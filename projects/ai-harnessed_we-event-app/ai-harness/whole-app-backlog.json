@@ -43,7 +43,7 @@
     },
     {
       "id": "domain-package",
-      "passes": false,
+      "passes": true,
       "priority": 10,
       "phase": 1,
       "agent": "backend",
