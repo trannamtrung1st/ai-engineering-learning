@@ -43,7 +43,9 @@ Implement routes from `09-page-list.md` per backlog slice—not all at once.
 MVP minimum before convergence:
 - Participant: event browse, event detail, registration status, check-in, feedback.
 - Organizer Admin: event list, create/edit, operations dashboard, check-in console.
-- Shared: app shell, access denied, not found, error recovery.
+- Shared: app shell, `/login`, `/signup`, access denied, not found, error recovery.
+
+Domain status colors from semantic tokens apply to all state families (event lifecycle, registration, eligibility).
 
 ## Data contract
 
@@ -56,7 +58,7 @@ MVP minimum before convergence:
 ## Visual polish
 
 - 8px grid spacing; consistent typography hierarchy (page title → section → helper).
-- Domain status colors from semantic tokens (`color.status.*`).
+- Domain status colors from semantic tokens (`color.status.*`) for all state families (event, registration, eligibility).
 - Loading: skeleton placeholders that preserve layout (not spinner-only pages).
 - Empty states: explain why empty and offer one clear next action.
 - Primary CTA once per section; destructive actions require confirmation.
@@ -77,6 +79,9 @@ Frontend work belongs in these backlog slices (see `ai-harness/whole-app-backlog
 1. `web-design-system-shell` — tokens, layout, primitives first.
 2. `web-participant-journeys` — participant flows.
 3. `web-organizer-journeys` — organizer flows.
+4. `web-auth-session-pages` — login, signup, logout, route guards.
+5. `web-event-cover-image` — cover upload and display.
+6. `web-domain-status-badge-colors` — per-state badge colors.
 
 Do not implement organizer dashboards in the same session as design-system bootstrap.
 

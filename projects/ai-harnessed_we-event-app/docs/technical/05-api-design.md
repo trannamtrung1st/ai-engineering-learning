@@ -47,9 +47,22 @@
 - `GET /events/{eventId}/audit-logs`
 - `GET /events/{eventId}/export`
 
-- `GET /events/{eventId}/export`
+## 2.6 Auth and Account (public + session)
+- `POST /auth/register` (public) — `{ email, password, displayName }` → creates user with `Participant` role; returns JWT + profile
+- `POST /auth/login` (public) — `{ email, password }` → returns JWT + profile with roles
+- `GET /me` — current authenticated user profile and roles (existing session endpoint)
+- `POST /dev/token` — **dev only** when `DEV_AUTH_ENABLED=true`; issues JWT without credential check (harness/local shortcut)
 
-## 2.6 Participant Self-Service
+Sign-out is client-side: clear stored JWT; no server revocation in MVP.
+
+## 2.7 Event Media
+- `POST /events/{eventId}/cover-image` — multipart upload (`image/jpeg`, `image/png`, `image/webp`; max 5 MB)
+- `DELETE /events/{eventId}/cover-image` — remove cover image
+- `GET /media/events/{key}` — serve uploaded file from controlled storage path
+
+Event list/detail responses include `coverImageUrl` when `cover_image_key` is set.
+
+## 2.8 Participant Self-Service
 - `GET /me/registrations` (paginated list of current actor's registrations across events)
 
 ## 3. Pagination Contract
@@ -226,3 +239,5 @@ HTTP mapping:
 - Feedback/eligibility endpoints: BR-14..BR-20, AC-08..AC-10
 - Audit/report endpoints: BR-21..BR-22, AC-11..AC-12
 - List pagination: FR-28..FR-31, NFR-16, AC-13..AC-14
+- Auth/account: FR-32..FR-34, NFR-07, NFR-08, NFR-17, AC-15..AC-16
+- Event media: FR-35..FR-36, NFR-18, AC-17

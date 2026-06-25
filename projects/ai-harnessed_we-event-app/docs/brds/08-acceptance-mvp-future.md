@@ -26,6 +26,13 @@
 - AC-13: Paginated list request with `page`/`pageSize` returns correct `items`, `total`, and `totalPages`; a page beyond the last page returns empty `items` with valid metadata.
 - AC-14: Listing pages expose prev/next (or equivalent page control) and do not render full unbounded datasets client-side.
 
+## 1.6 Identity and Session
+- AC-15: Unauthenticated access to protected API endpoints or routes returns 401 or redirects to login.
+- AC-16: Signup → login → view own registrations succeeds end-to-end.
+
+## 1.7 Event Media
+- AC-17: Organizer uploads a cover image; participant sees it on event list and event detail.
+
 ## 2. MVP scope
 - Event CRUD with publish/pause.
 - Event registration with capacity control.
@@ -35,6 +42,8 @@
 - Certificate eligibility evaluation based on attendance + feedback rules.
 - Basic operations dashboard and event data export.
 - Paginated list browsing for participant discovery and organizer operations.
+- Credential-based user authentication (signup, login, logout).
+- Event cover image upload and display.
 
 ## 3. Future scope
 - Advanced waitlist priority policies (priority groups, scoring).
@@ -49,9 +58,11 @@
 - Full event lifecycle is managed in one system from registration to certificate evaluation.
 - Event operational data is reliable enough to support improvement decisions for subsequent runs.
 
-## 5. Documentation Coverage Check (No Scope Expansion)
+## 5. Documentation Coverage Check
 - Registration/capacity: FR-05 to FR-12, BR-01 to BR-09, AC-01 to AC-04.
 - Check-in/attendance: FR-13 to FR-17, BR-10 to BR-13, AC-05 to AC-07.
 - Feedback/certificate: FR-18 to FR-21, BR-14 to BR-20, AC-08 to AC-10.
 - Governance/traceability: FR-22 to FR-27, BR-21 to BR-22, AC-11 to AC-12.
 - List pagination: FR-28 to FR-31, NFR-16, AC-13 to AC-14.
+- Identity/session: FR-32 to FR-34, NFR-07, NFR-08, NFR-17, AC-15 to AC-16.
+- Event media: FR-35 to FR-36, NFR-18, AC-17.

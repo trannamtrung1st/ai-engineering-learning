@@ -3,12 +3,13 @@
 ## Participant-facing components
 
 ### Event card
-- Fields: title, date/time, location, organizer, capacity hint, registration status.
+- Fields: cover image thumbnail (16:9), title, date/time, location, organizer, capacity hint, registration status.
 - Actions: view details, register (if available), view my status.
 - States: registration open, full with waitlist, closed, canceled.
+- Cover image: use `next/image`; show neutral placeholder when `coverImageUrl` is absent.
 
 ### Event detail header
-- Fields: event metadata, timeline windows, seat status, policy hints.
+- Fields: cover image hero, event metadata, timeline windows, seat status, policy hints.
 - Primary action changes by user state (`Register`, `Cancel registration`, `Check in`, `Submit feedback`).
 
 ### Registration status panel
@@ -52,8 +53,25 @@
 
 ## Domain status badge system
 
-- Event states: Draft, Published, RegistrationOpen, RegistrationClosed, InProgress, Completed, Archived, Cancelled.
+All domain state families use distinct semantic colors — not outline-only chips.
+
+### Event lifecycle colors
+
+| State | Token | Visual intent |
+|---|---|---|
+| Draft | `color.status.draft` | Neutral gray — not visible to participants |
+| Published | `color.status.published` | Blue — announced, registration not yet open |
+| RegistrationOpen | `color.status.registrationOpen` | Green — actionable registration |
+| RegistrationClosed | `color.status.registrationClosed` | Amber — closed, awaiting event start |
+| InProgress | `color.status.inProgress` | Teal — live event |
+| Completed | `color.status.completed` | Slate — finished, feedback may be open |
+| Archived | `color.status.archived` | Muted slate — read-only history |
+| Cancelled | `color.status.cancelled` | Red — event will not take place |
+
+### Registration and eligibility colors
+
 - Registration states: Requested, Registered, Waitlisted, Rejected, CancelledByUser, CancelledByOrganizer, CheckedIn, Attended, Absent, Expired.
 - Eligibility states: PendingEvaluation, Eligible, NotEligible, Revoked.
+- Terminal registration states (`CancelledByUser`, `CancelledByOrganizer`, `Expired`) use distinct muted tokens — not the same as active states.
 
 Status badges must include tooltip or inline explanation when ambiguity risk is high.

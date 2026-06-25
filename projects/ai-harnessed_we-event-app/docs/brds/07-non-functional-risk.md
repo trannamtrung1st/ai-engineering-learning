@@ -18,6 +18,8 @@
 - NFR-08: Authorization is enforced by role and event scope.
 - NFR-09: Participant personal data is protected and displayed only as required by business needs.
 - NFR-10: All critical operations must have audit logs for traceability.
+- NFR-17: Passwords are stored with adaptive hashing (bcrypt or argon2); no plaintext storage.
+- NFR-18: Uploaded images are validated for allowed MIME types and maximum size; served from a controlled storage path.
 
 ## 1.4 Usability and Accessibility
 - NFR-11: Registration/check-in flows must be clear, low-step, and usable on common devices.

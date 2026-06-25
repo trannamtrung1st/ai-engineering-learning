@@ -190,6 +190,55 @@
       "description": "Audit log module for critical config and state changes; paginated audit-logs and status-history."
     },
     {
+      "id": "module-user-accounts",
+      "passes": false,
+      "priority": 25,
+      "phase": 2,
+      "agent": "backend",
+      "acceptance": [
+        "NFR-07",
+        "NFR-08",
+        "NFR-17",
+        "FR-25",
+        "FR-26",
+        "FR-32",
+        "FR-33",
+        "FR-34"
+      ],
+      "docs": [
+        "docs/technical/05-api-design.md",
+        "docs/technical/04-database-design.md",
+        "docs/technical/01-roles-permissions.md",
+        "docs/technical/09-error-handling.md"
+      ],
+      "completionArtifacts": [
+        "apps/api/src/modules/auth",
+        "apps/api/src/modules/user"
+      ],
+      "description": "User accounts: users + user_roles tables, email/password signup and login, credential-based JWT issuance; participant_id maps to users.id; dev token remains behind DEV_AUTH_ENABLED for local harness only."
+    },
+    {
+      "id": "module-event-cover-image",
+      "passes": false,
+      "priority": 26,
+      "phase": 2,
+      "agent": "backend",
+      "acceptance": [
+        "FR-35",
+        "FR-36",
+        "NFR-18"
+      ],
+      "docs": [
+        "docs/technical/05-api-design.md",
+        "docs/technical/04-database-design.md",
+        "docs/technical/02-module-breakdown.md"
+      ],
+      "completionArtifacts": [
+        "apps/api/src/modules/event"
+      ],
+      "description": "Event cover image: cover_image_key column, multipart upload endpoint, local filesystem storage with served URL path; validate MIME/size; delete/replace on update."
+    },
+    {
       "id": "web-design-system-shell",
       "passes": true,
       "priority": 30,
@@ -257,8 +306,77 @@
       "description": "Organizer admin/staff routes: paginated event list, create/edit, dashboard, check-in console, operational tables."
     },
     {
+      "id": "web-auth-session-pages",
+      "passes": false,
+      "priority": 33,
+      "phase": 3,
+      "agent": "frontend",
+      "acceptance": [
+        "NFR-07",
+        "FR-32",
+        "FR-33",
+        "FR-34",
+        "AC-15",
+        "AC-16"
+      ],
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/10-user-flows.md",
+        "docs/ui-ux/06-app-layout-components.md",
+        "docs/ui-ux/02-ui-framework-tech-stack.md"
+      ],
+      "completionArtifacts": [
+        "apps/web/src/app/(auth)"
+      ],
+      "description": "Dedicated /login and /signup pages; route guards redirect unauthenticated users; remove auto sign-in defaults; wire TopBar sign-out; access-denied page; shells use credential login instead of dev ID forms."
+    },
+    {
+      "id": "web-event-cover-image",
+      "passes": false,
+      "priority": 34,
+      "phase": 3,
+      "agent": "frontend",
+      "acceptance": [
+        "FR-35",
+        "FR-36",
+        "AC-17"
+      ],
+      "docs": [
+        "docs/ui-ux/07-event-specific-components.md",
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/05-common-ui-components.md"
+      ],
+      "completionArtifacts": [
+        "apps/web/src/components/organizer/event-form.tsx",
+        "apps/web/src/components/participant/event-card.tsx"
+      ],
+      "description": "Organizer event form file picker + upload progress; participant event card and detail hero/thumbnail via next/image; placeholder when no cover."
+    },
+    {
+      "id": "web-domain-status-badge-colors",
+      "passes": false,
+      "priority": 35,
+      "phase": 3,
+      "agent": "frontend",
+      "acceptance": [
+        "NFR-06"
+      ],
+      "docs": [
+        "docs/ui-ux/04-design-tokens.md",
+        "docs/ui-ux/07-event-specific-components.md",
+        "docs/ui-ux/12-ui-states.md"
+      ],
+      "completionArtifacts": [
+        "apps/web/src/components/participant/event-state-badge.tsx",
+        "apps/web/src/lib/domain-labels.ts",
+        "apps/web/src/lib/status-tokens.ts",
+        "apps/web/src/app/globals.css"
+      ],
+      "description": "Distinct semantic colors for all event lifecycle states and missing registration terminal states; EventStateBadge uses badgeStatus; extend tokens in globals.css and status-tokens.ts."
+    },
+    {
       "id": "e2e-acceptance-suite",
-      "passes": true,
+      "passes": false,
       "priority": 40,
       "phase": 4,
       "agent": "test",
@@ -277,7 +395,10 @@
         "AC-11",
         "AC-12",
         "AC-13",
-        "AC-14"
+        "AC-14",
+        "AC-15",
+        "AC-16",
+        "AC-17"
       ],
       "docs": [
         "docs/technical/11-testing-plan.md",
@@ -286,7 +407,7 @@
       "completionArtifacts": [
         "tests/e2e"
       ],
-      "description": "End-to-end scenario tests covering core acceptance matrix."
+      "description": "End-to-end scenario tests covering core acceptance matrix plus signup/login/logout, cover upload display, and badge color regression spot-checks."
     }
   ]
 }

@@ -14,6 +14,8 @@ Minimum required variables (example names):
 - `DATABASE_URL`
 - `APP_PORT`
 - `JWT_SECRET` (or local auth secret)
+- `DEV_AUTH_ENABLED=true|false` (enables `POST /dev/token` for harness/local; credential auth always available when users table is seeded)
+- `UPLOADS_DIR` (filesystem path for event cover images; default `./uploads` in dev)
 - `TIMEZONE` (recommend UTC for deterministic tests)
 - `SEED_ENABLED=true|false`
 
@@ -47,11 +49,13 @@ Do not use in-memory repositories, SQLite, or non-Compose Postgres shortcuts for
 ## 5. Seed Data Strategy
 Seed data should include:
 - 1 organization.
-- 3 actor personas (`OrganizerAdmin`, `OrganizerStaff`, `Participant`).
+- 3 actor personas (`OrganizerAdmin`, `OrganizerStaff`, `Participant`) with credential-based user records (email + password hash).
 - At least 2 events:
   - one with available seats,
   - one full with waitlist enabled.
 - registration/check-in/feedback fixtures for transition testing.
+
+Optional: one event with a seeded cover image for UI smoke testing.
 
 ## 6. Local Validation Guardrails
 - Fail startup when schema migration is pending.
@@ -81,5 +85,5 @@ Seed data should include:
 - Production scaling and traffic management.
 
 ## 11. BRD Traceability
-- NFR-02, NFR-04..NFR-06, NFR-14, NFR-15
-- AC-01..AC-12 via local validation workflows
+- NFR-02, NFR-04..NFR-06, NFR-14, NFR-15, NFR-17, NFR-18
+- AC-01..AC-17 via local validation workflows

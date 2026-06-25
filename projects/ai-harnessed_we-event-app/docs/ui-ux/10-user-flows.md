@@ -1,5 +1,20 @@
 # User Flows
 
+## Flow 0: Account creation and session
+
+1. New user opens sign-up page (`/signup`).
+2. User enters email, password, and display name.
+3. System creates account with `Participant` role and signs user in (JWT).
+4. User is redirected to intended route or participant event discovery.
+
+## Flow 0b: Sign-in and sign-out
+
+1. User opens sign-in page (`/login`).
+2. User enters email and password.
+3. System validates credentials and issues JWT; client stores token.
+4. User accesses protected routes per role.
+5. User selects sign out from TopBar user menu; client clears token and redirects to `/login`.
+
 ## Flow 1: Participant registration
 
 1. User opens event discovery.

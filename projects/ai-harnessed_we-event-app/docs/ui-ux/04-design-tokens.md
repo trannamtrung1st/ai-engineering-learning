@@ -34,6 +34,15 @@ Use semantic tokens as the source of truth so components reference meaning, not 
 - `color.status.eligible`
 - `color.status.notEligible`
 - `color.status.pending`
+- `color.status.cancelled` (registration cancellations and expired)
+- `color.status.draft`
+- `color.status.published`
+- `color.status.registrationOpen`
+- `color.status.registrationClosed`
+- `color.status.inProgress`
+- `color.status.completed`
+- `color.status.archived`
+- `color.status.cancelledEvent` (event lifecycle cancelled — distinct from registration cancelled)
 
 Each status color must have an accessible foreground variant and icon/text pairing.
 

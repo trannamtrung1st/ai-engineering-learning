@@ -49,3 +49,12 @@
 - FR-29: Participant can view a paginated list of their registrations across events.
 - FR-30: Organizer Admin/Staff can view paginated operational lists (registrations, waitlist, attendance, eligibility, audit) scoped to authorized events.
 - FR-31: System returns total result count with each paginated list response.
+
+## 9. Identity and Session
+- FR-32: Participant can register a user account with email and password.
+- FR-33: User can sign in with email and password and receive an authenticated JWT session.
+- FR-34: User can sign out, clearing the client session.
+
+## 10. Event Media
+- FR-35: Organizer Admin can upload or replace an event cover image during create/edit.
+- FR-36: Participants and organizers see event cover images on discovery cards and event detail.

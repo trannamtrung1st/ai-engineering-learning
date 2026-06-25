@@ -33,10 +33,12 @@
 - Certificate eligibility evaluation based on configured rules.
 - Registration status management per participant.
 - Paginated list browsing for participant event discovery and organizer operational views.
+- User account registration and credential-based sign-in/sign-out.
+- Event cover image upload and display (single image per event).
 
 ## 2.2 Out of Scope (MVP)
 - Online payment/ticketing.
-- Livestream and media content management.
+- Livestream and full media content management (galleries, video hosting, CDN workflows).
 - External LMS/CRM/ERP integrations.
 - Advanced multi-channel marketing automation (advanced email marketing, social campaigns).
 - Native mobile app (current MVP scope is web-based only).
@@ -44,3 +46,4 @@
 ## 2.3 Scope Boundaries
 - We Event manages the in-system event process and does not fully replace internal communications.
 - Certificate process support is limited to eligibility determination; template generation/issuance may be handled in later phases by each organization.
+- Event cover images are basic event metadata (one image per event); this is not a media CMS.

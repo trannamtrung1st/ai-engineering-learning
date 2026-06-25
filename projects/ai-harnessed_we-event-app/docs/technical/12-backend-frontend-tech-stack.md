@@ -11,7 +11,7 @@ Define a single, explicit technical stack recommendation for both backend and fr
 - API style: REST JSON (`/api/v1`)
 - Database: PostgreSQL via Docker Compose (`db` service); mandatory for harness-driven implementation
 - Validation: schema validation at request boundary + domain rule validation
-- Auth: JWT-based auth (or local equivalent for MVP)
+- Auth: JWT-based credential auth (email/password signup and login) for preview and production; `POST /dev/token` available only when `DEV_AUTH_ENABLED=true` for harness/local shortcuts
 - Observability: structured logs with `requestId`, dedicated audit log stream for critical actions
 
 ### 2.2 Frontend

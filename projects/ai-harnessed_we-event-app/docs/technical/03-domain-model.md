@@ -12,8 +12,18 @@
 
 Context entities:
 - `Organization`
-- `User`
+- `User` (identity aggregate — email/password credentials, display name, role assignments)
 - `Role`
+
+### User entity
+- `id` (UUID) — also used as `participantId` in registrations when role is `Participant`.
+- `email` (unique, normalized lowercase).
+- `passwordHash` (adaptive hash; never exposed in API responses).
+- `displayName`.
+- `createdAt`, `updatedAt`.
+- Role assignments via `UserRole` (see database design): one user may hold `Participant` and/or organizer roles.
+
+Self-service signup creates `Participant` role only. `OrganizerAdmin` and `OrganizerStaff` accounts are provisioned via seed script or admin invite — not open registration.
 
 ## 2. Core Relationships
 ```mermaid
@@ -26,7 +36,9 @@ classDiagram
     class Feedback
     class CertificateEligibility
     class AuditLog
+    class User
 
+    User "1" --> "many" Registration : participatesAs
     Event "1" --> "1" EventRuleConfig : governedBy
     Event "1" --> "many" Registration : has
     Registration "1" --> "0..1" WaitlistEntry : mayCreate

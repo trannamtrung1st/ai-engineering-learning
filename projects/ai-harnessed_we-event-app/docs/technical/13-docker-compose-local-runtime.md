@@ -98,8 +98,9 @@ services:
 ```
 
 ### 4.1 Storage Policy
-- **No named volumes.** Database data is ephemeral for local preview.
-- Data resets when containers are recreated.
+- **No named volumes for database.** Database data is ephemeral for local preview.
+- **Uploads directory:** API service mounts `UPLOADS_DIR` (e.g. `./uploads` bind mount in dev, named volume `we-event-uploads` in full preview) for event cover images.
+- Data resets when containers are recreated (DB); uploaded images persist only while the uploads volume/bind mount is retained.
 - Suitable for local dev/preview; not for durable local datasets.
 
 ### 4.2 Persistence Policy for Harness Runs
@@ -160,6 +161,8 @@ Exclude from image build context:
 | `API_BASE_URL` | Web (server-side) | `http://api:3001` in preview |
 | `NEXT_PUBLIC_API_BASE_URL` | Web (browser) | `http://localhost:3001` |
 | `JWT_SECRET` | API | local secret (not committed) |
+| `DEV_AUTH_ENABLED` | API | `true` enables dev token endpoint (local/harness only) |
+| `UPLOADS_DIR` | API | `./uploads` (dev) or mounted volume path (preview) |
 | `TIMEZONE` | API | `UTC` |
 
 ## 7. Harness Integration

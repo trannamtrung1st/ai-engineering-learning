@@ -2,20 +2,24 @@
 
 ## Shared pages
 
-- Sign-in page.
-- Access denied page.
+- Sign-in page (`/login`) — shared across roles; email and password.
+- Sign-up page (`/signup`) — participant self-registration; creates `Participant` role only.
+- Access denied page (`/access-denied`).
 - Not found page.
 - Generic error/recovery page.
+
+Login and signup are dedicated routes — not inline ID forms inside participant/organizer shells.
 
 ## Participant pages
 
 ### Event discovery
 - Browse list with search and basic filters.
 - Surface event availability and registration status.
-- Paginated card grid; changing filters resets to page 1.
+- Paginated card grid with cover image thumbnail (16:9); fallback illustration when no cover.
+- Changing filters resets to page 1.
 
 ### Event detail
-- Display event information, windows, and current action.
+- Display event information, cover image hero, windows, and current action.
 - Show status-dependent CTA and explanation.
 
 ### My registrations
@@ -40,7 +44,7 @@
 
 ### Event management
 - Event list (paginated table).
-- Create/edit event form.
+- Create/edit event form with cover image upload (file picker, preview, replace, remove).
 - Publish/pause controls.
 
 ### Operations dashboard
@@ -76,4 +80,5 @@
 ## Routing guidance
 
 - Participant and organizer areas should be clearly separated.
-- Route guards should enforce role and event scope before render.
+- Route guards should enforce authentication, role, and event scope before render.
+- Unauthenticated users redirect to `/login` with return URL preserved.

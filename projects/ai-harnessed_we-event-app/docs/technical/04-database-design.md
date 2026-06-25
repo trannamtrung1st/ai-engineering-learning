@@ -27,11 +27,33 @@ Core tables:
 - `audit_logs`
 
 ## 3. Key Columns and Constraints
+### `users`
+- `id` PK (UUID)
+- `email` unique, not null (normalized lowercase)
+- `password_hash` not null
+- `display_name` not null
+- `created_at`, `updated_at`
+
+Constraints:
+- unique index on `lower(email)`
+
+### `user_roles`
+- `id` PK
+- `user_id` FK → `users.id`
+- `role` enum (`OrganizerAdmin`, `OrganizerStaff`, `Participant`)
+- `organization_id` FK nullable (required for organizer roles)
+- `assigned_event_ids` uuid[] nullable (staff scope)
+
+Constraints:
+- unique `(user_id, role, organization_id)` where applicable
+
 ### `events`
 - `id` PK
 - `organization_id` FK
 - `state` enum (`Draft`, `Published`, `RegistrationOpen`, `RegistrationClosed`, `InProgress`, `Completed`, `Archived`, `Cancelled`)
 - `start_at`, `end_at`
+- `cover_image_key` nullable (storage key for uploaded cover image)
+- `cover_image_updated_at` nullable
 - `created_by`, `updated_by`
 
 Constraints:
@@ -55,7 +77,7 @@ Constraints:
 ### `registrations`
 - `id` PK
 - `event_id` FK
-- `participant_id` FK (`users.id`)
+- `participant_id` FK → `users.id` (authenticated participant identity)
 - `state` enum (`Requested`, `Registered`, `Waitlisted`, `Rejected`, `CancelledByUser`, `CancelledByOrganizer`, `CheckedIn`, `Attended`, `Absent`, `Expired`)
 - `requested_at`
 - `cancelled_at` nullable
@@ -166,6 +188,6 @@ ON registrations(participant_id, updated_at DESC);
 
 ## 7. BRD Traceability
 - BR-01..BR-13, BR-17..BR-22
-- FR-06..FR-17, FR-20, FR-23, FR-24, FR-28..FR-31
-- AC-01..AC-07, AC-11, AC-12, AC-13
-- NFR-16 (pagination indexes in §4)
+- FR-06..FR-17, FR-20, FR-23, FR-24, FR-28..FR-36
+- AC-01..AC-07, AC-11, AC-12, AC-13, AC-15..AC-17
+- NFR-16, NFR-17, NFR-18 (pagination indexes in §4)

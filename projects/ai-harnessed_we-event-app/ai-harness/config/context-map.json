@@ -95,6 +95,23 @@
         "docs/technical/05-api-design.md"
       ]
     },
+    "module-user-accounts": {
+      "agent": "backend",
+      "docs": [
+        "docs/technical/05-api-design.md",
+        "docs/technical/04-database-design.md",
+        "docs/technical/01-roles-permissions.md",
+        "docs/technical/09-error-handling.md"
+      ]
+    },
+    "module-event-cover-image": {
+      "agent": "backend",
+      "docs": [
+        "docs/technical/05-api-design.md",
+        "docs/technical/04-database-design.md",
+        "docs/technical/02-module-breakdown.md"
+      ]
+    },
     "web-design-system-shell": {
       "agent": "frontend",
       "docs": [
@@ -119,6 +136,31 @@
         "docs/ui-ux/07-event-specific-components.md",
         "docs/ui-ux/08-forms-validation-ux.md",
         "docs/ui-ux/05-common-ui-components.md"
+      ]
+    },
+    "web-auth-session-pages": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/10-user-flows.md",
+        "docs/ui-ux/06-app-layout-components.md",
+        "docs/ui-ux/02-ui-framework-tech-stack.md"
+      ]
+    },
+    "web-event-cover-image": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/07-event-specific-components.md",
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/05-common-ui-components.md"
+      ]
+    },
+    "web-domain-status-badge-colors": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/04-design-tokens.md",
+        "docs/ui-ux/07-event-specific-components.md",
+        "docs/ui-ux/12-ui-states.md"
       ]
     },
     "e2e-acceptance-suite": {

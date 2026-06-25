@@ -33,6 +33,11 @@ Roles:
 - `OrganizerAdmin` can operate on organization-owned events.
 - System automation acts on explicit triggers and never bypasses invariants.
 
+## 3.1 Account provisioning
+- Self-service signup (`POST /auth/register`) assigns `Participant` role only.
+- `OrganizerAdmin` and `OrganizerStaff` accounts are created via seed data or admin provisioning — not via public signup.
+- JWT `sub` claim is the user's `users.id` UUID for credential-based sessions.
+
 ## 4. Sensitive Actions and Guardrails
 Sensitive actions:
 - Rule/capacity change after registration opens.
@@ -73,6 +78,6 @@ For each command:
 ```
 
 ## 7. BRD Traceability
-- FR-25, FR-26, FR-27
+- FR-25, FR-26, FR-27, FR-32, FR-33
 - BR-20, BR-21, BR-22
-- AC-11, AC-12
+- AC-11, AC-12, AC-15, AC-16
