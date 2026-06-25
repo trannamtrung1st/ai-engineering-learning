@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { EventState } from "@we-event/domain";
-import { useQueries } from "@tanstack/react-query";
+import type { EventState, RegistrationState } from "@we-event/domain";
 
 import { EventCard, EventCardSkeleton } from "@/components/participant/event-card";
 import { FilterBar } from "@/components/layout/filter-bar";
@@ -20,10 +19,12 @@ import {
 } from "@/components/ui/select";
 import { useLiveQuery } from "@/hooks/use-live-query";
 import { queryKeys } from "@/lib/query-keys";
-import { fetchEvents, fetchRegistrationStatus } from "@/lib/participant-api";
+import { fetchEvents, fetchMyRegistrations } from "@/lib/participant-api";
 import { useAuth } from "@/providers/auth-provider";
 
 const EVENT_PAGE_SIZE = 12;
+/** Single lookup request for registration badges on the current browse page. */
+const REGISTRATION_LOOKUP_PAGE_SIZE = 100;
 
 const EVENT_STATE_FILTERS: Array<{ value: "all" | EventState; label: string }> = [
   { value: "all", label: "All states" },
@@ -66,6 +67,20 @@ export default function BrowseEventsPage() {
     enabled: Boolean(token),
   });
 
+  const myRegistrationsQuery = useLiveQuery({
+    queryKey: queryKeys.registrations.mine({
+      page: 1,
+      pageSize: REGISTRATION_LOOKUP_PAGE_SIZE,
+    }),
+    queryFn: () =>
+      fetchMyRegistrations(token!, {
+        page: 1,
+        pageSize: REGISTRATION_LOOKUP_PAGE_SIZE,
+      }),
+    mode: "eventList",
+    enabled: Boolean(token),
+  });
+
   const events = useMemo(
     () => eventsQuery.data?.items ?? [],
     [eventsQuery.data?.items],
@@ -74,22 +89,13 @@ export default function BrowseEventsPage() {
   const totalPages = eventsQuery.data?.totalPages ?? 1;
   const pageSize = eventsQuery.data?.pageSize ?? EVENT_PAGE_SIZE;
 
-  const registrationQueries = useQueries({
-    queries: events.map((event) => ({
-      queryKey: queryKeys.registrations.status(event.eventId),
-      queryFn: () => fetchRegistrationStatus(token!, event.eventId),
-      enabled: Boolean(token) && events.length > 0,
-      staleTime: 30_000,
-    })),
-  });
-
-  const registrationByEventId = useMemo(() => {
-    const map = new Map<string, (typeof registrationQueries)[number]>();
-    events.forEach((event, index) => {
-      map.set(event.eventId, registrationQueries[index]!);
-    });
+  const registrationStateByEventId = useMemo(() => {
+    const map = new Map<string, RegistrationState>();
+    for (const item of myRegistrationsQuery.data?.items ?? []) {
+      map.set(item.eventId, item.state);
+    }
     return map;
-  }, [events, registrationQueries]);
+  }, [myRegistrationsQuery.data?.items]);
 
   return (
     <div className="space-y-8">
@@ -162,20 +168,17 @@ export default function BrowseEventsPage() {
       {eventsQuery.isSuccess && events.length > 0 ? (
         <>
           <div className="grid gap-4 lg:grid-cols-2">
-            {events.map((event) => {
-              const registrationQuery = registrationByEventId.get(event.eventId);
-              return (
-                <EventCard
-                  key={event.eventId}
-                  event={event}
-                  registration={registrationQuery?.data?.registration}
-                  registrationLoading={registrationQuery?.isLoading}
-                  registrationError={
-                    registrationQuery?.isError ? registrationQuery.error.message : null
-                  }
-                />
-              );
-            })}
+            {events.map((event) => (
+              <EventCard
+                key={event.eventId}
+                event={event}
+                registrationState={registrationStateByEventId.get(event.eventId) ?? null}
+                registrationLoading={myRegistrationsQuery.isLoading}
+                registrationError={
+                  myRegistrationsQuery.isError ? myRegistrationsQuery.error.message : null
+                }
+              />
+            ))}
           </div>
 
           <Pagination

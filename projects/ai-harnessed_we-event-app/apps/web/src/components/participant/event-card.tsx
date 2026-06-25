@@ -8,18 +8,20 @@ import { RegistrationStateBadge } from "@/components/participant/registration-st
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatDateTime } from "@/lib/format";
-import type { EventListItem, RegistrationStatus } from "@/lib/participant-api";
+import type { RegistrationState } from "@we-event/domain";
+
+import type { EventListItem } from "@/lib/participant-api";
 
 export interface EventCardProps {
   event: EventListItem;
-  registration?: RegistrationStatus | null;
+  registrationState?: RegistrationState | null;
   registrationLoading?: boolean;
   registrationError?: string | null;
 }
 
 export function EventCard({
   event,
-  registration,
+  registrationState,
   registrationLoading,
   registrationError,
 }: EventCardProps) {
@@ -65,8 +67,8 @@ export function EventCard({
             <span className="text-[length:var(--font-size-sm)] text-[var(--color-status-rejected)]">
               Status unavailable
             </span>
-          ) : registration ? (
-            <RegistrationStateBadge state={registration.state} />
+          ) : registrationState ? (
+            <RegistrationStateBadge state={registrationState} />
           ) : (
             <span className="text-[length:var(--font-size-sm)] text-[var(--color-text-secondary)]">
               Not registered

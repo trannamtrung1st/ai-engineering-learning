@@ -1,15 +1,24 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, ClipboardCheck, MessageSquare, ShieldCheck } from "lucide-react";
 import type { RegistrationState } from "@we-event/domain";
 
 import { RegistrationStateBadge } from "@/components/participant/registration-state-badge";
+import { FilterBar } from "@/components/layout/filter-bar";
 import { EmptyFailureBlock } from "@/components/layout/empty-failure-block";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
+import { Field } from "@/components/ui/field";
 import { Pagination } from "@/components/ui/pagination";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useLiveQuery } from "@/hooks/use-live-query";
 import { registrationStateLabel } from "@/lib/domain-labels";
@@ -19,6 +28,19 @@ import { queryKeys } from "@/lib/query-keys";
 import { useAuth } from "@/providers/auth-provider";
 
 const REGISTRATION_PAGE_SIZE = 20;
+
+const REGISTRATION_STATE_FILTERS: Array<{
+  value: "all" | RegistrationState;
+  label: string;
+}> = [
+  { value: "all", label: "All statuses" },
+  { value: "Registered", label: "Registered" },
+  { value: "Waitlisted", label: "Waitlisted" },
+  { value: "CheckedIn", label: "Checked in" },
+  { value: "Attended", label: "Attended" },
+  { value: "Rejected", label: "Rejected" },
+  { value: "CancelledByUser", label: "Cancelled" },
+];
 
 function showCheckInLink(state: RegistrationState): boolean {
   return state === "Registered" || state === "CheckedIn";
@@ -35,13 +57,19 @@ function showEligibilityLink(state: RegistrationState): boolean {
 export default function MyRegistrationsPage() {
   const { token } = useAuth();
   const [page, setPage] = useState(1);
+  const [stateFilter, setStateFilter] = useState<"all" | RegistrationState>("all");
+
+  useEffect(() => {
+    setPage(1);
+  }, [stateFilter]);
 
   const listParams = useMemo(
     () => ({
       page,
       pageSize: REGISTRATION_PAGE_SIZE,
+      state: stateFilter === "all" ? undefined : stateFilter,
     }),
-    [page],
+    [page, stateFilter],
   );
 
   const registrationsQuery = useLiveQuery({
@@ -66,6 +94,31 @@ export default function MyRegistrationsPage() {
         subtitle="Current and past registrations with quick access to check-in and feedback."
       />
 
+      <FilterBar>
+        <Field id="registration-state-filter" label="Status" className="min-w-[12rem]">
+          <Select
+            value={stateFilter}
+            onValueChange={(value) =>
+              setStateFilter(value as "all" | RegistrationState)
+            }
+          >
+            <SelectTrigger
+              id="registration-state-filter"
+              aria-label="Filter by registration status"
+            >
+              <SelectValue placeholder="All statuses" />
+            </SelectTrigger>
+            <SelectContent>
+              {REGISTRATION_STATE_FILTERS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+      </FilterBar>
+
       {registrationsQuery.isLoading ? (
         <div className="space-y-4">
           {Array.from({ length: 3 }).map((_, index) => (
@@ -87,11 +140,22 @@ export default function MyRegistrationsPage() {
       {registrationsQuery.isSuccess && items.length === 0 ? (
         <EmptyFailureBlock
           variant="empty"
-          title="No registrations yet"
-          description="Browse published events and register when registration is open."
-          actionLabel="Browse events"
+          title={
+            stateFilter === "all" ? "No registrations yet" : "No matching registrations"
+          }
+          description={
+            stateFilter === "all"
+              ? "Browse published events and register when registration is open."
+              : "Try choosing a different status filter."
+          }
+          actionLabel={stateFilter === "all" ? "Browse events" : "Clear filter"}
           onAction={() => {
-            window.location.href = "/events";
+            if (stateFilter === "all") {
+              window.location.href = "/events";
+            } else {
+              setStateFilter("all");
+              setPage(1);
+            }
           }}
         />
       ) : null}

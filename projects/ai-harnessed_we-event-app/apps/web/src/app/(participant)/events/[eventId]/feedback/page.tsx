@@ -135,6 +135,8 @@ export default function FeedbackPage() {
           variant="failure"
           title="Could not load event"
           description={eventQuery.error.message}
+          actionLabel="Retry"
+          onAction={() => void eventQuery.refetch()}
         />
       ) : null}
 

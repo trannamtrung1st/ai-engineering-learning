@@ -211,7 +211,7 @@
     },
     {
       "id": "web-participant-journeys",
-      "passes": false,
+      "passes": true,
       "priority": 31,
       "phase": 3,
       "agent": "frontend",
