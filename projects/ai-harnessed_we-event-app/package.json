@@ -4,7 +4,8 @@
   "description": "We Event MVP — AI-harnessed implementation",
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "tests/*"
   ],
   "engines": {
     "node": ">=20"

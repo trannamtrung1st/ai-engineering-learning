@@ -258,7 +258,7 @@
     },
     {
       "id": "e2e-acceptance-suite",
-      "passes": false,
+      "passes": true,
       "priority": 40,
       "phase": 4,
       "agent": "test",
