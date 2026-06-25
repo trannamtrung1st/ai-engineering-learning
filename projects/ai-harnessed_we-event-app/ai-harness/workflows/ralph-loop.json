@@ -1,0 +1,71 @@
+{
+  "loop": {
+    "maxIterations": 30,
+    "branchPrefix": "aih/",
+    "commitOnPass": true
+  },
+  "signals": {
+    "complete": "COMPLETE",
+    "sliceDone": "SLICE_DONE",
+    "sliceBlocked": "SLICE_BLOCKED",
+    "reviewPass": "REVIEW_PASS",
+    "reviewFail": "REVIEW_FAIL"
+  },
+  "computationalChecks": {
+    "forbiddenPatterns": [
+      {
+        "id": "in-memory-map-repo",
+        "pattern": "new Map\\(\\).*repository|repository.*new Map\\(\\)",
+        "paths": ["apps", "packages"],
+        "message": "In-memory Map repository forbidden as system of record"
+      },
+      {
+        "id": "sqlite",
+        "pattern": "better-sqlite3|sqlite3",
+        "paths": ["apps", "packages"],
+        "message": "SQLite forbidden; use Postgres via Docker Compose"
+      },
+      {
+        "id": "mock-events",
+        "pattern": "mockEvents|const events = \\[",
+        "paths": ["apps/web"],
+        "message": "Hardcoded event fixtures forbidden in page components"
+      },
+      {
+        "id": "lorem-ipsum",
+        "pattern": "lorem ipsum",
+        "paths": ["apps"],
+        "message": "Placeholder lorem ipsum content forbidden"
+      },
+      {
+        "id": "demo-event",
+        "pattern": "demo-event|Annual summit",
+        "paths": ["apps/web"],
+        "message": "Demo copy forbidden in production UI"
+      }
+    ],
+    "commands": [
+      { "script": "typecheck", "activeWhen": "apps", "optional": false },
+      { "script": "lint", "activeWhen": "apps", "optional": false },
+      { "script": "build", "activeWhen": "apps", "optional": false },
+      { "script": "test", "activeWhen": "tests", "optional": true }
+    ],
+    "runtimeValidation": {
+      "db": {
+        "strategy": "docker-compose",
+        "service": "db",
+        "healthTimeoutMs": 60000,
+        "requiredBeforeApi": true,
+        "activeWhen": "docker-compose.yml"
+      }
+    }
+  },
+  "aiReview": {
+    "required": true,
+    "modelKey": "reviewer"
+  },
+  "humanReview": {
+    "requiredForMergeReady": true,
+    "signal": "HUMAN_REVIEW_PASS"
+  }
+}

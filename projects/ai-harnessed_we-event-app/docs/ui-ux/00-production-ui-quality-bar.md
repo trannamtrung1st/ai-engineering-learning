@@ -69,7 +69,7 @@ MVP minimum before convergence:
 
 ## Slice alignment
 
-Frontend work belongs in these backlog slices (see `whole-app-backlog.json`):
+Frontend work belongs in these backlog slices (see `ai-harness/whole-app-backlog.json`):
 1. `web-design-system-shell` — tokens, layout, primitives first.
 2. `web-participant-journeys` — participant flows.
 3. `web-organizer-journeys` — organizer flows.

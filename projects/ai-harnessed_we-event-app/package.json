@@ -1,0 +1,17 @@
+{
+  "name": "we-event",
+  "private": true,
+  "description": "We Event MVP — AI-harnessed implementation",
+  "scripts": {
+    "typecheck": "npm run typecheck -ws --if-present",
+    "lint": "npm run lint -ws --if-present",
+    "build": "npm run build -ws --if-present",
+    "test": "npm run test -ws --if-present",
+    "aih:once": "./ai-harness/scripts/ralph-once.sh",
+    "aih:loop": "./ai-harness/scripts/ralph-loop.sh",
+    "aih:loop:bg": "./ai-harness/scripts/ralph-loop-daemon.sh",
+    "aih:loop:stop": "./ai-harness/scripts/ralph-loop-stop.sh",
+    "aih:check": "./ai-harness/scripts/run-checks.sh",
+    "aih:review": "./ai-harness/scripts/run-ai-review.sh"
+  }
+}
