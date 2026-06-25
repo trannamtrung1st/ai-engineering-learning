@@ -6,15 +6,15 @@ import { getPool } from "../../db/pool.js";
 import type {
   AuditLogRow,
   AuditWriteInput,
-  ListAuditLogsQuery,
-  ListStatusHistoryQuery,
+  ListAuditLogsOptions,
+  ListAuditLogsResult,
+  ListStatusHistoryOptions,
+  ListStatusHistoryResult,
 } from "./types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const STATUS_HISTORY_ENTITY_TYPES = ["Registration", "CheckinRecord"] as const;
-const DEFAULT_LIMIT = 100;
-const MAX_LIMIT = 500;
 
 let schemaReady: Promise<void> | null = null;
 
@@ -45,14 +45,43 @@ function mapAuditLog(row: Record<string, unknown>): AuditLogRow {
   };
 }
 
-function clampLimit(limit: number | undefined): number {
-  if (limit === undefined) {
-    return DEFAULT_LIMIT;
+function buildAuditLogFilters(
+  eventId: string,
+  options: Pick<ListAuditLogsOptions, "entityType" | "entityId">,
+): { conditions: string[]; params: unknown[] } {
+  const params: unknown[] = [eventId];
+  const conditions = ["event_id = $1"];
+  let paramIndex = 2;
+
+  if (options.entityType) {
+    conditions.push(`entity_type = $${paramIndex++}`);
+    params.push(options.entityType);
   }
-  if (!Number.isInteger(limit) || limit < 1) {
-    return DEFAULT_LIMIT;
+  if (options.entityId) {
+    conditions.push(`entity_id = $${paramIndex++}`);
+    params.push(options.entityId);
   }
-  return Math.min(limit, MAX_LIMIT);
+
+  return { conditions, params };
+}
+
+function buildStatusHistoryFilters(
+  eventId: string,
+  options: Pick<ListStatusHistoryOptions, "registrationId">,
+): { conditions: string[]; params: unknown[] } {
+  const params: unknown[] = [eventId, STATUS_HISTORY_ENTITY_TYPES];
+  const conditions = ["event_id = $1", "entity_type = ANY($2::text[])"];
+  let paramIndex = 3;
+
+  if (options.registrationId) {
+    conditions.push(
+      `(entity_id = $${paramIndex}::uuid OR after_json->>'registrationId' = $${paramIndex}::text)`,
+    );
+    params.push(options.registrationId);
+    paramIndex++;
+  }
+
+  return { conditions, params };
 }
 
 export async function insertAuditLog(
@@ -82,72 +111,78 @@ export async function insertAuditLog(
 
 export async function listAuditLogsForEvent(
   eventId: string,
-  query: ListAuditLogsQuery = {},
+  options: ListAuditLogsOptions,
   client: Pool | PoolClient = getPool(),
-): Promise<AuditLogRow[]> {
-  const params: unknown[] = [eventId];
-  const conditions = ["event_id = $1"];
-  let paramIndex = 2;
+): Promise<ListAuditLogsResult> {
+  const { conditions, params } = buildAuditLogFilters(eventId, options);
 
-  if (query.entityType) {
-    conditions.push(`entity_type = $${paramIndex++}`);
-    params.push(query.entityType);
-  }
-  if (query.entityId) {
-    conditions.push(`entity_id = $${paramIndex++}`);
-    params.push(query.entityId);
-  }
+  const countResult = await client.query(
+    `SELECT COUNT(*)::int AS total
+     FROM audit_logs
+     WHERE ${conditions.join(" AND ")}`,
+    params,
+  );
+  const total = (countResult.rows[0] as { total: number }).total;
 
-  params.push(clampLimit(query.limit));
+  const listParams = [
+    ...params,
+    options.limit,
+    options.offset,
+  ];
 
   const result = await client.query(
     `SELECT *
      FROM audit_logs
      WHERE ${conditions.join(" AND ")}
-     ORDER BY occurred_at DESC
-     LIMIT $${paramIndex}`,
-    params,
+     ORDER BY ${options.sortColumn} ${options.sortDirection}
+     LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    listParams,
   );
 
-  return result.rows.map((row) =>
-    mapAuditLog(row as Record<string, unknown>),
-  );
+  return {
+    items: result.rows.map((row) =>
+      mapAuditLog(row as Record<string, unknown>),
+    ),
+    total,
+  };
 }
 
 export async function listRegistrationStatusHistory(
   eventId: string,
-  query: ListStatusHistoryQuery = {},
+  options: ListStatusHistoryOptions,
   client: Pool | PoolClient = getPool(),
-): Promise<AuditLogRow[]> {
-  const params: unknown[] = [eventId, STATUS_HISTORY_ENTITY_TYPES];
-  const conditions = [
-    "event_id = $1",
-    "entity_type = ANY($2::text[])",
+): Promise<ListStatusHistoryResult> {
+  const { conditions, params } = buildStatusHistoryFilters(eventId, options);
+
+  const countResult = await client.query(
+    `SELECT COUNT(*)::int AS total
+     FROM audit_logs
+     WHERE ${conditions.join(" AND ")}`,
+    params,
+  );
+  const total = (countResult.rows[0] as { total: number }).total;
+
+  const listParams = [
+    ...params,
+    options.limit,
+    options.offset,
   ];
-  let paramIndex = 3;
-
-  if (query.registrationId) {
-    conditions.push(
-      `(entity_id = $${paramIndex}::uuid OR after_json->>'registrationId' = $${paramIndex}::text)`,
-    );
-    params.push(query.registrationId);
-    paramIndex++;
-  }
-
-  params.push(clampLimit(query.limit));
 
   const result = await client.query(
     `SELECT *
      FROM audit_logs
      WHERE ${conditions.join(" AND ")}
-     ORDER BY occurred_at ASC
-     LIMIT $${paramIndex}`,
-    params,
+     ORDER BY ${options.sortColumn} ${options.sortDirection}
+     LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+    listParams,
   );
 
-  return result.rows.map((row) =>
-    mapAuditLog(row as Record<string, unknown>),
-  );
+  return {
+    items: result.rows.map((row) =>
+      mapAuditLog(row as Record<string, unknown>),
+    ),
+    total,
+  };
 }
 
 export async function countAuditLogsForEvent(

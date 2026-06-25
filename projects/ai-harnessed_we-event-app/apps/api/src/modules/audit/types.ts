@@ -1,3 +1,5 @@
+import type { PaginatedQuery } from "../../pagination/index.js";
+
 export interface AuditWriteInput {
   eventId: string;
   entityType: string;
@@ -54,13 +56,40 @@ export interface StatusHistoryEntry {
   occurredAt: string;
 }
 
-export interface ListAuditLogsQuery {
+export interface ListAuditLogsQuery extends PaginatedQuery {
   entityType?: string;
   entityId?: string;
-  limit?: number;
+  sort?: string;
 }
 
-export interface ListStatusHistoryQuery {
+export interface ListStatusHistoryQuery extends PaginatedQuery {
   registrationId?: string;
-  limit?: number;
+  sort?: string;
+}
+
+export interface ListAuditLogsOptions {
+  entityType?: string;
+  entityId?: string;
+  sortColumn: string;
+  sortDirection: "ASC" | "DESC";
+  limit: number;
+  offset: number;
+}
+
+export interface ListStatusHistoryOptions {
+  registrationId?: string;
+  sortColumn: string;
+  sortDirection: "ASC" | "DESC";
+  limit: number;
+  offset: number;
+}
+
+export interface ListAuditLogsResult {
+  items: AuditLogRow[];
+  total: number;
+}
+
+export interface ListStatusHistoryResult {
+  items: AuditLogRow[];
+  total: number;
 }

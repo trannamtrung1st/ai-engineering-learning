@@ -104,11 +104,11 @@ describe("audit integration", () => {
       "OrganizerAdmin",
     );
 
-    const { entries } = await auditService.listAuditLogs(event.id, {
+    const { items } = await auditService.listAuditLogs(event.id, {
       entityType: "EventRuleConfig",
     });
 
-    const ruleChange = entries.find(
+    const ruleChange = items.find(
       (entry) => entry.action === "event.rule_config.updated",
     );
     assert.ok(ruleChange, "expected rule config audit entry");
@@ -137,25 +137,68 @@ describe("audit integration", () => {
       { actorId: participantId, actorRole: "Participant" },
     );
 
-    const { entries } = await auditService.listStatusHistory(event.id, {
+    const { items } = await auditService.listStatusHistory(event.id, {
       registrationId: registration.registrationId,
+      pageSize: "100",
+      sort: "createdAt:asc",
     });
 
-    assert.ok(entries.length >= 2, "expected at least register and cancel entries");
+    assert.ok(items.length >= 2, "expected at least register and cancel entries");
 
-    const accepted = entries.find(
+    const accepted = items.find(
       (entry) => entry.action === "registration.accepted",
     );
     assert.ok(accepted, "expected registration.accepted entry");
     assert.equal(accepted.registrationId, registration.registrationId);
     assert.equal(accepted.afterState, "Registered");
 
-    const cancelled = entries.find(
+    const cancelled = items.find(
       (entry) => entry.action === "registration.cancelled",
     );
     assert.ok(cancelled, "expected registration.cancelled entry");
     assert.equal(cancelled.registrationId, registration.registrationId);
     assert.equal(cancelled.afterState, "CancelledByUser");
     assert.ok(cancelled.occurredAt);
+  });
+
+  it("AC-13: paginated audit-logs and status-history return envelope metadata", async () => {
+    const event = await createRegistrationOpenEvent({ capacity: 3 });
+    const participantIds = [randomUUID(), randomUUID(), randomUUID()];
+
+    for (const participantId of participantIds) {
+      await registrationService.register(event.id, participantId, {
+        actorId: participantId,
+        actorRole: "Participant",
+      });
+    }
+
+    const auditPage = await auditService.listAuditLogs(event.id, {
+      page: "1",
+      pageSize: "2",
+    });
+    assert.equal(auditPage.page, 1);
+    assert.equal(auditPage.pageSize, 2);
+    assert.ok(auditPage.total >= 3);
+    assert.equal(auditPage.items.length, 2);
+    assert.equal(auditPage.totalPages, Math.ceil(auditPage.total / 2));
+
+    const beyondPage = await auditService.listAuditLogs(event.id, {
+      page: String(auditPage.totalPages + 5),
+      pageSize: "2",
+    });
+    assert.deepEqual(beyondPage.items, []);
+    assert.equal(beyondPage.page, auditPage.totalPages + 5);
+    assert.equal(beyondPage.total, auditPage.total);
+
+    const historyPage = await auditService.listStatusHistory(event.id, {
+      page: "1",
+      pageSize: "2",
+      sort: "createdAt:asc",
+    });
+    assert.equal(historyPage.page, 1);
+    assert.equal(historyPage.pageSize, 2);
+    assert.ok(historyPage.total >= 3);
+    assert.equal(historyPage.items.length, 2);
+    assert.equal(historyPage.totalPages, Math.ceil(historyPage.total / 2));
   });
 });

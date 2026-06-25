@@ -1,4 +1,10 @@
 import { ApiError } from "../../errors/api-error.js";
+import {
+  buildPaginatedResult,
+  parsePagination,
+  parseSort,
+  type PaginatedResult,
+} from "../../pagination/index.js";
 import { findEventById } from "../event/repository.js";
 import {
   listAuditLogsForEvent,
@@ -94,25 +100,74 @@ export class AuditService {
   async listAuditLogs(
     eventId: string,
     query: ListAuditLogsQuery = {},
-  ): Promise<{ eventId: string; entries: AuditLogEntry[] }> {
+  ): Promise<PaginatedResult<AuditLogEntry>> {
     await this.requireEvent(eventId);
-    const rows = await listAuditLogsForEvent(eventId, query);
-    return {
-      eventId,
-      entries: rows.map(toAuditLogEntry),
-    };
+
+    const pagination = parsePagination(query, {
+      defaultPageSize: 20,
+      maxPageSize: 100,
+    });
+
+    const sort = parseSort(
+      query.sort,
+      { createdAt: "occurred_at" },
+      "createdAt",
+    );
+
+    const effectiveSort = query.sort?.trim()
+      ? sort
+      : { column: "occurred_at", direction: "DESC" as const };
+
+    const { items, total } = await listAuditLogsForEvent(eventId, {
+      entityType: query.entityType,
+      entityId: query.entityId,
+      sortColumn: effectiveSort.column,
+      sortDirection: effectiveSort.direction,
+      limit: pagination.pageSize,
+      offset: pagination.offset,
+    });
+
+    return buildPaginatedResult(
+      items.map(toAuditLogEntry),
+      total,
+      pagination,
+    );
   }
 
   async listStatusHistory(
     eventId: string,
     query: ListStatusHistoryQuery = {},
-  ): Promise<{ eventId: string; entries: StatusHistoryEntry[] }> {
+  ): Promise<PaginatedResult<StatusHistoryEntry>> {
     await this.requireEvent(eventId);
-    const rows = await listRegistrationStatusHistory(eventId, query);
-    return {
-      eventId,
-      entries: rows.map(toStatusHistoryEntry),
-    };
+
+    const pagination = parsePagination(query, {
+      defaultPageSize: 20,
+      maxPageSize: 100,
+    });
+
+    const sort = parseSort(
+      query.sort,
+      { createdAt: "occurred_at" },
+      "createdAt",
+    );
+
+    const effectiveSort = query.sort?.trim()
+      ? sort
+      : { column: "occurred_at", direction: "DESC" as const };
+
+    const { items, total } = await listRegistrationStatusHistory(eventId, {
+      registrationId: query.registrationId,
+      sortColumn: effectiveSort.column,
+      sortDirection: effectiveSort.direction,
+      limit: pagination.pageSize,
+      offset: pagination.offset,
+    });
+
+    return buildPaginatedResult(
+      items.map(toStatusHistoryEntry),
+      total,
+      pagination,
+    );
   }
 
   private async requireEvent(eventId: string): Promise<void> {

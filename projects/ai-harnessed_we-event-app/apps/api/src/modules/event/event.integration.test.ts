@@ -268,12 +268,12 @@ describe("event integration", () => {
       context,
     );
 
-    const { entries } = await auditService.listAuditLogs(draft.id, {
+    const { items } = await auditService.listAuditLogs(draft.id, {
       entityType: "EventRuleConfig",
     });
 
     assert.ok(
-      entries.some((entry) => entry.action === "event.rule_config.updated"),
+      items.some((entry) => entry.action === "event.rule_config.updated"),
     );
   });
 
