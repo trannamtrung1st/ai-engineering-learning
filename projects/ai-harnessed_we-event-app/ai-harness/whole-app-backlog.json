@@ -103,7 +103,7 @@
     },
     {
       "id": "module-registration",
-      "passes": false,
+      "passes": true,
       "priority": 21,
       "phase": 2,
       "agent": "backend",

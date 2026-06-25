@@ -8,7 +8,8 @@ export type ApiErrorCode =
   | "INVALID_INPUT"
   | "INTERNAL_ERROR"
   | "NOT_FOUND"
-  | "INVALID_STATE_TRANSITION";
+  | "INVALID_STATE_TRANSITION"
+  | "IDEMPOTENCY_KEY_CONFLICT";
 
 export class ApiError extends Error {
   readonly code: ApiErrorCode;

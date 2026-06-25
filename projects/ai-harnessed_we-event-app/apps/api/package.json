@@ -9,7 +9,8 @@
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "build": "tsc && mkdir -p dist/modules/event && cp src/modules/event/schema.sql dist/modules/event/"
+    "test": "node --import tsx --test --test-concurrency=1 'src/**/*.test.ts'",
+    "build": "tsc && mkdir -p dist/modules/event dist/modules/registration dist/idempotency && cp src/modules/event/schema.sql dist/modules/event/ && cp src/modules/registration/schema.sql dist/modules/registration/ && cp src/idempotency/schema.sql dist/idempotency/"
   },
   "dependencies": {
     "@fastify/jwt": "^9.0.2",
@@ -22,6 +23,7 @@
     "@types/node": "^22.10.2",
     "@types/pg": "^8.11.10",
     "eslint": "^9.17.0",
+    "tsx": "^4.19.2",
     "typescript": "^5.7.2"
   }
 }

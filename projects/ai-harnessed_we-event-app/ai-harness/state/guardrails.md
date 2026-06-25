@@ -36,3 +36,4 @@ Lessons learned across harness iterations. Read before every implementer session
 - [docker-compose-db] Computational checks failed — see 20260625T091348Z-checks.json
 - [api-foundation] AI review failed — see 20260625T092300Z-review.json
 - [module-event] AI review failed — see 20260625T093544Z-review.json
+- [module-registration] AI review failed — see 20260625T095129Z-review.json

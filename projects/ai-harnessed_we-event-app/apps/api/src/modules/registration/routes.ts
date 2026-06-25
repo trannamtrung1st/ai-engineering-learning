@@ -1,0 +1,165 @@
+import type { FastifyPluginAsync } from "fastify";
+import {
+  assertEventScope,
+  assertParticipantOwnership,
+} from "../../auth/scope.js";
+import { getActor, requireRole } from "../../auth/middleware.js";
+import { ApiError } from "../../errors/api-error.js";
+import {
+  ensureIdempotencySchema,
+  executeIdempotent,
+} from "../../idempotency/index.js";
+import { ensureRegistrationSchema } from "./repository.js";
+import { registrationService } from "./service.js";
+import type { CancelInput } from "./types.js";
+
+interface EventParams {
+  eventId: string;
+}
+
+interface RegistrationParams extends EventParams {
+  registrationId: string;
+}
+
+interface RegisterBody {
+  participantId?: string;
+}
+
+export const registrationRoutes: FastifyPluginAsync = async (app) => {
+  await ensureRegistrationSchema();
+  await ensureIdempotencySchema();
+
+  app.get<{ Params: EventParams }>(
+    "/events/:eventId/registration-status",
+    async (request) => {
+      const actor = getActor(request);
+      const { eventId } = request.params;
+      return registrationService.getStatus(eventId, actor.sub);
+    },
+  );
+
+  app.post<{ Params: EventParams; Body?: RegisterBody }>(
+    "/events/:eventId/registrations",
+    async (request) => {
+      const actor = getActor(request);
+      if (actor.role !== "Participant") {
+        throw new ApiError({
+          code: "FORBIDDEN",
+          message: "Only participants can register for events.",
+          statusCode: 403,
+        });
+      }
+
+      const { eventId } = request.params;
+      const participantId = request.body?.participantId ?? actor.sub;
+      assertParticipantOwnership(actor, participantId);
+
+      const fingerprint = JSON.stringify({ eventId, participantId });
+      return executeIdempotent(
+        request.headers,
+        actor.sub,
+        `registration.register:${eventId}`,
+        fingerprint,
+        () =>
+          registrationService.register(eventId, participantId, {
+            actorId: actor.sub,
+            actorRole: actor.role,
+          }),
+      );
+    },
+  );
+
+  app.post<{ Params: RegistrationParams; Body?: CancelInput }>(
+    "/events/:eventId/registrations/:registrationId/cancel",
+    async (request) => {
+      const actor = getActor(request);
+      const { eventId, registrationId } = request.params;
+
+      const cancelContext = {
+        actorId: actor.sub,
+        actorRole: actor.role,
+      };
+      const cancelBody = request.body;
+      const asOrganizer =
+        actor.role === "OrganizerAdmin" || actor.role === "OrganizerStaff";
+
+      if (actor.role === "Participant") {
+        const fingerprint = JSON.stringify({
+          eventId,
+          registrationId,
+          body: cancelBody ?? {},
+        });
+        return executeIdempotent(
+          request.headers,
+          actor.sub,
+          `registration.cancel:${eventId}:${registrationId}`,
+          fingerprint,
+          () =>
+            registrationService.cancel(
+              eventId,
+              registrationId,
+              cancelContext,
+              cancelBody,
+            ),
+        );
+      }
+
+      if (asOrganizer) {
+        assertEventScope(actor, eventId);
+        const fingerprint = JSON.stringify({
+          eventId,
+          registrationId,
+          body: cancelBody ?? {},
+          asOrganizer: true,
+        });
+        return executeIdempotent(
+          request.headers,
+          actor.sub,
+          `registration.cancel:${eventId}:${registrationId}`,
+          fingerprint,
+          () =>
+            registrationService.cancel(
+              eventId,
+              registrationId,
+              cancelContext,
+              cancelBody,
+              { asOrganizer: true },
+            ),
+        );
+      }
+
+      throw new ApiError({
+        code: "FORBIDDEN",
+        message: "You do not have permission to cancel this registration.",
+        statusCode: 403,
+      });
+    },
+  );
+
+  app.register(async (staffApp) => {
+    staffApp.addHook(
+      "onRequest",
+      requireRole("OrganizerAdmin", "OrganizerStaff"),
+    );
+
+    staffApp.get<{ Params: EventParams }>(
+      "/events/:eventId/registrations",
+      async (request) => {
+        const actor = getActor(request);
+        const { eventId } = request.params;
+        assertEventScope(actor, eventId);
+        return registrationService.listRegistrations(eventId);
+      },
+    );
+
+    staffApp.get<{ Params: EventParams }>(
+      "/events/:eventId/waitlist",
+      async (request) => {
+        const actor = getActor(request);
+        const { eventId } = request.params;
+        assertEventScope(actor, eventId);
+        return registrationService.listWaitlist(eventId);
+      },
+    );
+  });
+};
