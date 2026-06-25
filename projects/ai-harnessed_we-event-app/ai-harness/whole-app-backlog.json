@@ -209,7 +209,7 @@
     },
     {
       "id": "module-feedback-eligibility",
-      "passes": false,
+      "passes": true,
       "priority": 23,
       "phase": 2,
       "agent": "backend",
@@ -227,6 +227,22 @@
         "apps/api/src/modules/feedback",
         "apps/api/src/modules/eligibility"
       ],
+      "testRequirements": {
+        "unit": [
+          "apps/api/src/modules/feedback/validation.test.ts",
+          "apps/api/src/modules/eligibility/validation.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/modules/feedback/feedback-eligibility.integration.test.ts",
+          "apps/api/src/modules/registration/registration.integration.test.ts"
+        ],
+        "acceptanceTags": [
+          "AC-08",
+          "AC-09",
+          "AC-10",
+          "AC-13"
+        ]
+      },
       "description": "Feedback submission and eligibility evaluation; paginated eligibility list and GET /me/registrations."
     },
     {
