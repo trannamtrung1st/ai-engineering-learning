@@ -21,6 +21,10 @@
     "aih:check": "./ai-harness/scripts/run-checks.sh",
     "aih:review": "./ai-harness/scripts/run-ai-review.sh",
     "aih:dev:db:up": "docker compose up -d db",
-    "aih:dev:db:down": "docker compose stop db"
+    "aih:dev:db:down": "docker compose stop db",
+    "aih:preview": "./ai-harness/scripts/preview-stack.sh --mode dev",
+    "aih:preview:full": "./ai-harness/scripts/preview-stack.sh --mode full",
+    "aih:preview:down": "./ai-harness/scripts/preview-stack.sh --down",
+    "aih:preview:verify": "./ai-harness/scripts/verify-stack.sh"
   }
 }

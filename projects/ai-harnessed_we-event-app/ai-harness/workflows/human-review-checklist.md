@@ -29,8 +29,9 @@ Complete before merging a `mergeReady` slice or closing an `aih/*` branch.
 
 ## Local smoke
 
-- [ ] `npm run aih:dev:db:up` (when compose exists)
-- [ ] API health responds
+- [ ] `npm run aih:preview:verify` passes (or `npm run aih:preview:full` + verify for merge-ready infra slices)
+- [ ] API health: `status=ok`, `db=connected` at `http://localhost:3001/api/v1/health`
+- [ ] Web responds HTTP 200 at `http://localhost:3000/`
 - [ ] One end-to-end path exercised manually per slice scope
 
 ## Sign-off

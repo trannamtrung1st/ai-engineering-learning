@@ -41,3 +41,5 @@ Lessons learned across harness iterations. Read before every implementer session
 - [web-design-system-shell] AI review failed — see 20260625T110259Z-review.json
 - [web-design-system-shell] AI review failed — see 20260625T110938Z-review.json
 - [web-design-system-shell] AI review failed — see 20260625T111833Z-review.json
+- [web-participant-journeys] AI review failed — see 20260625T140938Z-review.json
+- [web-participant-journeys] AI review failed — see 20260625T142403Z-review.json

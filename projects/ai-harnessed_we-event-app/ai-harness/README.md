@@ -9,6 +9,7 @@ Cursor CLI + Ralph loop for spec-driven implementation. Keeps agent prompts thin
 | Cursor CLI | `agent --version` | `curl https://cursor.com/install -fsS \| bash` |
 | Auth | `agent login` | OAuth flow — one-time per machine |
 | jq | `jq --version` | `brew install jq` |
+| curl | `curl --version` | Required for preview startup verification |
 | Docker | `docker compose version` | Required when `docker-compose.yml` exists |
 
 `rg` (ripgrep) is optional — checks fall back to `grep` if absent.
@@ -46,6 +47,30 @@ Defaults live in `ai-harness/config/models.json`.
 | `npm run aih:loop:stop` | Stop background loop |
 | `npm run aih:check` | Computational gates only (no agent) |
 | `npm run aih:review` | AI review for next pending slice |
+| `npm run aih:preview` | **Dev preview** — DB in Docker, API + web as local dev processes |
+| `npm run aih:preview:full` | **Full preview** — DB + API + web as built Compose images |
+| `npm run aih:preview:verify` | Verify API health + web HTTP 200 (no start) |
+| `npm run aih:preview:down` | Stop preview stack |
+
+### Preview (API + web)
+
+Start and verify both API and web. Canonical spec: [`ai-harness/docs/preview-runtime.md`](docs/preview-runtime.md).
+
+```bash
+# Dev mode (default) — fast reload
+npm run aih:preview
+
+# Full preview — production-like containers (requires Dockerfiles)
+npm run aih:preview:full
+
+# Verify an already-running stack
+npm run aih:preview:verify
+
+# Tear down
+npm run aih:preview:down
+```
+
+Startup success requires API `GET /api/v1/health` with `status=ok` and `db=connected`, and web `GET /` returning HTTP 200. See preview-runtime doc for timeouts and script contract.
 
 ### Autonomous loop (hands-off)
 
@@ -113,6 +138,7 @@ Gates run after every implementer iteration and can be run standalone:
 | `typecheck`, `lint`, `build` | `apps/` exists | Yes — root scripts must exist and pass |
 | `test` | `tests/` exists | No — runs only when root `test` script is defined |
 | DB health (Docker Compose) | `docker-compose.yml` exists | Yes when `apps/api` exists |
+| Stack startup (API health + web HTTP 200) | `apps/api` and `apps/web` exist | Yes — `verify-stack.sh --quick` via `run-checks.sh`; full poll with `AIH_VERIFY_STACK=1` |
 
 Root `package.json` orchestrates workspace scripts via `npm run <script> -ws --if-present`. Each workspace package (`apps/api`, `apps/web`, `packages/domain`, etc.) must define its own `typecheck`, `lint`, and `build` scripts once bootstrapped.
 
@@ -125,6 +151,7 @@ On a docs-only repo (no `apps/`), `npm run aih:check` passes without code-qualit
 - `ai-harness/config/context-map.json` — which docs to read per slice
 - `ai-harness/state/guardrails.md` — lessons (Ralph Signs)
 - `ai-harness/HARNESS-DESIGN.md` — component index
+- `ai-harness/docs/preview-runtime.md` — preview + startup verification spec
 
 ## Signals
 

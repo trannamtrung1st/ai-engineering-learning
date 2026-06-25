@@ -23,9 +23,10 @@ Use when iterating on application code with fast reload.
 | API | Local `npm run dev --workspace @we-event/api` |
 | Web | Local `npm run dev --workspace @we-event/web` |
 
-Planned commands:
+Harness commands (see `ai-harness/docs/preview-runtime.md`):
 - `npm run aih:dev:db:up` → `docker compose up -d db`
 - `npm run aih:dev:db:down` → `docker compose stop db`
+- `npm run aih:preview` → `./ai-harness/scripts/preview-stack.sh --mode dev`
 
 ### 3.2 Full Preview Mode (Built Images)
 Use for end-to-end smoke validation with production-like containers.
@@ -36,9 +37,10 @@ Use for end-to-end smoke validation with production-like containers.
 | API | Built image from `apps/api/Dockerfile` |
 | Web | Built image from `apps/web/Dockerfile` |
 
-Planned commands:
-- `npm run aih:preview` → `docker compose --profile full-preview up --build`
-- `npm run aih:preview:down` → `docker compose --profile full-preview down`
+Harness commands (see `ai-harness/docs/preview-runtime.md`):
+- `npm run aih:preview:full` → `./ai-harness/scripts/preview-stack.sh --mode full`
+- `npm run aih:preview:verify` → `./ai-harness/scripts/verify-stack.sh`
+- `npm run aih:preview:down` → `./ai-harness/scripts/preview-stack.sh --down`
 
 ## 4. Compose File Contract (`docker-compose.yml`)
 
@@ -166,19 +168,33 @@ The AI harness:
 - References this spec from `10-local-development-setup.md` and `ai-harness/HARNESS-DESIGN.md`.
 - Requires `docker-compose.yml` and `.env.example` with `DATABASE_URL` as completion artifacts.
 - Enforces forbidden in-memory/SQLite patterns in `ralph-loop.json` completion criteria.
-- Will use `docker compose --profile full-preview up -d --build` for runtime validation once images exist.
-- Specifies `runtimeValidation.db` in `ralph-loop.json` (active when compose is implemented):
+- Uses canonical preview and startup verification scripts specified in `ai-harness/docs/preview-runtime.md` (`preview-stack.sh`, `verify-stack.sh`). Root npm scripts `aih:preview`, `aih:preview:full`, `aih:preview:verify`, and `aih:preview:down` are defined there and supersede inline command wording in this doc.
+- Specifies `runtimeValidation` in `ralph-loop.json` (active when compose and apps exist):
 
 ```json
-"db": {
-  "strategy": "docker-compose",
-  "service": "db",
-  "healthTimeoutMs": 60000,
-  "requiredBeforeApi": true
+"runtimeValidation": {
+  "db": {
+    "strategy": "docker-compose",
+    "service": "db",
+    "healthTimeoutMs": 60000,
+    "requiredBeforeApi": true
+  },
+  "api": {
+    "activeWhen": "apps/api",
+    "url": "http://localhost:3001/api/v1/health",
+    "expectJson": { "status": "ok", "db": "connected" },
+    "timeoutMs": 60000
+  },
+  "web": {
+    "activeWhen": "apps/web",
+    "url": "http://localhost:3000",
+    "expectStatus": 200,
+    "timeoutMs": 120000
+  }
 }
 ```
 
-Until `docker-compose.yml` exists, runtime validation continues with local `npm run dev` workspace processes but still gates on Postgres code contract (migrations, `DATABASE_URL`, no in-memory repos).
+`run-checks.sh` enforces DB health and quick API/web probes (`verify-stack.sh --quick`); set `AIH_VERIFY_STACK=1` for full poll against a running preview stack.
 
 Recommended startup timeout for first image build: 180s.
 

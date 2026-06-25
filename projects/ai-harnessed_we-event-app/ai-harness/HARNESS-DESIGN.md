@@ -17,7 +17,9 @@ Concise index for the 12 harness components. Referenced by `docs/technical/13-do
 | Observability | `generated/runs/<timestamp>-*.json` |
 | Feedback loops | Failed check/review → guardrails append → retry |
 | Human review | `workflows/human-review-checklist.md` |
-| Runtime | `ralph-loop.json` → `runtimeValidation.db` |
+| Preview runtime | `scripts/preview-stack.sh`, `docs/preview-runtime.md` |
+| Startup verification | `scripts/verify-stack.sh` |
+| Runtime | `ralph-loop.json` → `runtimeValidation` (db, api, web) |
 
 ## Ralph loop
 
@@ -40,12 +42,29 @@ Harness hard-fails: in-memory repos, SQLite, mock page data, lorem ipsum. See `r
 ## DB runtime (when compose exists)
 
 ```json
-"db": {
-  "strategy": "docker-compose",
-  "service": "db",
-  "healthTimeoutMs": 60000,
-  "requiredBeforeApi": true
+"runtimeValidation": {
+  "db": {
+    "strategy": "docker-compose",
+    "service": "db",
+    "healthTimeoutMs": 60000,
+    "requiredBeforeApi": true,
+    "activeWhen": "docker-compose.yml"
+  },
+  "api": {
+    "activeWhen": "apps/api",
+    "url": "http://localhost:3001/api/v1/health",
+    "expectJson": { "status": "ok", "db": "connected" },
+    "timeoutMs": 60000
+  },
+  "web": {
+    "activeWhen": "apps/web",
+    "url": "http://localhost:3000",
+    "expectStatus": 200,
+    "timeoutMs": 120000
+  }
 }
 ```
 
-Dev mode: DB in Docker; API/web as local Node processes per `docs/technical/13-docker-compose-local-runtime.md`.
+`run-checks.sh` enforces `db` and quick stack probes. Full stack poll via `AIH_VERIFY_STACK=1` or `npm run aih:preview:verify`.
+
+Dev mode: DB in Docker; API/web as local Node processes per `docs/technical/13-docker-compose-local-runtime.md`. Full preview: all services via Compose `full-preview` profile.

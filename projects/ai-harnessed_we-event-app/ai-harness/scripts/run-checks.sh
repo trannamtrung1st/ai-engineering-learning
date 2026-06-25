@@ -114,10 +114,33 @@ check_db_runtime() {
   fi
 }
 
+check_stack_startup() {
+  local api_when web_when
+  api_when="$(jq -r '.computationalChecks.runtimeValidation.api.activeWhen // empty' "$LOOP_CONFIG")"
+  web_when="$(jq -r '.computationalChecks.runtimeValidation.web.activeWhen // empty' "$LOOP_CONFIG")"
+  [[ -n "$api_when" && -d "$REPO_ROOT/$api_when" ]] || return 0
+  [[ -n "$web_when" && -d "$REPO_ROOT/$web_when" ]] || return 0
+
+  local verify_script
+  verify_script="$(dirname "$0")/verify-stack.sh"
+  [[ -x "$verify_script" ]] || return 0
+
+  if [[ "${AIH_VERIFY_STACK:-}" == "1" ]]; then
+    if ! "$verify_script" 2>&1; then
+      FAILURES+=("{\"type\":\"runtime\",\"message\":\"stack startup verification failed (api/web)\"}")
+      PASS=false
+    fi
+  elif ! "$verify_script" --quick 2>&1; then
+    FAILURES+=("{\"type\":\"runtime\",\"message\":\"stack startup verification failed (api/web)\"}")
+    PASS=false
+  fi
+}
+
 check_forbidden_patterns
 check_artifacts
 check_npm_commands
 check_db_runtime
+check_stack_startup
 
 # Build JSON report
 failures_json="[]"

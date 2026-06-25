@@ -57,6 +57,18 @@
         "healthTimeoutMs": 60000,
         "requiredBeforeApi": true,
         "activeWhen": "docker-compose.yml"
+      },
+      "api": {
+        "activeWhen": "apps/api",
+        "url": "http://localhost:3001/api/v1/health",
+        "expectJson": { "status": "ok", "db": "connected" },
+        "timeoutMs": 60000
+      },
+      "web": {
+        "activeWhen": "apps/web",
+        "url": "http://localhost:3000",
+        "expectStatus": 200,
+        "timeoutMs": 120000
       }
     }
   },
