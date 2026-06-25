@@ -34,3 +34,4 @@ Lessons learned across harness iterations. Read before every implementer session
 - [repo-monorepo-bootstrap] Computational checks failed — see 20260625T083050Z-checks.json
 - [repo-monorepo-bootstrap] Computational checks failed — see 20260625T083050Z-checks.json
 - [docker-compose-db] Computational checks failed — see 20260625T091348Z-checks.json
+- [api-foundation] AI review failed — see 20260625T092300Z-review.json

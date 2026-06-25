@@ -64,7 +64,7 @@
     },
     {
       "id": "api-foundation",
-      "passes": false,
+      "passes": true,
       "priority": 11,
       "phase": 1,
       "agent": "backend",

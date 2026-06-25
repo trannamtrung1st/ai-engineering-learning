@@ -8,6 +8,17 @@
 export const DOMAIN_PACKAGE_VERSION = "0.0.1";
 
 /**
+ * Canonical actor roles for RBAC (see docs/technical/01-roles-permissions.md).
+ */
+export const ACTOR_ROLES = [
+  "OrganizerAdmin",
+  "OrganizerStaff",
+  "Participant",
+] as const;
+
+export type ActorRole = (typeof ACTOR_ROLES)[number];
+
+/**
  * Event aggregate lifecycle states (see docs/technical/07-state-machines.md).
  */
 export const EVENT_STATES = [
