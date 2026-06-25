@@ -46,10 +46,11 @@ stop_dev_processes() {
   if [[ -f "$PID_FILE" ]]; then
     while IFS= read -r pid; do
       [[ -z "$pid" ]] && continue
-      kill "$pid" 2>/dev/null || true
+      terminate_pid "$pid"
     done < "$PID_FILE"
     rm -f "$PID_FILE"
   fi
+  sleep 0.5
 }
 
 wait_db_healthy() {

@@ -187,9 +187,71 @@ slice_requires_web_runtime() {
   [[ "$agent" == "frontend" || "$agent" == "test" ]]
 }
 
+terminate_pid() {
+  local pid="$1"
+  [[ -z "$pid" ]] && return 0
+  kill "$pid" 2>/dev/null || true
+  pkill -P "$pid" 2>/dev/null || true
+  local _
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    kill -0 "$pid" 2>/dev/null || return 0
+    sleep 0.3
+  done
+  kill -9 "$pid" 2>/dev/null || true
+  pkill -9 -P "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+}
+
+remove_path_safely() {
+  local target="$1"
+  [[ -e "$target" ]] || return 0
+  chmod -R u+w "$target" 2>/dev/null || true
+  if rm -rf "$target" 2>/dev/null; then
+    return 0
+  fi
+  local _
+  for _ in 1 2 3 4 5; do
+    sleep 0.5
+    chmod -R u+w "$target" 2>/dev/null || true
+    rm -rf "$target" 2>/dev/null && return 0
+  done
+  echo "WARN: could not remove ${target} (locked or permission denied); continuing" >&2
+  return 0
+}
+
+stop_preview_web_process() {
+  local web_port="${AIH_PREVIEW_WEB_PORT:-3000}"
+  local web_pid=""
+
+  if [[ -f "$PREVIEW_PID_FILE" ]]; then
+    local -a pids=()
+    local pid
+    while IFS= read -r pid; do
+      [[ -z "$pid" ]] && continue
+      pids+=("$pid")
+    done < "$PREVIEW_PID_FILE"
+    if [[ ${#pids[@]} -ge 2 ]]; then
+      web_pid="${pids[1]}"
+      terminate_pid "$web_pid"
+    fi
+  fi
+
+  if command -v lsof >/dev/null 2>&1; then
+    local port_pid
+    while IFS= read -r port_pid; do
+      [[ -z "$port_pid" ]] && continue
+      [[ -n "$web_pid" && "$port_pid" == "$web_pid" ]] && continue
+      terminate_pid "$port_pid"
+    done < <(lsof -ti ":${web_port}" 2>/dev/null || true)
+  fi
+
+  sleep 0.5
+}
+
 clean_web_next_cache() {
   [[ -d "$REPO_ROOT/apps/web" ]] || return 0
-  rm -rf "$REPO_ROOT/apps/web/.next"
+  stop_preview_web_process
+  remove_path_safely "$REPO_ROOT/apps/web/.next"
 }
 
 print_preview_web_hint() {
@@ -217,8 +279,8 @@ refresh_preview_web_after_build() {
   local web_pid="${pids[1]}"
   kill -0 "$web_pid" 2>/dev/null || return 0
 
-  kill "$web_pid" 2>/dev/null || true
-  clean_web_next_cache
+  stop_preview_web_process
+  remove_path_safely "$REPO_ROOT/apps/web/.next"
   ensure_runs_dir
   if [[ -f "$REPO_ROOT/.env" ]]; then
     set -a
