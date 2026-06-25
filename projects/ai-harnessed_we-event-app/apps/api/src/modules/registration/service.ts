@@ -1,4 +1,5 @@
 import { REGISTRATION_STATES, type RegistrationState } from "@we-event/domain";
+import { resolveActorId } from "../../auth/resolve-actor-id.js";
 import { ApiError } from "../../errors/api-error.js";
 import {
   buildPaginatedResult,
@@ -40,15 +41,16 @@ export class RegistrationService {
     participantId: string,
     context: ActorContext,
   ) {
+    const resolvedParticipantId = resolveActorId(participantId);
     const event = await this.requireEvent(eventId);
     assertRegistrationWindowOpen(event);
 
-    const existing = await findActiveRegistration(eventId, participantId);
+    const existing = await findActiveRegistration(eventId, resolvedParticipantId);
     assertNoDuplicateActive(existing);
 
     const registration = await createRegistration(
       eventId,
-      participantId,
+      resolvedParticipantId,
       context,
     );
 
@@ -56,7 +58,11 @@ export class RegistrationService {
   }
 
   async getStatus(eventId: string, participantId: string) {
-    const registration = await findActiveRegistration(eventId, participantId);
+    const resolvedParticipantId = resolveActorId(participantId);
+    const registration = await findActiveRegistration(
+      eventId,
+      resolvedParticipantId,
+    );
     if (!registration) {
       return { registration: null };
     }
@@ -82,7 +88,7 @@ export class RegistrationService {
     if (options.asOrganizer) {
       assertOrganizerCancellationAllowed(registration);
     } else {
-      if (registration.participantId !== context.actorId) {
+      if (resolveActorId(registration.participantId) !== resolveActorId(context.actorId)) {
         throw new ApiError({
           code: "FORBIDDEN",
           message: "You can only cancel your own registration.",
@@ -204,6 +210,7 @@ export class RegistrationService {
     participantId: string,
     query: ListMyRegistrationsQuery = {},
   ): Promise<PaginatedResult<MyRegistrationListItem>> {
+    const resolvedParticipantId = resolveActorId(participantId);
     const pagination = parsePagination(query, {
       defaultPageSize: 20,
       maxPageSize: 100,
@@ -236,7 +243,7 @@ export class RegistrationService {
       : { column: "r.updated_at", direction: "DESC" as const };
 
     const { items, total } = await listRegistrationsForParticipant(
-      participantId,
+      resolvedParticipantId,
       {
         state: stateFilter,
         sortColumn: effectiveSort.column,

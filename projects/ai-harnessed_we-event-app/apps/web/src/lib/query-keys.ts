@@ -24,7 +24,31 @@ export const queryKeys = {
     me: (eventId: string) => ["eligibility", "me", eventId] as const,
   },
   organizer: {
-    dashboard: () => ["organizer", "dashboard"] as const,
+    dashboard: (eventId: string) => ["organizer", "dashboard", eventId] as const,
+    events: {
+      all: ["organizer", "events"] as const,
+      list: (params?: {
+        page?: number;
+        pageSize?: number;
+        q?: string;
+        state?: string;
+      }) => [...queryKeys.organizer.events.all, "list", params ?? {}] as const,
+      listRoot: () => [...queryKeys.organizer.events.all, "list"] as const,
+      detail: (eventId: string) =>
+        [...queryKeys.organizer.events.all, "detail", eventId] as const,
+    },
+    registrations: (eventId: string, params?: { page?: number; state?: string }) =>
+      ["organizer", "registrations", eventId, params ?? {}] as const,
+    waitlist: (eventId: string, params?: { page?: number }) =>
+      ["organizer", "waitlist", eventId, params ?? {}] as const,
+    attendance: (eventId: string, params?: { page?: number }) =>
+      ["organizer", "attendance", eventId, params ?? {}] as const,
+    eligibility: (
+      eventId: string,
+      params?: { page?: number; eligibility?: string },
+    ) => ["organizer", "eligibility", eventId, params ?? {}] as const,
+    audit: (eventId: string, params?: { page?: number }) =>
+      ["organizer", "audit", eventId, params ?? {}] as const,
     checkIn: (eventId: string) => ["organizer", "check-in", eventId] as const,
   },
 } as const;

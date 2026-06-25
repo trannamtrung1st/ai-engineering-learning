@@ -1,4 +1,5 @@
 import { ApiError } from "../errors/api-error.js";
+import { actorIdsMatch } from "./resolve-actor-id.js";
 import type { JwtPayload } from "./types.js";
 
 /**
@@ -13,7 +14,7 @@ export function assertParticipantOwnership(
     return;
   }
 
-  if (actor.sub !== participantId) {
+  if (!actorIdsMatch(actor.sub, participantId)) {
     throw new ApiError({
       code: "FORBIDDEN",
       message: "You can only access your own registration data.",

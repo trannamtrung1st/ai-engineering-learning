@@ -4,6 +4,7 @@ import {
   assertParticipantOwnership,
 } from "../../auth/scope.js";
 import { getActor, requireRole } from "../../auth/middleware.js";
+import { resolveActorId } from "../../auth/resolve-actor-id.js";
 import { ApiError } from "../../errors/api-error.js";
 import {
   ensureIdempotencySchema,
@@ -77,16 +78,21 @@ export const registrationRoutes: FastifyPluginAsync = async (app) => {
       const { eventId } = request.params;
       const participantId = request.body?.participantId ?? actor.sub;
       assertParticipantOwnership(actor, participantId);
+      const resolvedActorId = resolveActorId(actor.sub);
+      const resolvedParticipantId = resolveActorId(participantId);
 
-      const fingerprint = JSON.stringify({ eventId, participantId });
+      const fingerprint = JSON.stringify({
+        eventId,
+        participantId: resolvedParticipantId,
+      });
       return executeIdempotent(
         request.headers,
-        actor.sub,
+        resolvedActorId,
         `registration.register:${eventId}`,
         fingerprint,
         () =>
           registrationService.register(eventId, participantId, {
-            actorId: actor.sub,
+            actorId: resolvedActorId,
             actorRole: actor.role,
           }),
       );
@@ -99,8 +105,9 @@ export const registrationRoutes: FastifyPluginAsync = async (app) => {
       const actor = getActor(request);
       const { eventId, registrationId } = request.params;
 
+      const resolvedActorId = resolveActorId(actor.sub);
       const cancelContext = {
-        actorId: actor.sub,
+        actorId: resolvedActorId,
         actorRole: actor.role,
       };
       const cancelBody = request.body;
@@ -115,7 +122,7 @@ export const registrationRoutes: FastifyPluginAsync = async (app) => {
         });
         return executeIdempotent(
           request.headers,
-          actor.sub,
+          resolvedActorId,
           `registration.cancel:${eventId}:${registrationId}`,
           fingerprint,
           () =>
@@ -138,7 +145,7 @@ export const registrationRoutes: FastifyPluginAsync = async (app) => {
         });
         return executeIdempotent(
           request.headers,
-          actor.sub,
+          resolvedActorId,
           `registration.cancel:${eventId}:${registrationId}`,
           fingerprint,
           () =>

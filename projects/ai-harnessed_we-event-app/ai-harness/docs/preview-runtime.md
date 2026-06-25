@@ -275,10 +275,28 @@ echo "  Stop: npm run aih:preview:down"
 
 ## Harness gate integration
 
-`run-checks.sh` invokes `verify-stack.sh` when `apps/api` and `apps/web` exist:
+`run-checks.sh` invokes `verify-stack.sh` and `verify-scenarios.sh` when `apps/api` and `apps/web` exist:
 
 - **Default (`npm run aih:check`):** `--quick` — skips when services are not listening; fails if up but unhealthy.
 - **Full poll:** set `AIH_VERIFY_STACK=1` before `aih:check` (expects preview stack running).
+- **Slice-scoped web probe:** backend/infra slices use `verify-stack.sh --api-only` (API health only). Frontend and test slices also require web `GET /` HTTP 200.
+- **Scenario probe:** `verify-scenarios.sh` runs independently of web health (API-only participant registration flow).
+- **After build:** if preview web dev is running, harness restarts it with a clean `apps/web/.next` to avoid `next build` + `next dev` cache corruption.
+
+### Web dev cache recovery
+
+`next build` (run during `aih:check`) writes production artifacts to `apps/web/.next`. A long-lived `next dev` preview process can then return HTTP 500 (`Cannot find module './NNN.js'`).
+
+Recovery:
+
+```bash
+npm run aih:preview:down
+rm -rf apps/web/.next
+npm run aih:preview
+npm run aih:preview:verify
+```
+
+`aih:preview` clears `.next` before starting web dev. During Ralph loops, `run-checks.sh` also refreshes preview web after `build` when the stack is already up.
 
 ## Quick reference
 
@@ -289,8 +307,11 @@ npm run aih:preview
 # Full preview (all services in Docker)
 npm run aih:preview:full
 
-# Verify already-running stack
+# Verify already-running stack (API + web)
 npm run aih:preview:verify
+
+# Participant registration API scenario (independent of web)
+npm run aih:preview:scenarios
 
 # Tear down
 npm run aih:preview:down

@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
 # Poll API health and web HTTP until startup succeeds or timeout.
-# Usage: verify-stack.sh [--quick]
+# Usage: verify-stack.sh [--quick] [--api-only]
 set -euo pipefail
 source "$(dirname "$0")/lib/common.sh"
 
 QUICK=false
+API_ONLY=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --quick) QUICK=true; shift ;;
+    --api-only) API_ONLY=true; shift ;;
     -h|--help)
-      echo "Usage: verify-stack.sh [--quick]"
+      echo "Usage: verify-stack.sh [--quick] [--api-only]"
       exit 0
       ;;
     *) echo "Unknown option: $1" >&2; exit 1 ;;
@@ -22,6 +24,8 @@ require_cmd curl
 API_PORT="${AIH_PREVIEW_API_PORT:-3001}"
 WEB_PORT="${AIH_PREVIEW_WEB_PORT:-3000}"
 MODE="${AIH_PREVIEW_MODE:-dev}"
+QUICK_RETRIES="${AIH_VERIFY_QUICK_RETRIES:-3}"
+QUICK_RETRY_DELAY_SEC="${AIH_VERIFY_QUICK_RETRY_DELAY_SEC:-2}"
 
 if [[ -z "${AIH_VERIFY_API_TIMEOUT_MS:-}" ]]; then
   [[ "$MODE" == "full" ]] && AIH_VERIFY_API_TIMEOUT_MS=180000 || AIH_VERIFY_API_TIMEOUT_MS=60000
@@ -60,6 +64,10 @@ poll_api() {
       echo "ERROR: API unhealthy" >&2
       echo "  URL: $API_URL" >&2
       echo "  Last response: $body" >&2
+      if [[ -f "$PREVIEW_API_LOG" ]]; then
+        echo "  Last lines of ${PREVIEW_API_LOG}:" >&2
+        tail -n 5 "$PREVIEW_API_LOG" >&2 || true
+      fi
       return 1
     fi
     if (( $(date +%s) * 1000 >= deadline )); then
@@ -73,8 +81,15 @@ poll_api() {
 }
 
 poll_web() {
+  local attempt=1
+  local max_attempts=1
   local deadline=$(( $(date +%s) * 1000 + AIH_VERIFY_WEB_TIMEOUT_MS ))
   local code
+
+  if [[ "$QUICK" == true ]]; then
+    max_attempts="$QUICK_RETRIES"
+  fi
+
   while true; do
     code="$(curl -s -o /dev/null -w '%{http_code}' "$WEB_URL" 2>/dev/null || true)"
     [[ -z "$code" ]] && code="000"
@@ -86,15 +101,22 @@ poll_web() {
       return 0
     fi
     if [[ "$QUICK" == true ]]; then
+      if (( attempt < max_attempts )); then
+        sleep "$QUICK_RETRY_DELAY_SEC"
+        attempt=$((attempt + 1))
+        continue
+      fi
       echo "ERROR: Web unhealthy" >&2
       echo "  URL: $WEB_URL" >&2
-      echo "  Last HTTP status: $code" >&2
+      echo "  Last HTTP status: $code (after ${max_attempts} attempt(s))" >&2
+      print_preview_web_hint
       return 1
     fi
     if (( $(date +%s) * 1000 >= deadline )); then
       echo "ERROR: Web startup failed after ${AIH_VERIFY_WEB_TIMEOUT_MS}ms" >&2
       echo "  URL: $WEB_URL" >&2
       echo "  Last HTTP status: $code" >&2
+      print_preview_web_hint
       return 1
     fi
     sleep 2
@@ -103,5 +125,11 @@ poll_web() {
 
 cd "$REPO_ROOT"
 poll_api
-poll_web
-echo "Stack startup verification passed (mode=$MODE)"
+if [[ "$API_ONLY" != true ]]; then
+  poll_web
+fi
+if [[ "$API_ONLY" == true ]]; then
+  echo "Stack startup verification passed (api-only, mode=$MODE)"
+else
+  echo "Stack startup verification passed (mode=$MODE)"
+fi

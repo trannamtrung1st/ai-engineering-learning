@@ -6,7 +6,7 @@ source "$(dirname "$0")/lib/common.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 VERIFY_SCRIPT="${SCRIPT_DIR}/verify-stack.sh"
-PID_FILE="${RUNS_DIR}/preview-stack.pids"
+PID_FILE="${PREVIEW_PID_FILE}"
 MODE_FILE="${RUNS_DIR}/preview-stack.mode"
 MODE="${AIH_PREVIEW_MODE:-dev}"
 ACTION="up"
@@ -104,10 +104,11 @@ else
   load_preview_env
   npm run build --workspace @we-event/api
   stop_dev_processes
+  clean_web_next_cache
   : > "$PID_FILE"
-  PORT="${AIH_PREVIEW_API_PORT:-3001}" npm run dev --workspace @we-event/api >>"${RUNS_DIR}/preview-api.log" 2>&1 &
+  PORT="${AIH_PREVIEW_API_PORT:-3001}" npm run dev --workspace @we-event/api >>"${PREVIEW_API_LOG}" 2>&1 &
   echo $! >> "$PID_FILE"
-  PORT="${AIH_PREVIEW_WEB_PORT:-3000}" npm run dev --workspace @we-event/web >>"${RUNS_DIR}/preview-web.log" 2>&1 &
+  PORT="${AIH_PREVIEW_WEB_PORT:-3000}" npm run dev --workspace @we-event/web >>"${PREVIEW_WEB_LOG}" 2>&1 &
   echo $! >> "$PID_FILE"
 fi
 
@@ -122,6 +123,6 @@ echo "  API: http://localhost:${API_PORT}/api/v1/health"
 echo "  Web: http://localhost:${WEB_PORT}/"
 if [[ "$MODE" == "dev" && -f "$PID_FILE" ]]; then
   echo "  PIDs: $(tr '\n' ' ' < "$PID_FILE")"
-  echo "  Logs: ${RUNS_DIR}/preview-api.log, ${RUNS_DIR}/preview-web.log"
+  echo "  Logs: ${PREVIEW_API_LOG}, ${PREVIEW_WEB_LOG}"
 fi
 echo "  Stop: npm run aih:preview:down"

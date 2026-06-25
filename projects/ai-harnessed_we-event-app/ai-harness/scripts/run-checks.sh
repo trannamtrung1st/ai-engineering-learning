@@ -122,23 +122,55 @@ check_stack_startup() {
   [[ -n "$web_when" && -d "$REPO_ROOT/$web_when" ]] || return 0
 
   local verify_script scenario_script
+  local verify_args=()
+  local stack_out scenario_out
   verify_script="$(dirname "$0")/verify-stack.sh"
   scenario_script="$(dirname "$0")/verify-scenarios.sh"
   [[ -x "$verify_script" ]] || return 0
 
   if [[ "${AIH_VERIFY_STACK:-}" == "1" ]]; then
-    if ! "$verify_script" 2>&1; then
-      FAILURES+=("{\"type\":\"runtime\",\"message\":\"stack startup verification failed (api/web)\"}")
-      PASS=false
+    verify_args=()
+  else
+    verify_args=(--quick)
+  fi
+
+  if ! slice_requires_web_runtime "$SLICE_ID"; then
+    verify_args+=(--api-only)
+  fi
+
+  set +e
+  stack_out="$("$verify_script" "${verify_args[@]}" 2>&1)"
+  local stack_status=$?
+  set -e
+  echo "$stack_out"
+
+  if [[ "$stack_status" -ne 0 ]]; then
+    local failure_msg="stack startup verification failed"
+    if echo "$stack_out" | grep -q "API unhealthy"; then
+      failure_msg="API startup verification failed"
+    elif echo "$stack_out" | grep -q "Web unhealthy"; then
+      failure_msg="web startup verification failed"
     fi
-    if [[ -x "$scenario_script" ]] && ! "$scenario_script" 2>&1; then
-      FAILURES+=("{\"type\":\"runtime\",\"message\":\"participant registration scenario probe failed\"}")
-      PASS=false
-    fi
-  elif ! "$verify_script" --quick 2>&1; then
-    FAILURES+=("{\"type\":\"runtime\",\"message\":\"stack startup verification failed (api/web)\"}")
+    FAILURES+=("{\"type\":\"runtime\",\"message\":\"${failure_msg}\"}")
     PASS=false
-  elif [[ -x "$scenario_script" ]] && ! "$scenario_script" --quick 2>&1; then
+  fi
+
+  if [[ ! -x "$scenario_script" ]]; then
+    return 0
+  fi
+
+  local scenario_args=()
+  if [[ "${AIH_VERIFY_STACK:-}" != "1" ]]; then
+    scenario_args=(--quick)
+  fi
+
+  set +e
+  scenario_out="$("$scenario_script" "${scenario_args[@]}" 2>&1)"
+  local scenario_status=$?
+  set -e
+  echo "$scenario_out"
+
+  if [[ "$scenario_status" -ne 0 ]]; then
     FAILURES+=("{\"type\":\"runtime\",\"message\":\"participant registration scenario probe failed\"}")
     PASS=false
   fi
@@ -147,6 +179,7 @@ check_stack_startup() {
 check_forbidden_patterns
 check_artifacts
 check_npm_commands
+refresh_preview_web_after_build
 check_db_runtime
 check_stack_startup
 

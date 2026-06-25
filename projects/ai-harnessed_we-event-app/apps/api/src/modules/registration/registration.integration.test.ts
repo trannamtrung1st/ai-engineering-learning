@@ -108,6 +108,31 @@ describe("registration integration", () => {
     assert.equal(result.waitlistPosition, null);
   });
 
+  it("AC-02: rejects registration when full and waitlist disabled (BR-05)", async () => {
+    const event = await createRegistrationOpenEvent({
+      capacity: 1,
+      waitlistEnabled: false,
+    });
+
+    const first = randomUUID();
+    const second = randomUUID();
+
+    await registrationService.register(event.id, first, actorContext);
+
+    await assert.rejects(
+      () => registrationService.register(event.id, second, actorContext),
+      (error: unknown) => {
+        assert.ok(error instanceof ApiError);
+        assert.equal(
+          error.code,
+          VALIDATION_ERROR_CODES.REGISTRATION_REJECTED_FULL,
+        );
+        assert.equal(error.statusCode, 422);
+        return true;
+      },
+    );
+  });
+
   it("AC-02: assigns Waitlisted when full and waitlist enabled", async () => {
     const event = await createRegistrationOpenEvent({
       capacity: 1,
@@ -293,6 +318,46 @@ describe("registration integration", () => {
     assert.ok(
       filtered.items.every((item) => item.state === "Registered"),
     );
+  });
+
+  it("FR-10: registration-status returns null when participant is not registered", async () => {
+    const event = await createRegistrationOpenEvent({ capacity: 5 });
+    const participantId = randomUUID();
+
+    const status = await registrationService.getStatus(event.id, participantId);
+
+    assert.equal(status.registration, null);
+  });
+
+  it("FR-10: registration-status works for default dev participant sub", async () => {
+    const event = await createRegistrationOpenEvent({ capacity: 5 });
+
+    const status = await registrationService.getStatus(event.id, "participant-1");
+
+    assert.equal(status.registration, null);
+  });
+
+  it("FR-10: registration-status returns active registration after register", async () => {
+    const event = await createRegistrationOpenEvent({ capacity: 5 });
+    const participantId = randomUUID();
+    const participantContext = {
+      actorId: participantId,
+      actorRole: "Participant" as const,
+    };
+
+    const registered = await registrationService.register(
+      event.id,
+      participantId,
+      participantContext,
+    );
+
+    const status = await registrationService.getStatus(event.id, participantId);
+
+    assert.ok(status.registration);
+    assert.equal(status.registration.registrationId, registered.registrationId);
+    assert.equal(status.registration.state, "Registered");
+    assert.equal(status.registration.eventId, event.id);
+    assert.equal(status.registration.participantId, participantId);
   });
 
   it("AC-13: GET /me/registrations returns paginated participant registrations", async () => {

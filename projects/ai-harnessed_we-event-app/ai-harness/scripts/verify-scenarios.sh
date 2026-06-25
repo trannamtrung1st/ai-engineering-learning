@@ -82,20 +82,26 @@ if ! jq -e 'has("registration")' "$status_tmp" >/dev/null 2>&1; then
   exit 1
 fi
 
-register_tmp="$(mktemp)"
-trap 'rm -f "$status_tmp" "$register_tmp"' EXIT
+existing_state="$(jq -r '.registration.state // empty' "$status_tmp" 2>/dev/null || true)"
 
-register_code="$(curl -s -o "$register_tmp" -w '%{http_code}' \
-  -X POST "${API_BASE}/events/${event_id}/registrations" \
-  -H "Authorization: Bearer ${token}" \
-  -H "Content-Type: application/json" \
-  -H "Idempotency-Key: $(uuidgen | tr '[:upper:]' '[:lower:]')" \
-  -d '{}')"
+if [[ -z "$existing_state" ]]; then
+  register_tmp="$(mktemp)"
+  trap 'rm -f "$status_tmp" "$register_tmp"' EXIT
 
-if [[ "$register_code" != "200" && "$register_code" != "201" ]]; then
-  echo "ERROR: register returned HTTP ${register_code} for event ${event_id}" >&2
-  cat "$register_tmp" >&2
-  exit 1
+  register_code="$(curl -s -o "$register_tmp" -w '%{http_code}' \
+    -X POST "${API_BASE}/events/${event_id}/registrations" \
+    -H "Authorization: Bearer ${token}" \
+    -H "Content-Type: application/json" \
+    -H "Idempotency-Key: $(uuidgen | tr '[:upper:]' '[:lower:]')" \
+    -d '{}')"
+
+  if [[ "$register_code" != "200" && "$register_code" != "201" ]]; then
+    echo "ERROR: register returned HTTP ${register_code} for event ${event_id}" >&2
+    cat "$register_tmp" >&2
+    exit 1
+  fi
+else
+  trap 'rm -f "$status_tmp"' EXIT
 fi
 
 after_body="$(curl -sf "${API_BASE}/events/${event_id}/registration-status" \

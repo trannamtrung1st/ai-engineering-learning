@@ -11,8 +11,12 @@ MODELS_CONFIG="${HARNESS_ROOT}/config/models.json"
 CONTEXT_MAP="${HARNESS_ROOT}/config/context-map.json"
 STATE_DIR="${HARNESS_ROOT}/state"
 RUNS_DIR="${HARNESS_ROOT}/generated/runs"
+PREVIEW_PID_FILE="${RUNS_DIR}/preview-stack.pids"
+PREVIEW_WEB_LOG="${RUNS_DIR}/preview-web.log"
+PREVIEW_API_LOG="${RUNS_DIR}/preview-api.log"
 
 export HARNESS_ROOT REPO_ROOT BACKLOG LOOP_CONFIG MODELS_CONFIG CONTEXT_MAP STATE_DIR RUNS_DIR
+export PREVIEW_PID_FILE PREVIEW_WEB_LOG PREVIEW_API_LOG
 
 require_cmd() {
   local cmd="$1"
@@ -170,4 +174,64 @@ agent_invoke() {
     return "${PIPESTATUS[0]}"
   fi
   "$AGENT_BIN" "${args[@]}" "$prompt"
+}
+
+# Backend/infra slices only require API runtime probes; frontend/test need web too.
+slice_requires_web_runtime() {
+  local slice_id="${1:-}"
+  if [[ -z "$slice_id" ]]; then
+    return 0
+  fi
+  local agent
+  agent="$(get_slice_field "$slice_id" agent)"
+  [[ "$agent" == "frontend" || "$agent" == "test" ]]
+}
+
+clean_web_next_cache() {
+  [[ -d "$REPO_ROOT/apps/web" ]] || return 0
+  rm -rf "$REPO_ROOT/apps/web/.next"
+}
+
+print_preview_web_hint() {
+  echo "  Hint: next build + next dev can corrupt apps/web/.next. Recovery:" >&2
+  echo "    npm run aih:preview:down && rm -rf apps/web/.next && npm run aih:preview" >&2
+  if [[ -f "$PREVIEW_WEB_LOG" ]]; then
+    echo "  Last lines of ${PREVIEW_WEB_LOG}:" >&2
+    tail -n 8 "$PREVIEW_WEB_LOG" >&2 || true
+  fi
+}
+
+# After root build, restart preview web dev so it does not serve stale .next chunks.
+refresh_preview_web_after_build() {
+  [[ -d "$REPO_ROOT/apps/web" ]] || return 0
+  [[ -f "$PREVIEW_PID_FILE" ]] || return 0
+
+  local -a pids=()
+  local pid
+  while IFS= read -r pid; do
+    [[ -z "$pid" ]] && continue
+    pids+=("$pid")
+  done < "$PREVIEW_PID_FILE"
+
+  [[ ${#pids[@]} -ge 2 ]] || return 0
+  local web_pid="${pids[1]}"
+  kill -0 "$web_pid" 2>/dev/null || return 0
+
+  kill "$web_pid" 2>/dev/null || true
+  clean_web_next_cache
+  ensure_runs_dir
+  if [[ -f "$REPO_ROOT/.env" ]]; then
+    set -a
+    # shellcheck disable=SC1091
+    source "$REPO_ROOT/.env"
+    set +a
+  fi
+  PORT="${AIH_PREVIEW_WEB_PORT:-3000}" npm run dev --workspace @we-event/web >>"$PREVIEW_WEB_LOG" 2>&1 &
+  local new_pid=$!
+  {
+    echo "${pids[0]}"
+    echo "$new_pid"
+  } > "$PREVIEW_PID_FILE"
+  sleep 2
+  echo "Refreshed preview web dev (pid=${new_pid}) after build"
 }
