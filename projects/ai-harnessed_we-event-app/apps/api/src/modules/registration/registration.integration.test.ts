@@ -294,4 +294,50 @@ describe("registration integration", () => {
       filtered.items.every((item) => item.state === "Registered"),
     );
   });
+
+  it("AC-13: GET /me/registrations returns paginated participant registrations", async () => {
+    const participantId = randomUUID();
+    const participantContext = {
+      actorId: participantId,
+      actorRole: "Participant" as const,
+    };
+
+    const eventA = await createRegistrationOpenEvent({ capacity: 5 });
+    const eventB = await createRegistrationOpenEvent({ capacity: 5 });
+
+    const regA = await registrationService.register(
+      eventA.id,
+      participantId,
+      participantContext,
+    );
+    const regB = await registrationService.register(
+      eventB.id,
+      participantId,
+      participantContext,
+    );
+
+    const page = await registrationService.listMyRegistrations(participantId, {
+      page: "1",
+      pageSize: "1",
+    });
+
+    assert.equal(page.page, 1);
+    assert.equal(page.pageSize, 1);
+    assert.equal(page.total, 2);
+    assert.equal(page.totalPages, 2);
+    assert.equal(page.items.length, 1);
+    assert.ok(page.items[0]?.eventName);
+    assert.ok(
+      [regA.registrationId, regB.registrationId].includes(
+        page.items[0]!.registrationId,
+      ),
+    );
+
+    const beyond = await registrationService.listMyRegistrations(participantId, {
+      page: "99",
+      pageSize: "1",
+    });
+    assert.deepEqual(beyond.items, []);
+    assert.equal(beyond.total, 2);
+  });
 });

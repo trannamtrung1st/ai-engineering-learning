@@ -4,7 +4,7 @@ import { getActor, requireRole } from "../../auth/middleware.js";
 import { ApiError } from "../../errors/api-error.js";
 import { ensureEligibilitySchema } from "./repository.js";
 import { eligibilityService } from "./service.js";
-import type { RevokeEligibilityInput } from "./types.js";
+import type { RevokeEligibilityInput, ListEligibilityQuery } from "./types.js";
 
 interface EventParams {
   eventId: string;
@@ -43,16 +43,20 @@ export const eligibilityRoutes: FastifyPluginAsync = async (app) => {
       requireRole("OrganizerAdmin", "OrganizerStaff"),
     );
 
-    staffApp.get<{ Params: EventParams }>(
+    staffApp.get<{ Params: EventParams; Querystring: ListEligibilityQuery }>(
       "/events/:eventId/eligibility",
       async (request) => {
         const actor = getActor(request);
         const { eventId } = request.params;
         assertEventScope(actor, eventId);
-        return eligibilityService.listEligibility(eventId, {
-          actorId: actor.sub,
-          actorRole: actor.role,
-        });
+        return eligibilityService.listEligibility(
+          eventId,
+          request.query,
+          {
+            actorId: actor.sub,
+            actorRole: actor.role,
+          },
+        );
       },
     );
   });

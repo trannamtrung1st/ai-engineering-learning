@@ -282,12 +282,16 @@ describe("feedback and eligibility integration", () => {
       { actorId: participantId, actorRole: "Participant" },
     );
 
-    const list = await eligibilityService.listEligibility(event.id, {
-      actorId: ORG_ADMIN_ID,
-      actorRole: "OrganizerAdmin",
-    });
+    const list = await eligibilityService.listEligibility(
+      event.id,
+      { page: "1", pageSize: "20" },
+      {
+        actorId: ORG_ADMIN_ID,
+        actorRole: "OrganizerAdmin",
+      },
+    );
 
-    const entry = list.eligibility.find(
+    const entry = list.items.find(
       (item) => item.registrationId === registrationId,
     );
     assert.ok(entry);
@@ -325,5 +329,36 @@ describe("feedback and eligibility integration", () => {
     assert.equal(revoked.result, "Revoked");
     assert.equal(revoked.reasonCode, "ADMIN_REVOKED");
     assert.equal(revoked.overriddenBy, ORG_ADMIN_ID);
+  });
+
+  it("AC-13: paginated eligibility list returns envelope metadata", async () => {
+    const { event, participantId } = await createCompletedEventWithAttendee();
+
+    await feedbackService.submit(
+      event.id,
+      participantId,
+      { answers: { q1: 5 } },
+      { actorId: participantId, actorRole: "Participant" },
+    );
+
+    const page = await eligibilityService.listEligibility(
+      event.id,
+      { page: "1", pageSize: "1" },
+      { actorId: ORG_ADMIN_ID, actorRole: "OrganizerAdmin" },
+    );
+
+    assert.equal(page.page, 1);
+    assert.equal(page.pageSize, 1);
+    assert.ok(page.total >= 1);
+    assert.ok(page.totalPages >= 1);
+    assert.equal(page.items.length, 1);
+
+    const beyond = await eligibilityService.listEligibility(
+      event.id,
+      { page: "99", pageSize: "1" },
+      { actorId: ORG_ADMIN_ID, actorRole: "OrganizerAdmin" },
+    );
+    assert.deepEqual(beyond.items, []);
+    assert.equal(beyond.total, page.total);
   });
 });

@@ -36,6 +36,13 @@ export interface EligibilityListEntry {
   eligibility: ReturnType<typeof toEligibilityResponse>;
 }
 
+export interface ListEligibilityQuery {
+  page?: string;
+  pageSize?: string;
+  sort?: string;
+  eligibility?: string;
+}
+
 export interface RevokeEligibilityInput {
   reasonCode: string;
   reasonText: string;

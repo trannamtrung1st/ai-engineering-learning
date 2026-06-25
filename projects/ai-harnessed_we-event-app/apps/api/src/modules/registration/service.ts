@@ -13,14 +13,17 @@ import {
   findActiveRegistration,
   findRegistrationById,
   listRegistrationsForEvent,
+  listRegistrationsForParticipant,
   listWaitlistForEvent,
   loadRegistrationWithWaitlist,
 } from "./repository.js";
 import type {
   ActorContext,
   CancelInput,
+  ListMyRegistrationsQuery,
   ListRegistrationsQuery,
   ListWaitlistQuery,
+  MyRegistrationListItem,
   WaitlistListItem,
 } from "./types.js";
 import {
@@ -193,6 +196,55 @@ export class RegistrationService {
       limit: pagination.pageSize,
       offset: pagination.offset,
     });
+
+    return buildPaginatedResult(items, total, pagination);
+  }
+
+  async listMyRegistrations(
+    participantId: string,
+    query: ListMyRegistrationsQuery = {},
+  ): Promise<PaginatedResult<MyRegistrationListItem>> {
+    const pagination = parsePagination(query, {
+      defaultPageSize: 20,
+      maxPageSize: 100,
+    });
+
+    const sort = parseSort(
+      query.sort,
+      {
+        updatedAt: "r.updated_at",
+        requestedAt: "r.requested_at",
+      },
+      "updatedAt",
+    );
+
+    let stateFilter: RegistrationState | undefined;
+    if (query.state) {
+      if (!REGISTRATION_STATES.includes(query.state as RegistrationState)) {
+        throw new ApiError({
+          code: "INVALID_INPUT",
+          message: "Invalid registration state filter.",
+          statusCode: 400,
+          details: { state: query.state },
+        });
+      }
+      stateFilter = query.state as RegistrationState;
+    }
+
+    const effectiveSort = query.sort?.trim()
+      ? sort
+      : { column: "r.updated_at", direction: "DESC" as const };
+
+    const { items, total } = await listRegistrationsForParticipant(
+      participantId,
+      {
+        state: stateFilter,
+        sortColumn: effectiveSort.column,
+        sortDirection: effectiveSort.direction,
+        limit: pagination.pageSize,
+        offset: pagination.offset,
+      },
+    );
 
     return buildPaginatedResult(items, total, pagination);
   }

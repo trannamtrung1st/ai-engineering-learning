@@ -86,20 +86,15 @@ export async function findEligibilityByRegistrationId(
   return mapEligibility(result.rows[0] as Record<string, unknown>);
 }
 
-export async function listRegistrationsForEligibility(
-  eventId: string,
-  client: Pool | PoolClient = getPool(),
-): Promise<RegistrationRow[]> {
-  const result = await client.query(
-    `SELECT *
-     FROM registrations
-     WHERE event_id = $1
-       AND state IN ('Attended', 'Absent', 'CheckedIn', 'Registered')
-     ORDER BY requested_at ASC`,
-    [eventId],
-  );
+const ELIGIBILITY_REGISTRATION_STATES = [
+  "Attended",
+  "Absent",
+  "CheckedIn",
+  "Registered",
+] as const;
 
-  return result.rows.map((row) => ({
+function mapRegistrationRow(row: Record<string, unknown>): RegistrationRow {
+  return {
     id: row.id as string,
     eventId: row.event_id as string,
     participantId: row.participant_id as string,
@@ -113,7 +108,70 @@ export async function listRegistrationsForEligibility(
     createdAt: (row.created_at as Date).toISOString(),
     updatedAt: (row.updated_at as Date).toISOString(),
     version: row.version as number,
-  }));
+  };
+}
+
+export interface ListEligibilityRegistrationsOptions {
+  eligibility?: CertificateEligibilityState;
+  sortColumn: string;
+  sortDirection: "ASC" | "DESC";
+  limit: number;
+  offset: number;
+}
+
+export interface ListEligibilityRegistrationsResult {
+  items: RegistrationRow[];
+  total: number;
+}
+
+export async function listRegistrationsForEligibilityPaginated(
+  eventId: string,
+  options: ListEligibilityRegistrationsOptions,
+  client: Pool | PoolClient = getPool(),
+): Promise<ListEligibilityRegistrationsResult> {
+  const params: unknown[] = [eventId, ELIGIBILITY_REGISTRATION_STATES];
+  const conditions = [
+    "r.event_id = $1",
+    "r.state = ANY($2::text[])",
+  ];
+  let paramIndex = 3;
+
+  if (options.eligibility) {
+    conditions.push(
+      `COALESCE(ce.result, 'PendingEvaluation') = $${paramIndex++}`,
+    );
+    params.push(options.eligibility);
+  }
+
+  const where = `WHERE ${conditions.join(" AND ")}`;
+  const join = `LEFT JOIN certificate_eligibilities ce ON ce.registration_id = r.id`;
+
+  const countResult = await client.query(
+    `SELECT COUNT(*)::int AS total
+     FROM registrations r
+     ${join}
+     ${where}`,
+    params,
+  );
+  const total = (countResult.rows[0] as { total: number }).total;
+
+  const listParams = [...params, options.limit, options.offset];
+  const result = await client.query(
+    `SELECT r.*
+     FROM registrations r
+     ${join}
+     ${where}
+     ORDER BY ${options.sortColumn} ${options.sortDirection}
+     LIMIT $${paramIndex++} OFFSET $${paramIndex}`,
+    listParams,
+  );
+
+  return {
+    items: result.rows.map((row) =>
+      mapRegistrationRow(row as Record<string, unknown>),
+    ),
+    total,
+  };
 }
 
 export async function listEligibilitiesForEvent(

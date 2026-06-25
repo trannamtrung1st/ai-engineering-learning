@@ -662,3 +662,71 @@ export async function loadRegistrationWithWaitlist(
   const waitlistPosition = await getWaitlistPosition(registration.id);
   return { ...registration, waitlistPosition };
 }
+
+export interface ListParticipantRegistrationsOptions {
+  state?: RegistrationState;
+  sortColumn: string;
+  sortDirection: "ASC" | "DESC";
+  limit: number;
+  offset: number;
+}
+
+export interface ParticipantRegistrationRow {
+  registrationId: string;
+  eventId: string;
+  eventName: string;
+  state: RegistrationState;
+  updatedAt: string;
+}
+
+export interface ListParticipantRegistrationsResult {
+  items: ParticipantRegistrationRow[];
+  total: number;
+}
+
+export async function listRegistrationsForParticipant(
+  participantId: string,
+  options: ListParticipantRegistrationsOptions,
+  client: Pool | PoolClient = getPool(),
+): Promise<ListParticipantRegistrationsResult> {
+  const params: unknown[] = [participantId];
+  const conditions = ["r.participant_id = $1"];
+  let paramIndex = 2;
+
+  if (options.state) {
+    conditions.push(`r.state = $${paramIndex++}`);
+    params.push(options.state);
+  }
+
+  const where = `WHERE ${conditions.join(" AND ")}`;
+
+  const countResult = await client.query(
+    `SELECT COUNT(*)::int AS total
+     FROM registrations r
+     ${where}`,
+    params,
+  );
+  const total = (countResult.rows[0] as { total: number }).total;
+
+  const listParams = [...params, options.limit, options.offset];
+  const result = await client.query(
+    `SELECT r.id, r.event_id, r.state, r.updated_at, e.name AS event_name
+     FROM registrations r
+     INNER JOIN events e ON e.id = r.event_id
+     ${where}
+     ORDER BY ${options.sortColumn} ${options.sortDirection}
+     LIMIT $${paramIndex++} OFFSET $${paramIndex}`,
+    listParams,
+  );
+
+  return {
+    items: result.rows.map((row) => ({
+      registrationId: row.id as string,
+      eventId: row.event_id as string,
+      eventName: row.event_name as string,
+      state: row.state as RegistrationState,
+      updatedAt: (row.updated_at as Date).toISOString(),
+    })),
+    total,
+  };
+}

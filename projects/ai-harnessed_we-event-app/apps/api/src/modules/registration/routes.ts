@@ -13,6 +13,7 @@ import { ensureRegistrationSchema } from "./repository.js";
 import { registrationService } from "./service.js";
 import type {
   CancelInput,
+  ListMyRegistrationsQuery,
   ListRegistrationsQuery,
   ListWaitlistQuery,
 } from "./types.js";
@@ -32,6 +33,25 @@ interface RegisterBody {
 export const registrationRoutes: FastifyPluginAsync = async (app) => {
   await ensureRegistrationSchema();
   await ensureIdempotencySchema();
+
+  app.get<{ Querystring: ListMyRegistrationsQuery }>(
+    "/me/registrations",
+    async (request) => {
+      const actor = getActor(request);
+      if (actor.role !== "Participant") {
+        throw new ApiError({
+          code: "FORBIDDEN",
+          message: "Only participants can list their registrations.",
+          statusCode: 403,
+        });
+      }
+
+      return registrationService.listMyRegistrations(
+        actor.sub,
+        request.query,
+      );
+    },
+  );
 
   app.get<{ Params: EventParams }>(
     "/events/:eventId/registration-status",

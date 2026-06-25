@@ -67,6 +67,21 @@ export interface ListWaitlistQuery {
   sort?: string;
 }
 
+export interface ListMyRegistrationsQuery {
+  page?: string;
+  pageSize?: string;
+  sort?: string;
+  state?: string;
+}
+
+export interface MyRegistrationListItem {
+  registrationId: string;
+  eventId: string;
+  eventName: string;
+  state: RegistrationState;
+  updatedAt: string;
+}
+
 export interface WaitlistListItem {
   waitlistEntryId: string;
   registrationId: string;

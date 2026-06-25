@@ -1,4 +1,10 @@
 import { ApiError } from "../../errors/api-error.js";
+import {
+  buildPaginatedResult,
+  parsePagination,
+  parseSort,
+  type PaginatedResult,
+} from "../../pagination/index.js";
 import { findFeedbackByRegistrationId } from "../feedback/repository.js";
 import { findEventById } from "../event/repository.js";
 import {
@@ -6,13 +12,22 @@ import {
   findRegistrationByParticipant,
 } from "../registration/repository.js";
 import {
+  CERTIFICATE_ELIGIBILITY_STATES,
+  type CertificateEligibilityState,
+} from "@we-event/domain";
+import {
   findEligibilityByRegistrationId,
   listEligibilitiesForEvent,
-  listRegistrationsForEligibility,
+  listRegistrationsForEligibilityPaginated,
   persistEligibilityEvaluation,
   revokeEligibility,
 } from "./repository.js";
-import type { ActorContext, RevokeEligibilityInput } from "./types.js";
+import type {
+  ActorContext,
+  EligibilityListEntry,
+  ListEligibilityQuery,
+  RevokeEligibilityInput,
+} from "./types.js";
 import { toEligibilityResponse } from "./types.js";
 import {
   assertRevokeAllowed,
@@ -54,15 +69,64 @@ export class EligibilityService {
     return toEligibilityResponse(row);
   }
 
-  async listEligibility(eventId: string, context: ActorContext) {
+  async listEligibility(
+    eventId: string,
+    query: ListEligibilityQuery,
+    context: ActorContext,
+  ): Promise<PaginatedResult<EligibilityListEntry>> {
     const event = await this.requireEvent(eventId);
-    const registrations = await listRegistrationsForEligibility(eventId);
+
+    const pagination = parsePagination(query, {
+      defaultPageSize: 20,
+      maxPageSize: 100,
+    });
+
+    let eligibilityFilter: CertificateEligibilityState | undefined;
+    if (query.eligibility) {
+      if (
+        !CERTIFICATE_ELIGIBILITY_STATES.includes(
+          query.eligibility as CertificateEligibilityState,
+        )
+      ) {
+        throw new ApiError({
+          code: "INVALID_INPUT",
+          message: "Invalid eligibility filter.",
+          statusCode: 400,
+          details: { eligibility: query.eligibility },
+        });
+      }
+      eligibilityFilter = query.eligibility as CertificateEligibilityState;
+    }
+
+    const sort = parseSort(
+      query.sort,
+      {
+        participantId: "r.participant_id",
+        updatedAt: "r.updated_at",
+        evaluatedAt: "ce.evaluated_at",
+      },
+      "participantId",
+    );
+
+    const effectiveSort = query.sort?.trim()
+      ? sort
+      : { column: "r.participant_id", direction: "ASC" as const };
+
+    const { items: registrations, total } =
+      await listRegistrationsForEligibilityPaginated(eventId, {
+        eligibility: eligibilityFilter,
+        sortColumn: effectiveSort.column,
+        sortDirection: effectiveSort.direction,
+        limit: pagination.pageSize,
+        offset: pagination.offset,
+      });
+
     const existing = await listEligibilitiesForEvent(eventId);
     const byRegistration = new Map(
       existing.map((row) => [row.registrationId, row]),
     );
 
-    const entries = [];
+    const entries: EligibilityListEntry[] = [];
 
     for (const registration of registrations) {
       const feedback = await findFeedbackByRegistrationId(registration.id);
@@ -90,7 +154,7 @@ export class EligibilityService {
       });
     }
 
-    return { eligibility: entries };
+    return buildPaginatedResult(entries, total, pagination);
   }
 
   async revoke(
