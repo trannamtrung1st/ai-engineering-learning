@@ -37,3 +37,7 @@ Lessons learned across harness iterations. Read before every implementer session
 - [api-foundation] AI review failed — see 20260625T092300Z-review.json
 - [module-event] AI review failed — see 20260625T093544Z-review.json
 - [module-registration] AI review failed — see 20260625T095129Z-review.json
+- [web-design-system-shell] AI review failed — see 20260625T103226Z-review.json
+- [web-design-system-shell] AI review failed — see 20260625T110259Z-review.json
+- [web-design-system-shell] AI review failed — see 20260625T110938Z-review.json
+- [web-design-system-shell] AI review failed — see 20260625T111833Z-review.json

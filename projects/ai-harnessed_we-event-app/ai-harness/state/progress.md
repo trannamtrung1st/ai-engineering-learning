@@ -46,3 +46,8 @@ Append-only log of completed iterations.
 - 2026-06-25T10:15:08Z | module-checkin | passed
 - 2026-06-25T10:25:48Z | module-feedback-eligibility | passed
 - 2026-06-25T10:32:26Z | module-audit | passed
+- 2026-06-25T11:02:59Z | web-design-system-shell | review_failed
+- 2026-06-25T11:09:38Z | web-design-system-shell | review_failed
+- 2026-06-25T11:18:33Z | web-design-system-shell | review_failed
+- 2026-06-25T11:27:13Z | web-design-system-shell | review_failed
+- 2026-06-25T14:09:38Z | web-design-system-shell | passed
