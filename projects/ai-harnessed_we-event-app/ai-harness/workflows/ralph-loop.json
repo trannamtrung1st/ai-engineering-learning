@@ -74,7 +74,24 @@
   },
   "aiReview": {
     "required": true,
-    "modelKey": "reviewer"
+    "modelKey": "reviewer",
+    "mode": "read-only-static",
+    "forbidden": [
+      "shell",
+      "npm",
+      "docker",
+      "tests",
+      "builds",
+      "servers",
+      "file-writes"
+    ],
+    "inputs": [
+      "git-diff",
+      "changed-files",
+      "completion-artifacts",
+      "checks-report",
+      "slice-docs"
+    ]
   },
   "humanReview": {
     "requiredForMergeReady": true,

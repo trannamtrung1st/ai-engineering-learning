@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# AI code review via Cursor CLI
-# Usage: run-ai-review.sh <sliceId>
+# AI code review via Cursor CLI (read-only static pass)
+# Usage: run-ai-review.sh <sliceId> [runId]
 set -euo pipefail
 source "$(dirname "$0")/lib/common.sh"
 
@@ -8,6 +8,7 @@ require_harness_deps
 require_agent
 
 SLICE_ID="${1:-$(pick_next_slice_id)}"
+RUN_ID="${2:-${AIH_RUN_ID:-}}"
 if [[ -z "$SLICE_ID" ]]; then
   echo "ERROR: no slice to review" >&2
   exit 1
@@ -19,13 +20,39 @@ cd "$REPO_ROOT"
 
 prompt="$(./ai-harness/scripts/build-prompt.sh "$SLICE_ID" reviewer)"
 
-# Include recent diff context
+# Bundle static evidence so the reviewer does not need to run checks.
 diff_context=""
+changed_files=""
+checks_summary=""
+artifacts_list=""
+
 if git rev-parse --git-dir >/dev/null 2>&1; then
   diff_context="$(git diff HEAD 2>/dev/null | head -c 50000 || true)"
+  changed_files="$(git_changed_files | sed 's/^/- /')"
 fi
 
+checks_summary="$(find_checks_report_for_slice "$SLICE_ID" "$RUN_ID")"
+artifacts_list="$(get_slice_json "$SLICE_ID" | jq -r '.completionArtifacts[]? | "- " + .' 2>/dev/null || true)"
+
 full_prompt="${prompt}
+
+## Harness reminder
+
+Computational checks already passed. Review **only** from the evidence below and by reading listed files. Do not run shell, npm, docker, tests, builds, or servers.
+
+## Changed files (read these + completion artifacts only)
+
+${changed_files:-_(none detected)_}
+
+## Completion artifacts
+
+${artifacts_list:-_(none listed)_}
+
+## Computational checks (already passed — trust this; do not re-run)
+
+\`\`\`json
+${checks_summary}
+\`\`\`
 
 ## Git diff (truncated)
 
@@ -38,7 +65,7 @@ outfile="${RUNS_DIR}/${RID}-review.txt"
 model="$(get_model reviewer)"
 
 set +e
-agent_invoke "$model" "$full_prompt" "$outfile"
+agent_invoke_review "$model" "$full_prompt" "$outfile"
 agent_status=$?
 set -e
 

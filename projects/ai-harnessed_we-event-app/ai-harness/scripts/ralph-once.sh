@@ -68,9 +68,9 @@ fi
 if [[ "${AIH_SKIP_REVIEW:-}" == "1" ]]; then
   echo "WARN: AIH_SKIP_REVIEW=1 — skipping AI review"
 else
-  echo "==> Running AI code review"
+  echo "==> Running AI code review (read-only static pass)"
   set +e
-  ./ai-harness/scripts/run-ai-review.sh "$SLICE_ID"
+  AIH_RUN_ID="$RID" ./ai-harness/scripts/run-ai-review.sh "$SLICE_ID" "$RID"
   review_status=$?
   set -e
   if [[ "$review_status" -ne 0 ]]; then

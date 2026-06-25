@@ -176,6 +176,48 @@ agent_invoke() {
   "$AGENT_BIN" "${args[@]}" "$prompt"
 }
 
+# Read-only reviewer: plan mode blocks edits; prompt forbids shell/tests.
+agent_invoke_review() {
+  local model="$1"
+  local prompt="$2"
+  local outfile="${3:-}"
+  require_agent
+  local -a args=(-p --force --trust --output-format text --model "$model" --mode plan)
+  if [[ -n "$outfile" ]]; then
+    "$AGENT_BIN" "${args[@]}" "$prompt" | tee "$outfile"
+    return "${PIPESTATUS[0]}"
+  fi
+  "$AGENT_BIN" "${args[@]}" "$prompt"
+}
+
+git_changed_files() {
+  if ! git rev-parse --git-dir >/dev/null 2>&1; then
+    return 0
+  fi
+  {
+    git diff --name-only HEAD 2>/dev/null || true
+    git diff --cached --name-only 2>/dev/null || true
+    git ls-files --others --exclude-standard 2>/dev/null || true
+  } | sed '/^$/d' | sort -u
+}
+
+find_checks_report_for_slice() {
+  local slice_id="$1"
+  local run_id="${2:-}"
+  if [[ -n "$run_id" && -f "${RUNS_DIR}/${run_id}-checks.json" ]]; then
+    cat "${RUNS_DIR}/${run_id}-checks.json"
+    return 0
+  fi
+  local f
+  for f in $(ls -t "${RUNS_DIR}"/*-checks.json 2>/dev/null || true); do
+    if jq -e --arg s "$slice_id" '.slice == $s and .pass == true' "$f" >/dev/null 2>&1; then
+      cat "$f"
+      return 0
+    fi
+  done
+  echo '{"pass":false,"note":"no checks report found for slice"}'
+}
+
 # Backend/infra slices only require API runtime probes; frontend/test need web too.
 slice_requires_web_runtime() {
   local slice_id="${1:-}"
