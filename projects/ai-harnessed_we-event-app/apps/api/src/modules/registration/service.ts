@@ -1,4 +1,11 @@
+import { REGISTRATION_STATES, type RegistrationState } from "@we-event/domain";
 import { ApiError } from "../../errors/api-error.js";
+import {
+  buildPaginatedResult,
+  parsePagination,
+  parseSort,
+  type PaginatedResult,
+} from "../../pagination/index.js";
 import { findEventById } from "../event/repository.js";
 import {
   cancelRegistration,
@@ -9,7 +16,13 @@ import {
   listWaitlistForEvent,
   loadRegistrationWithWaitlist,
 } from "./repository.js";
-import type { ActorContext, CancelInput } from "./types.js";
+import type {
+  ActorContext,
+  CancelInput,
+  ListRegistrationsQuery,
+  ListWaitlistQuery,
+  WaitlistListItem,
+} from "./types.js";
 import {
   assertNoDuplicateActive,
   assertOrganizerCancellationAllowed,
@@ -100,20 +113,88 @@ export class RegistrationService {
     };
   }
 
-  async listRegistrations(eventId: string) {
+  async listRegistrations(
+    eventId: string,
+    query: ListRegistrationsQuery = {},
+  ): Promise<
+    PaginatedResult<ReturnType<typeof toRegistrationResponse>>
+  > {
     await this.requireEvent(eventId);
-    const registrations = await listRegistrationsForEvent(eventId);
-    return {
-      registrations: registrations.map((row) =>
-        toRegistrationResponse(row, row.waitlistPosition),
-      ),
-    };
+
+    const pagination = parsePagination(query, {
+      defaultPageSize: 20,
+      maxPageSize: 100,
+    });
+
+    const sort = parseSort(
+      query.sort,
+      {
+        updatedAt: "r.updated_at",
+        requestedAt: "r.requested_at",
+      },
+      "updatedAt",
+    );
+
+    let stateFilter: RegistrationState | undefined;
+    if (query.state) {
+      if (!REGISTRATION_STATES.includes(query.state as RegistrationState)) {
+        throw new ApiError({
+          code: "INVALID_INPUT",
+          message: "Invalid registration state filter.",
+          statusCode: 400,
+          details: { state: query.state },
+        });
+      }
+      stateFilter = query.state as RegistrationState;
+    }
+
+    const effectiveSort = query.sort?.trim()
+      ? sort
+      : { column: "r.updated_at", direction: "DESC" as const };
+
+    const { items, total } = await listRegistrationsForEvent(eventId, {
+      state: stateFilter,
+      sortColumn: effectiveSort.column,
+      sortDirection: effectiveSort.direction,
+      limit: pagination.pageSize,
+      offset: pagination.offset,
+    });
+
+    return buildPaginatedResult(
+      items.map((row) => toRegistrationResponse(row, row.waitlistPosition)),
+      total,
+      pagination,
+    );
   }
 
-  async listWaitlist(eventId: string) {
+  async listWaitlist(
+    eventId: string,
+    query: ListWaitlistQuery = {},
+  ): Promise<PaginatedResult<WaitlistListItem>> {
     await this.requireEvent(eventId);
-    const entries = await listWaitlistForEvent(eventId);
-    return { waitlist: entries };
+
+    const pagination = parsePagination(query, {
+      defaultPageSize: 20,
+      maxPageSize: 100,
+    });
+
+    const sort = parseSort(
+      query.sort,
+      {
+        position: "w.position",
+        enqueuedAt: "w.enqueued_at",
+      },
+      "position",
+    );
+
+    const { items, total } = await listWaitlistForEvent(eventId, {
+      sortColumn: sort.column,
+      sortDirection: sort.direction,
+      limit: pagination.pageSize,
+      offset: pagination.offset,
+    });
+
+    return buildPaginatedResult(items, total, pagination);
   }
 
   private async requireEvent(eventId: string) {

@@ -11,7 +11,11 @@ import {
 } from "../../idempotency/index.js";
 import { ensureRegistrationSchema } from "./repository.js";
 import { registrationService } from "./service.js";
-import type { CancelInput } from "./types.js";
+import type {
+  CancelInput,
+  ListRegistrationsQuery,
+  ListWaitlistQuery,
+} from "./types.js";
 
 interface EventParams {
   eventId: string;
@@ -142,23 +146,23 @@ export const registrationRoutes: FastifyPluginAsync = async (app) => {
       requireRole("OrganizerAdmin", "OrganizerStaff"),
     );
 
-    staffApp.get<{ Params: EventParams }>(
+    staffApp.get<{ Params: EventParams; Querystring: ListRegistrationsQuery }>(
       "/events/:eventId/registrations",
       async (request) => {
         const actor = getActor(request);
         const { eventId } = request.params;
         assertEventScope(actor, eventId);
-        return registrationService.listRegistrations(eventId);
+        return registrationService.listRegistrations(eventId, request.query);
       },
     );
 
-    staffApp.get<{ Params: EventParams }>(
+    staffApp.get<{ Params: EventParams; Querystring: ListWaitlistQuery }>(
       "/events/:eventId/waitlist",
       async (request) => {
         const actor = getActor(request);
         const { eventId } = request.params;
         assertEventScope(actor, eventId);
-        return registrationService.listWaitlist(eventId);
+        return registrationService.listWaitlist(eventId, request.query);
       },
     );
   });

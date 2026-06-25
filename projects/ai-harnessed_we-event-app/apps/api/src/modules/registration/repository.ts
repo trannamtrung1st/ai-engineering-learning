@@ -527,10 +527,53 @@ export async function cancelRegistration(
   }
 }
 
+export interface ListRegistrationsOptions {
+  state?: RegistrationState;
+  sortColumn: string;
+  sortDirection: "ASC" | "DESC";
+  limit: number;
+  offset: number;
+}
+
+export interface ListRegistrationsResult {
+  items: RegistrationWithWaitlist[];
+  total: number;
+}
+
+function mapRegistrationWithWaitlist(
+  row: Record<string, unknown>,
+): RegistrationWithWaitlist {
+  const registration = mapRegistration(row);
+  const waitlistPosition =
+    row.waitlist_position === null || row.waitlist_position === undefined
+      ? null
+      : Number(row.waitlist_position);
+  return { ...registration, waitlistPosition };
+}
+
 export async function listRegistrationsForEvent(
   eventId: string,
+  options: ListRegistrationsOptions,
   client: Pool | PoolClient = getPool(),
-): Promise<RegistrationWithWaitlist[]> {
+): Promise<ListRegistrationsResult> {
+  const params: unknown[] = [eventId];
+  const conditions = ["r.event_id = $1"];
+  let paramIndex = 2;
+
+  if (options.state) {
+    conditions.push(`r.state = $${paramIndex++}`);
+    params.push(options.state);
+  }
+
+  const where = `WHERE ${conditions.join(" AND ")}`;
+
+  const countResult = await client.query(
+    `SELECT COUNT(*)::int AS total FROM registrations r ${where}`,
+    params,
+  );
+  const total = (countResult.rows[0] as { total: number }).total;
+
+  const listParams = [...params, options.limit, options.offset];
   const result = await client.query(
     `SELECT r.*, w.position AS waitlist_position
      FROM registrations r
@@ -538,54 +581,79 @@ export async function listRegistrationsForEvent(
        ON w.registration_id = r.id
        AND w.promoted_at IS NULL
        AND w.expired_at IS NULL
-     WHERE r.event_id = $1
-     ORDER BY r.requested_at ASC`,
-    [eventId],
+     ${where}
+     ORDER BY ${options.sortColumn} ${options.sortDirection}
+     LIMIT $${paramIndex++} OFFSET $${paramIndex}`,
+    listParams,
   );
 
-  return result.rows.map((row) => {
-    const registration = mapRegistration(row as Record<string, unknown>);
-    const waitlistPosition =
-      row.waitlist_position === null || row.waitlist_position === undefined
-        ? null
-        : Number(row.waitlist_position);
-    return { ...registration, waitlistPosition };
-  });
+  return {
+    items: result.rows.map((row) =>
+      mapRegistrationWithWaitlist(row as Record<string, unknown>),
+    ),
+    total,
+  };
 }
 
-export async function listWaitlistForEvent(
-  eventId: string,
-  client: Pool | PoolClient = getPool(),
-): Promise<
-  Array<{
+export interface ListWaitlistOptions {
+  sortColumn: string;
+  sortDirection: "ASC" | "DESC";
+  limit: number;
+  offset: number;
+}
+
+export interface ListWaitlistResult {
+  items: Array<{
     waitlistEntryId: string;
     registrationId: string;
     participantId: string;
     position: number;
     enqueuedAt: string;
     state: RegistrationState;
-  }>
-> {
+  }>;
+  total: number;
+}
+
+export async function listWaitlistForEvent(
+  eventId: string,
+  options: ListWaitlistOptions,
+  client: Pool | PoolClient = getPool(),
+): Promise<ListWaitlistResult> {
+  const baseWhere = `w.event_id = $1
+       AND w.promoted_at IS NULL
+       AND w.expired_at IS NULL`;
+
+  const countResult = await client.query(
+    `SELECT COUNT(*)::int AS total
+     FROM waitlist_entries w
+     INNER JOIN registrations r ON r.id = w.registration_id
+     WHERE ${baseWhere}`,
+    [eventId],
+  );
+  const total = (countResult.rows[0] as { total: number }).total;
+
   const result = await client.query(
     `SELECT w.id, w.registration_id, w.position, w.enqueued_at,
             r.participant_id, r.state
      FROM waitlist_entries w
      INNER JOIN registrations r ON r.id = w.registration_id
-     WHERE w.event_id = $1
-       AND w.promoted_at IS NULL
-       AND w.expired_at IS NULL
-     ORDER BY w.position ASC`,
-    [eventId],
+     WHERE ${baseWhere}
+     ORDER BY ${options.sortColumn} ${options.sortDirection}
+     LIMIT $2 OFFSET $3`,
+    [eventId, options.limit, options.offset],
   );
 
-  return result.rows.map((row) => ({
-    waitlistEntryId: row.id as string,
-    registrationId: row.registration_id as string,
-    participantId: row.participant_id as string,
-    position: row.position as number,
-    enqueuedAt: (row.enqueued_at as Date).toISOString(),
-    state: row.state as RegistrationState,
-  }));
+  return {
+    items: result.rows.map((row) => ({
+      waitlistEntryId: row.id as string,
+      registrationId: row.registration_id as string,
+      participantId: row.participant_id as string,
+      position: row.position as number,
+      enqueuedAt: (row.enqueued_at as Date).toISOString(),
+      state: row.state as RegistrationState,
+    })),
+    total,
+  };
 }
 
 export async function loadRegistrationWithWaitlist(

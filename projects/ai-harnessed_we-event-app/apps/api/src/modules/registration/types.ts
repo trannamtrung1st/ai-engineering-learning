@@ -53,3 +53,25 @@ export interface RegistrationAuditInput {
   before: Record<string, unknown>;
   after: Record<string, unknown>;
 }
+
+export interface ListRegistrationsQuery {
+  page?: string;
+  pageSize?: string;
+  sort?: string;
+  state?: string;
+}
+
+export interface ListWaitlistQuery {
+  page?: string;
+  pageSize?: string;
+  sort?: string;
+}
+
+export interface WaitlistListItem {
+  waitlistEntryId: string;
+  registrationId: string;
+  participantId: string;
+  position: number;
+  enqueuedAt: string;
+  state: RegistrationState;
+}

@@ -183,4 +183,115 @@ describe("registration integration", () => {
     ).length;
     assert.equal(waitlisted, attempts - capacity);
   });
+
+  it("promotes waitlisted participant FIFO when a seat is released", async () => {
+    const event = await createRegistrationOpenEvent({
+      capacity: 1,
+      waitlistEnabled: true,
+    });
+
+    const firstParticipant = randomUUID();
+    const secondParticipant = randomUUID();
+    const thirdParticipant = randomUUID();
+
+    const first = await registrationService.register(
+      event.id,
+      firstParticipant,
+      actorContext,
+    );
+    const second = await registrationService.register(
+      event.id,
+      secondParticipant,
+      actorContext,
+    );
+    const third = await registrationService.register(
+      event.id,
+      thirdParticipant,
+      actorContext,
+    );
+
+    assert.equal(first.state, "Registered");
+    assert.equal(second.waitlistPosition, 1);
+    assert.equal(third.waitlistPosition, 2);
+
+    const cancelResult = await registrationService.cancel(
+      event.id,
+      first.registrationId,
+      { actorId: firstParticipant, actorRole: "Participant" },
+    );
+
+    assert.equal(cancelResult.cancelled.state, "CancelledByUser");
+    assert.ok(cancelResult.promoted);
+    assert.equal(cancelResult.promoted.registrationId, second.registrationId);
+    assert.equal(cancelResult.promoted.state, "Registered");
+
+    const waitlist = await registrationService.listWaitlist(event.id, {
+      page: "1",
+      pageSize: "20",
+    });
+    assert.equal(waitlist.items.length, 1);
+    assert.equal(waitlist.items[0]?.registrationId, third.registrationId);
+    assert.equal(waitlist.items[0]?.position, 2);
+  });
+
+  it("AC-13: paginated registrations and waitlist lists", async () => {
+    const event = await createRegistrationOpenEvent({
+      capacity: 2,
+      waitlistEnabled: true,
+    });
+
+    const registeredIds: string[] = [];
+    for (let index = 0; index < 2; index += 1) {
+      const result = await registrationService.register(
+        event.id,
+        randomUUID(),
+        actorContext,
+      );
+      registeredIds.push(result.registrationId);
+    }
+
+    for (let index = 0; index < 3; index += 1) {
+      await registrationService.register(event.id, randomUUID(), actorContext);
+    }
+
+    const registrationsPage = await registrationService.listRegistrations(
+      event.id,
+      { page: "1", pageSize: "3" },
+    );
+
+    assert.equal(registrationsPage.page, 1);
+    assert.equal(registrationsPage.pageSize, 3);
+    assert.equal(registrationsPage.total, 5);
+    assert.equal(registrationsPage.totalPages, 2);
+    assert.equal(registrationsPage.items.length, 3);
+
+    const beyond = await registrationService.listRegistrations(event.id, {
+      page: "99",
+      pageSize: "3",
+    });
+    assert.deepEqual(beyond.items, []);
+    assert.equal(beyond.total, 5);
+    assert.equal(beyond.totalPages, 2);
+
+    const waitlistPage = await registrationService.listWaitlist(event.id, {
+      page: "1",
+      pageSize: "2",
+      sort: "position:asc",
+    });
+
+    assert.equal(waitlistPage.total, 3);
+    assert.equal(waitlistPage.items.length, 2);
+    assert.equal(waitlistPage.items[0]?.position, 1);
+    assert.equal(waitlistPage.items[1]?.position, 2);
+
+    const filtered = await registrationService.listRegistrations(event.id, {
+      state: "Registered",
+      page: "1",
+      pageSize: "20",
+    });
+    assert.equal(filtered.total, 2);
+    assert.ok(
+      filtered.items.every((item) => item.state === "Registered"),
+    );
+  });
 });
