@@ -289,7 +289,7 @@ export async function updateEvent(
   input: UpdateEventInput,
   actorId: string,
   actorRole: string,
-): Promise<EventWithConfig> {
+): Promise<EventWithConfig | null> {
   const pool = getPool();
   const client = await pool.connect();
   try {
@@ -298,7 +298,7 @@ export async function updateEvent(
     const existing = await findEventById(eventId, client);
     if (!existing) {
       await client.query("ROLLBACK");
-      return null as never;
+      return null;
     }
 
     const eventFields: string[] = [];
