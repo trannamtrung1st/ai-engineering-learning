@@ -40,19 +40,6 @@ export interface EventWithConfig extends EventRow {
   ruleConfig: EventRuleConfigRow;
 }
 
-export interface AuditWriteInput {
-  eventId: string;
-  entityType: string;
-  entityId: string;
-  action: string;
-  actorId: string;
-  actorRole: string;
-  reasonCode?: string | null;
-  reasonText?: string | null;
-  before: Record<string, unknown>;
-  after: Record<string, unknown>;
-}
-
 export interface CreateEventInput {
   organizationId?: string;
   name: string;

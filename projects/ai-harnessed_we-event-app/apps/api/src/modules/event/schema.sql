@@ -51,23 +51,6 @@ CREATE TABLE IF NOT EXISTS event_rule_configs (
   CONSTRAINT event_rule_feedback_window CHECK (feedback_open_at < feedback_close_at)
 );
 
-CREATE TABLE IF NOT EXISTS audit_logs (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  event_id UUID REFERENCES events(id) ON DELETE SET NULL,
-  entity_type TEXT NOT NULL,
-  entity_id UUID NOT NULL,
-  action TEXT NOT NULL,
-  actor_id UUID NOT NULL,
-  actor_role TEXT NOT NULL,
-  reason_code TEXT,
-  reason_text TEXT,
-  before_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-  after_json JSONB NOT NULL DEFAULT '{}'::jsonb,
-  occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX IF NOT EXISTS idx_audit_logs_event ON audit_logs(event_id, occurred_at DESC);
-
 -- Idempotent column add for harness iterations that created schema without pause flag
 ALTER TABLE event_rule_configs
   ADD COLUMN IF NOT EXISTS registration_paused BOOLEAN NOT NULL DEFAULT FALSE;

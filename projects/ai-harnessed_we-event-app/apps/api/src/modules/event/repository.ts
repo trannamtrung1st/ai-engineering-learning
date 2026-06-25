@@ -4,8 +4,8 @@ import { fileURLToPath } from "node:url";
 import type { EventState } from "@we-event/domain";
 import type { Pool, PoolClient } from "pg";
 import { getPool } from "../../db/pool.js";
+import { ensureAuditSchema, insertAuditLog } from "../audit/repository.js";
 import type {
-  AuditWriteInput,
   CreateEventInput,
   EventRow,
   EventRuleConfigRow,
@@ -23,6 +23,7 @@ export async function ensureEventSchema(): Promise<void> {
     schemaReady = (async () => {
       const sql = await readFile(join(__dirname, "schema.sql"), "utf8");
       await getPool().query(sql);
+      await ensureAuditSchema();
     })();
   }
   await schemaReady;
@@ -150,31 +151,6 @@ export async function organizationExists(
     [organizationId],
   );
   return (result.rowCount ?? 0) > 0;
-}
-
-export async function insertAuditLog(
-  input: AuditWriteInput,
-  client: Pool | PoolClient = getPool(),
-): Promise<void> {
-  await client.query(
-    `INSERT INTO audit_logs (
-      event_id, entity_type, entity_id, action,
-      actor_id, actor_role, reason_code, reason_text,
-      before_json, after_json
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb)`,
-    [
-      input.eventId,
-      input.entityType,
-      input.entityId,
-      input.action,
-      input.actorId,
-      input.actorRole,
-      input.reasonCode ?? null,
-      input.reasonText ?? null,
-      JSON.stringify(input.before),
-      JSON.stringify(input.after),
-    ],
-  );
 }
 
 export async function createEvent(
@@ -491,10 +467,3 @@ export async function transitionEventState(
   }
 }
 
-export async function countAuditLogsForEvent(eventId: string): Promise<number> {
-  const result = await getPool().query(
-    "SELECT COUNT(*)::int AS count FROM audit_logs WHERE event_id = $1",
-    [eventId],
-  );
-  return (result.rows[0] as { count: number }).count;
-}

@@ -8,7 +8,7 @@ import {
 import type { Pool, PoolClient } from "pg";
 import { getPool } from "../../db/pool.js";
 import { ApiError } from "../../errors/api-error.js";
-import { insertAuditLog } from "../event/repository.js";
+import { insertAuditLog } from "../audit/repository.js";
 import type { RegistrationRow } from "../registration/types.js";
 import type {
   ActorContext,
