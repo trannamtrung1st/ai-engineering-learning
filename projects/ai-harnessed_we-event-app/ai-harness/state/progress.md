@@ -60,3 +60,6 @@ Append-only log of completed iterations.
 - 2026-06-25T15:24:35Z | module-checkin | passed
 - 2026-06-25T15:30:26Z | module-feedback-eligibility | passed
 - 2026-06-25T15:35:14Z | module-audit | passed
+- 2026-06-25T15:42:12Z | web-participant-journeys | review_failed
+- 2026-06-25T15:49:04Z | web-participant-journeys | review_failed
+- 2026-06-25T15:56:40Z | web-participant-journeys | passed

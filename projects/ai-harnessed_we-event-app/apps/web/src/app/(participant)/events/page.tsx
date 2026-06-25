@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { EventState } from "@we-event/domain";
 import { useQueries } from "@tanstack/react-query";
 
@@ -10,6 +10,7 @@ import { EmptyFailureBlock } from "@/components/layout/empty-failure-block";
 import { PageHeader } from "@/components/layout/page-header";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Pagination } from "@/components/ui/pagination";
 import {
   Select,
   SelectContent,
@@ -22,6 +23,8 @@ import { queryKeys } from "@/lib/query-keys";
 import { fetchEvents, fetchRegistrationStatus } from "@/lib/participant-api";
 import { useAuth } from "@/providers/auth-provider";
 
+const EVENT_PAGE_SIZE = 12;
+
 const EVENT_STATE_FILTERS: Array<{ value: "all" | EventState; label: string }> = [
   { value: "all", label: "All states" },
   { value: "RegistrationOpen", label: "Registration open" },
@@ -32,20 +35,44 @@ const EVENT_STATE_FILTERS: Array<{ value: "all" | EventState; label: string }> =
 
 export default function BrowseEventsPage() {
   const { token } = useAuth();
+  const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [stateFilter, setStateFilter] = useState<"all" | EventState>("all");
+  const [page, setPage] = useState(1);
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => setSearch(searchInput), 300);
+    return () => window.clearTimeout(handle);
+  }, [searchInput]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, stateFilter]);
+
+  const listParams = useMemo(
+    () => ({
+      page,
+      pageSize: EVENT_PAGE_SIZE,
+      q: search.trim() || undefined,
+      state: stateFilter === "all" ? undefined : stateFilter,
+    }),
+    [page, search, stateFilter],
+  );
 
   const eventsQuery = useLiveQuery({
-    queryKey: queryKeys.events.list(),
-    queryFn: () => fetchEvents(token!),
+    queryKey: queryKeys.events.list(listParams),
+    queryFn: () => fetchEvents(token!, listParams),
     mode: "eventList",
     enabled: Boolean(token),
   });
 
   const events = useMemo(
-    () => eventsQuery.data?.events ?? [],
-    [eventsQuery.data?.events],
+    () => eventsQuery.data?.items ?? [],
+    [eventsQuery.data?.items],
   );
+  const total = eventsQuery.data?.total ?? 0;
+  const totalPages = eventsQuery.data?.totalPages ?? 1;
+  const pageSize = eventsQuery.data?.pageSize ?? EVENT_PAGE_SIZE;
 
   const registrationQueries = useQueries({
     queries: events.map((event) => ({
@@ -64,19 +91,6 @@ export default function BrowseEventsPage() {
     return map;
   }, [events, registrationQueries]);
 
-  const filteredEvents = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return events.filter((event) => {
-      const matchesSearch =
-        !query ||
-        event.name.toLowerCase().includes(query) ||
-        event.location.toLowerCase().includes(query) ||
-        event.description.toLowerCase().includes(query);
-      const matchesState = stateFilter === "all" || event.state === stateFilter;
-      return matchesSearch && matchesState;
-    });
-  }, [events, search, stateFilter]);
-
   return (
     <div className="space-y-8">
       <PageHeader
@@ -88,8 +102,8 @@ export default function BrowseEventsPage() {
         <Field id="event-search" label="Search" className="min-w-[12rem] flex-1">
           <Input
             id="event-search"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
+            value={searchInput}
+            onChange={(event) => setSearchInput(event.target.value)}
             placeholder="Search by name, location, or description"
           />
         </Field>
@@ -130,36 +144,48 @@ export default function BrowseEventsPage() {
         />
       ) : null}
 
-      {eventsQuery.isSuccess && filteredEvents.length === 0 ? (
+      {eventsQuery.isSuccess && events.length === 0 ? (
         <EmptyFailureBlock
           variant="empty"
           title="No events match your filters"
           description="Try clearing search or choosing a different event state."
           actionLabel="Clear filters"
           onAction={() => {
+            setSearchInput("");
             setSearch("");
             setStateFilter("all");
+            setPage(1);
           }}
         />
       ) : null}
 
-      {eventsQuery.isSuccess && filteredEvents.length > 0 ? (
-        <div className="grid gap-4 lg:grid-cols-2">
-          {filteredEvents.map((event) => {
-            const registrationQuery = registrationByEventId.get(event.eventId);
-            return (
-              <EventCard
-                key={event.eventId}
-                event={event}
-                registration={registrationQuery?.data?.registration}
-                registrationLoading={registrationQuery?.isLoading}
-                registrationError={
-                  registrationQuery?.isError ? registrationQuery.error.message : null
-                }
-              />
-            );
-          })}
-        </div>
+      {eventsQuery.isSuccess && events.length > 0 ? (
+        <>
+          <div className="grid gap-4 lg:grid-cols-2">
+            {events.map((event) => {
+              const registrationQuery = registrationByEventId.get(event.eventId);
+              return (
+                <EventCard
+                  key={event.eventId}
+                  event={event}
+                  registration={registrationQuery?.data?.registration}
+                  registrationLoading={registrationQuery?.isLoading}
+                  registrationError={
+                    registrationQuery?.isError ? registrationQuery.error.message : null
+                  }
+                />
+              );
+            })}
+          </div>
+
+          <Pagination
+            page={page}
+            pageCount={Math.max(totalPages, 1)}
+            total={total}
+            pageSize={pageSize}
+            onPageChange={setPage}
+          />
+        </>
       ) : null}
     </div>
   );

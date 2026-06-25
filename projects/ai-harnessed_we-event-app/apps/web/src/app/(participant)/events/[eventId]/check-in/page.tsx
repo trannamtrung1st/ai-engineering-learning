@@ -48,7 +48,8 @@ export default function CheckInPage() {
     mutationFn: () => selfCheckin(token!, eventId),
     onSuccess: (result) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.registrations.status(eventId) });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.registrations.mine() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.registrations.mineAll() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.events.listRoot() });
       push({
         title: "Check-in successful",
         description: `Checked in at ${formatDateTime(result.checkinAt)}`,
@@ -104,6 +105,16 @@ export default function CheckInPage() {
           description={eventQuery.error.message}
           actionLabel="Retry"
           onAction={() => void eventQuery.refetch()}
+        />
+      ) : null}
+
+      {registrationQuery.isError ? (
+        <EmptyFailureBlock
+          variant="failure"
+          title="Could not load registration status"
+          description={registrationQuery.error.message}
+          actionLabel="Retry"
+          onAction={() => void registrationQuery.refetch()}
         />
       ) : null}
 

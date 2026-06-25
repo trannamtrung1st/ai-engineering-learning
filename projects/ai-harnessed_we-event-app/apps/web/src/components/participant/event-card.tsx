@@ -8,10 +8,10 @@ import { RegistrationStateBadge } from "@/components/participant/registration-st
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatDateTime } from "@/lib/format";
-import type { EventSummary, RegistrationStatus } from "@/lib/participant-api";
+import type { EventListItem, RegistrationStatus } from "@/lib/participant-api";
 
 export interface EventCardProps {
-  event: EventSummary;
+  event: EventListItem;
   registration?: RegistrationStatus | null;
   registrationLoading?: boolean;
   registrationError?: string | null;
@@ -45,24 +45,11 @@ export function EventCard({
         <EventStateBadge state={event.state} />
       </div>
 
-      {event.description ? (
-        <p className="line-clamp-2 text-[length:var(--font-size-sm)] text-[var(--color-text-secondary)]">
-          {event.description}
-        </p>
-      ) : null}
-
-      <dl className="grid gap-2 text-[length:var(--font-size-sm)] sm:grid-cols-2">
+      <dl className="grid gap-2 text-[length:var(--font-size-sm)]">
         <div>
           <dt className="text-[var(--color-text-secondary)]">Starts</dt>
           <dd className="font-[var(--font-weight-medium)] text-[var(--color-text-primary)]">
             {formatDateTime(event.startAt)}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-[var(--color-text-secondary)]">Registration</dt>
-          <dd className="font-[var(--font-weight-medium)] text-[var(--color-text-primary)]">
-            {formatDateTime(event.ruleConfig.registrationOpenAt)} –{" "}
-            {formatDateTime(event.ruleConfig.registrationCloseAt)}
           </dd>
         </div>
       </dl>
@@ -99,11 +86,7 @@ export function EventCardSkeleton() {
     <div className="space-y-4 rounded-[var(--radius-lg)] border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] p-6">
       <Skeleton className="h-6 w-2/3" />
       <Skeleton className="h-4 w-full" />
-      <Skeleton className="h-4 w-4/5" />
-      <div className="grid gap-2 sm:grid-cols-2">
-        <Skeleton className="h-10" />
-        <Skeleton className="h-10" />
-      </div>
+      <Skeleton className="h-10 w-40" />
       <Skeleton className="h-10 w-32" />
     </div>
   );

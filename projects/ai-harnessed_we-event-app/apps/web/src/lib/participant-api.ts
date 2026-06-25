@@ -6,6 +6,45 @@ import type {
 
 import { apiFetch } from "@/lib/api-client";
 
+export interface PaginatedResult<T> {
+  items: T[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+}
+
+export interface EventListItem {
+  eventId: string;
+  name: string;
+  state: EventState;
+  startAt: string;
+  location: string;
+}
+
+export interface MyRegistrationListItem {
+  registrationId: string;
+  eventId: string;
+  eventName: string;
+  state: RegistrationState;
+  updatedAt: string;
+}
+
+export interface FetchEventsParams {
+  page?: number;
+  pageSize?: number;
+  q?: string;
+  state?: EventState;
+  sort?: string;
+}
+
+export interface FetchMyRegistrationsParams {
+  page?: number;
+  pageSize?: number;
+  state?: RegistrationState;
+  sort?: string;
+}
+
 export interface EventRuleConfig {
   capacity: number;
   waitlistEnabled: boolean;
@@ -102,8 +141,31 @@ export function fetchSession(token: string): Promise<SessionInfo> {
   return apiFetch<SessionInfo>("/me", { token });
 }
 
-export function fetchEvents(token: string): Promise<{ events: EventSummary[] }> {
-  return apiFetch<{ events: EventSummary[] }>("/events", { token });
+function buildQueryString(
+  params: Record<string, string | number | undefined>,
+): string {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== "") {
+      search.set(key, String(value));
+    }
+  }
+  const query = search.toString();
+  return query ? `?${query}` : "";
+}
+
+export function fetchEvents(
+  token: string,
+  params: FetchEventsParams = {},
+): Promise<PaginatedResult<EventListItem>> {
+  const query = buildQueryString({
+    page: params.page,
+    pageSize: params.pageSize,
+    q: params.q,
+    state: params.state,
+    sort: params.sort,
+  });
+  return apiFetch<PaginatedResult<EventListItem>>(`/events${query}`, { token });
 }
 
 export function fetchEvent(token: string, eventId: string): Promise<EventSummary> {
@@ -198,18 +260,18 @@ export function requestDevToken(sub: string): Promise<DevTokenResponse> {
   });
 }
 
-export interface RegistrationWithEvent {
-  event: EventSummary;
-  registration: RegistrationStatus;
-}
-
-export async function fetchMyRegistrations(token: string): Promise<RegistrationWithEvent[]> {
-  const { events } = await fetchEvents(token);
-  const statuses = await Promise.all(
-    events.map(async (event) => {
-      const { registration } = await fetchRegistrationStatus(token, event.eventId);
-      return registration ? { event, registration } : null;
-    }),
+export function fetchMyRegistrations(
+  token: string,
+  params: FetchMyRegistrationsParams = {},
+): Promise<PaginatedResult<MyRegistrationListItem>> {
+  const query = buildQueryString({
+    page: params.page,
+    pageSize: params.pageSize,
+    state: params.state,
+    sort: params.sort,
+  });
+  return apiFetch<PaginatedResult<MyRegistrationListItem>>(
+    `/me/registrations${query}`,
+    { token },
   );
-  return statuses.filter((entry): entry is RegistrationWithEvent => entry !== null);
 }

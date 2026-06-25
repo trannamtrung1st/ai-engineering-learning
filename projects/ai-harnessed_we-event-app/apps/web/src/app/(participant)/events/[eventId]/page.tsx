@@ -71,7 +71,8 @@ export default function EventDetailPage() {
     mutationFn: () => registerForEvent(token!, eventId),
     onSuccess: (registration) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.registrations.status(eventId) });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.registrations.mine() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.registrations.mineAll() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.events.listRoot() });
       push({
         title: "Registration submitted",
         description: registrationStateLabel(registration.state).label,
@@ -98,7 +99,8 @@ export default function EventDetailPage() {
     onSuccess: () => {
       setCancelDialogOpen(false);
       void queryClient.invalidateQueries({ queryKey: queryKeys.registrations.status(eventId) });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.registrations.mine() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.registrations.mineAll() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.events.listRoot() });
       push({
         title: "Registration cancelled",
         variant: "success",

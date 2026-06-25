@@ -1,36 +1,63 @@
 "use client";
 
 import Link from "next/link";
+import { useMemo, useState } from "react";
 import { ArrowRight, ClipboardCheck, MessageSquare, ShieldCheck } from "lucide-react";
+import type { RegistrationState } from "@we-event/domain";
 
 import { RegistrationStateBadge } from "@/components/participant/registration-state-badge";
-import { EventStateBadge } from "@/components/participant/event-state-badge";
 import { EmptyFailureBlock } from "@/components/layout/empty-failure-block";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
+import { Pagination } from "@/components/ui/pagination";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useLiveQuery } from "@/hooks/use-live-query";
+import { registrationStateLabel } from "@/lib/domain-labels";
 import { formatDateTime } from "@/lib/format";
 import { fetchMyRegistrations } from "@/lib/participant-api";
-import {
-  canSelfCheckIn,
-  canSubmitFeedback,
-  canViewEligibility,
-} from "@/lib/participant-rules";
 import { queryKeys } from "@/lib/query-keys";
 import { useAuth } from "@/providers/auth-provider";
 
+const REGISTRATION_PAGE_SIZE = 20;
+
+function showCheckInLink(state: RegistrationState): boolean {
+  return state === "Registered" || state === "CheckedIn";
+}
+
+function showFeedbackLink(state: RegistrationState): boolean {
+  return state === "Attended";
+}
+
+function showEligibilityLink(state: RegistrationState): boolean {
+  return state === "Attended" || state === "Absent" || state === "CheckedIn";
+}
+
 export default function MyRegistrationsPage() {
   const { token } = useAuth();
+  const [page, setPage] = useState(1);
+
+  const listParams = useMemo(
+    () => ({
+      page,
+      pageSize: REGISTRATION_PAGE_SIZE,
+    }),
+    [page],
+  );
 
   const registrationsQuery = useLiveQuery({
-    queryKey: queryKeys.registrations.mine(),
-    queryFn: () => fetchMyRegistrations(token!),
+    queryKey: queryKeys.registrations.mine(listParams),
+    queryFn: () => fetchMyRegistrations(token!, listParams),
     mode: "eventList",
     enabled: Boolean(token),
   });
 
-  const entries = registrationsQuery.data ?? [];
+  const items = useMemo(
+    () => registrationsQuery.data?.items ?? [],
+    [registrationsQuery.data?.items],
+  );
+  const total = registrationsQuery.data?.total ?? 0;
+  const totalPages = registrationsQuery.data?.totalPages ?? 1;
+  const pageSize = registrationsQuery.data?.pageSize ?? REGISTRATION_PAGE_SIZE;
 
   return (
     <div className="space-y-8">
@@ -57,7 +84,7 @@ export default function MyRegistrationsPage() {
         />
       ) : null}
 
-      {registrationsQuery.isSuccess && entries.length === 0 ? (
+      {registrationsQuery.isSuccess && items.length === 0 ? (
         <EmptyFailureBlock
           variant="empty"
           title="No registrations yet"
@@ -69,95 +96,86 @@ export default function MyRegistrationsPage() {
         />
       ) : null}
 
-      {entries.length > 0 ? (
-        <ul className="space-y-4">
-          {entries.map(({ event, registration }) => (
-            <li
-              key={registration.registrationId}
-              className="rounded-[var(--radius-lg)] border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] p-6"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="space-y-1">
-                  <Link
-                    href={`/events/${event.eventId}`}
-                    className="text-[length:var(--font-size-lg)] font-[var(--font-weight-semibold)] text-[var(--color-text-primary)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-action-focus-ring)]"
-                  >
-                    {event.name}
-                  </Link>
-                  <p className="text-[length:var(--font-size-sm)] text-[var(--color-text-secondary)]">
-                    {formatDateTime(event.startAt)}
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <EventStateBadge state={event.state} />
-                  <RegistrationStateBadge state={registration.state} />
-                </div>
-              </div>
+      {registrationsQuery.isSuccess && items.length > 0 ? (
+        <>
+          <ul className="space-y-4">
+            {items.map((item) => {
+              const statusLabel = registrationStateLabel(item.state);
 
-              {registration.waitlistPosition ? (
-                <p className="mt-3 text-[length:var(--font-size-sm)] text-[var(--color-text-secondary)]">
-                  Waitlist position {registration.waitlistPosition}
-                </p>
-              ) : null}
+              return (
+                <li
+                  key={item.registrationId}
+                  className="rounded-[var(--radius-lg)] border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] p-6"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <Link
+                        href={`/events/${item.eventId}`}
+                        className="text-[length:var(--font-size-lg)] font-[var(--font-weight-semibold)] text-[var(--color-text-primary)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-action-focus-ring)]"
+                      >
+                        {item.eventName}
+                      </Link>
+                      <p className="text-[length:var(--font-size-sm)] text-[var(--color-text-secondary)]">
+                        Registration updated {formatDateTime(item.updatedAt)}
+                      </p>
+                    </div>
+                    <RegistrationStateBadge state={item.state} />
+                  </div>
 
-              {registration.reasonText ? (
-                <p className="mt-3 text-[length:var(--font-size-sm)] text-[var(--color-text-secondary)]">
-                  {registration.reasonText}
-                </p>
-              ) : null}
+                  {statusLabel.hint ? (
+                    <p className="mt-3 text-[length:var(--font-size-sm)] text-[var(--color-text-secondary)]">
+                      {statusLabel.hint}
+                    </p>
+                  ) : null}
 
-              <div className="mt-4 flex flex-wrap gap-2">
-                {canSelfCheckIn(
-                  event.state,
-                  registration.state,
-                  event.ruleConfig.checkinOpenAt,
-                  event.ruleConfig.checkinCloseAt,
-                ) ? (
-                  <Button asChild size="sm" variant="secondary">
-                    <Link href={`/events/${event.eventId}/check-in`}>
-                      <ClipboardCheck className="h-4 w-4" aria-hidden />
-                      Check in
-                    </Link>
-                  </Button>
-                ) : null}
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {showCheckInLink(item.state) ? (
+                      <Button asChild size="sm" variant="secondary">
+                        <Link href={`/events/${item.eventId}/check-in`}>
+                          <ClipboardCheck className="h-4 w-4" aria-hidden />
+                          Check in
+                        </Link>
+                      </Button>
+                    ) : null}
 
-                {canSubmitFeedback(
-                  event.state,
-                  registration.state,
-                  event.ruleConfig.feedbackOpenAt,
-                  event.ruleConfig.feedbackCloseAt,
-                ) ? (
-                  <Button asChild size="sm" variant="secondary">
-                    <Link href={`/events/${event.eventId}/feedback`}>
-                      <MessageSquare className="h-4 w-4" aria-hidden />
-                      Feedback
-                    </Link>
-                  </Button>
-                ) : null}
+                    {showFeedbackLink(item.state) ? (
+                      <Button asChild size="sm" variant="secondary">
+                        <Link href={`/events/${item.eventId}/feedback`}>
+                          <MessageSquare className="h-4 w-4" aria-hidden />
+                          Feedback
+                        </Link>
+                      </Button>
+                    ) : null}
 
-                {canViewEligibility(event.state, registration.state) ? (
-                  <Button asChild size="sm" variant="ghost">
-                    <Link href={`/events/${event.eventId}/eligibility`}>
-                      <ShieldCheck className="h-4 w-4" aria-hidden />
-                      Eligibility
-                    </Link>
-                  </Button>
-                ) : null}
+                    {showEligibilityLink(item.state) ? (
+                      <Button asChild size="sm" variant="ghost">
+                        <Link href={`/events/${item.eventId}/eligibility`}>
+                          <ShieldCheck className="h-4 w-4" aria-hidden />
+                          Eligibility
+                        </Link>
+                      </Button>
+                    ) : null}
 
-                <Button asChild size="sm" variant="ghost">
-                  <Link href={`/events/${event.eventId}`}>
-                    Event details
-                    <ArrowRight className="h-4 w-4" aria-hidden />
-                  </Link>
-                </Button>
-              </div>
+                    <Button asChild size="sm" variant="ghost">
+                      <Link href={`/events/${item.eventId}`}>
+                        Event details
+                        <ArrowRight className="h-4 w-4" aria-hidden />
+                      </Link>
+                    </Button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
 
-              <p className="mt-3 text-[length:var(--font-size-xs)] text-[var(--color-text-secondary)]">
-                Updated {formatDateTime(registration.updatedAt)}
-              </p>
-            </li>
-          ))}
-        </ul>
+          <Pagination
+            page={page}
+            pageCount={Math.max(totalPages, 1)}
+            total={total}
+            pageSize={pageSize}
+            onPageChange={setPage}
+          />
+        </>
       ) : null}
     </div>
   );

@@ -81,7 +81,8 @@ export default function FeedbackPage() {
       }),
     onSuccess: (result) => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.registrations.status(eventId) });
-      void queryClient.invalidateQueries({ queryKey: queryKeys.registrations.mine() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.registrations.mineAll() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.events.listRoot() });
       void queryClient.invalidateQueries({ queryKey: queryKeys.eligibility.me(eventId) });
       push({
         title: "Feedback submitted",
@@ -125,13 +126,25 @@ export default function FeedbackPage() {
         }
       />
 
-      {eventQuery.isLoading ? <Skeleton className="h-64 w-full max-w-xl" /> : null}
+      {eventQuery.isLoading || registrationQuery.isLoading ? (
+        <Skeleton className="h-64 w-full max-w-xl" />
+      ) : null}
 
       {eventQuery.isError ? (
         <EmptyFailureBlock
           variant="failure"
           title="Could not load event"
           description={eventQuery.error.message}
+        />
+      ) : null}
+
+      {registrationQuery.isError ? (
+        <EmptyFailureBlock
+          variant="failure"
+          title="Could not load registration status"
+          description={registrationQuery.error.message}
+          actionLabel="Retry"
+          onAction={() => void registrationQuery.refetch()}
         />
       ) : null}
 
@@ -147,7 +160,7 @@ export default function FeedbackPage() {
         </Alert>
       ) : null}
 
-      {event && !feedbackMutation.isSuccess ? (
+      {event && registrationQuery.isSuccess && !feedbackMutation.isSuccess ? (
         <Form
           form={form}
           className="max-w-xl space-y-6 rounded-[var(--radius-lg)] border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] p-6"
