@@ -35,7 +35,7 @@ else
   agent_out="${RUNS_DIR}/${RID}-agent.txt"
   echo "==> Running implementer (${AGENT_BIN}, model=${model})"
   set +e
-  agent_invoke "$model" "$prompt" "$agent_out"
+  agent_invoke "$model" "$prompt" "$agent_out" "$SLICE_ID"
   agent_status=$?
   set -e
   echo "==> Agent exit: ${agent_status}"

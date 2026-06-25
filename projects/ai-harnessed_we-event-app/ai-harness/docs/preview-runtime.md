@@ -382,4 +382,5 @@ curl -sf -o /dev/null -w '%{http_code}\n' http://localhost:3000/
 
 - `docs/technical/13-docker-compose-local-runtime.md` — Compose services and ports
 - `docs/technical/10-local-development-setup.md` — Local runbook
+- `ai-harness/docs/browser-mcp.md` — Playwright MCP functional UI testing
 - `.env.example` — required environment variables

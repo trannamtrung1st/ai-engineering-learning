@@ -14,6 +14,17 @@ Cursor CLI + Ralph loop for spec-driven implementation. Keeps agent prompts thin
 
 `rg` (ripgrep) is optional — checks fall back to `grep` if absent.
 
+### Playwright MCP (frontend/test slices)
+
+One-time setup for browser functional testing:
+
+```bash
+npx playwright install chromium
+agent mcp enable playwright
+```
+
+Config lives in `.cursor/mcp.json`. Implementer agents on `frontend` and `test` slices receive `--approve-mcps` automatically. See [`docs/browser-mcp.md`](docs/browser-mcp.md).
+
 ## Auth (no .env file)
 
 ```bash
@@ -34,6 +45,7 @@ npm run aih:loop -- 50                     # max 50 iterations
 | `AIH_REVIEWER_MODEL` | `auto` | Reviewer model |
 | `AIH_SKIP_AGENT` | — | Skip implementer (`1`) |
 | `AIH_SKIP_REVIEW` | — | Skip AI review (`1`) |
+| `AIH_BROWSER_MCP` | — | Enable Playwright MCP on any slice (`1`) |
 
 Defaults live in `ai-harness/config/models.json`.
 
@@ -141,7 +153,10 @@ Gates run after every implementer iteration and can be run standalone:
 | Forbidden patterns (in-memory repos, SQLite, mock data) | `apps/` or `packages/` exists | Yes |
 | Slice completion artifacts | Ralph iteration with slice id | Yes |
 | `typecheck`, `lint`, `build` | `apps/` exists | Yes — root scripts must exist and pass |
-| `test` | `tests/` exists | No — runs only when root `test` script is defined |
+| `test:unit` | `apps/api` exists (and `apps/web` when it defines `test:unit`) | Yes |
+| `test:integration` | `apps/api` exists | Yes |
+| `test:e2e` | `tests/e2e` exists | Yes |
+| Slice `testRequirements` | Ralph iteration with slice id | Yes when field present |
 | DB health (Docker Compose) | `docker-compose.yml` exists | Yes when `apps/api` exists |
 | Stack startup (API health + web HTTP 200) | `apps/api` and `apps/web` exist | Yes — `verify-stack.sh --quick` via `run-checks.sh`; full poll with `AIH_VERIFY_STACK=1` |
 
@@ -157,6 +172,7 @@ On a docs-only repo (no `apps/`), `npm run aih:check` passes without code-qualit
 - `ai-harness/state/guardrails.md` — lessons (Ralph Signs)
 - `ai-harness/HARNESS-DESIGN.md` — component index
 - `ai-harness/docs/preview-runtime.md` — preview + startup verification spec
+- `ai-harness/docs/browser-mcp.md` — Playwright MCP functional testing
 
 ## Signals
 

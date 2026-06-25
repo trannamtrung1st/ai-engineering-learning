@@ -48,7 +48,8 @@ Also read when relevant to this slice:
 1. **Slice scope** — changes match slice; no unrelated edits
 2. **Forbidden patterns** — no in-memory repos, SQLite, mock fixtures, lorem ipsum (trust bundled checks; spot-check diff only)
 3. **Acceptance tags** — addressed with evidence visible in code/docs (static analysis, not runtime)
-4. **Audit** — critical paths where applicable
+4. **Test coverage** — for each path in `testRequirements` (unit, integration, component) and each `acceptanceTags` entry, confirm a matching test file exists and references the tag (read files only; trust computational gates for pass/fail)
+5. **Audit** — critical paths where applicable
 
 ## Bundled harness evidence
 

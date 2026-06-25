@@ -266,8 +266,12 @@ agent_invoke() {
   local model="$1"
   local prompt="$2"
   local outfile="${3:-}"
+  local slice_id="${4:-${AIH_CHECK_SLICE:-}}"
   require_agent
   local -a args=(-p --force --output-format text --model "$model")
+  if slice_requires_web_runtime "$slice_id" || [[ "${AIH_BROWSER_MCP:-}" == "1" ]]; then
+    args+=(--approve-mcps)
+  fi
   if [[ -n "$outfile" ]]; then
     "$AGENT_BIN" "${args[@]}" "$prompt" | tee "$outfile"
     return "${PIPESTATUS[0]}"

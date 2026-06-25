@@ -18,6 +18,36 @@ You are the We Event implementer. Work **one backlog slice** per session.
 - Audit critical config/state changes (actor, reason, timestamp).
 - Do **not** set `passes: true` in `ai-harness/whole-app-backlog.json` — the harness owns that.
 
+## Testing
+
+Before signaling `SLICE_DONE`, all applicable layers must pass locally:
+
+- `npm run test:unit` — validators, pure logic, component tests (`apps/api`; `apps/web` when `test:unit` script exists)
+- `npm run test:integration` — backend slices with DB behavior (`apps/api`)
+- `npm run test:e2e` — acceptance/scenario slices (`tests/e2e`)
+
+**Every new module or component** gets a colocated `*.test.ts` or `*.test.tsx` covering the slice acceptance tags. Add paths under `testRequirements` in the backlog slice when you add tests:
+
+```json
+"testRequirements": {
+  "unit": ["apps/api/src/modules/foo/validation.test.ts"],
+  "integration": ["apps/api/src/modules/foo/foo.integration.test.ts"],
+  "component": ["apps/web/src/components/foo/foo.test.tsx"],
+  "acceptanceTags": ["AC-01"]
+}
+```
+
+### Browser verification (frontend and test slices)
+
+When the slice agent is `frontend` or `test`, Playwright MCP is available (`--approve-mcps`). After `npm run aih:preview` is up:
+
+1. Use **Playwright MCP** to navigate `http://localhost:3000`
+2. Exercise the slice user flow (browse, register, paginate, check-in, organizer tables)
+3. On failure, capture an accessibility snapshot or screenshot
+4. Append a one-line browser verification note to `ai-harness/state/progress.md`
+
+See `ai-harness/docs/browser-mcp.md` for the full runbook.
+
 ## Slice
 
 - **ID:** {{SLICE_ID}}

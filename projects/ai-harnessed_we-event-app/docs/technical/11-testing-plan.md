@@ -65,12 +65,17 @@ Flow C:
 - Seeded deterministic fixture IDs where practical.
 
 ## 8. Validation and Guardrail Gates (Local)
-Minimum pre-merge gates:
-- all unit tests pass
-- all integration tests pass
-- scenario matrix acceptance suite passes
+Minimum pre-merge gates (enforced by `npm run aih:check` / `run-checks.sh`):
+
+- `npm run test:unit` — all unit and component tests pass (workspaces that define `test:unit`)
+- `npm run test:integration` — all integration tests pass (requires Postgres via `npm run aih:dev:db:up`)
+- `npm run test:e2e` — API scenario acceptance suite passes
+- slice `testRequirements` artifacts exist when defined in backlog
+- `typecheck`, `lint`, `build` pass across workspaces
 - no unresolved canonical-state naming drift
 - no missing audit event for critical operations
+
+Frontend/test slices: implementer uses Playwright MCP for interactive browser verification (see `ai-harness/docs/browser-mcp.md`). This is agent-driven, not a computational gate.
 
 ## 9. Defect Severity Model
 - **P0**: capacity overflow, duplicate active registration, unauthorized critical update.

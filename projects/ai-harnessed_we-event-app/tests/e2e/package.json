@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --import tsx --test --test-concurrency=1 'src/**/*.test.ts'"
+    "test:e2e": "node --import tsx --test --test-concurrency=1 'src/**/*.test.ts'",
+    "test": "npm run test:e2e"
   },
   "dependencies": {
     "@we-event/domain": "*"

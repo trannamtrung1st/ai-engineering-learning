@@ -63,6 +63,44 @@ check_artifacts() {
   done < <(echo "$slice_json" | jq -r '.completionArtifacts[]?')
 }
 
+check_slice_test_requirements() {
+  [[ -z "$SLICE_ID" ]] && return 0
+  local slice_json
+  slice_json="$(get_slice_json "$SLICE_ID")"
+  [[ -z "$slice_json" || "$slice_json" == "null" ]] && return 0
+  if ! echo "$slice_json" | jq -e '.testRequirements' >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local layer path tag
+  for layer in unit integration component; do
+    while IFS= read -r path; do
+      [[ -z "$path" ]] && continue
+      if [[ ! -e "$REPO_ROOT/$path" ]]; then
+        FAILURES+=("{\"type\":\"missing_test\",\"layer\":\"$layer\",\"path\":\"$path\"}")
+        PASS=false
+      fi
+    done < <(echo "$slice_json" | jq -r --arg layer "$layer" '.testRequirements[$layer][]?')
+  done
+
+  while IFS= read -r tag; do
+    [[ -z "$tag" ]] && continue
+    local found=false
+    local match
+    if command -v rg >/dev/null 2>&1; then
+      match="$(rg -l "$tag" apps/api tests/e2e apps/web \
+        -g '*.test.ts' -g '*.test.tsx' -g '*.integration.test.ts' 2>/dev/null | head -1 || true)"
+    else
+      match="$(grep -Ril "$tag" apps/api tests/e2e apps/web --include='*.test.ts' --include='*.test.tsx' --include='*.integration.test.ts' 2>/dev/null | head -1 || true)"
+    fi
+    [[ -n "$match" ]] && found=true
+    if [[ "$found" != true ]]; then
+      FAILURES+=("{\"type\":\"missing_test\",\"layer\":\"acceptance\",\"tag\":\"$tag\"}")
+      PASS=false
+    fi
+  done < <(echo "$slice_json" | jq -r '.testRequirements.acceptanceTags[]?')
+}
+
 check_npm_commands() {
   [[ -f package.json ]] || return 0
   local script optional active_when
@@ -183,6 +221,7 @@ check_stack_startup() {
 
 check_forbidden_patterns
 check_artifacts
+check_slice_test_requirements
 check_npm_commands
 refresh_preview_web_after_build
 check_db_runtime

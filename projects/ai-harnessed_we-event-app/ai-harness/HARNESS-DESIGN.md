@@ -9,15 +9,16 @@ Concise index for the 12 harness components. Referenced by `docs/technical/13-do
 | Model | `config/models.json`, env `AIH_MODEL` |
 | Prompt | `agents/implementer.prompt.md`, `agents/reviewer.prompt.md` |
 | Context | `config/context-map.json` — doc pointers per slice/agent |
-| Tools | Cursor CLI (`agent -p --force`) |
+| Tools | Cursor CLI (`agent -p --force`) + Playwright MCP on frontend/test slices |
 | Workflow | `workflows/ralph-loop.json` |
 | Memory/State | `state/progress.md`, `state/guardrails.md`, `whole-app-backlog.json` (in `ai-harness/`) |
-| Validation | `scripts/run-checks.sh` |
+| Validation | `scripts/run-checks.sh` — layered `test:unit`, `test:integration`, `test:e2e`, `testRequirements` |
 | Guardrails | `state/guardrails.md` + forbidden patterns in `ralph-loop.json` |
 | Observability | `generated/runs/<timestamp>-*.json` |
 | Feedback loops | Failed check/review → guardrails append → retry |
 | Human review | `workflows/human-review-checklist.md` |
 | Preview runtime | `scripts/preview-stack.sh`, `docs/preview-runtime.md` |
+| Browser MCP | `.cursor/mcp.json`, `docs/browser-mcp.md` |
 | Startup verification | `scripts/verify-stack.sh` |
 | Runtime | `ralph-loop.json` → `runtimeValidation` (db, api, web) |
 

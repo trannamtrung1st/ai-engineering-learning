@@ -48,7 +48,9 @@
       { "script": "typecheck", "activeWhen": "apps", "optional": false },
       { "script": "lint", "activeWhen": "apps", "optional": false },
       { "script": "build", "activeWhen": "apps", "optional": false },
-      { "script": "test", "activeWhen": "apps/api", "optional": false }
+      { "script": "test:unit", "activeWhen": "apps/api", "optional": false },
+      { "script": "test:integration", "activeWhen": "apps/api", "optional": false },
+      { "script": "test:e2e", "activeWhen": "tests/e2e", "optional": false }
     ],
     "runtimeValidation": {
       "db": {
