@@ -122,6 +122,32 @@ export async function findRegistrationById(
   return mapRegistration(result.rows[0] as Record<string, unknown>);
 }
 
+export async function findRegistrationByParticipant(
+  eventId: string,
+  participantId: string,
+  states: RegistrationState[],
+  client: Pool | PoolClient = getPool(),
+): Promise<RegistrationRow | null> {
+  if (states.length === 0) {
+    return null;
+  }
+
+  const result = await client.query(
+    `SELECT *
+     FROM registrations
+     WHERE event_id = $1
+       AND participant_id = $2
+       AND state = ANY($3::text[])
+     ORDER BY requested_at DESC
+     LIMIT 1`,
+    [eventId, participantId, states],
+  );
+  if (result.rowCount === 0) {
+    return null;
+  }
+  return mapRegistration(result.rows[0] as Record<string, unknown>);
+}
+
 export async function countSeatHolders(
   eventId: string,
   client: Pool | PoolClient,

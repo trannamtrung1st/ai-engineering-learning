@@ -142,7 +142,7 @@
     },
     {
       "id": "module-feedback-eligibility",
-      "passes": false,
+      "passes": true,
       "priority": 23,
       "phase": 2,
       "agent": "backend",
