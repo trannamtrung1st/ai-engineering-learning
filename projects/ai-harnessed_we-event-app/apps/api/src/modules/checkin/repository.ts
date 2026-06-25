@@ -16,6 +16,8 @@ import type {
   CheckinAuditInput,
   CheckinMethod,
   CheckinRecordRow,
+  ListAttendanceOptions,
+  ListAttendanceResult,
 } from "./types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -336,25 +338,14 @@ export async function finalizeAttendanceForEvent(
   }
 }
 
-export async function listAttendanceForEvent(
-  eventId: string,
-  client: Pool | PoolClient = getPool(),
-): Promise<AttendanceEntry[]> {
-  const result = await client.query(
-    `SELECT r.id AS registration_id,
-            r.participant_id,
-            r.state,
-            c.checkin_at,
-            c.method AS checkin_method
-     FROM registrations r
-     LEFT JOIN checkin_records c ON c.registration_id = r.id
-     WHERE r.event_id = $1
-       AND r.state IN ('Registered', 'CheckedIn', 'Attended', 'Absent')
-     ORDER BY r.requested_at ASC`,
-    [eventId],
-  );
+const ATTENDANCE_BASE_FROM = `FROM registrations r
+     LEFT JOIN checkin_records c ON c.registration_id = r.id`;
 
-  return result.rows.map((row) => ({
+const ATTENDANCE_BASE_WHERE = `WHERE r.event_id = $1
+       AND r.state IN ('Registered', 'CheckedIn', 'Attended', 'Absent')`;
+
+function mapAttendanceRow(row: Record<string, unknown>): AttendanceEntry {
+  return {
     registrationId: row.registration_id as string,
     participantId: row.participant_id as string,
     state: row.state as string,
@@ -362,5 +353,42 @@ export async function listAttendanceForEvent(
       ? (row.checkin_at as Date).toISOString()
       : null,
     checkinMethod: (row.checkin_method as CheckinMethod | null) ?? null,
-  }));
+  };
+}
+
+export async function listAttendanceForEvent(
+  eventId: string,
+  options: ListAttendanceOptions,
+  client: Pool | PoolClient = getPool(),
+): Promise<ListAttendanceResult> {
+  const nullsOrder =
+    options.sortDirection === "DESC" ? "NULLS LAST" : "NULLS FIRST";
+
+  const countResult = await client.query(
+    `SELECT COUNT(*)::int AS total
+     ${ATTENDANCE_BASE_FROM}
+     ${ATTENDANCE_BASE_WHERE}`,
+    [eventId],
+  );
+  const total = (countResult.rows[0] as { total: number }).total;
+
+  const result = await client.query(
+    `SELECT r.id AS registration_id,
+            r.participant_id,
+            r.state,
+            c.checkin_at,
+            c.method AS checkin_method
+     ${ATTENDANCE_BASE_FROM}
+     ${ATTENDANCE_BASE_WHERE}
+     ORDER BY ${options.sortColumn} ${options.sortDirection} ${nullsOrder}
+     LIMIT $2 OFFSET $3`,
+    [eventId, options.limit, options.offset],
+  );
+
+  return {
+    items: result.rows.map((row) =>
+      mapAttendanceRow(row as Record<string, unknown>),
+    ),
+    total,
+  };
 }

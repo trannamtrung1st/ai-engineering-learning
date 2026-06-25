@@ -1,4 +1,10 @@
 import { ApiError } from "../../errors/api-error.js";
+import {
+  buildPaginatedResult,
+  parsePagination,
+  parseSort,
+  type PaginatedResult,
+} from "../../pagination/index.js";
 import { findEventById } from "../event/repository.js";
 import {
   findActiveRegistration,
@@ -9,7 +15,12 @@ import {
   listAttendanceForEvent,
   recordCheckin,
 } from "./repository.js";
-import type { ActorContext, StaffCheckinInput } from "./types.js";
+import type {
+  ActorContext,
+  AttendanceEntry,
+  ListAttendanceQuery,
+  StaffCheckinInput,
+} from "./types.js";
 import {
   assertAuditMetadata,
   assertCheckinWindowOpen,
@@ -92,10 +103,39 @@ export class CheckinService {
     );
   }
 
-  async listAttendance(eventId: string) {
+  async listAttendance(
+    eventId: string,
+    query: ListAttendanceQuery = {},
+  ): Promise<PaginatedResult<AttendanceEntry>> {
     await this.requireEvent(eventId);
-    const attendance = await listAttendanceForEvent(eventId);
-    return { attendance };
+
+    const pagination = parsePagination(query, {
+      defaultPageSize: 20,
+      maxPageSize: 100,
+    });
+
+    const sort = parseSort(
+      query.sort,
+      {
+        checkinAt: "c.checkin_at",
+        requestedAt: "r.requested_at",
+        state: "r.state",
+      },
+      "checkinAt",
+    );
+
+    const effectiveSort = query.sort?.trim()
+      ? sort
+      : { column: "c.checkin_at", direction: "DESC" as const };
+
+    const { items, total } = await listAttendanceForEvent(eventId, {
+      sortColumn: effectiveSort.column,
+      sortDirection: effectiveSort.direction,
+      limit: pagination.pageSize,
+      offset: pagination.offset,
+    });
+
+    return buildPaginatedResult(items, total, pagination);
   }
 
   private async requireEvent(eventId: string) {

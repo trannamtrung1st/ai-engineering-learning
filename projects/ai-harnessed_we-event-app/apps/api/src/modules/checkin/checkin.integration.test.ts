@@ -321,4 +321,100 @@ describe("checkin integration", () => {
     assert.equal(result.method, "Self");
     assert.equal(result.operatorId, null);
   });
+
+  it("AC-13: paginated attendance list returns envelope metadata", async () => {
+    const windows = checkinWindows();
+    const ctx = {
+      actorId: ORG_ADMIN_ID,
+      actorRole: "OrganizerAdmin" as const,
+      action: "test",
+    };
+
+    const draft = await createEvent(
+      {
+        name: `Attendance Pagination ${randomUUID()}`,
+        startAt: windows.open,
+        endAt: windows.close,
+        ruleConfig: {
+          capacity: 20,
+          registrationOpenAt: windows.open,
+          registrationCloseAt: windows.close,
+          checkinOpenAt: windows.open,
+          checkinCloseAt: windows.close,
+          feedbackOpenAt: windows.open,
+          feedbackCloseAt: windows.close,
+        },
+      },
+      ORG_ADMIN_ID,
+      "OrganizerAdmin",
+      ORG_ID,
+    );
+
+    await transitionEventState(draft.id, "Published", {
+      ...ctx,
+      action: "event.published",
+    });
+    await transitionEventState(draft.id, "RegistrationOpen", {
+      ...ctx,
+      action: "event.registration_opened",
+    });
+
+    const registrationIds: string[] = [];
+    for (let index = 0; index < 5; index += 1) {
+      const row = await createRegistration(draft.id, randomUUID(), {
+        actorId: ORG_ADMIN_ID,
+        actorRole: "Participant",
+      });
+      registrationIds.push(row.id);
+    }
+
+    await transitionEventState(draft.id, "InProgress", {
+      ...ctx,
+      action: "event.started",
+    });
+
+    const staffContext = {
+      actorId: ORG_ADMIN_ID,
+      actorRole: "OrganizerAdmin" as const,
+    };
+
+    await checkinService.staffCheckin(
+      draft.id,
+      { registrationId: registrationIds[0]! },
+      staffContext,
+    );
+    await checkinService.staffCheckin(
+      draft.id,
+      { registrationId: registrationIds[1]! },
+      staffContext,
+    );
+
+    const page = await checkinService.listAttendance(draft.id, {
+      page: "1",
+      pageSize: "3",
+    });
+
+    assert.equal(page.page, 1);
+    assert.equal(page.pageSize, 3);
+    assert.equal(page.total, 5);
+    assert.equal(page.totalPages, 2);
+    assert.equal(page.items.length, 3);
+
+    const beyond = await checkinService.listAttendance(draft.id, {
+      page: "99",
+      pageSize: "3",
+    });
+    assert.deepEqual(beyond.items, []);
+    assert.equal(beyond.total, 5);
+    assert.equal(beyond.totalPages, 2);
+
+    const sorted = await checkinService.listAttendance(draft.id, {
+      page: "1",
+      pageSize: "5",
+      sort: "checkinAt:desc",
+    });
+    assert.equal(sorted.items.filter((item) => item.checkinAt !== null).length, 2);
+    assert.ok(sorted.items[0]?.checkinAt);
+    assert.ok(sorted.items[1]?.checkinAt);
+  });
 });

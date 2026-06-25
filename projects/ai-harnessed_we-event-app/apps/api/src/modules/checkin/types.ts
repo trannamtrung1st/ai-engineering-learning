@@ -39,3 +39,21 @@ export interface AttendanceEntry {
   checkinAt: string | null;
   checkinMethod: CheckinMethod | null;
 }
+
+export interface ListAttendanceQuery {
+  page?: string;
+  pageSize?: string;
+  sort?: string;
+}
+
+export interface ListAttendanceOptions {
+  sortColumn: string;
+  sortDirection: "ASC" | "DESC";
+  limit: number;
+  offset: number;
+}
+
+export interface ListAttendanceResult {
+  items: AttendanceEntry[];
+  total: number;
+}

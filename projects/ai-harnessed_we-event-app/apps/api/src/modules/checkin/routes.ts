@@ -8,7 +8,7 @@ import {
 } from "../../idempotency/index.js";
 import { ensureCheckinSchema } from "./repository.js";
 import { checkinService } from "./service.js";
-import type { StaffCheckinInput } from "./types.js";
+import type { ListAttendanceQuery, StaffCheckinInput } from "./types.js";
 
 interface EventParams {
   eventId: string;
@@ -82,13 +82,13 @@ export const checkinRoutes: FastifyPluginAsync = async (app) => {
       },
     );
 
-    staffApp.get<{ Params: EventParams }>(
+    staffApp.get<{ Params: EventParams; Querystring: ListAttendanceQuery }>(
       "/events/:eventId/attendance",
       async (request) => {
         const actor = getActor(request);
         const { eventId } = request.params;
         assertEventScope(actor, eventId);
-        return checkinService.listAttendance(eventId);
+        return checkinService.listAttendance(eventId, request.query);
       },
     );
   });
