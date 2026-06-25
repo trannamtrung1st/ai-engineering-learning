@@ -4,7 +4,7 @@ import { getActor, requireRole } from "../../auth/middleware.js";
 import { ApiError } from "../../errors/api-error.js";
 import { ensureEligibilitySchema } from "./repository.js";
 import { eligibilityService } from "./service.js";
-import type { RevokeEligibilityInput, ListEligibilityQuery } from "./types.js";
+import type { RevokeEligibilityInput, ListEligibilityQuery, ExportEventQuery } from "./types.js";
 
 interface EventParams {
   eventId: string;
@@ -57,6 +57,43 @@ export const eligibilityRoutes: FastifyPluginAsync = async (app) => {
             actorRole: actor.role,
           },
         );
+      },
+    );
+
+    staffApp.get<{ Params: EventParams; Querystring: ExportEventQuery }>(
+      "/events/:eventId/export",
+      async (request, reply) => {
+        const actor = getActor(request);
+        const { eventId } = request.params;
+        assertEventScope(actor, eventId);
+
+        const exportType = request.query.type?.trim() || "eligibility";
+        if (exportType !== "eligibility") {
+          throw new ApiError({
+            code: "INVALID_INPUT",
+            message: "Unsupported export type.",
+            statusCode: 400,
+            details: { type: exportType },
+          });
+        }
+
+        const result = await eligibilityService.exportEligibilityCsv(
+          eventId,
+          request.query,
+          {
+            actorId: actor.sub,
+            actorRole: actor.role,
+          },
+        );
+
+        return reply
+          .header("Content-Type", "text/csv; charset=utf-8")
+          .header(
+            "Content-Disposition",
+            `attachment; filename="${result.filename}"`,
+          )
+          .header("X-Export-Row-Count", String(result.rowCount))
+          .send(result.csv);
       },
     );
   });

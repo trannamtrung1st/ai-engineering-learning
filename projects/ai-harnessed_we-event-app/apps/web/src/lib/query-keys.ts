@@ -49,6 +49,10 @@ export const queryKeys = {
     ) => ["organizer", "eligibility", eventId, params ?? {}] as const,
     audit: (eventId: string, params?: { page?: number }) =>
       ["organizer", "audit", eventId, params ?? {}] as const,
+    statusHistory: (
+      eventId: string,
+      params?: { page?: number; registrationId?: string },
+    ) => ["organizer", "status-history", eventId, params ?? {}] as const,
     checkIn: (eventId: string) => ["organizer", "check-in", eventId] as const,
   },
 } as const;

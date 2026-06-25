@@ -174,6 +174,39 @@ export async function listRegistrationsForEligibilityPaginated(
   };
 }
 
+export async function listRegistrationsForEligibilityExport(
+  eventId: string,
+  options: Pick<ListEligibilityRegistrationsOptions, "eligibility" | "sortColumn" | "sortDirection">,
+  client: Pool | PoolClient = getPool(),
+): Promise<RegistrationRow[]> {
+  const params: unknown[] = [eventId, ELIGIBILITY_REGISTRATION_STATES];
+  const conditions = ["r.event_id = $1", "r.state = ANY($2::text[])"];
+  let paramIndex = 3;
+
+  if (options.eligibility) {
+    conditions.push(
+      `COALESCE(ce.result, 'PendingEvaluation') = $${paramIndex++}`,
+    );
+    params.push(options.eligibility);
+  }
+
+  const where = `WHERE ${conditions.join(" AND ")}`;
+  const join = `LEFT JOIN certificate_eligibilities ce ON ce.registration_id = r.id`;
+
+  const result = await client.query(
+    `SELECT r.*
+     FROM registrations r
+     ${join}
+     ${where}
+     ORDER BY ${options.sortColumn} ${options.sortDirection}`,
+    params,
+  );
+
+  return result.rows.map((row) =>
+    mapRegistrationRow(row as Record<string, unknown>),
+  );
+}
+
 export async function listEligibilitiesForEvent(
   eventId: string,
   client: Pool | PoolClient = getPool(),

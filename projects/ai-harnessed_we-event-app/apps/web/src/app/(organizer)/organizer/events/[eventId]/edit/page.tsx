@@ -74,6 +74,7 @@ export default function EditEventPage() {
           endAt: event.endAt,
           ruleConfig: event.ruleConfig,
         }}
+        eventState={event.state}
         submitLabel="Save changes"
         onSubmit={async (values) => {
           await updateEvent(token!, eventId, toUpdateEventPayload(values));

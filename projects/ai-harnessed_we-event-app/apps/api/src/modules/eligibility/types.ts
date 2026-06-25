@@ -43,6 +43,11 @@ export interface ListEligibilityQuery {
   eligibility?: string;
 }
 
+export interface ExportEventQuery {
+  type?: string;
+  eligibility?: string;
+}
+
 export interface RevokeEligibilityInput {
   reasonCode: string;
   reasonText: string;

@@ -26,7 +26,11 @@ import { useToast } from "@/components/ui/toast";
 import { useLiveQuery } from "@/hooks/use-live-query";
 import { ApiClientError } from "@/lib/api-client";
 import { formatDateTime } from "@/lib/format";
-import { fetchEligibility, revokeEligibility } from "@/lib/organizer-api";
+import {
+  downloadEligibilityExport,
+  fetchEligibility,
+  revokeEligibility,
+} from "@/lib/organizer-api";
 import { queryKeys } from "@/lib/query-keys";
 import { useOrganizerAuth } from "@/providers/organizer-auth-provider";
 
@@ -56,6 +60,7 @@ export default function EventEligibilityPage() {
   const [revokeTarget, setRevokeTarget] = useState<string | null>(null);
   const [reasonCode, setReasonCode] = useState("ORGANIZER_REVOKE");
   const [reasonText, setReasonText] = useState("");
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     setPage(1);
@@ -115,6 +120,41 @@ export default function EventEligibilityPage() {
       <PageHeader
         title="Eligibility"
         subtitle="Review certificate eligibility outcomes with reason visibility."
+        actions={
+          <Button
+            size="sm"
+            variant="secondary"
+            loading={exporting}
+            disabled={exporting}
+            onClick={async () => {
+              setExporting(true);
+              try {
+                const result = await downloadEligibilityExport(token!, eventId, {
+                  eligibility: segment === "all" ? undefined : segment,
+                });
+                push({
+                  title: "Export ready",
+                  description:
+                    result.rowCount > 0
+                      ? `Downloaded ${result.rowCount} eligibility rows.`
+                      : `Downloaded ${result.filename}.`,
+                  variant: "success",
+                });
+              } catch (error) {
+                push({
+                  title: "Export failed",
+                  description:
+                    error instanceof ApiClientError ? error.message : "Try again.",
+                  variant: "error",
+                });
+              } finally {
+                setExporting(false);
+              }
+            }}
+          >
+            Export CSV
+          </Button>
+        }
       />
 
       <Tabs

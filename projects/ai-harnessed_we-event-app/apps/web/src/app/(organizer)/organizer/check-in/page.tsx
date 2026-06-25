@@ -1,37 +1,36 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import { EventStateBadge } from "@/components/participant/event-state-badge";
+import { ServerPaginatedTable } from "@/components/organizer/server-paginated-table";
 import { EmptyFailureBlock } from "@/components/layout/empty-failure-block";
 import { PageHeader } from "@/components/layout/page-header";
 import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useLiveQuery } from "@/hooks/use-live-query";
 import { formatDateTime } from "@/lib/format";
-import { fetchOrganizerEvents } from "@/lib/organizer-api";
-import { filterEventsForScope } from "@/lib/organizer-rules";
+import { fetchScopedOrganizerEvents } from "@/lib/organizer-events-list";
 import { queryKeys } from "@/lib/query-keys";
 import { useOrganizerAuth } from "@/providers/organizer-auth-provider";
 
+const PAGE_SIZE = 12;
+
 export default function OrganizerCheckInHubPage() {
   const { token, session } = useOrganizerAuth();
+  const [page, setPage] = useState(1);
+
+  const listParams = useMemo(
+    () => ({ page, pageSize: PAGE_SIZE }),
+    [page],
+  );
 
   const eventsQuery = useLiveQuery({
-    queryKey: queryKeys.organizer.events.list({ page: 1, pageSize: 100 }),
-    queryFn: () => fetchOrganizerEvents(token!, { page: 1, pageSize: 100 }),
+    queryKey: queryKeys.organizer.events.list(listParams),
+    queryFn: () => fetchScopedOrganizerEvents(token!, session!, listParams),
     mode: "eventList",
-    enabled: Boolean(token),
+    enabled: Boolean(token && session),
   });
-
-  const events = useMemo(() => {
-    const items = eventsQuery.data?.items ?? [];
-    if (!session) {
-      return items;
-    }
-    return filterEventsForScope(session, items);
-  }, [eventsQuery.data?.items, session]);
 
   return (
     <div className="space-y-8">
@@ -39,14 +38,6 @@ export default function OrganizerCheckInHubPage() {
         title="Check-in"
         subtitle="Open the check-in console for an assigned event."
       />
-
-      {eventsQuery.isLoading ? (
-        <div className="space-y-3">
-          {Array.from({ length: 3 }).map((_, index) => (
-            <Skeleton key={index} className="h-20 w-full" />
-          ))}
-        </div>
-      ) : null}
 
       {eventsQuery.isError ? (
         <EmptyFailureBlock
@@ -58,21 +49,12 @@ export default function OrganizerCheckInHubPage() {
         />
       ) : null}
 
-      {eventsQuery.isSuccess && events.length === 0 ? (
-        <EmptyFailureBlock
-          variant="empty"
-          title="No events available"
-          description="Assign events to staff or create events as an admin."
-        />
-      ) : null}
-
-      {events.length > 0 ? (
-        <ul className="space-y-3">
-          {events.map((event) => (
-            <li
-              key={event.eventId}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-[var(--radius-lg)] border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] p-4"
-            >
+      <ServerPaginatedTable
+        columns={[
+          {
+            id: "name",
+            header: "Event",
+            cell: (event) => (
               <div className="space-y-1">
                 <p className="font-[var(--font-weight-semibold)] text-[var(--color-text-primary)]">
                   {event.name}
@@ -81,18 +63,37 @@ export default function OrganizerCheckInHubPage() {
                   {formatDateTime(event.startAt)} · {event.location || "—"}
                 </p>
               </div>
-              <div className="flex items-center gap-3">
-                <EventStateBadge state={event.state} />
-                <Button asChild size="sm">
-                  <Link href={`/organizer/events/${event.eventId}/check-in`}>
-                    Open console
-                  </Link>
-                </Button>
-              </div>
-            </li>
-          ))}
-        </ul>
-      ) : null}
+            ),
+          },
+          {
+            id: "state",
+            header: "State",
+            cell: (event) => <EventStateBadge state={event.state} />,
+          },
+          {
+            id: "actions",
+            header: "",
+            cell: (event) => (
+              <Button asChild size="sm">
+                <Link href={`/organizer/events/${event.eventId}/check-in`}>
+                  Open console
+                </Link>
+              </Button>
+            ),
+          },
+        ]}
+        items={eventsQuery.data?.items ?? []}
+        rowKey={(event) => event.eventId}
+        page={page}
+        pageSize={eventsQuery.data?.pageSize ?? PAGE_SIZE}
+        total={eventsQuery.data?.total ?? 0}
+        totalPages={eventsQuery.data?.totalPages ?? 1}
+        onPageChange={setPage}
+        isLoading={eventsQuery.isLoading}
+        isError={false}
+        emptyTitle="No events available"
+        emptyDescription="Assign events to staff or create events as an admin."
+      />
     </div>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useForm } from "react-hook-form";
+import type { EventState } from "@we-event/domain";
 import { z } from "zod";
 
 import { Alert } from "@/components/ui/alert";
@@ -15,7 +16,7 @@ import {
   defaultEventWindowOffsets,
   isoToDatetimeLocal,
 } from "@/lib/datetime-local";
-import { DEFAULT_ORGANIZATION_ID } from "@/lib/organizer-api";
+import { DEFAULT_ORGANIZATION_ID, type UpdateEventInput } from "@/lib/organizer-api";
 
 const eventFormSchema = z
   .object({
@@ -33,6 +34,8 @@ const eventFormSchema = z
     feedbackRequired: z.boolean(),
     feedbackOpenAt: z.string().min(1, "Feedback open time is required."),
     feedbackCloseAt: z.string().min(1, "Feedback close time is required."),
+    reasonCode: z.string().optional(),
+    reasonText: z.string().optional(),
   })
   .superRefine((values, ctx) => {
     const start = new Date(values.startAt).getTime();
@@ -114,8 +117,19 @@ function buildDefaults(initial?: EventFormInitialValues): EventFormValues {
     feedbackRequired: rule?.feedbackRequired ?? true,
     feedbackOpenAt: isoToDatetimeLocal(rule?.feedbackOpenAt ?? windows.feedbackOpenAt),
     feedbackCloseAt: isoToDatetimeLocal(rule?.feedbackCloseAt ?? windows.feedbackCloseAt),
+    reasonCode: "",
+    reasonText: "",
   };
 }
+
+const POST_REGISTRATION_OPEN_STATES: EventState[] = [
+  "RegistrationOpen",
+  "RegistrationClosed",
+  "InProgress",
+  "Completed",
+  "Archived",
+  "Cancelled",
+];
 
 export function toCreateEventPayload(values: EventFormValues) {
   return {
@@ -139,8 +153,8 @@ export function toCreateEventPayload(values: EventFormValues) {
   };
 }
 
-export function toUpdateEventPayload(values: EventFormValues) {
-  return {
+export function toUpdateEventPayload(values: EventFormValues): UpdateEventInput {
+  const payload: UpdateEventInput = {
     name: values.name.trim(),
     description: values.description?.trim() || undefined,
     location: values.location?.trim() || undefined,
@@ -158,21 +172,38 @@ export function toUpdateEventPayload(values: EventFormValues) {
       feedbackCloseAt: datetimeLocalToIso(values.feedbackCloseAt),
     },
   };
+
+  const reasonCode = values.reasonCode?.trim();
+  const reasonText = values.reasonText?.trim();
+  if (reasonCode && reasonText) {
+    payload.reasonCode = reasonCode;
+    payload.reasonText = reasonText;
+  }
+
+  return payload;
 }
 
 export interface EventFormProps {
   initial?: EventFormInitialValues;
+  eventState?: EventState;
   submitLabel: string;
   onSubmit: (values: EventFormValues) => Promise<void>;
 }
 
-export function EventForm({ initial, submitLabel, onSubmit }: EventFormProps) {
+export function EventForm({
+  initial,
+  eventState,
+  submitLabel,
+  onSubmit,
+}: EventFormProps) {
   const form = useForm<EventFormValues>({
     defaultValues: buildDefaults(initial),
     mode: "onBlur",
   });
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const auditReasonRequired =
+    eventState !== undefined && POST_REGISTRATION_OPEN_STATES.includes(eventState);
 
   return (
     <Form
@@ -192,6 +223,20 @@ export function EventForm({ initial, submitLabel, onSubmit }: EventFormProps) {
               }
             }
             return;
+          }
+          if (auditReasonRequired) {
+            if (!parsed.data.reasonCode?.trim()) {
+              form.setError("reasonCode", {
+                message: "Reason code is required for audited rule changes.",
+              });
+              return;
+            }
+            if (!parsed.data.reasonText?.trim()) {
+              form.setError("reasonText", {
+                message: "Reason is required for audited rule changes.",
+              });
+              return;
+            }
           }
           await onSubmit(parsed.data);
         } catch (error) {
@@ -434,6 +479,46 @@ export function EventForm({ initial, submitLabel, onSubmit }: EventFormProps) {
           />
         </div>
       </section>
+
+      {auditReasonRequired ? (
+        <section className="space-y-4">
+          <h2 className="text-[length:var(--font-size-lg)] font-[var(--font-weight-semibold)]">
+            Audit reason
+          </h2>
+          <p className="text-[length:var(--font-size-sm)] text-[var(--color-text-secondary)]">
+            Critical rule changes after registration opens require a reason code and
+            explanation for the audit log.
+          </p>
+          <FormField
+            name="reasonCode"
+            control={form.control}
+            label="Reason code"
+            required
+            render={({ field, fieldState }) => (
+              <Input
+                id={String(field.name)}
+                placeholder="CAPACITY_INCREASE"
+                error={Boolean(fieldState.error)}
+                {...field}
+              />
+            )}
+          />
+          <FormField
+            name="reasonText"
+            control={form.control}
+            label="Reason"
+            required
+            render={({ field, fieldState }) => (
+              <Textarea
+                id={String(field.name)}
+                rows={3}
+                error={Boolean(fieldState.error)}
+                {...field}
+              />
+            )}
+          />
+        </section>
+      ) : null}
 
       <Button type="submit" loading={submitting} disabled={submitting}>
         {submitting ? "Saving…" : submitLabel}

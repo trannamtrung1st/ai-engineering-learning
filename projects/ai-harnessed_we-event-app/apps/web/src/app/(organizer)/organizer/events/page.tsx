@@ -21,8 +21,7 @@ import {
 } from "@/components/ui/select";
 import { useLiveQuery } from "@/hooks/use-live-query";
 import { formatDateTime } from "@/lib/format";
-import { fetchOrganizerEvents } from "@/lib/organizer-api";
-import { filterEventsForScope } from "@/lib/organizer-rules";
+import { fetchScopedOrganizerEvents } from "@/lib/organizer-events-list";
 import { queryKeys } from "@/lib/query-keys";
 import { useOrganizerAuth } from "@/providers/organizer-auth-provider";
 
@@ -67,19 +66,12 @@ export default function OrganizerEventsPage() {
 
   const eventsQuery = useLiveQuery({
     queryKey: queryKeys.organizer.events.list(listParams),
-    queryFn: () => fetchOrganizerEvents(token!, listParams),
+    queryFn: () => fetchScopedOrganizerEvents(token!, session!, listParams),
     mode: "eventList",
-    enabled: Boolean(token),
+    enabled: Boolean(token && session),
   });
 
-  const scopedItems = useMemo(() => {
-    const items = eventsQuery.data?.items ?? [];
-    if (!session) {
-      return items;
-    }
-    return filterEventsForScope(session, items);
-  }, [eventsQuery.data?.items, session]);
-
+  const items = eventsQuery.data?.items ?? [];
   const total = eventsQuery.data?.total ?? 0;
   const totalPages = eventsQuery.data?.totalPages ?? 1;
   const pageSize = eventsQuery.data?.pageSize ?? EVENT_PAGE_SIZE;
@@ -175,7 +167,7 @@ export default function OrganizerEventsPage() {
             ),
           },
         ]}
-        items={scopedItems}
+        items={items}
         rowKey={(event) => event.eventId}
         page={page}
         pageSize={pageSize}

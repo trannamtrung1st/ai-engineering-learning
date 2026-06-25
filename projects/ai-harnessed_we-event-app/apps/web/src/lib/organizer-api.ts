@@ -4,7 +4,8 @@ import type {
   RegistrationState,
 } from "@we-event/domain";
 
-import { apiFetch } from "@/lib/api-client";
+import { ApiClientError, apiFetch } from "@/lib/api-client";
+import { downloadBlob } from "@/lib/export-csv";
 import type {
   EventListItem,
   EventRuleConfig,
@@ -112,6 +113,19 @@ export interface AuditLogEntry {
   occurredAt: string;
 }
 
+export interface StatusHistoryEntry {
+  id: string;
+  registrationId: string;
+  action: string;
+  actorId: string;
+  actorRole: string;
+  reasonCode: string | null;
+  reasonText: string | null;
+  beforeState: string | null;
+  afterState: string | null;
+  occurredAt: string;
+}
+
 export interface EventDashboardMetrics {
   registrations: number;
   registeredSeats: number;
@@ -136,6 +150,11 @@ export interface ListQueryParams {
   pageSize?: number;
   sort?: string;
   state?: string;
+  eligibility?: CertificateEligibilityState;
+  registrationId?: string;
+}
+
+export interface DownloadEligibilityExportParams {
   eligibility?: CertificateEligibilityState;
 }
 
@@ -385,6 +404,76 @@ export function fetchAuditLogs(
     `/events/${eventId}/audit-logs${query}`,
     { token },
   );
+}
+
+export function fetchStatusHistory(
+  token: string,
+  eventId: string,
+  params: ListQueryParams = {},
+): Promise<PaginatedResult<StatusHistoryEntry>> {
+  const query = buildQueryString({
+    page: params.page,
+    pageSize: params.pageSize,
+    sort: params.sort,
+    registrationId: params.registrationId,
+  });
+  return apiFetch<PaginatedResult<StatusHistoryEntry>>(
+    `/events/${eventId}/status-history${query}`,
+    { token },
+  );
+}
+
+export async function downloadEligibilityExport(
+  token: string,
+  eventId: string,
+  params: DownloadEligibilityExportParams = {},
+): Promise<{ filename: string; rowCount: number }> {
+  const query = buildQueryString({
+    type: "eligibility",
+    eligibility: params.eligibility,
+  });
+
+  const normalizedPath = `/api/v1/events/${eventId}/export${query}`;
+  const url =
+    typeof window !== "undefined"
+      ? normalizedPath
+      : `${(process.env.API_BASE_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001").replace(/\/$/, "")}${normalizedPath}`;
+
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "text/csv",
+    },
+  });
+
+  if (!response.ok) {
+    let message = `Export failed (${response.status})`;
+    try {
+      const body = (await response.json()) as {
+        error?: { message?: string; code?: string };
+      };
+      message = body.error?.message ?? message;
+    } catch {
+      // Non-JSON error body — keep default message.
+    }
+    throw new ApiClientError(message, response.status);
+  }
+
+  const blob = await response.blob();
+  const disposition = response.headers.get("Content-Disposition");
+  const filename =
+    disposition?.match(/filename="([^"]+)"/)?.[1] ??
+    `eligibility-${eventId}.csv`;
+
+  downloadBlob(filename, blob);
+
+  const rowCountHeader = response.headers.get("X-Export-Row-Count");
+  const rowCount = rowCountHeader ? Number.parseInt(rowCountHeader, 10) : NaN;
+
+  return {
+    filename,
+    rowCount: Number.isFinite(rowCount) ? rowCount : 0,
+  };
 }
 
 async function fetchCount(

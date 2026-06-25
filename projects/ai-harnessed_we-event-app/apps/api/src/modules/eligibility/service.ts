@@ -18,6 +18,7 @@ import {
 import {
   findEligibilityByRegistrationId,
   listEligibilitiesForEvent,
+  listRegistrationsForEligibilityExport,
   listRegistrationsForEligibilityPaginated,
   persistEligibilityEvaluation,
   revokeEligibility,
@@ -25,6 +26,7 @@ import {
 import type {
   ActorContext,
   EligibilityListEntry,
+  ExportEventQuery,
   ListEligibilityQuery,
   RevokeEligibilityInput,
 } from "./types.js";
@@ -33,6 +35,7 @@ import {
   assertRevokeAllowed,
   evaluateEligibilityRules,
 } from "./validation.js";
+import { buildCsv } from "./csv.js";
 
 const ELIGIBILITY_PARTICIPANT_STATES = ["Attended", "Absent"] as const;
 
@@ -155,6 +158,93 @@ export class EligibilityService {
     }
 
     return buildPaginatedResult(entries, total, pagination);
+  }
+
+  async exportEligibilityCsv(
+    eventId: string,
+    query: ExportEventQuery,
+    context: ActorContext,
+  ): Promise<{ csv: string; filename: string; rowCount: number }> {
+    const event = await this.requireEvent(eventId);
+
+    let eligibilityFilter: CertificateEligibilityState | undefined;
+    if (query.eligibility) {
+      if (
+        !CERTIFICATE_ELIGIBILITY_STATES.includes(
+          query.eligibility as CertificateEligibilityState,
+        )
+      ) {
+        throw new ApiError({
+          code: "INVALID_INPUT",
+          message: "Invalid eligibility filter.",
+          statusCode: 400,
+          details: { eligibility: query.eligibility },
+        });
+      }
+      eligibilityFilter = query.eligibility as CertificateEligibilityState;
+    }
+
+    const registrations = await listRegistrationsForEligibilityExport(eventId, {
+      eligibility: eligibilityFilter,
+      sortColumn: "r.participant_id",
+      sortDirection: "ASC",
+    });
+
+    const existing = await listEligibilitiesForEvent(eventId);
+    const byRegistration = new Map(
+      existing.map((row) => [row.registrationId, row]),
+    );
+
+    const rows: string[][] = [
+      [
+        "participantId",
+        "registrationId",
+        "registrationState",
+        "eligibility",
+        "reason",
+        "evaluatedAt",
+        "overriddenBy",
+      ],
+    ];
+
+    for (const registration of registrations) {
+      const feedback = await findFeedbackByRegistrationId(registration.id);
+      const evaluation = evaluateEligibilityRules(
+        registration,
+        event,
+        feedback,
+      );
+
+      const stored = byRegistration.get(registration.id);
+      const needsRefresh =
+        !stored ||
+        stored.result === "PendingEvaluation" ||
+        (stored.result !== "Revoked" && stored.result !== evaluation.result);
+
+      const row = needsRefresh
+        ? await persistEligibilityEvaluation(registration, evaluation, context)
+        : stored;
+
+      rows.push([
+        registration.participantId,
+        registration.id,
+        registration.state,
+        row.result,
+        row.reasonText ?? row.reasonCode ?? "",
+        row.evaluatedAt ?? "",
+        row.overriddenBy ?? "",
+      ]);
+    }
+
+    const filename = eligibilityFilter
+      ? `eligibility-${eventId}-${eligibilityFilter.toLowerCase()}.csv`
+      : `eligibility-${eventId}.csv`;
+
+    return {
+      csv: buildCsv(rows),
+      filename,
+      rowCount: rows.length - 1,
+    };
   }
 
   async revoke(
