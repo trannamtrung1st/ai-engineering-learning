@@ -32,6 +32,7 @@
 - Post-event feedback collection.
 - Certificate eligibility evaluation based on configured rules.
 - Registration status management per participant.
+- Paginated list browsing for participant event discovery and organizer operational views.
 
 ## 2.2 Out of Scope (MVP)
 - Online payment/ticketing.

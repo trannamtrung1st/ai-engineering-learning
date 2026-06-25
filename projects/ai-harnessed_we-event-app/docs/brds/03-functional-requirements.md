@@ -43,3 +43,9 @@
 - FR-25: System enforces role-based access (Admin, Staff, Participant).
 - FR-26: Participant can only operate on their own registration data.
 - FR-27: Staff can only operate within assigned event scope.
+
+## 8. List Browsing and Pagination
+- FR-28: Participant can browse paginated event listings with search and filter.
+- FR-29: Participant can view a paginated list of their registrations across events.
+- FR-30: Organizer Admin/Staff can view paginated operational lists (registrations, waitlist, attendance, eligibility, audit) scoped to authorized events.
+- FR-31: System returns total result count with each paginated list response.

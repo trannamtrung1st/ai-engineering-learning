@@ -28,6 +28,10 @@ Priority is correctness of business invariants over UI polish in this phase.
 | Organizer views eligible list | list + reasons available | AC-10 |
 | Critical config change audit | audit record persisted | AC-11, BR-22 |
 | Status history retrieval | transitions traceable | AC-12 |
+| Events list page 2 | correct slice + total | AC-13 |
+| Registrations list beyond capacity | never returns more than `pageSize` items | AC-13, NFR-16 |
+| Audit logs paginated | ordered + total count | AC-13 |
+| My registrations paginated | single API call, no N+1 fan-out | AC-14, FR-29 |
 
 ## 4. Unit Test Coverage Targets
 - registration dedupe validator
@@ -43,6 +47,7 @@ Priority is correctness of business invariants over UI polish in this phase.
 - check-in + registration state consistency
 - eligibility persistence with reason
 - audit write for critical config changes
+- paginated list queries return correct `total` and page boundaries
 
 ## 6. End-to-End Flows
 Flow A:
@@ -80,7 +85,7 @@ Each run should report:
 - regression trend notes
 
 ## 11. BRD Traceability
-- FR-01..FR-27
+- FR-01..FR-31
 - BR-01..BR-22
-- AC-01..AC-12
-- NFR-02, NFR-10, NFR-13, NFR-15
+- AC-01..AC-14
+- NFR-02, NFR-10, NFR-13, NFR-15, NFR-16

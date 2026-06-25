@@ -23,6 +23,7 @@ Define a single, explicit technical stack recommendation for both backend and fr
 - Server state: TanStack Query
 - Data grid/table: TanStack Table (or equivalent lightweight utility)
 - Charts: lightweight chart library for organizer KPI views
+- Listing pages: server-driven pagination via TanStack Query; `DataTable` and card grids use API `page`/`pageSize`/`total` metadata (not client-only slicing of a full dataset when the backing API is paginated)
 
 ## 3. Why This Is Recommended
 - Keeps one language (TypeScript) across frontend and backend for faster iteration and shared domain types.
@@ -56,6 +57,7 @@ This structure is recommended for maintainability, but not required for initial 
 - System scope and architecture assumptions: `00-system-overview.md`
 - Module/domain boundaries: `02-module-breakdown.md`
 - Database baseline and constraints: `04-database-design.md`
+- API pagination contract: `05-api-design.md` §3
 - Local runtime constraints: `10-local-development-setup.md`
 - Docker Compose local runtime spec: `13-docker-compose-local-runtime.md`
 - Frontend framework recommendation source: `../ui-ux/02-ui-framework-tech-stack.md`

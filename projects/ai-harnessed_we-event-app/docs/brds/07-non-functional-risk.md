@@ -9,8 +9,9 @@
 
 ## 1.2 Performance
 - NFR-04: Registration actions must respond quickly under normal load.
-- NFR-05: Event list and event detail pages load within acceptable levels on typical campus networks.
+- NFR-05: Event list and event detail pages load within acceptable levels on typical campus networks; list views fetch one page at a time rather than loading the entire catalog.
 - NFR-06: Event operations dashboard data updates in near real-time for organizers.
+- NFR-16: Paginated list endpoints return a single page within acceptable response time when total results exceed 500 rows.
 
 ## 1.3 Security and Privacy
 - NFR-07: User authentication is required before sensitive operations.

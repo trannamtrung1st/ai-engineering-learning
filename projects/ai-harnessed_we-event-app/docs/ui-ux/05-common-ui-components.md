@@ -37,6 +37,14 @@
 - Required features: sort, filter, empty state, pagination.
 - Sticky header for long operational lists.
 - Row actions must obey role permissions and state constraints.
+- When backed by a paginated API, pagination is **server-driven** (fetch one page per request; do not load the full dataset client-side).
+
+### Pagination
+- Shows "Page X of Y" and item range (e.g. "Showing 21–40 of 142").
+- Prev/next buttons disabled at first/last page; keyboard accessible.
+- Resets to page 1 when search or filter criteria change.
+- **Table lists**: use server-driven pagination with API `page`/`pageSize`/`total` metadata.
+- **Card grids** (event discovery): same control below the grid; default `pageSize` 12 per `05-api-design.md`.
 
 ### Modal/dialog
 - Use for confirmation or focused secondary tasks.

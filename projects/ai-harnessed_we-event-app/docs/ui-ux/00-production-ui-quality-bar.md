@@ -20,6 +20,8 @@ Not acceptable (hard fail):
 - Single monolithic "workspace" page dumping all flows.
 - Unstyled HTML forms or inline layout styles.
 - Color-only status indicators without text or icons.
+- Rendering 100+ list rows without pagination controls.
+- Fetching all pages in a loop to assemble a full client-side dataset.
 
 ## Required stack usage
 
@@ -46,6 +48,8 @@ MVP minimum before convergence:
 ## Data contract
 
 - All list and detail views fetch from `/api/v1`; backend remains authoritative for domain states.
+- Listing pages must use paginated API requests (`page`/`pageSize`); see `05-api-design.md` §3.
+- Fetching all pages in a loop to build a client-side list is a harness hard-fail.
 - Use TanStack Query (or equivalent) for server state; no module-level mock stores in pages.
 - Optimistic updates only for reversible operations with rollback UI.
 

@@ -17,6 +17,7 @@ The following low-fidelity wireframes are required for MVP readiness:
 ### Participant event discovery
 - Search/filter row.
 - Event cards/list.
+- Pagination control below grid (page X of Y, item range).
 - Empty state and retry state.
 
 ### Participant event detail
@@ -27,6 +28,7 @@ The following low-fidelity wireframes are required for MVP readiness:
 
 ### Participant My Registrations
 - Status list (active + past).
+- Pagination control below list.
 - Quick actions based on status.
 - Status explanation drawer or tooltip.
 
@@ -43,11 +45,13 @@ The following low-fidelity wireframes are required for MVP readiness:
 ### Organizer check-in console
 - Search input and quick filters.
 - Participant row list with action button.
+- Pagination control below row list.
 - Result log or recent activity section.
 
 ### Organizer eligibility list
 - Eligible/NotEligible segmented view.
 - Reason column and export action.
+- Pagination control below table.
 - Filter by attendance/feedback completion.
 
 ## Annotation requirements

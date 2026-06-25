@@ -43,3 +43,5 @@ Lessons learned across harness iterations. Read before every implementer session
 - [web-design-system-shell] AI review failed — see 20260625T111833Z-review.json
 - [web-participant-journeys] AI review failed — see 20260625T140938Z-review.json
 - [web-participant-journeys] AI review failed — see 20260625T142403Z-review.json
+- [pagination] List endpoints must return the paginated envelope (`items`, `page`, `pageSize`, `total`, `totalPages`) per `docs/technical/05-api-design.md` §3; bare arrays are deprecated.
+- [pagination] Listing pages must not client-fetch all events then fan out N+1 registration calls for my-registrations; use `GET /me/registrations` with server-driven pagination.

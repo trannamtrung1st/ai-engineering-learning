@@ -37,9 +37,11 @@
 
 - KPI summary strip.
 - Filter bar.
-- List/table region.
+- List/table region with pagination footer below content.
 - Details drawer.
 - Empty/failure fallback block.
+
+Filter bar remains visible (sticky) while list rows scroll; pagination sits below the list region.
 
 ## Responsive rules
 

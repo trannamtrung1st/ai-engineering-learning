@@ -131,6 +131,12 @@ Constraints:
 - Promotion from waitlist uses `ORDER BY position ASC` with lock to avoid double promotion.
 - Cancellation and promotion run atomically.
 
+### Pagination index support
+- `events.start_at` — default sort for `GET /events`.
+- `waitlist_entries(event_id, position)` — FIFO queue paging.
+- `registrations.updated_at` — registration list and `GET /me/registrations` paging.
+- `audit_logs.created_at`, `status_history.created_at` — governance list paging.
+
 ## 5. Suggested DDL Guardrail Snippets
 ```sql
 -- Unique active registration constraint example (PostgreSQL partial index)
@@ -145,6 +151,14 @@ CREATE INDEX idx_reg_event_state
 ON registrations(event_id, state);
 ```
 
+```sql
+-- Paginated registration and my-registrations sorts
+CREATE INDEX idx_reg_event_updated
+ON registrations(event_id, updated_at DESC);
+CREATE INDEX idx_reg_participant_updated
+ON registrations(participant_id, updated_at DESC);
+```
+
 ## 6. Data Retention (Local MVP)
 - Keep all audit and state history for testability.
 - Do not hard-delete business records in MVP.
@@ -152,5 +166,6 @@ ON registrations(event_id, state);
 
 ## 7. BRD Traceability
 - BR-01..BR-13, BR-17..BR-22
-- FR-06..FR-17, FR-20, FR-23, FR-24
-- AC-01..AC-07, AC-11, AC-12
+- FR-06..FR-17, FR-20, FR-23, FR-24, FR-28..FR-31
+- AC-01..AC-07, AC-11, AC-12, AC-13
+- NFR-16 (pagination indexes in §4)

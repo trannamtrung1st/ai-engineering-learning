@@ -59,35 +59,40 @@
       "agent": "backend",
       "docs": [
         "docs/technical/02-module-breakdown.md",
-        "docs/technical/06-main-workflows.md"
+        "docs/technical/06-main-workflows.md",
+        "docs/technical/05-api-design.md"
       ]
     },
     "module-registration": {
       "agent": "backend",
       "docs": [
         "docs/technical/02-module-breakdown.md",
-        "docs/technical/08-validation-rules.md"
+        "docs/technical/08-validation-rules.md",
+        "docs/technical/05-api-design.md"
       ]
     },
     "module-checkin": {
       "agent": "backend",
       "docs": [
         "docs/technical/02-module-breakdown.md",
-        "docs/technical/07-state-machines.md"
+        "docs/technical/07-state-machines.md",
+        "docs/technical/05-api-design.md"
       ]
     },
     "module-feedback-eligibility": {
       "agent": "backend",
       "docs": [
         "docs/technical/02-module-breakdown.md",
-        "docs/technical/03-domain-model.md"
+        "docs/technical/03-domain-model.md",
+        "docs/technical/05-api-design.md"
       ]
     },
     "module-audit": {
       "agent": "backend",
       "docs": [
         "docs/technical/02-module-breakdown.md",
-        "docs/technical/09-error-handling.md"
+        "docs/technical/09-error-handling.md",
+        "docs/technical/05-api-design.md"
       ]
     },
     "web-design-system-shell": {
@@ -103,7 +108,8 @@
       "docs": [
         "docs/ui-ux/09-page-list.md",
         "docs/ui-ux/10-user-flows.md",
-        "docs/ui-ux/12-ui-states.md"
+        "docs/ui-ux/12-ui-states.md",
+        "docs/ui-ux/05-common-ui-components.md"
       ]
     },
     "web-organizer-journeys": {
@@ -111,7 +117,8 @@
       "docs": [
         "docs/ui-ux/09-page-list.md",
         "docs/ui-ux/07-event-specific-components.md",
-        "docs/ui-ux/08-forms-validation-ux.md"
+        "docs/ui-ux/08-forms-validation-ux.md",
+        "docs/ui-ux/05-common-ui-components.md"
       ]
     },
     "e2e-acceptance-suite": {

@@ -27,6 +27,7 @@
 - Ordered queue list (default FIFO).
 - Highlights promoted entries.
 - Shows reason when promotion is blocked by rule/policy.
+- Paginated; queue position order preserved across pages.
 
 ### Check-in console row item
 - Participant identity summary.
@@ -42,10 +43,12 @@
 - Displays `Eligible` / `NotEligible` with reason tags.
 - Supports organizer review/export context.
 - Indicates post-finalization override markers (if any).
+- Paginated list; segmented eligible/not-eligible views preserve sort order across pages.
 
 ### Audit timeline
 - Shows critical rule/config changes and major lifecycle transitions.
 - Includes actor, timestamp, and change summary.
+- Paginated log table for long histories.
 
 ## Domain status badge system
 

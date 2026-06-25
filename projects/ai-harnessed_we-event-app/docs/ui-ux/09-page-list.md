@@ -12,6 +12,7 @@
 ### Event discovery
 - Browse list with search and basic filters.
 - Surface event availability and registration status.
+- Paginated card grid; changing filters resets to page 1.
 
 ### Event detail
 - Display event information, windows, and current action.
@@ -20,6 +21,7 @@
 ### My registrations
 - List current and past registrations with status timeline.
 - Quick access to check-in or feedback when applicable.
+- Paginated status list (server-driven; default `pageSize` 20).
 
 ### Check-in (self-service)
 - Event-specific check-in action page.
@@ -32,11 +34,12 @@
 ### Participation history and eligibility
 - Historical outcomes.
 - Eligibility results with reason text.
+- Paginated outcomes list.
 
 ## Organizer Admin pages
 
 ### Event management
-- Event list.
+- Event list (paginated table).
 - Create/edit event form.
 - Publish/pause controls.
 
@@ -47,22 +50,26 @@
 ### Registration and waitlist management
 - Search/filter participants.
 - Waitlist queue and promotion visibility.
+- Paginated participant and waitlist tables.
 
 ### Check-in operations console
 - Event check-in list.
 - Staff and method audit markers.
+- Paginated attendance rows.
 
 ### Eligibility management
 - Eligible and not-eligible lists.
 - Reason visibility and export trigger.
+- Paginated segmented lists (order preserved across pages).
 
 ### Governance pages
 - Audit log history.
 - Export center.
+- Paginated audit log table.
 
 ## Organizer Staff pages
 
-- Assigned events list.
+- Assigned events list (paginated).
 - Check-in console for assigned scope.
 - Limited participant lookup tools.
 

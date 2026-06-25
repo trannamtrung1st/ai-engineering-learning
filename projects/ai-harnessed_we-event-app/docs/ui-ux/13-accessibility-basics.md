@@ -34,6 +34,7 @@
 - Escape key support for dismissible overlays.
 - Sufficient tap target sizes for mobile interactions.
 - Avoid time-sensitive interactions without clear countdown/expiry hints.
+- Pagination navigation: `nav` with `aria-label` (e.g. "Pagination"); current page announced; focus moves predictably on page change.
 
 ## Accessibility testing checklist
 
