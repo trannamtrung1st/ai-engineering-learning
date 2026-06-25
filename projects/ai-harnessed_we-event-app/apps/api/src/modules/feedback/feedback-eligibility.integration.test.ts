@@ -24,6 +24,10 @@ import { ensureEligibilitySchema } from "../eligibility/repository.js";
 import { eligibilityService } from "../eligibility/service.js";
 import { ensureFeedbackSchema } from "../feedback/repository.js";
 import { feedbackService } from "../feedback/service.js";
+import {
+  ensureTestOrganizerAdmin,
+  ensureTestParticipant,
+} from "../../test-helpers/participant-user.js";
 
 const ORG_ADMIN_ID = "00000000-0000-0000-0000-000000000099";
 const ORG_ID = "00000000-0000-0000-0000-000000000001";
@@ -45,6 +49,7 @@ async function createCompletedEventWithAttendee(options?: {
 }> {
   const windows = eventWindows();
   const participantId = randomUUID();
+  await ensureTestParticipant(participantId);
 
   const draft = await createEvent(
     {
@@ -133,6 +138,7 @@ describe("feedback and eligibility integration", () => {
     await ensureFeedbackSchema();
     await ensureEligibilitySchema();
     await ensureIdempotencySchema();
+    await ensureTestOrganizerAdmin(ORG_ADMIN_ID);
   });
 
   after(async () => {
@@ -158,6 +164,7 @@ describe("feedback and eligibility integration", () => {
   it("rejects feedback outside the feedback window", async () => {
     const windows = eventWindows();
     const participantId = randomUUID();
+    await ensureTestParticipant(participantId);
 
     const draft = await createEvent(
       {

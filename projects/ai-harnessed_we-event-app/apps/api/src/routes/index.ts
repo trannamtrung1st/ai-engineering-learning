@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import type { AppConfig } from "../config.js";
 import { requireAuth } from "../auth/middleware.js";
+import { authRoutes } from "../modules/auth/index.js";
 import { adminRoutes } from "./admin.js";
 import { devAuthRoutes } from "./dev-auth.js";
 import { healthRoutes } from "./health.js";
@@ -20,6 +21,7 @@ export async function registerRoutes(
 ): Promise<void> {
   await app.register(healthRoutes, { prefix: basePath });
   await app.register(devAuthRoutes(config), { prefix: basePath });
+  await app.register(authRoutes, { prefix: basePath });
 
   await app.register(
     async (protectedApp) => {

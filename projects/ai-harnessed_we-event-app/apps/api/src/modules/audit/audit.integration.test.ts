@@ -16,6 +16,10 @@ import {
   ensureRegistrationSchema,
 } from "../registration/repository.js";
 import { registrationService } from "../registration/service.js";
+import {
+  ensureTestOrganizerAdmin,
+  ensureTestParticipant,
+} from "../../test-helpers/participant-user.js";
 
 const ACTOR_ID = "00000000-0000-0000-0000-000000000099";
 const ORG_ID = "00000000-0000-0000-0000-000000000001";
@@ -84,6 +88,7 @@ describe("audit integration", () => {
     await ensureAuditSchema();
     await ensureRegistrationSchema();
     await ensureIdempotencySchema();
+    await ensureTestOrganizerAdmin(ACTOR_ID);
   });
 
   after(async () => {
@@ -124,6 +129,7 @@ describe("audit integration", () => {
   it("AC-12: registration status changes are traceable via status history", async () => {
     const event = await createRegistrationOpenEvent({ capacity: 5 });
     const participantId = randomUUID();
+    await ensureTestParticipant(participantId);
 
     const registration = await registrationService.register(
       event.id,
@@ -166,6 +172,7 @@ describe("audit integration", () => {
     const participantIds = [randomUUID(), randomUUID(), randomUUID()];
 
     for (const participantId of participantIds) {
+      await ensureTestParticipant(participantId);
       await registrationService.register(event.id, participantId, {
         actorId: participantId,
         actorRole: "Participant",

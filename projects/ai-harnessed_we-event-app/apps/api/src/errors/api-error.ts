@@ -10,7 +10,9 @@ export type ApiErrorCode =
   | "NOT_FOUND"
   | "INVALID_STATE_TRANSITION"
   | "INVALID_PAGINATION"
-  | "IDEMPOTENCY_KEY_CONFLICT";
+  | "IDEMPOTENCY_KEY_CONFLICT"
+  | "EMAIL_ALREADY_REGISTERED"
+  | "INVALID_CREDENTIALS";
 
 export class ApiError extends Error {
   readonly code: ApiErrorCode;

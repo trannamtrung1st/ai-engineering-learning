@@ -12,18 +12,20 @@
     "test:unit": "node --import tsx --test --test-concurrency=1 $(find src -name '*.test.ts' ! -name '*.integration.test.ts')",
     "test:integration": "node --import tsx --test --test-concurrency=1 'src/**/*.integration.test.ts'",
     "test": "npm run test:unit && npm run test:integration",
-    "build": "tsc && mkdir -p dist/modules/event dist/modules/registration dist/modules/checkin dist/modules/feedback dist/modules/eligibility dist/modules/audit dist/idempotency && cp src/modules/event/schema.sql dist/modules/event/ && cp src/modules/registration/schema.sql dist/modules/registration/ && cp src/modules/checkin/schema.sql dist/modules/checkin/ && cp src/modules/feedback/schema.sql dist/modules/feedback/ && cp src/modules/eligibility/schema.sql dist/modules/eligibility/ && cp src/modules/audit/schema.sql dist/modules/audit/ && cp src/idempotency/schema.sql dist/idempotency/"
+    "build": "tsc && mkdir -p dist/modules/event dist/modules/registration dist/modules/checkin dist/modules/feedback dist/modules/eligibility dist/modules/audit dist/modules/user dist/idempotency && cp src/modules/event/schema.sql dist/modules/event/ && cp src/modules/registration/schema.sql dist/modules/registration/ && cp src/modules/checkin/schema.sql dist/modules/checkin/ && cp src/modules/feedback/schema.sql dist/modules/feedback/ && cp src/modules/eligibility/schema.sql dist/modules/eligibility/ && cp src/modules/audit/schema.sql dist/modules/audit/ && cp src/modules/user/schema.sql dist/modules/user/ && cp src/idempotency/schema.sql dist/idempotency/"
   },
   "dependencies": {
     "@fastify/jwt": "^9.0.2",
     "@we-event/domain": "*",
+    "bcrypt": "^6.0.0",
     "fastify": "^5.2.1",
     "pg": "^8.13.1"
   },
   "devDependencies": {
-    "@we-event/config": "*",
+    "@types/bcrypt": "^6.0.0",
     "@types/node": "^22.10.2",
     "@types/pg": "^8.11.10",
+    "@we-event/config": "*",
     "eslint": "^9.17.0",
     "tsx": "^4.19.2",
     "typescript": "^5.7.2"

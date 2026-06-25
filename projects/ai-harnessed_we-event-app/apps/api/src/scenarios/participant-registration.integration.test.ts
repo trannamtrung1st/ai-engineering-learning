@@ -12,6 +12,10 @@ import {
 } from "../modules/event/repository.js";
 import type { EventWithConfig } from "../modules/event/types.js";
 import { ensureRegistrationSchema } from "../modules/registration/repository.js";
+import {
+  ensureTestOrganizerAdmin,
+  ensureTestParticipant,
+} from "../test-helpers/participant-user.js";
 
 const DEV_PARTICIPANT_SUB = "participant-1";
 const ORG_ID = "00000000-0000-0000-0000-000000000001";
@@ -101,6 +105,8 @@ describe("participant registration HTTP scenario", () => {
     await ensureEventSchema();
     await ensureRegistrationSchema();
     await ensureIdempotencySchema();
+    await ensureTestOrganizerAdmin(ORGANIZER_ID);
+    await ensureTestParticipant(DEV_PARTICIPANT_SUB);
 
     const event = await createRegistrationOpenEvent({ capacity: 5 });
     eventId = event.id;

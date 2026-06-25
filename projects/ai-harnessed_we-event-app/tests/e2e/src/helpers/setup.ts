@@ -2,6 +2,12 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import { buildApp } from "../../../../apps/api/src/index.js";
+import { resolveActorId } from "../../../../apps/api/src/auth/resolve-actor-id.js";
+import {
+  ensureTestOrganizerAdmin,
+  ensureTestParticipant,
+  ensureTestUser,
+} from "../../../../apps/api/src/test-helpers/participant-user.js";
 
 const API_PREFIX = "/api/v1";
 
@@ -52,6 +58,7 @@ export async function createE2EContext(): Promise<E2EContext> {
   process.env.DEV_AUTH_ENABLED = "true";
 
   const { app } = await buildApp();
+  await ensureTestOrganizerAdmin(ORGANIZER_ADMIN_SUB);
   return { app };
 }
 
@@ -65,6 +72,17 @@ export async function signDevToken(
   role: DevActorRole,
   assignedEventIds?: string[],
 ): Promise<string> {
+  const userId = resolveActorId(sub);
+  if (role === "Participant") {
+    await ensureTestParticipant(userId);
+  } else if (role === "OrganizerAdmin") {
+    await ensureTestOrganizerAdmin(userId);
+  } else {
+    await ensureTestUser(userId, role, {
+      assignedEventIds: assignedEventIds ?? [],
+    });
+  }
+
   const response = await app.inject({
     method: "POST",
     url: `${API_PREFIX}/dev/token`,

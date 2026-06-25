@@ -281,7 +281,7 @@
     },
     {
       "id": "module-user-accounts",
-      "passes": false,
+      "passes": true,
       "priority": 25,
       "phase": 2,
       "agent": "backend",
@@ -305,6 +305,24 @@
         "apps/api/src/modules/auth",
         "apps/api/src/modules/user"
       ],
+      "testRequirements": {
+        "unit": [
+          "apps/api/src/modules/auth/validation.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/modules/auth/auth.integration.test.ts"
+        ],
+        "acceptanceTags": [
+          "NFR-07",
+          "NFR-08",
+          "NFR-17",
+          "FR-25",
+          "FR-26",
+          "FR-32",
+          "FR-33",
+          "FR-34"
+        ]
+      },
       "description": "User accounts: users + user_roles tables, email/password signup and login, credential-based JWT issuance; participant_id maps to users.id; dev token remains behind DEV_AUTH_ENABLED for local harness only."
     },
     {

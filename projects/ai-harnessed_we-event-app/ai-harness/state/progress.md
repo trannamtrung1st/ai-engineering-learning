@@ -84,3 +84,5 @@ Append-only log of completed iterations.
 - 2026-06-25T19:10:22Z | module-checkin | passed
 - 2026-06-25T19:12:54Z | module-feedback-eligibility | passed
 - 2026-06-25T19:16:32Z | module-audit | passed
+- 2026-06-25T19:23:55Z | module-user-accounts | checks_failed
+- 2026-06-25T19:29:19Z | module-user-accounts | passed

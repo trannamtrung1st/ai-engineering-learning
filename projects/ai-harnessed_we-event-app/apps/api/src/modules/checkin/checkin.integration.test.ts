@@ -20,6 +20,10 @@ import {
 import { registrationService } from "../registration/service.js";
 import { ensureCheckinSchema } from "./repository.js";
 import { checkinService } from "./service.js";
+import {
+  ensureTestOrganizerAdmin,
+  ensureTestParticipant,
+} from "../../test-helpers/participant-user.js";
 
 const ORG_ADMIN_ID = "00000000-0000-0000-0000-000000000099";
 const ORG_ID = "00000000-0000-0000-0000-000000000001";
@@ -39,6 +43,7 @@ async function createCheckinableEvent(): Promise<{
 }> {
   const windows = checkinWindows();
   const participantId = randomUUID();
+  await ensureTestParticipant(participantId);
 
   const draft = await createEvent(
     {
@@ -112,6 +117,7 @@ describe("checkin integration", () => {
     await ensureRegistrationSchema();
     await ensureCheckinSchema();
     await ensureIdempotencySchema();
+    await ensureTestOrganizerAdmin(ORG_ADMIN_ID);
   });
 
   after(async () => {
@@ -137,6 +143,7 @@ describe("checkin integration", () => {
   it("AC-06: out-of-window check-in is rejected", async () => {
     const windows = checkinWindows();
     const participantId = randomUUID();
+    await ensureTestParticipant(participantId);
 
     const draft = await createEvent(
       {
@@ -240,6 +247,8 @@ describe("checkin integration", () => {
     const windows = checkinWindows();
     const noShowId = randomUUID();
     const checkedInId = randomUUID();
+    await ensureTestParticipant(noShowId);
+    await ensureTestParticipant(checkedInId);
 
     const draft = await createEvent(
       {
@@ -361,8 +370,10 @@ describe("checkin integration", () => {
 
     const registrationIds: string[] = [];
     for (let index = 0; index < 5; index += 1) {
-      const row = await createRegistration(draft.id, randomUUID(), {
-        actorId: ORG_ADMIN_ID,
+      const participantId = randomUUID();
+      await ensureTestParticipant(participantId);
+      const row = await createRegistration(draft.id, participantId, {
+        actorId: participantId,
         actorRole: "Participant",
       });
       registrationIds.push(row.id);

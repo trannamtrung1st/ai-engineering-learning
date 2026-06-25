@@ -12,6 +12,10 @@ import {
 import type { EventWithConfig } from "../event/types.js";
 import { ensureIdempotencySchema } from "../../idempotency/index.js";
 import {
+  ensureTestOrganizerAdmin,
+  ensureTestParticipant,
+} from "../../test-helpers/participant-user.js";
+import {
   countSeatHolders,
   createRegistration,
   ensureRegistrationSchema,
@@ -79,6 +83,12 @@ async function createRegistrationOpenEvent(options: {
 
 const actorContext = { actorId: ACTOR_ID, actorRole: "Participant" };
 
+async function newParticipantId(): Promise<string> {
+  const participantId = randomUUID();
+  await ensureTestParticipant(participantId);
+  return participantId;
+}
+
 describe("registration integration", () => {
   before(async () => {
     const databaseUrl =
@@ -88,6 +98,7 @@ describe("registration integration", () => {
     await ensureEventSchema();
     await ensureRegistrationSchema();
     await ensureIdempotencySchema();
+    await ensureTestOrganizerAdmin(ACTOR_ID);
   });
 
   after(async () => {
@@ -96,7 +107,7 @@ describe("registration integration", () => {
 
   it("AC-01: assigns Registered when seats are available", async () => {
     const event = await createRegistrationOpenEvent({ capacity: 5 });
-    const participantId = randomUUID();
+    const participantId = await newParticipantId();
 
     const result = await registrationService.register(
       event.id,
@@ -114,8 +125,8 @@ describe("registration integration", () => {
       waitlistEnabled: false,
     });
 
-    const first = randomUUID();
-    const second = randomUUID();
+    const first = await newParticipantId();
+    const second = await newParticipantId();
 
     await registrationService.register(event.id, first, actorContext);
 
@@ -139,8 +150,8 @@ describe("registration integration", () => {
       waitlistEnabled: true,
     });
 
-    const first = randomUUID();
-    const second = randomUUID();
+    const first = await newParticipantId();
+    const second = await newParticipantId();
 
     const registered = await registrationService.register(
       event.id,
@@ -160,7 +171,7 @@ describe("registration integration", () => {
 
   it("AC-03: blocks duplicate registration for same participant and event", async () => {
     const event = await createRegistrationOpenEvent({ capacity: 10 });
-    const participantId = randomUUID();
+    const participantId = await newParticipantId();
 
     await registrationService.register(event.id, participantId, actorContext);
 
@@ -186,9 +197,12 @@ describe("registration integration", () => {
     });
 
     const attempts = 12;
+    const participantIds = await Promise.all(
+      Array.from({ length: attempts }, () => newParticipantId()),
+    );
     const results = await Promise.allSettled(
-      Array.from({ length: attempts }, () =>
-        createRegistration(event.id, randomUUID(), actorContext),
+      participantIds.map((participantId) =>
+        createRegistration(event.id, participantId, actorContext),
       ),
     );
 
@@ -215,9 +229,9 @@ describe("registration integration", () => {
       waitlistEnabled: true,
     });
 
-    const firstParticipant = randomUUID();
-    const secondParticipant = randomUUID();
-    const thirdParticipant = randomUUID();
+    const firstParticipant = await newParticipantId();
+    const secondParticipant = await newParticipantId();
+    const thirdParticipant = await newParticipantId();
 
     const first = await registrationService.register(
       event.id,
@@ -269,14 +283,18 @@ describe("registration integration", () => {
     for (let index = 0; index < 2; index += 1) {
       const result = await registrationService.register(
         event.id,
-        randomUUID(),
+        await newParticipantId(),
         actorContext,
       );
       registeredIds.push(result.registrationId);
     }
 
     for (let index = 0; index < 3; index += 1) {
-      await registrationService.register(event.id, randomUUID(), actorContext);
+      await registrationService.register(
+        event.id,
+        await newParticipantId(),
+        actorContext,
+      );
     }
 
     const registrationsPage = await registrationService.listRegistrations(
@@ -322,7 +340,7 @@ describe("registration integration", () => {
 
   it("FR-10: registration-status returns null when participant is not registered", async () => {
     const event = await createRegistrationOpenEvent({ capacity: 5 });
-    const participantId = randomUUID();
+    const participantId = await newParticipantId();
 
     const status = await registrationService.getStatus(event.id, participantId);
 
@@ -331,6 +349,7 @@ describe("registration integration", () => {
 
   it("FR-10: registration-status works for default dev participant sub", async () => {
     const event = await createRegistrationOpenEvent({ capacity: 5 });
+    await ensureTestParticipant("participant-1");
 
     const status = await registrationService.getStatus(event.id, "participant-1");
 
@@ -339,7 +358,7 @@ describe("registration integration", () => {
 
   it("FR-10: registration-status returns active registration after register", async () => {
     const event = await createRegistrationOpenEvent({ capacity: 5 });
-    const participantId = randomUUID();
+    const participantId = await newParticipantId();
     const participantContext = {
       actorId: participantId,
       actorRole: "Participant" as const,
@@ -361,7 +380,7 @@ describe("registration integration", () => {
   });
 
   it("AC-13: GET /me/registrations returns paginated participant registrations", async () => {
-    const participantId = randomUUID();
+    const participantId = await newParticipantId();
     const participantContext = {
       actorId: participantId,
       actorRole: "Participant" as const,

@@ -15,6 +15,11 @@ import {
 import type { EventWithConfig } from "../modules/event/types.js";
 import { ensureRegistrationSchema } from "../modules/registration/repository.js";
 import { registrationService } from "../modules/registration/service.js";
+import {
+  ensureTestOrganizerAdmin,
+  ensureTestParticipant,
+  ensureTestUser,
+} from "../test-helpers/participant-user.js";
 
 const ORG_ID = "00000000-0000-0000-0000-000000000001";
 const ORGANIZER_ID = "00000000-0000-0000-0000-000000000099";
@@ -112,6 +117,7 @@ describe("audit HTTP scenario", () => {
     await ensureAuditSchema();
     await ensureRegistrationSchema();
     await ensureIdempotencySchema();
+    await ensureTestOrganizerAdmin(ORGANIZER_ID);
 
     const event = await createRegistrationOpenEvent({ capacity: 5 });
     eventId = event.id;
@@ -128,12 +134,18 @@ describe("audit HTTP scenario", () => {
     );
 
     const participantId = randomUUID();
+    await ensureTestParticipant(participantId);
     await registrationService.register(eventId, participantId, {
       actorId: participantId,
       actorRole: "Participant",
     });
 
     adminToken = await signDevToken(app, ORGANIZER_ID, "OrganizerAdmin");
+    await ensureTestUser(
+      "00000000-0000-0000-0000-000000000088",
+      "OrganizerStaff",
+      { assignedEventIds: [eventId] },
+    );
     staffToken = await signDevToken(
       app,
       "00000000-0000-0000-0000-000000000088",

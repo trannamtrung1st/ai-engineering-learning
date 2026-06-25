@@ -8,6 +8,8 @@ import {
 import type { Pool, PoolClient, QueryResult } from "pg";
 import { getPool } from "../../db/pool.js";
 import { ApiError } from "../../errors/api-error.js";
+import { ensureEventSchema } from "../event/repository.js";
+import { ensureUserSchema } from "../user/repository.js";
 import { insertAuditLog } from "../audit/repository.js";
 import type {
   ActorContext,
@@ -25,8 +27,10 @@ let schemaReady: Promise<void> | null = null;
 export async function ensureRegistrationSchema(): Promise<void> {
   if (!schemaReady) {
     schemaReady = (async () => {
+      await ensureEventSchema();
       const sql = await readFile(join(__dirname, "schema.sql"), "utf8");
       await getPool().query(sql);
+      await ensureUserSchema();
     })();
   }
   await schemaReady;
