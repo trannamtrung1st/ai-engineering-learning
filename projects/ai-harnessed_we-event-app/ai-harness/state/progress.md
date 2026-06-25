@@ -77,3 +77,4 @@ Append-only log of completed iterations.
 - 2026-06-25T18:32:34Z | module-user-accounts | checks_failed
 - 2026-06-25T18:47:41Z | repo-monorepo-bootstrap | passed
 - 2026-06-25T18:50:34Z | docker-compose-db | passed
+- 2026-06-25T18:53:56Z | domain-package | passed

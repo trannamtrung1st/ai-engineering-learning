@@ -43,7 +43,7 @@
     },
     {
       "id": "domain-package",
-      "passes": false,
+      "passes": true,
       "priority": 10,
       "phase": 1,
       "agent": "backend",
@@ -60,6 +60,11 @@
       "completionArtifacts": [
         "packages/domain/src/index.ts"
       ],
+      "testRequirements": {
+        "unit": [
+          "packages/domain/src/index.test.ts"
+        ]
+      },
       "description": "Shared domain enums, state machines, and validation rule identifiers."
     },
     {
