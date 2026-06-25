@@ -13,6 +13,19 @@ export interface NavItem {
   roles: AppRole[];
 }
 
+export const participantNavItems: NavItem[] = [
+  {
+    href: "/events",
+    label: "Browse events",
+    roles: ["participant"],
+  },
+  {
+    href: "/registrations",
+    label: "My registrations",
+    roles: ["participant"],
+  },
+];
+
 export const organizerNavItems: NavItem[] = [
   {
     href: "/organizer/events",
