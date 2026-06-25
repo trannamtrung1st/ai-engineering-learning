@@ -3,7 +3,12 @@ import { getActor, requireRole } from "../../auth/middleware.js";
 import { assertEventScope } from "../../auth/scope.js";
 import { ensureEventSchema } from "./repository.js";
 import { eventService } from "./service.js";
-import type { CreateEventInput, RuleConfigInput, UpdateEventInput } from "./types.js";
+import type {
+  CreateEventInput,
+  ListEventsQuery,
+  RuleConfigInput,
+  UpdateEventInput,
+} from "./types.js";
 
 interface ReasonBody {
   reasonCode?: string;
@@ -21,9 +26,9 @@ interface EventParams {
 export const eventRoutes: FastifyPluginAsync = async (app) => {
   await ensureEventSchema();
 
-  app.get("/events", async (request) => {
+  app.get<{ Querystring: ListEventsQuery }>("/events", async (request) => {
     const actor = getActor(request);
-    return { events: await eventService.list(actor.role) };
+    return eventService.list(actor.role, request.query);
   });
 
   app.get<{ Params: EventParams }>("/events/:eventId", async (request) => {

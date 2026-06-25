@@ -5,3 +5,4 @@ ai-harness/generated/runs/
 *.log
 dist/
 .next/
+*.tsbuildinfo

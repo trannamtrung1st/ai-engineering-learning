@@ -7,6 +7,7 @@ import {
 import { ApiError } from "../../errors/api-error.js";
 import type {
   CreateEventInput,
+  EventListItem,
   EventWithConfig,
   RuleConfigInput,
   UpdateEventInput,
@@ -314,6 +315,16 @@ export function resolveTransition(
     });
   }
   return match.to;
+}
+
+export function toEventListItem(event: EventWithConfig): EventListItem {
+  return {
+    eventId: event.id,
+    name: event.name,
+    state: event.state,
+    startAt: event.startAt,
+    location: event.location,
+  };
 }
 
 export function toEventResponse(event: EventWithConfig) {

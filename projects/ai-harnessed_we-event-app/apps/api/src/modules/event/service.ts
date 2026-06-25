@@ -1,5 +1,12 @@
-import type { ActorRole, EventTransitionTrigger } from "@we-event/domain";
+import type { ActorRole, EventState, EventTransitionTrigger } from "@we-event/domain";
+import { EVENT_STATES } from "@we-event/domain";
 import { ApiError } from "../../errors/api-error.js";
+import {
+  buildPaginatedResult,
+  parsePagination,
+  parseSort,
+  type PaginatedResult,
+} from "../../pagination/index.js";
 import { finalizeAttendanceForEvent } from "../checkin/repository.js";
 import {
   createEvent,
@@ -11,13 +18,16 @@ import {
 } from "./repository.js";
 import type {
   CreateEventInput,
+  EventListItem,
   EventWithConfig,
+  ListEventsQuery,
   TransitionContext,
   UpdateEventInput,
 } from "./types.js";
 import {
   assertPublishReady,
   resolveTransition,
+  toEventListItem,
   toEventResponse,
   validateCreateInput,
   validateUpdateInput,
@@ -77,11 +87,57 @@ export class EventService {
     return toEventResponse(event);
   }
 
-  async list(role: string): Promise<ReturnType<typeof toEventResponse>[]> {
-    const states =
+  async list(
+    role: string,
+    query: ListEventsQuery = {},
+  ): Promise<PaginatedResult<EventListItem>> {
+    const pagination = parsePagination(query, {
+      defaultPageSize: 12,
+      maxPageSize: 100,
+    });
+
+    const sort = parseSort(query.sort, {
+      startAt: "e.start_at",
+      updatedAt: "e.updated_at",
+    }, "startAt");
+
+    const roleStates =
       role === "Participant" ? [...PARTICIPANT_VISIBLE_STATES] : undefined;
-    const events = await listEvents({ states });
-    return events.map(toEventResponse);
+
+    let stateFilter: EventState | undefined;
+    if (query.state) {
+      if (!EVENT_STATES.includes(query.state as EventState)) {
+        throw new ApiError({
+          code: "INVALID_INPUT",
+          message: "Invalid event state filter.",
+          statusCode: 400,
+          details: { state: query.state },
+        });
+      }
+      stateFilter = query.state as EventState;
+      if (
+        roleStates &&
+        !(roleStates as readonly EventState[]).includes(stateFilter)
+      ) {
+        return buildPaginatedResult([], 0, pagination);
+      }
+    }
+
+    const { items, total } = await listEvents({
+      states: stateFilter ? undefined : roleStates,
+      state: stateFilter,
+      q: query.q,
+      sortColumn: sort.column,
+      sortDirection: sort.direction,
+      limit: pagination.pageSize,
+      offset: pagination.offset,
+    });
+
+    return buildPaginatedResult(
+      items.map(toEventListItem),
+      total,
+      pagination,
+    );
   }
 
   async update(

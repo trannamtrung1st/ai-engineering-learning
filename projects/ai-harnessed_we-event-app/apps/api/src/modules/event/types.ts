@@ -81,3 +81,19 @@ export interface TransitionContext {
   reasonCode?: string;
   reasonText?: string;
 }
+
+export interface ListEventsQuery {
+  page?: string;
+  pageSize?: string;
+  q?: string;
+  sort?: string;
+  state?: string;
+}
+
+export interface EventListItem {
+  eventId: string;
+  name: string;
+  state: EventState;
+  startAt: string;
+  location: string;
+}

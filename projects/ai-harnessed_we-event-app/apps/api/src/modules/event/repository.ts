@@ -14,6 +14,21 @@ import type {
   UpdateEventInput,
 } from "./types.js";
 
+export interface ListEventsOptions {
+  states?: EventState[];
+  state?: EventState;
+  q?: string;
+  sortColumn: string;
+  sortDirection: "ASC" | "DESC";
+  limit: number;
+  offset: number;
+}
+
+export interface ListEventsResult {
+  items: EventWithConfig[];
+  total: number;
+}
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 let schemaReady: Promise<void> | null = null;
@@ -124,22 +139,57 @@ export async function findEventById(
 }
 
 export async function listEvents(
-  options: { states?: EventState[] } = {},
+  options: ListEventsOptions,
   client: Pool | PoolClient = getPool(),
-): Promise<EventWithConfig[]> {
+): Promise<ListEventsResult> {
   const params: unknown[] = [];
-  let where = "";
+  const conditions: string[] = [];
+  let paramIndex = 1;
+
   if (options.states && options.states.length > 0) {
-    where = "WHERE e.state = ANY($1::text[])";
+    conditions.push(`e.state = ANY($${paramIndex++}::text[])`);
     params.push(options.states);
   }
-  const result = await client.query(
-    `${EVENT_SELECT} ${where} ORDER BY e.start_at ASC`,
+
+  if (options.state) {
+    conditions.push(`e.state = $${paramIndex++}`);
+    params.push(options.state);
+  }
+
+  if (options.q?.trim()) {
+    const pattern = `%${options.q.trim()}%`;
+    conditions.push(
+      `(e.name ILIKE $${paramIndex} OR e.location ILIKE $${paramIndex} OR e.description ILIKE $${paramIndex})`,
+    );
+    params.push(pattern);
+    paramIndex += 1;
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
+  const countResult = await client.query(
+    `SELECT COUNT(*)::int AS total FROM events e ${where}`,
     params,
   );
-  return result.rows.map((row) =>
-    mapEventWithConfig(row as Record<string, unknown>),
+  const total = (countResult.rows[0] as { total: number }).total;
+
+  const sortColumn = options.sortColumn;
+  const sortDirection = options.sortDirection;
+  const listParams = [...params, options.limit, options.offset];
+
+  const result = await client.query(
+    `${EVENT_SELECT} ${where}
+     ORDER BY ${sortColumn} ${sortDirection}
+     LIMIT $${paramIndex++} OFFSET $${paramIndex}`,
+    listParams,
   );
+
+  return {
+    items: result.rows.map((row) =>
+      mapEventWithConfig(row as Record<string, unknown>),
+    ),
+    total,
+  };
 }
 
 export async function organizationExists(

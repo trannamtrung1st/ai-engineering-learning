@@ -54,3 +54,5 @@ Append-only log of completed iterations.
 - 2026-06-25T14:24:03Z | web-participant-journeys | review_failed
 - 2026-06-25T14:30:13Z | web-participant-journeys | review_failed
 - 2026-06-25T14:55:02Z | web-participant-journeys | passed
+- 2026-06-25T15:08:04Z | module-event | review_failed
+- 2026-06-25T15:14:14Z | module-event | passed

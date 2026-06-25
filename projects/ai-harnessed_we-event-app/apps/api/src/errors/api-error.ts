@@ -9,6 +9,7 @@ export type ApiErrorCode =
   | "INTERNAL_ERROR"
   | "NOT_FOUND"
   | "INVALID_STATE_TRANSITION"
+  | "INVALID_PAGINATION"
   | "IDEMPOTENCY_KEY_CONFLICT";
 
 export class ApiError extends Error {
