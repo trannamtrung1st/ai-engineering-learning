@@ -121,8 +121,9 @@ check_stack_startup() {
   [[ -n "$api_when" && -d "$REPO_ROOT/$api_when" ]] || return 0
   [[ -n "$web_when" && -d "$REPO_ROOT/$web_when" ]] || return 0
 
-  local verify_script
+  local verify_script scenario_script
   verify_script="$(dirname "$0")/verify-stack.sh"
+  scenario_script="$(dirname "$0")/verify-scenarios.sh"
   [[ -x "$verify_script" ]] || return 0
 
   if [[ "${AIH_VERIFY_STACK:-}" == "1" ]]; then
@@ -130,8 +131,15 @@ check_stack_startup() {
       FAILURES+=("{\"type\":\"runtime\",\"message\":\"stack startup verification failed (api/web)\"}")
       PASS=false
     fi
+    if [[ -x "$scenario_script" ]] && ! "$scenario_script" 2>&1; then
+      FAILURES+=("{\"type\":\"runtime\",\"message\":\"participant registration scenario probe failed\"}")
+      PASS=false
+    fi
   elif ! "$verify_script" --quick 2>&1; then
     FAILURES+=("{\"type\":\"runtime\",\"message\":\"stack startup verification failed (api/web)\"}")
+    PASS=false
+  elif [[ -x "$scenario_script" ]] && ! "$scenario_script" --quick 2>&1; then
+    FAILURES+=("{\"type\":\"runtime\",\"message\":\"participant registration scenario probe failed\"}")
     PASS=false
   fi
 }

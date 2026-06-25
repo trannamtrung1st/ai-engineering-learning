@@ -48,3 +48,4 @@ Lessons learned across harness iterations. Read before every implementer session
 - [module-event] AI review failed — see 20260625T150028Z-review.json
 - [web-participant-journeys] AI review failed — see 20260625T153514Z-review.json
 - [web-participant-journeys] AI review failed — see 20260625T154212Z-review.json
+- [web-organizer-journeys] AI review failed — see 20260625T155640Z-review.json
