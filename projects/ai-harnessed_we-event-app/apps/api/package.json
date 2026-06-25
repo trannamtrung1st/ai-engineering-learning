@@ -10,7 +10,7 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "test": "node --import tsx --test --test-concurrency=1 'src/**/*.test.ts'",
-    "build": "tsc && mkdir -p dist/modules/event dist/modules/registration dist/idempotency && cp src/modules/event/schema.sql dist/modules/event/ && cp src/modules/registration/schema.sql dist/modules/registration/ && cp src/idempotency/schema.sql dist/idempotency/"
+    "build": "tsc && mkdir -p dist/modules/event dist/modules/registration dist/modules/checkin dist/idempotency && cp src/modules/event/schema.sql dist/modules/event/ && cp src/modules/registration/schema.sql dist/modules/registration/ && cp src/modules/checkin/schema.sql dist/modules/checkin/ && cp src/idempotency/schema.sql dist/idempotency/"
   },
   "dependencies": {
     "@fastify/jwt": "^9.0.2",

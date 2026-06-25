@@ -123,7 +123,7 @@
     },
     {
       "id": "module-checkin",
-      "passes": false,
+      "passes": true,
       "priority": 22,
       "phase": 2,
       "agent": "backend",

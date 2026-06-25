@@ -1,5 +1,6 @@
-import type { EventTransitionTrigger } from "@we-event/domain";
+import type { ActorRole, EventTransitionTrigger } from "@we-event/domain";
 import { ApiError } from "../../errors/api-error.js";
+import { finalizeAttendanceForEvent } from "../checkin/repository.js";
 import {
   createEvent,
   findEventById,
@@ -212,10 +213,23 @@ export class EventService {
   ): Promise<ReturnType<typeof toEventResponse>> {
     const existing = await this.requireEvent(eventId);
     const toState = resolveTransition(existing.state, "endEvent");
-    return this.applyTransition(eventId, existing, toState, "endEvent", {
-      ...context,
-      action: "event.completed",
+    const completed = await this.applyTransition(
+      eventId,
+      existing,
+      toState,
+      "endEvent",
+      {
+        ...context,
+        action: "event.completed",
+      },
+    );
+
+    await finalizeAttendanceForEvent(eventId, {
+      actorId: context.actorId,
+      actorRole: context.actorRole as ActorRole,
     });
+
+    return completed;
   }
 
   async cancel(

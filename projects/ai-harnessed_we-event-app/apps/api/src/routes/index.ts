@@ -5,6 +5,7 @@ import { adminRoutes } from "./admin.js";
 import { devAuthRoutes } from "./dev-auth.js";
 import { healthRoutes } from "./health.js";
 import { eventRoutes } from "../modules/event/index.js";
+import { checkinRoutes } from "../modules/checkin/index.js";
 import { registrationRoutes } from "../modules/registration/index.js";
 import { scopeRoutes } from "./scope.js";
 import { sessionRoutes } from "./session.js";
@@ -24,6 +25,7 @@ export async function registerRoutes(
       await protectedApp.register(scopeRoutes);
       await protectedApp.register(eventRoutes);
       await protectedApp.register(registrationRoutes);
+      await protectedApp.register(checkinRoutes);
       await protectedApp.register(adminRoutes);
     },
     { prefix: basePath },
