@@ -1,4 +1,7 @@
 .env
 node_modules/
+.npm-cache/
 ai-harness/generated/runs/
 *.log
+dist/
+.next/

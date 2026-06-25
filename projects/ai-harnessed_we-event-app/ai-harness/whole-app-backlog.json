@@ -3,11 +3,13 @@
   "slices": [
     {
       "id": "repo-monorepo-bootstrap",
-      "passes": false,
+      "passes": true,
       "priority": 0,
       "phase": 0,
       "agent": "infra",
-      "acceptance": ["NFR-14"],
+      "acceptance": [
+        "NFR-14"
+      ],
       "docs": [
         "docs/technical/12-backend-frontend-tech-stack.md",
         "docs/technical/10-local-development-setup.md"
@@ -26,8 +28,13 @@
       "priority": 1,
       "phase": 0,
       "agent": "infra",
-      "acceptance": ["NFR-02", "NFR-04"],
-      "docs": ["docs/technical/13-docker-compose-local-runtime.md"],
+      "acceptance": [
+        "NFR-02",
+        "NFR-04"
+      ],
+      "docs": [
+        "docs/technical/13-docker-compose-local-runtime.md"
+      ],
       "completionArtifacts": [
         "docker-compose.yml",
         ".env.example"
@@ -40,13 +47,19 @@
       "priority": 10,
       "phase": 1,
       "agent": "backend",
-      "acceptance": ["BR-01", "BR-03", "BR-10"],
+      "acceptance": [
+        "BR-01",
+        "BR-03",
+        "BR-10"
+      ],
       "docs": [
         "docs/technical/03-domain-model.md",
         "docs/technical/07-state-machines.md",
         "docs/technical/08-validation-rules.md"
       ],
-      "completionArtifacts": ["packages/domain/src/index.ts"],
+      "completionArtifacts": [
+        "packages/domain/src/index.ts"
+      ],
       "description": "Shared domain enums, state machines, and validation rule identifiers."
     },
     {
@@ -55,7 +68,10 @@
       "priority": 11,
       "phase": 1,
       "agent": "backend",
-      "acceptance": ["FR-25", "FR-26"],
+      "acceptance": [
+        "FR-25",
+        "FR-26"
+      ],
       "docs": [
         "docs/technical/05-api-design.md",
         "docs/technical/09-error-handling.md",
@@ -73,9 +89,16 @@
       "priority": 20,
       "phase": 2,
       "agent": "backend",
-      "acceptance": ["AC-11"],
-      "docs": ["docs/technical/02-module-breakdown.md", "docs/technical/06-main-workflows.md"],
-      "completionArtifacts": ["apps/api/src/modules/event"],
+      "acceptance": [
+        "AC-11"
+      ],
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/06-main-workflows.md"
+      ],
+      "completionArtifacts": [
+        "apps/api/src/modules/event"
+      ],
       "description": "Event module: CRUD, publish/pause, lifecycle transitions."
     },
     {
@@ -84,9 +107,18 @@
       "priority": 21,
       "phase": 2,
       "agent": "backend",
-      "acceptance": ["AC-01", "AC-02", "AC-03", "AC-04"],
-      "docs": ["docs/technical/02-module-breakdown.md"],
-      "completionArtifacts": ["apps/api/src/modules/registration"],
+      "acceptance": [
+        "AC-01",
+        "AC-02",
+        "AC-03",
+        "AC-04"
+      ],
+      "docs": [
+        "docs/technical/02-module-breakdown.md"
+      ],
+      "completionArtifacts": [
+        "apps/api/src/modules/registration"
+      ],
       "description": "Registration module: capacity, waitlist FIFO, dedupe."
     },
     {
@@ -95,9 +127,17 @@
       "priority": 22,
       "phase": 2,
       "agent": "backend",
-      "acceptance": ["AC-05", "AC-06", "AC-07"],
-      "docs": ["docs/technical/02-module-breakdown.md"],
-      "completionArtifacts": ["apps/api/src/modules/checkin"],
+      "acceptance": [
+        "AC-05",
+        "AC-06",
+        "AC-07"
+      ],
+      "docs": [
+        "docs/technical/02-module-breakdown.md"
+      ],
+      "completionArtifacts": [
+        "apps/api/src/modules/checkin"
+      ],
       "description": "Check-in module: window validation, attendance linkage."
     },
     {
@@ -106,9 +146,18 @@
       "priority": 23,
       "phase": 2,
       "agent": "backend",
-      "acceptance": ["AC-08", "AC-09", "AC-10"],
-      "docs": ["docs/technical/02-module-breakdown.md"],
-      "completionArtifacts": ["apps/api/src/modules/feedback", "apps/api/src/modules/eligibility"],
+      "acceptance": [
+        "AC-08",
+        "AC-09",
+        "AC-10"
+      ],
+      "docs": [
+        "docs/technical/02-module-breakdown.md"
+      ],
+      "completionArtifacts": [
+        "apps/api/src/modules/feedback",
+        "apps/api/src/modules/eligibility"
+      ],
       "description": "Feedback submission and eligibility evaluation with reasons."
     },
     {
@@ -117,9 +166,16 @@
       "priority": 24,
       "phase": 2,
       "agent": "backend",
-      "acceptance": ["AC-11", "AC-12"],
-      "docs": ["docs/technical/02-module-breakdown.md"],
-      "completionArtifacts": ["apps/api/src/modules/audit"],
+      "acceptance": [
+        "AC-11",
+        "AC-12"
+      ],
+      "docs": [
+        "docs/technical/02-module-breakdown.md"
+      ],
+      "completionArtifacts": [
+        "apps/api/src/modules/audit"
+      ],
       "description": "Audit log module for critical config and state changes."
     },
     {
@@ -128,7 +184,9 @@
       "priority": 30,
       "phase": 3,
       "agent": "frontend",
-      "acceptance": ["NFR-06"],
+      "acceptance": [
+        "NFR-06"
+      ],
       "docs": [
         "docs/ui-ux/00-production-ui-quality-bar.md",
         "docs/ui-ux/04-design-tokens.md",
@@ -146,9 +204,18 @@
       "priority": 31,
       "phase": 3,
       "agent": "frontend",
-      "acceptance": ["AC-01", "AC-05", "AC-08"],
-      "docs": ["docs/ui-ux/09-page-list.md", "docs/ui-ux/10-user-flows.md"],
-      "completionArtifacts": ["apps/web/src/app/(participant)"],
+      "acceptance": [
+        "AC-01",
+        "AC-05",
+        "AC-08"
+      ],
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/10-user-flows.md"
+      ],
+      "completionArtifacts": [
+        "apps/web/src/app/(participant)"
+      ],
       "description": "Participant routes: browse, detail, registration, check-in, feedback."
     },
     {
@@ -157,9 +224,17 @@
       "priority": 32,
       "phase": 3,
       "agent": "frontend",
-      "acceptance": ["AC-10", "AC-11"],
-      "docs": ["docs/ui-ux/09-page-list.md", "docs/ui-ux/07-event-specific-components.md"],
-      "completionArtifacts": ["apps/web/src/app/(organizer)"],
+      "acceptance": [
+        "AC-10",
+        "AC-11"
+      ],
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/07-event-specific-components.md"
+      ],
+      "completionArtifacts": [
+        "apps/web/src/app/(organizer)"
+      ],
       "description": "Organizer admin/staff routes: event list, create/edit, dashboard, check-in console."
     },
     {
@@ -169,9 +244,27 @@
       "phase": 4,
       "agent": "test",
       "mergeReady": true,
-      "acceptance": ["AC-01", "AC-02", "AC-03", "AC-04", "AC-05", "AC-06", "AC-07", "AC-08", "AC-09", "AC-10", "AC-11", "AC-12"],
-      "docs": ["docs/technical/11-testing-plan.md", "docs/brds/08-acceptance-mvp-future.md"],
-      "completionArtifacts": ["tests/e2e"],
+      "acceptance": [
+        "AC-01",
+        "AC-02",
+        "AC-03",
+        "AC-04",
+        "AC-05",
+        "AC-06",
+        "AC-07",
+        "AC-08",
+        "AC-09",
+        "AC-10",
+        "AC-11",
+        "AC-12"
+      ],
+      "docs": [
+        "docs/technical/11-testing-plan.md",
+        "docs/brds/08-acceptance-mvp-future.md"
+      ],
+      "completionArtifacts": [
+        "tests/e2e"
+      ],
       "description": "End-to-end scenario tests covering core acceptance matrix."
     }
   ]

@@ -2,6 +2,13 @@
   "name": "we-event",
   "private": true,
   "description": "We Event MVP — AI-harnessed implementation",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "typecheck": "npm run typecheck -ws --if-present",
     "lint": "npm run lint -ws --if-present",
