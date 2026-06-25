@@ -39,3 +39,5 @@ Append-only log of completed iterations.
 - 2026-06-25T09:23:00Z | domain-package | passed
 - 2026-06-25T09:28:51Z | api-foundation | review_failed
 - 2026-06-25T09:35:43Z | api-foundation | passed
+- 2026-06-25T09:43:42Z | module-event | review_failed
+- 2026-06-25T09:51:29Z | module-event | passed

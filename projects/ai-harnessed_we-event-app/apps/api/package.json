@@ -9,7 +9,7 @@
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "build": "tsc"
+    "build": "tsc && mkdir -p dist/modules/event && cp src/modules/event/schema.sql dist/modules/event/"
   },
   "dependencies": {
     "@fastify/jwt": "^9.0.2",

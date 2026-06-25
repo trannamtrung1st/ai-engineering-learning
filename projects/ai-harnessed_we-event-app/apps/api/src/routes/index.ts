@@ -4,6 +4,7 @@ import { requireAuth } from "../auth/middleware.js";
 import { adminRoutes } from "./admin.js";
 import { devAuthRoutes } from "./dev-auth.js";
 import { healthRoutes } from "./health.js";
+import { eventRoutes } from "../modules/event/index.js";
 import { scopeRoutes } from "./scope.js";
 import { sessionRoutes } from "./session.js";
 
@@ -20,6 +21,7 @@ export async function registerRoutes(
       protectedApp.addHook("onRequest", requireAuth);
       await protectedApp.register(sessionRoutes);
       await protectedApp.register(scopeRoutes);
+      await protectedApp.register(eventRoutes);
       await protectedApp.register(adminRoutes);
     },
     { prefix: basePath },
