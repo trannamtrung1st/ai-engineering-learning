@@ -50,6 +50,7 @@ Defaults live in `ai-harness/config/models.json`.
 | `npm run aih:preview` | **Dev preview** — DB in Docker, API + web as local dev processes |
 | `npm run aih:preview:full` | **Full preview** — DB + API + web as built Compose images |
 | `npm run aih:preview:verify` | Verify API health + web HTTP 200 (no start) |
+| `npm run aih:preview:logs` | View preview logs (combined, api, web, db, stack) |
 | `npm run aih:preview:down` | Stop preview stack |
 
 ### Preview (API + web)
@@ -65,6 +66,10 @@ npm run aih:preview:full
 
 # Verify an already-running stack
 npm run aih:preview:verify
+
+# View logs (combined stream or per-service)
+npm run aih:preview:logs
+npm run aih:preview:logs -- --follow
 
 # Tear down
 npm run aih:preview:down

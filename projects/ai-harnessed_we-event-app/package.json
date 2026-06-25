@@ -26,6 +26,7 @@
     "aih:preview:full": "./ai-harness/scripts/preview-stack.sh --mode full",
     "aih:preview:down": "./ai-harness/scripts/preview-stack.sh --down",
     "aih:preview:verify": "./ai-harness/scripts/verify-stack.sh",
-    "aih:preview:scenarios": "./ai-harness/scripts/verify-scenarios.sh"
+    "aih:preview:scenarios": "./ai-harness/scripts/verify-scenarios.sh",
+    "aih:preview:logs": "./ai-harness/scripts/preview-logs.sh"
   }
 }

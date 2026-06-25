@@ -70,3 +70,5 @@ Append-only log of completed iterations.
 - 2026-06-25T17:36:03Z | module-registration | passed
 - 2026-06-25T17:41:57Z | web-participant-journeys | passed
 - 2026-06-25T17:51:57Z | web-organizer-journeys | review_failed
+- 2026-06-25T17:56:15Z | web-organizer-journeys | checks_failed
+- 2026-06-25T18:03:22Z | web-organizer-journeys | checks_failed

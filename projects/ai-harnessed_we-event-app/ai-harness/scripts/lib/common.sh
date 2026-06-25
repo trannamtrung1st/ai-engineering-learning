@@ -12,14 +12,110 @@ CONTEXT_MAP="${HARNESS_ROOT}/config/context-map.json"
 STATE_DIR="${HARNESS_ROOT}/state"
 RUNS_DIR="${HARNESS_ROOT}/generated/runs"
 PREVIEW_PID_FILE="${RUNS_DIR}/preview-stack.pids"
+PREVIEW_AUX_PID_FILE="${RUNS_DIR}/preview-aux.pids"
 PREVIEW_WEB_LOG="${RUNS_DIR}/preview-web.log"
 PREVIEW_API_LOG="${RUNS_DIR}/preview-api.log"
+PREVIEW_DB_LOG="${RUNS_DIR}/preview-db.log"
+PREVIEW_STACK_LOG="${RUNS_DIR}/preview-stack.log"
+PREVIEW_COMBINED_LOG="${RUNS_DIR}/preview-combined.log"
 PREVIEW_SUPERVISOR_STOP_FILE="${RUNS_DIR}/preview-supervisor.stop"
 PREVIEW_WEB_REFRESH_FILE="${RUNS_DIR}/preview-web.refresh"
 
 export HARNESS_ROOT REPO_ROOT BACKLOG LOOP_CONFIG MODELS_CONFIG CONTEXT_MAP STATE_DIR RUNS_DIR
-export PREVIEW_PID_FILE PREVIEW_WEB_LOG PREVIEW_API_LOG
+export PREVIEW_PID_FILE PREVIEW_AUX_PID_FILE
+export PREVIEW_WEB_LOG PREVIEW_API_LOG PREVIEW_DB_LOG PREVIEW_STACK_LOG PREVIEW_COMBINED_LOG
 export PREVIEW_SUPERVISOR_STOP_FILE PREVIEW_WEB_REFRESH_FILE
+
+preview_log_files() {
+  printf '%s\n' \
+    "$PREVIEW_COMBINED_LOG" \
+    "$PREVIEW_STACK_LOG" \
+    "$PREVIEW_API_LOG" \
+    "$PREVIEW_WEB_LOG" \
+    "$PREVIEW_DB_LOG"
+}
+
+preview_log_ts() {
+  date -u +"%Y-%m-%dT%H:%M:%SZ"
+}
+
+preview_write_log() {
+  local tag="$1"
+  local primary_log="${2:-}"
+  local content="$3"
+  local ts line
+  ts="$(preview_log_ts)"
+  line="[${ts}][${tag}] ${content}"
+  ensure_runs_dir
+  echo "$line" >> "$PREVIEW_COMBINED_LOG"
+  if [[ -n "$primary_log" ]]; then
+    echo "$line" >> "$primary_log"
+  fi
+}
+
+preview_log_session_start() {
+  local mode="${1:-dev}"
+  local banner
+  banner="======== preview session start mode=${mode} $(preview_log_ts) pid=$$ ========"
+  ensure_runs_dir
+  local log_file
+  while IFS= read -r log_file; do
+    echo "$banner" >> "$log_file"
+  done < <(preview_log_files)
+}
+
+preview_log_stack() {
+  preview_write_log "stack" "$PREVIEW_STACK_LOG" "$*"
+}
+
+preview_tee_process_log() {
+  local tag="$1"
+  local primary_log="$2"
+  local line
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    preview_write_log "$tag" "$primary_log" "$line"
+  done
+}
+
+stop_preview_log_followers() {
+  if [[ ! -f "$PREVIEW_AUX_PID_FILE" ]]; then
+    return 0
+  fi
+  local pid
+  while IFS= read -r pid; do
+    [[ -z "$pid" ]] && continue
+    terminate_pid "$pid"
+  done < "$PREVIEW_AUX_PID_FILE"
+  rm -f "$PREVIEW_AUX_PID_FILE"
+}
+
+start_preview_db_log_follower() {
+  if ! command -v docker >/dev/null 2>&1; then
+    return 0
+  fi
+  ensure_runs_dir
+  stop_preview_log_followers
+  : > "$PREVIEW_AUX_PID_FILE"
+  (
+    docker compose logs -f --tail=50 db 2>&1 | preview_tee_process_log "db" "$PREVIEW_DB_LOG"
+  ) &
+  echo $! >> "$PREVIEW_AUX_PID_FILE"
+  preview_log_stack "db log follower started (pid=$!)"
+}
+
+start_preview_compose_log_follower() {
+  if ! command -v docker >/dev/null 2>&1; then
+    return 0
+  fi
+  ensure_runs_dir
+  stop_preview_log_followers
+  : > "$PREVIEW_AUX_PID_FILE"
+  (
+    docker compose --profile full-preview logs -f --tail=100 2>&1 | preview_tee_process_log "compose" "$PREVIEW_STACK_LOG"
+  ) &
+  echo $! >> "$PREVIEW_AUX_PID_FILE"
+  preview_log_stack "compose log follower started (pid=$!)"
+}
 
 require_cmd() {
   local cmd="$1"
@@ -278,6 +374,7 @@ read_preview_supervisor_pids() {
 
 stop_preview_supervisors() {
   ensure_runs_dir
+  preview_log_stack "stopping preview supervisors"
   touch "$PREVIEW_SUPERVISOR_STOP_FILE"
   rm -f "$PREVIEW_WEB_REFRESH_FILE"
 
@@ -290,8 +387,10 @@ stop_preview_supervisors() {
     rm -f "$PREVIEW_PID_FILE"
   fi
 
+  stop_preview_log_followers
   sleep 0.5
   rm -f "$PREVIEW_SUPERVISOR_STOP_FILE"
+  preview_log_stack "preview supervisors stopped"
 }
 
 start_preview_supervisors() {
@@ -301,10 +400,13 @@ start_preview_supervisors() {
   rm -f "$PREVIEW_SUPERVISOR_STOP_FILE" "$PREVIEW_WEB_REFRESH_FILE"
   : > "$PREVIEW_PID_FILE"
 
-  "$supervisor_script" api >>"$PREVIEW_API_LOG" 2>&1 &
+  "$supervisor_script" api &
   echo $! >> "$PREVIEW_PID_FILE"
-  "$supervisor_script" web >>"$PREVIEW_WEB_LOG" 2>&1 &
+  local api_sup=$!
+  "$supervisor_script" web &
   echo $! >> "$PREVIEW_PID_FILE"
+  local web_sup=$!
+  preview_log_stack "supervisors started (api=${api_sup}, web=${web_sup})"
 }
 
 # Kill the dev child on a port so its supervisor restarts it.
@@ -370,6 +472,7 @@ clean_web_next_cache() {
 print_preview_web_hint() {
   echo "  Hint: next build + next dev can corrupt apps/web/.next. Recovery:" >&2
   echo "    npm run aih:preview:down && rm -rf apps/web/.next && npm run aih:preview" >&2
+  echo "  Logs: npm run aih:preview:logs -- web" >&2
   if [[ -f "$PREVIEW_WEB_LOG" ]]; then
     echo "  Last lines of ${PREVIEW_WEB_LOG}:" >&2
     tail -n 8 "$PREVIEW_WEB_LOG" >&2 || true

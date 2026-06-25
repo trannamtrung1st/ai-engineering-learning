@@ -66,10 +66,14 @@ case "$ACTION" in
       export AIH_PREVIEW_MODE="$MODE"
     fi
     if [[ "$MODE" == "full" ]]; then
+      preview_log_stack "stopping full preview compose stack"
+      stop_preview_log_followers
       docker compose --profile full-preview down
     else
+      preview_log_stack "stopping dev preview stack"
       stop_dev_processes
-      npm run aih:dev:db:down
+      preview_log_stack "bringing down database"
+      npm run aih:dev:db:down 2>&1 | preview_tee_process_log "stack" "$PREVIEW_STACK_LOG" || true
     fi
     rm -f "$MODE_FILE"
     echo "Preview stack stopped (mode=$MODE)"
@@ -91,19 +95,51 @@ if [[ "$MODE" == "full" ]]; then
       exit 1
     fi
   done
-  docker compose --profile full-preview up -d --build
+  preview_log_session_start "full"
+  preview_log_stack "starting full preview compose stack"
+  set +e
+  docker compose --profile full-preview up -d --build 2>&1 | preview_tee_process_log "stack" "$PREVIEW_STACK_LOG"
+  compose_status=${PIPESTATUS[0]}
+  set -e
+  if [[ "$compose_status" -ne 0 ]]; then
+    preview_log_stack "compose up failed (exit $compose_status)"
+    exit "$compose_status"
+  fi
+  start_preview_compose_log_follower
 else
-  npm run aih:dev:db:up
+  preview_log_session_start "$MODE"
+  preview_log_stack "starting dev preview stack"
+  preview_log_stack "bringing up database"
+  npm run aih:dev:db:up 2>&1 | preview_tee_process_log "stack" "$PREVIEW_STACK_LOG" || true
+  preview_log_stack "waiting for database health"
   wait_db_healthy
   load_preview_env
-  npm run build --workspace @we-event/api
+  preview_log_stack "building API workspace"
+  set +e
+  npm run build --workspace @we-event/api 2>&1 | preview_tee_process_log "stack" "$PREVIEW_STACK_LOG"
+  build_status=${PIPESTATUS[0]}
+  set -e
+  if [[ "$build_status" -ne 0 ]]; then
+    preview_log_stack "API build failed (exit $build_status)"
+    exit "$build_status"
+  fi
   stop_dev_processes
   clean_web_next_cache
   start_preview_supervisors
+  start_preview_db_log_follower
 fi
 
 echo "$MODE" > "$MODE_FILE"
-"$VERIFY_SCRIPT"
+preview_log_stack "running startup verification"
+set +e
+"$VERIFY_SCRIPT" 2>&1 | preview_tee_process_log "stack" "$PREVIEW_STACK_LOG"
+verify_status=${PIPESTATUS[0]}
+set -e
+if [[ "$verify_status" -ne 0 ]]; then
+  preview_log_stack "startup verification failed (exit $verify_status)"
+  exit "$verify_status"
+fi
+preview_log_stack "startup verification passed"
 
 API_PORT="${AIH_PREVIEW_API_PORT:-3001}"
 WEB_PORT="${AIH_PREVIEW_WEB_PORT:-3000}"
@@ -111,8 +147,15 @@ echo ""
 echo "Preview stack ready (mode=$MODE)"
 echo "  API: http://localhost:${API_PORT}/api/v1/health"
 echo "  Web: http://localhost:${WEB_PORT}/"
-if [[ "$MODE" == "dev" && -f "$PID_FILE" ]]; then
-  echo "  Supervisors: $(tr '\n' ' ' < "$PID_FILE") (auto-restart on crash)"
-  echo "  Logs: ${PREVIEW_API_LOG}, ${PREVIEW_WEB_LOG}"
+if [[ -f "$PID_FILE" || -f "$PREVIEW_AUX_PID_FILE" || "$MODE" == "full" ]]; then
+  echo "  Logs: npm run aih:preview:logs -- --follow"
+  echo "    combined: ${PREVIEW_COMBINED_LOG}"
+  echo "    stack:    ${PREVIEW_STACK_LOG}"
+  if [[ "$MODE" == "dev" && -f "$PID_FILE" ]]; then
+    echo "  Supervisors: $(tr '\n' ' ' < "$PID_FILE") (auto-restart on crash)"
+    echo "    api:      ${PREVIEW_API_LOG}"
+    echo "    web:      ${PREVIEW_WEB_LOG}"
+    echo "    db:       ${PREVIEW_DB_LOG}"
+  fi
 fi
 echo "  Stop: npm run aih:preview:down"

@@ -21,10 +21,7 @@ if [[ -f "$REPO_ROOT/.env" ]]; then
 fi
 
 log_supervisor() {
-  local log_file="$1"
-  shift
-  echo "[preview-supervisor:${SERVICE}] $*" >>"$log_file"
-  echo "[preview-supervisor:${SERVICE}] $*" >&2
+  preview_write_log "supervisor:${SERVICE}" "$log_file" "$*"
 }
 
 run_api() {
@@ -39,38 +36,40 @@ maybe_refresh_web_cache() {
   [[ "$SERVICE" == "web" ]] || return 0
   [[ -f "$PREVIEW_WEB_REFRESH_FILE" ]] || return 0
   rm -f "$PREVIEW_WEB_REFRESH_FILE"
-  log_supervisor "$PREVIEW_WEB_LOG" "refresh requested — clearing apps/web/.next"
+  log_supervisor "refresh requested — clearing apps/web/.next"
   remove_path_safely "$REPO_ROOT/apps/web/.next"
 }
 
 log_file="$PREVIEW_API_LOG"
 run_cmd=run_api
+process_tag="api"
 if [[ "$SERVICE" == "web" ]]; then
   log_file="$PREVIEW_WEB_LOG"
   run_cmd=run_web
+  process_tag="web"
 fi
 
-log_supervisor "$log_file" "supervisor started (pid=$$)"
+log_supervisor "supervisor started (pid=$$)"
 
 while true; do
   if [[ -f "$PREVIEW_SUPERVISOR_STOP_FILE" ]]; then
-    log_supervisor "$log_file" "stop signal received — exiting"
+    log_supervisor "stop signal received — exiting"
     exit 0
   fi
 
   maybe_refresh_web_cache
 
-  log_supervisor "$log_file" "starting dev process at $(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+  log_supervisor "starting dev process"
   set +e
-  $run_cmd >>"$log_file" 2>&1
-  exit_code=$?
+  $run_cmd 2>&1 | preview_tee_process_log "$process_tag" "$log_file"
+  exit_code="${PIPESTATUS[0]}"
   set -e
 
   if [[ -f "$PREVIEW_SUPERVISOR_STOP_FILE" ]]; then
-    log_supervisor "$log_file" "stop signal received after exit ($exit_code) — exiting"
+    log_supervisor "stop signal received after exit ($exit_code) — exiting"
     exit 0
   fi
 
-  log_supervisor "$log_file" "dev process exited ($exit_code) — restarting in ${PREVIEW_RESTART_DELAY_SEC:-2}s"
+  log_supervisor "dev process exited ($exit_code) — restarting in ${PREVIEW_RESTART_DELAY_SEC:-2}s"
   sleep "${PREVIEW_RESTART_DELAY_SEC:-2}"
 done

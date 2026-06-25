@@ -303,6 +303,36 @@ Signal files in `ai-harness/generated/runs/`:
 
 Override restart delay: `PREVIEW_RESTART_DELAY_SEC=5`
 
+### Logging (all processes)
+
+Every preview session writes timestamped, tagged logs under `ai-harness/generated/runs/`:
+
+| File | Tag | Contents |
+|---|---|---|
+| `preview-combined.log` | all | Unified stream — best for debugging |
+| `preview-stack.log` | `stack` | Start/stop, db up, build, verify |
+| `preview-api.log` | `api`, `supervisor:api` | API dev + supervisor events |
+| `preview-web.log` | `web`, `supervisor:web` | Web dev + supervisor events |
+| `preview-db.log` | `db` | Postgres container (`docker compose logs -f db`) |
+
+Full preview mode also tails all compose services into `preview-stack.log` with tag `compose`.
+
+View logs:
+
+```bash
+# Last 50 lines of combined log (default)
+npm run aih:preview:logs
+
+# Follow all logs live
+npm run aih:preview:logs -- --follow
+
+# One service, more lines
+npm run aih:preview:logs -- api --lines 200
+npm run aih:preview:logs -- all --follow
+```
+
+Log lines format: `[2026-06-25T18:00:00Z][api] message`
+
 ### Web dev cache recovery
 
 `next build` and `next dev` share `apps/web/.next`. While preview is up, harness checks skip web production build. If you run `next build` manually while preview is serving, restart preview:
@@ -332,6 +362,10 @@ npm run aih:preview:verify
 
 # Participant registration API scenario (independent of web)
 npm run aih:preview:scenarios
+
+# View / follow logs (combined or per-service)
+npm run aih:preview:logs
+npm run aih:preview:logs -- --follow all
 
 # Tear down
 npm run aih:preview:down
