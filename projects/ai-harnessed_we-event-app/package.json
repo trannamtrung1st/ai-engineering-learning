@@ -19,6 +19,8 @@
     "aih:loop:bg": "./ai-harness/scripts/ralph-loop-daemon.sh",
     "aih:loop:stop": "./ai-harness/scripts/ralph-loop-stop.sh",
     "aih:check": "./ai-harness/scripts/run-checks.sh",
-    "aih:review": "./ai-harness/scripts/run-ai-review.sh"
+    "aih:review": "./ai-harness/scripts/run-ai-review.sh",
+    "aih:dev:db:up": "docker compose up -d db",
+    "aih:dev:db:down": "docker compose stop db"
   }
 }

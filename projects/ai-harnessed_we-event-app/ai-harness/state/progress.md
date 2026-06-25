@@ -34,3 +34,5 @@ Append-only log of completed iterations.
 - 2026-06-25T08:30:50Z | repo-monorepo-bootstrap | checks_failed
 - 2026-06-25T08:30:50Z | repo-monorepo-bootstrap | checks_failed
 - 2026-06-25T09:13:48Z | repo-monorepo-bootstrap | passed
+- 2026-06-25T09:16:20Z | docker-compose-db | checks_failed
+- 2026-06-25T09:20:15Z | docker-compose-db | passed
