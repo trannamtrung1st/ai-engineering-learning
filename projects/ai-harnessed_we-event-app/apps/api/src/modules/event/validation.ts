@@ -12,6 +12,7 @@ import type {
   RuleConfigInput,
   UpdateEventInput,
 } from "./types.js";
+import { buildCoverImageUrl } from "./cover-image.js";
 
 const DEFAULT_ORGANIZATION_ID = "00000000-0000-0000-0000-000000000001";
 
@@ -318,17 +319,21 @@ export function resolveTransition(
 }
 
 export function toEventListItem(event: EventWithConfig): EventListItem {
-  return {
+  const item: EventListItem = {
     eventId: event.id,
     name: event.name,
     state: event.state,
     startAt: event.startAt,
     location: event.location,
   };
+  if (event.coverImageKey) {
+    item.coverImageUrl = buildCoverImageUrl(event.coverImageKey);
+  }
+  return item;
 }
 
 export function toEventResponse(event: EventWithConfig) {
-  return {
+  const response = {
     eventId: event.id,
     organizationId: event.organizationId,
     name: event.name,
@@ -352,7 +357,11 @@ export function toEventResponse(event: EventWithConfig) {
       registrationPaused: event.ruleConfig.registrationPaused,
       version: event.ruleConfig.version,
     },
+    ...(event.coverImageKey
+      ? { coverImageUrl: buildCoverImageUrl(event.coverImageKey) }
+      : {}),
   };
+  return response;
 }
 
 export { DEFAULT_ORGANIZATION_ID };

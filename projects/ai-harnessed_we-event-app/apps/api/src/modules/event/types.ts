@@ -29,6 +29,8 @@ export interface EventRow {
   state: EventState;
   startAt: string;
   endAt: string;
+  coverImageKey: string | null;
+  coverImageUpdatedAt: string | null;
   createdBy: string;
   updatedBy: string;
   createdAt: string;
@@ -96,4 +98,5 @@ export interface EventListItem {
   state: EventState;
   startAt: string;
   location: string;
+  coverImageUrl?: string;
 }

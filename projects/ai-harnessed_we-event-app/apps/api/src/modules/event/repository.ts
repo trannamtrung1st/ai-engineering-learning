@@ -71,6 +71,10 @@ function mapEvent(row: Record<string, unknown>): EventRow {
     state: row.state as EventState,
     startAt: (row.start_at as Date).toISOString(),
     endAt: (row.end_at as Date).toISOString(),
+    coverImageKey: (row.cover_image_key as string | null) ?? null,
+    coverImageUpdatedAt: row.cover_image_updated_at
+      ? (row.cover_image_updated_at as Date).toISOString()
+      : null,
     createdBy: row.created_by as string,
     updatedBy: row.updated_by as string,
     createdAt: (row.created_at as Date).toISOString(),
@@ -96,6 +100,8 @@ const EVENT_SELECT = `
     e.state,
     e.start_at,
     e.end_at,
+    e.cover_image_key,
+    e.cover_image_updated_at,
     e.created_by,
     e.updated_by,
     e.created_at,
@@ -509,6 +515,111 @@ export async function transitionEventState(
 
     await client.query("COMMIT");
     return findEventById(eventId);
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function setEventCoverImage(
+  eventId: string,
+  coverImageKey: string,
+  actorId: string,
+  actorRole: string,
+  previousKey: string | null,
+): Promise<EventWithConfig | null> {
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const existing = await findEventById(eventId, client);
+    if (!existing) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+
+    await client.query(
+      `UPDATE events
+       SET cover_image_key = $1,
+           cover_image_updated_at = NOW(),
+           updated_by = $2,
+           updated_at = NOW(),
+           version = version + 1
+       WHERE id = $3`,
+      [coverImageKey, actorId, eventId],
+    );
+
+    await insertAuditLog(
+      {
+        eventId,
+        entityType: "Event",
+        entityId: eventId,
+        action: "event.cover_image.uploaded",
+        actorId,
+        actorRole,
+        before: { coverImageKey: previousKey },
+        after: { coverImageKey },
+      },
+      client,
+    );
+
+    await client.query("COMMIT");
+    return findEventById(eventId, client);
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function clearEventCoverImage(
+  eventId: string,
+  actorId: string,
+  actorRole: string,
+  previousKey: string | null,
+): Promise<EventWithConfig | null> {
+  const pool = getPool();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const existing = await findEventById(eventId, client);
+    if (!existing) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+
+    await client.query(
+      `UPDATE events
+       SET cover_image_key = NULL,
+           cover_image_updated_at = NULL,
+           updated_by = $1,
+           updated_at = NOW(),
+           version = version + 1
+       WHERE id = $2`,
+      [actorId, eventId],
+    );
+
+    await insertAuditLog(
+      {
+        eventId,
+        entityType: "Event",
+        entityId: eventId,
+        action: "event.cover_image.deleted",
+        actorId,
+        actorRole,
+        before: { coverImageKey: previousKey },
+        after: { coverImageKey: null },
+      },
+      client,
+    );
+
+    await client.query("COMMIT");
+    return findEventById(eventId, client);
   } catch (error) {
     await client.query("ROLLBACK");
     throw error;

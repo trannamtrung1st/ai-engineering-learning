@@ -1,5 +1,6 @@
 import type { ActorRole, EventState, EventTransitionTrigger } from "@we-event/domain";
 import { EVENT_STATES } from "@we-event/domain";
+import { randomUUID } from "node:crypto";
 import { ApiError } from "../../errors/api-error.js";
 import {
   buildPaginatedResult,
@@ -15,6 +16,8 @@ import {
   organizationExists,
   transitionEventState,
   updateEvent,
+  setEventCoverImage,
+  clearEventCoverImage,
 } from "./repository.js";
 import type {
   CreateEventInput,
@@ -32,6 +35,16 @@ import {
   validateCreateInput,
   validateUpdateInput,
 } from "./validation.js";
+import {
+  buildCoverImageKey,
+  extensionForMime,
+  validateCoverImage,
+} from "./cover-image.js";
+import {
+  deleteCoverImageFile,
+  ensureEventsUploadDir,
+  saveCoverImage,
+} from "./storage.js";
 
 const PARTICIPANT_VISIBLE_STATES = [
   "Published",
@@ -305,6 +318,74 @@ export class EventService {
       ...context,
       action: "event.cancelled",
     });
+  }
+
+  async uploadCoverImage(
+    eventId: string,
+    uploadsDir: string,
+    file: { mimeType: string | undefined; buffer: Buffer },
+    context: TransitionContext,
+  ): Promise<ReturnType<typeof toEventResponse>> {
+    const existing = await this.requireEvent(eventId);
+    validateCoverImage(file.mimeType, file.buffer.length);
+
+    const extension = extensionForMime(file.mimeType!);
+    if (!extension) {
+      throw new ApiError({
+        code: "INVALID_INPUT",
+        message: "Unsupported cover image type.",
+        statusCode: 400,
+      });
+    }
+
+    const key = buildCoverImageKey(eventId, randomUUID(), extension);
+    await ensureEventsUploadDir(uploadsDir);
+
+    if (existing.coverImageKey) {
+      await deleteCoverImageFile(uploadsDir, existing.coverImageKey);
+    }
+
+    await saveCoverImage(uploadsDir, key, file.buffer);
+
+    try {
+      const updated = await setEventCoverImage(
+        eventId,
+        key,
+        context.actorId,
+        context.actorRole,
+        existing.coverImageKey,
+      );
+      if (!updated) {
+        throw notFound(eventId);
+      }
+      return toEventResponse(updated);
+    } catch (error) {
+      await deleteCoverImageFile(uploadsDir, key);
+      throw error;
+    }
+  }
+
+  async deleteCoverImage(
+    eventId: string,
+    uploadsDir: string,
+    context: TransitionContext,
+  ): Promise<ReturnType<typeof toEventResponse>> {
+    const existing = await this.requireEvent(eventId);
+
+    if (existing.coverImageKey) {
+      await deleteCoverImageFile(uploadsDir, existing.coverImageKey);
+    }
+
+    const updated = await clearEventCoverImage(
+      eventId,
+      context.actorId,
+      context.actorRole,
+      existing.coverImageKey,
+    );
+    if (!updated) {
+      throw notFound(eventId);
+    }
+    return toEventResponse(updated);
   }
 
   private async applyTransition(

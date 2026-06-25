@@ -5,7 +5,7 @@ import { authRoutes } from "../modules/auth/index.js";
 import { adminRoutes } from "./admin.js";
 import { devAuthRoutes } from "./dev-auth.js";
 import { healthRoutes } from "./health.js";
-import { eventRoutes } from "../modules/event/index.js";
+import { eventRoutes, mediaRoutes } from "../modules/event/index.js";
 import { auditRoutes } from "../modules/audit/index.js";
 import { checkinRoutes } from "../modules/checkin/index.js";
 import { eligibilityRoutes } from "../modules/eligibility/index.js";
@@ -22,13 +22,14 @@ export async function registerRoutes(
   await app.register(healthRoutes, { prefix: basePath });
   await app.register(devAuthRoutes(config), { prefix: basePath });
   await app.register(authRoutes, { prefix: basePath });
+  await app.register(mediaRoutes(config), { prefix: basePath });
 
   await app.register(
     async (protectedApp) => {
       protectedApp.addHook("onRequest", requireAuth);
       await protectedApp.register(sessionRoutes);
       await protectedApp.register(scopeRoutes);
-      await protectedApp.register(eventRoutes);
+      await protectedApp.register(eventRoutes(config));
       await protectedApp.register(registrationRoutes);
       await protectedApp.register(checkinRoutes);
       await protectedApp.register(feedbackRoutes);

@@ -24,6 +24,8 @@ function buildEvent(overrides: Partial<EventWithConfig> = {}): EventWithConfig {
     state: "Completed",
     startAt: open,
     endAt: close,
+    coverImageKey: null,
+    coverImageUpdatedAt: null,
     createdBy: "00000000-0000-0000-0000-000000000099",
     updatedBy: "00000000-0000-0000-0000-000000000099",
     createdAt: open,

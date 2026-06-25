@@ -59,6 +59,18 @@ export async function buildApp() {
       return;
     }
 
+    if (error.code === "FST_REQ_FILE_TOO_LARGE") {
+      reply.status(400).send(
+        buildErrorEnvelope(
+          "INVALID_INPUT",
+          "Cover image must be 5 MB or smaller.",
+          requestId,
+          { maxBytes: 5 * 1024 * 1024 },
+        ),
+      );
+      return;
+    }
+
     request.log.error({ err: error, requestId }, "unhandled error");
     reply.status(500).send(
       buildErrorEnvelope(

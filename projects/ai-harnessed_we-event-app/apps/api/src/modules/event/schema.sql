@@ -54,3 +54,7 @@ CREATE TABLE IF NOT EXISTS event_rule_configs (
 -- Idempotent column add for harness iterations that created schema without pause flag
 ALTER TABLE event_rule_configs
   ADD COLUMN IF NOT EXISTS registration_paused BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE events
+  ADD COLUMN IF NOT EXISTS cover_image_key TEXT,
+  ADD COLUMN IF NOT EXISTS cover_image_updated_at TIMESTAMPTZ;

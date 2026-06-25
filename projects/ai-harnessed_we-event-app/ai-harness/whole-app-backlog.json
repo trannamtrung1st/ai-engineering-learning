@@ -327,7 +327,7 @@
     },
     {
       "id": "module-event-cover-image",
-      "passes": false,
+      "passes": true,
       "priority": 26,
       "phase": 2,
       "agent": "backend",
@@ -344,6 +344,19 @@
       "completionArtifacts": [
         "apps/api/src/modules/event"
       ],
+      "testRequirements": {
+        "unit": [
+          "apps/api/src/modules/event/cover-image.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/modules/event/cover-image.integration.test.ts"
+        ],
+        "acceptanceTags": [
+          "FR-35",
+          "FR-36",
+          "NFR-18"
+        ]
+      },
       "description": "Event cover image: cover_image_key column, multipart upload endpoint, local filesystem storage with served URL path; validate MIME/size; delete/replace on update."
     },
     {

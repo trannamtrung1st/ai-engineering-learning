@@ -4,6 +4,7 @@ export interface AppConfig {
   jwtSecret: string;
   timezone: string;
   devAuthEnabled: boolean;
+  uploadsDir: string;
 }
 
 function requireEnv(name: string): string {
@@ -26,5 +27,6 @@ export function loadConfig(): AppConfig {
     jwtSecret: requireEnv("JWT_SECRET"),
     timezone: process.env.TIMEZONE ?? "UTC",
     devAuthEnabled: process.env.DEV_AUTH_ENABLED === "true",
+    uploadsDir: process.env.UPLOADS_DIR ?? "./uploads",
   };
 }
