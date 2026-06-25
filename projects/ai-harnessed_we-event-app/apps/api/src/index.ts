@@ -97,7 +97,7 @@ const isMainModule =
 
 if (isMainModule) {
   startServer().catch((error: unknown) => {
-    console.error(error);
-    process.exit(1);
+    console.error("Failed to start API server:", error);
+    // Let node --watch retry after dist/ or env changes instead of exiting.
   });
 }

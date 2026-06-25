@@ -52,3 +52,4 @@ Lessons learned across harness iterations. Read before every implementer session
 - [module-registration] Computational checks failed — see 20260625T162337Z-checks.json
 - [module-registration] Computational checks failed — see 20260625T170113Z-checks.json
 - [module-registration] AI review failed — see 20260625T171051Z-review.json
+- [web-organizer-journeys] AI review failed — see 20260625T174157Z-review.json

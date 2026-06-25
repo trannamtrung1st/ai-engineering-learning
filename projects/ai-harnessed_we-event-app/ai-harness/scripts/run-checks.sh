@@ -74,7 +74,12 @@ check_npm_commands() {
       continue
     fi
     if jq -e --arg s "$script" '.scripts[$s]' package.json >/dev/null 2>&1; then
-      if ! npm run "$script" 2>&1; then
+      if [[ "$script" == "build" ]]; then
+        if ! run_build_for_checks 2>&1; then
+          FAILURES+=("{\"type\":\"npm_script\",\"script\":\"$script\"}")
+          PASS=false
+        fi
+      elif ! npm run "$script" 2>&1; then
         FAILURES+=("{\"type\":\"npm_script\",\"script\":\"$script\"}")
         PASS=false
       fi

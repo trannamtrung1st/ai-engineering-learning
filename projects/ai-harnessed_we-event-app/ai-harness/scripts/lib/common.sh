@@ -14,9 +14,12 @@ RUNS_DIR="${HARNESS_ROOT}/generated/runs"
 PREVIEW_PID_FILE="${RUNS_DIR}/preview-stack.pids"
 PREVIEW_WEB_LOG="${RUNS_DIR}/preview-web.log"
 PREVIEW_API_LOG="${RUNS_DIR}/preview-api.log"
+PREVIEW_SUPERVISOR_STOP_FILE="${RUNS_DIR}/preview-supervisor.stop"
+PREVIEW_WEB_REFRESH_FILE="${RUNS_DIR}/preview-web.refresh"
 
 export HARNESS_ROOT REPO_ROOT BACKLOG LOOP_CONFIG MODELS_CONFIG CONTEXT_MAP STATE_DIR RUNS_DIR
 export PREVIEW_PID_FILE PREVIEW_WEB_LOG PREVIEW_API_LOG
+export PREVIEW_SUPERVISOR_STOP_FILE PREVIEW_WEB_REFRESH_FILE
 
 require_cmd() {
   local cmd="$1"
@@ -244,6 +247,96 @@ terminate_pid() {
   wait "$pid" 2>/dev/null || true
 }
 
+preview_supervisor_script() {
+  echo "${HARNESS_ROOT}/scripts/preview-supervisor.sh"
+}
+
+preview_stack_is_running() {
+  [[ -f "$PREVIEW_PID_FILE" ]] || return 1
+  local pid
+  while IFS= read -r pid; do
+    [[ -z "$pid" ]] && continue
+    kill -0 "$pid" 2>/dev/null && return 0
+  done < "$PREVIEW_PID_FILE"
+  return 1
+}
+
+read_preview_supervisor_pids() {
+  PREVIEW_API_SUPERVISOR_PID=""
+  PREVIEW_WEB_SUPERVISOR_PID=""
+  [[ -f "$PREVIEW_PID_FILE" ]] || return 1
+  local -a pids=()
+  local pid
+  while IFS= read -r pid; do
+    [[ -z "$pid" ]] && continue
+    pids+=("$pid")
+  done < "$PREVIEW_PID_FILE"
+  [[ ${#pids[@]} -ge 1 ]] && PREVIEW_API_SUPERVISOR_PID="${pids[0]}"
+  [[ ${#pids[@]} -ge 2 ]] && PREVIEW_WEB_SUPERVISOR_PID="${pids[1]}"
+  export PREVIEW_API_SUPERVISOR_PID PREVIEW_WEB_SUPERVISOR_PID
+}
+
+stop_preview_supervisors() {
+  ensure_runs_dir
+  touch "$PREVIEW_SUPERVISOR_STOP_FILE"
+  rm -f "$PREVIEW_WEB_REFRESH_FILE"
+
+  if [[ -f "$PREVIEW_PID_FILE" ]]; then
+    local pid
+    while IFS= read -r pid; do
+      [[ -z "$pid" ]] && continue
+      terminate_pid "$pid"
+    done < "$PREVIEW_PID_FILE"
+    rm -f "$PREVIEW_PID_FILE"
+  fi
+
+  sleep 0.5
+  rm -f "$PREVIEW_SUPERVISOR_STOP_FILE"
+}
+
+start_preview_supervisors() {
+  local supervisor_script
+  supervisor_script="$(preview_supervisor_script)"
+  ensure_runs_dir
+  rm -f "$PREVIEW_SUPERVISOR_STOP_FILE" "$PREVIEW_WEB_REFRESH_FILE"
+  : > "$PREVIEW_PID_FILE"
+
+  "$supervisor_script" api >>"$PREVIEW_API_LOG" 2>&1 &
+  echo $! >> "$PREVIEW_PID_FILE"
+  "$supervisor_script" web >>"$PREVIEW_WEB_LOG" 2>&1 &
+  echo $! >> "$PREVIEW_PID_FILE"
+}
+
+# Kill the dev child on a port so its supervisor restarts it.
+nudge_preview_service_restart() {
+  local port="$1"
+  local self_pid="${2:-}"
+
+  if ! command -v lsof >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local port_pid
+  while IFS= read -r port_pid; do
+    [[ -z "$port_pid" ]] && continue
+    [[ -n "$self_pid" && "$port_pid" == "$self_pid" ]] && continue
+    [[ -n "${PREVIEW_WEB_SUPERVISOR_PID:-}" && "$port_pid" == "$PREVIEW_WEB_SUPERVISOR_PID" ]] && continue
+    [[ -n "${PREVIEW_API_SUPERVISOR_PID:-}" && "$port_pid" == "$PREVIEW_API_SUPERVISOR_PID" ]] && continue
+    terminate_pid "$port_pid"
+  done < <(lsof -ti ":${port}" 2>/dev/null || true)
+}
+
+nudge_preview_api_restart() {
+  read_preview_supervisor_pids || return 0
+  nudge_preview_service_restart "${AIH_PREVIEW_API_PORT:-3001}"
+}
+
+nudge_preview_web_restart() {
+  read_preview_supervisor_pids || return 0
+  touch "$PREVIEW_WEB_REFRESH_FILE"
+  nudge_preview_service_restart "${AIH_PREVIEW_WEB_PORT:-3000}"
+}
+
 remove_path_safely() {
   local target="$1"
   [[ -e "$target" ]] || return 0
@@ -262,37 +355,15 @@ remove_path_safely() {
 }
 
 stop_preview_web_process() {
-  local web_port="${AIH_PREVIEW_WEB_PORT:-3000}"
-  local web_pid=""
-
-  if [[ -f "$PREVIEW_PID_FILE" ]]; then
-    local -a pids=()
-    local pid
-    while IFS= read -r pid; do
-      [[ -z "$pid" ]] && continue
-      pids+=("$pid")
-    done < "$PREVIEW_PID_FILE"
-    if [[ ${#pids[@]} -ge 2 ]]; then
-      web_pid="${pids[1]}"
-      terminate_pid "$web_pid"
-    fi
-  fi
-
-  if command -v lsof >/dev/null 2>&1; then
-    local port_pid
-    while IFS= read -r port_pid; do
-      [[ -z "$port_pid" ]] && continue
-      [[ -n "$web_pid" && "$port_pid" == "$web_pid" ]] && continue
-      terminate_pid "$port_pid"
-    done < <(lsof -ti ":${web_port}" 2>/dev/null || true)
-  fi
-
+  nudge_preview_web_restart
   sleep 0.5
 }
 
 clean_web_next_cache() {
   [[ -d "$REPO_ROOT/apps/web" ]] || return 0
-  stop_preview_web_process
+  if preview_stack_is_running; then
+    nudge_preview_web_restart
+  fi
   remove_path_safely "$REPO_ROOT/apps/web/.next"
 }
 
@@ -305,37 +376,39 @@ print_preview_web_hint() {
   fi
 }
 
-# After root build, restart preview web dev so it does not serve stale .next chunks.
+# No-op when preview is up: run_build_for_checks skips web build to avoid .next corruption.
 refresh_preview_web_after_build() {
   [[ -d "$REPO_ROOT/apps/web" ]] || return 0
-  [[ -f "$PREVIEW_PID_FILE" ]] || return 0
-
-  local -a pids=()
-  local pid
-  while IFS= read -r pid; do
-    [[ -z "$pid" ]] && continue
-    pids+=("$pid")
-  done < "$PREVIEW_PID_FILE"
-
-  [[ ${#pids[@]} -ge 2 ]] || return 0
-  local web_pid="${pids[1]}"
-  kill -0 "$web_pid" 2>/dev/null || return 0
-
-  stop_preview_web_process
-  remove_path_safely "$REPO_ROOT/apps/web/.next"
-  ensure_runs_dir
-  if [[ -f "$REPO_ROOT/.env" ]]; then
-    set -a
-    # shellcheck disable=SC1091
-    source "$REPO_ROOT/.env"
-    set +a
+  if preview_stack_is_running; then
+    return 0
   fi
-  PORT="${AIH_PREVIEW_WEB_PORT:-3000}" npm run dev --workspace @we-event/web >>"$PREVIEW_WEB_LOG" 2>&1 &
-  local new_pid=$!
-  {
-    echo "${pids[0]}"
-    echo "$new_pid"
-  } > "$PREVIEW_PID_FILE"
-  sleep 2
-  echo "Refreshed preview web dev (pid=${new_pid}) after build"
+}
+
+# Build all workspaces except web while preview dev is serving (avoids .next corruption).
+run_build_for_checks() {
+  local ws
+  local pkg
+  local -a workspaces=(
+    "@we-event/api:apps/api"
+    "@we-event/domain:packages/domain"
+    "@we-event/config:packages/config"
+    "@we-event/web:apps/web"
+  )
+
+  if preview_stack_is_running; then
+    echo "Preview stack running — skipping @we-event/web build to preserve dev .next cache"
+    for ws in "${workspaces[@]}"; do
+      [[ "${ws##*:}" == "apps/web" ]] && continue
+      pkg="${ws%%:*}"
+      if [[ -f "$REPO_ROOT/${ws##*:}/package.json" ]] && jq -e --arg s "build" '.scripts[$s] // empty' "$REPO_ROOT/${ws##*:}/package.json" >/dev/null 2>&1; then
+        npm run build --workspace "$pkg" || return 1
+        if [[ "$pkg" == "@we-event/api" ]]; then
+          nudge_preview_api_restart
+        fi
+      fi
+    done
+    return 0
+  fi
+
+  npm run build || return 1
 }

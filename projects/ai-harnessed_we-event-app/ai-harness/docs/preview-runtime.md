@@ -281,11 +281,31 @@ echo "  Stop: npm run aih:preview:down"
 - **Full poll:** set `AIH_VERIFY_STACK=1` before `aih:check` (expects preview stack running).
 - **Slice-scoped web probe:** backend/infra slices use `verify-stack.sh --api-only` (API health only). Frontend and test slices also require web `GET /` HTTP 200.
 - **Scenario probe:** `verify-scenarios.sh` runs independently of web health (API-only participant registration flow).
-- **After build:** if preview web dev is running, harness restarts it with a clean `apps/web/.next` to avoid `next build` + `next dev` cache corruption.
+- **After build:** when preview is **not** running, full workspace build includes web. When preview **is** running, `run-checks.sh` skips `@we-event/web` build to avoid corrupting dev `.next` (typecheck still covers web).
+
+### Dev-mode supervisors (auto-restart)
+
+Dev preview starts two supervisor processes (`preview-supervisor.sh`) instead of bare `npm run dev`:
+
+| Supervisor | Command | On crash |
+|---|---|---|
+| API | `node dist/index.js` (supervisor restarts; no `--watch`) | Restarts after 2s |
+| Web | `next dev` | Restarts after 2s; honors refresh signal |
+
+PID file (`preview-stack.pids`) stores **supervisor** PIDs (not child npm/next PIDs). Stop via `npm run aih:preview:down` sets `preview-supervisor.stop` and terminates supervisors cleanly.
+
+Signal files in `ai-harness/generated/runs/`:
+
+| File | Purpose |
+|---|---|
+| `preview-supervisor.stop` | Supervisors exit their restart loop |
+| `preview-web.refresh` | Web supervisor clears `.next` before next start |
+
+Override restart delay: `PREVIEW_RESTART_DELAY_SEC=5`
 
 ### Web dev cache recovery
 
-`next build` (run during `aih:check`) writes production artifacts to `apps/web/.next`. A long-lived `next dev` preview process can then return HTTP 500 (`Cannot find module './NNN.js'`).
+`next build` and `next dev` share `apps/web/.next`. While preview is up, harness checks skip web production build. If you run `next build` manually while preview is serving, restart preview:
 
 Recovery:
 
@@ -296,7 +316,7 @@ npm run aih:preview
 npm run aih:preview:verify
 ```
 
-`aih:preview` clears `.next` before starting web dev. During Ralph loops, `run-checks.sh` also refreshes preview web after `build` when the stack is already up.
+`aih:preview` clears `.next` before starting web dev.
 
 ## Quick reference
 

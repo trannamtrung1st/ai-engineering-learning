@@ -43,14 +43,7 @@ load_preview_env() {
 }
 
 stop_dev_processes() {
-  if [[ -f "$PID_FILE" ]]; then
-    while IFS= read -r pid; do
-      [[ -z "$pid" ]] && continue
-      terminate_pid "$pid"
-    done < "$PID_FILE"
-    rm -f "$PID_FILE"
-  fi
-  sleep 0.5
+  stop_preview_supervisors
 }
 
 wait_db_healthy() {
@@ -106,11 +99,7 @@ else
   npm run build --workspace @we-event/api
   stop_dev_processes
   clean_web_next_cache
-  : > "$PID_FILE"
-  PORT="${AIH_PREVIEW_API_PORT:-3001}" npm run dev --workspace @we-event/api >>"${PREVIEW_API_LOG}" 2>&1 &
-  echo $! >> "$PID_FILE"
-  PORT="${AIH_PREVIEW_WEB_PORT:-3000}" npm run dev --workspace @we-event/web >>"${PREVIEW_WEB_LOG}" 2>&1 &
-  echo $! >> "$PID_FILE"
+  start_preview_supervisors
 fi
 
 echo "$MODE" > "$MODE_FILE"
@@ -123,7 +112,7 @@ echo "Preview stack ready (mode=$MODE)"
 echo "  API: http://localhost:${API_PORT}/api/v1/health"
 echo "  Web: http://localhost:${WEB_PORT}/"
 if [[ "$MODE" == "dev" && -f "$PID_FILE" ]]; then
-  echo "  PIDs: $(tr '\n' ' ' < "$PID_FILE")"
+  echo "  Supervisors: $(tr '\n' ' ' < "$PID_FILE") (auto-restart on crash)"
   echo "  Logs: ${PREVIEW_API_LOG}, ${PREVIEW_WEB_LOG}"
 fi
 echo "  Stop: npm run aih:preview:down"
