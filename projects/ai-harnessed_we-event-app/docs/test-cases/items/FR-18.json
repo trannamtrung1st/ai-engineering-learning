@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-18",
   "version": 1,
-  "docFingerprint": "sha256:107397bd83cd034f847adc3aa5c281b5205685eb1f8283558c1614364f516122",
-  "generatedAt": "2026-06-26T12:22:20Z",
+  "docFingerprint": "sha256:7433a3d750e43b22d11a68701a7f1b5c84cd70f9e0c73887fcb4bbc85d306aed",
+  "generatedAt": "2026-06-26T17:10:33Z",
   "cases": [
     {
       "id": "TC-FR-18-001",
@@ -11,7 +11,8 @@
       "technique": "module-integration",
       "priority": "P0",
       "traceability": [
-        "FR-18"
+        "FR-18",
+        "AC-08"
       ],
       "title": "Organizer Admin configures feedback as mandatory during event creation in Draft",
       "preconditions": [
@@ -34,7 +35,8 @@
       "technique": "http-contract",
       "priority": "P0",
       "traceability": [
-        "FR-18"
+        "FR-18",
+        "AC-08"
       ],
       "title": "POST /events persists feedbackRequired true and GET detail returns mandatory policy",
       "preconditions": [
@@ -55,7 +57,9 @@
       "technique": "module-integration",
       "priority": "P0",
       "traceability": [
-        "FR-18"
+        "FR-18",
+        "AC-08",
+        "AC-09"
       ],
       "title": "Organizer Admin configures feedback as optional during event creation",
       "preconditions": [
@@ -124,7 +128,8 @@
         "FR-18",
         "BR-14",
         "BR-18",
-        "AC-09"
+        "AC-09",
+        "AC-09c"
       ],
       "title": "Testing-plan §3 eligibility pass/fail reflects mandatory feedbackRequired config",
       "preconditions": [
@@ -136,7 +141,7 @@
         "Run eligibilityEvaluator for the attended participant without feedback",
         "Inspect CertificateEligibility result and reason payload"
       ],
-      "expected": "Testing-plan §3 eligibility row satisfied: outcome is NotEligible with reason code NOT_ELIGIBLE_FEEDBACK or FEEDBACK_REQUIRED per BR-14 and BR-18; passAllRules guard fails because feedback is mandatory but incomplete",
+      "expected": "Testing-plan §3 eligibility row satisfied: outcome is NotEligible with reasonCode NOT_ELIGIBLE_FEEDBACK per AC-09c, FR-20 step 2, and BR-18; mandatory feedback policy from EventRuleConfig blocks eligibility when feedback is incomplete",
       "edgeCase": false
     },
     {
@@ -184,7 +189,7 @@
         "GET /api/v1/events/{mandatoryEventId}/eligibility/me with participant token",
         "GET /api/v1/events/{optionalEventId}/eligibility/me with participant token"
       ],
-      "expected": "Mandatory-event response is NotEligible with feedback-related reason; optional-event response is Eligible when attendance alone satisfies BR-17; demonstrates FR-18 config drives deterministic eligibility outcomes",
+      "expected": "Mandatory-event response is HTTP 200 NotEligible with reasonCode NOT_ELIGIBLE_FEEDBACK (AC-09c); optional-event response is Eligible when attendance baseline passes (AC-09b); demonstrates FR-18 feedbackRequired config drives deterministic eligibility outcomes",
       "edgeCase": false
     },
     {
@@ -208,7 +213,7 @@
         "GET /api/v1/events/{eventId} and confirm ruleConfig.feedbackRequired true",
         "GET /api/v1/events/{eventId}/eligibility/me with participant token after event completion"
       ],
-      "expected": "Flow A completes through check-in and completion; eligibility/me returns NotEligible with feedback-related reason because mandatory feedback policy configured at draft persists through lifecycle",
+      "expected": "Flow A completes through check-in and completion; eligibility/me returns HTTP 200 NotEligible with reasonCode NOT_ELIGIBLE_FEEDBACK because mandatory feedback policy configured at draft persists through lifecycle",
       "edgeCase": false
     },
     {
@@ -288,7 +293,8 @@
       "technique": "boundary-error",
       "priority": "P1",
       "traceability": [
-        "FR-18"
+        "FR-18",
+        "AC-08"
       ],
       "title": "Reject feedback policy save when feedback window has openAt >= closeAt",
       "preconditions": [
@@ -390,7 +396,7 @@
         "Run eligibility evaluation pipeline twice with identical inputs",
         "Compare reason_code and result across both runs"
       ],
-      "expected": "Both runs produce identical NotEligible outcome with same feedback-related reason; validation step 2 (validate feedback requirement) executes before persist per validation pipeline",
+      "expected": "Both runs produce identical NotEligible outcome with reasonCode NOT_ELIGIBLE_FEEDBACK; FR-20 evaluation step 2 (mandatory feedback check) executes before persist per BR-19 deterministic order",
       "edgeCase": false
     },
     {
@@ -425,16 +431,17 @@
         "FR-18",
         "FR-22"
       ],
-      "title": "Event dashboard exposes configured feedback policy for organizer review",
+      "title": "Event dashboard exposes configured feedback policy and mandatory outstanding count",
       "preconditions": [
-        "Event with feedbackRequired true and valid feedback window",
+        "Completed event with feedbackRequired true and valid feedback window",
+        "At least one Attended participant has not submitted feedback",
         "OrganizerAdmin JWT authorized for dashboard"
       ],
       "steps": [
         "GET /api/v1/events/{eventId}/dashboard with organizer token",
-        "Verify feedback policy section or rule summary in response"
+        "Verify feedbackRequired true, feedbackSubmitted count, and mandatory-feedback outstanding count in response"
       ],
-      "expected": "Dashboard returns HTTP 200 with feedbackRequired true and feedback window metadata so organizer can confirm mandatory policy is active per FR-22 operational overview",
+      "expected": "Dashboard returns HTTP 200 with feedbackRequired true and feedback completion metrics; mandatory-feedback outstanding count is non-zero and reflects attended participants missing required feedback per FR-18 and FR-22 operational overview",
       "edgeCase": false
     }
   ]
