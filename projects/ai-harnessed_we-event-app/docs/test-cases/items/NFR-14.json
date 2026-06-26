@@ -1,8 +1,8 @@
 {
   "productItemId": "NFR-14",
   "version": 1,
-  "docFingerprint": "sha256:3ef34de51e629338bb80d28f095b60c3a35be925eaaedb8316f99080c3e69bb9",
-  "generatedAt": "2026-06-26T13:06:57Z",
+  "docFingerprint": "sha256:760d931f03571cf7d36ca7d48482931be0c8d73890d7d000688eb1ec0072b034",
+  "generatedAt": "2026-06-27T00:00:00Z",
   "cases": [
     {
       "id": "TC-NFR-14-001",
@@ -172,24 +172,24 @@
     {
       "id": "TC-NFR-14-008",
       "category": "non-functional",
-      "layer": "unit",
+      "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
       "traceability": [
         "NFR-14",
         "NFR-13"
       ],
-      "title": "Cross-field window validator returns actionable error for conflicting ruleConfig times",
+      "title": "PATCH rejects conflicting ruleConfig check-in window with actionable error",
       "preconditions": [
-        "Event rule config validator module available",
-        "Draft event ruleConfig with checkinCloseAt before checkinOpenAt"
+        "Draft event with OrganizerAdmin JWT",
+        "Valid registration window in ruleConfig"
       ],
       "steps": [
-        "Call validateEventRuleConfig or equivalent with conflicting check-in window timestamps",
-        "Inspect returned error code and message"
+        "PATCH /api/v1/events/{eventId} with ruleConfig setting checkinCloseAt before checkinOpenAt",
+        "Inspect HTTP status and structured error envelope"
       ],
-      "expected": "Validation fails with deterministic error and user-safe message explaining how to fix window order; supports low-setup-error organizer UX per design overview without requiring technical support to diagnose invalid config",
-      "edgeCase": false
+      "expected": "HTTP 422 with deterministic validation error code and user-safe message explaining how to fix window order; EventRuleConfig unchanged; supports low-setup-error organizer UX per NFR-13 without requiring technical support to diagnose invalid config",
+      "edgeCase": true
     },
     {
       "id": "TC-NFR-14-009",
@@ -327,23 +327,24 @@
     {
       "id": "TC-NFR-14-015",
       "category": "edge",
-      "layer": "unit",
+      "layer": "integration",
       "technique": "rbac-negative",
       "priority": "P1",
       "traceability": [
         "NFR-14",
         "BR-21"
       ],
-      "title": "assertEventRuleConfigChangePermission rejects non-admin roles",
+      "title": "eventService rejects rule config mutation for non-admin roles at service boundary",
       "preconditions": [
-        "Authorization helper assertEventRuleConfigChangePermission or equivalent available",
-        "Actor context with role OrganizerStaff or Participant"
+        "Draft event in Postgres per docker-compose local runtime",
+        "OrganizerStaff and Participant actor contexts available"
       ],
       "steps": [
-        "Call permission guard with OrganizerStaff actor attempting ruleConfig mutation",
-        "Call permission guard with Participant actor attempting ruleConfig mutation"
+        "Invoke eventService.update with OrganizerStaff actor and ruleConfig capacity change",
+        "Invoke eventService.update with Participant actor and ruleConfig mutation",
+        "Verify event_rule_configs row unchanged in Postgres after both attempts"
       ],
-      "expected": "Both invocations throw EVENT_RULE_CHANGE_FORBIDDEN before domain mutation; config change pipeline enforces BR-21 at validation layer step per validation rules catalog",
+      "expected": "Both invocations reject with EVENT_RULE_CHANGE_FORBIDDEN before domain mutation; config change pipeline enforces BR-21 at service boundary per tech stack layered backend guardrails",
       "edgeCase": true
     }
   ]

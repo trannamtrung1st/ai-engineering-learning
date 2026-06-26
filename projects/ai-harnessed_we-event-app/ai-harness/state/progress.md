@@ -365,3 +365,4 @@ Append-only log of completed iterations.
 - 2026-06-26T17:58:39Z | NFR-06 | testgen_passed
 - 2026-06-26T18:00:40Z | NFR-07 | testgen_passed
 - 2026-06-26T18:02:58Z | NFR-08 | testgen_passed
+- 2026-06-26T18:04:01Z | NFR-14 | testgen_passed
