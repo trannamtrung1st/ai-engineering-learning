@@ -359,3 +359,4 @@ Lessons learned across harness iterations. Read before every implementer session
 - [docker-compose-db] AI review failed — see 20260626T181528Z-review.json
 - [docker-compose-db] AI review failed — see 20260626T182649Z-review.json
 - [docker-compose-db] Do not cite generated case IDs (e.g. TC-NFR-02-019) on infra smoke tests; map each case ID to its real scenario in the owning module test file (waitlist concurrency → registration.integration.test.ts).
+- [api-foundation] AI review failed — see 20260626T184529Z-review.json

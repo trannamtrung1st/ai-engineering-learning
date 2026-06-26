@@ -130,6 +130,110 @@ async function createCompletedEventWithAttendee(options?: {
   };
 }
 
+async function createCompletedEventWithTwoAttendees(options?: {
+  feedbackRequired?: boolean;
+}): Promise<{
+  event: EventWithConfig;
+  participantA: { id: string; registrationId: string };
+  participantB: { id: string; registrationId: string };
+}> {
+  const windows = eventWindows();
+  const participantAId = randomUUID();
+  const participantBId = randomUUID();
+  await ensureTestParticipant(participantAId);
+  await ensureTestParticipant(participantBId);
+
+  const draft = await createEvent(
+    {
+      name: `Multi Eligibility ${randomUUID()}`,
+      startAt: windows.open,
+      endAt: windows.close,
+      ruleConfig: {
+        capacity: 10,
+        waitlistEnabled: false,
+        registrationOpenAt: windows.open,
+        registrationCloseAt: windows.close,
+        checkinOpenAt: windows.open,
+        checkinCloseAt: windows.close,
+        feedbackRequired: options?.feedbackRequired ?? true,
+        feedbackOpenAt: windows.open,
+        feedbackCloseAt: windows.close,
+      },
+    },
+    ORG_ADMIN_ID,
+    "OrganizerAdmin",
+    ORG_ID,
+  );
+
+  const ctx = {
+    actorId: ORG_ADMIN_ID,
+    actorRole: "OrganizerAdmin" as const,
+    action: "test.transition",
+  };
+
+  await transitionEventState(draft.id, "Published", {
+    ...ctx,
+    action: "event.published",
+  });
+  await transitionEventState(draft.id, "RegistrationOpen", {
+    ...ctx,
+    action: "event.registration_opened",
+  });
+
+  const registeredA = await registrationService.register(
+    draft.id,
+    participantAId,
+    { actorId: participantAId, actorRole: "Participant" },
+  );
+  const registeredB = await registrationService.register(
+    draft.id,
+    participantBId,
+    { actorId: participantBId, actorRole: "Participant" },
+  );
+
+  await transitionEventState(draft.id, "RegistrationClosed", {
+    ...ctx,
+    action: "event.registration_closed",
+  });
+  await transitionEventState(draft.id, "InProgress", {
+    ...ctx,
+    action: "event.started",
+  });
+
+  await checkinService.staffCheckin(
+    draft.id,
+    { registrationId: registeredA.registrationId },
+    { actorId: ORG_ADMIN_ID, actorRole: "OrganizerAdmin" },
+  );
+  await checkinService.staffCheckin(
+    draft.id,
+    { registrationId: registeredB.registrationId },
+    { actorId: ORG_ADMIN_ID, actorRole: "OrganizerAdmin" },
+  );
+
+  const completed = await eventService.complete(draft.id, {
+    actorId: ORG_ADMIN_ID,
+    actorRole: "OrganizerAdmin",
+  });
+
+  const event = await findEventById(completed.eventId);
+  if (!event) {
+    throw new Error("Failed to load completed event");
+  }
+
+  return {
+    event,
+    participantA: {
+      id: participantAId,
+      registrationId: registeredA.registrationId,
+    },
+    participantB: {
+      id: participantBId,
+      registrationId: registeredB.registrationId,
+    },
+  };
+}
+
 describe("feedback and eligibility integration (FR-19, FR-21, BR-15, BR-16, BR-18, BR-19, BR-20)", () => {
   before(async () => {
     const databaseUrl =
@@ -281,7 +385,7 @@ describe("feedback and eligibility integration (FR-19, FR-21, BR-15, BR-16, BR-1
     assert.deepEqual(updated.answers, { q1: 5 });
   });
 
-  it("TC-AC-09-002 / BR-18 / BR-19: getMyEligibility persists Eligible result in certificate_eligibilities", async () => {
+  it("TC-AC-09-002 / AC-09 / FR-20 / BR-18 / BR-19: getMyEligibility persists Eligible result with reason in certificate_eligibilities", async () => {
     const { event, participantId, registrationId } =
       await createCompletedEventWithAttendee();
 
@@ -304,6 +408,72 @@ describe("feedback and eligibility integration (FR-19, FR-21, BR-15, BR-16, BR-1
     assert.equal(persisted.reasonCode, result.reasonCode);
     assert.equal(persisted.reasonText, result.reasonText);
     assert.ok(persisted.evaluatedAt);
+  });
+
+  it("TC-FR-26-007 / FR-20a / FR-26 / AC-09: getMyEligibility returns only current actor eligibility", async () => {
+    const { event, participantA, participantB } =
+      await createCompletedEventWithTwoAttendees();
+
+    await feedbackService.submit(
+      event.id,
+      participantA.id,
+      { answers: { q1: 5 } },
+      { actorId: participantA.id, actorRole: "Participant" },
+    );
+
+    const myResult = await eligibilityService.getMyEligibility(
+      event.id,
+      participantA.id,
+      { actorId: participantA.id, actorRole: "Participant" },
+    );
+
+    const organizerList = await eligibilityService.listEligibility(
+      event.id,
+      { page: "1", pageSize: "20" },
+      { actorId: ORG_ADMIN_ID, actorRole: "OrganizerAdmin" },
+    );
+
+    const entryA = organizerList.items.find(
+      (item) => item.registrationId === participantA.registrationId,
+    );
+    const entryB = organizerList.items.find(
+      (item) => item.registrationId === participantB.registrationId,
+    );
+    assert.ok(entryA);
+    assert.ok(entryB);
+    assert.equal(entryA.participantId, participantA.id);
+    assert.equal(entryA.eligibility.result, myResult.result);
+    assert.equal(entryA.eligibility.reasonCode, myResult.reasonCode);
+    assert.equal(entryA.eligibility.reasonText, myResult.reasonText);
+    assert.equal(entryB.eligibility.result, "NotEligible");
+    assert.notEqual(entryB.eligibility.result, myResult.result);
+  });
+
+  it("TC-FR-26-019 / FR-20a / FR-26 / AC-09: getMyEligibility scoped to actor identity only returns own eligibility", async () => {
+    const { event, participantA, participantB } =
+      await createCompletedEventWithTwoAttendees();
+
+    await feedbackService.submit(
+      event.id,
+      participantA.id,
+      { answers: { q1: 5 } },
+      { actorId: participantA.id, actorRole: "Participant" },
+    );
+
+    const resultA = await eligibilityService.getMyEligibility(
+      event.id,
+      participantA.id,
+      { actorId: participantA.id, actorRole: "Participant" },
+    );
+    const resultB = await eligibilityService.getMyEligibility(
+      event.id,
+      participantB.id,
+      { actorId: participantB.id, actorRole: "Participant" },
+    );
+
+    assert.equal(resultA.result, "Eligible");
+    assert.equal(resultB.result, "NotEligible");
+    assert.notEqual(resultA.reasonCode, resultB.reasonCode);
   });
 
   it("AC-09 / BR-18 / BR-19: eligibility evaluation returns Eligible with reason after feedback", async () => {

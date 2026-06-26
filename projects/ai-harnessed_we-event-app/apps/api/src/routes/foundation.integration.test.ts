@@ -191,6 +191,24 @@ describe("api foundation", () => {
     }
   });
 
+  it("FR-26 / FR-20a: eligibility/me rejects non-participant roles", async () => {
+    const adminToken = await signDevToken(
+      app,
+      "00000000-0000-0000-0000-000000000096",
+      "OrganizerAdmin",
+    );
+    const eventId = "00000000-0000-0000-0000-000000000050";
+
+    const response = await app.inject({
+      method: "GET",
+      url: `${API_BASE_PATH}/events/${eventId}/eligibility/me`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+
+    assert.equal(response.statusCode, 403);
+    assert.equal(parseError(response.body).error.code, "FORBIDDEN");
+  });
+
   it("FR-26: participant can only access own registration scope", async () => {
     const ownSub = "participant-scope-a";
     const otherSub = "participant-scope-b";

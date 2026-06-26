@@ -373,3 +373,5 @@ Append-only log of completed iterations.
 - 2026-06-26T18:34:54Z | docker-compose-db | review_failed
 - 2026-06-26T18:40:49Z | docker-compose-db | passed
 - 2026-06-26T18:45:29Z | domain-package | passed
+- 2026-06-26T18:53:51Z | api-foundation | review_failed
+- 2026-06-26T19:02:03Z | api-foundation | passed
