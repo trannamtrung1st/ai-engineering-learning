@@ -2,15 +2,16 @@
   "productItemId": "AC-10",
   "version": 1,
   "docFingerprint": "sha256:ac1db8b40211f70e028eb0b2e18e8a7c3e48283625918ed84f037849f363d057",
-  "generatedAt": "2026-06-26T14:30:00Z",
+  "generatedAt": "2026-06-26T16:00:00Z",
   "cases": [
     {
       "id": "TC-AC-10-001",
       "category": "functional",
       "layer": "integration",
+      "technique": "scenario-matrix",
       "priority": "P0",
       "traceability": ["AC-10", "FR-21", "BR-17", "BR-18", "BR-19"],
-      "title": "OrganizerAdmin lists certificate-eligible participants with reason code and text",
+      "title": "Organizer views certificate-eligible participant list with reasons per testing-plan §3",
       "preconditions": [
         "Completed event with mandatory feedback and at least one Attended participant who submitted feedback",
         "Eligibility evaluation has run or will be triggered on list",
@@ -20,16 +21,56 @@
         "Invoke eligibilityService.listEligibility(eventId, { page: \"1\", pageSize: \"20\" }, organizerAdminContext)",
         "Locate list entry for the eligible registrationId"
       ],
-      "expected": "Paginated result includes entry with eligibility.result Eligible, non-empty reasonCode, and non-empty reasonText; satisfies AC-10 and BR-19 reason persistence",
+      "expected": "Paginated result includes entry with eligibility.result Eligible, non-empty reasonCode, and non-empty reasonText; satisfies testing-plan §3 row: Organizer views eligible list → list + reasons available (AC-10)",
       "edgeCase": false
     },
     {
       "id": "TC-AC-10-002",
       "category": "functional",
-      "layer": "e2e",
+      "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["AC-10", "FR-21", "BR-17", "BR-18", "BR-19"],
-      "title": "GET eligibility list returns Eligible row with reasons after full lifecycle",
+      "title": "OrganizerAdmin listEligibility persists and returns Eligible row with reason from certificate_eligibilities",
+      "preconditions": [
+        "Completed event with mandatory feedback and at least one Attended participant who submitted feedback",
+        "certificate_eligibilities row exists or will be created on list access",
+        "Authenticated OrganizerAdmin actor with event scope"
+      ],
+      "steps": [
+        "Invoke eligibilityService.listEligibility(eventId, { page: \"1\", pageSize: \"20\" }, organizerAdminContext)",
+        "Query certificate_eligibilities table for the eligible registrationId in the same database session"
+      ],
+      "expected": "Paginated result and persisted row both show eligibility.result Eligible with non-empty reasonCode and reasonText; module-integration boundary per eligibility module transaction contract",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-10-003",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["AC-10", "FR-21", "BR-17", "BR-18", "BR-19"],
+      "title": "GET /api/v1/events/{eventId}/eligibility returns HTTP 200 paginated envelope with reason fields",
+      "preconditions": [
+        "Completed event with evaluated Eligible participant",
+        "OrganizerAdmin JWT with scope to the event"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/eligibility?page=1&pageSize=20 with organizer Authorization bearer token",
+        "Verify HTTP status, paginated envelope fields, and eligibility payload on matching item"
+      ],
+      "expected": "HTTP 200 with items, page, pageSize, total, totalPages; matching item has eligibility.result Eligible, non-empty reasonCode, and non-empty reasonText per API design §2.4 and §3",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-10-004",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["AC-10", "FR-21", "BR-17", "BR-18", "BR-19"],
+      "title": "Flow A organizer eligibility list shows Eligible row with reasons after full lifecycle",
       "preconditions": [
         "E2E Flow A progressed through publish, registration, check-in, event completion, and feedback submission",
         "OrganizerAdmin JWT with scope to the event",
@@ -39,13 +80,14 @@
         "GET /api/v1/events/{eventId}/eligibility?page=1&pageSize=20 with organizer Authorization bearer token",
         "Find item matching participant registrationId in response items array"
       ],
-      "expected": "HTTP 200 with paginated envelope; matching item has eligibility.result Eligible, non-empty reasonCode, and non-empty reasonText per testing plan scenario matrix",
+      "expected": "HTTP 200 with paginated envelope; matching item has eligibility.result Eligible, non-empty reasonCode, and non-empty reasonText; completes Flow A organizer eligibility visibility step",
       "edgeCase": false
     },
     {
-      "id": "TC-AC-10-003",
+      "id": "TC-AC-10-005",
       "category": "functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["AC-10", "FR-21", "BR-17", "BR-18", "BR-19"],
       "title": "Organizer lists NotEligible participants with attendance or feedback reason",
@@ -62,9 +104,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-AC-10-004",
+      "id": "TC-AC-10-006",
       "category": "functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P1",
       "traceability": ["AC-10", "FR-21", "FR-30"],
       "title": "OrganizerStaff can list eligibility for assigned event",
@@ -80,9 +123,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-AC-10-005",
+      "id": "TC-AC-10-007",
       "category": "functional",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["AC-10", "FR-21"],
       "title": "Organizer eligibility page displays result badge and reason text column",
@@ -100,9 +144,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-AC-10-006",
+      "id": "TC-AC-10-008",
       "category": "functional",
       "layer": "integration",
+      "technique": "state-transition",
       "priority": "P1",
       "traceability": ["AC-10", "FR-21", "BR-20"],
       "title": "Revoked eligibility appears in organizer list with override reason",
@@ -112,37 +157,40 @@
         "Authenticated OrganizerAdmin actor"
       ],
       "steps": [
+        "Read certificate_eligibilities beforeState for revoked registrationId",
         "Invoke eligibilityService.listEligibility with eligibility filter Revoked or All",
-        "Locate revoked participant entry"
+        "Locate revoked participant entry and compare afterState"
       ],
-      "expected": "Entry shows eligibility.result Revoked with admin-provided reasonCode and reasonText; overriddenBy populated per BR-20",
+      "expected": "Entry shows eligibility.result Revoked with admin-provided reasonCode and reasonText; overriddenBy populated per BR-20 and domain lifecycle §6 Eligibility",
       "edgeCase": false
     },
     {
-      "id": "TC-AC-10-007",
+      "id": "TC-AC-10-009",
       "category": "edge",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P1",
       "traceability": ["AC-10", "FR-21"],
-      "title": "eligibility query filter Eligible returns only eligible rows",
+      "title": "GET eligibility with eligibility=Eligible filter returns only eligible rows",
       "preconditions": [
         "Completed event with mix of Eligible and NotEligible participants",
         "OrganizerAdmin JWT"
       ],
       "steps": [
         "GET /api/v1/events/{eventId}/eligibility?eligibility=Eligible&page=1&pageSize=20",
-        "Verify every item in response"
+        "Verify HTTP 200 and every item in response items array"
       ],
-      "expected": "All returned items have eligibility.result Eligible; no NotEligible rows in filtered page",
+      "expected": "HTTP 200; all returned items have eligibility.result Eligible; no NotEligible rows in filtered page",
       "edgeCase": true
     },
     {
-      "id": "TC-AC-10-008",
+      "id": "TC-AC-10-010",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["AC-10", "FR-21"],
-      "title": "eligibility query filter NotEligible returns only not-eligible rows",
+      "title": "GET eligibility with eligibility=NotEligible filter returns only not-eligible rows",
       "preconditions": [
         "Completed event with at least one NotEligible participant (e.g. missing mandatory feedback)",
         "OrganizerAdmin JWT"
@@ -151,16 +199,17 @@
         "GET /api/v1/events/{eventId}/eligibility?eligibility=NotEligible&page=1&pageSize=20",
         "Verify every item in response"
       ],
-      "expected": "All returned items have eligibility.result NotEligible with non-empty reason fields",
+      "expected": "HTTP 200; all returned items have eligibility.result NotEligible with non-empty reason fields",
       "edgeCase": true
     },
     {
-      "id": "TC-AC-10-009",
+      "id": "TC-AC-10-011",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["AC-10"],
-      "title": "Invalid eligibility filter value returns 400",
+      "title": "Invalid eligibility filter value returns HTTP 400 INVALID_INPUT",
       "preconditions": [
         "Completed event with eligibility records",
         "OrganizerAdmin JWT"
@@ -172,12 +221,13 @@
       "edgeCase": true
     },
     {
-      "id": "TC-AC-10-010",
+      "id": "TC-AC-10-012",
       "category": "edge",
       "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P1",
       "traceability": ["AC-10", "AC-15"],
-      "title": "Unauthenticated GET eligibility list returns 401",
+      "title": "Unauthenticated GET eligibility list returns HTTP 401",
       "preconditions": [
         "Completed event with eligibility records",
         "No Authorization header on request"
@@ -189,11 +239,12 @@
       "edgeCase": true
     },
     {
-      "id": "TC-AC-10-011",
+      "id": "TC-AC-10-013",
       "category": "edge",
       "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P1",
-      "traceability": ["AC-10", "AC-15"],
+      "traceability": ["AC-10", "AC-15", "FR-26"],
       "title": "Participant cannot access organizer eligibility list endpoint",
       "preconditions": [
         "Completed event with evaluated eligibility",
@@ -202,13 +253,14 @@
       "steps": [
         "GET /api/v1/events/{eventId}/eligibility with participant Authorization bearer token"
       ],
-      "expected": "HTTP 403 forbidden; participant scoped to /eligibility/me only per permission matrix",
+      "expected": "HTTP 403 forbidden; participant scoped to /eligibility/me only per permission matrix §2–§3",
       "edgeCase": true
     },
     {
-      "id": "TC-AC-10-012",
+      "id": "TC-AC-10-014",
       "category": "edge",
       "layer": "integration",
+      "technique": "rbac-negative",
       "priority": "P1",
       "traceability": ["AC-10", "FR-30"],
       "title": "OrganizerStaff outside event scope cannot list eligibility",
@@ -223,9 +275,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-AC-10-013",
+      "id": "TC-AC-10-015",
       "category": "edge",
       "layer": "integration",
+      "technique": "pagination",
       "priority": "P2",
       "traceability": ["AC-10", "AC-13", "FR-30"],
       "title": "Eligibility list page beyond totalPages returns empty items with valid metadata",
@@ -237,16 +290,17 @@
         "Call listEligibility with page=1 pageSize=1 to read total and totalPages",
         "Call listEligibility with page exceeding totalPages"
       ],
-      "expected": "Beyond-last-page response has items: [], matching total and totalPages; pagination contract per AC-13 and API design section 3",
+      "expected": "Beyond-last-page response has items: [], matching total and totalPages; pagination contract per AC-13 and API design §3",
       "edgeCase": true
     },
     {
-      "id": "TC-AC-10-014",
+      "id": "TC-AC-10-016",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P2",
       "traceability": ["AC-10"],
-      "title": "Invalid pagination parameters on eligibility list return 400",
+      "title": "Invalid pagination parameters on eligibility list return HTTP 400 INVALID_PAGINATION",
       "preconditions": [
         "Completed event",
         "OrganizerAdmin JWT"
@@ -255,13 +309,14 @@
         "GET /api/v1/events/{eventId}/eligibility?page=0&pageSize=20",
         "GET /api/v1/events/{eventId}/eligibility?page=1&pageSize=101"
       ],
-      "expected": "HTTP 400 with INVALID_PAGINATION for non-integer, sub-1 page, or pageSize above max (100)",
+      "expected": "HTTP 400 with INVALID_PAGINATION for sub-1 page or pageSize above max (100) per API design §3",
       "edgeCase": true
     },
     {
-      "id": "TC-AC-10-015",
+      "id": "TC-AC-10-017",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P1",
       "traceability": ["AC-10", "BR-19", "FR-30"],
       "title": "Every terminal eligibility list entry includes non-empty reason code and text",
@@ -277,9 +332,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-AC-10-016",
+      "id": "TC-AC-10-018",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "pagination",
       "priority": "P1",
       "traceability": ["AC-10", "FR-30", "NFR-16"],
       "title": "Eligibility list returns paginated envelope with correct total and page boundaries",
@@ -295,9 +351,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-AC-10-017",
+      "id": "TC-AC-10-019",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P1",
       "traceability": ["AC-10", "BR-17", "BR-18", "BR-19"],
       "title": "List operation evaluates and persists missing eligibility before returning rows",
@@ -310,23 +367,6 @@
         "Query certificate_eligibilities table for the registration"
       ],
       "expected": "List entry includes evaluated Eligible or NotEligible with reason; row persisted in same request path per module transaction boundary; organizer sees current deterministic outcome",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-AC-10-018",
-      "category": "non-functional",
-      "layer": "unit",
-      "priority": "P2",
-      "traceability": ["AC-10"],
-      "title": "Operational table component surfaces eligibility reason text in rows",
-      "preconditions": [
-        "ServerPaginatedTable fixture with eligibility list row containing result and reasonText"
-      ],
-      "steps": [
-        "Render table columns for Eligibility result and Reason with sample eligible row",
-        "Inspect static markup output"
-      ],
-      "expected": "Rendered HTML includes terminal eligibility result and human-readable reasonText; supports organizer reason visibility without full browser flow",
       "edgeCase": false
     }
   ]
