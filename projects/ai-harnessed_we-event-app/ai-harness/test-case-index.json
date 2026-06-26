@@ -254,6 +254,11 @@
       "current": true,
       "docFingerprint": "sha256:4df3b9fe5a47366f3a2e6893d54863d7ebd7808387ffd2e446a5608089ea8a67",
       "generatedAt": "2026-06-26T05:26:28Z"
+    },
+    "FR-35": {
+      "current": true,
+      "docFingerprint": "sha256:20dc4744e6b360cadb5ea4206b636accdc3eed30db646a391487565a106b15eb",
+      "generatedAt": "2026-06-26T05:28:01Z"
     }
   }
 }

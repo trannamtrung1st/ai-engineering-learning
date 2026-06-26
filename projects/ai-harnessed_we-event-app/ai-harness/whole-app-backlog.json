@@ -533,7 +533,8 @@
       "description": "Organizer event form file picker + upload progress; participant event card and detail hero/thumbnail via next/image; placeholder when no cover.",
       "testRequirements": {
         "acceptanceTags": [
-          "AC-17"
+          "AC-17",
+          "FR-35"
         ]
       }
     },
