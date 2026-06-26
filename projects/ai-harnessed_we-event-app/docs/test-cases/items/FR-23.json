@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-23",
   "version": 1,
-  "docFingerprint": "sha256:aa1117f3b650d9449d7073916f7ca9b84a02286b19d61773de4e49196817a850",
-  "generatedAt": "2026-06-26T12:31:05Z",
+  "docFingerprint": "sha256:984a9eaa4cc519175977be0c09a3e92ab246bfda71a445ec868b145cb22df20b",
+  "generatedAt": "2026-06-26T17:19:36Z",
   "cases": [
     {
       "id": "TC-FR-23-001",
@@ -44,10 +44,10 @@
         "Authenticated OrganizerAdmin actor with organization scope to the event"
       ],
       "steps": [
-        "GET /api/v1/events/{eventId}/status-history with organizer Authorization bearer token",
-        "Inspect paginated response envelope and first history item fields"
+        "GET /api/v1/events/{eventId}/status-history?page=1&pageSize=20&sort=createdAt:desc with organizer Authorization bearer token",
+        "Verify HTTP status code and response envelope shape"
       ],
-      "expected": "HTTP 200 with items array containing at least one registration status transition entry (e.g. registration.accepted with afterState Registered); Organizer Admin can retrieve registration status change history per FR-23 and GET /events/{eventId}/status-history contract",
+      "expected": "HTTP 200 with items array, page, pageSize, total, totalPages; at least one item has action registration.accepted with afterState visible per API design §2.5 and §3; Organizer Admin can retrieve registration status change history per FR-23",
       "edgeCase": false
     },
     {
@@ -60,18 +60,18 @@
         "FR-23",
         "AC-12"
       ],
-      "title": "Register then cancel produces traceable status history with before and after states",
+      "title": "Status history rows projected from audit_logs with traceable before and after states",
       "preconditions": [
         "RegistrationOpen event with available capacity",
         "Real Postgres test database with transaction rollback per test",
         "Participant registered and subsequently cancelled own registration"
       ],
       "steps": [
-        "Invoke registrationService.register for participant on event",
-        "Invoke registrationService.cancel for the registration",
+        "Invoke registrationService.register then registrationService.cancel within registration module",
+        "Query audit_logs for registration state-change rows projected as status history for eventId and registrationId",
         "Call auditService.listStatusHistory(eventId, { registrationId, sort: \"createdAt:asc\" })"
       ],
-      "expected": "At least two append-only history rows: registration.accepted with afterState Registered and registration.cancelled with afterState CancelledByUser; each entry includes registrationId, occurredAt, and before/after state enabling organizer traceability via audit module boundary",
+      "expected": "Append-only audit_logs rows persisted with registration.accepted and registration.cancelled actions, before/after states, actorId, and occurredAt; status history is not a separate table — projected from audit_logs per database design §2; listStatusHistory returns matching traceable entries for FR-23 organizer retrieval",
       "edgeCase": false
     },
     {
@@ -200,7 +200,8 @@
       "traceability": [
         "FR-23",
         "AC-12",
-        "FR-30"
+        "FR-30",
+        "AC-14"
       ],
       "title": "Organizer registrations page opens status history dialog with transition columns",
       "preconditions": [
@@ -213,7 +214,7 @@
         "Observe dialog table columns for When, Transition (beforeState → afterState), Actor, and Action",
         "Use pagination controls inside dialog when history exceeds pageSize"
       ],
-      "expected": "Dialog renders registration status history with beforeState → afterState transition, actor identifier, and occurredAt timestamp; server-driven pagination inside dialog does not render unbounded dataset client-side; Organizer Admin can retrieve and review status change history in UI per FR-23",
+      "expected": "Dialog renders registration status history with beforeState → afterState transition, actor identifier, and occurredAt timestamp; server-driven pagination inside dialog does not render unbounded dataset client-side per AC-14; Organizer Admin can retrieve and review status change history in UI per FR-23",
       "edgeCase": false
     },
     {
@@ -506,6 +507,29 @@
         "Re-read registration states and status history total"
       ],
       "expected": "No registration state transitions or new history records created by read queries; query contract is side-effect free per module breakdown query conventions",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-23-023",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": [
+        "FR-23",
+        "AC-12"
+      ],
+      "title": "E2E GET status-history over HTTP traces register-to-cancel transitions",
+      "preconditions": [
+        "E2E RegistrationOpen event with capacity 5",
+        "Participant registered then cancelled via POST /registrations/{id}/cancel",
+        "OrganizerAdmin JWT with event scope"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/status-history?registrationId={registrationId}&sort=createdAt:asc with organizer Authorization bearer token",
+        "Locate registration.accepted and registration.cancelled items in paginated envelope"
+      ],
+      "expected": "HTTP 200 with items array containing registration.accepted (afterState Registered) and registration.cancelled (afterState CancelledByUser) for the same registrationId with occurredAt timestamps; satisfies testing-plan §3 Status history retrieval → transitions traceable and FR-23 organizer retrieval capability",
       "edgeCase": false
     }
   ]
