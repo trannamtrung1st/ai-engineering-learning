@@ -51,18 +51,19 @@ format_layer_policy_block() {
   local tag="$1"
   local policy_json
   policy_json="$(jq -c --arg tag "$tag" '
-    def glob_to_re: "^" + (gsub("\\*"; ".*")) + "$";
-    (.validation.layerPolicy // {}) | to_entries[]
-    | select($tag | test(.key | glob_to_re))
-    | .value
-  ' "$TESTGEN_CONFIG" 2>/dev/null | head -1)"
+    . as $cfg |
+    reduce (($cfg.validation.layerPolicy // {}) | to_entries[]) as $e (
+      null;
+      if ($tag | test("^" + ($e.key | gsub("\\*"; ".*")) + "$")) then $e.value else . end
+    )
+  ' "$TESTGEN_CONFIG" 2>/dev/null)"
 
   if [[ -z "$policy_json" || "$policy_json" == "null" ]]; then
     echo ""
     return 0
   fi
 
-  local required_layers min_integration min_e2e min_browser
+  local required_layers min_integration min_e2e
   required_layers="$(echo "$policy_json" | jq -r '.requiredLayers // [] | join(", ")')"
   min_integration="$(echo "$policy_json" | jq -r '.minPerLayer.integration // 0')"
   min_e2e="$(echo "$policy_json" | jq -r '.minPerLayer.e2e // 0')"

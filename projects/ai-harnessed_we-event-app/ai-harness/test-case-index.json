@@ -1,322 +1,322 @@
 {
   "tags": {
     "AC-01": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:79bdbca423ea91c83496c623bf764b00d329b0edef3e6d130765edc4907c901b",
       "generatedAt": "2026-06-26T04:07:08Z"
     },
     "AC-02": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:79bdbca423ea91c83496c623bf764b00d329b0edef3e6d130765edc4907c901b",
       "generatedAt": "2026-06-26T04:08:10Z"
     },
     "AC-03": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:79bdbca423ea91c83496c623bf764b00d329b0edef3e6d130765edc4907c901b",
       "generatedAt": "2026-06-26T04:09:15Z"
     },
     "AC-04": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:79bdbca423ea91c83496c623bf764b00d329b0edef3e6d130765edc4907c901b",
       "generatedAt": "2026-06-26T04:10:23Z"
     },
     "AC-05": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:c6bd2470b2186d8b109b2fe04884f4802250d75d244124495523616faaa9e091",
       "generatedAt": "2026-06-26T04:11:28Z"
     },
     "AC-06": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:c6bd2470b2186d8b109b2fe04884f4802250d75d244124495523616faaa9e091",
       "generatedAt": "2026-06-26T04:13:01Z"
     },
     "AC-07": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:c6bd2470b2186d8b109b2fe04884f4802250d75d244124495523616faaa9e091",
       "generatedAt": "2026-06-26T04:14:05Z"
     },
     "AC-08": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:ac1db8b40211f70e028eb0b2e18e8a7c3e48283625918ed84f037849f363d057",
       "generatedAt": "2026-06-26T04:15:17Z"
     },
     "AC-09": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:ac1db8b40211f70e028eb0b2e18e8a7c3e48283625918ed84f037849f363d057",
       "generatedAt": "2026-06-26T04:17:08Z"
     },
     "AC-10": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:ac1db8b40211f70e028eb0b2e18e8a7c3e48283625918ed84f037849f363d057",
       "generatedAt": "2026-06-26T04:18:07Z"
     },
     "AC-11": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:d7f6a976320b1aa92f16ec06ff6560b565944c1c9015956c4de24bcccdea65b2",
       "generatedAt": "2026-06-26T04:19:39Z"
     },
     "AC-12": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:d7f6a976320b1aa92f16ec06ff6560b565944c1c9015956c4de24bcccdea65b2",
       "generatedAt": "2026-06-26T04:20:59Z"
     },
     "AC-13": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:8baa9d6bbbb0500a77788a39f6ca1d164ddad256856ee4b85c9652b6a2a2d392",
       "generatedAt": "2026-06-26T04:22:04Z"
     },
     "AC-14": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:8baa9d6bbbb0500a77788a39f6ca1d164ddad256856ee4b85c9652b6a2a2d392",
       "generatedAt": "2026-06-26T04:23:19Z"
     },
     "AC-15": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:95b2130478acb06c85d10e9e25b8bd9fbb6f4ea0d832479d2adbe9e0d10ad022",
       "generatedAt": "2026-06-26T04:24:34Z"
     },
     "AC-16": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:95b2130478acb06c85d10e9e25b8bd9fbb6f4ea0d832479d2adbe9e0d10ad022",
       "generatedAt": "2026-06-26T04:25:44Z"
     },
     "AC-17": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:76ea7a27e8001767c130daca58d854080820cacf97cf62df887657fbfc028f2e",
       "generatedAt": "2026-06-26T04:26:52Z"
     },
     "FR-01": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:f44c92d5b8e8208272ca20445a8ed22605865e55c323b1677af54c0c2242f917",
       "generatedAt": "2026-06-26T04:27:54Z"
     },
     "FR-02": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:f44c92d5b8e8208272ca20445a8ed22605865e55c323b1677af54c0c2242f917",
       "generatedAt": "2026-06-26T04:29:47Z"
     },
     "FR-03": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:f44c92d5b8e8208272ca20445a8ed22605865e55c323b1677af54c0c2242f917",
       "generatedAt": "2026-06-26T04:31:02Z"
     },
     "FR-04": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:f44c92d5b8e8208272ca20445a8ed22605865e55c323b1677af54c0c2242f917",
       "generatedAt": "2026-06-26T04:32:11Z"
     },
     "FR-05": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:61772db2f0be7d5f91f9eccefef8b9d85ce957dbd55d47d9d14f933847b053f4",
       "generatedAt": "2026-06-26T04:34:33Z"
     },
     "FR-06": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:61772db2f0be7d5f91f9eccefef8b9d85ce957dbd55d47d9d14f933847b053f4",
       "generatedAt": "2026-06-26T04:35:45Z"
     },
     "FR-07": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:61772db2f0be7d5f91f9eccefef8b9d85ce957dbd55d47d9d14f933847b053f4",
       "generatedAt": "2026-06-26T04:37:29Z"
     },
     "FR-08": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:61772db2f0be7d5f91f9eccefef8b9d85ce957dbd55d47d9d14f933847b053f4",
       "generatedAt": "2026-06-26T04:39:11Z"
     },
     "FR-09": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:61772db2f0be7d5f91f9eccefef8b9d85ce957dbd55d47d9d14f933847b053f4",
       "generatedAt": "2026-06-26T04:40:53Z"
     },
     "FR-10": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:61772db2f0be7d5f91f9eccefef8b9d85ce957dbd55d47d9d14f933847b053f4",
       "generatedAt": "2026-06-26T04:42:40Z"
     },
     "FR-11": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:61772db2f0be7d5f91f9eccefef8b9d85ce957dbd55d47d9d14f933847b053f4",
       "generatedAt": "2026-06-26T04:44:49Z"
     },
     "FR-12": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:61772db2f0be7d5f91f9eccefef8b9d85ce957dbd55d47d9d14f933847b053f4",
       "generatedAt": "2026-06-26T04:46:01Z"
     },
     "FR-13": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:4ef9b21ee020318b8667ba54306d7c16fd1e1129e20152c62d596022b477de06",
       "generatedAt": "2026-06-26T04:47:15Z"
     },
     "FR-14": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:4ef9b21ee020318b8667ba54306d7c16fd1e1129e20152c62d596022b477de06",
       "generatedAt": "2026-06-26T04:49:16Z"
     },
     "FR-15": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:4ef9b21ee020318b8667ba54306d7c16fd1e1129e20152c62d596022b477de06",
       "generatedAt": "2026-06-26T04:50:29Z"
     },
     "FR-16": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:4ef9b21ee020318b8667ba54306d7c16fd1e1129e20152c62d596022b477de06",
       "generatedAt": "2026-06-26T04:51:56Z"
     },
     "FR-17": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:4ef9b21ee020318b8667ba54306d7c16fd1e1129e20152c62d596022b477de06",
       "generatedAt": "2026-06-26T04:53:53Z"
     },
     "FR-18": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:c8464a2daaed16ecde6f5b245103fd0bd13f2d0d45cf241a272a9e3647b9b40e",
       "generatedAt": "2026-06-26T04:58:05Z"
     },
     "FR-19": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:c8464a2daaed16ecde6f5b245103fd0bd13f2d0d45cf241a272a9e3647b9b40e",
       "generatedAt": "2026-06-26T04:59:29Z"
     },
     "FR-20": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:c8464a2daaed16ecde6f5b245103fd0bd13f2d0d45cf241a272a9e3647b9b40e",
       "generatedAt": "2026-06-26T05:03:07Z"
     },
     "FR-21": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:c8464a2daaed16ecde6f5b245103fd0bd13f2d0d45cf241a272a9e3647b9b40e",
       "generatedAt": "2026-06-26T05:05:24Z"
     },
     "FR-22": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:f44c92d5b8e8208272ca20445a8ed22605865e55c323b1677af54c0c2242f917",
       "generatedAt": "2026-06-26T05:06:48Z"
     },
     "FR-23": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:f44c92d5b8e8208272ca20445a8ed22605865e55c323b1677af54c0c2242f917",
       "generatedAt": "2026-06-26T05:07:59Z"
     },
     "FR-24": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:f44c92d5b8e8208272ca20445a8ed22605865e55c323b1677af54c0c2242f917",
       "generatedAt": "2026-06-26T05:09:47Z"
     },
     "FR-25": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:9e3a1aeddf47dc551a5606803a672761c422c9beeb7fcdb1e4e55a7f23eb5c9b",
       "generatedAt": "2026-06-26T05:13:40Z"
     },
     "FR-26": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:9e3a1aeddf47dc551a5606803a672761c422c9beeb7fcdb1e4e55a7f23eb5c9b",
       "generatedAt": "2026-06-26T05:14:55Z"
     },
     "FR-27": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:9e3a1aeddf47dc551a5606803a672761c422c9beeb7fcdb1e4e55a7f23eb5c9b",
       "generatedAt": "2026-06-26T05:16:00Z"
     },
     "FR-28": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:5acfc070b54f77ab2ad0b419735f860b390f8a4b88a52809f83094992e0b94d3",
       "generatedAt": "2026-06-26T05:17:20Z"
     },
     "FR-29": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:5acfc070b54f77ab2ad0b419735f860b390f8a4b88a52809f83094992e0b94d3",
       "generatedAt": "2026-06-26T05:18:31Z"
     },
     "FR-30": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:5acfc070b54f77ab2ad0b419735f860b390f8a4b88a52809f83094992e0b94d3",
       "generatedAt": "2026-06-26T05:20:19Z"
     },
     "FR-31": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:5acfc070b54f77ab2ad0b419735f860b390f8a4b88a52809f83094992e0b94d3",
       "generatedAt": "2026-06-26T05:21:54Z"
     },
     "FR-32": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:4df3b9fe5a47366f3a2e6893d54863d7ebd7808387ffd2e446a5608089ea8a67",
       "generatedAt": "2026-06-26T05:23:15Z"
     },
     "FR-33": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:4df3b9fe5a47366f3a2e6893d54863d7ebd7808387ffd2e446a5608089ea8a67",
       "generatedAt": "2026-06-26T05:24:55Z"
     },
     "FR-34": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:4df3b9fe5a47366f3a2e6893d54863d7ebd7808387ffd2e446a5608089ea8a67",
       "generatedAt": "2026-06-26T05:26:28Z"
     },
     "FR-35": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:20dc4744e6b360cadb5ea4206b636accdc3eed30db646a391487565a106b15eb",
       "generatedAt": "2026-06-26T05:28:01Z"
     },
     "FR-36": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:20dc4744e6b360cadb5ea4206b636accdc3eed30db646a391487565a106b15eb",
       "generatedAt": "2026-06-26T05:29:11Z"
     },
     "BR-01": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:cb1c9eb60d41f4924b791516e6ce60f977cb306449ba7795b60d8f0014d0e753",
       "generatedAt": "2026-06-26T05:30:20Z"
     },
     "BR-03": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:cb1c9eb60d41f4924b791516e6ce60f977cb306449ba7795b60d8f0014d0e753",
       "generatedAt": "2026-06-26T05:31:40Z"
     },
     "BR-10": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:cb1c9eb60d41f4924b791516e6ce60f977cb306449ba7795b60d8f0014d0e753",
       "generatedAt": "2026-06-26T05:32:46Z"
     },
     "NFR-02": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:165db3bf1b6e2d69c0247f57cf57e1ee618773a7367cf603d879d37786d9cb38",
       "generatedAt": "2026-06-26T05:34:01Z"
     },
     "NFR-04": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:165db3bf1b6e2d69c0247f57cf57e1ee618773a7367cf603d879d37786d9cb38",
       "generatedAt": "2026-06-26T05:35:20Z"
     },
     "NFR-06": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:dd4156aac81bc7c84fb99bc512700e0e281e4b2cfc16a1c70c375415bf93c472",
       "generatedAt": "2026-06-26T05:37:06Z"
     },
     "NFR-07": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:36eb7ede51ffcb03df8f9b4c191e51a75639a1a971475a654f1ec32d95231414",
       "generatedAt": "2026-06-26T05:38:13Z"
     },
     "NFR-08": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:36eb7ede51ffcb03df8f9b4c191e51a75639a1a971475a654f1ec32d95231414",
       "generatedAt": "2026-06-26T05:39:36Z"
     },
     "NFR-14": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:7dc141c77359e102a4e8c2f6ef581229d07bc466b6054a0c3af84404dffbe829",
       "generatedAt": "2026-06-26T05:42:00Z"
     },
     "NFR-17": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:36eb7ede51ffcb03df8f9b4c191e51a75639a1a971475a654f1ec32d95231414",
       "generatedAt": "2026-06-26T05:43:12Z"
     },
     "NFR-18": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:11ddf4c5c81698ee9aadf540af5c4b69e4286c60734018f2e40a3df142e2c12c",
       "generatedAt": "2026-06-26T05:44:24Z"
     }

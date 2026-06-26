@@ -38,6 +38,7 @@
     "aih:testgen:once": "./ai-harness/scripts/testgen-once.sh",
     "aih:testgen:loop": "./ai-harness/scripts/testgen-loop.sh",
     "aih:testgen:drift": "./ai-harness/scripts/check-test-case-drift.sh",
-    "aih:testgen:validate": "./ai-harness/scripts/validate-test-cases.sh"
+    "aih:testgen:validate": "./ai-harness/scripts/validate-test-cases.sh",
+    "aih:testgen:audit": "./ai-harness/scripts/audit-test-coverage.sh"
   }
 }
