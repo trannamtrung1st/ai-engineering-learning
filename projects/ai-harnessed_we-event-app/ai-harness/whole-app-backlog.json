@@ -361,7 +361,7 @@
     },
     {
       "id": "web-design-system-shell",
-      "passes": true,
+      "passes": false,
       "priority": 30,
       "phase": 3,
       "agent": "frontend",
@@ -395,7 +395,7 @@
     },
     {
       "id": "web-participant-journeys",
-      "passes": true,
+      "passes": false,
       "priority": 31,
       "phase": 3,
       "agent": "frontend",
@@ -438,7 +438,7 @@
     },
     {
       "id": "web-organizer-journeys",
-      "passes": true,
+      "passes": false,
       "priority": 32,
       "phase": 3,
       "agent": "frontend",
