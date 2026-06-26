@@ -2,12 +2,13 @@
   "productItemId": "FR-34",
   "version": 1,
   "docFingerprint": "sha256:4df3b9fe5a47366f3a2e6893d54863d7ebd7808387ffd2e446a5608089ea8a67",
-  "generatedAt": "2026-06-26T20:15:00Z",
+  "generatedAt": "2026-06-26T12:48:01Z",
   "cases": [
     {
       "id": "TC-FR-34-001",
       "category": "functional",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P0",
       "traceability": ["FR-34"],
       "title": "TopBar sign-out clears stored JWT and redirects to /login",
@@ -28,6 +29,7 @@
       "id": "TC-FR-34-002",
       "category": "functional",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P0",
       "traceability": ["FR-34"],
       "title": "After sign-out TopBar reflects unauthenticated state",
@@ -47,24 +49,44 @@
       "id": "TC-FR-34-003",
       "category": "functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
       "traceability": ["FR-34", "AC-15"],
-      "title": "Protected API endpoints reject requests after client session cleared",
+      "title": "GET /api/v1/me without Authorization returns 401 after client session cleared",
       "preconditions": [
         "User obtained valid JWT via POST /auth/login",
         "Client session cleared (simulating sign-out: no Authorization header sent)"
       ],
       "steps": [
         "GET /api/v1/me without Authorization bearer header",
-        "GET /api/v1/me/registrations without Authorization bearer header"
+        "Inspect HTTP status and response envelope"
       ],
-      "expected": "Both requests return HTTP 401 with standard unauthenticated error envelope; no profile or registration data returned; cleared client session cannot access protected endpoints",
+      "expected": "HTTP 401 with standard unauthenticated error envelope; no profile or role data returned; cleared client session cannot access session endpoint per API design §2.6",
       "edgeCase": false
     },
     {
       "id": "TC-FR-34-004",
       "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-34", "AC-15"],
+      "title": "GET /api/v1/me/registrations without Authorization returns 401 after sign-out",
+      "preconditions": [
+        "Participant had registrations while signed in",
+        "Client session cleared simulating TopBar sign-out"
+      ],
+      "steps": [
+        "GET /api/v1/me/registrations?page=1&pageSize=20 without Authorization bearer header"
+      ],
+      "expected": "HTTP 401; paginated registration data not exposed; protected self-service endpoint rejects cleared session per AC-15",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-34-005",
+      "category": "functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["FR-34"],
       "title": "MVP sign-out is client-side only with no server revocation endpoint",
@@ -80,9 +102,49 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-34-005",
+      "id": "TC-FR-34-006",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-34", "NFR-07"],
+      "title": "Sign-out simulation via omitted bearer matches unauthenticated middleware rejection",
+      "preconditions": [
+        "Valid JWT previously issued via login",
+        "Integration test harness can call protected routes with and without Authorization header"
+      ],
+      "steps": [
+        "GET /api/v1/me with valid JWT and confirm HTTP 200",
+        "GET /api/v1/me with Authorization header omitted (client sign-out state)",
+        "Compare error code to never-authenticated request"
+      ],
+      "expected": "Omitted bearer after sign-out yields HTTP 401 UNAUTHENTICATED equivalent to fresh unauthenticated request; auth middleware enforces authentication before domain logic per authorization decision pattern step 1",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-34-007",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-34", "AC-15", "NFR-07"],
+      "title": "After sign-out unauthenticated caller denied on role-restricted organizer endpoint",
+      "preconditions": [
+        "OrganizerAdmin previously signed in and signed out (client JWT cleared)",
+        "Event with audit log entries exists",
+        "No Authorization header on request"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/audit-logs without bearer token after sign-out simulation"
+      ],
+      "expected": "HTTP 401 before role or scope checks; audit logs not returned; unauthenticated actor denied per permission matrix §2 (read audit logs requires OrganizerAdmin) and authorization pattern step 1",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-34-008",
       "category": "functional",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P0",
       "traceability": ["FR-34", "NFR-08"],
       "title": "Organizer session sign-out clears role context and redirects to login",
@@ -99,9 +161,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-34-006",
+      "id": "TC-FR-34-009",
       "category": "functional",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P0",
       "traceability": ["FR-34", "AC-16"],
       "title": "Participant can sign out and sign back in to restore protected access",
@@ -118,9 +181,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-34-007",
+      "id": "TC-FR-34-010",
       "category": "non-functional",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P0",
       "traceability": ["FR-34", "NFR-07"],
       "title": "After sign-out client cannot perform sensitive operations without re-authentication",
@@ -136,28 +200,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-34-008",
-      "category": "non-functional",
-      "layer": "integration",
-      "priority": "P1",
-      "traceability": ["FR-34", "NFR-07"],
-      "title": "Sign-out simulation via omitted bearer matches unauthenticated middleware rejection",
-      "preconditions": [
-        "Valid JWT previously issued via login",
-        "Integration test harness can call protected routes with and without Authorization header"
-      ],
-      "steps": [
-        "GET /api/v1/me with valid JWT and confirm HTTP 200",
-        "GET /api/v1/me with Authorization header omitted (client sign-out state)",
-        "Compare error code to never-authenticated request"
-      ],
-      "expected": "Omitted bearer after sign-out yields HTTP 401 UNAUTHENTICATED equivalent to fresh unauthenticated request; auth middleware enforces authentication before domain logic",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-FR-34-009",
+      "id": "TC-FR-34-011",
       "category": "edge",
       "layer": "browser",
+      "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["FR-34"],
       "title": "Double sign-out from login page is idempotent",
@@ -173,9 +219,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-34-010",
+      "id": "TC-FR-34-012",
       "category": "edge",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P0",
       "traceability": ["FR-34", "AC-15"],
       "title": "After sign-out direct navigation to protected route redirects to login with return URL",
@@ -191,9 +238,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-34-011",
+      "id": "TC-FR-34-013",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["FR-34"],
       "title": "Retained JWT string still authenticates server until expiry in MVP (no revocation)",
@@ -209,9 +257,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-34-012",
+      "id": "TC-FR-34-014",
       "category": "edge",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["FR-34", "AC-15"],
       "title": "Browser back navigation after sign-out does not restore authenticated protected view",
