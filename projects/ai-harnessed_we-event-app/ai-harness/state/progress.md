@@ -144,5 +144,7 @@ Append-only log of completed iterations.
 - 2026-06-26T04:59:50Z | FR-20 | testgen_failed
 - 2026-06-26T05:00:26Z | FR-20 | testgen_validation_failed
 - 2026-06-26T05:03:07Z | FR-20 | testgen_passed
+- 2026-06-26T05:07:01Z | web-design-system-shell | browser: homepage HTTP 200 — AppShell, 17 domain status badges, NFR-06 live-query panel Connected
 - 2026-06-26T05:05:24Z | FR-21 | testgen_passed
 - 2026-06-26T05:06:48Z | FR-22 | testgen_passed
+- 2026-06-26T05:07:59Z | FR-23 | testgen_passed
