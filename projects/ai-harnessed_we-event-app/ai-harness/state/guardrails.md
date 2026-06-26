@@ -65,3 +65,5 @@ Lessons learned across harness iterations. Read before every implementer session
 - [web-participant-journeys] Browser test failed — see 20260626T025805Z-browser-test.json
 - [web-participant-journeys] `GET /events/:eventId/registration-status` must use latest participant registration (include `Attended`/`Absent`); `findActiveRegistration` alone breaks feedback UI when post-event status is no longer "active".
 - [FR-18] TestGen agent did not emit TESTGEN_DONE
+- [FR-20] TestGen agent did not emit TESTGEN_DONE
+- [FR-20] Test case validation failed — see 20260626T050026Z-testgen.txt

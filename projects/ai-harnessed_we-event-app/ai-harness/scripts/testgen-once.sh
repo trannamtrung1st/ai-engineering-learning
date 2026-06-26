@@ -102,11 +102,8 @@ requeue_slices_pending_test_verification "$REQUIREMENT_TAG"
 append_progress "$REQUIREMENT_TAG" "testgen_passed"
 
 commit_on_pass="$(jq -r '.loop.commitOnPass // true' "$TESTGEN_CONFIG")"
-if [[ "$commit_on_pass" == "true" ]] && git rev-parse --git-dir >/dev/null 2>&1; then
-  if ! git diff --quiet || ! git diff --cached --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
-    git add -A
-    git commit -m "aih: generate test cases for ${REQUIREMENT_TAG}" --no-verify 2>/dev/null || true
-  fi
+if [[ "$commit_on_pass" == "true" ]]; then
+  "$(dirname "$0")/git-commit-testgen.sh" "$REQUIREMENT_TAG"
 fi
 
 if all_test_cases_current; then

@@ -646,6 +646,62 @@ git_changed_files() {
   } | sed '/^$/d' | sort -u
 }
 
+git_path_has_changes() {
+  local rel="$1"
+  [[ -n "$rel" ]] || return 1
+  if [[ -e "$REPO_ROOT/$rel" ]] && ! git ls-files --error-unmatch "$rel" >/dev/null 2>&1; then
+    return 0
+  fi
+  ! git diff --quiet -- "$rel" 2>/dev/null && return 0
+  ! git diff --cached --quiet -- "$rel" 2>/dev/null && return 0
+  return 1
+}
+
+git_commit_allowlisted_paths() {
+  local message="$1"
+  shift
+  local paths=("$@")
+  [[ ${#paths[@]} -gt 0 ]] || return 0
+  if ! git rev-parse --git-dir >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local to_add=()
+  local rel
+  for rel in "${paths[@]}"; do
+    [[ -n "$rel" ]] || continue
+    [[ -e "$REPO_ROOT/$rel" ]] || continue
+    if git_path_has_changes "$rel"; then
+      to_add+=("$rel")
+    fi
+  done
+
+  [[ ${#to_add[@]} -gt 0 ]] || return 0
+  git add -- "${to_add[@]}"
+  git commit -m "$message" --no-verify 2>/dev/null || true
+}
+
+testgen_owned_paths() {
+  local requirement_tag="$1"
+  printf '%s\n' \
+    "$(test_case_artifact_path "$requirement_tag")" \
+    "ai-harness/test-cases/items/${requirement_tag}.stale.json" \
+    "ai-harness/test-case-index.json" \
+    "ai-harness/whole-app-backlog.json" \
+    "ai-harness/state/progress.md"
+}
+
+git_commit_testgen_pass() {
+  local requirement_tag="$1"
+  local -a paths=()
+  local path
+  while IFS= read -r path; do
+    [[ -z "$path" ]] && continue
+    paths+=("$path")
+  done < <(testgen_owned_paths "$requirement_tag")
+  git_commit_allowlisted_paths "aih: generate test cases for ${requirement_tag}" "${paths[@]}"
+}
+
 find_checks_report_for_slice() {
   local slice_id="$1"
   local run_id="${2:-}"

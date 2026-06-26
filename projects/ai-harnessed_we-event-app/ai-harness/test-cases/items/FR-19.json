@@ -1,0 +1,426 @@
+{
+  "productItemId": "FR-19",
+  "version": 1,
+  "docFingerprint": "sha256:c8464a2daaed16ecde6f5b245103fd0bd13f2d0d45cf241a272a9e3647b9b40e",
+  "generatedAt": "2026-06-26T13:00:00Z",
+  "cases": [
+    {
+      "id": "TC-FR-19-001",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-19", "AC-08", "BR-15"],
+      "title": "Attended participant submits feedback after event completion within feedback window",
+      "preconditions": [
+        "Event in Completed state with active feedback window (current time between feedbackOpenAt and feedbackCloseAt)",
+        "Participant has registration in Attended state for the event",
+        "Authenticated Participant actor submitting for own registration"
+      ],
+      "steps": [
+        "Invoke feedbackService.submit(eventId, participantId, { answers: { q1: 5, q2: \"Great session\" } }, participantContext)",
+        "Query persisted feedback row linked to registrationId",
+        "Verify FeedbackSubmitted domain event emitted"
+      ],
+      "expected": "Submission succeeds with feedbackId and submittedAt; answers persisted on Registration 1-to-0..1 Feedback relationship; satisfies FR-19 post-event feedback within allowed window per Workflow E step 1",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-19-002",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-19", "AC-08", "BR-15"],
+      "title": "POST /events/{eventId}/feedback returns feedbackId and submittedAt within window",
+      "preconditions": [
+        "E2E fixture event in Completed state with feedback window active",
+        "Participant JWT for Attended registration on the event",
+        "Request body includes registrationId and non-empty answers object"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/feedback with Authorization bearer token and body { registrationId, answers: { q1: 5, q2: \"Excellent session\" } }",
+        "Verify response payload fields"
+      ],
+      "expected": "HTTP 200 with feedbackId (UUID), submittedAt (ISO-8601), and answers retrievable; participant can submit feedback via public API after event within allowed window",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-19-003",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-19", "AC-08"],
+      "title": "Flow A lifecycle feedback step succeeds after event completion",
+      "preconditions": [
+        "E2E Flow A progressed through draft, publish, registration, check-in, and event completion",
+        "Participant Attended with feedback window open post-event",
+        "Participant token from prior flow steps"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/feedback with participant token and answers payload after complete transition",
+        "Confirm submittedAt is present in response"
+      ],
+      "expected": "Feedback accepted within window; Flow A proceeds from check-in through post-event feedback submission without blocking on participant submit failure",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-19-004",
+      "category": "functional",
+      "layer": "unit",
+      "priority": "P1",
+      "traceability": ["FR-19", "AC-08"],
+      "title": "Feedback submission validator accepts time inside feedback window bounds",
+      "preconditions": [
+        "Configured feedbackOpenAt and feedbackCloseAt with openAt < closeAt per TimeWindow value object",
+        "Fixed clock now set to a time between feedbackOpenAt and feedbackCloseAt",
+        "Event Completed state"
+      ],
+      "steps": [
+        "Call assertFeedbackWindowOpen(event) or isWithinTimeWindow(feedbackOpenAt, feedbackCloseAt, now) with in-window now"
+      ],
+      "expected": "Validator passes without throwing; feedback submission pipeline may proceed for participant post-event submit",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-19-005",
+      "category": "functional",
+      "layer": "unit",
+      "priority": "P1",
+      "traceability": ["FR-19"],
+      "title": "canSubmitFeedback permits Attended participant on Completed event within window",
+      "preconditions": [
+        "Participant UX gating rule canSubmitFeedback",
+        "Event state Completed, registration state Attended",
+        "Current time within feedback window bounds (post-event window open)"
+      ],
+      "steps": [
+        "Evaluate canSubmitFeedback(eventState, registrationState, feedbackOpenAt, feedbackCloseAt, now)"
+      ],
+      "expected": "Returns true; participant UI may enable Submit feedback primary action per Flow 5 step 2",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-19-006",
+      "category": "functional",
+      "layer": "browser",
+      "priority": "P1",
+      "traceability": ["FR-19", "AC-08"],
+      "title": "Participant submits feedback via UI after event when window is open",
+      "preconditions": [
+        "Participant logged in with Attended registration on a Completed event",
+        "Feedback window is currently open post-event",
+        "Event detail or my registrations page exposes feedback submission UI"
+      ],
+      "steps": [
+        "Navigate to event detail or feedback entry for the completed attended event",
+        "Observe feedback form availability and timing guidance for post-event window",
+        "Fill valid answers and submit",
+        "Confirm success state with timestamp or completion indicator"
+      ],
+      "expected": "Feedback form is enabled; submission shows immediate success confirmation; system marks feedback completion per Flow 5 step 3",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-19-007",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["FR-19", "BR-16"],
+      "title": "Participant updates feedback answers within window when updates allowed",
+      "preconditions": [
+        "Event Completed with active feedback window",
+        "Event rule config permits in-window feedback updates per BR-16",
+        "Participant has existing feedback submission within window"
+      ],
+      "steps": [
+        "Submit updated answers for same registration within feedback window",
+        "Read persisted feedback answers and submittedAt"
+      ],
+      "expected": "Update succeeds without FEEDBACK_DUPLICATE; latest answers stored; participant retains ability to refine feedback before window closes",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-19-008",
+      "category": "edge",
+      "layer": "unit",
+      "priority": "P0",
+      "traceability": ["FR-19", "BR-15"],
+      "title": "Feedback submission rejected before feedbackOpenAt",
+      "preconditions": [
+        "Event Completed with Attended registration",
+        "Fixed clock now strictly before feedbackOpenAt (post-event but window not yet open)"
+      ],
+      "steps": [
+        "Call assertFeedbackWindowOpen(event) with now before window open",
+        "Attempt feedbackService.submit with valid answers"
+      ],
+      "expected": "Validation fails with ApiError code FEEDBACK_NOT_ALLOWED; no feedback persisted; participant cannot submit before allowed window opens",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-19-009",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-19", "BR-15", "BR-18"],
+      "title": "Feedback submission rejected after feedbackCloseAt",
+      "preconditions": [
+        "Event Completed with Attended participant",
+        "Fixed clock now strictly after feedbackCloseAt",
+        "No prior feedback submission for the registration"
+      ],
+      "steps": [
+        "Attempt feedbackService.submit with valid answers after window close"
+      ],
+      "expected": "Submission rejected with FEEDBACK_NOT_ALLOWED; no feedback row persisted; mandatory feedback not completed within window per BR-18 downstream impact",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-19-010",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-19", "BR-15"],
+      "title": "POST feedback outside configured window returns semantic error",
+      "preconditions": [
+        "Completed event with feedback window not yet open or already closed",
+        "Participant JWT for Attended registration"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/feedback with valid answers while current time is outside window"
+      ],
+      "expected": "HTTP 422 with error.code FEEDBACK_NOT_ALLOWED; response includes requestId; no feedbackId returned; FR-19 window constraint enforced at API boundary",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-19-011",
+      "category": "edge",
+      "layer": "unit",
+      "priority": "P0",
+      "traceability": ["FR-19", "BR-15"],
+      "title": "Non-attended registration cannot submit post-event feedback",
+      "preconditions": [
+        "Event Completed with feedback window active",
+        "Registration still in Registered or CheckedIn state (not yet Attended)"
+      ],
+      "steps": [
+        "Call assertRegistrationFeedbackEligible(registration) or canSubmitFeedback with non-Attended state"
+      ],
+      "expected": "Validation fails with FEEDBACK_NOT_ALLOWED; participant cannot submit feedback until attendance is finalized to Attended",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-19-012",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-19", "BR-15", "FR-26"],
+      "title": "Participant without valid registration cannot submit feedback",
+      "preconditions": [
+        "Completed event with active feedback window",
+        "Authenticated participant with no registration or cancelled registration for the event"
+      ],
+      "steps": [
+        "Attempt feedbackService.submit for eventId where actor has no valid registration holder relationship"
+      ],
+      "expected": "Rejected with FEEDBACK_NOT_ALLOWED per BR-15; only valid registration holders may submit feedback",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-19-013",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["FR-19", "BR-16"],
+      "title": "Duplicate official feedback submission returns FEEDBACK_DUPLICATE",
+      "preconditions": [
+        "Attended participant already submitted one official feedback for the event within window",
+        "Event rule config does not allow in-window updates"
+      ],
+      "steps": [
+        "Submit feedback successfully once",
+        "Attempt second feedbackService.submit with different answers for same registration"
+      ],
+      "expected": "Second attempt rejected with FEEDBACK_DUPLICATE (HTTP 409); original feedback row unchanged per one-official-feedback policy",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-19-014",
+      "category": "edge",
+      "layer": "unit",
+      "priority": "P1",
+      "traceability": ["FR-19"],
+      "title": "Empty answers object rejected at schema validation",
+      "preconditions": [
+        "Valid Attended registration and open feedback window on Completed event",
+        "Request payload with answers: {}"
+      ],
+      "steps": [
+        "Call assertAnswersValid({}) or POST feedback with empty answers"
+      ],
+      "expected": "Rejected with INVALID_INPUT (HTTP 400); no feedback persisted",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-19-015",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["FR-19", "FR-25", "FR-26"],
+      "title": "Organizer cannot submit feedback on behalf of participant",
+      "preconditions": [
+        "Completed event with active feedback window and Attended participant",
+        "OrganizerAdmin JWT (no Participant role for target registration)"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/feedback with organizer token and participant registrationId"
+      ],
+      "expected": "HTTP 403 or FEEDBACK_NOT_ALLOWED; only Participant role may submit own feedback per permission matrix",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-19-016",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["FR-19", "AC-15", "FR-26"],
+      "title": "Unauthenticated feedback POST returns 401",
+      "preconditions": [
+        "Completed event with open feedback window",
+        "No Authorization header on request"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/feedback without bearer token"
+      ],
+      "expected": "HTTP 401 unauthenticated; no feedback row created",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-19-017",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P2",
+      "traceability": ["FR-19", "FR-26"],
+      "title": "Participant cannot submit feedback for another participant's registration",
+      "preconditions": [
+        "Completed event with two Attended participants A and B",
+        "Active feedback window",
+        "Authenticated as participant A"
+      ],
+      "steps": [
+        "Attempt feedbackService.submit using participant B's registrationId while authenticated as A"
+      ],
+      "expected": "Rejected with FEEDBACK_NOT_ALLOWED or 403; FR-26 scope constraint enforced — participant operates only on own registration data",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-19-018",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P2",
+      "traceability": ["FR-19", "BR-16"],
+      "title": "Concurrent duplicate feedback submits for same registration produce single official record",
+      "preconditions": [
+        "Completed event with active feedback window",
+        "Attended participant with no prior feedback",
+        "Two parallel feedbackService.submit calls with identical registrationId"
+      ],
+      "steps": [
+        "Launch two concurrent submit requests with different answers payloads",
+        "Query feedback_submissions for the registration after both settle"
+      ],
+      "expected": "Exactly one feedback row persisted; one request succeeds with feedbackId; other returns FEEDBACK_DUPLICATE or equivalent conflict; no duplicate official feedback per BR-16",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-19-019",
+      "category": "non-functional",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["FR-19", "NFR-13"],
+      "title": "Successful feedback submission returns immediate success payload",
+      "preconditions": [
+        "Attended participant within feedback window on Completed event"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/feedback with valid payload",
+        "Inspect response latency and body"
+      ],
+      "expected": "Synchronous HTTP 200 with feedbackId and submittedAt; client receives actionable success without polling; satisfies NFR-13 immediate feedback on critical participant action",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-19-020",
+      "category": "non-functional",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["FR-19", "NFR-13"],
+      "title": "Rejected feedback submission returns deterministic error code and message",
+      "preconditions": [
+        "Completed event with feedback window closed or not yet open",
+        "Participant JWT for Attended registration"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/feedback outside window",
+        "Parse error envelope",
+        "Repeat identical request"
+      ],
+      "expected": "Response includes error.code FEEDBACK_NOT_ALLOWED, user-safe message, and requestId per standard error contract; same inputs produce same error code on repeat",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-19-021",
+      "category": "non-functional",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["FR-19", "BR-15"],
+      "title": "Feedback window validation is deterministic under fixed clock",
+      "preconditions": [
+        "Fixed clock abstraction per testing plan deterministic controls",
+        "Identical Completed event, Attended registration, and answers fixtures across runs"
+      ],
+      "steps": [
+        "Run in-window feedback submit scenario twice with identical inputs and clock",
+        "Compare outcomes including feedbackId presence and error codes on out-of-window variant"
+      ],
+      "expected": "Both runs accept or reject consistently with same error codes; no flakiness from timing; core scenario matrix Feedback in allowed window row is stable",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-19-022",
+      "category": "non-functional",
+      "layer": "browser",
+      "priority": "P2",
+      "traceability": ["FR-19", "NFR-13"],
+      "title": "Feedback form shows clear blocking reason when post-event window is closed",
+      "preconditions": [
+        "Participant logged in with Attended registration on Completed event",
+        "Feedback window closed (after feedbackCloseAt)"
+      ],
+      "steps": [
+        "Navigate to event detail or feedback entry",
+        "Attempt to access or submit feedback form"
+      ],
+      "expected": "Form disabled or submission blocked with concrete message (e.g. feedback period ended); not a generic error identifier in user-facing text per microcopy standards",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-19-023",
+      "category": "non-functional",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["FR-19"],
+      "title": "FeedbackSubmitted domain event emitted on successful participant submit",
+      "preconditions": [
+        "Completed event with active feedback window",
+        "Attended participant with no prior feedback",
+        "Domain event listener or outbox capture enabled in test harness"
+      ],
+      "steps": [
+        "Submit feedback via feedbackService.submit with valid answers",
+        "Inspect emitted domain events or outbox records"
+      ],
+      "expected": "FeedbackSubmitted event recorded with eventId, registrationId, feedbackId, and submittedAt; enables downstream eligibility evaluation per Workflow E",
+      "edgeCase": false
+    }
+  ]
+}

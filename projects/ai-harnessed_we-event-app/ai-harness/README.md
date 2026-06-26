@@ -177,7 +177,7 @@ AIH_SKIP_AGENT=1 AIH_SKIP_REVIEW=1 npm run aih:once
 4. `agent -p --force` writes `test-cases/items/<tag>.json`
 5. `validate-test-cases.sh` — schema + traceability
 6. `sync-test-cases-to-backlog.sh` — updates slices whose `acceptance` includes the tag
-7. Tag marked current in `test-case-index.json`; optional git commit
+7. Tag marked current in `test-case-index.json`; optional git commit (TestGen-owned paths only — test case artifact, index, backlog sync, progress)
 
 ### Implementation
 
