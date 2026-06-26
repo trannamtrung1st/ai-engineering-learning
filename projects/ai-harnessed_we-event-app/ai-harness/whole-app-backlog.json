@@ -395,7 +395,7 @@
     },
     {
       "id": "web-participant-journeys",
-      "passes": false,
+      "passes": true,
       "priority": 31,
       "phase": 3,
       "agent": "frontend",
@@ -416,6 +416,24 @@
       "completionArtifacts": [
         "apps/web/src/app/(participant)"
       ],
+      "testRequirements": {
+        "unit": [
+          "apps/web/src/lib/participant-rules.test.ts"
+        ],
+        "component": [
+          "apps/web/src/components/participant/event-card.test.tsx",
+          "apps/web/src/components/ui/pagination.test.tsx"
+        ],
+        "acceptanceTags": [
+          "AC-01",
+          "AC-05",
+          "AC-08",
+          "AC-14",
+          "FR-10",
+          "FR-28",
+          "FR-29"
+        ]
+      },
       "description": "Participant routes: paginated event browse, detail, registration, check-in, feedback, paginated my registrations."
     },
     {

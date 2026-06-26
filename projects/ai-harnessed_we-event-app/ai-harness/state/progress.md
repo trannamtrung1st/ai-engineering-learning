@@ -92,3 +92,5 @@ Append-only log of completed iterations.
 - 2026-06-26T01:53:08Z | web-design-system-shell | browser: homepage HTTP 200 — AppShell, 17 domain status badges, NFR-06 live-query panel
 - 2026-06-26T01:57:10Z | web-design-system-shell | review_failed
 - 2026-06-26T02:00:19Z | web-design-system-shell | passed
+- 2026-06-26T02:09:00Z | web-participant-journeys | browser: /events paginated browse (1–12 of 4951), event detail, /registrations page 2 (21–40 of 110), check-in page — HTTP 200
+- 2026-06-26T02:11:42Z | web-participant-journeys | passed

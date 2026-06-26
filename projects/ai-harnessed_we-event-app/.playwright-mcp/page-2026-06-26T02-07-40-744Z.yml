@@ -1,0 +1,408 @@
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e4]:
+        - generic [ref=e5]:
+          - link "We Event" [ref=e6] [cursor=pointer]:
+            - /url: /
+            - img [ref=e7]
+            - generic [ref=e9]: We Event
+          - generic [ref=e10]: /
+          - generic [ref=e11]: Participant
+        - button "Account menu" [ref=e12]:
+          - img [ref=e13]
+          - generic [ref=e16]: participant-1
+    - main [ref=e18]:
+      - generic [ref=e20]:
+        - navigation "Participant" [ref=e25]:
+          - generic [ref=e26]:
+            - link "Browse events" [ref=e27] [cursor=pointer]:
+              - /url: /events
+            - link "My registrations" [active] [ref=e28] [cursor=pointer]:
+              - /url: /registrations
+        - generic [ref=e87]:
+          - generic [ref=e89]:
+            - heading "My registrations" [level=1] [ref=e90]
+            - paragraph [ref=e91]: Current and past registrations with quick access to check-in and feedback.
+          - region "Filters" [ref=e92]:
+            - generic [ref=e94]:
+              - text: Status
+              - combobox "Filter by registration status" [ref=e96]:
+                - generic: All statuses
+                - img [ref=e97]
+          - list [ref=e100]:
+            - listitem [ref=e101]:
+              - generic [ref=e102]:
+                - generic [ref=e103]:
+                  - link "Scenario Event 7fa53d35-1451-46f7-9bae-37dff4bc1d37" [ref=e104] [cursor=pointer]:
+                    - /url: /events/cf8ec306-64ea-4cb9-b02c-1e03f2164382
+                  - paragraph [ref=e105]: Registration updated Jun 26, 2026, 9:06 AM
+                - 'generic "Registration status: Registered" [ref=e106]':
+                  - generic [ref=e108]: Registered
+              - paragraph [ref=e109]: Your seat is confirmed.
+              - generic [ref=e110]:
+                - link "Check in" [ref=e111] [cursor=pointer]:
+                  - /url: /events/cf8ec306-64ea-4cb9-b02c-1e03f2164382/check-in
+                  - img [ref=e112]
+                  - text: Check in
+                - link "Event details" [ref=e116] [cursor=pointer]:
+                  - /url: /events/cf8ec306-64ea-4cb9-b02c-1e03f2164382
+                  - text: Event details
+                  - img [ref=e117]
+            - listitem [ref=e119]:
+              - generic [ref=e120]:
+                - generic [ref=e121]:
+                  - link "Scenario Event c621593b-6fcb-4955-a79b-c4c69b98de69" [ref=e122] [cursor=pointer]:
+                    - /url: /events/2a6b3221-a6a4-4f3d-bca4-789257115b72
+                  - paragraph [ref=e123]: Registration updated Jun 26, 2026, 9:05 AM
+                - 'generic "Registration status: Registered" [ref=e124]':
+                  - generic [ref=e126]: Registered
+              - paragraph [ref=e127]: Your seat is confirmed.
+              - generic [ref=e128]:
+                - link "Check in" [ref=e129] [cursor=pointer]:
+                  - /url: /events/2a6b3221-a6a4-4f3d-bca4-789257115b72/check-in
+                  - img [ref=e130]
+                  - text: Check in
+                - link "Event details" [ref=e134] [cursor=pointer]:
+                  - /url: /events/2a6b3221-a6a4-4f3d-bca4-789257115b72
+                  - text: Event details
+                  - img [ref=e135]
+            - listitem [ref=e137]:
+              - generic [ref=e138]:
+                - generic [ref=e139]:
+                  - link "Scenario Event 34715565-6889-427e-947c-e04bdb1b87f6" [ref=e140] [cursor=pointer]:
+                    - /url: /events/27e0492b-f38c-44dc-87cd-b6b669ea980a
+                  - paragraph [ref=e141]: Registration updated Jun 26, 2026, 8:58 AM
+                - 'generic "Registration status: Registered" [ref=e142]':
+                  - generic [ref=e144]: Registered
+              - paragraph [ref=e145]: Your seat is confirmed.
+              - generic [ref=e146]:
+                - link "Check in" [ref=e147] [cursor=pointer]:
+                  - /url: /events/27e0492b-f38c-44dc-87cd-b6b669ea980a/check-in
+                  - img [ref=e148]
+                  - text: Check in
+                - link "Event details" [ref=e152] [cursor=pointer]:
+                  - /url: /events/27e0492b-f38c-44dc-87cd-b6b669ea980a
+                  - text: Event details
+                  - img [ref=e153]
+            - listitem [ref=e155]:
+              - generic [ref=e156]:
+                - generic [ref=e157]:
+                  - link "Scenario Event bb781c62-1236-4d36-9252-81c4ced43760" [ref=e158] [cursor=pointer]:
+                    - /url: /events/b22d19d5-7461-4485-abb5-a1ac15da8449
+                  - paragraph [ref=e159]: Registration updated Jun 26, 2026, 8:55 AM
+                - 'generic "Registration status: Registered" [ref=e160]':
+                  - generic [ref=e162]: Registered
+              - paragraph [ref=e163]: Your seat is confirmed.
+              - generic [ref=e164]:
+                - link "Check in" [ref=e165] [cursor=pointer]:
+                  - /url: /events/b22d19d5-7461-4485-abb5-a1ac15da8449/check-in
+                  - img [ref=e166]
+                  - text: Check in
+                - link "Event details" [ref=e170] [cursor=pointer]:
+                  - /url: /events/b22d19d5-7461-4485-abb5-a1ac15da8449
+                  - text: Event details
+                  - img [ref=e171]
+            - listitem [ref=e173]:
+              - generic [ref=e174]:
+                - generic [ref=e175]:
+                  - link "Scenario Event 13a472ed-61ca-41ed-872c-094294f67353" [ref=e176] [cursor=pointer]:
+                    - /url: /events/e9686a6d-c84d-458e-a85d-c57c3420568f
+                  - paragraph [ref=e177]: Registration updated Jun 26, 2026, 8:54 AM
+                - 'generic "Registration status: Registered" [ref=e178]':
+                  - generic [ref=e180]: Registered
+              - paragraph [ref=e181]: Your seat is confirmed.
+              - generic [ref=e182]:
+                - link "Check in" [ref=e183] [cursor=pointer]:
+                  - /url: /events/e9686a6d-c84d-458e-a85d-c57c3420568f/check-in
+                  - img [ref=e184]
+                  - text: Check in
+                - link "Event details" [ref=e188] [cursor=pointer]:
+                  - /url: /events/e9686a6d-c84d-458e-a85d-c57c3420568f
+                  - text: Event details
+                  - img [ref=e189]
+            - listitem [ref=e191]:
+              - generic [ref=e192]:
+                - generic [ref=e193]:
+                  - link "Scenario Event 5826f038-01e5-4685-855e-e56aff66c199" [ref=e194] [cursor=pointer]:
+                    - /url: /events/cb304dd4-6aed-4deb-8373-b4f7245bd730
+                  - paragraph [ref=e195]: Registration updated Jun 26, 2026, 8:50 AM
+                - 'generic "Registration status: Registered" [ref=e196]':
+                  - generic [ref=e198]: Registered
+              - paragraph [ref=e199]: Your seat is confirmed.
+              - generic [ref=e200]:
+                - link "Check in" [ref=e201] [cursor=pointer]:
+                  - /url: /events/cb304dd4-6aed-4deb-8373-b4f7245bd730/check-in
+                  - img [ref=e202]
+                  - text: Check in
+                - link "Event details" [ref=e206] [cursor=pointer]:
+                  - /url: /events/cb304dd4-6aed-4deb-8373-b4f7245bd730
+                  - text: Event details
+                  - img [ref=e207]
+            - listitem [ref=e209]:
+              - generic [ref=e210]:
+                - generic [ref=e211]:
+                  - link "Scenario Event 7e297f48-7cff-41f5-8fd2-0a5f116a6bdc" [ref=e212] [cursor=pointer]:
+                    - /url: /events/54ed7659-48e0-4e82-8f2d-da446bd07d84
+                  - paragraph [ref=e213]: Registration updated Jun 26, 2026, 8:33 AM
+                - 'generic "Registration status: Registered" [ref=e214]':
+                  - generic [ref=e216]: Registered
+              - paragraph [ref=e217]: Your seat is confirmed.
+              - generic [ref=e218]:
+                - link "Check in" [ref=e219] [cursor=pointer]:
+                  - /url: /events/54ed7659-48e0-4e82-8f2d-da446bd07d84/check-in
+                  - img [ref=e220]
+                  - text: Check in
+                - link "Event details" [ref=e224] [cursor=pointer]:
+                  - /url: /events/54ed7659-48e0-4e82-8f2d-da446bd07d84
+                  - text: Event details
+                  - img [ref=e225]
+            - listitem [ref=e227]:
+              - generic [ref=e228]:
+                - generic [ref=e229]:
+                  - link "Scenario Event 5964ce28-1e77-48b0-b245-3f5938303b5a" [ref=e230] [cursor=pointer]:
+                    - /url: /events/daf4aa0a-98b5-4995-ad7a-18f3097a2d88
+                  - paragraph [ref=e231]: Registration updated Jun 26, 2026, 2:58 AM
+                - 'generic "Registration status: Registered" [ref=e232]':
+                  - generic [ref=e234]: Registered
+              - paragraph [ref=e235]: Your seat is confirmed.
+              - generic [ref=e236]:
+                - link "Check in" [ref=e237] [cursor=pointer]:
+                  - /url: /events/daf4aa0a-98b5-4995-ad7a-18f3097a2d88/check-in
+                  - img [ref=e238]
+                  - text: Check in
+                - link "Event details" [ref=e242] [cursor=pointer]:
+                  - /url: /events/daf4aa0a-98b5-4995-ad7a-18f3097a2d88
+                  - text: Event details
+                  - img [ref=e243]
+            - listitem [ref=e245]:
+              - generic [ref=e246]:
+                - generic [ref=e247]:
+                  - link "Scenario Event f39f6850-81cd-4be6-9d19-5856e130e19c" [ref=e248] [cursor=pointer]:
+                    - /url: /events/b443ddaf-45db-423f-b969-bda5b9071550
+                  - paragraph [ref=e249]: Registration updated Jun 26, 2026, 2:49 AM
+                - 'generic "Registration status: Registered" [ref=e250]':
+                  - generic [ref=e252]: Registered
+              - paragraph [ref=e253]: Your seat is confirmed.
+              - generic [ref=e254]:
+                - link "Check in" [ref=e255] [cursor=pointer]:
+                  - /url: /events/b443ddaf-45db-423f-b969-bda5b9071550/check-in
+                  - img [ref=e256]
+                  - text: Check in
+                - link "Event details" [ref=e260] [cursor=pointer]:
+                  - /url: /events/b443ddaf-45db-423f-b969-bda5b9071550
+                  - text: Event details
+                  - img [ref=e261]
+            - listitem [ref=e263]:
+              - generic [ref=e264]:
+                - generic [ref=e265]:
+                  - link "Scenario Event 9ac366a3-4be2-4eff-83d0-0121f1532f79" [ref=e266] [cursor=pointer]:
+                    - /url: /events/affcdbc8-7292-4622-be3a-51dbe20bb1be
+                  - paragraph [ref=e267]: Registration updated Jun 26, 2026, 2:46 AM
+                - 'generic "Registration status: Registered" [ref=e268]':
+                  - generic [ref=e270]: Registered
+              - paragraph [ref=e271]: Your seat is confirmed.
+              - generic [ref=e272]:
+                - link "Check in" [ref=e273] [cursor=pointer]:
+                  - /url: /events/affcdbc8-7292-4622-be3a-51dbe20bb1be/check-in
+                  - img [ref=e274]
+                  - text: Check in
+                - link "Event details" [ref=e278] [cursor=pointer]:
+                  - /url: /events/affcdbc8-7292-4622-be3a-51dbe20bb1be
+                  - text: Event details
+                  - img [ref=e279]
+            - listitem [ref=e281]:
+              - generic [ref=e282]:
+                - generic [ref=e283]:
+                  - link "Scenario Event b2618cfc-da77-4564-91a6-22fc04a18dd6" [ref=e284] [cursor=pointer]:
+                    - /url: /events/a814e190-5c63-4a82-8af1-335f2e6ed022
+                  - paragraph [ref=e285]: Registration updated Jun 26, 2026, 2:38 AM
+                - 'generic "Registration status: Registered" [ref=e286]':
+                  - generic [ref=e288]: Registered
+              - paragraph [ref=e289]: Your seat is confirmed.
+              - generic [ref=e290]:
+                - link "Check in" [ref=e291] [cursor=pointer]:
+                  - /url: /events/a814e190-5c63-4a82-8af1-335f2e6ed022/check-in
+                  - img [ref=e292]
+                  - text: Check in
+                - link "Event details" [ref=e296] [cursor=pointer]:
+                  - /url: /events/a814e190-5c63-4a82-8af1-335f2e6ed022
+                  - text: Event details
+                  - img [ref=e297]
+            - listitem [ref=e299]:
+              - generic [ref=e300]:
+                - generic [ref=e301]:
+                  - link "Scenario Event ccc74b20-4cbb-4f8b-8c70-4147bbec9326" [ref=e302] [cursor=pointer]:
+                    - /url: /events/a0ec0296-9ddb-48c7-b007-2507d2aab911
+                  - paragraph [ref=e303]: Registration updated Jun 26, 2026, 2:36 AM
+                - 'generic "Registration status: Registered" [ref=e304]':
+                  - generic [ref=e306]: Registered
+              - paragraph [ref=e307]: Your seat is confirmed.
+              - generic [ref=e308]:
+                - link "Check in" [ref=e309] [cursor=pointer]:
+                  - /url: /events/a0ec0296-9ddb-48c7-b007-2507d2aab911/check-in
+                  - img [ref=e310]
+                  - text: Check in
+                - link "Event details" [ref=e314] [cursor=pointer]:
+                  - /url: /events/a0ec0296-9ddb-48c7-b007-2507d2aab911
+                  - text: Event details
+                  - img [ref=e315]
+            - listitem [ref=e317]:
+              - generic [ref=e318]:
+                - generic [ref=e319]:
+                  - link "Scenario Event 705d1eff-8184-4b52-ac2e-1792c8aa7924" [ref=e320] [cursor=pointer]:
+                    - /url: /events/7e3bdde1-9253-4429-bfda-021bf893c822
+                  - paragraph [ref=e321]: Registration updated Jun 26, 2026, 2:35 AM
+                - 'generic "Registration status: Registered" [ref=e322]':
+                  - generic [ref=e324]: Registered
+              - paragraph [ref=e325]: Your seat is confirmed.
+              - generic [ref=e326]:
+                - link "Check in" [ref=e327] [cursor=pointer]:
+                  - /url: /events/7e3bdde1-9253-4429-bfda-021bf893c822/check-in
+                  - img [ref=e328]
+                  - text: Check in
+                - link "Event details" [ref=e332] [cursor=pointer]:
+                  - /url: /events/7e3bdde1-9253-4429-bfda-021bf893c822
+                  - text: Event details
+                  - img [ref=e333]
+            - listitem [ref=e335]:
+              - generic [ref=e336]:
+                - generic [ref=e337]:
+                  - link "Scenario Event 3624849b-15bf-461b-9a5f-026a1102a0d4" [ref=e338] [cursor=pointer]:
+                    - /url: /events/ac33f38d-2a55-4ab8-89e2-ec8eefcb4da1
+                  - paragraph [ref=e339]: Registration updated Jun 26, 2026, 2:34 AM
+                - 'generic "Registration status: Registered" [ref=e340]':
+                  - generic [ref=e342]: Registered
+              - paragraph [ref=e343]: Your seat is confirmed.
+              - generic [ref=e344]:
+                - link "Check in" [ref=e345] [cursor=pointer]:
+                  - /url: /events/ac33f38d-2a55-4ab8-89e2-ec8eefcb4da1/check-in
+                  - img [ref=e346]
+                  - text: Check in
+                - link "Event details" [ref=e350] [cursor=pointer]:
+                  - /url: /events/ac33f38d-2a55-4ab8-89e2-ec8eefcb4da1
+                  - text: Event details
+                  - img [ref=e351]
+            - listitem [ref=e353]:
+              - generic [ref=e354]:
+                - generic [ref=e355]:
+                  - link "Scenario Event 263fddb9-3509-44f2-a4ca-d99fc8e45b1e" [ref=e356] [cursor=pointer]:
+                    - /url: /events/46f1067d-b26a-4673-bc7a-ac3d24442e00
+                  - paragraph [ref=e357]: Registration updated Jun 26, 2026, 2:27 AM
+                - 'generic "Registration status: Registered" [ref=e358]':
+                  - generic [ref=e360]: Registered
+              - paragraph [ref=e361]: Your seat is confirmed.
+              - generic [ref=e362]:
+                - link "Check in" [ref=e363] [cursor=pointer]:
+                  - /url: /events/46f1067d-b26a-4673-bc7a-ac3d24442e00/check-in
+                  - img [ref=e364]
+                  - text: Check in
+                - link "Event details" [ref=e368] [cursor=pointer]:
+                  - /url: /events/46f1067d-b26a-4673-bc7a-ac3d24442e00
+                  - text: Event details
+                  - img [ref=e369]
+            - listitem [ref=e371]:
+              - generic [ref=e372]:
+                - generic [ref=e373]:
+                  - link "Scenario Event 8ff09b83-b39b-47b4-afbf-496c59bb5186" [ref=e374] [cursor=pointer]:
+                    - /url: /events/25f5a621-c3ce-447c-803f-a3b612236fd6
+                  - paragraph [ref=e375]: Registration updated Jun 26, 2026, 2:26 AM
+                - 'generic "Registration status: Registered" [ref=e376]':
+                  - generic [ref=e378]: Registered
+              - paragraph [ref=e379]: Your seat is confirmed.
+              - generic [ref=e380]:
+                - link "Check in" [ref=e381] [cursor=pointer]:
+                  - /url: /events/25f5a621-c3ce-447c-803f-a3b612236fd6/check-in
+                  - img [ref=e382]
+                  - text: Check in
+                - link "Event details" [ref=e386] [cursor=pointer]:
+                  - /url: /events/25f5a621-c3ce-447c-803f-a3b612236fd6
+                  - text: Event details
+                  - img [ref=e387]
+            - listitem [ref=e389]:
+              - generic [ref=e390]:
+                - generic [ref=e391]:
+                  - link "Scenario Event e4f35581-6d08-4465-84af-8de3079f3fe1" [ref=e392] [cursor=pointer]:
+                    - /url: /events/6821b424-152a-4ff7-b70a-2dd8c490c54d
+                  - paragraph [ref=e393]: Registration updated Jun 26, 2026, 2:26 AM
+                - 'generic "Registration status: Registered" [ref=e394]':
+                  - generic [ref=e396]: Registered
+              - paragraph [ref=e397]: Your seat is confirmed.
+              - generic [ref=e398]:
+                - link "Check in" [ref=e399] [cursor=pointer]:
+                  - /url: /events/6821b424-152a-4ff7-b70a-2dd8c490c54d/check-in
+                  - img [ref=e400]
+                  - text: Check in
+                - link "Event details" [ref=e404] [cursor=pointer]:
+                  - /url: /events/6821b424-152a-4ff7-b70a-2dd8c490c54d
+                  - text: Event details
+                  - img [ref=e405]
+            - listitem [ref=e407]:
+              - generic [ref=e408]:
+                - generic [ref=e409]:
+                  - link "Scenario Event a2690e77-ee6d-474b-b5da-ca4278d684bc" [ref=e410] [cursor=pointer]:
+                    - /url: /events/a199d36b-2cdd-4cbb-b951-2e3468d0f069
+                  - paragraph [ref=e411]: Registration updated Jun 26, 2026, 2:25 AM
+                - 'generic "Registration status: Registered" [ref=e412]':
+                  - generic [ref=e414]: Registered
+              - paragraph [ref=e415]: Your seat is confirmed.
+              - generic [ref=e416]:
+                - link "Check in" [ref=e417] [cursor=pointer]:
+                  - /url: /events/a199d36b-2cdd-4cbb-b951-2e3468d0f069/check-in
+                  - img [ref=e418]
+                  - text: Check in
+                - link "Event details" [ref=e422] [cursor=pointer]:
+                  - /url: /events/a199d36b-2cdd-4cbb-b951-2e3468d0f069
+                  - text: Event details
+                  - img [ref=e423]
+            - listitem [ref=e425]:
+              - generic [ref=e426]:
+                - generic [ref=e427]:
+                  - link "Scenario Event 1e3b9949-0c23-437b-9fbf-8c8db9f09ba8" [ref=e428] [cursor=pointer]:
+                    - /url: /events/b6ee3307-3cbb-4585-b586-345c82dc2d63
+                  - paragraph [ref=e429]: Registration updated Jun 26, 2026, 2:24 AM
+                - 'generic "Registration status: Registered" [ref=e430]':
+                  - generic [ref=e432]: Registered
+              - paragraph [ref=e433]: Your seat is confirmed.
+              - generic [ref=e434]:
+                - link "Check in" [ref=e435] [cursor=pointer]:
+                  - /url: /events/b6ee3307-3cbb-4585-b586-345c82dc2d63/check-in
+                  - img [ref=e436]
+                  - text: Check in
+                - link "Event details" [ref=e440] [cursor=pointer]:
+                  - /url: /events/b6ee3307-3cbb-4585-b586-345c82dc2d63
+                  - text: Event details
+                  - img [ref=e441]
+            - listitem [ref=e443]:
+              - generic [ref=e444]:
+                - generic [ref=e445]:
+                  - link "Scenario Event df0d85ff-ee8f-4c79-9b35-1bfdaa90cb94" [ref=e446] [cursor=pointer]:
+                    - /url: /events/f2b4a805-64f5-4725-a32b-aa8a57e42048
+                  - paragraph [ref=e447]: Registration updated Jun 26, 2026, 2:24 AM
+                - 'generic "Registration status: Registered" [ref=e448]':
+                  - generic [ref=e450]: Registered
+              - paragraph [ref=e451]: Your seat is confirmed.
+              - generic [ref=e452]:
+                - link "Check in" [ref=e453] [cursor=pointer]:
+                  - /url: /events/f2b4a805-64f5-4725-a32b-aa8a57e42048/check-in
+                  - img [ref=e454]
+                  - text: Check in
+                - link "Event details" [ref=e458] [cursor=pointer]:
+                  - /url: /events/f2b4a805-64f5-4725-a32b-aa8a57e42048
+                  - text: Event details
+                  - img [ref=e459]
+          - navigation "Pagination" [ref=e461]:
+            - generic [ref=e462]:
+              - paragraph [ref=e463]: Showing 1–20 of 110
+              - paragraph [ref=e464]: Page 1 of 6
+            - generic [ref=e465]:
+              - button "Previous page" [disabled]:
+                - img
+                - text: Previous
+              - button "Next page" [ref=e466]:
+                - text: Next
+                - img [ref=e467]
+        - button "Sign out" [ref=e77]
+  - button "Open Next.js Dev Tools" [ref=e83] [cursor=pointer]:
+    - img [ref=e84]
+  - alert [ref=e24]

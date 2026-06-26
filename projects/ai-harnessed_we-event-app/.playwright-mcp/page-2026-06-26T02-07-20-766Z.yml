@@ -1,0 +1,67 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e4]:
+        - generic [ref=e5]:
+          - link "We Event" [ref=e6] [cursor=pointer]:
+            - /url: /
+            - img [ref=e7]
+            - generic [ref=e9]: We Event
+          - generic [ref=e10]: /
+          - generic [ref=e11]: Participant
+        - button "Account menu" [ref=e12]:
+          - img [ref=e13]
+          - generic [ref=e16]: participant-1
+    - main [ref=e18]:
+      - generic [ref=e20]:
+        - navigation "Participant" [ref=e24]:
+          - generic [ref=e25]:
+            - link "Browse events" [ref=e26] [cursor=pointer]:
+              - /url: /events
+            - link "My registrations" [ref=e27] [cursor=pointer]:
+              - /url: /registrations
+        - generic [ref=e249]:
+          - generic [ref=e250]:
+            - generic [ref=e251]:
+              - heading "Audit Test Event bf7bb3cd-5a8a-44ce-a14b-4785ec532c43" [level=1] [ref=e252]
+              - paragraph [ref=e253]: Event details and your next actions.
+            - 'generic "Event status: Registration open" [ref=e255]': Registration open
+          - generic [ref=e256]:
+            - generic [ref=e257]:
+              - heading "Event information" [level=2] [ref=e258]
+              - generic [ref=e260]:
+                - img [ref=e261]
+                - generic [ref=e263]:
+                  - term [ref=e264]: Schedule
+                  - definition [ref=e265]: Jun 25, 2026, 9:04 PM – Jun 26, 2026, 10:04 PM
+              - generic [ref=e266]:
+                - heading "Operational windows" [level=3] [ref=e267]
+                - generic [ref=e268]:
+                  - generic [ref=e269]:
+                    - term [ref=e270]: Registration
+                    - definition [ref=e271]: Jun 25, 2026, 9:04 PM – Jun 26, 2026, 10:04 PM
+                  - generic [ref=e272]:
+                    - term [ref=e273]: Check-in
+                    - definition [ref=e274]: Jun 25, 2026, 9:04 PM – Jun 26, 2026, 10:04 PM
+                  - generic [ref=e275]:
+                    - term [ref=e276]: Feedback
+                    - definition [ref=e277]: Jun 25, 2026, 9:04 PM – Jun 26, 2026, 10:04 PM
+                  - generic [ref=e278]:
+                    - term [ref=e279]: Capacity
+                    - definition [ref=e280]: 20 seats
+            - complementary [ref=e281]:
+              - generic [ref=e282]:
+                - heading "Your registration" [level=2] [ref=e283]
+                - generic [ref=e284]:
+                  - 'generic "Registration status: Registered" [ref=e285]':
+                    - generic [ref=e287]: Registered
+                  - paragraph [ref=e288]: Your seat is confirmed.
+                  - paragraph [ref=e289]: Last updated Jun 25, 2026, 11:39 PM
+              - generic [ref=e290]:
+                - heading "Actions" [level=2] [ref=e291]
+                - paragraph [ref=e292]: You can register now.
+                - button "Cancel registration" [ref=e294]
+        - button "Sign out" [ref=e238]
+  - button "Open Next.js Dev Tools" [ref=e244] [cursor=pointer]:
+    - img [ref=e245]
+  - alert [ref=e248]

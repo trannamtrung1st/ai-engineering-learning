@@ -1,0 +1,16 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - banner [ref=e3]:
+      - generic [ref=e4]:
+        - generic [ref=e5]:
+          - link "We Event" [ref=e6] [cursor=pointer]:
+            - /url: /
+            - img [ref=e7]
+            - generic [ref=e9]: We Event
+          - generic [ref=e10]: /
+          - generic [ref=e11]: Participant
+        - button "Account menu" [ref=e12]:
+          - img [ref=e13]
+          - generic [ref=e16]: Loading…
+    - main [ref=e18]
+  - alert [ref=e24]
