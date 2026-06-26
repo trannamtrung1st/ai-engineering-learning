@@ -3,7 +3,7 @@
   "slices": [
     {
       "id": "repo-monorepo-bootstrap",
-      "passes": false,
+      "passes": true,
       "priority": 0,
       "phase": 0,
       "agent": "infra",

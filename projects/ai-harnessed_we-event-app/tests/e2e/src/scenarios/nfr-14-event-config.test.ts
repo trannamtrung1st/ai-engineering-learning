@@ -35,7 +35,7 @@ describe("NFR-14 — event rule config operability", () => {
     await destroyE2EContext(ctx);
   });
 
-  it("NFR-14 / FR-02 / TC-NFR-14-001: OrganizerAdmin PATCHes full EventRuleConfig on draft event", async () => {
+  it("NFR-14 / FR-02 / FR-03 / TC-NFR-14-001: OrganizerAdmin PATCHes full EventRuleConfig on draft event", async () => {
     const { eventId } = await createDraftEvent(ctx.app, organizerToken, {
       capacity: 50,
     });
@@ -249,6 +249,38 @@ describe("NFR-14 — event rule config operability", () => {
       idempotencyKey: newIdempotencyKey(),
     });
     assert.equal(patchResponse.statusCode, 403, patchResponse.body);
+  });
+
+  it("NFR-14 / NFR-13 / TC-NFR-14-008: PATCH rejects conflicting check-in window with actionable error", async () => {
+    const { eventId } = await createDraftEvent(ctx.app, organizerToken);
+    const windows = futureWindow(3_600_000);
+
+    const patchResponse = await apiRequest(ctx.app, {
+      method: "PATCH",
+      path: `/events/${eventId}`,
+      token: organizerToken,
+      payload: {
+        ruleConfig: {
+          checkinOpenAt: windows.close,
+          checkinCloseAt: windows.open,
+        },
+      },
+      idempotencyKey: newIdempotencyKey(),
+    });
+    assert.equal(patchResponse.statusCode, 422, patchResponse.body);
+    const error = parseJson<ErrorEnvelope>(patchResponse.body);
+    assert.equal(error.error.code, "INVALID_INPUT");
+    assert.match(error.error.message, /checkin window/i);
+
+    const getResponse = await apiRequest(ctx.app, {
+      method: "GET",
+      path: `/events/${eventId}`,
+      token: organizerToken,
+    });
+    const event = parseJson<{
+      ruleConfig: { checkinOpenAt: string; checkinCloseAt: string };
+    }>(getResponse.body);
+    assert.notEqual(event.ruleConfig.checkinOpenAt, windows.close);
   });
 
   it("NFR-14 / TC-NFR-14-012: post-open critical change rejected without mandatory reason", async () => {

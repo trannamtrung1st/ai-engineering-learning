@@ -327,7 +327,38 @@ describe("event integration", () => {
     assert.ok(loaded.ruleConfig.version >= 2);
   });
 
-  it("BR-03 / NFR-14 / FR-02 / TC-NFR-14-013: capacity reduction below Registered count is rejected", async () => {
+  it("NFR-14 / BR-21 / TC-NFR-14-015: eventService rejects rule config mutation for non-admin roles", async () => {
+    const draft = await createEvent(
+      createInput({ name: `RbacGuard ${randomUUID()}` }),
+      ACTOR_ID,
+      "OrganizerAdmin",
+      ORG_ID,
+    );
+    const staffId = randomUUID();
+    const participantId = randomUUID();
+    await ensureTestParticipant(participantId);
+
+    for (const actorRole of ["OrganizerStaff", "Participant"] as const) {
+      const actorId = actorRole === "OrganizerStaff" ? staffId : participantId;
+      await assert.rejects(
+        () =>
+          eventService.update(
+            draft.id,
+            { ruleConfig: { capacity: draft.ruleConfig.capacity + 1 } },
+            { actorId, actorRole },
+          ),
+        (error: unknown) =>
+          error instanceof ApiError &&
+          error.code === VALIDATION_ERROR_CODES.EVENT_RULE_CHANGE_FORBIDDEN,
+      );
+    }
+
+    const loaded = await findEventById(draft.id);
+    assert.ok(loaded);
+    assert.equal(loaded.ruleConfig.capacity, draft.ruleConfig.capacity);
+  });
+
+  it("TC-NFR-14-013 / BR-03 / NFR-14 / FR-02: capacity reduction below Registered count is rejected", async () => {
     const capacity = 20;
     const registeredTarget = 15;
     const baseInput = createInput({ name: `CapacityGuard ${randomUUID()}` });
