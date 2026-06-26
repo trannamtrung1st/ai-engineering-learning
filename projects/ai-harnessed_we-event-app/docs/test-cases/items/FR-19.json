@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-19",
   "version": 1,
-  "docFingerprint": "sha256:107397bd83cd034f847adc3aa5c281b5205685eb1f8283558c1614364f516122",
-  "generatedAt": "2026-06-26T12:23:45Z",
+  "docFingerprint": "sha256:7433a3d750e43b22d11a68701a7f1b5c84cd70f9e0c73887fcb4bbc85d306aed",
+  "generatedAt": "2026-06-27T10:00:00Z",
   "cases": [
     {
       "id": "TC-FR-19-001",
@@ -26,7 +26,7 @@
         "Query persisted feedback row linked to registrationId",
         "Verify FeedbackSubmitted domain event emitted"
       ],
-      "expected": "Submission succeeds with feedbackId and submittedAt; answers persisted on Registration 1-to-0..1 Feedback relationship; aligns with testing-plan §3 row: Feedback in allowed window → accepted (AC-08, BR-15)",
+      "expected": "Submission succeeds with feedbackId and submittedAt per AC-08a; answers persisted on Registration 1-to-0..1 Feedback relationship; aligns with testing-plan §3 row: Feedback in allowed window → accepted (AC-08, BR-15)",
       "edgeCase": false
     },
     {
@@ -50,7 +50,7 @@
         "POST /api/v1/events/{eventId}/feedback with Authorization bearer token and body { registrationId, answers: { q1: 5, q2: \"Excellent session\" } }",
         "Verify HTTP status code and response payload fields per API design §4"
       ],
-      "expected": "HTTP 200 with feedbackId (UUID) and submittedAt (ISO-8601); participant can submit feedback via public API after event within allowed window",
+      "expected": "HTTP 200 with feedbackId (UUID) and submittedAt (ISO-8601) per AC-08a; participant can submit feedback via public API after event within allowed window",
       "edgeCase": false
     },
     {
@@ -73,50 +73,7 @@
         "POST /api/v1/events/{eventId}/feedback with participant token and answers payload after complete transition",
         "Confirm submittedAt is present in response"
       ],
-      "expected": "Feedback accepted within window; Flow A proceeds from check-in through post-event feedback submission without blocking on participant submit failure",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-FR-19-004",
-      "category": "functional",
-      "layer": "unit",
-      "technique": "boundary-error",
-      "priority": "P1",
-      "traceability": [
-        "FR-19",
-        "AC-08"
-      ],
-      "title": "Feedback submission validator accepts time inside feedback window bounds",
-      "preconditions": [
-        "Configured feedbackOpenAt and feedbackCloseAt with openAt < closeAt per TimeWindow value object",
-        "Fixed clock now set to a time between feedbackOpenAt and feedbackCloseAt",
-        "Event Completed state"
-      ],
-      "steps": [
-        "Call assertFeedbackWindowOpen(event) or isWithinTimeWindow(feedbackOpenAt, feedbackCloseAt, now) with in-window now"
-      ],
-      "expected": "Validator passes without throwing; feedback submission pipeline may proceed for participant post-event submit",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-FR-19-005",
-      "category": "functional",
-      "layer": "unit",
-      "technique": "state-transition",
-      "priority": "P1",
-      "traceability": [
-        "FR-19"
-      ],
-      "title": "canSubmitFeedback permits Attended participant on Completed event within window",
-      "preconditions": [
-        "Participant UX gating rule canSubmitFeedback",
-        "Event state Completed, registration state Attended",
-        "Current time within feedback window bounds (post-event window open)"
-      ],
-      "steps": [
-        "Evaluate canSubmitFeedback(eventState, registrationState, feedbackOpenAt, feedbackCloseAt, now)"
-      ],
-      "expected": "Returns true; participant UI may enable Submit feedback primary action per Flow 5 step 2",
+      "expected": "Feedback accepted within window per AC-08a; Flow A proceeds from check-in through post-event feedback submission without blocking on participant submit failure",
       "edgeCase": false
     },
     {
@@ -141,7 +98,7 @@
         "Fill valid answers and submit",
         "Confirm success state with timestamp or completion indicator"
       ],
-      "expected": "Feedback form is enabled; submission shows immediate success confirmation; system marks feedback completion per Flow 5 step 3",
+      "expected": "Feedback form is enabled per AC-08a; submission shows immediate success confirmation per NFR-13; system marks feedback completion per Flow 5 step 3",
       "edgeCase": false
     },
     {
@@ -152,6 +109,7 @@
       "priority": "P1",
       "traceability": [
         "FR-19",
+        "AC-08",
         "BR-16"
       ],
       "title": "Participant updates feedback answers within window when updates allowed",
@@ -164,17 +122,18 @@
         "Submit updated answers for same registration within feedback window",
         "Read persisted feedback answers and submittedAt"
       ],
-      "expected": "Update succeeds without FEEDBACK_DUPLICATE; latest answers stored; participant retains ability to refine feedback before window closes",
+      "expected": "Update succeeds without FEEDBACK_DUPLICATE per AC-08e; latest answers stored; participant retains ability to refine feedback before window closes",
       "edgeCase": false
     },
     {
       "id": "TC-FR-19-008",
       "category": "edge",
-      "layer": "unit",
+      "layer": "integration",
       "technique": "boundary-error",
       "priority": "P0",
       "traceability": [
         "FR-19",
+        "AC-08",
         "BR-15"
       ],
       "title": "Feedback submission rejected before feedbackOpenAt",
@@ -183,10 +142,10 @@
         "Fixed clock now strictly before feedbackOpenAt (post-event but window not yet open)"
       ],
       "steps": [
-        "Call assertFeedbackWindowOpen(event) with now before window open",
-        "Attempt feedbackService.submit with valid answers"
+        "Attempt feedbackService.submit with valid answers before window open",
+        "Verify no feedback row is created"
       ],
-      "expected": "Validation fails with ApiError code FEEDBACK_NOT_ALLOWED; no feedback persisted; participant cannot submit before allowed window opens",
+      "expected": "Rejected with FEEDBACK_NOT_ALLOWED (HTTP 422) per AC-08b; no feedback persisted; participant cannot submit before allowed window opens",
       "edgeCase": true
     },
     {
@@ -197,6 +156,7 @@
       "priority": "P0",
       "traceability": [
         "FR-19",
+        "AC-08",
         "BR-15",
         "BR-18"
       ],
@@ -209,7 +169,7 @@
       "steps": [
         "Attempt feedbackService.submit with valid answers after window close"
       ],
-      "expected": "Submission rejected with FEEDBACK_NOT_ALLOWED; no feedback row persisted; mandatory feedback not completed within window per BR-18 downstream impact",
+      "expected": "Submission rejected with FEEDBACK_NOT_ALLOWED per AC-08b; no feedback row persisted; mandatory feedback not completed within window per BR-18 downstream impact",
       "edgeCase": true
     },
     {
@@ -220,6 +180,7 @@
       "priority": "P0",
       "traceability": [
         "FR-19",
+        "AC-08",
         "BR-15"
       ],
       "title": "POST feedback outside configured window returns HTTP 422 FEEDBACK_NOT_ALLOWED",
@@ -228,30 +189,33 @@
         "Participant JWT for Attended registration"
       ],
       "steps": [
-        "POST /api/v1/events/{eventId}/feedback with valid answers while current time is outside window"
+        "POST /api/v1/events/{eventId}/feedback with valid answers while current time is outside window",
+        "Parse error envelope"
       ],
-      "expected": "HTTP 422 with error.code FEEDBACK_NOT_ALLOWED; response includes requestId; no feedbackId returned; FR-19 window constraint enforced at API boundary",
+      "expected": "HTTP 422 with error.code FEEDBACK_NOT_ALLOWED per AC-08b; response includes requestId; no feedbackId returned; FR-19 window constraint enforced at API boundary",
       "edgeCase": true
     },
     {
       "id": "TC-FR-19-011",
       "category": "edge",
-      "layer": "unit",
+      "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
       "traceability": [
         "FR-19",
+        "AC-08",
         "BR-15"
       ],
-      "title": "Non-attended registration cannot submit post-event feedback",
+      "title": "Non-Attended registration cannot submit post-event feedback",
       "preconditions": [
         "Event Completed with feedback window active",
-        "Registration still in Registered or CheckedIn state (not yet Attended)"
+        "Registration in Registered, CheckedIn, or Absent state (not Attended)"
       ],
       "steps": [
-        "Call assertRegistrationFeedbackEligible(registration) or canSubmitFeedback with non-Attended state"
+        "Attempt feedbackService.submit with valid answers for non-Attended registration",
+        "Verify no feedback row is created"
       ],
-      "expected": "Validation fails with FEEDBACK_NOT_ALLOWED; participant cannot submit feedback until attendance is finalized to Attended",
+      "expected": "Submission rejected with FEEDBACK_NOT_ALLOWED per AC-08c; participant cannot submit feedback until attendance is finalized to Attended",
       "edgeCase": true
     },
     {
@@ -262,6 +226,7 @@
       "priority": "P0",
       "traceability": [
         "FR-19",
+        "AC-08",
         "BR-15",
         "FR-26"
       ],
@@ -284,6 +249,7 @@
       "priority": "P1",
       "traceability": [
         "FR-19",
+        "AC-08",
         "BR-16"
       ],
       "title": "Duplicate official feedback submission returns FEEDBACK_DUPLICATE",
@@ -295,27 +261,29 @@
         "Submit feedback successfully once",
         "Attempt second feedbackService.submit with different answers for same registration"
       ],
-      "expected": "Second attempt rejected with FEEDBACK_DUPLICATE (HTTP 409); original feedback row unchanged per one-official-feedback policy",
+      "expected": "Second attempt rejected with FEEDBACK_DUPLICATE (HTTP 409) per AC-08d; original feedback row unchanged per one-official-feedback policy",
       "edgeCase": true
     },
     {
       "id": "TC-FR-19-014",
       "category": "edge",
-      "layer": "unit",
+      "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
       "traceability": [
-        "FR-19"
+        "FR-19",
+        "AC-08",
+        "BR-15"
       ],
-      "title": "Empty answers object rejected at schema validation",
+      "title": "Empty answers object rejected with INVALID_INPUT at API boundary",
       "preconditions": [
         "Valid Attended registration and open feedback window on Completed event",
         "Request payload with answers: {}"
       ],
       "steps": [
-        "Call assertAnswersValid({}) or POST feedback with empty answers"
+        "POST /api/v1/events/{eventId}/feedback with empty answers object"
       ],
-      "expected": "Rejected with INVALID_INPUT (HTTP 400); no feedback persisted",
+      "expected": "Rejected with INVALID_INPUT (HTTP 400) per AC-08g; no feedback persisted",
       "edgeCase": true
     },
     {
@@ -326,6 +294,7 @@
       "priority": "P1",
       "traceability": [
         "FR-19",
+        "AC-08",
         "FR-25",
         "FR-26"
       ],
@@ -337,7 +306,7 @@
       "steps": [
         "POST /api/v1/events/{eventId}/feedback with organizer token and participant registrationId"
       ],
-      "expected": "HTTP 403 or FEEDBACK_NOT_ALLOWED; only Participant role may submit own feedback per permission matrix",
+      "expected": "HTTP 403 unauthorized per AC-08f; only Participant role may submit own feedback per permission matrix",
       "edgeCase": true
     },
     {
@@ -348,6 +317,7 @@
       "priority": "P1",
       "traceability": [
         "FR-19",
+        "AC-08",
         "AC-15",
         "FR-26"
       ],
@@ -359,7 +329,7 @@
       "steps": [
         "POST /api/v1/events/{eventId}/feedback without bearer token"
       ],
-      "expected": "HTTP 401 unauthenticated; no feedback row created",
+      "expected": "HTTP 401 unauthenticated per AC-08f; no feedback row created",
       "edgeCase": true
     },
     {
@@ -370,6 +340,7 @@
       "priority": "P2",
       "traceability": [
         "FR-19",
+        "AC-08",
         "FR-26"
       ],
       "title": "Participant cannot submit feedback for another participant's registration",
@@ -381,7 +352,7 @@
       "steps": [
         "Attempt feedbackService.submit using participant B's registrationId while authenticated as A"
       ],
-      "expected": "Rejected with FEEDBACK_NOT_ALLOWED or HTTP 403; FR-26 scope constraint enforced — participant operates only on own registration data",
+      "expected": "HTTP 403 unauthorized per AC-08f; FR-26 scope constraint enforced — participant operates only on own registration data",
       "edgeCase": true
     },
     {
@@ -392,6 +363,7 @@
       "priority": "P2",
       "traceability": [
         "FR-19",
+        "AC-08",
         "BR-16"
       ],
       "title": "Concurrent duplicate feedback submits for same registration produce single official record",
@@ -404,7 +376,7 @@
         "Launch two concurrent submit requests with different answers payloads",
         "Query feedback_submissions for the registration after both settle"
       ],
-      "expected": "Exactly one feedback row persisted; one request succeeds with feedbackId; other returns FEEDBACK_DUPLICATE or equivalent conflict; no duplicate official feedback per BR-16",
+      "expected": "Exactly one feedback row persisted; one request succeeds with feedbackId; other returns FEEDBACK_DUPLICATE (HTTP 409) per AC-08d; no duplicate official feedback per BR-16",
       "edgeCase": true
     },
     {
@@ -415,6 +387,7 @@
       "priority": "P1",
       "traceability": [
         "FR-19",
+        "AC-08",
         "NFR-13"
       ],
       "title": "Successful feedback submission returns immediate success payload",
@@ -425,7 +398,7 @@
         "POST /api/v1/events/{eventId}/feedback with valid payload",
         "Inspect response latency and body"
       ],
-      "expected": "Synchronous HTTP 200 with feedbackId and submittedAt; client receives actionable success without polling; satisfies NFR-13 immediate feedback on critical participant action",
+      "expected": "Synchronous HTTP 200 with feedbackId and submittedAt per AC-08a; client receives actionable success without polling; satisfies NFR-13 immediate feedback on critical participant action",
       "edgeCase": false
     },
     {
@@ -436,6 +409,7 @@
       "priority": "P1",
       "traceability": [
         "FR-19",
+        "AC-08",
         "NFR-13"
       ],
       "title": "Rejected feedback submission returns deterministic error code and message",
@@ -448,7 +422,7 @@
         "Parse error envelope",
         "Repeat identical request"
       ],
-      "expected": "Response includes error.code FEEDBACK_NOT_ALLOWED, user-safe message, and requestId per standard error contract; same inputs produce same error code on repeat",
+      "expected": "Response includes error.code FEEDBACK_NOT_ALLOWED per AC-08b, user-safe message, and requestId per standard error contract; same inputs produce same error code on repeat",
       "edgeCase": false
     },
     {
@@ -459,6 +433,7 @@
       "priority": "P1",
       "traceability": [
         "FR-19",
+        "AC-08",
         "BR-15"
       ],
       "title": "Feedback window validation is deterministic under fixed clock",
@@ -481,6 +456,7 @@
       "priority": "P2",
       "traceability": [
         "FR-19",
+        "AC-08",
         "NFR-13"
       ],
       "title": "Feedback form shows clear blocking reason when post-event window is closed",
@@ -492,7 +468,7 @@
         "Navigate to event detail or feedback entry",
         "Attempt to access or submit feedback form"
       ],
-      "expected": "Form disabled or submission blocked with concrete message (e.g. feedback period ended); not a generic error identifier in user-facing text per microcopy standards",
+      "expected": "Form disabled or submission blocked with concrete message (e.g. feedback period ended) per AC-08b; not a generic error identifier in user-facing text per microcopy standards",
       "edgeCase": false
     },
     {
@@ -502,7 +478,8 @@
       "technique": "module-integration",
       "priority": "P1",
       "traceability": [
-        "FR-19"
+        "FR-19",
+        "AC-08"
       ],
       "title": "FeedbackSubmitted domain event emitted on successful participant submit",
       "preconditions": [
@@ -514,8 +491,55 @@
         "Submit feedback via feedbackService.submit with valid answers",
         "Inspect emitted domain events or outbox records"
       ],
-      "expected": "FeedbackSubmitted event recorded with eventId, registrationId, feedbackId, and submittedAt; enables downstream eligibility evaluation per Workflow E",
+      "expected": "FeedbackSubmitted event recorded with eventId, registrationId, feedbackId, and submittedAt per AC-08a; enables downstream eligibility evaluation per Workflow E",
       "edgeCase": false
+    },
+    {
+      "id": "TC-FR-19-024",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": [
+        "FR-19",
+        "AC-08",
+        "BR-15"
+      ],
+      "title": "Feedback submission rejected when event is not Completed",
+      "preconditions": [
+        "Event in Published or InProgress state (not Completed)",
+        "Attended or CheckedIn registration with active feedback window timestamps configured",
+        "Authenticated participant with valid registration"
+      ],
+      "steps": [
+        "Attempt feedbackService.submit with valid answers while event state is not Completed",
+        "Verify no feedback row is created"
+      ],
+      "expected": "Submission rejected with FEEDBACK_NOT_ALLOWED per FR-19 event-state gate and BR-15; feedback only permitted after event transitions to Completed",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-19-025",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P1",
+      "traceability": [
+        "FR-19",
+        "AC-08",
+        "FR-26"
+      ],
+      "title": "Cross-participant feedback POST returns HTTP 403",
+      "preconditions": [
+        "Completed event with active feedback window",
+        "Two Attended participants A and B with separate registrations",
+        "Participant A JWT"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/feedback with participant A token and registrationId belonging to participant B"
+      ],
+      "expected": "HTTP 403 unauthorized per AC-08f; no feedback row created for B; FR-26 own-registration scope enforced at API boundary",
+      "edgeCase": true
     }
   ]
 }
