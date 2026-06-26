@@ -114,6 +114,22 @@ describe("api foundation", () => {
     assert.equal(body.role, "OrganizerAdmin");
   });
 
+  it("FR-23: OrganizerStaff denied audit logs via requireRole", async () => {
+    const assignedEventId = "00000000-0000-0000-0000-000000000010";
+    const staffToken = await signDevToken(app, "staff-audit-foundation", "OrganizerStaff", [
+      assignedEventId,
+    ]);
+
+    const denied = await app.inject({
+      method: "GET",
+      url: `${API_BASE_PATH}/events/${assignedEventId}/audit-logs`,
+      headers: { authorization: `Bearer ${staffToken}` },
+    });
+
+    assert.equal(denied.statusCode, 403);
+    assert.equal(parseError(denied.body).error.code, "FORBIDDEN");
+  });
+
   it("FR-25: enforces event scope for organizer staff", async () => {
     const assignedEventId = "00000000-0000-0000-0000-000000000010";
     const unassignedEventId = "00000000-0000-0000-0000-000000000099";
