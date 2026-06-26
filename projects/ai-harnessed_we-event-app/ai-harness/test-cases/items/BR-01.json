@@ -2,12 +2,32 @@
   "productItemId": "BR-01",
   "version": 1,
   "docFingerprint": "sha256:cb1c9eb60d41f4924b791516e6ce60f977cb306449ba7795b60d8f0014d0e753",
-  "generatedAt": "2026-06-26T05:29:47Z",
+  "generatedAt": "2026-06-26T12:53:48Z",
   "cases": [
     {
       "id": "TC-BR-01-001",
       "category": "functional",
       "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["BR-01", "AC-03"],
+      "title": "Duplicate registration attempt blocked per testing-plan §3",
+      "preconditions": [
+        "Event is RegistrationOpen with available seats and active registration window",
+        "Participant already has an active registration (Registered) for the event"
+      ],
+      "steps": [
+        "Invoke registrationService.register(eventId, participantId, actorContext) for the same participant a second time",
+        "Query active registration rows for the participant/event pair"
+      ],
+      "expected": "Registration is rejected with ApiError code REGISTRATION_DUPLICATE_ACTIVE and HTTP status 409; no second active row is created; testing-plan §3 row 'Duplicate registration attempt → blocked' is satisfied",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-01-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["BR-01", "AC-01"],
       "title": "First registration for participant/event pair creates exactly one active row",
@@ -23,98 +43,71 @@
       "edgeCase": false
     },
     {
-      "id": "TC-BR-01-002",
+      "id": "TC-BR-01-003",
       "category": "functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["BR-01", "AC-03"],
-      "title": "Second registration attempt while Registered is rejected",
+      "title": "Second registration attempt persists no duplicate row at DB boundary",
       "preconditions": [
-        "Event RegistrationOpen with available seats",
-        "Participant already has active Registered registration for the event"
+        "Event is in RegistrationOpen state with available seats",
+        "Registration window is active",
+        "Participant already has an active registration (Registered) for the event",
+        "Database transaction boundaries enabled for registration module"
       ],
       "steps": [
         "Invoke registrationService.register(eventId, participantId, actorContext) for the same participant a second time",
-        "Observe error and count active registration rows"
+        "Query registrations table for (eventId, participantId) where state is active after rollback or rejection"
       ],
-      "expected": "Rejected with ApiError code REGISTRATION_DUPLICATE_ACTIVE and HTTP 409; no second active row created; existing Registered state unchanged",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-BR-01-003",
-      "category": "functional",
-      "layer": "unit",
-      "priority": "P0",
-      "traceability": ["BR-01", "AC-03"],
-      "title": "BR-01 maps to REGISTRATION_DUPLICATE_ACTIVE error code",
-      "preconditions": [
-        "Domain rule catalog loaded per validation rules doc"
-      ],
-      "steps": [
-        "Resolve RULE_TO_ERROR_CODE for business rule BR-01",
-        "Assert BUSINESS_RULE_IDS.BR_01 equals BR-01"
-      ],
-      "expected": "BR-01 resolves to VALIDATION_ERROR_CODES.REGISTRATION_DUPLICATE_ACTIVE; mapping is stable and deterministic",
+      "expected": "Registration is rejected with REGISTRATION_DUPLICATE_ACTIVE (409); exactly one active registration row remains; existing registration state unchanged at DB boundary",
       "edgeCase": false
     },
     {
       "id": "TC-BR-01-004",
       "category": "functional",
-      "layer": "unit",
+      "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["BR-01"],
-      "title": "assertNoDuplicateActive rejects existing active registration row",
+      "traceability": ["BR-01", "AC-03", "FR-06"],
+      "title": "POST registrations duplicate returns HTTP 409 with typed error envelope",
       "preconditions": [
-        "Existing registration row in an active state (Registered, Waitlisted, Requested, or CheckedIn)"
+        "Published event with registration opened and available capacity",
+        "Participant JWT used to successfully POST /api/v1/events/{eventId}/registrations once",
+        "Fresh Idempotency-Key header for the duplicate attempt"
       ],
       "steps": [
-        "Call assertNoDuplicateActive(existingRegistrationRow)"
+        "POST /api/v1/events/{eventId}/registrations with the same participant Authorization bearer token a second time",
+        "Parse error response body and GET /api/v1/events/{eventId}/registration-status"
       ],
-      "expected": "Throws ApiError with code REGISTRATION_DUPLICATE_ACTIVE and statusCode 409; details include existing registrationId and state",
+      "expected": "HTTP 409 with error.code REGISTRATION_DUPLICATE_ACTIVE, user-safe message per API error contract, and requestId; GET registration-status still returns the original registration unchanged",
       "edgeCase": false
     },
     {
       "id": "TC-BR-01-005",
       "category": "functional",
-      "layer": "e2e",
-      "priority": "P0",
-      "traceability": ["BR-01", "AC-03", "FR-06"],
-      "title": "Duplicate POST registrations returns 409 with typed error envelope",
-      "preconditions": [
-        "Published event with registration opened and available capacity",
-        "Participant JWT used to successfully POST /api/v1/events/{eventId}/registrations once",
-        "Fresh Idempotency-Key header for duplicate attempt"
-      ],
-      "steps": [
-        "POST /api/v1/events/{eventId}/registrations with the same participant Authorization bearer a second time",
-        "Parse error response and GET registration-status"
-      ],
-      "expected": "HTTP 409 with error.code REGISTRATION_DUPLICATE_ACTIVE and user-safe message; registration-status still returns the original single active registration unchanged",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-BR-01-006",
-      "category": "functional",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["BR-01", "AC-03"],
       "title": "Participant UI prevents duplicate registration with clear feedback",
       "preconditions": [
         "Participant logged in with active Registered status for an open event",
-        "Event detail page displays current registration state"
+        "Event detail page displays current registration state badge or label"
       ],
       "steps": [
         "Navigate to event detail for the event where participant is already registered",
         "Attempt to register again via UI (register button, retry, or equivalent)",
-        "Observe inline or toast error messaging"
+        "Observe inline or toast error messaging and registration status area"
       ],
       "expected": "UI does not create a second registration; participant sees duplicate-registration feedback consistent with REGISTRATION_DUPLICATE_ACTIVE server semantics",
       "edgeCase": false
     },
     {
-      "id": "TC-BR-01-007",
+      "id": "TC-BR-01-006",
       "category": "edge",
       "layer": "integration",
+      "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["BR-01", "AC-03"],
       "title": "Duplicate blocked when participant is already Waitlisted",
@@ -129,9 +122,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-BR-01-008",
+      "id": "TC-BR-01-007",
       "category": "edge",
       "layer": "integration",
+      "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["BR-01", "AC-03"],
       "title": "Duplicate blocked when participant is already CheckedIn",
@@ -145,9 +139,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-BR-01-009",
+      "id": "TC-BR-01-008",
       "category": "edge",
       "layer": "integration",
+      "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["BR-01"],
       "title": "Duplicate blocked when registration is still in Requested state",
@@ -161,9 +156,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-BR-01-010",
+      "id": "TC-BR-01-009",
       "category": "edge",
       "layer": "integration",
+      "technique": "state-transition",
       "priority": "P0",
       "traceability": ["BR-01", "AC-03", "BR-07"],
       "title": "Re-registration permitted after cancellation when no active row remains",
@@ -176,13 +172,14 @@
         "Invoke registrationService.register for the same participant after cancellation completed",
         "Query active registrations for participant/event pair"
       ],
-      "expected": "New registration succeeds with state Registered; BR-01 satisfied because cancelled state is not active; not treated as duplicate",
+      "expected": "beforeState CancelledByUser (inactive) permits new registration; afterState Registered; BR-01 satisfied because cancelled state is not active; not treated as duplicate",
       "edgeCase": true
     },
     {
-      "id": "TC-BR-01-011",
+      "id": "TC-BR-01-010",
       "category": "edge",
       "layer": "integration",
+      "technique": "concurrency",
       "priority": "P0",
       "traceability": ["BR-01", "AC-03"],
       "title": "Concurrent duplicate registration requests yield single active row",
@@ -198,9 +195,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-BR-01-012",
+      "id": "TC-BR-01-011",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["BR-01", "AC-03"],
       "title": "Duplicate POST with new Idempotency-Key still rejected",
@@ -215,25 +213,29 @@
       "edgeCase": true
     },
     {
-      "id": "TC-BR-01-013",
+      "id": "TC-BR-01-012",
       "category": "edge",
-      "layer": "unit",
+      "layer": "integration",
+      "technique": "state-transition",
       "priority": "P1",
       "traceability": ["BR-01"],
-      "title": "assertNoDuplicateActive permits registration when prior row is terminal inactive",
+      "title": "Terminal inactive prior registration permits new active registration",
       "preconditions": [
-        "Existing registration row in terminal inactive state (Rejected, CancelledByUser, CancelledByOrganizer, Expired, Absent, or Attended)"
+        "Existing registration row in terminal inactive state (Rejected, CancelledByUser, CancelledByOrganizer, Expired, Absent, or Attended)",
+        "Event RegistrationOpen with available seats"
       ],
       "steps": [
-        "Call assertNoDuplicateActive(terminalInactiveRegistrationRow)"
+        "Invoke registrationService.register for the same participant and event",
+        "Query active registration rows for participant/event pair"
       ],
-      "expected": "Function completes without throwing; registration pipeline may proceed because terminal states are not active per INV-01",
+      "expected": "New registration succeeds because terminal states are not active per INV-01; at most one active row exists after commit",
       "edgeCase": true
     },
     {
-      "id": "TC-BR-01-014",
+      "id": "TC-BR-01-013",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["BR-01", "AC-03"],
       "title": "Dedupe validation runs before capacity assignment in registration pipeline",
@@ -242,16 +244,17 @@
         "Participant already has active Registered registration"
       ],
       "steps": [
-        "Attempt second registration for same participant",
+        "Attempt second registration for same participant via registrationService.register",
         "Inspect error code on failure"
       ],
-      "expected": "Failure code is REGISTRATION_DUPLICATE_ACTIVE (not REGISTRATION_REJECTED_FULL), confirming pipeline step 3 (dedup active registration) executes before step 4 (capacity decision)",
+      "expected": "Failure code is REGISTRATION_DUPLICATE_ACTIVE (not REGISTRATION_REJECTED_FULL), confirming pipeline step 3 (dedup active registration) executes before step 4 (capacity decision) per validation pipeline",
       "edgeCase": false
     },
     {
-      "id": "TC-BR-01-015",
+      "id": "TC-BR-01-014",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["BR-01"],
       "title": "P0 invariant: persistence never holds more than one active registration per participant/event",
@@ -266,21 +269,81 @@
       "edgeCase": false
     },
     {
-      "id": "TC-BR-01-016",
-      "category": "non-functional",
-      "layer": "unit",
-      "priority": "P1",
-      "traceability": ["BR-01"],
-      "title": "BR-01 rule evaluation is deterministic for identical inputs",
+      "id": "TC-BR-01-015",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P0",
+      "traceability": ["BR-01", "AC-03"],
+      "title": "Flow B duplicate registration step blocked after waitlist entry",
       "preconditions": [
-        "Fixed participantId, eventId, and existing active registration fixture"
+        "E2E Flow B fixture: participant already Waitlisted on a full event",
+        "Valid participant JWT and fresh Idempotency-Key"
       ],
       "steps": [
-        "Evaluate BR-01 dedupe guard twice with identical inputs",
-        "Compare error code, message, and details"
+        "Execute Flow B BR-01 step: POST /api/v1/events/{eventId}/registrations again for the waitlisted participant",
+        "Verify error response before proceeding with cancellation/promotion steps"
       ],
-      "expected": "Both evaluations produce identical REGISTRATION_DUPLICATE_ACTIVE outcome; same inputs always yield same output per determinism requirements",
+      "expected": "HTTP 409 with REGISTRATION_DUPLICATE_ACTIVE; original Waitlisted registration unchanged with same registrationId and waitlistPosition",
       "edgeCase": false
+    },
+    {
+      "id": "TC-BR-01-016",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P1",
+      "traceability": ["BR-01", "AC-01"],
+      "title": "Flow A register step enforces single active registration before check-in",
+      "preconditions": [
+        "E2E Flow A fixture: participant successfully registered (Registered) for a published event",
+        "Valid participant JWT"
+      ],
+      "steps": [
+        "During Flow A lifecycle after initial registration, POST /api/v1/events/{eventId}/registrations again for the same participant",
+        "Continue Flow A only if duplicate is blocked"
+      ],
+      "expected": "Duplicate POST rejected with HTTP 409 REGISTRATION_DUPLICATE_ACTIVE; original Registered row proceeds through check-in and feedback without a second active registration",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-01-017",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-01", "FR-25", "FR-26"],
+      "title": "OrganizerAdmin and OrganizerStaff denied POST registrations",
+      "preconditions": [
+        "Event RegistrationOpen with available seats",
+        "Valid JWT for OrganizerAdmin (or OrganizerStaff scoped to the event)",
+        "Actor has no participant registration for the event"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/registrations with OrganizerAdmin bearer token and Idempotency-Key",
+        "Repeat POST with OrganizerStaff bearer token for the same event"
+      ],
+      "expected": "Both requests return HTTP 403 unauthorized; no registration row is created; Register for event is Participant-only per roles-permissions matrix — BR-01 dedupe path is not reachable by non-participant roles",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-01-018",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-01"],
+      "title": "BR-01 violation returns deterministic REGISTRATION_DUPLICATE_ACTIVE error code",
+      "preconditions": [
+        "Participant has active registration for the event",
+        "Validation rule catalog loaded per docs/technical/08-validation-rules.md"
+      ],
+      "steps": [
+        "Trigger registration request that violates BR-01 (one active registration per participant/event)",
+        "Inspect ApiError code, HTTP status, and user-safe message"
+      ],
+      "expected": "Failure returns error code REGISTRATION_DUPLICATE_ACTIVE with HTTP 409 per validation rules catalog row for BR-01; outcome is deterministic for identical inputs",
+      "edgeCase": true
     }
   ]
 }
