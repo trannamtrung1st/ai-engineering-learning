@@ -39,7 +39,12 @@
         "docker-compose.yml",
         ".env.example"
       ],
-      "description": "Add docker-compose.yml with db service and aih:dev:db:up/down npm scripts."
+      "description": "Add docker-compose.yml with db service and aih:dev:db:up/down npm scripts.",
+      "testRequirements": {
+        "acceptanceTags": [
+          "NFR-02"
+        ]
+      }
     },
     {
       "id": "domain-package",

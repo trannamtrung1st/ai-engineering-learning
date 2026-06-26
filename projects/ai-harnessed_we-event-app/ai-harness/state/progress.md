@@ -168,3 +168,4 @@ Append-only log of completed iterations.
 - 2026-06-26T05:30:20Z | BR-01 | testgen_passed
 - 2026-06-26T05:31:40Z | BR-03 | testgen_passed
 - 2026-06-26T05:32:46Z | BR-10 | testgen_passed
+- 2026-06-26T05:34:01Z | NFR-02 | testgen_passed

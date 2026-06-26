@@ -1,0 +1,269 @@
+{
+  "productItemId": "NFR-02",
+  "version": 1,
+  "docFingerprint": "sha256:165db3bf1b6e2d69c0247f57cf57e1ee618773a7367cf603d879d37786d9cb38",
+  "generatedAt": "2026-06-26T12:45:00Z",
+  "cases": [
+    {
+      "id": "TC-NFR-02-001",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["NFR-02", "AC-01", "AC-04", "BR-03"],
+      "title": "Successful registration transaction preserves capacity invariant without double booking",
+      "preconditions": [
+        "Event is RegistrationOpen with capacity N and available seats",
+        "Participant has no active registration for the event",
+        "Postgres database via Compose db service with migrations applied"
+      ],
+      "steps": [
+        "Invoke registrationService.register(eventId, participantId, actorContext) inside a committed transaction",
+        "Query Registered seat-holder count and active registration rows for the participant/event pair"
+      ],
+      "expected": "Registration commits with state Registered; INV-02 holds (Registered count <= capacity); INV-01 holds (at most one active registration per participant/event); no duplicate seat assignment",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-02-002",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["NFR-02", "AC-05", "BR-10", "BR-13"],
+      "title": "Check-in transaction atomically persists CheckinRecord and registration CheckedIn state",
+      "preconditions": [
+        "Event is InProgress with active check-in window",
+        "Participant has Registered registration with no prior valid check-in",
+        "Staff or admin actor authorized for event check-in"
+      ],
+      "steps": [
+        "Invoke checkinService.staffCheckin(eventId, { registrationId }, actorContext)",
+        "Query checkin_records and registration state for the registrationId"
+      ],
+      "expected": "Single valid CheckinRecord with timestamp exists; registration state is CheckedIn; INV-04 holds (at most one valid check-in per registration); registration and check-in rows are mutually consistent",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-02-003",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["NFR-02", "AC-01", "AC-05"],
+      "title": "Flow A register-then-check-in maintains data consistency end-to-end",
+      "preconditions": [
+        "E2E Flow A fixture: published event with open registration then InProgress with check-in window",
+        "Participant JWT with no prior registration",
+        "Staff JWT for check-in"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/registrations to obtain Registered state",
+        "POST /api/v1/events/{eventId}/checkins with registrationId during active check-in window",
+        "GET registration-status and attendance for the participant"
+      ],
+      "expected": "Exactly one active registration exists throughout; after check-in exactly one valid check-in record with matching checkinAt; registration state CheckedIn; no orphaned or duplicate booking artifacts",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-02-004",
+      "category": "non-functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["NFR-02", "AC-04", "BR-03"],
+      "title": "Registration acceptance uses transactional row lock and in-transaction seat count",
+      "preconditions": [
+        "Event with capacity 3 and multiple concurrent registration attempts",
+        "lockEventRuleConfig (or equivalent) serializes writers per event",
+        "Postgres as system of record per docker-compose local runtime policy"
+      ],
+      "steps": [
+        "Fire parallel registrationService.register calls from distinct participants",
+        "Inspect database transaction boundaries and post-commit Registered count"
+      ],
+      "expected": "Each registration path runs inside BEGIN/COMMIT with row lock on event rule config; seat count computed in-transaction; no committed state where Registered count exceeds capacity",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-02-005",
+      "category": "non-functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["NFR-02", "AC-04", "BR-08"],
+      "title": "Cancellation and waitlist promotion run atomically without transient double booking",
+      "preconditions": [
+        "Event at capacity with Registered participants and at least one Waitlisted",
+        "waitlistEnabled true",
+        "One Registered participant eligible to cancel before deadline"
+      ],
+      "steps": [
+        "Cancel a Registered registration triggering FIFO promotion in the same transaction",
+        "Query Registered count and waitlist positions before and after commit"
+      ],
+      "expected": "Promotion and cancellation commit atomically; Registered count never exceeds capacity at any observable point; no intermediate state with two promotions consuming one seat or zero Registered when capacity allows one",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-02-006",
+      "category": "non-functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["NFR-02", "AC-03", "AC-04"],
+      "title": "Domain invariants INV-01, INV-02, and INV-04 hold after mixed registration and check-in sequence",
+      "preconditions": [
+        "Database reset per test with registration and check-in modules enabled",
+        "Mix of register, duplicate-block, cancel, promote, and check-in operations on seeded events"
+      ],
+      "steps": [
+        "Execute a deterministic sequence covering Flow A and Flow B partial paths",
+        "After each committed operation verify INV-01 (one active registration per participant/event), INV-02 (Registered <= capacity), INV-04 (one valid check-in per registration)"
+      ],
+      "expected": "All three invariants hold after every commit; aligns with system overview consistency goal and testing plan P0 severity for capacity overflow and duplicate active registration",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-02-007",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["NFR-02", "AC-03", "AC-04", "BR-01", "BR-03"],
+      "title": "Heavy concurrent registration burst never produces double booking or duplicate active rows",
+      "preconditions": [
+        "Event RegistrationOpen with capacity 3 and waitlistEnabled true",
+        "12+ unique participantIds with no prior registration",
+        "Parallel registrationService.register calls fired simultaneously"
+      ],
+      "steps": [
+        "Execute Promise.allSettled on all concurrent register calls",
+        "Count Registered rows, active registrations per participant, and compare to capacity"
+      ],
+      "expected": "Registered count is at most 3 and equals 3 when all attempts resolve; each participant has at most one active registration; zero capacity overflow and zero duplicate active registrations under contention",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-02-008",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["NFR-02", "AC-05", "BR-10"],
+      "title": "Concurrent check-in attempts for same registration yield at most one valid check-in",
+      "preconditions": [
+        "Registered participant with no prior check-in",
+        "Event InProgress with active check-in window",
+        "Two or more parallel staffCheckin calls targeting the same registrationId"
+      ],
+      "steps": [
+        "Fire concurrent checkinService.staffCheckin calls for the same registrationId",
+        "Count valid checkin_records and registration state after all calls settle"
+      ],
+      "expected": "Exactly one valid CheckinRecord exists; registration is CheckedIn once; duplicate attempts rejected with conflict error without creating a second valid check-in; INV-04 preserved",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-02-009",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["NFR-02", "AC-04", "BR-03"],
+      "title": "Failed registration rolls back entirely with no partial seat consumption",
+      "preconditions": [
+        "Registration path that fails post-insert capacity guard (CAPACITY_EXCEEDED) or mid-transaction error",
+        "Known Registered count before attempt"
+      ],
+      "steps": [
+        "Trigger registration that fails after insert attempt or during capacity check",
+        "Query Registered count and any new rows for the participant after ROLLBACK"
+      ],
+      "expected": "Transaction is fully rolled back; Registered count unchanged; no partial registration row leaves inconsistent capacity or double-booking exposure",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-02-010",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["NFR-02", "AC-06", "BR-10"],
+      "title": "Rejected out-of-window check-in leaves registration and check-in tables unchanged",
+      "preconditions": [
+        "Registered participant with no check-in",
+        "Fixed clock set outside check-in window (before openAt or after closeAt)"
+      ],
+      "steps": [
+        "Attempt checkinService.staffCheckin for the registration",
+        "Query checkin_records count and registration state"
+      ],
+      "expected": "Check-in rejected with appropriate error code; zero CheckinRecord rows created; registration remains Registered (not CheckedIn); data consistency preserved on validation failure",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-02-011",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["NFR-02", "AC-03", "BR-01"],
+      "title": "Concurrent duplicate registration from same participant yields single active row",
+      "preconditions": [
+        "Event RegistrationOpen with available seats",
+        "Same participantId used in parallel register calls with no prior registration"
+      ],
+      "steps": [
+        "Fire two or more concurrent registrationService.register calls for the same participantId and eventId",
+        "Count active registration rows for the participant/event pair"
+      ],
+      "expected": "Exactly one request succeeds; others rejected with REGISTRATION_DUPLICATE_ACTIVE or equivalent conflict; database never holds more than one active registration; prevents double booking of the same participant slot",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-02-012",
+      "category": "non-functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["NFR-02"],
+      "title": "Transactional consistency tests execute against Compose Postgres not in-memory stores",
+      "preconditions": [
+        "npm run aih:dev:db:up has started healthy db service",
+        "DATABASE_URL points to postgresql://we_event:we_event@localhost:5432/we_event",
+        "Forbidden persistence modes (in-memory Map, SQLite, mock-only repos) are not used"
+      ],
+      "steps": [
+        "Run npm run test:integration for registration and check-in consistency scenarios",
+        "Verify tests connect to Postgres and use schema migrations"
+      ],
+      "expected": "Integration suite exercises real transactional behavior on Postgres per docker-compose local runtime policy; concurrency and atomicity assertions are meaningful against durable storage",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-02-013",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["NFR-02", "AC-04", "BR-08"],
+      "title": "Flow B cancel-promote-check-in preserves capacity and check-in consistency",
+      "preconditions": [
+        "E2E Flow B fixture: full event (capacity 1), one Registered, one Waitlisted",
+        "Event transitions to InProgress with active check-in window after promotion"
+      ],
+      "steps": [
+        "Registered participant cancels; waitlisted participant promoted to Registered",
+        "Promoted participant completes check-in via POST checkins or self-checkin",
+        "Verify Registered count and check-in records at each step"
+      ],
+      "expected": "Registered count never exceeds capacity through cancel and promotion; promoted participant has exactly one valid check-in after check-in step; no duplicate registrations or check-ins at any stage",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-02-014",
+      "category": "non-functional",
+      "layer": "unit",
+      "priority": "P0",
+      "traceability": ["NFR-02", "AC-03", "AC-04"],
+      "title": "Registration pipeline validators enforce dedupe before capacity assignment",
+      "preconditions": [
+        "Unit tests for registration dedupe validator and capacity guard validator per testing plan unit targets"
+      ],
+      "steps": [
+        "Run assertNoDuplicateActive against existing active row → expect REGISTRATION_DUPLICATE_ACTIVE",
+        "Run capacity guard with registeredCount >= capacity → expect Waitlisted or rejection, never Registered"
+      ],
+      "expected": "Pure validators deterministically enforce ordering that prevents double booking logic errors before persistence; dedupe runs before capacity decision in the validation pipeline",
+      "edgeCase": false
+    }
+  ]
+}
