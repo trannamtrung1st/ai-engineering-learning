@@ -1,0 +1,306 @@
+{
+  "productItemId": "FR-36",
+  "version": 1,
+  "docFingerprint": "sha256:20dc4744e6b360cadb5ea4206b636accdc3eed30db646a391487565a106b15eb",
+  "generatedAt": "2026-06-26T22:15:00Z",
+  "cases": [
+    {
+      "id": "TC-FR-36-001",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-36", "AC-17"],
+      "title": "Participant paginated event list includes coverImageUrl for events with cover",
+      "preconditions": [
+        "Published discoverable event with cover_image_key set via prior organizer upload",
+        "Authenticated Participant JWT or public list access per GET /events policy"
+      ],
+      "steps": [
+        "GET /api/v1/events?page=1&pageSize=12 as participant",
+        "Locate the event with cover in the items array",
+        "GET the coverImageUrl from the list item"
+      ],
+      "expected": "List item includes non-null coverImageUrl when cover_image_key is set; URL resolves to HTTP 200 image bytes matching uploaded asset; satisfies FR-36 participant visibility on discovery listings",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-36-002",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-36", "AC-17"],
+      "title": "Participant event detail returns coverImageUrl for display on detail page",
+      "preconditions": [
+        "Event with uploaded cover image and known cover_image_key",
+        "Participant authenticated or public detail access per API policy"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId} and read coverImageUrl from response",
+        "GET coverImageUrl (or derived GET /api/v1/media/events/{key})"
+      ],
+      "expected": "Event detail includes coverImageUrl; media GET returns HTTP 200 with correct Content-Type (image/jpeg, image/png, or image/webp) and bytes matching upload; FR-36 participant event detail cover display satisfied",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-36-003",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-36"],
+      "title": "Organizer Admin event detail includes coverImageUrl when cover exists",
+      "preconditions": [
+        "Published event in organizer scope with cover_image_key set",
+        "Valid OrganizerAdmin JWT"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId} with OrganizerAdmin bearer token",
+        "GET /api/v1/events?page=1&pageSize=12 scoped to organizer-visible events"
+      ],
+      "expected": "Organizer detail and list responses include coverImageUrl for events with cover; organizer can read the same cover metadata participants see per FR-36 organizers see cover on discovery and detail surfaces",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-36-004",
+      "category": "functional",
+      "layer": "browser",
+      "priority": "P0",
+      "traceability": ["FR-36", "AC-17"],
+      "title": "Participant event discovery card renders 16:9 cover thumbnail via next/image",
+      "preconditions": [
+        "Web app running with participant event discovery page",
+        "Published event with uploaded cover visible in browse list",
+        "Participant session or public browse enabled"
+      ],
+      "steps": [
+        "Navigate to participant event discovery (paginated card grid)",
+        "Locate event card for seeded event with cover",
+        "Inspect cover image region dimensions and rendered image source"
+      ],
+      "expected": "Event card displays cover thumbnail in 16:9 aspect ratio using next/image; uploaded cover visible on discovery card per event-specific components spec and page-list discovery card grid",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-36-005",
+      "category": "functional",
+      "layer": "browser",
+      "priority": "P0",
+      "traceability": ["FR-36", "AC-17"],
+      "title": "Participant event detail header renders cover image hero",
+      "preconditions": [
+        "Published event with uploaded cover image",
+        "Participant navigated to event detail page for that event"
+      ],
+      "steps": [
+        "Open event detail from discovery card",
+        "Observe event detail header cover hero region"
+      ],
+      "expected": "Event detail header renders cover image hero above event metadata; image matches uploaded cover; satisfies FR-36 event detail display and event-specific components Event detail header fields",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-36-006",
+      "category": "functional",
+      "layer": "browser",
+      "priority": "P1",
+      "traceability": ["FR-36"],
+      "title": "Organizer views cover on event detail when reviewing managed event",
+      "preconditions": [
+        "OrganizerAdmin logged in",
+        "Managed event with uploaded cover image",
+        "Organizer navigates to event detail or preview for that event"
+      ],
+      "steps": [
+        "As OrganizerAdmin, open event detail or operational view that surfaces participant-facing header",
+        "Confirm cover hero or thumbnail is visible"
+      ],
+      "expected": "Organizer sees the same cover image on event detail as participants; FR-36 organizer visibility on event detail satisfied",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-36-007",
+      "category": "functional",
+      "layer": "unit",
+      "priority": "P0",
+      "traceability": ["FR-36"],
+      "title": "Event card component renders neutral placeholder when coverImageUrl is absent",
+      "preconditions": [
+        "Event card component mountable in isolation",
+        "Fixture event props with coverImageUrl null or undefined"
+      ],
+      "steps": [
+        "Render Event card with event data lacking coverImageUrl",
+        "Assert cover image slot content"
+      ],
+      "expected": "Component shows neutral placeholder illustration instead of broken image; no next/image src for missing cover; matches event-specific components cover absent behavior",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-36-008",
+      "category": "non-functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-36", "NFR-18"],
+      "title": "coverImageUrl points to controlled GET /media/events/{key} path not raw filesystem",
+      "preconditions": [
+        "Event with cover_image_key persisted",
+        "UPLOADS_DIR configured per local development setup"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId} and parse coverImageUrl",
+        "Verify URL pattern matches /api/v1/media/events/{key}",
+        "Attempt direct filesystem path access outside media route"
+      ],
+      "expected": "coverImageUrl uses API media route under controlled storage path; no direct UPLOADS_DIR filesystem URL exposed; NFR-18 served from controlled storage path honored for display",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-36-009",
+      "category": "non-functional",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["FR-36", "NFR-18"],
+      "title": "Displayed cover media returns correct Content-Type for JPEG, PNG, and WebP uploads",
+      "preconditions": [
+        "Three events each with cover uploaded as JPEG, PNG, and WebP respectively",
+        "coverImageUrl available on each event detail"
+      ],
+      "steps": [
+        "GET coverImageUrl for JPEG-covered event and inspect Content-Type header",
+        "Repeat for PNG and WebP covered events"
+      ],
+      "expected": "Each media response Content-Type matches uploaded format (image/jpeg, image/png, image/webp); browsers and next/image can render covers correctly per NFR-18 validation contract",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-36-010",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-36"],
+      "title": "Event list and detail omit coverImageUrl when cover_image_key is null",
+      "preconditions": [
+        "Published discoverable event without cover_image_key",
+        "Participant or public read access"
+      ],
+      "steps": [
+        "GET /api/v1/events?page=1&pageSize=12 and locate event without cover",
+        "GET /api/v1/events/{eventId} for same event"
+      ],
+      "expected": "List item and detail response omit coverImageUrl or return null; no media URL fabricated; API contract per 05-api-design includes coverImageUrl only when cover_image_key is set",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-36-011",
+      "category": "edge",
+      "layer": "browser",
+      "priority": "P0",
+      "traceability": ["FR-36"],
+      "title": "Discovery card shows fallback illustration when event has no cover",
+      "preconditions": [
+        "Published event without cover_image_key visible in discovery list",
+        "Participant on event discovery page"
+      ],
+      "steps": [
+        "Navigate to participant event discovery",
+        "Locate card for event without cover",
+        "Inspect cover thumbnail slot"
+      ],
+      "expected": "Card renders neutral fallback illustration in 16:9 slot; no broken image icon; matches page-list fallback when no cover and event-specific components placeholder spec",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-36-012",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["FR-36", "FR-35"],
+      "title": "After organizer deletes cover, list and detail no longer expose coverImageUrl",
+      "preconditions": [
+        "Event previously had cover_image_key",
+        "OrganizerAdmin performs DELETE /events/{eventId}/cover-image"
+      ],
+      "steps": [
+        "DELETE /api/v1/events/{eventId}/cover-image as OrganizerAdmin",
+        "GET /api/v1/events?page=1&pageSize=12 as participant and inspect list item",
+        "GET /api/v1/events/{eventId} as participant"
+      ],
+      "expected": "Post-delete list and detail omit coverImageUrl; prior media URL no longer associated with event; display surfaces fall back to no-cover state per FR-36",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-36-013",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["FR-36", "FR-35"],
+      "title": "After cover replace, participant list and detail reflect updated coverImageUrl",
+      "preconditions": [
+        "Event with existing cover_image_key",
+        "OrganizerAdmin uploads replacement image via POST /events/{eventId}/cover-image",
+        "Participant read access"
+      ],
+      "steps": [
+        "Record original coverImageUrl from GET /events/{eventId}",
+        "POST replacement cover image",
+        "GET /api/v1/events?page=1&pageSize=12 and GET /api/v1/events/{eventId}",
+        "Fetch new coverImageUrl bytes"
+      ],
+      "expected": "coverImageUrl changes on both list and detail; new URL serves replacement bytes; stale cover no longer displayed; FR-36 display stays in sync with FR-35 replace",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-36-014",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["FR-36"],
+      "title": "coverImageUrl consistent between list item and detail for same event",
+      "preconditions": [
+        "Event with cover on page 1 of participant browse list",
+        "Authenticated Participant JWT"
+      ],
+      "steps": [
+        "GET /api/v1/events?page=1&pageSize=12 and read coverImageUrl from matching list item",
+        "GET /api/v1/events/{eventId} and read coverImageUrl from detail"
+      ],
+      "expected": "List item coverImageUrl equals detail coverImageUrl for the same eventId; no divergent media references between discovery card and detail hero data sources",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-36-015",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P2",
+      "traceability": ["FR-36", "AC-13"],
+      "title": "Paginated page 2 list items include coverImageUrl when cover_image_key is set",
+      "preconditions": [
+        "At least 13 discoverable events with at least one covered event appearing on page 2",
+        "Authenticated Participant JWT"
+      ],
+      "steps": [
+        "GET /api/v1/events?page=2&pageSize=12&sort=startAt:asc",
+        "Locate covered event on page 2 if present"
+      ],
+      "expected": "Page-2 items with cover_image_key include coverImageUrl same as page 1 contract; pagination does not strip cover metadata per AC-13 correct slice semantics",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-36-016",
+      "category": "edge",
+      "layer": "browser",
+      "priority": "P1",
+      "traceability": ["FR-36"],
+      "title": "Event detail hero shows placeholder when navigating to event without cover",
+      "preconditions": [
+        "Published event without cover_image_key",
+        "Participant on event detail page for that event"
+      ],
+      "steps": [
+        "Navigate directly to event detail URL for no-cover event",
+        "Inspect cover hero region in event detail header"
+      ],
+      "expected": "Detail header renders without broken image; neutral placeholder or omitted hero per component spec; FR-36 graceful no-cover detail display",
+      "edgeCase": true
+    }
+  ]
+}

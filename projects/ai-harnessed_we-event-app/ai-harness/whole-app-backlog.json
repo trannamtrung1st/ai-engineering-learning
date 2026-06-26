@@ -534,7 +534,8 @@
       "testRequirements": {
         "acceptanceTags": [
           "AC-17",
-          "FR-35"
+          "FR-35",
+          "FR-36"
         ]
       }
     },
