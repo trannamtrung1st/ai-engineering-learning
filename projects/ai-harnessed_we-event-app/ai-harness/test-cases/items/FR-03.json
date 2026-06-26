@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-03",
   "version": 1,
-  "docFingerprint": "sha256:aa1117f3b650d9449d7073916f7ca9b84a02286b19d61773de4e49196817a850",
-  "generatedAt": "2026-06-26T11:57:34Z",
+  "docFingerprint": "sha256:d5426bd8235ae44f8d8c17ffb86670943a993f20178df22df9dcadf4ea6c6df5",
+  "generatedAt": "2026-06-26T16:37:47Z",
   "cases": [
     {
       "id": "TC-FR-03-001",
@@ -206,7 +206,7 @@
         "PATCH /api/v1/events/{eventId} with OrganizerStaff bearer token and registration window change",
         "PATCH /api/v1/events/{eventId} with Participant bearer token and registration window change"
       ],
-      "expected": "Both requests return HTTP 403 unauthorized; registration_open_at and registration_close_at remain unchanged; permission matrix Configure rules/capacity/windows is OrganizerAdmin only per roles-permissions §2 (BR-21)",
+      "expected": "Both requests return HTTP 403 with code EVENT_RULE_CHANGE_FORBIDDEN; registration_open_at and registration_close_at remain unchanged; permission matrix Configure rules/capacity/windows is OrganizerAdmin only per roles-permissions §2 and BR-21",
       "edgeCase": true
     },
     {
@@ -251,7 +251,7 @@
         "Attempt eventService.update(eventId, { ruleConfig: { registrationCloseAt: newClose } }, context) without reason fields",
         "Verify event_rule_configs.registration_close_at unchanged"
       ],
-      "expected": "ApiError with code AUDIT_REQUIRED_FOR_CRITICAL_CHANGE; registration_close_at remains at prior value; satisfies INV-06 post-registration-open critical config change guard",
+      "expected": "ApiError with code AUDIT_REQUIRED_FOR_CRITICAL_CHANGE (HTTP 422 semantic rule violation); registration_close_at remains at prior value; satisfies INV-06 post-registration-open critical config change guard per BR-22",
       "edgeCase": true
     },
     {
@@ -423,11 +423,11 @@
         "Fixed clock abstraction available for deterministic time-window tests per testing plan §7"
       ],
       "steps": [
-        "Evaluate canRegister (or equivalent) at exactly T1 (registration open boundary)",
-        "Evaluate canRegister at exactly T2 (registration close boundary)",
-        "Compare outcomes against documented TimeWindow semantics"
+        "Invoke registration validation at exactly T1 (registrationOpenAt) with event state RegistrationOpen",
+        "Invoke registration validation at exactly T2 (registrationCloseAt) with event state RegistrationOpen",
+        "Invoke registration validation at T2 plus one millisecond with event state RegistrationOpen"
       ],
-      "expected": "At T1 registration is permitted when event state is RegistrationOpen and other guards pass; at T2 registration is rejected with REGISTRATION_WINDOW_CLOSED unless domain explicitly defines inclusive close; boundary behavior is deterministic and documented",
+      "expected": "At T1 and T2 registration window check passes (inclusive boundaries: rejection when now < openAt or now > closeAt); one instant after closeAt returns REGISTRATION_WINDOW_CLOSED (HTTP 422); boundary behavior is deterministic per validation pipeline step 2 and TimeWindow openAt < closeAt invariant",
       "edgeCase": true
     },
     {
