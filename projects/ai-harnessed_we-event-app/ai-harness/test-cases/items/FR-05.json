@@ -2,23 +2,25 @@
   "productItemId": "FR-05",
   "version": 1,
   "docFingerprint": "sha256:61772db2f0be7d5f91f9eccefef8b9d85ce957dbd55d47d9d14f933847b053f4",
-  "generatedAt": "2026-06-26T04:33:24Z",
+  "generatedAt": "2026-06-26T12:01:30Z",
   "cases": [
     {
       "id": "TC-FR-05-001",
       "category": "functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["FR-05"],
       "title": "Participant event listing query returns events in RegistrationOpen state",
       "preconditions": [
         "Seeded events in mixed states: at least one RegistrationOpen, one Published (not yet open), one Draft, one RegistrationClosed",
         "Authenticated Participant actor context",
-        "Fixed clock within registration window for RegistrationOpen fixture"
+        "Fixed clock within registration window for RegistrationOpen fixture",
+        "PostgreSQL test database per integration test setup"
       ],
       "steps": [
-        "Invoke eventService.listEvents(participantContext, { page: 1, pageSize: 12 })",
-        "Inspect returned items and their state fields"
+        "Invoke eventService.listEvents(participantContext, { page: 1, pageSize: 12 }) within a real DB transaction",
+        "Inspect returned items and their state fields against persisted event rows"
       ],
       "expected": "Paginated result includes RegistrationOpen events visible to Participant per permission matrix View open events; role-filtered listing excludes Draft and other non-discoverable states; each item exposes eventId, name, state RegistrationOpen, startAt, and location per API list contract",
       "edgeCase": false
@@ -27,6 +29,7 @@
       "id": "TC-FR-05-002",
       "category": "functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
       "traceability": ["FR-05"],
       "title": "GET /events returns paginated RegistrationOpen events for authenticated participant",
@@ -46,6 +49,7 @@
       "id": "TC-FR-05-003",
       "category": "functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
       "traceability": ["FR-05", "BR-02"],
       "title": "GET /events/{eventId} returns detail for RegistrationOpen event visible to participant",
@@ -65,6 +69,7 @@
       "id": "TC-FR-05-004",
       "category": "functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
       "traceability": ["FR-05"],
       "title": "GET /events?state=RegistrationOpen filters to open-for-registration catalog",
@@ -83,6 +88,7 @@
       "id": "TC-FR-05-005",
       "category": "functional",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["FR-05"],
       "title": "Participant event discovery page displays RegistrationOpen events with availability context",
@@ -96,16 +102,17 @@
         "Locate card for RegistrationOpen event",
         "Open event detail from the card"
       ],
-      "expected": "Discovery card grid shows RegistrationOpen event with name, timing, location, cover or fallback illustration, and registration-open status indicator; detail page displays event information, windows, and status-dependent CTA per page list and Flow 1 step 1–2 (user opens discovery and selects event)",
+      "expected": "Discovery card grid shows RegistrationOpen event with name, timing, location, cover or fallback illustration, and registration-open status indicator; detail page displays event information, windows, and status-dependent CTA per page list and Flow A step 1–2 (user opens discovery and selects event)",
       "edgeCase": false
     },
     {
       "id": "TC-FR-05-006",
       "category": "functional",
       "layer": "e2e",
+      "technique": "flow-a",
       "priority": "P0",
       "traceability": ["FR-05", "FR-04", "FR-03"],
-      "title": "Lifecycle prerequisite: only RegistrationOpen events appear after publish and open-registration",
+      "title": "Flow A lifecycle prerequisite: only RegistrationOpen events appear after publish and open-registration",
       "preconditions": [
         "OrganizerAdmin JWT",
         "Draft event with complete metadata and valid registration window (FR-03)",
@@ -116,13 +123,14 @@
         "POST /api/v1/events/{eventId}/publish then POST /api/v1/events/{eventId}/open-registration as organizer",
         "GET /api/v1/events as participant after open-registration"
       ],
-      "expected": "Draft event never visible to participant; after publish + open-registration the event appears in participant listing with state RegistrationOpen; aligns with state machine Published → RegistrationOpen via openRegistrationWindow and Workflow A draft → publish → open registration",
+      "expected": "Draft event never visible to participant; after publish + open-registration the event appears in participant listing with state RegistrationOpen; aligns with state machine Published → RegistrationOpen via openRegistrationWindow and Flow A draft → publish → open registration",
       "edgeCase": false
     },
     {
       "id": "TC-FR-05-007",
       "category": "functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P1",
       "traceability": ["FR-05", "FR-28"],
       "title": "Participant searches discovery list for RegistrationOpen event by name",
@@ -141,6 +149,7 @@
       "id": "TC-FR-05-008",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["FR-05"],
       "title": "Draft and Published-not-open events excluded from participant open-events discovery",
@@ -160,6 +169,7 @@
       "id": "TC-FR-05-009",
       "category": "edge",
       "layer": "e2e",
+      "technique": "state-transition",
       "priority": "P0",
       "traceability": ["FR-05", "BR-02"],
       "title": "RegistrationClosed event not presented as open for registration",
@@ -179,6 +189,7 @@
       "id": "TC-FR-05-010",
       "category": "edge",
       "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["FR-05", "AC-15"],
       "title": "Unauthenticated GET /events returns 401",
@@ -197,6 +208,7 @@
       "id": "TC-FR-05-011",
       "category": "edge",
       "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P1",
       "traceability": ["FR-05"],
       "title": "Participant cannot view Draft event detail by direct eventId",
@@ -207,13 +219,14 @@
       "steps": [
         "GET /api/v1/events/{draftEventId} with Participant Authorization bearer"
       ],
-      "expected": "HTTP 404 or 403 — Draft event not exposed to Participant scope; original Draft state unchanged; role-filtered access prevents viewing unpublished configuration",
+      "expected": "HTTP 404 or 403 — Draft event not exposed to Participant scope; original Draft state unchanged; role-filtered access prevents viewing unpublished configuration per permission matrix Create/edit event draft denied to Participant",
       "edgeCase": true
     },
     {
       "id": "TC-FR-05-012",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P2",
       "traceability": ["FR-05"],
       "title": "Invalid pagination parameters on GET /events return 400 INVALID_PAGINATION",
@@ -232,6 +245,7 @@
       "id": "TC-FR-05-013",
       "category": "edge",
       "layer": "e2e",
+      "technique": "state-transition",
       "priority": "P1",
       "traceability": ["FR-05"],
       "title": "Cancelled event no longer discoverable as open for registration",
@@ -250,6 +264,7 @@
       "id": "TC-FR-05-014",
       "category": "non-functional",
       "layer": "e2e",
+      "technique": "pagination",
       "priority": "P1",
       "traceability": ["FR-05", "NFR-05", "AC-14"],
       "title": "Events list returns single paginated page envelope not full catalog",
@@ -268,12 +283,14 @@
       "id": "TC-FR-05-015",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "pagination",
       "priority": "P2",
       "traceability": ["FR-05", "AC-13", "NFR-16"],
       "title": "Paginated events list beyond last page returns empty items with valid metadata",
       "preconditions": [
         "Known count of RegistrationOpen events (e.g. 5 total)",
-        "Participant actor context"
+        "Participant actor context",
+        "PostgreSQL test database"
       ],
       "steps": [
         "Request page 1 with pageSize 12 and record totalPages",
@@ -286,6 +303,7 @@
       "id": "TC-FR-05-016",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "pagination",
       "priority": "P2",
       "traceability": ["FR-05", "NFR-16"],
       "title": "Large RegistrationOpen catalog list query returns one page within acceptable response time",
@@ -305,6 +323,7 @@
       "id": "TC-FR-05-017",
       "category": "functional",
       "layer": "unit",
+      "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["FR-05"],
       "title": "Participant-visible event state filter includes RegistrationOpen only among pre-registration discoverable states",
@@ -317,6 +336,27 @@
         "Verify RegistrationOpen passes and Draft fails"
       ],
       "expected": "Filter logic marks RegistrationOpen as visible for participant discovery; Draft excluded; aligns with role-filtered GET /events and FR-05 scope of viewing events currently open for registration",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-05-018",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P1",
+      "traceability": ["FR-05", "AC-13"],
+      "title": "Testing plan §3 Events list page 2 — participant views second page of RegistrationOpen events",
+      "preconditions": [
+        "At least 13 RegistrationOpen events seeded (exceeds default pageSize of 12)",
+        "Authenticated Participant JWT",
+        "Events seeded with distinct startAt values for sort verification"
+      ],
+      "steps": [
+        "GET /api/v1/events?page=1&pageSize=12&sort=startAt:asc and record total and totalPages",
+        "GET /api/v1/events?page=2&pageSize=12&sort=startAt:asc",
+        "Compare page-2 items to expected second slice ordered by startAt ascending"
+      ],
+      "expected": "Page-2 response has page=2, pageSize=12, total matching page-1 total, totalPages=ceil(total/12), items are the correct contiguous slice of RegistrationOpen events per testing plan §3 Events list page 2 scenario and AC-13",
       "edgeCase": false
     }
   ]
