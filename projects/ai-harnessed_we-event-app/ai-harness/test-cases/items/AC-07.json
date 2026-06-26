@@ -2,15 +2,16 @@
   "productItemId": "AC-07",
   "version": 1,
   "docFingerprint": "sha256:c6bd2470b2186d8b109b2fe04884f4802250d75d244124495523616faaa9e091",
-  "generatedAt": "2026-06-26T14:30:00Z",
+  "generatedAt": "2026-06-26T15:45:00Z",
   "cases": [
     {
       "id": "TC-AC-07-001",
       "category": "functional",
       "layer": "integration",
+      "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["AC-07", "FR-17", "BR-12"],
-      "title": "CheckedIn registration transitions to Attended when event completes",
+      "traceability": ["AC-07", "BR-12"],
+      "title": "Event completion attendance finalization marks checked-in participant Attended per testing-plan §3",
       "preconditions": [
         "Event progressed through RegistrationClosed and InProgress with valid check-in window",
         "Participant registration in CheckedIn state with one valid CheckinRecord",
@@ -18,74 +19,101 @@
       ],
       "steps": [
         "Invoke eventService.complete(eventId, organizerContext)",
-        "Query registration row by registrationId"
+        "Query registration row by registrationId and compare with cohort without check-in"
       ],
-      "expected": "Registration state is Attended; prior CheckinRecord and checkinAt timestamp remain unchanged; event state is Completed",
+      "expected": "Testing-plan §3 row satisfied: participant with valid check-in is Attended; Registered-without-check-in cohort member is Absent; event state is Completed",
       "edgeCase": false
     },
     {
       "id": "TC-AC-07-002",
       "category": "functional",
-      "layer": "e2e",
+      "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["AC-07", "FR-17", "BR-12"],
-      "title": "POST complete marks checked-in participant Attended in registrations list",
+      "title": "Event completion and CheckedIn-to-Attended transition commit in one DB transaction",
       "preconditions": [
-        "E2E fixture event with registered participant checked in via POST /events/{eventId}/checkins",
-        "Event in InProgress state",
-        "Organizer admin JWT with scope for the event"
+        "Real database fixture with Registered participant checked in (CheckedIn) and valid CheckinRecord",
+        "Event in InProgress state ready for completion",
+        "OrganizerAdmin actor context"
       ],
       "steps": [
-        "POST /api/v1/events/{eventId}/complete with organizer Authorization bearer token",
-        "GET /api/v1/events/{eventId}/registrations?state=Attended&page=1&pageSize=20"
+        "Execute eventService.complete against real Postgres",
+        "Query event.state, registrations.state, and checkin_records in the same database session immediately after commit"
       ],
-      "expected": "Complete returns success; attended list includes the checked-in registrationId with state Attended",
+      "expected": "Event is Completed; CheckedIn registration is Attended; prior CheckinRecord and checkinAt timestamp remain unchanged; no partial write (event Completed but registration still CheckedIn) per module breakdown §4 transaction boundary",
       "edgeCase": false
     },
     {
       "id": "TC-AC-07-003",
       "category": "functional",
-      "layer": "e2e",
+      "layer": "integration",
+      "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["AC-07", "FR-14", "FR-17", "BR-12"],
-      "title": "Self check-in participant is marked Attended after event completion",
+      "traceability": ["AC-07", "BR-12"],
+      "title": "markAttendance transitions CheckedIn registration to Attended when event completes",
       "preconditions": [
-        "Event rule config enables participant self check-in",
-        "Participant completed self check-in within window (registration CheckedIn)",
-        "Event InProgress ready for completion"
+        "Registration in CheckedIn state before event completion",
+        "Valid CheckinRecord exists for the registration",
+        "Event in InProgress state with completion trigger available"
       ],
       "steps": [
-        "POST /api/v1/events/{eventId}/self-checkin with participant token during InProgress",
-        "POST /api/v1/events/{eventId}/complete with organizer token",
-        "GET /api/v1/me/registrations for the participant"
+        "Record beforeState as CheckedIn from registration repository",
+        "Trigger event completion via eventService.complete",
+        "Read afterState from registration repository"
       ],
-      "expected": "Participant registration appears with state Attended after completion regardless of staff vs self check-in method",
+      "expected": "beforeState CheckedIn, afterState Attended per state machine §2; markAttendance guard satisfied (event complete); CheckinRecord unchanged",
       "edgeCase": false
     },
     {
       "id": "TC-AC-07-004",
       "category": "functional",
-      "layer": "unit",
-      "priority": "P1",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
       "traceability": ["AC-07", "FR-17", "BR-12"],
-      "title": "markAttendance guard permits CheckedIn to Attended when event is complete",
+      "title": "POST /events/{eventId}/complete returns HTTP 200 and marks checked-in registration Attended",
       "preconditions": [
-        "Registration state machine guard for markAttendance transition",
-        "Registration in CheckedIn state",
-        "Event in Completed state (or completion trigger active)"
+        "E2E fixture event with registered participant checked in via POST /events/{eventId}/checkins",
+        "Event in InProgress state",
+        "OrganizerAdmin JWT with scope for the event"
       ],
       "steps": [
-        "Evaluate markAttendance transition guard with CheckedIn registration and completed event context"
+        "POST /api/v1/events/{eventId}/complete with organizer Authorization bearer token",
+        "GET /api/v1/events/{eventId}/registrations?state=Attended&page=1&pageSize=20"
       ],
-      "expected": "Guard returns allowed; transition target is Attended per state machine table",
+      "expected": "POST returns HTTP 200 with event state Completed; attended list includes the checked-in registrationId with state Attended",
       "edgeCase": false
     },
     {
       "id": "TC-AC-07-005",
       "category": "functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["AC-07", "FR-17", "BR-12"],
+      "traceability": ["AC-07", "FR-14", "FR-17", "BR-12"],
+      "title": "Self check-in participant appears Attended in GET /me/registrations after completion",
+      "preconditions": [
+        "Event rule config enables participant self check-in",
+        "Participant completed self check-in within window (registration CheckedIn)",
+        "Event InProgress ready for completion",
+        "OrganizerAdmin JWT for completion step"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/self-checkin with participant token during InProgress",
+        "POST /api/v1/events/{eventId}/complete with organizer token",
+        "GET /api/v1/me/registrations?page=1&pageSize=20 for the participant"
+      ],
+      "expected": "HTTP 200 on completion; participant registration item shows state Attended regardless of staff vs self check-in method",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-07-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["AC-07", "FR-17"],
       "title": "Flow A lifecycle completion step finalizes checked-in participant as Attended",
       "preconditions": [
         "E2E Flow A progressed through publish, registration, check-in (CheckedIn)",
@@ -93,19 +121,20 @@
         "Organizer token from prior flow steps"
       ],
       "steps": [
-        "Execute Flow A event completion step: POST /events/{eventId}/complete",
-        "Verify registration state before proceeding to feedback/eligibility steps"
+        "Execute Flow A event completion step: POST /api/v1/events/{eventId}/complete",
+        "GET registration state for the checked-in participant before proceeding to feedback/eligibility steps"
       ],
       "expected": "Checked-in participant registration is Attended, enabling downstream feedback and eligibility evaluation per workflow D",
       "edgeCase": false
     },
     {
-      "id": "TC-AC-07-006",
+      "id": "TC-AC-07-007",
       "category": "functional",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["AC-07", "FR-17"],
-      "title": "Organizer registrations view shows Attended status after event completion",
+      "title": "Organizer registrations view shows Attended status badge after event completion",
       "preconditions": [
         "OrganizerAdmin logged in with event scope",
         "Event completed with at least one participant who checked in during the window",
@@ -120,9 +149,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-AC-07-007",
+      "id": "TC-AC-07-008",
       "category": "functional",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["AC-07", "FR-17"],
       "title": "Participant my registrations shows Attended after event completion",
@@ -133,15 +163,53 @@
       ],
       "steps": [
         "Navigate to participant my registrations list",
-        "Find the completed event registration row"
+        "Find the completed event registration row",
+        "Observe state badge or status column for the event"
       ],
       "expected": "Registration row displays Attended terminal state for the event where participant had valid check-in",
       "edgeCase": false
     },
     {
-      "id": "TC-AC-07-008",
+      "id": "TC-AC-07-009",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["AC-07", "FR-17"],
+      "title": "Participant denied POST /events/{eventId}/complete",
+      "preconditions": [
+        "Event InProgress with participant in CheckedIn state",
+        "Authenticated participant JWT only (no organizer capability)"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/complete with participant Authorization bearer token"
+      ],
+      "expected": "HTTP 403 unauthorized per roles matrix; registration remains CheckedIn; event remains InProgress; no attendance finalization side effects",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-07-010",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["AC-07"],
+      "title": "OrganizerStaff denied event completion on event outside assigned scope",
+      "preconditions": [
+        "Event InProgress with checked-in participant but event not assigned to staff actor",
+        "Authenticated OrganizerStaff JWT without scope for eventId"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/complete with staff JWT"
+      ],
+      "expected": "HTTP 403 or 404 per scope policy; registration remains CheckedIn; event state unchanged; Attended finalization does not occur",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-07-011",
       "category": "edge",
       "layer": "integration",
+      "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["AC-07", "BR-12"],
       "title": "Registered participant without valid check-in is marked Absent not Attended on completion",
@@ -154,13 +222,14 @@
         "Complete event via eventService.complete",
         "Query both registration states"
       ],
-      "expected": "Checked-in participant is Attended; participant without valid check-in is Absent; BR-12 attendance inference is correct for both outcomes",
+      "expected": "Checked-in participant is Attended; participant without valid check-in is Absent per BR-12; AC-07 scope limited to valid check-in holders",
       "edgeCase": true
     },
     {
-      "id": "TC-AC-07-009",
+      "id": "TC-AC-07-012",
       "category": "edge",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P1",
       "traceability": ["AC-07", "BR-12"],
       "title": "Mixed cohort attendance finalization assigns Attended and Absent correctly",
@@ -171,37 +240,19 @@
       ],
       "steps": [
         "Record in-window check-ins for subset only",
-        "Complete event",
+        "Complete event via eventService.complete against real Postgres",
         "List all registrations for the event and group by terminal state"
       ],
       "expected": "Every CheckedIn registration becomes Attended; every Registered-without-check-in becomes Absent; no registration remains CheckedIn or Registered after completion",
       "edgeCase": true
     },
     {
-      "id": "TC-AC-07-010",
+      "id": "TC-AC-07-013",
       "category": "edge",
       "layer": "integration",
+      "technique": "state-transition",
       "priority": "P1",
       "traceability": ["AC-07", "BR-12"],
-      "title": "Waitlisted registration is not marked Attended on event completion",
-      "preconditions": [
-        "Event at capacity with waitlist enabled",
-        "Participant registration in Waitlisted state (never promoted to Registered)",
-        "Event progressed to completion"
-      ],
-      "steps": [
-        "Complete event",
-        "Query waitlisted participant registration state"
-      ],
-      "expected": "Waitlisted registration does not transition to Attended; terminal state follows waitlist/expiry policy (e.g. Expired or unchanged non-attendance outcome), preserving AC-07 scope to valid check-in holders only",
-      "edgeCase": true
-    },
-    {
-      "id": "TC-AC-07-011",
-      "category": "edge",
-      "layer": "integration",
-      "priority": "P1",
-      "traceability": ["AC-07"],
       "title": "CheckedIn registration cannot transition to Attended before event completion",
       "preconditions": [
         "Event InProgress with participant in CheckedIn state",
@@ -211,31 +262,34 @@
         "Attempt to set or transition registration to Attended while event remains InProgress",
         "Inspect registration state"
       ],
-      "expected": "Transition rejected or unavailable; registration remains CheckedIn until event completion triggers markAttendance",
+      "expected": "Transition rejected or unavailable with 409 or equivalent; registration remains CheckedIn until event completion triggers markAttendance",
       "edgeCase": true
     },
     {
-      "id": "TC-AC-07-012",
-      "category": "edge",
-      "layer": "e2e",
-      "priority": "P1",
-      "traceability": ["AC-07", "BR-12"],
-      "title": "Repeated POST complete is idempotent for already Attended registrations",
-      "preconditions": [
-        "Event already Completed with checked-in participant in Attended state",
-        "Organizer admin JWT"
-      ],
-      "steps": [
-        "POST /api/v1/events/{eventId}/complete again (or verify second completion attempt)",
-        "GET registration state for the attended participant"
-      ],
-      "expected": "Registration remains Attended; no duplicate attendance side effects; invalid re-completion returns 409 or equivalent without corrupting Attended state",
-      "edgeCase": true
-    },
-    {
-      "id": "TC-AC-07-013",
+      "id": "TC-AC-07-014",
       "category": "edge",
       "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["AC-07"],
+      "title": "Waitlisted registration is not marked Attended on event completion",
+      "preconditions": [
+        "Event at capacity with waitlist enabled",
+        "Participant registration in Waitlisted state (never promoted to Registered)",
+        "Event progressed to completion"
+      ],
+      "steps": [
+        "Complete event via eventService.complete",
+        "Query waitlisted participant registration state"
+      ],
+      "expected": "Waitlisted registration does not transition to Attended; terminal state follows waitlist/expiry policy (e.g. Expired), preserving AC-07 scope to valid check-in holders only",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-07-015",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["AC-07", "BR-12"],
       "title": "Cancelled registration is not marked Attended on event completion",
@@ -245,16 +299,54 @@
         "Event completes normally"
       ],
       "steps": [
-        "Complete event",
-        "Query cancelled registration state"
+        "Complete event via eventService.complete",
+        "Query cancelled registration state and checked-in participant state"
       ],
       "expected": "Cancelled registration remains in cancelled terminal state; only CheckedIn registrations become Attended",
       "edgeCase": true
     },
     {
-      "id": "TC-AC-07-014",
+      "id": "TC-AC-07-016",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["AC-07", "BR-12"],
+      "title": "Repeated POST complete is idempotent for already Attended registrations",
+      "preconditions": [
+        "Event already Completed with checked-in participant in Attended state",
+        "OrganizerAdmin JWT"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/complete again",
+        "GET /api/v1/events/{eventId}/registrations and locate the attended participant"
+      ],
+      "expected": "Registration remains Attended; no duplicate attendance side effects; invalid re-completion returns HTTP 409 or equivalent without corrupting Attended state",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-07-017",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["AC-07"],
+      "title": "POST complete rejected when event not in InProgress state",
+      "preconditions": [
+        "Event in RegistrationOpen or Completed state (not InProgress)",
+        "Checked-in participant fixture may exist from prior run"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/complete with OrganizerAdmin JWT"
+      ],
+      "expected": "HTTP 409 with stable invalid-transition error code; event and registration states unchanged; no premature Attended finalization",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-07-018",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P1",
       "traceability": ["AC-07", "FR-17", "NFR-02"],
       "title": "Attendance finalization for all registrations commits atomically with event completion",
@@ -263,82 +355,67 @@
         "Database transaction boundary for event completion and attendance reconciliation per module breakdown"
       ],
       "steps": [
-        "Complete event in single operation",
+        "Complete event in single operation against real Postgres",
         "Query event state and all affected registration states in same database session"
       ],
       "expected": "Event is Completed and all registrations have consistent terminal attendance states (Attended or Absent); no partial finalization where event is Completed but some CheckedIn rows remain unchecked",
       "edgeCase": false
     },
     {
-      "id": "TC-AC-07-015",
-      "category": "non-functional",
-      "layer": "integration",
-      "priority": "P1",
-      "traceability": ["AC-07", "BR-12"],
-      "title": "Attendance finalization is deterministic for identical fixtures",
-      "preconditions": [
-        "Fixed clock and seeded fixture IDs per testing plan deterministic controls",
-        "Same CheckedIn cohort and completion trigger across repeated test runs"
-      ],
-      "steps": [
-        "Run attendance finalization scenario twice with identical inputs",
-        "Compare registration terminal states"
-      ],
-      "expected": "Both runs produce identical Attended/Absent assignments; no flakiness from ordering or timing",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-AC-07-016",
+      "id": "TC-AC-07-019",
       "category": "non-functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P1",
       "traceability": ["AC-07", "FR-17", "BR-12"],
-      "title": "GET attendance list reflects Attended participants after event completion",
+      "title": "GET /events/{eventId}/attendance reflects Attended participants after completion",
       "preconditions": [
         "Event completed after in-window check-ins",
-        "Organizer staff JWT with attendance read scope"
+        "OrganizerStaff JWT with attendance read scope for the event"
       ],
       "steps": [
         "GET /api/v1/events/{eventId}/attendance?page=1&pageSize=20 after completion",
-        "Cross-reference rows with registrations filtered by state=Attended"
+        "GET /api/v1/events/{eventId}/registrations?state=Attended&page=1&pageSize=20"
       ],
-      "expected": "Attendance list includes checked-in participants with checkinAt preserved; corresponding registrations show Attended state in paginated registrations endpoint",
+      "expected": "HTTP 200 on both endpoints; attendance list includes checked-in participants with checkinAt preserved; corresponding registrations show state Attended in paginated registrations response",
       "edgeCase": false
     },
     {
-      "id": "TC-AC-07-017",
+      "id": "TC-AC-07-020",
       "category": "non-functional",
       "layer": "e2e",
+      "technique": "flow-a",
       "priority": "P1",
       "traceability": ["AC-07", "BR-17"],
       "title": "Attended status satisfies downstream certificate eligibility attendance prerequisite",
       "preconditions": [
-        "Event completed with checked-in participant marked Attended",
+        "Event completed with checked-in participant marked Attended via Flow A",
         "Feedback not yet submitted; eligibility evaluation available post-completion"
       ],
       "steps": [
-        "Complete event and confirm Attended state",
-        "GET /api/v1/events/{eventId}/eligibility/me for the attended participant (or trigger evaluation)"
+        "Confirm Attended state via GET /api/v1/me/registrations",
+        "GET /api/v1/events/{eventId}/eligibility/me for the attended participant"
       ],
       "expected": "Eligibility evaluation does not fail attendance rule solely due to missing Attended status; Attended registration satisfies BR-17 minimum attendance condition (other rules may still yield NotEligible)",
       "edgeCase": false
     },
     {
-      "id": "TC-AC-07-018",
+      "id": "TC-AC-07-021",
       "category": "non-functional",
-      "layer": "integration",
+      "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P1",
       "traceability": ["AC-07", "AC-12", "BR-12"],
-      "title": "CheckedIn to Attended transition is traceable in registration status history",
+      "title": "GET /events/{eventId}/status-history records CheckedIn to Attended transition",
       "preconditions": [
         "Participant checked in and event completed",
-        "Status history endpoint enabled for the event"
+        "OrganizerAdmin JWT with status-history read scope"
       ],
       "steps": [
         "Complete event after check-in",
-        "GET /api/v1/events/{eventId}/status-history?registrationId={registrationId}"
+        "GET /api/v1/events/{eventId}/status-history?registrationId={registrationId}&page=1&pageSize=20"
       ],
-      "expected": "History includes CheckedIn to Attended transition with timestamp and trigger context (event completion), supporting operational traceability",
+      "expected": "HTTP 200 with paginated history including CheckedIn to Attended transition with timestamp and trigger context (event completion), supporting operational traceability",
       "edgeCase": false
     }
   ]
