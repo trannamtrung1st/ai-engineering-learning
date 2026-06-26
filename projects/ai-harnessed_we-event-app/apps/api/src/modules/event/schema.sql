@@ -55,6 +55,9 @@ CREATE TABLE IF NOT EXISTS event_rule_configs (
 ALTER TABLE event_rule_configs
   ADD COLUMN IF NOT EXISTS registration_paused BOOLEAN NOT NULL DEFAULT FALSE;
 
+ALTER TABLE event_rule_configs
+  ADD COLUMN IF NOT EXISTS self_checkin_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+
 ALTER TABLE events
   ADD COLUMN IF NOT EXISTS version INT NOT NULL DEFAULT 1,
   ADD COLUMN IF NOT EXISTS cover_image_key TEXT,

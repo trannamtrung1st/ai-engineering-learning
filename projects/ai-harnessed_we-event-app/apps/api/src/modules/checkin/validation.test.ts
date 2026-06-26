@@ -45,6 +45,7 @@ function buildEvent(overrides: Partial<EventWithConfig> = {}): EventWithConfig {
       feedbackOpenAt: open,
       feedbackCloseAt: close,
       registrationPaused: false,
+      selfCheckinEnabled: true,
       version: 1,
     },
     ...overrides,
@@ -227,6 +228,23 @@ describe("checkin validation", () => {
       (error: unknown) => {
         assert.ok(error instanceof ApiError);
         assert.equal(error.code, VALIDATION_ERROR_CODES.CHECKIN_WINDOW_CLOSED);
+        return true;
+      },
+    );
+  });
+
+  it("FR-14 / TC-FR-14-007: assertSelfCheckinAllowed rejects when selfCheckinEnabled is false", () => {
+    const event = buildEvent({
+      ruleConfig: {
+        ...buildEvent().ruleConfig,
+        selfCheckinEnabled: false,
+      },
+    });
+    assert.throws(
+      () => assertSelfCheckinAllowed(event),
+      (error: unknown) => {
+        assert.ok(error instanceof ApiError);
+        assert.equal(error.code, VALIDATION_ERROR_CODES.SELF_CHECKIN_DISABLED);
         return true;
       },
     );

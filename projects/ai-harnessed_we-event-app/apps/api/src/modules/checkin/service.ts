@@ -1,4 +1,5 @@
 import { ApiError } from "../../errors/api-error.js";
+import { actorIdsMatch, resolveActorId } from "../../auth/resolve-actor-id.js";
 import {
   buildPaginatedResult,
   parsePagination,
@@ -65,23 +66,28 @@ export class CheckinService {
   }
 
   async selfCheckin(eventId: string, participantId: string, context: ActorContext) {
-    assertAuditMetadata(context);
+    const resolvedParticipantId = resolveActorId(participantId);
+    const resolvedContext: ActorContext = {
+      ...context,
+      actorId: resolveActorId(context.actorId),
+    };
+    assertAuditMetadata(resolvedContext);
 
     const event = await this.requireEvent(eventId);
     assertSelfCheckinAllowed(event);
     assertCheckinWindowOpen(event);
 
-    const registration = await findActiveRegistration(eventId, participantId);
+    const registration = await findActiveRegistration(eventId, resolvedParticipantId);
     if (!registration) {
       throw new ApiError({
         code: "NOT_FOUND",
         message: "No active registration found for this event.",
         statusCode: 404,
-        details: { eventId, participantId },
+        details: { eventId, participantId: resolvedParticipantId },
       });
     }
 
-    if (registration.participantId !== participantId) {
+    if (!actorIdsMatch(registration.participantId, resolvedParticipantId)) {
       throw new ApiError({
         code: "FORBIDDEN",
         message: "You can only check in with your own registration.",
@@ -94,7 +100,7 @@ export class CheckinService {
     const existing = await findCheckinByRegistrationId(registration.id);
     assertNoExistingCheckin(existing);
 
-    const result = await recordCheckin(registration, "Self", context, null);
+    const result = await recordCheckin(registration, "Self", resolvedContext, null);
 
     return toCheckinResponse(
       result.record,

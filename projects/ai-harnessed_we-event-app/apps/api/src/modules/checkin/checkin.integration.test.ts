@@ -18,7 +18,10 @@ import {
   findRegistrationById,
 } from "../registration/repository.js";
 import { registrationService } from "../registration/service.js";
-import { ensureCheckinSchema } from "./repository.js";
+import {
+  ensureCheckinSchema,
+  findCheckinByRegistrationId,
+} from "./repository.js";
 import { checkinService } from "./service.js";
 import {
   ensureTestOrganizerAdmin,
@@ -205,6 +208,85 @@ describe("checkin integration (NFR-02, BR-13)", () => {
     );
   });
 
+  it("TC-AC-06-016 / AC-06 / BR-10: concurrent out-of-window check-in requests all fail without records", async () => {
+    const windows = checkinWindows();
+    const participantId = randomUUID();
+    await ensureTestParticipant(participantId);
+
+    const draft = await createEvent(
+      {
+        name: `Concurrent Closed Window ${randomUUID()}`,
+        startAt: windows.open,
+        endAt: windows.close,
+        ruleConfig: {
+          capacity: 5,
+          registrationOpenAt: windows.open,
+          registrationCloseAt: windows.close,
+          checkinOpenAt: new Date(Date.now() + 86_400_000).toISOString(),
+          checkinCloseAt: new Date(Date.now() + 172_800_000).toISOString(),
+          feedbackOpenAt: windows.open,
+          feedbackCloseAt: windows.close,
+        },
+      },
+      ORG_ADMIN_ID,
+      "OrganizerAdmin",
+      ORG_ID,
+    );
+
+    const ctx = {
+      actorId: ORG_ADMIN_ID,
+      actorRole: "OrganizerAdmin" as const,
+      action: "test",
+    };
+
+    await transitionEventState(draft.id, "Published", {
+      ...ctx,
+      action: "event.published",
+    });
+    await transitionEventState(draft.id, "RegistrationOpen", {
+      ...ctx,
+      action: "event.registration_opened",
+    });
+
+    const registered = await createRegistration(draft.id, participantId, {
+      actorId: participantId,
+      actorRole: "Participant",
+    });
+
+    await transitionEventState(draft.id, "InProgress", {
+      ...ctx,
+      action: "event.started",
+    });
+
+    const staffContext = {
+      actorId: ORG_ADMIN_ID,
+      actorRole: "OrganizerAdmin" as const,
+    };
+
+    const results = await Promise.allSettled(
+      Array.from({ length: 3 }, () =>
+        checkinService.staffCheckin(
+          draft.id,
+          { registrationId: registered.id },
+          staffContext,
+        ),
+      ),
+    );
+
+    for (const result of results) {
+      assert.equal(result.status, "rejected");
+      const error = (result as PromiseRejectedResult).reason;
+      assert.ok(error instanceof ApiError);
+      assert.equal(error.code, VALIDATION_ERROR_CODES.CHECKIN_WINDOW_CLOSED);
+    }
+
+    const checkin = await findCheckinByRegistrationId(registered.id);
+    assert.equal(checkin, null);
+
+    const registration = await findRegistrationById(registered.id);
+    assert.equal(registration?.state, "Registered");
+  });
+
   it("rejects duplicate check-in for same registration", async () => {
     const { event, registrationId } = await createCheckinableEvent();
     const context = { actorId: ORG_ADMIN_ID, actorRole: "OrganizerAdmin" as const };
@@ -223,6 +305,99 @@ describe("checkin integration (NFR-02, BR-13)", () => {
         return true;
       },
     );
+  });
+
+  it("TC-AC-05-013 / AC-05 / BR-11 / NFR-02: concurrent duplicate check-in yields at most one record", async () => {
+    const { event, registrationId } = await createCheckinableEvent();
+    const context = { actorId: ORG_ADMIN_ID, actorRole: "OrganizerAdmin" as const };
+
+    const results = await Promise.allSettled(
+      Array.from({ length: 3 }, () =>
+        checkinService.staffCheckin(event.id, { registrationId }, context),
+      ),
+    );
+
+    const fulfilled = results.filter((result) => result.status === "fulfilled");
+    const rejected = results.filter((result) => result.status === "rejected");
+    assert.equal(fulfilled.length, 1);
+    assert.equal(rejected.length, 2);
+
+    for (const result of rejected) {
+      const error = (result as PromiseRejectedResult).reason;
+      assert.ok(error instanceof ApiError);
+      assert.equal(error.code, VALIDATION_ERROR_CODES.CHECKIN_ALREADY_RECORDED);
+    }
+
+    const checkin = await findCheckinByRegistrationId(registrationId);
+    assert.ok(checkin?.checkinAt);
+
+    const registration = await findRegistrationById(registrationId);
+    assert.equal(registration?.state, "CheckedIn");
+  });
+
+  it("FR-14: self check-in resolves dev participant sub to stored registration id", async () => {
+    const devSub = "participant-checkin-dev-1";
+    const windows = checkinWindows();
+
+    const draft = await createEvent(
+      {
+        name: `Dev Sub Self Checkin ${randomUUID()}`,
+        startAt: windows.open,
+        endAt: windows.close,
+        ruleConfig: {
+          capacity: 5,
+          registrationOpenAt: windows.open,
+          registrationCloseAt: windows.close,
+          checkinOpenAt: windows.open,
+          checkinCloseAt: windows.close,
+          feedbackOpenAt: windows.open,
+          feedbackCloseAt: windows.close,
+          selfCheckinEnabled: true,
+        },
+      },
+      ORG_ADMIN_ID,
+      "OrganizerAdmin",
+      ORG_ID,
+    );
+
+    const ctx = {
+      actorId: ORG_ADMIN_ID,
+      actorRole: "OrganizerAdmin" as const,
+      action: "test",
+    };
+
+    await transitionEventState(draft.id, "Published", {
+      ...ctx,
+      action: "event.published",
+    });
+    await transitionEventState(draft.id, "RegistrationOpen", {
+      ...ctx,
+      action: "event.registration_opened",
+    });
+
+    await ensureTestParticipant(devSub);
+    const registered = await registrationService.register(draft.id, devSub, {
+      actorId: devSub,
+      actorRole: "Participant",
+    });
+
+    await transitionEventState(draft.id, "RegistrationClosed", {
+      ...ctx,
+      action: "event.registration_closed",
+    });
+    await transitionEventState(draft.id, "InProgress", {
+      ...ctx,
+      action: "event.started",
+    });
+
+    const result = await checkinService.selfCheckin(draft.id, devSub, {
+      actorId: devSub,
+      actorRole: "Participant",
+    });
+
+    assert.equal(result.registrationId, registered.registrationId);
+    assert.equal(result.method, "Self");
+    assert.equal(result.registrationState, "CheckedIn");
   });
 
   it("AC-07: checked-in participant is marked Attended after event completion", async () => {

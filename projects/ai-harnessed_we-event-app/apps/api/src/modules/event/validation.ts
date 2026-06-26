@@ -159,6 +159,8 @@ export function validateUpdateInput(
         input.ruleConfig.feedbackOpenAt ?? existing.ruleConfig.feedbackOpenAt,
       feedbackCloseAt:
         input.ruleConfig.feedbackCloseAt ?? existing.ruleConfig.feedbackCloseAt,
+      selfCheckinEnabled:
+        input.ruleConfig.selfCheckinEnabled ?? existing.ruleConfig.selfCheckinEnabled,
     };
     validateRuleConfig(merged);
 
@@ -227,6 +229,7 @@ function hasCriticalRuleChange(
     "feedbackRequired",
     "feedbackOpenAt",
     "feedbackCloseAt",
+    "selfCheckinEnabled",
   ];
 
   return criticalKeys.some((key) => {
@@ -253,6 +256,7 @@ function hasAnyRuleFieldChange(
     "feedbackOpenAt",
     "feedbackCloseAt",
     "registrationPaused",
+    "selfCheckinEnabled",
   ];
 
   return keys.some((key) => {
@@ -365,6 +369,7 @@ export function toEventResponse(event: EventWithConfig) {
       feedbackOpenAt: event.ruleConfig.feedbackOpenAt,
       feedbackCloseAt: event.ruleConfig.feedbackCloseAt,
       registrationPaused: event.ruleConfig.registrationPaused,
+      selfCheckinEnabled: event.ruleConfig.selfCheckinEnabled,
       version: event.ruleConfig.version,
     },
     ...(event.coverImageKey

@@ -63,6 +63,7 @@ export interface EventRuleConfig {
   feedbackOpenAt: string;
   feedbackCloseAt: string;
   registrationPaused: boolean;
+  selfCheckinEnabled?: boolean;
   version: number;
 }
 

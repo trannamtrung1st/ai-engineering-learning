@@ -310,6 +310,7 @@ export default function EventDetailPage() {
                     registration?.state,
                     event.ruleConfig.checkinOpenAt,
                     event.ruleConfig.checkinCloseAt,
+                    event.ruleConfig.selfCheckinEnabled ?? true,
                   ) ? (
                     <Button asChild variant="secondary">
                       <Link href={`/events/${eventId}/check-in`}>Go to check-in</Link>
@@ -348,6 +349,7 @@ export default function EventDetailPage() {
                     registration?.state,
                     event.ruleConfig.checkinOpenAt,
                     event.ruleConfig.checkinCloseAt,
+                    event.ruleConfig.selfCheckinEnabled ?? true,
                   ) &&
                   !canSubmitFeedback(
                     event.state,

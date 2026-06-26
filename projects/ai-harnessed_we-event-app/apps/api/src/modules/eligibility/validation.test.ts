@@ -45,6 +45,7 @@ function buildEvent(overrides: Partial<EventWithConfig> = {}): EventWithConfig {
       feedbackOpenAt: open,
       feedbackCloseAt: close,
       registrationPaused: false,
+      selfCheckinEnabled: true,
       version: 1,
     },
     ...overrides,

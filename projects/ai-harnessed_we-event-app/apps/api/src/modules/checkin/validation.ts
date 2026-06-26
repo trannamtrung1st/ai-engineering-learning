@@ -57,6 +57,15 @@ export function assertCheckinWindowOpen(
 }
 
 export function assertSelfCheckinAllowed(event: EventWithConfig): void {
+  if (!event.ruleConfig.selfCheckinEnabled) {
+    throw new ApiError({
+      code: VALIDATION_ERROR_CODES.SELF_CHECKIN_DISABLED,
+      message: "Self check-in is not enabled for this event.",
+      statusCode: 422,
+      details: { selfCheckinEnabled: false },
+    });
+  }
+
   if (
     !SELF_CHECKIN_EVENT_STATES.includes(
       event.state as (typeof SELF_CHECKIN_EVENT_STATES)[number],

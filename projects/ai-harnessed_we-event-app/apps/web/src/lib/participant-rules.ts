@@ -25,6 +25,20 @@ export function isWithinTimeWindow(
   return now >= open && now <= close;
 }
 
+/** Mirrors API `assertCheckinWindowOpen` — close boundary is exclusive. */
+export function isWithinCheckinWindow(
+  openAt: string,
+  closeAt: string,
+  now: number = Date.now(),
+): boolean {
+  const open = new Date(openAt).getTime();
+  const close = new Date(closeAt).getTime();
+  if (Number.isNaN(open) || Number.isNaN(close)) {
+    return false;
+  }
+  return now >= open && now < close;
+}
+
 /** Mirrors API `assertRegistrationWindowOpen` + `assertNoDuplicateActive` for UX gating. */
 export function canRegister(
   eventState: EventState,
@@ -64,12 +78,14 @@ export function canSelfCheckIn(
   registrationState: RegistrationState | null | undefined,
   checkinOpenAt: string,
   checkinCloseAt: string,
+  selfCheckinEnabled: boolean = true,
   now: number = Date.now(),
 ): boolean {
   return (
+    selfCheckinEnabled &&
     eventState === "InProgress" &&
     registrationState === "Registered" &&
-    isWithinTimeWindow(checkinOpenAt, checkinCloseAt, now)
+    isWithinCheckinWindow(checkinOpenAt, checkinCloseAt, now)
   );
 }
 

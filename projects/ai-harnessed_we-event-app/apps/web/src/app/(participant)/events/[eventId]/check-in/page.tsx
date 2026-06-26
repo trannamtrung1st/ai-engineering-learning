@@ -75,6 +75,7 @@ export default function CheckInPage() {
         registration?.state,
         event.ruleConfig.checkinOpenAt,
         event.ruleConfig.checkinCloseAt,
+        event.ruleConfig.selfCheckinEnabled ?? true,
       )
     : false;
 

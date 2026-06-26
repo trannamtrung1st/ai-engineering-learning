@@ -57,6 +57,7 @@ function mapRuleConfig(row: Record<string, unknown>): EventRuleConfigRow {
     feedbackOpenAt: (row.feedback_open_at as Date).toISOString(),
     feedbackCloseAt: (row.feedback_close_at as Date).toISOString(),
     registrationPaused: row.registration_paused as boolean,
+    selfCheckinEnabled: (row.self_checkin_enabled as boolean | undefined) ?? true,
     version: (row.rule_version ?? row.version) as number,
   };
 }
@@ -118,6 +119,7 @@ const EVENT_SELECT = `
     c.feedback_open_at,
     c.feedback_close_at,
     c.registration_paused,
+    c.self_checkin_enabled,
     c.version AS rule_version
   FROM events e
   INNER JOIN event_rule_configs c ON c.event_id = e.id
@@ -245,8 +247,9 @@ export async function createEvent(
         event_id, capacity, waitlist_enabled,
         registration_open_at, registration_close_at,
         checkin_open_at, checkin_close_at,
-        feedback_required, feedback_open_at, feedback_close_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        feedback_required, feedback_open_at, feedback_close_at,
+        self_checkin_enabled
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
       [
         event.id,
         rule.capacity,
@@ -258,6 +261,7 @@ export async function createEvent(
         rule.feedbackRequired ?? false,
         rule.feedbackOpenAt,
         rule.feedbackCloseAt,
+        rule.selfCheckinEnabled ?? true,
       ],
     );
 
@@ -362,6 +366,7 @@ export async function updateEvent(
         feedback_open_at: rule.feedbackOpenAt,
         feedback_close_at: rule.feedbackCloseAt,
         registration_paused: rule.registrationPaused,
+        self_checkin_enabled: rule.selfCheckinEnabled,
       };
 
       for (const [column, value] of Object.entries(ruleColumnMap)) {

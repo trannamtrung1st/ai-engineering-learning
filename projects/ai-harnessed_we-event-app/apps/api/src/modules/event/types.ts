@@ -17,6 +17,7 @@ export interface EventRuleConfigRow {
   feedbackOpenAt: string;
   feedbackCloseAt: string;
   registrationPaused: boolean;
+  selfCheckinEnabled: boolean;
   version: number;
 }
 
@@ -62,6 +63,7 @@ export interface RuleConfigInput {
   feedbackRequired?: boolean;
   feedbackOpenAt: string;
   feedbackCloseAt: string;
+  selfCheckinEnabled?: boolean;
 }
 
 export interface UpdateEventInput {

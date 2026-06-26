@@ -67,6 +67,7 @@ function buildEvent(overrides: Partial<EventWithConfig> = {}): EventWithConfig {
       feedbackOpenAt: windows.regOpen,
       feedbackCloseAt: windows.regClose,
       registrationPaused: false,
+      selfCheckinEnabled: true,
       version: 1,
       ...overrides.ruleConfig,
     },

@@ -7,6 +7,7 @@ import {
   canSelfCheckIn,
   canSubmitFeedback,
   canViewEligibility,
+  isWithinCheckinWindow,
   isWithinTimeWindow,
 } from "./participant-rules.js";
 
@@ -42,7 +43,7 @@ describe("participant UX gating rules", () => {
   describe("AC-05 / FR-13 / FR-14 / FR-15 / FR-16 self check-in", () => {
     it("allows check-in for registered participant during in-progress event and window", () => {
       assert.equal(
-        canSelfCheckIn("InProgress", "Registered", OPEN, CLOSE, MID),
+        canSelfCheckIn("InProgress", "Registered", OPEN, CLOSE, true, MID),
         true,
       );
     });
@@ -50,7 +51,23 @@ describe("participant UX gating rules", () => {
     it("blocks check-in outside the configured window", () => {
       const beforeOpen = new Date("2026-06-01T08:00:00.000Z").getTime();
       assert.equal(
-        canSelfCheckIn("InProgress", "Registered", OPEN, CLOSE, beforeOpen),
+        canSelfCheckIn("InProgress", "Registered", OPEN, CLOSE, true, beforeOpen),
+        false,
+      );
+    });
+
+    it("blocks check-in at exclusive close boundary per API window policy", () => {
+      const atClose = new Date(CLOSE).getTime();
+      assert.equal(
+        canSelfCheckIn("InProgress", "Registered", OPEN, CLOSE, true, atClose),
+        false,
+      );
+      assert.equal(isWithinCheckinWindow(OPEN, CLOSE, atClose), false);
+    });
+
+    it("blocks check-in when selfCheckinEnabled is false", () => {
+      assert.equal(
+        canSelfCheckIn("InProgress", "Registered", OPEN, CLOSE, false, MID),
         false,
       );
     });
@@ -99,15 +116,15 @@ describe("participant UX gating rules", () => {
   describe("FR-29 my registrations quick actions", () => {
     it("check-in link only when event is in progress and window is open", () => {
       assert.equal(
-        canSelfCheckIn("InProgress", "Registered", OPEN, CLOSE, MID),
+        canSelfCheckIn("InProgress", "Registered", OPEN, CLOSE, true, MID),
         true,
       );
       assert.equal(
-        canSelfCheckIn("RegistrationOpen", "Registered", OPEN, CLOSE, MID),
+        canSelfCheckIn("RegistrationOpen", "Registered", OPEN, CLOSE, true, MID),
         false,
       );
       assert.equal(
-        canSelfCheckIn("InProgress", "Attended", OPEN, CLOSE, MID),
+        canSelfCheckIn("InProgress", "Attended", OPEN, CLOSE, true, MID),
         false,
       );
     });

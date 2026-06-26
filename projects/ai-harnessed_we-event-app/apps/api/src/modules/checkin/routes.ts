@@ -1,6 +1,7 @@
 import type { FastifyPluginAsync } from "fastify";
 import { assertEventScope } from "../../auth/scope.js";
 import { getActor, requireRole } from "../../auth/middleware.js";
+import { resolveActorId } from "../../auth/resolve-actor-id.js";
 import { ApiError } from "../../errors/api-error.js";
 import {
   ensureIdempotencySchema,
@@ -31,15 +32,16 @@ export const checkinRoutes: FastifyPluginAsync = async (app) => {
       }
 
       const { eventId } = request.params;
-      const context = { actorId: actor.sub, actorRole: actor.role };
-      const fingerprint = JSON.stringify({ eventId, participantId: actor.sub });
+      const resolvedSub = resolveActorId(actor.sub);
+      const context = { actorId: resolvedSub, actorRole: actor.role };
+      const fingerprint = JSON.stringify({ eventId, participantId: resolvedSub });
 
       return executeIdempotent(
         request.headers,
-        actor.sub,
+        resolvedSub,
         `checkin.self:${eventId}`,
         fingerprint,
-        () => checkinService.selfCheckin(eventId, actor.sub, context),
+        () => checkinService.selfCheckin(eventId, resolvedSub, context),
       );
     },
   );

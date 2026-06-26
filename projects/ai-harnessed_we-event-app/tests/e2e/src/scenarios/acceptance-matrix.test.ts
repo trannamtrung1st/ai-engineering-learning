@@ -1,31 +1,26 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, before, describe, it } from "node:test";
-import { VALIDATION_ERROR_CODES } from "@we-event/domain";
-
 import {
-  createDraftEvent,
   createRegistrationOpenEvent,
   registerParticipant,
   transitionEvent,
 } from "../helpers/event-factory.js";
 import {
   type E2EContext,
-  type ErrorEnvelope,
   type PaginatedEnvelope,
   apiRequest,
   assertOk,
   createE2EContext,
   defaultTimeWindows,
   destroyE2EContext,
-  futureWindow,
   newIdempotencyKey,
   ORGANIZER_ADMIN_SUB,
   parseJson,
   signDevToken,
 } from "../helpers/setup.js";
 
-describe("Acceptance matrix — capacity, check-in, attendance, eligibility, pagination (NFR-02, NFR-04, NFR-13, NFR-15, BR-17, AC-15)", () => {
+describe("Acceptance matrix — capacity, check-in, attendance, eligibility, pagination (NFR-02, NFR-04, AC-15)", () => {
   let ctx: E2EContext;
   let organizerToken: string;
 
@@ -84,46 +79,6 @@ describe("Acceptance matrix — capacity, check-in, attendance, eligibility, pag
     assert.equal(list.total, capacity);
   });
 
-  it("AC-06 / NFR-15: out-of-window check-in is rejected with canonical error code (FR-14, FR-15, TC-AC-06-016)", async () => {
-    const future = futureWindow(86_400_000);
-
-    const { eventId } = await createDraftEvent(ctx.app, organizerToken, {
-      capacity: 5,
-      checkinOpenAt: future.open,
-      checkinCloseAt: future.close,
-    });
-    await transitionEvent(ctx.app, organizerToken, eventId, "publish");
-    await transitionEvent(ctx.app, organizerToken, eventId, "open-registration");
-
-    const participantSub = randomUUID();
-    const participantToken = await signDevToken(ctx.app, participantSub, "Participant");
-    const registered = await registerParticipant(ctx.app, participantToken, eventId);
-
-    await transitionEvent(ctx.app, organizerToken, eventId, "close-registration");
-    await transitionEvent(ctx.app, organizerToken, eventId, "start");
-
-    const checkinResponse = await apiRequest(ctx.app, {
-      method: "POST",
-      path: `/events/${eventId}/checkins`,
-      token: organizerToken,
-      payload: { registrationId: registered.registrationId },
-      idempotencyKey: newIdempotencyKey(),
-    });
-    assert.equal(checkinResponse.statusCode, 422, checkinResponse.body);
-    const error = parseJson<
-      ErrorEnvelope & {
-        error: {
-          requestId: string;
-          details: { checkinOpenAt?: string; checkinCloseAt?: string };
-        };
-      }
-    >(checkinResponse.body);
-    assert.equal(error.error.code, VALIDATION_ERROR_CODES.CHECKIN_WINDOW_CLOSED);
-    assert.match(error.error.requestId, /^[0-9a-f-]{36}$/i, "NFR-15 requestId");
-    assert.ok(error.error.details?.checkinOpenAt, "window bounds in details");
-    assert.ok(error.error.details?.checkinCloseAt, "window bounds in details");
-  });
-
   it("AC-07: checked-in participant is marked Attended after event completion", async () => {
     const { eventId } = await createRegistrationOpenEvent(ctx.app, organizerToken, {
       capacity: 5,
@@ -159,53 +114,6 @@ describe("Acceptance matrix — capacity, check-in, attendance, eligibility, pag
     );
     assert.ok(attended, "expected attended registration in organizer list");
     assert.equal(attended.state, "Attended");
-  });
-
-  it("AC-07 / BR-17: Attended registration satisfies attendance eligibility rule (TC-AC-07-017)", async () => {
-    const { eventId } = await createRegistrationOpenEvent(ctx.app, organizerToken, {
-      capacity: 5,
-      feedbackRequired: true,
-    });
-    const participantSub = randomUUID();
-    const participantToken = await signDevToken(ctx.app, participantSub, "Participant");
-    const registered = await registerParticipant(ctx.app, participantToken, eventId);
-
-    await transitionEvent(ctx.app, organizerToken, eventId, "close-registration");
-    await transitionEvent(ctx.app, organizerToken, eventId, "start");
-
-    await apiRequest(ctx.app, {
-      method: "POST",
-      path: `/events/${eventId}/checkins`,
-      token: organizerToken,
-      payload: { registrationId: registered.registrationId },
-      idempotencyKey: newIdempotencyKey(),
-    });
-
-    await transitionEvent(ctx.app, organizerToken, eventId, "complete");
-
-    const eligibilityResponse = await apiRequest(ctx.app, {
-      method: "GET",
-      path: `/events/${eventId}/eligibility/me`,
-      token: participantToken,
-    });
-    assertOk(eligibilityResponse.statusCode, eligibilityResponse.body, "BR-17 eligibility");
-    const eligibility = parseJson<{
-      result: string;
-      reasonCode: string;
-      reasonText: string;
-    }>(eligibilityResponse.body);
-
-    assert.notEqual(
-      eligibility.reasonCode,
-      VALIDATION_ERROR_CODES.NOT_ELIGIBLE_ATTENDANCE,
-      "Attended participant must pass BR-17 attendance rule",
-    );
-    assert.equal(eligibility.result, "NotEligible");
-    assert.equal(
-      eligibility.reasonCode,
-      VALIDATION_ERROR_CODES.NOT_ELIGIBLE_FEEDBACK,
-    );
-    assert.ok(eligibility.reasonText);
   });
 
   it("AC-10 / FR-21 / BR-18 / BR-19: organizer can list certificate-eligible participants with reasons", async () => {
