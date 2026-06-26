@@ -1,8 +1,8 @@
 {
   "productItemId": "NFR-04",
   "version": 1,
-  "docFingerprint": "sha256:66c6c2a085e264c591d98e9f94a7c01e4a22963048aa3bd8ad16e51948bbc052",
-  "generatedAt": "2026-06-26T14:30:00Z",
+  "docFingerprint": "sha256:51dc60c0a80dd45f020b6136d15c7a17807e81a26c2da8531d8688cc9ff1e1bf",
+  "generatedAt": "2026-06-26T17:55:37Z",
   "cases": [
     {
       "id": "TC-NFR-04-001",
@@ -20,7 +20,7 @@
         "Published event RegistrationOpen with available seats",
         "Authenticated participant with no active registration",
         "Normal load test environment (single user, not peak spike per R-01)",
-        "Compose Postgres db service healthy via npm run aih:dev:db:up"
+        "Compose Postgres db service healthy via npm run aih:dev:db:up; schema bootstrapped on first API use per docker-compose §4.2"
       ],
       "steps": [
         "Record start time immediately before POST /api/v1/events/{eventId}/registrations with Authorization and Idempotency-Key",
@@ -46,7 +46,7 @@
       "preconditions": [
         "Event RegistrationOpen with seats available",
         "Participant has no active registration",
-        "DATABASE_URL points to Compose Postgres with migrations applied",
+        "DATABASE_URL=postgresql://we_event:we_event@localhost:5432/we_event with schema bootstrapped via first API use per docker-compose §4.2",
         "Normal load (sequential single call, no burst)"
       ],
       "steps": [
@@ -116,20 +116,22 @@
       "traceability": [
         "NFR-04",
         "FR-11",
-        "AC-01"
+        "AC-01",
+        "AC-02"
       ],
       "title": "POST cancel registration responds within acceptable latency under normal load",
       "preconditions": [
         "Registered participants eligible to cancel before CancellationDeadline",
-        "Normal load environment (single or low-concurrency cancellations)",
-        "Event policy permits participant self-cancel"
+        "Event at capacity with waitlistEnabled true and at least one Waitlisted participant (Flow B promotion path)",
+        "Normal load environment (single or low-concurrency cancellations)"
       ],
       "steps": [
-        "Execute POST /api/v1/events/{eventId}/registrations/{registrationId}/cancel for multiple eligible registrations",
+        "Execute POST /api/v1/events/{eventId}/registrations/{registrationId}/cancel for eligible Registered participants",
         "Measure elapsed time per request from client to complete HTTP response",
+        "Verify FIFO waitlist promotion to Registered completes within the same transactional response when applicable (AC-02c)",
         "Compute p95 latency across successful cancellations"
       ],
-      "expected": "p95 cancel response time meets NFR-04 quick response under normal load; HTTP 200 with CancelledByUser returned without undue delay; cancellation remains a responsive registration action",
+      "expected": "p95 cancel response time meets NFR-04 quick response under normal load; HTTP 200 with CancelledByUser returned without undue delay; cancel-with-promotion path (testing-plan Flow B) remains responsive under normal load",
       "edgeCase": false
     },
     {
@@ -166,7 +168,8 @@
       "traceability": [
         "NFR-04",
         "AC-02",
-        "FR-08"
+        "FR-08",
+        "BR-04"
       ],
       "title": "Waitlisted registration POST responds within acceptable latency",
       "preconditions": [
@@ -178,7 +181,7 @@
         "Measure elapsed time for POST /api/v1/events/{eventId}/registrations when event is full",
         "Inspect response state and waitlistPosition"
       ],
-      "expected": "HTTP 200 with state Waitlisted returned within NFR-04 quick response threshold; testing-plan §3 row 'Register when full + waitlist enabled → Waitlisted' satisfied; waitlist path is not materially slower than Registered path under normal load",
+      "expected": "HTTP 200 with state Waitlisted and waitlistPosition >= 1 returned within NFR-04 quick response threshold; testing-plan §3 row 'Register when full + waitlist enabled → Waitlisted' satisfied; waitlist path is not materially slower than Registered path under normal load",
       "edgeCase": false
     },
     {
@@ -204,7 +207,7 @@
         "Collect elapsed times for all settled responses",
         "Compute p95 latency and verify capacity invariant"
       ],
-      "expected": "p95 remains within NFR-04 quick response under normal load; Registered count never exceeds capacity; no request hangs beyond acceptable timeout; distinguishes normal concurrent load from R-01 overload mitigation",
+      "expected": "p95 remains within NFR-04 quick response under normal load; Registered count never exceeds capacity per testing-plan §3 'Capacity under heavy concurrent requests'; no request hangs beyond acceptable timeout; distinguishes normal concurrent load from R-01 overload mitigation",
       "edgeCase": true
     },
     {
@@ -277,7 +280,7 @@
         "Measure elapsed time for POST /api/v1/events/{eventId}/registrations",
         "Inspect error response code and message"
       ],
-      "expected": "Rejection returned within NFR-04 quick response threshold; participant receives prompt failure feedback without waiting through slow capacity scans",
+      "expected": "HTTP rejection with code REGISTRATION_REJECTED_FULL returned within NFR-04 quick response threshold per AC-02b; participant receives prompt failure feedback without waiting through slow capacity scans",
       "edgeCase": true
     },
     {
@@ -294,7 +297,7 @@
       ],
       "title": "Participant registration UI provides immediate feedback under normal campus-network conditions",
       "preconditions": [
-        "Web and API running locally or in dev preview stack",
+        "Web and API running locally (dev mode per docker-compose §3.1) or full-preview stack via npm run aih:preview:full",
         "Event detail page with registration open and available seats",
         "Participant logged in on typical campus-network latency profile (not throttled to failure)"
       ],
@@ -318,14 +321,16 @@
       "title": "Registration performance assertions execute against Compose Postgres not in-memory stores",
       "preconditions": [
         "npm run aih:dev:db:up has started healthy db service",
-        "DATABASE_URL=postgresql://we_event:we_event@localhost:5432/we_event",
-        "Forbidden persistence modes (in-memory Map, SQLite, mock-only repos) are not used per docker-compose local runtime policy"
+        "DATABASE_URL=postgresql://we_event:we_event@localhost:5432/we_event per docker-compose §4.2",
+        "API health GET /api/v1/health returns status ok and db connected per runtimeValidation policy",
+        "Forbidden persistence modes (in-memory Map, SQLite, mock-only repos) are not used per docker-compose §4.3"
       ],
       "steps": [
+        "Verify API health endpoint reports db connected before latency scenarios",
         "Run integration or e2e latency scenarios for registration actions against Postgres",
         "Verify measurements reflect real database I/O and transactional behavior"
       ],
-      "expected": "NFR-04 latency measurements are meaningful against durable Postgres storage; performance regressions from in-memory shortcuts are prevented by harness runtime policy",
+      "expected": "NFR-04 latency measurements are meaningful against durable Postgres storage with schema bootstrapped on first API use; performance regressions from in-memory shortcuts are prevented by harness runtime policy",
       "edgeCase": false
     },
     {
@@ -337,6 +342,7 @@
       "traceability": [
         "NFR-04",
         "FR-29",
+        "AC-14",
         "AC-16"
       ],
       "title": "GET my registrations responds within acceptable latency for registration status browsing",
@@ -350,7 +356,7 @@
         "Repeat at least 30 times or across representative participants",
         "Compute p95 latency"
       ],
-      "expected": "p95 response time meets NFR-04 quick response under normal load; single API call returns paginated slice without N+1 fan-out per testing plan AC-14 pattern; suitable for participant registration list views",
+      "expected": "p95 response time meets NFR-04 quick response under normal load; single API call returns paginated slice without N+1 fan-out per testing-plan §3 'My registrations paginated' row; suitable for participant registration list views",
       "edgeCase": false
     },
     {
