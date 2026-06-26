@@ -1,0 +1,230 @@
+{
+  "productItemId": "FR-34",
+  "version": 1,
+  "docFingerprint": "sha256:4df3b9fe5a47366f3a2e6893d54863d7ebd7808387ffd2e446a5608089ea8a67",
+  "generatedAt": "2026-06-26T20:15:00Z",
+  "cases": [
+    {
+      "id": "TC-FR-34-001",
+      "category": "functional",
+      "layer": "browser",
+      "priority": "P0",
+      "traceability": ["FR-34"],
+      "title": "TopBar sign-out clears stored JWT and redirects to /login",
+      "preconditions": [
+        "Web app running with TopBar user menu per app-layout-components",
+        "User signed in with valid credentials and JWT stored client-side",
+        "User on any authenticated page (participant or organizer shell)"
+      ],
+      "steps": [
+        "Open TopBar user menu and select sign out",
+        "Observe browser URL after action completes",
+        "Inspect client session storage for persisted JWT"
+      ],
+      "expected": "Client clears stored JWT; browser navigates to /login per Flow 0b step 5; satisfies FR-34 client session clearing on sign-out",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-34-002",
+      "category": "functional",
+      "layer": "browser",
+      "priority": "P0",
+      "traceability": ["FR-34"],
+      "title": "After sign-out TopBar reflects unauthenticated state",
+      "preconditions": [
+        "User previously signed in; TopBar account button showed display name",
+        "Sign-out completed via TopBar user menu"
+      ],
+      "steps": [
+        "Observe TopBar on /login page after sign-out",
+        "Verify account menu trigger no longer shows signed-in display name",
+        "Confirm login page is reachable without redirect loop"
+      ],
+      "expected": "TopBar no longer presents signed-in user chrome; display name hidden; user is in unauthenticated state consistent with cleared client session",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-34-003",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-34", "AC-15"],
+      "title": "Protected API endpoints reject requests after client session cleared",
+      "preconditions": [
+        "User obtained valid JWT via POST /auth/login",
+        "Client session cleared (simulating sign-out: no Authorization header sent)"
+      ],
+      "steps": [
+        "GET /api/v1/me without Authorization bearer header",
+        "GET /api/v1/me/registrations without Authorization bearer header"
+      ],
+      "expected": "Both requests return HTTP 401 with standard unauthenticated error envelope; no profile or registration data returned; cleared client session cannot access protected endpoints",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-34-004",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-34"],
+      "title": "MVP sign-out is client-side only with no server revocation endpoint",
+      "preconditions": [
+        "API server running at /api/v1",
+        "API design §2.6 auth endpoints available"
+      ],
+      "steps": [
+        "Inspect published auth routes for POST /auth/logout or equivalent revocation endpoint",
+        "Confirm documented auth surface includes register, login, and GET /me only (plus dev token when enabled)"
+      ],
+      "expected": "No server logout/revocation endpoint in MVP; sign-out contract is client-side JWT clearing per API design §2.6; FR-34 fulfilled without backend session invalidation",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-34-005",
+      "category": "functional",
+      "layer": "browser",
+      "priority": "P0",
+      "traceability": ["FR-34", "NFR-08"],
+      "title": "Organizer session sign-out clears role context and redirects to login",
+      "preconditions": [
+        "OrganizerAdmin or OrganizerStaff account signed in via /login",
+        "User viewing organizer shell with role-aware navigation"
+      ],
+      "steps": [
+        "Select sign out from TopBar user menu while in organizer area",
+        "Observe redirect destination",
+        "Attempt to navigate directly to an organizer-only route"
+      ],
+      "expected": "JWT cleared; redirect to /login; organizer routes no longer accessible without re-authentication; role and event-scope context removed from client session",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-34-006",
+      "category": "functional",
+      "layer": "browser",
+      "priority": "P0",
+      "traceability": ["FR-34", "AC-16"],
+      "title": "Participant can sign out and sign back in to restore protected access",
+      "preconditions": [
+        "Participant signed in and has viewed My Registrations at least once",
+        "Known credentials for the account"
+      ],
+      "steps": [
+        "Sign out from TopBar user menu",
+        "Navigate to /login and sign in with original credentials",
+        "Open My Registrations"
+      ],
+      "expected": "Sign-out clears session; re-login issues new JWT; protected route accessible again; signup → login → view flow repeatable across sessions per AC-16 and Flow 0b",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-34-007",
+      "category": "non-functional",
+      "layer": "browser",
+      "priority": "P0",
+      "traceability": ["FR-34", "NFR-07"],
+      "title": "After sign-out client cannot perform sensitive operations without re-authentication",
+      "preconditions": [
+        "Participant signed in with at least one event registration",
+        "Sign-out completed clearing client JWT"
+      ],
+      "steps": [
+        "While on /login after sign-out, attempt to navigate to My Registrations",
+        "If any in-flight or cached UI triggers API calls, observe responses"
+      ],
+      "expected": "Protected routes redirect to /login; API calls without refreshed token return 401; sensitive operations blocked until user re-authenticates per NFR-07",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-34-008",
+      "category": "non-functional",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["FR-34", "NFR-07"],
+      "title": "Sign-out simulation via omitted bearer matches unauthenticated middleware rejection",
+      "preconditions": [
+        "Valid JWT previously issued via login",
+        "Integration test harness can call protected routes with and without Authorization header"
+      ],
+      "steps": [
+        "GET /api/v1/me with valid JWT and confirm HTTP 200",
+        "GET /api/v1/me with Authorization header omitted (client sign-out state)",
+        "Compare error code to never-authenticated request"
+      ],
+      "expected": "Omitted bearer after sign-out yields HTTP 401 UNAUTHENTICATED equivalent to fresh unauthenticated request; auth middleware enforces authentication before domain logic",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-34-009",
+      "category": "edge",
+      "layer": "browser",
+      "priority": "P1",
+      "traceability": ["FR-34"],
+      "title": "Double sign-out from login page is idempotent",
+      "preconditions": [
+        "User completed sign-out and is already on /login",
+        "No stored JWT in client session"
+      ],
+      "steps": [
+        "If sign-out control is still reachable, trigger sign-out again",
+        "Otherwise refresh /login and confirm no error state"
+      ],
+      "expected": "No application error or redirect loop; user remains on /login in unauthenticated state; repeated sign-out is safe and idempotent",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-34-010",
+      "category": "edge",
+      "layer": "browser",
+      "priority": "P0",
+      "traceability": ["FR-34", "AC-15"],
+      "title": "After sign-out direct navigation to protected route redirects to login with return URL",
+      "preconditions": [
+        "User signed out via TopBar; JWT cleared",
+        "Route guards enabled per page-list guidance"
+      ],
+      "steps": [
+        "Navigate directly to a protected participant route such as /my-registrations",
+        "Observe browser URL and page content"
+      ],
+      "expected": "User redirected to /login; intended destination preserved as return URL query parameter; protected page content does not render; consistent with AC-15 unauthenticated route handling after FR-34 session clear",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-34-011",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["FR-34"],
+      "title": "Retained JWT string still authenticates server until expiry in MVP (no revocation)",
+      "preconditions": [
+        "User logged in and JWT value captured before client sign-out",
+        "MVP has no server-side token revocation per API design §2.6"
+      ],
+      "steps": [
+        "Clear client session (sign-out simulation)",
+        "GET /api/v1/me using the previously captured JWT in Authorization header"
+      ],
+      "expected": "Server may still return HTTP 200 with profile because MVP does not revoke tokens on sign-out; documents security boundary that FR-34 clears client session only and callers must not reuse stored tokens client-side",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-34-012",
+      "category": "edge",
+      "layer": "browser",
+      "priority": "P1",
+      "traceability": ["FR-34", "AC-15"],
+      "title": "Browser back navigation after sign-out does not restore authenticated protected view",
+      "preconditions": [
+        "User signed in and visited a protected page",
+        "User signed out via TopBar and landed on /login"
+      ],
+      "steps": [
+        "Use browser back button to return to prior protected page URL",
+        "Observe whether protected content renders or redirect occurs"
+      ],
+      "expected": "Route guard detects missing JWT and redirects to /login; protected content not shown from stale history entry; session remains cleared per FR-34",
+      "edgeCase": true
+    }
+  ]
+}
