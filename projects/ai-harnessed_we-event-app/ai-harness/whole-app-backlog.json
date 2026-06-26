@@ -367,7 +367,7 @@
     },
     {
       "id": "web-design-system-shell",
-      "passes": true,
+      "passes": false,
       "priority": 30,
       "phase": 3,
       "agent": "frontend",
