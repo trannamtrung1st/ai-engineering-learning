@@ -1,0 +1,372 @@
+{
+  "productItemId": "FR-30",
+  "version": 1,
+  "docFingerprint": "sha256:5acfc070b54f77ab2ad0b419735f860b390f8a4b88a52809f83094992e0b94d3",
+  "generatedAt": "2026-06-26T05:19:21Z",
+  "cases": [
+    {
+      "id": "TC-FR-30-001",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-30", "FR-31", "AC-13"],
+      "title": "OrganizerAdmin views paginated registrations list for authorized event",
+      "preconditions": [
+        "Event with multiple participant registrations in varied states",
+        "Authenticated OrganizerAdmin JWT with organization scope to the event"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/registrations?page=1&pageSize=20 with OrganizerAdmin Authorization bearer",
+        "Inspect response envelope and item ordering"
+      ],
+      "expected": "HTTP 200 with items, page=1, pageSize=20, total, totalPages; items sorted by updatedAt descending per API design default; operational registrations list scoped to the authorized event per FR-30",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-30-002",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-30", "FR-31", "AC-13"],
+      "title": "OrganizerAdmin views paginated waitlist queue for authorized event",
+      "preconditions": [
+        "Event at capacity with multiple waitlisted participants",
+        "Authenticated OrganizerAdmin JWT with event scope"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/waitlist?page=1&pageSize=20 with OrganizerAdmin Authorization bearer",
+        "Verify waitlist position ordering and envelope metadata"
+      ],
+      "expected": "HTTP 200 with paginated envelope; items ordered by position ascending per API design; total reflects full waitlist row count before paging; satisfies FR-30 waitlist operational list requirement",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-30-003",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-30", "FR-31", "AC-13"],
+      "title": "OrganizerAdmin views paginated attendance list for authorized event",
+      "preconditions": [
+        "Event with at least one check-in record and absent participants",
+        "Authenticated OrganizerAdmin JWT with event scope"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/attendance?page=1&pageSize=20 with OrganizerAdmin Authorization bearer",
+        "Inspect attendance rows and pagination metadata"
+      ],
+      "expected": "HTTP 200 with paginated envelope; items sorted by checkinAt descending per API design; operational attendance list returned for the authorized event per FR-30",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-30-004",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-30", "FR-21", "AC-10", "FR-31"],
+      "title": "OrganizerAdmin views paginated eligibility list for authorized event",
+      "preconditions": [
+        "Completed event with evaluated Eligible and NotEligible participants",
+        "Authenticated OrganizerAdmin JWT with event scope"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/eligibility?page=1&pageSize=20 with OrganizerAdmin Authorization bearer",
+        "Verify each item includes eligibility result and reason fields"
+      ],
+      "expected": "HTTP 200 with paginated envelope; items include eligibility result and reason fields; default sort participantId ascending per API design; FR-30 eligibility operational list available to authorized organizer admin",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-30-005",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-30", "AC-11", "FR-31", "AC-13"],
+      "title": "OrganizerAdmin views paginated audit logs for authorized event",
+      "preconditions": [
+        "Event with multiple audit log entries from critical configuration changes",
+        "Authenticated OrganizerAdmin JWT with event scope"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/audit-logs?page=1&pageSize=20 with OrganizerAdmin Authorization bearer",
+        "Verify ordering and envelope metadata"
+      ],
+      "expected": "HTTP 200 with paginated envelope; items ordered by createdAt descending; total equals full matching audit row count; audit operational list restricted to OrganizerAdmin per FR-30 and permission matrix",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-30-006",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-30", "FR-27", "FR-31"],
+      "title": "OrganizerStaff views operational registrations and waitlist on assigned event",
+      "preconditions": [
+        "Event at capacity with registrations and waitlist entries",
+        "OrganizerStaff JWT with assignedEventIds including eventId"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/registrations?page=1&pageSize=20 with staff Authorization bearer",
+        "GET /api/v1/events/{eventId}/waitlist?page=1&pageSize=20 with staff Authorization bearer"
+      ],
+      "expected": "Both requests return HTTP 200 paginated envelopes; staff reads operational registrations and waitlist within assigned event scope per FR-30 and FR-27",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-30-007",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["FR-30", "FR-27", "FR-31"],
+      "title": "OrganizerStaff views attendance and eligibility lists on assigned event",
+      "preconditions": [
+        "Completed event with check-in records and evaluated eligibility rows",
+        "OrganizerStaff JWT with assignedEventIds including eventId"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/attendance?page=1&pageSize=20 with staff Authorization bearer",
+        "GET /api/v1/events/{eventId}/eligibility?page=1&pageSize=20 with staff Authorization bearer"
+      ],
+      "expected": "Both requests return HTTP 200 paginated envelopes with correct default sorts; staff operational list access permitted for attendance and eligibility on assigned events per FR-30",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-30-008",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["FR-30", "FR-31"],
+      "title": "OrganizerAdmin filters registrations operational list by state",
+      "preconditions": [
+        "Event with Registered and Waitlisted participants",
+        "Authenticated OrganizerAdmin JWT with event scope"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/registrations?state=Registered&page=1&pageSize=20",
+        "Verify every returned item has state Registered and total reflects filtered count"
+      ],
+      "expected": "HTTP 200 with paginated envelope; all items have state Registered; total and totalPages computed from filtered rows only; state filter supported on registrations operational list per API design",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-30-009",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["FR-30", "FR-21", "AC-10"],
+      "title": "OrganizerAdmin filters eligibility operational list by eligibility result",
+      "preconditions": [
+        "Completed event with mix of Eligible and NotEligible participants",
+        "Authenticated OrganizerAdmin JWT"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/eligibility?eligibility=Eligible&page=1&pageSize=20",
+        "Verify every item has eligibility.result Eligible"
+      ],
+      "expected": "HTTP 200 with paginated envelope; all items have eligibility.result Eligible; NotEligible rows excluded; eligibility filter supported on operational list per API design",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-30-010",
+      "category": "functional",
+      "layer": "browser",
+      "priority": "P0",
+      "traceability": ["FR-30", "AC-14"],
+      "title": "Organizer operational tables render server-driven paginated rows",
+      "preconditions": [
+        "Event with registrations, waitlist, attendance, or eligibility rows exceeding one page (default pageSize 20)",
+        "Authenticated OrganizerAdmin or OrganizerStaff with event scope on organizer operational listing page"
+      ],
+      "steps": [
+        "Navigate to organizer registrations, waitlist, check-in attendance, or eligibility management page",
+        "Verify pagination controls and page metadata are visible",
+        "Advance to page 2 using Next control and observe network requests"
+      ],
+      "expected": "Table renders at most pageSize rows per page; prev/next controls update displayed rows; page change triggers paginated API request with updated page parameter per page list organizer sections and AC-14",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-30-011",
+      "category": "functional",
+      "layer": "browser",
+      "priority": "P1",
+      "traceability": ["FR-30", "FR-27", "AC-14"],
+      "title": "OrganizerStaff assigned events list is paginated and scoped",
+      "preconditions": [
+        "OrganizerStaff assigned to multiple events (more than one page if possible)",
+        "Authenticated OrganizerStaff on assigned events list page"
+      ],
+      "steps": [
+        "Navigate to organizer staff assigned events list",
+        "Verify only assigned events appear in the table",
+        "Use pagination controls if multiple pages exist"
+      ],
+      "expected": "Assigned events list shows only events in staff assignedEventIds; paginated table with server or scoped pagination per page list Organizer Staff pages; no unassigned events visible",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-30-012",
+      "category": "functional",
+      "layer": "unit",
+      "priority": "P0",
+      "traceability": ["FR-30", "FR-27"],
+      "title": "Organizer scope rules permit admin on any event and restrict staff to assignments",
+      "preconditions": [
+        "SessionInfo for OrganizerAdmin with empty assignedEventIds",
+        "SessionInfo for OrganizerStaff with assignedEventIds [evt-a, evt-b]"
+      ],
+      "steps": [
+        "Call canAccessEvent(adminSession, evt-unknown) and assert true",
+        "Call canAccessEvent(staffSession, evt-a) and assert true",
+        "Call canAccessEvent(staffSession, evt-c) and assert false",
+        "Call filterEventsForScope(staffSession, mixedEventList) and inspect filtered output"
+      ],
+      "expected": "Admin may access any event; staff may access only assigned event IDs; filterEventsForScope removes unassigned events from staff-visible lists per FR-30 authorized event scope",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-30-013",
+      "category": "functional",
+      "layer": "unit",
+      "priority": "P1",
+      "traceability": ["FR-30", "FR-31", "AC-13"],
+      "title": "Local pagination helper produces correct envelope metadata for operational lists",
+      "preconditions": [
+        "Array of 25 synthetic list rows for client-side pagination helper"
+      ],
+      "steps": [
+        "Call paginateLocally(items, 1, 10) and inspect page 1 envelope",
+        "Call paginateLocally(items, 3, 10) and inspect final partial page"
+      ],
+      "expected": "Page 1 returns 10 items with page=1, pageSize=10, total=25, totalPages=3; page 3 returns 5 items with page=3; envelope shape matches API pagination contract used by organizer operational tables",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-30-014",
+      "category": "non-functional",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["FR-30", "NFR-16", "AC-13"],
+      "title": "Operational list endpoint returns single page within acceptable time when total exceeds 500 rows",
+      "preconditions": [
+        "Database seeded with more than 500 rows for an organizer operational list endpoint (e.g. registrations or audit-logs)",
+        "Authenticated OrganizerAdmin JWT with event scope",
+        "Performance threshold defined for acceptable response time"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/registrations?page=1&pageSize=20 (or audit-logs with equivalent row count)",
+        "Measure response time and inspect items.length"
+      ],
+      "expected": "HTTP 200 within acceptable response time per NFR-16; items.length <= pageSize; total reflects full row count without loading entire dataset in one response; satisfies testing plan registrations list beyond capacity scenario",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-30-015",
+      "category": "non-functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-30", "NFR-08", "AC-15"],
+      "title": "Unauthenticated operational list request returns 401 before data exposure",
+      "preconditions": [
+        "Event with registrations and other operational data",
+        "No Authorization header on request"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/registrations without bearer token",
+        "GET /api/v1/events/{eventId}/waitlist without bearer token"
+      ],
+      "expected": "Both requests return HTTP 401 unauthenticated; no operational list items returned; auth required per API principles and NFR-08 before organizer operational data access",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-30-016",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-30", "FR-25"],
+      "title": "Participant denied access to organizer operational registrations list",
+      "preconditions": [
+        "Event with multiple registrations",
+        "Valid Participant JWT"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/registrations?page=1&pageSize=20 with Participant Authorization bearer"
+      ],
+      "expected": "HTTP 403 FORBIDDEN; paginated operational registrations list is organizer capability scoped to authorized roles per FR-30; no participant PII from other registrants exposed",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-30-017",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-30", "FR-27", "FR-25"],
+      "title": "OrganizerStaff denied operational lists on unassigned event",
+      "preconditions": [
+        "Event with operational data that staff actor is not assigned to",
+        "OrganizerStaff JWT without eventId in assignedEventIds"
+      ],
+      "steps": [
+        "GET /api/v1/events/{unassignedEventId}/registrations?page=1&pageSize=20 with staff Authorization bearer",
+        "GET /api/v1/events/{unassignedEventId}/attendance?page=1&pageSize=20 with staff Authorization bearer"
+      ],
+      "expected": "Both requests return HTTP 403 FORBIDDEN or HTTP 404 when entity not in actor scope; no cross-event operational data returned; FR-30 lists scoped to authorized events enforced via FR-27",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-30-018",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-30", "FR-25", "FR-27"],
+      "title": "OrganizerStaff denied audit logs but permitted other operational lists on assigned event",
+      "preconditions": [
+        "Assigned event with audit log entries and registrations",
+        "OrganizerStaff JWT with assignedEventIds including eventId"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/audit-logs?page=1&pageSize=20 with staff Authorization bearer",
+        "GET /api/v1/events/{eventId}/registrations?page=1&pageSize=20 with staff Authorization bearer"
+      ],
+      "expected": "Audit logs request returns HTTP 403 FORBIDDEN; registrations request returns HTTP 200 paginated envelope; audit operational list is admin-only while other FR-30 lists remain available to scoped staff per permission matrix",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-30-019",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-30", "AC-13", "FR-31"],
+      "title": "Invalid pagination parameters on operational list return 400 INVALID_PAGINATION",
+      "preconditions": [
+        "Event with operational list data",
+        "Authenticated OrganizerAdmin JWT"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/registrations?page=0&pageSize=20",
+        "GET /api/v1/events/{eventId}/registrations?page=1&pageSize=101",
+        "GET /api/v1/events/{eventId}/registrations?page=abc&pageSize=20"
+      ],
+      "expected": "Each invalid request returns HTTP 400 with error.code INVALID_PAGINATION; no partial operational list data returned; pagination guardrails enforced per API design section 3",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-30-020",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-30", "AC-13", "FR-31", "NFR-16"],
+      "title": "Operational list page beyond totalPages returns empty items with valid metadata",
+      "preconditions": [
+        "Event with known number of registrations (e.g. 25 rows)",
+        "Authenticated OrganizerAdmin JWT"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/registrations?page=1&pageSize=20 and record totalPages",
+        "GET /api/v1/events/{eventId}/registrations?page={totalPages + 1}&pageSize=20"
+      ],
+      "expected": "Beyond-last-page response returns HTTP 200 with items=[], valid page and pageSize, total unchanged, and totalPages unchanged per AC-13; never returns more than pageSize items on in-range pages",
+      "edgeCase": true
+    }
+  ]
+}
