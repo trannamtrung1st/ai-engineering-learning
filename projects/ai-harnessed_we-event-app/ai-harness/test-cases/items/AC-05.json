@@ -2,15 +2,16 @@
   "productItemId": "AC-05",
   "version": 1,
   "docFingerprint": "sha256:c6bd2470b2186d8b109b2fe04884f4802250d75d244124495523616faaa9e091",
-  "generatedAt": "2026-06-26T12:00:00Z",
+  "generatedAt": "2026-06-26T14:30:00Z",
   "cases": [
     {
       "id": "TC-AC-05-001",
       "category": "functional",
       "layer": "integration",
+      "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["AC-05", "FR-13", "FR-15", "BR-10"],
-      "title": "Staff check-in within window records CheckinRecord with timestamp",
+      "traceability": ["AC-05", "BR-10", "BR-13"],
+      "title": "In-window check-in stored with timestamp per testing-plan §3",
       "preconditions": [
         "Event is InProgress with check-in window active (current time between checkinOpenAt and checkinCloseAt)",
         "Participant has registration in Registered state with no prior valid check-in",
@@ -18,91 +19,139 @@
       ],
       "steps": [
         "Invoke checkinService.staffCheckin(eventId, { registrationId }, actorContext) at a fixed in-window time",
-        "Read returned check-in snapshot and linked registration state"
+        "Query checkin_records and registration state for the participant"
       ],
-      "expected": "CheckinRecord is persisted with non-null checkinAt ISO timestamp; registration transitions to CheckedIn; method indicates staff check-in",
+      "expected": "Testing-plan §3 row satisfied: check-in is stored with non-null checkinAt ISO timestamp; registration transitions to CheckedIn; audit metadata (actor, method) persisted per BR-13",
       "edgeCase": false
     },
     {
       "id": "TC-AC-05-002",
       "category": "functional",
-      "layer": "e2e",
+      "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["AC-05", "FR-13", "FR-16", "BR-10"],
-      "title": "POST checkins returns HTTP 200 with checkinAt and CheckedIn registration",
+      "traceability": ["AC-05", "FR-15", "FR-16", "BR-10", "BR-13"],
+      "title": "Check-in module persists CheckinRecord and registration transition in one DB transaction",
       "preconditions": [
-        "E2E fixture event in InProgress state with active check-in window",
-        "Registered participant with valid registrationId",
-        "Staff or admin JWT with scope for the event",
-        "Fresh Idempotency-Key header value"
+        "Real database fixture with Registered participant and active check-in window",
+        "No existing CheckinRecord for the registration",
+        "Staff actor context with operatorId"
       ],
       "steps": [
-        "POST /api/v1/events/{eventId}/checkins with body { registrationId } and Authorization bearer token",
-        "Optionally GET /api/v1/events/{eventId}/attendance and locate the participant row"
+        "Execute staff check-in through check-in module/repository against real Postgres",
+        "Query checkin_records row and registrations.state in the same database session immediately after commit"
       ],
-      "expected": "Response HTTP 200 includes checkinAt timestamp, registrationState CheckedIn, participantId, and method Staff; attendance list includes the participant with matching checkinAt",
+      "expected": "Exactly one CheckinRecord row with checkinAt, method Staff, and operatorId; registration state is CheckedIn; no partial write (record without state change or vice versa) per module breakdown §4 transaction boundary",
       "edgeCase": false
     },
     {
       "id": "TC-AC-05-003",
       "category": "functional",
-      "layer": "e2e",
+      "layer": "integration",
+      "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["AC-05", "FR-14", "FR-15", "BR-10"],
-      "title": "POST self-checkin records timestamp when self-service is enabled",
+      "traceability": ["AC-05", "BR-10"],
+      "title": "Valid in-window check-in transitions registration Registered to CheckedIn",
       "preconditions": [
-        "Event rule config enables participant self check-in",
-        "Event is InProgress with active check-in window",
-        "Authenticated participant JWT for a Registered registration with no prior check-in"
+        "Registration in Registered state before check-in",
+        "Event check-in window contains fixed clock now",
+        "No prior valid check-in on the registration"
       ],
       "steps": [
-        "POST /api/v1/events/{eventId}/self-checkin with participant Authorization bearer token",
-        "Read response body and participant registration state"
+        "Record beforeState as Registered from registration repository",
+        "Submit valid check-in via checkinService",
+        "Read afterState from registration repository and CheckinRecord"
       ],
-      "expected": "Response HTTP 200 with non-null checkinAt, registrationState CheckedIn, method Self (or equivalent self-service indicator); no staff operatorId required",
+      "expected": "beforeState Registered, afterState CheckedIn per state machine §2; validCheckin guard satisfied (in-window, no duplicate); checkinAt timestamp recorded",
       "edgeCase": false
     },
     {
       "id": "TC-AC-05-004",
       "category": "functional",
-      "layer": "unit",
-      "priority": "P1",
-      "traceability": ["AC-05", "FR-15", "BR-10"],
-      "title": "Check-in window validator accepts time strictly inside open-close bounds",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["AC-05", "FR-13", "FR-16", "BR-10"],
+      "title": "POST /events/{eventId}/checkins returns HTTP 200 with checkinAt timestamp",
       "preconditions": [
-        "Configured checkinOpenAt and checkinCloseAt with openAt < closeAt",
-        "Fixed clock now set to a time between openAt and closeAt (exclusive of boundaries if validator uses strict comparison)"
+        "E2E fixture event InProgress with active check-in window",
+        "Registered participant with valid registrationId",
+        "OrganizerStaff or OrganizerAdmin JWT scoped to the event",
+        "Fresh Idempotency-Key header value"
       ],
       "steps": [
-        "Call check-in window validator (e.g. isWithinCheckinWindow(openAt, closeAt, now)) with in-window now"
+        "POST /api/v1/events/{eventId}/checkins with body { registrationId } and Authorization bearer token",
+        "GET /api/v1/events/{eventId}/attendance?page=1&pageSize=20 and locate the participant row"
       ],
-      "expected": "Validator returns true, permitting check-in processing for AC-05 happy path",
+      "expected": "POST returns HTTP 200 with non-null checkinAt ISO timestamp, registrationState CheckedIn, participantId, and method Staff; attendance list includes the participant with matching checkinAt sorted by checkinAt:desc",
       "edgeCase": false
     },
     {
       "id": "TC-AC-05-005",
       "category": "functional",
-      "layer": "browser",
-      "priority": "P1",
-      "traceability": ["AC-05", "FR-14"],
-      "title": "Participant completes self check-in via UI and sees success with timestamp",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["AC-05", "FR-14", "FR-15", "BR-10"],
+      "title": "POST /events/{eventId}/self-checkin returns HTTP 200 with timestamp when self-service enabled",
       "preconditions": [
-        "Event with self check-in enabled and window currently open",
-        "Participant logged in with Registered status for the event",
-        "Event in InProgress or equivalent state allowing check-in"
+        "Event rule config enables participant self check-in",
+        "Event InProgress with active check-in window",
+        "Authenticated participant JWT for a Registered registration with no prior check-in"
       ],
       "steps": [
-        "Navigate to event self check-in page for the registered event",
-        "Trigger check-in action (button or equivalent primary control)",
-        "Observe success confirmation and check-in status display"
+        "POST /api/v1/events/{eventId}/self-checkin with participant Authorization bearer token and Idempotency-Key",
+        "GET /api/v1/events/{eventId}/registration-status for the same participant"
       ],
-      "expected": "UI shows check-in succeeded with visible timestamp or time-of-check-in indicator; registration status reflects checked-in state without manual page reload beyond normal client refresh",
+      "expected": "POST returns HTTP 200 with non-null checkinAt, registrationState CheckedIn, method Self; registration-status reflects CheckedIn with matching timestamp",
       "edgeCase": false
     },
     {
       "id": "TC-AC-05-006",
       "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["AC-05", "FR-15"],
+      "title": "Flow A lifecycle check-in step records timestamp after registration",
+      "preconditions": [
+        "E2E Flow A fixture: event progressed through publish, open-registration, and participant Registered",
+        "Event started (InProgress) with check-in window open",
+        "Participant token from prior registration step"
+      ],
+      "steps": [
+        "Execute Flow A check-in step: POST /api/v1/events/{eventId}/self-checkin or staff checkins for the registered participant",
+        "Verify response before proceeding to feedback step"
+      ],
+      "expected": "Check-in response HTTP 200 with non-null checkinAt and CheckedIn state, enabling subsequent feedback and eligibility steps in the lifecycle flow",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-05-007",
+      "category": "functional",
       "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["AC-05", "FR-14"],
+      "title": "Participant self check-in UI shows success with recorded timestamp",
+      "preconditions": [
+        "Event with self check-in enabled and window currently open",
+        "Participant logged in with Registered status for the event",
+        "Event in InProgress state allowing check-in"
+      ],
+      "steps": [
+        "Navigate to event self check-in page for the registered event",
+        "Trigger primary check-in action control",
+        "Observe success confirmation and check-in status display"
+      ],
+      "expected": "UI shows check-in succeeded with visible timestamp or time-of-check-in indicator; registration status reflects checked-in state without requiring manual full page reload beyond normal client refresh",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-05-008",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["AC-05", "FR-13"],
       "title": "Organizer staff check-in console records participant with timestamp",
@@ -114,15 +163,74 @@
       "steps": [
         "Open organizer check-in operations console for the event",
         "Identify registered participant and trigger staff check-in action",
-        "Verify row updates in console and/or attendance history"
+        "Verify row updates in console attendance list"
       ],
       "expected": "Console shows check-in success for the participant with recorded time; participant row reflects checked-in status immediately per UI state transition rules",
       "edgeCase": false
     },
     {
-      "id": "TC-AC-05-007",
+      "id": "TC-AC-05-009",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["AC-05", "FR-13"],
+      "title": "Participant denied staff check-in endpoint for another registration",
+      "preconditions": [
+        "Event InProgress with active check-in window",
+        "Two distinct Registered participants A and B",
+        "Authenticated JWT for participant A only"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/checkins with participant A token and body { registrationId: B's registrationId }"
+      ],
+      "expected": "HTTP 403 unauthorized; error envelope indicates insufficient check-in capability; no CheckinRecord created for participant B; registration B remains Registered",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-05-010",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["AC-05"],
+      "title": "OrganizerStaff denied check-in on event outside assigned scope",
+      "preconditions": [
+        "Event InProgress with active check-in window but not assigned to staff actor",
+        "Registered participant on that event",
+        "Authenticated OrganizerStaff JWT without scope for eventId"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/checkins with staff JWT and valid registrationId"
+      ],
+      "expected": "HTTP 403 or 404 per scope policy; no CheckinRecord persisted; registration state unchanged",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-05-011",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["AC-05", "BR-11"],
+      "title": "Second check-in attempt returns CHECKIN_ALREADY_RECORDED without altering timestamp",
+      "preconditions": [
+        "Participant already has one valid check-in recorded within the window",
+        "Registration state is CheckedIn",
+        "Check-in window still open"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/checkins (or self-checkin) for the same registrationId a second time",
+        "GET /api/v1/events/{eventId}/attendance and count rows for the registration"
+      ],
+      "expected": "HTTP 409 or 422 with error.code CHECKIN_ALREADY_RECORDED; original checkinAt unchanged; attendance list contains exactly one check-in row for the registration",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-05-012",
       "category": "edge",
       "layer": "integration",
+      "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["AC-05", "BR-10"],
       "title": "Check-in at CheckinOpenAt boundary is recorded with timestamp",
@@ -135,35 +243,17 @@
         "Submit staff or self check-in at the boundary instant checkinOpenAt",
         "Query CheckinRecord and registration state"
       ],
-      "expected": "Check-in succeeds per window policy; checkinAt is persisted and registration is CheckedIn",
+      "expected": "Check-in succeeds per window policy; checkinAt is persisted at or after checkinOpenAt and registration is CheckedIn",
       "edgeCase": true
     },
     {
-      "id": "TC-AC-05-008",
+      "id": "TC-AC-05-013",
       "category": "edge",
       "layer": "integration",
-      "priority": "P0",
-      "traceability": ["AC-05", "BR-11"],
-      "title": "Second check-in attempt for same registration is rejected after first success",
-      "preconditions": [
-        "Participant already has one valid check-in recorded within the window",
-        "Registration state is CheckedIn",
-        "Check-in window still open"
-      ],
-      "steps": [
-        "Attempt a second check-in for the same registrationId via staff or self endpoint",
-        "Observe error response and database state"
-      ],
-      "expected": "Request fails with stable error code CHECKIN_ALREADY_RECORDED (409 or 422); original checkinAt unchanged; no duplicate CheckinRecord created",
-      "edgeCase": true
-    },
-    {
-      "id": "TC-AC-05-009",
-      "category": "edge",
-      "layer": "integration",
+      "technique": "concurrency",
       "priority": "P0",
       "traceability": ["AC-05", "BR-11", "NFR-02"],
-      "title": "Concurrent duplicate check-in requests yield at most one valid record",
+      "title": "Concurrent duplicate check-in requests yield at most one valid record with timestamp",
       "preconditions": [
         "Registered participant with no prior check-in",
         "Active check-in window",
@@ -177,95 +267,23 @@
       "edgeCase": true
     },
     {
-      "id": "TC-AC-05-010",
+      "id": "TC-AC-05-014",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["AC-05"],
       "title": "Check-in rejected when registration is not in Registered state",
       "preconditions": [
         "Event with active check-in window",
-        "Registration in Waitlisted, CancelledByUser, or other non-Registered terminal/non-checkinable state",
-        "Valid authenticated actor attempting check-in"
+        "Registration in Waitlisted, CancelledByUser, or other non-checkinable state",
+        "Valid authenticated staff actor attempting check-in"
       ],
       "steps": [
-        "POST /api/v1/events/{eventId}/checkins (or self-checkin) for the ineligible registrationId"
+        "POST /api/v1/events/{eventId}/checkins for the ineligible registrationId"
       ],
       "expected": "HTTP 409 or 422 with typed domain error; no CheckinRecord created; registration state unchanged",
       "edgeCase": true
-    },
-    {
-      "id": "TC-AC-05-011",
-      "category": "non-functional",
-      "layer": "integration",
-      "priority": "P1",
-      "traceability": ["AC-05", "NFR-02", "BR-10"],
-      "title": "Check-in write and registration state transition commit atomically",
-      "preconditions": [
-        "Database transaction boundary enabled for check-in module (check-in write + registration transition in one transaction per module breakdown)",
-        "Registered participant, in-window, no prior check-in"
-      ],
-      "steps": [
-        "Complete successful in-window check-in",
-        "Query checkin_records row and registration state in the same database session immediately after commit"
-      ],
-      "expected": "CheckinRecord and registration CheckedIn state exist together; partial writes (record without state change or vice versa) do not occur",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-AC-05-012",
-      "category": "non-functional",
-      "layer": "integration",
-      "priority": "P1",
-      "traceability": ["AC-05", "BR-13", "FR-16"],
-      "title": "Successful check-in persists audit metadata (timestamp, actor, method)",
-      "preconditions": [
-        "In-window check-in about to be recorded",
-        "Staff check-in with known operatorId or self check-in with participant actor"
-      ],
-      "steps": [
-        "Perform successful check-in",
-        "Inspect persisted CheckinRecord and related audit metadata fields"
-      ],
-      "expected": "Record includes checkinAt timestamp, check-in method (Staff/Self), and actor reference (operatorId for staff, participant for self) satisfying BR-13 audit trail requirement",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-AC-05-013",
-      "category": "non-functional",
-      "layer": "e2e",
-      "priority": "P1",
-      "traceability": ["AC-05", "NFR-02"],
-      "title": "Idempotent check-in retry with same Idempotency-Key returns consistent snapshot",
-      "preconditions": [
-        "Registered participant, active check-in window",
-        "Fixed Idempotency-Key header value for check-in write endpoint"
-      ],
-      "steps": [
-        "POST /api/v1/events/{eventId}/checkins with Idempotency-Key K and receive success with checkinAt",
-        "Repeat POST with the same Idempotency-Key K and identical payload"
-      ],
-      "expected": "Both responses return HTTP 200 with the same checkinAt and registrationId; only one CheckinRecord exists; no duplicate state transition side effects",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-AC-05-014",
-      "category": "functional",
-      "layer": "e2e",
-      "priority": "P0",
-      "traceability": ["AC-05", "FR-15"],
-      "title": "Flow A lifecycle check-in step stores timestamp after registration",
-      "preconditions": [
-        "E2E Flow A fixture: event progressed through publish, open-registration, and participant Registered",
-        "Event started (InProgress) with check-in window open",
-        "Participant token from prior registration step"
-      ],
-      "steps": [
-        "Execute Flow A check-in step: POST self-checkin or staff checkins for the registered participant",
-        "Verify response before proceeding to feedback step"
-      ],
-      "expected": "Check-in response succeeds with non-null checkinAt and CheckedIn state, enabling subsequent feedback and eligibility steps in the lifecycle flow",
-      "edgeCase": false
     }
   ]
 }
