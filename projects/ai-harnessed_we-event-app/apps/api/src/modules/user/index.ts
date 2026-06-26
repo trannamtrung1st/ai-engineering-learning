@@ -2,6 +2,7 @@ export {
   assignUserRole,
   createUser,
   createUserWithRole,
+  ensureParticipantAccount,
   ensureParticipantUser,
   ensureUserSchema,
   findUserByEmail,

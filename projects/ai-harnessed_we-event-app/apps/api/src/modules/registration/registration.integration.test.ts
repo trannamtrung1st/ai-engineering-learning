@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, before, describe, it } from "node:test";
 import { VALIDATION_ERROR_CODES } from "@we-event/domain";
+import { resolveActorId } from "../../auth/resolve-actor-id.js";
 import { closeDb, getPool, initDb } from "../../db/pool.js";
 import { ApiError } from "../../errors/api-error.js";
 import { ensureEventSchema } from "../event/repository.js";
@@ -357,6 +358,24 @@ describe("registration integration (NFR-02, FR-31)", () => {
     const status = await registrationService.getStatus(event.id, "participant-1");
 
     assert.equal(status.registration, null);
+  });
+
+  it("AC-01 / NFR-07: registers dev-token participant without pre-provisioned user row", async () => {
+    const event = await createRegistrationOpenEvent({ capacity: 5 });
+    const devSub = `harness-probe-${randomUUID().slice(0, 8)}`;
+    const participantContext = {
+      actorId: devSub,
+      actorRole: "Participant" as const,
+    };
+
+    const result = await registrationService.register(
+      event.id,
+      devSub,
+      participantContext,
+    );
+
+    assert.equal(result.state, "Registered");
+    assert.equal(resolveActorId(result.participantId), resolveActorId(devSub));
   });
 
   it("FR-10 / NFR-09: registration-status returns active registration after register", async () => {

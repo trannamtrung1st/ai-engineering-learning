@@ -208,6 +208,24 @@ export async function createUserWithRole(
   }
 }
 
+/** Placeholder hash for auto-provisioned dev/harness participants (not for login). */
+const AUTO_PROVISIONED_PARTICIPANT_PASSWORD_HASH =
+  "$2b$10$ZLvMEXurERIwVQwHCd78EOwF6NwZ6HY.TV24xG/AHtq0031vuC8G.";
+
+/**
+ * Ensures a participant account row exists before registration writes (users.id FK).
+ */
+export async function ensureParticipantAccount(
+  userId: string,
+  displayName = "Participant",
+): Promise<UserRow> {
+  return ensureParticipantUser(
+    userId,
+    displayName,
+    AUTO_PROVISIONED_PARTICIPANT_PASSWORD_HASH,
+  );
+}
+
 /**
  * Ensures a participant user exists for integration tests and dev-token flows.
  */

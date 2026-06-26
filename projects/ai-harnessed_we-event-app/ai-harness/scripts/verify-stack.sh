@@ -46,8 +46,15 @@ api_healthy() {
 }
 
 poll_api() {
+  local attempt=1
+  local max_attempts=1
   local deadline=$(( $(date +%s) * 1000 + AIH_VERIFY_API_TIMEOUT_MS ))
   local body
+
+  if [[ "$QUICK" == true ]]; then
+    max_attempts="$QUICK_RETRIES"
+  fi
+
   while true; do
     if body="$(curl -sf "$API_URL" 2>/dev/null || true)" && [[ -n "$body" ]]; then
       if api_healthy "$body"; then
@@ -61,6 +68,11 @@ poll_api() {
       fi
     fi
     if [[ "$QUICK" == true ]]; then
+      if (( attempt < max_attempts )); then
+        sleep "$QUICK_RETRY_DELAY_SEC"
+        attempt=$((attempt + 1))
+        continue
+      fi
       echo "ERROR: API unhealthy" >&2
       echo "  URL: $API_URL" >&2
       echo "  Last response: $body" >&2

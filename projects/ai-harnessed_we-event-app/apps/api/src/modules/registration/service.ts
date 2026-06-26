@@ -8,6 +8,7 @@ import {
   type PaginatedResult,
 } from "../../pagination/index.js";
 import { findEventById } from "../event/repository.js";
+import { ensureParticipantAccount } from "../user/repository.js";
 import {
   cancelRegistration,
   createRegistration,
@@ -46,13 +47,18 @@ export class RegistrationService {
     const event = await this.requireEvent(eventId);
     assertRegistrationWindowOpen(event);
 
+    await ensureParticipantAccount(resolvedParticipantId);
+
     const existing = await findActiveRegistration(eventId, resolvedParticipantId);
     assertNoDuplicateActive(existing);
 
     const registration = await createRegistration(
       eventId,
       resolvedParticipantId,
-      context,
+      {
+        ...context,
+        actorId: resolveActorId(context.actorId),
+      },
     );
 
     return toRegistrationResponse(registration, registration.waitlistPosition);

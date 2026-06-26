@@ -1,8 +1,10 @@
 import { ACTOR_ROLES } from "@we-event/domain";
 import type { FastifyPluginAsync } from "fastify";
 import type { AppConfig } from "../config.js";
+import { resolveActorId } from "../auth/resolve-actor-id.js";
 import type { ActorRole } from "../auth/types.js";
 import { buildErrorEnvelope } from "../errors/api-error.js";
+import { ensureParticipantAccount } from "../modules/user/repository.js";
 
 interface DevTokenBody {
   sub: string;
@@ -40,6 +42,10 @@ export function devAuthRoutes(config: AppConfig): FastifyPluginAsync {
             { allowedRoles: ACTOR_ROLES },
           ),
         );
+      }
+
+      if (role === "Participant") {
+        await ensureParticipantAccount(resolveActorId(sub));
       }
 
       const token = await reply.jwtSign({

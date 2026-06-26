@@ -82,3 +82,4 @@ Lessons learned across harness iterations. Read before every implementer session
 - [api-foundation] Computational checks failed — see 20260626T094242Z-checks.json
 - [module-event] Computational checks failed — see 20260626T095859Z-checks.json
 - [module-event] AI review failed — see 20260626T100217Z-review.json
+- [module-registration] Registration insert requires users.id FK — call ensureParticipantAccount (resolve dev subs to UUID) before createRegistration; audit actorId must be resolved UUID too.
