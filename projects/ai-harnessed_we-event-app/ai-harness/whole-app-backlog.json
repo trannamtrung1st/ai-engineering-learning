@@ -172,6 +172,7 @@
       },
       "description": "Registration module: capacity, waitlist FIFO, dedupe; paginated registrations and waitlist lists.",
       "browserTestScenarios": [
+        "Participant UI blocks duplicate registration with clear feedback",
         "Participant registers via UI and sees Registered status",
         "Participant registers via UI when seats are available",
         "Participant sees Waitlisted status with queue position in UI"
@@ -596,6 +597,7 @@
       ],
       "description": "End-to-end scenario tests covering core acceptance matrix plus signup/login/logout, cover upload display, and badge color regression spot-checks.",
       "browserTestScenarios": [
+        "Participant UI blocks duplicate registration with clear feedback",
         "Participant registers via UI and sees Registered status",
         "Participant registers via UI when seats are available",
         "Participant sees Waitlisted status with queue position in UI"
@@ -603,7 +605,8 @@
       "testRequirements": {
         "acceptanceTags": [
           "AC-01",
-          "AC-02"
+          "AC-02",
+          "AC-03"
         ]
       }
     }
