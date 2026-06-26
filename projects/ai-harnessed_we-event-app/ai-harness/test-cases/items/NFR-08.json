@@ -2,12 +2,13 @@
   "productItemId": "NFR-08",
   "version": 1,
   "docFingerprint": "sha256:36eb7ede51ffcb03df8f9b4c191e51a75639a1a971475a654f1ec32d95231414",
-  "generatedAt": "2026-06-26T18:45:00Z",
+  "generatedAt": "2026-06-26T13:05:19Z",
   "cases": [
     {
       "id": "TC-NFR-08-001",
       "category": "functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
       "traceability": ["NFR-08", "FR-25", "AC-16"],
       "title": "OrganizerAdmin publishes draft event within organization scope",
@@ -27,6 +28,7 @@
       "id": "TC-NFR-08-002",
       "category": "functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
       "traceability": ["NFR-08", "FR-27", "AC-05"],
       "title": "OrganizerStaff performs check-in on assigned event",
@@ -46,6 +48,7 @@
       "id": "TC-NFR-08-003",
       "category": "functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
       "traceability": ["NFR-08", "FR-33", "AC-16"],
       "title": "Participant registers and reads own registration status only",
@@ -65,6 +68,7 @@
       "id": "TC-NFR-08-004",
       "category": "functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
       "traceability": ["NFR-08", "FR-26", "AC-10"],
       "title": "OrganizerAdmin revokes eligibility with mandatory reason",
@@ -83,6 +87,7 @@
       "id": "TC-NFR-08-005",
       "category": "functional",
       "layer": "e2e",
+      "technique": "pagination",
       "priority": "P1",
       "traceability": ["NFR-08", "FR-27", "FR-30"],
       "title": "OrganizerStaff views paginated registrations on assigned event",
@@ -100,6 +105,7 @@
       "id": "TC-NFR-08-006",
       "category": "functional",
       "layer": "unit",
+      "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["NFR-08", "FR-26"],
       "title": "JWT role selection uses highest-privilege role when user has multiple roles",
@@ -118,16 +124,19 @@
       "id": "TC-NFR-08-007",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["NFR-08", "FR-25"],
       "title": "Authorization pipeline validates role permission before event scope and domain execution",
       "preconditions": [
         "Protected command handler wired with authorization decision pattern: authenticate, role, scope, state guard, execute",
+        "Real database test harness with transaction rollback",
         "Authenticated Participant actor attempting organizer-only mutation"
       ],
       "steps": [
         "Invoke organizer-only command (e.g. POST /events/{eventId}/publish) with valid Participant JWT and body",
-        "Confirm handler short-circuits at role permission step before scope validators"
+        "Confirm handler short-circuits at role permission step before scope validators",
+        "Query events table to confirm no state mutation occurred"
       ],
       "expected": "HTTP 403 returned before event scope or state-transition validators run; no domain mutation or audit side effects; satisfies NFR-08 authorization by role at decision pattern step 2",
       "edgeCase": false
@@ -136,6 +145,7 @@
       "id": "TC-NFR-08-008",
       "category": "non-functional",
       "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["NFR-08", "FR-25"],
       "title": "Unauthorized critical event publish blocked for non-admin roles",
@@ -154,16 +164,19 @@
       "id": "TC-NFR-08-009",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["NFR-08", "FR-27"],
       "title": "Event scope check runs before domain mutation on staff commands",
       "preconditions": [
         "Protected staff command handler wired with authorization decision pattern",
+        "Real database test harness with transaction rollback",
         "OrganizerStaff JWT scoped to event B attempting mutation on unassigned event A"
       ],
       "steps": [
         "Invoke staff check-in or registrations list handler with staff token targeting unassigned eventId",
-        "Confirm handler short-circuits at event scope step before state-transition validators"
+        "Confirm handler short-circuits at event scope step before state-transition validators",
+        "Verify no CheckinRecord or registration mutation rows created for unassigned event"
       ],
       "expected": "HTTP 403 or 404 returned before domain transaction; no mutation or data exposure; satisfies NFR-08 authorization by event scope at decision pattern step 3",
       "edgeCase": false
@@ -172,6 +185,7 @@
       "id": "TC-NFR-08-010",
       "category": "non-functional",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["NFR-08", "NFR-13"],
       "title": "403 role denial responses use standard typed error envelope",
@@ -190,6 +204,7 @@
       "id": "TC-NFR-08-011",
       "category": "edge",
       "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["NFR-08", "FR-25"],
       "title": "Participant cannot create or publish events",
@@ -208,6 +223,7 @@
       "id": "TC-NFR-08-012",
       "category": "edge",
       "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["NFR-08", "FR-27"],
       "title": "OrganizerStaff check-in on unassigned event is blocked",
@@ -227,6 +243,7 @@
       "id": "TC-NFR-08-013",
       "category": "edge",
       "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["NFR-08", "FR-26"],
       "title": "OrganizerStaff cannot revoke eligibility",
@@ -244,6 +261,7 @@
       "id": "TC-NFR-08-014",
       "category": "edge",
       "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["NFR-08", "FR-32"],
       "title": "Self-service signup provisions Participant role only",
@@ -263,6 +281,7 @@
       "id": "TC-NFR-08-015",
       "category": "edge",
       "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P1",
       "traceability": ["NFR-08", "FR-24", "AC-11"],
       "title": "Participant cannot read organizer audit logs",
@@ -280,6 +299,7 @@
       "id": "TC-NFR-08-016",
       "category": "edge",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P0",
       "traceability": ["NFR-08", "FR-25", "FR-34"],
       "title": "Authenticated Participant blocked from organizer management routes",
@@ -298,6 +318,7 @@
       "id": "TC-NFR-08-017",
       "category": "edge",
       "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P1",
       "traceability": ["NFR-08", "FR-25", "FR-24"],
       "title": "Participant cannot access organizer export or dashboard endpoints",
@@ -316,6 +337,7 @@
       "id": "TC-NFR-08-018",
       "category": "edge",
       "layer": "unit",
+      "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["NFR-08", "FR-27"],
       "title": "assertEventScope rejects OrganizerStaff for unassigned event",
@@ -328,6 +350,47 @@
       ],
       "expected": "Throws FORBIDDEN or equivalent authorization error; OrganizerStaff may only operate on assigned events per scope constraints section 3",
       "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-08-019",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["NFR-08", "FR-33"],
+      "title": "Participant cannot register on behalf of another user",
+      "preconditions": [
+        "Published event in RegistrationOpen with available capacity",
+        "Participant A JWT authenticated",
+        "Known Participant B userId distinct from actor"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/registrations with Participant A bearer and body participantId set to Participant B userId",
+        "Query registrations for Participant B"
+      ],
+      "expected": "HTTP 403 FORBIDDEN or registration created only for authenticated actor (Participant A); Participant cannot affect another participant's registration records per scope constraint section 3",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-08-020",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-c",
+      "priority": "P0",
+      "traceability": ["NFR-08", "FR-25", "AC-11"],
+      "title": "OrganizerAdmin critical rule change after registration open requires authorized actor with reason",
+      "preconditions": [
+        "Event in RegistrationOpen with active registrations",
+        "OrganizerAdmin JWT with scope over eventId",
+        "Capacity or rule config mutation endpoint available"
+      ],
+      "steps": [
+        "PATCH /api/v1/events/{eventId} or rule-config endpoint with OrganizerAdmin bearer changing capacity after registration opened",
+        "Include mandatory reasonCode and reasonText in request per sensitive action guardrails",
+        "GET /api/v1/events/{eventId}/audit-logs with OrganizerAdmin bearer"
+      ],
+      "expected": "HTTP 200; config change applied; audit record includes actorId, actorRole OrganizerAdmin, before/after diff, and reason fields; only authorized admin within event scope may perform sensitive config change per roles-permissions sections 4 and 5",
+      "edgeCase": false
     }
   ]
 }
