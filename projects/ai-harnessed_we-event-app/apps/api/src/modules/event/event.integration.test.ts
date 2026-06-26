@@ -384,7 +384,74 @@ describe("event integration", () => {
     assert.equal(loaded.ruleConfig.capacity, capacity);
   });
 
-  it("AC-11 / NFR-10 / BR-22 / TC-AC-11-014: every successful post-open critical config change has exactly one audit record", async () => {
+  it("AC-11 / BR-22 / TC-AC-11-014: sequential critical config changes produce distinct immutable audit entries", async () => {
+    const draft = await createEvent(
+      createInput({ name: `SequentialAudit ${randomUUID()}` }),
+      ACTOR_ID,
+      "OrganizerAdmin",
+      ORG_ID,
+    );
+
+    const context = {
+      actorId: ACTOR_ID,
+      actorRole: "OrganizerAdmin",
+    };
+
+    await eventService.publish(draft.id, context);
+    await eventService.openRegistration(draft.id, context);
+
+    await eventService.update(
+      draft.id,
+      {
+        ruleConfig: { capacity: 15 },
+        reasonCode: "CAPACITY_INCREASE",
+        reasonText: "First expansion for early demand",
+      },
+      context,
+    );
+
+    await eventService.update(
+      draft.id,
+      {
+        ruleConfig: { capacity: 20 },
+        reasonCode: "CAPACITY_INCREASE",
+        reasonText: "Second expansion after waitlist interest",
+      },
+      context,
+    );
+
+    const { items } = await auditService.listAuditLogs(draft.id, {
+      entityType: "EventRuleConfig",
+      pageSize: "100",
+      sort: "createdAt:asc",
+    });
+    const ruleConfigEntries = items.filter(
+      (entry) => entry.action === "event.rule_config.updated",
+    );
+
+    assert.ok(
+      ruleConfigEntries.length >= 2,
+      "expected at least two rule config audit entries",
+    );
+
+    const [first, second] = ruleConfigEntries.slice(-2);
+    assert.ok(first && second, "expected two sequential audit entries");
+
+    assert.equal(first.before.capacity, 10);
+    assert.equal(first.after.capacity, 15);
+    assert.equal(first.reasonText, "First expansion for early demand");
+
+    assert.equal(second.before.capacity, 15);
+    assert.equal(second.after.capacity, 20);
+    assert.equal(second.reasonText, "Second expansion after waitlist interest");
+
+    assert.ok(
+      Date.parse(second.occurredAt) >= Date.parse(first.occurredAt),
+      "expected monotonic occurredAt ordering",
+    );
+  });
+
+  it("AC-11 / NFR-10 / BR-22 / TC-AC-11-015: every successful post-open critical config change has exactly one audit record", async () => {
     const draft = await createEvent(
       createInput({ name: `Audit ${randomUUID()}` }),
       ACTOR_ID,
