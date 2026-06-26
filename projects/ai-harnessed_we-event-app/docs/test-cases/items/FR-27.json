@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-27",
   "version": 1,
-  "docFingerprint": "sha256:8e59445691447471b0d38696b1b2d559ff61c4f46bb6ddbeca79a3fd83f91995",
-  "generatedAt": "2026-06-26T12:37:14Z",
+  "docFingerprint": "sha256:2671fa81c2f3b979341bed7f23df01d8c48eb829f62b5e0f85a501d6c63e4e0a",
+  "generatedAt": "2026-06-26T17:33:00Z",
   "cases": [
     {
       "id": "TC-FR-27-001",
@@ -48,7 +48,7 @@
         "GET /api/v1/events/{eventId}/registrations?page=1&pageSize=20 with staff Authorization bearer",
         "Verify paginated envelope contains items, page, pageSize, total, totalPages"
       ],
-      "expected": "HTTP 200 with paginated envelope; operational registrations list returned for assigned event only; total reflects full row count before paging per FR-30 and FR-31",
+      "expected": "HTTP 200 with paginated envelope; items sorted by updatedAt descending per API design default; operational registrations list returned for assigned event only; total reflects full row count before paging per FR-30 and FR-31",
       "edgeCase": false
     },
     {
@@ -70,7 +70,7 @@
         "GET /api/v1/events/{eventId}/waitlist?page=1&pageSize=20 with staff token",
         "GET /api/v1/events/{eventId}/attendance?page=1&pageSize=20 with staff token"
       ],
-      "expected": "Both requests return HTTP 200 paginated envelopes; staff can read operational waitlist and attendance data within assigned event scope",
+      "expected": "Both requests return HTTP 200 paginated envelopes; waitlist items ordered by position ascending and attendance by checkinAt descending per API design defaults; staff can read operational waitlist and attendance data within assigned event scope",
       "edgeCase": false
     },
     {
@@ -137,7 +137,7 @@
       "steps": [
         "GET /api/v1/events/{eventId}/eligibility?page=1&pageSize=20 with staff Authorization bearer"
       ],
-      "expected": "HTTP 200 with paginated eligibility items including result and reason fields; staff reads eligibility within assigned event scope per GET /events/{eventId}/eligibility admin/staff-scope contract",
+      "expected": "HTTP 200 with paginated eligibility items including Eligible, NotEligible, and Revoked rows; each row exposes participant identity, registrationId, terminal result, and non-empty reasonCode/reasonText; default sort participantId ascending; staff reads eligibility within assigned event scope per FR-21 and GET /events/{eventId}/eligibility admin/staff-scope contract",
       "edgeCase": false
     },
     {
@@ -397,7 +397,7 @@
       "steps": [
         "GET /api/v1/events/{unassignedEventId}/eligibility?page=1&pageSize=20 with staff Authorization bearer"
       ],
-      "expected": "HTTP 403 or 404 per assertEventScope; no cross-event eligibility participant data leakage",
+      "expected": "HTTP 403 out-of-scope or 404 per assertEventScope and FR-21 rejections; no cross-event eligibility participant data leakage",
       "edgeCase": true
     },
     {
@@ -416,11 +416,13 @@
         "OrganizerStaff JWT with assignedEventIds empty array"
       ],
       "steps": [
+        "GET /api/v1/events?page=1&pageSize=20 with staff token",
+        "GET /api/v1/events/{eventId} with staff token",
         "GET /api/v1/events/{eventId}/registrations with staff token",
         "POST /api/v1/events/{eventId}/checkins with staff token and valid registrationId",
         "GET /api/v1/events/{eventId}/dashboard with staff token"
       ],
-      "expected": "Each request returns HTTP 403 or 404; staff with no assignments cannot operate on any event; FR-27 boundary enforced for empty assignment set",
+      "expected": "Each request returns HTTP 403 or 404, or GET /events returns HTTP 200 with empty items when no assignments match; staff with empty assignedEventIds cannot operate on any event; FR-27 boundary enforced for empty assignment set",
       "edgeCase": true
     },
     {
@@ -493,6 +495,48 @@
       ],
       "expected": "Assigned event A operational pages load with paginated table rows; event B is not listed and direct URL shows access denied or redirect; FR-27 staff event scope enforced in UI journey",
       "edgeCase": false
+    },
+    {
+      "id": "TC-FR-27-023",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "FR-27",
+        "FR-30"
+      ],
+      "title": "OrganizerStaff GET /events list returns only assigned events",
+      "preconditions": [
+        "Events A and B exist with organizer-visible states",
+        "OrganizerStaff JWT with assignedEventIds containing event A only, not event B"
+      ],
+      "steps": [
+        "GET /api/v1/events?page=1&pageSize=20 with staff Authorization bearer",
+        "Inspect returned items eventId values against assignedEventIds claim"
+      ],
+      "expected": "HTTP 200 with paginated envelope; every returned eventId is in staff assignedEventIds; event B absent; role-filtered GET /events scoped to assigned events per API design §2.0 and FR-27",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-27-024",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": [
+        "FR-27"
+      ],
+      "title": "OrganizerStaff denied event detail for unassigned event",
+      "preconditions": [
+        "Published or RegistrationOpen event B not in staff assignedEventIds",
+        "OrganizerStaff JWT scoped to a different assigned event A"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventBId} with staff Authorization bearer"
+      ],
+      "expected": "HTTP 403 or 404 per scope-hiding policy; event B metadata not exposed outside assigned event scope; FR-27 enforced at single-event read boundary",
+      "edgeCase": true
     }
   ]
 }
