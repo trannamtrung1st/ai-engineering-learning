@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-12",
   "version": 1,
-  "docFingerprint": "sha256:1593c2ff42ceec9999c9e8d9b2cb30bad8891dfea6114e74ae8dff6eb463b47b",
-  "generatedAt": "2026-06-26T12:00:00Z",
+  "docFingerprint": "sha256:8c0de822d8fa2e988a5b739aaa107d3850c16ef1e948d222e29778ba9b67ebde",
+  "generatedAt": "2026-06-26T16:26:12Z",
   "cases": [
     {
       "id": "TC-AC-12-001",
@@ -38,7 +38,7 @@
         "AC-12",
         "FR-23"
       ],
-      "title": "Registration module writes append-only status history rows via audit module boundary",
+      "title": "Registration module writes append-only status history rows projected from audit_logs",
       "preconditions": [
         "RegistrationOpen event with available capacity",
         "Real Postgres test database with transaction rollback per test",
@@ -46,23 +46,23 @@
       ],
       "steps": [
         "Invoke registrationService.register then registrationService.cancel within registration module",
-        "Query audit_logs or status_history store for eventId and registrationId",
+        "Query audit_logs for registration state-change rows projected as status history for eventId and registrationId",
         "Verify registration module invoked audit module within transactional boundary"
       ],
-      "expected": "Append-only history rows persisted with registration.accepted and registration.cancelled actions, before/after states, actorId, and occurredAt; module-integration boundary per audit module contract",
+      "expected": "Append-only audit_logs rows persisted with registration.accepted and registration.cancelled actions, before/after states, actorId, and occurredAt; status history is not a separate table — projected from audit_logs per database design §2",
       "edgeCase": false
     },
     {
       "id": "TC-AC-12-003",
       "category": "functional",
       "layer": "e2e",
-      "technique": "flow-c",
+      "technique": "scenario-matrix",
       "priority": "P0",
       "traceability": [
         "AC-12",
         "FR-23"
       ],
-      "title": "Flow C GET status-history over HTTP traces register-to-cancel transitions",
+      "title": "E2E GET status-history over HTTP traces register-to-cancel transitions",
       "preconditions": [
         "E2E RegistrationOpen event with capacity 5",
         "Participant registered then cancelled via POST /registrations/{id}/cancel",
@@ -72,7 +72,7 @@
         "GET /api/v1/events/{eventId}/status-history?registrationId={registrationId}&sort=createdAt:asc with organizer Authorization bearer token",
         "Locate registration.accepted and registration.cancelled items in paginated envelope"
       ],
-      "expected": "HTTP 200 with items array containing registration.accepted (afterState Registered) and registration.cancelled (afterState CancelledByUser) for the same registrationId with occurredAt timestamps; satisfies Flow C governance traceability alongside AC-11",
+      "expected": "HTTP 200 with items array containing registration.accepted (afterState Registered) and registration.cancelled (afterState CancelledByUser) for the same registrationId with occurredAt timestamps; satisfies testing-plan §3 Status history retrieval → transitions traceable (AC-12)",
       "edgeCase": false
     },
     {
@@ -107,7 +107,8 @@
       "traceability": [
         "AC-12",
         "FR-23",
-        "FR-30"
+        "FR-30",
+        "AC-14"
       ],
       "title": "Organizer registrations page opens status history dialog with transition columns",
       "preconditions": [
@@ -120,7 +121,7 @@
         "Observe dialog table columns for When, Transition (beforeState → afterState), Actor, and Action",
         "Use pagination controls inside dialog when history exceeds pageSize"
       ],
-      "expected": "Dialog renders registration status history with beforeState → afterState transition, actor identifier, and occurredAt timestamp; server-driven pagination inside dialog does not render unbounded dataset client-side",
+      "expected": "Dialog renders registration status history with beforeState → afterState transition, actor identifier, and occurredAt timestamp; server-driven pagination inside dialog does not render unbounded dataset client-side per AC-14 and ui-ux page-list §Registration management",
       "edgeCase": false
     },
     {
@@ -191,7 +192,7 @@
         "Cancel an existing Registered registration to trigger FIFO promotion",
         "GET /api/v1/events/{eventId}/status-history?registrationId={promotedRegistrationId}&sort=createdAt:asc with organizer token"
       ],
-      "expected": "History includes waitlist entry and subsequent promotion transition with afterState Registered; promotion from Waitlisted traceable per Flow B waitlist lifecycle",
+      "expected": "History includes waitlist entry and registration.promoted_from_waitlist transition with afterState Registered; promotion from Waitlisted traceable per Flow B waitlist lifecycle and FR-12",
       "edgeCase": false
     },
     {
@@ -273,7 +274,8 @@
       "traceability": [
         "AC-12",
         "AC-15",
-        "FR-25"
+        "FR-25",
+        "NFR-07"
       ],
       "title": "Unauthenticated GET status-history returns 401",
       "preconditions": [
@@ -359,7 +361,8 @@
       "priority": "P1",
       "traceability": [
         "AC-12",
-        "FR-27"
+        "FR-27",
+        "NFR-08"
       ],
       "title": "OrganizerStaff cannot read status history for out-of-scope event",
       "preconditions": [
@@ -448,7 +451,8 @@
       "traceability": [
         "AC-12",
         "FR-31",
-        "AC-13"
+        "AC-13",
+        "NFR-16"
       ],
       "title": "Status history list returns accurate total count across multiple registrations",
       "preconditions": [
@@ -459,6 +463,75 @@
         "Compare total field against known transition count"
       ],
       "expected": "total reflects all registration status transitions for the event; pageSize slices items without losing count accuracy per FR-31 pagination contract",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-12-021",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "state-transition",
+      "priority": "P1",
+      "traceability": [
+        "AC-12",
+        "AC-07",
+        "BR-12",
+        "FR-23"
+      ],
+      "title": "Registered to Absent transition recorded in status history after event completion",
+      "preconditions": [
+        "Registered participant who did not check in before event completion",
+        "Event completed triggering attendance finalization"
+      ],
+      "steps": [
+        "Complete event without check-in for the registration",
+        "GET /api/v1/events/{eventId}/status-history?registrationId={registrationId}&sort=createdAt:asc with OrganizerAdmin token"
+      ],
+      "expected": "History includes Registered to Absent transition with timestamp after event completion; organizer can trace no-show outcome per attendance finalization workflow (AC-07, BR-12)",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-12-022",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": [
+        "AC-12",
+        "FR-23"
+      ],
+      "title": "Status history request for non-existent eventId returns 404",
+      "preconditions": [
+        "OrganizerAdmin JWT",
+        "eventId that does not exist or is not in actor scope"
+      ],
+      "steps": [
+        "GET /api/v1/events/{unknownEventId}/status-history with organizer token"
+      ],
+      "expected": "HTTP 404 with typed error envelope per error-handling §2.4; no partial history payload returned",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-12-023",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": [
+        "AC-12",
+        "FR-23",
+        "NFR-13"
+      ],
+      "title": "Status history query is read-only and does not mutate registration or audit state",
+      "preconditions": [
+        "Event with known registration and status history state",
+        "Authenticated OrganizerAdmin actor"
+      ],
+      "steps": [
+        "Record registration states and status history total",
+        "Invoke listStatusHistory multiple times in succession",
+        "Re-read registration states and status history total"
+      ],
+      "expected": "No registration state transitions or new history records created by read queries; query contract is side-effect free per module breakdown query conventions",
       "edgeCase": false
     }
   ]
