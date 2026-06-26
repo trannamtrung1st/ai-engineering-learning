@@ -3,7 +3,7 @@
   "slices": [
     {
       "id": "repo-monorepo-bootstrap",
-      "passes": true,
+      "passes": false,
       "priority": 0,
       "phase": 0,
       "agent": "infra",
@@ -29,7 +29,7 @@
     },
     {
       "id": "docker-compose-db",
-      "passes": true,
+      "passes": false,
       "priority": 1,
       "phase": 0,
       "agent": "infra",
@@ -54,7 +54,7 @@
     },
     {
       "id": "domain-package",
-      "passes": true,
+      "passes": false,
       "priority": 10,
       "phase": 1,
       "agent": "backend",
@@ -85,7 +85,7 @@
     },
     {
       "id": "api-foundation",
-      "passes": true,
+      "passes": false,
       "priority": 11,
       "phase": 1,
       "agent": "backend",
@@ -119,7 +119,7 @@
     },
     {
       "id": "module-event",
-      "passes": true,
+      "passes": false,
       "priority": 20,
       "phase": 2,
       "agent": "backend",
@@ -151,7 +151,7 @@
     },
     {
       "id": "module-registration",
-      "passes": true,
+      "passes": false,
       "priority": 21,
       "phase": 2,
       "agent": "backend",
@@ -190,7 +190,7 @@
     },
     {
       "id": "module-checkin",
-      "passes": true,
+      "passes": false,
       "priority": 22,
       "phase": 2,
       "agent": "backend",
@@ -225,7 +225,7 @@
     },
     {
       "id": "module-feedback-eligibility",
-      "passes": true,
+      "passes": false,
       "priority": 23,
       "phase": 2,
       "agent": "backend",
@@ -263,7 +263,7 @@
     },
     {
       "id": "module-audit",
-      "passes": true,
+      "passes": false,
       "priority": 24,
       "phase": 2,
       "agent": "backend",
@@ -297,7 +297,7 @@
     },
     {
       "id": "module-user-accounts",
-      "passes": true,
+      "passes": false,
       "priority": 25,
       "phase": 2,
       "agent": "backend",
@@ -343,7 +343,7 @@
     },
     {
       "id": "module-event-cover-image",
-      "passes": true,
+      "passes": false,
       "priority": 26,
       "phase": 2,
       "agent": "backend",
@@ -377,7 +377,7 @@
     },
     {
       "id": "web-design-system-shell",
-      "passes": true,
+      "passes": false,
       "priority": 30,
       "phase": 3,
       "agent": "frontend",
