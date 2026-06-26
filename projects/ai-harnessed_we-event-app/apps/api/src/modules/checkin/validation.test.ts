@@ -88,7 +88,7 @@ function buildCheckin(
 }
 
 describe("checkin validation", () => {
-  it("assertCheckinWindowOpen rejects out-of-window check-in (AC-06, FR-15)", () => {
+  it("BR-10 / AC-06 / FR-15: assertCheckinWindowOpen rejects out-of-window check-in", () => {
     const now = Date.now();
     const event = buildEvent({
       ruleConfig: {

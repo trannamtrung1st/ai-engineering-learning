@@ -90,7 +90,7 @@ describe("registration validation", () => {
     );
   });
 
-  it("assertNoDuplicateActive rejects existing active registration", () => {
+  it("BR-01 / AC-03: assertNoDuplicateActive rejects existing active registration", () => {
     const existing = buildRegistration({ state: "Registered" });
     assert.throws(
       () => assertNoDuplicateActive(existing),

@@ -159,6 +159,16 @@ describe("validation rule identifiers", () => {
     );
   });
 
+  it("BR-04 is a routing rule without a public error code", () => {
+    assert.equal(BUSINESS_RULE_IDS.BR_04, "BR-04");
+    assert.equal(RULE_TO_ERROR_CODE["BR-04"], null);
+  });
+
+  it("BR-12 is an invariant rule without a public error code", () => {
+    assert.equal(BUSINESS_RULE_IDS.BR_12, "BR-12");
+    assert.equal(RULE_TO_ERROR_CODE["BR-12"], null);
+  });
+
   it("covers BR-01 through BR-22 with stable error codes where defined", () => {
     const ruleIds = Object.values(BUSINESS_RULE_IDS);
     assert.equal(ruleIds.length, 22);

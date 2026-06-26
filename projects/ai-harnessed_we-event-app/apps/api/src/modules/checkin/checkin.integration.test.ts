@@ -140,7 +140,7 @@ describe("checkin integration (NFR-02, BR-13)", () => {
     assert.equal(result.method, "Staff");
   });
 
-  it("AC-06 / FR-14 / FR-16: out-of-window check-in is rejected", async () => {
+  it("BR-10 / AC-06 / FR-14 / FR-16: out-of-window check-in is rejected", async () => {
     const windows = checkinWindows();
     const participantId = randomUUID();
     await ensureTestParticipant(participantId);
@@ -243,7 +243,7 @@ describe("checkin integration (NFR-02, BR-13)", () => {
     assert.equal(registration?.state, "Attended");
   });
 
-  it("marks Registered participants without check-in as Absent on completion", async () => {
+  it("BR-12: marks Registered participants without check-in as Absent on completion", async () => {
     const windows = checkinWindows();
     const noShowId = randomUUID();
     const checkedInId = randomUUID();

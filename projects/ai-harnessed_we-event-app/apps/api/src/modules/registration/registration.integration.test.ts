@@ -147,7 +147,7 @@ describe("registration integration (NFR-02, FR-31)", () => {
     );
   });
 
-  it("AC-02: assigns Waitlisted when full and waitlist enabled", async () => {
+  it("AC-02 / BR-04: assigns Waitlisted when full and waitlist enabled", async () => {
     const event = await createRegistrationOpenEvent({
       capacity: 1,
       waitlistEnabled: true,
@@ -172,7 +172,7 @@ describe("registration integration (NFR-02, FR-31)", () => {
     assert.equal(waitlisted.waitlistPosition, 1);
   });
 
-  it("AC-03: blocks duplicate registration for same participant and event", async () => {
+  it("AC-03 / BR-01: blocks duplicate registration for same participant and event", async () => {
     const event = await createRegistrationOpenEvent({ capacity: 10 });
     const participantId = await newParticipantId();
 
