@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-08",
   "version": 1,
-  "docFingerprint": "sha256:027175175545d05eacf412663c601ddc7b622e4741a2ff40633c8e332b7bd6aa",
-  "generatedAt": "2026-06-26T12:30:00Z",
+  "docFingerprint": "sha256:87b20ee29539baa20adb28d25f392f7bf11c719437f7d84b899d86c14fe7f71b",
+  "generatedAt": "2026-06-26T17:00:00Z",
   "cases": [
     {
       "id": "TC-FR-08-001",
@@ -13,6 +13,7 @@
       "traceability": [
         "FR-08",
         "AC-02",
+        "AC-02a",
         "BR-04"
       ],
       "title": "System automatically assigns Waitlisted when event is full and waitlist is enabled",
@@ -24,9 +25,10 @@
       ],
       "steps": [
         "Invoke registrationService.register(eventId, participantId, actorContext) for a participant with no prior registration",
-        "Read the returned registration entity snapshot and waitlist entry if present"
+        "Read the returned registration entity snapshot and waitlist entry if present",
+        "Query registration audit and status history for the new registration"
       ],
-      "expected": "System assigns state Waitlisted automatically without organizer intervention; waitlistPosition is a positive integer (1 for first entrant); Registered count remains at EventCapacity without overflow; testing-plan §3 row Register when full + waitlist enabled → Waitlisted satisfied",
+      "expected": "System assigns state Waitlisted automatically without organizer intervention; waitlistPosition is a positive integer >= 1 (1 for first entrant); active WaitlistEntry created per BR-04b; Registered count remains at EventCapacity without overflow; registration audit and status history written per FR-08; testing-plan §3 row Register when full + waitlist enabled → Waitlisted; AC-02a",
       "edgeCase": false
     },
     {
@@ -38,7 +40,7 @@
       "traceability": [
         "FR-08",
         "AC-02",
-        "FR-10"
+        "AC-02a"
       ],
       "title": "POST registrations returns HTTP 200 with Waitlisted envelope when full",
       "preconditions": [
@@ -51,53 +53,7 @@
         "POST /api/v1/events/{eventId}/registrations as the second participant with Authorization bearer token and Idempotency-Key header",
         "GET /api/v1/events/{eventId}/registration-status for the same participant"
       ],
-      "expected": "POST returns HTTP 200 with body containing state Waitlisted, waitlistPosition 1, registrationId, eventId, participantId, reasonCode null, and updatedAt; GET registration-status returns the same Waitlisted assignment; system auto-statusing per FR-08",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-FR-08-003",
-      "category": "functional",
-      "layer": "unit",
-      "technique": "state-transition",
-      "priority": "P0",
-      "traceability": [
-        "FR-08",
-        "BR-04"
-      ],
-      "title": "queueWaitlist state transition guard permits Waitlisted when full and waitlist enabled",
-      "preconditions": [
-        "Registration in Requested state",
-        "registeredCount equals EventCapacity",
-        "waitlistEnabled is true",
-        "Registration window open and no duplicate active registration"
-      ],
-      "steps": [
-        "Call queueWaitlist transition guard with preconditions above",
-        "Verify guard returns permitted transition to Waitlisted"
-      ],
-      "expected": "Guard permits Requested to Waitlisted transition when full and waitlist enabled per state machine transition table; guard requires full + waitlist enabled",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-FR-08-004",
-      "category": "functional",
-      "layer": "unit",
-      "technique": "state-transition",
-      "priority": "P0",
-      "traceability": [
-        "FR-08",
-        "BR-04"
-      ],
-      "title": "Capacity guard routes to waitlist when registeredCount equals capacity and waitlistEnabled",
-      "preconditions": [
-        "Pure capacity decision inputs: registeredCount, capacity, waitlistEnabled"
-      ],
-      "steps": [
-        "Evaluate capacity decision for registeredCount=5, capacity=5, waitlistEnabled=true",
-        "Evaluate for registeredCount=1, capacity=1, waitlistEnabled=true",
-        "Evaluate for registeredCount=10, capacity=10, waitlistEnabled=true"
-      ],
-      "expected": "Each evaluation returns waitlist assign outcome (not Registered and not reject); aligns with testing plan unit target capacity guard validator and BR-04",
+      "expected": "POST returns HTTP 200 with body containing state Waitlisted, waitlistPosition >= 1, registrationId, eventId, participantId, reasonCode null, and updatedAt; GET registration-status returns the same Waitlisted assignment with matching waitlistPosition; system auto-statusing per FR-08 and AC-02a",
       "edgeCase": false
     },
     {
@@ -108,7 +64,11 @@
       "priority": "P0",
       "traceability": [
         "FR-08",
-        "AC-02"
+        "AC-02",
+        "AC-02a",
+        "BR-04",
+        "BR-04a",
+        "BR-04b"
       ],
       "title": "queueWaitlist transition persists Waitlisted state and waitlist entry in real DB transaction",
       "preconditions": [
@@ -118,9 +78,9 @@
       ],
       "steps": [
         "Execute queueWaitlist via registration module pipeline against real database",
-        "Query registration row state and waitlist_entries record"
+        "Query registration row state, waitlist_entries record, audit log, and status history"
       ],
-      "expected": "Registration row persisted with state Waitlisted; waitlist_entries row exists with matching position; transition from Requested to Waitlisted recorded; system outcome matches Flow B waitlist entry step",
+      "expected": "Registration row persisted with state Waitlisted; active WaitlistEntry exists (promoted_at and expired_at both null per BR-04b) with position assigned as MAX(active positions)+1 per BR-04a; registration audit and status history written per FR-08; transition from Requested to Waitlisted recorded; system outcome matches Flow B waitlist entry step",
       "edgeCase": false
     },
     {
@@ -131,8 +91,10 @@
       "priority": "P1",
       "traceability": [
         "FR-08",
-        "FR-10",
-        "AC-02"
+        "AC-02",
+        "AC-02a",
+        "AC-02e",
+        "FR-10a"
       ],
       "title": "Participant UI reflects system-assigned Waitlisted status after registration on full event",
       "preconditions": [
@@ -145,7 +107,7 @@
         "Observe registration status panel or badge after action completes",
         "Open my registrations list and locate the same event"
       ],
-      "expected": "UI displays Waitlisted status with queue position or equivalent queue messaging; no manual organizer approval step required; status consistent with API registration-status",
+      "expected": "UI displays Waitlisted status with queue position (waitlistPosition) per FR-10a and AC-02e; no manual organizer approval step required; status and position consistent with API registration-status",
       "edgeCase": false
     },
     {
@@ -156,9 +118,10 @@
       "priority": "P0",
       "traceability": [
         "FR-08",
-        "BR-04"
+        "BR-04",
+        "BR-04a"
       ],
-      "title": "Multiple waitlist entrants receive FIFO positions by enqueue order",
+      "title": "Multiple waitlist entrants receive monotonic positions by enqueue order",
       "preconditions": [
         "Event capacity 1, waitlistEnabled true, one Registered participant",
         "Three distinct participants with no active registration",
@@ -168,7 +131,7 @@
         "Register participant A, then B, then C while event remains full",
         "Read waitlistPosition for each Waitlisted registration from database"
       ],
-      "expected": "System assigns Waitlisted to all three with waitlistPosition 1, 2, 3 respectively; ordering matches FIFO by timestamp per BR-04; FR-08 applies to each entrant",
+      "expected": "System assigns Waitlisted to all three with waitlistPosition 1, 2, 3 respectively; each position assigned as MAX(active positions)+1 at enqueue time per BR-04a; ordering matches FIFO enqueue order per BR-04; FR-08 applies to each entrant",
       "edgeCase": true
     },
     {
@@ -217,7 +180,7 @@
         "Fire concurrent registrationService.register calls from eight participants while event is full",
         "Aggregate results and query Registered count"
       ],
-      "expected": "All eight concurrent entrants receive Waitlisted with unique sequential waitlistPosition values; Registered count remains exactly 5; no additional Registered assignments; core scenario matrix capacity under heavy concurrent requests satisfied for waitlist path",
+      "expected": "All eight concurrent entrants receive Waitlisted with unique sequential waitlistPosition values per BR-04a; Registered count remains exactly 5; no additional Registered assignments; core scenario matrix capacity under heavy concurrent requests satisfied for waitlist path",
       "edgeCase": true
     },
     {
@@ -229,7 +192,8 @@
       "traceability": [
         "FR-08",
         "BR-05",
-        "FR-09"
+        "FR-09",
+        "AC-02b"
       ],
       "title": "Full event with waitlist disabled does not assign Waitlisted",
       "preconditions": [
@@ -240,7 +204,7 @@
       "steps": [
         "POST /api/v1/events/{eventId}/registrations as the second participant"
       ],
-      "expected": "HTTP 422 or 409 with error code REGISTRATION_REJECTED_FULL; response state is not Waitlisted; no waitlist entry created; FR-08 precondition (waitlist enabled) not met",
+      "expected": "HTTP 422 or 409 with error code REGISTRATION_REJECTED_FULL per AC-02b; response state is not Waitlisted; no waitlist entry created; FR-08 precondition (waitlist enabled) not met",
       "edgeCase": true
     },
     {
@@ -251,7 +215,8 @@
       "priority": "P1",
       "traceability": [
         "FR-08",
-        "AC-02"
+        "AC-02",
+        "AC-02a"
       ],
       "title": "Registration at exact capacity boundary assigns Waitlisted to next participant",
       "preconditions": [
@@ -318,7 +283,9 @@
       "priority": "P0",
       "traceability": [
         "FR-08",
-        "AC-02"
+        "AC-02",
+        "AC-02a",
+        "BR-04b"
       ],
       "title": "Waitlist enqueue persists atomically with registration in one transaction",
       "preconditions": [
@@ -328,9 +295,9 @@
       ],
       "steps": [
         "Complete a successful registration that system assigns Waitlisted state",
-        "Query registration row and waitlist_entries row in the same database session"
+        "Query registration row, waitlist_entries row, audit log, and status history in the same database session"
       ],
-      "expected": "Registration row exists with state Waitlisted and corresponding waitlist_entries record with matching position; both committed atomically per cross-module transaction boundary for registration assignment + waitlist handling",
+      "expected": "Registration row exists with state Waitlisted and active WaitlistEntry (promoted_at and expired_at both null per BR-04b) with matching position; registration audit and status history written per FR-08; both committed atomically per cross-module transaction boundary for registration assignment + waitlist handling",
       "edgeCase": false
     },
     {
@@ -362,7 +329,8 @@
       "priority": "P1",
       "traceability": [
         "FR-08",
-        "AC-02"
+        "AC-02",
+        "AC-02a"
       ],
       "title": "Idempotent waitlist registration retry returns consistent Waitlisted snapshot",
       "preconditions": [
@@ -408,6 +376,7 @@
       "traceability": [
         "FR-08",
         "AC-02",
+        "AC-02a",
         "FR-12"
       ],
       "title": "Flow B waitlist entry step yields system-assigned Waitlisted status",
@@ -420,7 +389,7 @@
         "Execute Flow B step: POST /api/v1/events/{eventId}/registrations for second participant after event is full",
         "Verify registration state before proceeding to cancellation and auto-promotion steps"
       ],
-      "expected": "Registration response state is Waitlisted with waitlistPosition 1 assigned automatically by system; enables subsequent Flow B cancellation and FR-12 promotion steps; core scenario matrix Register when full + waitlist enabled maps to Waitlisted",
+      "expected": "Registration response state is Waitlisted with waitlistPosition >= 1 assigned automatically by system; enables subsequent Flow B cancellation and FR-12 promotion steps; core scenario matrix Register when full + waitlist enabled maps to Waitlisted",
       "edgeCase": false
     },
     {
@@ -431,7 +400,8 @@
       "priority": "P1",
       "traceability": [
         "FR-08",
-        "FR-30"
+        "FR-30a",
+        "AC-02f"
       ],
       "title": "Organizer waitlist list paginates system-assigned Waitlisted participants with correct position",
       "preconditions": [
@@ -442,31 +412,8 @@
         "GET /api/v1/events/{eventId}/waitlist?page=1&pageSize=20 with organizer Authorization",
         "Locate the waitlisted participant in items and verify page metadata"
       ],
-      "expected": "HTTP 200 with paginated envelope containing items, page, pageSize, total, and totalPages; waitlisted participant sorted by position ascending (default sort position:asc); item reflects Waitlisted registration consistent with participant-facing registration-status",
+      "expected": "HTTP 200 with paginated envelope containing items, page, pageSize, total, and totalPages; waitlisted participant sorted by position ascending (default sort position:asc per FR-30a); FIFO order preserved across pages per AC-02f; item reflects Waitlisted registration consistent with participant-facing registration-status",
       "edgeCase": false
-    },
-    {
-      "id": "TC-FR-08-020",
-      "category": "edge",
-      "layer": "unit",
-      "technique": "state-transition",
-      "priority": "P0",
-      "traceability": [
-        "FR-08",
-        "BR-04"
-      ],
-      "title": "State transition guard rejects queueWaitlist when seats remain available",
-      "preconditions": [
-        "registeredCount strictly less than capacity",
-        "waitlistEnabled true",
-        "Registration otherwise valid (window open, no duplicate)"
-      ],
-      "steps": [
-        "Call queueWaitlist transition guard when registeredCount < capacity",
-        "Verify guard denies Waitlisted transition"
-      ],
-      "expected": "Guard rejects Requested to Waitlisted transition; routes to Registered path instead; confirms FR-08 full-capacity precondition is enforced at state machine layer",
-      "edgeCase": true
     },
     {
       "id": "TC-FR-08-021",
@@ -489,6 +436,53 @@
         "Repeat POST with OrganizerStaff bearer token for the same event"
       ],
       "expected": "Both requests return HTTP 403 unauthorized; no registration row is created; Register for event capability is Participant-only per roles-permissions matrix",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-08-022",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": [
+        "FR-08",
+        "BR-04",
+        "AC-02a"
+      ],
+      "title": "Registration state transitions Requested to Waitlisted when full and waitlist enabled",
+      "preconditions": [
+        "Event RegistrationOpen with registeredCount equal to EventCapacity and waitlistEnabled true",
+        "New registration request in Requested state passes window and dedupe checks",
+        "Postgres available for integration test harness"
+      ],
+      "steps": [
+        "Execute registration module pipeline for a new participant against real database",
+        "Query registration row beforeState and afterState via status history"
+      ],
+      "expected": "Registration transitions from Requested to Waitlisted per state machine queueWaitlist guard (full + waitlist enabled); status history records the transition; FR-08 success path satisfied",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-08-023",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": [
+        "FR-08",
+        "AC-01",
+        "AC-02a"
+      ],
+      "title": "Registration when seats remain available assigns Registered not Waitlisted",
+      "preconditions": [
+        "Event capacity 2, waitlistEnabled true, one Registered participant (seats remain)",
+        "Second participant authenticated with no active registration",
+        "Fresh Idempotency-Key header value"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/registrations as the second participant"
+      ],
+      "expected": "HTTP 200 with state Registered (not Waitlisted); waitlistPosition null; FR-08 full-capacity precondition not met; confirms waitlist path only when at capacity",
       "edgeCase": true
     }
   ]
