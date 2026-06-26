@@ -2,33 +2,56 @@
   "productItemId": "AC-15",
   "version": 1,
   "docFingerprint": "sha256:95b2130478acb06c85d10e9e25b8bd9fbb6f4ea0d832479d2adbe9e0d10ad022",
-  "generatedAt": "2026-06-26T16:30:00Z",
+  "generatedAt": "2026-06-26T20:00:00Z",
   "cases": [
     {
       "id": "TC-AC-15-001",
       "category": "functional",
       "layer": "e2e",
+      "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["AC-15", "FR-33", "NFR-07"],
-      "title": "GET /me without Authorization returns 401 with standard error envelope",
+      "traceability": ["AC-15", "NFR-07"],
+      "title": "Unauthenticated access to protected endpoints blocked as prerequisite gate for testing-plan §3 scenarios",
       "preconditions": [
         "API server running at /api/v1",
-        "No Authorization header or session cookie on request"
+        "No Authorization header or session cookie on any request",
+        "Seeded event with registrations and audit data available"
       ],
       "steps": [
         "GET /api/v1/me without bearer token",
-        "Inspect HTTP status and response body"
+        "GET /api/v1/events/{eventId}/registrations without bearer token",
+        "POST /api/v1/events/{eventId}/registrations without bearer token"
       ],
-      "expected": "HTTP 401 unauthenticated; body contains error object with stable code, message, requestId, and no user profile or role data exposed",
+      "expected": "Each protected call returns HTTP 401 before domain execution; no scenario-matrix data (registrations, profile, mutations) is exposed or created; authentication gate per AC-15 and NFR-07 is enforced as prerequisite for all testing-plan §3 flows",
       "edgeCase": false
     },
     {
       "id": "TC-AC-15-002",
       "category": "functional",
       "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["AC-15", "FR-33", "NFR-07"],
+      "title": "GET /api/v1/me without Authorization returns 401 with standard error envelope",
+      "preconditions": [
+        "API server running at /api/v1",
+        "No Authorization header on request"
+      ],
+      "steps": [
+        "Send GET /api/v1/me without bearer token",
+        "Inspect HTTP status and response body"
+      ],
+      "expected": "HTTP 401; body contains error object with stable code, message, requestId; no user profile or role data exposed",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-15-003",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
       "traceability": ["AC-15", "NFR-07"],
-      "title": "POST event registration without auth returns 401 before domain execution",
+      "title": "POST /api/v1/events/{eventId}/registrations without auth returns 401 before domain execution",
       "preconditions": [
         "Published event in RegistrationOpen state with available capacity",
         "No Authorization header on request"
@@ -37,16 +60,17 @@
         "POST /api/v1/events/{eventId}/registrations with empty or omitted Authorization header",
         "Verify no registration row is created for the request"
       ],
-      "expected": "HTTP 401 unauthenticated; registration is not created; satisfies AC-15 and NFR-07 requirement that authentication precedes sensitive operations",
+      "expected": "HTTP 401; registration is not created; authentication precedes capacity and dedupe logic per authorization decision pattern step 1",
       "edgeCase": false
     },
     {
-      "id": "TC-AC-15-003",
+      "id": "TC-AC-15-004",
       "category": "functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
       "traceability": ["AC-15", "FR-25", "NFR-07"],
-      "title": "GET organizer audit-logs without auth returns 401",
+      "title": "GET /api/v1/events/{eventId}/audit-logs without auth returns 401",
       "preconditions": [
         "Event with existing audit log entries",
         "No Authorization header on request"
@@ -54,53 +78,17 @@
       "steps": [
         "GET /api/v1/events/{eventId}/audit-logs without bearer token"
       ],
-      "expected": "HTTP 401 unauthenticated; audit log items are not returned",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-AC-15-004",
-      "category": "functional",
-      "layer": "browser",
-      "priority": "P0",
-      "traceability": ["AC-15", "FR-34"],
-      "title": "Unauthenticated visit to protected participant route redirects to login with return URL",
-      "preconditions": [
-        "Web app running with route guards enabled",
-        "Browser session has no stored JWT (fresh context or after sign-out)",
-        "Target route requires authentication (e.g. My registrations)"
-      ],
-      "steps": [
-        "Navigate directly to a protected participant route such as /my-registrations",
-        "Observe browser URL and page content"
-      ],
-      "expected": "User is redirected to /login; intended destination is preserved as return URL query parameter or equivalent so post-login navigation can resume; no protected page content renders",
+      "expected": "HTTP 401; audit log items are not returned",
       "edgeCase": false
     },
     {
       "id": "TC-AC-15-005",
       "category": "functional",
-      "layer": "browser",
-      "priority": "P0",
-      "traceability": ["AC-15", "NFR-08"],
-      "title": "Unauthenticated visit to organizer area redirects to login",
-      "preconditions": [
-        "Web app running with role-aware route guards",
-        "No authenticated session in browser"
-      ],
-      "steps": [
-        "Navigate directly to an organizer-only route (e.g. event management or dashboard under organizer shell)",
-        "Observe redirect behavior"
-      ],
-      "expected": "User is redirected to /login (not access-denied); organizer UI does not render before authentication per page-list routing guidance",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-AC-15-006",
-      "category": "functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
       "traceability": ["AC-15", "FR-28"],
-      "title": "GET /me/registrations without auth returns 401",
+      "title": "GET /api/v1/me/registrations without auth returns 401",
       "preconditions": [
         "Participant has registrations in the system",
         "Request omits Authorization header"
@@ -108,31 +96,93 @@
       "steps": [
         "GET /api/v1/me/registrations?page=1&pageSize=20 without bearer token"
       ],
-      "expected": "HTTP 401 unauthenticated; paginated registration data is not exposed to anonymous caller",
+      "expected": "HTTP 401; paginated registration data is not exposed to anonymous caller",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-15-006",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["AC-15", "NFR-07"],
+      "title": "Auth middleware rejects unauthenticated POST /events before role or scope checks and DB write",
+      "preconditions": [
+        "Event management module mounted with authorization decision pattern (authenticate → role → scope)",
+        "Real database test harness with transaction rollback",
+        "Request context has no authenticated actor"
+      ],
+      "steps": [
+        "Invoke POST /api/v1/events handler with valid JSON body but no auth context",
+        "Query events table for new draft row",
+        "Confirm handler short-circuits at authentication step"
+      ],
+      "expected": "HTTP 401 returned; no event draft persisted in database; role and scope validators are not reached for unauthenticated actor per authorization decision pattern step 1",
       "edgeCase": false
     },
     {
       "id": "TC-AC-15-007",
       "category": "functional",
-      "layer": "integration",
+      "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["AC-15", "NFR-07"],
-      "title": "Auth middleware rejects unauthenticated POST /events before role or scope checks",
+      "traceability": ["AC-15", "FR-25", "NFR-07"],
+      "title": "Unauthenticated request to organizer-only dashboard endpoint returns 401",
       "preconditions": [
-        "Event management module mounted with standard authorization decision pattern (authenticate → role → scope)",
-        "Request context has no authenticated actor"
+        "Event with dashboard metrics available",
+        "No Authorization header; actor is unauthenticated (not merely wrong role)",
+        "GET /events/{eventId}/dashboard is OrganizerAdmin/OrganizerStaff scoped per permission matrix"
       ],
       "steps": [
-        "Invoke POST /api/v1/events handler or service entry with valid JSON body but no auth context",
-        "Confirm handler short-circuits at authentication step"
+        "GET /api/v1/events/{eventId}/dashboard without bearer token"
       ],
-      "expected": "HTTP 401 returned; no event draft persisted; role and scope validators are not reached for unauthenticated actor per authorization decision pattern step 1",
+      "expected": "HTTP 401 unauthenticated; dashboard summary and operational metrics not returned; authentication required before organizer role evaluation per roles-permissions authorization pattern",
       "edgeCase": false
     },
     {
       "id": "TC-AC-15-008",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["AC-15", "FR-34"],
+      "title": "Unauthenticated visit to protected participant My Registrations route redirects to login",
+      "preconditions": [
+        "Web app running with route guards enabled",
+        "Browser session has no stored JWT (fresh context)",
+        "Flow 1 participant journey depends on authenticated session for My Registrations"
+      ],
+      "steps": [
+        "Navigate directly to protected participant route /my-registrations (or equivalent)",
+        "Observe browser URL and page content"
+      ],
+      "expected": "User redirected to /login; intended destination preserved as return URL query parameter; no protected page content or registration list renders",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-15-009",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["AC-15", "NFR-08"],
+      "title": "Unauthenticated visit to organizer area redirects to login per Flow 6 governance entry",
+      "preconditions": [
+        "Web app running with role-aware route guards",
+        "No authenticated session in browser"
+      ],
+      "steps": [
+        "Navigate directly to organizer-only route (e.g. event management or dashboard under organizer shell)",
+        "Observe redirect behavior and visible page state"
+      ],
+      "expected": "User redirected to /login; organizer UI does not render before authentication; no dashboard summary or eligibility list visible",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-15-010",
       "category": "non-functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
       "traceability": ["AC-15", "NFR-07"],
       "title": "Representative sensitive mutation endpoints consistently return 401 when unauthenticated",
@@ -150,30 +200,32 @@
       "edgeCase": false
     },
     {
-      "id": "TC-AC-15-009",
+      "id": "TC-AC-15-011",
       "category": "non-functional",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["AC-15", "NFR-07", "NFR-13"],
       "title": "401 responses use standard typed error contract with requestId",
       "preconditions": [
         "API error middleware enabled",
-        "Unauthenticated request to any protected endpoint"
+        "Unauthenticated request to protected endpoint"
       ],
       "steps": [
         "GET /api/v1/me without Authorization header",
         "Parse JSON error body"
       ],
-      "expected": "Response body matches standard error envelope (error.code, error.message, error.requestId); status is 401; message is user-safe without stack trace per error-handling taxonomy",
+      "expected": "Response body matches standard error envelope (error.code, error.message, error.requestId); status is 401; message is user-safe without stack trace per API error contract",
       "edgeCase": false
     },
     {
-      "id": "TC-AC-15-010",
+      "id": "TC-AC-15-012",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["AC-15"],
-      "title": "Malformed JWT bearer token returns 401",
+      "title": "Malformed JWT bearer token returns 401 on protected endpoint",
       "preconditions": [
         "Protected endpoint available (GET /me)",
         "Authorization header set to Bearer with invalid or truncated token string"
@@ -182,13 +234,14 @@
         "GET /api/v1/me with Authorization: Bearer not-a-valid-jwt",
         "Inspect status and body"
       ],
-      "expected": "HTTP 401 unauthenticated; treated as missing/invalid auth token per authorization error taxonomy; no profile data returned",
+      "expected": "HTTP 401; treated as missing/invalid auth token per authorization error taxonomy; no profile data returned",
       "edgeCase": true
     },
     {
-      "id": "TC-AC-15-011",
+      "id": "TC-AC-15-013",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["AC-15", "FR-33"],
       "title": "Expired JWT returns 401 on protected endpoint",
@@ -199,13 +252,14 @@
       "steps": [
         "GET /api/v1/me/registrations with Authorization bearer set to expired token"
       ],
-      "expected": "HTTP 401 unauthenticated; client must re-authenticate via POST /auth/login; registration list not returned",
+      "expected": "HTTP 401; client must re-authenticate via POST /auth/login; registration list not returned",
       "edgeCase": true
     },
     {
-      "id": "TC-AC-15-012",
+      "id": "TC-AC-15-014",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["AC-15", "FR-32", "FR-33"],
       "title": "Public auth endpoints remain accessible without bearer token",
@@ -217,16 +271,17 @@
         "POST /api/v1/auth/register with valid email, password, displayName and no Authorization header",
         "POST /api/v1/auth/login with valid credentials and no Authorization header"
       ],
-      "expected": "Both requests succeed (not 401); public endpoints explicitly marked in API design remain reachable without prior session; boundary between public and protected endpoints is correct",
+      "expected": "Both requests succeed (not 401); public endpoints per API design §2.6 remain reachable without prior session; boundary between public and protected endpoints is correct",
       "edgeCase": true
     },
     {
-      "id": "TC-AC-15-013",
+      "id": "TC-AC-15-015",
       "category": "edge",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["AC-15", "FR-34"],
-      "title": "After sign-out, protected route access redirects to login again",
+      "title": "After sign-out from TopBar, protected route access redirects to login again (Flow 0b)",
       "preconditions": [
         "User previously signed in with valid credentials",
         "Client JWT cleared via TopBar sign-out (Flow 0b step 5)"
@@ -240,9 +295,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-AC-15-014",
+      "id": "TC-AC-15-016",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["AC-15"],
       "title": "Empty Authorization bearer value returns 401",
@@ -252,16 +308,17 @@
       "steps": [
         "GET /api/v1/me with Authorization: Bearer (empty token after Bearer prefix)"
       ],
-      "expected": "HTTP 401 unauthenticated; equivalent to missing auth per error-handling authorization taxonomy",
+      "expected": "HTTP 401; equivalent to missing auth per error-handling authorization taxonomy",
       "edgeCase": true
     },
     {
-      "id": "TC-AC-15-015",
+      "id": "TC-AC-15-017",
       "category": "edge",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P2",
       "traceability": ["AC-15"],
-      "title": "Public login and signup routes do not redirect-loop when unauthenticated",
+      "title": "Public /login and /signup routes render without redirect-loop when unauthenticated",
       "preconditions": [
         "Fresh browser session with no JWT"
       ],
