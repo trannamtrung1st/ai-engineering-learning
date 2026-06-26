@@ -296,3 +296,4 @@ Append-only log of completed iterations.
 - 2026-06-26T15:50:29Z | AC-01 | testgen_passed
 - 2026-06-26T15:51:39Z | AC-02 | testgen_passed
 - 2026-06-26T15:53:13Z | AC-03 | testgen_passed
+- 2026-06-26T15:55:42Z | AC-04 | testgen_passed
