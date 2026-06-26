@@ -1,8 +1,8 @@
 {
   "productItemId": "BR-10",
   "version": 1,
-  "docFingerprint": "sha256:2fa3a34949c25751d10f6f5b2619c6638b110526abebebb7f1b83749ae9b087b",
-  "generatedAt": "2026-06-26T12:56:50Z",
+  "docFingerprint": "sha256:e657fa128204c24311efead507e2ee01c1ac8f6463cc06d66184862bf864665e",
+  "generatedAt": "2026-06-26T17:52:15Z",
   "cases": [
     {
       "id": "TC-BR-10-001",
@@ -17,7 +17,7 @@
       ],
       "title": "In-window check-in stored with timestamp per testing-plan §3",
       "preconditions": [
-        "Event is InProgress with check-in window active (fixed clock now between checkinOpenAt and checkinCloseAt)",
+        "Event is InProgress with check-in window active (fixed clock now satisfies checkinOpenAt <= now < checkinCloseAt)",
         "Participant has registration in Registered state with no prior valid check-in",
         "Authenticated OrganizerStaff or OrganizerAdmin with check-in capability for the event"
       ],
@@ -25,7 +25,7 @@
         "Invoke checkinService.staffCheckin(eventId, { registrationId }, actorContext) at in-window time",
         "Query checkin_records and registration state for the participant"
       ],
-      "expected": "Testing-plan §3 row satisfied: CheckinRecord persisted with non-null checkinAt timestamp; registration transitions to CheckedIn; BR-10 satisfied because check-in occurred within CheckinOpenAt..CheckinCloseAt",
+      "expected": "Testing-plan §3 row satisfied: CheckinRecord persisted with non-null checkinAt timestamp; registration transitions to CheckedIn; BR-10 satisfied because check-in occurred within valid window (checkinOpenAt <= now < checkinCloseAt); audit metadata persisted per BR-13",
       "edgeCase": false
     },
     {
@@ -68,7 +68,7 @@
         "Real database fixture with Registered participant and active check-in window",
         "No existing CheckinRecord for the registration",
         "Staff actor context with operatorId",
-        "Fixed clock now strictly between checkinOpenAt and checkinCloseAt"
+        "Fixed clock now satisfies checkinOpenAt <= now < checkinCloseAt"
       ],
       "steps": [
         "Execute staff check-in through checkinService against real Postgres",
@@ -140,7 +140,7 @@
       "title": "Valid in-window check-in transitions registration Registered to CheckedIn",
       "preconditions": [
         "Registration in Registered state before check-in",
-        "Event check-in window contains fixed clock now",
+        "Event check-in window contains fixed clock now (checkinOpenAt <= now < checkinCloseAt)",
         "No prior valid check-in on the registration"
       ],
       "steps": [
@@ -314,7 +314,7 @@
         "Registered participant visible in attendance list"
       ],
       "steps": [
-        "Navigate to organizer check-in view for the event",
+        "Open organizer check-in operations console at /organizer/events/{eventId}/check-in",
         "Attempt to check in a registered participant via UI control",
         "Observe inline or toast error messaging"
       ],
@@ -334,7 +334,7 @@
       ],
       "title": "Participant self check-in UI succeeds when check-in window is open",
       "preconditions": [
-        "Event with self check-in enabled and window currently open",
+        "Event with self check-in enabled and window currently open (now >= checkinOpenAt and now < checkinCloseAt)",
         "Participant logged in with Registered status for the event",
         "Event in InProgress state allowing check-in"
       ],
@@ -356,17 +356,17 @@
         "BR-10",
         "AC-05"
       ],
-      "title": "Check-in at CheckinOpenAt boundary is accepted when window policy includes open instant",
+      "title": "Check-in at CheckinOpenAt boundary is recorded with timestamp",
       "preconditions": [
         "Event configured with known checkinOpenAt and checkinCloseAt",
         "Fixed clock set exactly to checkinOpenAt",
         "Registered participant with no prior check-in"
       ],
       "steps": [
-        "Submit staff check-in at the open boundary instant",
+        "Submit staff or self check-in at the boundary instant checkinOpenAt",
         "Query CheckinRecord and registration state"
       ],
-      "expected": "Check-in succeeds with persisted checkinAt at or after checkinOpenAt; registration transitions to CheckedIn per configured open-boundary rule",
+      "expected": "Check-in succeeds per BR-10 window policy (inclusive open boundary); checkinAt is persisted at or after checkinOpenAt and registration is CheckedIn",
       "edgeCase": true
     },
     {
@@ -379,17 +379,17 @@
         "BR-10",
         "AC-06"
       ],
-      "title": "Check-in at CheckinCloseAt boundary is rejected when window policy excludes close instant",
+      "title": "Check-in at checkinCloseAt boundary is rejected per exclusive close boundary",
       "preconditions": [
         "Event configured with known checkinOpenAt and checkinCloseAt",
-        "Fixed clock set exactly to checkinCloseAt",
+        "Fixed clock set exactly to checkinCloseAt (now >= checkinOpenAt and now < checkinCloseAt is false)",
         "Registered participant with no prior check-in"
       ],
       "steps": [
         "Submit staff or self check-in at the close boundary instant",
         "Query CheckinRecord and registration state"
       ],
-      "expected": "Check-in rejected with CHECKIN_WINDOW_CLOSED per configured close-boundary rule; registration stays Registered",
+      "expected": "Check-in rejected with CHECKIN_WINDOW_CLOSED; exclusive close boundary treats checkinCloseAt as out-of-window (valid window is checkinOpenAt <= now < checkinCloseAt); registration stays Registered",
       "edgeCase": true
     },
     {
