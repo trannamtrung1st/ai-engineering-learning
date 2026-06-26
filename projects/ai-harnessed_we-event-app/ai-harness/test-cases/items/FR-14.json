@@ -1,13 +1,34 @@
 {
   "productItemId": "FR-14",
-  "version": 2,
+  "version": 3,
   "docFingerprint": "sha256:4ef9b21ee020318b8667ba54306d7c16fd1e1129e20152c62d596022b477de06",
-  "generatedAt": "2026-06-26T14:00:00Z",
+  "generatedAt": "2026-06-26T12:15:24Z",
   "cases": [
     {
       "id": "TC-FR-14-001",
       "category": "functional",
       "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["FR-14", "AC-05", "BR-10", "BR-13"],
+      "title": "In-window participant self check-in stored with timestamp per testing-plan §3",
+      "preconditions": [
+        "Event rule config enables participant self check-in",
+        "Event is InProgress with check-in window active (current time between checkinOpenAt and checkinCloseAt)",
+        "Authenticated participant has registration in Registered state with no prior valid check-in"
+      ],
+      "steps": [
+        "Invoke checkinService.selfCheckin(eventId, participantActorContext) at a fixed in-window time",
+        "Query checkin_records and registration state for the participant"
+      ],
+      "expected": "Testing-plan §3 row satisfied: self check-in is stored with non-null checkinAt ISO timestamp; registration transitions to CheckedIn; method Self and participant actor reference persisted per BR-13",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-14-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["FR-14", "AC-05", "FR-15", "BR-10"],
       "title": "Participant self check-in transitions own Registered registration to CheckedIn when enabled and in window",
@@ -17,19 +38,43 @@
         "Authenticated participant has registration in Registered state with no prior valid check-in"
       ],
       "steps": [
-        "Invoke checkinService.selfCheckin(eventId, participantActorContext) at a fixed in-window time",
-        "Read returned check-in snapshot and linked registration state"
+        "Invoke checkinService.selfCheckin(eventId, participantActorContext) at a fixed in-window time against real Postgres",
+        "Read returned check-in snapshot and linked registration state in the same database session"
       ],
       "expected": "CheckinRecord is persisted with non-null checkinAt, method Self, and participant actor reference; registration transitions to CheckedIn in the same transaction; no staff operatorId required",
       "edgeCase": false
     },
     {
-      "id": "TC-FR-14-002",
+      "id": "TC-FR-14-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["FR-14", "AC-05", "BR-10"],
+      "title": "Self validCheckin transitions registration Registered to CheckedIn",
+      "preconditions": [
+        "Event rule config enables participant self check-in",
+        "Registration in Registered state before check-in",
+        "Event check-in window contains fixed clock now",
+        "No prior valid check-in on the registration",
+        "Authenticated participant actor context"
+      ],
+      "steps": [
+        "Record beforeState as Registered from registration repository",
+        "Submit self check-in via checkinService.selfCheckin",
+        "Read afterState from registration repository and CheckinRecord"
+      ],
+      "expected": "beforeState Registered, afterState CheckedIn per state machine §2 validCheckin trigger; checkinAt timestamp recorded with method Self",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-14-004",
       "category": "functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
       "traceability": ["FR-14", "AC-05", "FR-16", "BR-10"],
-      "title": "POST self-checkin returns HTTP 200 with checkinAt and CheckedIn registration for participant",
+      "title": "POST /events/{eventId}/self-checkin returns HTTP 200 with checkinAt and CheckedIn registration",
       "preconditions": [
         "E2E fixture event in InProgress state with active check-in window",
         "Event rule config enables participant self check-in",
@@ -38,55 +83,16 @@
       ],
       "steps": [
         "POST /api/v1/events/{eventId}/self-checkin with participant Authorization bearer token",
-        "Optionally GET /api/v1/events/{eventId}/attendance and locate the participant row"
+        "GET /api/v1/events/{eventId}/attendance?page=1&pageSize=20 and locate the participant row"
       ],
-      "expected": "Response HTTP 200 includes checkinAt timestamp, registrationState CheckedIn, participantId matching token subject, and method Self; attendance list includes the participant with matching checkinAt",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-FR-14-003",
-      "category": "functional",
-      "layer": "browser",
-      "priority": "P1",
-      "traceability": ["FR-14", "AC-05"],
-      "title": "Participant completes self check-in via UI and sees success with timestamp",
-      "preconditions": [
-        "Event with self check-in enabled and check-in window currently open",
-        "Participant logged in with Registered status for the event",
-        "Event in InProgress or equivalent state allowing check-in"
-      ],
-      "steps": [
-        "Navigate to event self check-in entry page (Flow 4 step 1)",
-        "System verifies event and registration context (Flow 4 step 2)",
-        "Trigger check-in action via primary control (Flow 4 step 3)",
-        "Observe success confirmation and check-in status display (Flow 4 step 4)"
-      ],
-      "expected": "UI shows check-in succeeded with visible timestamp or time-of-check-in indicator; registration status reflects checked-in state without manual page reload beyond normal client refresh",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-FR-14-004",
-      "category": "functional",
-      "layer": "unit",
-      "priority": "P1",
-      "traceability": ["FR-14", "FR-15", "BR-10"],
-      "title": "Self check-in guard permits action when self-service enabled and window open",
-      "preconditions": [
-        "Event rule config with selfCheckinEnabled true",
-        "Configured checkinOpenAt and checkinCloseAt with openAt < closeAt",
-        "Fixed clock now set to a time within the check-in window",
-        "Registration in Registered state with no prior check-in"
-      ],
-      "steps": [
-        "Call self check-in eligibility guard (e.g. canSelfCheckin(eventConfig, registration, now)) with enabled config and in-window now"
-      ],
-      "expected": "Guard returns permitted true, allowing self check-in processing for FR-14 happy path",
+      "expected": "POST returns HTTP 200 with non-null checkinAt timestamp, registrationState CheckedIn, participantId matching token subject, and method Self; attendance list includes the participant with matching checkinAt",
       "edgeCase": false
     },
     {
       "id": "TC-FR-14-005",
       "category": "functional",
       "layer": "e2e",
+      "technique": "flow-a",
       "priority": "P0",
       "traceability": ["FR-14", "AC-05", "FR-15"],
       "title": "Flow A lifecycle self check-in step succeeds after registration when self-service enabled",
@@ -105,8 +111,31 @@
     },
     {
       "id": "TC-FR-14-006",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["FR-14", "AC-05"],
+      "title": "Participant completes self check-in via UI and sees success with timestamp",
+      "preconditions": [
+        "Event with self check-in enabled and check-in window currently open",
+        "Participant logged in with Registered status for the event",
+        "Event in InProgress or equivalent state allowing check-in"
+      ],
+      "steps": [
+        "Navigate to event self check-in entry page (Flow 4 step 1)",
+        "System verifies event and registration context (Flow 4 step 2)",
+        "Trigger check-in action via primary control (Flow 4 step 3)",
+        "Observe success confirmation and check-in status display (Flow 4 step 4)"
+      ],
+      "expected": "UI shows check-in succeeded with visible timestamp or time-of-check-in indicator; registration status reflects checked-in state without manual page reload beyond normal client refresh",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-14-007",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["FR-14"],
       "title": "POST self-checkin rejected when self-service check-in is disabled on event",
@@ -124,9 +153,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-14-007",
+      "id": "TC-FR-14-008",
       "category": "edge",
       "layer": "integration",
+      "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["FR-14", "FR-15", "AC-06", "BR-10"],
       "title": "Self check-in outside configured window is rejected with CHECKIN_WINDOW_CLOSED",
@@ -144,9 +174,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-14-008",
+      "id": "TC-FR-14-009",
       "category": "edge",
       "layer": "integration",
+      "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["FR-14", "BR-11"],
       "title": "Second self check-in attempt for same registration is rejected after first success",
@@ -164,9 +195,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-14-009",
+      "id": "TC-FR-14-010",
       "category": "edge",
       "layer": "integration",
+      "technique": "concurrency",
       "priority": "P0",
       "traceability": ["FR-14", "BR-11", "NFR-02"],
       "title": "Concurrent self check-in requests yield at most one valid record",
@@ -184,9 +216,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-14-010",
+      "id": "TC-FR-14-011",
       "category": "edge",
       "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["FR-14", "FR-25", "FR-26", "AC-15"],
       "title": "Unauthenticated POST self-checkin returns 401",
@@ -202,28 +235,11 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-14-011",
-      "category": "edge",
-      "layer": "e2e",
-      "priority": "P0",
-      "traceability": ["FR-14", "FR-26"],
-      "title": "Participant without Registered registration for event cannot self check-in",
-      "preconditions": [
-        "Event rule config enables participant self check-in",
-        "Event InProgress with active check-in window",
-        "Authenticated participant JWT with no active registration (never registered, cancelled, or waitlisted only) for the event"
-      ],
-      "steps": [
-        "POST /api/v1/events/{eventId}/self-checkin with participant Authorization bearer token"
-      ],
-      "expected": "HTTP 404 or 422 with typed domain error indicating no checkinable registration; no CheckinRecord created; participant can only operate on own registration data per FR-26",
-      "edgeCase": true
-    },
-    {
       "id": "TC-FR-14-012",
       "category": "edge",
       "layer": "e2e",
-      "priority": "P1",
+      "technique": "rbac-negative",
+      "priority": "P0",
       "traceability": ["FR-14", "FR-25"],
       "title": "OrganizerStaff JWT cannot invoke participant self-checkin endpoint",
       "preconditions": [
@@ -241,6 +257,26 @@
       "id": "TC-FR-14-013",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-14", "FR-26"],
+      "title": "Participant without Registered registration for event cannot self check-in",
+      "preconditions": [
+        "Event rule config enables participant self check-in",
+        "Event InProgress with active check-in window",
+        "Authenticated participant JWT with no active registration (never registered, cancelled, or waitlisted only) for the event"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/self-checkin with participant Authorization bearer token"
+      ],
+      "expected": "HTTP 404 or 422 with typed domain error indicating no checkinable registration; no CheckinRecord created; participant can only operate on own registration data per FR-26",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-14-014",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["FR-14"],
       "title": "Self check-in rejected when registration is not in Registered state",
@@ -256,9 +292,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-14-014",
+      "id": "TC-FR-14-015",
       "category": "edge",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["FR-14", "FR-15", "AC-06", "BR-10"],
       "title": "Self check-in UI displays blocking reason when window is closed",
@@ -276,9 +313,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-14-015",
+      "id": "TC-FR-14-016",
       "category": "edge",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["FR-14"],
       "title": "Self check-in UI unavailable or blocked when self-service is disabled",
@@ -295,9 +333,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-14-016",
+      "id": "TC-FR-14-017",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P1",
       "traceability": ["FR-14", "FR-16", "BR-13"],
       "title": "Self check-in persists audit metadata with participant actor and method Self",
@@ -314,9 +353,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-14-017",
+      "id": "TC-FR-14-018",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P1",
       "traceability": ["FR-14", "NFR-02"],
       "title": "Self check-in write and registration CheckedIn transition commit atomically",
@@ -333,9 +373,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-14-018",
+      "id": "TC-FR-14-019",
       "category": "non-functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P1",
       "traceability": ["FR-14", "NFR-02"],
       "title": "Idempotent self check-in retry with same Idempotency-Key returns consistent snapshot",
@@ -353,9 +394,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-14-019",
+      "id": "TC-FR-14-020",
       "category": "non-functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P1",
       "traceability": ["FR-14", "NFR-13", "AC-05"],
       "title": "Self check-in success returns immediate actionable feedback without polling",
@@ -373,9 +415,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-14-020",
+      "id": "TC-FR-14-021",
       "category": "non-functional",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["FR-14", "NFR-13", "BR-10"],
       "title": "Failed self check-in returns immediate reason code not generic error",
@@ -393,9 +436,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-14-021",
+      "id": "TC-FR-14-022",
       "category": "edge",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P0",
       "traceability": ["FR-14", "FR-15", "AC-06", "BR-10"],
       "title": "Self check-in UI disables primary action at checkinCloseAt when API excludes close instant",
@@ -414,14 +458,15 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-14-022",
+      "id": "TC-FR-14-023",
       "category": "functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["FR-14", "FR-26"],
       "title": "Dev JWT sub alias participant-1 self check-in succeeds when registration stored under resolved UUID",
       "preconditions": [
-        "Event InProgress with active check-in window",
+        "Event InProgress with active check-in window and self check-in enabled",
         "Participant registered via dev sub participant-1; registration row participant_id is resolveActorId(participant-1)",
         "Dev JWT with sub participant-1 and Participant role",
         "No prior check-in for the registration"
