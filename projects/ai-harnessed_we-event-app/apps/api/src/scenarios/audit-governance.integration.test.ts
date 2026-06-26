@@ -187,7 +187,7 @@ describe("audit HTTP scenario", () => {
     assert.equal(ruleChange.reasonCode, "CAPACITY_CHANGE");
   });
 
-  it("FR-25: OrganizerStaff cannot access audit logs but can read status history", async () => {
+  it("FR-25, FR-23: OrganizerStaff cannot access audit logs but can read status history", async () => {
     const denied = await app.inject({
       method: "GET",
       url: `${API_BASE_PATH}/events/${eventId}/audit-logs`,

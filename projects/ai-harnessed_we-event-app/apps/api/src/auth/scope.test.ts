@@ -5,6 +5,7 @@ import { resolveActorId } from "./resolve-actor-id.js";
 import {
   assertEventScope,
   assertParticipantOwnership,
+  assertRegistrationScope,
 } from "./scope.js";
 import type { JwtPayload } from "./types.js";
 
@@ -45,6 +46,43 @@ describe("participant scope", () => {
   });
 });
 
+describe("registration scope", () => {
+  const registrationId = "00000000-0000-0000-0000-000000000020";
+  const participantSub = "participant-a";
+  const participantId = resolveActorId(participantSub);
+
+  const participantActor: JwtPayload = {
+    sub: participantSub,
+    role: "Participant",
+  };
+
+  it("FR-26: assertRegistrationScope permits participant for own registrationId", () => {
+    assert.doesNotThrow(() =>
+      assertRegistrationScope(participantActor, registrationId, participantId),
+    );
+    assert.doesNotThrow(() =>
+      assertRegistrationScope(participantActor, registrationId, participantSub),
+    );
+  });
+
+  it("FR-26: assertRegistrationScope rejects participant for another participant registrationId", () => {
+    const otherParticipantId = resolveActorId("participant-b");
+    assert.throws(
+      () =>
+        assertRegistrationScope(
+          participantActor,
+          registrationId,
+          otherParticipantId,
+        ),
+      (error: unknown) =>
+        error instanceof ApiError &&
+        error.code === "FORBIDDEN" &&
+        error.statusCode === 403 &&
+        error.details.registrationId === registrationId,
+    );
+  });
+});
+
 describe("event scope", () => {
   const eventId = "00000000-0000-0000-0000-000000000010";
 
@@ -53,7 +91,7 @@ describe("event scope", () => {
     assert.doesNotThrow(() => assertEventScope(admin, eventId));
   });
 
-  it("FR-25: OrganizerStaff limited to assigned events", () => {
+  it("FR-25, FR-27: OrganizerStaff limited to assigned events", () => {
     const staff: JwtPayload = {
       sub: "staff-1",
       role: "OrganizerStaff",
@@ -65,7 +103,9 @@ describe("event scope", () => {
       () =>
         assertEventScope(staff, "00000000-0000-0000-0000-000000000099"),
       (error: unknown) =>
-        error instanceof ApiError && error.code === "FORBIDDEN",
+        error instanceof ApiError &&
+        error.code === "FORBIDDEN" &&
+        error.statusCode === 403,
     );
   });
 

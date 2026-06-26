@@ -81,19 +81,27 @@ describe("api foundation", () => {
 
   it("FR-25: enforces role-based access on protected admin routes", async () => {
     const participantToken = await signDevToken(app, "participant-1", "Participant");
+    const staffToken = await signDevToken(
+      app,
+      "staff-foundation-1",
+      "OrganizerStaff",
+      ["00000000-0000-0000-0000-000000000010"],
+    );
     const adminToken = await signDevToken(
       app,
       "00000000-0000-0000-0000-000000000099",
       "OrganizerAdmin",
     );
 
-    const denied = await app.inject({
-      method: "GET",
-      url: `${API_BASE_PATH}/admin/status`,
-      headers: { authorization: `Bearer ${participantToken}` },
-    });
-    assert.equal(denied.statusCode, 403);
-    assert.equal(parseError(denied.body).error.code, "FORBIDDEN");
+    for (const token of [participantToken, staffToken]) {
+      const denied = await app.inject({
+        method: "GET",
+        url: `${API_BASE_PATH}/admin/status`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(denied.statusCode, 403);
+      assert.equal(parseError(denied.body).error.code, "FORBIDDEN");
+    }
 
     const allowed = await app.inject({
       method: "GET",
@@ -106,9 +114,71 @@ describe("api foundation", () => {
     assert.equal(body.role, "OrganizerAdmin");
   });
 
+  it("FR-25: enforces event scope for organizer staff", async () => {
+    const assignedEventId = "00000000-0000-0000-0000-000000000010";
+    const unassignedEventId = "00000000-0000-0000-0000-000000000099";
+    const staffToken = await signDevToken(app, "staff-scope-1", "OrganizerStaff", [
+      assignedEventId,
+    ]);
+    const adminToken = await signDevToken(
+      app,
+      "00000000-0000-0000-0000-000000000098",
+      "OrganizerAdmin",
+    );
+
+    const staffAllowed = await app.inject({
+      method: "GET",
+      url: `${API_BASE_PATH}/events/${assignedEventId}/access`,
+      headers: { authorization: `Bearer ${staffToken}` },
+    });
+    assert.equal(staffAllowed.statusCode, 200);
+
+    const staffDenied = await app.inject({
+      method: "GET",
+      url: `${API_BASE_PATH}/events/${unassignedEventId}/access`,
+      headers: { authorization: `Bearer ${staffToken}` },
+    });
+    assert.equal(staffDenied.statusCode, 403);
+    assert.equal(parseError(staffDenied.body).error.code, "FORBIDDEN");
+
+    const adminAllowed = await app.inject({
+      method: "GET",
+      url: `${API_BASE_PATH}/events/${unassignedEventId}/access`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    assert.equal(adminAllowed.statusCode, 200);
+  });
+
+  it("FR-26: GET /me returns authenticated actor profile with roles", async () => {
+    const adminToken = await signDevToken(
+      app,
+      "00000000-0000-0000-0000-000000000097",
+      "OrganizerAdmin",
+    );
+
+    const response = await app.inject({
+      method: "GET",
+      url: `${API_BASE_PATH}/me`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+
+    assert.equal(response.statusCode, 200);
+    const body = JSON.parse(response.body) as {
+      actorId: string;
+      role: string;
+      roles?: string[];
+    };
+    assert.equal(body.role, "OrganizerAdmin");
+    assert.ok(body.actorId);
+    if (body.roles) {
+      assert.ok(body.roles.includes("OrganizerAdmin"));
+    }
+  });
+
   it("FR-26: participant can only access own registration scope", async () => {
     const ownSub = "participant-scope-a";
     const otherSub = "participant-scope-b";
+    const registrationId = "00000000-0000-0000-0000-000000000030";
     const token = await signDevToken(app, ownSub, "Participant");
 
     const ownResponse = await app.inject({
@@ -125,5 +195,20 @@ describe("api foundation", () => {
     });
     assert.equal(otherResponse.statusCode, 403);
     assert.equal(parseError(otherResponse.body).error.code, "FORBIDDEN");
+
+    const ownRegistration = await app.inject({
+      method: "GET",
+      url: `${API_BASE_PATH}/registrations/${registrationId}/access?participantId=${encodeURIComponent(resolveActorId(ownSub))}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    assert.equal(ownRegistration.statusCode, 200);
+
+    const otherRegistration = await app.inject({
+      method: "GET",
+      url: `${API_BASE_PATH}/registrations/${registrationId}/access?participantId=${encodeURIComponent(resolveActorId(otherSub))}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    assert.equal(otherRegistration.statusCode, 403);
+    assert.equal(parseError(otherRegistration.body).error.code, "FORBIDDEN");
   });
 });

@@ -6,22 +6,30 @@ import type { JwtPayload } from "./types.js";
  * FR-26: Participants may only access their own registration-related records.
  * Other roles bypass this check and use event-scope or role guards instead.
  */
-export function assertParticipantOwnership(
+export function assertRegistrationScope(
   actor: JwtPayload,
-  participantId: string,
+  registrationId: string,
+  registrationParticipantId: string,
 ): void {
   if (actor.role !== "Participant") {
     return;
   }
 
-  if (!actorIdsMatch(actor.sub, participantId)) {
+  if (!actorIdsMatch(actor.sub, registrationParticipantId)) {
     throw new ApiError({
       code: "FORBIDDEN",
       message: "You can only access your own registration data.",
       statusCode: 403,
-      details: { participantId },
+      details: { registrationId, participantId: registrationParticipantId },
     });
   }
+}
+
+export function assertParticipantOwnership(
+  actor: JwtPayload,
+  participantId: string,
+): void {
+  assertRegistrationScope(actor, participantId, participantId);
 }
 
 /**
