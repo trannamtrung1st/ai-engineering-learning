@@ -14,8 +14,9 @@ const OPEN = "2026-06-01T09:00:00.000Z";
 const CLOSE = "2026-06-01T17:00:00.000Z";
 const MID = new Date("2026-06-01T12:00:00.000Z").getTime();
 
+/** Traceability: AC-01, AC-05, AC-08, FR-10, FR-28, FR-29 and related BR/NFR tags. */
 describe("participant UX gating rules", () => {
-  describe("AC-01 / FR-10 registration", () => {
+  describe("AC-01 / FR-10 / BR-02 registration", () => {
     it("allows register when event is open, window active, and no active registration", () => {
       assert.equal(
         canRegister("RegistrationOpen", false, OPEN, CLOSE, null, MID),
@@ -38,7 +39,7 @@ describe("participant UX gating rules", () => {
     });
   });
 
-  describe("AC-05 self check-in", () => {
+  describe("AC-05 / FR-13 / FR-14 / FR-15 / FR-16 self check-in", () => {
     it("allows check-in for registered participant during in-progress event and window", () => {
       assert.equal(
         canSelfCheckIn("InProgress", "Registered", OPEN, CLOSE, MID),
@@ -55,7 +56,7 @@ describe("participant UX gating rules", () => {
     });
   });
 
-  describe("AC-08 feedback", () => {
+  describe("AC-08 / FR-19 / BR-15 / BR-16 feedback", () => {
     it("allows feedback for attended participant after event completion within window", () => {
       assert.equal(
         canSubmitFeedback("Completed", "Attended", OPEN, CLOSE, MID),
@@ -71,7 +72,7 @@ describe("participant UX gating rules", () => {
     });
   });
 
-  describe("FR-28 / FR-29 supporting rules", () => {
+  describe("FR-28 / FR-29 / FR-31 / NFR-12 supporting rules", () => {
     it("isWithinTimeWindow returns true only inside open/close bounds", () => {
       assert.equal(isWithinTimeWindow(OPEN, CLOSE, MID), true);
       assert.equal(
@@ -91,6 +92,44 @@ describe("participant UX gating rules", () => {
     it("canViewEligibility requires completed event and attended/absent registration", () => {
       assert.equal(canViewEligibility("Completed", "Attended"), true);
       assert.equal(canViewEligibility("Completed", "Registered"), false);
+      assert.equal(canViewEligibility("Completed", "CheckedIn"), false);
+    });
+  });
+
+  describe("FR-29 my registrations quick actions", () => {
+    it("check-in link only when event is in progress and window is open", () => {
+      assert.equal(
+        canSelfCheckIn("InProgress", "Registered", OPEN, CLOSE, MID),
+        true,
+      );
+      assert.equal(
+        canSelfCheckIn("RegistrationOpen", "Registered", OPEN, CLOSE, MID),
+        false,
+      );
+      assert.equal(
+        canSelfCheckIn("InProgress", "Attended", OPEN, CLOSE, MID),
+        false,
+      );
+    });
+
+    it("feedback link only for attended participants on completed events within window", () => {
+      assert.equal(
+        canSubmitFeedback("Completed", "Attended", OPEN, CLOSE, MID),
+        true,
+      );
+      assert.equal(
+        canSubmitFeedback("InProgress", "Attended", OPEN, CLOSE, MID),
+        false,
+      );
+      assert.equal(
+        canSubmitFeedback("Completed", "Registered", OPEN, CLOSE, MID),
+        false,
+      );
+    });
+
+    it("eligibility link only after event completion for attended or absent", () => {
+      assert.equal(canViewEligibility("Completed", "Absent"), true);
+      assert.equal(canViewEligibility("InProgress", "Attended"), false);
     });
   });
 });

@@ -25,7 +25,7 @@ import {
  * Flow B (testing plan §6): full event → waitlist entry → cancellation →
  * auto promotion → check-in.
  */
-describe("Flow B — waitlist promotion (AC-02, AC-03)", () => {
+describe("Flow B — waitlist promotion (AC-02, AC-03, FR-11, BR-07, FR-12)", () => {
   let ctx: E2EContext;
   let organizerToken: string;
 
@@ -111,7 +111,7 @@ describe("Flow B — waitlist promotion (AC-02, AC-03)", () => {
       payload: {},
       idempotencyKey: newIdempotencyKey(),
     });
-    assertOk(cancelResponse.statusCode, cancelResponse.body, "cancel holder");
+    assertOk(cancelResponse.statusCode, cancelResponse.body, "FR-11 / BR-07 cancel holder");
     const cancelBody = parseJson<{
       promoted: { registrationId: string; state: string } | null;
     }>(cancelResponse.body);

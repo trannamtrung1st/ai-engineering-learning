@@ -3,6 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   VALIDATION_ERROR_CODES,
+  type EventState,
   type RegistrationState,
 } from "@we-event/domain";
 import type { Pool, PoolClient, QueryResult } from "pg";
@@ -700,8 +701,15 @@ export interface ParticipantRegistrationRow {
   registrationId: string;
   eventId: string;
   eventName: string;
+  eventState: EventState;
   state: RegistrationState;
   updatedAt: string;
+  waitlistPosition: number | null;
+  reasonText: string | null;
+  checkinOpenAt: string;
+  checkinCloseAt: string;
+  feedbackOpenAt: string;
+  feedbackCloseAt: string;
 }
 
 export interface ListParticipantRegistrationsResult {
@@ -735,9 +743,25 @@ export async function listRegistrationsForParticipant(
 
   const listParams = [...params, options.limit, options.offset];
   const result = await client.query(
-    `SELECT r.id, r.event_id, r.state, r.updated_at, e.name AS event_name
+    `SELECT r.id,
+            r.event_id,
+            r.state,
+            r.updated_at,
+            r.status_reason_text,
+            e.name AS event_name,
+            e.state AS event_state,
+            c.checkin_open_at,
+            c.checkin_close_at,
+            c.feedback_open_at,
+            c.feedback_close_at,
+            w.position AS waitlist_position
      FROM registrations r
      INNER JOIN events e ON e.id = r.event_id
+     INNER JOIN event_rule_configs c ON c.event_id = e.id
+     LEFT JOIN waitlist_entries w
+       ON w.registration_id = r.id
+      AND w.promoted_at IS NULL
+      AND w.expired_at IS NULL
      ${where}
      ORDER BY ${options.sortColumn} ${options.sortDirection}
      LIMIT $${paramIndex++} OFFSET $${paramIndex}`,
@@ -749,8 +773,15 @@ export async function listRegistrationsForParticipant(
       registrationId: row.id as string,
       eventId: row.event_id as string,
       eventName: row.event_name as string,
+      eventState: row.event_state as EventState,
       state: row.state as RegistrationState,
       updatedAt: (row.updated_at as Date).toISOString(),
+      waitlistPosition: (row.waitlist_position as number | null) ?? null,
+      reasonText: (row.status_reason_text as string | null) ?? null,
+      checkinOpenAt: (row.checkin_open_at as Date).toISOString(),
+      checkinCloseAt: (row.checkin_close_at as Date).toISOString(),
+      feedbackOpenAt: (row.feedback_open_at as Date).toISOString(),
+      feedbackCloseAt: (row.feedback_close_at as Date).toISOString(),
     })),
     total,
   };

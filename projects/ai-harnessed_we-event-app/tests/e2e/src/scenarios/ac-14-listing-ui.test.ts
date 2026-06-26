@@ -23,10 +23,10 @@ function readRepoFile(relativePath: string): string {
 }
 
 /**
- * AC-14: listing pages expose prev/next controls and use server-driven pagination
- * instead of rendering unbounded client-side datasets.
+ * AC-14 / FR-28 / FR-29 / FR-31 / NFR-05 / NFR-16: listing pages expose prev/next controls
+ * and use server-driven pagination instead of rendering unbounded client-side datasets.
  */
-describe("AC-14 — listing page pagination contract", () => {
+describe("AC-14 — listing page pagination contract (FR-31, NFR-05, NFR-16)", () => {
   it("participant listing pages render Pagination with server page params", () => {
     for (const pagePath of PARTICIPANT_LISTING_PAGES) {
       const source = readRepoFile(pagePath);

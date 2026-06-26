@@ -88,7 +88,7 @@ function buildCheckin(
 }
 
 describe("checkin validation", () => {
-  it("assertCheckinWindowOpen rejects out-of-window check-in (AC-06)", () => {
+  it("assertCheckinWindowOpen rejects out-of-window check-in (AC-06, FR-15)", () => {
     const now = Date.now();
     const event = buildEvent({
       ruleConfig: {
@@ -108,7 +108,7 @@ describe("checkin validation", () => {
     );
   });
 
-  it("assertCheckinWindowOpen allows in-window check-in", () => {
+  it("assertCheckinWindowOpen allows in-window check-in (FR-13, FR-14)", () => {
     const event = buildEvent();
     assert.doesNotThrow(() => assertCheckinWindowOpen(event));
   });
@@ -140,7 +140,7 @@ describe("checkin validation", () => {
     );
   });
 
-  it("assertSelfCheckinAllowed requires InProgress event", () => {
+  it("assertSelfCheckinAllowed requires InProgress event (FR-16)", () => {
     const event = buildEvent({ state: "RegistrationOpen" });
     assert.throws(
       () => assertSelfCheckinAllowed(event),

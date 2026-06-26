@@ -26,8 +26,15 @@ export interface MyRegistrationListItem {
   registrationId: string;
   eventId: string;
   eventName: string;
+  eventState: EventState;
   state: RegistrationState;
   updatedAt: string;
+  waitlistPosition: number | null;
+  reasonText: string | null;
+  checkinOpenAt: string;
+  checkinCloseAt: string;
+  feedbackOpenAt: string;
+  feedbackCloseAt: string;
 }
 
 export interface FetchEventsParams {

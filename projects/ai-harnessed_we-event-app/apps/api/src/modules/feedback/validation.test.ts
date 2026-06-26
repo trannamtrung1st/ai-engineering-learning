@@ -7,6 +7,7 @@ import type { RegistrationRow } from "../registration/types.js";
 import {
   assertAnswersValid,
   assertFeedbackWindowOpen,
+  assertNoDuplicateOutsideWindow,
   assertRegistrationFeedbackEligible,
 } from "./validation.js";
 
@@ -70,7 +71,7 @@ function buildRegistration(
 }
 
 describe("feedback validation", () => {
-  it("rejects feedback outside the configured window", () => {
+  it("rejects feedback outside the configured window (FR-19, BR-15)", () => {
     const event = buildEvent({
       ruleConfig: {
         ...buildEvent().ruleConfig,
@@ -89,7 +90,7 @@ describe("feedback validation", () => {
     );
   });
 
-  it("rejects feedback from non-attended registrations", () => {
+  it("rejects feedback from non-attended registrations (BR-15)", () => {
     assert.throws(
       () =>
         assertRegistrationFeedbackEligible(
@@ -109,6 +110,31 @@ describe("feedback validation", () => {
       (error: unknown) => {
         assert.ok(error instanceof ApiError);
         assert.equal(error.code, "INVALID_INPUT");
+        return true;
+      },
+    );
+  });
+
+  it("assertNoDuplicateOutsideWindow rejects resubmit when updates are not allowed (BR-16)", () => {
+    const now = new Date().toISOString();
+    assert.throws(
+      () =>
+        assertNoDuplicateOutsideWindow(
+          {
+            id: "00000000-0000-0000-0000-000000000050",
+            eventId: "00000000-0000-0000-0000-000000000010",
+            registrationId: "00000000-0000-0000-0000-000000000020",
+            participantId: "00000000-0000-0000-0000-000000000030",
+            payload: { q1: 4 },
+            submittedAt: now,
+            createdAt: now,
+            updatedAt: now,
+          },
+          false,
+        ),
+      (error: unknown) => {
+        assert.ok(error instanceof ApiError);
+        assert.equal(error.code, VALIDATION_ERROR_CODES.FEEDBACK_DUPLICATE);
         return true;
       },
     );

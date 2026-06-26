@@ -442,9 +442,17 @@
         "unit": [
           "apps/web/src/lib/participant-rules.test.ts"
         ],
+        "integration": [
+          "apps/api/src/modules/registration/registration.integration.test.ts"
+        ],
         "component": [
           "apps/web/src/components/participant/event-card.test.tsx",
           "apps/web/src/components/ui/pagination.test.tsx"
+        ],
+        "e2e": [
+          "tests/e2e/src/scenarios/participant-journeys.test.ts",
+          "tests/e2e/src/scenarios/flow-a-lifecycle.test.ts",
+          "tests/e2e/src/scenarios/ac-14-listing-ui.test.ts"
         ],
         "acceptanceTags": [
           "AC-01",

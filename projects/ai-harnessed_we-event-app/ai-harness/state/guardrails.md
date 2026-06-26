@@ -77,3 +77,4 @@ Lessons learned across harness iterations. Read before every implementer session
 - [web-design-system-shell] Browser test failed — see 20260626T072443Z-browser-test.json
 - [web-participant-journeys] Computational checks failed — see 20260626T074243Z-checks.json
 - [web-participant-journeys] Computational checks failed — see 20260626T075027Z-checks.json
+- [web-participant-journeys] Browser test failed — see 20260626T080428Z-browser-test.json

@@ -94,7 +94,7 @@ export default function BrowseEventsPage() {
             id="event-search"
             value={searchInput}
             onChange={(event) => setSearchInput(event.target.value)}
-            placeholder="Search by name, location, or description"
+            placeholder="Search by name or location"
           />
         </Field>
         <Field id="event-state-filter" label="Event state" className="min-w-[12rem]">

@@ -9,6 +9,7 @@ import { RegistrationStateBadge } from "@/components/participant/registration-st
 import { FilterBar } from "@/components/layout/filter-bar";
 import { EmptyFailureBlock } from "@/components/layout/empty-failure-block";
 import { PageHeader } from "@/components/layout/page-header";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Pagination } from "@/components/ui/pagination";
@@ -23,7 +24,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useLiveQuery } from "@/hooks/use-live-query";
 import { registrationStateLabel } from "@/lib/domain-labels";
 import { formatDateTime } from "@/lib/format";
-import { fetchMyRegistrations } from "@/lib/participant-api";
+import { fetchMyRegistrations, type MyRegistrationListItem } from "@/lib/participant-api";
+import {
+  canSelfCheckIn,
+  canSubmitFeedback,
+  canViewEligibility,
+} from "@/lib/participant-rules";
 import { queryKeys } from "@/lib/query-keys";
 import { useAuth } from "@/providers/auth-provider";
 
@@ -42,16 +48,26 @@ const REGISTRATION_STATE_FILTERS: Array<{
   { value: "CancelledByUser", label: "Cancelled" },
 ];
 
-function showCheckInLink(state: RegistrationState): boolean {
-  return state === "Registered" || state === "CheckedIn";
+function showCheckInLink(item: MyRegistrationListItem): boolean {
+  return canSelfCheckIn(
+    item.eventState,
+    item.state,
+    item.checkinOpenAt,
+    item.checkinCloseAt,
+  );
 }
 
-function showFeedbackLink(state: RegistrationState): boolean {
-  return state === "Attended";
+function showFeedbackLink(item: MyRegistrationListItem): boolean {
+  return canSubmitFeedback(
+    item.eventState,
+    item.state,
+    item.feedbackOpenAt,
+    item.feedbackCloseAt,
+  );
 }
 
-function showEligibilityLink(state: RegistrationState): boolean {
-  return state === "Attended" || state === "Absent" || state === "CheckedIn";
+function showEligibilityLink(item: MyRegistrationListItem): boolean {
+  return canViewEligibility(item.eventState, item.state);
 }
 
 export default function MyRegistrationsPage() {
@@ -192,8 +208,22 @@ export default function MyRegistrationsPage() {
                     </p>
                   ) : null}
 
+                  {item.waitlistPosition ? (
+                    <p className="mt-3 text-[length:var(--font-size-sm)] text-[var(--color-text-secondary)]">
+                      Queue position: {item.waitlistPosition}
+                    </p>
+                  ) : null}
+
+                  {item.reasonText ? (
+                    <div className="mt-3">
+                      <Alert variant="warning" title="Status note">
+                        {item.reasonText}
+                      </Alert>
+                    </div>
+                  ) : null}
+
                   <div className="mt-4 flex flex-wrap gap-2">
-                    {showCheckInLink(item.state) ? (
+                    {showCheckInLink(item) ? (
                       <Button asChild size="sm" variant="secondary">
                         <Link href={`/events/${item.eventId}/check-in`}>
                           <ClipboardCheck className="h-4 w-4" aria-hidden />
@@ -202,7 +232,7 @@ export default function MyRegistrationsPage() {
                       </Button>
                     ) : null}
 
-                    {showFeedbackLink(item.state) ? (
+                    {showFeedbackLink(item) ? (
                       <Button asChild size="sm" variant="secondary">
                         <Link href={`/events/${item.eventId}/feedback`}>
                           <MessageSquare className="h-4 w-4" aria-hidden />
@@ -211,7 +241,7 @@ export default function MyRegistrationsPage() {
                       </Button>
                     ) : null}
 
-                    {showEligibilityLink(item.state) ? (
+                    {showEligibilityLink(item) ? (
                       <Button asChild size="sm" variant="ghost">
                         <Link href={`/events/${item.eventId}/eligibility`}>
                           <ShieldCheck className="h-4 w-4" aria-hidden />

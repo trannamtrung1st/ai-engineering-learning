@@ -25,7 +25,7 @@ import {
   signDevToken,
 } from "../helpers/setup.js";
 
-describe("Acceptance matrix — capacity, check-in, attendance, eligibility, pagination", () => {
+describe("Acceptance matrix — capacity, check-in, attendance, eligibility, pagination (NFR-02, NFR-04, NFR-13, AC-15)", () => {
   let ctx: E2EContext;
   let organizerToken: string;
 
@@ -84,7 +84,7 @@ describe("Acceptance matrix — capacity, check-in, attendance, eligibility, pag
     assert.equal(list.total, capacity);
   });
 
-  it("AC-06: out-of-window check-in is rejected with canonical error code", async () => {
+  it("AC-06: out-of-window check-in is rejected with canonical error code (FR-14, FR-15)", async () => {
     const future = futureWindow(86_400_000);
 
     const { eventId } = await createDraftEvent(ctx.app, organizerToken, {

@@ -21,7 +21,7 @@ import {
  * Flow A (testing plan §6): draft → publish → open registration → register →
  * check-in → feedback → eligibility.
  */
-describe("Flow A — full participant lifecycle (AC-01, AC-05, AC-08, AC-09)", () => {
+describe("Flow A — full participant lifecycle (AC-01, AC-05, AC-08, AC-09, FR-13, FR-15, FR-19, BR-15, AC-15)", () => {
   let ctx: E2EContext;
   let organizerToken: string;
   let participantToken: string;
@@ -69,7 +69,7 @@ describe("Flow A — full participant lifecycle (AC-01, AC-05, AC-08, AC-09)", (
       payload: {},
       idempotencyKey: newIdempotencyKey(),
     });
-    assertOk(checkinResponse.statusCode, checkinResponse.body, "AC-05 check-in");
+    assertOk(checkinResponse.statusCode, checkinResponse.body, "AC-05 / FR-13 / FR-15 / FR-16 check-in");
     const checkin = parseJson<{ checkinAt: string; registrationState: string }>(
       checkinResponse.body,
     );
@@ -84,7 +84,7 @@ describe("Flow A — full participant lifecycle (AC-01, AC-05, AC-08, AC-09)", (
       token: participantToken,
       payload: { answers: { q1: 5, q2: "Excellent session" } },
     });
-    assertOk(feedbackResponse.statusCode, feedbackResponse.body, "AC-08 feedback");
+    assertOk(feedbackResponse.statusCode, feedbackResponse.body, "AC-08 / FR-19 / BR-15 feedback");
     const feedback = parseJson<{ submittedAt: string }>(feedbackResponse.body);
     assert.ok(feedback.submittedAt);
 

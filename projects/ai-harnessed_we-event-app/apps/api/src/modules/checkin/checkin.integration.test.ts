@@ -107,7 +107,7 @@ async function createCheckinableEvent(): Promise<{
   };
 }
 
-describe("checkin integration", () => {
+describe("checkin integration (NFR-02, BR-13)", () => {
   before(async () => {
     const databaseUrl =
       process.env.DATABASE_URL ??
@@ -124,7 +124,7 @@ describe("checkin integration", () => {
     await closeDb();
   });
 
-  it("AC-05: in-window check-in is recorded with timestamp", async () => {
+  it("AC-05 / FR-13 / FR-15: in-window check-in is recorded with timestamp", async () => {
     const { event, participantId, registrationId } =
       await createCheckinableEvent();
 
@@ -140,7 +140,7 @@ describe("checkin integration", () => {
     assert.equal(result.method, "Staff");
   });
 
-  it("AC-06: out-of-window check-in is rejected", async () => {
+  it("AC-06 / FR-14 / FR-16: out-of-window check-in is rejected", async () => {
     const windows = checkinWindows();
     const participantId = randomUUID();
     await ensureTestParticipant(participantId);
@@ -317,7 +317,7 @@ describe("checkin integration", () => {
     assert.equal(checkedInAfter?.state, "Attended");
   });
 
-  it("participant self check-in succeeds during InProgress", async () => {
+  it("participant self check-in succeeds during InProgress (FR-13, BR-13)", async () => {
     const { event, participantId, registrationId } =
       await createCheckinableEvent();
 

@@ -75,7 +75,7 @@ describe("registration validation", () => {
     assert.equal(isActiveRegistrationState("CancelledByUser"), false);
   });
 
-  it("assertRegistrationWindowOpen rejects non-open event states", () => {
+  it("assertRegistrationWindowOpen rejects non-open event states (BR-02)", () => {
     const event = buildEvent({ state: "Draft" });
     assert.throws(
       () => assertRegistrationWindowOpen(event),

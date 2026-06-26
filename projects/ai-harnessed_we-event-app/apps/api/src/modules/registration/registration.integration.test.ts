@@ -92,7 +92,7 @@ async function newParticipantId(): Promise<string> {
   return participantId;
 }
 
-describe("registration integration", () => {
+describe("registration integration (NFR-02, FR-31)", () => {
   before(async () => {
     const databaseUrl =
       process.env.DATABASE_URL ??
@@ -108,7 +108,7 @@ describe("registration integration", () => {
     await closeDb();
   });
 
-  it("AC-01: assigns Registered when seats are available", async () => {
+  it("AC-01 / BR-02: assigns Registered when seats are available", async () => {
     const event = await createRegistrationOpenEvent({ capacity: 5 });
     const participantId = await newParticipantId();
 
@@ -122,7 +122,7 @@ describe("registration integration", () => {
     assert.equal(result.waitlistPosition, null);
   });
 
-  it("AC-02: rejects registration when full and waitlist disabled (BR-05)", async () => {
+  it("AC-02 / FR-09: rejects registration when full and waitlist disabled (BR-05)", async () => {
     const event = await createRegistrationOpenEvent({
       capacity: 1,
       waitlistEnabled: false,
@@ -226,7 +226,7 @@ describe("registration integration", () => {
     assert.equal(waitlisted, attempts - capacity);
   });
 
-  it("promotes waitlisted participant FIFO when a seat is released", async () => {
+  it("FR-12 / BR-06: promotes waitlisted participant FIFO when a seat is released", async () => {
     const event = await createRegistrationOpenEvent({
       capacity: 1,
       waitlistEnabled: true,
@@ -276,7 +276,7 @@ describe("registration integration", () => {
     assert.equal(waitlist.items[0]?.position, 2);
   });
 
-  it("AC-13: paginated registrations and waitlist lists", async () => {
+  it("AC-13 / FR-31 / NFR-16: paginated registrations and waitlist lists", async () => {
     const event = await createRegistrationOpenEvent({
       capacity: 2,
       waitlistEnabled: true,
@@ -341,7 +341,7 @@ describe("registration integration", () => {
     );
   });
 
-  it("FR-10: registration-status returns null when participant is not registered", async () => {
+  it("FR-10 / BR-02: registration-status returns null when participant is not registered", async () => {
     const event = await createRegistrationOpenEvent({ capacity: 5 });
     const participantId = await newParticipantId();
 
@@ -359,7 +359,7 @@ describe("registration integration", () => {
     assert.equal(status.registration, null);
   });
 
-  it("FR-10: registration-status returns active registration after register", async () => {
+  it("FR-10 / NFR-09: registration-status returns active registration after register", async () => {
     const event = await createRegistrationOpenEvent({ capacity: 5 });
     const participantId = await newParticipantId();
     const participantContext = {
@@ -382,7 +382,7 @@ describe("registration integration", () => {
     assert.equal(status.registration.participantId, participantId);
   });
 
-  it("AC-08: registration-status returns Attended after event completion", async () => {
+  it("AC-08 / FR-19 / BR-15: registration-status returns Attended after event completion", async () => {
     const windows = defaultWindows();
     const participantId = await newParticipantId();
     const participantContext = {
@@ -496,5 +496,32 @@ describe("registration integration", () => {
     });
     assert.deepEqual(beyond.items, []);
     assert.equal(beyond.total, 2);
+  });
+
+  it("FR-29 / FR-31 / NFR-16: my registrations includes gating context and waitlist details", async () => {
+    const participantId = await newParticipantId();
+    const participantContext = {
+      actorId: participantId,
+      actorRole: "Participant" as const,
+    };
+
+    const event = await createRegistrationOpenEvent({ capacity: 5 });
+    await registrationService.register(event.id, participantId, participantContext);
+
+    const page = await registrationService.listMyRegistrations(participantId, {
+      page: "1",
+      pageSize: "20",
+    });
+
+    const item = page.items.find((row) => row.eventId === event.id);
+    assert.ok(item);
+    assert.equal(item.state, "Registered");
+    assert.equal(item.eventState, "RegistrationOpen");
+    assert.ok(item.checkinOpenAt);
+    assert.ok(item.checkinCloseAt);
+    assert.ok(item.feedbackOpenAt);
+    assert.ok(item.feedbackCloseAt);
+    assert.equal(item.waitlistPosition, null);
+    assert.equal(item.reasonText, null);
   });
 });

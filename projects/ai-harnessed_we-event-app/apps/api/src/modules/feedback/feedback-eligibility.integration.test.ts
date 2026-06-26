@@ -126,7 +126,7 @@ async function createCompletedEventWithAttendee(options?: {
   };
 }
 
-describe("feedback and eligibility integration", () => {
+describe("feedback and eligibility integration (FR-19, BR-15, BR-16)", () => {
   before(async () => {
     const databaseUrl =
       process.env.DATABASE_URL ??
@@ -145,7 +145,7 @@ describe("feedback and eligibility integration", () => {
     await closeDb();
   });
 
-  it("AC-08: participant can submit feedback within feedback window", async () => {
+  it("AC-08 / FR-19 / BR-15: participant can submit feedback within feedback window", async () => {
     const { event, participantId } = await createCompletedEventWithAttendee();
 
     const result = await feedbackService.submit(
@@ -161,7 +161,7 @@ describe("feedback and eligibility integration", () => {
     assert.deepEqual(result.answers, { q1: 5, q2: "Great session" });
   });
 
-  it("rejects feedback outside the feedback window", async () => {
+  it("rejects feedback outside the feedback window (BR-15)", async () => {
     const windows = eventWindows();
     const participantId = randomUUID();
     await ensureTestParticipant(participantId);
@@ -236,6 +236,27 @@ describe("feedback and eligibility integration", () => {
         return true;
       },
     );
+  });
+
+  it("allows feedback update within the feedback window (BR-16 allows in-window edits)", async () => {
+    const { event, participantId } = await createCompletedEventWithAttendee();
+
+    const first = await feedbackService.submit(
+      event.id,
+      participantId,
+      { answers: { q1: 4 } },
+      { actorId: participantId, actorRole: "Participant" },
+    );
+
+    const updated = await feedbackService.submit(
+      event.id,
+      participantId,
+      { answers: { q1: 5 } },
+      { actorId: participantId, actorRole: "Participant" },
+    );
+
+    assert.equal(updated.feedbackId, first.feedbackId);
+    assert.deepEqual(updated.answers, { q1: 5 });
   });
 
   it("AC-09: eligibility evaluation returns Eligible with reason after feedback", async () => {
