@@ -1,8 +1,8 @@
 {
   "productItemId": "BR-03",
   "version": 1,
-  "docFingerprint": "sha256:2fa3a34949c25751d10f6f5b2619c6638b110526abebebb7f1b83749ae9b087b",
-  "generatedAt": "2026-06-26T12:55:22Z",
+  "docFingerprint": "sha256:e657fa128204c24311efead507e2ee01c1ac8f6463cc06d66184862bf864665e",
+  "generatedAt": "2026-06-26T17:50:33Z",
   "cases": [
     {
       "id": "TC-BR-03-001",
@@ -42,13 +42,13 @@
       "title": "Sequential registrations fill seats up to EventCapacity without overflow",
       "preconditions": [
         "Event is RegistrationOpen with configured EventCapacity N (e.g. N=5)",
-        "Zero existing Registered participants",
+        "Zero existing registrations in Registered state",
         "Registration window is active",
         "Each participant has no prior active registration for the event"
       ],
       "steps": [
-        "Register N distinct participants sequentially via registrationService.register",
-        "After each registration, query count of seat holders (Registered state) for the event in the database"
+        "Register N distinct participants sequentially via registrationService.register(eventId, participantId, actorContext)",
+        "After each registration, query count of registrations in Registered state for the event in the database"
       ],
       "expected": "Each of the N registrations receives state Registered; after the Nth registration Registered count equals EventCapacity exactly; no registration assigns Registered when count would exceed capacity",
       "edgeCase": false
@@ -72,8 +72,8 @@
         "New participant with no active registration"
       ],
       "steps": [
-        "Register one additional participant via registrationService.register",
-        "Query Registered seat-holder count for the event"
+        "Register one additional participant via registrationService.register(eventId, participantId, actorContext)",
+        "Query count of registrations in Registered state for the event"
       ],
       "expected": "New registration receives Waitlisted (not Registered); Registered count remains N (equals EventCapacity); BR-03 invariant holds",
       "edgeCase": false
@@ -98,7 +98,7 @@
       "steps": [
         "Record beforeState: Registered count = 2, Waitlisted count = 1",
         "Cancel one Registered registration to release a seat",
-        "Allow FIFO waitlist promotion within the cancellation transaction",
+        "Allow FIFO waitlist promotion atomically within the cancellation transaction (BR-08b)",
         "Record afterState: Registered count and participant states"
       ],
       "expected": "afterState Registered count remains 2 (equals EventCapacity); promoted participant moves from Waitlisted to Registered; total Registered never exceeds EventCapacity during or after promotion",
@@ -122,11 +122,11 @@
         "Valid OrganizerAdmin JWT scoped to the event"
       ],
       "steps": [
-        "Fire parallel POST /api/v1/events/{eventId}/registrations from all participants",
+        "Fire parallel POST /api/v1/events/{eventId}/registrations from all participants with Authorization bearer token and Idempotency-Key headers",
         "Count response bodies with state Registered versus Waitlisted",
         "GET /api/v1/events/{eventId}/registrations?state=Registered&page=1&pageSize=100 with organizer bearer token"
       ],
-      "expected": "Exactly 3 POST responses return HTTP 200 with state Registered; remaining responses are HTTP 200 Waitlisted or HTTP 422 per policy; organizer GET returns HTTP 200 with total Registered count equal to EventCapacity (3) and never greater",
+      "expected": "Exactly 3 POST responses return HTTP 200 with body containing state Registered; remaining successful POST responses return HTTP 200 with state Waitlisted and waitlistPosition >= 1; organizer GET returns HTTP 200 paginated envelope with items, total, page, pageSize, and totalPages where total Registered count equals EventCapacity (3) and never greater",
       "edgeCase": false
     },
     {
@@ -138,7 +138,8 @@
       "traceability": [
         "BR-03",
         "AC-04",
-        "BR-08"
+        "BR-08",
+        "FR-12"
       ],
       "title": "Flow B lifecycle maintains capacity ceiling through cancel and promotion",
       "preconditions": [
@@ -147,8 +148,8 @@
         "waitlistEnabled true"
       ],
       "steps": [
-        "Execute Flow B: Registered participant POST /api/v1/events/{eventId}/registrations/{registrationId}/cancel",
-        "Verify waitlisted participant is promoted to Registered via GET registration-status",
+        "Execute Flow B: Registered participant POST /api/v1/events/{eventId}/registrations/{registrationId}/cancel with Idempotency-Key header",
+        "Verify waitlisted participant is promoted to Registered via GET /api/v1/events/{eventId}/registration-status",
         "GET /api/v1/events/{eventId}/registrations?state=Registered as organizer at each step"
       ],
       "expected": "After promotion exactly one Registered participant exists; count equals EventCapacity (1) and never exceeds it at any step in the flow",
@@ -168,11 +169,11 @@
       "preconditions": [
         "Event is RegistrationOpen with EventCapacity 3 and waitlistEnabled true",
         "Ten or more distinct participants with no prior registration",
-        "Registration window is active"
+        "Registration window is active (BR-02 satisfied)"
       ],
       "steps": [
-        "Fire parallel registrationService.register calls from all participants simultaneously",
-        "Query countSeatHolders (Registered only) for the event in the database after all commits settle"
+        "Fire parallel registrationService.register(eventId, participantId, actorContext) calls from all participants simultaneously",
+        "Query count of registrations in Registered state for the event in the database after all commits settle"
       ],
       "expected": "Registered count is at most 3 and equals 3 when all attempts succeed; remaining registrations are Waitlisted; testing-plan §3 scenario row satisfied: capacity under heavy concurrent requests never exceeds configured capacity",
       "edgeCase": false
@@ -191,11 +192,11 @@
       "preconditions": [
         "Event RegistrationOpen with EventCapacity 3 and waitlistEnabled true",
         "12 or more unique participantIds with no prior registration",
-        "Parallel registrationService.register calls fired simultaneously"
+        "Parallel registrationService.register(eventId, participantId, actorContext) calls fired simultaneously"
       ],
       "steps": [
         "Execute Promise.allSettled on all concurrent register calls",
-        "Query countSeatHolders (Registered) for the event in the database"
+        "Query count of registrations in Registered state for the event in the database"
       ],
       "expected": "Registered count is at most 3 and equals 3 when all attempts succeed; exactly (attempts - capacity) registrations are Waitlisted; zero overflow beyond EventCapacity under contention",
       "edgeCase": true
@@ -211,14 +212,14 @@
       ],
       "title": "Post-insert capacity guard rolls back transaction on CAPACITY_EXCEEDED",
       "preconditions": [
-        "Registration module uses transactional BEGIN/COMMIT with post-insert Registered count check",
-        "Scenario where accept would push Registered count above EventCapacity"
+        "Race condition or guard bypass attempt where insert would push Registered count above EventCapacity",
+        "Registration module uses transactional BEGIN/COMMIT with post-insert count check per validation-rules BR-03"
       ],
       "steps": [
         "Trigger registration accept/promotion path that detects postCount > EventCapacity after insert",
         "Observe error and database state after rollback"
       ],
-      "expected": "ApiError with code CAPACITY_EXCEEDED and HTTP 422; transaction rolled back; no persisted Registered row causes count to exceed EventCapacity",
+      "expected": "ApiError with code CAPACITY_EXCEEDED and HTTP 422 (semantic rule violation per error-handling taxonomy); transaction rolled back; no persisted Registered row causes count to exceed EventCapacity",
       "edgeCase": true
     },
     {
@@ -258,9 +259,9 @@
         "Three distinct participants with no prior registration"
       ],
       "steps": [
-        "Register first participant → expect Registered",
-        "Register second and third participants concurrently",
-        "Query Registered count after each attempt"
+        "Register first participant via registrationService.register(eventId, participantId, actorContext) → expect Registered",
+        "Register second and third participants concurrently via registrationService.register",
+        "Query count of registrations in Registered state after each attempt"
       ],
       "expected": "Exactly one Registered row exists at all times; additional participants receive Waitlisted; Registered count never exceeds 1",
       "edgeCase": true
@@ -279,13 +280,14 @@
       "preconditions": [
         "Event EventCapacity 2 with two Registered participants",
         "waitlistEnabled false",
-        "New participant with valid JWT"
+        "New participant with valid JWT",
+        "Fresh Idempotency-Key header value"
       ],
       "steps": [
-        "POST /api/v1/events/{eventId}/registrations for the new participant",
+        "POST /api/v1/events/{eventId}/registrations for the new participant with Authorization bearer token and Idempotency-Key header",
         "GET /api/v1/events/{eventId}/registrations?state=Registered as organizer"
       ],
-      "expected": "HTTP 422 with REGISTRATION_REJECTED_FULL; Registered count remains 2 (at capacity, not above); no Registered row created for rejected request",
+      "expected": "HTTP 422 with error.code REGISTRATION_REJECTED_FULL, user-safe message, requestId, and timestamp per standard error contract; Registered count remains 2 (at capacity, not above); no Registered row created for rejected request",
       "edgeCase": true
     },
     {
@@ -303,10 +305,10 @@
         "Registration window still open"
       ],
       "steps": [
-        "Query countSeatHolders (Registered-only count)",
+        "Query count of registrations in Registered state for the event",
         "Separately count rows in Waitlisted, Cancelled, and other non-Registered states"
       ],
-      "expected": "Seat-holder count equals Registered rows only and equals EventCapacity; Waitlisted rows do not inflate Registered count toward or beyond capacity",
+      "expected": "Registered count equals EventCapacity exactly; Waitlisted rows do not inflate Registered count toward or beyond capacity",
       "edgeCase": true
     },
     {
@@ -325,8 +327,8 @@
         "Participant with no prior registration"
       ],
       "steps": [
-        "Attempt registrationService.register for a participant",
-        "Query Registered count for the event"
+        "Attempt registrationService.register(eventId, participantId, actorContext) for a participant",
+        "Query count of registrations in Registered state for the event"
       ],
       "expected": "No registration receives Registered state; participant is Waitlisted or rejected per waitlist policy; Registered count remains 0 and never exceeds EventCapacity",
       "edgeCase": true
@@ -344,11 +346,11 @@
       "title": "Capacity validation on accept/promotion executes atomically within one transaction",
       "preconditions": [
         "Event with EventCapacity 5",
-        "lockEventRuleConfig serializes concurrent writers per event"
+        "Event rule config row lock serializes concurrent writers per event"
       ],
       "steps": [
-        "Complete a successful registration that assigns Registered",
-        "Verify BEGIN/COMMIT wraps insert, post-insert count check, and audit write",
+        "Complete a successful registration that assigns Registered via registrationService.register(eventId, participantId, actorContext)",
+        "Verify BEGIN/COMMIT wraps insert, post-insert Registered count check, audit write, and waitlist enqueue (if any)",
         "Trigger a failed capacity guard and confirm ROLLBACK"
       ],
       "expected": "No intermediate state visible where Registered count exceeds EventCapacity; failed BR-03 guard results in full ROLLBACK with no partial seat consumption",
@@ -362,6 +364,7 @@
       "priority": "P0",
       "traceability": [
         "BR-03",
+        "AC-15",
         "FR-25"
       ],
       "title": "Unauthenticated registration attempts do not inflate Registered count",
@@ -373,7 +376,7 @@
         "Fire multiple parallel POST /api/v1/events/{eventId}/registrations without Authorization header",
         "GET /api/v1/events/{eventId}/registrations?state=Registered as organizer"
       ],
-      "expected": "All unauthenticated POST requests return HTTP 401 with standard error envelope; organizer GET shows Registered count unchanged at 1; no unauthorized registration rows affect capacity invariant",
+      "expected": "All unauthenticated POST requests return HTTP 401 with standard error envelope (code, message, requestId, timestamp); organizer GET shows Registered count unchanged at 1; no unauthorized registration rows affect capacity invariant",
       "edgeCase": true
     },
     {
@@ -389,15 +392,91 @@
       ],
       "title": "Organizer capacity meter shows Registered count never above EventCapacity",
       "preconditions": [
-        "Organizer logged in viewing event operations dashboard for an event at or near capacity",
+        "Organizer logged in viewing event operations dashboard for an event at or near capacity (FR-22)",
         "Event has known EventCapacity N and up to N Registered participants"
       ],
       "steps": [
-        "Navigate to organizer event detail or registrations view showing capacity meter",
-        "Observe registered versus capacity display",
-        "Trigger additional participant registration up to capacity via API or second browser session"
+        "Navigate to organizer event operations dashboard showing capacity meter and registration summary",
+        "Observe registeredSeats versus capacity display",
+        "Trigger additional participant registration up to capacity via API or second browser session",
+        "Refresh dashboard and verify registeredSeats and capacity fields"
       ],
-      "expected": "UI capacity meter shows Registered count less than or equal to EventCapacity at all times; when full, display indicates no remaining seats without showing registered > capacity",
+      "expected": "Dashboard capacity summary shows registeredSeats less than or equal to capacity at all times; when full, capacity meter indicates no remaining seats without showing registeredSeats greater than capacity; values align with GET /api/v1/events/{eventId}/dashboard contract",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-03-018",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P0",
+      "traceability": [
+        "BR-03",
+        "AC-02g",
+        "BR-06b"
+      ],
+      "title": "Concurrent waitlist promotion attempts never push Registered count above EventCapacity",
+      "preconditions": [
+        "Event EventCapacity 1 with one Registered and two Waitlisted participants",
+        "waitlistEnabled true",
+        "Registered participant cancels releasing exactly one seat"
+      ],
+      "steps": [
+        "Fire parallel promotion paths triggered by the single seat release (e.g. concurrent cancel side-effects or retrying promotion handlers)",
+        "Query count of registrations in Registered state after all attempts settle"
+      ],
+      "expected": "Exactly one promotion succeeds; Registered count equals EventCapacity (1) and never exceeds it; losing concurrent attempts return WAITLIST_ORDER_CONFLICT (HTTP 409) or equivalent retry-safe outcome without creating extra Registered rows",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-03-019",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": [
+        "BR-03",
+        "BR-08",
+        "FR-12"
+      ],
+      "title": "Capacity increase triggers waitlist promotion without exceeding new EventCapacity",
+      "preconditions": [
+        "Event RegistrationOpen with EventCapacity 2, two Registered, two Waitlisted",
+        "waitlistEnabled true",
+        "Organizer Admin increases EventCapacity to 4 with mandatory audit per BR-22"
+      ],
+      "steps": [
+        "Record beforeState: Registered count = 2, Waitlisted count = 2",
+        "Apply capacity increase creating two available seats and triggering FIFO waitlist promotion (FR-12)",
+        "Record afterState: Registered and Waitlisted counts"
+      ],
+      "expected": "afterState Registered count equals 4 (new EventCapacity) and never exceeds it; exactly two waitlisted participants promoted FIFO; remaining Waitlisted count is 0; BR-03 invariant holds throughout capacity increase and promotion",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-03-020",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": [
+        "BR-03",
+        "BR-08",
+        "BR-08b"
+      ],
+      "title": "CheckedIn seat-holder cancellation promotes FIFO while maintaining capacity ceiling",
+      "preconditions": [
+        "Event EventCapacity 2 with two CheckedIn participants and one Waitlisted",
+        "waitlistEnabled true",
+        "One CheckedIn participant can cancel before CancellationDeadline (BR-07)"
+      ],
+      "steps": [
+        "Record beforeState: Registered/CheckedIn seat-holder count = 2, Waitlisted count = 1",
+        "Cancel one CheckedIn registration to release a seat (BR-08 seat-holder path)",
+        "Allow FIFO waitlist promotion atomically within the cancellation transaction (BR-08b)",
+        "Record afterState: seat-holder count and participant states"
+      ],
+      "expected": "afterState seat-holder count remains 2 (equals EventCapacity); promoted participant moves from Waitlisted to Registered; total Registered never exceeds EventCapacity during or after promotion",
       "edgeCase": false
     }
   ]
