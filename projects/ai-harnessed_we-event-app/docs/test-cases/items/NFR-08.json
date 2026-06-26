@@ -1,8 +1,8 @@
 {
   "productItemId": "NFR-08",
   "version": 1,
-  "docFingerprint": "sha256:cff33cca15ef6cab3bccc14f79d25f9da5a6809dfeed7b72d03730ab2b6fe8fb",
-  "generatedAt": "2026-06-26T13:05:19Z",
+  "docFingerprint": "sha256:ec35d07745935d43ede5bc23381533cb15ad15eb3a8347bf5c6bc75ca315ea0f",
+  "generatedAt": "2026-06-26T18:01:52Z",
   "cases": [
     {
       "id": "TC-NFR-08-001",
@@ -124,23 +124,25 @@
     {
       "id": "TC-NFR-08-006",
       "category": "functional",
-      "layer": "unit",
-      "technique": "boundary-error",
+      "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
       "traceability": [
         "NFR-08",
-        "FR-26"
+        "FR-32"
       ],
-      "title": "JWT role selection uses highest-privilege role when user has multiple roles",
+      "title": "Multi-role user JWT grants highest-privilege organizer capabilities",
       "preconditions": [
-        "User role rows include both Participant and OrganizerAdmin for same userId",
-        "selectJwtRole function available in auth validation module"
+        "User account with both Participant and OrganizerAdmin role rows",
+        "Draft event owned by user's organization",
+        "Dual-role user credentials available for login"
       ],
       "steps": [
-        "Call selectJwtRole with roles array containing Participant and OrganizerAdmin entries",
-        "Inspect returned selected role"
+        "POST /api/v1/auth/login with dual-role user credentials",
+        "Inspect JWT profile roles in login response",
+        "POST /api/v1/events/{eventId}/publish with returned bearer token"
       ],
-      "expected": "Selected role is OrganizerAdmin; authorization decisions use highest-privilege role so organizer capabilities are not incorrectly downgraded to Participant",
+      "expected": "Login response reflects OrganizerAdmin as effective role; publish succeeds with HTTP 200; authorization decisions use highest-privilege role so organizer capabilities are not downgraded to Participant",
       "edgeCase": false
     },
     {
@@ -395,22 +397,23 @@
     {
       "id": "TC-NFR-08-018",
       "category": "edge",
-      "layer": "unit",
-      "technique": "boundary-error",
+      "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P0",
       "traceability": [
         "NFR-08",
-        "FR-27"
+        "FR-25"
       ],
-      "title": "assertEventScope rejects OrganizerStaff for unassigned event",
+      "title": "OrganizerAdmin cannot mutate events outside own organization scope",
       "preconditions": [
-        "JwtPayload role OrganizerStaff with assignedEventIds not containing target eventId",
-        "Valid eventId UUID for another event"
+        "Draft event owned by organization org-2",
+        "OrganizerAdmin JWT with organizationId org-1 (different organization)"
       ],
       "steps": [
-        "Call assertEventScope(staffActor, unassignedEventId)"
+        "POST /api/v1/events/{org2EventId}/publish with org-1 OrganizerAdmin bearer",
+        "Verify event state unchanged in database"
       ],
-      "expected": "Throws FORBIDDEN or equivalent authorization error; OrganizerStaff may only operate on assigned events per scope constraints section 3",
+      "expected": "HTTP 403 or 404; event remains Draft; OrganizerAdmin scope limited to organization-owned events per scope constraints section 3",
       "edgeCase": true
     },
     {
@@ -460,6 +463,28 @@
       ],
       "expected": "HTTP 200; config change applied; audit record includes actorId, actorRole OrganizerAdmin, before/after diff, and reason fields; only authorized admin within event scope may perform sensitive config change per roles-permissions sections 4 and 5",
       "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-08-021",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P1",
+      "traceability": [
+        "NFR-08",
+        "FR-26",
+        "AC-10"
+      ],
+      "title": "Out-of-scope OrganizerStaff cannot read eligibility list",
+      "preconditions": [
+        "Completed event with evaluated eligibility rows",
+        "OrganizerStaff JWT assigned to a different event (not target eventId)"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/eligibility?page=1&pageSize=20 with out-of-scope staff Authorization bearer"
+      ],
+      "expected": "HTTP 403 FORBIDDEN; eligibility items and participant reason fields not returned; out-of-scope staff denied per AC-10e and OrganizerStaff assigned-events scope constraint",
+      "edgeCase": true
     }
   ]
 }
