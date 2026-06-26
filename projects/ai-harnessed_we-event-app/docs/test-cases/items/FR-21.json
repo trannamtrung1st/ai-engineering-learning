@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-21",
   "version": 1,
-  "docFingerprint": "sha256:107397bd83cd034f847adc3aa5c281b5205685eb1f8283558c1614364f516122",
-  "generatedAt": "2026-06-26T16:30:00Z",
+  "docFingerprint": "sha256:7433a3d750e43b22d11a68701a7f1b5c84cd70f9e0c73887fcb4bbc85d306aed",
+  "generatedAt": "2026-06-26T17:15:44Z",
   "cases": [
     {
       "id": "TC-FR-21-001",
@@ -25,7 +25,7 @@
         "Invoke eligibilityService.listEligibility(eventId, { page: \"1\", pageSize: \"20\" }, organizerAdminContext)",
         "Inspect items array for both Eligible and NotEligible rows with reason fields"
       ],
-      "expected": "Paginated result includes entries with eligibility.result Eligible and NotEligible; each row exposes registrationId, participantId, and non-empty reasonCode and reasonText; satisfies testing-plan §3 row: Organizer views eligible list → list + reasons available (AC-10, FR-21)",
+      "expected": "Paginated result includes entries with eligibility.result Eligible, NotEligible, and Revoked when present; each row exposes registrationId, participantId, and non-empty reasonCode and reasonText; satisfies testing-plan §3 row: Organizer views eligible list → list + reasons available (AC-10, FR-21)",
       "edgeCase": false
     },
     {
@@ -110,7 +110,8 @@
       "priority": "P0",
       "traceability": [
         "FR-21",
-        "AC-10"
+        "AC-10",
+        "AC-10b"
       ],
       "title": "OrganizerAdmin filters eligibility list to Eligible participants only",
       "preconditions": [
@@ -133,6 +134,7 @@
       "traceability": [
         "FR-21",
         "AC-10",
+        "AC-10b",
         "BR-18"
       ],
       "title": "OrganizerAdmin filters eligibility list to NotEligible participants only",
@@ -156,6 +158,7 @@
       "traceability": [
         "FR-21",
         "AC-10",
+        "AC-10f",
         "AC-14"
       ],
       "title": "Organizer eligibility page displays eligible and not-eligible participant rows with reasons",
@@ -180,6 +183,8 @@
       "priority": "P1",
       "traceability": [
         "FR-21",
+        "AC-10",
+        "AC-10d",
         "BR-20"
       ],
       "title": "OrganizerAdmin views Revoked eligibility in participant list with override reason",
@@ -203,6 +208,8 @@
       "priority": "P1",
       "traceability": [
         "FR-21",
+        "AC-10",
+        "AC-10a",
         "FR-30",
         "FR-27"
       ],
@@ -225,6 +232,8 @@
       "priority": "P0",
       "traceability": [
         "FR-21",
+        "AC-10",
+        "AC-10e",
         "AC-15"
       ],
       "title": "Unauthenticated GET eligibility list returns 401",
@@ -246,6 +255,8 @@
       "priority": "P0",
       "traceability": [
         "FR-21",
+        "AC-10",
+        "AC-10e",
         "AC-15",
         "FR-26"
       ],
@@ -268,6 +279,8 @@
       "priority": "P1",
       "traceability": [
         "FR-21",
+        "AC-10",
+        "AC-10e",
         "FR-27"
       ],
       "title": "OrganizerAdmin outside event organization scope cannot view eligibility list",
@@ -288,7 +301,9 @@
       "technique": "boundary-error",
       "priority": "P1",
       "traceability": [
-        "FR-21"
+        "FR-21",
+        "AC-10",
+        "AC-10b"
       ],
       "title": "Invalid eligibility filter value returns 400 on list request",
       "preconditions": [
@@ -309,6 +324,8 @@
       "priority": "P2",
       "traceability": [
         "FR-21",
+        "AC-10",
+        "AC-10c",
         "AC-13",
         "FR-31"
       ],
@@ -456,6 +473,29 @@
       ],
       "expected": "HTTP 200; items returned in ascending participantId order per API design default sort for GET /events/{eventId}/eligibility; stable predictable browsing for Organizer Admin",
       "edgeCase": false
+    },
+    {
+      "id": "TC-FR-21-021",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": [
+        "FR-21",
+        "AC-10",
+        "AC-10e",
+        "FR-27"
+      ],
+      "title": "OrganizerStaff outside assigned event scope cannot view eligibility list",
+      "preconditions": [
+        "Completed event with evaluated eligibility records",
+        "OrganizerStaff JWT assigned to a different event, not the target eventId"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/eligibility with OrganizerStaff Authorization bearer token for staff not assigned to the event"
+      ],
+      "expected": "HTTP 403 forbidden per AC-10e; out-of-scope staff cannot view participant eligibility lists for unassigned events",
+      "edgeCase": true
     }
   ]
 }
