@@ -2,30 +2,51 @@
   "productItemId": "FR-22",
   "version": 1,
   "docFingerprint": "sha256:f44c92d5b8e8208272ca20445a8ed22605865e55c323b1677af54c0c2242f917",
-  "generatedAt": "2026-06-26T05:06:14Z",
+  "generatedAt": "2026-06-26T12:29:15Z",
   "cases": [
     {
       "id": "TC-FR-22-001",
       "category": "functional",
-      "layer": "e2e",
+      "layer": "integration",
+      "technique": "scenario-matrix",
       "priority": "P0",
       "traceability": ["FR-22"],
-      "title": "OrganizerAdmin GET dashboard returns event overview with registrations, waitlist, check-ins, and feedback summaries",
+      "title": "Organizer Admin reviews consolidated event overview per user-flow governance step",
       "preconditions": [
-        "Published event in RegistrationOpen or later lifecycle state with known operational activity across registration, waitlist, check-in, and feedback domains",
+        "Published event with operational activity across registration, waitlist, check-in, and feedback domains",
         "Authenticated OrganizerAdmin actor with organization scope to the event"
       ],
       "steps": [
-        "GET /api/v1/events/{eventId}/dashboard with organizer Authorization bearer token",
-        "Inspect response body for registration, waitlist, check-in, and feedback summary fields"
+        "Invoke dashboardService.getEventDashboard(eventId) with organizer admin context",
+        "Inspect returned summary for registrations, waitlist, check-ins, feedback, and eligibility-related fields"
       ],
-      "expected": "HTTP 200 with JSON payload exposing non-negative counts or summaries for registrations, waitlist, check-ins, and feedback completion; Organizer Admin can view consolidated event operational overview per FR-22 and GET /events/{eventId}/dashboard contract",
+      "expected": "Summary exposes non-negative counts for registrations, registeredSeats, waitlist, checkedIn, attended, feedbackSubmitted, and eligibility breakdown; satisfies user-flow step 'Admin reviews dashboard summary' and FR-22 consolidated operational overview",
       "edgeCase": false
     },
     {
       "id": "TC-FR-22-002",
       "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-22"],
+      "title": "GET /api/v1/events/{eventId}/dashboard returns HTTP 200 with event overview envelope",
+      "preconditions": [
+        "Event in RegistrationOpen or later lifecycle state with known operational activity",
+        "OrganizerAdmin JWT with scope to the event"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/dashboard with organizer Authorization bearer token",
+        "Verify HTTP status and response body fields: eventId, capacity, registrations, registeredSeats, waitlist, checkedIn, attended, eligible, notEligible, pendingEligibility, feedbackSubmitted, feedbackRequired"
+      ],
+      "expected": "HTTP 200 with JSON payload exposing non-negative counts or summaries for registrations, waitlist, check-ins, and feedback completion per GET /events/{eventId}/dashboard contract in API design §2.5",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-22-003",
+      "category": "functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["FR-22", "FR-31"],
       "title": "Dashboard registration count matches paginated registrations list total",
@@ -34,17 +55,18 @@
         "Authenticated OrganizerAdmin actor"
       ],
       "steps": [
-        "Query dashboard summary for registration count",
-        "Invoke registrations list query with page=1 pageSize=1 and read total from paginated envelope",
-        "Compare dashboard registration metric to list total"
+        "Invoke dashboardService.getEventDashboard(eventId) and read registrations field",
+        "Invoke listRegistrationsForEvent with page=1 pageSize=1 and read total from paginated envelope",
+        "Compare dashboard registrations metric to list total"
       ],
-      "expected": "Dashboard registration count equals GET /events/{eventId}/registrations total metadata; overview is consistent with authoritative list query per FR-31",
+      "expected": "Dashboard registrations count equals registrations list total metadata; overview is consistent with authoritative list query per FR-31 module-integration boundary",
       "edgeCase": false
     },
     {
-      "id": "TC-FR-22-003",
+      "id": "TC-FR-22-004",
       "category": "functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["FR-22", "FR-08", "FR-31"],
       "title": "Dashboard waitlist count matches paginated waitlist list total",
@@ -54,16 +76,17 @@
       ],
       "steps": [
         "Read waitlist count from dashboard summary",
-        "GET /api/v1/events/{eventId}/waitlist?page=1&pageSize=1 and read total",
+        "Invoke listWaitlistForEvent with limit=1 offset=0 and read total",
         "Compare values"
       ],
       "expected": "Dashboard waitlist metric equals waitlist list total; Organizer Admin overview accurately reflects FIFO queue size",
       "edgeCase": false
     },
     {
-      "id": "TC-FR-22-004",
+      "id": "TC-FR-22-005",
       "category": "functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["FR-22", "FR-13", "FR-14", "FR-16"],
       "title": "Dashboard check-in summary reflects checked-in and attended registration counts",
@@ -72,16 +95,17 @@
         "Authenticated OrganizerAdmin actor"
       ],
       "steps": [
-        "Read check-in related metrics from dashboard summary",
+        "Read checkedIn and attended fields from dashboard summary",
         "Cross-reference with registrations filtered by CheckedIn and Attended states via paginated list totals"
       ],
-      "expected": "Dashboard check-in summary matches combined CheckedIn and Attended counts from registration queries; Organizer Admin can monitor on-site attendance progress from overview",
+      "expected": "Dashboard checkedIn and attended counts match respective registration query totals; Organizer Admin can monitor on-site attendance progress from overview",
       "edgeCase": false
     },
     {
-      "id": "TC-FR-22-005",
+      "id": "TC-FR-22-006",
       "category": "functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["FR-22", "FR-18", "FR-19"],
       "title": "Dashboard exposes feedback completion summary for organizer review",
@@ -91,16 +115,17 @@
         "Authenticated OrganizerAdmin actor"
       ],
       "steps": [
-        "Read feedback-related fields from dashboard summary (submitted count, outstanding count, or completion ratio)",
-        "Verify against known feedback submission fixture state"
+        "Read feedbackSubmitted and feedbackRequired fields from dashboard summary",
+        "Verify feedbackSubmitted against known feedback submission fixture state in persistence layer"
       ],
-      "expected": "Dashboard includes feedback completion metrics aligned with actual submission state; Organizer Admin can assess post-event feedback progress from operational overview per FR-22",
+      "expected": "Dashboard includes feedbackSubmitted count and feedbackRequired flag aligned with actual submission state; Organizer Admin can assess post-event feedback progress from operational overview per FR-22",
       "edgeCase": false
     },
     {
-      "id": "TC-FR-22-006",
+      "id": "TC-FR-22-007",
       "category": "functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
       "traceability": ["FR-22", "FR-02", "AC-04"],
       "title": "Dashboard capacity summary shows registered seats never exceeding configured capacity",
@@ -110,18 +135,19 @@
       ],
       "steps": [
         "GET /api/v1/events/{eventId}/dashboard",
-        "Inspect registered-seat or capacity utilization fields against event ruleConfig.capacity"
+        "Inspect registeredSeats and capacity fields"
       ],
-      "expected": "Dashboard registered count is less than or equal to configured capacity at all times; capacity utilization visible in overview supports organizer monitoring without violating AC-04 invariant",
+      "expected": "HTTP 200; registeredSeats is less than or equal to capacity at all times; capacity utilization visible in overview supports organizer monitoring without violating AC-04 invariant",
       "edgeCase": false
     },
     {
-      "id": "TC-FR-22-007",
+      "id": "TC-FR-22-008",
       "category": "functional",
       "layer": "e2e",
-      "priority": "P1",
+      "technique": "flow-a",
+      "priority": "P0",
       "traceability": ["FR-22", "FR-17", "FR-20", "FR-21"],
-      "title": "Dashboard after full lifecycle reflects registration through eligibility operational totals",
+      "title": "Flow A dashboard after full lifecycle reflects registration through eligibility operational totals",
       "preconditions": [
         "E2E Flow A progressed: publish, open registration, register, check-in, complete event, submit feedback, eligibility evaluated",
         "OrganizerAdmin JWT"
@@ -134,9 +160,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-22-008",
+      "id": "TC-FR-22-009",
       "category": "functional",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["FR-22", "AC-14"],
       "title": "Organizer operations dashboard page renders KPI blocks and drill-down navigation",
@@ -154,9 +181,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-22-009",
+      "id": "TC-FR-22-010",
       "category": "functional",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P2",
       "traceability": ["FR-22"],
       "title": "Organizer dashboard shows loading skeleton then populated KPIs on successful fetch",
@@ -174,9 +202,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-22-010",
+      "id": "TC-FR-22-011",
       "category": "edge",
       "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["FR-22", "AC-15", "FR-25", "NFR-07"],
       "title": "Unauthenticated GET dashboard returns 401",
@@ -191,9 +220,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-22-011",
+      "id": "TC-FR-22-012",
       "category": "edge",
       "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["FR-22", "AC-15", "FR-25", "FR-26", "NFR-08"],
       "title": "Participant cannot access organizer dashboard endpoint",
@@ -204,13 +234,14 @@
       "steps": [
         "GET /api/v1/events/{eventId}/dashboard with participant Authorization bearer token"
       ],
-      "expected": "HTTP 403 forbidden; participant cannot view organizer event operational overview",
+      "expected": "HTTP 403 forbidden; participant cannot view organizer event operational overview per roles-permissions matrix",
       "edgeCase": true
     },
     {
-      "id": "TC-FR-22-012",
+      "id": "TC-FR-22-013",
       "category": "edge",
       "layer": "integration",
+      "technique": "rbac-negative",
       "priority": "P1",
       "traceability": ["FR-22", "FR-27", "NFR-08"],
       "title": "OrganizerAdmin outside event organization scope cannot view dashboard",
@@ -219,15 +250,16 @@
         "OrganizerAdmin JWT without scope to target eventId"
       ],
       "steps": [
-        "Invoke dashboard query for out-of-scope eventId with admin context"
+        "Invoke dashboardService.getEventDashboard for out-of-scope eventId with admin context"
       ],
       "expected": "HTTP 403 or 404 per event scope guard; no cross-organization operational metrics leakage",
       "edgeCase": true
     },
     {
-      "id": "TC-FR-22-013",
+      "id": "TC-FR-22-014",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["FR-22"],
       "title": "Dashboard request for non-existent eventId returns 404",
@@ -238,13 +270,14 @@
       "steps": [
         "GET /api/v1/events/{unknownEventId}/dashboard with organizer token"
       ],
-      "expected": "HTTP 404 with typed error envelope; no partial dashboard payload returned",
+      "expected": "HTTP 404 with typed error envelope containing code NOT_FOUND; no partial dashboard payload returned",
       "edgeCase": true
     },
     {
-      "id": "TC-FR-22-014",
+      "id": "TC-FR-22-015",
       "category": "edge",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P2",
       "traceability": ["FR-22"],
       "title": "Dashboard for newly published event with zero activity returns zero counts",
@@ -259,9 +292,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-22-015",
+      "id": "TC-FR-22-016",
       "category": "edge",
       "layer": "e2e",
+      "technique": "flow-b",
       "priority": "P1",
       "traceability": ["FR-22", "FR-12", "AC-04"],
       "title": "Dashboard registration count updates after waitlist promotion when seat opens",
@@ -271,17 +305,18 @@
         "OrganizerAdmin JWT"
       ],
       "steps": [
-        "Record dashboard registered and waitlist counts before cancellation",
+        "Record dashboard registeredSeats and waitlist counts before cancellation",
         "POST cancellation for a Registered participant triggering FIFO promotion",
         "GET dashboard again after promotion completes"
       ],
-      "expected": "Registered count remains at or below capacity; waitlist count decreases by one when promotion succeeds; overview reflects atomic cancellation and promotion outcome",
+      "expected": "registeredSeats remains at or below capacity; waitlist count decreases by one when promotion succeeds; overview reflects atomic cancellation and promotion outcome per Flow B",
       "edgeCase": true
     },
     {
-      "id": "TC-FR-22-016",
+      "id": "TC-FR-22-017",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "pagination",
       "priority": "P1",
       "traceability": ["FR-22", "FR-31", "NFR-16"],
       "title": "Dashboard aggregation derives totals from paginated list contracts without loading full datasets",
@@ -298,9 +333,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-22-017",
+      "id": "TC-FR-22-018",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P1",
       "traceability": ["FR-22", "NFR-06"],
       "title": "Dashboard metrics reflect new registration within near-real-time refresh window",
@@ -312,15 +348,16 @@
       "steps": [
         "Capture baseline dashboard registration count",
         "Complete a new participant registration via API",
-        "Re-query dashboard within organizer dashboard refresh interval (per UI polling policy)"
+        "Re-query dashboard within organizer dashboard refresh interval"
       ],
-      "expected": "Updated registration and capacity metrics visible on subsequent dashboard read without manual full-page reload beyond configured refresh; satisfies NFR-06 near-real-time organizer visibility",
+      "expected": "Updated registration and registeredSeats metrics visible on subsequent dashboard read; satisfies NFR-06 near-real-time organizer visibility tied to FR-22 operational overview",
       "edgeCase": false
     },
     {
-      "id": "TC-FR-22-018",
+      "id": "TC-FR-22-019",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P1",
       "traceability": ["FR-22", "FR-25", "NFR-08"],
       "title": "Dashboard query is read-only and does not mutate event or registration state",
@@ -330,16 +367,17 @@
       ],
       "steps": [
         "Record registration states and latest audit log count",
-        "Invoke dashboard query multiple times in succession",
+        "Invoke dashboardService.getEventDashboard multiple times in succession",
         "Re-read registration states and audit log count"
       ],
       "expected": "No registration state transitions or new audit records created by dashboard reads; query contract is side-effect free per module breakdown query conventions",
       "edgeCase": false
     },
     {
-      "id": "TC-FR-22-019",
+      "id": "TC-FR-22-020",
       "category": "non-functional",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P2",
       "traceability": ["FR-22", "NFR-06"],
       "title": "Organizer dashboard live query polling refreshes KPI values during active event window",
@@ -354,6 +392,63 @@
       ],
       "expected": "KPI strip values update to reflect latest operational totals without requiring manual browser refresh; aligns with organizer dashboard shorter refresh interval during event-active windows",
       "edgeCase": false
+    },
+    {
+      "id": "TC-FR-22-021",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": ["FR-22", "FR-27"],
+      "title": "OrganizerStaff with dashboard.view can view assigned event overview",
+      "preconditions": [
+        "Event with operational activity",
+        "OrganizerStaff actor assigned to the event per scope rules"
+      ],
+      "steps": [
+        "Invoke dashboardService.getEventDashboard(eventId) with organizer staff context for assigned event"
+      ],
+      "expected": "HTTP 200 with valid dashboard summary; staff operational overview access scoped per dashboard.view permission for OrganizerStaff on assigned events",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-22-022",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "rbac-negative",
+      "priority": "P1",
+      "traceability": ["FR-22", "FR-27"],
+      "title": "OrganizerStaff cannot view dashboard for unassigned event",
+      "preconditions": [
+        "Event with operational data",
+        "OrganizerStaff JWT without assignment to target eventId"
+      ],
+      "steps": [
+        "Invoke dashboardService.getEventDashboard for unassigned eventId with staff context"
+      ],
+      "expected": "HTTP 403 or 404 per event scope guard; staff cannot view operational overview outside assigned event scope",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-22-023",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P1",
+      "traceability": ["FR-22", "AC-04"],
+      "title": "Dashboard totals remain consistent after concurrent registrations",
+      "preconditions": [
+        "Event RegistrationOpen with capacity well above concurrent request count",
+        "OrganizerAdmin actor",
+        "Multiple parallel participant registration requests"
+      ],
+      "steps": [
+        "Record baseline dashboard registrations and registeredSeats",
+        "Issue parallel POST /registrations from distinct participants",
+        "Re-query dashboard after all requests complete"
+      ],
+      "expected": "Dashboard registrations and registeredSeats increment by successful registration count; registeredSeats never exceeds capacity; concurrent writes do not produce inconsistent overview totals",
+      "edgeCase": true
     }
   ]
 }
