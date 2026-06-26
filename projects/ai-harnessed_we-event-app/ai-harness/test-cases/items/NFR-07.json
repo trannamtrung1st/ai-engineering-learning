@@ -1,0 +1,301 @@
+{
+  "productItemId": "NFR-07",
+  "version": 1,
+  "docFingerprint": "sha256:36eb7ede51ffcb03df8f9b4c191e51a75639a1a971475a654f1ec32d95231414",
+  "generatedAt": "2026-06-26T05:37:32Z",
+  "cases": [
+    {
+      "id": "TC-NFR-07-001",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["NFR-07", "AC-16", "FR-33"],
+      "title": "Authenticated participant completes signup, login, and sensitive self-service read",
+      "preconditions": [
+        "API server running at /api/v1",
+        "No existing account for test email"
+      ],
+      "steps": [
+        "POST /api/v1/auth/register with valid email, password, displayName (no prior session)",
+        "POST /api/v1/auth/login with the same credentials and capture JWT",
+        "GET /api/v1/me/registrations with Authorization: Bearer <token>"
+      ],
+      "expected": "Register and login succeed with JWT and Participant role; authenticated GET /me/registrations returns HTTP 200 with paginated envelope; sensitive self-service read succeeds only after authentication per NFR-07 and AC-16",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-07-002",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["NFR-07", "AC-01", "FR-33"],
+      "title": "Authenticated participant can register for event after login",
+      "preconditions": [
+        "Published event in RegistrationOpen state with available capacity",
+        "Participant account with valid JWT and no active registration for the event"
+      ],
+      "steps": [
+        "POST /api/v1/auth/login to obtain bearer token",
+        "POST /api/v1/events/{eventId}/registrations with Authorization header",
+        "GET /api/v1/events/{eventId}/registration-status with same token"
+      ],
+      "expected": "Registration mutation succeeds with Registered state when seats available; registration-status reflects authenticated actor; sensitive registration write permitted only with valid session",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-07-003",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["NFR-07", "FR-25"],
+      "title": "Authorization pipeline authenticates actor before role and scope validation",
+      "preconditions": [
+        "Command handler wired with authorization decision pattern: authenticate → role → scope → state guard",
+        "Sensitive organizer mutation endpoint (e.g. POST /events/{eventId}/publish) available"
+      ],
+      "steps": [
+        "Invoke handler with valid JSON body but no authenticated actor in request context",
+        "Verify response status and that no domain mutation or audit write occurred"
+      ],
+      "expected": "Request short-circuits at step 1 (authenticate actor) with HTTP 401; role permission and event scope validators are not reached; no publish side effects without authentication per roles-permissions authorization pattern",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-07-004",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["NFR-07", "AC-15", "FR-33"],
+      "title": "Unauthenticated POST registration is rejected before domain execution",
+      "preconditions": [
+        "Event in RegistrationOpen with available seats",
+        "Request omits Authorization header"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/registrations without bearer token",
+        "Query registrations table or list endpoint for new row tied to anonymous request"
+      ],
+      "expected": "HTTP 401 unauthenticated; no registration row created; authentication gate blocks sensitive participant mutation before capacity or dedupe logic runs",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-07-005",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["NFR-07", "AC-15", "FR-25"],
+      "title": "Unauthenticated organizer read of audit logs returns 401",
+      "preconditions": [
+        "Event with persisted audit log entries",
+        "No Authorization header on request"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/audit-logs without bearer token"
+      ],
+      "expected": "HTTP 401 unauthenticated; audit log items and actor metadata not exposed; sensitive governance read requires authentication per NFR-07",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-07-006",
+      "category": "functional",
+      "layer": "browser",
+      "priority": "P0",
+      "traceability": ["NFR-07", "AC-15", "FR-34"],
+      "title": "Protected participant route blocks sensitive UI until user signs in",
+      "preconditions": [
+        "Web app running with route guards enabled",
+        "Browser context has no stored JWT"
+      ],
+      "steps": [
+        "Navigate directly to a protected participant route (e.g. My registrations)",
+        "Observe URL and rendered content before any credentials are entered"
+      ],
+      "expected": "User is redirected to /login; protected page content and registration data do not render; client-side session absence enforces authentication before sensitive self-service UI",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-07-007",
+      "category": "non-functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["NFR-07", "AC-15"],
+      "title": "Representative sensitive write endpoints uniformly require authentication",
+      "preconditions": [
+        "Seeded event in RegistrationOpen state",
+        "All requests in this scenario omit Authorization header"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/registrations",
+        "POST /api/v1/events/{eventId}/checkins",
+        "POST /api/v1/events/{eventId}/feedback",
+        "POST /api/v1/events/{eventId}/publish",
+        "POST /api/v1/events/{eventId}/cover-image"
+      ],
+      "expected": "Each mutating request returns HTTP 401 (not 403, 404, or 500); no mutation side effects; authentication is required before all sensitive operations across registration, check-in, feedback, governance, and media groups per API auth principle",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-07-008",
+      "category": "non-functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["NFR-07", "AC-15", "NFR-08"],
+      "title": "Unauthenticated requests receive 401 not 403 on sensitive endpoints",
+      "preconditions": [
+        "Protected endpoints available for participant and organizer operations",
+        "No Authorization header; actor identity is unknown"
+      ],
+      "steps": [
+        "Call GET /api/v1/me without token",
+        "Call POST /api/v1/events without token",
+        "Call GET /api/v1/events/{eventId}/dashboard without token"
+      ],
+      "expected": "All responses are HTTP 401 unauthenticated; system does not return 403 unauthorized when actor is not authenticated; authentication precedes authorization per decision pattern step order",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-07-009",
+      "category": "non-functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["NFR-07"],
+      "title": "Non-public API surface is protected by default per API design principle",
+      "preconditions": [
+        "API mounted at /api/v1 with auth middleware on protected routes",
+        "Inventory of endpoint groups from API design (event management, registration, check-in, feedback, monitoring, media, self-service)"
+      ],
+      "steps": [
+        "For each documented non-public endpoint group, send a representative request without Authorization",
+        "Record HTTP status for GET /me, GET /me/registrations, POST registrations, GET dashboard, GET export"
+      ],
+      "expected": "Every non-public endpoint returns 401 without credentials; only explicitly public auth endpoints (POST /auth/register, POST /auth/login) accept unauthenticated callers; auth-required-for-non-public principle holds across the API surface",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-07-010",
+      "category": "non-functional",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["NFR-07", "AC-15", "NFR-13"],
+      "title": "401 authentication failures use standard typed error envelope",
+      "preconditions": [
+        "API error middleware enabled",
+        "Unauthenticated request to protected endpoint GET /me"
+      ],
+      "steps": [
+        "GET /api/v1/me without Authorization header",
+        "Parse JSON response body"
+      ],
+      "expected": "HTTP 401 with error object containing stable code, message, requestId, and details; no stack trace or sensitive profile data; immediate fail feedback per NFR-13 on auth gate rejection",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-07-011",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["NFR-07", "AC-15", "FR-33"],
+      "title": "Malformed JWT bearer token blocks sensitive operation with 401",
+      "preconditions": [
+        "Protected endpoint available (GET /me or POST registrations)",
+        "Authorization header set to Bearer with invalid or truncated token"
+      ],
+      "steps": [
+        "GET /api/v1/me with Authorization: Bearer not-a-valid-jwt",
+        "Attempt POST /api/v1/events/{eventId}/registrations with same malformed token"
+      ],
+      "expected": "Both requests return HTTP 401; no profile or registration data returned; invalid token treated as unauthenticated before any sensitive operation proceeds",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-07-012",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["NFR-07", "AC-15", "FR-33"],
+      "title": "Expired JWT blocks sensitive read and write until re-login",
+      "preconditions": [
+        "JWT issued with past exp claim or fixed-clock test fixture",
+        "Protected endpoints GET /me/registrations and POST registrations available"
+      ],
+      "steps": [
+        "GET /api/v1/me/registrations with expired bearer token",
+        "POST /api/v1/events/{eventId}/registrations with expired bearer token"
+      ],
+      "expected": "Both requests return HTTP 401; client must re-authenticate via POST /auth/login; expired session cannot perform sensitive operations",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-07-013",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["NFR-07", "FR-32", "FR-33"],
+      "title": "Public auth endpoints remain reachable without prior session",
+      "preconditions": [
+        "No Authorization header on requests",
+        "Valid signup and login payload available"
+      ],
+      "steps": [
+        "POST /api/v1/auth/register with valid email, password, displayName",
+        "POST /api/v1/auth/login with valid credentials"
+      ],
+      "expected": "Both requests succeed (not 401); public auth endpoints are the only unauthenticated entry points for obtaining a session; boundary between public and protected surfaces is correct",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-07-014",
+      "category": "edge",
+      "layer": "browser",
+      "priority": "P1",
+      "traceability": ["NFR-07", "FR-34", "AC-15"],
+      "title": "After sign-out, sensitive route access requires re-authentication",
+      "preconditions": [
+        "User previously signed in with valid credentials",
+        "Client JWT cleared via sign-out (TopBar or equivalent)"
+      ],
+      "steps": [
+        "Sign out from authenticated session",
+        "Navigate to protected participant route or trigger API call from stale client state",
+        "Observe redirect and API response"
+      ],
+      "expected": "Browser redirects to /login for protected routes; API calls without refreshed token return 401; sign-out clears session so sensitive operations are blocked until re-login",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-07-015",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["NFR-07", "AC-15"],
+      "title": "Empty Authorization bearer value is rejected before sensitive handler execution",
+      "preconditions": [
+        "Protected endpoint GET /me available"
+      ],
+      "steps": [
+        "GET /api/v1/me with Authorization: Bearer (empty token after prefix)",
+        "GET /api/v1/events/{eventId}/registration-status with same empty bearer"
+      ],
+      "expected": "HTTP 401 unauthenticated on both calls; equivalent to missing auth; no actor context derived and no sensitive data returned",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-07-016",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["NFR-07", "AC-15", "FR-25"],
+      "title": "Sensitive organizer export and eligibility revoke require authenticated actor",
+      "preconditions": [
+        "Event with registrations and eligibility records",
+        "No Authorization header"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/export without bearer token",
+        "POST /api/v1/events/{eventId}/eligibility/{registrationId}/revoke without bearer token"
+      ],
+      "expected": "Both requests return HTTP 401; no export payload or eligibility mutation occurs; high-impact organizer operations gated behind authentication per NFR-07 and testing plan P0 unauthorized-critical-update severity",
+      "edgeCase": true
+    }
+  ]
+}
