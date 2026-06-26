@@ -2,12 +2,33 @@
   "productItemId": "FR-13",
   "version": 1,
   "docFingerprint": "sha256:4ef9b21ee020318b8667ba54306d7c16fd1e1129e20152c62d596022b477de06",
-  "generatedAt": "2026-06-26T12:00:00Z",
+  "generatedAt": "2026-06-26T16:30:00Z",
   "cases": [
     {
       "id": "TC-FR-13-001",
       "category": "functional",
       "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["FR-13", "AC-05", "BR-10", "BR-13"],
+      "title": "In-window staff check-in stored with timestamp per testing-plan §3",
+      "preconditions": [
+        "Event is InProgress with check-in window active (current time between checkinOpenAt and checkinCloseAt)",
+        "Participant has registration in Registered state with no prior valid check-in",
+        "Authenticated OrganizerStaff actor assigned to the event with check-in capability"
+      ],
+      "steps": [
+        "Invoke checkinService.staffCheckin(eventId, { registrationId }, staffActorContext) at a fixed in-window time",
+        "Query checkin_records and registration state for the participant"
+      ],
+      "expected": "Testing-plan §3 row satisfied: check-in is stored with non-null checkinAt ISO timestamp; registration transitions to CheckedIn; method Staff and operatorId persisted per BR-13",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-13-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["FR-13", "AC-05", "FR-15", "BR-10"],
       "title": "OrganizerStaff check-in transitions Registered participant to CheckedIn within window",
@@ -17,19 +38,42 @@
         "Authenticated OrganizerStaff actor assigned to the event with check-in capability"
       ],
       "steps": [
-        "Invoke checkinService.staffCheckin(eventId, { registrationId }, staffActorContext) at a fixed in-window time",
-        "Read returned check-in snapshot and linked registration state"
+        "Invoke checkinService.staffCheckin(eventId, { registrationId }, staffActorContext) at a fixed in-window time against real Postgres",
+        "Read returned check-in snapshot and linked registration state in the same database session"
       ],
-      "expected": "CheckinRecord is persisted with non-null checkinAt, method Staff, and operatorId set to staff actor; registration transitions to CheckedIn in the same transaction",
+      "expected": "CheckinRecord is persisted with non-null checkinAt, method Staff, and operatorId set to staff actor; registration transitions to CheckedIn in the same transaction per check-in module boundary",
       "edgeCase": false
     },
     {
-      "id": "TC-FR-13-002",
+      "id": "TC-FR-13-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["FR-13", "AC-05", "BR-10"],
+      "title": "Staff validCheckin transitions registration Registered to CheckedIn",
+      "preconditions": [
+        "Registration in Registered state before check-in",
+        "Event check-in window contains fixed clock now",
+        "No prior valid check-in on the registration",
+        "OrganizerStaff actor authorized for the event"
+      ],
+      "steps": [
+        "Record beforeState as Registered from registration repository",
+        "Submit staff check-in via checkinService.staffCheckin",
+        "Read afterState from registration repository and CheckinRecord"
+      ],
+      "expected": "beforeState Registered, afterState CheckedIn per state machine §2 validCheckin trigger; checkinAt timestamp recorded with method Staff",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-13-004",
       "category": "functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
       "traceability": ["FR-13", "AC-05", "FR-16", "BR-10"],
-      "title": "POST checkins returns HTTP 200 with checkinAt and CheckedIn registration for staff actor",
+      "title": "POST /events/{eventId}/checkins returns HTTP 200 with checkinAt and CheckedIn registration",
       "preconditions": [
         "E2E fixture event in InProgress state with active check-in window",
         "Registered participant with valid registrationId",
@@ -38,15 +82,36 @@
       ],
       "steps": [
         "POST /api/v1/events/{eventId}/checkins with body { registrationId } and staff Authorization bearer token",
-        "Optionally GET /api/v1/events/{eventId}/attendance and locate the participant row"
+        "GET /api/v1/events/{eventId}/attendance?page=1&pageSize=20 and locate the participant row"
       ],
-      "expected": "Response HTTP 200 includes checkinAt timestamp, registrationState CheckedIn, participantId, and method Staff; attendance list includes the participant with matching checkinAt",
+      "expected": "POST returns HTTP 200 with non-null checkinAt timestamp, registrationState CheckedIn, participantId, and method Staff; attendance list includes the participant with matching checkinAt",
       "edgeCase": false
     },
     {
-      "id": "TC-FR-13-003",
+      "id": "TC-FR-13-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["FR-13", "AC-05", "FR-15"],
+      "title": "Flow A lifecycle staff check-in step records participant after registration",
+      "preconditions": [
+        "E2E Flow A fixture: event progressed through publish, open-registration, and participant Registered",
+        "Event started (InProgress) with check-in window open",
+        "OrganizerStaff JWT scoped to the event"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/checkins with staff token and registered participant registrationId",
+        "GET /api/v1/events/{eventId}/attendance and verify participant row"
+      ],
+      "expected": "Staff check-in step in Flow A succeeds with HTTP 200, checkinAt timestamp, and CheckedIn state; attendance list reflects the check-in before feedback step",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-13-006",
       "category": "functional",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["FR-13", "AC-05"],
       "title": "Organizer staff check-in console records participant with immediate success feedback",
@@ -64,9 +129,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-13-004",
+      "id": "TC-FR-13-007",
       "category": "functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P1",
       "traceability": ["FR-13", "AC-05", "FR-25"],
       "title": "OrganizerAdmin can check in participant via staff checkins endpoint",
@@ -83,9 +149,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-13-005",
+      "id": "TC-FR-13-008",
       "category": "functional",
       "layer": "integration",
+      "technique": "pagination",
       "priority": "P1",
       "traceability": ["FR-13", "AC-05", "FR-30"],
       "title": "Staff check-in appears in paginated attendance list for authorized event scope",
@@ -94,16 +161,17 @@
         "OrganizerStaff or OrganizerAdmin authorized for the event"
       ],
       "steps": [
-        "Query attendance list for the event with default pagination",
-        "Locate the checked-in participant row"
+        "GET /api/v1/events/{eventId}/attendance?page=1&pageSize=20 with authorized token",
+        "Locate the checked-in participant row and inspect paginated envelope metadata"
       ],
-      "expected": "Attendance list includes participant with checkinAt, method Staff, and CheckedIn registration state; paginated envelope returns valid items, total, and totalPages metadata",
+      "expected": "Attendance list includes participant with checkinAt, method Staff, and CheckedIn registration state; paginated envelope returns valid items, total, page, pageSize, and totalPages metadata",
       "edgeCase": false
     },
     {
-      "id": "TC-FR-13-006",
+      "id": "TC-FR-13-009",
       "category": "edge",
       "layer": "integration",
+      "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["FR-13", "BR-11"],
       "title": "Second staff check-in attempt for same registration is rejected",
@@ -121,9 +189,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-13-007",
+      "id": "TC-FR-13-010",
       "category": "edge",
       "layer": "integration",
+      "technique": "concurrency",
       "priority": "P0",
       "traceability": ["FR-13", "BR-11", "NFR-02"],
       "title": "Concurrent staff check-in requests yield at most one valid record",
@@ -140,9 +209,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-13-008",
+      "id": "TC-FR-13-011",
       "category": "edge",
       "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["FR-13", "FR-25", "FR-26"],
       "title": "Participant JWT cannot invoke staff checkins endpoint",
@@ -158,9 +228,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-13-009",
+      "id": "TC-FR-13-012",
       "category": "edge",
       "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["FR-13", "FR-27"],
       "title": "OrganizerStaff outside assigned event scope cannot check in participant",
@@ -176,9 +247,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-13-010",
+      "id": "TC-FR-13-013",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["FR-13"],
       "title": "Staff check-in rejected when registration is not in Registered state",
@@ -195,9 +267,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-13-011",
+      "id": "TC-FR-13-014",
       "category": "edge",
       "layer": "integration",
+      "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["FR-13", "FR-15", "AC-06", "BR-10"],
       "title": "Staff check-in outside configured window is rejected with CHECKIN_WINDOW_CLOSED",
@@ -215,9 +288,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-13-012",
+      "id": "TC-FR-13-015",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P1",
       "traceability": ["FR-13", "FR-16", "BR-13"],
       "title": "Staff check-in persists audit metadata with operatorId and method Staff",
@@ -233,9 +307,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-13-013",
+      "id": "TC-FR-13-016",
       "category": "non-functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P1",
       "traceability": ["FR-13", "NFR-13", "AC-05"],
       "title": "Staff check-in success returns immediate actionable feedback without polling",
@@ -252,9 +327,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-13-014",
+      "id": "TC-FR-13-017",
       "category": "non-functional",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["FR-13", "NFR-13", "BR-10"],
       "title": "Failed staff check-in returns immediate reason code not generic error",
@@ -271,9 +347,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-13-015",
+      "id": "TC-FR-13-018",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P1",
       "traceability": ["FR-13", "NFR-02"],
       "title": "Staff check-in write and registration CheckedIn transition commit atomically",
@@ -290,9 +367,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-13-016",
+      "id": "TC-FR-13-019",
       "category": "non-functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P1",
       "traceability": ["FR-13", "NFR-02"],
       "title": "Idempotent staff check-in retry with same Idempotency-Key returns consistent snapshot",
@@ -309,9 +387,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-13-017",
+      "id": "TC-FR-13-020",
       "category": "edge",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["FR-13", "FR-15", "AC-06", "BR-10"],
       "title": "Staff check-in console displays blocking reason when window is closed",
