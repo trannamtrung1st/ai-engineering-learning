@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-30",
   "version": 1,
-  "docFingerprint": "sha256:0de96fd30f2643dda5e25a994fcb22af16db2170ec550701a09657db14127a0b",
-  "generatedAt": "2026-06-26T12:41:51Z",
+  "docFingerprint": "sha256:b0ca474f51982b8e84b8aa043459a5098edb01c33a8ccd58f134a734cb0bdd8b",
+  "generatedAt": "2026-06-27T00:00:00Z",
   "cases": [
     {
       "id": "TC-FR-30-001",
@@ -35,7 +35,9 @@
       "priority": "P0",
       "traceability": [
         "FR-30",
+        "FR-30a",
         "FR-31",
+        "AC-02f",
         "AC-13"
       ],
       "title": "OrganizerAdmin views paginated waitlist queue for authorized event",
@@ -47,7 +49,7 @@
         "GET /api/v1/events/{eventId}/waitlist?page=1&pageSize=20 with OrganizerAdmin Authorization bearer",
         "Verify waitlist position ordering and envelope metadata"
       ],
-      "expected": "HTTP 200 with paginated envelope; items ordered by position ascending per API design; total reflects full waitlist row count before paging; satisfies FR-30 waitlist operational list requirement",
+      "expected": "HTTP 200 with paginated envelope; items ordered by position ascending per API design; total reflects full waitlist row count before paging; FIFO order preserved per FR-30a and AC-02f; satisfies FR-30 waitlist operational list requirement",
       "edgeCase": false
     },
     {
@@ -83,18 +85,19 @@
         "FR-30",
         "FR-21",
         "AC-10",
+        "AC-10d",
         "FR-31"
       ],
       "title": "OrganizerAdmin views paginated eligibility list for authorized event",
       "preconditions": [
-        "Completed event with evaluated Eligible and NotEligible participants",
+        "Completed event with evaluated Eligible, NotEligible, and Revoked participants",
         "Authenticated OrganizerAdmin JWT with event scope"
       ],
       "steps": [
         "GET /api/v1/events/{eventId}/eligibility?page=1&pageSize=20 with OrganizerAdmin Authorization bearer",
         "Verify each item includes eligibility result and reason fields"
       ],
-      "expected": "HTTP 200 with paginated envelope; items include eligibility result and reason fields; default sort participantId ascending per API design; FR-30 eligibility operational list available to authorized organizer admin",
+      "expected": "HTTP 200 with paginated envelope; items include Eligible, NotEligible, and Revoked rows with terminal result and non-empty reasonCode/reasonText; default sort participantId ascending per API design; FR-30 eligibility operational list available to authorized organizer admin",
       "edgeCase": false
     },
     {
@@ -175,7 +178,8 @@
       "priority": "P1",
       "traceability": [
         "FR-30",
-        "FR-31"
+        "FR-31",
+        "AC-18e"
       ],
       "title": "OrganizerAdmin filters registrations operational list by state",
       "preconditions": [
@@ -184,9 +188,11 @@
       ],
       "steps": [
         "GET /api/v1/events/{eventId}/registrations?state=Registered&page=1&pageSize=20",
-        "Verify every returned item has state Registered and total reflects filtered count"
+        "Verify every returned item has state Registered and total reflects filtered count",
+        "GET /api/v1/events/{eventId}/registrations?state=Waitlisted&page=1&pageSize=20",
+        "Verify every returned item has state Waitlisted and includes waitlistPosition"
       ],
-      "expected": "HTTP 200 with paginated envelope; all items have state Registered; total and totalPages computed from filtered rows only; state filter supported on registrations operational list per API design",
+      "expected": "HTTP 200 with paginated envelope for each filter; Registered filter returns only Registered rows; Waitlisted filter returns only Waitlisted rows each with waitlistPosition per AC-18e; total and totalPages computed from filtered rows only; state filter supported on registrations operational list per API design",
       "edgeCase": false
     },
     {
@@ -202,14 +208,14 @@
       ],
       "title": "OrganizerAdmin filters eligibility operational list by eligibility result",
       "preconditions": [
-        "Completed event with mix of Eligible and NotEligible participants",
+        "Completed event with mix of Eligible, NotEligible, and Revoked participants",
         "Authenticated OrganizerAdmin JWT"
       ],
       "steps": [
         "GET /api/v1/events/{eventId}/eligibility?eligibility=Eligible&page=1&pageSize=20",
         "Verify every item has eligibility.result Eligible"
       ],
-      "expected": "HTTP 200 with paginated envelope; all items have eligibility.result Eligible; NotEligible rows excluded; eligibility filter supported on operational list per API design",
+      "expected": "HTTP 200 with paginated envelope; all items have eligibility.result Eligible; NotEligible and Revoked rows excluded; eligibility filter supported on operational list per API design and page list segmented eligibility tabs",
       "edgeCase": false
     },
     {
@@ -220,7 +226,8 @@
       "priority": "P0",
       "traceability": [
         "FR-30",
-        "AC-14"
+        "AC-14",
+        "AC-18e"
       ],
       "title": "Organizer operational tables render server-driven paginated rows",
       "preconditions": [
@@ -230,9 +237,10 @@
       "steps": [
         "Navigate to organizer registrations, waitlist, check-in attendance, or eligibility management page",
         "Verify pagination controls and page metadata are visible",
+        "On registrations page with Waitlisted rows, verify waitlistPosition column is shown",
         "Advance to page 2 using Next control and observe network requests"
       ],
-      "expected": "Table renders at most pageSize rows per page; prev/next controls update displayed rows; page change triggers paginated API request with updated page parameter per page list organizer sections and AC-14",
+      "expected": "Table renders at most pageSize rows per page; prev/next controls update displayed rows; waitlistPosition column visible on Waitlisted registration rows per AC-18e; page change triggers paginated API request with updated page parameter per page list organizer sections and AC-14",
       "edgeCase": false
     },
     {
@@ -262,47 +270,26 @@
     {
       "id": "TC-FR-30-012",
       "category": "functional",
-      "layer": "unit",
+      "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
       "traceability": [
         "FR-30",
         "FR-27"
       ],
-      "title": "Organizer scope rules permit admin on any event and restrict staff to assignments",
+      "title": "Operational list queries enforce organizer admin full scope and staff assignment scope at persistence boundary",
       "preconditions": [
-        "SessionInfo for OrganizerAdmin with empty assignedEventIds",
-        "SessionInfo for OrganizerStaff with assignedEventIds [evt-a, evt-b]"
+        "Postgres seeded with events evt-a, evt-b, evt-c and registrations on each",
+        "OrganizerStaff user assigned only to evt-a and evt-b",
+        "Real database test harness with transaction rollback per test"
       ],
       "steps": [
-        "Call canAccessEvent(adminSession, evt-unknown) and assert true",
-        "Call canAccessEvent(staffSession, evt-a) and assert true",
-        "Call canAccessEvent(staffSession, evt-c) and assert false",
-        "Call filterEventsForScope(staffSession, mixedEventList) and inspect filtered output"
+        "Invoke operational list repository query for staff scoped to assignedEventIds [evt-a, evt-b]",
+        "Assert results include only registrations for evt-a and evt-b",
+        "Invoke same query path for OrganizerAdmin without assignment restriction",
+        "Assert admin query returns registrations across all organization events"
       ],
-      "expected": "Admin may access any event; staff may access only assigned event IDs; filterEventsForScope removes unassigned events from staff-visible lists per FR-30 authorized event scope",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-FR-30-013",
-      "category": "functional",
-      "layer": "unit",
-      "technique": "pagination",
-      "priority": "P1",
-      "traceability": [
-        "FR-30",
-        "FR-31",
-        "AC-13"
-      ],
-      "title": "Local pagination helper produces correct envelope metadata for operational lists",
-      "preconditions": [
-        "Array of 25 synthetic list rows for client-side pagination helper"
-      ],
-      "steps": [
-        "Call paginateLocally(items, 1, 10) and inspect page 1 envelope",
-        "Call paginateLocally(items, 3, 10) and inspect final partial page"
-      ],
-      "expected": "Page 1 returns 10 items with page=1, pageSize=10, total=25, totalPages=3; page 3 returns 5 items with page=3; envelope shape matches API pagination contract used by organizer operational tables",
+      "expected": "Staff-scoped list query excludes unassigned event rows; admin query includes all organization events; scope enforced at module-DB boundary per FR-30 authorized event scope and FR-27",
       "edgeCase": false
     },
     {
@@ -467,6 +454,54 @@
         "Compare returned items to direct COUNT and OFFSET/LIMIT expectations in persistence layer"
       ],
       "expected": "Beyond-last-page response returns items=[], valid page and pageSize, total unchanged, and totalPages unchanged per AC-13; page 1 returns 20 items with total=25; module-integration boundary exercises real DB transaction without loading full unbounded dataset",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-30-021",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "FR-30",
+        "FR-31",
+        "AC-13",
+        "AC-18a"
+      ],
+      "title": "OrganizerAdmin browses paginated organizer events list with search, state filter, and sort",
+      "preconditions": [
+        "Multiple events including at least one Draft and one RegistrationOpen with distinguishable names",
+        "Authenticated OrganizerAdmin JWT"
+      ],
+      "steps": [
+        "GET /api/v1/events?page=1&pageSize=20&sort=startAt:asc with OrganizerAdmin Authorization bearer",
+        "GET /api/v1/events?q={draftEventNameSubstring}&page=1&pageSize=20 with OrganizerAdmin Authorization bearer",
+        "GET /api/v1/events?state=Draft&page=1&pageSize=20 with OrganizerAdmin Authorization bearer",
+        "GET /api/v1/events?page=1&pageSize=20&sort=updatedAt:desc with OrganizerAdmin Authorization bearer"
+      ],
+      "expected": "Each request returns HTTP 200 paginated envelope; Draft state filter includes Draft events visible to organizer admin; q search returns matching events by name/location/description; sort parameter changes ordering per API design; organizer events list supports search + state filter (includes Draft) + sort per FR-30 behavior and listing matrix",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-30-022",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": [
+        "FR-30",
+        "FR-21",
+        "AC-10b"
+      ],
+      "title": "Invalid eligibility filter on operational list returns 400 INVALID_INPUT",
+      "preconditions": [
+        "Completed event with evaluated eligibility rows",
+        "Authenticated OrganizerAdmin JWT with event scope"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/eligibility?eligibility=InvalidStatus&page=1&pageSize=20"
+      ],
+      "expected": "HTTP 400 with error.code INVALID_INPUT; no partial eligibility list data returned; invalid eligibility enum rejected per API design section 3 and AC-10b",
       "edgeCase": true
     }
   ]
