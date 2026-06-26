@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-15",
   "version": 2,
-  "docFingerprint": "sha256:e2dfbabeeed703c3e91f7927502130070273c2e29f7eb78b92608b58e3a599e7",
-  "generatedAt": "2026-06-26T18:00:00Z",
+  "docFingerprint": "sha256:8fc81cab4e7b769ab81d7f566d602cbb40696b9b602ef66c13fdf3a69a441ddf",
+  "generatedAt": "2026-06-26T17:05:22Z",
   "cases": [
     {
       "id": "TC-FR-15-001",
@@ -13,11 +13,12 @@
       "traceability": [
         "FR-15",
         "AC-05",
-        "BR-10"
+        "BR-10",
+        "BR-13"
       ],
       "title": "In-window check-in recorded with timestamp per testing-plan §3",
       "preconditions": [
-        "Event is InProgress with check-in window active (fixed clock now between checkinOpenAt and checkinCloseAt)",
+        "Event is InProgress with check-in window active (now >= checkinOpenAt and now < checkinCloseAt per exclusive close boundary)",
         "Registered participant with no prior valid check-in",
         "Authenticated OrganizerStaff or OrganizerAdmin with check-in capability for the event"
       ],
@@ -46,11 +47,11 @@
         "Authenticated staff actor with check-in capability for the event"
       ],
       "steps": [
-        "Set fixed clock to a time outside checkinOpenAt..checkinCloseAt",
+        "Set fixed clock to a time strictly before checkinOpenAt or at/after checkinCloseAt per exclusive close boundary",
         "Invoke checkinService.staffCheckin(eventId, { registrationId }, actorContext)",
         "Inspect error code and database state"
       ],
-      "expected": "Testing-plan §3 out-of-window row satisfied: check-in rejected with stable error code CHECKIN_WINDOW_CLOSED; no CheckinRecord persisted; registration remains Registered per FR-15",
+      "expected": "Testing-plan §3 out-of-window row satisfied: check-in rejected with stable error code CHECKIN_WINDOW_CLOSED; no CheckinRecord persisted; registration remains Registered per FR-15; valid window is checkinOpenAt <= now < checkinCloseAt",
       "edgeCase": false
     },
     {
@@ -67,7 +68,7 @@
       ],
       "title": "Staff check-in module persists record only when current time is inside configured window",
       "preconditions": [
-        "Event InProgress with active check-in window",
+        "Event InProgress with active check-in window (now >= checkinOpenAt and now < checkinCloseAt per exclusive close boundary)",
         "Registered participant with no prior valid check-in",
         "Authenticated OrganizerStaff assigned to the event"
       ],
@@ -93,7 +94,7 @@
       "title": "Self check-in module persists record only when current time is inside configured window",
       "preconditions": [
         "Event rule config enables participant self check-in",
-        "Event InProgress with active check-in window",
+        "Event InProgress with active check-in window (now >= checkinOpenAt and now < checkinCloseAt per exclusive close boundary)",
         "Registered participant with no prior valid check-in",
         "Authenticated participant actor context"
       ],
@@ -118,7 +119,7 @@
       "title": "Valid in-window check-in transitions registration Registered to CheckedIn",
       "preconditions": [
         "Registration in Registered state before check-in",
-        "Event check-in window contains fixed clock now",
+        "Event check-in window active (now >= checkinOpenAt and now < checkinCloseAt per exclusive close boundary)",
         "No prior valid check-in on the registration"
       ],
       "steps": [
@@ -143,7 +144,7 @@
       "title": "Out-of-window check-in attempt preserves Registered state without transition",
       "preconditions": [
         "Registration in Registered state before check-in attempt",
-        "Fixed clock now outside checkinOpenAt..checkinCloseAt",
+        "Fixed clock now strictly before checkinOpenAt or at/after checkinCloseAt per exclusive close boundary",
         "No prior valid check-in on the registration"
       ],
       "steps": [
@@ -168,7 +169,7 @@
       ],
       "title": "POST /events/{eventId}/checkins returns HTTP 200 when inside configured window",
       "preconditions": [
-        "E2E fixture event InProgress with active check-in window",
+        "E2E fixture event InProgress with active check-in window (now >= checkinOpenAt and now < checkinCloseAt)",
         "Registered participant with valid registrationId",
         "OrganizerStaff JWT scoped to the event",
         "Fresh Idempotency-Key header value"
@@ -195,7 +196,7 @@
       "title": "POST /events/{eventId}/self-checkin returns HTTP 200 when inside configured window",
       "preconditions": [
         "Event rule config enables participant self check-in",
-        "Event InProgress with active check-in window",
+        "Event InProgress with active check-in window (now >= checkinOpenAt and now < checkinCloseAt per exclusive close boundary)",
         "Authenticated participant JWT for Registered registration with no prior check-in",
         "Fresh Idempotency-Key header value"
       ],
@@ -247,7 +248,7 @@
       "title": "POST /events/{eventId}/self-checkin returns HTTP 422 with CHECKIN_WINDOW_CLOSED when outside window",
       "preconditions": [
         "Event rule config enables participant self check-in",
-        "Event InProgress but current time is outside checkinOpenAt..checkinCloseAt",
+        "Event InProgress but current time is strictly before checkinOpenAt or at/after checkinCloseAt per exclusive close boundary",
         "Authenticated participant JWT for Registered registration with no prior check-in"
       ],
       "steps": [
@@ -270,7 +271,7 @@
       "title": "Flow A lifecycle check-in step succeeds only when inside configured window",
       "preconditions": [
         "E2E Flow A fixture: event progressed through publish, open-registration, and participant Registered",
-        "Event started (InProgress) with check-in window open",
+        "Event started (InProgress) with check-in window open (now >= checkinOpenAt and now < checkinCloseAt)",
         "Participant or staff token from prior registration step"
       ],
       "steps": [
@@ -419,14 +420,14 @@
       "title": "Check-in at checkinOpenAt boundary instant is recorded when open boundary is inclusive",
       "preconditions": [
         "Event configured with known checkinOpenAt and checkinCloseAt",
-        "Fixed clock set exactly to checkinOpenAt",
+        "Fixed clock set exactly to checkinOpenAt (now >= checkinOpenAt and now < checkinCloseAt)",
         "Registered participant with no prior check-in"
       ],
       "steps": [
         "Submit staff or self check-in at the open boundary instant",
         "Query CheckinRecord and registration state"
       ],
-      "expected": "Check-in succeeds per configured window policy; checkinAt persisted and registration is CheckedIn",
+      "expected": "Check-in succeeds per configured window policy (valid window is checkinOpenAt <= now < checkinCloseAt); checkinAt persisted and registration is CheckedIn",
       "edgeCase": true
     },
     {
@@ -440,17 +441,17 @@
         "AC-06",
         "BR-10"
       ],
-      "title": "Check-in at checkinCloseAt boundary instant is rejected when close boundary is exclusive",
+      "title": "Check-in at checkinCloseAt boundary instant is rejected per exclusive close boundary",
       "preconditions": [
         "Event configured with known checkinOpenAt and checkinCloseAt",
-        "Fixed clock set exactly to checkinCloseAt",
+        "Fixed clock set exactly to checkinCloseAt (now >= checkinOpenAt and now < checkinCloseAt is false)",
         "Registered participant with no prior check-in"
       ],
       "steps": [
         "Submit staff or self check-in at the close boundary instant",
         "Query CheckinRecord and registration state"
       ],
-      "expected": "Check-in rejected with CHECKIN_WINDOW_CLOSED per strictly-inside window semantics; registration stays Registered",
+      "expected": "Check-in rejected with CHECKIN_WINDOW_CLOSED; exclusive close boundary treats checkinCloseAt as out-of-window (valid window is checkinOpenAt <= now < checkinCloseAt); registration stays Registered",
       "edgeCase": true
     },
     {
@@ -571,7 +572,7 @@
         "POST check-in endpoint outside configured window",
         "Inspect error.error.details in response envelope"
       ],
-      "expected": "HTTP 422 (or 409) with error.code CHECKIN_WINDOW_CLOSED, user-safe message, and details containing checkinOpenAt and checkinCloseAt per error-handling contract",
+      "expected": "HTTP 422 with error.code CHECKIN_WINDOW_CLOSED, user-safe message, details.checkinOpenAt and details.checkinCloseAt ISO timestamps, non-empty requestId, and timestamp per error-handling §3 standard envelope",
       "edgeCase": false
     },
     {
@@ -587,11 +588,11 @@
       "title": "Window validation runs before duplicate-check-in check in check-in pipeline",
       "preconditions": [
         "Check-in validation pipeline order: auth, event check-in window, existing valid check-in check, persist",
-        "Registered participant with no prior check-in",
-        "Fixed clock outside check-in window"
+        "Registered participant with existing valid CheckinRecord (BR-11 would apply on duplicate)",
+        "Fixed clock outside check-in window (now < checkinOpenAt or now >= checkinCloseAt)"
       ],
       "steps": [
-        "Attempt check-in with out-of-window now",
+        "Attempt second check-in for the same registration while window is closed",
         "Inspect error code returned"
       ],
       "expected": "Failure is CHECKIN_WINDOW_CLOSED (not CHECKIN_ALREADY_RECORDED); window rule evaluated at pipeline step 2 before duplicate check at step 3",
@@ -620,8 +621,35 @@
         "Inspect primary check-in control state and any blocking message",
         "Attempt check-in if control is visible"
       ],
-      "expected": "canSelfCheckIn returns false; primary check-in button is disabled or hidden; UI does not show success path when API policy rejects at close boundary; participant remains not checked in",
+      "expected": "canSelfCheckIn returns false; primary check-in button is disabled or hidden; UI does not show success path when API policy rejects at close boundary (now >= checkinCloseAt); participant remains not checked in",
       "edgeCase": true
+    },
+    {
+      "id": "TC-FR-15-026",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": [
+        "FR-15",
+        "AC-05",
+        "NFR-13"
+      ],
+      "title": "Check-in page submit succeeds when UI gate shows window is open",
+      "preconditions": [
+        "Event InProgress with active check-in window (now >= checkinOpenAt and now < checkinCloseAt per exclusive close boundary)",
+        "Event rule config enables participant self check-in",
+        "Participant logged in with Registered registration and no prior check-in",
+        "Self check-in page shows enabled primary control (canSelfCheckIn true, mirroring API assertCheckinWindowOpen)"
+      ],
+      "steps": [
+        "Navigate to /events/{eventId}/check-in",
+        "Confirm UI gate permits check-in (button enabled, no window-closed or disabled-self-service blocker)",
+        "Trigger check-in via primary control",
+        "Observe network response and success UI"
+      ],
+      "expected": "POST self-checkin returns HTTP 200; UI shows check-in success with timestamp; no mismatch where UI gate passes but API returns CHECKIN_WINDOW_CLOSED; FR-15 satisfied — valid in-window check-in recorded only when window policy permits",
+      "edgeCase": false
     }
   ]
 }
