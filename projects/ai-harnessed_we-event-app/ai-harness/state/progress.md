@@ -157,3 +157,4 @@ Append-only log of completed iterations.
 - 2026-06-26T05:18:17Z | web-design-system-shell | browser: homepage HTTP 200 — AppShell, 17 domain status badges, NFR-06 live-query panel Connected
 - 2026-06-26T05:18:31Z | FR-29 | testgen_passed
 - 2026-06-26T05:20:20Z | FR-30 | testgen_passed
+- 2026-06-26T05:21:54Z | FR-31 | testgen_passed
