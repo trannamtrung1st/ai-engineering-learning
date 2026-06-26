@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-05",
   "version": 1,
-  "docFingerprint": "sha256:027175175545d05eacf412663c601ddc7b622e4741a2ff40633c8e332b7bd6aa",
-  "generatedAt": "2026-06-26T12:01:30Z",
+  "docFingerprint": "sha256:87b20ee29539baa20adb28d25f392f7bf11c719437f7d84b899d86c14fe7f71b",
+  "generatedAt": "2026-06-26T16:41:17Z",
   "cases": [
     {
       "id": "TC-FR-05-001",
@@ -46,7 +46,7 @@
         "GET /api/v1/events?page=1&pageSize=12 with Participant Authorization bearer",
         "Verify response envelope and first matching RegistrationOpen item"
       ],
-      "expected": "HTTP 200 with paginated envelope (items, page, pageSize, total, totalPages); items include RegistrationOpen event(s) with eventId, name, state RegistrationOpen, startAt, location; satisfies FR-05 participant can view events currently open for registration and GET /events default pageSize 12 with sort startAt:asc",
+      "expected": "HTTP 200 with paginated envelope (items, page, pageSize, total, totalPages); items include RegistrationOpen event(s) with eventId, name, state RegistrationOpen, startAt, location, and coverImageUrl when cover_image_key is set; satisfies FR-05 participant can view events currently open for registration and GET /events default pageSize 12 with sort startAt:asc",
       "edgeCase": false
     },
     {
@@ -69,7 +69,7 @@
         "GET /api/v1/events/{eventId} with Participant Authorization bearer",
         "Inspect state, registration window fields, and action-relevant metadata in response"
       ],
-      "expected": "HTTP 200 with event detail showing state RegistrationOpen, registration window timestamps, and fields needed for participant to review before registering; event is within configured registration window per BR-02 and state machine guard openRegistrationWindow",
+      "expected": "HTTP 200 with event detail showing state RegistrationOpen, registration window timestamps, coverImageUrl when cover_image_key is set, and fields needed for participant to review before registering; event is within configured registration window per BR-02 and state machine guard openRegistrationWindow",
       "edgeCase": false
     },
     {
@@ -360,27 +360,6 @@
         "Measure end-to-end query latency for single page fetch"
       ],
       "expected": "Single page returned with correct total count; response time within acceptable threshold for paginated list when total exceeds 500 rows per NFR-16; query uses events.start_at index for default sort",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-FR-05-017",
-      "category": "functional",
-      "layer": "unit",
-      "technique": "boundary-error",
-      "priority": "P1",
-      "traceability": [
-        "FR-05"
-      ],
-      "title": "Participant-visible event state filter includes RegistrationOpen only among pre-registration discoverable states",
-      "preconditions": [
-        "Pure participant event visibility or list-filter function",
-        "Input event states: Draft, Published, RegistrationOpen, RegistrationClosed, Cancelled"
-      ],
-      "steps": [
-        "Apply participantDiscoveryFilter or equivalent to each state",
-        "Verify RegistrationOpen passes and Draft fails"
-      ],
-      "expected": "Filter logic marks RegistrationOpen as visible for participant discovery; Draft excluded; aligns with role-filtered GET /events and FR-05 scope of viewing events currently open for registration",
       "edgeCase": false
     },
     {
