@@ -37,7 +37,7 @@ function mapEligibility(row: Record<string, unknown>): EligibilityRow {
     id: row.id as string,
     eventId: row.event_id as string,
     registrationId: row.registration_id as string,
-    participantId: row.participant_id as string,
+    participantId: (row.participant_id as string | undefined) ?? "",
     result: row.result as CertificateEligibilityState,
     reasonCode: (row.reason_code as string | null) ?? null,
     reasonText: (row.reason_text as string | null) ?? null,
@@ -45,9 +45,17 @@ function mapEligibility(row: Record<string, unknown>): EligibilityRow {
       ? (row.evaluated_at as Date).toISOString()
       : null,
     overriddenBy: (row.overridden_by as string | null) ?? null,
-    createdAt: (row.created_at as Date).toISOString(),
-    updatedAt: (row.updated_at as Date).toISOString(),
-    version: row.version as number,
+    createdAt: (
+      (row.created_at as Date | undefined) ??
+      (row.evaluated_at as Date | undefined) ??
+      new Date()
+    ).toISOString(),
+    updatedAt: (
+      (row.updated_at as Date | undefined) ??
+      (row.evaluated_at as Date | undefined) ??
+      new Date()
+    ).toISOString(),
+    version: (row.version as number | undefined) ?? 1,
   };
 }
 
@@ -105,9 +113,12 @@ function mapRegistrationRow(row: Record<string, unknown>): RegistrationRow {
       : null,
     statusReasonCode: (row.status_reason_code as string | null) ?? null,
     statusReasonText: (row.status_reason_text as string | null) ?? null,
-    createdAt: (row.created_at as Date).toISOString(),
+    createdAt: (
+      (row.created_at as Date | undefined) ??
+      (row.requested_at as Date)
+    ).toISOString(),
     updatedAt: (row.updated_at as Date).toISOString(),
-    version: row.version as number,
+    version: (row.version as number | undefined) ?? 1,
   };
 }
 
@@ -132,7 +143,7 @@ export async function listRegistrationsForEligibilityPaginated(
   const params: unknown[] = [eventId, ELIGIBILITY_REGISTRATION_STATES];
   const conditions = [
     "r.event_id = $1",
-    "r.state = ANY($2::text[])",
+    "r.state::text = ANY($2::text[])",
   ];
   let paramIndex = 3;
 
@@ -180,7 +191,7 @@ export async function listRegistrationsForEligibilityExport(
   client: Pool | PoolClient = getPool(),
 ): Promise<RegistrationRow[]> {
   const params: unknown[] = [eventId, ELIGIBILITY_REGISTRATION_STATES];
-  const conditions = ["r.event_id = $1", "r.state = ANY($2::text[])"];
+  const conditions = ["r.event_id = $1", "r.state::text = ANY($2::text[])"];
   let paramIndex = 3;
 
   if (options.eligibility) {

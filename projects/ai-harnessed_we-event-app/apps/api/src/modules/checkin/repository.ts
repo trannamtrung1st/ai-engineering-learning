@@ -42,7 +42,10 @@ function mapCheckinRecord(row: Record<string, unknown>): CheckinRecordRow {
     checkinAt: (row.checkin_at as Date).toISOString(),
     method: row.method as CheckinMethod,
     operatorId: (row.operator_id as string | null) ?? null,
-    createdAt: (row.created_at as Date).toISOString(),
+    createdAt: (
+      (row.created_at as Date | undefined) ??
+      (row.checkin_at as Date)
+    ).toISOString(),
   };
 }
 
@@ -165,8 +168,8 @@ export async function recordCheckin(
     let insertResult;
     try {
       insertResult = await client.query(
-        `INSERT INTO checkin_records (registration_id, event_id, method, operator_id)
-         VALUES ($1, $2, $3, $4)
+        `INSERT INTO checkin_records (registration_id, event_id, checkin_at, method, operator_id)
+         VALUES ($1, $2, NOW(), $3, $4)
          RETURNING *`,
         [registration.id, registration.eventId, method, operatorId],
       );

@@ -19,3 +19,9 @@ CREATE INDEX IF NOT EXISTS idx_checkin_event
 
 CREATE INDEX IF NOT EXISTS idx_checkin_at
   ON checkin_records(checkin_at);
+
+ALTER TABLE checkin_records
+  ALTER COLUMN checkin_at SET DEFAULT NOW();
+
+ALTER TABLE checkin_records
+  ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();

@@ -49,9 +49,12 @@ function mapRegistration(row: Record<string, unknown>): RegistrationRow {
       : null,
     statusReasonCode: (row.status_reason_code as string | null) ?? null,
     statusReasonText: (row.status_reason_text as string | null) ?? null,
-    createdAt: (row.created_at as Date).toISOString(),
+    createdAt: (
+      (row.created_at as Date | undefined) ??
+      (row.requested_at as Date)
+    ).toISOString(),
     updatedAt: (row.updated_at as Date).toISOString(),
-    version: row.version as number,
+    version: (row.version as number | undefined) ?? 1,
   };
 }
 
@@ -163,7 +166,7 @@ export async function findRegistrationByParticipant(
      FROM registrations
      WHERE event_id = $1
        AND participant_id = $2
-       AND state = ANY($3::text[])
+       AND state::text = ANY($3::text[])
      ORDER BY requested_at DESC
      LIMIT 1`,
     [eventId, participantId, states],
@@ -181,7 +184,7 @@ export async function countSeatHolders(
   const result = await client.query(
     `SELECT COUNT(*)::int AS count
      FROM registrations
-     WHERE event_id = $1 AND state = ANY($2::text[])`,
+     WHERE event_id = $1 AND state::text = ANY($2::text[])`,
     [eventId, SEAT_HOLDING_STATES],
   );
   return (result.rows[0] as { count: number }).count;
@@ -587,7 +590,7 @@ export async function listRegistrationsForEvent(
   let paramIndex = 2;
 
   if (options.state) {
-    conditions.push(`r.state = $${paramIndex++}`);
+    conditions.push(`r.state::text = $${paramIndex++}`);
     params.push(options.state);
   }
 
@@ -727,7 +730,7 @@ export async function listRegistrationsForParticipant(
   let paramIndex = 2;
 
   if (options.state) {
-    conditions.push(`r.state = $${paramIndex++}`);
+    conditions.push(`r.state::text = $${paramIndex++}`);
     params.push(options.state);
   }
 

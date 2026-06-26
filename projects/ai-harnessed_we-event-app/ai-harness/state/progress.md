@@ -281,3 +281,4 @@ Append-only log of completed iterations.
 - 2026-06-26T13:37:02Z | api-foundation | passed
 - 2026-06-26T13:45:04Z | module-event | passed
 - 2026-06-26T14:35:49Z | AC-01 | testgen_failed
+- 2026-06-26T14:54:01Z | module-registration | passed

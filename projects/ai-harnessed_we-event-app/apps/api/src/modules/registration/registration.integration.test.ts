@@ -85,7 +85,10 @@ async function createRegistrationOpenEvent(options: {
   return open;
 }
 
-const actorContext = { actorId: ACTOR_ID, actorRole: "Participant" };
+const actorContext = (participantId: string) => ({
+  actorId: participantId,
+  actorRole: "Participant" as const,
+});
 
 async function newParticipantId(): Promise<string> {
   const participantId = randomUUID();
@@ -116,7 +119,7 @@ describe("registration integration (NFR-02, FR-31)", () => {
     const result = await registrationService.register(
       event.id,
       participantId,
-      actorContext,
+      actorContext(participantId),
     );
 
     assert.equal(result.state, "Registered");
@@ -132,10 +135,10 @@ describe("registration integration (NFR-02, FR-31)", () => {
     const first = await newParticipantId();
     const second = await newParticipantId();
 
-    await registrationService.register(event.id, first, actorContext);
+    await registrationService.register(event.id, first, actorContext(first));
 
     await assert.rejects(
-      () => registrationService.register(event.id, second, actorContext),
+      () => registrationService.register(event.id, second, actorContext(second)),
       (error: unknown) => {
         assert.ok(error instanceof ApiError);
         assert.equal(
@@ -160,14 +163,14 @@ describe("registration integration (NFR-02, FR-31)", () => {
     const registered = await registrationService.register(
       event.id,
       first,
-      actorContext,
+      actorContext(first),
     );
     assert.equal(registered.state, "Registered");
 
     const waitlisted = await registrationService.register(
       event.id,
       second,
-      actorContext,
+      actorContext(second),
     );
     assert.equal(waitlisted.state, "Waitlisted");
     assert.equal(waitlisted.waitlistPosition, 1);
@@ -177,10 +180,10 @@ describe("registration integration (NFR-02, FR-31)", () => {
     const event = await createRegistrationOpenEvent({ capacity: 10 });
     const participantId = await newParticipantId();
 
-    await registrationService.register(event.id, participantId, actorContext);
+    await registrationService.register(event.id, participantId, actorContext(participantId));
 
     await assert.rejects(
-      () => registrationService.register(event.id, participantId, actorContext),
+      () => registrationService.register(event.id, participantId, actorContext(participantId)),
       (error: unknown) => {
         assert.ok(error instanceof ApiError);
         assert.equal(
@@ -206,7 +209,7 @@ describe("registration integration (NFR-02, FR-31)", () => {
     );
     const results = await Promise.allSettled(
       participantIds.map((participantId) =>
-        createRegistration(event.id, participantId, actorContext),
+        createRegistration(event.id, participantId, actorContext(participantId)),
       ),
     );
 
@@ -240,17 +243,17 @@ describe("registration integration (NFR-02, FR-31)", () => {
     const first = await registrationService.register(
       event.id,
       firstParticipant,
-      actorContext,
+      actorContext(firstParticipant),
     );
     const second = await registrationService.register(
       event.id,
       secondParticipant,
-      actorContext,
+      actorContext(secondParticipant),
     );
     const third = await registrationService.register(
       event.id,
       thirdParticipant,
-      actorContext,
+      actorContext(thirdParticipant),
     );
 
     assert.equal(first.state, "Registered");
@@ -285,19 +288,21 @@ describe("registration integration (NFR-02, FR-31)", () => {
 
     const registeredIds: string[] = [];
     for (let index = 0; index < 2; index += 1) {
+      const participantId = await newParticipantId();
       const result = await registrationService.register(
         event.id,
-        await newParticipantId(),
-        actorContext,
+        participantId,
+        actorContext(participantId),
       );
       registeredIds.push(result.registrationId);
     }
 
     for (let index = 0; index < 3; index += 1) {
+      const participantId = await newParticipantId();
       await registrationService.register(
         event.id,
-        await newParticipantId(),
-        actorContext,
+        participantId,
+        actorContext(participantId),
       );
     }
 

@@ -35,8 +35,14 @@ function mapFeedback(row: Record<string, unknown>): FeedbackRow {
     participantId: row.participant_id as string,
     submittedAt: (row.submitted_at as Date).toISOString(),
     payload: row.payload_json as Record<string, unknown>,
-    createdAt: (row.created_at as Date).toISOString(),
-    updatedAt: (row.updated_at as Date).toISOString(),
+    createdAt: (
+      (row.created_at as Date | undefined) ??
+      (row.submitted_at as Date)
+    ).toISOString(),
+    updatedAt: (
+      (row.updated_at as Date | undefined) ??
+      (row.submitted_at as Date)
+    ).toISOString(),
   };
 }
 

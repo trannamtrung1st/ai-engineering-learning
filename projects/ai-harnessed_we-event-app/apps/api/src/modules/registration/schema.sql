@@ -41,3 +41,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_waitlist_event_position_active
 CREATE INDEX IF NOT EXISTS idx_waitlist_event_queue
   ON waitlist_entries(event_id, position)
   WHERE promoted_at IS NULL AND expired_at IS NULL;
+
+-- Idempotent column adds for harness iterations that created schema without audit columns
+ALTER TABLE registrations
+  ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ADD COLUMN IF NOT EXISTS version INT NOT NULL DEFAULT 1;
+
+UPDATE registrations
+SET created_at = requested_at
+WHERE created_at IS NULL;

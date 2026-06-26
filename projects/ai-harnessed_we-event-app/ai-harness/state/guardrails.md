@@ -154,3 +154,4 @@ Lessons learned across harness iterations. Read before every implementer session
 - [NFR-17] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:cff33cca15ef6cab3bccc14f79d25f9da5a6809dfeed7b72d03730ab2b6fe8fb)
 - [NFR-18] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:408321cae2e96b072282d6a467ef56479d3cf5f57fc5f2184cdae796d2ae49e1)
 - [AC-01] TestGen agent did not emit TESTGEN_DONE
+- [module-registration] Legacy Postgres may use enum columns (`registration_state`, `event_state`) and omit module columns (`events.version`, `registrations.created_at`); use idempotent `ALTER TABLE … ADD COLUMN IF NOT EXISTS` in schema.sql and compare enums via `state::text` in queries.

@@ -29,3 +29,15 @@ CREATE INDEX IF NOT EXISTS idx_eligibility_event
 
 CREATE INDEX IF NOT EXISTS idx_eligibility_result
   ON certificate_eligibilities(event_id, result);
+
+ALTER TABLE certificate_eligibilities
+  ADD COLUMN IF NOT EXISTS participant_id UUID,
+  ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ADD COLUMN IF NOT EXISTS version INTEGER NOT NULL DEFAULT 1;
+
+UPDATE certificate_eligibilities ce
+SET participant_id = r.participant_id
+FROM registrations r
+WHERE ce.registration_id = r.id
+  AND ce.participant_id IS NULL;

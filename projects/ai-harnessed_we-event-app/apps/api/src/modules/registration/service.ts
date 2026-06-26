@@ -56,8 +56,8 @@ export class RegistrationService {
       eventId,
       resolvedParticipantId,
       {
-        ...context,
-        actorId: resolveActorId(context.actorId),
+        actorId: resolvedParticipantId,
+        actorRole: context.actorRole,
       },
     );
 

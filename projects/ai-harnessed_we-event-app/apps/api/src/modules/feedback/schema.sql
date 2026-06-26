@@ -16,3 +16,7 @@ CREATE INDEX IF NOT EXISTS idx_feedback_event
 
 CREATE INDEX IF NOT EXISTS idx_feedback_participant
   ON feedback_submissions(participant_id);
+
+ALTER TABLE feedback_submissions
+  ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();

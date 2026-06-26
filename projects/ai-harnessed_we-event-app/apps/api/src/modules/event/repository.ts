@@ -153,12 +153,12 @@ export async function listEvents(
   let paramIndex = 1;
 
   if (options.states && options.states.length > 0) {
-    conditions.push(`e.state = ANY($${paramIndex++}::text[])`);
+    conditions.push(`e.state::text = ANY($${paramIndex++}::text[])`);
     params.push(options.states);
   }
 
   if (options.state) {
-    conditions.push(`e.state = $${paramIndex++}`);
+    conditions.push(`e.state::text = $${paramIndex++}`);
     params.push(options.state);
   }
 
