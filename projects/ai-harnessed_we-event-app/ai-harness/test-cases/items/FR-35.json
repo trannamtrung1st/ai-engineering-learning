@@ -2,12 +2,13 @@
   "productItemId": "FR-35",
   "version": 1,
   "docFingerprint": "sha256:20dc4744e6b360cadb5ea4206b636accdc3eed30db646a391487565a106b15eb",
-  "generatedAt": "2026-06-26T21:30:00Z",
+  "generatedAt": "2026-06-26T12:49:24Z",
   "cases": [
     {
       "id": "TC-FR-35-001",
       "category": "functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
       "traceability": ["FR-35", "AC-17"],
       "title": "Organizer Admin uploads cover image to draft event via POST /events/{eventId}/cover-image",
@@ -21,33 +22,36 @@
         "POST /api/v1/events/{eventId}/cover-image as multipart/form-data with image file and OrganizerAdmin bearer token",
         "GET /api/v1/events/{eventId} with organizer or public read token per endpoint policy"
       ],
-      "expected": "Upload returns HTTP 200 or 201; event row persists cover_image_key and cover_image_updated_at; GET event detail includes non-null coverImageUrl pointing to controlled media path; satisfies FR-35 organizer upload during create/edit lifecycle",
+      "expected": "POST returns HTTP 200 or 201; event row persists cover_image_key and cover_image_updated_at; GET event detail includes non-null coverImageUrl pointing to controlled media path; satisfies FR-35 organizer upload during create/edit lifecycle",
       "edgeCase": false
     },
     {
       "id": "TC-FR-35-002",
       "category": "functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["FR-35"],
       "title": "Organizer Admin replaces existing cover image with new upload",
       "preconditions": [
-        "Event already has cover_image_key from prior OrganizerAdmin upload",
+        "Event already has cover_image_key from prior OrganizerAdmin upload in Postgres",
         "OrganizerAdmin JWT with write scope on event",
-        "Second valid image file (different content) under 5 MB"
+        "Second valid image file (different content) under 5 MB",
+        "Integration test harness with transaction rollback per test"
       ],
       "steps": [
-        "Record current coverImageUrl and cover_image_key from GET /events/{eventId}",
-        "POST /api/v1/events/{eventId}/cover-image with replacement file",
-        "GET /api/v1/events/{eventId} and fetch new coverImageUrl"
+        "Record current coverImageUrl and cover_image_key from GET /events/{eventId} and events table",
+        "POST /api/v1/events/{eventId}/cover-image with replacement file via media service/repository",
+        "Query events row and media storage for new key and file bytes"
       ],
-      "expected": "cover_image_key and cover_image_updated_at update; coverImageUrl changes; new media endpoint serves replacement bytes; prior key superseded or removed per storage policy; FR-35 replace semantics honored",
+      "expected": "cover_image_key and cover_image_updated_at update atomically in database; coverImageUrl changes; new media endpoint serves replacement bytes; prior key superseded or removed per storage policy; FR-35 replace semantics honored",
       "edgeCase": false
     },
     {
       "id": "TC-FR-35-003",
       "category": "functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P1",
       "traceability": ["FR-35"],
       "title": "Organizer Admin removes cover via DELETE /events/{eventId}/cover-image during edit",
@@ -57,7 +61,8 @@
       ],
       "steps": [
         "DELETE /api/v1/events/{eventId}/cover-image with OrganizerAdmin bearer token",
-        "GET /api/v1/events/{eventId}"
+        "GET /api/v1/events/{eventId}",
+        "Query events row for cover_image_key and cover_image_updated_at"
       ],
       "expected": "DELETE succeeds; cover_image_key cleared in database; GET detail omits coverImageUrl or returns null; single-image-per-event metadata removed per stakeholders scope",
       "edgeCase": false
@@ -66,6 +71,7 @@
       "id": "TC-FR-35-004",
       "category": "functional",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P0",
       "traceability": ["FR-35", "AC-17"],
       "title": "Organizer Admin selects cover via file picker with preview on create/edit event form",
@@ -87,6 +93,7 @@
       "id": "TC-FR-35-005",
       "category": "functional",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["FR-35"],
       "title": "Organizer Admin replaces and removes cover from edit form controls",
@@ -107,6 +114,7 @@
       "id": "TC-FR-35-006",
       "category": "functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
       "traceability": ["FR-35"],
       "title": "Cover upload allowed on published event edit (not only draft create)",
@@ -119,30 +127,33 @@
         "POST /api/v1/events/{eventId}/cover-image on published event",
         "GET /api/v1/events/{eventId}"
       ],
-      "expected": "Upload succeeds during edit of non-draft event; cover_image_key persisted; FR-35 covers both create and edit contexts",
+      "expected": "POST returns HTTP 200 or 201; cover_image_key persisted during edit of non-draft event; FR-35 covers both create and edit contexts",
       "edgeCase": false
     },
     {
       "id": "TC-FR-35-007",
       "category": "non-functional",
-      "layer": "unit",
+      "layer": "integration",
+      "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["FR-35", "NFR-18"],
-      "title": "Cover upload validator accepts only image/jpeg, image/png, and image/webp",
+      "title": "Cover upload rejects disallowed MIME types before persistence",
       "preconditions": [
-        "Upload MIME and extension validator module available in isolation"
+        "OrganizerAdmin JWT and editable event",
+        "Non-image file (e.g. application/pdf or text/plain) presented as upload"
       ],
       "steps": [
-        "Validate sample buffers or declared MIME types for image/jpeg, image/png, image/webp",
-        "Validate disallowed types such as image/gif, application/pdf, text/plain"
+        "POST /api/v1/events/{eventId}/cover-image with disallowed file type",
+        "Query events row for cover_image_key"
       ],
-      "expected": "Allowed types pass validation; disallowed types fail before domain execution per NFR-18 and API design §2.7",
-      "edgeCase": false
+      "expected": "HTTP 400 invalid input; cover_image_key remains null or unchanged; no file stored under uploads path; only image/jpeg, image/png, and image/webp accepted per API design §2.7 and NFR-18",
+      "edgeCase": true
     },
     {
       "id": "TC-FR-35-008",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["FR-35", "NFR-18"],
       "title": "Cover upload rejects files exceeding 5 MB maximum size",
@@ -154,12 +165,13 @@
         "POST /api/v1/events/{eventId}/cover-image with oversized file as multipart upload"
       ],
       "expected": "HTTP 400 with stable invalid-input error code; no cover_image_key persisted; event detail coverImageUrl unchanged if prior cover absent",
-      "edgeCase": false
+      "edgeCase": true
     },
     {
       "id": "TC-FR-35-009",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["FR-35", "NFR-18"],
       "title": "Uploaded cover stored under controlled path and served via GET /media/events/{key}",
@@ -170,7 +182,8 @@
       ],
       "steps": [
         "POST /api/v1/events/{eventId}/cover-image and capture cover_image_key from response or subsequent GET",
-        "GET /api/v1/media/events/{key} with valid key"
+        "GET /api/v1/media/events/{key} with valid key",
+        "Verify file exists under configured uploads directory"
       ],
       "expected": "File persisted under configured uploads directory; media GET returns HTTP 200 with correct Content-Type; no direct raw filesystem URL exposure per NFR-18",
       "edgeCase": false
@@ -179,9 +192,10 @@
       "id": "TC-FR-35-010",
       "category": "non-functional",
       "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["FR-35", "NFR-07", "NFR-08"],
-      "title": "Cover upload and delete require authenticated OrganizerAdmin authorization",
+      "title": "Participant cannot upload or delete cover image (OrganizerAdmin only)",
       "preconditions": [
         "Editable event in organizer scope",
         "Valid OrganizerAdmin JWT and separate participant JWT"
@@ -191,15 +205,16 @@
         "POST /api/v1/events/{eventId}/cover-image with participant token only",
         "DELETE /api/v1/events/{eventId}/cover-image with participant token only"
       ],
-      "expected": "OrganizerAdmin mutating requests succeed; participant-only mutating requests return 403 unauthorized; sensitive media mutation gated per NFR-07 and NFR-08",
-      "edgeCase": false
+      "expected": "OrganizerAdmin mutating requests succeed; participant-only mutating requests return HTTP 403 unauthorized; sensitive media mutation gated per NFR-07 and NFR-08",
+      "edgeCase": true
     },
     {
       "id": "TC-FR-35-011",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-35"],
+      "traceability": ["FR-35", "AC-15"],
       "title": "Unauthenticated cover upload returns 401",
       "preconditions": [
         "Existing event eligible for cover upload",
@@ -215,6 +230,7 @@
       "id": "TC-FR-35-012",
       "category": "edge",
       "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["FR-35"],
       "title": "OrganizerStaff cannot upload cover image (create/edit restricted to OrganizerAdmin)",
@@ -232,12 +248,13 @@
       "id": "TC-FR-35-013",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["FR-35", "NFR-18"],
       "title": "Invalid MIME type upload rejected before persistence",
       "preconditions": [
         "OrganizerAdmin JWT",
-        "Non-image file (e.g. application/pdf or text/plain) presented as upload"
+        "Non-image file (e.g. image/gif or application/pdf) presented as upload"
       ],
       "steps": [
         "POST /api/v1/events/{eventId}/cover-image with disallowed file type"
@@ -249,6 +266,7 @@
       "id": "TC-FR-35-014",
       "category": "edge",
       "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P1",
       "traceability": ["FR-35", "NFR-08"],
       "title": "Cover upload for event outside OrganizerAdmin scope returns 403 or 404",
@@ -266,6 +284,7 @@
       "id": "TC-FR-35-015",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["FR-35", "NFR-18"],
       "title": "Cover upload at exactly 5 MB boundary accepted; just over 5 MB rejected",
@@ -278,13 +297,14 @@
         "DELETE cover-image to reset",
         "POST cover-image with 5 MB + 1 byte file"
       ],
-      "expected": "At-limit file uploads successfully; over-limit file returns 400; boundary enforced consistently per API max 5 MB contract",
+      "expected": "At-limit file uploads successfully with HTTP 200 or 201; over-limit file returns HTTP 400; boundary enforced consistently per API max 5 MB contract",
       "edgeCase": true
     },
     {
       "id": "TC-FR-35-016",
       "category": "edge",
       "layer": "integration",
+      "technique": "boundary-error",
       "priority": "P2",
       "traceability": ["FR-35"],
       "title": "DELETE cover-image on event without cover is idempotent or returns clear not-found",
@@ -303,6 +323,7 @@
       "id": "TC-FR-35-017",
       "category": "edge",
       "layer": "integration",
+      "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["FR-35", "NFR-18"],
       "title": "Media route rejects path traversal attempts for cover keys",
@@ -314,7 +335,7 @@
         "GET /api/v1/media/events/../etc/passwd or similar traversal variant",
         "GET /api/v1/media/events/nonexistent-key"
       ],
-      "expected": "Path traversal and invalid keys rejected with 404 or 400; no arbitrary filesystem read; storage confined to configured uploads directory per NFR-18",
+      "expected": "Path traversal and invalid keys rejected with HTTP 404 or 400; no arbitrary filesystem read; storage confined to configured uploads directory per NFR-18",
       "edgeCase": true
     }
   ]
