@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-01",
   "version": 1,
-  "docFingerprint": "sha256:aa1117f3b650d9449d7073916f7ca9b84a02286b19d61773de4e49196817a850",
-  "generatedAt": "2026-06-26T11:55:01Z",
+  "docFingerprint": "sha256:d5426bd8235ae44f8d8c17ffb86670943a993f20178df22df9dcadf4ea6c6df5",
+  "generatedAt": "2026-06-26T16:34:45Z",
   "cases": [
     {
       "id": "TC-FR-01-001",
