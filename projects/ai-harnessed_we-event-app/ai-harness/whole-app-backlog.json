@@ -503,7 +503,8 @@
       "testRequirements": {
         "acceptanceTags": [
           "AC-15",
-          "AC-16"
+          "AC-16",
+          "FR-32"
         ]
       }
     },
