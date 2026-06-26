@@ -178,3 +178,9 @@ Append-only log of completed iterations.
 - 2026-06-26T05:44:24Z | NFR-18 | testgen_passed
 - 2026-06-26T06:18:41Z | web-design-system-shell | checks_failed
 - 2026-06-26T06:19:34Z | web-design-system-shell | checks_failed
+- 2026-06-26T06:32:00Z | web-design-system-shell | browser: homepage HTTP 200 via verify-stack — AppShell, domain status badges, NFR-06 live-query panel (Playwright MCP unreachable from agent network)
+- 2026-06-26T06:34:14Z | web-design-system-shell | browser_test_failed
+- 2026-06-26T06:42:15Z | web-design-system-shell | browser: homepage HTTP 200 — AppShell, 18 domain status badges, NFR-06 live-query panel Connected, request id updates after 5s poll
+- 2026-06-26T06:55:42Z | web-design-system-shell | browser_test_failed
+- 2026-06-26T06:58:24Z | web-design-system-shell | browser: homepage HTTP 200 — AppShell, 17 domain status badges, NFR-06 live-query panel Connected, request id updates after 5s poll
+- 2026-06-26T07:05:55Z | web-design-system-shell | browser_test_failed

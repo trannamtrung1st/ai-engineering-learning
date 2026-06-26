@@ -673,6 +673,85 @@ find_browser_test_report_for_slice() {
   echo '{"pass":false,"skipped":false,"note":"no browser test report found for slice"}'
 }
 
+find_latest_failed_run_id_for_slice() {
+  local slice_id="$1"
+  local artifact_kind="$2"
+  local f
+  for f in $(ls -t "${RUNS_DIR}"/*-"${artifact_kind}".json 2>/dev/null || true); do
+    if jq -e --arg s "$slice_id" '.slice == $s and .pass == false' "$f" >/dev/null 2>&1; then
+      if [[ "$artifact_kind" == "browser-test" ]]; then
+        jq -e --arg s "$slice_id" '.slice == $s and .pass == false and (.skipped // false) == false' "$f" >/dev/null 2>&1 || continue
+      fi
+      basename "$f" "-${artifact_kind}.json"
+      return 0
+    fi
+  done
+  return 1
+}
+
+read_run_artifact_text() {
+  local run_id="$1"
+  local artifact_kind="$2"
+  local max_chars="${3:-24000}"
+  local text_file="${RUNS_DIR}/${run_id}-${artifact_kind}.txt"
+  local json_file="${RUNS_DIR}/${run_id}-${artifact_kind}.json"
+  if [[ -f "$text_file" ]] && [[ -s "$text_file" ]]; then
+    head -c "$max_chars" "$text_file"
+    return 0
+  fi
+  if [[ -f "$json_file" ]]; then
+    jq -c '.' "$json_file" 2>/dev/null | head -c "$max_chars"
+    return 0
+  fi
+  return 1
+}
+
+build_implementer_prior_gate_feedback() {
+  local slice_id="$1"
+  local run_id block sections=""
+  local browser_run="" review_run=""
+
+  if browser_run="$(find_latest_failed_run_id_for_slice "$slice_id" browser-test)"; then
+    block="$(read_run_artifact_text "$browser_run" browser-test 2>/dev/null || true)"
+    if [[ -n "$block" ]]; then
+      sections="${sections}### Browser test failure (\`${browser_run}\`)
+
+Fix the issues below before signaling \`SLICE_DONE\`. The dedicated browser test agent will re-run after your changes.
+
+\`\`\`
+${block}
+\`\`\`
+
+"
+    fi
+  fi
+
+  if review_run="$(find_latest_failed_run_id_for_slice "$slice_id" review)"; then
+    block="$(read_run_artifact_text "$review_run" review 2>/dev/null || true)"
+    if [[ -n "$block" ]]; then
+      sections="${sections}### AI code review failure (\`${review_run}\`)
+
+Address the review findings below before signaling \`SLICE_DONE\`.
+
+\`\`\`
+${block}
+\`\`\`
+
+"
+    fi
+  fi
+
+  [[ -n "$sections" ]] || return 0
+
+  cat <<EOF
+## Prior gate failures — address these first
+
+This slice failed harness gates on a previous iteration. Read and fix the failures below; do not claim \`SLICE_DONE\` until they are resolved.
+
+${sections}
+EOF
+}
+
 # Backend/infra slices only require API runtime probes; frontend/test need web too.
 slice_requires_web_runtime() {
   local slice_id="${1:-}"

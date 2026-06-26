@@ -102,4 +102,13 @@ ${missing_tags}
 "
 fi
 
+if [[ "$MODE" == "implementer" ]]; then
+  prior_gate_feedback="$(build_implementer_prior_gate_feedback "$SLICE_ID" 2>/dev/null || true)"
+  if [[ -n "$prior_gate_feedback" ]]; then
+    prompt="${prompt}
+
+${prior_gate_feedback}"
+  fi
+fi
+
 printf '%s\n' "$prompt"

@@ -70,3 +70,6 @@ Lessons learned across harness iterations. Read before every implementer session
 - [FR-25] TestGen agent did not emit TESTGEN_DONE
 - [web-design-system-shell] Computational checks failed — see 20260626T061748Z-checks.json
 - [web-design-system-shell] Computational checks failed — see 20260626T061841Z-checks.json
+- [web-design-system-shell] Browser test failed — see 20260626T062246Z-browser-test.json
+- [web-design-system-shell] Browser test failed — see 20260626T063415Z-browser-test.json
+- [web-design-system-shell] Browser test failed — see 20260626T065542Z-browser-test.json

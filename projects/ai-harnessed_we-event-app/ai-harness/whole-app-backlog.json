@@ -396,8 +396,12 @@
       "testRequirements": {
         "unit": [
           "apps/web/src/lib/query-config.test.ts",
+          "apps/web/src/hooks/use-live-query.test.ts",
           "apps/web/src/lib/status-tokens.test.ts",
           "apps/web/src/lib/app-context.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/modules/dashboard/dashboard.integration.test.ts"
         ],
         "component": [
           "apps/web/src/components/ui/badge.test.tsx",
