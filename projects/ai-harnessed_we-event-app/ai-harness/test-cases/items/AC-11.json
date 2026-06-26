@@ -2,15 +2,16 @@
   "productItemId": "AC-11",
   "version": 1,
   "docFingerprint": "sha256:d7f6a976320b1aa92f16ec06ff6560b565944c1c9015956c4de24bcccdea65b2",
-  "generatedAt": "2026-06-26T15:00:00Z",
+  "generatedAt": "2026-06-26T11:19:37Z",
   "cases": [
     {
       "id": "TC-AC-11-001",
       "category": "functional",
       "layer": "integration",
+      "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["AC-11", "BR-22", "FR-25"],
-      "title": "Post-open capacity change persists audit log with actor, reason, and before/after diff",
+      "traceability": ["AC-11", "BR-22"],
+      "title": "Critical config change audit record persisted per testing-plan §3 scenario matrix",
       "preconditions": [
         "Event in RegistrationOpen state with initial capacity 10",
         "Authenticated OrganizerAdmin actor with event scope",
@@ -21,16 +22,38 @@
         "Query auditService.listAuditLogs(eventId, { entityType: \"EventRuleConfig\" })",
         "Locate entry with action event.rule_config.updated"
       ],
-      "expected": "Audit record persisted with actorId, actorRole OrganizerAdmin, reasonCode CAPACITY_CHANGE, reasonText, before.capacity 10, after.capacity 20, and occurredAt timestamp; satisfies AC-11 and BR-22",
+      "expected": "Audit record persisted with actorId, actorRole OrganizerAdmin, reasonCode CAPACITY_CHANGE, reasonText, before.capacity 10, after.capacity 20, and occurredAt timestamp; satisfies testing-plan §3 row: Critical config change audit → audit record persisted (AC-11, BR-22)",
       "edgeCase": false
     },
     {
       "id": "TC-AC-11-002",
       "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["AC-11", "BR-22", "FR-25"],
+      "title": "Post-open capacity change writes immutable audit row in audit_logs table",
+      "preconditions": [
+        "RegistrationOpen event with initial capacity 10",
+        "Authenticated OrganizerAdmin actor with mandatory reason payload",
+        "Real Postgres test database with transaction rollback per test"
+      ],
+      "steps": [
+        "Invoke eventService.update with ruleConfig capacity 20, reasonCode CAPACITY_CHANGE, and reasonText via event module",
+        "Query audit_logs table directly for eventId and action event.rule_config.updated",
+        "Verify event module invoked audit module within the same transaction boundary"
+      ],
+      "expected": "Exactly one append-only audit_logs row persisted with before/after capacity diff, actorId, actorRole, reasonCode, reasonText, and occurredAt; module-integration boundary per audit module contract",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-11-003",
+      "category": "functional",
       "layer": "e2e",
+      "technique": "flow-c",
       "priority": "P0",
       "traceability": ["AC-11", "BR-22"],
-      "title": "Flow C PATCH rule config after registration open is retrievable via audit-logs API",
+      "title": "Flow C admin critical rule change after registration open is verifiable via audit-logs API",
       "preconditions": [
         "E2E event progressed to RegistrationOpen with capacity 10",
         "OrganizerAdmin JWT with scope to the event"
@@ -44,48 +67,32 @@
       "edgeCase": false
     },
     {
-      "id": "TC-AC-11-003",
-      "category": "functional",
-      "layer": "integration",
-      "priority": "P0",
-      "traceability": ["AC-11", "BR-22", "BR-21"],
-      "title": "OrganizerAdmin can list audit logs for event with paginated envelope",
-      "preconditions": [
-        "RegistrationOpen event with at least one prior critical rule config change audit entry",
-        "Authenticated OrganizerAdmin actor"
-      ],
-      "steps": [
-        "GET /api/v1/events/{eventId}/audit-logs?entityType=EventRuleConfig&page=1&pageSize=5 with admin token",
-        "Verify paginated response metadata and items"
-      ],
-      "expected": "HTTP 200 with items array, page, pageSize, total, totalPages; at least one entry has action event.rule_config.updated with reasonCode visible",
-      "edgeCase": false
-    },
-    {
       "id": "TC-AC-11-004",
       "category": "functional",
-      "layer": "integration",
-      "priority": "P1",
-      "traceability": ["AC-11", "BR-22"],
-      "title": "Non-capacity rule config field change after registration open is audit logged",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["AC-11", "BR-21", "FR-25"],
+      "title": "GET /api/v1/events/{eventId}/audit-logs returns HTTP 200 paginated envelope",
       "preconditions": [
-        "RegistrationOpen event with waitlistEnabled false",
-        "OrganizerAdmin actor with mandatory reason payload"
+        "RegistrationOpen event with at least one prior critical rule config change audit entry",
+        "OrganizerAdmin JWT with event scope"
       ],
       "steps": [
-        "Update ruleConfig to toggle waitlistEnabled (or adjust registration/check-in window) with reasonCode and reasonText",
-        "List audit logs filtered by entityType EventRuleConfig"
+        "GET /api/v1/events/{eventId}/audit-logs?entityType=EventRuleConfig&page=1&pageSize=5 with admin Authorization bearer token",
+        "Verify HTTP status code and response envelope shape"
       ],
-      "expected": "Audit entry persisted capturing before/after diff for changed rule field, actor identity, and reason metadata; major post-open rule change traceable per BR-22",
+      "expected": "HTTP 200 with items array, page, pageSize, total, totalPages; at least one item has action event.rule_config.updated with reasonCode visible per API design §2.5 and §3",
       "edgeCase": false
     },
     {
       "id": "TC-AC-11-005",
       "category": "functional",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["AC-11", "FR-30"],
-      "title": "Organizer audit log page surfaces actor, action, and reason columns",
+      "title": "Organizer audit log page surfaces actor, action, and reason columns with pagination",
       "preconditions": [
         "OrganizerAdmin logged in with access to event that has audit log entries",
         "Organizer event audit/governance page reachable"
@@ -93,32 +100,54 @@
       "steps": [
         "Navigate to organizer event audit log page",
         "Observe table columns for Action, Actor, and Reason",
-        "Verify paginated table metadata if multiple pages exist"
+        "Use pagination controls when total exceeds pageSize"
       ],
-      "expected": "Table renders audit action label, actor identifier, and human-readable reason text per governance UX spec; server-driven pagination controls present",
+      "expected": "Table renders audit action label, actor identifier, and human-readable reason text per governance UX spec; server-driven pagination controls present and do not render unbounded dataset client-side",
       "edgeCase": false
     },
     {
       "id": "TC-AC-11-006",
-      "category": "edge",
+      "category": "functional",
       "layer": "integration",
-      "priority": "P0",
+      "technique": "state-transition",
+      "priority": "P1",
       "traceability": ["AC-11", "BR-22"],
-      "title": "Critical config change without reason is rejected with AUDIT_REQUIRED_FOR_CRITICAL_CHANGE",
+      "title": "Non-capacity rule config field change after registration open is audit logged with before/after diff",
       "preconditions": [
-        "RegistrationOpen event",
-        "OrganizerAdmin actor"
+        "RegistrationOpen event with waitlistEnabled false",
+        "OrganizerAdmin actor with mandatory reason payload"
       ],
       "steps": [
-        "Attempt eventService.update with ruleConfig change only (no reasonCode or reasonText)"
+        "Record current ruleConfig snapshot as beforeState",
+        "Update ruleConfig to toggle waitlistEnabled (or adjust registration/check-in window) with reasonCode and reasonText",
+        "List audit logs filtered by entityType EventRuleConfig and compare before/after payloads"
       ],
-      "expected": "Update rejected with error code AUDIT_REQUIRED_FOR_CRITICAL_CHANGE; no rule config mutation and no audit entry for the failed attempt; transaction rolled back per error-handling policy",
-      "edgeCase": true
+      "expected": "Audit entry persisted capturing beforeState and afterState for changed rule field, actor identity, and reason metadata; major post-open rule change traceable per BR-22 state-transition guard",
+      "edgeCase": false
     },
     {
       "id": "TC-AC-11-007",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["AC-11", "BR-22"],
+      "title": "Critical config change without reason returns AUDIT_REQUIRED_FOR_CRITICAL_CHANGE",
+      "preconditions": [
+        "RegistrationOpen event",
+        "OrganizerAdmin JWT"
+      ],
+      "steps": [
+        "PATCH /api/v1/events/{eventId} with ruleConfig capacity change only (no reasonCode or reasonText)"
+      ],
+      "expected": "HTTP 422 or 400 with error code AUDIT_REQUIRED_FOR_CRITICAL_CHANGE; no rule config mutation and no audit entry for the failed attempt; transaction rolled back per error-handling policy",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-11-008",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["AC-11", "BR-21"],
       "title": "OrganizerStaff cannot modify event-level rule configuration",
@@ -129,30 +158,14 @@
       "steps": [
         "PATCH /api/v1/events/{eventId} with ruleConfig capacity change and reason fields using staff token"
       ],
-      "expected": "HTTP 403 with EVENT_RULE_CHANGE_FORBIDDEN; no rule config change and no new audit entry for unauthorized actor",
-      "edgeCase": true
-    },
-    {
-      "id": "TC-AC-11-008",
-      "category": "edge",
-      "layer": "e2e",
-      "priority": "P1",
-      "traceability": ["AC-11", "AC-15", "FR-25"],
-      "title": "Unauthenticated GET audit-logs returns 401",
-      "preconditions": [
-        "Event with existing audit log entries",
-        "No Authorization header on request"
-      ],
-      "steps": [
-        "GET /api/v1/events/{eventId}/audit-logs without bearer token"
-      ],
-      "expected": "HTTP 401 unauthenticated; audit data not exposed",
+      "expected": "HTTP 403 with EVENT_RULE_CHANGE_FORBIDDEN; no rule config change and no new audit entry for unauthorized actor per roles-permissions §2",
       "edgeCase": true
     },
     {
       "id": "TC-AC-11-009",
       "category": "edge",
       "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P1",
       "traceability": ["AC-11", "FR-25", "FR-27"],
       "title": "Participant cannot read event audit logs",
@@ -170,6 +183,7 @@
       "id": "TC-AC-11-010",
       "category": "edge",
       "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P1",
       "traceability": ["AC-11", "FR-27"],
       "title": "OrganizerStaff cannot access audit logs endpoint",
@@ -180,52 +194,34 @@
       "steps": [
         "GET /api/v1/events/{eventId}/audit-logs with staff Authorization bearer token"
       ],
-      "expected": "HTTP 403 with FORBIDDEN; staff limited audit read per roles-permissions matrix",
+      "expected": "HTTP 403 with FORBIDDEN; staff has limited audit read per roles-permissions matrix (Read audit logs: Limited)",
       "edgeCase": true
     },
     {
       "id": "TC-AC-11-011",
       "category": "edge",
-      "layer": "integration",
+      "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P1",
-      "traceability": ["AC-11", "BR-22"],
-      "title": "Sequential critical config changes produce distinct audit entries",
+      "traceability": ["AC-11", "AC-15", "FR-25"],
+      "title": "Unauthenticated GET audit-logs returns 401",
       "preconditions": [
-        "RegistrationOpen event with capacity 10",
-        "OrganizerAdmin actor"
+        "Event with existing audit log entries",
+        "No Authorization header on request"
       ],
       "steps": [
-        "Apply first critical update (capacity 15) with reason payload",
-        "Apply second critical update (capacity 20) with distinct reason payload",
-        "List audit logs for EventRuleConfig entity"
+        "GET /api/v1/events/{eventId}/audit-logs without bearer token"
       ],
-      "expected": "Two separate audit entries with monotonic occurredAt ordering; each captures its own before/after diff and reason; configuration version history preserved",
+      "expected": "HTTP 401 unauthenticated; audit data not exposed",
       "edgeCase": true
     },
     {
       "id": "TC-AC-11-012",
       "category": "edge",
-      "layer": "e2e",
-      "priority": "P2",
-      "traceability": ["AC-11", "AC-13"],
-      "title": "Invalid pagination on audit-logs returns INVALID_PAGINATION",
-      "preconditions": [
-        "Event with audit log entries",
-        "OrganizerAdmin JWT"
-      ],
-      "steps": [
-        "GET /api/v1/events/{eventId}/audit-logs?page=0",
-        "GET /api/v1/events/{eventId}/audit-logs?page=1&pageSize=101"
-      ],
-      "expected": "HTTP 400 with INVALID_PAGINATION for sub-1 page or pageSize above max; no partial audit data returned",
-      "edgeCase": true
-    },
-    {
-      "id": "TC-AC-11-013",
-      "category": "edge",
       "layer": "integration",
+      "technique": "pagination",
       "priority": "P2",
-      "traceability": ["AC-11", "AC-13"],
+      "traceability": ["AC-11", "AC-13", "FR-30"],
       "title": "Audit log page beyond totalPages returns empty items with valid metadata",
       "preconditions": [
         "Event with known audit log count",
@@ -239,9 +235,49 @@
       "edgeCase": true
     },
     {
+      "id": "TC-AC-11-013",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P2",
+      "traceability": ["AC-11", "AC-13"],
+      "title": "Invalid pagination on audit-logs returns INVALID_PAGINATION",
+      "preconditions": [
+        "Event with audit log entries",
+        "OrganizerAdmin JWT"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/audit-logs?page=0",
+        "GET /api/v1/events/{eventId}/audit-logs?page=1&pageSize=101"
+      ],
+      "expected": "HTTP 400 with INVALID_PAGINATION for sub-1 page or pageSize above max 100; no partial audit data returned",
+      "edgeCase": true
+    },
+    {
       "id": "TC-AC-11-014",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": ["AC-11", "BR-22"],
+      "title": "Sequential critical config changes produce distinct immutable audit entries",
+      "preconditions": [
+        "RegistrationOpen event with capacity 10",
+        "OrganizerAdmin actor"
+      ],
+      "steps": [
+        "Apply first critical update (capacity 15) with reason payload",
+        "Apply second critical update (capacity 20) with distinct reason payload",
+        "List audit logs for EventRuleConfig entity ordered by occurredAt"
+      ],
+      "expected": "Two separate audit entries with monotonic occurredAt ordering; each captures its own before/after diff and reason; configuration version history preserved per BR-22",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-11-015",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["AC-11", "NFR-10", "BR-22"],
       "title": "Every successful post-open critical config change has corresponding audit record",
@@ -258,9 +294,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-AC-11-015",
+      "id": "TC-AC-11-016",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P1",
       "traceability": ["AC-11", "BR-22", "FR-25"],
       "title": "Audit record includes minimum payload fields for operational review",
@@ -271,13 +308,14 @@
         "Retrieve audit entry for event.rule_config.updated action",
         "Inspect actorId, actorRole, action, entityType, entityId, eventId, before, after, reasonCode, reasonText, occurredAt"
       ],
-      "expected": "All minimum audit payload fields populated per roles-permissions section 6; append-only policy enforced (no mutation endpoint)",
+      "expected": "All minimum audit payload fields populated per roles-permissions §6; append-only policy enforced (no mutation endpoint)",
       "edgeCase": false
     },
     {
-      "id": "TC-AC-11-016",
+      "id": "TC-AC-11-017",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "pagination",
       "priority": "P1",
       "traceability": ["AC-11", "AC-13", "FR-30"],
       "title": "Audit logs list defaults to createdAt descending order",
@@ -290,23 +328,6 @@
         "Compare occurredAt timestamps across consecutive items"
       ],
       "expected": "Items ordered newest-first per API design default sort createdAt:desc; supports operational review of latest critical changes",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-AC-11-017",
-      "category": "non-functional",
-      "layer": "unit",
-      "priority": "P2",
-      "traceability": ["AC-11"],
-      "title": "Operational table component renders audit actor, action, and reason columns",
-      "preconditions": [
-        "ServerPaginatedTable fixture with audit log row containing action, actorId, reasonCode, and reasonText"
-      ],
-      "steps": [
-        "Render audit log table columns for Action, Actor, and Reason with sample row",
-        "Inspect static markup output"
-      ],
-      "expected": "Rendered HTML includes audit action, actor identifier, and reason text; supports organizer governance visibility without full browser flow",
       "edgeCase": false
     }
   ]
