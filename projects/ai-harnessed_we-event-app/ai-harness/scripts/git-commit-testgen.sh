@@ -17,7 +17,6 @@ fi
 # Fallback when common.sh predates git_commit_testgen_pass (parallel agent runs / stale checkout).
 paths=(
   "$(test_case_artifact_path "$REQUIREMENT_TAG")"
-  "ai-harness/test-cases/items/${REQUIREMENT_TAG}.stale.json"
   "ai-harness/test-case-index.json"
   "ai-harness/whole-app-backlog.json"
   "ai-harness/state/progress.md"

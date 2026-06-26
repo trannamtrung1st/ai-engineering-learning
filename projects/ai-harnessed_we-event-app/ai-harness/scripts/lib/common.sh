@@ -285,6 +285,94 @@ test_case_artifact_abs() {
   echo "${REPO_ROOT}/$(test_case_artifact_path "$requirement_tag")"
 }
 
+test_case_stale_artifact_path() {
+  local requirement_tag="$1"
+  printf 'ai-harness/test-cases/items/%s.stale.json' "$requirement_tag"
+}
+
+test_case_stale_artifact_abs() {
+  local requirement_tag="$1"
+  echo "${REPO_ROOT}/$(test_case_stale_artifact_path "$requirement_tag")"
+}
+
+# Legacy: drift used to mv artifacts to .stale.json — restore so the agent can review in place.
+ensure_test_case_artifact_restored() {
+  local requirement_tag="$1"
+  local artifact_path stale_path
+  artifact_path="$(test_case_artifact_abs "$requirement_tag")"
+  stale_path="$(test_case_stale_artifact_abs "$requirement_tag")"
+  if [[ ! -f "$artifact_path" && -f "$stale_path" ]]; then
+    cp -f "$stale_path" "$artifact_path"
+    echo "==> ${requirement_tag}: restored legacy .stale.json to $(test_case_artifact_path "$requirement_tag")"
+  fi
+}
+
+testgen_regeneration_mode() {
+  jq -r '.regeneration.mode // "incremental"' "$TESTGEN_CONFIG" 2>/dev/null || echo "incremental"
+}
+
+format_existing_artifact_review_block() {
+  local requirement_tag="$1"
+  local artifact_path artifact_abs mode case_count id_list stored_fp
+  artifact_path="$(test_case_artifact_path "$requirement_tag")"
+  artifact_abs="$(test_case_artifact_abs "$requirement_tag")"
+  mode="$(testgen_regeneration_mode)"
+
+  if [[ ! -f "$artifact_abs" ]]; then
+    return 0
+  fi
+
+  if [[ "$mode" == "full" ]]; then
+    cat <<EOF
+## Existing artifact (reference)
+
+An artifact already exists at \`${artifact_path}\`. Regeneration mode is **full** — rewrite from current docs. You may use the existing file as reference but replace content as needed.
+
+EOF
+    return 0
+  fi
+
+  case_count="$(jq '.cases | length' "$artifact_abs")"
+  id_list="$(jq -r '.cases[].id' "$artifact_abs" | paste -sd ', ' -)"
+  stored_fp="$(jq -r --arg id "$requirement_tag" '.tags[$id].docFingerprint // ""' "$TEST_CASE_INDEX")"
+
+  cat <<EOF
+## Review and update existing artifact
+
+The test case artifact at \`${artifact_path}\` is **out of date** (\`test-case-index.json\` marks this tag \`current: false\` — docs changed since last generation).
+
+**Read the existing file first.** Update only what current docs require — do not rewrite from scratch.
+
+### Review rules
+
+1. **Keep** cases that still match current docs; edit only affected fields (\`traceability\`, \`title\`, \`preconditions\`, \`steps\`, \`expected\`, \`edgeCase\`, \`priority\`).
+2. **Add** cases for new doc requirements or coverage gaps (self-check below). Append new IDs; do not renumber existing ones.
+3. **Remove** cases only when docs explicitly drop that scenario.
+4. Set \`docFingerprint\` to the value in this prompt and refresh \`generatedAt\`.
+$( [[ -n "$stored_fp" && "$stored_fp" != "null" ]] && printf '5. Index stored fingerprint: `%s` (artifact may still carry an older `docFingerprint`).\n' "$stored_fp" )
+
+### Existing artifact summary
+
+- **Path:** \`${artifact_path}\`
+- **Case count:** ${case_count}
+- **Case IDs:** ${id_list}
+
+EOF
+}
+
+format_regeneration_finish_hint() {
+  local requirement_tag="$1"
+  local artifact_abs mode
+  artifact_abs="$(test_case_artifact_abs "$requirement_tag")"
+  mode="$(testgen_regeneration_mode)"
+
+  if [[ -f "$artifact_abs" && "$mode" == "incremental" ]]; then
+    echo "Finish in **one pass** — review the existing artifact against docs; update only what changed. Generate specs only — no implementation."
+    return 0
+  fi
+  echo "Finish in **one pass**. Generate specs only — no implementation."
+}
+
 requirement_tag_priority() {
   local tag="$1"
   local num
@@ -388,11 +476,7 @@ mark_test_cases_current() {
 reset_requirement_tag_on_doc_drift() {
   local requirement_tag="$1"
   local live_fp="$2"
-  local artifact_path
-  artifact_path="$(test_case_artifact_abs "$requirement_tag")"
-  if [[ -f "$artifact_path" ]]; then
-    mv -f "$artifact_path" "${artifact_path%.json}.stale.json" 2>/dev/null || true
-  fi
+  ensure_test_case_artifact_restored "$requirement_tag"
   local tmp pi_tmp
   tmp="$(mktemp)"
   jq --arg id "$requirement_tag" --arg fp "$live_fp" '
@@ -409,7 +493,7 @@ reset_requirement_tag_on_doc_drift() {
       if (.acceptance // [] | index($ref)) then .passes = false else . end
     )
   ' "$BACKLOG" > "$pi_tmp" && mv "$pi_tmp" "$BACKLOG"
-  append_guardrail "$requirement_tag" "Docs changed — test cases stale; affected slice passes reset (fingerprint=${live_fp})"
+  append_guardrail "$requirement_tag" "Docs changed — test cases need review (index current=false; fingerprint=${live_fp})"
 }
 
 load_test_cases_json_for_slice() {
@@ -622,7 +706,6 @@ testgen_owned_paths() {
   local requirement_tag="$1"
   printf '%s\n' \
     "$(test_case_artifact_path "$requirement_tag")" \
-    "ai-harness/test-cases/items/${requirement_tag}.stale.json" \
     "ai-harness/test-case-index.json" \
     "ai-harness/whole-app-backlog.json" \
     "ai-harness/state/progress.md"

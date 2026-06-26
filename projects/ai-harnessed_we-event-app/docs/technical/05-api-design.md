@@ -80,6 +80,8 @@ All list endpoints below return a **paginated envelope** instead of a bare array
 
 Invalid `page` or `pageSize` (non-integer, `< 1`, or `pageSize` above max) returns `400` with code `INVALID_PAGINATION`.
 
+Invalid `sort` field or direction, unknown `state` / `eligibility` filter, or unsupported enum returns `400` with code `INVALID_INPUT`.
+
 ### Response envelope
 
 ```json
@@ -98,16 +100,22 @@ Invalid `page` or `pageSize` (non-integer, `< 1`, or `pageSize` above max) retur
 
 ### Paginated list endpoints
 
-| Endpoint | Default `pageSize` | Default `sort` | Extra filters |
-|----------|-------------------|----------------|---------------|
-| `GET /events` | 12 | `startAt:asc` | `state` (optional) |
-| `GET /events/{eventId}/registrations` | 20 | `updatedAt:desc` | `state` (optional) |
-| `GET /events/{eventId}/waitlist` | 20 | `position:asc` | — |
-| `GET /events/{eventId}/attendance` | 20 | `checkinAt:desc` | — |
-| `GET /events/{eventId}/eligibility` | 20 | `participantId:asc` | `eligibility` (optional) |
-| `GET /events/{eventId}/audit-logs` | 20 | `createdAt:desc` | `entityType`, `entityId` |
-| `GET /events/{eventId}/status-history` | 20 | `createdAt:desc` | `registrationId` |
-| `GET /me/registrations` | 20 | `updatedAt:desc` | `state` (optional) |
+| Endpoint | Default `pageSize` | Default `sort` | Allowed `sort` fields | Search `q` fields | Extra filters |
+|----------|-------------------|----------------|----------------------|-------------------|---------------|
+| `GET /events` | 12 | `startAt:asc` | `startAt`, `updatedAt` | `name`, `location`, `description` (ILIKE) | `state` (optional) |
+| `GET /events/{eventId}/registrations` | 20 | `updatedAt:desc` | `updatedAt`, `requestedAt` | — | `state` (optional) |
+| `GET /events/{eventId}/waitlist` | 20 | `position:asc` | `position`, `enqueuedAt` | — | — |
+| `GET /events/{eventId}/attendance` | 20 | `checkinAt:desc` | `checkinAt` | — | — |
+| `GET /events/{eventId}/eligibility` | 20 | `participantId:asc` | `participantId` | — | `eligibility` (optional) |
+| `GET /events/{eventId}/audit-logs` | 20 | `createdAt:desc` | `createdAt` | — | `entityType`, `entityId` |
+| `GET /events/{eventId}/status-history` | 20 | `createdAt:desc` | `createdAt` | — | `registrationId` |
+| `GET /me/registrations` | 20 | `updatedAt:desc` | `updatedAt`, `requestedAt` | — | `state` (optional) |
+
+### 3.1 UI mapping
+
+Per-page search, filter, sort, and empty-state UX: [`docs/ui-ux/14-listing-pages-search-filter-sort.md`](../ui-ux/14-listing-pages-search-filter-sort.md).
+
+MVP UI exposes sort controls on participant event discovery, organizer events, and My Registrations. Waitlist UI locks to `position:asc` (FIFO).
 
 ### Example: Paginated events list
 
@@ -134,7 +142,7 @@ Response:
 
 ### Example: Paginated my registrations
 
-`GET /api/v1/me/registrations?page=1&pageSize=20`
+`GET /api/v1/me/registrations?page=1&pageSize=20&state=Waitlisted&sort=updatedAt:desc`
 
 Response:
 ```json
@@ -144,13 +152,38 @@ Response:
       "registrationId": "uuid",
       "eventId": "uuid",
       "eventName": "Workshop Series",
-      "state": "Registered",
+      "state": "Waitlisted",
+      "waitlistPosition": 2,
       "updatedAt": "2026-06-24T16:00:00Z"
     }
   ],
   "page": 1,
   "pageSize": 20,
   "total": 5,
+  "totalPages": 1
+}
+```
+
+### Example: Paginated waitlist
+
+`GET /api/v1/events/{eventId}/waitlist?page=1&pageSize=20&sort=position:asc`
+
+Response:
+```json
+{
+  "items": [
+    {
+      "waitlistEntryId": "uuid",
+      "registrationId": "uuid",
+      "participantId": "uuid",
+      "position": 1,
+      "enqueuedAt": "2026-06-24T10:00:00Z",
+      "state": "Waitlisted"
+    }
+  ],
+  "page": 1,
+  "pageSize": 20,
+  "total": 3,
   "totalPages": 1
 }
 ```
@@ -166,13 +199,27 @@ Request:
 }
 ```
 
-Response:
+Response (registered):
 ```json
 {
   "registrationId": "uuid",
   "eventId": "uuid",
   "participantId": "uuid",
   "state": "Registered",
+  "waitlistPosition": null,
+  "reasonCode": null,
+  "updatedAt": "2026-06-24T16:00:00Z"
+}
+```
+
+Response (waitlisted):
+```json
+{
+  "registrationId": "uuid",
+  "eventId": "uuid",
+  "participantId": "uuid",
+  "state": "Waitlisted",
+  "waitlistPosition": 3,
   "reasonCode": null,
   "updatedAt": "2026-06-24T16:00:00Z"
 }
@@ -238,6 +285,7 @@ HTTP mapping:
 - Check-in endpoints: BR-10..BR-13, AC-05..AC-07
 - Feedback/eligibility endpoints: BR-14..BR-20, AC-08..AC-10
 - Audit/report endpoints: BR-21..BR-22, AC-11..AC-12
-- List pagination: FR-28..FR-31, NFR-16, AC-13..AC-14
+- List pagination: FR-28..FR-31, NFR-16, AC-13, AC-14, AC-18a–e
+- Waitlist: BR-04..BR-06b, BR-08a–b, FR-08..FR-12, FR-30a, AC-02a–g
 - Auth/account: FR-32..FR-34, NFR-07, NFR-08, NFR-17, AC-15..AC-16
 - Event media: FR-35..FR-36, NFR-18, AC-17

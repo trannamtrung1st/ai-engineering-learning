@@ -15,10 +15,15 @@ All failures return deterministic error codes and user-safe messages.
 | BR-02 | Registration only in registration window | registration request | `REGISTRATION_WINDOW_CLOSED` |
 | BR-03 | `Registered` count never exceeds capacity | accept/promotion | `CAPACITY_EXCEEDED` |
 | BR-04 | Full + waitlist enabled -> waitlist assign | registration request | route to waitlist |
+| BR-04a | Monotonic waitlist position assign | waitlist enqueue | internal invariant error if violated |
+| BR-04b | Active entry = not promoted and not expired | waitlist read/promote | exclude inactive rows |
 | BR-05 | Full + waitlist disabled -> reject | registration request | `REGISTRATION_REJECTED_FULL` |
-| BR-06 | Waitlist promotion FIFO | seat release | `WAITLIST_ORDER_CONFLICT` |
+| BR-06 | Waitlist promotion FIFO | seat release | promote lowest `position` |
+| BR-06b | Concurrent promotion guard | promotion race | `WAITLIST_ORDER_CONFLICT` |
 | BR-07 | Cancellation before deadline allowed | cancellation request | `CANCELLATION_DEADLINE_PASSED` |
-| BR-08 | Valid cancellation frees seat + triggers promotion | cancellation success | internal invariant error if not satisfied |
+| BR-08 | Seat-holder cancel frees seat + promotes | cancellation (Registered/CheckedIn) | internal invariant error if not satisfied |
+| BR-08a | Waitlisted cancel expires entry only | cancellation (Waitlisted) | no promotion |
+| BR-08b | Seat release and promotion same transaction | cancellation (Registered/CheckedIn) | atomic with BR-06a |
 | BR-09 | Late cancellation policy enforced | cancellation request | `CANCELLATION_NOT_ALLOWED` |
 | BR-10 | Check-in only in check-in window | check-in request | `CHECKIN_WINDOW_CLOSED` |
 | BR-11 | One valid check-in per registration | check-in request | `CHECKIN_ALREADY_RECORDED` |
@@ -49,6 +54,17 @@ All failures return deterministic error codes and user-safe messages.
 4. persist check-in + state transition
 5. write audit metadata
 
+### Cancellation request
+1. auth + actor scope
+2. cancellation policy (BR-07, BR-09)
+3. if seat holder: cancel + promote FIFO in one transaction (BR-08b)
+4. if waitlisted: cancel + expire waitlist entry only (BR-08a)
+
+### List query validation
+- `page` / `pageSize` bounds → `INVALID_PAGINATION`
+- Unknown `sort` field or direction → `INVALID_INPUT`
+- Unknown `state` or `eligibility` filter enum → `INVALID_INPUT`
+
 ### Eligibility evaluation
 1. confirm registration and attendance status
 2. validate feedback requirement
@@ -67,6 +83,6 @@ All failures return deterministic error codes and user-safe messages.
 - Override paths are explicit and audited.
 
 ## 6. BRD Traceability
-- BR-01..BR-22 (primary)
-- FR-06..FR-21, FR-25..FR-27
-- AC-01..AC-12
+- BR-01..BR-22, BR-04a–b, BR-06a–b, BR-08a–b (primary)
+- FR-02a, FR-06..FR-12, FR-10a, FR-11a, FR-21, FR-25..FR-31, FR-30a
+- AC-01..AC-04, AC-02a–g, AC-13, AC-14, AC-18a–e

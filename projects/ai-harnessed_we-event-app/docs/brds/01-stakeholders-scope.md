@@ -10,17 +10,20 @@
 ## 1.2 System Actors
 - Organizer Admin:
   - Create/edit/publish events.
-  - Configure capacity, waitlist, check-in, feedback, and certificate conditions.
-  - Monitor event operations dashboard.
+  - Configure capacity, waitlist, check-in, feedback policy (`feedbackRequired`, feedback window), and certificate eligibility rules.
+  - Monitor event operations dashboard (including feedback completion and eligibility summary).
+  - View paginated eligibility lists (`Eligible`, `NotEligible`, `Revoked`) with reasons; revoke `Eligible` status with mandatory reason and audit.
 - Organizer Staff:
   - Support check-in operations at events.
+  - View paginated eligibility lists for assigned events (read-only; no policy changes or revocations).
   - Handle operational tasks within granted permissions.
 - Participant:
-  - View events, register, cancel registration (if allowed), check in, submit feedback.
-  - Track registration status and certificate eligibility result.
+  - View events, register, cancel registration (if allowed), check in, submit feedback (own `Attended` registration, within feedback window).
+  - View own certificate eligibility result and reason after attendance finalization.
 - System:
   - Automatically update registration/waitlist statuses.
   - Automatically enforce business rules and record history.
+  - Evaluate certificate eligibility deterministically and persist results with reasons.
 
 ## 2. Scope
 
@@ -29,8 +32,8 @@
 - Capacity-controlled event registration.
 - Automatic waitlist when full.
 - Event check-in.
-- Post-event feedback collection.
-- Certificate eligibility evaluation based on configured rules.
+- Post-event feedback collection with configurable mandatory/optional policy and feedback window.
+- Certificate eligibility evaluation based on attendance and feedback rules, with reason-backed outcomes for participants and organizers.
 - Registration status management per participant.
 - Paginated list browsing for participant event discovery and organizer operational views.
 - User account registration and credential-based sign-in/sign-out.

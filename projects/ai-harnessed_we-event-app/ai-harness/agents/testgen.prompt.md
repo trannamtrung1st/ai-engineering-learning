@@ -32,6 +32,8 @@ Doc paths are resolved from `ai-harness/config/testgen-docs-map.json` (not a sep
 
 Implementation slices reference this tag via `acceptance` in `whole-app-backlog.json` — do not generate per-slice artifacts.
 
+{{EXISTING_ARTIFACT_BLOCK}}
+
 ## Docs to read
 
 {{SLICE_DOCS}}
@@ -127,4 +129,4 @@ Confirm all that apply to this tag:
 - [ ] ≥1 `boundary-error` or `edge` category case for documented error/boundary
 - [ ] Tag-specific hints above satisfied when present
 
-Finish in **one pass**. Generate specs only — no implementation.
+{{REGENERATION_FINISH_HINT}}

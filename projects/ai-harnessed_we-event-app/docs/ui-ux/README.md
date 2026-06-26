@@ -46,6 +46,9 @@ This folder contains the detailed UI/UX documentation split by concern so design
 - `13-accessibility-basics.md`  
   MVP accessibility baseline and testing checklist.
 
+- `14-listing-pages-search-filter-sort.md`  
+  Per-page search, filter, sort matrix and shared listing UX contracts.
+
 ## Scope and traceability
 
 - Source requirements: `docs/brds`.

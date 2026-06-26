@@ -29,6 +29,7 @@ DRIFT_COUNT=0
 check_tag_drift() {
   local requirement_tag="$1"
   local stored_fp live_fp
+  ensure_test_case_artifact_restored "$requirement_tag"
   stored_fp="$(jq -r --arg id "$requirement_tag" '.tags[$id].docFingerprint // ""' "$TEST_CASE_INDEX")"
 
   live_fp="$(compute_requirement_tag_doc_fingerprint "$requirement_tag")"

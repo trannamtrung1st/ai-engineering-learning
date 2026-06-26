@@ -14,8 +14,9 @@
 
 ### Registration status panel
 - Displays current status and reason.
+- When `Waitlisted`: show `waitlistPosition` with copy “Queue position” (stable ordinal, not “people ahead”).
 - Includes timestamp of latest status change.
-- Provides contextual next step.
+- Provides contextual next step (e.g. “You will be registered automatically when a seat opens.”).
 
 ## Organizer-facing operational components
 
@@ -25,10 +26,13 @@
 - Warns when nearing capacity threshold.
 
 ### Waitlist queue panel
-- Ordered queue list (default FIFO).
-- Highlights promoted entries.
-- Shows reason when promotion is blocked by rule/policy.
+- Dedicated organizer waitlist page (`/organizer/events/{eventId}/waitlist`).
+- Columns: position, participant identity, registration status badge, enqueued timestamp.
+- Subtitle or label: “FIFO order” — sort locked to `position:asc` in MVP.
+- Empty state when no active queue entries.
+- Promoted participants no longer appear in active queue (historical trace via registrations list / status history).
 - Paginated; queue position order preserved across pages.
+- Dashboard waitlist KPI links to this view.
 
 ### Check-in console row item
 - Participant identity summary.

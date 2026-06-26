@@ -35,6 +35,7 @@ fi
 
 DOC_FP="$(compute_requirement_tag_doc_fingerprint "$REQUIREMENT_TAG")"
 ARTIFACT="$(test_case_artifact_abs "$REQUIREMENT_TAG")"
+ensure_test_case_artifact_restored "$REQUIREMENT_TAG"
 
 if [[ "${AIH_SKIP_TESTGEN_AGENT:-}" == "1" ]]; then
   echo "WARN: AIH_SKIP_TESTGEN_AGENT=1 — skipping testgen agent"
@@ -46,6 +47,13 @@ else
   model="$(get_model testgen)"
   agent_out="${RUNS_DIR}/${RID}-testgen.txt"
 
+  review_reminder=""
+  if [[ -f "$ARTIFACT" && "$(testgen_regeneration_mode)" == "incremental" ]]; then
+    review_reminder="
+Review and update the existing artifact at \`$(test_case_artifact_path "$REQUIREMENT_TAG")\` — change only what docs require."
+    echo "==> Incremental review: existing artifact for ${REQUIREMENT_TAG}"
+  fi
+
   full_prompt="${prompt}
 
 ## Harness reminder
@@ -53,7 +61,7 @@ else
 Write the test case JSON artifact to exactly: \`${ARTIFACT}\`
 Use doc fingerprint exactly: \`${DOC_FP}\`
 Set productItemId to exactly: \`${REQUIREMENT_TAG}\`
-Do not edit any other files.
+Do not edit any other files.${review_reminder}
 
 After writing the artifact, end with: TESTGEN_DONE ${REQUIREMENT_TAG}
 "

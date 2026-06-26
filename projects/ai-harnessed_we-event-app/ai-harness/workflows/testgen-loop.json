@@ -8,6 +8,9 @@
     "sliceDone": "TESTGEN_DONE",
     "sliceBlocked": "TESTGEN_BLOCKED"
   },
+  "regeneration": {
+    "mode": "incremental"
+  },
   "validation": {
     "schema": "ai-harness/schemas/test-cases.schema.json",
     "minCasesPerCategory": {

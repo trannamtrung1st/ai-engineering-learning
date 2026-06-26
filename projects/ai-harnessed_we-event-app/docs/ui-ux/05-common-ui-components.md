@@ -42,9 +42,26 @@
 ### Pagination
 - Shows "Page X of Y" and item range (e.g. "Showing 21–40 of 142").
 - Prev/next buttons disabled at first/last page; keyboard accessible.
-- Resets to page 1 when search or filter criteria change.
+- Resets to page 1 when search, filter, or sort criteria change.
 - **Table lists**: use server-driven pagination with API `page`/`pageSize`/`total` metadata.
 - **Card grids** (event discovery): same control below the grid; default `pageSize` 12 per `05-api-design.md`.
+
+### FilterBar
+- Sticky row below page header on list-heavy screens ([`06-app-layout-components.md`](06-app-layout-components.md)).
+- Groups search input, filter select(s), and sort select (where applicable).
+- On viewports below tablet: may collapse to a single “Filters” trigger opening a drawer.
+- Changing any control resets pagination to page 1.
+
+### SortSelect
+- Maps to API `sort` query param as `field:asc` or `field:desc`.
+- Used on participant event discovery, organizer events, and My Registrations in MVP.
+- Label + accessible name required (e.g. “Sort by”).
+- Waitlist and eligibility pages use fixed server sort only in MVP (no SortSelect).
+
+### Search input (listing)
+- Debounce **300ms** before updating API `q` param.
+- Used on `GET /events` lists only in MVP.
+- “Clear filters” empty-state action resets search, filter, and sort to defaults.
 
 ### Modal/dialog
 - Use for confirmation or focused secondary tasks.
@@ -54,7 +71,7 @@
 ## Content patterns by domain state
 
 - `Registered`: positive confirmation + next milestone.
-- `Waitlisted`: queue state + what can change status.
+- `Waitlisted`: queue position label + explanation that promotion happens when a seat opens (FIFO); cancel option when policy allows.
 - `Rejected`: explicit rule reason + what user can do next.
 - `Eligible`/`NotEligible`: result + reason trail.
 

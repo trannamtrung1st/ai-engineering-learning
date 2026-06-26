@@ -58,6 +58,20 @@ Buttons and form controls must consistently map to this state model.
 - Status color cannot be the only indicator; always include text labels.
 - Critical status transitions should show timestamp context.
 
+## Listing-specific empty and filter-empty copy
+
+| Screen | Empty (no data) | Filter-empty (no matches) |
+|--------|-----------------|---------------------------|
+| Event discovery | “No events available” | “No events match your filters” + Clear filters |
+| My registrations | “No registrations yet” + link to browse events | “No registrations match this status” + reset filter |
+| Organizer waitlist | “Waitlist is empty” | N/A (no filter in MVP) |
+| Organizer registrations | “No registrations” | “No registrations match this state” + reset filter |
+
+### Waitlisted row rendering (lists)
+- Badge: `Waitlisted` semantic color.
+- Secondary line: `Queue position: {n}` with helper text on detail views.
+- Quick actions: cancel when policy allows; no check-in or feedback links.
+
 ## State test checklist
 
 - Registration outcome transitions are reflected in event detail and My Registrations.

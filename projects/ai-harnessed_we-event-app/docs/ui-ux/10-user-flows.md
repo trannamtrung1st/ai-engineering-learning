@@ -29,11 +29,12 @@
 
 ## Flow 2: Participant cancellation and waitlist promotion
 
-1. Registered participant initiates cancellation.
+1. Participant initiates cancellation (registered or waitlisted).
 2. System checks cancellation policy deadline.
-3. If valid, seat is released.
-4. System promotes top waitlist participant under configured priority (FIFO default).
-5. Both affected users see updated statuses.
+3. **Registered path**: if valid, seat is released; system promotes lowest-position active waitlisted participant (FIFO).
+4. **Waitlisted path**: if valid, queue entry is expired; no seat release and no promotion of others.
+5. Affected participants see updated statuses; promoted user’s `waitlistPosition` clears and state becomes `Registered`.
+6. Remaining waitlisted participants retain their queue position (stable ordinal; not renumbered).
 
 ## Flow 3: Organizer staff check-in
 

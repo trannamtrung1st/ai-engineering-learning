@@ -105,7 +105,8 @@ Constraints and indexes:
 - `expired_at` nullable
 
 Constraints:
-- unique `(event_id, position)` for stable queue order
+- unique `(event_id, position)` among **active** entries (`promoted_at IS NULL AND expired_at IS NULL`) — partial unique index `uq_waitlist_event_position_active`
+- `idx_waitlist_event_queue` on `(event_id, position)` filtered to active rows — supports FIFO `GET .../waitlist?sort=position:asc` (BR-06a, FR-30a)
 
 ### `checkin_records`
 - `id` PK
@@ -162,7 +163,7 @@ Constraints:
 
 ### Pagination index support
 - `events.start_at` — default sort for `GET /events`.
-- `waitlist_entries(event_id, position)` — FIFO queue paging.
+- `waitlist_entries(event_id, position)` partial index on active rows — FIFO queue list and promotion (`ORDER BY position ASC`); see BR-04a, BR-06a.
 - `registrations.updated_at` — registration list and `GET /me/registrations` paging.
 - `audit_logs.occurred_at` — governance list paging (`audit-logs`, `status-history` endpoints).
 
