@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-05",
   "version": 2,
-  "docFingerprint": "sha256:4d12785a73f71eae22ecc1c28abee1e2becca04b0528fdc2184d610d44dc34ff",
-  "generatedAt": "2026-06-26T14:00:00Z",
+  "docFingerprint": "sha256:c08ad0039562ef88268aca8eda534df09d841c6763890b0568ed11fbf5e0e3fb",
+  "generatedAt": "2026-06-26T15:56:50Z",
   "cases": [
     {
       "id": "TC-AC-05-001",
@@ -88,7 +88,8 @@
         "AC-05",
         "FR-13",
         "FR-16",
-        "BR-10"
+        "BR-10",
+        "BR-13"
       ],
       "title": "POST /events/{eventId}/checkins returns HTTP 200 with checkinAt timestamp",
       "preconditions": [
@@ -114,7 +115,8 @@
         "AC-05",
         "FR-14",
         "FR-15",
-        "BR-10"
+        "BR-10",
+        "BR-13"
       ],
       "title": "POST /events/{eventId}/self-checkin returns HTTP 200 with timestamp when self-service enabled",
       "preconditions": [
@@ -137,7 +139,9 @@
       "priority": "P0",
       "traceability": [
         "AC-05",
-        "FR-15"
+        "FR-15",
+        "BR-10",
+        "BR-13"
       ],
       "title": "Flow A lifecycle check-in step records timestamp after registration",
       "preconditions": [
@@ -169,7 +173,7 @@
         "Event in InProgress state allowing check-in"
       ],
       "steps": [
-        "Navigate to event self check-in page for the registered event",
+        "Navigate to /events/{eventId}/check-in for the registered event",
         "Trigger primary check-in action control",
         "Observe success confirmation and check-in status display"
       ],
@@ -193,11 +197,11 @@
         "Target participant appears in check-in list with Registered state and eligible for check-in"
       ],
       "steps": [
-        "Open organizer check-in operations console for the event",
+        "Open organizer check-in operations console at /organizer/events/{eventId}/check-in",
         "Identify registered participant and trigger staff check-in action",
-        "Verify row updates in console attendance list"
+        "Verify row updates in paginated attendance list (default sort checkinAt:desc)"
       ],
-      "expected": "Console shows check-in success for the participant with recorded time; participant row reflects checked-in status immediately per UI state transition rules",
+      "expected": "Console shows check-in success for the participant with recorded time and audit metadata (method, actor, timestamp) per BR-13; participant row reflects checked-in status immediately per UI state transition rules",
       "edgeCase": false
     },
     {
