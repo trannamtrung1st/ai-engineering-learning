@@ -66,9 +66,9 @@
       "generatedAt": "2026-06-26T11:23:36Z"
     },
     "AC-14": {
-      "current": false,
+      "current": true,
       "docFingerprint": "sha256:8baa9d6bbbb0500a77788a39f6ca1d164ddad256856ee4b85c9652b6a2a2d392",
-      "generatedAt": "2026-06-26T04:23:19Z"
+      "generatedAt": "2026-06-26T11:24:59Z"
     },
     "AC-15": {
       "current": false,
