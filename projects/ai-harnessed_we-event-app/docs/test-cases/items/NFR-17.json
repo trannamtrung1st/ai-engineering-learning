@@ -1,8 +1,8 @@
 {
   "productItemId": "NFR-17",
   "version": 1,
-  "docFingerprint": "sha256:cff33cca15ef6cab3bccc14f79d25f9da5a6809dfeed7b72d03730ab2b6fe8fb",
-  "generatedAt": "2026-06-26T13:08:38Z",
+  "docFingerprint": "sha256:ec35d07745935d43ede5bc23381533cb15ad15eb3a8347bf5c6bc75ca315ea0f",
+  "generatedAt": "2026-06-26T18:04:55Z",
   "cases": [
     {
       "id": "TC-NFR-17-001",
@@ -26,7 +26,7 @@
         "POST /api/v1/auth/login with the same email and password",
         "GET /api/v1/me with returned login JWT"
       ],
-      "expected": "Register returns HTTP 200 with JWT; login returns HTTP 200 with JWT; GET /me returns matching profile; credential verification uses stored hash not plaintext comparison, proving NFR-17 adaptive hashing supports the identity/session flow per AC-16",
+      "expected": "Register returns HTTP 200 or 201 with JWT; login returns HTTP 200 with JWT; GET /me returns matching profile; credential verification uses stored hash not plaintext comparison, proving NFR-17 adaptive hashing supports the identity/session flow per AC-16",
       "edgeCase": false
     },
     {
@@ -213,10 +213,11 @@
       ],
       "steps": [
         "GET /api/v1/events/{eventId}/export with OrganizerAdmin bearer token and scan response",
+        "GET /api/v1/events/{eventId}/registrations with OrganizerAdmin bearer token and scan response",
         "GET /api/v1/me with Participant bearer token and scan response",
         "GET /api/v1/me/registrations with Participant bearer token and scan response"
       ],
-      "expected": "All responses return HTTP 200 where authorized but contain no password, passwordHash, or bcrypt/argon2 hash strings; RBAC grants data access per role without exposing credential storage material per NFR-17 and roles-permissions sensitive-data boundaries",
+      "expected": "All responses return HTTP 200 where authorized but contain no password, passwordHash, or bcrypt/argon2 hash strings; RBAC grants organizer and participant data access per role without exposing credential storage material per NFR-17 and roles-permissions sensitive-data boundaries",
       "edgeCase": false
     },
     {
@@ -260,7 +261,7 @@
         "POST /api/v1/auth/login with correct email and incorrect password",
         "Inspect HTTP status and error body"
       ],
-      "expected": "HTTP 401 with typed authentication error; no JWT issued; failed attempt does not reveal stored hash; hash verification rejects mismatch without exposing credential material",
+      "expected": "HTTP 401 with error.code INVALID_CREDENTIALS and user-safe message; no JWT issued; failed attempt does not reveal stored hash; hash verification rejects mismatch without exposing credential material",
       "edgeCase": true
     },
     {
@@ -326,7 +327,7 @@
         "Submit and observe inline error or toast",
         "Inspect login API error response in network tab and page DOM"
       ],
-      "expected": "Login rejected with user-safe invalid-credentials messaging; no JWT stored; response and DOM contain no password_hash, bcrypt, or argon2 strings; NFR-17 hash material never exposed on failed authentication",
+      "expected": "Login rejected with HTTP 401 error.code INVALID_CREDENTIALS and user-safe invalid-credentials messaging; no JWT stored; response and DOM contain no password_hash, bcrypt, or argon2 strings; NFR-17 hash material never exposed on failed authentication",
       "edgeCase": true
     }
   ]
