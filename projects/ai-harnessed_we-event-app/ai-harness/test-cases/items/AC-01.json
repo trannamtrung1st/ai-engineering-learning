@@ -2,7 +2,7 @@
   "productItemId": "AC-01",
   "version": 1,
   "docFingerprint": "sha256:e5fe6c876730dc2692555528b2f33e1afc4105ef98b3d84c4363464150dbd711",
-  "generatedAt": "2026-06-26T15:50:04Z",
+  "generatedAt": "2026-06-26T16:07:31Z",
   "cases": [
     {
       "id": "TC-AC-01-001",
@@ -13,19 +13,20 @@
       "traceability": [
         "AC-01",
         "FR-07",
+        "BR-02",
         "BR-03"
       ],
-      "title": "Register with available seat assigns Registered per testing-plan §3",
+      "title": "System automatically assigns Registered when seats available per testing-plan §3",
       "preconditions": [
         "Event is RegistrationOpen with configured capacity greater than current Registered count",
-        "Registration window is active (current time between registrationOpenAt and registrationCloseAt)",
+        "Registration window is active (current time between registrationOpenAt and registrationCloseAt per BR-02)",
         "Authenticated participant has no active registration for the event"
       ],
       "steps": [
         "Invoke registrationService.register(eventId, participantId, actorContext) for a participant with no prior registration",
         "Read the returned registration entity and query Registered seat-holder count for the event"
       ],
-      "expected": "Registration is created with state Registered, waitlistPosition is null, Registered count increments by one, and total Registered never exceeds EventCapacity (testing-plan §3: Register with available seat → Registered)",
+      "expected": "Registration is created with state Registered, waitlistPosition is null, Registered count increments by one, and total Registered never exceeds EventCapacity (testing-plan §3: Register with available seat → Registered; FR-07)",
       "edgeCase": false
     },
     {
@@ -99,7 +100,7 @@
         "Complete registrationService.register assigning Registered state",
         "Query registration row and Registered seat-holder count in the same database session after commit"
       ],
-      "expected": "Registration row exists with state Registered, Registered count equals 1, BR-03 invariant holds (Registered count never exceeds EventCapacity) immediately after commit, and Workflow B records the state transition",
+      "expected": "Registration row exists with state Registered, Registered count equals 1, BR-03 invariant holds (Registered count never exceeds EventCapacity) immediately after commit, and Workflow B step 4 records state transition and status history",
       "edgeCase": false
     },
     {
@@ -119,7 +120,7 @@
         "Fresh participant token and Idempotency-Key"
       ],
       "steps": [
-        "Execute Flow A step: POST /api/v1/events/{eventId}/registrations after open-registration",
+        "Execute Flow A step: POST /api/v1/events/{eventId}/registrations with Idempotency-Key after open-registration",
         "Verify registration state before proceeding to check-in, feedback, and eligibility steps"
       ],
       "expected": "Registration response state is Registered, enabling subsequent check-in, feedback, and eligibility steps in the lifecycle flow",
@@ -165,7 +166,7 @@
         "Authenticated participant with no active registration"
       ],
       "steps": [
-        "POST /api/v1/events/{eventId}/registrations while event state disallows registration intake"
+        "POST /api/v1/events/{eventId}/registrations with Idempotency-Key while event state disallows registration intake"
       ],
       "expected": "HTTP 409 or 422 with typed error envelope; response body state is not Registered; no seat consumed",
       "edgeCase": true
@@ -223,7 +224,8 @@
       "technique": "http-contract",
       "priority": "P1",
       "traceability": [
-        "AC-01"
+        "AC-01",
+        "AC-15"
       ],
       "title": "Unauthenticated POST registrations returns HTTP 401",
       "preconditions": [
