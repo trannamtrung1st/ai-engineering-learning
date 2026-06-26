@@ -434,17 +434,14 @@
       "description": "Design tokens, AppShell, shared primitives — no feature pages yet."
     },
     {
-      "id": "web-participant-journeys",
+      "id": "web-participant-discovery",
       "passes": false,
       "priority": 31,
       "phase": 3,
       "agent": "frontend",
       "acceptance": [
-        "AC-01",
-        "AC-05",
-        "AC-08",
+        "AC-13",
         "AC-14",
-        "FR-10",
         "FR-28",
         "FR-29"
       ],
@@ -454,7 +451,49 @@
         "docs/ui-ux/05-common-ui-components.md"
       ],
       "completionArtifacts": [
-        "apps/web/src/app/(participant)"
+        "apps/web/src/app/(participant)/events"
+      ],
+      "testRequirements": {
+        "component": [
+          "apps/web/src/components/participant/event-card.test.tsx",
+          "apps/web/src/components/ui/pagination.test.tsx"
+        ],
+        "e2e": [
+          "tests/e2e/src/scenarios/ac-14-listing-ui.test.ts"
+        ],
+        "acceptanceTags": [
+          "AC-14",
+          "FR-28",
+          "FR-29"
+        ]
+      },
+      "description": "Paginated event browse (card grid, filters), event detail information panel and status badges — no register/check-in actions yet."
+    },
+    {
+      "id": "web-participant-registration",
+      "passes": false,
+      "priority": 32,
+      "phase": 3,
+      "agent": "frontend",
+      "acceptance": [
+        "AC-01",
+        "AC-02",
+        "AC-03",
+        "AC-04",
+        "FR-10",
+        "FR-11",
+        "FR-12",
+        "FR-29"
+      ],
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/10-user-flows.md",
+        "docs/ui-ux/05-common-ui-components.md",
+        "docs/ui-ux/12-ui-states.md"
+      ],
+      "completionArtifacts": [
+        "apps/web/src/app/(participant)/registrations",
+        "apps/web/src/app/(participant)/events/[eventId]"
       ],
       "testRequirements": {
         "unit": [
@@ -463,70 +502,94 @@
         "integration": [
           "apps/api/src/modules/registration/registration.integration.test.ts"
         ],
-        "component": [
-          "apps/web/src/components/participant/event-card.test.tsx",
-          "apps/web/src/components/ui/pagination.test.tsx"
-        ],
         "e2e": [
-          "tests/e2e/src/scenarios/participant-journeys.test.ts",
           "tests/e2e/src/scenarios/flow-a-lifecycle.test.ts",
-          "tests/e2e/src/scenarios/ac-14-listing-ui.test.ts"
+          "tests/e2e/src/scenarios/flow-b-waitlist.test.ts",
+          "tests/e2e/src/scenarios/participant-journeys.test.ts"
         ],
         "acceptanceTags": [
           "AC-01",
-          "AC-05",
-          "AC-08",
-          "AC-14",
+          "AC-02",
+          "AC-03",
           "FR-10",
-          "FR-28",
+          "FR-11",
+          "FR-12",
           "FR-29"
         ]
       },
-      "description": "Participant routes: paginated event browse, detail, registration, check-in, feedback, paginated my registrations."
+      "description": "Register/waitlist/reject outcomes, cancellation with promotion visibility, paginated My Registrations with status timeline and quick-action gating."
     },
     {
-      "id": "web-organizer-journeys",
+      "id": "web-participant-checkin",
       "passes": false,
-      "priority": 32,
+      "priority": 33,
       "phase": 3,
       "agent": "frontend",
       "acceptance": [
-        "AC-10",
-        "AC-11",
-        "AC-14",
-        "FR-30"
+        "AC-05",
+        "AC-06",
+        "AC-07",
+        "FR-14",
+        "FR-15",
+        "FR-16"
       ],
       "docs": [
-        "docs/ui-ux/09-page-list.md",
-        "docs/ui-ux/07-event-specific-components.md",
+        "docs/ui-ux/10-user-flows.md",
+        "docs/ui-ux/12-ui-states.md",
         "docs/ui-ux/05-common-ui-components.md"
       ],
       "completionArtifacts": [
-        "apps/web/src/app/(organizer)"
+        "apps/web/src/app/(participant)/events/[eventId]/check-in"
       ],
       "testRequirements": {
-        "unit": [
-          "apps/web/src/lib/organizer-rules.test.ts",
-          "apps/web/src/lib/organizer-events-list.test.ts"
-        ],
-        "component": [
-          "apps/web/src/components/organizer/capacity-meter.test.tsx",
-          "apps/web/src/components/organizer/server-paginated-table.test.tsx",
-          "apps/web/src/components/ui/pagination.test.tsx"
-        ],
         "acceptanceTags": [
-          "AC-10",
-          "AC-11",
-          "AC-14",
-          "FR-30"
+          "AC-05",
+          "AC-06",
+          "AC-07",
+          "FR-14",
+          "FR-15",
+          "FR-16"
         ]
       },
-      "description": "Organizer admin/staff routes: paginated event list, create/edit, dashboard, check-in console, operational tables."
+      "description": "Self-service check-in page with window validation, success timestamp, and blocking reasons for out-of-window/duplicate/not-registered."
+    },
+    {
+      "id": "web-participant-feedback-eligibility",
+      "passes": false,
+      "priority": 34,
+      "phase": 3,
+      "agent": "frontend",
+      "acceptance": [
+        "AC-08",
+        "AC-09",
+        "FR-19",
+        "FR-20"
+      ],
+      "docs": [
+        "docs/ui-ux/10-user-flows.md",
+        "docs/ui-ux/12-ui-states.md",
+        "docs/ui-ux/07-event-specific-components.md"
+      ],
+      "completionArtifacts": [
+        "apps/web/src/app/(participant)/events/[eventId]/feedback",
+        "apps/web/src/app/(participant)/events/[eventId]/eligibility"
+      ],
+      "testRequirements": {
+        "e2e": [
+          "tests/e2e/src/scenarios/flow-a-lifecycle.test.ts"
+        ],
+        "acceptanceTags": [
+          "AC-08",
+          "AC-09",
+          "FR-19"
+        ]
+      },
+      "description": "Post-event feedback form (enabled only when rules allow), eligibility result with reason text, participation history links from My Registrations."
     },
     {
       "id": "web-auth-session-pages",
       "passes": false,
-      "priority": 33,
+      "priority": 35,
       "phase": 3,
       "agent": "frontend",
       "acceptance": [
@@ -561,7 +624,7 @@
     {
       "id": "web-event-cover-image",
       "passes": false,
-      "priority": 34,
+      "priority": 36,
       "phase": 3,
       "agent": "frontend",
       "acceptance": [
@@ -590,7 +653,7 @@
     {
       "id": "web-domain-status-badge-colors",
       "passes": false,
-      "priority": 35,
+      "priority": 37,
       "phase": 3,
       "agent": "frontend",
       "acceptance": [
@@ -615,9 +678,177 @@
       }
     },
     {
-      "id": "e2e-acceptance-suite",
+      "id": "web-organizer-events",
+      "passes": false,
+      "priority": 38,
+      "phase": 3,
+      "agent": "frontend",
+      "acceptance": [
+        "AC-11",
+        "AC-13",
+        "AC-14",
+        "FR-01",
+        "FR-02",
+        "FR-03",
+        "FR-04",
+        "FR-30"
+      ],
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/07-event-specific-components.md",
+        "docs/ui-ux/08-forms-validation-ux.md"
+      ],
+      "completionArtifacts": [
+        "apps/web/src/app/(organizer)/organizer/events"
+      ],
+      "testRequirements": {
+        "unit": [
+          "apps/web/src/lib/organizer-rules.test.ts",
+          "apps/web/src/lib/organizer-events-list.test.ts"
+        ],
+        "component": [
+          "apps/web/src/components/ui/pagination.test.tsx",
+          "apps/web/src/components/organizer/capacity-meter.test.tsx"
+        ],
+        "acceptanceTags": [
+          "AC-11",
+          "AC-14",
+          "FR-01",
+          "FR-02",
+          "FR-03",
+          "FR-30"
+        ]
+      },
+      "description": "Paginated event table, create/edit form, publish/pause lifecycle controls; config changes surface audit expectations."
+    },
+    {
+      "id": "web-organizer-operations-dashboard",
+      "passes": false,
+      "priority": 39,
+      "phase": 3,
+      "agent": "frontend",
+      "acceptance": [
+        "FR-22",
+        "FR-23",
+        "FR-24",
+        "NFR-06"
+      ],
+      "docs": [
+        "docs/ui-ux/07-event-specific-components.md",
+        "docs/ui-ux/06-app-layout-components.md",
+        "docs/ui-ux/12-ui-states.md"
+      ],
+      "completionArtifacts": [
+        "apps/web/src/app/(organizer)/organizer/events/[eventId]"
+      ],
+      "testRequirements": {
+        "integration": [
+          "apps/api/src/modules/dashboard/dashboard.integration.test.ts"
+        ],
+        "e2e": [
+          "tests/e2e/src/scenarios/nfr-06-dashboard-refresh.test.ts"
+        ],
+        "acceptanceTags": [
+          "FR-22",
+          "FR-23",
+          "FR-24",
+          "NFR-06"
+        ]
+      },
+      "description": "Per-event KPI strip (registrations, waitlist, check-ins, feedback, eligibility), drill-down links, live-query refresh on operational views."
+    },
+    {
+      "id": "web-organizer-registration-checkin",
       "passes": false,
       "priority": 40,
+      "phase": 3,
+      "agent": "frontend",
+      "acceptance": [
+        "AC-05",
+        "AC-06",
+        "AC-07",
+        "AC-13",
+        "AC-14",
+        "FR-11",
+        "FR-12",
+        "FR-13",
+        "FR-17",
+        "FR-27"
+      ],
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/07-event-specific-components.md",
+        "docs/ui-ux/10-user-flows.md"
+      ],
+      "completionArtifacts": [
+        "apps/web/src/app/(organizer)/organizer/events/[eventId]/registrations",
+        "apps/web/src/app/(organizer)/organizer/events/[eventId]/waitlist",
+        "apps/web/src/app/(organizer)/organizer/events/[eventId]/check-in",
+        "apps/web/src/app/(organizer)/organizer/check-in"
+      ],
+      "testRequirements": {
+        "component": [
+          "apps/web/src/components/organizer/server-paginated-table.test.tsx"
+        ],
+        "acceptanceTags": [
+          "AC-05",
+          "AC-06",
+          "AC-07",
+          "FR-11",
+          "FR-12",
+          "FR-13",
+          "FR-17",
+          "FR-27"
+        ]
+      },
+      "description": "Registration and waitlist operational tables, staff check-in console with window/duplicate rejection, staff event-scope enforcement in UI."
+    },
+    {
+      "id": "web-organizer-governance",
+      "passes": false,
+      "priority": 41,
+      "phase": 3,
+      "agent": "frontend",
+      "acceptance": [
+        "AC-10",
+        "AC-11",
+        "AC-12",
+        "AC-14",
+        "FR-20",
+        "FR-22",
+        "FR-26"
+      ],
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/07-event-specific-components.md",
+        "docs/ui-ux/10-user-flows.md"
+      ],
+      "completionArtifacts": [
+        "apps/web/src/app/(organizer)/organizer/events/[eventId]/eligibility",
+        "apps/web/src/app/(organizer)/organizer/audit"
+      ],
+      "testRequirements": {
+        "e2e": [
+          "tests/e2e/src/scenarios/flow-c-governance.test.ts"
+        ],
+        "component": [
+          "apps/web/src/components/organizer/server-paginated-table.test.tsx"
+        ],
+        "acceptanceTags": [
+          "AC-10",
+          "AC-11",
+          "AC-12",
+          "FR-20",
+          "FR-22",
+          "FR-26"
+        ]
+      },
+      "description": "Certificate-eligible participant list with reasons, paginated audit log, registration status history trace, export trigger."
+    },
+    {
+      "id": "e2e-acceptance-suite",
+      "passes": false,
+      "priority": 42,
       "phase": 4,
       "agent": "test",
       "mergeReady": true,
