@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-08",
   "version": 2,
-  "docFingerprint": "sha256:0dd7c4f2e3b88af76edb911a1b6ebfe8322a801c39ef58ffab323b3297400201",
-  "generatedAt": "2026-06-26T14:00:00Z",
+  "docFingerprint": "sha256:f89a34da7eb813f03345d90e0b972381aee6ca035fb8ff5dcfe017ee862eb3e0",
+  "generatedAt": "2026-06-26T16:20:02Z",
   "cases": [
     {
       "id": "TC-AC-08-001",
@@ -25,7 +25,7 @@
         "Invoke feedbackService.submit(eventId, participantId, { answers: { q1: 5, q2: \"Great session\" } }, participantContext)",
         "Query persisted feedback row linked to registrationId"
       ],
-      "expected": "Submission succeeds with feedbackId and submittedAt; answers persisted; aligns with testing-plan §3 row: Feedback in allowed window → accepted (AC-08, BR-15)",
+      "expected": "Submission succeeds with feedbackId and submittedAt; answers persisted; satisfies AC-08a and testing-plan §3 row: Feedback in allowed window → accepted (AC-08, BR-15)",
       "edgeCase": false
     },
     {
@@ -73,7 +73,7 @@
         "POST /api/v1/events/{eventId}/feedback with Authorization bearer token and body { registrationId, answers: { q1: 5, q2: \"Excellent session\" } }",
         "Verify response status code and payload fields per API design §4"
       ],
-      "expected": "HTTP 200 with feedbackId (UUID) and submittedAt (ISO-8601) in response envelope; no eligibility side effects required for AC-08 scope",
+      "expected": "HTTP 200 with feedbackId (UUID) and submittedAt (ISO-8601) in response envelope per AC-08a; no eligibility side effects required for AC-08 scope",
       "edgeCase": false
     },
     {
@@ -134,16 +134,16 @@
         "AC-08",
         "BR-15"
       ],
-      "title": "Only Attended registration may submit feedback on Completed event",
+      "title": "Non-Attended registration cannot submit feedback on Completed event (AC-08c)",
       "preconditions": [
         "Event Completed with feedback window active",
-        "Registration still in Registered or CheckedIn state (not yet Attended)"
+        "Registration in Registered, CheckedIn, or Absent state (not Attended)"
       ],
       "steps": [
         "Attempt feedbackService.submit with valid answers for non-Attended registration",
         "Verify no feedback row is created"
       ],
-      "expected": "Submission rejected with FEEDBACK_NOT_ALLOWED; feedback only permitted after attendance finalization to Attended per participant UX rules",
+      "expected": "Submission rejected with FEEDBACK_NOT_ALLOWED per AC-08c; feedback only permitted for Attended registration after attendance finalization",
       "edgeCase": false
     },
     {
@@ -165,7 +165,7 @@
       "steps": [
         "Attempt feedbackService.submit with valid answers after window close"
       ],
-      "expected": "Submission rejected with FEEDBACK_NOT_ALLOWED; no feedback row persisted; aligns with forms validation QA scenario for out-of-window feedback",
+      "expected": "Submission rejected with FEEDBACK_NOT_ALLOWED per AC-08b; no feedback row persisted",
       "edgeCase": true
     },
     {
@@ -187,7 +187,7 @@
         "POST /api/v1/events/{eventId}/feedback with valid answers while current time is outside window",
         "Parse error envelope"
       ],
-      "expected": "HTTP 422 with error.code FEEDBACK_NOT_ALLOWED, user-safe message, and requestId; no feedbackId returned",
+      "expected": "HTTP 422 with error.code FEEDBACK_NOT_ALLOWED per AC-08b, user-safe message, and requestId; no feedbackId returned",
       "edgeCase": true
     },
     {
@@ -209,7 +209,7 @@
         "Submit feedback successfully once",
         "Attempt second feedbackService.submit with different answers for same registration"
       ],
-      "expected": "Second attempt rejected with FEEDBACK_DUPLICATE (HTTP 409); original feedback row unchanged per one-official-feedback policy (BR-16)",
+      "expected": "Second attempt rejected with FEEDBACK_DUPLICATE (HTTP 409) per AC-08d; original feedback row unchanged per one-official-feedback policy (BR-16)",
       "edgeCase": true
     },
     {
@@ -230,7 +230,7 @@
       "steps": [
         "POST /api/v1/events/{eventId}/feedback with empty answers object"
       ],
-      "expected": "Rejected with INVALID_INPUT (HTTP 400); no feedback persisted",
+      "expected": "Rejected with INVALID_INPUT (HTTP 400) per AC-08g; no feedback persisted",
       "edgeCase": true
     },
     {
@@ -252,7 +252,7 @@
       "steps": [
         "POST /api/v1/events/{eventId}/feedback with organizer token and participant registrationId"
       ],
-      "expected": "HTTP 403 or FEEDBACK_NOT_ALLOWED; only Participant role may submit own feedback per roles-permissions §2",
+      "expected": "HTTP 403 unauthorized per AC-08f; only Participant role may submit own feedback per roles-permissions §2",
       "edgeCase": true
     },
     {
@@ -274,7 +274,7 @@
       "steps": [
         "POST /api/v1/events/{eventId}/feedback without bearer token"
       ],
-      "expected": "HTTP 401 unauthenticated; no feedback row created",
+      "expected": "HTTP 401 unauthenticated per AC-08f; no feedback row created",
       "edgeCase": true
     },
     {
@@ -296,7 +296,7 @@
       "steps": [
         "Attempt feedbackService.submit using participant B's registrationId while authenticated as A"
       ],
-      "expected": "Rejected with FEEDBACK_NOT_ALLOWED or HTTP 403; scope constraint FR-26 enforced (own registration only)",
+      "expected": "HTTP 403 unauthorized per AC-08f; scope constraint FR-26 enforced (own registration only)",
       "edgeCase": true
     },
     {
@@ -317,7 +317,7 @@
       "steps": [
         "Attempt feedbackService.submit with valid answers before window open"
       ],
-      "expected": "Rejected with FEEDBACK_NOT_ALLOWED (HTTP 422); no feedback row persisted",
+      "expected": "Rejected with FEEDBACK_NOT_ALLOWED (HTTP 422) per AC-08b; no feedback row persisted",
       "edgeCase": true
     },
     {
@@ -361,7 +361,7 @@
         "Submit updated answers for same registration within feedback window",
         "Read persisted feedback answers"
       ],
-      "expected": "Update succeeds without FEEDBACK_DUPLICATE; latest answers stored; submittedAt may refresh per module policy",
+      "expected": "Update succeeds without FEEDBACK_DUPLICATE per AC-08e; latest answers stored; submittedAt may refresh per module policy",
       "edgeCase": false
     },
     {
@@ -404,7 +404,7 @@
         "Navigate to event detail or feedback entry on my registrations",
         "Attempt to access or submit feedback form"
       ],
-      "expected": "Form disabled or submission blocked with concrete message (e.g. feedback period ended); not a generic error identifier in user-facing text per microcopy standards",
+      "expected": "Form disabled or submission blocked with concrete message (e.g. feedback period ended) per AC-08b; not a generic error identifier in user-facing text",
       "edgeCase": false
     },
     {
@@ -430,7 +430,7 @@
         "Fill required fields and submit",
         "Observe toast or inline success and network response"
       ],
-      "expected": "Submission succeeds with visible submitted-at confirmation; must not surface error text about only submitting for own registration when the registration belongs to the signed-in participant; satisfies NFR-13 immediate success feedback and AC-08 in-window acceptance",
+      "expected": "Submission succeeds with visible submitted-at confirmation per AC-08a; must not surface error text about only submitting for own registration when the registration belongs to the signed-in participant; satisfies NFR-13 immediate success feedback",
       "edgeCase": false
     }
   ]
