@@ -501,7 +501,8 @@
       "description": "Dedicated /login and /signup pages; route guards redirect unauthenticated users; remove auto sign-in defaults; wire TopBar sign-out; wire TopBar userDisplayName from session displayName (not actorId); access-denied page; shells use credential login instead of dev ID forms.",
       "testRequirements": {
         "acceptanceTags": [
-          "AC-15"
+          "AC-15",
+          "AC-16"
         ]
       }
     },
@@ -599,7 +600,8 @@
           "AC-12",
           "AC-13",
           "AC-14",
-          "AC-15"
+          "AC-15",
+          "AC-16"
         ]
       }
     }
