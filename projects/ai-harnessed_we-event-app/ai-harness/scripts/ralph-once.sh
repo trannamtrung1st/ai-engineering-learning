@@ -57,22 +57,12 @@ if ! slice_test_cases_current "$SLICE_ID"; then
   missing_tags="$(slice_missing_test_case_tags "$SLICE_ID" | tr '\n' ', ' | sed 's/, $//')"
   echo "WARN: test cases not current for slice ${SLICE_ID} — continuing (mode=${gate_mode})"
   echo "WARN: missing tags: ${missing_tags:-_(none listed)_}"
-  echo "WARN: harness will re-queue for verification when TestGen completes"
+  echo "WARN: set passes: false in whole-app-backlog.json to re-run after TestGen completes"
 fi
 
 # --- Implement ---
-skip_implementer=false
 if [[ "${AIH_SKIP_AGENT:-}" == "1" ]]; then
-  skip_implementer=true
-elif slice_reverify_only "$SLICE_ID"; then
-  echo "==> Re-verification only (test cases now available)"
-  skip_implementer=true
-fi
-
-if [[ "$skip_implementer" == true ]]; then
-  if [[ "${AIH_SKIP_AGENT:-}" == "1" ]]; then
-    echo "WARN: AIH_SKIP_AGENT=1 — skipping implementer agent"
-  fi
+  echo "WARN: AIH_SKIP_AGENT=1 — skipping implementer agent"
   agent_out="${RUNS_DIR}/${RID}-agent.txt"
   echo "SLICE_DONE ${SLICE_ID}" > "$agent_out"
 else

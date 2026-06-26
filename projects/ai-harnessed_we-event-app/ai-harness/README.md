@@ -119,7 +119,7 @@ npm run aih:loop
 npm run aih:testgen:drift && npm run aih:testgen:loop
 ```
 
-Slices that pass without full test coverage get `testCaseVerification: pending` in the backlog. When TestGen completes all acceptance tags for that slice, the harness automatically re-queues it for verification-only (checks → browser test → review, skipping the implementer).
+To re-run implementer and tester gates after TestGen catches up, set `passes: false` on that slice in `whole-app-backlog.json`.
 
 ### Autonomous loop (hands-off)
 
@@ -184,13 +184,12 @@ AIH_SKIP_AGENT=1 AIH_SKIP_REVIEW=1 npm run aih:once
 1. `pick-next-slice.sh` selects lowest-priority slice with `passes: false`
 2. Doc drift check — fails if any referenced tag has stale test-case state
 3. Test case gate — **optional by default** (`testCaseGate.mode` in `ralph-loop.json`); warns and continues when tags are missing; hard-fails only in `required` mode
-4. Re-verification runs skip the implementer when `testCaseVerification: pending`, artifacts exist, and all tags are now current
-5. `build-prompt.sh` injects slice into `implementer.prompt.md`
-6. `agent -p --force` implements one slice (unless re-verification-only)
-7. `run-checks.sh` — computational gates (see below)
-8. `run-browser-test.sh` — Playwright MCP gate using generated browser cases; must end with `BROWSER_TEST_PASS`
-9. `run-ai-review.sh` — static code review; must end with `REVIEW_PASS`
-10. Backlog updated (`testCaseVerification: pending` or `verified`), progress logged, optional git commit
+4. `build-prompt.sh` injects slice into `implementer.prompt.md`
+5. `agent -p --force` implements one slice
+6. `run-checks.sh` — computational gates (see below)
+7. `run-browser-test.sh` — Playwright MCP gate using generated browser cases; must end with `BROWSER_TEST_PASS`
+8. `run-ai-review.sh` — static code review; must end with `REVIEW_PASS`
+9. Backlog updated (`passes: true`), progress logged, optional git commit
 
 ## Computational checks (`npm run aih:check`)
 
@@ -216,7 +215,7 @@ On a docs-only repo (no `apps/`), `npm run aih:check` passes without code-qualit
 ## Key files
 
 - `ai-harness/whole-app-backlog.json` — slice queue
-- `ai-harness/workflows/ralph-loop.json` — loop policy (`testCaseGate.mode`, re-verification flags)
+- `ai-harness/workflows/ralph-loop.json` — loop policy (`testCaseGate.mode`)
 - `ai-harness/workflows/testgen-loop.json` — TestGen loop policy
 - `ai-harness/config/testgen-docs-map.json` — doc resolution rules per requirement tag
 - `ai-harness/test-case-index.json` — slim generation state (current, fingerprint)

@@ -22,7 +22,7 @@ You are the We Event implementer. Work **one backlog slice** per session.
 
 The harness maintains structured test cases per **requirement tag** in `ai-harness/test-cases/items/<tag>.json`. Tags are discovered from slice `acceptance` in the backlog; docs are resolved via `ai-harness/config/testgen-docs-map.json`.
 
-When test case artifacts exist for a tag, **treat them as the authoritative checklist** for what to verify. When an artifact is absent (TestGen has not run yet), implement from slice docs and acceptance tags — the harness will re-run verification once TestGen artifacts exist.
+When test case artifacts exist for a tag, **treat them as the authoritative checklist** for what to verify. When an artifact is absent (TestGen has not run yet), implement from slice docs and acceptance tags. To re-run a slice after TestGen catches up, a human sets `passes: false` for that slice in `whole-app-backlog.json`.
 
 Before signaling `SLICE_DONE`, all applicable layers must pass locally:
 

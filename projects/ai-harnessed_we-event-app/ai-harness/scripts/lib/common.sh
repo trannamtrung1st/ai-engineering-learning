@@ -255,14 +255,6 @@ test_case_gate_mode() {
   jq -r '.testCaseGate.mode // "optional"' "$LOOP_CONFIG"
 }
 
-test_case_reverify_enabled() {
-  jq -r '.testCaseGate.reverifyOnTestCasesAvailable // true' "$LOOP_CONFIG"
-}
-
-test_case_reverify_skip_implementer() {
-  jq -r '.testCaseGate.reverifySkipImplementer // true' "$LOOP_CONFIG"
-}
-
 slice_missing_test_case_tags() {
   local slice_id="$1"
   local ref
@@ -274,67 +266,12 @@ slice_missing_test_case_tags() {
   done < <(slice_requirement_tag_refs "$slice_id")
 }
 
-slice_completion_artifacts_exist() {
-  local slice_id="$1"
-  local slice_json artifact
-  slice_json="$(get_slice_json "$slice_id")"
-  [[ -z "$slice_json" || "$slice_json" == "null" ]] && return 0
-  while IFS= read -r artifact; do
-    [[ -z "$artifact" ]] && continue
-    [[ -e "$REPO_ROOT/$artifact" ]] || return 1
-  done < <(echo "$slice_json" | jq -r '.completionArtifacts[]?')
-  return 0
-}
-
-slice_test_case_verification() {
-  local slice_id="$1"
-  jq -r --arg id "$slice_id" '
-    .slices[] | select(.id == $id) | .testCaseVerification // "verified"
-  ' "$BACKLOG"
-}
-
-slice_reverify_only() {
-  local slice_id="$1"
-  [[ "$(get_slice_field "$slice_id" passes)" == "false" ]] || return 1
-  [[ "$(slice_test_case_verification "$slice_id")" == "pending" ]] || return 1
-  slice_test_cases_current "$slice_id" || return 1
-  slice_completion_artifacts_exist "$slice_id" || return 1
-  [[ "$(test_case_reverify_skip_implementer)" == "true" ]]
-}
-
-requeue_slices_pending_test_verification() {
-  local _trigger_tag="${1:-}"
-  [[ "$(test_case_reverify_enabled)" == "true" ]] || return 0
-
-  local slice_id
-  while IFS= read -r slice_id; do
-    [[ -z "$slice_id" ]] && continue
-    [[ "$(get_slice_field "$slice_id" passes)" == "true" ]] || continue
-    [[ "$(slice_test_case_verification "$slice_id")" == "pending" ]] || continue
-    slice_test_cases_current "$slice_id" || continue
-
-    local tmp
-    tmp="$(mktemp)"
-    jq --arg id "$slice_id" '
-      .slices |= map(if .id == $id then .passes = false else . end)
-    ' "$BACKLOG" > "$tmp" && mv "$tmp" "$BACKLOG"
-    append_progress "$slice_id" "test_case_reverification_queued"
-    echo "==> Re-queued slice ${slice_id} for test-case verification"
-  done < <(jq -r '.slices[].id' "$BACKLOG")
-}
-
 mark_slice_passed() {
   local slice_id="$1"
-  local verification="pending"
-  if slice_test_cases_current "$slice_id"; then
-    verification="verified"
-  fi
   local tmp
   tmp="$(mktemp)"
-  jq --arg id "$slice_id" --arg v "$verification" '
-    .slices |= map(
-      if .id == $id then .passes = true | .testCaseVerification = $v else . end
-    )
+  jq --arg id "$slice_id" '
+    .slices |= map(if .id == $id then .passes = true else . end)
   ' "$BACKLOG" > "$tmp" && mv "$tmp" "$BACKLOG"
 }
 

@@ -176,3 +176,5 @@ Append-only log of completed iterations.
 - 2026-06-26T05:42:00Z | NFR-14 | testgen_passed
 - 2026-06-26T05:43:12Z | NFR-17 | testgen_passed
 - 2026-06-26T05:44:24Z | NFR-18 | testgen_passed
+- 2026-06-26T06:18:41Z | web-design-system-shell | checks_failed
+- 2026-06-26T06:19:34Z | web-design-system-shell | checks_failed

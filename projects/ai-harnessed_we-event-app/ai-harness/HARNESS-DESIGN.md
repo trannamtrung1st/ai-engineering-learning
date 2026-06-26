@@ -29,16 +29,17 @@ Concise index for the 12 harness components. Referenced by `docs/technical/13-do
 Each iteration spawns a **fresh** agent context (no `--resume`). State lives on disk and in git.
 
 ```
-pick slice → drift check → test-case gate (optional) → [reverify-only skip implementer] → agent implement → run-checks → run-browser-test → run-ai-review → mark pass (testCaseVerification) → commit
+pick slice → drift check → test-case gate (optional) → agent implement → run-checks → run-browser-test → run-ai-review → mark pass → commit
 ```
 
-Test case gate policy (`ralph-loop.json` → `testCaseGate`):
+Test case gate policy (`ralph-loop.json` → `testCaseGate.mode`):
 
-| Key | Default | Purpose |
-|---|---|---|
-| `mode` | `optional` | `optional` warns and continues when tags missing; `required` hard-fails |
-| `reverifyOnTestCasesAvailable` | `true` | Re-queue slices with `testCaseVerification: pending` when all tags become current |
-| `reverifySkipImplementer` | `true` | Skip implementer on re-verification runs |
+| Value | Behavior |
+|---|---|
+| `optional` (default) | Warn and continue when acceptance tags lack current test cases |
+| `required` | Hard-fail until all slice acceptance tags are current |
+
+To re-run a slice after TestGen catches up, set `passes: false` manually in `whole-app-backlog.json`.
 
 Scripts: `ralph-loop.sh` (autonomous), `ralph-once.sh` (single step).
 
@@ -47,7 +48,7 @@ Scripts: `ralph-loop.sh` (autonomous), `ralph-once.sh` (single step).
 Separate loop that generates structured test cases from slice docs (can run in parallel with Ralph):
 
 ```
-pick requirement tag (from backlog acceptance union) → doc fingerprint → testgen agent → validate JSON → sync slice metadata → mark tag in test-case-index → re-queue pending slices → commit
+pick requirement tag (from backlog acceptance union) → doc fingerprint → testgen agent → validate JSON → sync slice metadata → mark tag in test-case-index → commit
 ```
 
 Scripts: `testgen-loop.sh` (autonomous), `testgen-once.sh` (single step).
@@ -58,7 +59,7 @@ Ralph and TestGen can run independently. Set `testCaseGate.mode` to `required` i
 
 ## Backlog
 
-`ai-harness/whole-app-backlog.json` — phased slices with `passes`, `priority`, `acceptance`, `completionArtifacts`, optional `testCaseVerification` (`pending` | `verified`).
+`ai-harness/whole-app-backlog.json` — phased slices with `passes`, `priority`, `acceptance`, `completionArtifacts`. Set `passes: false` to re-queue a slice for another Ralph iteration.
 
 ## Persistence policy
 

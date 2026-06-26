@@ -407,8 +407,7 @@
           "NFR-06"
         ]
       },
-      "description": "Design tokens, AppShell, shared primitives — no feature pages yet.",
-      "testCaseVerification": "pending"
+      "description": "Design tokens, AppShell, shared primitives — no feature pages yet."
     },
     {
       "id": "web-participant-journeys",
