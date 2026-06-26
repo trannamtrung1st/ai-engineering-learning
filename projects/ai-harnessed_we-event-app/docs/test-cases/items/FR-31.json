@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-31",
   "version": 1,
-  "docFingerprint": "sha256:0de96fd30f2643dda5e25a994fcb22af16db2170ec550701a09657db14127a0b",
-  "generatedAt": "2026-06-26T12:43:21Z",
+  "docFingerprint": "sha256:b0ca474f51982b8e84b8aa043459a5098edb01c33a8ccd58f134a734cb0bdd8b",
+  "generatedAt": "2026-06-26T17:39:30Z",
   "cases": [
     {
       "id": "TC-FR-31-001",
@@ -353,28 +353,6 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-31-016",
-      "category": "edge",
-      "layer": "unit",
-      "technique": "pagination",
-      "priority": "P1",
-      "traceability": [
-        "FR-31",
-        "AC-13"
-      ],
-      "title": "Pagination envelope computes totalPages as ceil(total divided by pageSize)",
-      "preconditions": [
-        "Pure function or mapper that builds paginated response envelope from items, page, pageSize, and total"
-      ],
-      "steps": [
-        "Build envelope for total=0, pageSize=20",
-        "Build envelope for total=25, pageSize=20",
-        "Build envelope for total=40, pageSize=20"
-      ],
-      "expected": "totalPages=1 when total=0; totalPages=2 when total=25; totalPages=2 when total=40; total echoed unchanged in envelope per API design totalPages formula and FR-31",
-      "edgeCase": true
-    },
-    {
       "id": "TC-FR-31-017",
       "category": "non-functional",
       "layer": "integration",
@@ -541,6 +519,81 @@
       ],
       "expected": "Each invalid request returns HTTP 400 with error.code INVALID_PAGINATION per API design §3; no paginated envelope with total returned for invalid page or pageSize parameters",
       "edgeCase": true
+    },
+    {
+      "id": "TC-FR-31-024",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "pagination",
+      "priority": "P1",
+      "traceability": [
+        "FR-31",
+        "AC-13"
+      ],
+      "title": "Paginated list API returns totalPages as ceil(total divided by pageSize)",
+      "preconditions": [
+        "Real Postgres test harness with transaction rollback per test",
+        "Paginated list endpoint with seedable matching row counts (e.g. GET /api/v1/events/{eventId}/registrations)",
+        "Authenticated OrganizerAdmin with event scope"
+      ],
+      "steps": [
+        "GET list endpoint with page=1 and pageSize=20 when matching row count is 0; record total and totalPages",
+        "Seed fixture with 25 matching rows; GET page=1 pageSize=20; record total and totalPages",
+        "Seed or use fixture with 40 matching rows; GET page=1 pageSize=20; record total and totalPages"
+      ],
+      "expected": "totalPages=1 when total=0; totalPages=2 when total=25; totalPages=2 when total=40; total echoed unchanged in envelope per API design §3 totalPages formula and FR-31",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-31-025",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "pagination",
+      "priority": "P1",
+      "traceability": [
+        "FR-31",
+        "FR-30a",
+        "AC-02f",
+        "AC-13"
+      ],
+      "title": "Waitlist list total equals full FIFO queue row count before paging",
+      "preconditions": [
+        "Event at capacity with at least 25 active waitlist entries",
+        "Authenticated OrganizerAdmin with event scope",
+        "Real Postgres test database"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/waitlist?page=1&pageSize=20",
+        "GET /api/v1/events/{eventId}/waitlist?page=2&pageSize=20",
+        "Count active waitlist entries for the event in persistence layer"
+      ],
+      "expected": "Page 1 items.length=20 with total matching full waitlist row count; page 2 carries same total metadata; total equals active waitlist entry count before paging per FR-30a dedicated waitlist view and FR-31 total on organizer waitlist list",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-31-026",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "pagination",
+      "priority": "P1",
+      "traceability": [
+        "FR-31",
+        "FR-29",
+        "AC-18c",
+        "AC-13"
+      ],
+      "title": "My registrations total reflects optional state filter applied server-side",
+      "preconditions": [
+        "Participant with registrations in Registered, Waitlisted, and Cancelled states",
+        "Authenticated Participant JWT"
+      ],
+      "steps": [
+        "GET /api/v1/me/registrations?page=1&pageSize=20 and record unfiltered total",
+        "GET /api/v1/me/registrations?state=Waitlisted&page=1&pageSize=20",
+        "Count Waitlisted registration rows for the participant in persistence layer"
+      ],
+      "expected": "Waitlisted filter total equals participant Waitlisted row count only; unfiltered total equals all participant registration rows; totalPages computed from filtered total per AC-18c server-side state filter and FR-31 total metadata",
+      "edgeCase": false
     }
   ]
 }
