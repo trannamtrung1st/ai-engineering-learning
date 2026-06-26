@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-11",
   "version": 1,
-  "docFingerprint": "sha256:1593c2ff42ceec9999c9e8d9b2cb30bad8891dfea6114e74ae8dff6eb463b47b",
-  "generatedAt": "2026-06-26T11:19:37Z",
+  "docFingerprint": "sha256:8c0de822d8fa2e988a5b739aaa107d3850c16ef1e948d222e29778ba9b67ebde",
+  "generatedAt": "2026-06-26T16:24:46Z",
   "cases": [
     {
       "id": "TC-AC-11-001",
@@ -112,14 +112,15 @@
       "title": "Organizer audit log page surfaces actor, action, and reason columns with pagination",
       "preconditions": [
         "OrganizerAdmin logged in with access to event that has audit log entries",
-        "Organizer event audit/governance page reachable"
+        "Organizer audit log page reachable at /organizer/events/{eventId}/audit"
       ],
       "steps": [
-        "Navigate to organizer event audit log page",
+        "Navigate to /organizer/events/{eventId}/audit",
         "Observe table columns for Action, Actor, and Reason",
-        "Use pagination controls when total exceeds pageSize"
+        "Apply entityType filter when multiple entity types exist",
+        "Use pagination controls when total exceeds pageSize (default 20)"
       ],
-      "expected": "Table renders audit action label, actor identifier, and human-readable reason text per governance UX spec; server-driven pagination controls present and do not render unbounded dataset client-side",
+      "expected": "Table renders audit action label, actor identifier, and human-readable reason text per listing matrix §2; entityType filter narrows rows server-side; server-driven pagination controls present and do not render unbounded dataset client-side (AC-14)",
       "edgeCase": false
     },
     {
@@ -139,7 +140,7 @@
       ],
       "steps": [
         "Record current ruleConfig snapshot as beforeState",
-        "Update ruleConfig to toggle waitlistEnabled (or adjust registration/check-in window) with reasonCode and reasonText",
+        "Update ruleConfig to toggle waitlistEnabled, adjust registration/check-in window, or change feedback-policy fields with reasonCode and reasonText",
         "List audit logs filtered by entityType EventRuleConfig and compare before/after payloads"
       ],
       "expected": "Audit entry persisted capturing beforeState and afterState for changed rule field, actor identity, and reason metadata; major post-open rule change traceable per BR-22 state-transition guard",
