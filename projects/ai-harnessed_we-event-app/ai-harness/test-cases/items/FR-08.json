@@ -1,0 +1,386 @@
+{
+  "productItemId": "FR-08",
+  "version": 1,
+  "docFingerprint": "sha256:61772db2f0be7d5f91f9eccefef8b9d85ce957dbd55d47d9d14f933847b053f4",
+  "generatedAt": "2026-06-26T04:38:07Z",
+  "cases": [
+    {
+      "id": "TC-FR-08-001",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-08", "AC-02", "BR-04"],
+      "title": "System automatically assigns Waitlisted when event is full and waitlist is enabled",
+      "preconditions": [
+        "Event is RegistrationOpen with waitlistEnabled true",
+        "Registered participant count equals EventCapacity (event is full)",
+        "Registration window is active per BR-02",
+        "New participant has no active registration for the event"
+      ],
+      "steps": [
+        "Invoke registrationService.register(eventId, participantId, actorContext) for a participant with no prior registration",
+        "Read the returned registration entity snapshot and waitlist entry if present"
+      ],
+      "expected": "System assigns state Waitlisted automatically without organizer intervention; waitlistPosition is a positive integer (1 for first entrant); Registered count remains at EventCapacity without overflow; FR-08 satisfied",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-08-002",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-08", "AC-02", "FR-10"],
+      "title": "POST registrations returns Waitlisted when full and waitlist enabled",
+      "preconditions": [
+        "Published event with registration opened, capacity 1, waitlistEnabled true",
+        "One participant already Registered consuming the sole seat",
+        "Second participant has valid JWT and no active registration",
+        "Fresh Idempotency-Key header value"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/registrations as the second participant with Authorization bearer token",
+        "GET /api/v1/events/{eventId}/registration-status for the same participant"
+      ],
+      "expected": "POST returns HTTP 200 with body containing state Waitlisted, waitlistPosition 1, registrationId, eventId, participantId, reasonCode null, and updatedAt; GET registration-status returns the same Waitlisted assignment; system auto-statusing per FR-08",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-08-003",
+      "category": "functional",
+      "layer": "unit",
+      "priority": "P0",
+      "traceability": ["FR-08", "BR-04"],
+      "title": "queueWaitlist state transition guard permits Waitlisted when full and waitlist enabled",
+      "preconditions": [
+        "Registration in Requested state",
+        "registeredCount equals EventCapacity",
+        "waitlistEnabled is true",
+        "Registration window open and no duplicate active registration"
+      ],
+      "steps": [
+        "Call queueWaitlist transition guard with preconditions above",
+        "Verify guard returns permitted transition to Waitlisted"
+      ],
+      "expected": "Guard permits Requested to Waitlisted transition when full and waitlist enabled per state machine transition table; guard requires full + waitlist enabled",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-08-004",
+      "category": "functional",
+      "layer": "unit",
+      "priority": "P0",
+      "traceability": ["FR-08", "BR-04"],
+      "title": "Capacity guard routes to waitlist when registeredCount equals capacity and waitlistEnabled",
+      "preconditions": [
+        "Pure capacity decision inputs: registeredCount, capacity, waitlistEnabled"
+      ],
+      "steps": [
+        "Evaluate capacity decision for registeredCount=5, capacity=5, waitlistEnabled=true",
+        "Evaluate for registeredCount=1, capacity=1, waitlistEnabled=true",
+        "Evaluate for registeredCount=10, capacity=10, waitlistEnabled=true"
+      ],
+      "expected": "Each evaluation returns waitlist assign outcome (not Registered and not reject); aligns with testing plan unit target capacity guard validator and BR-04",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-08-005",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-08", "AC-02"],
+      "title": "queueWaitlist transition persists Waitlisted state and waitlist entry",
+      "preconditions": [
+        "Event RegistrationOpen, full capacity, waitlistEnabled true",
+        "New registration request passes auth, window, and dedupe checks"
+      ],
+      "steps": [
+        "Execute queueWaitlist via registration module pipeline",
+        "Query registration row state and waitlist_entries record"
+      ],
+      "expected": "Registration row persisted with state Waitlisted; waitlist_entries row exists with matching position; transition from Requested to Waitlisted recorded; system outcome matches Flow B waitlist entry step",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-08-006",
+      "category": "functional",
+      "layer": "browser",
+      "priority": "P1",
+      "traceability": ["FR-08", "FR-10", "AC-02"],
+      "title": "Participant UI reflects system-assigned Waitlisted status after registration on full event",
+      "preconditions": [
+        "Event detail page shows open registration with full capacity and waitlist enabled",
+        "Participant logged in with no existing registration for the event",
+        "At least one other participant already Registered"
+      ],
+      "steps": [
+        "Navigate to event detail and initiate registration via UI",
+        "Observe registration status panel or badge after action completes"
+      ],
+      "expected": "UI displays Waitlisted status with queue position or equivalent queue messaging; no manual organizer approval step required; status consistent with API registration-status",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-08-007",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-08", "BR-04"],
+      "title": "Multiple waitlist entrants receive FIFO positions by enqueue order",
+      "preconditions": [
+        "Event capacity 1, waitlistEnabled true, one Registered participant",
+        "Three distinct participants with no active registration",
+        "Fixed clock or sequential registration calls to establish deterministic enqueue order"
+      ],
+      "steps": [
+        "Register participant A, then B, then C while event remains full",
+        "Read waitlistPosition for each Waitlisted registration"
+      ],
+      "expected": "System assigns Waitlisted to all three with waitlistPosition 1, 2, 3 respectively; ordering matches FIFO by timestamp per BR-04; FR-08 applies to each entrant",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-08-008",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-08", "BR-03"],
+      "title": "Waitlisted assignment does not increment Registered count beyond capacity",
+      "preconditions": [
+        "Event capacity N with exactly N participants in Registered state",
+        "waitlistEnabled true",
+        "New participant with no active registration"
+      ],
+      "steps": [
+        "Register additional participant via registrationService.register",
+        "Query count of Registered participants for the event"
+      ],
+      "expected": "System assigns Waitlisted to new participant; total Registered count remains N (equals EventCapacity); BR-03 invariant holds; no seat consumed by waitlist entrant",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-08-009",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-08", "BR-03", "BR-04", "AC-04"],
+      "title": "Concurrent registrations when full assign Waitlisted without capacity overflow",
+      "preconditions": [
+        "Event capacity 5 with five Registered participants (full)",
+        "waitlistEnabled true",
+        "Eight distinct participants attempt registration concurrently",
+        "Each participant has no prior active registration"
+      ],
+      "steps": [
+        "Fire concurrent registrationService.register calls from eight participants while event is full",
+        "Aggregate results and query Registered count"
+      ],
+      "expected": "All eight concurrent entrants receive Waitlisted with unique sequential waitlistPosition values; Registered count remains exactly 5; no additional Registered assignments; core scenario matrix capacity under heavy concurrent requests satisfied for waitlist path",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-08-010",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["FR-08", "BR-05", "FR-09"],
+      "title": "Full event with waitlist disabled does not assign Waitlisted",
+      "preconditions": [
+        "Event capacity N with N Registered participants",
+        "waitlistEnabled false",
+        "New participant with no active registration and valid registration window"
+      ],
+      "steps": [
+        "Attempt registrationService.register for the new participant",
+        "Observe error response and absence of Waitlisted assignment"
+      ],
+      "expected": "Registration is rejected per FR-09/BR-05; no Waitlisted state assigned; FR-08 precondition (waitlist enabled) not met",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-08-011",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["FR-08", "AC-02"],
+      "title": "Registration at exact capacity boundary assigns Waitlisted to next participant",
+      "preconditions": [
+        "Event capacity 2, waitlistEnabled true, zero Registered participants",
+        "Three authenticated participants (P1, P2, P3) with no active registrations"
+      ],
+      "steps": [
+        "POST registrations for P1 and P2 until capacity is filled",
+        "POST registration for P3",
+        "Verify P1, P2, and P3 responses"
+      ],
+      "expected": "P1 and P2 receive state Registered; P3 receives state Waitlisted with waitlistPosition 1 from system auto-assignment; FR-08 triggers only after capacity is reached",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-08-012",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["FR-08", "BR-02"],
+      "title": "Registration outside window does not assign Waitlisted even when event is full",
+      "preconditions": [
+        "Event is full with waitlistEnabled true",
+        "Current time is before registrationOpenAt or after registrationCloseAt via fixed clock",
+        "Participant has no active registration"
+      ],
+      "steps": [
+        "Attempt registrationService.register for the participant",
+        "Observe error and absence of Waitlisted assignment"
+      ],
+      "expected": "Registration rejected with REGISTRATION_WINDOW_CLOSED; no Waitlisted state assigned; FR-08 precondition (valid registration request within window) not met",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-08-013",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-08", "BR-01", "AC-03"],
+      "title": "Duplicate active registration attempt does not create second Waitlisted entry",
+      "preconditions": [
+        "Event full with waitlistEnabled true",
+        "Participant already has active Waitlisted registration for the event"
+      ],
+      "steps": [
+        "Attempt second registrationService.register for the same participant and event",
+        "Query waitlist entries and registration rows for the participant"
+      ],
+      "expected": "Second attempt rejected with REGISTRATION_DUPLICATE_ACTIVE; existing Waitlisted registration unchanged; no duplicate waitlist position created",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-08-014",
+      "category": "non-functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-08", "AC-02"],
+      "title": "Waitlist enqueue persists atomically with registration in one transaction",
+      "preconditions": [
+        "Event full with waitlistEnabled true",
+        "Database transaction boundaries enabled for registration module",
+        "New participant with no active registration"
+      ],
+      "steps": [
+        "Complete a successful registration that system assigns Waitlisted state",
+        "Query registration row and waitlist_entries row in the same database session"
+      ],
+      "expected": "Registration row exists with state Waitlisted and corresponding waitlist_entries record with matching position; both committed atomically per cross-module transaction boundary for registration assignment + waitlist handling",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-08-015",
+      "category": "non-functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-08"],
+      "title": "Waitlisted assignment requires no organizer manual approval or intervention",
+      "preconditions": [
+        "Event RegistrationOpen, full capacity, waitlistEnabled true",
+        "Only Participant actor initiates registration; no Organizer Admin or Staff action"
+      ],
+      "steps": [
+        "Participant invokes registrationService.register without any prior organizer waitlist placement",
+        "Verify registration state and audit that no manual override was required"
+      ],
+      "expected": "System actor automatically assigns Waitlisted per FR-08 functional requirement format (Actor: System); participant registration succeeds without organizer workflow step",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-08-016",
+      "category": "non-functional",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["FR-08", "AC-02"],
+      "title": "Idempotent waitlist registration retry returns consistent Waitlisted snapshot",
+      "preconditions": [
+        "Event full with waitlistEnabled true",
+        "Participant authenticated with no prior registration",
+        "Fixed Idempotency-Key value prepared for the register endpoint"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/registrations with Idempotency-Key K and receive Waitlisted response",
+        "Repeat POST with the same Idempotency-Key K and identical payload"
+      ],
+      "expected": "Both responses return HTTP 200 with the same registrationId, state Waitlisted, and waitlistPosition; only one waitlist entry is created; Registered count unchanged",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-08-017",
+      "category": "non-functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-08", "BR-03"],
+      "title": "Waitlisted assignment executes within capacity guard transaction without seat consumption",
+      "preconditions": [
+        "Event at capacity with waitlistEnabled true",
+        "Registration module uses BEGIN/COMMIT with row lock on event rule config"
+      ],
+      "steps": [
+        "Complete successful registration that system assigns Waitlisted",
+        "Verify transaction wraps insert, in-transaction registered count check, waitlist enqueue, and commit"
+      ],
+      "expected": "Waitlisted assignment and capacity check commit atomically; Registered count unchanged after commit; no intermediate state where Registered count exceeds capacity",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-08-018",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-08", "AC-02"],
+      "title": "Flow B waitlist entry step yields system-assigned Waitlisted status",
+      "preconditions": [
+        "E2E fixture: published event with capacity 1 and waitlistEnabled true",
+        "First participant Registered consuming the sole seat",
+        "Second participant token and fresh idempotency key"
+      ],
+      "steps": [
+        "Execute Flow B step: POST /api/v1/events/{eventId}/registrations for second participant after event is full",
+        "Verify registration state before proceeding to cancellation and auto-promotion steps"
+      ],
+      "expected": "Registration response state is Waitlisted with waitlistPosition 1 assigned automatically by system; enables subsequent Flow B cancellation and FR-12 promotion steps; core scenario matrix Register when full + waitlist enabled maps to Waitlisted",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-08-019",
+      "category": "non-functional",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["FR-08", "FR-30"],
+      "title": "Organizer waitlist list reflects system-assigned Waitlisted participants with correct position",
+      "preconditions": [
+        "Event full with waitlistEnabled true and at least one system-assigned Waitlisted participant",
+        "Organizer Admin JWT with scope for the event"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/waitlist?page=1&pageSize=20 with organizer Authorization",
+        "Locate the waitlisted participant in items"
+      ],
+      "expected": "Paginated response includes the waitlisted participant sorted by position ascending (default sort position:asc); item reflects Waitlisted registration consistent with participant-facing registration-status",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-08-020",
+      "category": "edge",
+      "layer": "unit",
+      "priority": "P0",
+      "traceability": ["FR-08", "BR-04"],
+      "title": "State transition guard rejects queueWaitlist when seats remain available",
+      "preconditions": [
+        "registeredCount strictly less than capacity",
+        "waitlistEnabled true",
+        "Registration otherwise valid (window open, no duplicate)"
+      ],
+      "steps": [
+        "Call queueWaitlist transition guard when registeredCount < capacity",
+        "Verify guard denies Waitlisted transition"
+      ],
+      "expected": "Guard rejects Requested to Waitlisted transition; routes to Registered path instead; confirms FR-08 full-capacity precondition is enforced at state machine layer",
+      "edgeCase": true
+    }
+  ]
+}
