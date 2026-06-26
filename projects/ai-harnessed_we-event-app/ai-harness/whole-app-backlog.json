@@ -207,7 +207,7 @@
     },
     {
       "id": "module-checkin",
-      "passes": true,
+      "passes": false,
       "priority": 22,
       "phase": 2,
       "agent": "backend",
@@ -242,7 +242,7 @@
     },
     {
       "id": "module-feedback-eligibility",
-      "passes": true,
+      "passes": false,
       "priority": 23,
       "phase": 2,
       "agent": "backend",

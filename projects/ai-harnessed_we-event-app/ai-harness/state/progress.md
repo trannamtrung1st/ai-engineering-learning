@@ -224,3 +224,6 @@ Append-only log of completed iterations.
 - 2026-06-26T11:24:59Z | AC-14 | testgen_passed
 - 2026-06-26T11:26:25Z | AC-15 | testgen_passed
 - 2026-06-26T11:27:57Z | AC-16 | testgen_passed
+- 2026-06-26T11:40:43Z | AC-17 | testgen_failed
+- 2026-06-26T11:40:45Z | AC-17 | testgen_failed
+- 2026-06-26T14:00:00Z | manual-test | harness-update: UI-enabled self check-in API fail; feedback false-negative own-registration — added TC-FR-14-021/022, TC-AC-05-021, TC-FR-26-021/022, TC-AC-08-022; reset module-checkin + module-feedback-eligibility passes

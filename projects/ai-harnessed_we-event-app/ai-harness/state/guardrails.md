@@ -83,3 +83,9 @@ Lessons learned across harness iterations. Read before every implementer session
 - [module-event] Computational checks failed — see 20260626T095859Z-checks.json
 - [module-event] AI review failed — see 20260626T100217Z-review.json
 - [module-registration] Registration insert requires users.id FK — call ensureParticipantAccount (resolve dev subs to UUID) before createRegistration; audit actorId must be resolved UUID too.
+- [AC-17] TestGen agent did not emit TESTGEN_DONE
+- [module-checkin] Self check-in routes/service must `resolveActorId(actor.sub)` before `findActiveRegistration` and ownership checks; registration `getStatus` already resolves — mismatch causes UI-enabled/API-404.
+- [module-checkin] `canSelfCheckIn` window must mirror API `assertCheckinWindowOpen` (exclusive `checkinCloseAt`: reject when `now >= closeAt`); UI `now <= close` vs API `now >= close` causes UI-enabled/API-422.
+- [module-checkin] FR-14 TC-006/015 expect `selfCheckinEnabled` on event rule config; do not mark slice done without the flag in schema/API or an explicit doc exception.
+- [module-feedback-eligibility] Feedback ownership must use `actorIdsMatch`, not strict string compare on `participantId`; dev sub `participant-1` + body `registrationId` is a required happy path.
+- [web-participant-journeys] Browser journeys for check-in and feedback must assert submit succeeds when UI gate is open (NFR-13 parity); see TC-AC-05-021, TC-AC-08-022, TC-FR-14-021.

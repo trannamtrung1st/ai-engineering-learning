@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-14",
-  "version": 1,
+  "version": 2,
   "docFingerprint": "sha256:4ef9b21ee020318b8667ba54306d7c16fd1e1129e20152c62d596022b477de06",
-  "generatedAt": "2026-06-26T12:00:00Z",
+  "generatedAt": "2026-06-26T14:00:00Z",
   "cases": [
     {
       "id": "TC-FR-14-001",
@@ -390,6 +390,47 @@
         "Parse error envelope from response"
       ],
       "expected": "Synchronous HTTP 422 (or 409) with error.code CHECKIN_WINDOW_CLOSED and user-safe message including window bounds in details; satisfies NFR-13 immediate feedback with explicit failure reason",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-14-021",
+      "category": "edge",
+      "layer": "browser",
+      "priority": "P0",
+      "traceability": ["FR-14", "FR-15", "AC-06", "BR-10"],
+      "title": "Self check-in UI disables primary action at checkinCloseAt when API excludes close instant",
+      "preconditions": [
+        "Event rule config enables participant self check-in",
+        "Event InProgress with known checkinOpenAt and checkinCloseAt",
+        "Fixed clock set exactly to checkinCloseAt",
+        "Participant logged in with Registered registration and no prior check-in"
+      ],
+      "steps": [
+        "Navigate to event self check-in page",
+        "Inspect primary check-in control state and any blocking message",
+        "Attempt check-in if control is visible"
+      ],
+      "expected": "canSelfCheckIn returns false; primary check-in button is disabled or hidden; UI does not show a success path when API policy rejects at close boundary (now >= checkinCloseAt); participant remains not checked in",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-14-022",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-14", "FR-26"],
+      "title": "Dev JWT sub alias participant-1 self check-in succeeds when registration stored under resolved UUID",
+      "preconditions": [
+        "Event InProgress with active check-in window",
+        "Participant registered via dev sub participant-1; registration row participant_id is resolveActorId(participant-1)",
+        "Dev JWT with sub participant-1 and Participant role",
+        "No prior check-in for the registration"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/self-checkin with dev participant-1 Authorization bearer",
+        "Query checkin_records and registration state for the resolved participant UUID"
+      ],
+      "expected": "HTTP 200 with checkinAt, method Self, and registrationState CheckedIn; not HTTP 404 (no registration) or HTTP 403 (own-registration false negative); actor ID alias resolution applied before DB lookup",
       "edgeCase": false
     }
   ]

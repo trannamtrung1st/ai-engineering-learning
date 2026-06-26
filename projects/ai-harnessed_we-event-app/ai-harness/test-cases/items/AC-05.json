@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-05",
-  "version": 1,
+  "version": 2,
   "docFingerprint": "sha256:c6bd2470b2186d8b109b2fe04884f4802250d75d244124495523616faaa9e091",
-  "generatedAt": "2026-06-26T14:30:00Z",
+  "generatedAt": "2026-06-26T14:00:00Z",
   "cases": [
     {
       "id": "TC-AC-05-001",
@@ -284,6 +284,28 @@
       ],
       "expected": "HTTP 409 or 422 with typed domain error; no CheckinRecord created; registration state unchanged",
       "edgeCase": true
+    },
+    {
+      "id": "TC-AC-05-021",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["AC-05", "NFR-13"],
+      "title": "Check-in page submit succeeds when UI gate shows check-in available",
+      "preconditions": [
+        "Event InProgress with active check-in window",
+        "Participant logged in with Registered registration and no prior check-in",
+        "Self check-in page shows enabled primary check-in control (canSelfCheckIn true)"
+      ],
+      "steps": [
+        "Navigate to /events/{eventId}/check-in",
+        "Confirm UI gate permits check-in (button enabled, no window-closed blocker)",
+        "Trigger check-in via primary control",
+        "Observe network response and success UI"
+      ],
+      "expected": "POST self-checkin returns HTTP 200; UI shows check-in success with timestamp; no mismatch where UI gate passes but API returns 404, 403, or CHECKIN_WINDOW_CLOSED; satisfies NFR-13 UI/API parity on critical check-in action",
+      "edgeCase": false
     }
   ]
 }

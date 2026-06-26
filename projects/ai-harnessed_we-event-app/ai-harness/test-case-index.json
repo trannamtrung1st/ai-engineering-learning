@@ -23,7 +23,7 @@
     "AC-05": {
       "current": true,
       "docFingerprint": "sha256:c6bd2470b2186d8b109b2fe04884f4802250d75d244124495523616faaa9e091",
-      "generatedAt": "2026-06-26T11:11:23Z"
+      "generatedAt": "2026-06-26T14:00:00Z"
     },
     "AC-06": {
       "current": true,
@@ -38,7 +38,7 @@
     "AC-08": {
       "current": true,
       "docFingerprint": "sha256:ac1db8b40211f70e028eb0b2e18e8a7c3e48283625918ed84f037849f363d057",
-      "generatedAt": "2026-06-26T11:15:32Z"
+      "generatedAt": "2026-06-26T14:00:00Z"
     },
     "AC-09": {
       "current": true,
@@ -151,9 +151,9 @@
       "generatedAt": "2026-06-26T04:47:15Z"
     },
     "FR-14": {
-      "current": false,
+      "current": true,
       "docFingerprint": "sha256:4ef9b21ee020318b8667ba54306d7c16fd1e1129e20152c62d596022b477de06",
-      "generatedAt": "2026-06-26T04:49:16Z"
+      "generatedAt": "2026-06-26T14:00:00Z"
     },
     "FR-15": {
       "current": false,
@@ -211,9 +211,9 @@
       "generatedAt": "2026-06-26T05:13:40Z"
     },
     "FR-26": {
-      "current": false,
+      "current": true,
       "docFingerprint": "sha256:9e3a1aeddf47dc551a5606803a672761c422c9beeb7fcdb1e4e55a7f23eb5c9b",
-      "generatedAt": "2026-06-26T05:14:55Z"
+      "generatedAt": "2026-06-26T14:00:00Z"
     },
     "FR-27": {
       "current": false,

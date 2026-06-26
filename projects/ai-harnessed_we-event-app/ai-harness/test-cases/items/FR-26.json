@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-26",
-  "version": 1,
+  "version": 2,
   "docFingerprint": "sha256:9e3a1aeddf47dc551a5606803a672761c422c9beeb7fcdb1e4e55a7f23eb5c9b",
-  "generatedAt": "2026-06-26T05:14:23Z",
+  "generatedAt": "2026-06-26T14:00:00Z",
   "cases": [
     {
       "id": "TC-FR-26-001",
@@ -368,6 +368,46 @@
       ],
       "expected": "UI lists only registrations belonging to signed-in participant; no other participant names or registration identifiers visible; AC-16 signup login view own registrations end-to-end satisfied",
       "edgeCase": true
+    },
+    {
+      "id": "TC-FR-26-021",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-26", "AC-08", "BR-15"],
+      "title": "Dev sub alias participant-1 submits feedback on own Attended registration with registrationId in body",
+      "preconditions": [
+        "Completed event with active feedback window",
+        "Participant registered and Attended under resolveActorId(participant-1)",
+        "Dev JWT sub participant-1 with Participant role",
+        "Request body includes registrationId for that Attended row"
+      ],
+      "steps": [
+        "Invoke feedbackService.submit(eventId, participant-1, { registrationId, answers: { overallRating: 4 } }, participantContext)",
+        "Query persisted feedback row for the registration"
+      ],
+      "expected": "Submission succeeds with feedbackId and submittedAt; not rejected with FORBIDDEN or message about own registration; ownership check uses actorIdsMatch (alias-aware), not strict string compare on participantId",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-26-022",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-26", "FR-19"],
+      "title": "POST feedback with dev token sub alias and own registrationId returns HTTP 200",
+      "preconditions": [
+        "Completed event with active feedback window",
+        "Attended registration for dev sub participant-1 (stored UUID participant_id)",
+        "Dev JWT with sub participant-1",
+        "Request body { registrationId: ownAttendedRegistrationId, answers: { overallRating: 5 } }"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/feedback with dev participant-1 Authorization bearer and own registrationId",
+        "Parse response status and body"
+      ],
+      "expected": "HTTP 200 with feedbackId and submittedAt; response must not be HTTP 403 with ownership message when registrationId belongs to the authenticated participant; FR-26 own-registration scope satisfied for dev auth aliases",
+      "edgeCase": false
     }
   ]
 }

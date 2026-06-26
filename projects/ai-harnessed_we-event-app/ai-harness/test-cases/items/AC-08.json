@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-08",
-  "version": 1,
+  "version": 2,
   "docFingerprint": "sha256:ac1db8b40211f70e028eb0b2e18e8a7c3e48283625918ed84f037849f363d057",
-  "generatedAt": "2026-06-26T12:00:00Z",
+  "generatedAt": "2026-06-26T14:00:00Z",
   "cases": [
     {
       "id": "TC-AC-08-001",
@@ -344,6 +344,28 @@
         "Attempt to access or submit feedback form"
       ],
       "expected": "Form disabled or submission blocked with concrete message (e.g. feedback period ended); not a generic error identifier in user-facing text per microcopy standards",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-08-022",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["AC-08", "FR-19", "NFR-13"],
+      "title": "Attended participant submits own feedback via browser without false ownership error",
+      "preconditions": [
+        "Completed event with active feedback window",
+        "Participant logged in (dev sub alias such as participant-1 acceptable)",
+        "Registration in Attended state; feedback form enabled (canSubmitFeedback true)"
+      ],
+      "steps": [
+        "Navigate to /events/{eventId}/feedback",
+        "Confirm Submit feedback control is enabled",
+        "Fill required fields and submit",
+        "Observe toast or inline success and network response"
+      ],
+      "expected": "Submission succeeds with visible submitted-at confirmation; must not surface error text about only submitting for own registration when the registration belongs to the signed-in participant; satisfies NFR-13 immediate success feedback and AC-08 in-window acceptance",
       "edgeCase": false
     }
   ]
