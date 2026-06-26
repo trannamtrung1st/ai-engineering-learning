@@ -1,0 +1,330 @@
+{
+  "productItemId": "AC-12",
+  "version": 1,
+  "docFingerprint": "sha256:d7f6a976320b1aa92f16ec06ff6560b565944c1c9015956c4de24bcccdea65b2",
+  "generatedAt": "2026-06-26T04:20:21Z",
+  "cases": [
+    {
+      "id": "TC-AC-12-001",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["AC-12", "FR-23"],
+      "title": "Register then cancel produces traceable status history entries with before/after states",
+      "preconditions": [
+        "RegistrationOpen event with available capacity",
+        "Participant registered and subsequently cancelled own registration"
+      ],
+      "steps": [
+        "Invoke registrationService.register for participant on event",
+        "Invoke registrationService.cancel for the registration",
+        "Call auditService.listStatusHistory(eventId, { registrationId, sort: \"createdAt:asc\" })"
+      ],
+      "expected": "At least two entries: registration.accepted with afterState Registered and registration.cancelled with afterState CancelledByUser; each entry includes registrationId, occurredAt, and before/after state per AC-12",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-12-002",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["AC-12", "FR-23"],
+      "title": "Flow C GET status-history over HTTP traces register-to-cancel transitions",
+      "preconditions": [
+        "E2E RegistrationOpen event with capacity 5",
+        "Participant registered then cancelled via POST /registrations/{id}/cancel",
+        "OrganizerAdmin JWT with event scope"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/status-history?registrationId={registrationId}&sort=createdAt:asc with organizer Authorization bearer token",
+        "Locate registration.accepted and registration.cancelled items in paginated envelope"
+      ],
+      "expected": "HTTP 200 with items array containing registration.accepted (afterState Registered) and registration.cancelled (afterState CancelledByUser) for the same registrationId with occurredAt timestamps; satisfies testing plan status history retrieval scenario",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-12-003",
+      "category": "functional",
+      "layer": "unit",
+      "priority": "P0",
+      "traceability": ["AC-12"],
+      "title": "toStatusHistoryEntry maps registration transitions with beforeState and afterState",
+      "preconditions": [
+        "Audit mapper receives raw audit row for registration.accepted with before.state Pending and after.state Registered"
+      ],
+      "steps": [
+        "Call toStatusHistoryEntry with entityType Registration, action registration.accepted, and before/after state payloads",
+        "Call toStatusHistoryEntry for checkin.recorded with after.state Attended"
+      ],
+      "expected": "Mapped entry exposes registrationId, beforeState Pending, afterState Registered for acceptance; check-in entry resolves registrationId and afterState Attended from nested after payload",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-12-004",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["AC-12", "FR-23", "FR-30"],
+      "title": "OrganizerAdmin lists event-wide status history with paginated envelope",
+      "preconditions": [
+        "RegistrationOpen event with at least one registration status change recorded",
+        "Authenticated OrganizerAdmin actor"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/status-history?page=1&pageSize=20&sort=createdAt:desc with admin token",
+        "Verify response envelope fields and at least one registration.accepted entry"
+      ],
+      "expected": "HTTP 200 with items, page, pageSize, total, totalPages; default sort createdAt:desc; at least one entry has action registration.accepted",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-12-005",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["AC-12", "FR-23"],
+      "title": "registrationId filter returns only that registration's transitions",
+      "preconditions": [
+        "Event with two distinct participant registrations each having status history",
+        "OrganizerAdmin actor"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/status-history?registrationId={registrationIdA}",
+        "Verify all returned items belong to registrationIdA"
+      ],
+      "expected": "Every item in response has registrationId matching filter; no entries from other registrations leak into filtered result",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-12-006",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["AC-12", "AC-02", "BR-04"],
+      "title": "Waitlisted to Registered promotion is traceable in status history",
+      "preconditions": [
+        "Full event with waitlist enabled",
+        "Participant waitlisted then promoted after cancellation frees a seat"
+      ],
+      "steps": [
+        "Register participant when event full to receive Waitlisted state",
+        "Cancel an existing Registered registration to trigger promotion",
+        "GET status-history filtered by promoted registrationId with sort createdAt:asc"
+      ],
+      "expected": "History includes waitlist queue entry and subsequent promotion transition with afterState Registered; promotion from Waitlisted traceable per state machine",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-12-007",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["AC-12", "AC-05", "AC-07", "BR-12"],
+      "title": "Check-in and event completion produce CheckedIn and Attended history entries",
+      "preconditions": [
+        "Registered participant with valid in-window check-in recorded",
+        "Event progressed to Completed triggering attendance finalization"
+      ],
+      "steps": [
+        "Perform valid check-in for registration",
+        "Complete event to finalize attendance",
+        "GET /api/v1/events/{eventId}/status-history?registrationId={registrationId}&sort=createdAt:asc"
+      ],
+      "expected": "History includes checkin.recorded with afterState reflecting check-in and transition to Attended after event completion; timestamps and states support operational traceability",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-12-008",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["AC-12", "FR-23", "FR-25", "FR-30"],
+      "title": "OrganizerStaff on assigned event can read status history",
+      "preconditions": [
+        "Event with at least one registration status change",
+        "OrganizerStaff JWT assigned to the event"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/status-history?page=1&pageSize=10 with staff Authorization bearer token"
+      ],
+      "expected": "HTTP 200 with paginated envelope; items include registration.accepted; staff read access permitted for operational lists per FR-30 while audit-logs remain admin-only",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-12-009",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["AC-12", "FR-25", "FR-26"],
+      "title": "Participant cannot read event status history",
+      "preconditions": [
+        "RegistrationOpen event with status history entries",
+        "Participant JWT registered on the event"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/status-history with participant Authorization bearer token"
+      ],
+      "expected": "HTTP 403 forbidden; registration status history restricted to organizer roles per permission matrix",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-12-010",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["AC-12", "AC-15", "FR-25"],
+      "title": "Unauthenticated GET status-history returns 401",
+      "preconditions": [
+        "Event with existing status history entries",
+        "No Authorization header on request"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/status-history without bearer token"
+      ],
+      "expected": "HTTP 401 unauthenticated; status history data not exposed",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-12-011",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P2",
+      "traceability": ["AC-12", "AC-13"],
+      "title": "Invalid pagination on status-history returns INVALID_PAGINATION",
+      "preconditions": [
+        "Event with status history entries",
+        "OrganizerAdmin JWT"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/status-history?page=0",
+        "GET /api/v1/events/{eventId}/status-history?page=1&pageSize=101"
+      ],
+      "expected": "HTTP 400 with INVALID_PAGINATION for page less than 1 or pageSize above max 100; no partial history data returned",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-12-012",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P2",
+      "traceability": ["AC-12", "AC-13"],
+      "title": "Status history page beyond totalPages returns empty items with valid metadata",
+      "preconditions": [
+        "Event with known status history entry count",
+        "OrganizerAdmin actor"
+      ],
+      "steps": [
+        "Call listStatusHistory with page=1 pageSize=2 to read total and totalPages",
+        "Call listStatusHistory with page exceeding totalPages"
+      ],
+      "expected": "Beyond-last-page response has items: [] with matching total and totalPages per pagination contract",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-12-013",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P2",
+      "traceability": ["AC-12", "FR-23"],
+      "title": "registrationId filter for registration with no history returns empty paginated result",
+      "preconditions": [
+        "Valid registrationId UUID that has never transitioned on the event",
+        "OrganizerAdmin actor"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/status-history?registrationId={unusedRegistrationId}"
+      ],
+      "expected": "HTTP 200 with items: [], total 0, totalPages 0 or 1 per envelope rules; no error for empty history",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-12-014",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["AC-12", "FR-27"],
+      "title": "OrganizerStaff cannot read status history for out-of-scope event",
+      "preconditions": [
+        "Event with status history entries not assigned to staff actor",
+        "OrganizerStaff JWT scoped to a different event"
+      ],
+      "steps": [
+        "GET /api/v1/events/{unassignedEventId}/status-history with staff Authorization bearer token"
+      ],
+      "expected": "HTTP 403 or 404 per scope-hiding policy; status history not exposed outside assigned event scope",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-12-015",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["AC-12", "BR-12"],
+      "title": "Sequential registration transitions produce distinct chronologically ordered history entries",
+      "preconditions": [
+        "RegistrationOpen event",
+        "Single registration progressing through register, check-in, and event completion"
+      ],
+      "steps": [
+        "Register participant",
+        "Check in within valid window",
+        "Complete event",
+        "List status history with sort createdAt:asc for the registrationId"
+      ],
+      "expected": "Multiple distinct entries with monotonic occurredAt ordering; each transition (Registered, CheckedIn, Attended) captured as separate immutable records",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-12-016",
+      "category": "non-functional",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["AC-12", "NFR-10"],
+      "title": "Status history entries include actorId, actorRole, and occurredAt for audit correlation",
+      "preconditions": [
+        "Registration status change recorded by known Participant actor"
+      ],
+      "steps": [
+        "Retrieve status history entry for registration.accepted action",
+        "Inspect actorId, actorRole, and occurredAt fields"
+      ],
+      "expected": "Entry includes non-null actorId matching initiating participant, actorRole Participant, and ISO occurredAt timestamp; supports error and audit log correlation per NFR-10",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-12-017",
+      "category": "non-functional",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["AC-12", "NFR-13"],
+      "title": "Status history records are immutable with no mutation API",
+      "preconditions": [
+        "Existing status history entry persisted for an event",
+        "Audit module guardrail: never allow audit record mutation"
+      ],
+      "steps": [
+        "Confirm no PATCH/PUT/DELETE endpoint exists for status-history items",
+        "Re-query same history entry after subsequent unrelated registrations"
+      ],
+      "expected": "Original entry unchanged; no client-facing mutation path; append-only history preserved per audit module invariant",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-12-018",
+      "category": "non-functional",
+      "layer": "integration",
+      "priority": "P2",
+      "traceability": ["AC-12", "FR-31", "AC-13"],
+      "title": "Status history list returns accurate total count across multiple registrations",
+      "preconditions": [
+        "Event with three or more participant registrations each producing at least one history entry"
+      ],
+      "steps": [
+        "Call listStatusHistory without registrationId filter with pageSize=2",
+        "Compare total field against known transition count"
+      ],
+      "expected": "total reflects all registration status transitions for the event; pageSize slices items without losing count accuracy per FR-31 pagination contract",
+      "edgeCase": false
+    }
+  ]
+}
