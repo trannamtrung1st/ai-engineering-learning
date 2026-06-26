@@ -2,15 +2,16 @@
   "productItemId": "NFR-18",
   "version": 1,
   "docFingerprint": "sha256:11ddf4c5c81698ee9aadf540af5c4b69e4286c60734018f2e40a3df142e2c12c",
-  "generatedAt": "2026-06-26T22:00:00Z",
+  "generatedAt": "2026-06-26T22:30:00Z",
   "cases": [
     {
       "id": "TC-NFR-18-001",
       "category": "functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
       "traceability": ["NFR-18", "FR-35", "AC-17"],
-      "title": "Valid cover image upload is served from controlled media path with correct Content-Type",
+      "title": "POST cover-image and GET media/events/{key} honor allowed MIME types and controlled path contract",
       "preconditions": [
         "API server running at /api/v1",
         "Editable event owned by OrganizerAdmin",
@@ -19,6 +20,7 @@
       ],
       "steps": [
         "POST /api/v1/events/{eventId}/cover-image as multipart upload with allowed image file",
+        "Assert POST returns HTTP 200 or 201 with stable success envelope",
         "GET /api/v1/events/{eventId} and capture coverImageUrl",
         "GET coverImageUrl (GET /api/v1/media/events/{key})"
       ],
@@ -29,31 +31,34 @@
       "id": "TC-NFR-18-002",
       "category": "functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["NFR-18", "FR-35"],
       "title": "Uploaded cover file persisted under configured uploads directory with storage key format",
       "preconditions": [
         "OrganizerAdmin JWT and editable event",
         "UPLOADS_DIR configured per local development setup",
-        "Valid image file under 5 MB"
+        "Valid image file under 5 MB",
+        "Integration harness with real Postgres and filesystem"
       ],
       "steps": [
-        "POST /api/v1/events/{eventId}/cover-image with valid image",
-        "Read cover_image_key from events row or API response",
+        "POST /api/v1/events/{eventId}/cover-image with valid image via media service/repository",
+        "Read cover_image_key from events row in Postgres",
         "Verify file exists only under UPLOADS_DIR at path derived from key"
       ],
-      "expected": "cover_image_key stored in database; physical file exists under controlled uploads directory; no file written outside configured storage root; NFR-18 controlled storage path requirement met",
+      "expected": "cover_image_key stored in database; physical file exists under controlled uploads directory; no file written outside configured storage root; NFR-18 controlled storage path requirement met at module-DB boundary",
       "edgeCase": false
     },
     {
       "id": "TC-NFR-18-003",
       "category": "functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P1",
       "traceability": ["NFR-18", "FR-36"],
       "title": "Event list and detail coverImageUrl uses API media route not raw filesystem path",
       "preconditions": [
-        "Event with cover_image_key set from prior valid upload",
+        "Event with cover_image_key set from prior valid upload in Postgres",
         "Public or authenticated GET access to event list and detail"
       ],
       "steps": [
@@ -66,59 +71,32 @@
     },
     {
       "id": "TC-NFR-18-004",
-      "category": "non-functional",
-      "layer": "unit",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["NFR-18"],
-      "title": "Cover image validator accepts only image/jpeg, image/png, and image/webp within size limit",
+      "traceability": ["NFR-18", "FR-35", "FR-36", "AC-17"],
+      "title": "Organizer uploads validated cover; participant retrieves image only via controlled media URL",
       "preconditions": [
-        "Cover image validation module (validateCoverImage or equivalent) available for unit test"
+        "API server running at /api/v1",
+        "Draft or editable event in organizer scope",
+        "OrganizerAdmin JWT and Participant JWT (or public read policy)",
+        "Valid WebP image under 5 MB"
       ],
       "steps": [
-        "Call validator for image/jpeg, image/png, and image/webp with size under 5 MB",
-        "Assert each allowed MIME type passes without throwing"
+        "POST /api/v1/events/{eventId}/cover-image as OrganizerAdmin with valid image",
+        "GET /api/v1/events?page=1&pageSize=12 as participant and read coverImageUrl on list item",
+        "GET /api/v1/events/{eventId} as participant and read coverImageUrl",
+        "GET coverImageUrl and verify bytes and Content-Type"
       ],
-      "expected": "All three API-design §2.7 allowed MIME types pass validation; unit-level guarantee of NFR-18 allowed-type policy before domain execution",
+      "expected": "Upload passes MIME and size validation; list and detail expose coverImageUrl under controlled /media/events/ path; participant can fetch image bytes with correct Content-Type; end-to-end NFR-18 validation plus controlled serve path for event media acceptance scope",
       "edgeCase": false
     },
     {
       "id": "TC-NFR-18-005",
       "category": "non-functional",
-      "layer": "unit",
-      "priority": "P0",
-      "traceability": ["NFR-18"],
-      "title": "Cover image validator rejects disallowed MIME types before persistence",
-      "preconditions": [
-        "Cover image validation module available for unit test"
-      ],
-      "steps": [
-        "Call validator with disallowed types such as image/gif, application/pdf, text/plain, and application/octet-stream",
-        "Assert each invocation fails with invalid-input semantics"
-      ],
-      "expected": "Disallowed MIME types rejected at validation layer; no storage key or file path produced; satisfies NFR-18 allowed MIME type constraint",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-NFR-18-006",
-      "category": "non-functional",
-      "layer": "unit",
-      "priority": "P0",
-      "traceability": ["NFR-18"],
-      "title": "Cover image validator enforces 5 MB maximum byte size",
-      "preconditions": [
-        "Cover image validation module with COVER_IMAGE_MAX_BYTES constant (5_000_000)"
-      ],
-      "steps": [
-        "Call validator with allowed MIME type and size equal to 5 MB",
-        "Call validator with same MIME type and size 5 MB + 1 byte"
-      ],
-      "expected": "At-limit size passes; over-limit size fails with invalid-input error referencing max bytes; NFR-18 maximum size enforced at validation boundary",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-NFR-18-007",
-      "category": "non-functional",
       "layer": "integration",
+      "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["NFR-18", "FR-35"],
       "title": "API rejects oversized multipart upload before cover_image_key persistence",
@@ -128,33 +106,38 @@
       ],
       "steps": [
         "POST /api/v1/events/{eventId}/cover-image with oversized file",
-        "GET /api/v1/events/{eventId} and query events.cover_image_key in database"
+        "Query events.cover_image_key in Postgres",
+        "List files under UPLOADS_DIR for event-scoped keys"
       ],
-      "expected": "HTTP 400 with stable invalid-input error code; cover_image_key remains null; no file written under uploads directory; NFR-18 size limit enforced at API boundary",
+      "expected": "HTTP 400 with stable invalid-input error code; cover_image_key remains null; no file written under uploads directory; NFR-18 maximum size enforced at API and persistence boundary",
       "edgeCase": false
     },
     {
-      "id": "TC-NFR-18-008",
+      "id": "TC-NFR-18-006",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["NFR-18"],
       "title": "Media handler serves files only from configured uploads directory via key lookup",
       "preconditions": [
-        "Valid cover uploaded and cover_image_key known",
-        "API media handler mounted at GET /media/events/{key}"
+        "Valid cover uploaded and cover_image_key known in Postgres",
+        "API media handler mounted at GET /media/events/{key}",
+        "Integration harness with real uploads directory"
       ],
       "steps": [
         "GET /api/v1/media/events/{validKey} for uploaded cover",
-        "Verify response body matches uploaded bytes and Content-Type header"
+        "Verify response body matches uploaded bytes and Content-Type header",
+        "Confirm handler resolves key to path under UPLOADS_DIR only"
       ],
       "expected": "HTTP 200 with correct image bytes and Content-Type; file resolved through controlled handler mapping key to UPLOADS_DIR; no arbitrary filesystem read; NFR-18 controlled storage path serving satisfied",
       "edgeCase": false
     },
     {
-      "id": "TC-NFR-18-009",
+      "id": "TC-NFR-18-007",
       "category": "non-functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P1",
       "traceability": ["NFR-18", "FR-36", "AC-17"],
       "title": "Each allowed image format returns matching Content-Type on media GET",
@@ -163,17 +146,18 @@
         "Valid JPEG, PNG, and WebP fixtures each under 5 MB"
       ],
       "steps": [
-        "Upload JPEG cover; GET media endpoint and record Content-Type",
-        "Replace with PNG; GET media endpoint and record Content-Type",
-        "Replace with WebP; GET media endpoint and record Content-Type"
+        "Upload JPEG cover; GET media endpoint and record HTTP status and Content-Type",
+        "Replace with PNG; GET media endpoint and record HTTP status and Content-Type",
+        "Replace with WebP; GET media endpoint and record HTTP status and Content-Type"
       ],
-      "expected": "Media responses return image/jpeg, image/png, and image/webp respectively; browsers and clients can render covers correctly; NFR-18 MIME validation contract consistent through serve path",
+      "expected": "Media responses return HTTP 200 with image/jpeg, image/png, and image/webp respectively; MIME validation contract consistent through serve path per API design §2.7",
       "edgeCase": false
     },
     {
-      "id": "TC-NFR-18-010",
+      "id": "TC-NFR-18-008",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["NFR-18", "FR-35"],
       "title": "Disallowed MIME type upload rejected with no storage side effects",
@@ -189,9 +173,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-NFR-18-011",
+      "id": "TC-NFR-18-009",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["NFR-18"],
       "title": "Cover upload at exactly 5 MB accepted; one byte over rejected",
@@ -200,7 +185,7 @@
         "Fixtures: valid WebP at exactly 5_000_000 bytes and at 5_000_001 bytes"
       ],
       "steps": [
-        "POST cover-image with 5 MB file and confirm success",
+        "POST cover-image with 5 MB file and confirm HTTP 200 or 201",
         "DELETE cover-image to reset",
         "POST cover-image with 5 MB + 1 byte file"
       ],
@@ -208,25 +193,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-NFR-18-012",
-      "category": "edge",
-      "layer": "unit",
-      "priority": "P1",
-      "traceability": ["NFR-18"],
-      "title": "Empty file (zero bytes) rejected by cover image validator",
-      "preconditions": [
-        "Cover image validation module available for unit test"
-      ],
-      "steps": [
-        "Call validator with allowed MIME type image/png and size 0"
-      ],
-      "expected": "Validation fails with invalid-input error; zero-byte uploads cannot bypass NFR-18 MIME and size checks",
-      "edgeCase": true
-    },
-    {
-      "id": "TC-NFR-18-013",
+      "id": "TC-NFR-18-010",
       "category": "edge",
       "layer": "integration",
+      "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["NFR-18"],
       "title": "Media route rejects path traversal and invalid keys without filesystem escape",
@@ -238,13 +208,14 @@
         "GET /api/v1/media/events/../etc/passwd and URL-encoded traversal variants",
         "GET /api/v1/media/events/nonexistent-key-uuid"
       ],
-      "expected": "Traversal attempts return 404 or 400; no arbitrary filesystem read outside UPLOADS_DIR; invalid keys do not leak directory contents; NFR-18 controlled storage path confinement enforced",
+      "expected": "Traversal attempts return HTTP 404 or 400; no arbitrary filesystem read outside UPLOADS_DIR; invalid keys do not leak directory contents; NFR-18 controlled storage path confinement enforced",
       "edgeCase": true
     },
     {
-      "id": "TC-NFR-18-014",
+      "id": "TC-NFR-18-011",
       "category": "edge",
       "layer": "integration",
+      "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["NFR-18"],
       "title": "GET media for deleted cover key returns not found without serving stale file",
@@ -260,15 +231,97 @@
       "edgeCase": true
     },
     {
+      "id": "TC-NFR-18-012",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["NFR-18", "NFR-08", "FR-35"],
+      "title": "Participant cannot upload event cover image",
+      "preconditions": [
+        "Editable event in organizer scope",
+        "Valid OrganizerAdmin JWT and separate Participant JWT",
+        "Valid image file under 5 MB"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/cover-image with Participant token only",
+        "Query events.cover_image_key in database"
+      ],
+      "expected": "Participant POST returns HTTP 403 unauthorized; cover_image_key unchanged; create/edit event media mutation restricted to OrganizerAdmin per roles matrix",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-18-013",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["NFR-18", "NFR-08", "FR-35"],
+      "title": "OrganizerStaff denied cover image upload on editable event",
+      "preconditions": [
+        "Draft event in OrganizerAdmin organizing unit",
+        "OrganizerStaff JWT assigned to event scope",
+        "Valid image file under 5 MB"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/cover-image with OrganizerStaff bearer token"
+      ],
+      "expected": "HTTP 403 unauthorized; no cover_image_key written; roles matrix restricts create/edit event draft to OrganizerAdmin only",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-18-014",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-18", "FR-35", "FR-36", "AC-17"],
+      "title": "Organizer cover upload enforces type and size feedback; participant sees image via controlled URL",
+      "preconditions": [
+        "Web app running with organizer event create/edit form and participant discovery pages",
+        "OrganizerAdmin logged in; participant session available",
+        "Valid JPEG/PNG/WebP under 5 MB and disallowed file (e.g. PDF) for negative check"
+      ],
+      "steps": [
+        "As OrganizerAdmin, open event form, attempt to select disallowed file type and observe validation feedback",
+        "Select valid cover image, complete upload, and confirm preview renders",
+        "As participant, open event discovery list and event detail for the same event"
+      ],
+      "expected": "Form rejects or warns on disallowed MIME and oversize files before submit; successful upload shows preview; participant list card and detail hero load cover from API media URL (not raw filesystem path); broken-image fallback absent for valid upload; NFR-18 validation and controlled serve path visible in UI journey",
+      "edgeCase": false
+    },
+    {
       "id": "TC-NFR-18-015",
       "category": "edge",
-      "layer": "e2e",
+      "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["NFR-18", "FR-35"],
-      "title": "Declared allowed MIME with mismatched or missing multipart field rejected at API validation",
+      "title": "Organizer form blocks oversize cover selection with clear error before API call",
+      "preconditions": [
+        "Web app event form with client-side or immediate server validation for cover upload",
+        "OrganizerAdmin logged in on editable event",
+        "Image fixture larger than 5 MB"
+      ],
+      "steps": [
+        "Open event edit form cover upload control",
+        "Select file exceeding 5 MB maximum",
+        "Attempt to save or upload"
+      ],
+      "expected": "UI surfaces size-limit error with immediate feedback; no successful cover persistence; participant views unchanged; aligns with NFR-18 maximum size constraint at user-facing boundary",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-18-016",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["NFR-18", "FR-35"],
+      "title": "Malformed multipart upload rejected at API validation gate",
       "preconditions": [
         "OrganizerAdmin JWT and editable event",
-        "Multipart request with missing file part or wrong Content-Type header on file field"
+        "Multipart request with missing file part or unsupported Content-Type on file field"
       ],
       "steps": [
         "POST /api/v1/events/{eventId}/cover-image with empty multipart body",
