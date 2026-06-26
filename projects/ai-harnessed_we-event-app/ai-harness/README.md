@@ -23,7 +23,7 @@ npx playwright install chromium
 agent mcp enable playwright
 ```
 
-Config lives in `.cursor/mcp.json`. Implementer agents on `frontend` and `test` slices receive `--approve-mcps` automatically. See [`docs/browser-mcp.md`](docs/browser-mcp.md).
+Config lives in `.cursor/mcp.json` (headless by default). Implementer agents on `frontend` and `test` slices receive `--approve-mcps` for smoke verification; a dedicated **browser test agent** gate runs after computational checks. See [`docs/browser-mcp.md`](docs/browser-mcp.md).
 
 ## Auth (no .env file)
 
@@ -43,8 +43,10 @@ npm run aih:loop -- 50                     # max 50 iterations
 |---|---|---|
 | `AIH_MODEL` | `auto` | Implementer model |
 | `AIH_REVIEWER_MODEL` | `auto` | Reviewer model |
+| `AIH_TESTER_MODEL` | `auto` | Browser test agent model |
 | `AIH_SKIP_AGENT` | — | Skip implementer (`1`) |
 | `AIH_SKIP_REVIEW` | — | Skip AI review (`1`) |
+| `AIH_SKIP_BROWSER_TEST` | — | Skip browser test gate (`1`) |
 | `AIH_BROWSER_MCP` | — | Enable Playwright MCP on any slice (`1`) |
 | `AIH_PLAYWRIGHT_MCP_KEEP` | `0` | Newest Playwright MCP files to keep per dir (`0` = wipe before browser slices) |
 | `AIH_SKIP_PLAYWRIGHT_MCP_CLEANUP` | — | Skip Playwright MCP artifact cleanup (`1`) |
@@ -55,11 +57,12 @@ Defaults live in `ai-harness/config/models.json`.
 
 | Command | What it does |
 |---|---|
-| `npm run aih:once` | **One** iteration (implement → check → review) |
+| `npm run aih:once` | **One** iteration (implement → check → browser test → review) |
 | `npm run aih:loop` | **Autonomous loop** — repeats until all slices pass or max iterations (30) |
 | `npm run aih:loop:bg` | Same as loop, but **background/unattended** (nohup + log file) |
 | `npm run aih:loop:stop` | Stop background loop |
 | `npm run aih:check` | Computational gates only (no agent) |
+| `npm run aih:browser-test` | Playwright MCP functional test for next/current slice |
 | `npm run aih:review` | AI review for next pending slice |
 | `npm run aih:preview` | **Dev preview** — DB in Docker, API + web as local dev processes |
 | `npm run aih:preview:full` | **Full preview** — DB + API + web as built Compose images |
@@ -116,7 +119,7 @@ AIH_MODEL=auto npm run aih:loop -- 50
 npm run aih:loop:stop
 ```
 
-The loop picks the next backlog slice, runs the implementer agent, runs checks + AI review, marks pass, commits, and repeats. No manual step between slices.
+The loop picks the next backlog slice, runs the implementer agent, runs checks + browser test (frontend/test slices) + AI review, marks pass, commits, and repeats. No manual step between slices.
 
 ### First run
 
@@ -144,8 +147,9 @@ AIH_SKIP_AGENT=1 AIH_SKIP_REVIEW=1 npm run aih:once
 2. `build-prompt.sh` injects slice into `implementer.prompt.md`
 3. `agent -p --force` implements one slice
 4. `run-checks.sh` — computational gates (see below)
-5. `run-ai-review.sh` — second agent pass; must end with `REVIEW_PASS`
-6. Backlog updated, progress logged, optional git commit
+5. `run-browser-test.sh` — Playwright MCP functional/UI gate for `frontend`/`test` slices; must end with `BROWSER_TEST_PASS`
+6. `run-ai-review.sh` — static code review; must end with `REVIEW_PASS`
+7. Backlog updated, progress logged, optional git commit
 
 ## Computational checks (`npm run aih:check`)
 
@@ -184,6 +188,7 @@ On a docs-only repo (no `apps/`), `npm run aih:check` passes without code-qualit
 | `SLICE_DONE <id>` | Implementer finished |
 | `SLICE_BLOCKED <reason>` | Blocked |
 | `REVIEW_PASS` / `REVIEW_FAIL` | AI review outcome |
+| `BROWSER_TEST_PASS` / `BROWSER_TEST_FAIL` | Browser functional test outcome |
 | `COMPLETE` | All slices pass |
 | `HUMAN_REVIEW_PASS <id>` | Manual sign-off (merge-ready slices) |
 

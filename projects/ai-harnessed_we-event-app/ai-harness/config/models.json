@@ -1,4 +1,5 @@
 {
   "default": "auto",
-  "reviewer": "auto"
+  "reviewer": "auto",
+  "tester": "auto"
 }

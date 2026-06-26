@@ -7,15 +7,15 @@ Concise index for the 12 harness components. Referenced by `docs/technical/13-do
 | Component | Location |
 |---|---|
 | Model | `config/models.json`, env `AIH_MODEL` |
-| Prompt | `agents/implementer.prompt.md`, `agents/reviewer.prompt.md` |
+| Prompt | `agents/implementer.prompt.md`, `agents/tester.prompt.md`, `agents/reviewer.prompt.md` |
 | Context | `config/context-map.json` — doc pointers per slice/agent |
 | Tools | Cursor CLI (`agent -p --force`) + Playwright MCP on frontend/test slices |
 | Workflow | `workflows/ralph-loop.json` |
 | Memory/State | `state/progress.md`, `state/guardrails.md`, `whole-app-backlog.json` (in `ai-harness/`) |
-| Validation | `scripts/run-checks.sh` — layered `test:unit`, `test:integration`, `test:e2e`, `testRequirements` |
+| Validation | `scripts/run-checks.sh` — layered tests; `scripts/run-browser-test.sh` — Playwright MCP gate |
 | Guardrails | `state/guardrails.md` + forbidden patterns in `ralph-loop.json` |
 | Observability | `generated/runs/<timestamp>-*.json` |
-| Feedback loops | Failed check/review → guardrails append → retry |
+| Feedback loops | Failed check/browser-test/review → guardrails append → retry |
 | Human review | `workflows/human-review-checklist.md` |
 | Preview runtime | `scripts/preview-stack.sh`, `docs/preview-runtime.md` |
 | Browser MCP | `.cursor/mcp.json`, `docs/browser-mcp.md` |
@@ -27,7 +27,7 @@ Concise index for the 12 harness components. Referenced by `docs/technical/13-do
 Each iteration spawns a **fresh** agent context (no `--resume`). State lives on disk and in git.
 
 ```
-pick slice → build prompt → agent implement → run-checks → run-ai-review → mark pass → commit
+pick slice → build prompt → agent implement → run-checks → run-browser-test → run-ai-review → mark pass → commit
 ```
 
 Scripts: `ralph-loop.sh` (autonomous), `ralph-once.sh` (single step).

@@ -75,7 +75,7 @@ Minimum pre-merge gates (enforced by `npm run aih:check` / `run-checks.sh`):
 - no unresolved canonical-state naming drift
 - no missing audit event for critical operations
 
-Frontend/test slices: implementer uses Playwright MCP for interactive browser verification (see `ai-harness/docs/browser-mcp.md`). This is agent-driven, not a computational gate.
+Frontend/test slices: implementer uses Playwright MCP for interactive browser smoke verification (see `ai-harness/docs/browser-mcp.md`). A dedicated **browser test agent** gate (`run-browser-test.sh`) runs after computational checks and before AI code review for `frontend`/`test` slices.
 
 ## 9. Defect Severity Model
 - **P0**: capacity overflow, duplicate active registration, unauthorized critical update.

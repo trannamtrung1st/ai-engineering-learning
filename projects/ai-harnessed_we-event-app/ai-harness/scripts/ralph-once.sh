@@ -67,6 +67,20 @@ if [[ "$check_status" -ne 0 ]]; then
   exit 1
 fi
 
+# --- Browser functional test (Playwright MCP) ---
+if [[ "${AIH_SKIP_BROWSER_TEST:-}" != "1" ]]; then
+  echo "==> Running browser functional test (Playwright MCP)"
+  set +e
+  AIH_RUN_ID="$RID" ./ai-harness/scripts/run-browser-test.sh "$SLICE_ID" "$RID"
+  browser_test_status=$?
+  set -e
+  if [[ "$browser_test_status" -ne 0 ]]; then
+    append_guardrail "$SLICE_ID" "Browser test failed — see ${RID}-browser-test.json"
+    append_progress "$SLICE_ID" "browser_test_failed"
+    exit 1
+  fi
+fi
+
 # --- AI review ---
 if [[ "${AIH_SKIP_REVIEW:-}" == "1" ]]; then
   echo "WARN: AIH_SKIP_REVIEW=1 — skipping AI review"

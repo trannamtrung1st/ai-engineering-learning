@@ -31,7 +31,9 @@ cd "$REPO_ROOT"
 } >>"$logfile"
 
 nohup env AIH_MODEL="${AIH_MODEL:-}" AIH_REVIEWER_MODEL="${AIH_REVIEWER_MODEL:-}" \
+  AIH_TESTER_MODEL="${AIH_TESTER_MODEL:-}" \
   AIH_SKIP_AGENT="${AIH_SKIP_AGENT:-}" AIH_SKIP_REVIEW="${AIH_SKIP_REVIEW:-}" \
+  AIH_SKIP_BROWSER_TEST="${AIH_SKIP_BROWSER_TEST:-}" \
   ./ai-harness/scripts/ralph-loop.sh "$max" >>"$logfile" 2>&1 &
 echo $! >"$pidfile"
 

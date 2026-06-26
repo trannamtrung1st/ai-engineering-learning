@@ -9,7 +9,9 @@
     "sliceDone": "SLICE_DONE",
     "sliceBlocked": "SLICE_BLOCKED",
     "reviewPass": "REVIEW_PASS",
-    "reviewFail": "REVIEW_FAIL"
+    "reviewFail": "REVIEW_FAIL",
+    "testPass": "BROWSER_TEST_PASS",
+    "testFail": "BROWSER_TEST_FAIL"
   },
   "computationalChecks": {
     "forbiddenPatterns": [
@@ -74,6 +76,19 @@
       }
     }
   },
+  "browserTest": {
+    "required": true,
+    "modelKey": "tester",
+    "activeWhenAgent": ["frontend", "test"],
+    "requirePreviewStack": true,
+    "inputs": [
+      "slice-docs",
+      "acceptance-tags",
+      "checks-report",
+      "changed-files",
+      "completion-artifacts"
+    ]
+  },
   "aiReview": {
     "required": true,
     "modelKey": "reviewer",
@@ -92,6 +107,7 @@
       "changed-files",
       "completion-artifacts",
       "checks-report",
+      "browser-test-report",
       "slice-docs"
     ]
   },

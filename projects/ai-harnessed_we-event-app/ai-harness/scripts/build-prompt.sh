@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Build implementer or reviewer prompt for a slice
-# Usage: build-prompt.sh <sliceId> [implementer|reviewer]
+# Build implementer, reviewer, or tester prompt for a slice
+# Usage: build-prompt.sh <sliceId> [implementer|reviewer|tester]
 set -euo pipefail
 source "$(dirname "$0")/lib/common.sh"
 
@@ -9,8 +9,8 @@ require_harness_deps
 SLICE_ID="${1:?slice id required}"
 MODE="${2:-implementer}"
 
-if [[ "$MODE" != "implementer" && "$MODE" != "reviewer" ]]; then
-  echo "ERROR: mode must be implementer or reviewer" >&2
+if [[ "$MODE" != "implementer" && "$MODE" != "reviewer" && "$MODE" != "tester" ]]; then
+  echo "ERROR: mode must be implementer, reviewer, or tester" >&2
   exit 1
 fi
 
@@ -24,9 +24,11 @@ description="$(echo "$slice_json" | jq -r '.description // ""')"
 acceptance="$(echo "$slice_json" | jq -r '.acceptance | join(", ")')"
 artifacts="$(echo "$slice_json" | jq -r '.completionArtifacts | join(", ")')"
 agent_type="$(echo "$slice_json" | jq -r '.agent // "backend"')"
+prompt_agent="$agent_type"
+[[ "$MODE" == "tester" ]] && prompt_agent="tester"
 
 # Merge slice docs with agent alwaysRead from context-map
-docs_list="$(jq -r --arg id "$SLICE_ID" --arg agent "$agent_type" '
+docs_list="$(jq -r --arg id "$SLICE_ID" --arg agent "$prompt_agent" '
   .slices[$id].docs // [] as $sliceDocs |
   .agents[$agent].alwaysRead // [] as $always |
   ($always + $sliceDocs) | unique | .[] | "- " + .

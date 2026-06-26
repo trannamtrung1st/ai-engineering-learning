@@ -22,6 +22,14 @@
         "docs/technical/11-testing-plan.md",
         "docs/brds/08-acceptance-mvp-future.md"
       ]
+    },
+    "tester": {
+      "alwaysRead": [
+        "docs/technical/11-testing-plan.md",
+        "docs/brds/08-acceptance-mvp-future.md",
+        "ai-harness/docs/browser-mcp.md",
+        "docs/ui-ux/00-production-ui-quality-bar.md"
+      ]
     }
   },
   "slices": {

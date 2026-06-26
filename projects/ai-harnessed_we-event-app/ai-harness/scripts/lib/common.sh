@@ -167,12 +167,16 @@ require_agent() {
 
 get_model() {
   local key="${1:-default}"
-  if [[ -n "${AIH_MODEL:-}" ]]; then
+  if [[ "$key" == "default" && -n "${AIH_MODEL:-}" ]]; then
     echo "$AIH_MODEL"
     return
   fi
   if [[ "$key" == "reviewer" && -n "${AIH_REVIEWER_MODEL:-}" ]]; then
     echo "$AIH_REVIEWER_MODEL"
+    return
+  fi
+  if [[ "$key" == "tester" && -n "${AIH_TESTER_MODEL:-}" ]]; then
+    echo "$AIH_TESTER_MODEL"
     return
   fi
   jq -r --arg k "$key" '.[$k] // .default' "$MODELS_CONFIG"
@@ -192,7 +196,7 @@ print_harness_env() {
   local bin
   bin="$(resolve_agent_bin)"
   if [[ -n "$bin" ]]; then
-    echo "Agent: ${bin} | Model: $(get_model default) | Reviewer: $(get_model reviewer)"
+    echo "Agent: ${bin} | Model: $(get_model default) | Reviewer: $(get_model reviewer) | Tester: $(get_model tester)"
   else
     echo "Agent: not installed (curl https://cursor.com/install -fsS | bash)"
   fi
@@ -270,6 +274,14 @@ slice_uses_browser_mcp() {
   slice_requires_web_runtime "$slice_id" || [[ "${AIH_BROWSER_MCP:-}" == "1" ]]
 }
 
+slice_requires_browser_test() {
+  local slice_id="${1:-}"
+  [[ -n "$slice_id" ]] || return 1
+  local agent
+  agent="$(get_slice_field "$slice_id" agent)"
+  jq -e --arg agent "$agent" '.browserTest.activeWhenAgent[]? | select(. == $agent)' "$LOOP_CONFIG" >/dev/null 2>&1
+}
+
 playwright_mcp_artifact_dirs() {
   printf '%s\n' "$PLAYWRIGHT_MCP_LEGACY_DIR" "$PLAYWRIGHT_MCP_OUTPUT_DIR"
 }
@@ -341,6 +353,20 @@ agent_invoke_review() {
   "$AGENT_BIN" "${args[@]}" "$prompt"
 }
 
+# Browser tester: Playwright MCP enabled; prompt forbids file edits.
+agent_invoke_browser_test() {
+  local model="$1"
+  local prompt="$2"
+  local outfile="${3:-}"
+  require_agent
+  local -a args=(-p --force --trust --approve-mcps --output-format text --model "$model")
+  if [[ -n "$outfile" ]]; then
+    "$AGENT_BIN" "${args[@]}" "$prompt" | tee "$outfile"
+    return "${PIPESTATUS[0]}"
+  fi
+  "$AGENT_BIN" "${args[@]}" "$prompt"
+}
+
 git_changed_files() {
   if ! git rev-parse --git-dir >/dev/null 2>&1; then
     return 0
@@ -367,6 +393,23 @@ find_checks_report_for_slice() {
     fi
   done
   echo '{"pass":false,"note":"no checks report found for slice"}'
+}
+
+find_browser_test_report_for_slice() {
+  local slice_id="$1"
+  local run_id="${2:-}"
+  if [[ -n "$run_id" && -f "${RUNS_DIR}/${run_id}-browser-test.json" ]]; then
+    cat "${RUNS_DIR}/${run_id}-browser-test.json"
+    return 0
+  fi
+  local f
+  for f in $(ls -t "${RUNS_DIR}"/*-browser-test.json 2>/dev/null || true); do
+    if jq -e --arg s "$slice_id" '.slice == $s and (.pass == true or .skipped == true)' "$f" >/dev/null 2>&1; then
+      cat "$f"
+      return 0
+    fi
+  done
+  echo '{"pass":false,"skipped":false,"note":"no browser test report found for slice"}'
 }
 
 # Backend/infra slices only require API runtime probes; frontend/test need web too.

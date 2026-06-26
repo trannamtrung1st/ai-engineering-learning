@@ -32,13 +32,14 @@ if git rev-parse --git-dir >/dev/null 2>&1; then
 fi
 
 checks_summary="$(find_checks_report_for_slice "$SLICE_ID" "$RUN_ID")"
+browser_test_summary="$(find_browser_test_report_for_slice "$SLICE_ID" "$RUN_ID")"
 artifacts_list="$(get_slice_json "$SLICE_ID" | jq -r '.completionArtifacts[]? | "- " + .' 2>/dev/null || true)"
 
 full_prompt="${prompt}
 
 ## Harness reminder
 
-Computational checks already passed. Review **only** from the evidence below and by reading listed files. Do not run shell, npm, docker, tests, builds, or servers.
+Computational checks already passed. Browser functional test report is bundled below when applicable. Review **only** from the evidence below and by reading listed files. Do not run shell, npm, docker, tests, builds, servers, or browser/MCP.
 
 ## Changed files (read these + completion artifacts only)
 
@@ -52,6 +53,12 @@ ${artifacts_list:-_(none listed)_}
 
 \`\`\`json
 ${checks_summary}
+\`\`\`
+
+## Browser functional test (trust when not skipped; do not re-run)
+
+\`\`\`json
+${browser_test_summary}
 \`\`\`
 
 ## Git diff (truncated)

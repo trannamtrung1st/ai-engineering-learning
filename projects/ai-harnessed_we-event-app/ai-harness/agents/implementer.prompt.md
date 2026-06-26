@@ -46,7 +46,7 @@ When the slice agent is `frontend` or `test`, Playwright MCP is available (`--ap
 3. On failure, capture an accessibility snapshot or screenshot
 4. Append a one-line browser verification note to `ai-harness/state/progress.md`
 
-See `ai-harness/docs/browser-mcp.md` for the full runbook.
+See `ai-harness/docs/browser-mcp.md` for the full runbook. The harness will **re-verify** your work via a dedicated browser test agent gate after computational checks.
 
 ## Slice
 

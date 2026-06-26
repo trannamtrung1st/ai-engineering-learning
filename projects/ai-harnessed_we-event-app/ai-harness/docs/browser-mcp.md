@@ -1,6 +1,9 @@
 # Browser MCP — Playwright functional testing
 
-Interactive UI verification for frontend and test slices. The harness enables Playwright MCP for implementer agents on `frontend` and `test` slices (`--approve-mcps`).
+Interactive UI verification for frontend and test slices. The harness uses Playwright MCP in two places:
+
+1. **Implementer smoke test** — `frontend`/`test` slices get `--approve-mcps` during implementation
+2. **Browser test agent gate** — `run-browser-test.sh` runs after computational checks and before AI code review (hard gate for `frontend`/`test` slices)
 
 ## Prerequisites
 
@@ -11,11 +14,11 @@ Interactive UI verification for frontend and test slices. The harness enables Pl
 | Start preview stack | `npm run aih:preview` |
 | Verify stack | `npm run aih:preview:verify` |
 
-Project MCP config: [`.cursor/mcp.json`](../../.cursor/mcp.json) — writes snapshots to `ai-harness/generated/runs/playwright-mcp` (gitignored). Add `--headless` to args for unattended background loops; omit it for local visual debugging.
+Project MCP config: [`.cursor/mcp.json`](../../.cursor/mcp.json) — writes snapshots to `ai-harness/generated/runs/playwright-mcp` (gitignored). `--headless` is enabled by default for unattended loops; remove it from `.cursor/mcp.json` for local visual debugging.
 
 ## Artifact cleanup
 
-Playwright MCP writes timestamped page snapshots (`.yml`) and console logs. The harness cleans these automatically before each implementer run on `frontend`/`test` slices (or when `AIH_BROWSER_MCP=1`).
+Playwright MCP writes timestamped page snapshots (`.yml`) and console logs. The harness cleans these automatically before each implementer run on `frontend`/`test` slices (or when `AIH_BROWSER_MCP=1`), and before each browser test agent gate run.
 
 | Command / env | Behavior |
 |---|---|
@@ -59,9 +62,10 @@ Use dev auth tokens or the app's dev login flow as documented in `docs/technical
 | Integration tests | `npm run test:integration` — API + Postgres |
 | API scenario tests | `npm run test:e2e` — in-process Fastify flows |
 | HTTP stack probe | `verify-stack.sh` — health + web HTTP 200 |
-| **Browser UI** | **Playwright MCP** — agent-driven; not a computational gate |
+| **Browser UI (implementer)** | Playwright MCP smoke test during implementation |
+| **Browser UI (gate)** | `run-browser-test.sh` — dedicated test agent; must emit `BROWSER_TEST_PASS` |
 
-API-level e2e remains the automated acceptance gate. Playwright MCP supplements with real rendered UI verification.
+API-level e2e remains the automated acceptance gate. Playwright MCP supplements with real rendered UI verification; the browser test agent gate enforces it before code review.
 
 ## On completion
 
@@ -78,7 +82,9 @@ Append one line to `ai-harness/state/progress.md`:
 | MCP not available | Run `agent mcp list`; enable with `agent mcp enable playwright` |
 | Web unreachable | `npm run aih:preview` then `npm run aih:preview:verify` |
 | Stale Next cache | `npm run aih:preview:down && rm -rf apps/web/.next && npm run aih:preview` |
-| Force MCP on any slice | `AIH_BROWSER_MCP=1 npm run aih:once` |
+| Force MCP on implementer for any slice | `AIH_BROWSER_MCP=1 npm run aih:once` |
+| Skip browser test gate | `AIH_SKIP_BROWSER_TEST=1 npm run aih:once` |
+| Run browser test only | `npm run aih:browser-test -- <slice-id>` |
 
 ## Related docs
 

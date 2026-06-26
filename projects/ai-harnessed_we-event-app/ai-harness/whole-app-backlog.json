@@ -434,6 +434,11 @@
           "FR-29"
         ]
       },
+      "browserTestScenarios": [
+        "Browse paginated events list — prev/next changes page",
+        "Open event detail and register — Registered status badge visible",
+        "My registrations — paginated list loads"
+      ],
       "description": "Participant routes: paginated event browse, detail, registration, check-in, feedback, paginated my registrations."
     },
     {
@@ -497,6 +502,10 @@
       ],
       "completionArtifacts": [
         "apps/web/src/app/(auth)"
+      ],
+      "browserTestScenarios": [
+        "Unauthenticated visit to protected route redirects to login",
+        "Signup then login then view my registrations succeeds"
       ],
       "description": "Dedicated /login and /signup pages; route guards redirect unauthenticated users; remove auto sign-in defaults; wire TopBar sign-out; access-denied page; shells use credential login instead of dev ID forms."
     },
