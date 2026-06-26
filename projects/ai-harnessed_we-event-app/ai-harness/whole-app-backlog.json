@@ -136,7 +136,7 @@
     },
     {
       "id": "module-event",
-      "passes": false,
+      "passes": true,
       "priority": 20,
       "phase": 2,
       "agent": "backend",

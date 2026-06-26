@@ -384,7 +384,7 @@ describe("event integration", () => {
     assert.equal(loaded.ruleConfig.capacity, capacity);
   });
 
-  it("AC-11: audits critical rule config changes after registration opens", async () => {
+  it("AC-11 / NFR-10 / BR-22 / TC-AC-11-014: every successful post-open critical config change has exactly one audit record", async () => {
     const draft = await createEvent(
       createInput({ name: `Audit ${randomUUID()}` }),
       ACTOR_ID,
@@ -412,6 +412,14 @@ describe("event integration", () => {
         error.code === VALIDATION_ERROR_CODES.AUDIT_REQUIRED_FOR_CRITICAL_CHANGE,
     );
 
+    const beforeAudit = await auditService.listAuditLogs(draft.id, {
+      entityType: "EventRuleConfig",
+      pageSize: "100",
+    });
+    const ruleConfigAuditCountBefore = beforeAudit.items.filter(
+      (entry) => entry.action === "event.rule_config.updated",
+    ).length;
+
     await eventService.update(
       draft.id,
       {
@@ -422,13 +430,28 @@ describe("event integration", () => {
       context,
     );
 
-    const { items } = await auditService.listAuditLogs(draft.id, {
+    const afterAudit = await auditService.listAuditLogs(draft.id, {
       entityType: "EventRuleConfig",
+      pageSize: "100",
     });
-
-    assert.ok(
-      items.some((entry) => entry.action === "event.rule_config.updated"),
+    const ruleConfigEntries = afterAudit.items.filter(
+      (entry) => entry.action === "event.rule_config.updated",
     );
+
+    assert.equal(
+      ruleConfigEntries.length,
+      ruleConfigAuditCountBefore + 1,
+      "expected exactly one new audit record for the critical config change",
+    );
+
+    const latest = ruleConfigEntries[0];
+    assert.ok(latest, "expected rule config audit entry");
+    assert.equal(latest.action, "event.rule_config.updated");
+    assert.equal(latest.actorId, ACTOR_ID);
+    assert.equal(latest.actorRole, "OrganizerAdmin");
+    assert.equal(latest.reasonCode, "CAPACITY_INCREASE");
+    assert.equal(latest.reasonText, "Higher demand than forecast");
+    assert.ok(latest.occurredAt);
   });
 
   it("repository list supports search and sort", async () => {

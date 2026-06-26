@@ -80,3 +80,5 @@ Lessons learned across harness iterations. Read before every implementer session
 - [web-participant-journeys] Browser test failed — see 20260626T080428Z-browser-test.json
 - [repo-monorepo-bootstrap] AI review failed — see 20260626T090637Z-review.json
 - [api-foundation] Computational checks failed — see 20260626T094242Z-checks.json
+- [module-event] Computational checks failed — see 20260626T095859Z-checks.json
+- [module-event] AI review failed — see 20260626T100217Z-review.json
