@@ -1,29 +1,29 @@
 {
   "tags": {
     "AC-01": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:e5fe6c876730dc2692555528b2f33e1afc4105ef98b3d84c4363464150dbd711",
-      "generatedAt": "2026-06-26T15:50:29Z"
+      "generatedAt": null
     },
     "AC-02": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:e5fe6c876730dc2692555528b2f33e1afc4105ef98b3d84c4363464150dbd711",
-      "generatedAt": "2026-06-26T15:51:39Z"
+      "generatedAt": null
     },
     "AC-03": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:e5fe6c876730dc2692555528b2f33e1afc4105ef98b3d84c4363464150dbd711",
-      "generatedAt": "2026-06-26T15:53:13Z"
+      "generatedAt": null
     },
     "AC-04": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:e5fe6c876730dc2692555528b2f33e1afc4105ef98b3d84c4363464150dbd711",
-      "generatedAt": "2026-06-26T15:55:42Z"
+      "generatedAt": null
     },
     "AC-05": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:c08ad0039562ef88268aca8eda534df09d841c6763890b0568ed11fbf5e0e3fb",
-      "generatedAt": "2026-06-26T15:57:22Z"
+      "generatedAt": null
     },
     "AC-06": {
       "current": false,

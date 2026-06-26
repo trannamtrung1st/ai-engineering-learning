@@ -253,3 +253,39 @@ Lessons learned across harness iterations. Read before every implementer session
 - [NFR-17] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:c89abc37237f79771544560a1b8a425c035270edde6acd40a302cdd057f28b9c)
 - [NFR-18] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:23d5de68c108484ea1801ea48413a197788e20f8f722ff8dda5fa5cd6e7f03db)
 - [AC-07] TestGen agent did not emit TESTGEN_DONE
+- [AC-06] TestGen agent did not emit TESTGEN_DONE
+- [FR-05] Docs changed — test cases need review (index current=false; fingerprint=sha256:87b20ee29539baa20adb28d25f392f7bf11c719437f7d84b899d86c14fe7f71b)
+- [FR-05] TestGen policy: artifact contained forbidden layer unit — regenerate without unit cases
+- [FR-06] Docs changed — test cases need review (index current=false; fingerprint=sha256:87b20ee29539baa20adb28d25f392f7bf11c719437f7d84b899d86c14fe7f71b)
+- [FR-06] TestGen policy: artifact contained forbidden layer unit — regenerate without unit cases
+- [FR-07] Docs changed — test cases need review (index current=false; fingerprint=sha256:87b20ee29539baa20adb28d25f392f7bf11c719437f7d84b899d86c14fe7f71b)
+- [FR-07] TestGen policy: artifact contained forbidden layer unit — regenerate without unit cases
+- [FR-08] Docs changed — test cases need review (index current=false; fingerprint=sha256:87b20ee29539baa20adb28d25f392f7bf11c719437f7d84b899d86c14fe7f71b)
+- [FR-08] TestGen policy: artifact contained forbidden layer unit — regenerate without unit cases
+- [FR-09] Docs changed — test cases need review (index current=false; fingerprint=sha256:87b20ee29539baa20adb28d25f392f7bf11c719437f7d84b899d86c14fe7f71b)
+- [FR-09] TestGen policy: artifact contained forbidden layer unit — regenerate without unit cases
+- [FR-10] Docs changed — test cases need review (index current=false; fingerprint=sha256:87b20ee29539baa20adb28d25f392f7bf11c719437f7d84b899d86c14fe7f71b)
+- [FR-10] TestGen policy: artifact contained forbidden layer unit — regenerate without unit cases
+- [FR-12] Docs changed — test cases need review (index current=false; fingerprint=sha256:87b20ee29539baa20adb28d25f392f7bf11c719437f7d84b899d86c14fe7f71b)
+- [FR-12] TestGen policy: artifact contained forbidden layer unit — regenerate without unit cases
+- [FR-19] Docs changed — test cases need review (index current=false; fingerprint=sha256:a88273429c8bfea2eb7f46c9590bda0aa15d0f7c39465ea4d747421d441ec970)
+- [FR-19] TestGen policy: artifact contained forbidden layer unit — regenerate without unit cases
+- [FR-25] Docs changed — test cases need review (index current=false; fingerprint=sha256:e74c35f26b4734b8e2c76e63dfa6d88d8b047f36327d9cfdfe8a0fcc60cd6152)
+- [FR-25] TestGen policy: artifact contained forbidden layer unit — regenerate without unit cases
+- [FR-26] Docs changed — test cases need review (index current=false; fingerprint=sha256:e74c35f26b4734b8e2c76e63dfa6d88d8b047f36327d9cfdfe8a0fcc60cd6152)
+- [FR-26] TestGen policy: artifact contained forbidden layer unit — regenerate without unit cases
+- [FR-30] Docs changed — test cases need review (index current=false; fingerprint=sha256:5773daadf4db1bba8ee3675cdb6814920473805d2f00a2db7a33f8a45d9dc102)
+- [FR-30] TestGen policy: artifact contained forbidden layer unit — regenerate without unit cases
+- [FR-31] Docs changed — test cases need review (index current=false; fingerprint=sha256:5773daadf4db1bba8ee3675cdb6814920473805d2f00a2db7a33f8a45d9dc102)
+- [FR-31] TestGen policy: artifact contained forbidden layer unit — regenerate without unit cases
+- [FR-32] Docs changed — test cases need review (index current=false; fingerprint=sha256:f7e3c4d779baf141e3f75bc11ce8faebdacb476df8cbb90cefce14190cc0ec97)
+- [FR-32] TestGen policy: artifact contained forbidden layer unit — regenerate without unit cases
+- [FR-33] Docs changed — test cases need review (index current=false; fingerprint=sha256:f7e3c4d779baf141e3f75bc11ce8faebdacb476df8cbb90cefce14190cc0ec97)
+- [FR-33] TestGen policy: artifact contained forbidden layer unit — regenerate without unit cases
+- [NFR-06] Docs changed — test cases need review (index current=false; fingerprint=sha256:811f4d770b558dcfb915aa7b035c7054a12c86d6513ad54bc3bb97018584824d)
+- [NFR-06] TestGen policy: artifact contained forbidden layer unit — regenerate without unit cases
+- [NFR-08] Docs changed — test cases need review (index current=false; fingerprint=sha256:c89abc37237f79771544560a1b8a425c035270edde6acd40a302cdd057f28b9c)
+- [NFR-08] TestGen policy: artifact contained forbidden layer unit — regenerate without unit cases
+- [NFR-14] Docs changed — test cases need review (index current=false; fingerprint=sha256:ef8af7610faaa1ef09c735d42be44aaef001ee9a0ac07cfabd9a39a68dee1931)
+- [NFR-14] TestGen policy: artifact contained forbidden layer unit — regenerate without unit cases
+- [FR-08] Test case validation failed after enhance — see 20260626T160227Z-testgen-enhance.txt

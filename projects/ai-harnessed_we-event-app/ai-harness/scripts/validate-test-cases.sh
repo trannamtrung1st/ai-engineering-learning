@@ -55,11 +55,16 @@ resolved_docs_for_tag() {
   resolve_docs_for_requirement_tag "$PRODUCT_ITEM_ID"
 }
 
+allowed_layers_json() {
+  jq -c '.validation.allowedLayers // ["integration", "e2e", "browser"]' "$TESTGEN_CONFIG"
+}
+
 validate_structure() {
-  local require_technique
+  local require_technique allowed_layers
   require_technique="$(jq -r '.validation.requireTechniqueField // true' "$TESTGEN_CONFIG")"
+  allowed_layers="$(allowed_layers_json)"
   local errors
-  errors="$(jq -r --arg req "$require_technique" '
+  errors="$(jq -r --arg req "$require_technique" --argjson allowed "$allowed_layers" '
     def req($o; $k): if ($o[$k] // null) == null then "\($k) missing" else empty end;
     . as $root |
     (req($root; "productItemId")),
@@ -80,7 +85,7 @@ validate_structure() {
       (req(.; "steps")),
       (req(.; "expected")),
       (if (.category | IN("functional","non-functional","edge")) | not then "invalid category: \(.id)" else empty end),
-      (if (.layer | IN("unit","integration","e2e","browser")) | not then "invalid layer: \(.id)" else empty end),
+      (if (.layer | IN($allowed[])) | not then "invalid layer: \(.id) (allowed: \($allowed | join(", ")))" else empty end),
       (if (.traceability | length) < 1 then "traceability empty: \(.id)" else empty end)
     )
   ' "$ARTIFACT" 2>/dev/null || true)"
@@ -139,6 +144,25 @@ validate_traceability_match() {
   if [[ -n "$invalid" ]]; then
     FAILURES+=("$invalid")
     PASS=false
+  fi
+}
+
+validate_allowed_layers() {
+  local allowed_layers
+  allowed_layers="$(allowed_layers_json)"
+  local invalid
+  invalid="$(jq -r --argjson allowed "$allowed_layers" '
+    .cases[] |
+    select((.layer | IN($allowed[])) | not) |
+    "forbidden layer \(.layer) on \(.id) (allowed: \($allowed | join(", ")))"
+  ' "$ARTIFACT" 2>/dev/null || true)"
+
+  if [[ -n "$invalid" ]]; then
+    while IFS= read -r err; do
+      [[ -z "$err" ]] && continue
+      FAILURES+=("$err")
+      PASS=false
+    done <<< "$invalid"
   fi
 }
 
@@ -228,6 +252,7 @@ validate_structure
 validate_product_item_match
 validate_min_per_category
 validate_traceability_match
+validate_allowed_layers
 validate_layer_policy
 validate_browser_required
 validate_technique_policy

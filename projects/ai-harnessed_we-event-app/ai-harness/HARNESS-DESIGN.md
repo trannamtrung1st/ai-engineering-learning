@@ -53,6 +53,8 @@ pick requirement tag (from backlog acceptance union) → doc fingerprint → tes
 
 Scripts: `testgen-loop.sh` (autonomous), `testgen-once.sh` (single step).
 
+TestGen emits only `integration`, `e2e`, and `browser` layers in generated artifacts; unit tests are the implementer's responsibility via `testRequirements.unit` and colocated `*.test.ts` files.
+
 Doc drift (`check-test-case-drift.sh`) resets tag state in `test-case-index.json` and `passes` on all slices whose `acceptance` references that tag.
 
 Ralph and TestGen can run independently. Set `testCaseGate.mode` to `required` in `ralph-loop.json` to restore the strict TestGen-first workflow.

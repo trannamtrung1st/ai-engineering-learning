@@ -10,17 +10,20 @@ Doc paths are resolved from `ai-harness/config/testgen-docs-map.json` (not a sep
 
 - Read product item docs, BRD acceptance matrix, and testing plan
 - Write **only** the test case artifact JSON file at the path given below
-- Apply the **coverage techniques** below — prioritize **integration**, **e2e**, and **browser** over unit specs for AC/FR tags
+- Apply the **coverage techniques** below — generate cases only at layers `integration`, `e2e`, or `browser`
 - Set `technique` on every case (machine-checkable coverage type)
 - Include `{{PRODUCT_ITEM_ID}}` in every case's `traceability` array (may include related FR/BR tags)
 - Set `docFingerprint` to the fingerprint provided in this prompt (exact string)
 - End with exactly one signal: `TESTGEN_DONE {{PRODUCT_ITEM_ID}}` or `TESTGEN_BLOCKED <reason>`
+
+Pure validators, mappers, and isolated components are covered by the implementer in colocated unit tests (`testRequirements.unit` in the backlog), not by TestGen.
 
 ### You MUST NOT
 
 - Edit application source (`apps/`, `packages/`, `tests/`)
 - Set `passes: true` in the backlog
 - Write executable test code — only the JSON specification artifact
+- Use `layer: "unit"` — unit tests are implementer-owned
 
 ## Requirement tag
 
@@ -66,8 +69,6 @@ Use these techniques to decide **what** to cover — not just how many cases to 
 | Concurrency / race | `concurrency` | `integration` | Parallel requests — capacity, dedupe |
 | Boundary / error code | `boundary-error` | `e2e` or `edge` category | Documented error codes, out-of-window |
 
-**Layer priority for AC/FR:** prefer `integration` and `e2e` over `unit`. Use `unit` only for pure validators, mappers, or isolated UI components with no HTTP/DB path.
-
 ## Output artifact schema
 
 Write valid JSON matching `ai-harness/schemas/test-cases.schema.json`:
@@ -108,7 +109,6 @@ Write valid JSON matching `ai-harness/schemas/test-cases.schema.json`:
 
 | Layer | When to use |
 |-------|-------------|
-| `unit` | Pure validators, mappers, UI component markup |
 | `integration` | DB transactions, module APIs |
 | `e2e` | Full API scenario flows |
 | `browser` | UI flows requiring Playwright MCP |

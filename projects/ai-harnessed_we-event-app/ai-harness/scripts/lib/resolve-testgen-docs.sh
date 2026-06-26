@@ -83,6 +83,11 @@ format_layer_policy_block() {
     min_browser="$(jq -r '.validation.browserRequiredWhen.minBrowserCases // 1' "$TESTGEN_CONFIG")"
     echo "- At least ${min_browser} browser case(s) (UI-facing tag)"
   fi
+
+  local allowed_layers
+  allowed_layers="$(jq -r '.validation.allowedLayers // ["integration", "e2e", "browser"] | join(", ")' "$TESTGEN_CONFIG")"
+  echo ""
+  echo "Allowed layers for this artifact: ${allowed_layers}. Do **not** emit unit-layer cases — unit tests are the implementer's responsibility."
 }
 
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then

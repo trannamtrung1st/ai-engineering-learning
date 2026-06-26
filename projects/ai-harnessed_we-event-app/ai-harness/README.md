@@ -75,6 +75,7 @@ Defaults live in `ai-harness/config/models.json`.
 | `npm run aih:playwright-mcp:clean` | Remove Playwright MCP page snapshots and console logs |
 | `npm run aih:testgen:once` | Generate test cases for one slice from docs |
 | `npm run aih:testgen:loop` | Autonomous TestGen loop until all slices have current test cases |
+| `npm run aih:testgen:enhance` | Ad-hoc improve test cases for one tag with free-text instructions |
 | `npm run aih:testgen:drift` | Detect doc drift; reset passes + test case state |
 | `npm run aih:testgen:validate` | Validate generated test case JSON for a slice |
 
@@ -179,6 +180,21 @@ AIH_SKIP_AGENT=1 AIH_SKIP_REVIEW=1 npm run aih:once
 6. `sync-test-cases-to-backlog.sh` — updates slices whose `acceptance` includes the tag
 7. Tag marked current in `test-case-index.json`; optional git commit (TestGen-owned paths only — test case artifact, index, backlog sync, progress)
 
+**Ad-hoc enhance** (`npm run aih:testgen:enhance`) — improve cases for one tag without waiting for doc drift:
+
+```bash
+# Positional instructions
+npm run aih:testgen:enhance -- FR-08 "Add browser-journey cases for admin pagination and sort"
+
+# Stdin
+echo "Tighten preconditions on TC-FR-08-003" | npm run aih:testgen:enhance -- FR-08
+
+# Options: --file <path>, --context <path1,path2>, --no-commit
+npm run aih:testgen:enhance -- FR-08 --no-commit --context docs/ui-ux/14-listing-pages-search-filter-sort.md "Add sort cases"
+```
+
+The script reuses the TestGen agent and validation pipeline; it attaches docs, related backlog slices, and existing artifact summary automatically. Set `AIH_TESTGEN_NO_COMMIT=1` to skip commit (same as `--no-commit`).
+
 ### Implementation
 
 1. `pick-next-slice.sh` selects lowest-priority slice with `passes: false`
@@ -204,7 +220,7 @@ Gates run after every implementer iteration and can be run standalone:
 | `test:integration` | `apps/api` exists | Yes |
 | `test:e2e` | `tests/e2e` exists | Yes |
 | Slice `testRequirements` | Ralph iteration with slice id | Yes when field present |
-| Generated test case coverage | all slice `acceptance` product items current | Yes — unit/integration/e2e case tags must appear in test files |
+| Generated test case coverage | all slice `acceptance` product items current | Yes — integration/e2e case tags must appear in test files (unit is implementer-owned via `testRequirements`) |
 | DB health (Docker Compose) | `docker-compose.yml` exists | Yes when `apps/api` exists |
 | Stack startup (API health + web HTTP 200) | `apps/api` and `apps/web` exist | Yes — `verify-stack.sh --quick` via `run-checks.sh`; full poll with `AIH_VERIFY_STACK=1` |
 

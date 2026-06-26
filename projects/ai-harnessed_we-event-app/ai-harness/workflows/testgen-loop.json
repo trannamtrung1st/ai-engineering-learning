@@ -20,6 +20,7 @@
     },
     "requireTraceabilityMatch": true,
     "requireTechniqueField": true,
+    "allowedLayers": ["integration", "e2e", "browser"],
     "layerPolicy": {
       "AC-*": {
         "requiredLayers": ["integration", "e2e"],

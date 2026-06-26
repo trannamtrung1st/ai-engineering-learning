@@ -133,7 +133,7 @@ check_generated_test_case_coverage() {
           PASS=false
         fi
       done
-    done < <(jq -r '.cases[] | select(.layer != "browser") | [.id, .layer, (.traceability | join(","))] | @tsv' "$artifact")
+    done < <(jq -r '.cases[] | select(.layer == "integration" or .layer == "e2e") | [.id, .layer, (.traceability | join(","))] | @tsv' "$artifact")
   done < <(slice_product_item_refs "$SLICE_ID")
 }
 

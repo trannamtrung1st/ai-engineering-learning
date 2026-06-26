@@ -373,6 +373,106 @@ format_regeneration_finish_hint() {
   echo "Finish in **one pass**. Generate specs only — no implementation."
 }
 
+valid_requirement_tag() {
+  local tag="$1"
+  [[ "$tag" =~ ^(AC|FR|BR|NFR)-[0-9]+$ ]]
+}
+
+require_valid_requirement_tag() {
+  local tag="$1"
+  if ! valid_requirement_tag "$tag"; then
+    echo "ERROR: invalid requirement tag: ${tag} (expected AC-*, FR-*, BR-*, or NFR-*)" >&2
+    exit 1
+  fi
+}
+
+slices_for_requirement_tag() {
+  local requirement_tag="$1"
+  jq -r --arg tag "$requirement_tag" '
+    .slices[] | select(.acceptance[]? == $tag) |
+    "- `\(.id)`: \(.description // "") (acceptance: \(.acceptance | join(", ")))"
+  ' "$BACKLOG" 2>/dev/null || true
+}
+
+format_enhancement_artifact_block() {
+  local requirement_tag="$1"
+  local artifact_path artifact_abs case_count id_list
+  artifact_path="$(test_case_artifact_path "$requirement_tag")"
+  artifact_abs="$(test_case_artifact_abs "$requirement_tag")"
+
+  if [[ ! -f "$artifact_abs" ]]; then
+    cat <<EOF
+## Artifact status
+
+No test case artifact exists yet at \`${artifact_path}\`. Create one per docs, validation policy, and the enhancement instructions below.
+
+EOF
+    return 0
+  fi
+
+  case_count="$(jq '.cases | length' "$artifact_abs")"
+  id_list="$(jq -r '.cases[].id' "$artifact_abs" | paste -sd ', ' -)"
+
+  cat <<EOF
+## Existing artifact (incremental update)
+
+**Read the existing file first** at \`${artifact_path}\`. Apply the enhancement instructions below — do not rewrite from scratch.
+
+### Update rules
+
+1. **Keep** cases that remain valid; edit only affected fields.
+2. **Add** cases per instructions; append new IDs; do not renumber existing ones.
+3. **Remove** cases only when instructions or docs explicitly drop that scenario.
+4. Set \`docFingerprint\` to the value in this prompt and refresh \`generatedAt\`.
+
+### Existing artifact summary
+
+- **Path:** \`${artifact_path}\`
+- **Case count:** ${case_count}
+- **Case IDs:** ${id_list}
+
+EOF
+}
+
+format_testgen_enhancement_block() {
+  local requirement_tag="$1"
+  local instructions="$2"
+  local extra_context="${3:-}"
+
+  local slices_block
+  slices_block="$(slices_for_requirement_tag "$requirement_tag")"
+  if [[ -z "$slices_block" ]]; then
+    slices_block="_(no backlog slices reference this tag)_"
+  fi
+
+  cat <<EOF
+## Enhancement request (human-directed)
+
+Apply these improvements to the test case artifact. This is **ad-hoc** — not doc-drift driven.
+Keep valid cases; add, edit, or remove per instructions. Append new case IDs; do not renumber.
+
+### Instructions
+
+${instructions}
+
+### Related implementation slices
+
+${slices_block}
+
+EOF
+
+  format_enhancement_artifact_block "$requirement_tag"
+
+  if [[ -n "$extra_context" ]]; then
+    cat <<EOF
+### Extra context paths (read as needed)
+
+${extra_context}
+
+EOF
+  fi
+}
+
 requirement_tag_priority() {
   local tag="$1"
   local num

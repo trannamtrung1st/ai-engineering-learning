@@ -58,7 +58,7 @@
         },
         "layer": {
           "type": "string",
-          "enum": ["unit", "integration", "e2e", "browser"]
+          "enum": ["integration", "e2e", "browser"]
         },
         "technique": { "$ref": "#/$defs/technique" },
         "priority": { "type": "string", "enum": ["P0", "P1", "P2"] },
