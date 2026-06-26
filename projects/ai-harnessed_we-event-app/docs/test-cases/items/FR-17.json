@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-17",
   "version": 1,
-  "docFingerprint": "sha256:e2dfbabeeed703c3e91f7927502130070273c2e29f7eb78b92608b58e3a599e7",
-  "generatedAt": "2026-06-26T12:20:45Z",
+  "docFingerprint": "sha256:8fc81cab4e7b769ab81d7f566d602cbb40696b9b602ef66c13fdf3a69a441ddf",
+  "generatedAt": "2026-06-26T17:08:47Z",
   "cases": [
     {
       "id": "TC-FR-17-001",
@@ -17,8 +17,8 @@
       ],
       "title": "Testing-plan §3 event completion attendance finalization yields Attended and Absent",
       "preconditions": [
-        "Event progressed to InProgress with one CheckedIn participant and one Registered participant without check-in",
-        "Valid CheckinRecord exists only for the checked-in registration",
+        "Event progressed through RegistrationClosed and InProgress with valid check-in window",
+        "One CheckedIn participant with valid CheckinRecord and one Registered participant without check-in",
         "Authenticated OrganizerAdmin authorized to complete the event"
       ],
       "steps": [
@@ -89,7 +89,7 @@
       ],
       "title": "POST /events/{eventId}/complete returns HTTP 200 and finalizes Attended and Absent states",
       "preconditions": [
-        "E2E fixture event InProgress with one CheckedIn and one Registered-without-check-in participant",
+        "E2E fixture event InProgress with one participant checked in via POST /events/{eventId}/checkins and one Registered-without-check-in participant",
         "Organizer admin JWT with event scope"
       ],
       "steps": [
@@ -254,6 +254,7 @@
         "No waitlisted or cancelled registrations in test cohort"
       ],
       "steps": [
+        "Record in-window check-ins for subset only",
         "Complete event via eventService.complete against real Postgres",
         "List all registrations and group by terminal attendance state"
       ],
@@ -347,7 +348,7 @@
         "POST /api/v1/events/{eventId}/complete again",
         "GET registration states for attended and absent participants"
       ],
-      "expected": "HTTP 409 Conflict with stable error code; Attended and Absent states remain unchanged; no duplicate attendance side effects",
+      "expected": "HTTP 409 Conflict with stable error code per state machine §5 invalid-transition policy; Attended and Absent states remain unchanged; no duplicate attendance side effects",
       "edgeCase": true
     },
     {
@@ -387,7 +388,7 @@
       "title": "Attendance finalization commits atomically with event completion",
       "preconditions": [
         "Multiple CheckedIn and Registered-without-check-in participants on same event",
-        "Database transaction boundary for event completion and attendance reconciliation per module breakdown §4"
+        "Event completion reconciles attendance per validation rules BR-12 trigger on event completion"
       ],
       "steps": [
         "Complete event in single operation against real Postgres",
@@ -429,19 +430,20 @@
       "traceability": [
         "FR-17",
         "BR-17",
-        "AC-07"
+        "AC-07",
+        "AC-09d"
       ],
       "title": "Attended status from completion satisfies downstream certificate eligibility attendance rule",
       "preconditions": [
         "Flow A progressed through check-in and event completion with participant marked Attended",
-        "Eligibility evaluation available post-completion"
+        "Eligibility evaluation available post-completion per BR-17 attendance-finalization precondition"
       ],
       "steps": [
         "Confirm registration state is Attended after completion via GET /api/v1/me/registrations",
         "GET /api/v1/events/{eventId}/eligibility/me for the attended participant",
         "GET /api/v1/events/{eventId}/eligibility/me for an Absent participant for contrast"
       ],
-      "expected": "Attended participant eligibility does not fail attendance rule solely due to missing Attended status; Absent participant fails BR-17 minimum attendance condition",
+      "expected": "Attended participant eligibility does not fail attendance rule solely due to missing Attended status; Absent participant evaluates to NotEligible with NOT_ELIGIBLE_ATTENDANCE per AC-09d",
       "edgeCase": false
     },
     {
@@ -467,6 +469,27 @@
       ],
       "expected": "HTTP 200 paginated envelope with valid page, pageSize, total, and totalPages; attendance list preserves checkinAt for checked-in participants; corresponding registrations show Attended",
       "edgeCase": false
+    },
+    {
+      "id": "TC-FR-17-021",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": [
+        "FR-17",
+        "BR-12"
+      ],
+      "title": "POST complete rejected when event not in InProgress prevents premature attendance finalization",
+      "preconditions": [
+        "Event in RegistrationOpen or Completed state (not InProgress)",
+        "Fixture may include CheckedIn and Registered-without-check-in participants from prior setup"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/complete with OrganizerAdmin JWT"
+      ],
+      "expected": "HTTP 409 with stable invalid-transition error code per state machine §5; event and registration states unchanged; no premature Attended or Absent transitions",
+      "edgeCase": true
     }
   ]
 }
