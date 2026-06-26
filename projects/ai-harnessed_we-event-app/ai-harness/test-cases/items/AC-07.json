@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-07",
-  "version": 1,
-  "docFingerprint": "sha256:4d12785a73f71eae22ecc1c28abee1e2becca04b0528fdc2184d610d44dc34ff",
-  "generatedAt": "2026-06-26T15:45:00Z",
+  "version": 2,
+  "docFingerprint": "sha256:c08ad0039562ef88268aca8eda534df09d841c6763890b0568ed11fbf5e0e3fb",
+  "generatedAt": "2026-06-26T16:25:00Z",
   "cases": [
     {
       "id": "TC-AC-07-001",
@@ -12,6 +12,7 @@
       "priority": "P0",
       "traceability": [
         "AC-07",
+        "FR-17",
         "BR-12"
       ],
       "title": "Event completion attendance finalization marks checked-in participant Attended per testing-plan §3",
@@ -48,7 +49,7 @@
         "Execute eventService.complete against real Postgres",
         "Query event.state, registrations.state, and checkin_records in the same database session immediately after commit"
       ],
-      "expected": "Event is Completed; CheckedIn registration is Attended; prior CheckinRecord and checkinAt timestamp remain unchanged; no partial write (event Completed but registration still CheckedIn) per module breakdown §4 transaction boundary",
+      "expected": "Event is Completed; CheckedIn registration is Attended; prior CheckinRecord and checkinAt timestamp remain unchanged; no partial write (event Completed but registration still CheckedIn) per workflow D (main-workflows §5) attendance finalization guardrails and BR-13 immutable check-in metadata",
       "edgeCase": false
     },
     {
@@ -391,7 +392,7 @@
       "steps": [
         "POST /api/v1/events/{eventId}/complete with OrganizerAdmin JWT"
       ],
-      "expected": "HTTP 409 with stable invalid-transition error code; event and registration states unchanged; no premature Attended finalization",
+      "expected": "HTTP 409 with stable invalid-transition error code per state machine §5 invalid-transition policy; event and registration states unchanged; no premature Attended finalization",
       "edgeCase": true
     },
     {
@@ -408,7 +409,7 @@
       "title": "Attendance finalization for all registrations commits atomically with event completion",
       "preconditions": [
         "Multiple CheckedIn and Registered participants on same event",
-        "Database transaction boundary for event completion and attendance reconciliation per module breakdown"
+        "Event completion reconciles all registration attendance states per workflow D (main-workflows §5) and BR-12"
       ],
       "steps": [
         "Complete event in single operation against real Postgres",
