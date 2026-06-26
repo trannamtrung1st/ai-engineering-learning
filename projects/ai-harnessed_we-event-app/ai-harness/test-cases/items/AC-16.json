@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-16",
   "version": 1,
-  "docFingerprint": "sha256:5e79e4c58f0f91c5bbe4d59de7cf91990ac57ea7ff85ef3efbfb221ffac55c1f",
-  "generatedAt": "2026-06-26T21:30:00Z",
+  "docFingerprint": "sha256:ec951167b11f7b857de880da792108576199bef5665b828dc729878bf36b96e4",
+  "generatedAt": "2026-06-26T16:31:25Z",
   "cases": [
     {
       "id": "TC-AC-16-001",
@@ -27,7 +27,7 @@
         "POST /api/v1/events/{eventId}/registrations with login JWT to create one registration",
         "GET /api/v1/me/registrations?page=1&pageSize=20 with bearer token"
       ],
-      "expected": "Single paginated GET /me/registrations returns HTTP 200 with items, page, pageSize, total, totalPages; registration row includes registrationId, eventId, eventName, state, updatedAt; no N+1 fan-out per testing-plan §3 my registrations paginated scenario",
+      "expected": "Single paginated GET /me/registrations returns HTTP 200 with items, page, pageSize, total, totalPages; registration row includes registrationId, eventId, eventName, state, updatedAt, and waitlistPosition when state is Waitlisted; no N+1 fan-out per testing-plan §3 my registrations paginated scenario (AC-14, FR-29)",
       "edgeCase": false
     },
     {
@@ -91,7 +91,7 @@
         "GET /api/v1/me/registrations?page=1&pageSize=20 with Authorization: Bearer <JWT>",
         "Verify response envelope fields"
       ],
-      "expected": "HTTP 200; body matches paginated envelope (items, page, pageSize, total, totalPages); default sort updatedAt:desc per API design §3",
+      "expected": "HTTP 200; body matches paginated envelope (items, page, pageSize, total, totalPages); default sort updatedAt:desc; allowed sort fields updatedAt and requestedAt per API design §3 paginated list table",
       "edgeCase": false
     },
     {
@@ -118,7 +118,7 @@
         "POST /api/v1/events/{eventId}/registrations with login JWT",
         "GET /api/v1/me/registrations with login JWT"
       ],
-      "expected": "Full AC-16 flow succeeds: account created with Participant role, login issues fresh JWT, GET /me/registrations returns participant's registration with correct state and event metadata",
+      "expected": "Full AC-16 flow succeeds: account created with Participant role, login issues fresh JWT, GET /me/registrations returns participant's registration with eventName, state, updatedAt, and waitlistPosition when Waitlisted per API design §3 example",
       "edgeCase": false
     },
     {
