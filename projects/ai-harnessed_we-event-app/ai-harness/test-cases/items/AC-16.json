@@ -2,36 +2,155 @@
   "productItemId": "AC-16",
   "version": 1,
   "docFingerprint": "sha256:95b2130478acb06c85d10e9e25b8bd9fbb6f4ea0d832479d2adbe9e0d10ad022",
-  "generatedAt": "2026-06-26T17:15:00Z",
+  "generatedAt": "2026-06-26T21:30:00Z",
   "cases": [
     {
       "id": "TC-AC-16-001",
       "category": "functional",
       "layer": "e2e",
+      "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["AC-16", "FR-32", "FR-33", "FR-29"],
-      "title": "Signup, login, and GET /me/registrations succeed end-to-end via API",
+      "traceability": ["AC-16", "FR-29", "AC-14"],
+      "title": "Testing-plan §3 my registrations paginated row after signup and login",
       "preconditions": [
         "API server running at /api/v1",
         "Published event in RegistrationOpen state with available capacity",
-        "Fresh unique email not yet registered in the system"
+        "Fresh unique email not yet registered"
       ],
       "steps": [
-        "POST /api/v1/auth/register with { email, password, displayName } for a new participant",
-        "POST /api/v1/auth/login with the same email and password",
-        "Use returned JWT as Authorization bearer on POST /api/v1/events/{eventId}/registrations to create one registration",
-        "GET /api/v1/me/registrations?page=1&pageSize=20 with the login JWT"
+        "POST /api/v1/auth/register with { email, password, displayName }",
+        "POST /api/v1/auth/login with the same credentials",
+        "POST /api/v1/events/{eventId}/registrations with login JWT to create one registration",
+        "GET /api/v1/me/registrations?page=1&pageSize=20 with bearer token"
       ],
-      "expected": "Register returns JWT and profile with Participant role; login returns fresh JWT and profile; GET /me/registrations returns HTTP 200 with paginated envelope containing the participant's registration (registrationId, eventId, eventName, state, updatedAt), total ≥ 1, and valid page metadata",
+      "expected": "Single paginated GET /me/registrations returns HTTP 200 with items, page, pageSize, total, totalPages; registration row includes registrationId, eventId, eventName, state, updatedAt; no N+1 fan-out per testing-plan §3 my registrations paginated scenario",
       "edgeCase": false
     },
     {
       "id": "TC-AC-16-002",
       "category": "functional",
-      "layer": "browser",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["AC-16", "FR-32"],
+      "title": "POST /api/v1/auth/register returns JWT and Participant profile",
+      "preconditions": [
+        "API server running at /api/v1",
+        "No existing user with target email"
+      ],
+      "steps": [
+        "POST /api/v1/auth/register with { email, password, displayName }",
+        "Inspect HTTP status and response body"
+      ],
+      "expected": "HTTP 200 or 201; response includes JWT access token and profile with displayName, email, and roles containing Participant only",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-16-003",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["AC-16", "FR-33"],
+      "title": "POST /api/v1/auth/login returns JWT and profile with roles",
+      "preconditions": [
+        "Participant account exists via prior POST /auth/register"
+      ],
+      "steps": [
+        "POST /api/v1/auth/login with { email, password }",
+        "Inspect HTTP status and response body"
+      ],
+      "expected": "HTTP 200; response includes JWT and profile with roles array containing Participant; JWT sub claim is users.id UUID",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-16-004",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["AC-16", "FR-29"],
+      "title": "GET /api/v1/me/registrations returns 200 paginated envelope for authenticated participant",
+      "preconditions": [
+        "Participant logged in via POST /auth/login with at least one registration"
+      ],
+      "steps": [
+        "GET /api/v1/me/registrations?page=1&pageSize=20 with Authorization: Bearer <JWT>",
+        "Verify response envelope fields"
+      ],
+      "expected": "HTTP 200; body matches paginated envelope (items, page, pageSize, total, totalPages); default sort updatedAt:desc per API design §3",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-16-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
       "priority": "P0",
       "traceability": ["AC-16", "FR-32", "FR-33", "FR-29"],
-      "title": "Browser signup → login → My Registrations page shows own registrations",
+      "title": "Signup → login → view own registrations succeeds end-to-end via API",
+      "preconditions": [
+        "API server running at /api/v1",
+        "Published open event with available capacity",
+        "Fresh unique email"
+      ],
+      "steps": [
+        "POST /api/v1/auth/register with valid credentials",
+        "POST /api/v1/auth/login with same credentials",
+        "POST /api/v1/events/{eventId}/registrations with login JWT",
+        "GET /api/v1/me/registrations with login JWT"
+      ],
+      "expected": "Full AC-16 flow succeeds: account created with Participant role, login issues fresh JWT, GET /me/registrations returns participant's registration with correct state and event metadata",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-16-006",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["AC-16", "FR-32", "FR-33"],
+      "title": "Auth module persists user with Participant role and login JWT sub matches users.id",
+      "preconditions": [
+        "Auth module and users table available with real DB transaction",
+        "No existing user with target email"
+      ],
+      "steps": [
+        "POST /api/v1/auth/register with valid credentials",
+        "Query users table for new email and role assignment",
+        "POST /api/v1/auth/login and decode JWT sub claim",
+        "GET /api/v1/me with login token"
+      ],
+      "expected": "User row persisted with Participant role only (not OrganizerAdmin or OrganizerStaff); register and login JWT sub equals users.id; GET /me returns matching profile id and Participant role per roles-permissions §3.1",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-16-007",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["AC-16", "FR-29", "NFR-08"],
+      "title": "My registrations repository returns only current actor rows in DB transaction",
+      "preconditions": [
+        "Two distinct participants each with registrations on different events in database",
+        "Valid JWT for participant A from login"
+      ],
+      "steps": [
+        "Invoke registrations list service or GET /me/registrations as participant A",
+        "Query all registration rows for participant B in database"
+      ],
+      "expected": "Response items contain only participant A registrations; no cross-participant data leaked; scope constraint per roles-permissions §3 enforced at query layer",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-16-008",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["AC-16", "FR-32", "FR-33", "FR-29"],
+      "title": "Browser Flow 0 signup → Flow 0b login → My Registrations shows own registrations",
       "preconditions": [
         "Web app running with /signup, /login, and protected My Registrations route",
         "Published open event available for registration",
@@ -39,167 +158,116 @@
       ],
       "steps": [
         "Navigate to /signup and submit email, password, and display name",
-        "Sign out or clear session if auto-signed-in, then navigate to /login and sign in with the same credentials",
+        "Sign out or clear session, navigate to /login and sign in with same credentials",
         "Register for an open event via participant UI",
-        "Navigate to My Registrations (or equivalent protected route)",
+        "Navigate to My Registrations protected route",
         "Observe TopBar account button and registration list"
       ],
-      "expected": "Signup and login succeed; TopBar shows participant displayName; My Registrations page renders the user's registration with correct event name and status; no redirect to /login after authenticated navigation",
+      "expected": "Signup and login succeed per Flow 0 and Flow 0b; TopBar shows participant displayName; My Registrations renders user's registration with event name and status; no redirect to /login after authenticated navigation",
       "edgeCase": false
     },
     {
-      "id": "TC-AC-16-003",
-      "category": "functional",
-      "layer": "integration",
-      "priority": "P0",
-      "traceability": ["AC-16", "FR-32", "FR-33"],
-      "title": "Self-service signup assigns Participant role and login JWT sub matches users.id",
-      "preconditions": [
-        "Auth module and users table available",
-        "No existing user with target email"
-      ],
-      "steps": [
-        "POST /api/v1/auth/register with valid credentials",
-        "Decode returned JWT and read sub claim",
-        "Query users table for the new email",
-        "POST /api/v1/auth/login with same credentials and decode JWT sub"
-      ],
-      "expected": "New user row exists with Participant role only (not OrganizerAdmin or OrganizerStaff); register and login JWT sub equals users.id UUID; GET /me with login token returns matching profile id and roles array containing Participant",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-AC-16-004",
-      "category": "functional",
-      "layer": "e2e",
-      "priority": "P0",
-      "traceability": ["AC-16", "FR-29", "AC-13"],
-      "title": "Authenticated participant retrieves paginated own registrations with correct envelope",
-      "preconditions": [
-        "Participant account with at least two registrations across events (Registered and/or Waitlisted states)",
-        "Valid participant JWT from POST /auth/login"
-      ],
-      "steps": [
-        "GET /api/v1/me/registrations?page=1&pageSize=20 with bearer token",
-        "Verify each item belongs to authenticated participant",
-        "GET /api/v1/me/registrations?page=1&pageSize=1 and confirm total and totalPages consistency"
-      ],
-      "expected": "Response matches paginated envelope (items, page, pageSize, total, totalPages); every item's participantId or implicit actor scope matches JWT sub; default sort updatedAt:desc applied; pageSize boundary respected per pagination contract",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-AC-16-005",
+      "id": "TC-AC-16-009",
       "category": "functional",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["AC-16", "FR-34"],
-      "title": "Post-login redirect resumes intended My Registrations route after signup/login gate",
+      "title": "Post-login redirect resumes intended My Registrations route after auth gate",
       "preconditions": [
         "Route guard preserves return URL when unauthenticated user hits protected route",
         "Fresh unregistered email available"
       ],
       "steps": [
         "While unauthenticated, navigate directly to My Registrations protected route",
-        "Complete signup on /signup or follow redirect to /login and sign in with new account",
-        "Observe post-auth navigation"
+        "Complete signup on /signup or follow redirect to /login and sign in",
+        "Observe post-auth navigation and page content"
       ],
-      "expected": "After successful login, user lands on originally requested My Registrations route (or equivalent); page loads registration list without second manual navigation; satisfies signup → login → view own registrations UX per Flow 0 and AC-16",
+      "expected": "After successful login, user lands on originally requested My Registrations route; registration list loads without second manual navigation per Flow 0 step 4",
       "edgeCase": false
-    },
-    {
-      "id": "TC-AC-16-006",
-      "category": "non-functional",
-      "layer": "integration",
-      "priority": "P0",
-      "traceability": ["AC-16", "NFR-08"],
-      "title": "GET /me/registrations returns only current actor's registrations, never cross-participant data",
-      "preconditions": [
-        "Two distinct participant accounts each with registrations on different events",
-        "Valid JWT for participant A from login"
-      ],
-      "steps": [
-        "GET /api/v1/me/registrations as participant A",
-        "Compare returned registrationIds against all registrations in database for participant B"
-      ],
-      "expected": "Response items contain only participant A's registrations; no registrationId, eventId, or status row belonging to participant B appears; scope constraint per roles-permissions §3 enforced at query layer",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-AC-16-007",
-      "category": "non-functional",
-      "layer": "integration",
-      "priority": "P0",
-      "traceability": ["AC-16", "NFR-17"],
-      "title": "Signup persists password with adaptive hashing, not plaintext",
-      "preconditions": [
-        "Database access to users credential storage column",
-        "Fresh signup email"
-      ],
-      "steps": [
-        "POST /api/v1/auth/register with known password value",
-        "Read stored password hash from users table for the new account"
-      ],
-      "expected": "Stored value is bcrypt or argon2 hash (recognizable prefix and length); plaintext password is not persisted; login still succeeds with original password via POST /auth/login",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-AC-16-008",
-      "category": "non-functional",
-      "layer": "e2e",
-      "priority": "P1",
-      "traceability": ["AC-16", "NFR-07", "FR-29"],
-      "title": "My registrations list requires authenticated session per NFR-07",
-      "preconditions": [
-        "Participant with existing registrations",
-        "Ability to call GET /me/registrations with and without Authorization header"
-      ],
-      "steps": [
-        "Complete signup and login flow for participant",
-        "GET /api/v1/me/registrations with valid bearer token",
-        "Repeat GET /api/v1/me/registrations without Authorization header"
-      ],
-      "expected": "Authenticated request returns 200 with items; unauthenticated request returns 401; sensitive self-service read is gated behind authentication per NFR-07",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-AC-16-009",
-      "category": "edge",
-      "layer": "e2e",
-      "priority": "P0",
-      "traceability": ["AC-16", "FR-32"],
-      "title": "Newly signed-up user with zero registrations receives empty paginated list",
-      "preconditions": [
-        "Fresh participant account created via POST /auth/register and authenticated via POST /auth/login",
-        "Participant has not registered for any event"
-      ],
-      "steps": [
-        "GET /api/v1/me/registrations?page=1&pageSize=20 with participant JWT"
-      ],
-      "expected": "HTTP 200 with items: [], total: 0, totalPages: 0 or 1 per pagination rules, and valid page/pageSize metadata; flow still succeeds end-to-end despite empty list",
-      "edgeCase": true
     },
     {
       "id": "TC-AC-16-010",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["AC-16", "FR-25"],
+      "title": "Participant JWT denied organizer-only GET /events/{eventId}/registrations",
+      "preconditions": [
+        "Participant account created via signup and login flow",
+        "Event with existing registrations managed by organizer"
+      ],
+      "steps": [
+        "Authenticate as Participant via POST /auth/login",
+        "GET /api/v1/events/{eventId}/registrations with participant bearer token"
+      ],
+      "expected": "HTTP 403 unauthorized; organizer roster endpoint not accessible to Participant role per permission matrix; participant self-service remains limited to GET /me/registrations",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-16-011",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["AC-16", "NFR-07", "AC-15"],
+      "title": "Unauthenticated GET /me/registrations returns 401 before list query",
+      "preconditions": [
+        "API server running",
+        "No Authorization header on request"
+      ],
+      "steps": [
+        "GET /api/v1/me/registrations without bearer token"
+      ],
+      "expected": "HTTP 401 with standard error envelope; no registration items exposed; authentication gate enforced before AC-16 view-own-registrations flow",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-16-012",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "pagination",
+      "priority": "P0",
+      "traceability": ["AC-16", "FR-29", "AC-13"],
+      "title": "My registrations paginated query returns correct total and page boundaries",
+      "preconditions": [
+        "Participant with at least two registrations across events in database",
+        "Valid participant JWT"
+      ],
+      "steps": [
+        "GET /api/v1/me/registrations?page=1&pageSize=1 via service or HTTP",
+        "Verify total, totalPages, and item count",
+        "GET /api/v1/me/registrations?page=2&pageSize=1"
+      ],
+      "expected": "pageSize boundary respected; total reflects all actor registrations; page 2 returns next item or empty slice with consistent metadata per pagination contract",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-16-013",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["AC-16", "FR-32"],
-      "title": "Duplicate signup with same email is rejected",
+      "title": "Duplicate signup with same email rejected with stable error code",
       "preconditions": [
         "Existing participant account with email user@example.com"
       ],
       "steps": [
-        "POST /api/v1/auth/register with the same email, different password and displayName"
+        "POST /api/v1/auth/register with same email, different password and displayName"
       ],
-      "expected": "HTTP 400 or 409 with stable error code (e.g. duplicate email); no second user row created; subsequent login still works only with original account credentials",
+      "expected": "HTTP 400 or 409 with stable error code; no second user row created; login still works only with original credentials",
       "edgeCase": true
     },
     {
-      "id": "TC-AC-16-011",
+      "id": "TC-AC-16-014",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["AC-16", "FR-33"],
-      "title": "Login with wrong password after successful signup fails",
+      "title": "Login with wrong password after signup fails without JWT",
       "preconditions": [
         "Participant account created via POST /auth/register with known password"
       ],
@@ -210,74 +278,79 @@
       "edgeCase": true
     },
     {
-      "id": "TC-AC-16-012",
-      "category": "edge",
-      "layer": "e2e",
-      "priority": "P1",
-      "traceability": ["AC-16", "FR-33", "AC-13"],
-      "title": "My registrations page beyond last page returns empty items with valid metadata",
-      "preconditions": [
-        "Participant logged in with exactly one registration (total=1, pageSize=20)"
-      ],
-      "steps": [
-        "GET /api/v1/me/registrations?page=99&pageSize=20 with bearer token"
-      ],
-      "expected": "HTTP 200 with items: [] and consistent total, totalPages, page, pageSize fields per AC-13 pagination contract; no error for out-of-range page index",
-      "edgeCase": true
-    },
-    {
-      "id": "TC-AC-16-013",
-      "category": "edge",
-      "layer": "browser",
-      "priority": "P1",
-      "traceability": ["AC-16", "FR-34"],
-      "title": "Re-login after sign-out restores access to My Registrations",
-      "preconditions": [
-        "Participant completed signup, registered for an event, and viewed My Registrations",
-        "Client JWT cleared via TopBar sign-out (Flow 0b step 5)"
-      ],
-      "steps": [
-        "Sign out from TopBar user menu",
-        "Navigate to /login and sign in with original credentials",
-        "Open My Registrations again"
-      ],
-      "expected": "After re-login, protected route accessible without permanent lockout; registration list repopulates with same user's data; signup → login → view flow repeatable across sessions",
-      "edgeCase": true
-    },
-    {
-      "id": "TC-AC-16-014",
-      "category": "edge",
-      "layer": "e2e",
-      "priority": "P1",
-      "traceability": ["AC-16", "FR-32"],
-      "title": "Signup with invalid input rejects before account creation",
-      "preconditions": [
-        "No existing user with target email"
-      ],
-      "steps": [
-        "POST /api/v1/auth/register with missing password or invalid email format",
-        "POST /api/v1/auth/register with password below minimum policy length if enforced"
-      ],
-      "expected": "HTTP 400 with INVALID_INPUT or equivalent stable code; no user row persisted; login with submitted credentials fails",
-      "edgeCase": true
-    },
-    {
       "id": "TC-AC-16-015",
       "category": "edge",
-      "layer": "integration",
-      "priority": "P2",
-      "traceability": ["AC-16", "FR-29"],
-      "title": "My registrations query uses single paginated fetch without N+1 fan-out",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["AC-16", "AC-13"],
+      "title": "Invalid page or pageSize on GET /me/registrations returns 400 INVALID_PAGINATION",
       "preconditions": [
-        "Participant with multiple registrations across events",
-        "Database query logging or integration test spy enabled"
+        "Authenticated participant JWT from login"
       ],
       "steps": [
-        "GET /api/v1/me/registrations?page=1&pageSize=20 via service layer or HTTP",
-        "Count database round-trips for list query and event name resolution"
+        "GET /api/v1/me/registrations?page=0&pageSize=20",
+        "GET /api/v1/me/registrations?page=1&pageSize=101"
       ],
-      "expected": "List endpoint resolves eventName (or equivalent display fields) without per-row N+1 queries; aligns with testing-plan scenario matrix expectation for my registrations paginated fetch",
+      "expected": "HTTP 400 with error code INVALID_PAGINATION per API design §3; no partial or unbounded list returned",
       "edgeCase": true
+    },
+    {
+      "id": "TC-AC-16-016",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["AC-16", "FR-32"],
+      "title": "Newly signed-up participant with zero registrations receives empty paginated list",
+      "preconditions": [
+        "Fresh participant via POST /auth/register and POST /auth/login",
+        "Participant has not registered for any event"
+      ],
+      "steps": [
+        "GET /api/v1/me/registrations?page=1&pageSize=20 with participant JWT"
+      ],
+      "expected": "HTTP 200 with items: [], total: 0, and valid page/pageSize/totalPages metadata; signup → login → view flow succeeds despite empty list",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-16-017",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["AC-16", "FR-34"],
+      "title": "Re-login after TopBar sign-out restores My Registrations access",
+      "preconditions": [
+        "Participant completed signup, registered for event, and viewed My Registrations",
+        "Client JWT cleared via TopBar sign-out per Flow 0b step 5"
+      ],
+      "steps": [
+        "Sign out from TopBar user menu and confirm redirect to /login",
+        "Sign in with original credentials",
+        "Navigate to My Registrations"
+      ],
+      "expected": "Protected route accessible after re-login; registration list repopulates with same user's data; signup → login → view flow repeatable across sessions",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-16-018",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["AC-16", "NFR-17"],
+      "title": "Signup persists password with adaptive hashing not plaintext",
+      "preconditions": [
+        "Database access to users credential storage column",
+        "Fresh signup email"
+      ],
+      "steps": [
+        "POST /api/v1/auth/register with known password",
+        "Read stored password hash from users table for new account"
+      ],
+      "expected": "Stored value is bcrypt or argon2 hash; plaintext password not persisted; POST /auth/login succeeds with original password",
+      "edgeCase": false
     }
   ]
 }
