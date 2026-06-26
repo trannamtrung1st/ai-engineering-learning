@@ -172,6 +172,7 @@
       },
       "description": "Registration module: capacity, waitlist FIFO, dedupe; paginated registrations and waitlist lists.",
       "browserTestScenarios": [
+        "Organizer capacity meter reflects Registered count never above configured capacity",
         "Participant UI blocks duplicate registration with clear feedback",
         "Participant registers via UI and sees Registered status",
         "Participant registers via UI when seats are available",
@@ -597,6 +598,7 @@
       ],
       "description": "End-to-end scenario tests covering core acceptance matrix plus signup/login/logout, cover upload display, and badge color regression spot-checks.",
       "browserTestScenarios": [
+        "Organizer capacity meter reflects Registered count never above configured capacity",
         "Participant UI blocks duplicate registration with clear feedback",
         "Participant registers via UI and sees Registered status",
         "Participant registers via UI when seats are available",
@@ -606,7 +608,8 @@
         "acceptanceTags": [
           "AC-01",
           "AC-02",
-          "AC-03"
+          "AC-03",
+          "AC-04"
         ]
       }
     }
