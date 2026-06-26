@@ -138,7 +138,9 @@ Append-only log of completed iterations.
 - 2026-06-26T04:51:56Z | FR-16 | testgen_passed
 - 2026-06-26T04:53:53Z | FR-17 | testgen_passed
 - 2026-06-26T04:55:38Z | FR-18 | testgen_failed
+- 2026-06-26T05:02:03Z | web-design-system-shell | browser: homepage HTTP 200 — AppShell, 17 domain status badges, NFR-06 live-query panel Connected
 - 2026-06-26T04:58:05Z | FR-18 | testgen_passed
 - 2026-06-26T04:59:30Z | FR-19 | testgen_passed
 - 2026-06-26T04:59:50Z | FR-20 | testgen_failed
 - 2026-06-26T05:00:26Z | FR-20 | testgen_validation_failed
+- 2026-06-26T05:03:07Z | FR-20 | testgen_passed
