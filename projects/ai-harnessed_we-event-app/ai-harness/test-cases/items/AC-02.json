@@ -1,0 +1,237 @@
+{
+  "productItemId": "AC-02",
+  "version": 1,
+  "docFingerprint": "sha256:79bdbca423ea91c83496c623bf764b00d329b0edef3e6d130765edc4907c901b",
+  "generatedAt": "2026-06-26T12:00:00Z",
+  "cases": [
+    {
+      "id": "TC-AC-02-001",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["AC-02", "FR-08", "BR-04"],
+      "title": "Registration assigns Waitlisted when event is full and waitlist is enabled",
+      "preconditions": [
+        "Event is in RegistrationOpen state with waitlistEnabled true",
+        "Registered participant count equals EventCapacity (event is full)",
+        "Registration window is active",
+        "New participant has no active registration for the event"
+      ],
+      "steps": [
+        "Invoke registrationService.register(eventId, participantId, actorContext) for a participant with no prior registration",
+        "Read the returned registration entity snapshot and waitlist entry if present"
+      ],
+      "expected": "Registration is created with state Waitlisted, waitlistPosition is a positive integer (1 for first entrant), and Registered count remains at EventCapacity without overflow",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-02-002",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["AC-02", "FR-08", "FR-10"],
+      "title": "POST registrations returns Waitlisted when full and registration-status reflects queue position",
+      "preconditions": [
+        "Published event with registration opened, capacity 1, waitlistEnabled true",
+        "One participant already Registered consuming the sole seat",
+        "Second participant has valid JWT and no active registration",
+        "Fresh Idempotency-Key header value"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/registrations as the second participant with Authorization bearer token",
+        "GET /api/v1/events/{eventId}/registration-status for the same participant"
+      ],
+      "expected": "POST returns HTTP 200 with body containing state Waitlisted, waitlistPosition 1, registrationId, eventId, participantId, reasonCode null, and updatedAt; GET registration-status returns the same registration with state Waitlisted and matching waitlistPosition",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-02-003",
+      "category": "functional",
+      "layer": "browser",
+      "priority": "P1",
+      "traceability": ["AC-02", "FR-10"],
+      "title": "Participant sees Waitlisted status with queue position in UI",
+      "preconditions": [
+        "Event visible on participant discovery with registration open, full capacity, and waitlist enabled",
+        "Participant logged in with no existing registration for the event",
+        "At least one other participant already Registered"
+      ],
+      "steps": [
+        "Navigate to event detail page for the full event with waitlist enabled",
+        "Click register (or equivalent primary registration action)",
+        "Observe registration status area on event detail and/or my registrations list"
+      ],
+      "expected": "UI shows Waitlisted status with understandable queue position text (for example position number or 'in queue') without implying a confirmed seat; status is consistent with API registration-status",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-02-004",
+      "category": "functional",
+      "layer": "unit",
+      "priority": "P1",
+      "traceability": ["AC-02", "BR-04"],
+      "title": "Seat decision routes to waitlist when full and waitlist enabled",
+      "preconditions": [
+        "Event capacity is N with Registered count equal to N",
+        "waitlistEnabled is true",
+        "Registration window is open and participant has no active registration"
+      ],
+      "steps": [
+        "Evaluate seat assignment decision (capacity guard or registration router) for a new registration request under preconditions"
+      ],
+      "expected": "Decision outcome is waitlist assign (not Registered and not reject); BR-04 validation rule routes registration request to waitlist path",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-02-005",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["AC-02", "BR-04"],
+      "title": "Multiple waitlist entrants receive FIFO positions by enqueue order",
+      "preconditions": [
+        "Event capacity 1, waitlistEnabled true, one Registered participant",
+        "Three distinct participants with no active registration",
+        "Fixed clock or sequential registration calls to establish deterministic enqueue order"
+      ],
+      "steps": [
+        "Register participant A, then B, then C while event remains full",
+        "Read waitlistPosition for each Waitlisted registration"
+      ],
+      "expected": "Participant A receives waitlistPosition 1, B receives 2, C receives 3; ordering matches FIFO by timestamp (BR-04); all three have state Waitlisted",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-02-006",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["AC-02", "BR-03"],
+      "title": "Waitlisted registration does not increment Registered count beyond capacity",
+      "preconditions": [
+        "Event capacity N with exactly N participants in Registered state",
+        "waitlistEnabled true",
+        "New participant with no active registration"
+      ],
+      "steps": [
+        "Register additional participant via registrationService.register",
+        "Query count of Registered participants for the event"
+      ],
+      "expected": "New registration has state Waitlisted; total Registered count remains N (equals EventCapacity); BR-03 invariant holds",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-02-007",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["AC-02", "BR-03", "BR-04"],
+      "title": "Concurrent registrations when full assign excess participants to Waitlisted without capacity overflow",
+      "preconditions": [
+        "Event capacity 1, waitlistEnabled true, one Registered participant",
+        "Multiple distinct participants attempt registration concurrently (parallel requests)",
+        "Each participant has no prior active registration"
+      ],
+      "steps": [
+        "Fire concurrent registrationService.register calls from M participants while event is full",
+        "Aggregate results and query Registered count"
+      ],
+      "expected": "Exactly zero additional Registered assignments beyond capacity; each concurrent entrant receives Waitlisted with unique sequential waitlistPosition; Registered count never exceeds EventCapacity",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-02-008",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["AC-02"],
+      "title": "Registration at exact capacity boundary waitlists the next participant",
+      "preconditions": [
+        "Event capacity 2, waitlistEnabled true, zero Registered participants",
+        "Three authenticated participants (P1, P2, P3) with no active registrations"
+      ],
+      "steps": [
+        "POST registrations for P1 and P2 until capacity is filled",
+        "POST registration for P3",
+        "Verify P1 and P2 responses and P3 response"
+      ],
+      "expected": "P1 and P2 receive state Registered; P3 receives state Waitlisted with waitlistPosition 1; no fourth Registered seat is created",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-02-009",
+      "category": "non-functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["AC-02", "FR-08"],
+      "title": "Waitlist enqueue persists atomically with registration in one transaction",
+      "preconditions": [
+        "Event full with waitlistEnabled true",
+        "Database transaction boundaries enabled for registration module",
+        "New participant with no active registration"
+      ],
+      "steps": [
+        "Complete a successful registration assigning Waitlisted state",
+        "Query registration row and waitlist_entries row in the same database session"
+      ],
+      "expected": "Registration row exists with state Waitlisted and corresponding waitlist_entries record with matching position; both committed atomically per cross-module transaction boundary for registration assignment + waitlist handling",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-02-010",
+      "category": "non-functional",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["AC-02", "FR-08"],
+      "title": "Idempotent waitlist registration retry returns consistent Waitlisted snapshot",
+      "preconditions": [
+        "Event full with waitlistEnabled true",
+        "Participant authenticated with no prior registration",
+        "Fixed Idempotency-Key value prepared for the register endpoint"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/registrations with Idempotency-Key K and receive Waitlisted response",
+        "Repeat POST with the same Idempotency-Key K and identical payload"
+      ],
+      "expected": "Both responses return HTTP 200 with the same registrationId, state Waitlisted, and waitlistPosition; only one waitlist entry is created; Registered count unchanged",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-02-011",
+      "category": "non-functional",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["AC-02", "FR-10"],
+      "title": "Organizer waitlist list includes newly waitlisted participant with correct position",
+      "preconditions": [
+        "Event full with waitlistEnabled true and at least one Waitlisted participant",
+        "Organizer Admin JWT with scope for the event"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/waitlist?page=1&pageSize=20 with organizer Authorization",
+        "Locate the waitlisted participant in items"
+      ],
+      "expected": "Paginated response includes the waitlisted participant with position ascending order (default sort position:asc); item reflects Waitlisted registration consistent with participant-facing registration-status",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-02-012",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["AC-02", "FR-08"],
+      "title": "Flow B waitlist entry step yields Waitlisted before cancellation and promotion",
+      "preconditions": [
+        "E2E fixture: published event with capacity 1 and waitlistEnabled true",
+        "First participant Registered consuming the sole seat",
+        "Second participant token and fresh idempotency key"
+      ],
+      "steps": [
+        "Execute Flow B step: POST /api/v1/events/{eventId}/registrations for second participant after event is full",
+        "Verify registration state before proceeding to cancellation/promotion steps"
+      ],
+      "expected": "Registration response state is Waitlisted with waitlistPosition 1, enabling subsequent Flow B cancellation and auto-promotion steps",
+      "edgeCase": false
+    }
+  ]
+}
