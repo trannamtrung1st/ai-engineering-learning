@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-09",
   "version": 1,
-  "docFingerprint": "sha256:027175175545d05eacf412663c601ddc7b622e4741a2ff40633c8e332b7bd6aa",
-  "generatedAt": "2026-06-26T14:00:00Z",
+  "docFingerprint": "sha256:f601725c26e22adca80d48f9fae45d3bcf9dc70f757edfc29c65352770d3803e",
+  "generatedAt": "2026-06-26T18:30:00Z",
   "cases": [
     {
       "id": "TC-FR-09-001",
@@ -13,6 +13,7 @@
       "traceability": [
         "FR-09",
         "BR-05",
+        "AC-02b",
         "AC-04"
       ],
       "title": "System automatically rejects registration when event is full and waitlist is disabled",
@@ -26,7 +27,7 @@
         "Invoke registrationService.register(eventId, participantId, actorContext) for a participant with no prior registration",
         "Observe error response and query registration rows and Registered count for the event"
       ],
-      "expected": "System rejects registration automatically without organizer intervention; error code REGISTRATION_REJECTED_FULL returned; no Registered or Waitlisted state assigned; Registered count remains at EventCapacity; testing-plan §3 capacity invariant satisfied for rejection path when full and waitlist disabled",
+      "expected": "System rejects registration automatically without organizer intervention; error code REGISTRATION_REJECTED_FULL returned; no registration row created in an active state (Registered or Waitlisted); Registered count remains at EventCapacity; AC-02b and testing-plan §3 capacity invariant satisfied for rejection path when full and waitlist disabled",
       "edgeCase": false
     },
     {
@@ -38,6 +39,7 @@
       "traceability": [
         "FR-09",
         "BR-05",
+        "AC-02b",
         "FR-10"
       ],
       "title": "POST registrations returns REGISTRATION_REJECTED_FULL when full and waitlist disabled",
@@ -51,53 +53,7 @@
         "POST /api/v1/events/{eventId}/registrations as the second participant with Authorization bearer token",
         "GET /api/v1/events/{eventId}/registration-status for the same participant"
       ],
-      "expected": "POST returns HTTP 409 or 422 with error.code REGISTRATION_REJECTED_FULL and user-safe message explaining event is full; no active Registered or Waitlisted registration created for the second participant; GET registration-status shows no active registration; system auto-rejection per FR-09",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-FR-09-003",
-      "category": "functional",
-      "layer": "unit",
-      "technique": "state-transition",
-      "priority": "P0",
-      "traceability": [
-        "FR-09",
-        "BR-05"
-      ],
-      "title": "rejectRegistration state transition guard permits Rejected when full and waitlist disabled",
-      "preconditions": [
-        "Registration in Requested state",
-        "registeredCount equals EventCapacity",
-        "waitlistEnabled is false",
-        "Registration window open and no duplicate active registration"
-      ],
-      "steps": [
-        "Call rejectRegistration transition guard with preconditions above",
-        "Verify guard returns permitted transition to Rejected"
-      ],
-      "expected": "Guard permits Requested to Rejected transition when full and waitlist disabled per state machine transition table; guard requires full + waitlist disabled",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-FR-09-004",
-      "category": "functional",
-      "layer": "unit",
-      "technique": "state-transition",
-      "priority": "P0",
-      "traceability": [
-        "FR-09",
-        "BR-05"
-      ],
-      "title": "Capacity guard returns reject outcome when registeredCount equals capacity and waitlistEnabled false",
-      "preconditions": [
-        "Pure capacity decision inputs: registeredCount, capacity, waitlistEnabled"
-      ],
-      "steps": [
-        "Evaluate capacity decision for registeredCount=5, capacity=5, waitlistEnabled=false",
-        "Evaluate for registeredCount=1, capacity=1, waitlistEnabled=false",
-        "Evaluate for registeredCount=10, capacity=10, waitlistEnabled=false"
-      ],
-      "expected": "Each evaluation returns reject outcome (not Registered and not waitlist assign); aligns with validation rules BR-05 outcome REGISTRATION_REJECTED_FULL and testing plan unit target capacity guard validator",
+      "expected": "POST returns HTTP 422 with error.code REGISTRATION_REJECTED_FULL and user-safe message explaining event is full; no registration row in an active state created for the second participant; GET registration-status shows no active registration; system auto-rejection per FR-09 and AC-02b",
       "edgeCase": false
     },
     {
@@ -108,18 +64,19 @@
       "priority": "P0",
       "traceability": [
         "FR-09",
-        "BR-05"
+        "BR-05",
+        "AC-02b"
       ],
-      "title": "rejectRegistration transition records rejection without consuming a seat or creating waitlist entry",
+      "title": "Capacity rejection persists no active registration row and does not consume a seat",
       "preconditions": [
         "Event RegistrationOpen, full capacity, waitlistEnabled false",
         "New registration request passes auth, window, and dedupe checks"
       ],
       "steps": [
-        "Execute rejectRegistration via registration module capacity decision pipeline",
-        "Query registration row state, waitlist_entries, and Registered count"
+        "Execute registration capacity decision pipeline via registration module for a new participant",
+        "Query registration rows for the participant, waitlist_entries, and Registered count"
       ],
-      "expected": "No Registered or Waitlisted assignment for the participant; Registered count unchanged at EventCapacity; no waitlist_entries row created; rejection outcome matches registration state machine Requested to Rejected when full + waitlist disabled",
+      "expected": "No registration row in an active state (Registered or Waitlisted) for the participant; Registered count unchanged at EventCapacity; no waitlist_entries row created; rejection outcome matches FR-09 behavior without creating an active registration row",
       "edgeCase": false
     },
     {
@@ -131,9 +88,10 @@
       "traceability": [
         "FR-09",
         "FR-10",
-        "BR-05"
+        "BR-05",
+        "AC-02b"
       ],
-      "title": "Participant UI shows Rejected outcome with explicit rule reason when full and waitlist disabled",
+      "title": "Participant UI shows full-capacity rejection message when waitlist disabled",
       "preconditions": [
         "Event detail page shows open registration with full capacity and waitlist disabled",
         "Participant logged in with no existing registration for the event",
@@ -141,9 +99,10 @@
       ],
       "steps": [
         "Navigate to event detail and initiate registration via UI",
-        "Observe registration outcome message or status panel after action completes"
+        "Observe inline error or toast message after registration action completes",
+        "Verify event detail registration status overlay shows no active registration for the participant"
       ],
-      "expected": "UI displays Rejected outcome with explicit rule reason and guidance on what user can do next per common UI content patterns; no manual organizer approval step; outcome consistent with API REGISTRATION_REJECTED_FULL rejection",
+      "expected": "UI displays user-safe rejection message consistent with REGISTRATION_REJECTED_FULL; no active registration badge or status shown for the participant; no manual organizer approval step; event detail reflects absence of active registration per FR-09 and FR-10",
       "edgeCase": false
     },
     {
@@ -154,7 +113,8 @@
       "priority": "P0",
       "traceability": [
         "FR-09",
-        "BR-05"
+        "BR-05",
+        "AC-02b"
       ],
       "title": "Full event without waitlist yields system auto-rejection at registration step",
       "preconditions": [
@@ -164,9 +124,9 @@
       ],
       "steps": [
         "Execute registration step on full event: POST /api/v1/events/{eventId}/registrations for second participant after event is full",
-        "Verify rejection response and absence of waitlist or Registered assignment for second participant"
+        "Verify rejection response and absence of waitlist or active registration for second participant"
       ],
-      "expected": "Registration rejected with REGISTRATION_REJECTED_FULL; no waitlist entry created; Flow B alternative branch (waitlist disabled) yields rejected outcome instead of waitlist enqueue",
+      "expected": "Registration rejected with REGISTRATION_REJECTED_FULL; no waitlist entry and no active registration row created; Flow B alternative branch (waitlist disabled) yields rejected outcome instead of waitlist enqueue",
       "edgeCase": false
     },
     {
@@ -178,6 +138,7 @@
       "traceability": [
         "FR-09",
         "BR-03",
+        "AC-02b",
         "AC-04"
       ],
       "title": "Rejection when full preserves Registered count at capacity without overflow",
@@ -190,7 +151,7 @@
         "Attempt registrationService.register for the new participant",
         "Query count of Registered participants for the event"
       ],
-      "expected": "Registration rejected with REGISTRATION_REJECTED_FULL; total Registered count remains N (equals EventCapacity); BR-03 and AC-04 invariants hold; no seat consumed by rejected request",
+      "expected": "Registration rejected with REGISTRATION_REJECTED_FULL; total Registered count remains N (equals EventCapacity); BR-03 and AC-04 invariants hold; no seat consumed and no active registration row created for rejected request",
       "edgeCase": true
     },
     {
@@ -202,6 +163,7 @@
       "traceability": [
         "FR-09",
         "BR-05",
+        "AC-02b",
         "AC-04"
       ],
       "title": "Concurrent registrations when full and waitlist disabled all reject without capacity overflow",
@@ -215,7 +177,7 @@
         "Fire concurrent registrationService.register calls from eight participants while event is full and waitlist disabled",
         "Aggregate results and query Registered count"
       ],
-      "expected": "All eight concurrent attempts rejected with REGISTRATION_REJECTED_FULL; Registered count remains exactly 5; no Waitlisted assignments; no additional Registered assignments; core scenario matrix capacity under heavy concurrent requests satisfied for rejection path",
+      "expected": "All eight concurrent attempts rejected with REGISTRATION_REJECTED_FULL; Registered count remains exactly 5; no Waitlisted assignments; no additional Registered assignments; no active registration rows created for rejected participants; core scenario matrix capacity under heavy concurrent requests satisfied for rejection path",
       "edgeCase": true
     },
     {
@@ -227,6 +189,7 @@
       "traceability": [
         "FR-09",
         "BR-05",
+        "AC-02b",
         "FR-08"
       ],
       "title": "Registration at exact capacity boundary rejects next participant when waitlist disabled",
@@ -239,7 +202,7 @@
         "POST registration for P3",
         "Verify P1, P2, and P3 responses"
       ],
-      "expected": "P1 and P2 receive state Registered; P3 receives REGISTRATION_REJECTED_FULL rejection; no Waitlisted assignment; FR-09 triggers only after capacity is reached and waitlist is disabled",
+      "expected": "P1 and P2 receive state Registered; P3 receives REGISTRATION_REJECTED_FULL rejection with no active registration row; no Waitlisted assignment; FR-09 triggers only after capacity is reached and waitlist is disabled",
       "edgeCase": true
     },
     {
@@ -313,52 +276,6 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-09-014",
-      "category": "edge",
-      "layer": "unit",
-      "technique": "state-transition",
-      "priority": "P0",
-      "traceability": [
-        "FR-09",
-        "BR-05"
-      ],
-      "title": "State transition guard rejects rejectRegistration when seats remain available",
-      "preconditions": [
-        "registeredCount strictly less than capacity",
-        "waitlistEnabled false",
-        "Registration otherwise valid (window open, no duplicate)"
-      ],
-      "steps": [
-        "Call rejectRegistration transition guard when registeredCount < capacity",
-        "Verify guard denies Rejected transition"
-      ],
-      "expected": "Guard rejects Requested to Rejected transition for full-capacity-only path; routes to Registered path instead; confirms FR-09 full-capacity precondition is enforced at state machine layer",
-      "edgeCase": true
-    },
-    {
-      "id": "TC-FR-09-015",
-      "category": "edge",
-      "layer": "unit",
-      "technique": "state-transition",
-      "priority": "P0",
-      "traceability": [
-        "FR-09",
-        "BR-05"
-      ],
-      "title": "State transition guard rejects rejectRegistration when full but waitlist enabled",
-      "preconditions": [
-        "registeredCount equals capacity",
-        "waitlistEnabled true",
-        "Registration otherwise valid"
-      ],
-      "steps": [
-        "Call rejectRegistration transition guard when full and waitlist enabled",
-        "Verify guard denies Rejected transition for waitlist-disabled-only path"
-      ],
-      "expected": "Guard rejects Requested to Rejected transition; routes to queueWaitlist path instead; confirms FR-09 requires both full capacity and waitlist disabled",
-      "edgeCase": true
-    },
-    {
       "id": "TC-FR-09-016",
       "category": "non-functional",
       "layer": "integration",
@@ -366,7 +283,8 @@
       "priority": "P0",
       "traceability": [
         "FR-09",
-        "BR-05"
+        "BR-05",
+        "AC-02b"
       ],
       "title": "Full-capacity rejection executes atomically without partial seat or waitlist side effects",
       "preconditions": [
@@ -376,9 +294,9 @@
       ],
       "steps": [
         "Attempt registration that triggers REGISTRATION_REJECTED_FULL",
-        "Verify transaction rolls back or commits without Registered increment or waitlist insert"
+        "Verify transaction rolls back or commits without Registered increment, active registration row, or waitlist insert"
       ],
-      "expected": "Rejection and capacity check complete atomically; Registered count unchanged after operation; no intermediate state where Registered count exceeds capacity; no orphaned waitlist entry",
+      "expected": "Rejection and capacity check complete atomically; Registered count unchanged after operation; no intermediate state where Registered count exceeds capacity; no orphaned waitlist entry or active registration row",
       "edgeCase": false
     },
     {
@@ -389,7 +307,8 @@
       "priority": "P0",
       "traceability": [
         "FR-09",
-        "BR-05"
+        "BR-05",
+        "AC-02b"
       ],
       "title": "REGISTRATION_REJECTED_FULL error response includes stable code and user-safe message",
       "preconditions": [
@@ -398,9 +317,9 @@
       ],
       "steps": [
         "POST /api/v1/events/{eventId}/registrations and capture error response body",
-        "Verify error contract fields: code, message, requestId"
+        "Verify error contract fields: code, message, requestId, timestamp"
       ],
-      "expected": "Response conforms to standard error contract with code REGISTRATION_REJECTED_FULL; message is user-safe and actionable per error handling guidelines; HTTP status 409 or 422 per semantic rule violation mapping; no internal stack trace exposed",
+      "expected": "Response conforms to standard error contract with code REGISTRATION_REJECTED_FULL; message is user-safe and actionable per error handling guidelines; HTTP status 422 per semantic rule violation mapping; no internal stack trace exposed",
       "edgeCase": false
     },
     {
@@ -410,7 +329,8 @@
       "technique": "module-integration",
       "priority": "P0",
       "traceability": [
-        "FR-09"
+        "FR-09",
+        "AC-02b"
       ],
       "title": "Full-capacity rejection requires no organizer manual approval or intervention",
       "preconditions": [
@@ -421,7 +341,7 @@
         "Participant invokes registrationService.register without any prior organizer action",
         "Verify automatic rejection outcome"
       ],
-      "expected": "System actor automatically rejects registration per FR-09 functional requirement format (Actor: System); rejection occurs without organizer workflow step",
+      "expected": "System actor automatically rejects registration per FR-09 functional requirement format (Actor: System); rejection occurs without organizer workflow step and without creating an active registration row",
       "edgeCase": false
     },
     {
@@ -432,7 +352,8 @@
       "priority": "P1",
       "traceability": [
         "FR-09",
-        "BR-05"
+        "BR-05",
+        "AC-02b"
       ],
       "title": "Idempotent retry after full rejection returns consistent REGISTRATION_REJECTED_FULL",
       "preconditions": [
@@ -444,7 +365,7 @@
         "POST /api/v1/events/{eventId}/registrations with Idempotency-Key K and receive REGISTRATION_REJECTED_FULL",
         "Repeat POST with the same Idempotency-Key K and identical payload"
       ],
-      "expected": "Both responses return the same REGISTRATION_REJECTED_FULL error with consistent requestId or idempotent replay semantics; no Registered or Waitlisted registration created; Registered count unchanged",
+      "expected": "Both responses return the same REGISTRATION_REJECTED_FULL error with consistent idempotent replay semantics; no active registration row created; Registered count unchanged",
       "edgeCase": false
     },
     {
@@ -455,7 +376,8 @@
       "priority": "P0",
       "traceability": [
         "FR-09",
-        "BR-05"
+        "BR-05",
+        "AC-02b"
       ],
       "title": "Capacity rejection error is deterministic for identical inputs",
       "preconditions": [
@@ -465,7 +387,7 @@
         "Run capacity decision and rejection path twice with identical preconditions for two different participants",
         "Compare error codes and Registered count outcomes"
       ],
-      "expected": "Both attempts produce REGISTRATION_REJECTED_FULL with same rejection semantics; determinism requirement from validation rules satisfied; same inputs produce same rejection outcome class",
+      "expected": "Both attempts produce REGISTRATION_REJECTED_FULL with same rejection semantics; determinism requirement from validation rules satisfied; same inputs produce same rejection outcome class with no active registration rows",
       "edgeCase": false
     },
     {
@@ -489,6 +411,54 @@
         "Repeat POST with OrganizerStaff bearer token for the same event"
       ],
       "expected": "Both requests return HTTP 403 unauthorized; no registration row is created; Register for event capability is Participant-only per roles-permissions matrix regardless of capacity state",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-09-022",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": [
+        "FR-09",
+        "BR-05",
+        "AC-02b"
+      ],
+      "title": "Full-capacity rejection leaves participant without active registration state",
+      "preconditions": [
+        "Event RegistrationOpen, registeredCount equals EventCapacity, waitlistEnabled false",
+        "Participant has no prior registration row for the event",
+        "Registration window open and dedupe checks pass"
+      ],
+      "steps": [
+        "Invoke registrationService.register for the participant on the full event",
+        "Query participant registration state before and after the attempt"
+      ],
+      "expected": "beforeState: no active registration for participant; afterState: still no registration row in an active state; rejectRegistration outcome per state machine does not persist Registered or Waitlisted; REGISTRATION_REJECTED_FULL returned",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-09-023",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": [
+        "FR-09",
+        "BR-05",
+        "FR-07"
+      ],
+      "title": "Registration with available seats routes to Registered not FR-09 rejection",
+      "preconditions": [
+        "Event RegistrationOpen, registeredCount strictly less than EventCapacity",
+        "waitlistEnabled false",
+        "Participant has no active registration and registration window is open"
+      ],
+      "steps": [
+        "Invoke registrationService.register for the participant",
+        "Observe resulting registration state transition"
+      ],
+      "expected": "Registration transitions Requested to Registered via acceptRegistration; FR-09 rejectRegistration path not taken; confirms full-capacity precondition is required for REGISTRATION_REJECTED_FULL",
       "edgeCase": true
     }
   ]
