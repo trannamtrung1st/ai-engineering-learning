@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-14",
-  "version": 3,
-  "docFingerprint": "sha256:e2dfbabeeed703c3e91f7927502130070273c2e29f7eb78b92608b58e3a599e7",
-  "generatedAt": "2026-06-26T12:15:24Z",
+  "version": 4,
+  "docFingerprint": "sha256:8fc81cab4e7b769ab81d7f566d602cbb40696b9b602ef66c13fdf3a69a441ddf",
+  "generatedAt": "2026-06-26T17:03:06Z",
   "cases": [
     {
       "id": "TC-FR-14-001",
@@ -19,7 +19,7 @@
       "title": "In-window participant self check-in stored with timestamp per testing-plan §3",
       "preconditions": [
         "Event rule config enables participant self check-in",
-        "Event is InProgress with check-in window active (current time between checkinOpenAt and checkinCloseAt)",
+        "Event is InProgress with check-in window active (now >= checkinOpenAt and now < checkinCloseAt per exclusive close boundary)",
         "Authenticated participant has registration in Registered state with no prior valid check-in"
       ],
       "steps": [
@@ -44,7 +44,7 @@
       "title": "Participant self check-in transitions own Registered registration to CheckedIn when enabled and in window",
       "preconditions": [
         "Event rule config enables participant self check-in",
-        "Event is InProgress with check-in window active (current time between checkinOpenAt and checkinCloseAt)",
+        "Event is InProgress with check-in window active (now >= checkinOpenAt and now < checkinCloseAt per exclusive close boundary)",
         "Authenticated participant has registration in Registered state with no prior valid check-in"
       ],
       "steps": [
@@ -104,7 +104,7 @@
         "POST /api/v1/events/{eventId}/self-checkin with participant Authorization bearer token",
         "GET /api/v1/events/{eventId}/attendance?page=1&pageSize=20 and locate the participant row"
       ],
-      "expected": "POST returns HTTP 200 with non-null checkinAt timestamp, registrationState CheckedIn, participantId matching token subject, and method Self; attendance list includes the participant with matching checkinAt",
+      "expected": "POST returns HTTP 200 with non-null checkinAt timestamp, registrationState CheckedIn, participantId matching token subject, and method Self; attendance list includes the participant with matching checkinAt sorted by checkinAt:desc",
       "edgeCase": false
     },
     {
@@ -144,12 +144,12 @@
       ],
       "title": "Participant completes self check-in via UI and sees success with timestamp",
       "preconditions": [
-        "Event with self check-in enabled and check-in window currently open",
+        "Event with self check-in enabled and check-in window currently open (now >= checkinOpenAt and now < checkinCloseAt per exclusive close boundary)",
         "Participant logged in with Registered status for the event",
-        "Event in InProgress or equivalent state allowing check-in"
+        "Event in InProgress state allowing check-in"
       ],
       "steps": [
-        "Navigate to event self check-in entry page (Flow 4 step 1)",
+        "Navigate to /events/{eventId}/check-in (Flow 4 step 1)",
         "System verifies event and registration context (Flow 4 step 2)",
         "Trigger check-in action via primary control (Flow 4 step 3)",
         "Observe success confirmation and check-in status display (Flow 4 step 4)"
@@ -497,9 +497,10 @@
       "traceability": [
         "FR-14",
         "NFR-13",
+        "NFR-15",
         "BR-10"
       ],
-      "title": "Failed self check-in returns immediate reason code not generic error",
+      "title": "Failed self check-in returns immediate reason code with standard error envelope",
       "preconditions": [
         "Event rule config enables participant self check-in",
         "Registered participant on event with closed check-in window",
@@ -510,7 +511,7 @@
         "POST /api/v1/events/{eventId}/self-checkin while outside the configured window",
         "Parse error envelope from response"
       ],
-      "expected": "Synchronous HTTP 422 (or 409) with error.code CHECKIN_WINDOW_CLOSED and user-safe message including window bounds in details; satisfies NFR-13 immediate feedback with explicit failure reason",
+      "expected": "Synchronous HTTP 422 (or 409) with error.code CHECKIN_WINDOW_CLOSED, user-safe message, details.checkinOpenAt and details.checkinCloseAt ISO timestamps, non-empty requestId, and timestamp per error-handling §3 standard envelope; satisfies NFR-13 immediate feedback with explicit failure reason",
       "edgeCase": false
     },
     {
@@ -563,6 +564,85 @@
       ],
       "expected": "HTTP 200 with checkinAt, method Self, and registrationState CheckedIn; not HTTP 404 (no registration) or HTTP 403 (own-registration false negative); actor ID alias resolution applied before DB lookup",
       "edgeCase": false
+    },
+    {
+      "id": "TC-FR-14-024",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": [
+        "FR-14",
+        "AC-05",
+        "NFR-13"
+      ],
+      "title": "Self check-in page submit succeeds when UI gate shows check-in available",
+      "preconditions": [
+        "Event InProgress with active check-in window (now >= checkinOpenAt and now < checkinCloseAt)",
+        "Event rule config enables participant self check-in",
+        "Participant logged in with Registered registration and no prior check-in",
+        "Self check-in page shows enabled primary control (canSelfCheckIn true, mirroring API assertCheckinWindowOpen and assertSelfCheckinAllowed)"
+      ],
+      "steps": [
+        "Navigate to /events/{eventId}/check-in",
+        "Confirm UI gate permits check-in (button enabled, no window-closed or disabled-self-service blocker)",
+        "Trigger check-in via primary control",
+        "Observe network response and success UI"
+      ],
+      "expected": "POST self-checkin returns HTTP 200; UI shows check-in success with timestamp; no mismatch where UI gate passes but API returns 404, 403, SELF_CHECKIN_DISABLED, or CHECKIN_WINDOW_CLOSED; satisfies NFR-13 UI/API parity on critical self check-in action",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-14-025",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": [
+        "FR-14",
+        "AC-05",
+        "BR-10"
+      ],
+      "title": "Self check-in at checkinOpenAt boundary instant is recorded when open boundary is inclusive",
+      "preconditions": [
+        "Event rule config enables participant self check-in",
+        "Event configured with known checkinOpenAt and checkinCloseAt",
+        "Fixed clock set exactly to checkinOpenAt",
+        "Registered participant with no prior check-in",
+        "Authenticated participant actor context"
+      ],
+      "steps": [
+        "Invoke checkinService.selfCheckin(eventId, participantActorContext) at checkinOpenAt boundary instant",
+        "Query CheckinRecord and registration state"
+      ],
+      "expected": "Self check-in succeeds per configured window policy; checkinAt persisted and registration is CheckedIn with method Self",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-14-026",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": [
+        "FR-14",
+        "AC-06",
+        "BR-10"
+      ],
+      "title": "Self check-in at checkinCloseAt boundary instant is rejected when close boundary is exclusive",
+      "preconditions": [
+        "Event rule config enables participant self check-in",
+        "Event configured with known checkinOpenAt and checkinCloseAt",
+        "Fixed clock set exactly to checkinCloseAt",
+        "Registered participant with no prior check-in",
+        "Authenticated participant actor context"
+      ],
+      "steps": [
+        "Invoke checkinService.selfCheckin(eventId, participantActorContext) at checkinCloseAt boundary instant",
+        "Query checkin_records and registration state"
+      ],
+      "expected": "Request fails with CHECKIN_WINDOW_CLOSED; exclusive close boundary treats checkinCloseAt as out-of-window (valid window is checkinOpenAt <= now < checkinCloseAt); no CheckinRecord persisted; registration remains Registered",
+      "edgeCase": true
     }
   ]
 }
