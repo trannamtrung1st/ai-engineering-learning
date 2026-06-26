@@ -38,10 +38,43 @@
       ]
     },
     {
-      "match": "^AC-1[34]$",
+      "match": "^AC-13$",
       "docs": [
         "docs/technical/05-api-design.md",
         "docs/ui-ux/09-page-list.md"
+      ],
+      "coverageHints": [
+        "integration: paginated list returns correct total, pageSize, and page-2 slice boundaries",
+        "e2e: events list page 2 returns correct slice per testing-plan §3",
+        "browser-journey: organizer/participant paginated tables show range label (e.g. 1–20 of N)",
+        "pagination: invalid page/pageSize returns INVALID_PAGINATION"
+      ]
+    },
+    {
+      "match": "^AC-14$",
+      "docs": [
+        "docs/technical/05-api-design.md",
+        "docs/ui-ux/09-page-list.md"
+      ],
+      "coverageHints": [
+        "integration: my-registrations list uses single query — no N+1 fan-out",
+        "e2e: GET my registrations paginated envelope with page, pageSize, total",
+        "browser-journey: /registrations paginates with correct range and quick actions",
+        "pagination: page-2 boundary returns expected slice"
+      ]
+    },
+    {
+      "match": "^FR-29$",
+      "docs": [
+        "docs/brds/03-functional-requirements.md",
+        "docs/technical/05-api-design.md",
+        "docs/ui-ux/09-page-list.md"
+      ],
+      "coverageHints": [
+        "integration: participant my-registrations query is batched — no per-row API fan-out",
+        "e2e: single GET /participants/me/registrations returns full page envelope",
+        "browser-journey: my registrations page loads one page without per-card fetch storms",
+        "pagination: total count matches DB rows for participant scope"
       ]
     },
     {
@@ -50,6 +83,11 @@
         "docs/technical/05-api-design.md",
         "docs/ui-ux/10-user-flows.md",
         "docs/technical/01-roles-permissions.md"
+      ],
+      "coverageHints": [
+        "browser-journey: participant/organizer flow from user-flows doc — navigate, act, verify visible state",
+        "rbac-negative: denied role cannot access organizer-only routes",
+        "http-contract: API endpoints referenced in flow return expected status codes"
       ]
     },
     {

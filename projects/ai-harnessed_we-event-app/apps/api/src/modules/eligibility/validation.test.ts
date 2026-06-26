@@ -106,8 +106,8 @@ function buildEligibility(
   };
 }
 
-describe("eligibility validation", () => {
-  it("returns NotEligible when participant did not attend", () => {
+describe("eligibility validation (BR-17, BR-18, BR-19)", () => {
+  it("returns NotEligible when participant did not attend (BR-17)", () => {
     const result = evaluateEligibilityRules(
       buildRegistration({ state: "Absent" }),
       buildEvent(),
@@ -121,7 +121,7 @@ describe("eligibility validation", () => {
     );
   });
 
-  it("returns NotEligible when mandatory feedback is missing", () => {
+  it("returns NotEligible when mandatory feedback is missing (BR-18)", () => {
     const result = evaluateEligibilityRules(
       buildRegistration(),
       buildEvent(),
@@ -135,7 +135,7 @@ describe("eligibility validation", () => {
     );
   });
 
-  it("returns Eligible when attendance and feedback requirements pass", () => {
+  it("returns Eligible when attendance and feedback requirements pass (BR-19)", () => {
     const result = evaluateEligibilityRules(
       buildRegistration(),
       buildEvent(),

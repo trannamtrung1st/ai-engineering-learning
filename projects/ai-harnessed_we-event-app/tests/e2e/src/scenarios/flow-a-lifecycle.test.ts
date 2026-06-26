@@ -21,7 +21,7 @@ import {
  * Flow A (testing plan §6): draft → publish → open registration → register →
  * check-in → feedback → eligibility.
  */
-describe("Flow A — full participant lifecycle (AC-01, AC-05, AC-08, AC-09, FR-13, FR-15, FR-19, BR-15, AC-15)", () => {
+describe("Flow A — full participant lifecycle (AC-01, AC-05, AC-08, AC-09, FR-13, FR-15, FR-19, BR-15, BR-18, BR-19, AC-15)", () => {
   let ctx: E2EContext;
   let organizerToken: string;
   let participantToken: string;

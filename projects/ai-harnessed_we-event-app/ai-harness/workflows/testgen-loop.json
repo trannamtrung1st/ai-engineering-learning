@@ -15,6 +15,69 @@
       "non-functional": 0,
       "edge": 0
     },
-    "requireTraceabilityMatch": true
+    "requireTraceabilityMatch": true,
+    "requireTechniqueField": true,
+    "layerPolicy": {
+      "AC-*": {
+        "requiredLayers": ["integration", "e2e"],
+        "minPerLayer": {
+          "integration": 1,
+          "e2e": 1
+        }
+      },
+      "FR-*": {
+        "requiredLayers": ["integration", "e2e"],
+        "minPerLayer": {
+          "integration": 1,
+          "e2e": 1
+        }
+      },
+      "BR-*": {
+        "requiredLayers": ["integration"],
+        "minPerLayer": {
+          "integration": 1
+        }
+      },
+      "NFR-*": {
+        "requiredLayers": ["integration"],
+        "minPerLayer": {
+          "integration": 1
+        }
+      }
+    },
+    "techniquePolicy": {
+      "AC-*": ["scenario-matrix", "http-contract", "module-integration"],
+      "FR-*": ["http-contract", "module-integration"],
+      "BR-*": ["module-integration"],
+      "NFR-*": ["module-integration"]
+    },
+    "techniqueWhen": [
+      {
+        "tagMatches": "^(AC|FR|BR)-",
+        "docsInclude": "docs/technical/01-roles-permissions.md",
+        "require": ["rbac-negative"]
+      },
+      {
+        "tagMatches": "^AC-04$|^BR-03$",
+        "require": ["concurrency"]
+      },
+      {
+        "tagMatches": "^AC-1[34]$|^FR-29$",
+        "require": ["pagination"]
+      },
+      {
+        "tagMatches": "^AC-0[5-7]$",
+        "require": ["state-transition"]
+      }
+    ],
+    "browserRequiredWhen": {
+      "tagMatches": [
+        "^AC-1[34]$",
+        "^AC-1[567]$",
+        "^FR-2[89]$",
+        "^FR-3[0-6]$"
+      ],
+      "minBrowserCases": 1
+    }
   }
 }

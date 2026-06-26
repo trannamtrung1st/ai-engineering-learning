@@ -208,7 +208,7 @@ describe("Acceptance matrix — capacity, check-in, attendance, eligibility, pag
     assert.ok(eligibility.reasonText);
   });
 
-  it("AC-10: organizer can list certificate-eligible participants with reasons", async () => {
+  it("AC-10 / FR-21 / BR-18 / BR-19: organizer can list certificate-eligible participants with reasons", async () => {
     const { eventId } = await createRegistrationOpenEvent(ctx.app, organizerToken, {
       capacity: 5,
       feedbackRequired: true,

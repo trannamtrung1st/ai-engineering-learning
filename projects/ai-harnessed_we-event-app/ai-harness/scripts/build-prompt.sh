@@ -48,6 +48,10 @@ if [[ "$MODE" == "testgen" ]]; then
   prompt="${prompt//\{\{SLICE_DOCS\}\}/$docs_list}"
   prompt="${prompt//\{\{DOC_FINGERPRINT\}\}/$doc_fp}"
   prompt="${prompt//\{\{TEST_CASE_ARTIFACT\}\}/$artifact_path}"
+  coverage_hints="$(format_coverage_hints_block "$REQUIREMENT_TAG")"
+  layer_policy="$(format_layer_policy_block "$REQUIREMENT_TAG")"
+  prompt="${prompt//\{\{COVERAGE_HINTS\}\}/$coverage_hints}"
+  prompt="${prompt//\{\{LAYER_POLICY\}\}/$layer_policy}"
   printf '%s\n' "$prompt"
   exit 0
 fi

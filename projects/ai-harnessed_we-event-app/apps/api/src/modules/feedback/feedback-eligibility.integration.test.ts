@@ -126,7 +126,7 @@ async function createCompletedEventWithAttendee(options?: {
   };
 }
 
-describe("feedback and eligibility integration (FR-19, BR-15, BR-16)", () => {
+describe("feedback and eligibility integration (FR-19, FR-21, BR-15, BR-16, BR-18, BR-19, BR-20)", () => {
   before(async () => {
     const databaseUrl =
       process.env.DATABASE_URL ??
@@ -259,7 +259,7 @@ describe("feedback and eligibility integration (FR-19, BR-15, BR-16)", () => {
     assert.deepEqual(updated.answers, { q1: 5 });
   });
 
-  it("AC-09: eligibility evaluation returns Eligible with reason after feedback", async () => {
+  it("AC-09 / BR-18 / BR-19: eligibility evaluation returns Eligible with reason after feedback", async () => {
     const { event, participantId } = await createCompletedEventWithAttendee();
 
     await feedbackService.submit(
@@ -281,7 +281,7 @@ describe("feedback and eligibility integration (FR-19, BR-15, BR-16)", () => {
     assert.ok(result.evaluatedAt);
   });
 
-  it("AC-09: eligibility is NotEligible when mandatory feedback is missing", async () => {
+  it("AC-09 / BR-18 / BR-19: eligibility is NotEligible when mandatory feedback is missing", async () => {
     const { event, participantId } = await createCompletedEventWithAttendee({
       feedbackRequired: true,
     });
@@ -299,7 +299,7 @@ describe("feedback and eligibility integration (FR-19, BR-15, BR-16)", () => {
     );
   });
 
-  it("AC-10: organizer can list eligibility with reasons", async () => {
+  it("AC-10 / FR-21 / BR-18 / BR-19: organizer can list eligibility with reasons", async () => {
     const { event, participantId, registrationId } =
       await createCompletedEventWithAttendee();
 
@@ -328,7 +328,7 @@ describe("feedback and eligibility integration (FR-19, BR-15, BR-16)", () => {
     assert.ok(entry.eligibility.reasonText);
   });
 
-  it("admin can revoke eligible participant with reason", async () => {
+  it("FR-21 / BR-20: admin can revoke eligible participant with reason", async () => {
     const { event, participantId, registrationId } =
       await createCompletedEventWithAttendee();
 

@@ -17,12 +17,30 @@
     }
   },
   "$defs": {
+    "technique": {
+      "type": "string",
+      "enum": [
+        "scenario-matrix",
+        "flow-a",
+        "flow-b",
+        "flow-c",
+        "module-integration",
+        "http-contract",
+        "rbac-negative",
+        "pagination",
+        "state-transition",
+        "browser-journey",
+        "concurrency",
+        "boundary-error"
+      ]
+    },
     "testCase": {
       "type": "object",
       "required": [
         "id",
         "category",
         "layer",
+        "technique",
         "priority",
         "traceability",
         "title",
@@ -42,6 +60,7 @@
           "type": "string",
           "enum": ["unit", "integration", "e2e", "browser"]
         },
+        "technique": { "$ref": "#/$defs/technique" },
         "priority": { "type": "string", "enum": ["P0", "P1", "P2"] },
         "traceability": {
           "type": "array",
