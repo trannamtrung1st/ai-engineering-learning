@@ -175,7 +175,7 @@ AIH_SKIP_AGENT=1 AIH_SKIP_REVIEW=1 npm run aih:once
 1. Pick next requirement tag from backlog `acceptance` union where `test-case-index.json` is not current
 2. `check-test-case-drift.sh` compares doc fingerprint (from `testgen-docs-map.json`) per tag
 3. `build-prompt.sh testgen <tag>` injects into `testgen.prompt.md`
-4. `agent -p --force` writes `test-cases/items/<tag>.json`
+4. `agent -p --force` writes `docs/test-cases/items/<tag>.json`
 5. `validate-test-cases.sh` — schema + traceability
 6. `sync-test-cases-to-backlog.sh` — updates slices whose `acceptance` includes the tag
 7. Tag marked current in `test-case-index.json`; optional git commit (TestGen-owned paths only — test case artifact, index, backlog sync, progress)
@@ -235,7 +235,7 @@ On a docs-only repo (no `apps/`), `npm run aih:check` passes without code-qualit
 - `ai-harness/workflows/testgen-loop.json` — TestGen loop policy
 - `ai-harness/config/testgen-docs-map.json` — doc resolution rules per requirement tag
 - `ai-harness/test-case-index.json` — slim generation state (current, fingerprint)
-- `ai-harness/test-cases/items/` — generated test case artifacts per tag
+- `docs/test-cases/items/` — generated test case artifacts per tag
 - `ai-harness/config/context-map.json` — which docs to read per slice
 - `ai-harness/state/guardrails.md` — lessons (Ralph Signs)
 - `ai-harness/HARNESS-DESIGN.md` — component index

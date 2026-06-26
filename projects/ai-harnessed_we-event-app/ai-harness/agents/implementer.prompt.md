@@ -21,7 +21,7 @@ You are the We Event implementer. Work **one backlog slice** per session.
 
 ## Testing
 
-The harness maintains structured test cases per **requirement tag** in `ai-harness/test-cases/items/<tag>.json`. Tags are discovered from slice `acceptance` in the backlog; docs are resolved via `ai-harness/config/testgen-docs-map.json`.
+The harness maintains structured test cases per **requirement tag** in `docs/test-cases/items/<tag>.json`. Tags are discovered from slice `acceptance` in the backlog; docs are resolved via `ai-harness/config/testgen-docs-map.json`.
 
 When test case artifacts exist for a tag, **treat them as the authoritative checklist** for integration and e2e verification (browser cases are exercised by the browser tester gate). When an artifact is absent (TestGen has not run yet), implement from slice docs and acceptance tags. To re-run a slice after TestGen catches up, a human sets `passes: false` for that slice in `whole-app-backlog.json`.
 
@@ -31,7 +31,7 @@ Before signaling `SLICE_DONE`, all applicable layers must pass locally:
 - `npm run test:integration` — backend slices with DB behavior (`apps/api`)
 - `npm run test:e2e` — acceptance/scenario slices (`tests/e2e`)
 
-Read the generated test case artifacts for each product item in this slice's `acceptance` list when present (`ai-harness/test-cases/items/<AC|FR|BR|NFR-id>.json`). Every case with `layer` of `integration` or `e2e` must have its `traceability` tags covered in colocated test files.
+Read the generated test case artifacts for each product item in this slice's `acceptance` list when present (`docs/test-cases/items/<AC|FR|BR|NFR-id>.json`). Every case with `layer` of `integration` or `e2e` must have its `traceability` tags covered in colocated test files.
 
 **Unit and component tests** are implementer-written: colocated `*.test.ts` / `*.test.tsx`, listed under `testRequirements.unit` / `component`, and must reference acceptance tags.
 

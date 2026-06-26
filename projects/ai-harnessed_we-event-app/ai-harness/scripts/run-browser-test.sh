@@ -121,7 +121,7 @@ ${artifacts_list:-_(none listed)_}
 
 ${acceptance_tags:-_(none listed)_}
 
-## Generated browser test cases (mandatory — from test-cases/items/<tag>.json via acceptance)
+## Generated browser test cases (mandatory — from docs/test-cases/items/<tag>.json via acceptance)
 
 ${generated_browser_cases:-_(no browser-layer cases in current artifacts for this slice — derive scenarios from acceptance tags, slice description, and docs above)_}
 

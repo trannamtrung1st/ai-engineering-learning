@@ -289,3 +289,5 @@ Lessons learned across harness iterations. Read before every implementer session
 - [NFR-14] Docs changed — test cases need review (index current=false; fingerprint=sha256:ef8af7610faaa1ef09c735d42be44aaef001ee9a0ac07cfabd9a39a68dee1931)
 - [NFR-14] TestGen policy: artifact contained forbidden layer unit — regenerate without unit cases
 - [FR-08] Test case validation failed after enhance — see 20260626T160227Z-testgen-enhance.txt
+- [FR-09] TestGen agent did not emit TESTGEN_DONE
+- [FR-09] Docs changed — test cases need review (index current=false; fingerprint=sha256:f601725c26e22adca80d48f9fae45d3bcf9dc70f757edfc29c65352770d3803e)

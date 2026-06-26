@@ -14,7 +14,7 @@ MODELS_CONFIG="${HARNESS_ROOT}/config/models.json"
 CONTEXT_MAP="${HARNESS_ROOT}/config/context-map.json"
 STATE_DIR="${HARNESS_ROOT}/state"
 RUNS_DIR="${HARNESS_ROOT}/generated/runs"
-TEST_CASES_DIR="${HARNESS_ROOT}/test-cases"
+TEST_CASES_DIR="${REPO_ROOT}/docs/test-cases"
 PREVIEW_PID_FILE="${RUNS_DIR}/preview-stack.pids"
 PREVIEW_AUX_PID_FILE="${RUNS_DIR}/preview-aux.pids"
 PREVIEW_WEB_LOG="${RUNS_DIR}/preview-web.log"
@@ -277,7 +277,7 @@ mark_slice_passed() {
 
 test_case_artifact_path() {
   local requirement_tag="$1"
-  printf 'ai-harness/test-cases/items/%s.json' "$requirement_tag"
+  printf 'docs/test-cases/items/%s.json' "$requirement_tag"
 }
 
 test_case_artifact_abs() {
@@ -287,7 +287,7 @@ test_case_artifact_abs() {
 
 test_case_stale_artifact_path() {
   local requirement_tag="$1"
-  printf 'ai-harness/test-cases/items/%s.stale.json' "$requirement_tag"
+  printf 'docs/test-cases/items/%s.stale.json' "$requirement_tag"
 }
 
 test_case_stale_artifact_abs() {

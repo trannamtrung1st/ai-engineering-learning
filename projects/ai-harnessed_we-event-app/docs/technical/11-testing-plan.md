@@ -91,7 +91,7 @@ Test cases are organized by **requirement tag** (AC/FR/BR/NFR) derived from the 
 |---|---|
 | Doc resolution rules | `ai-harness/config/testgen-docs-map.json` |
 | Generation state | `ai-harness/test-case-index.json` |
-| Per-tag test cases | `ai-harness/test-cases/items/<tag>.json` |
+| Per-tag test cases | `docs/test-cases/items/<tag>.json` |
 
 The work queue is the union of all `acceptance` tags in `whole-app-backlog.json`. Docs are the authority (`docs/brds/`, `docs/technical/11-testing-plan.md`); harness rules map each tag to which doc files to read.
 

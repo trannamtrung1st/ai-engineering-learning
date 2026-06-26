@@ -12,7 +12,7 @@ Concise index for the 12 harness components. Referenced by `docs/technical/13-do
 | Tools | Cursor CLI (`agent -p --force`) + Playwright MCP on frontend/test slices |
 | Workflow | `workflows/ralph-loop.json`, `workflows/testgen-loop.json` |
 | Memory/State | `state/progress.md`, `state/guardrails.md`, `whole-app-backlog.json` (in `ai-harness/`) |
-| Test cases | `config/testgen-docs-map.json`, `test-case-index.json`, `test-cases/items/<tag>.json` |
+| Test cases | `config/testgen-docs-map.json`, `test-case-index.json`, `docs/test-cases/items/<tag>.json` |
 | Validation | `scripts/run-checks.sh` — layered tests; `scripts/run-browser-test.sh` — Playwright MCP gate |
 | TestGen | `scripts/testgen-loop.sh`, `scripts/check-test-case-drift.sh` — docs-driven catalog per requirement tag |
 | Guardrails | `state/guardrails.md` + forbidden patterns in `ralph-loop.json` |
