@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-13",
   "version": 1,
-  "docFingerprint": "sha256:e2dfbabeeed703c3e91f7927502130070273c2e29f7eb78b92608b58e3a599e7",
-  "generatedAt": "2026-06-26T16:30:00Z",
+  "docFingerprint": "sha256:8fc81cab4e7b769ab81d7f566d602cbb40696b9b602ef66c13fdf3a69a441ddf",
+  "generatedAt": "2026-06-26T17:00:46Z",
   "cases": [
     {
       "id": "TC-FR-13-001",
@@ -20,13 +20,13 @@
       "preconditions": [
         "Event is InProgress with check-in window active (current time between checkinOpenAt and checkinCloseAt)",
         "Participant has registration in Registered state with no prior valid check-in",
-        "Authenticated OrganizerStaff actor assigned to the event with check-in capability"
+        "Authenticated OrganizerStaff or OrganizerAdmin actor with check-in capability for the event"
       ],
       "steps": [
         "Invoke checkinService.staffCheckin(eventId, { registrationId }, staffActorContext) at a fixed in-window time",
         "Query checkin_records and registration state for the participant"
       ],
-      "expected": "Testing-plan §3 row satisfied: check-in is stored with non-null checkinAt ISO timestamp; registration transitions to CheckedIn; method Staff and operatorId persisted per BR-13",
+      "expected": "Testing-plan §3 row satisfied: check-in is stored with non-null checkinAt ISO timestamp; registration transitions to CheckedIn; audit metadata (actor, method Staff, operatorId) persisted per BR-13",
       "edgeCase": false
     },
     {
@@ -103,7 +103,7 @@
         "POST /api/v1/events/{eventId}/checkins with body { registrationId } and staff Authorization bearer token",
         "GET /api/v1/events/{eventId}/attendance?page=1&pageSize=20 and locate the participant row"
       ],
-      "expected": "POST returns HTTP 200 with non-null checkinAt timestamp, registrationState CheckedIn, participantId, and method Staff; attendance list includes the participant with matching checkinAt",
+      "expected": "POST returns HTTP 200 with non-null checkinAt timestamp, registrationState CheckedIn, participantId, and method Staff; attendance list includes the participant with matching checkinAt sorted by checkinAt:desc",
       "edgeCase": false
     },
     {
@@ -148,10 +148,11 @@
       ],
       "steps": [
         "Open organizer check-in operations console for the assigned event (Flow 3 step 1)",
+        "Verify check-in window summary and paginated participant row list per listing UX matrix",
         "Identify registered participant and trigger staff check-in action (Flow 3 step 2)",
         "Verify row updates in console and/or attendance history (Flow 3 steps 4–5)"
       ],
-      "expected": "Console shows check-in success for the participant with recorded time; participant row reflects checked-in status immediately without manual page reload beyond normal client refresh",
+      "expected": "Console shows check-in success for the participant with recorded time; participant row reflects checked-in status immediately without manual page reload beyond normal client refresh; pagination control present below row list",
       "edgeCase": false
     },
     {
@@ -187,9 +188,10 @@
       "traceability": [
         "FR-13",
         "AC-05",
+        "AC-13",
         "FR-30"
       ],
-      "title": "Staff check-in appears in paginated attendance list for authorized event scope",
+      "title": "Staff check-in appears in paginated attendance list sorted by checkinAt descending",
       "preconditions": [
         "Successful staff check-in recorded for a Registered participant",
         "OrganizerStaff or OrganizerAdmin authorized for the event"
@@ -198,7 +200,7 @@
         "GET /api/v1/events/{eventId}/attendance?page=1&pageSize=20 with authorized token",
         "Locate the checked-in participant row and inspect paginated envelope metadata"
       ],
-      "expected": "Attendance list includes participant with checkinAt, method Staff, and CheckedIn registration state; paginated envelope returns valid items, total, page, pageSize, and totalPages metadata",
+      "expected": "Attendance list includes participant with checkinAt, method Staff, and CheckedIn registration state; items sorted by checkinAt descending per API default sort; paginated envelope returns valid items, total, page, pageSize, and totalPages metadata",
       "edgeCase": false
     },
     {
@@ -398,9 +400,10 @@
       "traceability": [
         "FR-13",
         "NFR-13",
+        "NFR-15",
         "BR-10"
       ],
-      "title": "Failed staff check-in returns immediate reason code not generic error",
+      "title": "Failed staff check-in returns immediate reason code with standard error envelope",
       "preconditions": [
         "Registered participant on event with closed check-in window",
         "OrganizerStaff JWT with event scope",
@@ -410,7 +413,7 @@
         "POST /api/v1/events/{eventId}/checkins while outside the configured window",
         "Parse error envelope from response"
       ],
-      "expected": "Synchronous HTTP 422 (or 409) with error.code CHECKIN_WINDOW_CLOSED and user-safe message including window bounds in details; satisfies NFR-13 immediate feedback with explicit failure reason",
+      "expected": "Synchronous HTTP 422 (or 409) with error.code CHECKIN_WINDOW_CLOSED, user-safe message, details.checkinOpenAt and details.checkinCloseAt ISO timestamps, non-empty requestId, and timestamp per error-handling §3 standard envelope; satisfies NFR-13 immediate feedback with explicit failure reason",
       "edgeCase": false
     },
     {
