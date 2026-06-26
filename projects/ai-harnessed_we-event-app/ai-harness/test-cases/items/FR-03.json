@@ -2,12 +2,13 @@
   "productItemId": "FR-03",
   "version": 1,
   "docFingerprint": "sha256:f44c92d5b8e8208272ca20445a8ed22605865e55c323b1677af54c0c2242f917",
-  "generatedAt": "2026-06-26T05:00:00Z",
+  "generatedAt": "2026-06-26T11:57:34Z",
   "cases": [
     {
       "id": "TC-FR-03-001",
       "category": "functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["FR-03"],
       "title": "Organizer Admin sets registration open/close timing during event creation in Draft",
@@ -17,16 +18,17 @@
         "Other ruleConfig fields (capacity, check-in, feedback windows) are chronologically consistent"
       ],
       "steps": [
-        "Invoke eventService.create with name, basic fields, and ruleConfig including registrationOpenAt and registrationCloseAt",
+        "Invoke eventService.create with name, basic fields, and ruleConfig including registrationOpenAt and registrationCloseAt within a real DB transaction",
         "Read persisted event_rule_configs row linked to the new event"
       ],
-      "expected": "Event is created in Draft state; event_rule_configs.registration_open_at and registration_close_at equal the configured values; satisfies Workflow A step 2 (admin configures EventRuleConfig including registration window)",
+      "expected": "Event is created in Draft state; event_rule_configs.registration_open_at and registration_close_at equal the configured values; satisfies Workflow A step 2 (admin configures EventRuleConfig including registration window) and Event Module rule config ownership",
       "edgeCase": false
     },
     {
       "id": "TC-FR-03-002",
       "category": "functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
       "traceability": ["FR-03"],
       "title": "POST /events persists registration window and GET detail returns it",
@@ -38,13 +40,14 @@
         "POST /api/v1/events with Authorization bearer and ruleConfig registration window fields in JSON body",
         "GET /api/v1/events/{eventId} with the same organizer token"
       ],
-      "expected": "POST returns HTTP 200 with ruleConfig.registrationOpenAt and ruleConfig.registrationCloseAt in the entity snapshot; GET detail returns the same registration window values on the linked EventRuleConfig",
+      "expected": "POST returns HTTP 200 with ruleConfig.registrationOpenAt and ruleConfig.registrationCloseAt in the entity snapshot; GET detail returns HTTP 200 with the same registration window values on the linked EventRuleConfig per API design §2.1 Event Management",
       "edgeCase": false
     },
     {
       "id": "TC-FR-03-003",
       "category": "functional",
       "layer": "integration",
+      "technique": "state-transition",
       "priority": "P0",
       "traceability": ["FR-03"],
       "title": "Organizer Admin updates registration window on Draft event without audit reason",
@@ -54,16 +57,18 @@
         "Registration has not yet been opened (event state Published or Draft)"
       ],
       "steps": [
+        "Record event_rule_configs.registration_open_at and registration_close_at before update (beforeState)",
         "Invoke eventService.update(eventId, { ruleConfig: { registrationOpenAt: newOpen, registrationCloseAt: newClose } }, organizerAdminContext)",
-        "Read event_rule_configs.registration_open_at and registration_close_at for the event"
+        "Read event_rule_configs.registration_open_at and registration_close_at after update (afterState)"
       ],
-      "expected": "Update succeeds without mandatory reason payload; persisted registration_open_at and registration_close_at reflect the new values; no AUDIT_REQUIRED_FOR_CRITICAL_CHANGE error because registration is not yet open",
+      "expected": "Update succeeds without mandatory reason payload; afterState reflects newOpen and newClose; no AUDIT_REQUIRED_FOR_CRITICAL_CHANGE error because registration is not yet open",
       "edgeCase": false
     },
     {
       "id": "TC-FR-03-004",
       "category": "functional",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["FR-03"],
       "title": "Organizer Admin configures registration window in event setup Section 3",
@@ -76,33 +81,37 @@
         "In Section 3 (registration window), enter registration open and close date/time values",
         "Save draft and open event detail or edit view"
       ],
-      "expected": "UI persists and displays the entered registration open and close times on event detail or edit form; Section 3 registration window fields are editable by Organizer Admin per forms layout",
+      "expected": "UI persists and displays the entered registration open and close times on event detail or edit form; Section 3 registration window fields are editable by Organizer Admin per forms layout §Section 3",
       "edgeCase": false
     },
     {
       "id": "TC-FR-03-005",
       "category": "functional",
-      "layer": "unit",
-      "priority": "P1",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
       "traceability": ["FR-03"],
-      "title": "TimeWindow value object accepts registration openAt strictly before closeAt",
+      "title": "Flow A lifecycle uses configured registration window after open-registration",
       "preconditions": [
-        "Pure validator input for TimeWindow or ruleConfig registration window fields",
-        "registrationOpenAt and registrationCloseAt as valid ISO-8601 with openAt < closeAt"
+        "OrganizerAdmin JWT",
+        "E2E fixture: Draft event created with registrationOpenAt and registrationCloseAt suitable for Flow A",
+        "Fixed clock within configured registration window"
       ],
       "steps": [
-        "Validate TimeWindow with openAt 2026-07-01T08:00:00Z and closeAt 2026-07-15T23:59:59Z"
+        "POST /api/v1/events/{eventId}/publish then POST /api/v1/events/{eventId}/open-registration",
+        "POST /api/v1/events/{eventId}/registrations as participant while inside configured window"
       ],
-      "expected": "Validation passes; normalized TimeWindow returned per domain model rule openAt < closeAt and database constraint registration/check-in/feedback windows all have open < close",
+      "expected": "Event transitions Published → RegistrationOpen; participant registration succeeds only when current time falls within admin-configured registrationOpenAt/registrationCloseAt; Flow A draft → publish → open registration → register proceeds using FR-03 configuration",
       "edgeCase": false
     },
     {
       "id": "TC-FR-03-006",
       "category": "functional",
       "layer": "integration",
+      "technique": "flow-c",
       "priority": "P0",
       "traceability": ["FR-03", "BR-22", "AC-11"],
-      "title": "Post-registration-open registration window change with reason updates EventRuleConfig",
+      "title": "Post-registration-open registration window change with reason updates EventRuleConfig and audit",
       "preconditions": [
         "Event published and RegistrationOpen with initial registrationOpenAt and registrationCloseAt",
         "Authenticated OrganizerAdmin actor",
@@ -113,16 +122,17 @@
         "Read event_rule_configs.registration_close_at and version for the event",
         "Query audit logs for entityType EventRuleConfig"
       ],
-      "expected": "Update succeeds; registration_close_at persisted as extendedClose; event_rule_configs.version incremented; audit record written with before/after registration window values, actor, and reason per BR-22 and INV-06",
+      "expected": "Update succeeds; registration_close_at persisted as extendedClose; event_rule_configs.version incremented; audit record written with before/after registration window values, actor, and reason per BR-22 and INV-06; satisfies Flow C critical config change verification",
       "edgeCase": false
     },
     {
       "id": "TC-FR-03-007",
       "category": "functional",
       "layer": "e2e",
+      "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["FR-03", "BR-02", "FR-05"],
-      "title": "Configured registration window gates participant registration acceptance",
+      "traceability": ["FR-03", "BR-02", "AC-01"],
+      "title": "Testing-plan §3 register-with-seat scenario requires registration window open",
       "preconditions": [
         "Event RegistrationOpen with registrationOpenAt and registrationCloseAt configured",
         "Fixed clock set to a time strictly between openAt and closeAt",
@@ -131,32 +141,35 @@
       ],
       "steps": [
         "POST /api/v1/events/{eventId}/registrations with participant JWT while current time is inside the configured window",
-        "Verify response state"
+        "Verify response state is Registered"
       ],
-      "expected": "Registration succeeds with state Registered; configured registrationOpenAt/registrationCloseAt are the authoritative window enforced by BR-02 registration pipeline step 2 (event state and registration window)",
+      "expected": "Registration succeeds with state Registered; cross-walks testing-plan §3 row 'Register with available seat' (AC-01, BR-03) which depends on BR-02 registration window gate; admin-configured registrationOpenAt/registrationCloseAt are authoritative",
       "edgeCase": false
     },
     {
       "id": "TC-FR-03-008",
-      "category": "edge",
-      "layer": "unit",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
       "traceability": ["FR-03"],
-      "title": "Registration window validator rejects registrationOpenAt on or after registrationCloseAt",
+      "title": "PATCH /events/{eventId} updates registration window on Draft event",
       "preconditions": [
-        "CreateEventInput or UpdateEventInput with ruleConfig where registrationOpenAt >= registrationCloseAt",
-        "All other fields otherwise valid"
+        "Draft event with EventRuleConfig registrationOpenAt and registrationCloseAt configured",
+        "OrganizerAdmin JWT authorized for eventId"
       ],
       "steps": [
-        "Call ruleConfig or TimeWindow validation with registrationOpenAt equal to or later than registrationCloseAt"
+        "PATCH /api/v1/events/{eventId} with JSON body { \"ruleConfig\": { \"registrationOpenAt\": \"2026-08-01T08:00:00Z\", \"registrationCloseAt\": \"2026-08-15T23:59:59Z\" } }",
+        "GET /api/v1/events/{eventId} with OrganizerAdmin Authorization bearer"
       ],
-      "expected": "ApiError thrown with code INVALID_INPUT or semantic 422 indicating openAt must be before closeAt; no event_rule_configs row created or updated with invalid window; violates TimeWindow invariant openAt < closeAt",
-      "edgeCase": true
+      "expected": "PATCH returns HTTP 200 with updated ruleConfig.registrationOpenAt and ruleConfig.registrationCloseAt in response snapshot; GET returns HTTP 200 confirming persisted registration window per API design §2.1",
+      "edgeCase": false
     },
     {
       "id": "TC-FR-03-009",
       "category": "edge",
       "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["FR-03", "BR-21", "FR-25"],
       "title": "OrganizerStaff and Participant cannot configure registration timing",
@@ -169,13 +182,14 @@
         "PATCH /api/v1/events/{eventId} with OrganizerStaff bearer token and registration window change",
         "PATCH /api/v1/events/{eventId} with Participant bearer token and registration window change"
       ],
-      "expected": "Both requests return HTTP 403 unauthorized; registration_open_at and registration_close_at remain unchanged; permission matrix Configure rules/capacity/windows is OrganizerAdmin only (BR-21)",
+      "expected": "Both requests return HTTP 403 unauthorized; registration_open_at and registration_close_at remain unchanged; permission matrix Configure rules/capacity/windows is OrganizerAdmin only per roles-permissions §2 (BR-21)",
       "edgeCase": true
     },
     {
       "id": "TC-FR-03-010",
       "category": "edge",
       "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["FR-03", "FR-25"],
       "title": "Unauthenticated registration timing configuration is rejected",
@@ -194,6 +208,7 @@
       "id": "TC-FR-03-011",
       "category": "edge",
       "layer": "integration",
+      "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["FR-03", "BR-22"],
       "title": "Post-open registration window change without reason is rejected",
@@ -213,6 +228,7 @@
       "id": "TC-FR-03-012",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["FR-03", "BR-02"],
       "title": "Registration rejected before configured registrationOpenAt",
@@ -224,13 +240,14 @@
       "steps": [
         "POST /api/v1/events/{eventId}/registrations with participant JWT"
       ],
-      "expected": "HTTP 422 semantic rule violation with code REGISTRATION_WINDOW_CLOSED; no registration row created in Registered or Waitlisted state; API guardrail reject registration when outside registration window upheld",
+      "expected": "HTTP 422 semantic rule violation with code REGISTRATION_WINDOW_CLOSED; no registration row created in Registered or Waitlisted state; API guardrail reject registration when outside registration window upheld per validation rules BR-02",
       "edgeCase": true
     },
     {
       "id": "TC-FR-03-013",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["FR-03", "BR-02"],
       "title": "Registration rejected after configured registrationCloseAt",
@@ -248,26 +265,27 @@
     {
       "id": "TC-FR-03-014",
       "category": "edge",
-      "layer": "unit",
-      "priority": "P1",
-      "traceability": ["FR-03", "BR-02"],
-      "title": "Registration window boundary: inclusive openAt and exclusive or inclusive closeAt per domain policy",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-03"],
+      "title": "Create or PATCH rejects registrationOpenAt on or after registrationCloseAt",
       "preconditions": [
-        "EventRuleConfig with registrationOpenAt T1 and registrationCloseAt T2",
-        "Fixed clock abstraction available for deterministic time-window tests per testing plan section 7"
+        "OrganizerAdmin JWT",
+        "Payload with ruleConfig where registrationOpenAt >= registrationCloseAt; all other fields otherwise valid"
       ],
       "steps": [
-        "Evaluate canRegister (or equivalent) at exactly T1 (registration open boundary)",
-        "Evaluate canRegister at exactly T2 (registration close boundary)",
-        "Compare outcomes against documented TimeWindow semantics"
+        "POST /api/v1/events with invalid registration window (openAt >= closeAt)",
+        "PATCH /api/v1/events/{eventId} with invalid registration window on Draft event"
       ],
-      "expected": "At T1 registration is permitted when event state is RegistrationOpen and other guards pass; at T2 registration is rejected with REGISTRATION_WINDOW_CLOSED unless domain explicitly defines inclusive close; boundary behavior is deterministic and documented",
+      "expected": "HTTP 400 or 422 with code INVALID_INPUT indicating openAt must be before closeAt; no event_rule_configs row created or updated with invalid window; violates TimeWindow invariant openAt < closeAt per database design",
       "edgeCase": true
     },
     {
       "id": "TC-FR-03-015",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["FR-03"],
       "title": "Create or PATCH rejects malformed ISO-8601 registration window timestamps",
@@ -279,13 +297,14 @@
         "POST /api/v1/events with invalid registrationOpenAt or registrationCloseAt",
         "PATCH /api/v1/events/{eventId} with invalid registration window timestamp"
       ],
-      "expected": "HTTP 400 with code INVALID_INPUT and field-level details; no event_rule_configs row created or updated with malformed timestamps; API strict input validation before domain execution",
+      "expected": "HTTP 400 with code INVALID_INPUT and field-level details; no event_rule_configs row created or updated with malformed timestamps; API strict input validation before domain execution per §5",
       "edgeCase": true
     },
     {
       "id": "TC-FR-03-016",
       "category": "edge",
       "layer": "integration",
+      "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["FR-03"],
       "title": "Cross-field validation rejects registration window conflicting with event start/end",
@@ -303,8 +322,9 @@
     },
     {
       "id": "TC-FR-03-017",
-      "category": "non-functional",
+      "category": "functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["FR-03", "BR-02"],
       "title": "Configured registration window is enforced by registration module validation pipeline",
@@ -313,16 +333,17 @@
         "Registration module receives request when fixed clock is outside the window"
       ],
       "steps": [
-        "Invoke registrationService.register with participant outside the configured window",
-        "Verify no state transition to Registered or Waitlisted occurs"
+        "Invoke registrationService.register with participant outside the configured window within a real DB transaction",
+        "Verify no state transition to Registered or Waitlisted occurs and no registration row is committed"
       ],
       "expected": "Registration pipeline step 2 (event state and registration window) fails before dedup and capacity checks; REGISTRATION_WINDOW_CLOSED returned; admin-configured timing is the authoritative gate for BR-02",
       "edgeCase": false
     },
     {
       "id": "TC-FR-03-018",
-      "category": "non-functional",
+      "category": "functional",
       "layer": "integration",
+      "technique": "state-transition",
       "priority": "P1",
       "traceability": ["FR-03", "BR-22"],
       "title": "Critical registration window change increments event_rule_configs.version",
@@ -331,48 +352,52 @@
         "OrganizerAdmin actor with valid reason payload"
       ],
       "steps": [
-        "Record event_rule_configs.version before update",
+        "Record event_rule_configs.version before update (beforeState)",
         "Update registrationCloseAt with reasonCode and reasonText",
-        "Read version after commit"
+        "Read version after commit (afterState)"
       ],
-      "expected": "event_rule_configs.version increments by 1 on successful critical registration window change; supports configuration version history per database design and BR-22",
+      "expected": "afterState version equals beforeState version + 1 on successful critical registration window change; supports configuration version history per database design and BR-22",
       "edgeCase": false
     },
     {
       "id": "TC-FR-03-019",
-      "category": "non-functional",
-      "layer": "unit",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-03"],
-      "title": "Registration window tests use fixed clock abstraction for determinism",
+      "traceability": ["FR-03", "BR-02"],
+      "title": "Registration window boundary: openAt inclusive and closeAt exclusive per domain policy",
       "preconditions": [
-        "Test harness provides injectable clock or time provider",
-        "EventRuleConfig with registrationOpenAt and registrationCloseAt at known offsets from epoch"
+        "EventRuleConfig with registrationOpenAt T1 and registrationCloseAt T2",
+        "Fixed clock abstraction available for deterministic time-window tests per testing plan §7"
       ],
       "steps": [
-        "Run registration window validator unit tests with clock frozen before open, inside window, and after close",
-        "Repeat same inputs and verify identical outcomes across runs"
+        "Evaluate canRegister (or equivalent) at exactly T1 (registration open boundary)",
+        "Evaluate canRegister at exactly T2 (registration close boundary)",
+        "Compare outcomes against documented TimeWindow semantics"
       ],
-      "expected": "All window boundary assertions pass deterministically without flakiness; same inputs always produce the same validation outcome per testing plan section 7 deterministic test controls and section 5 determinism requirements",
-      "edgeCase": false
+      "expected": "At T1 registration is permitted when event state is RegistrationOpen and other guards pass; at T2 registration is rejected with REGISTRATION_WINDOW_CLOSED unless domain explicitly defines inclusive close; boundary behavior is deterministic and documented",
+      "edgeCase": true
     },
     {
       "id": "TC-FR-03-020",
       "category": "functional",
-      "layer": "e2e",
-      "priority": "P0",
-      "traceability": ["FR-03"],
-      "title": "Flow A lifecycle uses configured registration window after open-registration",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["FR-03", "BR-02", "FR-05"],
+      "title": "Participant sees registration closed messaging when outside configured window",
       "preconditions": [
-        "OrganizerAdmin JWT",
-        "E2E fixture: Draft event created with registrationOpenAt and registrationCloseAt suitable for Flow A",
-        "Fixed clock within configured registration window"
+        "Web app running with participant authenticated",
+        "Event detail page for RegistrationOpen event where fixed clock is after registrationCloseAt",
+        "Event has available capacity"
       ],
       "steps": [
-        "POST publish, then POST open-registration on the event",
-        "POST /api/v1/events/{eventId}/registrations as participant while inside configured window"
+        "Navigate to event detail page for the event",
+        "Observe registration action button or badge state",
+        "Attempt register action if exposed"
       ],
-      "expected": "Event transitions Published → RegistrationOpen; participant registration succeeds only when current time falls within admin-configured registrationOpenAt/registrationCloseAt; Flow A draft → publish → open registration → register proceeds using FR-03 configuration",
+      "expected": "UI shows registration closed state (badge or disabled register control) with concrete message such as 'Registration is closed for this event'; no successful registration occurs outside admin-configured window per forms UX microcopy policy",
       "edgeCase": false
     }
   ]
