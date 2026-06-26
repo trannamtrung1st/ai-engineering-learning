@@ -214,8 +214,10 @@
       },
       "description": "Check-in module: window validation, attendance linkage; paginated attendance list.",
       "browserTestScenarios": [
+        "Organizer staff check-in console blocks action when window is closed",
         "Organizer staff check-in console records participant with timestamp",
-        "Participant completes self check-in via UI and sees success with timestamp"
+        "Participant completes self check-in via UI and sees success with timestamp",
+        "Participant self check-in UI shows window-closed feedback when outside window"
       ]
     },
     {
@@ -605,12 +607,14 @@
       "description": "End-to-end scenario tests covering core acceptance matrix plus signup/login/logout, cover upload display, and badge color regression spot-checks.",
       "browserTestScenarios": [
         "Organizer capacity meter reflects Registered count never above configured capacity",
+        "Organizer staff check-in console blocks action when window is closed",
         "Organizer staff check-in console records participant with timestamp",
         "Participant UI blocks duplicate registration with clear feedback",
         "Participant completes self check-in via UI and sees success with timestamp",
         "Participant registers via UI and sees Registered status",
         "Participant registers via UI when seats are available",
-        "Participant sees Waitlisted status with queue position in UI"
+        "Participant sees Waitlisted status with queue position in UI",
+        "Participant self check-in UI shows window-closed feedback when outside window"
       ],
       "testRequirements": {
         "acceptanceTags": [
@@ -618,7 +622,8 @@
           "AC-02",
           "AC-03",
           "AC-04",
-          "AC-05"
+          "AC-05",
+          "AC-06"
         ]
       }
     }
