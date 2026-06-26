@@ -7,10 +7,7 @@ import {
   type UseQueryResult,
 } from "@tanstack/react-query";
 
-import {
-  LIVE_REFRESH_INTERVALS,
-  type LiveRefreshMode,
-} from "@/lib/query-config";
+import { getLiveQueryPolicy, type LiveRefreshMode } from "@/lib/query-config";
 
 type LiveQueryOptions<TData> = Omit<
   UseQueryOptions<TData, Error, TData, QueryKey>,
@@ -35,16 +32,13 @@ export function useLiveQuery<TData>({
   enabled = true,
   options,
 }: UseLiveQueryParams<TData>): UseQueryResult<TData, Error> {
-  const interval = LIVE_REFRESH_INTERVALS[mode];
+  const policy = getLiveQueryPolicy(mode);
 
   return useQuery({
     queryKey,
     queryFn,
     enabled,
-    refetchInterval: interval,
-    refetchIntervalInBackground: mode !== "checkInConsole",
-    refetchOnWindowFocus: true,
-    staleTime: Math.floor(interval / 2),
+    ...policy,
     ...options,
   });
 }

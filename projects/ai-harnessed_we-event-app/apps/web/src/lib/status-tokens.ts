@@ -7,7 +7,16 @@ export type DomainStatus =
   | "absent"
   | "eligible"
   | "notEligible"
-  | "pending";
+  | "pending"
+  | "cancelled"
+  | "draft"
+  | "published"
+  | "registrationOpen"
+  | "registrationClosed"
+  | "inProgress"
+  | "completed"
+  | "archived"
+  | "cancelledEvent";
 
 export const statusTokenMap: Record<
   DomainStatus,
@@ -53,4 +62,52 @@ export const statusTokenMap: Record<
     fg: "var(--color-status-pending-fg)",
     label: "Pending",
   },
+  cancelled: {
+    bg: "var(--color-status-cancelled)",
+    fg: "var(--color-status-cancelled-fg)",
+    label: "Cancelled",
+  },
+  draft: {
+    bg: "var(--color-status-draft)",
+    fg: "var(--color-status-draft-fg)",
+    label: "Draft",
+  },
+  published: {
+    bg: "var(--color-status-published)",
+    fg: "var(--color-status-published-fg)",
+    label: "Published",
+  },
+  registrationOpen: {
+    bg: "var(--color-status-registration-open)",
+    fg: "var(--color-status-registration-open-fg)",
+    label: "Registration open",
+  },
+  registrationClosed: {
+    bg: "var(--color-status-registration-closed)",
+    fg: "var(--color-status-registration-closed-fg)",
+    label: "Registration closed",
+  },
+  inProgress: {
+    bg: "var(--color-status-in-progress)",
+    fg: "var(--color-status-in-progress-fg)",
+    label: "In progress",
+  },
+  completed: {
+    bg: "var(--color-status-completed)",
+    fg: "var(--color-status-completed-fg)",
+    label: "Completed",
+  },
+  archived: {
+    bg: "var(--color-status-archived)",
+    fg: "var(--color-status-archived-fg)",
+    label: "Archived",
+  },
+  cancelledEvent: {
+    bg: "var(--color-status-cancelled-event)",
+    fg: "var(--color-status-cancelled-event-fg)",
+    label: "Event cancelled",
+  },
 };
+
+/** Every semantic status token declared in globals.css must have a map entry. */
+export const allDomainStatuses = Object.keys(statusTokenMap) as DomainStatus[];

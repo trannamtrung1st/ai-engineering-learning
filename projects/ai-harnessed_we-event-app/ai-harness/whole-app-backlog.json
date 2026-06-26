@@ -361,7 +361,7 @@
     },
     {
       "id": "web-design-system-shell",
-      "passes": false,
+      "passes": true,
       "priority": 30,
       "phase": 3,
       "agent": "frontend",
@@ -377,6 +377,20 @@
         "apps/web/src/app/layout.tsx",
         "apps/web/src/components"
       ],
+      "testRequirements": {
+        "unit": [
+          "apps/web/src/lib/query-config.test.ts",
+          "apps/web/src/lib/status-tokens.test.ts",
+          "apps/web/src/lib/app-context.test.ts"
+        ],
+        "component": [
+          "apps/web/src/components/ui/badge.test.tsx",
+          "apps/web/src/components/layout/app-shell.test.tsx"
+        ],
+        "acceptanceTags": [
+          "NFR-06"
+        ]
+      },
       "description": "Design tokens, AppShell, shared primitives — no feature pages yet."
     },
     {

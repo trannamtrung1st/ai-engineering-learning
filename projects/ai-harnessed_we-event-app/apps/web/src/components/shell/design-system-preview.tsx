@@ -5,20 +5,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SkeletonText } from "@/components/ui/skeleton";
-import { type DomainStatus } from "@/lib/status-tokens";
+import { allDomainStatuses } from "@/lib/status-tokens";
 
 import { LiveQueryStatus } from "./live-query-status";
-
-const domainStatuses: DomainStatus[] = [
-  "registered",
-  "waitlisted",
-  "rejected",
-  "attended",
-  "absent",
-  "eligible",
-  "notEligible",
-  "pending",
-];
 
 export function DesignSystemPreview() {
   return (
@@ -34,7 +23,7 @@ export function DesignSystemPreview() {
           Semantic badges pair icon and text — never color alone.
         </p>
         <div className="flex flex-wrap gap-2">
-          {domainStatuses.map((status) => (
+          {allDomainStatuses.map((status) => (
             <Badge key={status} status={status} />
           ))}
         </div>

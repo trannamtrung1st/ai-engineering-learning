@@ -59,3 +59,4 @@ Lessons learned across harness iterations. Read before every implementer session
 - [module-user-accounts] Computational checks failed — see 20260625T183152Z-checks.json
 - [module-user-accounts] Computational checks failed — see 20260625T191632Z-checks.json
 - [web-design-system-shell] Computational checks failed — see 20260625T193720Z-checks.json
+- [web-design-system-shell] AI review failed — see 20260626T014840Z-review.json

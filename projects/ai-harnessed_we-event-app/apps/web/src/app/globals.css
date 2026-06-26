@@ -38,6 +38,24 @@
   --color-status-not-eligible-fg: #ffffff;
   --color-status-pending: #6d28d9;
   --color-status-pending-fg: #ffffff;
+  --color-status-cancelled: #9f1239;
+  --color-status-cancelled-fg: #ffffff;
+  --color-status-draft: #475569;
+  --color-status-draft-fg: #ffffff;
+  --color-status-published: #1d4ed8;
+  --color-status-published-fg: #ffffff;
+  --color-status-registration-open: #15803d;
+  --color-status-registration-open-fg: #ffffff;
+  --color-status-registration-closed: #b45309;
+  --color-status-registration-closed-fg: #ffffff;
+  --color-status-in-progress: #0369a1;
+  --color-status-in-progress-fg: #ffffff;
+  --color-status-completed: #0f766e;
+  --color-status-completed-fg: #ffffff;
+  --color-status-archived: #64748b;
+  --color-status-archived-fg: #ffffff;
+  --color-status-cancelled-event: #7f1d1d;
+  --color-status-cancelled-event-fg: #ffffff;
 
   /* Typography */
   --font-family-base: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -205,5 +223,50 @@
   [data-domain-status="pending"] {
     --status-bg: var(--color-status-pending);
     --status-fg: var(--color-status-pending-fg);
+  }
+
+  [data-domain-status="cancelled"] {
+    --status-bg: var(--color-status-cancelled);
+    --status-fg: var(--color-status-cancelled-fg);
+  }
+
+  [data-domain-status="draft"] {
+    --status-bg: var(--color-status-draft);
+    --status-fg: var(--color-status-draft-fg);
+  }
+
+  [data-domain-status="published"] {
+    --status-bg: var(--color-status-published);
+    --status-fg: var(--color-status-published-fg);
+  }
+
+  [data-domain-status="registrationOpen"] {
+    --status-bg: var(--color-status-registration-open);
+    --status-fg: var(--color-status-registration-open-fg);
+  }
+
+  [data-domain-status="registrationClosed"] {
+    --status-bg: var(--color-status-registration-closed);
+    --status-fg: var(--color-status-registration-closed-fg);
+  }
+
+  [data-domain-status="inProgress"] {
+    --status-bg: var(--color-status-in-progress);
+    --status-fg: var(--color-status-in-progress-fg);
+  }
+
+  [data-domain-status="completed"] {
+    --status-bg: var(--color-status-completed);
+    --status-fg: var(--color-status-completed-fg);
+  }
+
+  [data-domain-status="archived"] {
+    --status-bg: var(--color-status-archived);
+    --status-fg: var(--color-status-archived-fg);
+  }
+
+  [data-domain-status="cancelledEvent"] {
+    --status-bg: var(--color-status-cancelled-event);
+    --status-fg: var(--color-status-cancelled-event-fg);
   }
 }

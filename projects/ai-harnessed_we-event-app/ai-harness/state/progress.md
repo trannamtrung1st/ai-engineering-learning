@@ -89,3 +89,6 @@ Append-only log of completed iterations.
 - 2026-06-25T19:37:20Z | module-event-cover-image | passed
 - 2026-06-26T19:58:36Z | web-design-system-shell | browser: homepage renders AppShell, all domain status badges, and NFR-06 live-query panel (HTTP 200)
 - 2026-06-26T01:31:49Z | web-design-system-shell | checks_failed
+- 2026-06-26T01:53:08Z | web-design-system-shell | browser: homepage HTTP 200 — AppShell, 17 domain status badges, NFR-06 live-query panel
+- 2026-06-26T01:57:10Z | web-design-system-shell | review_failed
+- 2026-06-26T02:00:19Z | web-design-system-shell | passed

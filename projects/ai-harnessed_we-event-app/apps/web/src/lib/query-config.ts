@@ -12,3 +12,15 @@ export const LIVE_REFRESH_INTERVALS = {
 } as const;
 
 export type LiveRefreshMode = keyof typeof LIVE_REFRESH_INTERVALS;
+
+/** NFR-06 — shared TanStack Query polling policy for live organizer surfaces. */
+export function getLiveQueryPolicy(mode: LiveRefreshMode) {
+  const refetchInterval = LIVE_REFRESH_INTERVALS[mode];
+
+  return {
+    refetchInterval,
+    refetchIntervalInBackground: mode !== "checkInConsole",
+    refetchOnWindowFocus: true,
+    staleTime: Math.floor(refetchInterval / 2),
+  } as const;
+}
