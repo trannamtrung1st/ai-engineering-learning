@@ -110,3 +110,4 @@ Append-only log of completed iterations.
 - 2026-06-26T04:11:28Z | AC-05 | testgen_passed
 - 2026-06-26T04:13:01Z | AC-06 | testgen_passed
 - 2026-06-26T04:14:05Z | AC-07 | testgen_passed
+- 2026-06-26T04:15:17Z | AC-08 | testgen_passed

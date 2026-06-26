@@ -73,7 +73,7 @@ prompt="$(./ai-harness/scripts/build-prompt.sh "$SLICE_ID" tester)"
 changed_files=""
 checks_summary=""
 artifacts_list=""
-browser_scenarios=""
+acceptance_tags=""
 slice_json="$(get_slice_json "$SLICE_ID")"
 
 if git rev-parse --git-dir >/dev/null 2>&1; then
@@ -82,7 +82,7 @@ fi
 
 checks_summary="$(find_checks_report_for_slice "$SLICE_ID" "$RUN_ID")"
 artifacts_list="$(echo "$slice_json" | jq -r '.completionArtifacts[]? | "- " + .' 2>/dev/null || true)"
-browser_scenarios="$(echo "$slice_json" | jq -r '.browserTestScenarios[]? | "- " + .' 2>/dev/null || true)"
+acceptance_tags="$(echo "$slice_json" | jq -r '.acceptance[]? | "- " + .' 2>/dev/null || true)"
 
 generated_browser_cases=""
 test_cases_json=""
@@ -117,13 +117,13 @@ ${changed_files:-_(none detected)_}
 
 ${artifacts_list:-_(none listed)_}
 
-## Explicit browser scenarios (if listed)
+## Slice acceptance tags (derive browser scenarios from artifacts when no browser cases below)
 
-${browser_scenarios:-_(none — use generated cases below)_}
+${acceptance_tags:-_(none listed)_}
 
-## Generated browser test cases (mandatory when listed)
+## Generated browser test cases (mandatory — from test-cases/items/<tag>.json via acceptance)
 
-${generated_browser_cases:-_(no current test case artifact — derive from acceptance tags)_}
+${generated_browser_cases:-_(no browser-layer cases in current artifacts for this slice — derive scenarios from acceptance tags, slice description, and docs above)_}
 
 ## Full test case artifact (reference)
 

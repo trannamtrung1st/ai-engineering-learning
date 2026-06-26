@@ -14,18 +14,11 @@ if [[ ! -f "$ARTIFACT" ]]; then
   exit 1
 fi
 
-browser_scenarios="$(jq -r '[.cases[] | select(.layer == "browser") | .title] | unique | .[]' "$ARTIFACT")"
-
 tmp="$(mktemp)"
-jq --arg ref "$PRODUCT_ITEM_ID" \
-  --argjson browser "$(jq -R -s 'split("\n") | map(select(length>0))' <<< "$browser_scenarios")" \
-  '
+jq --arg ref "$PRODUCT_ITEM_ID" '
   .slices |= map(
     if (.acceptance // [] | index($ref)) then
-      (if ($browser | length) > 0 then
-        .browserTestScenarios = ((.browserTestScenarios // []) + $browser | unique)
-      else . end)
-      | .testRequirements = (.testRequirements // {})
+      .testRequirements = (.testRequirements // {})
       | .testRequirements.acceptanceTags = (
           ((.testRequirements.acceptanceTags // []) + [$ref]) | unique
         )
