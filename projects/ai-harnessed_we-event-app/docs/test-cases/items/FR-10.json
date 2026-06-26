@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-10",
   "version": 1,
-  "docFingerprint": "sha256:027175175545d05eacf412663c601ddc7b622e4741a2ff40633c8e332b7bd6aa",
-  "generatedAt": "2026-06-26T14:30:00Z",
+  "docFingerprint": "sha256:f601725c26e22adca80d48f9fae45d3bcf9dc70f757edfc29c65352770d3803e",
+  "generatedAt": "2026-06-26T16:54:09Z",
   "cases": [
     {
       "id": "TC-FR-10-001",
@@ -46,7 +46,7 @@
         "POST /api/v1/events/{eventId}/registrations with Authorization bearer token",
         "GET /api/v1/events/{eventId}/registration-status for the same participant"
       ],
-      "expected": "POST returns state Registered; GET returns HTTP 200 with registration object whose state is Registered, registrationId matches POST response, and updatedAt is present; testing-plan §3 row Register with available seat → Registered reflected in near real-time status query",
+      "expected": "POST returns state Registered; GET returns HTTP 200 with registration object whose state is Registered, registrationId matches POST response, reasonCode null, reasonText null or omitted when not applicable, and updatedAt present; testing-plan §3 row Register with available seat → Registered reflected in near real-time status query",
       "edgeCase": false
     },
     {
@@ -57,6 +57,7 @@
       "priority": "P0",
       "traceability": [
         "FR-10",
+        "FR-10a",
         "AC-02",
         "FR-08"
       ],
@@ -70,7 +71,7 @@
         "POST /api/v1/events/{eventId}/registrations as the waitlisted participant",
         "GET /api/v1/events/{eventId}/registration-status for the same participant"
       ],
-      "expected": "GET returns registration with state Waitlisted and waitlistPosition reflecting queue order; status matches POST response body; testing-plan §3 row Register when full + waitlist enabled → Waitlisted satisfied via status endpoint",
+      "expected": "GET returns registration with state Waitlisted, waitlistPosition reflecting queue order, reasonCode null, reasonText null or omitted when not applicable, and updatedAt; status matches POST response body; testing-plan §3 row Register when full + waitlist enabled → Waitlisted satisfied via status endpoint",
       "edgeCase": false
     },
     {
@@ -95,7 +96,7 @@
         "Trigger cancellation and waitlist promotion for participant B",
         "GET registration-status for participant B after promotion completes"
       ],
-      "expected": "Initial status shows Waitlisted with queue position; subsequent GET shows state Registered with waitlistPosition cleared or null; participant B tracks promotion outcome without re-registering per Flow B step 5",
+      "expected": "Initial status shows Waitlisted with queue position; subsequent GET shows state Registered with waitlistPosition cleared or null and updatedAt refreshed after promotion; participant B tracks promotion outcome without re-registering per Flow B step 5",
       "edgeCase": false
     },
     {
@@ -119,7 +120,7 @@
         "POST check-in for the participant registration within the valid window",
         "GET registration-status for the participant"
       ],
-      "expected": "registration-status returns state CheckedIn (or equivalent post-check-in state per state machine); status reflects check-in write and registration state transition in one transaction",
+      "expected": "registration-status returns state CheckedIn (or equivalent post-check-in state per state machine) with refreshed updatedAt; status reflects check-in write and registration state transition in one transaction",
       "edgeCase": false
     },
     {
@@ -143,7 +144,7 @@
         "GET registration-status for participant with valid check-in",
         "GET registration-status for participant without check-in"
       ],
-      "expected": "Participant with valid check-in sees Attended; participant without check-in sees Absent; latest registration snapshot is returned (not filtered out as inactive) so post-event tracking remains available",
+      "expected": "Participant with valid check-in sees Attended; participant without check-in sees Absent; getStatus returns latest participant registration snapshot including terminal post-event states (not filtered by active-only lookup); post-event tracking remains available for feedback and eligibility flows",
       "edgeCase": false
     },
     {
@@ -164,9 +165,9 @@
       ],
       "steps": [
         "GET /api/v1/me/registrations?page=1&pageSize=20 with Authorization bearer token",
-        "Compare each item state to GET registration-status for the corresponding eventId"
+        "Compare each item state, reason text, and updatedAt to GET registration-status for the corresponding eventId"
       ],
-      "expected": "Paginated envelope returns items with registrationId, eventId, eventName, state, and updatedAt; each item state matches per-event registration-status; single API call per page with no N+1 fan-out per testing plan AC-14",
+      "expected": "Paginated envelope returns items with registrationId, eventId, eventName, state, reason text when applicable, waitlistPosition when Waitlisted, and updatedAt; each item matches per-event registration-status; single API call per page with no N+1 fan-out per testing plan AC-14",
       "edgeCase": false
     },
     {
@@ -188,7 +189,7 @@
         "GET /api/v1/events/{eventId}/registration-status with Authorization bearer token",
         "Inspect HTTP status and response body shape"
       ],
-      "expected": "HTTP 200 with registration object containing registrationId, eventId, participantId, state, updatedAt, and waitlistPosition when applicable; typed JSON envelope per API design §2.2",
+      "expected": "HTTP 200 with registration object containing registrationId, eventId, participantId, state, reasonCode, reasonText when applicable, updatedAt, and waitlistPosition when applicable; typed JSON envelope per API design §2.2",
       "edgeCase": false
     },
     {
@@ -210,7 +211,7 @@
         "Click Register on event detail page",
         "Observe registration status panel or badge after request completes"
       ],
-      "expected": "UI displays Registered status with positive confirmation; panel updates without full page reload; aligns with user Flow 1 steps 3–5 and wireframe registration status panel",
+      "expected": "UI displays Registered status with positive confirmation and latest updatedAt-driven refresh; reason text shown when applicable; panel updates without full page reload; aligns with user Flow 1 steps 3–5 and wireframe registration status panel",
       "edgeCase": false
     },
     {
@@ -233,7 +234,7 @@
         "Inspect registration status badge on registered event card",
         "Inspect registration status badge on unregistered event card"
       ],
-      "expected": "Registered event card shows Registered (or current state) instead of Not registered; unregistered card shows Not registered or equivalent neutral state; per-event status fetched for visible cards",
+      "expected": "Registered event card shows Registered (or current state) overlay instead of Not registered; unregistered card shows Not registered or equivalent neutral state; per-event status fetched for visible cards per FR-28",
       "edgeCase": false
     },
     {
@@ -254,9 +255,9 @@
       "steps": [
         "Complete registration via event detail flow",
         "Navigate to My Registrations page",
-        "Locate the event row and read displayed status"
+        "Locate the event row and read displayed status and reason text"
       ],
-      "expected": "My Registrations lists the event with state matching registration-status API; user Flow 1 step 6 satisfied — latest status visible in consolidated participant view",
+      "expected": "My Registrations lists the event with state, reason text when applicable, and updatedAt matching registration-status API; user Flow 1 step 6 satisfied — latest status visible in consolidated participant view per FR-29",
       "edgeCase": false
     },
     {
@@ -282,7 +283,7 @@
         "POST valid check-in for participant — GET registration-status — expect CheckedIn",
         "Complete event — GET registration-status — expect Attended"
       ],
-      "expected": "Each lifecycle milestone is reflected on the next status query without manual refresh beyond normal API poll; Flow A register → check-in → attendance finalization traceable via registration-status",
+      "expected": "Each lifecycle milestone is reflected on the next status query with refreshed updatedAt; Flow A register → check-in → attendance finalization traceable via registration-status",
       "edgeCase": false
     },
     {
@@ -304,7 +305,7 @@
       "steps": [
         "GET /api/v1/events/{eventId}/registration-status without bearer token"
       ],
-      "expected": "HTTP 401 with typed error envelope; registration data not exposed; auth required before sensitive participant data per NFR-07 and AC-15",
+      "expected": "HTTP 401 with typed error envelope; registration data not exposed; auth required before sensitive participant data per FR-10 rejections, NFR-07, and AC-15",
       "edgeCase": true
     },
     {
@@ -332,7 +333,7 @@
     {
       "id": "TC-FR-10-015",
       "category": "edge",
-      "layer": "integration",
+      "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
       "traceability": [
@@ -340,17 +341,17 @@
         "FR-26",
         "NFR-08"
       ],
-      "title": "registration-status returns only the current actor registration not other participants",
+      "title": "registration-status scoped to current actor returns 403 or 404 for another participant registration",
       "preconditions": [
         "Two distinct participants A and B registered for the same event",
         "Participant A authenticated context"
       ],
       "steps": [
-        "GET registration-status as participant A",
-        "GET registration-status as participant B",
-        "Attempt to pass participant B id in query or body if supported"
+        "GET /api/v1/events/{eventId}/registration-status as participant A",
+        "GET /api/v1/events/{eventId}/registration-status as participant B",
+        "If API accepts participantId query or body override, attempt to read participant B registration while authenticated as participant A"
       ],
-      "expected": "Each call returns only the requesting participant's registration snapshot; participantId in response matches token subject; FR-26 own-data scope enforced",
+      "expected": "Each authorized call returns only the requesting participant's registration snapshot with participantId matching token subject; cross-participant access attempt returns HTTP 403 or 404 per FR-10 rejections; FR-26 own-data scope enforced",
       "edgeCase": true
     },
     {
@@ -373,7 +374,7 @@
         "POST /api/v1/events/{eventId}/registrations/{registrationId}/cancel with valid Idempotency-Key",
         "GET /api/v1/events/{eventId}/registration-status"
       ],
-      "expected": "GET returns HTTP 200 with registration state CancelledByUser (or equivalent terminal cancel state); participant tracks cancellation outcome immediately after successful cancel",
+      "expected": "GET returns HTTP 200 with registration state CancelledByUser (or equivalent terminal cancel state), reason text when applicable, and refreshed updatedAt; participant tracks cancellation outcome immediately after successful cancel",
       "edgeCase": true
     },
     {
@@ -416,7 +417,7 @@
       "steps": [
         "GET /api/v1/events/{nonExistentEventId}/registration-status with Authorization header"
       ],
-      "expected": "HTTP 404 with typed error code; no registration payload returned; safe failure for invalid event scope",
+      "expected": "HTTP 404 with typed error code; no registration payload returned; safe failure for invalid event scope per FR-10 rejections",
       "edgeCase": true
     },
     {
@@ -440,7 +441,7 @@
         "GET registration-status for A",
         "GET registration-status for B without delay or manual refresh beyond normal API poll"
       ],
-      "expected": "A sees cancelled terminal state; B sees Registered replacing prior Waitlisted; both affected users see updated statuses per Flow B step 5 near real-time after atomic cancellation plus promotion transaction",
+      "expected": "A sees cancelled terminal state with refreshed updatedAt; B sees Registered replacing prior Waitlisted with waitlistPosition cleared; both affected users see updated statuses per Flow B step 5 near real-time after atomic cancellation plus promotion transaction",
       "edgeCase": true
     },
     {
@@ -485,27 +486,6 @@
         "Repeat for GET /api/v1/me/registrations with pageSize 20"
       ],
       "expected": "p95 response time meets NFR-04 quick response under normal load; participant status queries remain suitable for near real-time UI refresh patterns",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-FR-10-022",
-      "category": "non-functional",
-      "layer": "unit",
-      "technique": "state-transition",
-      "priority": "P1",
-      "traceability": [
-        "FR-10",
-        "NFR-12"
-      ],
-      "title": "Status token mapping produces consistent human-readable labels for each registration state",
-      "preconditions": [
-        "Status token or badge mapper module for participant-facing registration states"
-      ],
-      "steps": [
-        "Map each canonical state (Registered, Waitlisted, CheckedIn, Attended, Absent, Cancelled variants, Rejected) to display label",
-        "Verify same state always maps to same label and semantic tone"
-      ],
-      "expected": "Labels are understandable and consistent per NFR-12; no duplicate conflicting labels for the same state; supports event card and detail panel reuse",
       "edgeCase": false
     },
     {
@@ -570,7 +550,7 @@
         "GET /api/v1/events/{eventId}/registration-status",
         "Inspect response fields"
       ],
-      "expected": "Response includes registrationId, eventId, participantId, state, updatedAt, and waitlistPosition when applicable; does not leak other participants' data or excessive internal operator metadata per NFR-09",
+      "expected": "Response includes registrationId, eventId, participantId, state, reasonCode, reasonText when applicable, updatedAt, and waitlistPosition when applicable; does not leak other participants' data or excessive internal operator metadata per NFR-09",
       "edgeCase": false
     },
     {
@@ -616,6 +596,31 @@
       ],
       "expected": "Status reflects Expired or equivalent terminal waitlist state per registration state machine; participant can track that waitlist entry will not convert after window close",
       "edgeCase": true
+    },
+    {
+      "id": "TC-FR-10-028",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "FR-10",
+        "FR-11",
+        "FR-12"
+      ],
+      "title": "registration-status and me/registrations expose reason text and updatedAt after status-changing actions",
+      "preconditions": [
+        "Published event with registration open",
+        "Participant Registered; second participant Waitlisted on same full event with waitlist enabled",
+        "Valid cancellation policy for seat-holding participant"
+      ],
+      "steps": [
+        "GET registration-status and me/registrations for waitlisted participant — record state, reason fields, and updatedAt",
+        "Cancel Registered participant triggering waitlist promotion",
+        "GET registration-status and me/registrations for both participants"
+      ],
+      "expected": "After cancel and promotion, each participant sees current state with reasonCode/reasonText when applicable and updatedAt later than pre-action snapshot on both registration-status and me/registrations; FR-10 near real-time tracking with reason text satisfied",
+      "edgeCase": false
     }
   ]
 }
