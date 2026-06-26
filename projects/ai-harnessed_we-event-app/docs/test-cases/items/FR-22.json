@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-22",
   "version": 1,
-  "docFingerprint": "sha256:aa1117f3b650d9449d7073916f7ca9b84a02286b19d61773de4e49196817a850",
-  "generatedAt": "2026-06-26T12:29:15Z",
+  "docFingerprint": "sha256:984a9eaa4cc519175977be0c09a3e92ab246bfda71a445ec868b145cb22df20b",
+  "generatedAt": "2026-06-27T00:00:00Z",
   "cases": [
     {
       "id": "TC-FR-22-001",
@@ -13,16 +13,17 @@
       "traceability": [
         "FR-22"
       ],
-      "title": "Organizer Admin reviews consolidated event overview per user-flow governance step",
+      "title": "Organizer Admin reviews consolidated event overview including configured feedback policy",
       "preconditions": [
-        "Published event with operational activity across registration, waitlist, check-in, and feedback domains",
+        "Published event with operational activity across registration, waitlist, check-in, feedback, and eligibility domains",
+        "EventRuleConfig with feedbackRequired set (true or false) and known feedback window",
         "Authenticated OrganizerAdmin actor with organization scope to the event"
       ],
       "steps": [
         "Invoke dashboardService.getEventDashboard(eventId) with organizer admin context",
-        "Inspect returned summary for registrations, waitlist, check-ins, feedback, and eligibility-related fields"
+        "Inspect returned summary for registrations, waitlist, check-ins, feedback completion, configured feedback policy (feedbackRequired), and eligibility breakdown"
       ],
-      "expected": "Summary exposes non-negative counts for registrations, registeredSeats, waitlist, checkedIn, attended, feedbackSubmitted, and eligibility breakdown; satisfies user-flow step 'Admin reviews dashboard summary' and FR-22 consolidated operational overview",
+      "expected": "Summary exposes non-negative counts for registrations, registeredSeats, waitlist, checkedIn, attended, feedbackSubmitted, eligibility breakdown (eligible, notEligible, pendingEligibility), and feedbackRequired reflecting configured policy; when feedbackRequired is true and attended participants lack submissions, mandatory-feedback outstanding count is exposed; satisfies user-flow step 'Admin reviews dashboard summary' and FR-22 consolidated operational overview",
       "edgeCase": false
     },
     {
@@ -32,18 +33,20 @@
       "technique": "http-contract",
       "priority": "P0",
       "traceability": [
-        "FR-22"
+        "FR-22",
+        "FR-18"
       ],
       "title": "GET /api/v1/events/{eventId}/dashboard returns HTTP 200 with event overview envelope",
       "preconditions": [
         "Event in RegistrationOpen or later lifecycle state with known operational activity",
+        "Event configured with feedbackRequired true and at least one Attended participant missing feedback submission",
         "OrganizerAdmin JWT with scope to the event"
       ],
       "steps": [
         "GET /api/v1/events/{eventId}/dashboard with organizer Authorization bearer token",
-        "Verify HTTP status and response body fields: eventId, capacity, registrations, registeredSeats, waitlist, checkedIn, attended, eligible, notEligible, pendingEligibility, feedbackSubmitted, feedbackRequired"
+        "Verify HTTP status and response body fields: eventId, capacity, registrations, registeredSeats, waitlist, checkedIn, attended, eligible, notEligible, pendingEligibility, feedbackSubmitted, feedbackRequired, mandatoryFeedbackOutstanding"
       ],
-      "expected": "HTTP 200 with JSON payload exposing non-negative counts or summaries for registrations, waitlist, check-ins, and feedback completion per GET /events/{eventId}/dashboard contract in API design §2.5",
+      "expected": "HTTP 200 with JSON payload exposing non-negative counts or summaries for registrations, waitlist, check-ins, feedback completion, configured feedback policy (feedbackRequired), and eligibility summary; when feedbackRequired is true, mandatoryFeedbackOutstanding reflects attended participants missing required feedback per GET /events/{eventId}/dashboard contract and FR-18 dashboard tie-in",
       "edgeCase": false
     },
     {
@@ -87,7 +90,7 @@
       ],
       "steps": [
         "Read waitlist count from dashboard summary",
-        "Invoke listWaitlistForEvent with limit=1 offset=0 and read total",
+        "Invoke GET waitlist list with page=1 pageSize=1 and read total from paginated envelope",
         "Compare values"
       ],
       "expected": "Dashboard waitlist metric equals waitlist list total; Organizer Admin overview accurately reflects FIFO queue size",
@@ -128,17 +131,18 @@
         "FR-18",
         "FR-19"
       ],
-      "title": "Dashboard exposes feedback completion summary for organizer review",
+      "title": "Dashboard exposes feedback completion, configured policy, and mandatory outstanding count",
       "preconditions": [
-        "Completed or post-event event with feedback window configured",
-        "Mix of participants with and without submitted feedback",
+        "Completed or post-event event with feedbackRequired true and valid feedback window",
+        "Mix of attended participants with and without submitted feedback",
         "Authenticated OrganizerAdmin actor"
       ],
       "steps": [
-        "Read feedbackSubmitted and feedbackRequired fields from dashboard summary",
-        "Verify feedbackSubmitted against known feedback submission fixture state in persistence layer"
+        "Read feedbackSubmitted, feedbackRequired, and mandatoryFeedbackOutstanding from dashboard summary",
+        "Verify feedbackSubmitted against known feedback submission fixture state in persistence layer",
+        "Verify mandatoryFeedbackOutstanding equals count of Attended registrations without submitted feedback"
       ],
-      "expected": "Dashboard includes feedbackSubmitted count and feedbackRequired flag aligned with actual submission state; Organizer Admin can assess post-event feedback progress from operational overview per FR-22",
+      "expected": "Dashboard includes feedbackSubmitted count, feedbackRequired true reflecting configured policy, and mandatoryFeedbackOutstanding aligned with attended participants missing required feedback; Organizer Admin can assess post-event feedback progress from operational overview per FR-22 and FR-18",
       "edgeCase": false
     },
     {
@@ -173,19 +177,21 @@
       "traceability": [
         "FR-22",
         "FR-17",
+        "FR-18",
         "FR-20",
         "FR-21"
       ],
       "title": "Flow A dashboard after full lifecycle reflects registration through eligibility operational totals",
       "preconditions": [
         "E2E Flow A progressed: publish, open registration, register, check-in, complete event, submit feedback, eligibility evaluated",
+        "Event configured with feedbackRequired and known feedback policy",
         "OrganizerAdmin JWT"
       ],
       "steps": [
         "GET /api/v1/events/{eventId}/dashboard after lifecycle completion",
-        "Verify registration, waitlist, check-in/attendance, feedback, and eligibility summary fields"
+        "Verify registration, waitlist, check-in/attendance, feedback completion, configured feedback policy (feedbackRequired), mandatory-feedback outstanding when applicable, and eligibility summary fields (eligible, notEligible, pendingEligibility)"
       ],
-      "expected": "Overview totals align with terminal states across modules; Organizer Admin has single-call visibility into end-to-end event operations matching testing plan Flow A governance step 'Admin reviews dashboard summary'",
+      "expected": "Overview totals align with terminal states across modules including configured feedback policy and eligibility summary; Organizer Admin has single-call visibility into end-to-end event operations matching testing plan Flow A governance step 'Admin reviews dashboard summary'",
       "edgeCase": false
     },
     {
@@ -196,20 +202,22 @@
       "priority": "P1",
       "traceability": [
         "FR-22",
+        "FR-18",
         "AC-14"
       ],
-      "title": "Organizer operations dashboard page renders KPI blocks and drill-down navigation",
+      "title": "Organizer operations dashboard page renders KPI blocks, feedback tracker, and drill-down navigation",
       "preconditions": [
         "OrganizerAdmin logged in with scope to an active event",
         "Event has non-zero registrations or waitlist for meaningful KPI display",
+        "Event configured with feedbackRequired true and at least one attended participant missing feedback when post-event",
         "Organizer event dashboard route reachable at /organizer/events/{eventId}"
       ],
       "steps": [
         "Navigate to organizer event operations dashboard",
-        "Observe KPI blocks for Registrations, Waitlist, Check-ins, and Eligibility or feedback indicators",
+        "Observe KPI blocks for Registrations, Waitlist, Check-ins, Feedback completion (including mandatory feedback outstanding count when feedbackRequired true), and Eligibility indicators",
         "Verify drill-down links to registrations, waitlist, check-in console, and eligibility pages"
       ],
-      "expected": "UI displays KPI summary strip and capacity meter with drill-down links to detailed operational views; dashboard does not render unbounded full participant datasets client-side per AC-14 and UI page-list operations dashboard spec",
+      "expected": "UI displays KPI summary strip and capacity meter with feedback completion tracker showing mandatory outstanding count when policy is mandatory, plus drill-down links to detailed operational views; dashboard does not render unbounded full participant datasets client-side per AC-14 and UI page-list operations dashboard spec",
       "edgeCase": false
     },
     {
@@ -331,17 +339,19 @@
       "technique": "module-integration",
       "priority": "P2",
       "traceability": [
-        "FR-22"
+        "FR-22",
+        "FR-18"
       ],
-      "title": "Dashboard for newly published event with zero activity returns zero counts",
+      "title": "Dashboard for newly published event with zero activity returns zero counts and configured policy",
       "preconditions": [
         "Published event with no registrations, waitlist entries, check-ins, or feedback",
+        "EventRuleConfig with feedbackRequired set (true or false)",
         "Authenticated OrganizerAdmin actor"
       ],
       "steps": [
         "Query dashboard summary immediately after publish with no participant activity"
       ],
-      "expected": "HTTP 200 with zero-valued registration, waitlist, check-in, and feedback metrics; valid empty overview rather than error",
+      "expected": "HTTP 200 with zero-valued registration, waitlist, check-in, and feedback metrics; feedbackRequired reflects configured policy; mandatoryFeedbackOutstanding is zero when feedbackRequired true; valid empty overview rather than error",
       "edgeCase": true
     },
     {
@@ -529,6 +539,30 @@
       ],
       "expected": "Dashboard registrations and registeredSeats increment by successful registration count; registeredSeats never exceeds capacity; concurrent writes do not produce inconsistent overview totals",
       "edgeCase": true
+    },
+    {
+      "id": "TC-FR-22-024",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": [
+        "FR-22",
+        "FR-18",
+        "FR-21"
+      ],
+      "title": "Dashboard eligibility summary counts match paginated eligibility list totals",
+      "preconditions": [
+        "Completed event with attendance finalized and mixed eligibility outcomes (Eligible, NotEligible, PendingEvaluation)",
+        "Authenticated OrganizerAdmin actor"
+      ],
+      "steps": [
+        "Read eligible, notEligible, and pendingEligibility from dashboard summary",
+        "Invoke GET /events/{eventId}/eligibility with page=1 pageSize=1 and eligibility filter for each status; read total from each paginated envelope",
+        "Compare dashboard eligibility breakdown to filtered list totals"
+      ],
+      "expected": "Dashboard eligible, notEligible, and pendingEligibility counts equal respective paginated eligibility list total metadata; eligibility summary in operational overview is consistent with authoritative list queries per FR-21 and FR-22",
+      "edgeCase": false
     }
   ]
 }
