@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-11",
   "version": 1,
-  "docFingerprint": "sha256:027175175545d05eacf412663c601ddc7b622e4741a2ff40633c8e332b7bd6aa",
-  "generatedAt": "2026-06-26T15:45:00Z",
+  "docFingerprint": "sha256:f601725c26e22adca80d48f9fae45d3bcf9dc70f757edfc29c65352770d3803e",
+  "generatedAt": "2026-06-26T16:56:35Z",
   "cases": [
     {
       "id": "TC-FR-11-001",
@@ -13,7 +13,7 @@
       "traceability": [
         "FR-11",
         "BR-07",
-        "BR-08"
+        "BR-08b"
       ],
       "title": "Registered participant cancels before CancellationDeadline transitions to CancelledByUser",
       "preconditions": [
@@ -37,7 +37,9 @@
       "priority": "P0",
       "traceability": [
         "FR-11",
-        "BR-07"
+        "BR-07",
+        "BR-08b",
+        "AC-02c"
       ],
       "title": "POST registrations cancel returns 200 with CancelledByUser for valid participant cancellation",
       "preconditions": [
@@ -49,7 +51,7 @@
         "POST /api/v1/events/{eventId}/registrations/{registrationId}/cancel with Authorization bearer and Idempotency-Key",
         "GET /api/v1/events/{eventId}/registration-status with same token"
       ],
-      "expected": "Cancel POST returns HTTP 200 with body containing state CancelledByUser, registrationId, and updatedAt; registration-status reflects same cancelled terminal state; participant successfully cancels via public API",
+      "expected": "Cancel POST returns HTTP 200 with body containing state CancelledByUser, registrationId, and updatedAt; when waitlist promotion ran, response may include optional promoted registration snapshot (BR-08b); registration-status reflects same cancelled terminal state; participant successfully cancels via public API",
       "edgeCase": false
     },
     {
@@ -83,9 +85,10 @@
       "priority": "P0",
       "traceability": [
         "FR-11",
-        "BR-08",
+        "BR-08b",
         "BR-06",
-        "FR-12"
+        "FR-12",
+        "AC-02c"
       ],
       "title": "Valid cancellation transitions Registered to CancelledByUser and promotes top waitlist atomically",
       "preconditions": [
@@ -98,7 +101,7 @@
         "Query registration state for A and B in same transaction boundary or immediately after commit",
         "Query Registered count for event"
       ],
-      "expected": "A transitions Registered → CancelledByUser; B transitions Waitlisted → Registered in same atomic transaction per Workflow C; Registered count remains at capacity; BR-08 invariant satisfied",
+      "expected": "A transitions Registered → CancelledByUser; B transitions Waitlisted → Registered in same atomic transaction per Workflow C; Registered count remains at capacity; BR-08b invariant satisfied (AC-02c)",
       "edgeCase": false
     },
     {
@@ -109,8 +112,9 @@
       "priority": "P0",
       "traceability": [
         "FR-11",
+        "AC-02c",
         "AC-04",
-        "BR-08",
+        "BR-08b",
         "FR-12"
       ],
       "title": "Flow B cancellation step releases seat and enables waitlist promotion",
@@ -124,7 +128,7 @@
         "GET /api/v1/events/{eventId}/waitlist for organizer scope or GET registration-status for waitlisted participant B",
         "GET organizer registrations list filtered state=Registered"
       ],
-      "expected": "Cancelling participant shows CancelledByUser; top waitlist participant promoted to Registered; Registered count never exceeds capacity; completes Flow B cancellation segment before check-in step",
+      "expected": "Cancelling participant shows CancelledByUser; cancel response may include optional promoted registration when promotion ran (BR-08b); top waitlist participant promoted to Registered; Registered count never exceeds capacity; completes Flow B cancellation segment before check-in step",
       "edgeCase": false
     },
     {
@@ -324,7 +328,7 @@
         "Invoke registrationService.cancel(registrationId, participantActorContext)",
         "Verify registration state unchanged"
       ],
-      "expected": "Cancellation rejected with HTTP 409 and INVALID_STATE_TRANSITION; state remains CheckedIn; state machine allows cancelByParticipant only from Registered per registration transition table",
+      "expected": "Cancellation rejected with HTTP 409 and INVALID_STATE_TRANSITION; state remains CheckedIn; registration state machine does not permit cancelByParticipant from CheckedIn per invalid transition policy",
       "edgeCase": true
     },
     {
@@ -357,7 +361,9 @@
       "traceability": [
         "FR-11",
         "BR-06",
-        "FR-12"
+        "BR-08b",
+        "FR-12",
+        "AC-02g"
       ],
       "title": "Concurrent cancellations on full waitlisted event do not double-promote same waitlist slot",
       "preconditions": [
@@ -369,12 +375,12 @@
         "Trigger concurrent cancel for A and B registrations",
         "After both complete, query states of all waitlisted participants and Registered count"
       ],
-      "expected": "Each cancellation promotes at most one distinct waitlist participant; Registered count never exceeds capacity; no WAITLIST_ORDER_CONFLICT or duplicate promotion of same waitlist entry; FIFO order preserved per BR-06",
+      "expected": "Each cancellation promotes at most one distinct waitlist participant; Registered count never exceeds capacity; no WAITLIST_ORDER_CONFLICT or duplicate promotion of same waitlist entry; FIFO order preserved per BR-06 (AC-02g)",
       "edgeCase": true
     },
     {
       "id": "TC-FR-11-017",
-      "category": "edge",
+      "category": "functional",
       "layer": "e2e",
       "technique": "scenario-matrix",
       "priority": "P1",
@@ -382,17 +388,18 @@
         "FR-11",
         "AC-12"
       ],
-      "title": "Successful cancel writes traceable status history entry",
+      "title": "Successful cancel writes audit record and traceable status history entry",
       "preconditions": [
         "Participant Registered then cancels before deadline",
-        "Organizer Admin authorized for status-history endpoint"
+        "Organizer Admin authorized for status-history and audit-logs endpoints"
       ],
       "steps": [
         "POST cancel as participant",
-        "GET /api/v1/events/{eventId}/status-history?registrationId={registrationId} as Organizer Admin"
+        "GET /api/v1/events/{eventId}/status-history?registrationId={registrationId} as Organizer Admin",
+        "GET /api/v1/events/{eventId}/audit-logs?registrationId={registrationId} as Organizer Admin"
       ],
-      "expected": "Status history includes registration.cancelled entry with beforeState Registered and afterState CancelledByUser, registrationId, and occurredAt; satisfies testing-plan §3 row Status history retrieval for cancellation transitions",
-      "edgeCase": true
+      "expected": "Status history includes registration.cancelled entry with beforeState Registered and afterState CancelledByUser, registrationId, and occurredAt; append-only audit_logs row persists registration.cancelled action with actorId and before/after state per FR-11 behavior; satisfies testing-plan §3 row Status history retrieval for cancellation transitions",
+      "edgeCase": false
     },
     {
       "id": "TC-FR-11-018",
@@ -402,7 +409,7 @@
       "priority": "P0",
       "traceability": [
         "FR-11",
-        "BR-08"
+        "BR-08b"
       ],
       "title": "Cancellation and waitlist promotion execute in single database transaction",
       "preconditions": [
@@ -426,7 +433,8 @@
       "priority": "P1",
       "traceability": [
         "FR-11",
-        "BR-08"
+        "BR-07",
+        "BR-09"
       ],
       "title": "Cancellation deadline policy behavior covered in integration suite",
       "preconditions": [
@@ -460,6 +468,32 @@
         "Verify status feedback and action availability after cancel"
       ],
       "expected": "Cancel path is reachable in few steps without horizontal scroll or hidden controls; post-cancel UI shows cancelled status token and removes Register/Cancel ambiguity; aligns with registration flow clarity goals for participant self-service",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-11-021",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "FR-11",
+        "AC-02c",
+        "BR-08b"
+      ],
+      "title": "Organizer Admin cancel returns 200 with CancelledByOrganizer and audit with reason",
+      "preconditions": [
+        "Event at capacity with waitlistEnabled true",
+        "Participant A Registered; participant B Waitlisted at FIFO position 1",
+        "Organizer Admin authenticated with event scope",
+        "Mandatory reasonCode and reasonText per sensitive action guardrails for manual organizer cancellation"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/registrations/{registrationIdOfA}/cancel with Organizer Admin Authorization, Idempotency-Key, and reason payload",
+        "GET /api/v1/events/{eventId}/registration-status as participant B",
+        "GET /api/v1/events/{eventId}/audit-logs?registrationId={registrationIdOfA} as Organizer Admin"
+      ],
+      "expected": "HTTP 200 with state CancelledByOrganizer; B promoted to Registered when waitlist promotion ran with optional promoted payload on cancel response (BR-08b, AC-02c); audit_logs row persists registration.cancelled with OrganizerAdmin actor, reasonCode, reasonText, and before/after state diff per FR-11 behavior and sensitive action guardrails",
       "edgeCase": false
     }
   ]
