@@ -66,7 +66,8 @@
         ],
         "acceptanceTags": [
           "BR-01",
-          "BR-03"
+          "BR-03",
+          "BR-10"
         ]
       },
       "description": "Shared domain enums, state machines, and validation rule identifiers."
