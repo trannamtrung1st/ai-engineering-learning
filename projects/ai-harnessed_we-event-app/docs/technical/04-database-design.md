@@ -9,7 +9,12 @@ Forbidden persistence modes (harness hard fail):
 - In-memory stores, module-level `Map`/`Record` repositories, or process-local caches used as the system of record.
 - SQLite or other embedded databases.
 - JSON-file or mock-only repositories without a Postgres adapter.
-- Any dev shortcut that skips migrations against the Compose Postgres instance.
+- Any dev shortcut that skips schema bootstrap against the Compose Postgres instance.
+
+### 1.1 Data Access Pattern
+- **No ORM** — repositories execute raw SQL via the `pg` driver and a shared connection pool.
+- **Per-module schema** — DDL co-located with each domain module; applied lazily on first use (idempotent bootstrap, not versioned migration tooling).
+- **Transactional boundaries** — multi-table operations (registration + waitlist, cancellation + promotion, check-in + status transition) run in a single database transaction.
 
 ## 2. Logical Schema
 Core tables:
@@ -25,6 +30,8 @@ Core tables:
 - `feedback_submissions`
 - `certificate_eligibilities`
 - `audit_logs`
+
+**Status history** is not a separate table — `GET /events/{eventId}/status-history` projects registration state-change rows from `audit_logs`.
 
 ## 3. Key Columns and Constraints
 ### `users`
@@ -157,7 +164,7 @@ Constraints:
 - `events.start_at` — default sort for `GET /events`.
 - `waitlist_entries(event_id, position)` — FIFO queue paging.
 - `registrations.updated_at` — registration list and `GET /me/registrations` paging.
-- `audit_logs.created_at`, `status_history.created_at` — governance list paging.
+- `audit_logs.occurred_at` — governance list paging (`audit-logs`, `status-history` endpoints).
 
 ## 5. Suggested DDL Guardrail Snippets
 ```sql

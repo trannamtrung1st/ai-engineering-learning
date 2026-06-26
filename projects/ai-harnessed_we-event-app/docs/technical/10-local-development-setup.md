@@ -5,7 +5,7 @@ Provide a reproducible local environment for building and validating We Event MV
 
 ## 2. Prerequisites
 - Node.js LTS (recommended >= 20)
-- Package manager: npm/pnpm/yarn (project default preferred)
+- Package manager: **npm workspaces** (root `package.json`)
 - Git and shell tools
 - Docker Desktop (or compatible Docker Engine + Compose v2) — required for PostgreSQL local runtime (see `13-docker-compose-local-runtime.md`)
 
@@ -24,9 +24,9 @@ Rules:
 - Provide `.env.example` with non-sensitive defaults.
 
 ## 4. Local Runbook
-1. Install dependencies.
+1. Install dependencies (`npm install` at repo root).
 2. Start database: `npm run aih:dev:db:up` (Docker Compose `db` service only).
-3. Run migrations against Postgres (`DATABASE_URL` must point at Compose instance).
+3. Schema is applied automatically on first API use (see `04-database-design.md` §1.1).
 4. Seed reference data (organization/users/events).
 5. Start API service locally (`npm run dev --workspace @we-event/api`).
 6. Start frontend locally (`npm run dev --workspace @we-event/web`).
@@ -40,7 +40,7 @@ Local container orchestration is specified in `13-docker-compose-local-runtime.m
 | Development | PostgreSQL only | API + web dev servers |
 | Full preview | PostgreSQL + built API + built web images | Nothing |
 
-Root scripts (when `docker-compose.yml` is present):
+Root scripts:
 - `npm run aih:dev:db:up` / `aih:dev:db:down` — DB-only for development
 - `npm run aih:preview` / `aih:preview:down` — full preview with built images
 
@@ -58,10 +58,9 @@ Seed data should include:
 Optional: one event with a seeded cover image for UI smoke testing.
 
 ## 6. Local Validation Guardrails
-- Fail startup when schema migration is pending.
-- Fail startup when enum definitions mismatch DB.
-- Enforce strict request schema validation in dev mode.
 - Fail startup when `DATABASE_URL` does not target the Compose Postgres instance.
+- Enforce strict request validation in dev mode.
+- Health endpoint reports DB connectivity.
 
 ## 7. Local Observability Basics
 - Structured logs with `requestId`.

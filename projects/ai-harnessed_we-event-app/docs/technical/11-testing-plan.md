@@ -13,6 +13,12 @@ Priority is correctness of business invariants over UI polish in this phase.
 - Integration: 30%
 - End-to-end: 10%
 
+### 2.1 Test Layers
+- **Unit** — rule validators, state guards, and component logic (Node test runner)
+- **Integration** — transactional module behavior against real Postgres
+- **E2E** — full API workflow scenarios (`tests/e2e` workspace)
+- **Browser smoke** — interactive verification via Playwright MCP / harness browser gate (see §8)
+
 ## 3. Core Scenario Matrix
 | Scenario | Expected Result | Traceability |
 |---|---|---|

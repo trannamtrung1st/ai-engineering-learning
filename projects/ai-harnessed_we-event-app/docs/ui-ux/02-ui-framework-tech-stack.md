@@ -1,44 +1,58 @@
 # UI Framework / Tech Stack
 
-## Recommended MVP stack
+## Stack
 
-- Frontend: React + TypeScript.
-- Framework: Next.js App Router.
-- Styling: Tailwind CSS with CSS variable-driven semantic tokens.
-- Components: headless primitives (Radix UI or equivalent) for accessibility.
-- Forms: React Hook Form + Zod.
-- Server state: TanStack Query.
-- Tables and filters: lightweight table utility (TanStack Table or equivalent).
-- Charts: minimal chart library for organizer dashboard KPI visualization.
+| Concern | Technology |
+|---|---|
+| Framework | Next.js App Router |
+| UI | React + TypeScript |
+| Styling | Tailwind CSS + semantic CSS variable tokens |
+| Components | Radix UI headless primitives |
+| Forms | React Hook Form + Zod |
+| Server state | TanStack Query |
+| Tables | TanStack Table (server-driven pagination) |
+| Charts | Deferred — organizer KPI views use tables/metrics until a chart library is added |
 
 ## Why this stack fits We Event
 
 - Supports fast, state-rich interfaces for status-driven workflows.
-- Enables strict typing for rule-sensitive domain states.
+- Enables strict typing for rule-sensitive domain states via shared `@we-event/domain` types.
 - Handles near real-time updates needed by check-in and waitlist operations.
 - Makes role-based UI composition straightforward.
 
-## Frontend architecture guidelines
+## Frontend architecture
 
 ### Route strategy
-- Public routes for participant discovery and detail.
-- Auth-required routes for registration status, check-in, feedback.
-- Organizer namespace with role-aware navigation and guard logic.
+- **Participant namespace** — event discovery, registration status, check-in, feedback, eligibility.
+- **Organizer namespace** — event CRUD, operations dashboard, registrations, waitlist, check-in console, audit, eligibility.
+- Each namespace has its own layout and auth context.
+
+### API integration
+- Browser calls `/api/v1` through the Next.js dev server, which proxies to the backend.
+- Role-specific API facades centralize fetch logic and bearer token attachment.
 
 ### State boundaries
-- Server authority for registration, check-in, and eligibility states.
+- **Server authority** for registration, check-in, and eligibility states.
+- **TanStack Query** for server/async state; no global client store (Redux/Zustand).
+- **React Context** for auth and UI chrome (toasts).
 - Client-local state only for presentational behavior (modals, sort order, pending input).
-- Optimistic updates only for reversible operations and only with robust rollback UI.
+- Optimistic updates only for reversible operations with rollback UI.
 
 ### Data refresh behavior
-- Event list: periodic refresh during open registration windows.
-- Organizer dashboard: shorter refresh interval in event-active windows.
-- Check-in console: explicit refresh action + automatic polling while active.
+Polling intervals for live surfaces (no WebSockets in MVP):
+
+| Surface | Interval | Rationale |
+|---|---|---|
+| Event list | 60s | Periodic refresh during open registration |
+| Organizer dashboard | 5s | Near real-time during active operations |
+| Check-in console | 3s | Fastest refresh while check-in is in progress |
+
+Check-in console also supports explicit manual refresh.
 
 ## Technical UX constraints
 
 - Prevent duplicate submissions by disabling CTA while request is in-flight.
-- Surface transaction IDs or trace references for failed critical operations.
+- Surface `requestId` from API error envelope for failed critical operations.
 - Preserve form draft input during non-fatal network errors.
 - Provide consistent loading placeholders to avoid layout shift.
 

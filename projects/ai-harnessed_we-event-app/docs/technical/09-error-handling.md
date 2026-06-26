@@ -31,6 +31,8 @@
 - unhandled domain exceptions
 
 ## 3. Standard Error Response
+All API errors use a single JSON envelope. Domain validation codes are defined in `@we-event/domain`; API-layer codes (e.g. `INVALID_STATE_TRANSITION`, `NOT_FOUND`) extend that set.
+
 ```json
 {
   "error": {
@@ -51,19 +53,23 @@
 - `REGISTRATION_WINDOW_CLOSED`
 - `REGISTRATION_REJECTED_FULL`
 - `CAPACITY_EXCEEDED`
+- `WAITLIST_ORDER_CONFLICT`
 - `CANCELLATION_DEADLINE_PASSED`
 - `CANCELLATION_NOT_ALLOWED`
 - `CHECKIN_WINDOW_CLOSED`
 - `CHECKIN_ALREADY_RECORDED`
+- `AUDIT_METADATA_MISSING`
 - `FEEDBACK_NOT_ALLOWED`
 - `FEEDBACK_DUPLICATE`
 - `FEEDBACK_REQUIRED`
 - `NOT_ELIGIBLE_ATTENDANCE`
 - `NOT_ELIGIBLE_FEEDBACK`
+- `ELIGIBILITY_REASON_MISSING`
 - `ELIGIBILITY_OVERRIDE_FORBIDDEN`
 - `EVENT_RULE_CHANGE_FORBIDDEN`
 - `AUDIT_REQUIRED_FOR_CRITICAL_CHANGE`
 - `INVALID_STATE_TRANSITION`
+- `NOT_FOUND`
 
 ## 5. Retry and Idempotency Policy
 - Clients may safely retry idempotent write requests using `Idempotency-Key`.

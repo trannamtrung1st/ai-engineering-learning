@@ -1,7 +1,7 @@
 # We Event System Overview (Local-First)
 
 ## 1. Purpose
-This document defines the local-first system architecture for the We Event MVP and establishes shared terminology for all design documents in `designs/`.
+This document defines the local-first system architecture for the We Event MVP and establishes shared terminology for all design documents in `docs/`.
 
 Primary focus for this phase:
 - Local development and deterministic behavior.
@@ -9,7 +9,8 @@ Primary focus for this phase:
 - Testability and traceability from BRD to implementation.
 
 Related reference:
-- Recommended implementation stack: `12-backend-frontend-tech-stack.md`
+- Tech stack and architecture style: `12-backend-frontend-tech-stack.md`
+- Module boundaries: `02-module-breakdown.md`
 
 Out of scope for this phase:
 - Deployment architecture, cloud topology, CI/CD rollout, production scaling.
@@ -58,22 +59,25 @@ Exceptional transition:
 ## 5. Local-First Architecture
 ```mermaid
 flowchart LR
-    participantUI[ParticipantUI] --> apiService[APIService]
-    organizerUI[OrganizerUI] --> apiService
-    staffUI[StaffUI] --> apiService
-    apiService --> authzValidation[AuthzAndValidation]
+    nextWebApp[NextWebApp] -->|rewrite /api/v1| fastifyAPI[FastifyAPIService]
+    participantUI[ParticipantUI] --> nextWebApp
+    organizerUI[OrganizerUI] --> nextWebApp
+    staffUI[StaffUI] --> nextWebApp
+    fastifyAPI --> authzValidation[AuthzAndValidation]
     authzValidation --> eventModule[EventModule]
     authzValidation --> registrationModule[RegistrationModule]
     authzValidation --> checkinModule[CheckinModule]
     authzValidation --> feedbackModule[FeedbackModule]
     authzValidation --> eligibilityModule[EligibilityModule]
     authzValidation --> auditModule[AuditLogModule]
-    eventModule --> localDb[(LocalDatabase)]
-    registrationModule --> localDb
-    checkinModule --> localDb
-    feedbackModule --> localDb
-    eligibilityModule --> localDb
-    auditModule --> localDb
+    eventModule --> postgres[(PostgreSQL)]
+    registrationModule --> postgres
+    checkinModule --> postgres
+    feedbackModule --> postgres
+    eligibilityModule --> postgres
+    auditModule --> postgres
+    sharedDomain["@we-event/domain"] -.-> fastifyAPI
+    sharedDomain -.-> nextWebApp
 ```
 
 Design guardrails:
@@ -81,6 +85,7 @@ Design guardrails:
 - Domain-layer invariants before persistence.
 - Critical state transitions are audit logged.
 - Deterministic rule evaluation for reproducible tests.
+- Shared domain types in `@we-event/domain` consumed by both API and web.
 
 ## 6. Quality Attributes (Local Context)
 - **Consistency**: no capacity overflow, no duplicate active registrations.

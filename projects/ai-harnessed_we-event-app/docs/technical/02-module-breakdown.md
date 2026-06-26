@@ -96,3 +96,17 @@ Contract conventions:
 - FR-01..FR-24
 - BR-01..BR-19
 - AC-01..AC-10
+
+## 6. Application Structure
+The API is organized as **vertical domain modules** (Event, Registration, Check-in, Feedback, Eligibility, Audit), each following the same layering:
+
+1. **Routes** — HTTP handlers, auth guards, idempotency
+2. **Services** — orchestration, transactions, audit side effects
+3. **Repositories** — raw SQL persistence (no ORM)
+4. **Validation** — domain rule checks before state changes
+
+Supporting modules handle **auth**, **user provisioning**, and **organizer dashboard** queries. Cross-cutting concerns — RBAC, event scope, idempotency, pagination — sit outside individual domain modules.
+
+Shared enums, state machines, and error codes live in `@we-event/domain` and are consumed by both API and web.
+
+The frontend mirrors role boundaries: a **participant** namespace and an **organizer** namespace, each with its own layout and auth context.

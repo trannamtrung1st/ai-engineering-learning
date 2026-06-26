@@ -34,7 +34,7 @@ Not acceptable (hard fail):
 | UI states | `12-ui-states.md` — loading, empty, error, domain badges |
 | Accessibility | `13-accessibility-basics.md` — keyboard, focus, live regions |
 
-Stack: Next.js App Router, React + TypeScript, Tailwind CSS, Radix UI (or equivalent), TanStack Query, React Hook Form + Zod.
+Stack: Next.js App Router, React + TypeScript, Tailwind CSS, Radix UI, TanStack Query, TanStack Table, React Hook Form + Zod.
 
 ## Page coverage (incremental by slice)
 
@@ -52,7 +52,7 @@ Domain status colors from semantic tokens apply to all state families (event lif
 - All list and detail views fetch from `/api/v1`; backend remains authoritative for domain states.
 - Listing pages must use paginated API requests (`page`/`pageSize`); see `05-api-design.md` §3.
 - Fetching all pages in a loop to build a client-side list is a harness hard-fail.
-- Use TanStack Query (or equivalent) for server state; no module-level mock stores in pages.
+- Use TanStack Query for server state; no module-level mock stores in pages.
 - Optimistic updates only for reversible operations with rollback UI.
 
 ## Visual polish

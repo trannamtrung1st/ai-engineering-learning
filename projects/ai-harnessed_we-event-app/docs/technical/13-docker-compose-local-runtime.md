@@ -1,13 +1,13 @@
 # Docker Compose Local Runtime
 
-> **Status:** Canonical harness requirement. `docker-compose.yml` implementation is a follow-up task; policy and completion gates apply now.
+> **Status:** Canonical harness requirement. `docker-compose.yml` is implemented at the repository root (PostgreSQL 16 Alpine; `api` and `web` services use the `full-preview` profile).
 
 ## 1. Objective
 Define a reproducible local runtime using Docker Compose with two explicit modes:
 - **Development:** database container only; API and web run as local Node processes.
 - **Full preview:** database + API + web run as built container images.
 
-## 2. Prerequisites (When Implemented)
+## 2. Prerequisites
 - Docker Desktop (or compatible Docker Engine + Compose v2)
 - Node.js LTS (>= 20) for development mode
 - Monorepo workspaces: `apps/api`, `apps/web`, `packages/domain`
@@ -44,7 +44,7 @@ Harness commands (see `ai-harness/docs/preview-runtime.md`):
 
 ## 4. Compose File Contract (`docker-compose.yml`)
 
-Planned file location: repository root.
+File location: repository root.
 
 ```yaml
 name: we-event
@@ -106,14 +106,14 @@ services:
 ### 4.2 Persistence Policy for Harness Runs
 - **Development mode (DB only)** is mandatory for harness-driven implementation: API and web run as local Node processes; Postgres runs in the `db` Compose service.
 - API must connect via `DATABASE_URL=postgresql://we_event:we_event@localhost:5432/we_event`.
-- Migrations must run against this Postgres instance before API startup.
+- Schema is applied automatically on first API use (see `04-database-design.md` §1.1).
 
 ### 4.3 Forbidden Persistence Modes
 Harness and guardrails hard-fail implementations that use:
 - In-memory stores or module-level `Map`/`Record` repositories as the system of record.
 - SQLite, `better-sqlite3`, or embedded JSON-file databases.
 - Mock-only repositories without a Postgres adapter.
-- Any shortcut that skips schema migrations against Compose Postgres.
+- Any shortcut that skips schema bootstrap against Compose Postgres.
 
 ### 4.4 Default Ports
 | Service | Host port |
@@ -208,6 +208,6 @@ Recommended startup timeout for first image build: 180s.
 
 ## 9. Traceability
 - Local setup overview: `10-local-development-setup.md`
-- Stack recommendation: `12-backend-frontend-tech-stack.md`
+- Stack: `12-backend-frontend-tech-stack.md`
 - Database baseline: `04-database-design.md`
 - NFR-02, NFR-04..NFR-06, NFR-14, NFR-15

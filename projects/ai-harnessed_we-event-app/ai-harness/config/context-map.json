@@ -3,7 +3,8 @@
     "backend": {
       "alwaysRead": [
         "docs/technical/00-system-overview.md",
-        "docs/technical/08-validation-rules.md"
+        "docs/technical/08-validation-rules.md",
+        "docs/technical/12-backend-frontend-tech-stack.md"
       ]
     },
     "frontend": {
