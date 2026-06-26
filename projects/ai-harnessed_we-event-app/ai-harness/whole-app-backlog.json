@@ -65,7 +65,8 @@
           "packages/domain/src/index.test.ts"
         ],
         "acceptanceTags": [
-          "BR-01"
+          "BR-01",
+          "BR-03"
         ]
       },
       "description": "Shared domain enums, state machines, and validation rule identifiers."
