@@ -355,3 +355,4 @@ Lessons learned across harness iterations. Read before every implementer session
 - [NFR-17] Docs changed — test cases need review (index current=false; fingerprint=sha256:ec35d07745935d43ede5bc23381533cb15ad15eb3a8347bf5c6bc75ca315ea0f)
 - [NFR-18] Docs changed — test cases need review (index current=false; fingerprint=sha256:09e78b258de4c46281d1d59df150219c140d7f6f90933662ab83c157d8a7910b)
 - [FR-09] TestGen agent did not emit TESTGEN_DONE
+- [FR-34] TestGen agent did not emit TESTGEN_DONE
