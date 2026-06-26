@@ -1,0 +1,314 @@
+{
+  "productItemId": "FR-33",
+  "version": 1,
+  "docFingerprint": "sha256:4df3b9fe5a47366f3a2e6893d54863d7ebd7808387ffd2e446a5608089ea8a67",
+  "generatedAt": "2026-06-26T19:00:00Z",
+  "cases": [
+    {
+      "id": "TC-FR-33-001",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-33"],
+      "title": "Participant signs in with email and password via POST /auth/login",
+      "preconditions": [
+        "API server running at /api/v1",
+        "Existing participant account registered with known email and password",
+        "No Authorization header required (public endpoint)"
+      ],
+      "steps": [
+        "POST /api/v1/auth/login with { email, password } matching the registered account",
+        "Inspect HTTP status and response body"
+      ],
+      "expected": "HTTP 200; response includes JWT token and profile with userId, email, displayName, and roles array; satisfies FR-33 credential-based sign-in with authenticated JWT session",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-33-002",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-33", "AC-16"],
+      "title": "Login-issued JWT authenticates GET /me for current actor",
+      "preconditions": [
+        "Existing user account with known credentials",
+        "Auth module and session middleware available"
+      ],
+      "steps": [
+        "POST /api/v1/auth/login with valid { email, password }",
+        "GET /api/v1/me with Authorization: Bearer {token} from login response"
+      ],
+      "expected": "GET /me returns HTTP 200 with profile matching login response (userId, email, role/roles); login JWT establishes authenticated session usable on protected endpoints",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-33-003",
+      "category": "functional",
+      "layer": "browser",
+      "priority": "P0",
+      "traceability": ["FR-33", "AC-16"],
+      "title": "Browser sign-in page issues JWT and enables protected navigation",
+      "preconditions": [
+        "Web app running with dedicated /login route",
+        "Fresh browser context with no stored JWT",
+        "Existing account with known email and password"
+      ],
+      "steps": [
+        "Navigate to /login",
+        "Enter email and password and submit the form",
+        "Observe post-submit navigation and TopBar account control",
+        "Navigate to a protected participant route"
+      ],
+      "expected": "Credentials validated; JWT stored client-side per Flow 0b; user redirected to intended route or default landing; TopBar account button shows display name; protected routes accessible without redirect to /login",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-33-004",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-33", "AC-15"],
+      "title": "POST /auth/login succeeds without prior authentication",
+      "preconditions": [
+        "Existing account with known credentials",
+        "Request sent with no Authorization bearer header"
+      ],
+      "steps": [
+        "POST /api/v1/auth/login with valid { email, password } and no Authorization header",
+        "Verify JWT and profile are returned"
+      ],
+      "expected": "HTTP 200; public login endpoint accepts unauthenticated requests per API design §2.6; session issued without pre-existing bearer token",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-33-005",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-33", "FR-25"],
+      "title": "Login JWT sub claim maps to users.id UUID",
+      "preconditions": [
+        "Existing account with known credentials",
+        "Ability to decode JWT sub claim"
+      ],
+      "steps": [
+        "POST /api/v1/auth/login with valid credentials",
+        "Decode JWT sub from returned token",
+        "Compare sub to profile.userId and users.id in database"
+      ],
+      "expected": "JWT sub equals users.id UUID; profile.userId matches; credential session identity aligns with roles-permissions JWT sub contract",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-33-006",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-33", "FR-25"],
+      "title": "Login response profile includes roles array for authorization",
+      "preconditions": [
+        "Existing account with known role assignment (Participant, OrganizerStaff, or OrganizerAdmin)"
+      ],
+      "steps": [
+        "POST /api/v1/auth/login with valid credentials for the account",
+        "Inspect profile.roles in response body",
+        "GET /api/v1/me with returned JWT and compare role information"
+      ],
+      "expected": "Profile roles array reflects account role rows; GET /me returns consistent role data; role information available for client route guards and API authorization per permission matrix",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-33-007",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["FR-33", "FR-25"],
+      "title": "OrganizerAdmin seed account login receives admin-role JWT session",
+      "preconditions": [
+        "OrganizerAdmin account provisioned via seed or admin provisioning (not public signup)",
+        "Known OrganizerAdmin credentials"
+      ],
+      "steps": [
+        "POST /api/v1/auth/login with OrganizerAdmin email and password",
+        "Decode JWT role claim or GET /api/v1/me with returned token",
+        "GET /api/v1/admin/status with login JWT"
+      ],
+      "expected": "HTTP 200 login with JWT; session role is OrganizerAdmin; admin-only protected route returns HTTP 200 confirming authenticated admin session",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-33-008",
+      "category": "non-functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-33", "NFR-07"],
+      "title": "Successful login enables access to sensitive protected operations",
+      "preconditions": [
+        "Participant account with at least one registration",
+        "No valid session before login"
+      ],
+      "steps": [
+        "Confirm GET /api/v1/me/registrations without token returns HTTP 401",
+        "POST /api/v1/auth/login with valid participant credentials",
+        "GET /api/v1/me/registrations with login JWT"
+      ],
+      "expected": "Protected endpoint blocked before login; after login returns HTTP 200 with paginated data; satisfies NFR-07 requirement that authentication precedes sensitive operations",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-33-009",
+      "category": "non-functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-33", "NFR-13", "NFR-07"],
+      "title": "Invalid login attempts return standard typed error envelope with immediate feedback",
+      "preconditions": [
+        "API server running",
+        "Known invalid credential combination (unknown email or wrong password)"
+      ],
+      "steps": [
+        "POST /api/v1/auth/login with invalid credentials",
+        "Parse JSON error body"
+      ],
+      "expected": "HTTP 401 with error.code INVALID_CREDENTIALS, user-safe error.message, and requestId; no JWT or profile returned; immediate fail feedback per NFR-13 without internal stack trace or DB details",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-33-010",
+      "category": "non-functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-33", "NFR-17"],
+      "title": "Login response never exposes password hash or credential secrets",
+      "preconditions": [
+        "Existing account with known credentials"
+      ],
+      "steps": [
+        "POST /api/v1/auth/login with valid credentials",
+        "Parse full JSON response body for passwordHash, password, or hash fields"
+      ],
+      "expected": "Response contains token and profile only; no passwordHash, password, or credential material in API response per NFR-17 password storage and exposure rules",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-33-011",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-33", "NFR-07"],
+      "title": "Login with incorrect password is rejected",
+      "preconditions": [
+        "Existing account registered with known email and password"
+      ],
+      "steps": [
+        "POST /api/v1/auth/login with correct email and incorrect password"
+      ],
+      "expected": "HTTP 401 with error.code INVALID_CREDENTIALS; no JWT returned; GET /me without valid token remains blocked",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-33-012",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-33", "NFR-07"],
+      "title": "Login with unknown email returns same invalid-credentials response as wrong password",
+      "preconditions": [
+        "Email not registered in users table"
+      ],
+      "steps": [
+        "POST /api/v1/auth/login with unregistered email and any password",
+        "Compare error code and message shape to wrong-password attempt for existing account"
+      ],
+      "expected": "HTTP 401 INVALID_CREDENTIALS with generic 'Invalid email or password' message; no indication whether email exists; prevents user enumeration while blocking unauthenticated access",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-33-013",
+      "category": "edge",
+      "layer": "unit",
+      "priority": "P0",
+      "traceability": ["FR-33"],
+      "title": "validateLoginInput rejects empty password",
+      "preconditions": [
+        "Auth validation module available"
+      ],
+      "steps": [
+        "Call validateLoginInput with valid email and empty or missing password",
+        "Observe thrown ApiError"
+      ],
+      "expected": "ApiError with code INVALID_INPUT, statusCode 400, and details.field password; login rejected before credential lookup",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-33-014",
+      "category": "edge",
+      "layer": "unit",
+      "priority": "P0",
+      "traceability": ["FR-33"],
+      "title": "validateLoginInput rejects invalid email format",
+      "preconditions": [
+        "Auth validation module available"
+      ],
+      "steps": [
+        "Call validateLoginInput with malformed email (missing @, empty string) and any password",
+        "Observe thrown ApiError"
+      ],
+      "expected": "ApiError with code INVALID_INPUT, statusCode 400, and details.field email; no credential verification attempted",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-33-015",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["FR-33"],
+      "title": "Login with mixed-case email succeeds against lowercase stored account",
+      "preconditions": [
+        "Account registered as user@example.com with known password"
+      ],
+      "steps": [
+        "POST /api/v1/auth/login with email User@Example.com and correct password"
+      ],
+      "expected": "HTTP 200 with JWT and profile for user@example.com; email normalized on login per same normalization rules as registration",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-33-016",
+      "category": "edge",
+      "layer": "unit",
+      "priority": "P1",
+      "traceability": ["FR-33"],
+      "title": "validateLoginInput normalizes email to lowercase trimmed form",
+      "preconditions": [
+        "Auth validation module available"
+      ],
+      "steps": [
+        "Call validateLoginInput with email '  User@Example.com  ' and non-empty password"
+      ],
+      "expected": "Returned email is 'user@example.com'; valid input passes validation for downstream credential lookup",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-33-017",
+      "category": "edge",
+      "layer": "browser",
+      "priority": "P1",
+      "traceability": ["FR-33", "AC-15"],
+      "title": "Login page preserves return URL for post-auth redirect",
+      "preconditions": [
+        "Web app running with route guards",
+        "Fresh browser session with no JWT",
+        "Existing account credentials",
+        "User attempted to access protected route before login"
+      ],
+      "steps": [
+        "Navigate directly to a protected route while unauthenticated",
+        "Observe redirect to /login with return URL query parameter",
+        "Submit valid credentials on login form"
+      ],
+      "expected": "After successful sign-in, user redirected to originally requested protected route per page-list route guard contract; session established without losing intended destination",
+      "edgeCase": true
+    }
+  ]
+}
