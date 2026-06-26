@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Check doc drift for requirement tags; reset passes on referencing slices
-# Usage: check-test-case-drift.sh [requirementTag]
+# Usage: check-test-case-drift.sh [--quiet] [requirementTag]
 set -euo pipefail
 source "$(dirname "$0")/lib/common.sh"
 # shellcheck source=lib/doc-fingerprint.sh
@@ -9,7 +9,21 @@ source "$(dirname "$0")/lib/doc-fingerprint.sh"
 require_harness_deps
 cd "$REPO_ROOT"
 
-TARGET_TAG="${1:-}"
+QUIET=false
+TARGET_TAG=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --quiet|-q)
+      QUIET=true
+      shift
+      ;;
+    *)
+      TARGET_TAG="$1"
+      shift
+      ;;
+  esac
+done
+
 DRIFT_COUNT=0
 
 check_tag_drift() {
@@ -61,5 +75,7 @@ if [[ "$DRIFT_COUNT" -gt 0 ]]; then
   exit 1
 fi
 
-echo "==> No doc drift detected"
+if [[ "$QUIET" != true ]]; then
+  echo "==> No doc drift detected"
+fi
 exit 0

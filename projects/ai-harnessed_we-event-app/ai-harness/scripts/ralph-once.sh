@@ -25,10 +25,12 @@ ensure_runs_dir
 
 # --- Test case drift ---
 drift_failed=false
+drift_checked=0
 while IFS= read -r ref; do
   [[ -z "$ref" ]] && continue
+  drift_checked=$((drift_checked + 1))
   set +e
-  ./ai-harness/scripts/check-test-case-drift.sh "$ref" 2>&1
+  ./ai-harness/scripts/check-test-case-drift.sh --quiet "$ref" 2>&1
   ref_drift=$?
   set -e
   if [[ "$ref_drift" -ne 0 ]]; then
@@ -38,6 +40,9 @@ done < <(slice_product_item_refs "$SLICE_ID")
 if [[ "$drift_failed" == true ]]; then
   echo "==> Doc drift detected for product items referenced by ${SLICE_ID} — run: npm run aih:testgen:loop"
   exit 1
+fi
+if [[ "$drift_checked" -gt 0 ]]; then
+  echo "==> Doc drift check: ${drift_checked} tag(s) ok for ${SLICE_ID}"
 fi
 
 # --- Test case gate ---
