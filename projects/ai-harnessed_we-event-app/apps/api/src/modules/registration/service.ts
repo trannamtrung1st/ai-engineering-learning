@@ -12,6 +12,7 @@ import {
   cancelRegistration,
   createRegistration,
   findActiveRegistration,
+  findLatestParticipantRegistration,
   findRegistrationById,
   listRegistrationsForEvent,
   listRegistrationsForParticipant,
@@ -59,7 +60,7 @@ export class RegistrationService {
 
   async getStatus(eventId: string, participantId: string) {
     const resolvedParticipantId = resolveActorId(participantId);
-    const registration = await findActiveRegistration(
+    const registration = await findLatestParticipantRegistration(
       eventId,
       resolvedParticipantId,
     );

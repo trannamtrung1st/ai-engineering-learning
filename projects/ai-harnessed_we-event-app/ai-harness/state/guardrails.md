@@ -62,3 +62,5 @@ Lessons learned across harness iterations. Read before every implementer session
 - [web-design-system-shell] Computational checks failed — see 20260625T193720Z-checks.json
 - [web-design-system-shell] AI review failed — see 20260626T014840Z-review.json
 - [web-organizer-journeys] Computational checks failed — see 20260626T022552Z-checks.json
+- [web-participant-journeys] Browser test failed — see 20260626T025805Z-browser-test.json
+- [web-participant-journeys] `GET /events/:eventId/registration-status` must use latest participant registration (include `Attended`/`Absent`); `findActiveRegistration` alone breaks feedback UI when post-event status is no longer "active".

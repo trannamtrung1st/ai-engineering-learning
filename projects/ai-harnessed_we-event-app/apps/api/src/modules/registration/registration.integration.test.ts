@@ -19,8 +19,11 @@ import {
   countSeatHolders,
   createRegistration,
   ensureRegistrationSchema,
+  findRegistrationById,
 } from "./repository.js";
 import { registrationService } from "./service.js";
+import { checkinService } from "../checkin/service.js";
+import { eventService } from "../event/service.js";
 
 const ACTOR_ID = "00000000-0000-0000-0000-000000000099";
 const ORG_ID = "00000000-0000-0000-0000-000000000001";
@@ -377,6 +380,76 @@ describe("registration integration", () => {
     assert.equal(status.registration.state, "Registered");
     assert.equal(status.registration.eventId, event.id);
     assert.equal(status.registration.participantId, participantId);
+  });
+
+  it("AC-08: registration-status returns Attended after event completion", async () => {
+    const windows = defaultWindows();
+    const participantId = await newParticipantId();
+    const participantContext = {
+      actorId: participantId,
+      actorRole: "Participant" as const,
+    };
+
+    const draft = await createEvent(
+      {
+        name: `Feedback Status ${randomUUID()}`,
+        startAt: windows.open,
+        endAt: windows.close,
+        ruleConfig: {
+          capacity: 5,
+          registrationOpenAt: windows.open,
+          registrationCloseAt: windows.close,
+          checkinOpenAt: windows.open,
+          checkinCloseAt: windows.close,
+          feedbackOpenAt: windows.open,
+          feedbackCloseAt: windows.close,
+        },
+      },
+      ACTOR_ID,
+      "OrganizerAdmin",
+      ORG_ID,
+    );
+
+    await transitionEventState(draft.id, "Published", {
+      actorId: ACTOR_ID,
+      actorRole: "OrganizerAdmin",
+      action: "test",
+    });
+    await transitionEventState(draft.id, "RegistrationOpen", {
+      actorId: ACTOR_ID,
+      actorRole: "OrganizerAdmin",
+      action: "test",
+    });
+
+    const registered = await registrationService.register(
+      draft.id,
+      participantId,
+      participantContext,
+    );
+
+    await transitionEventState(draft.id, "InProgress", {
+      actorId: ACTOR_ID,
+      actorRole: "OrganizerAdmin",
+      action: "test",
+    });
+
+    await checkinService.staffCheckin(
+      draft.id,
+      { registrationId: registered.registrationId },
+      { actorId: ACTOR_ID, actorRole: "OrganizerAdmin" },
+    );
+
+    await eventService.complete(draft.id, {
+      actorId: ACTOR_ID,
+      actorRole: "OrganizerAdmin",
+    });
+
+    const row = await findRegistrationById(registered.registrationId);
+    assert.equal(row?.state, "Attended");
+
+    const status = await registrationService.getStatus(draft.id, participantId);
+    assert.ok(status.registration);
+    assert.equal(status.registration.state, "Attended");
   });
 
   it("AC-13: GET /me/registrations returns paginated participant registrations", async () => {

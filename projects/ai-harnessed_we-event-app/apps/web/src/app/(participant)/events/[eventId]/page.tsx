@@ -265,7 +265,7 @@ export default function EventDetailPage() {
                 <h2 className="text-[length:var(--font-size-lg)] font-[var(--font-weight-semibold)]">
                   Actions
                 </h2>
-                {eventLabel?.hint ? (
+                {eventLabel?.hint && !registration ? (
                   <p className="mt-2 text-[length:var(--font-size-sm)] text-[var(--color-text-secondary)]">
                     {eventLabel.hint}
                   </p>

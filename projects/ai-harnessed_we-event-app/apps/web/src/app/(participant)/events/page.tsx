@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import type { EventState, RegistrationState } from "@we-event/domain";
+import type { EventState } from "@we-event/domain";
 
 import { EventCard, EventCardSkeleton } from "@/components/participant/event-card";
 import { FilterBar } from "@/components/layout/filter-bar";
@@ -18,13 +18,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useLiveQuery } from "@/hooks/use-live-query";
+import { useEventRegistrationStatuses } from "@/hooks/use-event-registration-statuses";
 import { queryKeys } from "@/lib/query-keys";
-import { fetchEvents, fetchMyRegistrations } from "@/lib/participant-api";
+import { fetchEvents } from "@/lib/participant-api";
 import { useAuth } from "@/providers/auth-provider";
 
 const EVENT_PAGE_SIZE = 12;
-/** Single lookup request for registration badges on the current browse page. */
-const REGISTRATION_LOOKUP_PAGE_SIZE = 100;
 
 const EVENT_STATE_FILTERS: Array<{ value: "all" | EventState; label: string }> = [
   { value: "all", label: "All states" },
@@ -67,19 +66,12 @@ export default function BrowseEventsPage() {
     enabled: Boolean(token),
   });
 
-  const myRegistrationsQuery = useLiveQuery({
-    queryKey: queryKeys.registrations.mine({
-      page: 1,
-      pageSize: REGISTRATION_LOOKUP_PAGE_SIZE,
-    }),
-    queryFn: () =>
-      fetchMyRegistrations(token!, {
-        page: 1,
-        pageSize: REGISTRATION_LOOKUP_PAGE_SIZE,
-      }),
-    mode: "eventList",
-    enabled: Boolean(token),
-  });
+  const eventIds = useMemo(
+    () => (eventsQuery.data?.items ?? []).map((event) => event.eventId),
+    [eventsQuery.data?.items],
+  );
+
+  const registrationStatuses = useEventRegistrationStatuses(token, eventIds);
 
   const events = useMemo(
     () => eventsQuery.data?.items ?? [],
@@ -88,14 +80,6 @@ export default function BrowseEventsPage() {
   const total = eventsQuery.data?.total ?? 0;
   const totalPages = eventsQuery.data?.totalPages ?? 1;
   const pageSize = eventsQuery.data?.pageSize ?? EVENT_PAGE_SIZE;
-
-  const registrationStateByEventId = useMemo(() => {
-    const map = new Map<string, RegistrationState>();
-    for (const item of myRegistrationsQuery.data?.items ?? []) {
-      map.set(item.eventId, item.state);
-    }
-    return map;
-  }, [myRegistrationsQuery.data?.items]);
 
   return (
     <div className="space-y-8">
@@ -172,10 +156,14 @@ export default function BrowseEventsPage() {
               <EventCard
                 key={event.eventId}
                 event={event}
-                registrationState={registrationStateByEventId.get(event.eventId) ?? null}
-                registrationLoading={myRegistrationsQuery.isLoading}
+                registrationState={
+                  registrationStatuses.stateByEventId.get(event.eventId) ?? null
+                }
+                registrationLoading={registrationStatuses.isLoading}
                 registrationError={
-                  myRegistrationsQuery.isError ? myRegistrationsQuery.error.message : null
+                  registrationStatuses.hasError
+                    ? registrationStatuses.errorMessage
+                    : null
                 }
               />
             ))}

@@ -112,6 +112,27 @@ export async function findActiveRegistration(
   return mapRegistration(result.rows[0] as Record<string, unknown>);
 }
 
+/** Latest registration row for participant UX (includes Attended/Absent after event completion). */
+export async function findLatestParticipantRegistration(
+  eventId: string,
+  participantId: string,
+  client: Pool | PoolClient = getPool(),
+): Promise<RegistrationRow | null> {
+  const result = await client.query(
+    `SELECT *
+     FROM registrations
+     WHERE event_id = $1
+       AND participant_id = $2
+     ORDER BY requested_at DESC
+     LIMIT 1`,
+    [eventId, participantId],
+  );
+  if (result.rowCount === 0) {
+    return null;
+  }
+  return mapRegistration(result.rows[0] as Record<string, unknown>);
+}
+
 export async function findRegistrationById(
   registrationId: string,
   client: Pool | PoolClient = getPool(),
