@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-17",
   "version": 1,
-  "docFingerprint": "sha256:acbd62dbcf565def34dd64afff5a54fa280437d552a05240188b14dda78e5dd6",
-  "generatedAt": "2026-06-26T11:53:40Z",
+  "docFingerprint": "sha256:7a9d111cfd09cb9b493187cefe6a7aba58b72f6b9f4ee6e0acaf3c7335da20a3",
+  "generatedAt": "2026-06-26T16:33:05Z",
   "cases": [
     {
       "id": "TC-AC-17-001",
@@ -15,7 +15,7 @@
         "FR-35",
         "FR-36"
       ],
-      "title": "BRD §1.7 organizer uploads cover; participant sees cover on event list and detail",
+      "title": "BRD §1.7 Event Media — organizer uploads cover; participant sees on list and detail",
       "preconditions": [
         "API server running at /api/v1",
         "Draft or editable event owned by organizer scope",
@@ -29,7 +29,7 @@
         "GET /api/v1/events/{eventId} as participant and read coverImageUrl",
         "GET coverImageUrl (or GET /api/v1/media/events/{key}) to fetch image bytes"
       ],
-      "expected": "Upload succeeds and persists cover_image_key; paginated list item includes coverImageUrl when key is set; event detail includes same coverImageUrl; media endpoint returns HTTP 200 with correct image Content-Type and bytes matching upload — satisfies BRD AC-17 acceptance criterion and MVP event media scope",
+      "expected": "Upload succeeds and persists cover_image_key; paginated list item includes coverImageUrl when key is set; event detail includes same coverImageUrl; media endpoint returns HTTP 200 with correct image Content-Type and bytes matching upload — satisfies BRD §1.7 AC-17 (Organizer uploads a cover image; participant sees it on event list and event detail) and MVP event media scope",
       "edgeCase": false
     },
     {
@@ -42,7 +42,7 @@
         "AC-17",
         "FR-35"
       ],
-      "title": "POST /api/v1/events/{eventId}/cover-image returns success and persists cover metadata",
+      "title": "Organizer Admin POST /api/v1/events/{eventId}/cover-image returns success and persists cover metadata",
       "preconditions": [
         "API server running at /api/v1",
         "Draft or editable event owned by organizer scope",
@@ -92,16 +92,16 @@
       ],
       "title": "Organizer uploads cover in event form; participant sees 16:9 thumbnail on list and hero on detail",
       "preconditions": [
-        "Web app running with organizer event create/edit form and participant discovery pages",
+        "Web app running with organizer event create/edit form per page-list §Event management and participant discovery pages",
         "OrganizerAdmin logged in; participant session available or public browse enabled",
         "Valid image file for file picker"
       ],
       "steps": [
-        "As OrganizerAdmin, open create or edit event form, select cover image via file picker, observe preview, and save/upload",
-        "As participant, navigate to event discovery list (paginated card grid)",
-        "Open the same event detail page"
+        "As OrganizerAdmin, open create or edit event form at /organizer/events, select cover via file picker, observe preview, and save/upload",
+        "As participant, navigate to event discovery list at /events (paginated card grid, pageSize 12)",
+        "Open the same event detail page at /events/{eventId}"
       ],
-      "expected": "Organizer form shows upload progress and preview per FR-35; participant event card renders 16:9 cover thumbnail via next/image; event detail header renders cover hero; uploaded image visible on both surfaces per AC-17 and event-specific components spec",
+      "expected": "Organizer form exposes file picker, preview, replace, and remove per page-list create/edit spec and FR-35; participant event card renders 16:9 cover thumbnail via next/image; event detail header renders cover hero; uploaded image visible on both surfaces per AC-17 and event-specific components spec",
       "edgeCase": false
     },
     {
@@ -309,7 +309,7 @@
         "Navigate to participant event discovery list",
         "Open event detail for event without cover"
       ],
-      "expected": "Event card and detail header render neutral placeholder illustration instead of broken image; no coverImageUrl-dependent fetch errors; next/image fallback behavior per UI spec §Event card and Event detail header",
+      "expected": "Event card and detail header render neutral fallback illustration instead of broken image; no coverImageUrl-dependent fetch errors; next/image fallback behavior per page-list discovery card grid and event-specific components Event card and Event detail header",
       "edgeCase": true
     },
     {
