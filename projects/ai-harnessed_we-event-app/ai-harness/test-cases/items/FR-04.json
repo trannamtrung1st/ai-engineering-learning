@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-04",
   "version": 1,
-  "docFingerprint": "sha256:aa1117f3b650d9449d7073916f7ca9b84a02286b19d61773de4e49196817a850",
-  "generatedAt": "2026-06-26T11:59:21Z",
+  "docFingerprint": "sha256:d5426bd8235ae44f8d8c17ffb86670943a993f20178df22df9dcadf4ea6c6df5",
+  "generatedAt": "2026-06-26T16:39:47Z",
   "cases": [
     {
       "id": "TC-FR-04-001",
@@ -66,7 +66,7 @@
         "Invoke eventService.publish(eventId, organizerAdminContext)",
         "Query audit logs for the event filtered by entityType Event"
       ],
-      "expected": "Audit record persisted with actorId, actorRole OrganizerAdmin, action indicating publish transition, eventId, before.state Draft, after.state Published, and occurredAt timestamp; satisfies Workflow A step 5 (system writes EventPublished and audit log) and AC-11 critical event configuration change audit expectation",
+      "expected": "Audit record persisted with actorId, actorRole OrganizerAdmin, action event.published, entityType Event, before.state Draft, after.state Published, and occurredAt timestamp per roles §6 minimum audit payload; satisfies Workflow A step 5 (system writes EventPublished and audit log) and authorization decision pattern step 6",
       "edgeCase": false
     },
     {
@@ -133,7 +133,7 @@
         "POST /api/v1/events/{eventId}/pause with organizer Authorization bearer",
         "POST /api/v1/events/{eventId}/registrations with participant JWT"
       ],
-      "expected": "Pause returns HTTP 200 with registrationPaused true; subsequent registration attempt fails with typed semantic error (HTTP 422 or 409) indicating registration is paused or not accepted; no new Registered or Waitlisted record created; existing registrations unaffected",
+      "expected": "Pause returns HTTP 200 with registrationPaused true; subsequent registration attempt fails with HTTP 422 and error.code REGISTRATION_WINDOW_CLOSED (details.registrationPaused true) per API error contract §7; no new Registered or Waitlisted record created; existing registrations unaffected",
       "edgeCase": false
     },
     {
@@ -198,7 +198,7 @@
         "Attempt eventService.publish(eventId, organizerAdminContext)",
         "Verify event.state remains Draft in database"
       ],
-      "expected": "ApiError with semantic validation or HTTP 409 invalid transition; event state unchanged at Draft; satisfies Event module guardrail reject publish if required event fields are incomplete",
+      "expected": "HTTP 422 with error.code INVALID_INPUT and details.missing listing incomplete fields; event state unchanged at Draft; satisfies Event module guardrail reject publish if required event fields are incomplete and API strict input validation before domain execution",
       "edgeCase": true
     },
     {
@@ -219,7 +219,7 @@
         "Attempt eventService.publish(eventId, organizerAdminContext)",
         "Query event.state"
       ],
-      "expected": "Publish blocked with validation error before state transition; event remains Draft; satisfies Workflow A guardrail block publish on invalid time windows",
+      "expected": "HTTP 422 with error.code INVALID_INPUT before state transition; event remains Draft; satisfies Workflow A guardrail block publish on invalid time windows and assertPublishReady rule-config validation",
       "edgeCase": true
     },
     {
@@ -240,7 +240,7 @@
         "POST /api/v1/events/{eventId}/publish on the non-Draft event",
         "GET /api/v1/events/{eventId} to read current state"
       ],
-      "expected": "HTTP 409 Conflict with stable error code for invalid transition; original event state preserved unchanged; aligns with invalid transition policy reject with 409 and preserve original state",
+      "expected": "HTTP 409 with error.code INVALID_STATE_TRANSITION; original event state preserved unchanged; aligns with invalid transition policy §5 reject with 409 and preserve original state",
       "edgeCase": true
     },
     {
@@ -252,16 +252,16 @@
       "traceability": [
         "FR-04"
       ],
-      "title": "Pause rejected when event is not RegistrationOpen or already paused",
+      "title": "Pause rejected when event is not RegistrationOpen",
       "preconditions": [
-        "Event in Draft, Published, RegistrationClosed, InProgress, Completed, or Cancelled state; OR RegistrationOpen with registrationPaused already true",
+        "Event fixtures in Draft, Published, RegistrationClosed (registrationPaused false), InProgress, Completed, or Cancelled state",
         "OrganizerAdmin JWT"
       ],
       "steps": [
         "POST /api/v1/events/{eventId}/pause for each ineligible state fixture",
         "Verify event state and registrationPaused unchanged"
       ],
-      "expected": "HTTP 409 or semantic guard error indicating illegal pause transition; event state and registrationPaused flag unchanged; satisfies Event module guardrail reject illegal transitions by current state",
+      "expected": "HTTP 409 with error.code INVALID_STATE_TRANSITION and message indicating pause is only allowed while registration is open; event state and registrationPaused flag unchanged; satisfies Event module guardrail reject illegal transitions by current state",
       "edgeCase": true
     },
     {
@@ -439,6 +439,48 @@
       ],
       "steps": [
         "POST /api/v1/events/{unknownEventId}/pause with organizer Authorization bearer"
+      ],
+      "expected": "HTTP 404 with typed error envelope indicating entity not found or not in actor scope; no side effects per API error contract §7",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-04-021",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": [
+        "FR-04",
+        "AC-11"
+      ],
+      "title": "Pause event writes audit log with registrationPaused before/after diff",
+      "preconditions": [
+        "Event in RegistrationOpen state with registrationPaused false",
+        "Authenticated OrganizerAdmin actor with event scope"
+      ],
+      "steps": [
+        "Invoke eventService.pause(eventId, organizerAdminContext)",
+        "Query audit logs for the event filtered by action event.paused"
+      ],
+      "expected": "Audit record persisted with actorId, actorRole OrganizerAdmin, action event.paused, entityType Event, before.ruleConfig.registrationPaused false, after.ruleConfig.registrationPaused true, and occurredAt timestamp; event lifecycle state remains RegistrationOpen; satisfies authorization decision pattern step 6 and Audit module guardrail for critical state-forcing actions",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-04-022",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": [
+        "FR-04"
+      ],
+      "title": "POST publish on non-existent event returns 404",
+      "preconditions": [
+        "OrganizerAdmin JWT",
+        "eventId UUID that does not exist or is outside actor organization scope"
+      ],
+      "steps": [
+        "POST /api/v1/events/{unknownEventId}/publish with organizer Authorization bearer"
       ],
       "expected": "HTTP 404 with typed error envelope indicating entity not found or not in actor scope; no side effects per API error contract §7",
       "edgeCase": true
