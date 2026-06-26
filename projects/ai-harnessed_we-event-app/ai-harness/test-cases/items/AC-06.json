@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-06",
-  "version": 1,
-  "docFingerprint": "sha256:4d12785a73f71eae22ecc1c28abee1e2becca04b0528fdc2184d610d44dc34ff",
-  "generatedAt": "2026-06-26T11:12:00Z",
+  "version": 2,
+  "docFingerprint": "sha256:c08ad0039562ef88268aca8eda534df09d841c6763890b0568ed11fbf5e0e3fb",
+  "generatedAt": "2026-06-26T16:17:17Z",
   "cases": [
     {
       "id": "TC-AC-06-001",
@@ -160,7 +160,8 @@
       "priority": "P0",
       "traceability": [
         "AC-06",
-        "FR-15"
+        "FR-15",
+        "BR-10"
       ],
       "title": "Flow A lifecycle blocks check-in step when outside configured window",
       "preconditions": [
@@ -236,7 +237,7 @@
         "Participant logged in with Registered status for the event"
       ],
       "steps": [
-        "Navigate to event self check-in page",
+        "Navigate to /events/{eventId}/check-in for the registered event",
         "Attempt check-in action or observe disabled state and messaging",
         "Confirm no success timestamp is displayed"
       ],
@@ -261,7 +262,7 @@
         "Target participant in Registered state listed in console"
       ],
       "steps": [
-        "Open organizer check-in operations console for the event",
+        "Open organizer check-in operations console at /organizer/events/{eventId}/check-in",
         "Attempt staff check-in for a registered participant",
         "Observe error or disabled control feedback"
       ],
@@ -278,17 +279,17 @@
         "AC-06",
         "BR-10"
       ],
-      "title": "Check-in at checkinCloseAt boundary is rejected when window policy excludes close instant",
+      "title": "Check-in at checkinCloseAt boundary is rejected per exclusive close boundary",
       "preconditions": [
         "Event configured with known checkinOpenAt and checkinCloseAt",
-        "Fixed clock set exactly to checkinCloseAt",
+        "Fixed clock set exactly to checkinCloseAt (now >= checkinOpenAt and now < checkinCloseAt is false)",
         "Registered participant with no prior check-in"
       ],
       "steps": [
         "Submit staff or self check-in at the close boundary instant",
         "Query CheckinRecord and registration state"
       ],
-      "expected": "Check-in rejected with CHECKIN_WINDOW_CLOSED per configured close-boundary rule; registration stays Registered",
+      "expected": "Check-in rejected with CHECKIN_WINDOW_CLOSED; exclusive close boundary treats checkinCloseAt as out-of-window (valid window is checkinOpenAt <= now < checkinCloseAt); registration stays Registered",
       "edgeCase": true
     },
     {
@@ -415,7 +416,8 @@
       "traceability": [
         "AC-06",
         "BR-10",
-        "NFR-13"
+        "NFR-13",
+        "NFR-15"
       ],
       "title": "CHECKIN_WINDOW_CLOSED error includes window bounds in details for user action",
       "preconditions": [
@@ -424,9 +426,9 @@
       ],
       "steps": [
         "POST check-in endpoint outside window",
-        "Inspect error.error.details in response body"
+        "Inspect error envelope fields in response body"
       ],
-      "expected": "Error envelope includes code CHECKIN_WINDOW_CLOSED, user-safe message, and details with checkinOpenAt and checkinCloseAt ISO timestamps per error-handling contract",
+      "expected": "HTTP 422 with error.code CHECKIN_WINDOW_CLOSED, user-safe message, details.checkinOpenAt and details.checkinCloseAt ISO timestamps, non-empty requestId, and timestamp per error-handling §3 standard envelope",
       "edgeCase": false
     },
     {
