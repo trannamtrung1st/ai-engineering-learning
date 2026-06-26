@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-35",
   "version": 1,
-  "docFingerprint": "sha256:5087064824d0b6a4f531034dbe1fa0a232327bacca5de04922a3530f3e8e13cb",
-  "generatedAt": "2026-06-26T12:49:24Z",
+  "docFingerprint": "sha256:b1932c8f98ad822f8ce321e52d352f13a8e3d852d45a6bb71ba9c83d321fc738",
+  "generatedAt": "2026-06-26T17:45:49Z",
   "cases": [
     {
       "id": "TC-FR-35-001",
@@ -96,7 +96,7 @@
         "Observe inline preview before or after save",
         "Submit form or trigger upload and confirm persistence"
       ],
-      "expected": "Form exposes file picker, preview, and upload progress per page-list create/edit spec; selected image preview renders; upload completes and cover persists on event; FR-35 upload during create/edit UI flow satisfied",
+      "expected": "Form exposes file picker, preview, replace, and remove per page-list create/edit spec; selected image preview renders; upload completes and cover persists on event; FR-35 upload during create/edit UI flow satisfied",
       "edgeCase": false
     },
     {
@@ -265,15 +265,16 @@
       "traceability": [
         "FR-35"
       ],
-      "title": "OrganizerStaff cannot upload cover image (create/edit restricted to OrganizerAdmin)",
+      "title": "OrganizerStaff cannot upload or delete cover image (create/edit restricted to OrganizerAdmin)",
       "preconditions": [
         "Editable event in staff-assigned scope",
         "Valid OrganizerStaff JWT (no create/edit event draft permission per roles-permissions matrix)"
       ],
       "steps": [
-        "POST /api/v1/events/{eventId}/cover-image with OrganizerStaff token and valid image file"
+        "POST /api/v1/events/{eventId}/cover-image with OrganizerStaff token and valid image file",
+        "DELETE /api/v1/events/{eventId}/cover-image with OrganizerStaff token on event with existing cover"
       ],
-      "expected": "HTTP 403 unauthorized; no cover_image_key change; FR-35 actor is Organizer Admin only and Staff lacks create/edit event draft capability",
+      "expected": "HTTP 403 unauthorized for both POST and DELETE; no cover_image_key change; FR-35 actor is Organizer Admin only and Staff lacks create/edit event draft capability",
       "edgeCase": true
     },
     {
@@ -382,6 +383,28 @@
         "GET /api/v1/media/events/nonexistent-key"
       ],
       "expected": "Path traversal and invalid keys rejected with HTTP 404 or 400; no arbitrary filesystem read; storage confined to configured uploads directory per NFR-18",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-35-018",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": [
+        "FR-35",
+        "NFR-18"
+      ],
+      "title": "Malformed multipart cover upload rejected at API validation gate",
+      "preconditions": [
+        "OrganizerAdmin JWT and editable event",
+        "Multipart request with missing file part or unsupported Content-Type on file field"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/cover-image with empty multipart body",
+        "POST with file field but unsupported or missing Content-Type declaration"
+      ],
+      "expected": "HTTP 400 invalid input; no cover_image_key persisted; malformed uploads cannot bypass NFR-18 MIME validation gate",
       "edgeCase": true
     }
   ]
