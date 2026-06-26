@@ -1,0 +1,342 @@
+{
+  "productItemId": "FR-28",
+  "version": 1,
+  "docFingerprint": "sha256:5acfc070b54f77ab2ad0b419735f860b390f8a4b88a52809f83094992e0b94d3",
+  "generatedAt": "2026-06-26T12:00:00Z",
+  "cases": [
+    {
+      "id": "TC-FR-28-001",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-28", "FR-31"],
+      "title": "Participant browses first page of discoverable events with default pagination",
+      "preconditions": [
+        "At least three events in participant-visible states (e.g. RegistrationOpen)",
+        "Authenticated Participant JWT",
+        "Events seeded with distinct startAt values for sort verification"
+      ],
+      "steps": [
+        "GET /api/v1/events?page=1 with Participant Authorization bearer",
+        "Inspect response envelope and first item fields"
+      ],
+      "expected": "HTTP 200 with paginated envelope (items, page=1, pageSize=12, total, totalPages); items.length <= 12; items sorted by startAt ascending per default sort; each item includes eventId, name, state, startAt, location, and coverImageUrl when set; satisfies FR-28 browse paginated event listings and FR-31 total count metadata",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-28-002",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-28", "AC-13", "FR-31"],
+      "title": "Participant navigates to page 2 of event browse list",
+      "preconditions": [
+        "At least 13 participant-visible events (exceeds default pageSize of 12)",
+        "Authenticated Participant JWT"
+      ],
+      "steps": [
+        "GET /api/v1/events?page=1&pageSize=12&sort=startAt:asc and record total and totalPages",
+        "GET /api/v1/events?page=2&pageSize=12&sort=startAt:asc",
+        "Compare page-2 items to expected second slice ordered by startAt ascending"
+      ],
+      "expected": "Page-2 response has page=2, pageSize=12, total matching page-1 total, totalPages=ceil(total/12), items are the correct contiguous slice per testing plan Events list page 2 scenario and AC-13",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-28-003",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-28"],
+      "title": "Participant searches event browse list by name via q parameter",
+      "preconditions": [
+        "Discoverable event named uniquely (e.g. Campus Workshop Alpha)",
+        "Additional discoverable events seeded with different names",
+        "Authenticated Participant JWT"
+      ],
+      "steps": [
+        "GET /api/v1/events?q=Campus+Workshop+Alpha&page=1&pageSize=12 with Participant token",
+        "Verify all returned items match search intent"
+      ],
+      "expected": "HTTP 200; items include the matching event by name; non-matching discoverable events excluded; search q parameter filters participant browse list per API design GET /events and page list browse with search",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-28-004",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-28"],
+      "title": "Participant filters event browse list by state",
+      "preconditions": [
+        "Seeded events in RegistrationOpen and RegistrationClosed states visible to participants",
+        "Authenticated Participant JWT"
+      ],
+      "steps": [
+        "GET /api/v1/events?state=RegistrationOpen&page=1&pageSize=12 with Participant token",
+        "GET /api/v1/events?state=RegistrationClosed&page=1&pageSize=12 with same token"
+      ],
+      "expected": "RegistrationOpen filter returns only events with state RegistrationOpen; RegistrationClosed filter returns only RegistrationClosed events; optional state filter on GET /events supports participant browse basic filters per page list and API paginated list endpoints table",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-28-005",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["FR-28", "FR-31"],
+      "title": "Combined search, state filter, and pagination on event browse",
+      "preconditions": [
+        "Multiple RegistrationOpen events containing 'workshop' in name plus RegistrationOpen events without that term",
+        "At least 13 RegistrationOpen events matching q=workshop to exceed one page",
+        "Authenticated Participant JWT"
+      ],
+      "steps": [
+        "GET /api/v1/events?q=workshop&state=RegistrationOpen&page=1&pageSize=12&sort=startAt:asc",
+        "GET /api/v1/events?q=workshop&state=RegistrationOpen&page=2&pageSize=12&sort=startAt:asc"
+      ],
+      "expected": "Both responses apply search and state filter before paging; total reflects filtered row count not full catalog; page-2 items are correct slice of filtered set; demonstrates FR-28 browse with search and filter together",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-28-006",
+      "category": "functional",
+      "layer": "browser",
+      "priority": "P0",
+      "traceability": ["FR-28", "AC-14", "AC-17"],
+      "title": "Participant event discovery page renders paginated card grid with search and filters",
+      "preconditions": [
+        "Web app running with at least 13 discoverable seeded events",
+        "At least one event has cover image uploaded",
+        "Participant authenticated on event discovery browse route"
+      ],
+      "steps": [
+        "Navigate to participant event discovery browse list",
+        "Verify search input and basic state filter controls are visible",
+        "Confirm paginated card grid shows at most 12 cards with cover thumbnail or fallback illustration",
+        "Use Next pagination control to advance to page 2"
+      ],
+      "expected": "Browse list displays search and basic filters, availability/registration status on cards, paginated card grid (16:9 cover or fallback), and pagination below grid; page change fetches next server page per page list event discovery, common UI pagination contract, and AC-14 server-driven listing",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-28-007",
+      "category": "functional",
+      "layer": "browser",
+      "priority": "P0",
+      "traceability": ["FR-28", "AC-14"],
+      "title": "Changing search or filter criteria resets browse list to page 1",
+      "preconditions": [
+        "More than 12 discoverable events seeded",
+        "Participant on event discovery browse page currently viewing page 2"
+      ],
+      "steps": [
+        "Navigate to page 2 of event browse list",
+        "Enter a search term in the search input and submit or debounce trigger",
+        "Observe resulting page index and network request parameters",
+        "Clear search, apply a state filter, and observe page reset again"
+      ],
+      "expected": "Each search or filter change resets pagination to page 1 and issues GET /events with page=1 and updated q or state parameters; matches common UI pagination rule and page list requirement that changing filters resets to page 1",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-28-008",
+      "category": "functional",
+      "layer": "unit",
+      "priority": "P1",
+      "traceability": ["FR-28"],
+      "title": "Event discovery card renders browse metadata with state badge and detail link",
+      "preconditions": [
+        "EventCard (or equivalent) component test harness",
+        "Sample event props: name, state RegistrationOpen, startAt, location, optional coverImageUrl"
+      ],
+      "steps": [
+        "Render event card with RegistrationOpen fixture",
+        "Assert visible name, timing, location, state badge, and link to event detail"
+      ],
+      "expected": "Card markup exposes discoverable event summary fields and navigation to detail; supports participant browse list card grid per page list and backlog component test requirement event-card.test.tsx",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-28-009",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-28", "FR-31"],
+      "title": "Event list service returns paginated envelope with correct total for participant browse",
+      "preconditions": [
+        "Known count of participant-visible events (e.g. 15 total)",
+        "Participant actor context",
+        "PostgreSQL test database with seeded events"
+      ],
+      "steps": [
+        "Invoke eventService.listEvents(participantContext, { page: 1, pageSize: 12 })",
+        "Compare items.length, total, and totalPages to seeded row count"
+      ],
+      "expected": "Service returns paginated result with total=15, totalPages=2, items.length=12 on page 1; total reflects full matching count before paging per integration target paginated list queries and FR-31",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-28-010",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["FR-28"],
+      "title": "Search with no matching events returns empty items with valid pagination metadata",
+      "preconditions": [
+        "Discoverable events seeded with names not containing 'zzznomatch'",
+        "Authenticated Participant JWT"
+      ],
+      "steps": [
+        "GET /api/v1/events?q=zzznomatch&page=1&pageSize=12 with Participant token"
+      ],
+      "expected": "HTTP 200 with items: [], total=0, totalPages=0 (or equivalent), page=1, pageSize=12; empty search result is a valid browse outcome with intact envelope",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-28-011",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-28", "AC-13"],
+      "title": "Event browse page beyond last page returns empty items with valid metadata",
+      "preconditions": [
+        "Five participant-visible events seeded (totalPages=1 at pageSize 12)",
+        "Authenticated Participant JWT"
+      ],
+      "steps": [
+        "GET /api/v1/events?page=1&pageSize=12 and record totalPages",
+        "GET /api/v1/events?page={totalPages+1}&pageSize=12"
+      ],
+      "expected": "Page beyond totalPages returns items: [] with unchanged total, totalPages, page, and pageSize per AC-13 paginated list boundary behavior for participant event browse",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-28-012",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-28"],
+      "title": "Invalid pagination parameters on event browse return 400 INVALID_PAGINATION",
+      "preconditions": [
+        "Authenticated Participant JWT",
+        "Discoverable events seeded"
+      ],
+      "steps": [
+        "GET /api/v1/events?page=0&pageSize=12 with Participant token",
+        "GET /api/v1/events?page=1&pageSize=101 with Participant token",
+        "GET /api/v1/events?page=abc&pageSize=12 with Participant token"
+      ],
+      "expected": "Each invalid request returns HTTP 400 with error code INVALID_PAGINATION; no partial event data returned; pagination contract enforces page >= 1 and pageSize max 100",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-28-013",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["FR-28"],
+      "title": "Invalid state filter value on event browse is rejected or ignored safely",
+      "preconditions": [
+        "Authenticated Participant JWT",
+        "RegistrationOpen events seeded"
+      ],
+      "steps": [
+        "GET /api/v1/events?state=NotARealState&page=1&pageSize=12 with Participant token"
+      ],
+      "expected": "Request returns HTTP 400 with validation error or HTTP 200 with empty items; must not return events in unintended states or crash; invalid filter input handled per strict input validation API principle",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-28-014",
+      "category": "edge",
+      "layer": "browser",
+      "priority": "P1",
+      "traceability": ["FR-28", "AC-14"],
+      "title": "Empty browse result shows empty state when search or filter matches no events",
+      "preconditions": [
+        "Discoverable events seeded",
+        "Participant on event discovery browse page"
+      ],
+      "steps": [
+        "Enter search term that matches no events",
+        "Submit search and wait for list update"
+      ],
+      "expected": "Card grid region shows empty state messaging (not an error page); pagination reflects zero total or hides appropriately; user can clear search to restore results per common UI table/card empty state contract",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-28-015",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P2",
+      "traceability": ["FR-28", "AC-15"],
+      "title": "Unauthenticated event browse API request returns 401",
+      "preconditions": [
+        "API running",
+        "No Authorization header"
+      ],
+      "steps": [
+        "GET /api/v1/events?page=1&pageSize=12 without credentials"
+      ],
+      "expected": "HTTP 401 with typed error envelope; unauthenticated access to protected GET /events rejected per AC-15 and auth required for non-public endpoints",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-28-016",
+      "category": "non-functional",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["FR-28", "NFR-05", "AC-14"],
+      "title": "Event browse returns single paginated page not full catalog in one response",
+      "preconditions": [
+        "More than 12 participant-visible events seeded",
+        "Authenticated Participant JWT"
+      ],
+      "steps": [
+        "GET /api/v1/events?page=1&pageSize=12 with Participant token",
+        "Verify items.length and total fields"
+      ],
+      "expected": "Response contains at most 12 items while total reflects full matching row count; client receives one page at a time per NFR-05 and AC-14 (no unbounded full-catalog payload in a single call)",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-28-017",
+      "category": "non-functional",
+      "layer": "integration",
+      "priority": "P2",
+      "traceability": ["FR-28", "NFR-16"],
+      "title": "Large participant-visible event catalog browse returns one page within acceptable response time",
+      "preconditions": [
+        "Seeded participant-visible events exceeding 500 rows",
+        "Participant actor context",
+        "PostgreSQL test database per integration test setup"
+      ],
+      "steps": [
+        "Invoke paginated GET /events equivalent query for page 1 pageSize 12",
+        "Measure end-to-end query latency for single page fetch"
+      ],
+      "expected": "Single page returned with correct total count; response time within acceptable threshold when total exceeds 500 rows per NFR-16; query uses events.start_at index for default sort",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-28-018",
+      "category": "non-functional",
+      "layer": "browser",
+      "priority": "P1",
+      "traceability": ["FR-28", "AC-14", "NFR-05"],
+      "title": "Event browse page change triggers single paginated API request not full dataset load",
+      "preconditions": [
+        "More than 12 discoverable events seeded",
+        "Participant on event discovery browse page with network inspection available"
+      ],
+      "steps": [
+        "Load page 1 and record GET /events request with page=1",
+        "Click Next to page 2",
+        "Verify only one new GET /events request with page=2 is issued"
+      ],
+      "expected": "Page navigation fetches exactly one server page per interaction; no client-side slicing of a previously loaded full catalog per AC-14, NFR-05, and listing pages server-driven pagination tech stack guidance",
+      "edgeCase": false
+    }
+  ]
+}
