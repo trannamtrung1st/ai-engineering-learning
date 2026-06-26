@@ -271,9 +271,9 @@
       "generatedAt": "2026-06-26T12:54:50Z"
     },
     "BR-03": {
-      "current": false,
+      "current": true,
       "docFingerprint": "sha256:cb1c9eb60d41f4924b791516e6ce60f977cb306449ba7795b60d8f0014d0e753",
-      "generatedAt": "2026-06-26T05:31:40Z"
+      "generatedAt": "2026-06-26T12:56:02Z"
     },
     "BR-10": {
       "current": false,
