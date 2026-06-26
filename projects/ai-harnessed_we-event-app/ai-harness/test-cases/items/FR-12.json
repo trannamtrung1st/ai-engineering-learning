@@ -2,12 +2,13 @@
   "productItemId": "FR-12",
   "version": 1,
   "docFingerprint": "sha256:61772db2f0be7d5f91f9eccefef8b9d85ce957dbd55d47d9d14f933847b053f4",
-  "generatedAt": "2026-06-26T14:00:00Z",
+  "generatedAt": "2026-06-26T12:12:05Z",
   "cases": [
     {
       "id": "TC-FR-12-001",
       "category": "functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["FR-12", "BR-06", "BR-08"],
       "title": "System automatically promotes top waitlist participant to Registered when seat is released",
@@ -27,7 +28,29 @@
     {
       "id": "TC-FR-12-002",
       "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["FR-12", "AC-04", "BR-03", "BR-08"],
+      "title": "Testing-plan Flow B promotion segment keeps Registered count at capacity after auto-promotion",
+      "preconditions": [
+        "Full event with waitlistEnabled true per testing-plan §6 Flow B setup",
+        "Participant A Registered and participant B Waitlisted at position 1",
+        "EventCapacity fixed at N with exactly N Registered before cancellation"
+      ],
+      "steps": [
+        "Release one seat by valid cancellation of participant A",
+        "Observe automatic promotion of participant B without separate promotion command",
+        "Count registrations in Registered state immediately after commit"
+      ],
+      "expected": "Flow B cancellation → auto promotion segment completes; Registered count equals EventCapacity (never exceeds capacity per testing-plan §3 Capacity row and AC-04); promotion is system-triggered on seat availability per FR-12",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-12-003",
+      "category": "functional",
       "layer": "unit",
+      "technique": "state-transition",
       "priority": "P0",
       "traceability": ["FR-12", "BR-06"],
       "title": "promoteFromWaitlist state transition guard permits Waitlisted to Registered when seat available",
@@ -45,9 +68,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-12-003",
+      "id": "TC-FR-12-004",
       "category": "functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["FR-12", "BR-06"],
       "title": "FIFO promotion selects position 1 waitlist entry when one seat opens",
@@ -64,9 +88,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-12-004",
+      "id": "TC-FR-12-005",
       "category": "functional",
       "layer": "e2e",
+      "technique": "flow-b",
       "priority": "P0",
       "traceability": ["FR-12", "BR-08", "AC-04"],
       "title": "Flow B auto-promotion step after cancellation promotes waitlisted participant via API",
@@ -84,9 +109,30 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-12-005",
+      "id": "TC-FR-12-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-12", "FR-10", "BR-08"],
+      "title": "GET registration-status returns HTTP 200 with Registered after automatic waitlist promotion",
+      "preconditions": [
+        "Event at capacity with waitlistEnabled true",
+        "Participant A Registered; participant B Waitlisted position 1",
+        "A has cancelled successfully releasing one seat; B holds valid JWT"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/registrations/{registrationId}/cancel as participant A with Idempotency-Key",
+        "GET /api/v1/events/{eventId}/registration-status as participant B with Authorization bearer"
+      ],
+      "expected": "Cancel POST returns HTTP 200 with state CancelledByUser; subsequent GET registration-status returns HTTP 200 with body containing state Registered, registrationId, eventId, participantId matching B, reasonCode null, and updatedAt after promotion timestamp; no manual promotion endpoint invoked",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-12-007",
       "category": "functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P1",
       "traceability": ["FR-12", "BR-08"],
       "title": "Organizer-initiated cancellation triggers same automatic waitlist promotion",
@@ -103,27 +149,29 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-12-006",
+      "id": "TC-FR-12-008",
       "category": "functional",
       "layer": "integration",
+      "technique": "state-transition",
       "priority": "P1",
       "traceability": ["FR-12", "AC-12"],
-      "title": "WaitlistPromoted recorded in status history when promotion succeeds",
+      "title": "Waitlisted to Registered promotion recorded in status history when promotion succeeds",
       "preconditions": [
         "Event at capacity with one Waitlisted participant at position 1",
         "One Registered participant whose cancellation is permitted"
       ],
       "steps": [
-        "Cancel Registered participant to trigger promotion",
+        "Cancel Registered participant to trigger promoteFromWaitlist transition",
         "GET /api/v1/events/{eventId}/status-history?registrationId={promotedRegistrationId} or query status_history store directly"
       ],
       "expected": "Status history contains transition from Waitlisted to Registered with promoteFromWaitlist trigger context; WaitlistPromoted domain event semantics reflected in audit trail per AC-12 traceability",
       "edgeCase": false
     },
     {
-      "id": "TC-FR-12-007",
+      "id": "TC-FR-12-009",
       "category": "functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P1",
       "traceability": ["FR-12", "BR-06"],
       "title": "Sequential seat releases promote waitlist entries in FIFO order",
@@ -140,9 +188,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-12-008",
+      "id": "TC-FR-12-010",
       "category": "functional",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["FR-12", "FR-10"],
       "title": "Promoted and cancelling participants see updated statuses in UI per Flow 2",
@@ -160,14 +209,15 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-12-009",
+      "id": "TC-FR-12-011",
       "category": "edge",
       "layer": "integration",
+      "technique": "concurrency",
       "priority": "P0",
       "traceability": ["FR-12", "BR-06", "AC-04"],
       "title": "Concurrent cancellations with single waitlist entry prevent double promotion",
       "preconditions": [
-        "Event capacity 1 with two Registered participants (test harness allows controlled over-setup before cancel) OR capacity 2 with two Registered and exactly one Waitlisted",
+        "Event capacity 2 with two Registered and exactly one Waitlisted",
         "Only one waitlist slot to fill on single seat release",
         "Database uses row lock on waitlist ORDER BY position ASC per database design"
       ],
@@ -176,13 +226,34 @@
         "Await both transactions to complete",
         "Count Registered rows and verify waitlist entry promotion state"
       ],
-      "expected": "Exactly one waitlist participant promoted to Registered; no duplicate promotion of the same waitlist entry; Registered count never exceeds capacity; second concurrent promotion attempt either promotes next queue entry only when a second seat was actually freed or is a no-op when no seat remains; WAITLIST_ORDER_CONFLICT or equivalent guard prevents double promotion race",
+      "expected": "Exactly one waitlist participant promoted to Registered per freed seat; no duplicate promotion of the same waitlist entry; Registered count never exceeds capacity; second concurrent promotion promotes next queue entry only when a second seat was actually freed",
       "edgeCase": true
     },
     {
-      "id": "TC-FR-12-010",
+      "id": "TC-FR-12-012",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-12", "FR-26", "FR-25"],
+      "title": "Waitlisted participant denied canceling another participant's registration to trigger promotion",
+      "preconditions": [
+        "Event at capacity with participant A Registered and participant B Waitlisted",
+        "Participant C authenticated with valid JWT but no registration for the event",
+        "A's registrationId is known"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/registrations/{registrationId}/cancel as participant C using A's registrationId",
+        "Verify registration states for A and B unchanged"
+      ],
+      "expected": "POST returns HTTP 403 unauthorized; A remains Registered; B remains Waitlisted; participant cannot operate on another's registration per FR-26; promotion cannot be indirectly forced by unauthorized cancel",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-12-013",
       "category": "edge",
       "layer": "unit",
+      "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["FR-12", "BR-03"],
       "title": "promoteFromWaitlist rejected when no seat is available",
@@ -195,13 +266,14 @@
         "Attempt promoteFromWaitlist transition without a preceding seat release",
         "Verify guard or domain service rejects the transition"
       ],
-      "expected": "Transition rejected with 409 Conflict or domain error; registration remains Waitlisted; BR-03 capacity invariant preserved; promotion cannot occur without an available seat",
+      "expected": "Transition rejected with 409 Conflict or domain error INVALID_TRANSITION; registration remains Waitlisted; BR-03 capacity invariant preserved; promotion cannot occur without an available seat",
       "edgeCase": true
     },
     {
-      "id": "TC-FR-12-011",
+      "id": "TC-FR-12-014",
       "category": "edge",
       "layer": "integration",
+      "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["FR-12", "BR-08"],
       "title": "No promotion attempted when waitlist is empty on seat release",
@@ -218,9 +290,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-12-012",
+      "id": "TC-FR-12-015",
       "category": "edge",
       "layer": "integration",
+      "technique": "boundary-error",
       "priority": "P2",
       "traceability": ["FR-12"],
       "title": "Waitlisted registration does not promote when registration window closes before seat opens",
@@ -237,9 +310,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-12-013",
+      "id": "TC-FR-12-016",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["FR-12", "BR-08"],
       "title": "Cancellation and waitlist promotion execute atomically in one transaction",
@@ -252,13 +326,14 @@
         "Simulate cancellation mid-transaction failure after seat release but before promotion commit (or use transactional test fixture)",
         "Verify database state on rollback versus successful commit path"
       ],
-      "expected": "On successful commit both cancellation and promotion persist together; on failure neither partial state remains — no freed seat without corresponding promotion when waitlist exists; satisfies testing plan integration target for registration + waitlist promotion atomicity",
+      "expected": "On successful commit both cancellation and promotion persist together; on failure neither partial state remains — no freed seat without corresponding promotion when waitlist exists; satisfies testing plan §5 integration target for registration + waitlist promotion atomicity",
       "edgeCase": false
     },
     {
-      "id": "TC-FR-12-014",
+      "id": "TC-FR-12-017",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "scenario-matrix",
       "priority": "P0",
       "traceability": ["FR-12", "AC-04", "BR-03"],
       "title": "Registered count never exceeds capacity immediately after auto-promotion",
@@ -271,13 +346,14 @@
         "Query count of registrations in Registered state in same transaction snapshot",
         "Repeat under light concurrent load with multiple waitlisted entries"
       ],
-      "expected": "registeredCount <= EventCapacity invariant holds immediately after promotion; AC-04 and BR-03 never violated during auto-promotion",
+      "expected": "registeredCount <= EventCapacity invariant holds immediately after promotion; testing-plan §3 Capacity under heavy concurrent requests invariant satisfied for promotion path; AC-04 and BR-03 never violated during auto-promotion",
       "edgeCase": false
     },
     {
-      "id": "TC-FR-12-015",
+      "id": "TC-FR-12-018",
       "category": "non-functional",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P2",
       "traceability": ["FR-12", "NFR-12"],
       "title": "Promoted participant receives understandable and consistent Registered status messaging",
