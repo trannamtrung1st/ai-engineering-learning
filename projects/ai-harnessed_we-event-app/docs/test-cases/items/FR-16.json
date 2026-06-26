@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-16",
   "version": 1,
-  "docFingerprint": "sha256:e2dfbabeeed703c3e91f7927502130070273c2e29f7eb78b92608b58e3a599e7",
-  "generatedAt": "2026-06-26T12:19:02Z",
+  "docFingerprint": "sha256:8fc81cab4e7b769ab81d7f566d602cbb40696b9b602ef66c13fdf3a69a441ddf",
+  "generatedAt": "2026-06-26T17:07:12Z",
   "cases": [
     {
       "id": "TC-FR-16-001",
@@ -18,9 +18,9 @@
       ],
       "title": "In-window check-in stores history with timestamp per testing-plan §3",
       "preconditions": [
-        "Event InProgress with active check-in window (current time between checkinOpenAt and checkinCloseAt)",
+        "Event is InProgress with check-in window active (now >= checkinOpenAt and now < checkinCloseAt per exclusive close boundary)",
         "Registered participant with no prior CheckinRecord",
-        "Authenticated OrganizerStaff actor assigned to the event"
+        "Authenticated OrganizerStaff or OrganizerAdmin actor assigned to the event"
       ],
       "steps": [
         "Invoke checkinService.staffCheckin(eventId, { registrationId }, staffActorContext) at a fixed in-window time",
@@ -43,9 +43,9 @@
       ],
       "title": "Staff check-in persists check-in history with timestamp, method Staff, and operatorId",
       "preconditions": [
-        "Event InProgress with active check-in window",
+        "Event is InProgress with check-in window active (now >= checkinOpenAt and now < checkinCloseAt per exclusive close boundary)",
         "Registered participant with no prior CheckinRecord",
-        "Authenticated OrganizerStaff actor with known operatorId assigned to the event",
+        "Authenticated OrganizerStaff or OrganizerAdmin actor with known operatorId assigned to the event",
         "Real Postgres available for check-in module transaction"
       ],
       "steps": [
@@ -67,17 +67,17 @@
         "AC-05",
         "BR-13"
       ],
-      "title": "Self check-in persists check-in history with timestamp, method Self, and null operatorId",
+      "title": "Self check-in persists check-in history with timestamp, method Self, and participant actor reference",
       "preconditions": [
         "Event rule config enables participant self check-in",
-        "Event InProgress with active check-in window",
+        "Event is InProgress with check-in window active (now >= checkinOpenAt and now < checkinCloseAt per exclusive close boundary)",
         "Authenticated participant with Registered registration and no prior CheckinRecord"
       ],
       "steps": [
         "Invoke checkinService.selfCheckin(eventId, participantActorContext) at a fixed in-window time",
         "Query checkin_records table by registration_id"
       ],
-      "expected": "Exactly one CheckinRecord exists with non-null checkinAt, method Self, operatorId null, and registration_id unique per database constraint",
+      "expected": "Exactly one CheckinRecord exists with non-null checkinAt, method Self, participant actor reference per BR-13, operatorId null (staff-only field), and registration_id unique per database constraint",
       "edgeCase": false
     },
     {
@@ -94,9 +94,9 @@
       "title": "validCheckin transition creates CheckinRecord history alongside Registered to CheckedIn",
       "preconditions": [
         "Registration in Registered state before check-in",
-        "Event check-in window contains fixed clock now",
+        "Event check-in window contains fixed clock now (now >= checkinOpenAt and now < checkinCloseAt)",
         "No prior valid check-in on the registration",
-        "OrganizerStaff actor authorized for the event"
+        "OrganizerStaff or OrganizerAdmin actor authorized for the event"
       ],
       "steps": [
         "Record beforeState as Registered from registration repository",
@@ -122,13 +122,13 @@
       "preconditions": [
         "E2E fixture event InProgress with active check-in window",
         "Registered participant with no prior check-in",
-        "Staff JWT with event scope and fresh Idempotency-Key header"
+        "OrganizerStaff or OrganizerAdmin JWT with event scope and fresh Idempotency-Key header"
       ],
       "steps": [
         "POST /api/v1/events/{eventId}/checkins with body { registrationId } and staff Authorization bearer token",
-        "Compare response checkinAt, method, and operatorId with subsequent GET /api/v1/events/{eventId}/attendance row"
+        "GET /api/v1/events/{eventId}/attendance?page=1&pageSize=20&sort=checkinAt:desc and locate the participant row"
       ],
-      "expected": "POST returns HTTP 200 with non-null checkinAt, method Staff, and operatorId; attendance list row shares identical history fields; timestamp satisfies AC-05 and FR-16",
+      "expected": "POST returns HTTP 200 with non-null checkinAt, method Staff, and operatorId; attendance list row shares identical history fields sorted by checkinAt:desc; timestamp satisfies AC-05 and FR-16",
       "edgeCase": false
     },
     {
@@ -148,10 +148,10 @@
         "OrganizerStaff or OrganizerAdmin JWT authorized for the event"
       ],
       "steps": [
-        "GET /api/v1/events/{eventId}/attendance with default pagination",
+        "GET /api/v1/events/{eventId}/attendance?page=1&pageSize=20&sort=checkinAt:desc",
         "Locate the checked-in participant row in items"
       ],
-      "expected": "HTTP 200 with attendance item including checkinAt timestamp, method (Staff or Self), participantId, and registrationState CheckedIn; staff check-in rows include operator reference when method is Staff",
+      "expected": "HTTP 200 with attendance item including checkinAt timestamp, method (Staff or Self), participantId, and registrationState CheckedIn; staff check-in rows include operator reference when method is Staff; self check-in rows show method Self without staff operatorId",
       "edgeCase": false
     },
     {
@@ -174,7 +174,7 @@
       ],
       "steps": [
         "POST /api/v1/events/{eventId}/checkins with staff token and registered participant registrationId",
-        "GET /api/v1/events/{eventId}/attendance and verify participant row history fields"
+        "GET /api/v1/events/{eventId}/attendance?page=1&pageSize=20&sort=checkinAt:desc and verify participant row history fields"
       ],
       "expected": "Flow A check-in step stores CheckinRecord history retrievable via attendance API with checkinAt, method Staff, and operatorId before feedback step proceeds",
       "edgeCase": false
@@ -190,18 +190,18 @@
         "FR-30",
         "AC-05"
       ],
-      "title": "Organizer attendance list UI displays stored check-in timestamp and source for participant",
+      "title": "Organizer check-in console displays stored check-in timestamp and source for participant",
       "preconditions": [
         "OrganizerStaff logged in with assigned event scope",
         "At least one participant with persisted CheckinRecord (staff or self method)",
-        "Event operations attendance page available per UI page list"
+        "Check-in operations console available at /organizer/events/{eventId}/check-in per page list"
       ],
       "steps": [
-        "Navigate to organizer attendance list for the event",
-        "Locate a checked-in participant row",
-        "Inspect displayed check-in time and source indicator (staff vs self)"
+        "Navigate to organizer check-in operations console at /organizer/events/{eventId}/check-in",
+        "Locate a checked-in participant row in the paginated attendance table (default sort checkinAt:desc)",
+        "Inspect displayed check-in time and source/method indicator (staff vs self)"
       ],
-      "expected": "Row shows human-readable check-in timestamp and source/method consistent with stored CheckinRecord history; unchecked-in participants show no check-in history fields",
+      "expected": "Row shows human-readable check-in timestamp and source/method consistent with stored CheckinRecord history and audit metadata per BR-13; unchecked-in participants show no check-in history fields; pagination control present below row list",
       "edgeCase": false
     },
     {
@@ -218,12 +218,12 @@
       ],
       "title": "Out-of-window check-in attempt leaves no check-in history record",
       "preconditions": [
-        "Event InProgress with check-in window not containing current fixed clock time",
+        "Event InProgress with check-in window not containing current fixed clock time (before checkinOpenAt or at/after checkinCloseAt per exclusive close boundary)",
         "Registered participant with no prior CheckinRecord",
         "Authorized staff or participant actor depending on check-in path under test"
       ],
       "steps": [
-        "Set fixed clock outside checkinOpenAt..checkinCloseAt",
+        "Set fixed clock outside checkinOpenAt..checkinCloseAt (inclusive open, exclusive close)",
         "Attempt staff or self check-in for the registration",
         "Query checkin_records for the registration_id"
       ],
@@ -316,10 +316,10 @@
       "title": "Paginated attendance list returns check-in history slice without unbounded payload",
       "preconditions": [
         "Event with more than default pageSize checked-in participants each having stored CheckinRecord history",
-        "OrganizerStaff JWT authorized for the event"
+        "OrganizerStaff or OrganizerAdmin JWT authorized for the event"
       ],
       "steps": [
-        "GET /api/v1/events/{eventId}/attendance?page=1&pageSize=20",
+        "GET /api/v1/events/{eventId}/attendance?page=1&pageSize=20&sort=checkinAt:desc",
         "Verify each item includes checkinAt and method",
         "Request page beyond totalPages and inspect envelope"
       ],
@@ -415,7 +415,7 @@
         "Perform successful check-in via checkinService",
         "Inspect persisted CheckinRecord and any audit module write triggered by checkinModule"
       ],
-      "expected": "Audit trail captures timestamp (checkinAt), actor (operatorId for Staff or participant for Self), and method (Staff or Self) on every successful check-in write satisfying BR-13 and NFR-10 traceability",
+      "expected": "Audit trail captures timestamp (checkinAt), actor (operatorId for Staff or participant for Self), and method (Staff or Self) on every successful check-in write satisfying BR-13 and NFR-10 traceability; missing metadata would surface AUDIT_METADATA_MISSING per validation rules",
       "edgeCase": false
     },
     {
@@ -439,6 +439,32 @@
         "Re-read checkin_records row"
       ],
       "expected": "checkinAt, method, and operatorId remain unchanged from original values; system treats check-in history as immutable audit metadata per Workflow D guardrails",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-16-019",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "FR-16",
+        "FR-14",
+        "AC-05",
+        "BR-13"
+      ],
+      "title": "POST /events/{eventId}/self-checkin returns HTTP 200 with self check-in history fields",
+      "preconditions": [
+        "Event rule config enables participant self check-in",
+        "E2E fixture event InProgress with active check-in window",
+        "Authenticated participant JWT with Registered registration and no prior check-in",
+        "Fresh Idempotency-Key header value"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/self-checkin with participant Authorization bearer token",
+        "GET /api/v1/events/{eventId}/attendance?page=1&pageSize=20&sort=checkinAt:desc and locate the participant row"
+      ],
+      "expected": "POST returns HTTP 200 with non-null checkinAt, method Self, and participant actor reference per BR-13; attendance list row shares identical history fields with method Self and no staff operatorId",
       "edgeCase": false
     }
   ]

@@ -161,9 +161,9 @@
       "generatedAt": "2026-06-26T17:06:13Z"
     },
     "FR-16": {
-      "current": false,
+      "current": true,
       "docFingerprint": "sha256:8fc81cab4e7b769ab81d7f566d602cbb40696b9b602ef66c13fdf3a69a441ddf",
-      "generatedAt": null
+      "generatedAt": "2026-06-26T17:07:54Z"
     },
     "FR-17": {
       "current": false,
