@@ -23,7 +23,7 @@ function toListItem(event: {
   };
 }
 
-function matchesFilters(
+export function matchesEventListFilters(
   event: EventListItem,
   params: FetchEventsParams,
 ): boolean {
@@ -40,7 +40,7 @@ function matchesFilters(
   );
 }
 
-function paginateLocally<T>(
+export function paginateLocally<T>(
   items: T[],
   page: number,
   pageSize: number,
@@ -92,7 +92,7 @@ export async function fetchScopedOrganizerEvents(
   const items = loaded
     .filter((event): event is NonNullable<typeof event> => event !== null)
     .map(toListItem)
-    .filter((event) => matchesFilters(event, params))
+    .filter((event) => matchesEventListFilters(event, params))
     .sort(
       (left, right) =>
         new Date(right.startAt).getTime() - new Date(left.startAt).getTime(),

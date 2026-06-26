@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { organizerNavItems } from "@/lib/app-context";
+import { DEFAULT_ORGANIZER_ADMIN_ID } from "@/lib/organizer-api";
 import {
   useOrganizerAuth,
   type OrganizerRole,
@@ -24,7 +25,7 @@ import {
 export function OrganizerShell({ children }: { children: ReactNode }) {
   const { token, session, isAdmin, isLoading, error, signIn, signOut } =
     useOrganizerAuth();
-  const [organizerId, setOrganizerId] = useState("organizer-admin-1");
+  const [organizerId, setOrganizerId] = useState(DEFAULT_ORGANIZER_ADMIN_ID);
   const [role, setRole] = useState<OrganizerRole>("OrganizerAdmin");
   const [assignedEvents, setAssignedEvents] = useState("");
   const [signingIn, setSigningIn] = useState(false);

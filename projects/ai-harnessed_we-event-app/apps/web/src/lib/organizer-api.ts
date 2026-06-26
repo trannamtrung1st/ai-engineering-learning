@@ -18,6 +18,9 @@ import type {
 export type { PaginatedResult, EventSummary, SessionInfo };
 
 export const DEFAULT_ORGANIZATION_ID = "00000000-0000-0000-0000-000000000001";
+/** Seeded organizer admin — must be a UUID (audit log actor columns). */
+export const DEFAULT_ORGANIZER_ADMIN_ID =
+  "00000000-0000-0000-0000-000000000099";
 
 export interface RuleConfigInput {
   capacity: number;

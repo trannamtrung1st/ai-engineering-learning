@@ -12,6 +12,7 @@ import {
 
 import { ApiClientError } from "@/lib/api-client";
 import {
+  DEFAULT_ORGANIZER_ADMIN_ID,
   fetchSession,
   requestOrganizerDevToken,
   type SessionInfo,
@@ -21,7 +22,14 @@ const TOKEN_STORAGE_KEY = "we-event.organizer.auth.token";
 const SUB_STORAGE_KEY = "we-event.organizer.auth.sub";
 const ROLE_STORAGE_KEY = "we-event.organizer.auth.role";
 const ASSIGNED_STORAGE_KEY = "we-event.organizer.auth.assigned";
-const DEFAULT_ADMIN_SUB = "organizer-admin-1";
+const LEGACY_ADMIN_SUB = "organizer-admin-1";
+
+function resolveStoredOrganizerSub(raw: string | null): string {
+  if (!raw || raw === LEGACY_ADMIN_SUB) {
+    return DEFAULT_ORGANIZER_ADMIN_ID;
+  }
+  return raw;
+}
 
 export type OrganizerRole = "OrganizerAdmin" | "OrganizerStaff";
 
@@ -140,7 +148,9 @@ export function OrganizerAuthProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      const storedSub = sessionStorage.getItem(SUB_STORAGE_KEY) ?? DEFAULT_ADMIN_SUB;
+      const storedSub = resolveStoredOrganizerSub(
+        sessionStorage.getItem(SUB_STORAGE_KEY),
+      );
       const storedRole =
         (sessionStorage.getItem(ROLE_STORAGE_KEY) as OrganizerRole | null) ??
         "OrganizerAdmin";

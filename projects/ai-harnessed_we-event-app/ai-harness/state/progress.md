@@ -94,3 +94,6 @@ Append-only log of completed iterations.
 - 2026-06-26T02:00:19Z | web-design-system-shell | passed
 - 2026-06-26T02:09:00Z | web-participant-journeys | browser: /events paginated browse (1–12 of 4951), event detail, /registrations page 2 (21–40 of 110), check-in page — HTTP 200
 - 2026-06-26T02:11:42Z | web-participant-journeys | passed
+- 2026-06-26T02:30:00Z | web-organizer-journeys | browser: /organizer/events paginated table (1–20 of 6683), event dashboard KPIs, eligibility reasons (AC-10), audit log actor columns (AC-11) — HTTP 200
+- 2026-06-26T02:31:55Z | web-organizer-journeys | checks_failed
+- 2026-06-26T02:37:34Z | web-organizer-journeys | passed

@@ -56,7 +56,9 @@ Lessons learned across harness iterations. Read before every implementer session
 - [web-organizer-journeys] Computational checks failed — see 20260625T175157Z-checks.json
 - [web-organizer-journeys] Computational checks failed — see 20260625T175615Z-checks.json
 - [e2e-acceptance-suite] HTTP e2e dev tokens must use UUID `sub` values for organizers (DB actor columns) and participants (idempotency/feedback paths); non-UUID subs like `e2e-organizer-*` cause Postgres 22P02 errors.
+- [web-organizer-journeys] Organizer dev sign-in default sub must be a UUID (`00000000-0000-0000-0000-000000000099`); legacy `organizer-admin-1` breaks eligibility dashboard metrics (audit log 22P02 on PendingEvaluation).
 - [module-user-accounts] Computational checks failed — see 20260625T183152Z-checks.json
 - [module-user-accounts] Computational checks failed — see 20260625T191632Z-checks.json
 - [web-design-system-shell] Computational checks failed — see 20260625T193720Z-checks.json
 - [web-design-system-shell] AI review failed — see 20260626T014840Z-review.json
+- [web-organizer-journeys] Computational checks failed — see 20260626T022552Z-checks.json
