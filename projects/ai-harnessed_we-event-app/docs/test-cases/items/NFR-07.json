@@ -1,8 +1,8 @@
 {
   "productItemId": "NFR-07",
   "version": 1,
-  "docFingerprint": "sha256:cff33cca15ef6cab3bccc14f79d25f9da5a6809dfeed7b72d03730ab2b6fe8fb",
-  "generatedAt": "2026-06-26T13:03:24Z",
+  "docFingerprint": "sha256:ec35d07745935d43ede5bc23381533cb15ad15eb3a8347bf5c6bc75ca315ea0f",
+  "generatedAt": "2026-06-26T17:59:34Z",
   "cases": [
     {
       "id": "TC-NFR-07-001",
@@ -137,10 +137,10 @@
         "Browser context has no stored JWT"
       ],
       "steps": [
-        "Navigate directly to a protected participant route (e.g. My registrations)",
+        "Navigate directly to protected participant route /my-registrations (or equivalent)",
         "Observe URL and rendered content before any credentials are entered"
       ],
-      "expected": "User is redirected to /login; protected page content and registration data do not render; client-side session absence enforces authentication before sensitive self-service UI",
+      "expected": "User is redirected to /login with intended destination preserved as return URL; protected page content and registration data do not render; client-side session absence enforces authentication before sensitive self-service UI",
       "edgeCase": false
     },
     {
@@ -161,11 +161,13 @@
       "steps": [
         "POST /api/v1/events/{eventId}/registrations",
         "POST /api/v1/events/{eventId}/checkins",
+        "POST /api/v1/events/{eventId}/self-checkin",
         "POST /api/v1/events/{eventId}/feedback",
         "POST /api/v1/events/{eventId}/publish",
-        "POST /api/v1/events/{eventId}/cover-image"
+        "POST /api/v1/events/{eventId}/cover-image",
+        "DELETE /api/v1/events/{eventId}/cover-image"
       ],
-      "expected": "Each mutating request returns HTTP 401 (not 403, 404, or 500); no mutation side effects; authentication is required before all sensitive operations across registration, check-in, feedback, governance, and media groups per API auth principle",
+      "expected": "Each mutating request returns HTTP 401 (not 403, 404, or 500); no mutation side effects; authentication is required before all sensitive operations across registration, check-in, self-check-in, feedback, governance, and media groups per API auth principle",
       "edgeCase": false
     },
     {
@@ -186,6 +188,7 @@
       ],
       "steps": [
         "Call GET /api/v1/me without token",
+        "Call GET /api/v1/events without token",
         "Call POST /api/v1/events without token",
         "Call GET /api/v1/events/{eventId}/dashboard without token"
       ],
@@ -204,11 +207,11 @@
       "title": "Non-public API surface is protected by default per API design principle",
       "preconditions": [
         "API mounted at /api/v1 with auth middleware on protected routes",
-        "Inventory of endpoint groups from API design (event management, registration, check-in, feedback, monitoring, media, self-service)"
+        "Inventory of endpoint groups from API design (event listing, event management, registration, check-in, self-check-in, feedback, eligibility, monitoring, media, self-service)"
       ],
       "steps": [
         "For each documented non-public endpoint group, send a representative request without Authorization",
-        "Record HTTP status for GET /me, GET /me/registrations, POST registrations, GET dashboard, GET export"
+        "Record HTTP status for GET /me, GET /me/registrations, GET /events, POST registrations, GET /events/{eventId}/eligibility/me, GET dashboard, GET export"
       ],
       "expected": "Every non-public endpoint returns 401 without credentials; only explicitly public auth endpoints (POST /auth/register, POST /auth/login) accept unauthenticated callers; auth-required-for-non-public principle holds across the API surface",
       "edgeCase": false
@@ -372,6 +375,75 @@
       ],
       "expected": "Both requests return HTTP 401; no export payload or eligibility mutation occurs; high-impact organizer operations gated behind authentication per NFR-07 and testing plan P0 unauthorized-critical-update severity",
       "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-07-017",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "NFR-07",
+        "AC-08",
+        "AC-15"
+      ],
+      "title": "Unauthenticated feedback submission returns 401 before validation",
+      "preconditions": [
+        "Completed event with feedback window open and attended registration",
+        "Valid feedback payload prepared",
+        "No Authorization header on request"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/feedback with valid registrationId and answers but no bearer token"
+      ],
+      "expected": "HTTP 401 unauthenticated; no feedback row created; authentication required before feedback submission per AC-08f and NFR-07",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-07-018",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "NFR-07",
+        "AC-10",
+        "AC-15"
+      ],
+      "title": "Unauthenticated eligibility list and self-service read return 401",
+      "preconditions": [
+        "Event with finalized eligibility records",
+        "No Authorization header on requests"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/eligibility without bearer token",
+        "GET /api/v1/events/{eventId}/eligibility/me without bearer token"
+      ],
+      "expected": "Both requests return HTTP 401; organizer eligibility list and participant self-service eligibility result not exposed; authentication gate enforced per AC-10e and NFR-07",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-07-019",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": [
+        "NFR-07",
+        "AC-15",
+        "FR-34"
+      ],
+      "title": "Unauthenticated visit to organizer area redirects to login",
+      "preconditions": [
+        "Web app running with role-aware route guards",
+        "Browser session has no stored JWT"
+      ],
+      "steps": [
+        "Navigate directly to organizer-only route (e.g. event management or dashboard under organizer shell)",
+        "Observe redirect behavior and visible page state"
+      ],
+      "expected": "User redirected to /login; organizer UI does not render before authentication; no dashboard summary, eligibility list, or operational data visible",
+      "edgeCase": false
     }
   ]
 }
