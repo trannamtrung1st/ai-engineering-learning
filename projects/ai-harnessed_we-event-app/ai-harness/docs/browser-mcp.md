@@ -11,7 +11,18 @@ Interactive UI verification for frontend and test slices. The harness enables Pl
 | Start preview stack | `npm run aih:preview` |
 | Verify stack | `npm run aih:preview:verify` |
 
-Project MCP config: [`.cursor/mcp.json`](../../.cursor/mcp.json) — runs `@playwright/mcp` in headless mode for unattended loops. Remove `--headless` from args for local visual debugging.
+Project MCP config: [`.cursor/mcp.json`](../../.cursor/mcp.json) — writes snapshots to `ai-harness/generated/runs/playwright-mcp` (gitignored). Add `--headless` to args for unattended background loops; omit it for local visual debugging.
+
+## Artifact cleanup
+
+Playwright MCP writes timestamped page snapshots (`.yml`) and console logs. The harness cleans these automatically before each implementer run on `frontend`/`test` slices (or when `AIH_BROWSER_MCP=1`).
+
+| Command / env | Behavior |
+|---|---|
+| (default) | Wipe all Playwright MCP artifacts before browser slices |
+| `npm run aih:playwright-mcp:clean` | Manual cleanup of `.playwright-mcp/` and `ai-harness/generated/runs/playwright-mcp/` |
+| `AIH_PLAYWRIGHT_MCP_KEEP=20` | Keep the 20 newest files per directory instead of wiping |
+| `AIH_SKIP_PLAYWRIGHT_MCP_CLEANUP=1` | Disable automatic cleanup (debugging) |
 
 ## Playwright MCP vs built-in browser
 

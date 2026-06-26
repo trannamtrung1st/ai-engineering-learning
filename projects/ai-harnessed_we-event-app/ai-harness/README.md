@@ -46,6 +46,8 @@ npm run aih:loop -- 50                     # max 50 iterations
 | `AIH_SKIP_AGENT` | — | Skip implementer (`1`) |
 | `AIH_SKIP_REVIEW` | — | Skip AI review (`1`) |
 | `AIH_BROWSER_MCP` | — | Enable Playwright MCP on any slice (`1`) |
+| `AIH_PLAYWRIGHT_MCP_KEEP` | `0` | Newest Playwright MCP files to keep per dir (`0` = wipe before browser slices) |
+| `AIH_SKIP_PLAYWRIGHT_MCP_CLEANUP` | — | Skip Playwright MCP artifact cleanup (`1`) |
 
 Defaults live in `ai-harness/config/models.json`.
 
@@ -64,6 +66,7 @@ Defaults live in `ai-harness/config/models.json`.
 | `npm run aih:preview:verify` | Verify API health + web HTTP 200 (no start) |
 | `npm run aih:preview:logs` | View preview logs (combined, api, web, db, stack) |
 | `npm run aih:preview:down` | Stop preview stack |
+| `npm run aih:playwright-mcp:clean` | Remove Playwright MCP page snapshots and console logs |
 
 ### Preview (API + web)
 

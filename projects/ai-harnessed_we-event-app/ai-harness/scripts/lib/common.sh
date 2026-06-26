@@ -20,11 +20,14 @@ PREVIEW_STACK_LOG="${RUNS_DIR}/preview-stack.log"
 PREVIEW_COMBINED_LOG="${RUNS_DIR}/preview-combined.log"
 PREVIEW_SUPERVISOR_STOP_FILE="${RUNS_DIR}/preview-supervisor.stop"
 PREVIEW_WEB_REFRESH_FILE="${RUNS_DIR}/preview-web.refresh"
+PLAYWRIGHT_MCP_LEGACY_DIR="${REPO_ROOT}/.playwright-mcp"
+PLAYWRIGHT_MCP_OUTPUT_DIR="${RUNS_DIR}/playwright-mcp"
 
 export HARNESS_ROOT REPO_ROOT BACKLOG LOOP_CONFIG MODELS_CONFIG CONTEXT_MAP STATE_DIR RUNS_DIR
 export PREVIEW_PID_FILE PREVIEW_AUX_PID_FILE
 export PREVIEW_WEB_LOG PREVIEW_API_LOG PREVIEW_DB_LOG PREVIEW_STACK_LOG PREVIEW_COMBINED_LOG
 export PREVIEW_SUPERVISOR_STOP_FILE PREVIEW_WEB_REFRESH_FILE
+export PLAYWRIGHT_MCP_LEGACY_DIR PLAYWRIGHT_MCP_OUTPUT_DIR
 
 preview_log_files() {
   printf '%s\n' \
@@ -262,6 +265,51 @@ write_run_report() {
   echo "$content" > "${RUNS_DIR}/${name}"
 }
 
+slice_uses_browser_mcp() {
+  local slice_id="${1:-}"
+  slice_requires_web_runtime "$slice_id" || [[ "${AIH_BROWSER_MCP:-}" == "1" ]]
+}
+
+playwright_mcp_artifact_dirs() {
+  printf '%s\n' "$PLAYWRIGHT_MCP_LEGACY_DIR" "$PLAYWRIGHT_MCP_OUTPUT_DIR"
+}
+
+cleanup_playwright_mcp_dir() {
+  local dir="$1"
+  local keep="${2:-0}"
+  [[ -d "$dir" ]] || return 0
+
+  if [[ "$keep" -le 0 ]]; then
+    find "$dir" -mindepth 1 -maxdepth 1 -exec rm -rf {} + 2>/dev/null || true
+    return 0
+  fi
+
+  local f
+  for f in $(ls -t "$dir" 2>/dev/null | tail -n +$((keep + 1))); do
+    rm -f "${dir}/${f}"
+  done
+}
+
+cleanup_playwright_mcp_artifacts() {
+  if [[ "${AIH_SKIP_PLAYWRIGHT_MCP_CLEANUP:-}" == "1" ]]; then
+    return 0
+  fi
+
+  local keep="${AIH_PLAYWRIGHT_MCP_KEEP:-0}"
+  local dir removed=0
+  ensure_runs_dir
+  while IFS= read -r dir; do
+    if [[ -d "$dir" ]] && [[ -n "$(ls -A "$dir" 2>/dev/null || true)" ]]; then
+      cleanup_playwright_mcp_dir "$dir" "$keep"
+      removed=1
+    fi
+  done < <(playwright_mcp_artifact_dirs)
+
+  if [[ "$removed" -eq 1 ]]; then
+    echo "==> Playwright MCP artifacts cleaned (keep=${keep})"
+  fi
+}
+
 agent_invoke() {
   local model="$1"
   local prompt="$2"
@@ -269,7 +317,7 @@ agent_invoke() {
   local slice_id="${4:-${AIH_CHECK_SLICE:-}}"
   require_agent
   local -a args=(-p --force --output-format text --model "$model")
-  if slice_requires_web_runtime "$slice_id" || [[ "${AIH_BROWSER_MCP:-}" == "1" ]]; then
+  if slice_uses_browser_mcp "$slice_id"; then
     args+=(--approve-mcps)
   fi
   if [[ -n "$outfile" ]]; then

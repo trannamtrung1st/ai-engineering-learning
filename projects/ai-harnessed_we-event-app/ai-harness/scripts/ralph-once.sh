@@ -33,6 +33,9 @@ else
   prompt="$(./ai-harness/scripts/build-prompt.sh "$SLICE_ID" implementer)"
   model="$(get_model default)"
   agent_out="${RUNS_DIR}/${RID}-agent.txt"
+  if slice_uses_browser_mcp "$SLICE_ID"; then
+    cleanup_playwright_mcp_artifacts
+  fi
   echo "==> Running implementer (${AGENT_BIN}, model=${model})"
   set +e
   agent_invoke "$model" "$prompt" "$agent_out" "$SLICE_ID"
