@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-03",
   "version": 1,
-  "docFingerprint": "sha256:821074ac696b804b1f73d0845dc12142be4e7113c91c417dae5b9ba1cbf42225",
-  "generatedAt": "2026-06-26T12:00:00Z",
+  "docFingerprint": "sha256:e5fe6c876730dc2692555528b2f33e1afc4105ef98b3d84c4363464150dbd711",
+  "generatedAt": "2026-06-26T15:52:51Z",
   "cases": [
     {
       "id": "TC-AC-03-001",
@@ -73,7 +73,7 @@
         "POST /api/v1/events/{eventId}/registrations with the same participant Authorization bearer token a second time",
         "Parse error response body and GET /api/v1/events/{eventId}/registration-status"
       ],
-      "expected": "HTTP 409 with error.code REGISTRATION_DUPLICATE_ACTIVE, user-safe message per API error contract, and requestId; GET registration-status still returns the original registration unchanged",
+      "expected": "HTTP 409 with error.code REGISTRATION_DUPLICATE_ACTIVE, user-safe message per API error contract, requestId, and timestamp; GET registration-status still returns the original registration unchanged",
       "edgeCase": false
     },
     {
@@ -118,7 +118,7 @@
       "steps": [
         "Attempt registrationService.register for the same participant and event again"
       ],
-      "expected": "Rejected with REGISTRATION_DUPLICATE_ACTIVE (409); waitlistPosition and single Waitlisted row unchanged; no second waitlist entry created",
+      "expected": "Rejected with REGISTRATION_DUPLICATE_ACTIVE (409); waitlistPosition and single Waitlisted row unchanged; no second waitlist entry created; at-most-once applies to all active states not only Registered",
       "edgeCase": true
     },
     {
@@ -296,6 +296,27 @@
         "Repeat POST with OrganizerStaff bearer token for the same event"
       ],
       "expected": "Both requests return HTTP 403 unauthorized; no registration row is created; Register for event is Participant-only per roles-permissions matrix — duplicate prevention is not reachable by non-participant roles",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-03-014",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": [
+        "AC-03",
+        "BR-01"
+      ],
+      "title": "Duplicate blocked when registration is still in Requested state",
+      "preconditions": [
+        "Participant has registration row in Requested state (in-flight, not yet accepted or rejected)",
+        "Partial unique index on (event_id, participant_id) covers Requested among active states"
+      ],
+      "steps": [
+        "Attempt a second registrationService.register for the same participant and event before first request completes or transitions out of Requested"
+      ],
+      "expected": "Second attempt rejected with REGISTRATION_DUPLICATE_ACTIVE; Requested row remains the only active registration; aligns with database active-state constraint (Requested, Registered, Waitlisted, CheckedIn)",
       "edgeCase": true
     }
   ]
