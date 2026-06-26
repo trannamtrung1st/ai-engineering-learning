@@ -26,6 +26,7 @@ Complete before merging a `mergeReady` slice or closing an `aih/*` branch.
 - [ ] Meets `docs/ui-ux/00-production-ui-quality-bar.md`
 - [ ] Live `/api/v1` data — no hardcoded fixtures
 - [ ] AppShell, tokens, loading/empty/error states present
+- [ ] Signed-in TopBar shows user display name (or email fallback), not internal actor/user ID
 
 ## Local smoke
 

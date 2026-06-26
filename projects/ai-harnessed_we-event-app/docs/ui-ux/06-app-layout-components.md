@@ -6,6 +6,9 @@
 - Product identity.
 - Current role and organization context.
 - User menu with account/session actions.
+- Account menu trigger label shows the signed-in user's **display name** (from `GET /me` `displayName`).
+- Fallback order when display name is missing: email, then generic "Signed in user". Never show internal `actorId`, `userId`, or dev-token subject strings in app chrome.
+- Dropdown menu label repeats the same display name.
 
 ### Side navigation (organizer views)
 - Role-aware menu visibility.
@@ -54,3 +57,4 @@ Filter bar remains visible (sticky) while list rows scroll; pagination sits belo
 - Multiple primary buttons in the same visual hierarchy level.
 - Hidden critical actions in overflow menus.
 - Deep nesting of cards that obscures key status information.
+- Showing actor or user IDs in the TopBar account control.
