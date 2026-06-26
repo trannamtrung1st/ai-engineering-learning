@@ -91,6 +91,7 @@ export default function EventDashboardPage() {
       />
 
       <KpiSummaryStrip
+        isRefreshing={metricsQuery.isFetching && !metricsQuery.isLoading}
         items={[
           {
             label: "Registrations",

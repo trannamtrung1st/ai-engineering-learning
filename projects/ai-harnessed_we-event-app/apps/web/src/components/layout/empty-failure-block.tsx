@@ -1,6 +1,7 @@
 import { type ReactNode } from "react";
 
 import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { cn } from "@/lib/cn";
 
@@ -24,11 +25,20 @@ export function EmptyFailureBlock({
   className,
 }: EmptyFailureBlockProps) {
   if (variant === "failure") {
+    const showAction = actionLabel && onAction;
+
     return (
       <div className={cn(className)}>
         <Alert variant="error" title={title}>
           {description}
           {children}
+          {showAction ? (
+            <div className="mt-3">
+              <Button size="sm" variant="secondary" onClick={onAction}>
+                {actionLabel}
+              </Button>
+            </div>
+          ) : null}
         </Alert>
       </div>
     );

@@ -4,6 +4,7 @@ import { useLiveQuery } from "@/hooks/use-live-query";
 import { fetchHealth } from "@/lib/api-client";
 import { LIVE_REFRESH_INTERVALS } from "@/lib/query-config";
 import { queryKeys } from "@/lib/query-keys";
+import { LiveRefreshIndicator } from "@/components/layout/live-refresh-indicator";
 import { Alert } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -53,11 +54,7 @@ export function LiveQueryStatus() {
         <Badge status={healthy ? "registered" : "waitlisted"}>
           {healthy ? "Connected" : "Degraded"}
         </Badge>
-        {isFetching ? (
-          <span className="text-[length:var(--font-size-xs)] text-[var(--color-text-secondary)]">
-            Refreshing…
-          </span>
-        ) : null}
+        {isFetching ? <LiveRefreshIndicator /> : null}
       </div>
       <p className="text-[length:var(--font-size-sm)] text-[var(--color-text-secondary)]">
         Polls{" "}

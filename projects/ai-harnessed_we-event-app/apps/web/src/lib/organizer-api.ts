@@ -479,60 +479,13 @@ export async function downloadEligibilityExport(
   };
 }
 
-async function fetchCount(
-  fetcher: (params: ListQueryParams) => Promise<PaginatedResult<unknown>>,
-  filters: ListQueryParams = {},
-): Promise<number> {
-  const result = await fetcher({ ...filters, page: 1, pageSize: 1 });
-  return result.total;
-}
-
-export async function fetchEventDashboardMetrics(
+export function fetchEventDashboardMetrics(
   token: string,
   eventId: string,
 ): Promise<EventDashboardMetrics> {
-  const [
-    registrations,
-    registeredSeats,
-    waitlist,
-    checkedIn,
-    attended,
-    eligible,
-    notEligible,
-    pendingEligibility,
-  ] = await Promise.all([
-    fetchCount((p) => fetchRegistrations(token, eventId, p)),
-    fetchCount((p) =>
-      fetchRegistrations(token, eventId, { ...p, state: "Registered" }),
-    ),
-    fetchCount((p) => fetchWaitlist(token, eventId, p)),
-    fetchCount((p) =>
-      fetchRegistrations(token, eventId, { ...p, state: "CheckedIn" }),
-    ),
-    fetchCount((p) =>
-      fetchRegistrations(token, eventId, { ...p, state: "Attended" }),
-    ),
-    fetchCount((p) =>
-      fetchEligibility(token, eventId, { ...p, eligibility: "Eligible" }),
-    ),
-    fetchCount((p) =>
-      fetchEligibility(token, eventId, { ...p, eligibility: "NotEligible" }),
-    ),
-    fetchCount((p) =>
-      fetchEligibility(token, eventId, { ...p, eligibility: "PendingEvaluation" }),
-    ),
-  ]);
-
-  return {
-    registrations,
-    registeredSeats,
-    waitlist,
-    checkedIn,
-    attended,
-    eligible,
-    notEligible,
-    pendingEligibility,
-  };
+  return apiFetch<EventDashboardMetrics>(`/events/${eventId}/dashboard`, {
+    token,
+  });
 }
 
 export function countRegisteredSeats(

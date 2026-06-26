@@ -377,7 +377,7 @@
     },
     {
       "id": "web-design-system-shell",
-      "passes": false,
+      "passes": true,
       "priority": 30,
       "phase": 3,
       "agent": "frontend",
@@ -405,7 +405,9 @@
         ],
         "component": [
           "apps/web/src/components/ui/badge.test.tsx",
-          "apps/web/src/components/layout/app-shell.test.tsx"
+          "apps/web/src/components/layout/app-shell.test.tsx",
+          "apps/web/src/components/layout/empty-failure-block.test.tsx",
+          "apps/web/src/components/layout/kpi-summary-strip.test.tsx"
         ],
         "acceptanceTags": [
           "NFR-06"

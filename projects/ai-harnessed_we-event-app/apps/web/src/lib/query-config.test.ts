@@ -16,6 +16,9 @@ describe("NFR-06 live query polling policy", () => {
   });
 
   it("derives staleTime as half the refetch interval", () => {
+    assert.equal(LIVE_REFRESH_INTERVALS.organizerDashboard, 5_000);
+    assert.equal(getLiveQueryPolicy("organizerDashboard").staleTime, 2_500);
+
     for (const mode of Object.keys(LIVE_REFRESH_INTERVALS) as Array<
       keyof typeof LIVE_REFRESH_INTERVALS
     >) {

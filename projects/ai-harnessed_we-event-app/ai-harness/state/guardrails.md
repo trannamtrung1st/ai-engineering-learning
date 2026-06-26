@@ -73,3 +73,5 @@ Lessons learned across harness iterations. Read before every implementer session
 - [web-design-system-shell] Browser test failed — see 20260626T062246Z-browser-test.json
 - [web-design-system-shell] Browser test failed — see 20260626T063415Z-browser-test.json
 - [web-design-system-shell] Browser test failed — see 20260626T065542Z-browser-test.json
+- [web-design-system-shell] Browser test failed — see 20260626T071239Z-browser-test.json
+- [web-design-system-shell] Browser test failed — see 20260626T072443Z-browser-test.json
