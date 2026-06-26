@@ -246,9 +246,9 @@
       "generatedAt": "2026-06-26T12:45:44Z"
     },
     "FR-33": {
-      "current": false,
+      "current": true,
       "docFingerprint": "sha256:4df3b9fe5a47366f3a2e6893d54863d7ebd7808387ffd2e446a5608089ea8a67",
-      "generatedAt": "2026-06-26T05:24:55Z"
+      "generatedAt": "2026-06-26T12:47:05Z"
     },
     "FR-34": {
       "current": false,
