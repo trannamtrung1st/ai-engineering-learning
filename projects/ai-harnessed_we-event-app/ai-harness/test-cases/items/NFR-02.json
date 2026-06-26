@@ -2,12 +2,13 @@
   "productItemId": "NFR-02",
   "version": 1,
   "docFingerprint": "sha256:165db3bf1b6e2d69c0247f57cf57e1ee618773a7367cf603d879d37786d9cb38",
-  "generatedAt": "2026-06-26T12:45:00Z",
+  "generatedAt": "2026-06-26T13:15:00Z",
   "cases": [
     {
       "id": "TC-NFR-02-001",
       "category": "functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["NFR-02", "AC-01", "AC-04", "BR-03"],
       "title": "Successful registration transaction preserves capacity invariant without double booking",
@@ -27,6 +28,7 @@
       "id": "TC-NFR-02-002",
       "category": "functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["NFR-02", "AC-05", "BR-10", "BR-13"],
       "title": "Check-in transaction atomically persists CheckinRecord and registration CheckedIn state",
@@ -45,7 +47,47 @@
     {
       "id": "TC-NFR-02-003",
       "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["NFR-02", "AC-03", "BR-01"],
+      "title": "Duplicate registration attempt blocked per testing-plan §3 without second active row",
+      "preconditions": [
+        "Event is RegistrationOpen with available seats",
+        "Participant already has an active Registered registration for the event"
+      ],
+      "steps": [
+        "Invoke registrationService.register(eventId, participantId, actorContext) a second time for the same participant",
+        "Query active registration rows for the participant/event pair"
+      ],
+      "expected": "Registration rejected with REGISTRATION_DUPLICATE_ACTIVE; exactly one active registration row remains; testing-plan §3 row 'Duplicate registration attempt → blocked' satisfied; no double booking of the same participant",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-02-004",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["NFR-02", "AC-04", "BR-03"],
+      "title": "Capacity under heavy concurrent requests never exceeds configured capacity per testing-plan §3",
+      "preconditions": [
+        "Event RegistrationOpen with capacity 3 and waitlistEnabled true",
+        "10+ distinct participants with no prior registration",
+        "Parallel registrationService.register calls fired simultaneously"
+      ],
+      "steps": [
+        "Execute Promise.allSettled on all concurrent register calls",
+        "Query countSeatHolders (Registered) for the event after all commits settle"
+      ],
+      "expected": "Registered count is at most 3 and equals 3 when all attempts resolve; testing-plan §3 row 'Capacity under heavy concurrent requests → never exceeds capacity' satisfied; zero overflow under contention",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-02-005",
+      "category": "functional",
       "layer": "e2e",
+      "technique": "flow-a",
       "priority": "P0",
       "traceability": ["NFR-02", "AC-01", "AC-05"],
       "title": "Flow A register-then-check-in maintains data consistency end-to-end",
@@ -63,9 +105,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-NFR-02-004",
+      "id": "TC-NFR-02-006",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "concurrency",
       "priority": "P0",
       "traceability": ["NFR-02", "AC-04", "BR-03"],
       "title": "Registration acceptance uses transactional row lock and in-transaction seat count",
@@ -82,9 +125,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-NFR-02-005",
+      "id": "TC-NFR-02-007",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "state-transition",
       "priority": "P0",
       "traceability": ["NFR-02", "AC-04", "BR-08"],
       "title": "Cancellation and waitlist promotion run atomically without transient double booking",
@@ -94,16 +138,18 @@
         "One Registered participant eligible to cancel before deadline"
       ],
       "steps": [
+        "Record beforeState: Registered count and waitlist positions",
         "Cancel a Registered registration triggering FIFO promotion in the same transaction",
-        "Query Registered count and waitlist positions before and after commit"
+        "Record afterState: Registered count and participant states"
       ],
-      "expected": "Promotion and cancellation commit atomically; Registered count never exceeds capacity at any observable point; no intermediate state with two promotions consuming one seat or zero Registered when capacity allows one",
+      "expected": "Promotion and cancellation commit atomically; Registered count never exceeds capacity at any observable point; no intermediate state with two promotions consuming one seat",
       "edgeCase": false
     },
     {
-      "id": "TC-NFR-02-006",
+      "id": "TC-NFR-02-008",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "state-transition",
       "priority": "P0",
       "traceability": ["NFR-02", "AC-03", "AC-04"],
       "title": "Domain invariants INV-01, INV-02, and INV-04 hold after mixed registration and check-in sequence",
@@ -119,9 +165,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-NFR-02-007",
+      "id": "TC-NFR-02-009",
       "category": "edge",
       "layer": "integration",
+      "technique": "concurrency",
       "priority": "P0",
       "traceability": ["NFR-02", "AC-03", "AC-04", "BR-01", "BR-03"],
       "title": "Heavy concurrent registration burst never produces double booking or duplicate active rows",
@@ -134,13 +181,14 @@
         "Execute Promise.allSettled on all concurrent register calls",
         "Count Registered rows, active registrations per participant, and compare to capacity"
       ],
-      "expected": "Registered count is at most 3 and equals 3 when all attempts resolve; each participant has at most one active registration; zero capacity overflow and zero duplicate active registrations under contention",
+      "expected": "Registered count is at most 3; each participant has at most one active registration; zero capacity overflow and zero duplicate active registrations under contention",
       "edgeCase": true
     },
     {
-      "id": "TC-NFR-02-008",
+      "id": "TC-NFR-02-010",
       "category": "edge",
       "layer": "integration",
+      "technique": "concurrency",
       "priority": "P0",
       "traceability": ["NFR-02", "AC-05", "BR-10"],
       "title": "Concurrent check-in attempts for same registration yield at most one valid check-in",
@@ -157,9 +205,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-NFR-02-009",
+      "id": "TC-NFR-02-011",
       "category": "edge",
       "layer": "integration",
+      "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["NFR-02", "AC-04", "BR-03"],
       "title": "Failed registration rolls back entirely with no partial seat consumption",
@@ -175,9 +224,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-NFR-02-010",
+      "id": "TC-NFR-02-012",
       "category": "edge",
       "layer": "integration",
+      "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["NFR-02", "AC-06", "BR-10"],
       "title": "Rejected out-of-window check-in leaves registration and check-in tables unchanged",
@@ -193,9 +243,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-NFR-02-011",
+      "id": "TC-NFR-02-013",
       "category": "edge",
       "layer": "integration",
+      "technique": "concurrency",
       "priority": "P0",
       "traceability": ["NFR-02", "AC-03", "BR-01"],
       "title": "Concurrent duplicate registration from same participant yields single active row",
@@ -211,16 +262,17 @@
       "edgeCase": true
     },
     {
-      "id": "TC-NFR-02-012",
+      "id": "TC-NFR-02-014",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["NFR-02"],
       "title": "Transactional consistency tests execute against Compose Postgres not in-memory stores",
       "preconditions": [
         "npm run aih:dev:db:up has started healthy db service",
         "DATABASE_URL points to postgresql://we_event:we_event@localhost:5432/we_event",
-        "Forbidden persistence modes (in-memory Map, SQLite, mock-only repos) are not used"
+        "Forbidden persistence modes (in-memory Map, SQLite, mock-only repos) are not used per docker-compose local runtime §4.3"
       ],
       "steps": [
         "Run npm run test:integration for registration and check-in consistency scenarios",
@@ -230,9 +282,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-NFR-02-013",
+      "id": "TC-NFR-02-015",
       "category": "functional",
       "layer": "e2e",
+      "technique": "flow-b",
       "priority": "P0",
       "traceability": ["NFR-02", "AC-04", "BR-08"],
       "title": "Flow B cancel-promote-check-in preserves capacity and check-in consistency",
@@ -249,20 +302,66 @@
       "edgeCase": false
     },
     {
-      "id": "TC-NFR-02-014",
-      "category": "non-functional",
-      "layer": "unit",
+      "id": "TC-NFR-02-016",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["NFR-02", "AC-03", "AC-04"],
-      "title": "Registration pipeline validators enforce dedupe before capacity assignment",
+      "traceability": ["NFR-02", "AC-03", "AC-04", "BR-01", "BR-03"],
+      "title": "Concurrent POST registrations and organizer GET confirm capacity ceiling via HTTP contract",
       "preconditions": [
-        "Unit tests for registration dedupe validator and capacity guard validator per testing plan unit targets"
+        "Published event with registration opened, capacity 3, waitlistEnabled true",
+        "10+ distinct participant JWTs with no prior registration",
+        "Each POST uses a unique Idempotency-Key header",
+        "Valid OrganizerAdmin JWT scoped to the event"
       ],
       "steps": [
-        "Run assertNoDuplicateActive against existing active row → expect REGISTRATION_DUPLICATE_ACTIVE",
-        "Run capacity guard with registeredCount >= capacity → expect Waitlisted or rejection, never Registered"
+        "Fire parallel POST /api/v1/events/{eventId}/registrations from all participants",
+        "Count HTTP 200 responses with state Registered versus Waitlisted",
+        "GET /api/v1/events/{eventId}/registrations?state=Registered&page=1&pageSize=100 with organizer bearer token"
       ],
-      "expected": "Pure validators deterministically enforce ordering that prevents double booking logic errors before persistence; dedupe runs before capacity decision in the validation pipeline",
+      "expected": "Exactly 3 POST responses return HTTP 200 with state Registered; organizer GET returns HTTP 200 with total Registered count equal to capacity (3) and never greater; duplicate POST from same participant returns HTTP 409 REGISTRATION_DUPLICATE_ACTIVE",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-02-017",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["NFR-02", "AC-03", "AC-04", "FR-06"],
+      "title": "Participant UI reflects capacity and blocks duplicate or in-flight double registration",
+      "preconditions": [
+        "Participant logged in on event detail page for an open event",
+        "Event capacity meter shows Registered/Capacity per UI event components spec",
+        "Participant either already Registered or event nearing capacity"
+      ],
+      "steps": [
+        "Navigate to event detail and observe capacity meter (Registered / Capacity) matches server state",
+        "If already Registered, attempt to register again via UI and observe feedback",
+        "If registering fresh, double-click or rapidly retry register CTA while request is in-flight"
+      ],
+      "expected": "Capacity display stays consistent with API after registration; duplicate attempt shows clear error or disabled CTA without second booking; in-flight guard prevents duplicate submissions; UI state matches single active registration invariant",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-02-018",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["NFR-02", "AC-05", "BR-10"],
+      "title": "Participant denied staff check-in for another registration leaves check-in data unchanged",
+      "preconditions": [
+        "Event InProgress with active check-in window",
+        "Participant A has Registered registration; Participant B JWT authenticated",
+        "Participant B lacks OrganizerStaff/OrganizerAdmin check-in permission for the event"
+      ],
+      "steps": [
+        "Participant B POST /api/v1/events/{eventId}/checkins with Participant A registrationId",
+        "Query checkin_records and registration state for Participant A"
+      ],
+      "expected": "HTTP 403 Forbidden (or 401 if unscoped); zero CheckinRecord rows created for Participant A; registration remains Registered; unauthorized attempt cannot introduce inconsistent check-in state",
       "edgeCase": false
     }
   ]
