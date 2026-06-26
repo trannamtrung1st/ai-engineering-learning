@@ -42,7 +42,8 @@
       "description": "Add docker-compose.yml with db service and aih:dev:db:up/down npm scripts.",
       "testRequirements": {
         "acceptanceTags": [
-          "NFR-02"
+          "NFR-02",
+          "NFR-04"
         ]
       }
     },
