@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-02",
   "version": 1,
-  "docFingerprint": "sha256:aa1117f3b650d9449d7073916f7ca9b84a02286b19d61773de4e49196817a850",
-  "generatedAt": "2026-06-26T11:56:18Z",
+  "docFingerprint": "sha256:d5426bd8235ae44f8d8c17ffb86670943a993f20178df22df9dcadf4ea6c6df5",
+  "generatedAt": "2026-06-26T16:36:09Z",
   "cases": [
     {
       "id": "TC-FR-02-001",
@@ -179,7 +179,7 @@
         "PATCH /api/v1/events/{eventId} with OrganizerStaff bearer token and capacity change",
         "PATCH /api/v1/events/{eventId} with Participant bearer token and capacity change"
       ],
-      "expected": "Both requests return HTTP 403 unauthorized; capacity remains unchanged; permission matrix Configure rules/capacity/windows is OrganizerAdmin only per roles-permissions §2",
+      "expected": "Both requests return HTTP 403 with code EVENT_RULE_CHANGE_FORBIDDEN; capacity remains unchanged; permission matrix Configure rules/capacity/windows is OrganizerAdmin only per roles-permissions §2 and BR-21",
       "edgeCase": true
     },
     {
@@ -224,7 +224,7 @@
         "Attempt eventService.update(eventId, { ruleConfig: { capacity: 20 } }, context) without reason fields",
         "Verify event_rule_configs.capacity unchanged"
       ],
-      "expected": "ApiError with code AUDIT_REQUIRED_FOR_CRITICAL_CHANGE; capacity remains 10; satisfies sensitive-action guardrail for rule/capacity change after registration opens",
+      "expected": "ApiError with code AUDIT_REQUIRED_FOR_CRITICAL_CHANGE (HTTP 422 semantic rule violation); capacity remains 10; satisfies sensitive-action guardrail for rule/capacity change after registration opens per BR-22",
       "edgeCase": true
     },
     {
@@ -274,23 +274,22 @@
       "id": "TC-FR-02-013",
       "category": "edge",
       "layer": "integration",
-      "technique": "state-transition",
-      "priority": "P1",
+      "technique": "boundary-error",
+      "priority": "P0",
       "traceability": [
         "FR-02",
         "BR-03"
       ],
-      "title": "Organizer capacity reduction triggers seat/waitlist rebalancing",
+      "title": "Capacity reduction below current Registered count is rejected",
       "preconditions": [
-        "RegistrationOpen event with capacity 10 and exactly 8 Registered participants",
-        "waitlistEnabled true with at least 2 Waitlisted participants",
-        "OrganizerAdmin actor with reason for critical change"
+        "RegistrationOpen event with capacity 20 and 15 Registered participants",
+        "Authenticated OrganizerAdmin actor with mandatory reasonCode and reasonText for post-open change"
       ],
       "steps": [
-        "Update ruleConfig capacity from 10 to 5 with mandatory reasonCode and reasonText",
-        "Query Registered and Waitlisted counts after rebalancing"
+        "Attempt eventService.update(eventId, { ruleConfig: { capacity: 10 }, reasonCode: \"CAPACITY_DECREASE\", reasonText: \"Attempt to reduce below registered count\" }, context)",
+        "Verify event_rule_configs.capacity remains 20 in Postgres"
       ],
-      "expected": "Capacity persisted as 5; system rebalances seat/waitlist allocation per business workflow exception (organizer changes capacity); Registered count does not exceed new configured maximum",
+      "expected": "ApiError with code CAPACITY_EXCEEDED (HTTP 422 semantic rule violation); capacity not reduced below active Registered count; BR-03 invariant prevents misconfigured capacity ceiling per validation rules §2",
       "edgeCase": true
     },
     {
