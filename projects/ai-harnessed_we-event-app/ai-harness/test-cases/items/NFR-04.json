@@ -2,12 +2,13 @@
   "productItemId": "NFR-04",
   "version": 1,
   "docFingerprint": "sha256:165db3bf1b6e2d69c0247f57cf57e1ee618773a7367cf603d879d37786d9cb38",
-  "generatedAt": "2026-06-26T05:34:42Z",
+  "generatedAt": "2026-06-26T14:30:00Z",
   "cases": [
     {
       "id": "TC-NFR-04-001",
       "category": "functional",
       "layer": "e2e",
+      "technique": "scenario-matrix",
       "priority": "P0",
       "traceability": ["NFR-04", "AC-01", "FR-07"],
       "title": "POST registration succeeds with quick response under normal single-user load",
@@ -22,13 +23,14 @@
         "Await HTTP response and record elapsed time",
         "Verify response body contains state Registered and registrationId"
       ],
-      "expected": "HTTP 200 with Registered assignment; elapsed time meets NFR-04 quick response under normal load; registration action completes without perceptible delay that would block participant flow",
+      "expected": "HTTP 200 with Registered assignment; elapsed time meets NFR-04 quick response under normal load; testing-plan §3 row 'Register with available seat → Registered' satisfied without perceptible delay blocking participant flow",
       "edgeCase": false
     },
     {
       "id": "TC-NFR-04-002",
       "category": "functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["NFR-04", "AC-01", "FR-07", "BR-03"],
       "title": "registrationService.register completes promptly with correct state on Postgres",
@@ -49,6 +51,7 @@
       "id": "TC-NFR-04-003",
       "category": "non-functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
       "traceability": ["NFR-04", "AC-01", "FR-06", "FR-07"],
       "title": "POST registrations p95 latency under normal load",
@@ -69,6 +72,7 @@
       "id": "TC-NFR-04-004",
       "category": "non-functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
       "traceability": ["NFR-04", "FR-10", "AC-01"],
       "title": "GET registration-status p95 latency under normal load",
@@ -89,6 +93,7 @@
       "id": "TC-NFR-04-005",
       "category": "non-functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P1",
       "traceability": ["NFR-04", "FR-11", "AC-01"],
       "title": "POST cancel registration responds within acceptable latency under normal load",
@@ -109,6 +114,7 @@
       "id": "TC-NFR-04-006",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P1",
       "traceability": ["NFR-04", "BR-03", "NFR-02"],
       "title": "Registration transactional path avoids N+1 queries that would slow normal-load responses",
@@ -129,6 +135,7 @@
       "id": "TC-NFR-04-007",
       "category": "non-functional",
       "layer": "e2e",
+      "technique": "scenario-matrix",
       "priority": "P1",
       "traceability": ["NFR-04", "AC-02", "FR-08"],
       "title": "Waitlisted registration POST responds within acceptable latency",
@@ -141,13 +148,14 @@
         "Measure elapsed time for POST /api/v1/events/{eventId}/registrations when event is full",
         "Inspect response state and waitlistPosition"
       ],
-      "expected": "HTTP 200 with state Waitlisted returned within NFR-04 quick response threshold; waitlist assignment path is not materially slower than Registered path under normal load",
+      "expected": "HTTP 200 with state Waitlisted returned within NFR-04 quick response threshold; testing-plan §3 row 'Register when full + waitlist enabled → Waitlisted' satisfied; waitlist path is not materially slower than Registered path under normal load",
       "edgeCase": false
     },
     {
       "id": "TC-NFR-04-008",
       "category": "edge",
       "layer": "e2e",
+      "technique": "concurrency",
       "priority": "P1",
       "traceability": ["NFR-04", "AC-04", "BR-03", "R-01"],
       "title": "Moderate concurrent registration burst maintains acceptable p95 without peak-spike degradation",
@@ -168,6 +176,7 @@
       "id": "TC-NFR-04-009",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["NFR-04", "AC-03", "BR-01", "FR-06"],
       "title": "Duplicate registration rejection responds quickly without lock-induced delay",
@@ -179,13 +188,14 @@
         "Measure elapsed time for POST /api/v1/events/{eventId}/registrations from participant with active registration",
         "Repeat several times to capture p95 for rejection path"
       ],
-      "expected": "HTTP 409 (or equivalent conflict) returned within NFR-04 quick response threshold; duplicate guard does not block on long-held locks; error path remains responsive per NFR-13 immediate feedback expectation",
+      "expected": "HTTP 409 (or equivalent conflict) returned within NFR-04 quick response threshold; testing-plan §3 row 'Duplicate registration attempt → blocked' satisfied on error path; duplicate guard does not block on long-held locks; error path remains responsive per NFR-13 immediate feedback expectation",
       "edgeCase": true
     },
     {
       "id": "TC-NFR-04-010",
       "category": "edge",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P1",
       "traceability": ["NFR-04", "AC-04", "BR-03", "NFR-02"],
       "title": "Registration at near-capacity event responds within acceptable latency",
@@ -205,6 +215,7 @@
       "id": "TC-NFR-04-011",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P2",
       "traceability": ["NFR-04", "AC-02", "FR-08"],
       "title": "Registration rejection when full without waitlist responds quickly",
@@ -224,6 +235,7 @@
       "id": "TC-NFR-04-012",
       "category": "non-functional",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["NFR-04", "NFR-13", "AC-01", "FR-10"],
       "title": "Participant registration UI provides immediate feedback under normal campus-network conditions",
@@ -244,6 +256,7 @@
       "id": "TC-NFR-04-013",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["NFR-04"],
       "title": "Registration performance assertions execute against Compose Postgres not in-memory stores",
@@ -263,6 +276,7 @@
       "id": "TC-NFR-04-014",
       "category": "non-functional",
       "layer": "e2e",
+      "technique": "pagination",
       "priority": "P1",
       "traceability": ["NFR-04", "FR-29", "AC-16"],
       "title": "GET my registrations responds within acceptable latency for registration status browsing",
@@ -277,6 +291,27 @@
         "Compute p95 latency"
       ],
       "expected": "p95 response time meets NFR-04 quick response under normal load; single API call returns paginated slice without N+1 fan-out per testing plan AC-14 pattern; suitable for participant registration list views",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-04-015",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["NFR-04", "AC-15", "NFR-07"],
+      "title": "Unauthenticated POST registration returns 401 quickly without slow auth probe",
+      "preconditions": [
+        "Published event RegistrationOpen with available seats",
+        "No Authorization header or expired/invalid token",
+        "Normal load environment (single request)"
+      ],
+      "steps": [
+        "Record start time immediately before POST /api/v1/events/{eventId}/registrations without Authorization",
+        "Await HTTP response and record elapsed time",
+        "Verify no registration row is created for the attempt"
+      ],
+      "expected": "HTTP 401 Unauthorized returned within NFR-04 quick response threshold; AC-15 unauthenticated access denial satisfied; auth rejection path does not block on expensive downstream work; no registration side effects",
       "edgeCase": false
     }
   ]
