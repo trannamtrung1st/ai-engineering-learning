@@ -67,3 +67,4 @@ Lessons learned across harness iterations. Read before every implementer session
 - [FR-18] TestGen agent did not emit TESTGEN_DONE
 - [FR-20] TestGen agent did not emit TESTGEN_DONE
 - [FR-20] Test case validation failed — see 20260626T050026Z-testgen.txt
+- [FR-25] TestGen agent did not emit TESTGEN_DONE
