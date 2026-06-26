@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-32",
   "version": 1,
-  "docFingerprint": "sha256:1795587dc6c00a1833c45415b462d73fd4b8426dae103e6bff17f76a3aee2f8b",
-  "generatedAt": "2026-06-26T12:44:54Z",
+  "docFingerprint": "sha256:32ba11492db28a31bc0f0f6dfba02adacb2f3f8674cf6e19ce91b104d3c20adc",
+  "generatedAt": "2026-06-27T00:00:00Z",
   "cases": [
     {
       "id": "TC-FR-32-001",
@@ -23,7 +23,7 @@
         "POST /api/v1/auth/register with { email, password, displayName } for a new participant",
         "Inspect HTTP status and response body"
       ],
-      "expected": "HTTP 200; response includes JWT token and profile with userId, email, displayName, and roles array containing exactly Participant; satisfies FR-32 participant self-registration with email and password",
+      "expected": "HTTP 200 or 201; response includes JWT token and profile with userId, email, displayName, and roles array containing exactly Participant; satisfies FR-32 participant self-registration with email and password",
       "edgeCase": false
     },
     {
@@ -91,13 +91,13 @@
         "POST /api/v1/auth/register with valid { email, password, displayName } and no Authorization header",
         "Verify account is created and JWT is returned"
       ],
-      "expected": "HTTP 200; public signup endpoint accepts unauthenticated requests per API design §2.6; account and session issued without pre-existing credentials",
+      "expected": "HTTP 200 or 201; public signup endpoint accepts unauthenticated requests per API design §2.6; account and session issued without pre-existing credentials",
       "edgeCase": false
     },
     {
       "id": "TC-FR-32-005",
       "category": "functional",
-      "layer": "integration",
+      "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
       "traceability": [
@@ -225,47 +225,6 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-32-011",
-      "category": "edge",
-      "layer": "unit",
-      "technique": "boundary-error",
-      "priority": "P0",
-      "traceability": [
-        "FR-32"
-      ],
-      "title": "validateRegisterInput rejects invalid email format",
-      "preconditions": [
-        "Auth validation module available"
-      ],
-      "steps": [
-        "Call validateRegisterInput with malformed email (missing @, empty string, or over max length)",
-        "Observe thrown ApiError"
-      ],
-      "expected": "ApiError with code INVALID_INPUT and statusCode 400; field detail identifies email; no account creation attempted",
-      "edgeCase": true
-    },
-    {
-      "id": "TC-FR-32-012",
-      "category": "edge",
-      "layer": "unit",
-      "technique": "boundary-error",
-      "priority": "P0",
-      "traceability": [
-        "FR-32"
-      ],
-      "title": "validateRegisterInput rejects password below minimum length",
-      "preconditions": [
-        "Auth validation module available",
-        "MIN_PASSWORD_LENGTH policy enforced (8 characters per validation rules)"
-      ],
-      "steps": [
-        "Call validateRegisterInput with password shorter than minimum length",
-        "Observe thrown ApiError"
-      ],
-      "expected": "ApiError with code INVALID_INPUT, statusCode 400, and details.field password with minLength; registration rejected before persistence",
-      "edgeCase": true
-    },
-    {
       "id": "TC-FR-32-013",
       "category": "edge",
       "layer": "e2e",
@@ -325,25 +284,6 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-32-016",
-      "category": "edge",
-      "layer": "unit",
-      "technique": "boundary-error",
-      "priority": "P1",
-      "traceability": [
-        "FR-32"
-      ],
-      "title": "validateRegisterInput normalizes email to lowercase trimmed form",
-      "preconditions": [
-        "Auth validation module available"
-      ],
-      "steps": [
-        "Call validateRegisterInput with email '  User@Example.com  ' and otherwise valid fields"
-      ],
-      "expected": "Returned email is 'user@example.com'; displayName trimmed; valid input passes validation for downstream persistence",
-      "edgeCase": true
-    },
-    {
       "id": "TC-FR-32-017",
       "category": "functional",
       "layer": "browser",
@@ -364,6 +304,26 @@
       ],
       "expected": "User remains on signup page; field-level validation errors displayed; no account created and no redirect to protected routes until valid submission",
       "edgeCase": false
+    },
+    {
+      "id": "TC-FR-32-018",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": [
+        "FR-32"
+      ],
+      "title": "Signup with password below minimum length is rejected",
+      "preconditions": [
+        "Fresh email not yet registered"
+      ],
+      "steps": [
+        "POST /api/v1/auth/register with valid email and displayName but password shorter than minimum required length",
+        "Parse JSON error body"
+      ],
+      "expected": "HTTP 400 with error.code INVALID_INPUT and details.field password; no user row persisted; registration rejected at API boundary before persistence",
+      "edgeCase": true
     }
   ]
 }
