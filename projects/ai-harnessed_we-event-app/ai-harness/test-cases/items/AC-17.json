@@ -2,149 +2,168 @@
   "productItemId": "AC-17",
   "version": 1,
   "docFingerprint": "sha256:76ea7a27e8001767c130daca58d854080820cacf97cf62df887657fbfc028f2e",
-  "generatedAt": "2026-06-26T04:26:10Z",
+  "generatedAt": "2026-06-26T11:53:40Z",
   "cases": [
     {
       "id": "TC-AC-17-001",
       "category": "functional",
       "layer": "e2e",
+      "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["AC-17", "FR-35"],
-      "title": "Organizer uploads cover image via POST /events/{eventId}/cover-image",
+      "traceability": ["AC-17", "FR-35", "FR-36"],
+      "title": "BRD §1.7 organizer uploads cover; participant sees cover on event list and detail",
       "preconditions": [
         "API server running at /api/v1",
         "Draft or editable event owned by organizer scope",
-        "Valid OrganizerAdmin or OrganizerStaff JWT",
-        "Valid JPEG, PNG, or WebP image file under 5 MB"
+        "Valid OrganizerAdmin JWT",
+        "Valid JPEG, PNG, or WebP image file under 5 MB",
+        "Participant JWT or public read access per GET /events and GET /events/{eventId} policy"
       ],
       "steps": [
-        "POST /api/v1/events/{eventId}/cover-image as multipart/form-data with image file and organizer bearer token",
-        "GET /api/v1/events/{eventId} with any authenticated or public read token per endpoint policy"
+        "POST /api/v1/events/{eventId}/cover-image as multipart/form-data with image file and OrganizerAdmin bearer token",
+        "GET /api/v1/events?page=1&pageSize=12 as participant and locate the event in items",
+        "GET /api/v1/events/{eventId} as participant and read coverImageUrl",
+        "GET coverImageUrl (or GET /api/v1/media/events/{key}) to fetch image bytes"
       ],
-      "expected": "Upload returns HTTP 200 or 201; event row persists cover_image_key and cover_image_updated_at; GET event detail response includes non-null coverImageUrl pointing to controlled media path",
+      "expected": "Upload succeeds and persists cover_image_key; paginated list item includes coverImageUrl when key is set; event detail includes same coverImageUrl; media endpoint returns HTTP 200 with correct image Content-Type and bytes matching upload — satisfies BRD AC-17 acceptance criterion and MVP event media scope",
       "edgeCase": false
     },
     {
       "id": "TC-AC-17-002",
       "category": "functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["AC-17", "FR-36"],
-      "title": "Participant event list includes coverImageUrl for events with cover",
+      "traceability": ["AC-17", "FR-35"],
+      "title": "POST /api/v1/events/{eventId}/cover-image returns success and persists cover metadata",
       "preconditions": [
-        "Published event with cover_image_key set via organizer upload",
-        "Participant JWT or public list access per GET /events policy"
+        "API server running at /api/v1",
+        "Draft or editable event owned by organizer scope",
+        "Valid OrganizerAdmin JWT",
+        "Valid JPEG, PNG, or WebP image file under 5 MB"
       ],
       "steps": [
-        "GET /api/v1/events?page=1&pageSize=12 as participant",
-        "Locate the seeded event in items array"
+        "POST /api/v1/events/{eventId}/cover-image as multipart/form-data with image file and OrganizerAdmin bearer token",
+        "GET /api/v1/events/{eventId} with organizer or public read token per endpoint policy"
       ],
-      "expected": "Paginated list item for the event includes coverImageUrl when cover_image_key is set; URL is fetchable and matches uploaded asset",
+      "expected": "POST returns HTTP 200 or 201; event row persists cover_image_key and cover_image_updated_at; GET event detail response includes non-null coverImageUrl pointing to controlled media path per API design §2.7",
       "edgeCase": false
     },
     {
       "id": "TC-AC-17-003",
       "category": "functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
       "traceability": ["AC-17", "FR-36"],
-      "title": "Participant event detail returns coverImageUrl and media endpoint serves image",
+      "title": "GET /api/v1/events list and detail include coverImageUrl; GET /media/events/{key} serves image",
       "preconditions": [
-        "Event with uploaded cover image and known cover_image_key",
-        "Participant authenticated or public detail access per API policy"
+        "Published event with cover_image_key set via organizer upload",
+        "Participant JWT or public list/detail access per API policy"
       ],
       "steps": [
+        "GET /api/v1/events?page=1&pageSize=12 as participant and locate the seeded event",
         "GET /api/v1/events/{eventId} and read coverImageUrl from response",
         "GET the coverImageUrl (or GET /api/v1/media/events/{key} derived from key)"
       ],
-      "expected": "Event detail includes coverImageUrl; media GET returns HTTP 200 with correct Content-Type (image/jpeg, image/png, or image/webp) and image bytes matching upload",
+      "expected": "List item includes coverImageUrl when cover_image_key is set; detail includes coverImageUrl; media GET returns HTTP 200 with correct Content-Type (image/jpeg, image/png, or image/webp) and image bytes matching upload",
       "edgeCase": false
     },
     {
       "id": "TC-AC-17-004",
       "category": "functional",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P0",
       "traceability": ["AC-17", "FR-35", "FR-36"],
-      "title": "Organizer uploads cover in event form; participant sees thumbnail on list and hero on detail",
+      "title": "Organizer uploads cover in event form; participant sees 16:9 thumbnail on list and hero on detail",
       "preconditions": [
         "Web app running with organizer event create/edit form and participant discovery pages",
-        "Organizer logged in; participant session available or public browse enabled",
+        "OrganizerAdmin logged in; participant session available or public browse enabled",
         "Valid image file for file picker"
       ],
       "steps": [
-        "As organizer, open create or edit event form, select cover image via file picker, observe preview, and save/upload",
+        "As OrganizerAdmin, open create or edit event form, select cover image via file picker, observe preview, and save/upload",
         "As participant, navigate to event discovery list (paginated card grid)",
         "Open the same event detail page"
       ],
-      "expected": "Organizer form shows upload progress and preview per FR-35; participant event card renders 16:9 cover thumbnail via next/image; event detail header renders cover hero; uploaded image visible on both surfaces per AC-17",
+      "expected": "Organizer form shows upload progress and preview per FR-35; participant event card renders 16:9 cover thumbnail via next/image; event detail header renders cover hero; uploaded image visible on both surfaces per AC-17 and event-specific components spec",
       "edgeCase": false
     },
     {
       "id": "TC-AC-17-005",
       "category": "functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P1",
       "traceability": ["AC-17", "FR-35"],
-      "title": "Organizer replaces existing cover image with new upload",
+      "title": "Event media module replaces existing cover_image_key in real DB transaction",
       "preconditions": [
-        "Event already has cover_image_key from prior upload",
-        "Organizer JWT with write scope on event",
-        "Second valid image file (different content) under 5 MB"
+        "Event already has cover_image_key from prior upload in Postgres",
+        "OrganizerAdmin JWT with write scope on event",
+        "Second valid image file (different content) under 5 MB",
+        "Integration test harness with transaction rollback per test"
       ],
       "steps": [
-        "Record current coverImageUrl and cover_image_key from GET /events/{eventId}",
-        "POST /api/v1/events/{eventId}/cover-image with replacement file",
-        "GET /api/v1/events/{eventId} and fetch new coverImageUrl"
+        "Record current cover_image_key and cover_image_updated_at from events table",
+        "POST /api/v1/events/{eventId}/cover-image with replacement file via media service/repository",
+        "Query events row and media storage for new key and file bytes"
       ],
-      "expected": "cover_image_key and cover_image_updated_at update; coverImageUrl changes; new media endpoint serves replacement bytes; prior key superseded or removed per storage policy",
+      "expected": "cover_image_key and cover_image_updated_at update atomically in database; new media endpoint serves replacement bytes; prior key superseded or removed per storage policy; module-integration boundary exercises real DB + filesystem persistence",
       "edgeCase": false
     },
     {
       "id": "TC-AC-17-006",
       "category": "functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P1",
       "traceability": ["AC-17", "FR-35"],
-      "title": "Organizer removes cover via DELETE /events/{eventId}/cover-image",
+      "title": "DELETE cover-image clears cover_image_key at DB and storage boundary",
       "preconditions": [
-        "Event with existing cover_image_key",
-        "Organizer JWT with write scope"
+        "Event with existing cover_image_key persisted in Postgres",
+        "OrganizerAdmin JWT with write scope",
+        "Integration test harness with transaction rollback per test"
       ],
       "steps": [
-        "DELETE /api/v1/events/{eventId}/cover-image with organizer bearer token",
-        "GET /api/v1/events/{eventId}",
-        "GET /api/v1/events?page=1&pageSize=12 and locate event item"
+        "DELETE /api/v1/events/{eventId}/cover-image with OrganizerAdmin bearer token",
+        "Query events table for cover_image_key and cover_image_updated_at",
+        "GET /api/v1/events/{eventId} and GET /api/v1/events?page=1&pageSize=12"
       ],
-      "expected": "DELETE succeeds; cover_image_key cleared in database; GET detail and list responses omit coverImageUrl or return null; UI falls back to neutral placeholder per event-specific components spec",
+      "expected": "DELETE succeeds; cover_image_key cleared in database; GET detail and list responses omit coverImageUrl or return null; storage file removed or orphaned per policy; UI falls back to neutral placeholder per event-specific components spec",
       "edgeCase": false
     },
     {
       "id": "TC-AC-17-007",
       "category": "non-functional",
-      "layer": "unit",
+      "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["AC-17", "NFR-18"],
-      "title": "Cover upload validator accepts only image/jpeg, image/png, and image/webp",
+      "title": "Cover images served only from controlled GET /media/events/{key} storage path",
       "preconditions": [
-        "Upload MIME and extension validator module available in isolation"
+        "Event with uploaded cover and known storage key under UPLOADS_DIR",
+        "No direct filesystem URL exposure",
+        "Integration test harness with real uploads directory"
       ],
       "steps": [
-        "Validate sample buffers or declared MIME types for image/jpeg, image/png, image/webp",
-        "Validate disallowed types such as image/gif, application/pdf, text/plain"
+        "Upload cover and capture cover_image_key via media module",
+        "GET /api/v1/media/events/{key} with valid key",
+        "Attempt to access raw filesystem path or traversal variants (e.g. ../) via media route"
       ],
-      "expected": "Allowed types pass validation; disallowed types fail before domain execution per NFR-18 and API design §2.7",
+      "expected": "Valid key returns image from controlled handler; path traversal or arbitrary file access rejected with HTTP 400 or 404; storage confined to configured uploads directory per NFR-18",
       "edgeCase": false
     },
     {
       "id": "TC-AC-17-008",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["AC-17", "NFR-18"],
       "title": "Cover upload rejects files exceeding 5 MB maximum size",
       "preconditions": [
-        "Organizer JWT and editable event",
+        "OrganizerAdmin JWT and editable event",
         "Valid MIME image file larger than 5 MB (or boundary test fixture)"
       ],
       "steps": [
@@ -156,79 +175,85 @@
     {
       "id": "TC-AC-17-009",
       "category": "non-functional",
-      "layer": "integration",
+      "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["AC-17", "NFR-18"],
-      "title": "Cover images served only from controlled GET /media/events/{key} storage path",
+      "traceability": ["AC-17", "NFR-07", "NFR-08", "FR-35"],
+      "title": "Participant cannot upload or delete event cover image",
       "preconditions": [
-        "Event with uploaded cover and known storage key under UPLOADS_DIR",
-        "No direct filesystem URL exposure"
+        "Editable event in organizer scope",
+        "Valid OrganizerAdmin JWT and separate Participant JWT",
+        "Valid image file under 5 MB"
       ],
       "steps": [
-        "Upload cover and capture cover_image_key",
-        "GET /api/v1/media/events/{key} with valid key",
-        "Attempt to access raw filesystem path or traversal variants (e.g. ../) via media route"
+        "POST /api/v1/events/{eventId}/cover-image with OrganizerAdmin token — confirm success baseline",
+        "POST /api/v1/events/{eventId}/cover-image with Participant token only",
+        "DELETE /api/v1/events/{eventId}/cover-image with Participant token only"
       ],
-      "expected": "Valid key returns image from controlled handler; path traversal or arbitrary file access rejected; storage confined to configured uploads directory per NFR-18",
+      "expected": "OrganizerAdmin mutating requests succeed; Participant-only POST and DELETE return HTTP 403 unauthorized; cover_image_key unchanged by participant attempts; sensitive media mutation gated per roles matrix (create/edit event draft: OrganizerAdmin only)",
       "edgeCase": false
     },
     {
       "id": "TC-AC-17-010",
       "category": "non-functional",
       "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["AC-17", "NFR-07", "NFR-08"],
-      "title": "Cover upload and delete require authenticated organizer authorization",
+      "traceability": ["AC-17", "FR-35"],
+      "title": "OrganizerStaff denied cover upload on create/edit event",
       "preconditions": [
-        "Editable event in organizer scope",
-        "Valid organizer JWT and separate participant JWT"
+        "Draft event in OrganizerAdmin organizing unit",
+        "OrganizerStaff JWT assigned to event scope",
+        "Valid image file under 5 MB"
       ],
       "steps": [
-        "POST /api/v1/events/{eventId}/cover-image with organizer token",
-        "POST /api/v1/events/{eventId}/cover-image with participant token only",
-        "DELETE /api/v1/events/{eventId}/cover-image with participant token only"
+        "POST /api/v1/events/{eventId}/cover-image with OrganizerStaff bearer token"
       ],
-      "expected": "Organizer-scoped requests succeed; participant-only mutating requests return 403 unauthorized; sensitive media mutation gated per NFR-07 and NFR-08",
+      "expected": "HTTP 403 unauthorized; no cover_image_key written; roles matrix restricts create/edit event draft to OrganizerAdmin only",
       "edgeCase": false
     },
     {
       "id": "TC-AC-17-011",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["AC-17", "FR-35"],
-      "title": "Unauthenticated cover upload returns 401",
+      "traceability": ["AC-17", "FR-35", "AC-15"],
+      "title": "Unauthenticated POST /events/{eventId}/cover-image returns 401",
       "preconditions": [
         "Existing event eligible for cover upload",
-        "No Authorization header on request"
+        "No Authorization header on request",
+        "Valid image file under 5 MB"
       ],
       "steps": [
         "POST /api/v1/events/{eventId}/cover-image without bearer token"
       ],
-      "expected": "HTTP 401 unauthenticated; no cover_image_key written; consistent typed error envelope with requestId",
+      "expected": "HTTP 401 unauthenticated; no cover_image_key written; consistent typed error envelope with requestId per API error contract",
       "edgeCase": true
     },
     {
       "id": "TC-AC-17-012",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["AC-17", "NFR-18"],
       "title": "Invalid MIME type upload rejected before persistence",
       "preconditions": [
-        "Organizer JWT",
+        "OrganizerAdmin JWT",
         "Non-image file (e.g. application/pdf or text/plain) presented as upload"
       ],
       "steps": [
         "POST /api/v1/events/{eventId}/cover-image with disallowed file type"
       ],
-      "expected": "HTTP 400 invalid input; cover_image_key remains null or unchanged; no file stored under uploads path",
+      "expected": "HTTP 400 invalid input; cover_image_key remains null or unchanged; no file stored under uploads path; only image/jpeg, image/png, image/webp allowed per API design §2.7",
       "edgeCase": true
     },
     {
       "id": "TC-AC-17-013",
       "category": "edge",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["AC-17", "FR-36"],
       "title": "Event without cover shows neutral placeholder on list and detail",
@@ -240,36 +265,39 @@
         "Navigate to participant event discovery list",
         "Open event detail for event without cover"
       ],
-      "expected": "Event card and detail header render neutral placeholder illustration instead of broken image; no coverImageUrl-dependent fetch errors; next/image fallback behavior per UI spec",
+      "expected": "Event card and detail header render neutral placeholder illustration instead of broken image; no coverImageUrl-dependent fetch errors; next/image fallback behavior per UI spec §Event card and Event detail header",
       "edgeCase": true
     },
     {
       "id": "TC-AC-17-014",
       "category": "edge",
       "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P1",
       "traceability": ["AC-17", "NFR-08"],
       "title": "Cover upload for event outside organizer scope returns 403 or 404",
       "preconditions": [
         "Event owned by organizing unit A",
-        "Organizer JWT scoped only to unit B"
+        "OrganizerAdmin JWT scoped only to unit B",
+        "Valid image file under 5 MB"
       ],
       "steps": [
-        "POST /api/v1/events/{eventId}/cover-image as organizer B with valid image file"
+        "POST /api/v1/events/{eventId}/cover-image as OrganizerAdmin B with valid image file"
       ],
-      "expected": "HTTP 403 or 404 per roles-permissions scope rules; no cover_image_key change on target event",
+      "expected": "HTTP 403 or 404 per scope rules; no cover_image_key change on target event",
       "edgeCase": true
     },
     {
       "id": "TC-AC-17-015",
       "category": "edge",
       "layer": "integration",
+      "technique": "boundary-error",
       "priority": "P2",
       "traceability": ["AC-17", "FR-35"],
       "title": "DELETE cover-image on event without cover is idempotent or returns clear not-found",
       "preconditions": [
-        "Event with cover_image_key null",
-        "Organizer JWT with write scope"
+        "Event with cover_image_key null in Postgres",
+        "OrganizerAdmin JWT with write scope"
       ],
       "steps": [
         "DELETE /api/v1/events/{eventId}/cover-image",
@@ -282,11 +310,12 @@
       "id": "TC-AC-17-016",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["AC-17", "NFR-18"],
       "title": "Cover upload at exactly 5 MB boundary accepted; just over 5 MB rejected",
       "preconditions": [
-        "Organizer JWT and editable event without cover",
+        "OrganizerAdmin JWT and editable event without cover",
         "Fixtures: valid WebP at 5_000_000 bytes and at 5_000_001 bytes"
       ],
       "steps": [
@@ -294,7 +323,7 @@
         "DELETE cover-image to reset",
         "POST cover-image with 5 MB + 1 byte file"
       ],
-      "expected": "At-limit file uploads successfully; over-limit file returns 400; boundary enforced consistently per API max 5 MB contract",
+      "expected": "At-limit file uploads successfully with HTTP 200 or 201; over-limit file returns HTTP 400; boundary enforced consistently per API max 5 MB contract",
       "edgeCase": true
     }
   ]
