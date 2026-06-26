@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-28",
   "version": 1,
-  "docFingerprint": "sha256:0de96fd30f2643dda5e25a994fcb22af16db2170ec550701a09657db14127a0b",
-  "generatedAt": "2026-06-26T12:38:42Z",
+  "docFingerprint": "sha256:b0ca474f51982b8e84b8aa043459a5098edb01c33a8ccd58f134a734cb0bdd8b",
+  "generatedAt": "2026-06-27T10:00:00Z",
   "cases": [
     {
       "id": "TC-FR-28-001",
@@ -58,19 +58,23 @@
       "technique": "http-contract",
       "priority": "P0",
       "traceability": [
-        "FR-28"
+        "FR-28",
+        "AC-18a"
       ],
-      "title": "Participant searches event browse list by name via q parameter",
+      "title": "Participant searches event browse list via q across name, location, or description",
       "preconditions": [
-        "Discoverable event named uniquely (e.g. Campus Workshop Alpha)",
-        "Additional discoverable events seeded with different names",
+        "Discoverable event with unique name token (e.g. Campus Workshop Alpha)",
+        "Discoverable event with unique location token (e.g. Building C Room 204)",
+        "Discoverable event with unique description token not present in name or location",
+        "Additional discoverable events seeded without those tokens",
         "Authenticated Participant JWT"
       ],
       "steps": [
         "GET /api/v1/events?q=Campus+Workshop+Alpha&page=1&pageSize=12 with Participant token",
-        "Verify all returned items match search intent"
+        "GET /api/v1/events?q=Building+C+Room+204&page=1&pageSize=12 with same token",
+        "GET /api/v1/events?q=<unique-description-token>&page=1&pageSize=12 with same token"
       ],
-      "expected": "HTTP 200; items include the matching event by name; non-matching discoverable events excluded; search q parameter filters participant browse list per API design GET /events and page list browse with search",
+      "expected": "HTTP 200 for each query; items include the matching event for name, location, and description searches respectively; non-matching discoverable events excluded; q parameter applies ILIKE search across name, location, and description per API design GET /events and listing matrix",
       "edgeCase": false
     },
     {
@@ -80,7 +84,8 @@
       "technique": "http-contract",
       "priority": "P0",
       "traceability": [
-        "FR-28"
+        "FR-28",
+        "AC-18a"
       ],
       "title": "Participant filters event browse list by state",
       "preconditions": [
@@ -102,7 +107,8 @@
       "priority": "P1",
       "traceability": [
         "FR-28",
-        "FR-31"
+        "FR-31",
+        "AC-18a"
       ],
       "title": "Combined search, state filter, and pagination on event browse",
       "preconditions": [
@@ -125,22 +131,24 @@
       "priority": "P0",
       "traceability": [
         "FR-28",
+        "AC-13",
         "AC-14",
         "AC-17"
       ],
-      "title": "Participant event discovery page renders paginated card grid with search and filters",
+      "title": "Participant event discovery page renders paginated card grid with FilterBar controls",
       "preconditions": [
         "Web app running with at least 13 discoverable seeded events",
         "At least one event has cover image uploaded",
-        "Participant authenticated on event discovery browse route"
+        "Participant authenticated on event discovery browse route (/events)"
       ],
       "steps": [
         "Navigate to participant event discovery browse list",
-        "Verify search input and basic state filter controls are visible",
+        "Verify FilterBar shows debounced search input, state filter select, and sort select",
         "Confirm paginated card grid shows at most 12 cards with cover thumbnail or fallback illustration",
+        "Verify pagination shows item range label (e.g. Showing 1–12 of N) with prev/next controls",
         "Use Next pagination control to advance to page 2"
       ],
-      "expected": "Browse list displays search and basic filters, availability/registration status on cards, paginated card grid (16:9 cover or fallback), and pagination below grid; page change fetches next server page per page list event discovery and AC-14 server-driven listing",
+      "expected": "Browse list displays search, state filter, and sort controls, paginated card grid (16:9 cover or fallback), and server-driven pagination with range label below grid; page change fetches next server page per page list event discovery, listing pages §3, and AC-14",
       "edgeCase": false
     },
     {
@@ -151,9 +159,10 @@
       "priority": "P0",
       "traceability": [
         "FR-28",
-        "AC-14"
+        "AC-14",
+        "AC-18a"
       ],
-      "title": "Changing search or filter criteria resets browse list to page 1",
+      "title": "Changing search, filter, or sort criteria resets browse list to page 1",
       "preconditions": [
         "More than 12 discoverable events seeded",
         "Participant on event discovery browse page currently viewing page 2"
@@ -162,9 +171,10 @@
         "Navigate to page 2 of event browse list",
         "Enter a search term in the search input and submit or debounce trigger",
         "Observe resulting page index and network request parameters",
-        "Clear search, apply a state filter, and observe page reset again"
+        "Clear search, apply a state filter, and observe page reset again",
+        "Change sort select from startAt:asc to updatedAt:desc and observe page reset"
       ],
-      "expected": "Each search or filter change resets pagination to page 1 and issues GET /events with page=1 and updated q or state parameters; matches page list requirement that changing filters resets to page 1",
+      "expected": "Each search, filter, or sort change resets pagination to page 1 and issues GET /events with page=1 and updated q, state, or sort parameters; matches page list and AC-18a requirement that changing criteria resets to page 1",
       "edgeCase": false
     },
     {
@@ -198,19 +208,21 @@
       "priority": "P0",
       "traceability": [
         "FR-28",
-        "AC-13"
+        "AC-13",
+        "AC-18a"
       ],
       "title": "Event list repository applies search and state filter before OFFSET/LIMIT at DB boundary",
       "preconditions": [
-        "Seeded mix of RegistrationOpen and RegistrationClosed events with overlapping name tokens",
+        "Seeded mix of RegistrationOpen and RegistrationClosed events with overlapping name and location tokens",
         "Participant actor context",
         "PostgreSQL test database"
       ],
       "steps": [
         "Invoke event list query with q=workshop, state=RegistrationOpen, page=1, pageSize=12",
-        "Compare returned total to direct COUNT of rows matching both filters in persistence layer"
+        "Compare returned total to direct COUNT of rows matching both filters in persistence layer",
+        "Invoke event list query with q matching only location field and verify filtered total"
       ],
-      "expected": "Module returns total equal to filtered row count in database; items on page 1 are correct first slice of filtered set; search and state filter applied in query before paging not post-filtered in memory",
+      "expected": "Module returns total equal to filtered row count in database; items on page 1 are correct first slice of filtered set; search matches name, location, or description ILIKE and state filter applied in query before paging not post-filtered in memory",
       "edgeCase": false
     },
     {
@@ -284,9 +296,10 @@
       "technique": "boundary-error",
       "priority": "P1",
       "traceability": [
-        "FR-28"
+        "FR-28",
+        "AC-18a"
       ],
-      "title": "Invalid state filter value on event browse is rejected or ignored safely",
+      "title": "Invalid state filter value on event browse returns 400 INVALID_INPUT",
       "preconditions": [
         "Authenticated Participant JWT",
         "RegistrationOpen events seeded"
@@ -294,7 +307,7 @@
       "steps": [
         "GET /api/v1/events?state=NotARealState&page=1&pageSize=12 with Participant token"
       ],
-      "expected": "Request returns HTTP 400 with validation error or HTTP 200 with empty items; must not return events in unintended states or crash; invalid filter input handled per strict input validation API principle",
+      "expected": "HTTP 400 with error code INVALID_INPUT; must not return events in unintended states; invalid filter enum rejected per listing pages §4 and API design strict input validation",
       "edgeCase": true
     },
     {
@@ -316,7 +329,7 @@
         "Enter search term that matches no events",
         "Submit search and wait for list update"
       ],
-      "expected": "Card grid region shows empty state messaging (not an error page); pagination reflects zero total or hides appropriately; user can clear search to restore results per common UI table/card empty state contract",
+      "expected": "Card grid region shows 'No results match your filters' empty state (not an error page); Clear filters action available; pagination reflects zero total or hides appropriately; user can clear search to restore results per listing pages empty-state contract",
       "edgeCase": true
     },
     {
@@ -407,6 +420,97 @@
         "Verify only one new GET /events request with page=2 is issued"
       ],
       "expected": "Page navigation fetches exactly one server page per interaction; no client-side slicing of a previously loaded full catalog per AC-14, NFR-05, and listing pages server-driven pagination guidance",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-28-019",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": [
+        "FR-28",
+        "AC-18b"
+      ],
+      "title": "Invalid sort parameter on event browse returns 400 INVALID_INPUT",
+      "preconditions": [
+        "Authenticated Participant JWT",
+        "Discoverable events seeded"
+      ],
+      "steps": [
+        "GET /api/v1/events?sort=notAField:asc&page=1&pageSize=12 with Participant token",
+        "GET /api/v1/events?sort=startAt:sideways&page=1&pageSize=12 with Participant token"
+      ],
+      "expected": "Each invalid sort request returns HTTP 400 with error code INVALID_INPUT; no partial event data returned; invalid sort field or direction rejected per AC-18b and API design §3",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-28-020",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "FR-28",
+        "AC-18d"
+      ],
+      "title": "GET /events with sort=updatedAt:desc returns events ordered by updatedAt descending",
+      "preconditions": [
+        "At least three participant-visible events with distinct updatedAt timestamps",
+        "Authenticated Participant JWT"
+      ],
+      "steps": [
+        "GET /api/v1/events?sort=updatedAt:desc&page=1&pageSize=12 with Participant token",
+        "Verify item order matches updatedAt descending sequence from seed data"
+      ],
+      "expected": "HTTP 200; items ordered by updatedAt descending; sort query param accepted as allowed alternative to default startAt:asc per AC-18d and listing matrix",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-28-021",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": [
+        "FR-28",
+        "AC-18d"
+      ],
+      "title": "Sort select on discovery page updates API sort query param",
+      "preconditions": [
+        "Multiple discoverable events seeded with distinct updatedAt values",
+        "Participant on event discovery browse page (/events)"
+      ],
+      "steps": [
+        "Observe initial GET /events network request uses default sort=startAt:asc",
+        "Select 'Recently updated' (or equivalent) sort option mapping to updatedAt:desc in FilterBar",
+        "Inspect resulting GET /events request query parameters and card order"
+      ],
+      "expected": "Sort select change issues GET /events with sort=updatedAt:desc and resets to page=1; displayed card order reflects updatedAt descending per AC-18d and page list sort control mapping",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-28-022",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": [
+        "FR-28",
+        "AC-01"
+      ],
+      "title": "Discovery cards show registration status badge when participant has active registration",
+      "preconditions": [
+        "Participant registered for at least one discoverable event (e.g. Registered state)",
+        "Participant registered for zero other visible events on same browse page",
+        "Participant authenticated on event discovery browse page"
+      ],
+      "steps": [
+        "Navigate to event discovery browse list",
+        "Locate card for event with active registration",
+        "Locate card for event without registration"
+      ],
+      "expected": "Registered event card displays registration status badge or overlay (e.g. Registered); unregistered event card shows neutral state without registered overlay; per-event status visible on discovery cards per FR-28 behavior and page list registration status badge requirement",
       "edgeCase": false
     }
   ]
