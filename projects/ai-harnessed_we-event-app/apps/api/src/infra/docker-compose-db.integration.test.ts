@@ -19,7 +19,7 @@ describe("docker-compose db runtime (NFR-02, NFR-04)", () => {
     await closeDb();
   });
 
-  it("TC-NFR-02-012: integration tests connect to Compose Postgres not in-memory stores", async () => {
+  it("TC-NFR-02-014: integration tests connect to Compose Postgres not in-memory stores", async () => {
     assert.match(process.env.DATABASE_URL ?? "", /localhost:5432\/we_event/);
     assert.equal(await checkDbHealth(), true);
 
