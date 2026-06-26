@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-10",
   "version": 1,
-  "docFingerprint": "sha256:0dd7c4f2e3b88af76edb911a1b6ebfe8322a801c39ef58ffab323b3297400201",
-  "generatedAt": "2026-06-26T16:00:00Z",
+  "docFingerprint": "sha256:f89a34da7eb813f03345d90e0b972381aee6ca035fb8ff5dcfe017ee862eb3e0",
+  "generatedAt": "2026-06-26T16:23:14Z",
   "cases": [
     {
       "id": "TC-AC-10-001",
@@ -27,7 +27,7 @@
         "Invoke eligibilityService.listEligibility(eventId, { page: \"1\", pageSize: \"20\" }, organizerAdminContext)",
         "Locate list entry for the eligible registrationId"
       ],
-      "expected": "Paginated result includes entry with eligibility.result Eligible, non-empty reasonCode, and non-empty reasonText; satisfies testing-plan §3 row: Organizer views eligible list → list + reasons available (AC-10)",
+      "expected": "Paginated result includes entry with eligibility.result Eligible, non-empty reasonCode, and non-empty reasonText; satisfies testing-plan §3 row: Organizer views eligible list → list + reasons available (AC-10a)",
       "edgeCase": false
     },
     {
@@ -53,7 +53,7 @@
         "Invoke eligibilityService.listEligibility(eventId, { page: \"1\", pageSize: \"20\" }, organizerAdminContext)",
         "Query certificate_eligibilities table for the eligible registrationId in the same database session"
       ],
-      "expected": "Paginated result and persisted row both show eligibility.result Eligible with non-empty reasonCode and reasonText; module-integration boundary per eligibility module transaction contract",
+      "expected": "Paginated result and persisted row both show eligibility.result Eligible with non-empty reasonCode and reasonText; module-integration boundary per eligibility module transaction contract (AC-10a)",
       "edgeCase": false
     },
     {
@@ -78,7 +78,7 @@
         "GET /api/v1/events/{eventId}/eligibility?page=1&pageSize=20 with organizer Authorization bearer token",
         "Verify HTTP status, paginated envelope fields, and eligibility payload on matching item"
       ],
-      "expected": "HTTP 200 with items, page, pageSize, total, totalPages; matching item has eligibility.result Eligible, non-empty reasonCode, and non-empty reasonText per API design §2.4 and §3",
+      "expected": "HTTP 200 with items, page, pageSize, total, totalPages; matching item has eligibility.result Eligible, non-empty reasonCode, and non-empty reasonText per API design §2.4 and §3 (AC-10a)",
       "edgeCase": false
     },
     {
@@ -104,7 +104,7 @@
         "GET /api/v1/events/{eventId}/eligibility?page=1&pageSize=20 with organizer Authorization bearer token",
         "Find item matching participant registrationId in response items array"
       ],
-      "expected": "HTTP 200 with paginated envelope; matching item has eligibility.result Eligible, non-empty reasonCode, and non-empty reasonText; completes Flow A organizer eligibility visibility step",
+      "expected": "HTTP 200 with paginated envelope; matching item has eligibility.result Eligible, non-empty reasonCode, and non-empty reasonText; completes Flow A organizer eligibility visibility step (AC-10a)",
       "edgeCase": false
     },
     {
@@ -130,7 +130,7 @@
         "Invoke eligibilityService.listEligibility for the event",
         "Inspect entry for participant missing mandatory feedback"
       ],
-      "expected": "Entry shows eligibility.result NotEligible with reasonCode NOT_ELIGIBLE_FEEDBACK (or NOT_ELIGIBLE_ATTENDANCE for Absent) and explanatory reasonText visible to organizer",
+      "expected": "Entry shows eligibility.result NotEligible with reasonCode NOT_ELIGIBLE_FEEDBACK (or NOT_ELIGIBLE_ATTENDANCE for Absent) and explanatory reasonText visible to organizer (AC-10a)",
       "edgeCase": false
     },
     {
@@ -153,7 +153,7 @@
       "steps": [
         "Invoke eligibilityService.listEligibility(eventId, { page: \"1\", pageSize: \"20\" }, organizerStaffContext)"
       ],
-      "expected": "HTTP-equivalent success with paginated items including eligibility result and reason fields; staff operational list access per FR-30",
+      "expected": "Paginated items including Eligible and NotEligible rows with eligibility result and reason fields; scoped Organizer Staff list access per FR-21 and AC-10a",
       "edgeCase": false
     },
     {
@@ -164,20 +164,21 @@
       "priority": "P1",
       "traceability": [
         "AC-10",
+        "AC-14",
         "FR-21"
       ],
-      "title": "Organizer eligibility page displays result badge and reason text column",
+      "title": "Organizer eligibility page displays result badge, reason column, and segmented status filters",
       "preconditions": [
         "Organizer logged in with access to a Completed event",
         "At least one eligibility row exists with Eligible or NotEligible outcome",
-        "Event eligibility management page reachable at organizer event route"
+        "Event eligibility management page reachable at /organizer/events/{eventId}/eligibility"
       ],
       "steps": [
         "Navigate to organizer event eligibility page",
         "Observe table columns for Eligibility result and Reason",
-        "Switch segmented tabs (All, Eligible, Not eligible) if present"
+        "Switch segmented tabs for Eligible, NotEligible, PendingEvaluation, and Revoked if present"
       ],
-      "expected": "Table renders eligibility state badge and human-readable reasonText per wireframe and eligibility result panel spec; segmented views preserve server pagination",
+      "expected": "Table renders eligibility state badge and human-readable reasonText per page list §Eligibility management; segmented tabs map to eligibility query param and preserve server pagination (AC-10f, AC-14)",
       "edgeCase": false
     },
     {
@@ -189,6 +190,7 @@
       "traceability": [
         "AC-10",
         "FR-21",
+        "FR-37",
         "BR-20"
       ],
       "title": "Revoked eligibility appears in organizer list with override reason",
@@ -199,10 +201,10 @@
       ],
       "steps": [
         "Read certificate_eligibilities beforeState for revoked registrationId",
-        "Invoke eligibilityService.listEligibility with eligibility filter Revoked or All",
+        "Invoke eligibilityService.listEligibility with eligibility filter Revoked or unfiltered list",
         "Locate revoked participant entry and compare afterState"
       ],
-      "expected": "Entry shows eligibility.result Revoked with admin-provided reasonCode and reasonText; overriddenBy populated per BR-20 and domain lifecycle §6 Eligibility",
+      "expected": "Entry shows eligibility.result Revoked with admin-provided reasonCode and reasonText; overriddenBy populated per BR-20, FR-37, and domain lifecycle §6 Eligibility (AC-10d)",
       "edgeCase": false
     },
     {
@@ -224,7 +226,7 @@
         "GET /api/v1/events/{eventId}/eligibility?eligibility=Eligible&page=1&pageSize=20",
         "Verify HTTP 200 and every item in response items array"
       ],
-      "expected": "HTTP 200; all returned items have eligibility.result Eligible; no NotEligible rows in filtered page",
+      "expected": "HTTP 200; all returned items have eligibility.result Eligible; no NotEligible rows in filtered page (AC-10b)",
       "edgeCase": true
     },
     {
@@ -246,7 +248,7 @@
         "GET /api/v1/events/{eventId}/eligibility?eligibility=NotEligible&page=1&pageSize=20",
         "Verify every item in response"
       ],
-      "expected": "HTTP 200; all returned items have eligibility.result NotEligible with non-empty reason fields",
+      "expected": "HTTP 200; all returned items have eligibility.result NotEligible with non-empty reason fields (AC-10b)",
       "edgeCase": true
     },
     {
@@ -266,7 +268,7 @@
       "steps": [
         "GET /api/v1/events/{eventId}/eligibility?eligibility=InvalidState&page=1&pageSize=20"
       ],
-      "expected": "HTTP 400 with INVALID_INPUT error code; no partial list data returned",
+      "expected": "HTTP 400 with INVALID_INPUT error code; no partial list data returned (AC-10b)",
       "edgeCase": true
     },
     {
@@ -287,7 +289,7 @@
       "steps": [
         "GET /api/v1/events/{eventId}/eligibility without bearer token"
       ],
-      "expected": "HTTP 401 unauthenticated; organizer eligibility data not exposed",
+      "expected": "HTTP 401 unauthenticated; organizer eligibility data not exposed (AC-10e)",
       "edgeCase": true
     },
     {
@@ -309,7 +311,7 @@
       "steps": [
         "GET /api/v1/events/{eventId}/eligibility with participant Authorization bearer token"
       ],
-      "expected": "HTTP 403 forbidden; participant scoped to /eligibility/me only per permission matrix §2–§3",
+      "expected": "HTTP 403 forbidden; participant scoped to /eligibility/me only per permission matrix §2–§3 (AC-10e)",
       "edgeCase": true
     },
     {
@@ -330,7 +332,7 @@
       "steps": [
         "Invoke eligibilityService.listEligibility for out-of-scope eventId with staff context"
       ],
-      "expected": "HTTP 403 or 404 per assertEventScope; no cross-event eligibility data leakage",
+      "expected": "HTTP 403 or 404 per assertEventScope; no cross-event eligibility data leakage (AC-10e)",
       "edgeCase": true
     },
     {
@@ -353,7 +355,7 @@
         "Call listEligibility with page=1 pageSize=1 to read total and totalPages",
         "Call listEligibility with page exceeding totalPages"
       ],
-      "expected": "Beyond-last-page response has items: [], matching total and totalPages; pagination contract per AC-13 and API design §3",
+      "expected": "Beyond-last-page response has items: [], matching total and totalPages; pagination contract per AC-10c and API design §3",
       "edgeCase": true
     },
     {
@@ -397,7 +399,7 @@
         "List all eligibility rows without filter",
         "Inspect eligibility.reasonCode and eligibility.reasonText on each item with terminal result"
       ],
-      "expected": "All Eligible, NotEligible, and Revoked rows expose non-empty reasonCode and reasonText; INV-05 and BR-19 satisfied for organizer visibility",
+      "expected": "All Eligible, NotEligible, and Revoked rows expose non-empty reasonCode and reasonText; INV-05 and BR-19 satisfied for organizer visibility (AC-10a)",
       "edgeCase": false
     },
     {
@@ -420,7 +422,7 @@
         "Call listEligibility with page=1 pageSize=1",
         "Verify page, pageSize, total, totalPages, and items.length"
       ],
-      "expected": "Response matches pagination envelope contract; items.length <= pageSize; total reflects all finalized registrations eligible for evaluation; supports organizer operational browsing without unbounded payloads",
+      "expected": "Response matches pagination envelope contract; items.length <= pageSize; total reflects all finalized registrations eligible for evaluation; supports organizer operational browsing without unbounded payloads (AC-10c)",
       "edgeCase": false
     },
     {
@@ -433,7 +435,8 @@
         "AC-10",
         "BR-17",
         "BR-18",
-        "BR-19"
+        "BR-19",
+        "FR-21"
       ],
       "title": "List operation evaluates and persists missing eligibility before returning rows",
       "preconditions": [
@@ -444,7 +447,33 @@
         "Invoke listEligibility for the event",
         "Query certificate_eligibilities table for the registration"
       ],
-      "expected": "List entry includes evaluated Eligible or NotEligible with reason; row persisted in same request path per module transaction boundary; organizer sees current deterministic outcome",
+      "expected": "List entry includes evaluated Eligible or NotEligible with reason; row persisted in same request path per module transaction boundary and FR-21 first-list evaluation behavior; organizer sees current deterministic outcome",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-10-020",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": [
+        "AC-10",
+        "AC-14",
+        "FR-21",
+        "FR-31"
+      ],
+      "title": "Eligibility management page paginates server-side without unbounded client row render",
+      "preconditions": [
+        "Completed event with more than 20 eligibility rows (exceeds default pageSize)",
+        "Authenticated OrganizerAdmin on /organizer/events/{eventId}/eligibility"
+      ],
+      "steps": [
+        "Navigate to organizer eligibility management page",
+        "Verify pagination controls and item range summary (e.g. Showing 1–20 of N)",
+        "Click Next to advance to page 2 and observe network requests",
+        "Count rendered table rows during and after navigation"
+      ],
+      "expected": "Page renders at most pageSize eligibility rows with reason column; page change triggers single GET /events/{eventId}/eligibility with updated page parameter; rendered row count never exceeds pageSize; no unbounded full-dataset client render per AC-10f and page list §Eligibility management",
       "edgeCase": false
     }
   ]
