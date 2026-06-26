@@ -1,0 +1,332 @@
+{
+  "productItemId": "FR-13",
+  "version": 1,
+  "docFingerprint": "sha256:4ef9b21ee020318b8667ba54306d7c16fd1e1129e20152c62d596022b477de06",
+  "generatedAt": "2026-06-26T12:00:00Z",
+  "cases": [
+    {
+      "id": "TC-FR-13-001",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-13", "AC-05", "FR-15", "BR-10"],
+      "title": "OrganizerStaff check-in transitions Registered participant to CheckedIn within window",
+      "preconditions": [
+        "Event is InProgress with check-in window active (current time between checkinOpenAt and checkinCloseAt)",
+        "Participant has registration in Registered state with no prior valid check-in",
+        "Authenticated OrganizerStaff actor assigned to the event with check-in capability"
+      ],
+      "steps": [
+        "Invoke checkinService.staffCheckin(eventId, { registrationId }, staffActorContext) at a fixed in-window time",
+        "Read returned check-in snapshot and linked registration state"
+      ],
+      "expected": "CheckinRecord is persisted with non-null checkinAt, method Staff, and operatorId set to staff actor; registration transitions to CheckedIn in the same transaction",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-13-002",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-13", "AC-05", "FR-16", "BR-10"],
+      "title": "POST checkins returns HTTP 200 with checkinAt and CheckedIn registration for staff actor",
+      "preconditions": [
+        "E2E fixture event in InProgress state with active check-in window",
+        "Registered participant with valid registrationId",
+        "OrganizerStaff JWT with scope for the assigned event",
+        "Fresh Idempotency-Key header value"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/checkins with body { registrationId } and staff Authorization bearer token",
+        "Optionally GET /api/v1/events/{eventId}/attendance and locate the participant row"
+      ],
+      "expected": "Response HTTP 200 includes checkinAt timestamp, registrationState CheckedIn, participantId, and method Staff; attendance list includes the participant with matching checkinAt",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-13-003",
+      "category": "functional",
+      "layer": "browser",
+      "priority": "P1",
+      "traceability": ["FR-13", "AC-05"],
+      "title": "Organizer staff check-in console records participant with immediate success feedback",
+      "preconditions": [
+        "OrganizerStaff logged in with assigned event scope",
+        "Event InProgress with open check-in window",
+        "Target participant appears in check-in list with Registered state and eligible for check-in"
+      ],
+      "steps": [
+        "Open organizer check-in operations console for the assigned event (Flow 3 step 1)",
+        "Identify registered participant and trigger staff check-in action (Flow 3 step 2)",
+        "Verify row updates in console and/or attendance history (Flow 3 steps 4–5)"
+      ],
+      "expected": "Console shows check-in success for the participant with recorded time; participant row reflects checked-in status immediately without manual page reload beyond normal client refresh",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-13-004",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["FR-13", "AC-05", "FR-25"],
+      "title": "OrganizerAdmin can check in participant via staff checkins endpoint",
+      "preconditions": [
+        "Event InProgress with active check-in window",
+        "Registered participant with no prior check-in",
+        "OrganizerAdmin JWT with scope for organization-owned event",
+        "Fresh Idempotency-Key header value"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/checkins with body { registrationId } and admin Authorization bearer token"
+      ],
+      "expected": "HTTP 200 with checkinAt, method Staff, and registrationState CheckedIn; admin role is permitted per permission matrix optional check-in capability",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-13-005",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["FR-13", "AC-05", "FR-30"],
+      "title": "Staff check-in appears in paginated attendance list for authorized event scope",
+      "preconditions": [
+        "Successful staff check-in recorded for a Registered participant",
+        "OrganizerStaff or OrganizerAdmin authorized for the event"
+      ],
+      "steps": [
+        "Query attendance list for the event with default pagination",
+        "Locate the checked-in participant row"
+      ],
+      "expected": "Attendance list includes participant with checkinAt, method Staff, and CheckedIn registration state; paginated envelope returns valid items, total, and totalPages metadata",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-13-006",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-13", "BR-11"],
+      "title": "Second staff check-in attempt for same registration is rejected",
+      "preconditions": [
+        "Participant already has one valid staff check-in recorded within the window",
+        "Registration state is CheckedIn",
+        "Check-in window still open",
+        "Same OrganizerStaff actor authorized for the event"
+      ],
+      "steps": [
+        "Attempt a second staffCheckin for the same registrationId",
+        "Observe error response and database state"
+      ],
+      "expected": "Request fails with stable error code CHECKIN_ALREADY_RECORDED (409 or 422); original checkinAt and operatorId unchanged; no duplicate CheckinRecord created per BR-11",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-13-007",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-13", "BR-11", "NFR-02"],
+      "title": "Concurrent staff check-in requests yield at most one valid record",
+      "preconditions": [
+        "Registered participant with no prior check-in",
+        "Active check-in window",
+        "Two or more parallel staffCheckin requests targeting the same registrationId from authorized staff actor"
+      ],
+      "steps": [
+        "Fire concurrent staffCheckin (or API POST checkins) calls for the same registration",
+        "Count valid CheckinRecord rows and inspect registration state after all requests settle"
+      ],
+      "expected": "Exactly one check-in succeeds with timestamp and method Staff; other requests receive CHECKIN_ALREADY_RECORDED or equivalent conflict; registration ends in CheckedIn with single valid check-in invariant (INV-04) preserved",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-13-008",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-13", "FR-25", "FR-26"],
+      "title": "Participant JWT cannot invoke staff checkins endpoint",
+      "preconditions": [
+        "Event InProgress with active check-in window",
+        "Authenticated participant JWT for own Registered registration",
+        "Fresh Idempotency-Key header value"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/checkins with participant Authorization bearer token and own registrationId"
+      ],
+      "expected": "HTTP 403 Forbidden (or equivalent unauthorized response); no CheckinRecord created; registration remains Registered; participant role lacks staff check-in permission per RBAC matrix",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-13-009",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-13", "FR-27"],
+      "title": "OrganizerStaff outside assigned event scope cannot check in participant",
+      "preconditions": [
+        "Event A InProgress with active check-in window and Registered participant",
+        "OrganizerStaff JWT assigned only to a different event B, not event A",
+        "Fresh Idempotency-Key header value"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventAId}/checkins with staff JWT scoped to event B only and valid registrationId on event A"
+      ],
+      "expected": "HTTP 403 or 404 per authorization decision pattern; no CheckinRecord created; registration on event A unchanged; scope constraint FR-27 enforced",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-13-010",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["FR-13"],
+      "title": "Staff check-in rejected when registration is not in Registered state",
+      "preconditions": [
+        "Event with active check-in window",
+        "Registration in Waitlisted, CancelledByUser, or other non-checkinable state",
+        "Authorized OrganizerStaff for the event",
+        "Fresh Idempotency-Key header value"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/checkins with body { registrationId } for the ineligible registration"
+      ],
+      "expected": "HTTP 409 or 422 with typed domain error indicating invalid transition; no CheckinRecord created; registration state unchanged",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-13-011",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-13", "FR-15", "AC-06", "BR-10"],
+      "title": "Staff check-in outside configured window is rejected with CHECKIN_WINDOW_CLOSED",
+      "preconditions": [
+        "Event InProgress with check-in window not containing current fixed clock time",
+        "Registered participant with no prior check-in",
+        "Authenticated OrganizerStaff assigned to the event"
+      ],
+      "steps": [
+        "Set fixed clock to a time strictly before checkinOpenAt or after checkinCloseAt",
+        "Invoke checkinService.staffCheckin(eventId, { registrationId }, staffActorContext)",
+        "Query checkin_records and registration state"
+      ],
+      "expected": "Request fails with CHECKIN_WINDOW_CLOSED; no CheckinRecord persisted; registration remains Registered; error details may include checkinOpenAt and checkinCloseAt per error contract",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-13-012",
+      "category": "non-functional",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["FR-13", "FR-16", "BR-13"],
+      "title": "Staff check-in persists audit metadata with operatorId and method Staff",
+      "preconditions": [
+        "In-window staff check-in about to be recorded",
+        "Known OrganizerStaff operatorId in actor context"
+      ],
+      "steps": [
+        "Perform successful staff check-in via checkinService.staffCheckin",
+        "Inspect persisted CheckinRecord fields and any linked audit module write"
+      ],
+      "expected": "CheckinRecord includes non-null checkinAt, method Staff, and operatorId matching staff actor; audit trail satisfies BR-13 requirement for timestamp, actor, and method on every check-in write",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-13-013",
+      "category": "non-functional",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["FR-13", "NFR-13", "AC-05"],
+      "title": "Staff check-in success returns immediate actionable feedback without polling",
+      "preconditions": [
+        "Registered participant with active check-in window",
+        "OrganizerStaff JWT with event scope",
+        "Fresh Idempotency-Key header value"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/checkins with staff token and registrationId",
+        "Inspect synchronous response body without follow-up polling"
+      ],
+      "expected": "HTTP 200 response includes checkinAt, registrationState CheckedIn, and method Staff in a single round trip; client receives immediate success confirmation satisfying NFR-13 for critical check-in action",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-13-014",
+      "category": "non-functional",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["FR-13", "NFR-13", "BR-10"],
+      "title": "Failed staff check-in returns immediate reason code not generic error",
+      "preconditions": [
+        "Registered participant on event with closed check-in window",
+        "OrganizerStaff JWT with event scope",
+        "Fresh Idempotency-Key header value"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/checkins while outside the configured window",
+        "Parse error envelope from response"
+      ],
+      "expected": "Synchronous HTTP 422 (or 409) with error.code CHECKIN_WINDOW_CLOSED and user-safe message including window bounds in details; satisfies NFR-13 immediate feedback with explicit failure reason",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-13-015",
+      "category": "non-functional",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["FR-13", "NFR-02"],
+      "title": "Staff check-in write and registration CheckedIn transition commit atomically",
+      "preconditions": [
+        "Database transaction boundary enabled for check-in module per cross-module contract",
+        "Registered participant, in-window, no prior check-in",
+        "Authorized OrganizerStaff actor"
+      ],
+      "steps": [
+        "Complete successful in-window staff check-in",
+        "Query checkin_records row and registration state in the same database session immediately after commit"
+      ],
+      "expected": "CheckinRecord with method Staff and registration CheckedIn state exist together; partial writes (record without state change or vice versa) do not occur",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-13-016",
+      "category": "non-functional",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["FR-13", "NFR-02"],
+      "title": "Idempotent staff check-in retry with same Idempotency-Key returns consistent snapshot",
+      "preconditions": [
+        "Registered participant with active check-in window",
+        "OrganizerStaff JWT with event scope",
+        "Fixed Idempotency-Key header value K for check-in write endpoint"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/checkins with Idempotency-Key K and receive success with checkinAt",
+        "Repeat POST with the same Idempotency-Key K and identical payload"
+      ],
+      "expected": "Both responses return HTTP 200 with the same checkinAt and registrationId; only one CheckinRecord exists; no duplicate state transition side effects",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-13-017",
+      "category": "edge",
+      "layer": "browser",
+      "priority": "P1",
+      "traceability": ["FR-13", "FR-15", "AC-06", "BR-10"],
+      "title": "Staff check-in console displays blocking reason when window is closed",
+      "preconditions": [
+        "OrganizerStaff logged in with assigned event scope",
+        "Event InProgress but check-in window closed",
+        "Target participant in Registered state listed in console"
+      ],
+      "steps": [
+        "Open organizer check-in console for the event",
+        "Attempt staff check-in action for a registered participant while window is closed",
+        "Observe UI feedback and participant row state"
+      ],
+      "expected": "UI communicates check-in unavailable with explicit reason (window closed or not yet open); participant remains not checked in; no success timestamp displayed per Flow 3 invalid-attempt handling",
+      "edgeCase": true
+    }
+  ]
+}
