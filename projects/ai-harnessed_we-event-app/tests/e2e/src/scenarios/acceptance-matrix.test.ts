@@ -116,6 +116,43 @@ describe("Acceptance matrix — capacity, check-in, attendance, eligibility, pag
     assert.equal(attended.state, "Attended");
   });
 
+  it("TC-AC-09-019 / BR-18 / BR-19: GET eligibility/me returns NotEligible when feedback missing", async () => {
+    const { eventId } = await createRegistrationOpenEvent(ctx.app, organizerToken, {
+      capacity: 5,
+      feedbackRequired: true,
+    });
+    const participantSub = randomUUID();
+    const participantToken = await signDevToken(ctx.app, participantSub, "Participant");
+    const registered = await registerParticipant(ctx.app, participantToken, eventId);
+
+    await transitionEvent(ctx.app, organizerToken, eventId, "close-registration");
+    await transitionEvent(ctx.app, organizerToken, eventId, "start");
+
+    await apiRequest(ctx.app, {
+      method: "POST",
+      path: `/events/${eventId}/checkins`,
+      token: organizerToken,
+      payload: { registrationId: registered.registrationId },
+      idempotencyKey: newIdempotencyKey(),
+    });
+    await transitionEvent(ctx.app, organizerToken, eventId, "complete");
+
+    const eligibilityResponse = await apiRequest(ctx.app, {
+      method: "GET",
+      path: `/events/${eventId}/eligibility/me`,
+      token: participantToken,
+    });
+    assertOk(eligibilityResponse.statusCode, eligibilityResponse.body, "eligibility/me");
+    const eligibility = parseJson<{
+      result: string;
+      reasonCode: string;
+      reasonText: string;
+    }>(eligibilityResponse.body);
+    assert.equal(eligibility.result, "NotEligible");
+    assert.equal(eligibility.reasonCode, "NOT_ELIGIBLE_FEEDBACK");
+    assert.ok(eligibility.reasonText);
+  });
+
   it("AC-10 / FR-21 / BR-18 / BR-19: organizer can list certificate-eligible participants with reasons", async () => {
     const { eventId } = await createRegistrationOpenEvent(ctx.app, organizerToken, {
       capacity: 5,

@@ -1,3 +1,4 @@
+import { resolveActorId } from "../../auth/resolve-actor-id.js";
 import { ApiError } from "../../errors/api-error.js";
 import {
   buildPaginatedResult,
@@ -45,10 +46,16 @@ export class EligibilityService {
     participantId: string,
     context: ActorContext,
   ) {
+    const resolvedParticipantId = resolveActorId(participantId);
+    const resolvedContext: ActorContext = {
+      ...context,
+      actorId: resolveActorId(context.actorId),
+    };
+
     const event = await this.requireEvent(eventId);
     const registration = await findRegistrationByParticipant(
       eventId,
-      participantId,
+      resolvedParticipantId,
       [...ELIGIBILITY_PARTICIPANT_STATES],
     );
 
@@ -57,7 +64,7 @@ export class EligibilityService {
         code: "NOT_FOUND",
         message: "No registration found for eligibility evaluation.",
         statusCode: 404,
-        details: { eventId, participantId },
+        details: { eventId, participantId: resolvedParticipantId },
       });
     }
 
@@ -66,7 +73,7 @@ export class EligibilityService {
     const row = await persistEligibilityEvaluation(
       registration,
       evaluation,
-      context,
+      resolvedContext,
     );
 
     return toEligibilityResponse(row);

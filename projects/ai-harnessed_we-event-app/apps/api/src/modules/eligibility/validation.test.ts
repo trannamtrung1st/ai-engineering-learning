@@ -122,7 +122,21 @@ describe("eligibility validation (BR-17, BR-18, BR-19)", () => {
     );
   });
 
-  it("returns NotEligible when mandatory feedback is missing (BR-18)", () => {
+  it("TC-AC-09-010 / BR-17 / BR-18: attendance is evaluated before mandatory feedback", () => {
+    const result = evaluateEligibilityRules(
+      buildRegistration({ state: "Absent" }),
+      buildEvent({ ruleConfig: { ...buildEvent().ruleConfig, feedbackRequired: true } }),
+      null,
+    );
+
+    assert.equal(result.result, "NotEligible");
+    assert.equal(
+      result.reasonCode,
+      VALIDATION_ERROR_CODES.NOT_ELIGIBLE_ATTENDANCE,
+    );
+  });
+
+  it("TC-AC-09-001 / BR-18: returns NotEligible when mandatory feedback is missing", () => {
     const result = evaluateEligibilityRules(
       buildRegistration(),
       buildEvent(),
@@ -136,11 +150,25 @@ describe("eligibility validation (BR-17, BR-18, BR-19)", () => {
     );
   });
 
-  it("returns Eligible when attendance and feedback requirements pass (BR-19)", () => {
+  it("TC-AC-09-001 / BR-19: returns Eligible when attendance and feedback requirements pass", () => {
     const result = evaluateEligibilityRules(
       buildRegistration(),
       buildEvent(),
       buildFeedback(),
+    );
+
+    assert.equal(result.result, "Eligible");
+    assert.equal(result.reasonCode, ELIGIBLE_REASON_CODE);
+    assert.ok(result.reasonText.length > 0);
+  });
+
+  it("TC-AC-09-007 / BR-19: optional feedback does not block eligibility", () => {
+    const result = evaluateEligibilityRules(
+      buildRegistration(),
+      buildEvent({
+        ruleConfig: { ...buildEvent().ruleConfig, feedbackRequired: false },
+      }),
+      null,
     );
 
     assert.equal(result.result, "Eligible");

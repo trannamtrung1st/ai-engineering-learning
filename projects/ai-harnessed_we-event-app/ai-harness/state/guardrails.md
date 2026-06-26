@@ -156,3 +156,4 @@ Lessons learned across harness iterations. Read before every implementer session
 - [AC-01] TestGen agent did not emit TESTGEN_DONE
 - [module-registration] Legacy Postgres may use enum columns (`registration_state`, `event_state`) and omit module columns (`events.version`, `registrations.created_at`); use idempotent `ALTER TABLE … ADD COLUMN IF NOT EXISTS` in schema.sql and compare enums via `state::text` in queries.
 - [module-checkin] AI review failed — see 20260626T145401Z-review.json
+- [module-feedback-eligibility] Computational checks failed — see 20260626T151207Z-checks.json

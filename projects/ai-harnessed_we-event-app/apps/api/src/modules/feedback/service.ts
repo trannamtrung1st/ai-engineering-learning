@@ -1,3 +1,4 @@
+import { actorIdsMatch, resolveActorId } from "../../auth/resolve-actor-id.js";
 import { ApiError } from "../../errors/api-error.js";
 import { findEventById } from "../event/repository.js";
 import { findRegistrationById, findRegistrationByParticipant } from "../registration/repository.js";
@@ -22,17 +23,23 @@ export class FeedbackService {
   ) {
     assertAnswersValid(input.answers);
 
+    const resolvedParticipantId = resolveActorId(participantId);
+    const resolvedContext: ActorContext = {
+      ...context,
+      actorId: resolveActorId(context.actorId),
+    };
+
     const event = await this.requireEvent(eventId);
     assertFeedbackWindowOpen(event);
 
     const registration = await this.resolveRegistration(
       eventId,
-      participantId,
+      resolvedParticipantId,
       input.registrationId,
     );
     assertRegistrationFeedbackEligible(registration);
 
-    if (registration.participantId !== participantId) {
+    if (!actorIdsMatch(registration.participantId, resolvedParticipantId)) {
       throw new ApiError({
         code: "FORBIDDEN",
         message: "You can only submit feedback for your own registration.",
@@ -44,7 +51,7 @@ export class FeedbackService {
     const row = await submitOrUpdateFeedback(
       registration,
       input.answers,
-      context,
+      resolvedContext,
       existing,
     );
 

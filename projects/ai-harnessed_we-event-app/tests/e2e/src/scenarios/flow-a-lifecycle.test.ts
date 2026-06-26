@@ -102,5 +102,29 @@ describe("Flow A — full participant lifecycle (AC-01, AC-05, AC-08, AC-09, FR-
     assert.equal(eligibility.result, "Eligible");
     assert.ok(eligibility.reasonCode);
     assert.ok(eligibility.reasonText);
+
+    const organizerListResponse = await apiRequest(ctx.app, {
+      method: "GET",
+      path: `/events/${eventId}/eligibility?page=1&pageSize=20`,
+      token: organizerToken,
+    });
+    assertOk(
+      organizerListResponse.statusCode,
+      organizerListResponse.body,
+      "TC-AC-10-004 / FR-21 / BR-18 / BR-19 organizer eligibility list",
+    );
+    const organizerList = parseJson<{
+      items: Array<{
+        registrationId: string;
+        eligibility: { result: string; reasonCode: string; reasonText: string };
+      }>;
+    }>(organizerListResponse.body);
+    const listEntry = organizerList.items.find(
+      (row) => row.registrationId === registration.registrationId,
+    );
+    assert.ok(listEntry);
+    assert.equal(listEntry.eligibility.result, "Eligible");
+    assert.ok(listEntry.eligibility.reasonCode);
+    assert.ok(listEntry.eligibility.reasonText);
   });
 });

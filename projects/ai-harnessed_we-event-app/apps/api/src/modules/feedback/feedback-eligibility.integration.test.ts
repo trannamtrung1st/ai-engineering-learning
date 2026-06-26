@@ -20,7 +20,10 @@ import {
   ensureRegistrationSchema,
 } from "../registration/repository.js";
 import { registrationService } from "../registration/service.js";
-import { ensureEligibilitySchema } from "../eligibility/repository.js";
+import {
+  ensureEligibilitySchema,
+  findEligibilityByRegistrationId,
+} from "../eligibility/repository.js";
 import { eligibilityService } from "../eligibility/service.js";
 import { ensureFeedbackSchema } from "../feedback/repository.js";
 import { feedbackService } from "../feedback/service.js";
@@ -42,13 +45,14 @@ function eventWindows() {
 
 async function createCompletedEventWithAttendee(options?: {
   feedbackRequired?: boolean;
+  participantId?: string;
 }): Promise<{
   event: EventWithConfig;
   participantId: string;
   registrationId: string;
 }> {
   const windows = eventWindows();
-  const participantId = randomUUID();
+  const participantId = options?.participantId ?? randomUUID();
   await ensureTestParticipant(participantId);
 
   const draft = await createEvent(
@@ -161,6 +165,24 @@ describe("feedback and eligibility integration (FR-19, FR-21, BR-15, BR-16, BR-1
     assert.deepEqual(result.answers, { q1: 5, q2: "Great session" });
   });
 
+  it("TC-AC-08-022 / AC-08: dev sub alias submits feedback with registrationId without false ownership error", async () => {
+    const devSub = "participant-1";
+    const { event, registrationId } = await createCompletedEventWithAttendee({
+      participantId: devSub,
+    });
+
+    const result = await feedbackService.submit(
+      event.id,
+      devSub,
+      { registrationId, answers: { q1: 5, q2: "Great session" } },
+      { actorId: devSub, actorRole: "Participant" },
+    );
+
+    assert.ok(result.feedbackId);
+    assert.ok(result.submittedAt);
+    assert.deepEqual(result.answers, { q1: 5, q2: "Great session" });
+  });
+
   it("rejects feedback outside the feedback window (BR-15)", async () => {
     const windows = eventWindows();
     const participantId = randomUUID();
@@ -259,6 +281,31 @@ describe("feedback and eligibility integration (FR-19, FR-21, BR-15, BR-16, BR-1
     assert.deepEqual(updated.answers, { q1: 5 });
   });
 
+  it("TC-AC-09-002 / BR-18 / BR-19: getMyEligibility persists Eligible result in certificate_eligibilities", async () => {
+    const { event, participantId, registrationId } =
+      await createCompletedEventWithAttendee();
+
+    await feedbackService.submit(
+      event.id,
+      participantId,
+      { answers: { q1: 4 } },
+      { actorId: participantId, actorRole: "Participant" },
+    );
+
+    const result = await eligibilityService.getMyEligibility(
+      event.id,
+      participantId,
+      { actorId: participantId, actorRole: "Participant" },
+    );
+
+    const persisted = await findEligibilityByRegistrationId(registrationId);
+    assert.ok(persisted);
+    assert.equal(persisted.result, result.result);
+    assert.equal(persisted.reasonCode, result.reasonCode);
+    assert.equal(persisted.reasonText, result.reasonText);
+    assert.ok(persisted.evaluatedAt);
+  });
+
   it("AC-09 / BR-18 / BR-19: eligibility evaluation returns Eligible with reason after feedback", async () => {
     const { event, participantId } = await createCompletedEventWithAttendee();
 
@@ -281,6 +328,62 @@ describe("feedback and eligibility integration (FR-19, FR-21, BR-15, BR-16, BR-1
     assert.ok(result.evaluatedAt);
   });
 
+  it("TC-AC-09-012 / BR-19: eligibility refreshes to Eligible after feedback submission", async () => {
+    const { event, participantId } = await createCompletedEventWithAttendee({
+      feedbackRequired: true,
+    });
+
+    const before = await eligibilityService.getMyEligibility(
+      event.id,
+      participantId,
+      { actorId: participantId, actorRole: "Participant" },
+    );
+    assert.equal(before.result, "NotEligible");
+
+    await feedbackService.submit(
+      event.id,
+      participantId,
+      { answers: { q1: 5 } },
+      { actorId: participantId, actorRole: "Participant" },
+    );
+
+    const after = await eligibilityService.getMyEligibility(
+      event.id,
+      participantId,
+      { actorId: participantId, actorRole: "Participant" },
+    );
+    assert.equal(after.result, "Eligible");
+    assert.ok(after.reasonCode);
+    assert.ok(after.reasonText);
+    assert.ok(after.evaluatedAt);
+  });
+
+  it("TC-AC-09-016 / BR-18 / BR-19: eligibility evaluation is deterministic for identical inputs", async () => {
+    const { event, participantId } = await createCompletedEventWithAttendee();
+
+    await feedbackService.submit(
+      event.id,
+      participantId,
+      { answers: { q1: 4 } },
+      { actorId: participantId, actorRole: "Participant" },
+    );
+
+    const first = await eligibilityService.getMyEligibility(
+      event.id,
+      participantId,
+      { actorId: participantId, actorRole: "Participant" },
+    );
+    const second = await eligibilityService.getMyEligibility(
+      event.id,
+      participantId,
+      { actorId: participantId, actorRole: "Participant" },
+    );
+
+    assert.equal(first.result, second.result);
+    assert.equal(first.reasonCode, second.reasonCode);
+    assert.equal(first.reasonText, second.reasonText);
+  });
+
   it("AC-09 / BR-18 / BR-19: eligibility is NotEligible when mandatory feedback is missing", async () => {
     const { event, participantId } = await createCompletedEventWithAttendee({
       feedbackRequired: true,
@@ -297,6 +400,29 @@ describe("feedback and eligibility integration (FR-19, FR-21, BR-15, BR-16, BR-1
       result.reasonCode,
       VALIDATION_ERROR_CODES.NOT_ELIGIBLE_FEEDBACK,
     );
+  });
+
+  it("TC-AC-10-005 / FR-21 / BR-18 / BR-19: organizer list shows NotEligible when feedback missing", async () => {
+    const { event, participantId, registrationId } =
+      await createCompletedEventWithAttendee({ feedbackRequired: true });
+
+    const list = await eligibilityService.listEligibility(
+      event.id,
+      { page: "1", pageSize: "20" },
+      { actorId: ORG_ADMIN_ID, actorRole: "OrganizerAdmin" },
+    );
+
+    const entry = list.items.find(
+      (item) => item.registrationId === registrationId,
+    );
+    assert.ok(entry);
+    assert.equal(entry.participantId, participantId);
+    assert.equal(entry.eligibility.result, "NotEligible");
+    assert.equal(
+      entry.eligibility.reasonCode,
+      VALIDATION_ERROR_CODES.NOT_ELIGIBLE_FEEDBACK,
+    );
+    assert.ok(entry.eligibility.reasonText);
   });
 
   it("AC-10 / FR-21 / BR-18 / BR-19: organizer can list eligibility with reasons", async () => {
@@ -326,6 +452,43 @@ describe("feedback and eligibility integration (FR-19, FR-21, BR-15, BR-16, BR-1
     assert.equal(entry.eligibility.result, "Eligible");
     assert.ok(entry.eligibility.reasonCode);
     assert.ok(entry.eligibility.reasonText);
+  });
+
+  it("TC-AC-10-008 / FR-21 / BR-20: revoked eligibility appears in organizer list", async () => {
+    const { event, participantId, registrationId } =
+      await createCompletedEventWithAttendee();
+
+    await feedbackService.submit(
+      event.id,
+      participantId,
+      { answers: { q1: 5 } },
+      { actorId: participantId, actorRole: "Participant" },
+    );
+
+    await eligibilityService.revoke(
+      event.id,
+      registrationId,
+      {
+        reasonCode: "ADMIN_REVOKED",
+        reasonText: "Certificate policy violation.",
+      },
+      { actorId: ORG_ADMIN_ID, actorRole: "OrganizerAdmin" },
+    );
+
+    const list = await eligibilityService.listEligibility(
+      event.id,
+      { page: "1", pageSize: "20", eligibility: "Revoked" },
+      { actorId: ORG_ADMIN_ID, actorRole: "OrganizerAdmin" },
+    );
+
+    const entry = list.items.find(
+      (item) => item.registrationId === registrationId,
+    );
+    assert.ok(entry);
+    assert.equal(entry.eligibility.result, "Revoked");
+    assert.equal(entry.eligibility.reasonCode, "ADMIN_REVOKED");
+    assert.equal(entry.eligibility.reasonText, "Certificate policy violation.");
+    assert.equal(entry.eligibility.overriddenBy, ORG_ADMIN_ID);
   });
 
   it("FR-21 / BR-20: admin can revoke eligible participant with reason", async () => {
