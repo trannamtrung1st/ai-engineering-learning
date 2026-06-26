@@ -108,9 +108,89 @@ describe("checkin validation", () => {
     );
   });
 
-  it("assertCheckinWindowOpen allows in-window check-in (FR-13, FR-14)", () => {
+  it("assertCheckinWindowOpen allows in-window check-in (FR-13, FR-14, AC-05, TC-AC-05-004)", () => {
     const event = buildEvent();
     assert.doesNotThrow(() => assertCheckinWindowOpen(event));
+  });
+
+  it("AC-05 / TC-AC-05-007: check-in at checkinOpenAt boundary is permitted", () => {
+    const openAt = "2026-06-26T10:00:00.000Z";
+    const closeAt = "2026-06-26T12:00:00.000Z";
+    const event = buildEvent({
+      ruleConfig: {
+        ...buildEvent().ruleConfig,
+        checkinOpenAt: openAt,
+        checkinCloseAt: closeAt,
+      },
+    });
+    const atOpen = new Date(openAt).getTime();
+    assert.doesNotThrow(() => assertCheckinWindowOpen(event, atOpen));
+  });
+
+  it("AC-06 / TC-AC-06-005: assertCheckinWindowOpen rejects time before checkinOpenAt", () => {
+    const openAt = "2026-06-26T10:00:00.000Z";
+    const closeAt = "2026-06-26T12:00:00.000Z";
+    const event = buildEvent({
+      ruleConfig: {
+        ...buildEvent().ruleConfig,
+        checkinOpenAt: openAt,
+        checkinCloseAt: closeAt,
+      },
+    });
+    const beforeOpen = new Date(openAt).getTime() - 1;
+
+    assert.throws(
+      () => assertCheckinWindowOpen(event, beforeOpen),
+      (error: unknown) => {
+        assert.ok(error instanceof ApiError);
+        assert.equal(error.code, VALIDATION_ERROR_CODES.CHECKIN_WINDOW_CLOSED);
+        return true;
+      },
+    );
+  });
+
+  it("AC-06 / TC-AC-06-006: assertCheckinWindowOpen rejects time after checkinCloseAt", () => {
+    const openAt = "2026-06-26T10:00:00.000Z";
+    const closeAt = "2026-06-26T12:00:00.000Z";
+    const event = buildEvent({
+      ruleConfig: {
+        ...buildEvent().ruleConfig,
+        checkinOpenAt: openAt,
+        checkinCloseAt: closeAt,
+      },
+    });
+    const afterClose = new Date(closeAt).getTime() + 1;
+
+    assert.throws(
+      () => assertCheckinWindowOpen(event, afterClose),
+      (error: unknown) => {
+        assert.ok(error instanceof ApiError);
+        assert.equal(error.code, VALIDATION_ERROR_CODES.CHECKIN_WINDOW_CLOSED);
+        return true;
+      },
+    );
+  });
+
+  it("AC-06 / TC-AC-06-007: check-in at checkinCloseAt boundary is rejected", () => {
+    const openAt = "2026-06-26T10:00:00.000Z";
+    const closeAt = "2026-06-26T12:00:00.000Z";
+    const event = buildEvent({
+      ruleConfig: {
+        ...buildEvent().ruleConfig,
+        checkinOpenAt: openAt,
+        checkinCloseAt: closeAt,
+      },
+    });
+    const atClose = new Date(closeAt).getTime();
+
+    assert.throws(
+      () => assertCheckinWindowOpen(event, atClose),
+      (error: unknown) => {
+        assert.ok(error instanceof ApiError);
+        assert.equal(error.code, VALIDATION_ERROR_CODES.CHECKIN_WINDOW_CLOSED);
+        return true;
+      },
+    );
   });
 
   it("assertNoExistingCheckin rejects duplicate check-in (BR-11)", () => {

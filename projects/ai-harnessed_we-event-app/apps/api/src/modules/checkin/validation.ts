@@ -43,7 +43,7 @@ export function assertCheckinWindowOpen(
     });
   }
 
-  if (now < openAt || now > closeAt) {
+  if (now < openAt || now >= closeAt) {
     throw new ApiError({
       code: VALIDATION_ERROR_CODES.CHECKIN_WINDOW_CLOSED,
       message: "Check-in is not available at this time.",
