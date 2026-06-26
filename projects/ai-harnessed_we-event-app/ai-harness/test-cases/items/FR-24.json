@@ -1,0 +1,385 @@
+{
+  "productItemId": "FR-24",
+  "version": 1,
+  "docFingerprint": "sha256:f44c92d5b8e8208272ca20445a8ed22605865e55c323b1677af54c0c2242f917",
+  "generatedAt": "2026-06-26T05:08:48Z",
+  "cases": [
+    {
+      "id": "TC-FR-24-001",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-24"],
+      "title": "OrganizerAdmin exports event operational eligibility data via GET export",
+      "preconditions": [
+        "Completed or post-event event with at least one registration and evaluated eligibility outcomes",
+        "Authenticated OrganizerAdmin actor with organization scope to the event"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/export with organizer Authorization bearer token and Accept text/csv",
+        "Inspect response headers and CSV body"
+      ],
+      "expected": "HTTP 200 with Content-Type text/csv, Content-Disposition attachment filename, and CSV rows covering participant operational eligibility data; Organizer Admin can export event operational data for internal reporting per FR-24 and GET /events/{eventId}/export contract",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-24-002",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-24", "FR-20", "FR-21", "AC-09", "AC-10"],
+      "title": "Export CSV includes eligibility result and reason for each registration row",
+      "preconditions": [
+        "Event with mix of Eligible and NotEligible registrations after eligibility evaluation",
+        "OrganizerAdmin actor"
+      ],
+      "steps": [
+        "Invoke exportEligibilityCsv for eventId without eligibility filter",
+        "Parse CSV header and data rows",
+        "Cross-reference eligibility and reason columns with GET /events/{eventId}/eligibility list entries"
+      ],
+      "expected": "Each data row includes participantId, registrationId, registrationState, eligibility (Eligible or NotEligible), and human-readable reason; export supports certificate-eligible participant list reporting without manual processing per business workflow Stage 5 and AC-10",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-24-003",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-24", "FR-21", "AC-10"],
+      "title": "OrganizerAdmin exports Eligible-only list using eligibility filter",
+      "preconditions": [
+        "Event with at least one Eligible and one NotEligible registration",
+        "OrganizerAdmin JWT"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/export?type=eligibility&eligibility=Eligible with admin token",
+        "Verify every data row has eligibility Eligible"
+      ],
+      "expected": "HTTP 200 CSV containing only Eligible registrations; filtered export matches organizer need to export certificate-eligible participant lists per business workflow Stage 5 step 3",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-24-004",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-24", "FR-21", "AC-10"],
+      "title": "OrganizerAdmin exports NotEligible-only list using eligibility filter",
+      "preconditions": [
+        "Event with at least one Eligible and one NotEligible registration",
+        "OrganizerAdmin JWT"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/export?type=eligibility&eligibility=NotEligible with admin token",
+        "Verify every data row has eligibility NotEligible"
+      ],
+      "expected": "HTTP 200 CSV containing only NotEligible registrations with reasons visible; supports internal reporting on participants requiring follow-up per business workflow export of NotEligible lists",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-24-005",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-24", "FR-31", "AC-13"],
+      "title": "Unfiltered export row count matches eligibility list total metadata",
+      "preconditions": [
+        "Event with multiple registrations spanning eligibility states",
+        "OrganizerAdmin actor"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/export without eligibility filter and read X-Export-Row-Count header",
+        "GET /api/v1/events/{eventId}/eligibility?page=1&pageSize=1 and read total from paginated envelope",
+        "Compare export row count to eligibility list total"
+      ],
+      "expected": "X-Export-Row-Count equals eligibility list total; full operational export is complete and not truncated by pagination pageSize per FR-31 list contract contrast",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-24-006",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["FR-24", "FR-17", "FR-19", "FR-20"],
+      "title": "Export reflects attendance and feedback outcomes in eligibility evaluation",
+      "preconditions": [
+        "E2E Flow A progressed: register, check-in, complete event, submit feedback, eligibility evaluated",
+        "Known Attended participant with mandatory feedback submitted",
+        "OrganizerAdmin actor"
+      ],
+      "steps": [
+        "Export eligibility CSV for the event",
+        "Locate Attended participant row and participant who missed check-in or feedback"
+      ],
+      "expected": "Attended participant with satisfied rules appears Eligible with matching reason; no-show or missing-feedback participant appears NotEligible with deterministic reason codes; export operational data reliable for improvement decisions per MVP exit indicators",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-24-007",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["FR-24", "FR-30", "FR-27"],
+      "title": "OrganizerStaff on assigned event can export operational data",
+      "preconditions": [
+        "Event with eligibility data assigned to staff actor",
+        "OrganizerStaff JWT with assignedEventIds including eventId"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/export with staff Authorization bearer token"
+      ],
+      "expected": "HTTP 200 with CSV attachment; scoped staff export permitted per permission matrix Export reports Scoped/optional for OrganizerStaff on assigned events",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-24-008",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["FR-24", "FR-22", "FR-23"],
+      "title": "Governance flow exports operational data after dashboard and history review",
+      "preconditions": [
+        "Event with registrations, status history entries, and dashboard metrics",
+        "OrganizerAdmin JWT"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/dashboard and confirm operational activity",
+        "GET /api/v1/events/{eventId}/status-history and confirm traceable transitions",
+        "GET /api/v1/events/{eventId}/export and save CSV"
+      ],
+      "expected": "Export succeeds after monitoring steps; exported eligibility rows align with dashboard eligibility totals and traceable registration states per Flow 6 organizer governance and reporting workflow",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-24-009",
+      "category": "functional",
+      "layer": "browser",
+      "priority": "P1",
+      "traceability": ["FR-24"],
+      "title": "Organizer eligibility list export action downloads CSV file",
+      "preconditions": [
+        "OrganizerAdmin logged in with scope to event with eligibility results",
+        "Organizer eligibility management page reachable with export trigger per UI page-list"
+      ],
+      "steps": [
+        "Navigate to organizer eligibility list for the event",
+        "Click export action on eligibility segmented view",
+        "Observe browser download and file contents"
+      ],
+      "expected": "CSV file downloads with eligibility operational data; export trigger on eligibility page satisfies organizer review/export context per wireframes and page-list export trigger spec",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-24-010",
+      "category": "functional",
+      "layer": "browser",
+      "priority": "P2",
+      "traceability": ["FR-24"],
+      "title": "Organizer export center triggers event operational data download",
+      "preconditions": [
+        "OrganizerAdmin logged in",
+        "Governance export center page available with link to event export"
+      ],
+      "steps": [
+        "Navigate to organizer governance export center",
+        "Select or trigger export for a scoped event",
+        "Confirm CSV download initiates"
+      ],
+      "expected": "Export center provides organizer path to download operational reporting file without manual API invocation; aligns with UI governance pages export center spec",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-24-011",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-24", "AC-15", "FR-25", "NFR-07"],
+      "title": "Unauthenticated GET export returns 401",
+      "preconditions": [
+        "Existing event with exportable operational data",
+        "No Authorization header on request"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/export without bearer token"
+      ],
+      "expected": "HTTP 401 unauthenticated; event operational export not exposed to anonymous callers",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-24-012",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-24", "AC-15", "FR-25", "FR-26", "NFR-08"],
+      "title": "Participant cannot export event operational data",
+      "preconditions": [
+        "Event with eligibility export data",
+        "Participant JWT registered on the event"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/export with participant Authorization bearer token"
+      ],
+      "expected": "HTTP 403 forbidden; export reports capability denied to Participant per permission matrix",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-24-013",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["FR-24", "FR-27", "NFR-08"],
+      "title": "OrganizerStaff cannot export data for out-of-scope event",
+      "preconditions": [
+        "Event with operational data not assigned to staff actor",
+        "OrganizerStaff JWT scoped to a different event"
+      ],
+      "steps": [
+        "GET /api/v1/events/{unassignedEventId}/export with staff Authorization bearer token"
+      ],
+      "expected": "HTTP 403 or 404 per scope-hiding policy; no cross-event operational data leakage via export",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-24-014",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["FR-24"],
+      "title": "Export request for non-existent eventId returns 404",
+      "preconditions": [
+        "OrganizerAdmin JWT",
+        "eventId that does not exist or is not in actor scope"
+      ],
+      "steps": [
+        "GET /api/v1/events/{unknownEventId}/export with organizer token"
+      ],
+      "expected": "HTTP 404 with typed error envelope; no partial CSV payload returned",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-24-015",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["FR-24"],
+      "title": "Unsupported export type query parameter returns 400",
+      "preconditions": [
+        "Event with eligibility data",
+        "OrganizerAdmin JWT"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/export?type=registrations with admin token"
+      ],
+      "expected": "HTTP 400 with INVALID_INPUT and message indicating unsupported export type; only supported operational export types accepted",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-24-016",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P2",
+      "traceability": ["FR-24"],
+      "title": "Invalid eligibility filter value returns 400",
+      "preconditions": [
+        "Event with eligibility data",
+        "OrganizerAdmin JWT"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/export?eligibility=InvalidState with admin token"
+      ],
+      "expected": "HTTP 400 with INVALID_INPUT and details for invalid eligibility filter; no CSV body returned",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-24-017",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P2",
+      "traceability": ["FR-24"],
+      "title": "Export for event with zero registrations returns header-only CSV",
+      "preconditions": [
+        "Published event with no participant registrations",
+        "OrganizerAdmin actor"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/export with admin token",
+        "Parse CSV content and X-Export-Row-Count header"
+      ],
+      "expected": "HTTP 200 with CSV header row only and X-Export-Row-Count 0; valid empty export rather than error for newly published event",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-24-018",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["FR-24", "FR-20", "BR-20"],
+      "title": "Export includes Revoked eligibility with override metadata when admin revoked",
+      "preconditions": [
+        "Registration with eligibility previously revoked by OrganizerAdmin with reason",
+        "OrganizerAdmin actor"
+      ],
+      "steps": [
+        "Export eligibility CSV without filter",
+        "Locate revoked registration row"
+      ],
+      "expected": "Row shows eligibility Revoked with reason text and overriddenBy populated; export captures admin override outcome for internal governance reporting",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-24-019",
+      "category": "non-functional",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["FR-24", "NFR-16"],
+      "title": "Export returns full dataset without pagination envelope truncation",
+      "preconditions": [
+        "Event with total registrations exceeding default list pageSize (20)",
+        "OrganizerAdmin actor"
+      ],
+      "steps": [
+        "Export eligibility CSV for event",
+        "Compare X-Export-Row-Count to eligibility list total with pageSize=1 query"
+      ],
+      "expected": "Export includes all matching registrations in one CSV response; internal reporting receives complete operational dataset not limited to a single paginated page per NFR-16 bounded-list contrast",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-24-020",
+      "category": "non-functional",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["FR-24", "AC-09", "BR-17", "BR-19"],
+      "title": "Export eligibility outcomes are deterministic for fixed event state",
+      "preconditions": [
+        "Event with fixed attendance and feedback fixture state",
+        "No concurrent registration or rule changes during test"
+      ],
+      "steps": [
+        "Export eligibility CSV twice in succession without intervening mutations",
+        "Compare eligibility and reason columns row-by-row"
+      ],
+      "expected": "Both exports produce identical eligibility results and reasons; operational data reliable enough to support improvement decisions for subsequent event runs per MVP exit indicators",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-24-021",
+      "category": "non-functional",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["FR-24", "FR-25", "NFR-08"],
+      "title": "Export response uses attachment disposition suitable for secure organizer download",
+      "preconditions": [
+        "Event with exportable eligibility data",
+        "OrganizerAdmin JWT"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/export with admin token",
+        "Inspect Content-Type and Content-Disposition headers"
+      ],
+      "expected": "Content-Type is text/csv with charset and Content-Disposition is attachment with event-scoped filename; response formatted for organizer internal download not inline public rendering",
+      "edgeCase": false
+    }
+  ]
+}
