@@ -586,7 +586,8 @@
         "acceptanceTags": [
           "AC-08",
           "AC-09",
-          "FR-19"
+          "FR-19",
+          "FR-20"
         ]
       },
       "description": "Post-event feedback form (enabled only when rules allow), eligibility result with reason text, participation history links from My Registrations."
