@@ -1,7 +1,8 @@
 {
   "name": "@we-event/api",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
+  "description": "We Event API — Fastify REST service (@we-event/api workspace)",
   "type": "module",
   "main": "./dist/index.js",
   "scripts": {

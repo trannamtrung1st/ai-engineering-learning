@@ -196,3 +196,5 @@ Append-only log of completed iterations.
 - 2026-06-26T08:14:00Z | web-participant-journeys | browser: AC-08 feedback submit enabled (Attended a0a730fc… on 36d4fcf9…); /registrations shows Feedback+Eligibility quick actions rule-gated; pagination 1–1 of 1 — HTTP 200
 - 2026-06-26T08:38:06Z | web-participant-journeys | browser_test_failed
 - 2026-06-26T08:46:00Z | web-participant-journeys | browser: /events paginate 1–12→13–24 of 7828; Attended participant (a0a730fc…) my registrations shows Feedback+Eligibility only; waitlisted row shows Queue position 1; feedback form enabled on completed event — HTTP 200
+- 2026-06-26T09:17:46Z | repo-monorepo-bootstrap | review_failed
+- 2026-06-26T09:25:49Z | repo-monorepo-bootstrap | passed

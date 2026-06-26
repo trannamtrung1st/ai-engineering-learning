@@ -4,6 +4,7 @@ import { VALIDATION_ERROR_CODES } from "@we-event/domain";
 import { ApiError } from "../../errors/api-error.js";
 import type { EventWithConfig, RuleConfigInput } from "./types.js";
 import {
+  assertEventRuleConfigChangePermission,
   assertPublishReady,
   resolveTransition,
   validateCreateInput,
@@ -74,6 +75,21 @@ function buildEvent(overrides: Partial<EventWithConfig> = {}): EventWithConfig {
 }
 
 describe("event validation", () => {
+  it("NFR-14 / NFR-13 / TC-NFR-14-008: validateRuleConfig rejects inverted check-in window", () => {
+    const windows = defaultWindows();
+    assert.throws(
+      () =>
+        validateRuleConfig(
+          buildRuleConfig({
+            checkinOpenAt: windows.regClose,
+            checkinCloseAt: windows.regOpen,
+          }),
+        ),
+      (error: unknown) =>
+        error instanceof ApiError && error.statusCode === 422,
+    );
+  });
+
   it("validateRuleConfig rejects inverted registration window", () => {
     const windows = defaultWindows();
     assert.throws(
@@ -134,6 +150,17 @@ describe("event validation", () => {
     );
   });
 
+  it("NFR-14 / BR-21 / TC-NFR-14-015: assertEventRuleConfigChangePermission rejects non-admin roles", () => {
+    for (const role of ["OrganizerStaff", "Participant"] as const) {
+      assert.throws(
+        () => assertEventRuleConfigChangePermission(role),
+        (error: unknown) =>
+          error instanceof ApiError &&
+          error.code === VALIDATION_ERROR_CODES.EVENT_RULE_CHANGE_FORBIDDEN,
+      );
+    }
+  });
+
   it("validateUpdateInput requires audit reason for critical rule changes after registration opens", () => {
     const event = buildEvent({ state: "RegistrationOpen" });
     assert.throws(
@@ -155,7 +182,7 @@ describe("event validation", () => {
     );
   });
 
-  it("validateUpdateInput forbids non-critical rule changes after registration opens", () => {
+  it("BR-21 / NFR-14 / TC-NFR-14-015: validateUpdateInput forbids non-critical rule changes after registration opens", () => {
     const event = buildEvent({ state: "RegistrationOpen" });
     assert.throws(
       () =>

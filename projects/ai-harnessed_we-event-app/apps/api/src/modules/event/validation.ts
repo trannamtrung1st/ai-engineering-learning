@@ -55,6 +55,16 @@ function assertWindowOpenBeforeClose(
   }
 }
 
+export function assertEventRuleConfigChangePermission(actorRole: string): void {
+  if (actorRole !== "OrganizerAdmin") {
+    throw new ApiError({
+      code: VALIDATION_ERROR_CODES.EVENT_RULE_CHANGE_FORBIDDEN,
+      message: "Only OrganizerAdmin may change event-level rules.",
+      statusCode: 403,
+    });
+  }
+}
+
 export function validateRuleConfig(config: RuleConfigInput): void {
   if (!Number.isInteger(config.capacity) || config.capacity < 0) {
     throw new ApiError({

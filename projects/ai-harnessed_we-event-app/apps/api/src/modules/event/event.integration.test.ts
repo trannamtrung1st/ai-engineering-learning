@@ -4,8 +4,14 @@ import { after, before, describe, it } from "node:test";
 import { VALIDATION_ERROR_CODES } from "@we-event/domain";
 import { closeDb, initDb } from "../../db/pool.js";
 import { ApiError } from "../../errors/api-error.js";
+import { ensureIdempotencySchema } from "../../idempotency/index.js";
 import { auditService } from "../audit/service.js";
 import { ensureAuditSchema } from "../audit/repository.js";
+import {
+  ensureTestOrganizerAdmin,
+  ensureTestParticipant,
+} from "../../test-helpers/participant-user.js";
+import { ensureRegistrationSchema, registrationService } from "../registration/index.js";
 import {
   createEvent,
   ensureEventSchema,
@@ -59,6 +65,9 @@ describe("event integration", () => {
     await initDb(databaseUrl);
     await ensureEventSchema();
     await ensureAuditSchema();
+    await ensureRegistrationSchema();
+    await ensureIdempotencySchema();
+    await ensureTestOrganizerAdmin(ACTOR_ID);
   });
 
   after(async () => {
@@ -228,6 +237,151 @@ describe("event integration", () => {
       (error: unknown) =>
         error instanceof ApiError && error.code === "INVALID_STATE_TRANSITION",
     );
+  });
+
+  it("NFR-14 / FR-03: updates draft event rule config including registration window", async () => {
+    const draft = await createEvent(
+      createInput({ name: `RuleConfig ${randomUUID()}` }),
+      ACTOR_ID,
+      "OrganizerAdmin",
+      ORG_ID,
+    );
+    const windows = defaultWindows();
+    const laterOpen = new Date(Date.parse(windows.regOpen) + 3_600_000).toISOString();
+    const laterClose = new Date(Date.parse(windows.regClose) + 3_600_000).toISOString();
+
+    const updated = await eventService.update(
+      draft.id,
+      {
+        ruleConfig: {
+          capacity: 25,
+          waitlistEnabled: true,
+          registrationOpenAt: laterOpen,
+          registrationCloseAt: laterClose,
+        },
+      },
+      {
+        actorId: ACTOR_ID,
+        actorRole: "OrganizerAdmin",
+      },
+    );
+
+    assert.equal(updated.ruleConfig.capacity, 25);
+    assert.equal(updated.ruleConfig.waitlistEnabled, true);
+    assert.equal(updated.ruleConfig.registrationOpenAt, laterOpen);
+  });
+
+  it("NFR-14 / FR-02 / FR-03 / TC-NFR-14-004: rule config version increments on successive updates", async () => {
+    const draft = await createEvent(
+      createInput({ name: `Versioned ${randomUUID()}` }),
+      ACTOR_ID,
+      "OrganizerAdmin",
+      ORG_ID,
+    );
+    const context = {
+      actorId: ACTOR_ID,
+      actorRole: "OrganizerAdmin",
+    };
+
+    const first = await eventService.update(
+      draft.id,
+      { ruleConfig: { capacity: 20 } },
+      context,
+    );
+    const second = await eventService.update(
+      draft.id,
+      {
+        ruleConfig: {
+          registrationOpenAt: new Date(
+            Date.parse(first.ruleConfig.registrationOpenAt) + 1_800_000,
+          ).toISOString(),
+        },
+      },
+      context,
+    );
+
+    assert.equal(first.ruleConfig.version, 2);
+    assert.equal(second.ruleConfig.version, 3);
+  });
+
+  it("NFR-14 / TC-NFR-14-007: rule config updates persist in Postgres via service layer", async () => {
+    const draft = await createEvent(
+      createInput({ name: `Persisted ${randomUUID()}` }),
+      ACTOR_ID,
+      "OrganizerAdmin",
+      ORG_ID,
+    );
+
+    await eventService.update(
+      draft.id,
+      { ruleConfig: { capacity: 42 } },
+      {
+        actorId: ACTOR_ID,
+        actorRole: "OrganizerAdmin",
+      },
+    );
+
+    const loaded = await findEventById(draft.id);
+    assert.ok(loaded);
+    assert.equal(loaded.ruleConfig.capacity, 42);
+    assert.ok(loaded.ruleConfig.version >= 2);
+  });
+
+  it("BR-03 / NFR-14 / FR-02 / TC-NFR-14-013: capacity reduction below Registered count is rejected", async () => {
+    const capacity = 20;
+    const registeredTarget = 15;
+    const baseInput = createInput({ name: `CapacityGuard ${randomUUID()}` });
+    const draft = await createEvent(
+      {
+        ...baseInput,
+        ruleConfig: {
+          ...baseInput.ruleConfig,
+          capacity,
+          waitlistEnabled: false,
+        },
+      },
+      ACTOR_ID,
+      "OrganizerAdmin",
+      ORG_ID,
+    );
+
+    const context = {
+      actorId: ACTOR_ID,
+      actorRole: "OrganizerAdmin",
+    };
+
+    await eventService.publish(draft.id, context);
+    await eventService.openRegistration(draft.id, context);
+
+    for (let index = 0; index < registeredTarget; index += 1) {
+      const participantId = randomUUID();
+      await ensureTestParticipant(participantId);
+      await registrationService.register(draft.id, participantId, {
+        actorId: participantId,
+        actorRole: "Participant",
+      });
+    }
+
+    await assert.rejects(
+      () =>
+        eventService.update(
+          draft.id,
+          {
+            ruleConfig: { capacity: 10 },
+            reasonCode: "CAPACITY_DECREASE",
+            reasonText: "Attempt to reduce below registered count",
+          },
+          context,
+        ),
+      (error: unknown) =>
+        error instanceof ApiError &&
+        error.code === VALIDATION_ERROR_CODES.CAPACITY_EXCEEDED &&
+        error.statusCode === 422,
+    );
+
+    const loaded = await findEventById(draft.id);
+    assert.ok(loaded);
+    assert.equal(loaded.ruleConfig.capacity, capacity);
   });
 
   it("AC-11: audits critical rule config changes after registration opens", async () => {

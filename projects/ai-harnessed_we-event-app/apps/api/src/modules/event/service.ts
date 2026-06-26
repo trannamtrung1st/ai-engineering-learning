@@ -1,7 +1,9 @@
 import type { ActorRole, EventState, EventTransitionTrigger } from "@we-event/domain";
-import { EVENT_STATES } from "@we-event/domain";
+import { EVENT_STATES, VALIDATION_ERROR_CODES } from "@we-event/domain";
 import { randomUUID } from "node:crypto";
+import { getPool } from "../../db/pool.js";
 import { ApiError } from "../../errors/api-error.js";
+import { countSeatHolders } from "../registration/repository.js";
 import {
   buildPaginatedResult,
   parsePagination,
@@ -28,6 +30,7 @@ import type {
   UpdateEventInput,
 } from "./types.js";
 import {
+  assertEventRuleConfigChangePermission,
   assertPublishReady,
   resolveTransition,
   toEventListItem,
@@ -159,7 +162,15 @@ export class EventService {
     context: TransitionContext,
   ): Promise<ReturnType<typeof toEventResponse>> {
     const existing = await this.requireEvent(eventId);
+    if (input.ruleConfig) {
+      assertEventRuleConfigChangePermission(context.actorRole);
+    }
     const validated = validateUpdateInput(existing, input);
+    await assertCapacityNotBelowRegistered(
+      eventId,
+      validated.ruleConfig?.capacity,
+      existing.ruleConfig.capacity,
+    );
 
     const updated = await updateEvent(
       eventId,
@@ -424,6 +435,26 @@ export class EventService {
       throw notFound(eventId);
     }
     return event;
+  }
+}
+
+async function assertCapacityNotBelowRegistered(
+  eventId: string,
+  newCapacity: number | undefined,
+  currentCapacity: number,
+): Promise<void> {
+  if (newCapacity === undefined || newCapacity >= currentCapacity) {
+    return;
+  }
+
+  const registeredCount = await countSeatHolders(eventId, getPool());
+  if (newCapacity < registeredCount) {
+    throw new ApiError({
+      code: VALIDATION_ERROR_CODES.CAPACITY_EXCEEDED,
+      message: `Capacity cannot be reduced below the current registered count (${registeredCount}).`,
+      statusCode: 422,
+      details: { capacity: newCapacity, registeredCount },
+    });
   }
 }
 

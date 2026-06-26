@@ -3,7 +3,7 @@
   "slices": [
     {
       "id": "repo-monorepo-bootstrap",
-      "passes": false,
+      "passes": true,
       "priority": 0,
       "phase": 0,
       "agent": "infra",
@@ -22,6 +22,16 @@
       ],
       "description": "Bootstrap npm workspaces monorepo: apps/api, apps/web, packages/domain, packages/config.",
       "testRequirements": {
+        "unit": [
+          "apps/api/src/modules/event/validation.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/modules/event/event.integration.test.ts"
+        ],
+        "e2e": [
+          "tests/e2e/src/scenarios/monorepo-bootstrap.test.ts",
+          "tests/e2e/src/scenarios/nfr-14-event-config.test.ts"
+        ],
         "acceptanceTags": [
           "NFR-14"
         ]

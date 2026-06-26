@@ -1,7 +1,8 @@
 {
   "name": "we-event",
+  "version": "0.1.0",
   "private": true,
-  "description": "We Event MVP — AI-harnessed implementation",
+  "description": "We Event MVP — npm workspaces monorepo (apps/api, apps/web, packages/domain, packages/config)",
   "workspaces": [
     "apps/*",
     "packages/*",
