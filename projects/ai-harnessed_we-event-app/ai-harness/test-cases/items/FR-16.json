@@ -2,31 +2,54 @@
   "productItemId": "FR-16",
   "version": 1,
   "docFingerprint": "sha256:4ef9b21ee020318b8667ba54306d7c16fd1e1129e20152c62d596022b477de06",
-  "generatedAt": "2026-06-26T12:30:00Z",
+  "generatedAt": "2026-06-26T12:19:02Z",
   "cases": [
     {
       "id": "TC-FR-16-001",
       "category": "functional",
       "layer": "integration",
+      "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["FR-16", "FR-13", "AC-05", "BR-13"],
-      "title": "Staff check-in persists check-in history with timestamp, method Staff, and operatorId",
+      "traceability": ["FR-16", "AC-05", "BR-13", "FR-13"],
+      "title": "In-window check-in stores history with timestamp per testing-plan §3",
       "preconditions": [
-        "Event InProgress with active check-in window",
+        "Event InProgress with active check-in window (current time between checkinOpenAt and checkinCloseAt)",
         "Registered participant with no prior CheckinRecord",
-        "Authenticated OrganizerStaff actor with known operatorId assigned to the event"
+        "Authenticated OrganizerStaff actor assigned to the event"
       ],
       "steps": [
         "Invoke checkinService.staffCheckin(eventId, { registrationId }, staffActorContext) at a fixed in-window time",
         "Query checkin_records table by registration_id"
       ],
-      "expected": "Exactly one CheckinRecord exists with non-null checkinAt matching server-recorded time, method Staff, operatorId equal to staff actor id, and event_id linked to the registration",
+      "expected": "Testing-plan §3 row satisfied: exactly one CheckinRecord with non-null checkinAt ISO timestamp, method Staff, and operatorId equal to staff actor; FR-16 history fields complete per BR-13",
       "edgeCase": false
     },
     {
       "id": "TC-FR-16-002",
       "category": "functional",
       "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-16", "FR-13", "AC-05", "BR-13"],
+      "title": "Staff check-in persists check-in history with timestamp, method Staff, and operatorId",
+      "preconditions": [
+        "Event InProgress with active check-in window",
+        "Registered participant with no prior CheckinRecord",
+        "Authenticated OrganizerStaff actor with known operatorId assigned to the event",
+        "Real Postgres available for check-in module transaction"
+      ],
+      "steps": [
+        "Invoke checkinService.staffCheckin(eventId, { registrationId }, staffActorContext) at a fixed in-window time against real database",
+        "Query checkin_records table by registration_id in the same database session"
+      ],
+      "expected": "Exactly one CheckinRecord exists with non-null checkinAt matching server-recorded time, method Staff, operatorId equal to staff actor id, and event_id linked to the registration",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-16-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["FR-16", "FR-14", "AC-05", "BR-13"],
       "title": "Self check-in persists check-in history with timestamp, method Self, and null operatorId",
@@ -43,12 +66,55 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-16-003",
+      "id": "TC-FR-16-004",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["FR-16", "AC-05", "BR-10"],
+      "title": "validCheckin transition creates CheckinRecord history alongside Registered to CheckedIn",
+      "preconditions": [
+        "Registration in Registered state before check-in",
+        "Event check-in window contains fixed clock now",
+        "No prior valid check-in on the registration",
+        "OrganizerStaff actor authorized for the event"
+      ],
+      "steps": [
+        "Record beforeState as Registered from registration repository",
+        "Submit staff check-in via checkinService.staffCheckin",
+        "Read afterState from registration repository and CheckinRecord fields"
+      ],
+      "expected": "beforeState Registered, afterState CheckedIn per state machine §2 validCheckin trigger; CheckinRecord persisted with checkinAt, method, and operatorId satisfying FR-16",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-16-005",
       "category": "functional",
       "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-16", "AC-05", "FR-13", "BR-10"],
+      "title": "POST /events/{eventId}/checkins returns HTTP 200 with persisted history snapshot",
+      "preconditions": [
+        "E2E fixture event InProgress with active check-in window",
+        "Registered participant with no prior check-in",
+        "Staff JWT with event scope and fresh Idempotency-Key header"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/checkins with body { registrationId } and staff Authorization bearer token",
+        "Compare response checkinAt, method, and operatorId with subsequent GET /api/v1/events/{eventId}/attendance row"
+      ],
+      "expected": "POST returns HTTP 200 with non-null checkinAt, method Staff, and operatorId; attendance list row shares identical history fields; timestamp satisfies AC-05 and FR-16",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-16-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
       "traceability": ["FR-16", "FR-30", "AC-05"],
-      "title": "GET attendance returns stored check-in history fields for checked-in participant",
+      "title": "GET /events/{eventId}/attendance returns stored check-in history fields per participant",
       "preconditions": [
         "Successful staff or self check-in recorded for a participant within the check-in window",
         "OrganizerStaff or OrganizerAdmin JWT authorized for the event"
@@ -57,205 +123,34 @@
         "GET /api/v1/events/{eventId}/attendance with default pagination",
         "Locate the checked-in participant row in items"
       ],
-      "expected": "Attendance item includes checkinAt timestamp, method (Staff or Self), participantId, and registrationState CheckedIn; staff check-in rows include operator reference when method is Staff",
+      "expected": "HTTP 200 with attendance item including checkinAt timestamp, method (Staff or Self), participantId, and registrationState CheckedIn; staff check-in rows include operator reference when method is Staff",
       "edgeCase": false
-    },
-    {
-      "id": "TC-FR-16-004",
-      "category": "functional",
-      "layer": "e2e",
-      "priority": "P0",
-      "traceability": ["FR-16", "AC-05", "FR-13", "BR-10"],
-      "title": "In-window check-in API response includes persisted history snapshot with checkinAt",
-      "preconditions": [
-        "E2E fixture event InProgress with active check-in window",
-        "Registered participant with no prior check-in",
-        "Staff JWT with event scope and fresh Idempotency-Key header"
-      ],
-      "steps": [
-        "POST /api/v1/events/{eventId}/checkins with body { registrationId }",
-        "Compare response checkinAt with subsequent GET /api/v1/events/{eventId}/attendance row for the same registration"
-      ],
-      "expected": "POST response and attendance list row share the same checkinAt, method Staff, and operatorId; timestamp satisfies AC-05 requirement that in-window check-in is recorded with timestamp",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-FR-16-005",
-      "category": "functional",
-      "layer": "integration",
-      "priority": "P1",
-      "traceability": ["FR-16", "BR-11"],
-      "title": "Database enforces one check-in history record per registration",
-      "preconditions": [
-        "Valid CheckinRecord already persisted for a registration_id",
-        "Check-in module attempts to insert a second record for the same registration_id"
-      ],
-      "steps": [
-        "Attempt direct or domain-level second CheckinRecord insert for the same registration_id",
-        "Observe constraint violation or domain rejection"
-      ],
-      "expected": "Unique registration_id constraint prevents duplicate history rows; only the original checkinAt, method, and operatorId remain stored per BR-11 one valid check-in per registration",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-FR-16-006",
-      "category": "edge",
-      "layer": "integration",
-      "priority": "P0",
-      "traceability": ["FR-16", "FR-15", "AC-06", "BR-10"],
-      "title": "Out-of-window check-in attempt leaves no check-in history record",
-      "preconditions": [
-        "Event InProgress with check-in window not containing current fixed clock time",
-        "Registered participant with no prior CheckinRecord",
-        "Authorized staff or participant actor depending on check-in path under test"
-      ],
-      "steps": [
-        "Set fixed clock outside checkinOpenAt..checkinCloseAt",
-        "Attempt staff or self check-in for the registration",
-        "Query checkin_records for the registration_id"
-      ],
-      "expected": "Check-in request fails with CHECKIN_WINDOW_CLOSED; zero rows in checkin_records for the registration; no partial history metadata persisted",
-      "edgeCase": true
     },
     {
       "id": "TC-FR-16-007",
-      "category": "edge",
-      "layer": "integration",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
       "priority": "P0",
-      "traceability": ["FR-16", "BR-11"],
-      "title": "Duplicate check-in attempt preserves original history fields unchanged",
+      "traceability": ["FR-16", "AC-05", "FR-13", "FR-15"],
+      "title": "Flow A check-in step persists retrievable check-in history",
       "preconditions": [
-        "Participant already has one valid CheckinRecord with known checkinAt, method, and operatorId",
-        "Registration state is CheckedIn",
-        "Check-in window still open"
+        "E2E Flow A fixture: event progressed through publish, open-registration, and participant Registered",
+        "Event started (InProgress) with check-in window open",
+        "OrganizerStaff JWT scoped to the event"
       ],
       "steps": [
-        "Record original CheckinRecord field values",
-        "Attempt a second check-in for the same registrationId",
-        "Re-query checkin_records for the registration_id"
+        "POST /api/v1/events/{eventId}/checkins with staff token and registered participant registrationId",
+        "GET /api/v1/events/{eventId}/attendance and verify participant row history fields"
       ],
-      "expected": "Second attempt fails with CHECKIN_ALREADY_RECORDED; original checkinAt, method, and operatorId are unchanged; row count remains one",
-      "edgeCase": true
+      "expected": "Flow A check-in step stores CheckinRecord history retrievable via attendance API with checkinAt, method Staff, and operatorId before feedback step proceeds",
+      "edgeCase": false
     },
     {
       "id": "TC-FR-16-008",
-      "category": "edge",
-      "layer": "e2e",
-      "priority": "P1",
-      "traceability": ["FR-16", "BR-11"],
-      "title": "Idempotent check-in retry with same Idempotency-Key does not duplicate history",
-      "preconditions": [
-        "Registered participant with active check-in window",
-        "Authorized actor JWT for staff or self check-in endpoint",
-        "Fixed Idempotency-Key header value K"
-      ],
-      "steps": [
-        "POST check-in endpoint with Idempotency-Key K and capture checkinAt from first success",
-        "Repeat POST with the same Idempotency-Key K",
-        "Query checkin_records count for the registration_id"
-      ],
-      "expected": "Both responses return HTTP 200 with identical checkinAt and method; exactly one CheckinRecord exists; no second history row or altered operatorId",
-      "edgeCase": true
-    },
-    {
-      "id": "TC-FR-16-009",
-      "category": "non-functional",
-      "layer": "integration",
-      "priority": "P1",
-      "traceability": ["FR-16", "BR-13", "NFR-10"],
-      "title": "Every successful check-in write includes complete audit trail per BR-13",
-      "preconditions": [
-        "Check-in module integrated with audit module per module breakdown",
-        "Successful in-window staff or self check-in about to be recorded",
-        "Known actor context (staff operatorId or participant subject)"
-      ],
-      "steps": [
-        "Perform successful check-in via checkinService",
-        "Inspect persisted CheckinRecord and any audit module write triggered by checkinModule"
-      ],
-      "expected": "Audit trail captures timestamp (checkinAt), actor (operatorId for Staff or participant for Self), and method (Staff or Self) on every successful check-in write satisfying BR-13 and NFR-10 traceability",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-FR-16-010",
-      "category": "non-functional",
-      "layer": "integration",
-      "priority": "P1",
-      "traceability": ["FR-16", "NFR-02"],
-      "title": "Check-in history record and registration CheckedIn transition commit atomically",
-      "preconditions": [
-        "Cross-module transaction boundary enabled for check-in write per module breakdown",
-        "Registered participant in-window with no prior CheckinRecord"
-      ],
-      "steps": [
-        "Complete successful in-window check-in",
-        "Query checkin_records and registration state immediately after commit in the same database session"
-      ],
-      "expected": "CheckinRecord with complete history fields and registration CheckedIn state exist together; partial writes (history without state change or state change without history) do not occur per NFR-02 consistency requirement",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-FR-16-011",
-      "category": "non-functional",
-      "layer": "integration",
-      "priority": "P1",
-      "traceability": ["FR-16", "BR-13"],
-      "title": "Persisted check-in history metadata remains immutable after initial write",
-      "preconditions": [
-        "Valid CheckinRecord persisted with known checkinAt, method, and operatorId",
-        "No public API or domain command exists to mutate check-in history per workflow guardrails"
-      ],
-      "steps": [
-        "Record original CheckinRecord field values after successful check-in",
-        "Attempt any supported update path on the check-in record (direct SQL update simulation or absent API mutation)",
-        "Re-read checkin_records row"
-      ],
-      "expected": "checkinAt, method, and operatorId remain unchanged from original values; system treats check-in history as immutable audit metadata per Workflow D guardrails",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-FR-16-012",
-      "category": "non-functional",
-      "layer": "e2e",
-      "priority": "P2",
-      "traceability": ["FR-16", "FR-30", "AC-13", "NFR-16"],
-      "title": "Paginated attendance list returns check-in history slice without unbounded payload",
-      "preconditions": [
-        "Event with more than default pageSize checked-in participants each having stored CheckinRecord history",
-        "OrganizerStaff JWT authorized for the event"
-      ],
-      "steps": [
-        "GET /api/v1/events/{eventId}/attendance?page=1&pageSize=20",
-        "Verify each item includes checkinAt and method",
-        "Request page beyond totalPages and inspect envelope"
-      ],
-      "expected": "Response returns paginated envelope with items.length <= pageSize, each item carrying checkinAt and method history fields; total and totalPages metadata valid; page beyond last returns empty items without loading full unbounded history dataset per AC-13 and NFR-16",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-FR-16-013",
-      "category": "functional",
-      "layer": "unit",
-      "priority": "P1",
-      "traceability": ["FR-16", "BR-13"],
-      "title": "CheckinRecord validator rejects history missing required timestamp or method",
-      "preconditions": [
-        "CheckinRecord domain entity or mapper with validation for required history fields",
-        "Test inputs with missing checkinAt or missing/invalid method enum"
-      ],
-      "steps": [
-        "Attempt to construct or validate CheckinRecord with null checkinAt",
-        "Attempt to construct or validate CheckinRecord with null or invalid method value",
-        "Attempt valid record with method Staff and non-null operatorId",
-        "Attempt valid record with method Self and null operatorId"
-      ],
-      "expected": "Missing checkinAt or method fails validation; Staff method requires non-null operatorId; Self method permits null operatorId; complete valid payloads pass per database schema and BR-13 audit requirements",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-FR-16-014",
       "category": "functional",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["FR-16", "FR-30", "AC-05"],
       "title": "Organizer attendance list UI displays stored check-in timestamp and source for participant",
@@ -273,9 +168,52 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-16-015",
+      "id": "TC-FR-16-009",
       "category": "edge",
       "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-16", "FR-15", "AC-06", "BR-10"],
+      "title": "Out-of-window check-in attempt leaves no check-in history record",
+      "preconditions": [
+        "Event InProgress with check-in window not containing current fixed clock time",
+        "Registered participant with no prior CheckinRecord",
+        "Authorized staff or participant actor depending on check-in path under test"
+      ],
+      "steps": [
+        "Set fixed clock outside checkinOpenAt..checkinCloseAt",
+        "Attempt staff or self check-in for the registration",
+        "Query checkin_records for the registration_id"
+      ],
+      "expected": "Check-in request fails with CHECKIN_WINDOW_CLOSED; zero rows in checkin_records for the registration; no partial history metadata persisted",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-16-010",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-16", "BR-11"],
+      "title": "Duplicate check-in attempt preserves original history fields unchanged",
+      "preconditions": [
+        "Participant already has one valid CheckinRecord with known checkinAt, method, and operatorId",
+        "Registration state is CheckedIn",
+        "Check-in window still open"
+      ],
+      "steps": [
+        "Record original CheckinRecord field values",
+        "Attempt a second check-in for the same registrationId",
+        "Re-query checkin_records for the registration_id"
+      ],
+      "expected": "Second attempt fails with CHECKIN_ALREADY_RECORDED; original checkinAt, method, and operatorId are unchanged; row count remains one",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-16-011",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
       "priority": "P1",
       "traceability": ["FR-16", "BR-11", "NFR-02"],
       "title": "Concurrent duplicate check-in attempts persist at most one history record",
@@ -289,6 +227,143 @@
       ],
       "expected": "Exactly one request succeeds with persisted history; the other fails with CHECKIN_ALREADY_RECORDED or equivalent conflict; total CheckinRecord rows for registration_id is one with stable checkinAt, method, and operatorId",
       "edgeCase": true
+    },
+    {
+      "id": "TC-FR-16-012",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["FR-16", "BR-11"],
+      "title": "Idempotent check-in retry with same Idempotency-Key does not duplicate history",
+      "preconditions": [
+        "Registered participant with active check-in window",
+        "Authorized actor JWT for staff or self check-in endpoint",
+        "Fixed Idempotency-Key header value K"
+      ],
+      "steps": [
+        "POST check-in endpoint with Idempotency-Key K and capture checkinAt from first success",
+        "Repeat POST with the same Idempotency-Key K",
+        "Query checkin_records count for the registration_id"
+      ],
+      "expected": "Both responses return HTTP 200 with identical checkinAt and method; exactly one CheckinRecord exists; no second history row or altered operatorId",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-16-013",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "pagination",
+      "priority": "P2",
+      "traceability": ["FR-16", "FR-30", "AC-13", "NFR-16"],
+      "title": "Paginated attendance list returns check-in history slice without unbounded payload",
+      "preconditions": [
+        "Event with more than default pageSize checked-in participants each having stored CheckinRecord history",
+        "OrganizerStaff JWT authorized for the event"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/attendance?page=1&pageSize=20",
+        "Verify each item includes checkinAt and method",
+        "Request page beyond totalPages and inspect envelope"
+      ],
+      "expected": "Response returns paginated envelope with items.length <= pageSize, each item carrying checkinAt and method history fields; total and totalPages metadata valid; page beyond last returns empty items without loading full unbounded history dataset per AC-13 and NFR-16",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-16-014",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-16", "FR-25", "FR-26", "AC-15"],
+      "title": "Unauthenticated GET attendance returns 401 without exposing check-in history",
+      "preconditions": [
+        "Event with at least one persisted CheckinRecord",
+        "No Authorization bearer token on request"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/attendance without Authorization header"
+      ],
+      "expected": "HTTP 401 Unauthenticated per AC-15; response body does not include participant check-in history fields",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-16-015",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-16", "FR-25", "FR-26"],
+      "title": "Participant JWT cannot read organizer attendance list with other participants' history",
+      "preconditions": [
+        "Event with multiple participants including checked-in records with stored history",
+        "Authenticated participant JWT for a user registered on the event",
+        "GET /events/{eventId}/attendance is organizer-scoped per permission matrix"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/attendance with participant Authorization bearer token"
+      ],
+      "expected": "HTTP 403 Forbidden or 404 not in scope; participant cannot enumerate other participants' checkinAt, method, or operatorId history via organizer attendance endpoint",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-16-016",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": ["FR-16", "NFR-02"],
+      "title": "Check-in history record and registration CheckedIn transition commit atomically",
+      "preconditions": [
+        "Cross-module transaction boundary enabled for check-in write per module breakdown",
+        "Registered participant in-window with no prior CheckinRecord"
+      ],
+      "steps": [
+        "Complete successful in-window check-in",
+        "Query checkin_records and registration state immediately after commit in the same database session"
+      ],
+      "expected": "CheckinRecord with complete history fields and registration CheckedIn state exist together; partial writes (history without state change or state change without history) do not occur per NFR-02 consistency requirement",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-16-017",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": ["FR-16", "BR-13", "NFR-10"],
+      "title": "Every successful check-in write includes complete audit trail per BR-13",
+      "preconditions": [
+        "Check-in module integrated with audit module per module breakdown",
+        "Successful in-window staff or self check-in about to be recorded",
+        "Known actor context (staff operatorId or participant subject)"
+      ],
+      "steps": [
+        "Perform successful check-in via checkinService",
+        "Inspect persisted CheckinRecord and any audit module write triggered by checkinModule"
+      ],
+      "expected": "Audit trail captures timestamp (checkinAt), actor (operatorId for Staff or participant for Self), and method (Staff or Self) on every successful check-in write satisfying BR-13 and NFR-10 traceability",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-16-018",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": ["FR-16", "BR-13"],
+      "title": "Persisted check-in history metadata remains immutable after initial write",
+      "preconditions": [
+        "Valid CheckinRecord persisted with known checkinAt, method, and operatorId",
+        "No public API or domain command exists to mutate check-in history per workflow guardrails"
+      ],
+      "steps": [
+        "Record original CheckinRecord field values after successful check-in",
+        "Attempt any supported update path on the check-in record (direct SQL update simulation or absent API mutation)",
+        "Re-read checkin_records row"
+      ],
+      "expected": "checkinAt, method, and operatorId remain unchanged from original values; system treats check-in history as immutable audit metadata per Workflow D guardrails",
+      "edgeCase": false
     }
   ]
 }
