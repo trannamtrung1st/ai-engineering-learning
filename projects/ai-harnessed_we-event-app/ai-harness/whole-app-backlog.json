@@ -526,7 +526,12 @@
         "apps/web/src/components/organizer/event-form.tsx",
         "apps/web/src/components/participant/event-card.tsx"
       ],
-      "description": "Organizer event form file picker + upload progress; participant event card and detail hero/thumbnail via next/image; placeholder when no cover."
+      "description": "Organizer event form file picker + upload progress; participant event card and detail hero/thumbnail via next/image; placeholder when no cover.",
+      "testRequirements": {
+        "acceptanceTags": [
+          "AC-17"
+        ]
+      }
     },
     {
       "id": "web-domain-status-badge-colors",
@@ -601,7 +606,8 @@
           "AC-13",
           "AC-14",
           "AC-15",
-          "AC-16"
+          "AC-16",
+          "AC-17"
         ]
       }
     }
