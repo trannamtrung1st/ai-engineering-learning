@@ -1,0 +1,380 @@
+{
+  "productItemId": "FR-04",
+  "version": 1,
+  "docFingerprint": "sha256:f44c92d5b8e8208272ca20445a8ed22605865e55c323b1677af54c0c2242f917",
+  "generatedAt": "2026-06-26T04:31:38Z",
+  "cases": [
+    {
+      "id": "TC-FR-04-001",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-04"],
+      "title": "Organizer Admin publishes Draft event to Published state",
+      "preconditions": [
+        "Existing event in Draft state with complete required metadata (name, description, startAt, endAt, location, organizationId)",
+        "EventRuleConfig present with chronologically consistent registration, check-in, and feedback windows",
+        "Authenticated OrganizerAdmin actor with organization scope"
+      ],
+      "steps": [
+        "Invoke eventService.publish(eventId, organizerAdminContext)",
+        "Read persisted event.state for the event"
+      ],
+      "expected": "Event transitions from Draft to Published; returned versioned entity snapshot has state Published; satisfies Workflow A steps 3–4 (completeness validated, admin publishes event) and domain lifecycle rule that event must be Published before registration can open",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-04-002",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-04"],
+      "title": "POST /api/v1/events/{eventId}/publish returns Published snapshot",
+      "preconditions": [
+        "Draft event with complete basic fields and valid ruleConfig",
+        "OrganizerAdmin JWT scoped to the owning organization"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/publish with Authorization bearer token",
+        "GET /api/v1/events/{eventId} with the same organizer token"
+      ],
+      "expected": "POST returns HTTP 200 with state Published and versioned entity snapshot; GET detail confirms state Published and unchanged basic metadata",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-04-003",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-04", "AC-11"],
+      "title": "Publish event writes audit log per Workflow A",
+      "preconditions": [
+        "Draft event with complete required fields and valid ruleConfig",
+        "Authenticated OrganizerAdmin actor"
+      ],
+      "steps": [
+        "Invoke eventService.publish(eventId, organizerAdminContext)",
+        "Query audit logs for the event filtered by entityType Event"
+      ],
+      "expected": "Audit record persisted with actorId, actorRole OrganizerAdmin, action indicating publish transition, eventId, before.state Draft, after.state Published, and occurredAt timestamp; satisfies Workflow A step 5 (system writes EventPublished and audit log) and AC-11 critical event configuration change audit expectation",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-04-004",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-04"],
+      "title": "Flow A lifecycle requires publish before open-registration",
+      "preconditions": [
+        "OrganizerAdmin JWT",
+        "E2E fixture Draft event with complete metadata and valid ruleConfig suitable for Flow A",
+        "Event not yet published"
+      ],
+      "steps": [
+        "Attempt POST /api/v1/events/{eventId}/open-registration before publish",
+        "POST /api/v1/events/{eventId}/publish",
+        "POST /api/v1/events/{eventId}/open-registration after publish"
+      ],
+      "expected": "Open-registration before publish fails with invalid transition (409 or semantic guard); after publish succeeds, open-registration transitions event to RegistrationOpen; aligns with testing plan Flow A draft → publish → open registration and state machine guard openRegistrationWindow requires current state Published",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-04-005",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-04"],
+      "title": "Organizer Admin pauses event while registration is open",
+      "preconditions": [
+        "Event in RegistrationOpen state with registrationPaused false",
+        "Authenticated OrganizerAdmin actor with event scope"
+      ],
+      "steps": [
+        "Invoke eventService.pause(eventId, organizerAdminContext)",
+        "Read event.state and ruleConfig.registrationPaused"
+      ],
+      "expected": "Pause command succeeds; event remains in RegistrationOpen lifecycle state; registrationPaused flag is true in returned snapshot; new registration intake is administratively paused per FR-04 pause capability",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-04-006",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-04"],
+      "title": "POST /api/v1/events/{eventId}/pause blocks new participant registrations",
+      "preconditions": [
+        "Event RegistrationOpen with available capacity and active registration window",
+        "OrganizerAdmin JWT used to pause the event",
+        "Authenticated participant with no active registration for the event"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/pause with organizer Authorization bearer",
+        "POST /api/v1/events/{eventId}/registrations with participant JWT"
+      ],
+      "expected": "Pause returns HTTP 200 with registrationPaused true; subsequent registration attempt fails with typed semantic error (422 or 409) indicating registration is paused or not accepted; no new Registered or Waitlisted record created; existing registrations unaffected",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-04-007",
+      "category": "functional",
+      "layer": "browser",
+      "priority": "P1",
+      "traceability": ["FR-04"],
+      "title": "Organizer Admin uses publish and pause controls on event detail",
+      "preconditions": [
+        "Web app running with organizer authenticated as OrganizerAdmin",
+        "Draft event on create/edit flow or Published/RegistrationOpen event on organizer event detail"
+      ],
+      "steps": [
+        "On Draft event, submit publish action from organizer event detail or lifecycle controls",
+        "On RegistrationOpen event, submit pause action from publish/pause controls",
+        "Observe event status badge and any registration-paused notice"
+      ],
+      "expected": "UI exposes publish control for Draft and pause control when registration is open; after publish, status reflects Published; after pause, UI indicates registration is paused and new registrations are not accepted",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-04-008",
+      "category": "functional",
+      "layer": "unit",
+      "priority": "P1",
+      "traceability": ["FR-04"],
+      "title": "publishEvent transition guard permits Draft with complete required metadata",
+      "preconditions": [
+        "Event entity in Draft state",
+        "All required fields populated per publishEvent guard",
+        "ruleConfig passes chronological window validation"
+      ],
+      "steps": [
+        "Call state transition guard for publishEvent with complete Draft event"
+      ],
+      "expected": "Guard returns allowed transition Draft → Published; matches state machine transition table publishEvent guard required fields complete",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-04-009",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-04"],
+      "title": "Publish rejected when required event fields are incomplete",
+      "preconditions": [
+        "Draft event missing one or more required metadata fields (e.g. blank name or absent ruleConfig)",
+        "Authenticated OrganizerAdmin actor"
+      ],
+      "steps": [
+        "Attempt eventService.publish(eventId, organizerAdminContext)",
+        "Verify event.state remains Draft"
+      ],
+      "expected": "ApiError with semantic validation or 409 invalid transition; event state unchanged at Draft; satisfies Event module guardrail reject publish if required event fields are incomplete",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-04-010",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-04"],
+      "title": "Publish rejected when rule config has invalid time windows",
+      "preconditions": [
+        "Draft event with basic fields present but ruleConfig windows fail chronological consistency (e.g. registrationOpenAt >= registrationCloseAt)",
+        "Authenticated OrganizerAdmin actor"
+      ],
+      "steps": [
+        "Attempt eventService.publish(eventId, organizerAdminContext)",
+        "Query event.state"
+      ],
+      "expected": "Publish blocked with validation error before state transition; event remains Draft; satisfies Workflow A guardrail block publish on invalid time windows",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-04-011",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-04"],
+      "title": "Publish from non-Draft state returns conflict without mutating state",
+      "preconditions": [
+        "Event already in Published or RegistrationOpen state",
+        "OrganizerAdmin JWT"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/publish on the non-Draft event",
+        "GET /api/v1/events/{eventId} to read current state"
+      ],
+      "expected": "HTTP 409 Conflict with stable error code for invalid transition; original event state preserved unchanged; aligns with invalid transition policy reject with 409 and preserve original state",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-04-012",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-04"],
+      "title": "Pause rejected when event is not RegistrationOpen or already paused",
+      "preconditions": [
+        "Event in Draft, Published, RegistrationClosed, InProgress, Completed, or Cancelled state; OR RegistrationOpen with registrationPaused already true",
+        "OrganizerAdmin JWT"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/pause for each ineligible state fixture",
+        "Verify event state and registrationPaused unchanged"
+      ],
+      "expected": "HTTP 409 or semantic guard error indicating illegal pause transition; event state and registrationPaused flag unchanged; satisfies Event module guardrail reject illegal transitions by current state",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-04-013",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-04", "FR-25"],
+      "title": "OrganizerStaff and Participant cannot publish or pause events",
+      "preconditions": [
+        "Draft event and separately RegistrationOpen event in organizer scope",
+        "Authenticated JWTs for OrganizerStaff and Participant",
+        "Valid event IDs within staff assignment scope where applicable"
+      ],
+      "steps": [
+        "POST /api/v1/events/{draftEventId}/publish with OrganizerStaff token",
+        "POST /api/v1/events/{draftEventId}/publish with Participant token",
+        "POST /api/v1/events/{openEventId}/pause with OrganizerStaff token",
+        "POST /api/v1/events/{openEventId}/pause with Participant token"
+      ],
+      "expected": "All four requests return HTTP 403 unauthorized; no state transition or registrationPaused change occurs; permission matrix Publish/pause event is OrganizerAdmin only",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-04-014",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-04", "FR-25"],
+      "title": "Unauthenticated publish and pause requests are rejected",
+      "preconditions": [
+        "Valid Draft and RegistrationOpen event IDs",
+        "No Authorization header on requests"
+      ],
+      "steps": [
+        "POST /api/v1/events/{draftEventId}/publish without bearer token",
+        "POST /api/v1/events/{openEventId}/pause without bearer token"
+      ],
+      "expected": "Both requests return HTTP 401 unauthenticated; publish and pause handlers are not invoked; API auth-required principle for non-public endpoints upheld",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-04-015",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["FR-04"],
+      "title": "Duplicate publish attempt on already Published event is idempotent or rejected",
+      "preconditions": [
+        "Event already in Published state from prior successful publish",
+        "OrganizerAdmin JWT",
+        "Optional Idempotency-Key header on mutating endpoint"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/publish a second time",
+        "Observe HTTP status and response body state"
+      ],
+      "expected": "Second publish does not regress state or create duplicate side effects; returns 409 invalid transition or latest Published snapshot per mutating endpoints return latest known entity state convention",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-04-016",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["FR-04"],
+      "title": "Concurrent pause and registration requests do not admit registrations after pause commits",
+      "preconditions": [
+        "Event RegistrationOpen with one remaining seat",
+        "OrganizerAdmin and participant actors",
+        "Two concurrent requests: pause and register"
+      ],
+      "steps": [
+        "Issue simultaneous POST pause (admin) and POST registrations (participant) against the same event",
+        "Count Registered participants after both requests settle"
+      ],
+      "expected": "Transactional consistency ensures either pause commits before registration is evaluated (registration rejected as paused) or seat assignment respects capacity; no registration admitted after pause flag is true; server enforces transactional consistency per API concurrency section",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-04-017",
+      "category": "non-functional",
+      "layer": "unit",
+      "priority": "P1",
+      "traceability": ["FR-04"],
+      "title": "State transition guard functions covered in unit test pyramid",
+      "preconditions": [
+        "Unit test harness with fixtures for Draft, Published, and RegistrationOpen events",
+        "publishEvent and pause transition guard implementations under test"
+      ],
+      "steps": [
+        "Run unit tests for publishEvent guard with complete vs incomplete Draft payloads",
+        "Run unit tests for pause guard across eligible and ineligible event states"
+      ],
+      "expected": "All guard assertions pass deterministically; aligns with testing plan unit coverage target state transition guard functions and 60% unit pyramid allocation",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-04-018",
+      "category": "non-functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-04", "FR-25"],
+      "title": "Publish and pause enforce RBAC at authorization decision pattern step 2",
+      "preconditions": [
+        "Actor contexts for OrganizerAdmin (allowed) and OrganizerStaff (denied)",
+        "Valid Draft and RegistrationOpen event fixtures"
+      ],
+      "steps": [
+        "Invoke publish command with OrganizerStaff context and observe authorization outcome",
+        "Invoke pause command with OrganizerStaff context",
+        "Invoke same commands with OrganizerAdmin context"
+      ],
+      "expected": "Staff actor denied at role permission validation without state mutation; Admin actor passes steps 1–2 (authenticate, validate role permission) and proceeds to transition guard; satisfies authorization decision pattern and P0 defect model unauthorized critical update prevention",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-04-019",
+      "category": "non-functional",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["FR-04", "AC-11"],
+      "title": "Publish audit record is immutable after write",
+      "preconditions": [
+        "Successful publish with persisted audit log entry",
+        "OrganizerAdmin actor"
+      ],
+      "steps": [
+        "List audit logs for the event after publish",
+        "Attempt any mutation path on the audit record (direct update or delete)"
+      ],
+      "expected": "Audit entry remains unchanged and readable; mutation rejected or unavailable; satisfies Audit module guardrail never allow audit record mutation",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-04-020",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["FR-04", "FR-05"],
+      "title": "Published event becomes visible in participant event discovery when registration opens",
+      "preconditions": [
+        "Draft event created by OrganizerAdmin",
+        "Participant JWT for discovery list",
+        "Event published and registration opened after publish"
+      ],
+      "steps": [
+        "POST publish then POST open-registration as organizer",
+        "GET /api/v1/events with participant token and optional state filter"
+      ],
+      "expected": "Published then RegistrationOpen event appears in paginated participant event listing; publish is prerequisite lifecycle step enabling participant view of events open for registration per FR-05 dependency on Published state",
+      "edgeCase": false
+    }
+  ]
+}

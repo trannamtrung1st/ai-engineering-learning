@@ -99,6 +99,11 @@
       "current": true,
       "docFingerprint": "sha256:f44c92d5b8e8208272ca20445a8ed22605865e55c323b1677af54c0c2242f917",
       "generatedAt": "2026-06-26T04:31:02Z"
+    },
+    "FR-04": {
+      "current": true,
+      "docFingerprint": "sha256:f44c92d5b8e8208272ca20445a8ed22605865e55c323b1677af54c0c2242f917",
+      "generatedAt": "2026-06-26T04:32:11Z"
     }
   }
 }
