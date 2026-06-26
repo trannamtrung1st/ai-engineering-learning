@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-14",
   "version": 1,
-  "docFingerprint": "sha256:e02c1f2112398fe77830ccd62c814e9fb809075870195634fc99ea89db79c2fb",
-  "generatedAt": "2026-06-26T11:24:09Z",
+  "docFingerprint": "sha256:43a1316c7d0669030f2b3eac3b6b42994b9e6757f8b754368f1f5bbc574ab4b3",
+  "generatedAt": "2026-06-26T16:28:38Z",
   "cases": [
     {
       "id": "TC-AC-14-001",
@@ -98,7 +98,7 @@
         "GET /api/v1/me/registrations?page=1&pageSize=20 with Participant Authorization bearer",
         "Verify HTTP status code and response body shape"
       ],
-      "expected": "HTTP 200 with items (array), page=1, pageSize=20, total (integer), and totalPages per API design §3 response envelope; each item includes registrationId, eventId, eventName, state, and updatedAt; no bare array response",
+      "expected": "HTTP 200 with items (array), page=1, pageSize=20, total (integer), and totalPages per API design §3 response envelope; each item includes registrationId, eventId, eventName, state, updatedAt, and waitlistPosition when state is Waitlisted; no bare array response",
       "edgeCase": false
     },
     {
@@ -142,12 +142,13 @@
         "At least one registration eligible for check-in or feedback quick action"
       ],
       "steps": [
-        "Navigate to My Registrations page",
+        "Navigate to My Registrations page (/registrations)",
+        "Verify FilterBar with state filter and sort select per page list §My registrations",
         "Verify pagination controls, item range summary (e.g. Showing 1–20 of N), and registration rows with status",
-        "Confirm contextual quick-action links where applicable (check-in or feedback)",
+        "Confirm waitlistPosition displayed on Waitlisted rows and contextual quick-action links where applicable (check-in or feedback)",
         "Click Next to advance to page 2 and observe network requests"
       ],
-      "expected": "Page renders at most pageSize registration rows with event name, status, and quick actions; prev/next pagination controls present; page change triggers single GET /me/registrations with updated page parameter; only current page rows rendered client-side per page list and AC-14",
+      "expected": "Page renders at most pageSize (20) registration rows with event name, status, waitlistPosition when Waitlisted, and quick actions; prev/next pagination controls present; page change triggers single GET /me/registrations with updated page parameter; only current page rows rendered client-side per page list, listing-pages §3, and AC-14",
       "edgeCase": false
     },
     {
@@ -269,19 +270,20 @@
       "priority": "P0",
       "traceability": [
         "AC-14",
+        "AC-18a",
         "FR-28"
       ],
-      "title": "Changing event browse filters resets pagination to page 1",
+      "title": "Changing event browse search, filter, or sort resets pagination to page 1",
       "preconditions": [
         "Participant on event browse page navigated to page 2 or higher",
-        "Search or state filter controls available"
+        "Search, state filter, and sort controls available per listing-pages §2"
       ],
       "steps": [
         "Navigate to page 2 of event browse results",
-        "Change search query or state filter",
+        "Change search query, state filter, or sort select",
         "Observe pagination state and API request page parameter"
       ],
-      "expected": "Filter change resets displayed page to 1; subsequent GET /events uses page=1 with updated filter parameters; avoids stale page index on new result set per page list guidance",
+      "expected": "Search, filter, or sort change resets displayed page to 1; subsequent GET /events uses page=1 with updated query parameters; avoids stale page index on new result set per AC-18a, listing-pages §3, and page list event discovery",
       "edgeCase": true
     },
     {
@@ -416,6 +418,30 @@
         "GET /api/v1/me/registrations?page=1&pageSize=20 without credentials"
       ],
       "expected": "HTTP 401 with typed error envelope; unauthenticated access to protected paginated endpoint rejected per AC-15; no partial list data returned",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-14-019",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": [
+        "AC-14",
+        "AC-18c",
+        "FR-29"
+      ],
+      "title": "Changing My Registrations state filter or sort resets pagination to page 1",
+      "preconditions": [
+        "Participant on /registrations navigated to page 2 or higher",
+        "State filter and sort select controls available per page list"
+      ],
+      "steps": [
+        "Navigate to page 2 of My Registrations results",
+        "Change registration state filter or sort option",
+        "Observe pagination state and network request query parameters"
+      ],
+      "expected": "Filter or sort change resets displayed page to 1; subsequent GET /me/registrations uses page=1 with updated state and sort parameters applied server-side per AC-18c and listing-pages §3 shared UX; client does not retain stale page index on new result set",
       "edgeCase": true
     }
   ]
