@@ -1,8 +1,8 @@
 {
   "productItemId": "BR-01",
   "version": 1,
-  "docFingerprint": "sha256:2fa3a34949c25751d10f6f5b2619c6638b110526abebebb7f1b83749ae9b087b",
-  "generatedAt": "2026-06-26T12:53:48Z",
+  "docFingerprint": "sha256:e657fa128204c24311efead507e2ee01c1ac8f6463cc06d66184862bf864665e",
+  "generatedAt": "2026-06-26T17:49:12Z",
   "cases": [
     {
       "id": "TC-BR-01-001",
@@ -132,7 +132,7 @@
       "title": "Duplicate blocked when participant is already Waitlisted",
       "preconditions": [
         "Event is full with waitlistEnabled true",
-        "Participant already has active Waitlisted registration for the event"
+        "Participant already has active Waitlisted registration for the event with active WaitlistEntry per BR-04b (promoted_at and expired_at both null)"
       ],
       "steps": [
         "Attempt registrationService.register for the same participant and event again"
@@ -192,7 +192,7 @@
       ],
       "title": "Re-registration permitted after cancellation when no active row remains",
       "preconditions": [
-        "Participant previously Registered then cancelled (CancelledByUser) before deadline",
+        "Participant previously Registered then cancelled (CancelledByUser) before deadline per BR-07",
         "Event RegistrationOpen with available seats",
         "No active registration exists for participant on this event"
       ],
@@ -200,7 +200,7 @@
         "Invoke registrationService.register for the same participant after cancellation completed",
         "Query active registrations for participant/event pair"
       ],
-      "expected": "beforeState CancelledByUser (inactive) permits new registration; afterState Registered; BR-01 satisfied because cancelled state is not active; not treated as duplicate",
+      "expected": "beforeState CancelledByUser (inactive) permits new registration; afterState Registered on a new or reactivated row; BR-01 satisfied (at most one active registration at a time); not treated as duplicate",
       "edgeCase": true
     },
     {
@@ -286,7 +286,7 @@
         "Attempt second registration for same participant via registrationService.register",
         "Inspect error code on failure"
       ],
-      "expected": "Failure code is REGISTRATION_DUPLICATE_ACTIVE (not REGISTRATION_REJECTED_FULL), confirming pipeline step 3 (dedup active registration) executes before step 4 (capacity decision) per validation pipeline",
+      "expected": "Failure code is REGISTRATION_DUPLICATE_ACTIVE (not REGISTRATION_REJECTED_FULL), confirming validation pipeline step 3 (dedup active registration per BR-01) executes before step 4 (capacity decision) per docs/technical/08-validation-rules.md §3",
       "edgeCase": false
     },
     {
@@ -395,7 +395,7 @@
         "Trigger registration request that violates BR-01 (one active registration per participant/event)",
         "Inspect ApiError code, HTTP status, and user-safe message"
       ],
-      "expected": "Failure returns error code REGISTRATION_DUPLICATE_ACTIVE with HTTP 409 per validation rules catalog row for BR-01; outcome is deterministic for identical inputs",
+      "expected": "Failure returns error code REGISTRATION_DUPLICATE_ACTIVE per validation rules catalog row for BR-01 and HTTP 409 per API error contract; outcome is deterministic for identical inputs per docs/technical/08-validation-rules.md §5",
       "edgeCase": true
     }
   ]
