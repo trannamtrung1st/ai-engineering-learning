@@ -397,6 +397,78 @@ stop_preview_supervisors() {
   preview_log_stack "preview supervisors stopped"
 }
 
+# Kill preview-supervisor.sh processes left behind by interrupted preview-stack (^C).
+stop_stray_preview_supervisors() {
+  if ! command -v pgrep >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local pid
+  while IFS= read -r pid; do
+    [[ -z "$pid" ]] && continue
+    [[ "$pid" == "$$" ]] && continue
+    preview_log_stack "stopping stray preview supervisor (pid=${pid})"
+    terminate_pid "$pid"
+  done < <(pgrep -f 'preview-supervisor\.sh (api|web)' 2>/dev/null || true)
+}
+
+# Kill any process listening on preview API/web ports (orphan next dev after ^C).
+stop_preview_port_listeners() {
+  local api_port="${AIH_PREVIEW_API_PORT:-3001}"
+  local web_port="${AIH_PREVIEW_WEB_PORT:-3000}"
+
+  if ! command -v lsof >/dev/null 2>&1; then
+    preview_log_stack "WARN: lsof unavailable — cannot verify preview ports are free"
+    return 0
+  fi
+
+  local port port_pid
+  for port in "$api_port" "$web_port"; do
+    while IFS= read -r port_pid; do
+      [[ -z "$port_pid" ]] && continue
+      preview_log_stack "stopping listener on port ${port} (pid=${port_pid})"
+      terminate_pid "$port_pid"
+    done < <(lsof -ti ":${port}" 2>/dev/null || true)
+  done
+}
+
+wait_for_preview_ports_free() {
+  local api_port="${AIH_PREVIEW_API_PORT:-3001}"
+  local web_port="${AIH_PREVIEW_WEB_PORT:-3000}"
+
+  if ! command -v lsof >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local port
+  for port in "$api_port" "$web_port"; do
+    local _
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+      lsof -ti ":${port}" >/dev/null 2>&1 || break
+      sleep 0.3
+    done
+  done
+}
+
+# Full dev-preview reset before start: supervisors, orphans, ports, then .next cache.
+reset_dev_preview_stack() {
+  preview_log_stack "resetting dev preview stack (supervisors, ports, .next)"
+  stop_preview_supervisors
+  stop_stray_preview_supervisors
+  stop_preview_port_listeners
+  wait_for_preview_ports_free
+  remove_path_safely "$REPO_ROOT/apps/web/.next"
+  preview_log_stack "dev preview stack reset complete"
+}
+
+# Tear down dev preview processes without clearing .next (used by preview:down).
+stop_dev_preview_processes() {
+  stop_preview_supervisors
+  stop_stray_preview_supervisors
+  stop_preview_port_listeners
+  wait_for_preview_ports_free
+}
+
 start_preview_supervisors() {
   local supervisor_script
   supervisor_script="$(preview_supervisor_script)"
@@ -469,6 +541,8 @@ clean_web_next_cache() {
   [[ -d "$REPO_ROOT/apps/web" ]] || return 0
   if preview_stack_is_running; then
     nudge_preview_web_restart
+    stop_preview_port_listeners
+    wait_for_preview_ports_free
   fi
   remove_path_safely "$REPO_ROOT/apps/web/.next"
 }
@@ -483,12 +557,14 @@ print_preview_web_hint() {
   fi
 }
 
-# No-op when preview is up: run_build_for_checks skips web build to avoid .next corruption.
+# After a full workspace build (production .next), stop stray dev servers and clear cache.
 refresh_preview_web_after_build() {
   [[ -d "$REPO_ROOT/apps/web" ]] || return 0
   if preview_stack_is_running; then
     return 0
   fi
+  stop_preview_web_process
+  clean_web_next_cache
 }
 
 # Build all workspaces except web while preview dev is serving (avoids .next corruption).

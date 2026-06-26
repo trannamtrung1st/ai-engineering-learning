@@ -346,7 +346,7 @@ npm run aih:preview
 npm run aih:preview:verify
 ```
 
-`aih:preview` clears `.next` before starting web dev.
+`aih:preview` resets dev preview before start: stops tracked supervisors, kills stray `preview-supervisor.sh` and port listeners on `3000`/`3001` (orphans after `^C`), clears `apps/web/.next`, then starts fresh supervisors.
 
 ## Quick reference
 

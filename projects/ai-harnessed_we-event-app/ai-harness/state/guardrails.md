@@ -58,3 +58,4 @@ Lessons learned across harness iterations. Read before every implementer session
 - [e2e-acceptance-suite] HTTP e2e dev tokens must use UUID `sub` values for organizers (DB actor columns) and participants (idempotency/feedback paths); non-UUID subs like `e2e-organizer-*` cause Postgres 22P02 errors.
 - [module-user-accounts] Computational checks failed — see 20260625T183152Z-checks.json
 - [module-user-accounts] Computational checks failed — see 20260625T191632Z-checks.json
+- [web-design-system-shell] Computational checks failed — see 20260625T193720Z-checks.json

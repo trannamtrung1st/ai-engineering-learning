@@ -43,7 +43,7 @@ load_preview_env() {
 }
 
 stop_dev_processes() {
-  stop_preview_supervisors
+  stop_dev_preview_processes
 }
 
 wait_db_healthy() {
@@ -109,11 +109,12 @@ if [[ "$MODE" == "full" ]]; then
 else
   preview_log_session_start "$MODE"
   preview_log_stack "starting dev preview stack"
+  load_preview_env
+  reset_dev_preview_stack
   preview_log_stack "bringing up database"
   npm run aih:dev:db:up 2>&1 | preview_tee_process_log "stack" "$PREVIEW_STACK_LOG" || true
   preview_log_stack "waiting for database health"
   wait_db_healthy
-  load_preview_env
   preview_log_stack "building API workspace"
   set +e
   npm run build --workspace @we-event/api 2>&1 | preview_tee_process_log "stack" "$PREVIEW_STACK_LOG"
@@ -123,8 +124,6 @@ else
     preview_log_stack "API build failed (exit $build_status)"
     exit "$build_status"
   fi
-  stop_dev_processes
-  clean_web_next_cache
   start_preview_supervisors
   start_preview_db_log_follower
 fi
