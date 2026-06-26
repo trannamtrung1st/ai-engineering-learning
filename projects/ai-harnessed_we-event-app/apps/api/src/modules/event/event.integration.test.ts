@@ -87,7 +87,7 @@ describe("event integration", () => {
     assert.equal(loaded.state, "Draft");
   });
 
-  it("AC-13: paginated list returns items, total, and totalPages", async () => {
+  it("AC-13 / FR-28 / FR-31 / TC-AC-13-012 / TC-AC-13-016 / TC-AC-13-020: paginated list returns items, total, and totalPages", async () => {
     const prefix = `Paginate ${randomUUID()}`;
     for (let index = 0; index < 3; index += 1) {
       await createEvent(
@@ -120,6 +120,114 @@ describe("event integration", () => {
     assert.deepEqual(beyond.items, []);
     assert.equal(beyond.total, page1.total);
     assert.equal(beyond.totalPages, page1.totalPages);
+
+    const page2 = await eventService.list("OrganizerAdmin", {
+      q: prefix,
+      page: "2",
+      pageSize: "2",
+      sort: "startAt:asc",
+    });
+
+    assert.equal(page2.page, 2);
+    assert.equal(page2.total, page1.total);
+    assert.equal(page2.totalPages, page1.totalPages);
+    assert.ok(page2.items.length >= 1);
+  });
+
+  it("AC-13 / FR-28 / TC-AC-13-018: GET /events defaults page=1 and pageSize=12", async () => {
+    const defaults = await eventService.list("OrganizerAdmin", {});
+
+    assert.equal(defaults.page, 1);
+    assert.equal(defaults.pageSize, 12);
+    assert.ok(Array.isArray(defaults.items));
+    assert.ok(defaults.total >= 0);
+    assert.equal(defaults.totalPages, Math.max(1, Math.ceil(defaults.total / 12)));
+  });
+
+  it("AC-13 / AC-02f / FR-30 / FR-31 / TC-AC-13-014: waitlist FIFO order preserved across paginated pages", async () => {
+    const draft = await createEvent(
+      createInput({
+        name: `WaitlistFifo ${randomUUID()}`,
+        ruleConfig: {
+          ...createInput().ruleConfig,
+          capacity: 1,
+          waitlistEnabled: true,
+        },
+      }),
+      ACTOR_ID,
+      "OrganizerAdmin",
+      ORG_ID,
+    );
+
+    const context = {
+      actorId: ACTOR_ID,
+      actorRole: "OrganizerAdmin" as const,
+    };
+
+    await eventService.publish(draft.id, context);
+    await eventService.openRegistration(draft.id, context);
+
+    const participantContext = (participantId: string) => ({
+      actorId: participantId,
+      actorRole: "Participant" as const,
+    });
+
+    const firstParticipant = randomUUID();
+    await ensureTestParticipant(firstParticipant);
+    await registrationService.register(
+      draft.id,
+      firstParticipant,
+      participantContext(firstParticipant),
+    );
+
+    const waitlistSize = 21;
+    for (let index = 0; index < waitlistSize; index += 1) {
+      const participantId = randomUUID();
+      await ensureTestParticipant(participantId);
+      const result = await registrationService.register(
+        draft.id,
+        participantId,
+        participantContext(participantId),
+      );
+      assert.equal(result.state, "Waitlisted");
+      assert.equal(result.waitlistPosition, index + 1);
+    }
+
+    const page1 = await registrationService.listWaitlist(draft.id, {
+      page: "1",
+      pageSize: "20",
+      sort: "position:asc",
+    });
+
+    assert.equal(page1.page, 1);
+    assert.equal(page1.pageSize, 20);
+    assert.equal(page1.total, waitlistSize);
+    assert.equal(page1.totalPages, 2);
+    assert.equal(page1.items.length, 20);
+    assert.equal(page1.items[0]?.position, 1);
+    assert.equal(page1.items[19]?.position, 20);
+
+    const page2 = await registrationService.listWaitlist(draft.id, {
+      page: "2",
+      pageSize: "20",
+      sort: "position:asc",
+    });
+
+    assert.equal(page2.page, 2);
+    assert.equal(page2.total, waitlistSize);
+    assert.equal(page2.totalPages, 2);
+    assert.equal(page2.items.length, 1);
+    assert.equal(page2.items[0]?.position, 21);
+
+    const combined = [...page1.items, ...page2.items];
+    for (let index = 1; index < combined.length; index += 1) {
+      const previous = combined[index - 1]?.position;
+      const current = combined[index]?.position;
+      assert.ok(
+        previous !== undefined && current !== undefined && current === previous + 1,
+        "expected strictly increasing FIFO positions across pages",
+      );
+    }
   });
 
   it("filters participant-visible states only", async () => {
