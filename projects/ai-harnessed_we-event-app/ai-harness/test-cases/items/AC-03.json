@@ -2,7 +2,7 @@
   "productItemId": "AC-03",
   "version": 1,
   "docFingerprint": "sha256:e5fe6c876730dc2692555528b2f33e1afc4105ef98b3d84c4363464150dbd711",
-  "generatedAt": "2026-06-26T15:52:51Z",
+  "generatedAt": "2026-06-26T16:11:47Z",
   "cases": [
     {
       "id": "TC-AC-03-001",
@@ -113,12 +113,14 @@
       "title": "Duplicate blocked when participant is already Waitlisted",
       "preconditions": [
         "Event is full with waitlistEnabled true",
-        "Participant already has active Waitlisted registration for the event"
+        "Participant already has active Waitlisted registration for the event",
+        "Active WaitlistEntry exists for the registration (BR-04b: promoted_at and expired_at both null)"
       ],
       "steps": [
-        "Attempt registrationService.register for the same participant and event again"
+        "Attempt registrationService.register for the same participant and event again",
+        "Query WaitlistEntry rows for the participant/event pair"
       ],
-      "expected": "Rejected with REGISTRATION_DUPLICATE_ACTIVE (409); waitlistPosition and single Waitlisted row unchanged; no second waitlist entry created; at-most-once applies to all active states not only Registered",
+      "expected": "Rejected with REGISTRATION_DUPLICATE_ACTIVE (409); single Waitlisted registration and one active WaitlistEntry unchanged (waitlistPosition stable per BR-04a); no second waitlist entry created; at-most-once applies to all active states not only Registered",
       "edgeCase": true
     },
     {
@@ -195,7 +197,8 @@
       "technique": "boundary-error",
       "priority": "P1",
       "traceability": [
-        "AC-03"
+        "AC-03",
+        "FR-06"
       ],
       "title": "Duplicate POST with new Idempotency-Key still rejected (dedupe is not idempotency)",
       "preconditions": [
@@ -227,7 +230,7 @@
         "Attempt second registration for same participant via registrationService.register",
         "Inspect error code on failure"
       ],
-      "expected": "Failure code is REGISTRATION_DUPLICATE_ACTIVE (not capacity/full rejection), confirming pipeline step 3 (dedup active registration) executes before step 4 (capacity decision) per validation pipeline",
+      "expected": "Failure code is REGISTRATION_DUPLICATE_ACTIVE (not REGISTRATION_REJECTED_FULL), confirming validation pipeline step 3 (dedup active registration per BR-01) executes before step 4 (capacity decision) per docs/technical/08-validation-rules.md §3",
       "edgeCase": false
     },
     {
@@ -260,18 +263,19 @@
       "traceability": [
         "AC-03",
         "FR-06",
-        "BR-01"
+        "BR-01",
+        "BR-04b"
       ],
       "title": "Flow B duplicate registration step is blocked after waitlist entry",
       "preconditions": [
-        "E2E Flow B fixture: participant already Waitlisted on a full event",
+        "E2E Flow B fixture: participant already Waitlisted on a full event with active WaitlistEntry (BR-04b)",
         "Valid participant JWT and fresh Idempotency-Key"
       ],
       "steps": [
         "Execute Flow B AC-03 step: POST /api/v1/events/{eventId}/registrations again for the waitlisted participant",
-        "Verify error response before proceeding with cancellation/promotion steps"
+        "Verify error response and GET /api/v1/events/{eventId}/registration-status before proceeding with cancellation/promotion steps"
       ],
-      "expected": "HTTP 409 with REGISTRATION_DUPLICATE_ACTIVE; original Waitlisted registration unchanged with same registrationId and waitlistPosition",
+      "expected": "HTTP 409 with REGISTRATION_DUPLICATE_ACTIVE; original Waitlisted registration unchanged with same registrationId and waitlistPosition; active WaitlistEntry row count remains 1",
       "edgeCase": false
     },
     {
