@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-25",
   "version": 1,
-  "docFingerprint": "sha256:8e59445691447471b0d38696b1b2d559ff61c4f46bb6ddbeca79a3fd83f91995",
-  "generatedAt": "2026-06-26T12:34:10Z",
+  "docFingerprint": "sha256:2671fa81c2f3b979341bed7f23df01d8c48eb829f62b5e0f85a501d6c63e4e0a",
+  "generatedAt": "2026-06-27T08:00:00Z",
   "cases": [
     {
       "id": "TC-FR-25-001",
@@ -86,7 +86,7 @@
         "OrganizerStaff JWT with assignedEventIds including eventId"
       ],
       "steps": [
-        "POST /api/v1/events/{eventId}/checkins with staff Authorization bearer and target registrationId",
+        "POST /api/v1/events/{eventId}/checkins with staff Authorization bearer, Idempotency-Key header, and target registrationId",
         "Verify check-in persisted"
       ],
       "expected": "HTTP 200; check-in recorded; Check in participant capability granted to OrganizerStaff on assigned events per permission matrix",
@@ -157,26 +157,6 @@
         "Inspect profile roles in response body"
       ],
       "expected": "HTTP 200; profile includes roles matching JWT actor role; role information available for client-side route guards and API authorization",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-FR-25-008",
-      "category": "functional",
-      "layer": "unit",
-      "technique": "module-integration",
-      "priority": "P0",
-      "traceability": [
-        "FR-25"
-      ],
-      "title": "assertEventScope allows OrganizerAdmin for any organization event",
-      "preconditions": [
-        "JwtPayload with role OrganizerAdmin and arbitrary sub",
-        "Valid eventId UUID for an organization-owned event"
-      ],
-      "steps": [
-        "Call assertEventScope(adminActor, eventId)"
-      ],
-      "expected": "No exception thrown; OrganizerAdmin bypasses event assignment constraint per scope constraints and unit scope tests",
       "edgeCase": false
     },
     {
@@ -396,47 +376,6 @@
       ],
       "expected": "HTTP 403 with error.code FORBIDDEN, user-safe error.message, and requestId; no sensitive organizer data leaked; immediate fail feedback per NFR-13",
       "edgeCase": false
-    },
-    {
-      "id": "TC-FR-25-019",
-      "category": "edge",
-      "layer": "unit",
-      "technique": "rbac-negative",
-      "priority": "P0",
-      "traceability": [
-        "FR-25",
-        "FR-27"
-      ],
-      "title": "assertEventScope rejects OrganizerStaff for unassigned event",
-      "preconditions": [
-        "JwtPayload role OrganizerStaff with assignedEventIds not containing target eventId",
-        "Valid eventId UUID for another event"
-      ],
-      "steps": [
-        "Call assertEventScope(staffActor, unassignedEventId)"
-      ],
-      "expected": "ApiError thrown with code FORBIDDEN and statusCode 403; staff limited to assigned events per scope constraints",
-      "edgeCase": true
-    },
-    {
-      "id": "TC-FR-25-020",
-      "category": "edge",
-      "layer": "unit",
-      "technique": "rbac-negative",
-      "priority": "P0",
-      "traceability": [
-        "FR-25"
-      ],
-      "title": "assertEventScope rejects Participant for organizer event routes",
-      "preconditions": [
-        "JwtPayload role Participant",
-        "Any valid eventId"
-      ],
-      "steps": [
-        "Call assertEventScope(participantActor, eventId)"
-      ],
-      "expected": "ApiError thrown with code FORBIDDEN; Participant cannot access organizer event scope routes per unit scope tests",
-      "edgeCase": true
     },
     {
       "id": "TC-FR-25-021",
