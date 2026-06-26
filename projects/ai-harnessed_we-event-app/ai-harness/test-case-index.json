@@ -151,7 +151,7 @@
       "generatedAt": "2026-06-26T04:47:15Z"
     },
     "FR-14": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:4ef9b21ee020318b8667ba54306d7c16fd1e1129e20152c62d596022b477de06",
       "generatedAt": "2026-06-26T14:00:00Z"
     },
@@ -211,7 +211,7 @@
       "generatedAt": "2026-06-26T05:13:40Z"
     },
     "FR-26": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:9e3a1aeddf47dc551a5606803a672761c422c9beeb7fcdb1e4e55a7f23eb5c9b",
       "generatedAt": "2026-06-26T14:00:00Z"
     },
