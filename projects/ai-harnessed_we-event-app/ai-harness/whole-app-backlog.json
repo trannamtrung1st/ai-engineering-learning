@@ -63,6 +63,9 @@
       "testRequirements": {
         "unit": [
           "packages/domain/src/index.test.ts"
+        ],
+        "acceptanceTags": [
+          "BR-01"
         ]
       },
       "description": "Shared domain enums, state machines, and validation rule identifiers."
