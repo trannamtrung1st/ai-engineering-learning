@@ -2,12 +2,34 @@
   "productItemId": "FR-23",
   "version": 1,
   "docFingerprint": "sha256:f44c92d5b8e8208272ca20445a8ed22605865e55c323b1677af54c0c2242f917",
-  "generatedAt": "2026-06-26T05:07:21Z",
+  "generatedAt": "2026-06-26T12:31:05Z",
   "cases": [
     {
       "id": "TC-FR-23-001",
       "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["FR-23", "AC-12"],
+      "title": "Status history retrieval makes registration transitions traceable per testing-plan §3",
+      "preconditions": [
+        "RegistrationOpen event with available capacity",
+        "Participant registered then cancelled own registration",
+        "OrganizerAdmin actor with event scope"
+      ],
+      "steps": [
+        "Invoke registrationService.register for participant on event",
+        "Invoke registrationService.cancel for the registration",
+        "Call auditService.listStatusHistory(eventId, { registrationId, sort: \"createdAt:asc\" })"
+      ],
+      "expected": "At least two entries: registration.accepted with afterState Registered and registration.cancelled with afterState CancelledByUser; each entry includes registrationId, occurredAt, and before/after state; satisfies testing-plan §3 row Status history retrieval → transitions traceable (AC-12) and FR-23 organizer retrieval capability",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-23-002",
+      "category": "functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
       "traceability": ["FR-23", "AC-12"],
       "title": "OrganizerAdmin retrieves registration status change history via GET status-history",
@@ -23,14 +45,16 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-23-002",
+      "id": "TC-FR-23-003",
       "category": "functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["FR-23", "AC-12"],
       "title": "Register then cancel produces traceable status history with before and after states",
       "preconditions": [
         "RegistrationOpen event with available capacity",
+        "Real Postgres test database with transaction rollback per test",
         "Participant registered and subsequently cancelled own registration"
       ],
       "steps": [
@@ -38,13 +62,14 @@
         "Invoke registrationService.cancel for the registration",
         "Call auditService.listStatusHistory(eventId, { registrationId, sort: \"createdAt:asc\" })"
       ],
-      "expected": "At least two entries: registration.accepted with afterState Registered and registration.cancelled with afterState CancelledByUser; each entry includes registrationId, occurredAt, and before/after state enabling organizer traceability",
+      "expected": "At least two append-only history rows: registration.accepted with afterState Registered and registration.cancelled with afterState CancelledByUser; each entry includes registrationId, occurredAt, and before/after state enabling organizer traceability via audit module boundary",
       "edgeCase": false
     },
     {
-      "id": "TC-FR-23-003",
+      "id": "TC-FR-23-004",
       "category": "functional",
       "layer": "integration",
+      "technique": "pagination",
       "priority": "P0",
       "traceability": ["FR-23", "FR-30", "FR-31"],
       "title": "OrganizerAdmin lists event-wide status history with paginated envelope and default sort",
@@ -56,13 +81,14 @@
         "GET /api/v1/events/{eventId}/status-history?page=1&pageSize=20 with admin token",
         "Verify response envelope fields and default createdAt:desc ordering"
       ],
-      "expected": "HTTP 200 with items, page, pageSize, total, totalPages; entries sorted by createdAt descending by default; satisfies paginated operational list contract per FR-30 and FR-31",
+      "expected": "HTTP 200 with items, page, pageSize, total, totalPages; entries sorted by createdAt descending by default per API design §3; satisfies paginated operational list contract per FR-30 and FR-31",
       "edgeCase": false
     },
     {
-      "id": "TC-FR-23-004",
+      "id": "TC-FR-23-005",
       "category": "functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P1",
       "traceability": ["FR-23", "AC-12"],
       "title": "registrationId filter returns only that registration's status transitions",
@@ -78,9 +104,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-23-005",
+      "id": "TC-FR-23-006",
       "category": "functional",
-      "layer": "integration",
+      "layer": "e2e",
+      "technique": "flow-b",
       "priority": "P1",
       "traceability": ["FR-23", "AC-12", "FR-12", "AC-02"],
       "title": "Waitlisted to Registered promotion appears in status history",
@@ -91,15 +118,16 @@
       "steps": [
         "Register participant when event full to receive Waitlisted state",
         "Cancel an existing Registered registration to trigger FIFO promotion",
-        "GET status-history filtered by promoted registrationId with sort createdAt:asc"
+        "GET /api/v1/events/{eventId}/status-history?registrationId={promotedRegistrationId}&sort=createdAt:asc with OrganizerAdmin token"
       ],
-      "expected": "History includes waitlist entry and subsequent promotion transition with afterState Registered; promotion from Waitlisted is traceable for organizer review",
+      "expected": "History includes waitlist entry and subsequent promotion transition with afterState Registered; promotion from Waitlisted is traceable for organizer review per Flow B waitlist lifecycle",
       "edgeCase": false
     },
     {
-      "id": "TC-FR-23-006",
+      "id": "TC-FR-23-007",
       "category": "functional",
       "layer": "integration",
+      "technique": "state-transition",
       "priority": "P1",
       "traceability": ["FR-23", "AC-12", "FR-17", "AC-07"],
       "title": "Check-in and event completion produce CheckedIn and Attended history entries",
@@ -116,9 +144,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-23-007",
+      "id": "TC-FR-23-008",
       "category": "functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P1",
       "traceability": ["FR-23", "FR-30", "AC-12"],
       "title": "OrganizerStaff on assigned event can retrieve status history",
@@ -133,26 +162,31 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-23-008",
+      "id": "TC-FR-23-009",
       "category": "functional",
-      "layer": "unit",
-      "priority": "P0",
-      "traceability": ["FR-23", "AC-12"],
-      "title": "toStatusHistoryEntry maps registration transitions with beforeState and afterState",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["FR-23", "AC-12", "FR-30"],
+      "title": "Organizer registrations page opens status history dialog with transition columns",
       "preconditions": [
-        "Audit mapper receives raw audit row for registration.accepted with before.state Pending and after.state Registered"
+        "OrganizerAdmin logged in with access to event that has registrations with status history",
+        "Organizer event registrations page reachable at /organizer/events/{eventId}/registrations"
       ],
       "steps": [
-        "Call toStatusHistoryEntry with entityType Registration, action registration.accepted, and before/after state payloads",
-        "Call toStatusHistoryEntry for checkin.recorded with after.state CheckedIn"
+        "Navigate to organizer event registrations page",
+        "Click Status history button on a registration row",
+        "Observe dialog table columns for When, Transition (beforeState → afterState), Actor, and Action",
+        "Use pagination controls inside dialog when history exceeds pageSize"
       ],
-      "expected": "Mapped entry exposes registrationId, beforeState Pending, afterState Registered for acceptance; check-in entry resolves registrationId and afterState CheckedIn from nested after payload",
+      "expected": "Dialog renders registration status history with beforeState → afterState transition, actor identifier, and occurredAt timestamp; server-driven pagination inside dialog does not render unbounded dataset client-side; Organizer Admin can retrieve and review status change history in UI per FR-23",
       "edgeCase": false
     },
     {
-      "id": "TC-FR-23-009",
+      "id": "TC-FR-23-010",
       "category": "functional",
       "layer": "e2e",
+      "technique": "state-transition",
       "priority": "P1",
       "traceability": ["FR-23", "AC-12", "FR-17", "BR-12"],
       "title": "Registered to Absent transition recorded in status history after event completion",
@@ -168,9 +202,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-23-010",
+      "id": "TC-FR-23-011",
       "category": "edge",
       "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["FR-23", "FR-25", "FR-26", "AC-15"],
       "title": "Participant cannot retrieve event registration status history",
@@ -181,13 +216,14 @@
       "steps": [
         "GET /api/v1/events/{eventId}/status-history with participant Authorization bearer token"
       ],
-      "expected": "HTTP 403 forbidden; registration status history restricted to organizer roles; participant cannot access other participants' transition history",
+      "expected": "HTTP 403 forbidden; registration status history restricted to organizer roles; participant cannot access other participants' transition history per permission matrix",
       "edgeCase": true
     },
     {
-      "id": "TC-FR-23-011",
+      "id": "TC-FR-23-012",
       "category": "edge",
       "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["FR-23", "AC-15", "FR-25", "NFR-07"],
       "title": "Unauthenticated GET status-history returns 401",
@@ -202,9 +238,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-23-012",
+      "id": "TC-FR-23-013",
       "category": "edge",
       "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P1",
       "traceability": ["FR-23", "FR-27", "NFR-08"],
       "title": "OrganizerStaff cannot retrieve status history for out-of-scope event",
@@ -219,9 +256,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-23-013",
+      "id": "TC-FR-23-014",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P2",
       "traceability": ["FR-23", "AC-13"],
       "title": "Invalid pagination on status-history returns INVALID_PAGINATION",
@@ -237,9 +275,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-23-014",
+      "id": "TC-FR-23-015",
       "category": "edge",
       "layer": "integration",
+      "technique": "pagination",
       "priority": "P2",
       "traceability": ["FR-23", "AC-13"],
       "title": "Status history page beyond totalPages returns empty items with valid metadata",
@@ -255,9 +294,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-23-015",
+      "id": "TC-FR-23-016",
       "category": "edge",
       "layer": "integration",
+      "technique": "boundary-error",
       "priority": "P2",
       "traceability": ["FR-23"],
       "title": "registrationId filter for registration with no history returns empty paginated result",
@@ -272,9 +312,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-23-016",
+      "id": "TC-FR-23-017",
       "category": "edge",
       "layer": "integration",
+      "technique": "state-transition",
       "priority": "P1",
       "traceability": ["FR-23", "AC-12", "BR-12"],
       "title": "Sequential registration transitions produce distinct chronologically ordered history entries",
@@ -292,9 +333,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-23-017",
+      "id": "TC-FR-23-018",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["FR-23"],
       "title": "Status history request for non-existent eventId returns 404",
@@ -309,9 +351,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-23-018",
+      "id": "TC-FR-23-019",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P1",
       "traceability": ["FR-23", "NFR-10", "AC-12"],
       "title": "Status history entries include actorId, actorRole, and occurredAt for audit correlation",
@@ -326,9 +369,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-23-019",
+      "id": "TC-FR-23-020",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P1",
       "traceability": ["FR-23", "AC-12"],
       "title": "Status history records are immutable with no mutation API",
@@ -344,9 +388,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-23-020",
+      "id": "TC-FR-23-021",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "pagination",
       "priority": "P2",
       "traceability": ["FR-23", "FR-31", "AC-13", "NFR-16"],
       "title": "Status history list returns accurate total count across multiple registrations",
@@ -361,9 +406,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-23-021",
+      "id": "TC-FR-23-022",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P1",
       "traceability": ["FR-23", "FR-25", "NFR-08"],
       "title": "Status history query is read-only and does not mutate registration or audit state",
