@@ -1,8 +1,8 @@
 {
   "productItemId": "NFR-02",
   "version": 1,
-  "docFingerprint": "sha256:66c6c2a085e264c591d98e9f94a7c01e4a22963048aa3bd8ad16e51948bbc052",
-  "generatedAt": "2026-06-26T13:15:00Z",
+  "docFingerprint": "sha256:51dc60c0a80dd45f020b6136d15c7a17807e81a26c2da8531d8688cc9ff1e1bf",
+  "generatedAt": "2026-06-26T17:53:48Z",
   "cases": [
     {
       "id": "TC-NFR-02-001",
@@ -20,7 +20,7 @@
       "preconditions": [
         "Event is RegistrationOpen with capacity N and available seats",
         "Participant has no active registration for the event",
-        "Postgres database via Compose db service with migrations applied"
+        "Postgres database via Compose db service; idempotent per-module schema bootstrap on first API use per docker-compose §4.2"
       ],
       "steps": [
         "Invoke registrationService.register(eventId, participantId, actorContext) inside a committed transaction",
@@ -51,7 +51,7 @@
         "Invoke checkinService.staffCheckin(eventId, { registrationId }, actorContext)",
         "Query checkin_records and registration state for the registrationId"
       ],
-      "expected": "Single valid CheckinRecord with timestamp exists; registration state is CheckedIn; INV-04 holds (at most one valid check-in per registration); registration and check-in rows are mutually consistent",
+      "expected": "Single valid CheckinRecord with timestamp exists; registration state is CheckedIn; INV-04 holds (at most one valid check-in per registration); registration and check-in rows are mutually consistent; testing-plan §3 row 'In-window check-in → check-in stored with timestamp' satisfied",
       "edgeCase": false
     },
     {
@@ -291,7 +291,7 @@
         "Attempt checkinService.staffCheckin for the registration",
         "Query checkin_records count and registration state"
       ],
-      "expected": "Check-in rejected with appropriate error code; zero CheckinRecord rows created; registration remains Registered (not CheckedIn); data consistency preserved on validation failure",
+      "expected": "Check-in rejected with appropriate error code; zero CheckinRecord rows created; registration remains Registered (not CheckedIn); data consistency preserved on validation failure; testing-plan §3 row 'Out-of-window check-in → rejected with code' satisfied",
       "edgeCase": true
     },
     {
@@ -326,17 +326,17 @@
       "traceability": [
         "NFR-02"
       ],
-      "title": "Transactional consistency tests execute against Compose Postgres not in-memory stores",
+      "title": "Transactional consistency tests execute against Compose Postgres with schema bootstrap not in-memory stores",
       "preconditions": [
         "npm run aih:dev:db:up has started healthy db service",
-        "DATABASE_URL points to postgresql://we_event:we_event@localhost:5432/we_event",
-        "Forbidden persistence modes (in-memory Map, SQLite, mock-only repos) are not used per docker-compose local runtime §4.3"
+        "DATABASE_URL points to postgresql://we_event:we_event@localhost:5432/we_event per docker-compose §4.2 development mode",
+        "Forbidden persistence modes (in-memory Map, SQLite, mock-only repos) are not used per docker-compose §4.3"
       ],
       "steps": [
         "Run npm run test:integration for registration and check-in consistency scenarios",
-        "Verify tests connect to Postgres and use schema migrations"
+        "Verify tests connect to Compose Postgres and trigger idempotent per-module schema bootstrap on first API use (not versioned migration tooling or in-memory shortcuts)"
       ],
-      "expected": "Integration suite exercises real transactional behavior on Postgres per docker-compose local runtime policy; concurrency and atomicity assertions are meaningful against durable storage",
+      "expected": "Integration suite exercises real transactional behavior on Postgres per docker-compose local runtime §4.2–4.3; schema bootstrap and concurrency or atomicity assertions are meaningful against durable storage",
       "edgeCase": false
     },
     {
@@ -440,6 +440,31 @@
       ],
       "expected": "HTTP 403 Forbidden (or 401 if unscoped); zero CheckinRecord rows created for Participant A; registration remains Registered; unauthorized attempt cannot introduce inconsistent check-in state",
       "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-02-019",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P0",
+      "traceability": [
+        "NFR-02",
+        "AC-02",
+        "AC-02g",
+        "BR-08"
+      ],
+      "title": "Concurrent waitlist promotions yield single winner or WAITLIST_ORDER_CONFLICT without queue corruption",
+      "preconditions": [
+        "Event at capacity with at least two Waitlisted participants in FIFO order",
+        "One Registered seat freed triggering parallel promotion attempts for the same seat",
+        "waitlistEnabled true"
+      ],
+      "steps": [
+        "Fire concurrent cancellation-plus-promotion or parallel promotion operations targeting the same freed seat",
+        "Query waitlist positions, Registered count, and participant states after all operations settle"
+      ],
+      "expected": "Exactly one Waitlisted participant promotes to Registered; losing concurrent attempts return WAITLIST_ORDER_CONFLICT without corrupting FIFO queue order; Registered count never exceeds capacity; no duplicate promotions consuming one seat (AC-02g)",
+      "edgeCase": true
     }
   ]
 }
