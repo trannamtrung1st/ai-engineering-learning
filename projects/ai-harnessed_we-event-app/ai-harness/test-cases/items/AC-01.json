@@ -2,51 +2,53 @@
   "productItemId": "AC-01",
   "version": 1,
   "docFingerprint": "sha256:79bdbca423ea91c83496c623bf764b00d329b0edef3e6d130765edc4907c901b",
-  "generatedAt": "2026-06-26T04:06:38Z",
+  "generatedAt": "2026-06-26T11:05:06Z",
   "cases": [
     {
       "id": "TC-AC-01-001",
       "category": "functional",
       "layer": "integration",
+      "technique": "scenario-matrix",
       "priority": "P0",
       "traceability": ["AC-01", "FR-07", "BR-03"],
-      "title": "Registration assigns Registered when seats are available",
+      "title": "Register with available seat assigns Registered per testing-plan §3",
       "preconditions": [
-        "Event is in RegistrationOpen state with configured capacity greater than current Registered count",
+        "Event is RegistrationOpen with configured capacity greater than current Registered count",
         "Registration window is active (current time between registrationOpenAt and registrationCloseAt)",
-        "Authenticated participant has no active registration for the event",
-        "Waitlist is irrelevant because seats remain available"
+        "Authenticated participant has no active registration for the event"
       ],
       "steps": [
         "Invoke registrationService.register(eventId, participantId, actorContext) for a participant with no prior registration",
-        "Read the returned registration entity snapshot"
+        "Read the returned registration entity and query Registered seat-holder count for the event"
       ],
-      "expected": "Registration is created with state Registered, waitlistPosition is null, and Registered count is incremented by one without exceeding EventCapacity",
+      "expected": "Registration is created with state Registered, waitlistPosition is null, Registered count increments by one, and total Registered never exceeds EventCapacity (testing-plan §3: Register with available seat → Registered)",
       "edgeCase": false
     },
     {
       "id": "TC-AC-01-002",
       "category": "functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
       "traceability": ["AC-01", "FR-07", "FR-10"],
-      "title": "POST registrations returns Registered and registration-status reflects it",
+      "title": "POST registrations returns HTTP 200 with Registered envelope",
       "preconditions": [
         "Published event with registration opened, capacity 5, zero existing Registered participants",
         "Valid participant JWT",
         "Fresh Idempotency-Key header value"
       ],
       "steps": [
-        "POST /api/v1/events/{eventId}/registrations with Authorization bearer token and empty or token-derived body",
+        "POST /api/v1/events/{eventId}/registrations with Authorization bearer token and Idempotency-Key header",
         "GET /api/v1/events/{eventId}/registration-status for the same participant"
       ],
-      "expected": "POST returns HTTP 200 with body containing state Registered, registrationId, eventId, participantId, reasonCode null, and updatedAt; GET registration-status returns the same registration with state Registered",
+      "expected": "POST returns HTTP 200 with body containing registrationId, eventId, participantId, state Registered, reasonCode null, and updatedAt; GET registration-status returns the same registration with state Registered",
       "edgeCase": false
     },
     {
       "id": "TC-AC-01-003",
       "category": "functional",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["AC-01", "FR-10"],
       "title": "Participant registers via UI and sees Registered status",
@@ -59,32 +61,93 @@
         "Click register (or equivalent primary registration action)",
         "Observe registration status area on event detail and/or my registrations list"
       ],
-      "expected": "UI shows registration succeeded with Registered status (badge, label, or status text) without requiring page reload beyond normal client refresh",
+      "expected": "UI shows registration succeeded with Registered status (badge, label, or status text) without requiring manual page reload beyond normal client refresh",
       "edgeCase": false
     },
     {
       "id": "TC-AC-01-004",
       "category": "functional",
-      "layer": "unit",
-      "priority": "P1",
-      "traceability": ["AC-01", "FR-07", "BR-02"],
-      "title": "canRegister permits registration when window active and no active registration",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["AC-01", "BR-03", "FR-07"],
+      "title": "Successful registration persists atomically within capacity guard transaction",
       "preconditions": [
-        "Event state is RegistrationOpen",
-        "Registration is not paused",
-        "Current time is within registration open/close window",
-        "Participant has no active registration state for the event"
+        "Event with capacity 5 and zero Registered participants in RegistrationOpen state",
+        "Active registration window",
+        "Database transaction boundaries enabled for registration module"
       ],
       "steps": [
-        "Call canRegister(eventState, registrationPaused, openAt, closeAt, existingRegistrationState, now) with preconditions above"
+        "Complete registrationService.register assigning Registered state",
+        "Query registration row and Registered seat-holder count in the same database session after commit"
       ],
-      "expected": "Function returns true, indicating the participant may initiate registration while seats are available",
+      "expected": "Registration row exists with state Registered, Registered count equals 1, and BR-03 invariant holds (Registered count never exceeds EventCapacity) immediately after commit",
       "edgeCase": false
     },
     {
       "id": "TC-AC-01-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["AC-01", "FR-07"],
+      "title": "Flow A lifecycle register step yields Registered at start of participant journey",
+      "preconditions": [
+        "E2E fixture: draft event created with capacity 5",
+        "Organizer transitions event through publish and open-registration",
+        "Fresh participant token and Idempotency-Key"
+      ],
+      "steps": [
+        "Execute Flow A step: POST /api/v1/events/{eventId}/registrations after open-registration",
+        "Verify registration state before proceeding to check-in, feedback, and eligibility steps"
+      ],
+      "expected": "Registration response state is Registered, enabling subsequent check-in, feedback, and eligibility steps in the lifecycle flow",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-01-006",
       "category": "edge",
       "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["AC-01", "BR-02"],
+      "title": "Registration rejected when outside registration window despite available seats",
+      "preconditions": [
+        "Event has available seats (Registered count below capacity)",
+        "Current time is before registrationOpenAt or after registrationCloseAt (fixed clock)",
+        "Participant has no active registration"
+      ],
+      "steps": [
+        "Attempt registrationService.register for the participant",
+        "Observe error response and absence of new registration row"
+      ],
+      "expected": "Registration does not succeed; API returns HTTP 422 with typed semantic validation error indicating registration window violation; no new Registered record is created",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-01-007",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["AC-01"],
+      "title": "Registration rejected when event is not RegistrationOpen",
+      "preconditions": [
+        "Event is Published but registration not yet opened, or registration is closed/paused",
+        "Seats are available by capacity count",
+        "Authenticated participant with no active registration"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/registrations while event state disallows registration intake"
+      ],
+      "expected": "HTTP 409 or 422 with typed error envelope; response body state is not Registered; no seat consumed",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-01-008",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["AC-01", "BR-03"],
       "title": "Last available seat assigns Registered without exceeding capacity",
@@ -101,97 +164,42 @@
       "edgeCase": true
     },
     {
-      "id": "TC-AC-01-006",
-      "category": "edge",
-      "layer": "integration",
-      "priority": "P1",
-      "traceability": ["AC-01", "BR-02"],
-      "title": "Registration rejected when outside registration window despite available seats",
-      "preconditions": [
-        "Event has available seats (Registered count below capacity)",
-        "Current time is before registrationOpenAt or after registrationCloseAt (fixed clock)",
-        "Participant has no active registration"
-      ],
-      "steps": [
-        "Attempt registrationService.register for the participant",
-        "Observe error response"
-      ],
-      "expected": "Registration does not succeed; API returns semantic validation error (422) indicating registration window violation; no new Registered record is created",
-      "edgeCase": true
-    },
-    {
-      "id": "TC-AC-01-007",
+      "id": "TC-AC-01-009",
       "category": "edge",
       "layer": "e2e",
-      "priority": "P1",
-      "traceability": ["AC-01"],
-      "title": "Registration rejected when event is not RegistrationOpen",
-      "preconditions": [
-        "Event is Published but registration not yet opened, or registration is closed/paused",
-        "Seats are available by capacity count",
-        "Authenticated participant with no active registration"
-      ],
-      "steps": [
-        "POST /api/v1/events/{eventId}/registrations while event state disallows registration intake"
-      ],
-      "expected": "HTTP 409 or 422 with typed error; response body state is not Registered; no seat consumed",
-      "edgeCase": true
-    },
-    {
-      "id": "TC-AC-01-008",
-      "category": "non-functional",
-      "layer": "integration",
-      "priority": "P1",
-      "traceability": ["AC-01", "FR-07"],
-      "title": "Idempotent registration retry returns consistent Registered snapshot",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["AC-01", "FR-25"],
+      "title": "OrganizerAdmin and OrganizerStaff denied POST registrations",
       "preconditions": [
         "Event RegistrationOpen with available seats",
-        "Participant authenticated with no prior registration",
-        "Fixed Idempotency-Key value prepared for the register endpoint"
+        "Valid JWT for OrganizerAdmin (or OrganizerStaff scoped to the event)",
+        "Actor has no participant registration for the event"
       ],
       "steps": [
-        "POST /api/v1/events/{eventId}/registrations with Idempotency-Key K and receive Registered response",
-        "Repeat POST with the same Idempotency-Key K and identical payload"
+        "POST /api/v1/events/{eventId}/registrations with OrganizerAdmin bearer token and Idempotency-Key",
+        "Repeat POST with OrganizerStaff bearer token for the same event"
       ],
-      "expected": "Both responses return HTTP 200 with the same registrationId and state Registered; only one Registered seat is consumed",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-AC-01-009",
-      "category": "non-functional",
-      "layer": "integration",
-      "priority": "P0",
-      "traceability": ["AC-01", "BR-03"],
-      "title": "Successful registration persists atomically within capacity guard transaction",
-      "preconditions": [
-        "Event with capacity 5 and zero Registered participants",
-        "Database transaction boundaries enabled for registration module"
-      ],
-      "steps": [
-        "Complete a successful registration assigning Registered state",
-        "Query seat holder count and registration row in the same database session"
-      ],
-      "expected": "Registration row exists with state Registered and Registered count equals 1; BR-03 invariant holds (Registered count never exceeds EventCapacity) immediately after commit",
-      "edgeCase": false
+      "expected": "Both requests return HTTP 403 unauthorized; no registration row is created; Register for event capability is Participant-only per roles-permissions matrix",
+      "edgeCase": true
     },
     {
       "id": "TC-AC-01-010",
       "category": "edge",
       "layer": "e2e",
-      "priority": "P0",
-      "traceability": ["AC-01", "BR-03"],
-      "title": "Flow A lifecycle register step yields Registered at start of participant journey",
+      "technique": "http-contract",
+      "priority": "P1",
+      "traceability": ["AC-01"],
+      "title": "Unauthenticated POST registrations returns HTTP 401",
       "preconditions": [
-        "E2E fixture: draft event created with capacity 5",
-        "Organizer transitions event through publish and open-registration",
-        "Fresh participant token and idempotency key"
+        "Event RegistrationOpen with available seats",
+        "No Authorization header on the request"
       ],
       "steps": [
-        "Execute Flow A step: POST /api/v1/events/{eventId}/registrations after open-registration",
-        "Continue scenario only after verifying registration state"
+        "POST /api/v1/events/{eventId}/registrations without Authorization header"
       ],
-      "expected": "Registration response state is Registered, enabling subsequent check-in, feedback, and eligibility steps in the lifecycle flow",
-      "edgeCase": false
+      "expected": "HTTP 401 with standard error envelope; no registration created; participant authentication required before registration can succeed",
+      "edgeCase": true
     }
   ]
 }
