@@ -17,7 +17,7 @@ Concise index for the 12 harness components. Referenced by `docs/technical/13-do
 | TestGen | `scripts/testgen-loop.sh`, `scripts/check-test-case-drift.sh` — docs-driven catalog per requirement tag |
 | Guardrails | `state/guardrails.md` + forbidden patterns in `ralph-loop.json` |
 | Observability | `generated/runs/<timestamp>-*.json` |
-| Feedback loops | Failed check/browser-test/review → guardrails append → retry; prior browser-test and review output injected into next implementer prompt |
+| Feedback loops | Failed check/browser-test/review → guardrails append → retry; prior checks, browser-test, and review output injected into next implementer prompt |
 | Human review | `workflows/human-review-checklist.md` |
 | Preview runtime | `scripts/preview-stack.sh`, `docs/preview-runtime.md` |
 | Browser MCP | `.cursor/mcp.json`, `docs/browser-mcp.md` |

@@ -689,34 +689,73 @@ find_latest_failed_run_id_for_slice() {
   return 1
 }
 
-read_run_artifact_text() {
+summarize_checks_failures() {
   local run_id="$1"
-  local artifact_kind="$2"
-  local max_chars="${3:-24000}"
-  local text_file="${RUNS_DIR}/${run_id}-${artifact_kind}.txt"
-  local json_file="${RUNS_DIR}/${run_id}-${artifact_kind}.json"
-  if [[ -f "$text_file" ]] && [[ -s "$text_file" ]]; then
-    head -c "$max_chars" "$text_file"
-    return 0
+  local max_chars="${2:-32000}"
+  local json_file="${RUNS_DIR}/${run_id}-checks.json"
+  [[ -f "$json_file" ]] || return 1
+  jq -e '.pass == false and ((.failures // []) | length) > 0' "$json_file" >/dev/null 2>&1 || return 1
+  jq '{slice, timestamp, failureCount: (.failures | length), failures}' "$json_file" 2>/dev/null | head -c "$max_chars"
+}
+
+summarize_browser_test_failures() {
+  local run_id="$1"
+  local max_chars="${2:-12000}"
+  local text_file="${RUNS_DIR}/${run_id}-browser-test.txt"
+  local line block=""
+  [[ -f "$text_file" ]] || return 1
+  while IFS= read -r line; do
+    if echo "$line" | grep -qE ': FAIL|BROWSER_TEST_FAIL|^\*\*cases:'; then
+      block+="${line}"$'\n'
+    fi
+  done < "$text_file"
+  [[ -n "$block" ]] || return 1
+  printf '%s' "$block" | head -c "$max_chars"
+}
+
+summarize_review_failures() {
+  local run_id="$1"
+  local max_chars="${2:-12000}"
+  local text_file="${RUNS_DIR}/${run_id}-review.txt"
+  local block=""
+  [[ -f "$text_file" ]] || return 1
+  block="$(awk '
+    /\*\*Blocker|### Blocker|## Blocker/ { capture=1 }
+    capture { print }
+  ' "$text_file")"
+  if [[ -z "$block" ]]; then
+    block="$(grep -E 'REVIEW_FAIL|Blocker|blocker|\bgap\b|missing|out of scope|not met|violat' -i "$text_file" 2>/dev/null || true)"
   fi
-  if [[ -f "$json_file" ]]; then
-    jq -c '.' "$json_file" 2>/dev/null | head -c "$max_chars"
-    return 0
-  fi
-  return 1
+  [[ -n "$block" ]] || return 1
+  printf '%s' "$block" | head -c "$max_chars"
 }
 
 build_implementer_prior_gate_feedback() {
   local slice_id="$1"
-  local run_id block sections=""
-  local browser_run="" review_run=""
+  local block sections=""
+  local checks_run="" browser_run="" review_run=""
+
+  if checks_run="$(find_latest_failed_run_id_for_slice "$slice_id" checks)"; then
+    block="$(summarize_checks_failures "$checks_run" 2>/dev/null || true)"
+    if [[ -n "$block" ]]; then
+      sections="${sections}### Computational checks failures (\`${checks_run}\`)
+
+Fix every item in \`failures\` below before signaling \`SLICE_DONE\`.
+
+\`\`\`json
+${block}
+\`\`\`
+
+"
+    fi
+  fi
 
   if browser_run="$(find_latest_failed_run_id_for_slice "$slice_id" browser-test)"; then
-    block="$(read_run_artifact_text "$browser_run" browser-test 2>/dev/null || true)"
+    block="$(summarize_browser_test_failures "$browser_run" 2>/dev/null || true)"
     if [[ -n "$block" ]]; then
-      sections="${sections}### Browser test failure (\`${browser_run}\`)
+      sections="${sections}### Browser test failures (\`${browser_run}\`)
 
-Fix the issues below before signaling \`SLICE_DONE\`. The dedicated browser test agent will re-run after your changes.
+Fix only the failed cases below before signaling \`SLICE_DONE\`.
 
 \`\`\`
 ${block}
@@ -727,11 +766,11 @@ ${block}
   fi
 
   if review_run="$(find_latest_failed_run_id_for_slice "$slice_id" review)"; then
-    block="$(read_run_artifact_text "$review_run" review 2>/dev/null || true)"
+    block="$(summarize_review_failures "$review_run" 2>/dev/null || true)"
     if [[ -n "$block" ]]; then
-      sections="${sections}### AI code review failure (\`${review_run}\`)
+      sections="${sections}### AI code review blockers (\`${review_run}\`)
 
-Address the review findings below before signaling \`SLICE_DONE\`.
+Resolve the blockers below before signaling \`SLICE_DONE\`.
 
 \`\`\`
 ${block}
@@ -746,7 +785,7 @@ ${block}
   cat <<EOF
 ## Prior gate failures — address these first
 
-This slice failed harness gates on a previous iteration. Read and fix the failures below; do not claim \`SLICE_DONE\` until they are resolved.
+This slice failed harness gates on a previous iteration. Only failure summaries are included below — fix them before signaling \`SLICE_DONE\`.
 
 ${sections}
 EOF

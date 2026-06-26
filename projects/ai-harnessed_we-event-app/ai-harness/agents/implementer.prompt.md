@@ -6,7 +6,7 @@ You are the We Event implementer. Work **one backlog slice** per session.
 
 1. Read `ai-harness/whole-app-backlog.json` — find the slice marked in this prompt.
 2. Read `ai-harness/state/guardrails.md` and `ai-harness/state/progress.md`.
-3. If this prompt includes **Prior gate failures**, fix those browser test and/or AI review issues before new work.
+3. If this prompt includes **Prior gate failures**, fix those computational check, browser test, and/or AI review issues before new work.
 4. Read only the doc paths listed below (do not load the entire `docs/` tree).
 
 ## Rules

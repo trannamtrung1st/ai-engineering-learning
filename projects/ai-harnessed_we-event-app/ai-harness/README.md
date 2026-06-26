@@ -184,7 +184,7 @@ AIH_SKIP_AGENT=1 AIH_SKIP_REVIEW=1 npm run aih:once
 1. `pick-next-slice.sh` selects lowest-priority slice with `passes: false`
 2. Doc drift check — fails if any referenced tag has stale test-case state
 3. Test case gate — **optional by default** (`testCaseGate.mode` in `ralph-loop.json`); warns and continues when tags are missing; hard-fails only in `required` mode
-4. `build-prompt.sh` injects slice into `implementer.prompt.md` (plus prior browser-test / AI-review failures when the slice failed those gates last time)
+4. `build-prompt.sh` injects slice into `implementer.prompt.md` (plus prior checks / browser-test / AI-review failures when the slice failed those gates last time)
 5. `agent -p --force` implements one slice
 6. `run-checks.sh` — computational gates (see below)
 7. `run-browser-test.sh` — Playwright MCP gate using generated browser cases; must end with `BROWSER_TEST_PASS`

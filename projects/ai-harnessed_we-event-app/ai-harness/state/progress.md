@@ -189,3 +189,7 @@ Append-only log of completed iterations.
 - 2026-06-26T07:30:00Z | web-design-system-shell | browser: KPI strip shows Refreshing… during throttled dashboard poll (TC-NFR-06-006); homepage NFR-06 Connected; out-of-scope .cursor/mcp.json removed
 - 2026-06-26T07:32:15Z | web-design-system-shell | browser_test_failed
 - 2026-06-26T07:42:42Z | web-design-system-shell | passed
+- 2026-06-26T07:52:00Z | web-participant-journeys | browser: AC-08 feedback submit enabled for Attended participant (a0a730fc…); /events paginate 1–12→13–24; /registrations 1–20→21–40; quick actions gated by participant-rules — HTTP 200
+- 2026-06-26T07:50:27Z | web-participant-journeys | checks_failed
+- 2026-06-26T07:55:00Z | web-participant-journeys | browser: AC-08 feedback form enabled (Attended a0a730fc…); /events 1–12→13–24 of 7087; /registrations 1–20→21–40 of 161 with waitlist position + reasonText; quick actions rule-gated — HTTP 200
+- 2026-06-26T07:56:43Z | web-participant-journeys | checks_failed
