@@ -23,34 +23,51 @@ echo "==> Ralph iteration: slice=${SLICE_ID}"
 RID="$(run_id)"
 ensure_runs_dir
 
-# --- Test case drift + gate ---
-if [[ "${AIH_SKIP_TESTGEN_GATE:-}" != "1" ]]; then
-  drift_failed=false
-  while IFS= read -r ref; do
-    [[ -z "$ref" ]] && continue
-    set +e
-    ./ai-harness/scripts/check-test-case-drift.sh "$ref" 2>&1
-    ref_drift=$?
-    set -e
-    if [[ "$ref_drift" -ne 0 ]]; then
-      drift_failed=true
-    fi
-  done < <(slice_product_item_refs "$SLICE_ID")
-  if [[ "$drift_failed" == true ]]; then
-    echo "==> Doc drift detected for product items referenced by ${SLICE_ID} — run: npm run aih:testgen:loop"
-    exit 1
+# --- Test case drift ---
+drift_failed=false
+while IFS= read -r ref; do
+  [[ -z "$ref" ]] && continue
+  set +e
+  ./ai-harness/scripts/check-test-case-drift.sh "$ref" 2>&1
+  ref_drift=$?
+  set -e
+  if [[ "$ref_drift" -ne 0 ]]; then
+    drift_failed=true
   fi
-  if ! slice_test_cases_current "$SLICE_ID"; then
+done < <(slice_product_item_refs "$SLICE_ID")
+if [[ "$drift_failed" == true ]]; then
+  echo "==> Doc drift detected for product items referenced by ${SLICE_ID} — run: npm run aih:testgen:loop"
+  exit 1
+fi
+
+# --- Test case gate ---
+if ! slice_test_cases_current "$SLICE_ID"; then
+  gate_mode="$(test_case_gate_mode)"
+  if [[ "$gate_mode" == "required" ]]; then
     echo "ERROR: test cases not current for all product items referenced by slice ${SLICE_ID}" >&2
     echo "Missing items — run: npm run aih:testgen:loop" >&2
     echo "Skip gate: AIH_SKIP_TESTGEN_GATE=1" >&2
     exit 1
   fi
+  missing_tags="$(slice_missing_test_case_tags "$SLICE_ID" | tr '\n' ', ' | sed 's/, $//')"
+  echo "WARN: test cases not current for slice ${SLICE_ID} — continuing (mode=${gate_mode})"
+  echo "WARN: missing tags: ${missing_tags:-_(none listed)_}"
+  echo "WARN: harness will re-queue for verification when TestGen completes"
 fi
 
 # --- Implement ---
+skip_implementer=false
 if [[ "${AIH_SKIP_AGENT:-}" == "1" ]]; then
-  echo "WARN: AIH_SKIP_AGENT=1 — skipping implementer agent"
+  skip_implementer=true
+elif slice_reverify_only "$SLICE_ID"; then
+  echo "==> Re-verification only (test cases now available)"
+  skip_implementer=true
+fi
+
+if [[ "$skip_implementer" == true ]]; then
+  if [[ "${AIH_SKIP_AGENT:-}" == "1" ]]; then
+    echo "WARN: AIH_SKIP_AGENT=1 — skipping implementer agent"
+  fi
   agent_out="${RUNS_DIR}/${RID}-agent.txt"
   echo "SLICE_DONE ${SLICE_ID}" > "$agent_out"
 else

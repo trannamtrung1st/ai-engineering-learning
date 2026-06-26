@@ -98,6 +98,7 @@ fi
 ./ai-harness/scripts/sync-test-cases-to-backlog.sh "$REQUIREMENT_TAG"
 
 mark_test_cases_current "$REQUIREMENT_TAG" "$DOC_FP"
+requeue_slices_pending_test_verification "$REQUIREMENT_TAG"
 append_progress "$REQUIREMENT_TAG" "testgen_passed"
 
 commit_on_pass="$(jq -r '.loop.commitOnPass // true' "$TESTGEN_CONFIG")"

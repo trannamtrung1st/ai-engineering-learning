@@ -90,4 +90,16 @@ prompt="${prompt//\{\{SLICE_ARTIFACTS\}\}/$artifacts}"
 prompt="${prompt//\{\{SLICE_AGENT\}\}/$agent_type}"
 prompt="${prompt//\{\{SLICE_DOCS\}\}/$docs_list}"
 
+missing_tags="$(slice_missing_test_case_tags "$SLICE_ID" | sed 's/^/- /')"
+if [[ -n "$missing_tags" ]]; then
+  prompt="${prompt}
+
+## Missing test case artifacts
+
+The following acceptance tags have no current TestGen artifacts yet — implement from slice docs and acceptance tags:
+
+${missing_tags}
+"
+fi
+
 printf '%s\n' "$prompt"

@@ -48,7 +48,7 @@ npm run aih:loop -- 50                     # max 50 iterations
 | `AIH_SKIP_AGENT` | — | Skip implementer (`1`) |
 | `AIH_SKIP_REVIEW` | — | Skip AI review (`1`) |
 | `AIH_SKIP_BROWSER_TEST` | — | Skip browser test gate (`1`) |
-| `AIH_SKIP_TESTGEN_GATE` | — | Skip test-case-current gate in implement loop (`1`) |
+| `AIH_SKIP_TESTGEN_GATE` | — | Force optional test-case gate (`1`; redundant when `testCaseGate.mode` is `optional`) |
 | `AIH_SKIP_TESTGEN_AGENT` | — | Skip testgen agent (`1`) |
 | `AIH_BROWSER_MCP` | — | Enable Playwright MCP on any slice (`1`) |
 | `AIH_PLAYWRIGHT_MCP_KEEP` | `0` | Newest Playwright MCP files to keep per dir (`0` = wipe before browser slices) |
@@ -104,16 +104,22 @@ Startup success requires API `GET /api/v1/health` with `status=ok` and `db=conne
 
 ### Recommended workflow
 
+Ralph and TestGen can run in parallel — implementation does not require test cases upfront (default `testCaseGate.mode: optional` in `ralph-loop.json`):
+
 ```bash
-# 1. Generate test cases from docs (run before implementation)
+# Option A: parallel — implement while TestGen catches up
+npm run aih:loop &
 npm run aih:testgen:loop
 
-# 2. Implement slices (blocked if test cases missing/stale)
+# Option B: TestGen first (strict mode — set testCaseGate.mode to "required" in ralph-loop.json)
+npm run aih:testgen:loop
 npm run aih:loop
 
-# 3. After editing docs — drift check resets passes; regenerate test cases
+# After editing docs — drift check resets passes; regenerate test cases
 npm run aih:testgen:drift && npm run aih:testgen:loop
 ```
+
+Slices that pass without full test coverage get `testCaseVerification: pending` in the backlog. When TestGen completes all acceptance tags for that slice, the harness automatically re-queues it for verification-only (checks → browser test → review, skipping the implementer).
 
 ### Autonomous loop (hands-off)
 
@@ -176,13 +182,15 @@ AIH_SKIP_AGENT=1 AIH_SKIP_REVIEW=1 npm run aih:once
 ### Implementation
 
 1. `pick-next-slice.sh` selects lowest-priority slice with `passes: false`
-2. Test case gate — fails unless all product items in slice `acceptance` are current (skip with `AIH_SKIP_TESTGEN_GATE=1`)
-3. `build-prompt.sh` injects slice into `implementer.prompt.md`
-4. `agent -p --force` implements one slice
-5. `run-checks.sh` — computational gates (see below)
-6. `run-browser-test.sh` — Playwright MCP gate using generated browser cases; must end with `BROWSER_TEST_PASS`
-7. `run-ai-review.sh` — static code review; must end with `REVIEW_PASS`
-8. Backlog updated, progress logged, optional git commit
+2. Doc drift check — fails if any referenced tag has stale test-case state
+3. Test case gate — **optional by default** (`testCaseGate.mode` in `ralph-loop.json`); warns and continues when tags are missing; hard-fails only in `required` mode
+4. Re-verification runs skip the implementer when `testCaseVerification: pending`, artifacts exist, and all tags are now current
+5. `build-prompt.sh` injects slice into `implementer.prompt.md`
+6. `agent -p --force` implements one slice (unless re-verification-only)
+7. `run-checks.sh` — computational gates (see below)
+8. `run-browser-test.sh` — Playwright MCP gate using generated browser cases; must end with `BROWSER_TEST_PASS`
+9. `run-ai-review.sh` — static code review; must end with `REVIEW_PASS`
+10. Backlog updated (`testCaseVerification: pending` or `verified`), progress logged, optional git commit
 
 ## Computational checks (`npm run aih:check`)
 
@@ -208,7 +216,7 @@ On a docs-only repo (no `apps/`), `npm run aih:check` passes without code-qualit
 ## Key files
 
 - `ai-harness/whole-app-backlog.json` — slice queue
-- `ai-harness/workflows/ralph-loop.json` — loop policy
+- `ai-harness/workflows/ralph-loop.json` — loop policy (`testCaseGate.mode`, re-verification flags)
 - `ai-harness/workflows/testgen-loop.json` — TestGen loop policy
 - `ai-harness/config/testgen-docs-map.json` — doc resolution rules per requirement tag
 - `ai-harness/test-case-index.json` — slim generation state (current, fingerprint)

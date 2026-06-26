@@ -29,28 +29,36 @@ Concise index for the 12 harness components. Referenced by `docs/technical/13-do
 Each iteration spawns a **fresh** agent context (no `--resume`). State lives on disk and in git.
 
 ```
-pick slice → drift gate → build prompt → agent implement → run-checks → run-browser-test → run-ai-review → mark pass → commit
+pick slice → drift check → test-case gate (optional) → [reverify-only skip implementer] → agent implement → run-checks → run-browser-test → run-ai-review → mark pass (testCaseVerification) → commit
 ```
+
+Test case gate policy (`ralph-loop.json` → `testCaseGate`):
+
+| Key | Default | Purpose |
+|---|---|---|
+| `mode` | `optional` | `optional` warns and continues when tags missing; `required` hard-fails |
+| `reverifyOnTestCasesAvailable` | `true` | Re-queue slices with `testCaseVerification: pending` when all tags become current |
+| `reverifySkipImplementer` | `true` | Skip implementer on re-verification runs |
 
 Scripts: `ralph-loop.sh` (autonomous), `ralph-once.sh` (single step).
 
 ## TestGen loop
 
-Separate loop that generates structured test cases from slice docs **before** implementation:
+Separate loop that generates structured test cases from slice docs (can run in parallel with Ralph):
 
 ```
-pick requirement tag (from backlog acceptance union) → doc fingerprint → testgen agent → validate JSON → sync slice metadata → mark tag in test-case-index → commit
+pick requirement tag (from backlog acceptance union) → doc fingerprint → testgen agent → validate JSON → sync slice metadata → mark tag in test-case-index → re-queue pending slices → commit
 ```
 
 Scripts: `testgen-loop.sh` (autonomous), `testgen-once.sh` (single step).
 
 Doc drift (`check-test-case-drift.sh`) resets tag state in `test-case-index.json` and `passes` on all slices whose `acceptance` references that tag.
 
-Recommended order: `npm run aih:testgen:loop` then `npm run aih:loop`.
+Ralph and TestGen can run independently. Set `testCaseGate.mode` to `required` in `ralph-loop.json` to restore the strict TestGen-first workflow.
 
 ## Backlog
 
-`ai-harness/whole-app-backlog.json` — phased slices with `passes`, `priority`, `acceptance`, `completionArtifacts`.
+`ai-harness/whole-app-backlog.json` — phased slices with `passes`, `priority`, `acceptance`, `completionArtifacts`, optional `testCaseVerification` (`pending` | `verified`).
 
 ## Persistence policy
 

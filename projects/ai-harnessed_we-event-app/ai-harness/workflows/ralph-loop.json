@@ -114,5 +114,10 @@
   "humanReview": {
     "requiredForMergeReady": true,
     "signal": "HUMAN_REVIEW_PASS"
+  },
+  "testCaseGate": {
+    "mode": "optional",
+    "reverifyOnTestCasesAvailable": true,
+    "reverifySkipImplementer": true
   }
 }
