@@ -2,7 +2,7 @@
   "productItemId": "AC-02",
   "version": 1,
   "docFingerprint": "sha256:e5fe6c876730dc2692555528b2f33e1afc4105ef98b3d84c4363464150dbd711",
-  "generatedAt": "2026-06-26T12:00:00Z",
+  "generatedAt": "2026-06-26T16:10:24Z",
   "cases": [
     {
       "id": "TC-AC-02-001",
@@ -27,7 +27,7 @@
         "Invoke registrationService.register(eventId, participantId, actorContext) for a participant with no prior registration",
         "Read the returned registration entity snapshot and waitlist entry if present"
       ],
-      "expected": "Registration is created with state Waitlisted, waitlistPosition is a positive integer >= 1 (1 for first entrant), and Registered count remains at EventCapacity without overflow (testing-plan §3: Register when full + waitlist enabled → Waitlisted; AC-02a)",
+      "expected": "Registration is created with state Waitlisted, waitlistPosition is a positive integer >= 1 (1 for first entrant), and Registered count remains at EventCapacity without overflow; registration audit and status history are written (FR-08); testing-plan §3: Register when full + waitlist enabled → Waitlisted; AC-02a",
       "edgeCase": false
     },
     {
@@ -81,7 +81,7 @@
         "Navigate to My Registrations (/me/registrations or equivalent)",
         "Locate the same event row in the paginated list"
       ],
-      "expected": "Both event detail and My Registrations show Waitlisted status with numeric waitlistPosition; UI copy explains position is assigned at enrollment and promotion occurs FIFO when a seat opens (FR-10a); values match GET registration-status API",
+      "expected": "Both event detail and My Registrations show Waitlisted status with numeric waitlistPosition labeled as queue position (stable ordinal per FR-10a); UI copy explains position is assigned at enrollment and promotion occurs FIFO when a seat opens; values match GET registration-status API",
       "edgeCase": false
     },
     {
@@ -107,7 +107,7 @@
         "Complete registrationService.register assigning Waitlisted state",
         "Query registration row and waitlist_entries row in the same database session"
       ],
-      "expected": "Registration row exists with state Waitlisted and active WaitlistEntry (promoted_at and expired_at both null per BR-04b) with matching position; both committed atomically per cross-module transaction boundary for registration assignment + waitlist handling",
+      "expected": "Registration row exists with state Waitlisted and active WaitlistEntry (promoted_at and expired_at both null per BR-04b) with position assigned as MAX(active positions)+1 (BR-04a); registration audit and status history written (FR-08); both registration and waitlist rows committed atomically per cross-module transaction boundary",
       "edgeCase": false
     },
     {
@@ -302,7 +302,7 @@
         "GET /api/v1/events/{eventId}/waitlist?page=1&pageSize=20 with organizer Authorization",
         "Locate the waitlisted participant in items"
       ],
-      "expected": "HTTP 200 with paginated envelope; items include the waitlisted participant sorted by position ascending (default sort position:asc); item reflects Waitlisted registration consistent with participant-facing registration-status",
+      "expected": "HTTP 200 with paginated envelope; items include the waitlisted participant sorted by position ascending (default sort position:asc); each row includes queue position, participant identity, registration state, and enqueuedAt (FR-30a); item reflects Waitlisted registration consistent with participant-facing registration-status",
       "edgeCase": false
     },
     {
@@ -330,6 +330,86 @@
       ],
       "expected": "Page 1 items have positions 1–20 ascending; page 2 first item has position 21; combined sequence is strictly increasing by position with no gaps or reordering (AC-02f FIFO preserved across pages); envelope includes correct total and totalPages",
       "edgeCase": false
+    },
+    {
+      "id": "TC-AC-02-014",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P0",
+      "traceability": [
+        "AC-02",
+        "AC-02c",
+        "FR-11",
+        "FR-12",
+        "BR-06a",
+        "BR-08b"
+      ],
+      "title": "Flow B registered cancel within policy promotes FIFO next waitlisted participant",
+      "preconditions": [
+        "E2E fixture: published event capacity 1, waitlistEnabled true, registration open",
+        "First participant Registered consuming the sole seat",
+        "Second participant Waitlisted with waitlistPosition 1",
+        "Cancellation policy allows participant cancel before deadline (BR-07)"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/registrations/{registrationId}/cancel as the Registered participant with Idempotency-Key",
+        "GET /api/v1/events/{eventId}/registration-status for the waitlisted participant",
+        "Verify Registered seat count for the event"
+      ],
+      "expected": "Cancel returns HTTP 200; waitlisted participant transitions to Registered with waitlistPosition null; Registered count remains 1 (at capacity); promotion selects lowest-position active waitlist entry atomically with seat release (AC-02c, FR-12, BR-08b); optional promoted payload may appear on cancel response (BR-08b)",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-02-015",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P1",
+      "traceability": [
+        "AC-02",
+        "AC-02d",
+        "FR-11a",
+        "BR-08a"
+      ],
+      "title": "Waitlisted participant cancel expires queue entry without seat release or promotion",
+      "preconditions": [
+        "Event full with waitlistEnabled true and at least two Waitlisted participants (positions 1 and 2)",
+        "Registered count equals EventCapacity",
+        "Cancellation policy satisfied for waitlisted participant at position 1"
+      ],
+      "steps": [
+        "Invoke cancelByParticipant for the position-1 Waitlisted registration",
+        "Query WaitlistEntry for the cancelled registration and registration state for position-2 participant",
+        "Verify Registered seat count unchanged"
+      ],
+      "expected": "Cancelled registration transitions to CancelledByUser; active WaitlistEntry has expired_at set (BR-08a); position-2 participant remains Waitlisted with unchanged waitlistPosition (stable ordinal, not renumbered per BR-04a); Registered count unchanged and no promotion occurs (AC-02d, FR-11a)",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-02-016",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P0",
+      "traceability": [
+        "AC-02",
+        "AC-02g",
+        "FR-12",
+        "BR-06b"
+      ],
+      "title": "Concurrent waitlist promotions succeed once or return WAITLIST_ORDER_CONFLICT without queue corruption",
+      "preconditions": [
+        "Event capacity 1 with one Registered participant and at least one Waitlisted participant",
+        "Registered participant cancellation completes freeing one seat",
+        "Multiple parallel promotion triggers race for the same freed seat (e.g. concurrent cancel handlers or explicit promote calls)"
+      ],
+      "steps": [
+        "Fire concurrent promotion attempts targeting the same available seat",
+        "Aggregate outcomes and query waitlist queue order and Registered count"
+      ],
+      "expected": "Exactly one Waitlisted registration promotes to Registered; Registered count never exceeds EventCapacity; losing concurrent attempts return WAITLIST_ORDER_CONFLICT (retry-safe per BR-06b) without corrupting FIFO queue order or creating duplicate Registered rows (AC-02g)",
+      "edgeCase": true
     }
   ]
 }
