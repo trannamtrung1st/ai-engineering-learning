@@ -2,12 +2,13 @@
   "productItemId": "FR-11",
   "version": 1,
   "docFingerprint": "sha256:61772db2f0be7d5f91f9eccefef8b9d85ce957dbd55d47d9d14f933847b053f4",
-  "generatedAt": "2026-06-26T12:30:00Z",
+  "generatedAt": "2026-06-26T15:45:00Z",
   "cases": [
     {
       "id": "TC-FR-11-001",
       "category": "functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["FR-11", "BR-07", "BR-08"],
       "title": "Registered participant cancels before CancellationDeadline transitions to CancelledByUser",
@@ -28,9 +29,10 @@
       "id": "TC-FR-11-002",
       "category": "functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
       "traceability": ["FR-11", "BR-07"],
-      "title": "POST registrations cancel returns CancelledByUser for valid participant cancellation",
+      "title": "POST registrations cancel returns 200 with CancelledByUser for valid participant cancellation",
       "preconditions": [
         "Authenticated participant with Registered registration before CancellationDeadline",
         "Fresh Idempotency-Key header",
@@ -40,13 +42,14 @@
         "POST /api/v1/events/{eventId}/registrations/{registrationId}/cancel with Authorization bearer and Idempotency-Key",
         "GET /api/v1/events/{eventId}/registration-status with same token"
       ],
-      "expected": "Cancel POST returns HTTP 200 with state CancelledByUser, registrationId, and updatedAt; registration-status reflects same cancelled terminal state; participant successfully cancels via public API",
+      "expected": "Cancel POST returns HTTP 200 with body containing state CancelledByUser, registrationId, and updatedAt; registration-status reflects same cancelled terminal state; participant successfully cancels via public API",
       "edgeCase": false
     },
     {
       "id": "TC-FR-11-003",
       "category": "functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["FR-11", "BR-07"],
       "title": "Participant can cancel when event has no CancellationDeadline configured",
@@ -66,9 +69,10 @@
       "id": "TC-FR-11-004",
       "category": "functional",
       "layer": "integration",
+      "technique": "state-transition",
       "priority": "P0",
       "traceability": ["FR-11", "BR-08", "BR-06", "FR-12"],
-      "title": "Valid cancellation frees seat and promotes top waitlist participant atomically",
+      "title": "Valid cancellation transitions Registered to CancelledByUser and promotes top waitlist atomically",
       "preconditions": [
         "Event at capacity with waitlistEnabled true",
         "Participant A Registered, participant B Waitlisted (FIFO position 1)",
@@ -79,13 +83,14 @@
         "Query registration state for A and B in same transaction boundary or immediately after commit",
         "Query Registered count for event"
       ],
-      "expected": "A transitions to CancelledByUser; B transitions from Waitlisted to Registered in same atomic transaction per Workflow C and module contract; Registered count remains at capacity; BR-08 invariant satisfied",
+      "expected": "A transitions Registered → CancelledByUser; B transitions Waitlisted → Registered in same atomic transaction per Workflow C; Registered count remains at capacity; BR-08 invariant satisfied",
       "edgeCase": false
     },
     {
       "id": "TC-FR-11-005",
       "category": "functional",
       "layer": "e2e",
+      "technique": "flow-b",
       "priority": "P0",
       "traceability": ["FR-11", "AC-04", "BR-08", "FR-12"],
       "title": "Flow B cancellation step releases seat and enables waitlist promotion",
@@ -106,6 +111,7 @@
       "id": "TC-FR-11-006",
       "category": "functional",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["FR-11", "BR-07"],
       "title": "Participant UI cancel registration flow per user Flow 2",
@@ -125,25 +131,27 @@
     {
       "id": "TC-FR-11-007",
       "category": "functional",
-      "layer": "unit",
+      "layer": "integration",
+      "technique": "state-transition",
       "priority": "P0",
       "traceability": ["FR-11", "BR-07"],
-      "title": "Cancellation deadline validator permits request before configured deadline",
+      "title": "cancelByParticipant guard permits transition only from Registered before deadline",
       "preconditions": [
         "Fixed clock abstraction set to timestamp strictly before event CancellationDeadline",
         "Registration in Registered state eligible for cancelByParticipant transition"
       ],
       "steps": [
-        "Call cancellation policy validator with registration context and current clock",
-        "Observe validator outcome without persisting"
+        "Evaluate cancelByParticipant transition guard with registration context and current clock",
+        "Attempt transition via registration module without persisting unrelated side effects"
       ],
-      "expected": "Validator passes without error; cancel pipeline may proceed; aligns with validation catalog BR-07 row and testing plan unit coverage for rule validators",
+      "expected": "Guard permits Registered → CancelledByUser transition; cancel pipeline may proceed; aligns with registration state machine and BR-07 validation catalog row",
       "edgeCase": false
     },
     {
       "id": "TC-FR-11-008",
       "category": "edge",
       "layer": "integration",
+      "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["FR-11", "BR-07", "BR-09"],
       "title": "Cancellation after CancellationDeadline is rejected with CANCELLATION_DEADLINE_PASSED",
@@ -163,9 +171,10 @@
       "id": "TC-FR-11-009",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["FR-11", "BR-09"],
-      "title": "Late cancellation blocked by event policy returns CANCELLATION_NOT_ALLOWED",
+      "title": "Late cancellation blocked by event policy returns HTTP 422 CANCELLATION_NOT_ALLOWED",
       "preconditions": [
         "Event configured with post-deadline policy that blocks participant self-cancel without organizer approval",
         "Fixed clock after CancellationDeadline",
@@ -182,9 +191,10 @@
       "id": "TC-FR-11-010",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["FR-11"],
-      "title": "Duplicate cancel attempt on already cancelled registration returns conflict",
+      "title": "Duplicate cancel attempt on already cancelled registration returns HTTP 409 conflict",
       "preconditions": [
         "Participant registration already in CancelledByUser state from prior successful cancel",
         "Fresh Idempotency-Key for second attempt"
@@ -200,6 +210,7 @@
       "id": "TC-FR-11-011",
       "category": "edge",
       "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["FR-11", "FR-26"],
       "title": "Participant cannot cancel another participant registration",
@@ -218,9 +229,29 @@
       "id": "TC-FR-11-012",
       "category": "edge",
       "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["FR-11", "AC-15"],
-      "title": "Unauthenticated cancel request returns 401",
+      "title": "OrganizerStaff denied from participant cancel endpoint returns HTTP 403",
+      "preconditions": [
+        "Participant has Registered registration for event assigned to OrganizerStaff scope",
+        "OrganizerStaff authenticated with valid JWT for assigned event",
+        "Roles matrix grants Cancel own registration only to Participant"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/registrations/{registrationId}/cancel with OrganizerStaff Authorization bearer"
+      ],
+      "expected": "HTTP 403 with typed error envelope; registration remains Registered; OrganizerStaff lacks Cancel own registration capability per roles-permissions matrix",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-11-013",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-11", "AC-15"],
+      "title": "Unauthenticated cancel request returns HTTP 401",
       "preconditions": [
         "Valid eventId and registrationId for an existing Registered row",
         "No Authorization header on request"
@@ -232,9 +263,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-11-013",
+      "id": "TC-FR-11-014",
       "category": "edge",
       "layer": "integration",
+      "technique": "state-transition",
       "priority": "P1",
       "traceability": ["FR-11"],
       "title": "Cancel from CheckedIn registration is rejected as invalid transition",
@@ -250,12 +282,13 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-11-014",
+      "id": "TC-FR-11-015",
       "category": "edge",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P1",
       "traceability": ["FR-11"],
-      "title": "Idempotent cancel retry with same Idempotency-Key returns consistent outcome",
+      "title": "Idempotent cancel retry with same Idempotency-Key returns consistent HTTP 200 outcome",
       "preconditions": [
         "Participant Registered with valid cancellation policy",
         "First POST cancel succeeded with Idempotency-Key K"
@@ -264,13 +297,14 @@
         "Repeat POST /api/v1/events/{eventId}/registrations/{registrationId}/cancel with same Idempotency-Key K",
         "Compare response bodies and registration-status"
       ],
-      "expected": "Retry returns same CancelledByUser snapshot without double seat release or duplicate waitlist promotion; idempotency policy for cancel write endpoint satisfied",
+      "expected": "Retry returns HTTP 200 with same CancelledByUser snapshot without double seat release or duplicate waitlist promotion; idempotency policy for cancel write endpoint satisfied",
       "edgeCase": true
     },
     {
-      "id": "TC-FR-11-015",
+      "id": "TC-FR-11-016",
       "category": "edge",
       "layer": "integration",
+      "technique": "concurrency",
       "priority": "P1",
       "traceability": ["FR-11", "BR-06", "FR-12"],
       "title": "Concurrent cancellations on full waitlisted event do not double-promote same waitlist slot",
@@ -287,9 +321,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-11-016",
+      "id": "TC-FR-11-017",
       "category": "edge",
       "layer": "e2e",
+      "technique": "scenario-matrix",
       "priority": "P1",
       "traceability": ["FR-11", "AC-12"],
       "title": "Successful cancel writes traceable status history entry",
@@ -301,13 +336,14 @@
         "POST cancel as participant",
         "GET /api/v1/events/{eventId}/status-history?registrationId={registrationId} as Organizer Admin"
       ],
-      "expected": "Status history includes registration.cancelled entry with beforeState Registered and afterState CancelledByUser, registrationId, and occurredAt; supports AC-12 traceability for cancellation transitions",
+      "expected": "Status history includes registration.cancelled entry with beforeState Registered and afterState CancelledByUser, registrationId, and occurredAt; satisfies testing-plan §3 row Status history retrieval for cancellation transitions",
       "edgeCase": true
     },
     {
-      "id": "TC-FR-11-017",
+      "id": "TC-FR-11-018",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["FR-11", "BR-08"],
       "title": "Cancellation and waitlist promotion execute in single database transaction",
@@ -325,9 +361,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-11-018",
+      "id": "TC-FR-11-019",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P1",
       "traceability": ["FR-11", "BR-08"],
       "title": "Cancellation deadline policy behavior covered in integration suite",
@@ -343,9 +380,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-11-019",
+      "id": "TC-FR-11-020",
       "category": "non-functional",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P2",
       "traceability": ["FR-11"],
       "title": "Cancellation UI presents clear low-step flow on common viewport sizes",
