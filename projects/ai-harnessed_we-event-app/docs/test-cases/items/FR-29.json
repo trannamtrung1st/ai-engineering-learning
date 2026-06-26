@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-29",
   "version": 1,
-  "docFingerprint": "sha256:0de96fd30f2643dda5e25a994fcb22af16db2170ec550701a09657db14127a0b",
-  "generatedAt": "2026-06-26T12:40:13Z",
+  "docFingerprint": "sha256:b0ca474f51982b8e84b8aa043459a5098edb01c33a8ccd58f134a734cb0bdd8b",
+  "generatedAt": "2026-06-27T00:36:06Z",
   "cases": [
     {
       "id": "TC-FR-29-001",
@@ -17,14 +17,14 @@
       ],
       "title": "GET /api/v1/me/registrations returns HTTP 200 paginated envelope with full page metadata",
       "preconditions": [
-        "Participant registered for at least three events in varied states",
+        "Participant registered for at least three events in varied states including one Waitlisted",
         "Authenticated Participant JWT"
       ],
       "steps": [
         "GET /api/v1/me/registrations?page=1 with Participant Authorization bearer",
         "Inspect HTTP status code, response envelope, and first item fields"
       ],
-      "expected": "HTTP 200 with paginated envelope (items, page=1, pageSize=20, total, totalPages); items.length <= 20; each item includes registrationId, eventId, eventName, state, and updatedAt per API design example; single GET returns full page envelope satisfying FR-29 and FR-31 total count metadata",
+      "expected": "HTTP 200 with paginated envelope (items, page=1, pageSize=20, total, totalPages); items.length <= 20; each item includes registrationId, eventId, eventName, state, updatedAt, waitlistPosition when state is Waitlisted, and reasonText when applicable per API design §3 example; single GET returns full page envelope satisfying FR-29 and FR-31 total count metadata",
       "edgeCase": false
     },
     {
@@ -70,7 +70,7 @@
         "GET /api/v1/me/registrations?page=1&pageSize=20 with Participant token",
         "Verify items reference three distinct eventId values with correct eventName and state per event"
       ],
-      "expected": "Single paginated response contains registrations from all enrolled events; each row ties registration to its event via eventId and eventName; cross-event aggregation satisfies FR-29 view registrations across events",
+      "expected": "Single paginated response contains registrations from all enrolled events; each row ties registration to its event via eventId and eventName; Waitlisted row includes waitlistPosition; cross-event aggregation satisfies FR-29 view registrations across events",
       "edgeCase": false
     },
     {
@@ -80,9 +80,10 @@
       "technique": "http-contract",
       "priority": "P0",
       "traceability": [
-        "FR-29"
+        "FR-29",
+        "AC-18c"
       ],
-      "title": "Participant filters my registrations list by registration state",
+      "title": "Participant filters my registrations list by registration state server-side",
       "preconditions": [
         "Participant with at least one Registered and one Waitlisted registration",
         "Authenticated Participant JWT"
@@ -91,7 +92,7 @@
         "GET /api/v1/me/registrations?state=Registered&page=1&pageSize=20 with Participant token",
         "GET /api/v1/me/registrations?state=Waitlisted&page=1&pageSize=20 with same token"
       ],
-      "expected": "Registered filter returns only items with state Registered; Waitlisted filter returns only Waitlisted items; total reflects filtered row count; optional state filter on GET /me/registrations per API paginated list endpoints table",
+      "expected": "Registered filter returns only items with state Registered; Waitlisted filter returns only Waitlisted items with waitlistPosition; total reflects filtered row count applied server-side before paging per AC-18c and API paginated list endpoints table",
       "edgeCase": false
     },
     {
@@ -126,16 +127,16 @@
         "FR-29",
         "FR-26"
       ],
-      "title": "My registrations list includes current and past registration states",
+      "title": "My registrations list includes current and past registration states with reason text",
       "preconditions": [
-        "Participant with active Registered registration and terminal CancelledByUser or Expired registration",
+        "Participant with active Registered registration and terminal CancelledByUser or Expired registration with reason text when applicable",
         "Authenticated Participant JWT"
       ],
       "steps": [
         "GET /api/v1/me/registrations?page=1&pageSize=20 with Participant token",
         "Locate items for active and terminal-state registrations"
       ],
-      "expected": "Both current (active) and past (terminal) registrations appear in the list with correct state values; page list requirement to list current and past registrations with status is satisfied",
+      "expected": "Both current (active) and past (terminal) registrations appear in the list with correct state values and reasonText when applicable; Waitlisted rows include waitlistPosition; page list requirement to list current and past registrations with status is satisfied",
       "edgeCase": false
     },
     {
@@ -155,11 +156,12 @@
       ],
       "steps": [
         "Navigate to My Registrations page",
-        "Verify pagination controls and registration rows are visible",
+        "Verify FilterBar with state filter and sort select per page list §My registrations",
+        "Verify pagination controls, item range summary (e.g. Showing 1–20 of N), and registration rows with status",
         "Observe network requests during initial load",
         "Click Next to advance to page 2 and observe network requests during page change"
       ],
-      "expected": "Page renders at most pageSize registration rows with event name and status; prev/next pagination controls present; initial load and page change each trigger exactly one GET /me/registrations with appropriate page parameter; no per-registration or per-event detail fan-out per page list, AC-14, and testing-plan §3",
+      "expected": "Page renders at most pageSize registration rows with event name, status, waitlistPosition when Waitlisted, and reason text when applicable; prev/next pagination controls present; initial load and page change each trigger exactly one GET /me/registrations with appropriate page parameter; no per-registration or per-event detail fan-out per page list, AC-14, and testing-plan §3",
       "edgeCase": false
     },
     {
@@ -181,7 +183,7 @@
         "Inspect registration row for check-in-eligible event",
         "Inspect registration row for feedback-eligible event"
       ],
-      "expected": "Each row displays registration status timeline or status badge; check-in quick action visible when window open and state permits; feedback quick action visible when applicable per page list My registrations requirements",
+      "expected": "Each row displays registration status timeline or status badge with reason text when applicable; waitlistPosition shown when Waitlisted; check-in quick action visible when window open and state permits; feedback quick action visible when applicable per page list My registrations requirements",
       "edgeCase": false
     },
     {
@@ -281,7 +283,8 @@
       "technique": "boundary-error",
       "priority": "P1",
       "traceability": [
-        "FR-29"
+        "FR-29",
+        "AC-18c"
       ],
       "title": "State filter with no matching registrations returns empty items",
       "preconditions": [
@@ -291,7 +294,7 @@
       "steps": [
         "GET /api/v1/me/registrations?state=Waitlisted&page=1&pageSize=20 with Participant token"
       ],
-      "expected": "HTTP 200 with items: [], total=0, and valid page metadata; filter applied before paging without leaking non-matching states",
+      "expected": "HTTP 200 with items: [], total=0, and valid page metadata; state filter applied server-side before paging without leaking non-matching states per AC-18c",
       "edgeCase": true
     },
     {
@@ -408,6 +411,115 @@
         "Measure response time and confirm items.length=20 with correct total metadata"
       ],
       "expected": "Module returns one page from a single batched database query; no N+1 per-registration or per-event follow-up queries; total reflects full participant-scoped count without loading unbounded dataset per NFR-16",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-29-019",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": [
+        "FR-29",
+        "AC-18b"
+      ],
+      "title": "Invalid sort parameter on my registrations returns 400 INVALID_INPUT",
+      "preconditions": [
+        "Authenticated Participant JWT",
+        "Participant with at least one registration"
+      ],
+      "steps": [
+        "GET /api/v1/me/registrations?sort=notAField:asc&page=1&pageSize=20 with Participant token",
+        "GET /api/v1/me/registrations?sort=updatedAt:sideways&page=1&pageSize=20 with Participant token"
+      ],
+      "expected": "Each invalid sort request returns HTTP 400 with error code INVALID_INPUT; no partial registration data returned; invalid sort field or direction rejected per AC-18b and API design §3",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-29-020",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": [
+        "FR-29"
+      ],
+      "title": "Invalid state filter value on my registrations returns 400 INVALID_INPUT",
+      "preconditions": [
+        "Authenticated Participant JWT",
+        "Participant with at least one registration"
+      ],
+      "steps": [
+        "GET /api/v1/me/registrations?state=NotAState&page=1&pageSize=20 with Participant token"
+      ],
+      "expected": "HTTP 400 with error code INVALID_INPUT; must not return registrations in unintended states; invalid filter enum rejected per listing pages §4 and API design strict input validation",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-29-021",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P1",
+      "traceability": [
+        "FR-29"
+      ],
+      "title": "GET /me/registrations with sort=requestedAt:asc returns registrations ordered by request time ascending",
+      "preconditions": [
+        "Participant with at least three registrations with known requestedAt timestamps",
+        "Authenticated Participant JWT"
+      ],
+      "steps": [
+        "GET /api/v1/me/registrations?sort=requestedAt:asc&page=1&pageSize=20 with Participant token",
+        "Verify items are ordered by requestedAt ascending"
+      ],
+      "expected": "HTTP 200; items ordered by requestedAt ascending; sort query param accepted as allowed alternative to default updatedAt:desc per listing matrix and page list sort control",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-29-022",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": [
+        "FR-29",
+        "AC-18c"
+      ],
+      "title": "Changing My Registrations state filter or sort resets pagination to page 1",
+      "preconditions": [
+        "Participant on /registrations navigated to page 2 or higher",
+        "State filter and sort select controls available per page list"
+      ],
+      "steps": [
+        "Navigate to page 2 of My Registrations results",
+        "Change registration state filter or sort option",
+        "Observe pagination state and network request query parameters"
+      ],
+      "expected": "Filter or sort change resets displayed page to 1; subsequent GET /me/registrations uses page=1 with updated state and sort parameters applied server-side per AC-18c and listing-pages §3 shared UX; client does not retain stale page index on new result set",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-29-023",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": [
+        "FR-29"
+      ],
+      "title": "My registrations row includes gating context fields for rule-gated quick actions",
+      "preconditions": [
+        "Participant with Registered registration on RegistrationOpen event with configured check-in and feedback windows",
+        "PostgreSQL test database with seeded event and registration",
+        "Participant actor context"
+      ],
+      "steps": [
+        "Invoke my-registrations list service for participant with page=1, pageSize=20",
+        "Locate item for the seeded registration",
+        "Inspect eventState, checkinOpenAt, checkinCloseAt, feedbackOpenAt, feedbackCloseAt, waitlistPosition, and reasonText fields"
+      ],
+      "expected": "Row includes eventState, check-in and feedback window timestamps, waitlistPosition (null when not Waitlisted), and reasonText (null when not applicable); gating context enables rule-gated quick actions per FR-29 row contract without per-row follow-up queries",
       "edgeCase": false
     }
   ]
