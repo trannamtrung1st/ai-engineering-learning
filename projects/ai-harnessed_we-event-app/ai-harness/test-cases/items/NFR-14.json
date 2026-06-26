@@ -2,12 +2,13 @@
   "productItemId": "NFR-14",
   "version": 1,
   "docFingerprint": "sha256:7dc141c77359e102a4e8c2f6ef581229d07bc466b6054a0c3af84404dffbe829",
-  "generatedAt": "2026-06-26T05:40:43Z",
+  "generatedAt": "2026-06-26T13:06:57Z",
   "cases": [
     {
       "id": "TC-NFR-14-001",
       "category": "functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
       "traceability": ["NFR-14", "FR-02", "FR-03", "FR-18"],
       "title": "OrganizerAdmin configures full EventRuleConfig on draft event via PATCH API",
@@ -19,13 +20,14 @@
         "PATCH /api/v1/events/{eventId} with ruleConfig payload: capacity, waitlistEnabled, registrationOpenAt/registrationCloseAt, checkinOpenAt/checkinCloseAt, feedbackRequired, feedbackOpenAt/feedbackCloseAt",
         "GET /api/v1/events/{eventId} with OrganizerAdmin Authorization bearer"
       ],
-      "expected": "HTTP 200; GET response reflects all submitted ruleConfig fields; organizer updates event-level business configuration through standard REST API without database scripts or deployment steps",
+      "expected": "HTTP 200 on PATCH; GET 200 reflects all submitted ruleConfig fields; organizer updates event-level business configuration through standard REST API without database scripts or deployment steps",
       "edgeCase": false
     },
     {
       "id": "TC-NFR-14-002",
       "category": "functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
       "traceability": ["NFR-14", "FR-02"],
       "title": "OrganizerAdmin updates event capacity during Draft phase",
@@ -37,13 +39,14 @@
         "PATCH /api/v1/events/{eventId} with ruleConfig.capacity 100",
         "GET /api/v1/events/{eventId} and inspect ruleConfig.capacity and version"
       ],
-      "expected": "Capacity updated to 100 in persisted EventRuleConfig; change applied through application API only, satisfying NFR-14 operability for capacity configuration per FR-02",
+      "expected": "PATCH 200; capacity updated to 100 in persisted EventRuleConfig; change applied through application API only, satisfying NFR-14 operability for capacity configuration per FR-02",
       "edgeCase": false
     },
     {
       "id": "TC-NFR-14-003",
       "category": "functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
       "traceability": ["NFR-14", "FR-03", "FR-18"],
       "title": "OrganizerAdmin toggles waitlist and feedback policy without technical intervention",
@@ -55,24 +58,26 @@
         "PATCH /api/v1/events/{eventId} with ruleConfig waitlistEnabled true and feedbackRequired true",
         "GET /api/v1/events/{eventId} with admin token"
       ],
-      "expected": "ruleConfig.waitlistEnabled and ruleConfig.feedbackRequired both true in response; business policy fields updated via standard organizer API per workflow A EventRuleConfig configuration step",
+      "expected": "PATCH 200; ruleConfig.waitlistEnabled and ruleConfig.feedbackRequired both true in GET response; business policy fields updated via standard organizer API per workflow A EventRuleConfig configuration step",
       "edgeCase": false
     },
     {
       "id": "TC-NFR-14-004",
       "category": "functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["NFR-14", "FR-02", "FR-03"],
       "title": "EventRuleConfig version increments on each critical config update",
       "preconditions": [
         "Draft event with EventRuleConfig version 1",
-        "OrganizerAdmin actor context"
+        "OrganizerAdmin actor context",
+        "Postgres database running per docker-compose local runtime"
       ],
       "steps": [
         "Invoke eventService.update with ruleConfig capacity change",
         "Invoke second update changing registrationOpenAt",
-        "Read event_rule_configs row for eventId"
+        "Read event_rule_configs row for eventId in Postgres"
       ],
       "expected": "version increments from 1 to 2 then 3 on successive updates; configuration version history trackable without manual schema intervention per event_rule_configs.version constraint",
       "edgeCase": false
@@ -81,6 +86,7 @@
       "id": "TC-NFR-14-005",
       "category": "functional",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P0",
       "traceability": ["NFR-14", "FR-02", "FR-03", "FR-18"],
       "title": "OrganizerAdmin completes multi-section event setup form without technical steps",
@@ -100,6 +106,7 @@
       "id": "TC-NFR-14-006",
       "category": "functional",
       "layer": "e2e",
+      "technique": "state-transition",
       "priority": "P1",
       "traceability": ["NFR-14", "FR-08", "FR-09"],
       "title": "Updated waitlist policy takes effect on subsequent registrations",
@@ -119,6 +126,7 @@
       "id": "TC-NFR-14-007",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["NFR-14"],
       "title": "EventRuleConfig persisted in Postgres via application service not ad-hoc SQL",
@@ -138,6 +146,7 @@
       "id": "TC-NFR-14-008",
       "category": "non-functional",
       "layer": "unit",
+      "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["NFR-14", "NFR-13"],
       "title": "Cross-field window validator returns actionable error for conflicting ruleConfig times",
@@ -156,6 +165,7 @@
       "id": "TC-NFR-14-009",
       "category": "non-functional",
       "layer": "e2e",
+      "technique": "flow-c",
       "priority": "P1",
       "traceability": ["NFR-14", "AC-11", "BR-22"],
       "title": "Post-registration-open rule config update remains self-service for OrganizerAdmin with audit trail",
@@ -167,13 +177,14 @@
         "PATCH /api/v1/events/{eventId} with ruleConfig capacity increase, reasonCode, and reasonText",
         "GET /api/v1/events/{eventId}/audit-logs?entityType=EventRuleConfig with admin token"
       ],
-      "expected": "Config update succeeds without developer intervention; audit log entry event.rule_config.updated persisted with before/after diff; governance guardrails do not block operable admin self-service per testing plan Flow C",
+      "expected": "PATCH 200; config update succeeds without developer intervention; audit log entry event.rule_config.updated persisted with before/after diff; governance guardrails do not block operable admin self-service per testing plan Flow C",
       "edgeCase": false
     },
     {
       "id": "TC-NFR-14-010",
       "category": "edge",
       "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["NFR-14", "BR-21"],
       "title": "OrganizerStaff blocked from event rule config PATCH",
@@ -192,6 +203,7 @@
       "id": "TC-NFR-14-011",
       "category": "edge",
       "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["NFR-14", "BR-21"],
       "title": "Participant blocked from event rule config PATCH",
@@ -208,6 +220,7 @@
       "id": "TC-NFR-14-012",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["NFR-14", "BR-22", "AC-11"],
       "title": "Post-open critical rule config change rejected without mandatory reason",
@@ -225,6 +238,7 @@
       "id": "TC-NFR-14-013",
       "category": "edge",
       "layer": "integration",
+      "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["NFR-14", "BR-03", "FR-02"],
       "title": "Capacity reduction below current Registered count is rejected",
@@ -234,7 +248,7 @@
       ],
       "steps": [
         "Attempt PATCH /api/v1/events/{eventId} setting ruleConfig.capacity to 10",
-        "Verify event_rule_configs.capacity remains 20"
+        "Verify event_rule_configs.capacity remains 20 in Postgres"
       ],
       "expected": "HTTP 422 semantic rule violation with user-safe message; capacity not reduced below active Registered count; prevents misconfigured capacity per BR-03 while allowing safe config edits through standard API",
       "edgeCase": true
@@ -243,6 +257,7 @@
       "id": "TC-NFR-14-014",
       "category": "edge",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["NFR-14", "NFR-13"],
       "title": "Event setup form preserves entered values after cross-field validation failure",
@@ -262,6 +277,7 @@
       "id": "TC-NFR-14-015",
       "category": "edge",
       "layer": "unit",
+      "technique": "rbac-negative",
       "priority": "P1",
       "traceability": ["NFR-14", "BR-21"],
       "title": "assertEventRuleConfigChangePermission rejects non-admin roles",
