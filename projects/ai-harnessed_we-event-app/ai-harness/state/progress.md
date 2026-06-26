@@ -369,3 +369,6 @@ Append-only log of completed iterations.
 - 2026-06-26T18:06:20Z | NFR-17 | testgen_passed
 - 2026-06-26T18:08:16Z | NFR-18 | testgen_passed
 - 2026-06-26T18:15:28Z | repo-monorepo-bootstrap | passed
+- 2026-06-26T18:26:49Z | docker-compose-db | review_failed
+- 2026-06-26T18:34:54Z | docker-compose-db | review_failed
+- 2026-06-26T18:40:49Z | docker-compose-db | passed

@@ -356,3 +356,6 @@ Lessons learned across harness iterations. Read before every implementer session
 - [NFR-18] Docs changed — test cases need review (index current=false; fingerprint=sha256:09e78b258de4c46281d1d59df150219c140d7f6f90933662ab83c157d8a7910b)
 - [FR-09] TestGen agent did not emit TESTGEN_DONE
 - [FR-34] TestGen agent did not emit TESTGEN_DONE
+- [docker-compose-db] AI review failed — see 20260626T181528Z-review.json
+- [docker-compose-db] AI review failed — see 20260626T182649Z-review.json
+- [docker-compose-db] Do not cite generated case IDs (e.g. TC-NFR-02-019) on infra smoke tests; map each case ID to its real scenario in the owning module test file (waitlist concurrency → registration.integration.test.ts).

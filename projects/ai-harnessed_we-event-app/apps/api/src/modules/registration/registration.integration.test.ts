@@ -280,6 +280,76 @@ describe("registration integration (NFR-02, FR-31)", () => {
     assert.equal(waitlist.items[0]?.position, 2);
   });
 
+  it("TC-NFR-02-019 / AC-02g / NFR-02 / BR-08: concurrent cancel handlers promote one waitlisted participant without queue corruption", async () => {
+    const event = await createRegistrationOpenEvent({
+      capacity: 1,
+      waitlistEnabled: true,
+    });
+
+    const registeredParticipant = await newParticipantId();
+    const firstWaitlistedParticipant = await newParticipantId();
+    const secondWaitlistedParticipant = await newParticipantId();
+
+    const registered = await registrationService.register(
+      event.id,
+      registeredParticipant,
+      actorContext(registeredParticipant),
+    );
+    const firstWaitlisted = await registrationService.register(
+      event.id,
+      firstWaitlistedParticipant,
+      actorContext(firstWaitlistedParticipant),
+    );
+    const secondWaitlisted = await registrationService.register(
+      event.id,
+      secondWaitlistedParticipant,
+      actorContext(secondWaitlistedParticipant),
+    );
+
+    assert.equal(registered.state, "Registered");
+    assert.equal(firstWaitlisted.state, "Waitlisted");
+    assert.equal(firstWaitlisted.waitlistPosition, 1);
+    assert.equal(secondWaitlisted.state, "Waitlisted");
+    assert.equal(secondWaitlisted.waitlistPosition, 2);
+
+    const cancelContext = actorContext(registeredParticipant);
+    const cancelResults = await Promise.allSettled(
+      Array.from({ length: 8 }, () =>
+        registrationService.cancel(
+          event.id,
+          registered.registrationId,
+          cancelContext,
+        ),
+      ),
+    );
+
+    const fulfilled = cancelResults.filter((result) => result.status === "fulfilled");
+    assert.ok(fulfilled.length >= 1, "at least one concurrent cancel should succeed");
+
+    const registeredCount = await countSeatHolders(event.id, getPool());
+    assert.ok(
+      registeredCount <= 1,
+      `registered count ${registeredCount} must not exceed capacity 1`,
+    );
+    assert.equal(registeredCount, 1);
+
+    const promoted = await findRegistrationById(firstWaitlisted.registrationId);
+    assert.equal(promoted?.state, "Registered");
+
+    const stillWaitlisted = await findRegistrationById(
+      secondWaitlisted.registrationId,
+    );
+    assert.equal(stillWaitlisted?.state, "Waitlisted");
+
+    const waitlist = await registrationService.listWaitlist(event.id, {
+      page: "1",
+      pageSize: "10",
+    });
+    assert.equal(waitlist.items.length, 1);
+    assert.equal(waitlist.items[0]?.registrationId, secondWaitlisted.registrationId);
+    assert.equal(waitlist.items[0]?.position, 2);
+  });
+
   it("AC-13 / FR-31 / NFR-16: paginated registrations and waitlist lists", async () => {
     const event = await createRegistrationOpenEvent({
       capacity: 2,
