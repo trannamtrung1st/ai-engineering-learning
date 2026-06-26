@@ -1,7 +1,7 @@
 {
   "productItemId": "FR-18",
   "version": 1,
-  "docFingerprint": "sha256:c8464a2daaed16ecde6f5b245103fd0bd13f2d0d45cf241a272a9e3647b9b40e",
+  "docFingerprint": "sha256:107397bd83cd034f847adc3aa5c281b5205685eb1f8283558c1614364f516122",
   "generatedAt": "2026-06-26T12:22:20Z",
   "cases": [
     {
@@ -10,7 +10,9 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-18"],
+      "traceability": [
+        "FR-18"
+      ],
       "title": "Organizer Admin configures feedback as mandatory during event creation in Draft",
       "preconditions": [
         "Authenticated OrganizerAdmin actor with organization scope",
@@ -31,7 +33,9 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-18"],
+      "traceability": [
+        "FR-18"
+      ],
       "title": "POST /events persists feedbackRequired true and GET detail returns mandatory policy",
       "preconditions": [
         "OrganizerAdmin JWT scoped to the organization",
@@ -50,7 +54,9 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-18"],
+      "traceability": [
+        "FR-18"
+      ],
       "title": "Organizer Admin configures feedback as optional during event creation",
       "preconditions": [
         "Authenticated OrganizerAdmin actor with organization scope",
@@ -70,7 +76,9 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["FR-18"],
+      "traceability": [
+        "FR-18"
+      ],
       "title": "Organizer Admin updates feedbackRequired on Draft event before registration opens",
       "preconditions": [
         "Existing event in Draft state with feedbackRequired false",
@@ -90,7 +98,9 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-18"],
+      "traceability": [
+        "FR-18"
+      ],
       "title": "Organizer Admin toggles mandatory/optional feedback in event setup Section 5",
       "preconditions": [
         "Web app running with organizer authenticated as OrganizerAdmin",
@@ -110,7 +120,12 @@
       "layer": "integration",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["FR-18", "BR-14", "BR-18", "AC-09"],
+      "traceability": [
+        "FR-18",
+        "BR-14",
+        "BR-18",
+        "AC-09"
+      ],
       "title": "Testing-plan §3 eligibility pass/fail reflects mandatory feedbackRequired config",
       "preconditions": [
         "Event completed with ruleConfig.feedbackRequired true",
@@ -130,7 +145,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-18", "BR-14", "BR-17"],
+      "traceability": [
+        "FR-18",
+        "BR-14",
+        "BR-17"
+      ],
       "title": "Optional feedback config does not block eligibility when feedback absent",
       "preconditions": [
         "Event completed with ruleConfig.feedbackRequired false",
@@ -150,7 +169,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-18", "BR-14", "AC-09"],
+      "traceability": [
+        "FR-18",
+        "BR-14",
+        "AC-09"
+      ],
       "title": "GET eligibility/me reflects mandatory feedback policy from event rule config",
       "preconditions": [
         "Two E2E fixture events completed with identical attendance but different feedbackRequired (true vs false)",
@@ -170,7 +193,11 @@
       "layer": "e2e",
       "technique": "flow-a",
       "priority": "P0",
-      "traceability": ["FR-18", "BR-14", "AC-09"],
+      "traceability": [
+        "FR-18",
+        "BR-14",
+        "AC-09"
+      ],
       "title": "Flow A lifecycle with mandatory feedbackRequired blocks eligibility without submission",
       "preconditions": [
         "E2E Flow A progressed: draft created with feedbackRequired true, published, registered, checked in, event completed",
@@ -190,7 +217,11 @@
       "layer": "integration",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-18", "BR-21", "FR-25"],
+      "traceability": [
+        "FR-18",
+        "BR-21",
+        "FR-25"
+      ],
       "title": "OrganizerStaff cannot change feedbackRequired policy",
       "preconditions": [
         "Event in Draft or Published state",
@@ -210,7 +241,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-18", "BR-21", "FR-25"],
+      "traceability": [
+        "FR-18",
+        "BR-21",
+        "FR-25"
+      ],
       "title": "Participant cannot modify event feedback policy via PATCH",
       "preconditions": [
         "Published event with feedbackRequired false",
@@ -229,7 +264,11 @@
       "layer": "integration",
       "technique": "flow-c",
       "priority": "P0",
-      "traceability": ["FR-18", "BR-22", "AC-11"],
+      "traceability": [
+        "FR-18",
+        "BR-22",
+        "AC-11"
+      ],
       "title": "Changing feedbackRequired after registration opens requires audit with reason",
       "preconditions": [
         "Event in RegistrationOpen state with feedbackRequired false",
@@ -248,7 +287,9 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-18"],
+      "traceability": [
+        "FR-18"
+      ],
       "title": "Reject feedback policy save when feedback window has openAt >= closeAt",
       "preconditions": [
         "OrganizerAdmin JWT",
@@ -268,7 +309,10 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P1",
-      "traceability": ["FR-18", "BR-22"],
+      "traceability": [
+        "FR-18",
+        "BR-22"
+      ],
       "title": "Toggle feedbackRequired from mandatory to optional after registration open increments config version",
       "preconditions": [
         "Event RegistrationOpen with feedbackRequired true and config version N",
@@ -287,7 +331,10 @@
       "layer": "integration",
       "technique": "concurrency",
       "priority": "P1",
-      "traceability": ["FR-18", "BR-22"],
+      "traceability": [
+        "FR-18",
+        "BR-22"
+      ],
       "title": "Concurrent feedbackRequired updates after registration open produce consistent config",
       "preconditions": [
         "Event RegistrationOpen with feedbackRequired false",
@@ -306,7 +353,11 @@
       "layer": "e2e",
       "technique": "flow-c",
       "priority": "P1",
-      "traceability": ["FR-18", "AC-11", "BR-22"],
+      "traceability": [
+        "FR-18",
+        "AC-11",
+        "BR-22"
+      ],
       "title": "Critical feedbackRequired change after registration open writes immutable audit record",
       "preconditions": [
         "Event RegistrationOpen",
@@ -325,7 +376,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["FR-18", "BR-14", "BR-18"],
+      "traceability": [
+        "FR-18",
+        "BR-14",
+        "BR-18"
+      ],
       "title": "Eligibility evaluation order applies feedbackRequired before final result persist",
       "preconditions": [
         "Fixed clock and seeded fixture per testing plan deterministic controls",
@@ -344,7 +399,9 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-18"],
+      "traceability": [
+        "FR-18"
+      ],
       "title": "Feedback completion tracker shows mandatory outstanding count when feedbackRequired true",
       "preconditions": [
         "OrganizerAdmin logged in on operational dashboard for an in-progress or completed event",
@@ -364,7 +421,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P1",
-      "traceability": ["FR-18", "FR-22"],
+      "traceability": [
+        "FR-18",
+        "FR-22"
+      ],
       "title": "Event dashboard exposes configured feedback policy for organizer review",
       "preconditions": [
         "Event with feedbackRequired true and valid feedback window",

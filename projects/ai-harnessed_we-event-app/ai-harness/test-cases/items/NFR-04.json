@@ -1,7 +1,7 @@
 {
   "productItemId": "NFR-04",
   "version": 1,
-  "docFingerprint": "sha256:165db3bf1b6e2d69c0247f57cf57e1ee618773a7367cf603d879d37786d9cb38",
+  "docFingerprint": "sha256:66c6c2a085e264c591d98e9f94a7c01e4a22963048aa3bd8ad16e51948bbc052",
   "generatedAt": "2026-06-26T14:30:00Z",
   "cases": [
     {
@@ -10,7 +10,11 @@
       "layer": "e2e",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["NFR-04", "AC-01", "FR-07"],
+      "traceability": [
+        "NFR-04",
+        "AC-01",
+        "FR-07"
+      ],
       "title": "POST registration succeeds with quick response under normal single-user load",
       "preconditions": [
         "Published event RegistrationOpen with available seats",
@@ -32,7 +36,12 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["NFR-04", "AC-01", "FR-07", "BR-03"],
+      "traceability": [
+        "NFR-04",
+        "AC-01",
+        "FR-07",
+        "BR-03"
+      ],
       "title": "registrationService.register completes promptly with correct state on Postgres",
       "preconditions": [
         "Event RegistrationOpen with seats available",
@@ -53,7 +62,12 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["NFR-04", "AC-01", "FR-06", "FR-07"],
+      "traceability": [
+        "NFR-04",
+        "AC-01",
+        "FR-06",
+        "FR-07"
+      ],
       "title": "POST registrations p95 latency under normal load",
       "preconditions": [
         "Event RegistrationOpen with moderate existing registration volume (well below capacity)",
@@ -74,7 +88,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["NFR-04", "FR-10", "AC-01"],
+      "traceability": [
+        "NFR-04",
+        "FR-10",
+        "AC-01"
+      ],
       "title": "GET registration-status p95 latency under normal load",
       "preconditions": [
         "Event with moderate registration volume",
@@ -95,7 +113,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P1",
-      "traceability": ["NFR-04", "FR-11", "AC-01"],
+      "traceability": [
+        "NFR-04",
+        "FR-11",
+        "AC-01"
+      ],
       "title": "POST cancel registration responds within acceptable latency under normal load",
       "preconditions": [
         "Registered participants eligible to cancel before CancellationDeadline",
@@ -116,7 +138,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["NFR-04", "BR-03", "NFR-02"],
+      "traceability": [
+        "NFR-04",
+        "BR-03",
+        "NFR-02"
+      ],
       "title": "Registration transactional path avoids N+1 queries that would slow normal-load responses",
       "preconditions": [
         "Registration module wired to Postgres adapter per docker-compose local runtime policy",
@@ -137,7 +163,11 @@
       "layer": "e2e",
       "technique": "scenario-matrix",
       "priority": "P1",
-      "traceability": ["NFR-04", "AC-02", "FR-08"],
+      "traceability": [
+        "NFR-04",
+        "AC-02",
+        "FR-08"
+      ],
       "title": "Waitlisted registration POST responds within acceptable latency",
       "preconditions": [
         "Event at capacity with waitlistEnabled true",
@@ -157,7 +187,12 @@
       "layer": "e2e",
       "technique": "concurrency",
       "priority": "P1",
-      "traceability": ["NFR-04", "AC-04", "BR-03", "R-01"],
+      "traceability": [
+        "NFR-04",
+        "AC-04",
+        "BR-03",
+        "R-01"
+      ],
       "title": "Moderate concurrent registration burst maintains acceptable p95 without peak-spike degradation",
       "preconditions": [
         "Event RegistrationOpen with capacity comfortably above concurrent attempt count",
@@ -178,7 +213,12 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["NFR-04", "AC-03", "BR-01", "FR-06"],
+      "traceability": [
+        "NFR-04",
+        "AC-03",
+        "BR-01",
+        "FR-06"
+      ],
       "title": "Duplicate registration rejection responds quickly without lock-induced delay",
       "preconditions": [
         "Participant with existing active Registered registration for the event",
@@ -197,7 +237,12 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["NFR-04", "AC-04", "BR-03", "NFR-02"],
+      "traceability": [
+        "NFR-04",
+        "AC-04",
+        "BR-03",
+        "NFR-02"
+      ],
       "title": "Registration at near-capacity event responds within acceptable latency",
       "preconditions": [
         "Event with capacity N and exactly N-1 Registered participants",
@@ -217,7 +262,11 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P2",
-      "traceability": ["NFR-04", "AC-02", "FR-08"],
+      "traceability": [
+        "NFR-04",
+        "AC-02",
+        "FR-08"
+      ],
       "title": "Registration rejection when full without waitlist responds quickly",
       "preconditions": [
         "Event at capacity with waitlistEnabled false",
@@ -237,7 +286,12 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["NFR-04", "NFR-13", "AC-01", "FR-10"],
+      "traceability": [
+        "NFR-04",
+        "NFR-13",
+        "AC-01",
+        "FR-10"
+      ],
       "title": "Participant registration UI provides immediate feedback under normal campus-network conditions",
       "preconditions": [
         "Web and API running locally or in dev preview stack",
@@ -258,7 +312,9 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["NFR-04"],
+      "traceability": [
+        "NFR-04"
+      ],
       "title": "Registration performance assertions execute against Compose Postgres not in-memory stores",
       "preconditions": [
         "npm run aih:dev:db:up has started healthy db service",
@@ -278,7 +334,11 @@
       "layer": "e2e",
       "technique": "pagination",
       "priority": "P1",
-      "traceability": ["NFR-04", "FR-29", "AC-16"],
+      "traceability": [
+        "NFR-04",
+        "FR-29",
+        "AC-16"
+      ],
       "title": "GET my registrations responds within acceptable latency for registration status browsing",
       "preconditions": [
         "Authenticated participant with multiple registrations across events",
@@ -299,7 +359,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["NFR-04", "AC-15", "NFR-07"],
+      "traceability": [
+        "NFR-04",
+        "AC-15",
+        "NFR-07"
+      ],
       "title": "Unauthenticated POST registration returns 401 quickly without slow auth probe",
       "preconditions": [
         "Published event RegistrationOpen with available seats",

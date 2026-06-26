@@ -1,7 +1,7 @@
 {
   "productItemId": "FR-29",
   "version": 1,
-  "docFingerprint": "sha256:5acfc070b54f77ab2ad0b419735f860b390f8a4b88a52809f83094992e0b94d3",
+  "docFingerprint": "sha256:0de96fd30f2643dda5e25a994fcb22af16db2170ec550701a09657db14127a0b",
   "generatedAt": "2026-06-26T12:40:13Z",
   "cases": [
     {
@@ -10,7 +10,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-29", "FR-31", "AC-13"],
+      "traceability": [
+        "FR-29",
+        "FR-31",
+        "AC-13"
+      ],
       "title": "GET /api/v1/me/registrations returns HTTP 200 paginated envelope with full page metadata",
       "preconditions": [
         "Participant registered for at least three events in varied states",
@@ -29,7 +33,11 @@
       "layer": "e2e",
       "technique": "pagination",
       "priority": "P0",
-      "traceability": ["FR-29", "AC-13", "FR-31"],
+      "traceability": [
+        "FR-29",
+        "AC-13",
+        "FR-31"
+      ],
       "title": "Participant navigates to page 2 of my registrations list",
       "preconditions": [
         "Participant with at least 21 registrations across events (exceeds default pageSize of 20)",
@@ -50,7 +58,9 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-29"],
+      "traceability": [
+        "FR-29"
+      ],
       "title": "My registrations list aggregates registrations across multiple events",
       "preconditions": [
         "Participant registered for Event A (Registered) and Event B (Waitlisted) and Event C (CancelledByUser)",
@@ -69,7 +79,9 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-29"],
+      "traceability": [
+        "FR-29"
+      ],
       "title": "Participant filters my registrations list by registration state",
       "preconditions": [
         "Participant with at least one Registered and one Waitlisted registration",
@@ -88,7 +100,10 @@
       "layer": "e2e",
       "technique": "pagination",
       "priority": "P1",
-      "traceability": ["FR-29", "AC-13"],
+      "traceability": [
+        "FR-29",
+        "AC-13"
+      ],
       "title": "My registrations default sort orders by updatedAt descending",
       "preconditions": [
         "Participant with at least three registrations with known updatedAt timestamps",
@@ -107,7 +122,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-29", "FR-26"],
+      "traceability": [
+        "FR-29",
+        "FR-26"
+      ],
       "title": "My registrations list includes current and past registration states",
       "preconditions": [
         "Participant with active Registered registration and terminal CancelledByUser or Expired registration",
@@ -126,7 +144,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["FR-29", "AC-14"],
+      "traceability": [
+        "FR-29",
+        "AC-14"
+      ],
       "title": "My Registrations page loads one page without per-card fetch storms",
       "preconditions": [
         "Participant with more than 20 registrations across events",
@@ -147,7 +168,9 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["FR-29"],
+      "traceability": [
+        "FR-29"
+      ],
       "title": "My Registrations page shows status timeline and contextual quick actions",
       "preconditions": [
         "Participant with Registered registration eligible for check-in and Attended registration eligible for feedback",
@@ -167,7 +190,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-29", "FR-31", "AC-13"],
+      "traceability": [
+        "FR-29",
+        "FR-31",
+        "AC-13"
+      ],
       "title": "My registrations service returns paginated envelope with total matching DB row count for participant scope",
       "preconditions": [
         "Known count of registrations for participant (e.g. 25 total across events)",
@@ -189,7 +216,10 @@
       "layer": "e2e",
       "technique": "pagination",
       "priority": "P0",
-      "traceability": ["FR-29", "AC-13"],
+      "traceability": [
+        "FR-29",
+        "AC-13"
+      ],
       "title": "My registrations page beyond last page returns empty items with valid metadata",
       "preconditions": [
         "Participant with five registrations (totalPages=1 at default pageSize 20)",
@@ -208,7 +238,9 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-29"],
+      "traceability": [
+        "FR-29"
+      ],
       "title": "Invalid pagination parameters on my registrations return 400 INVALID_PAGINATION",
       "preconditions": [
         "Authenticated Participant JWT",
@@ -228,7 +260,9 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-29"],
+      "traceability": [
+        "FR-29"
+      ],
       "title": "Participant with no registrations receives empty paginated envelope",
       "preconditions": [
         "Newly registered participant with zero event registrations",
@@ -246,7 +280,9 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-29"],
+      "traceability": [
+        "FR-29"
+      ],
       "title": "State filter with no matching registrations returns empty items",
       "preconditions": [
         "Participant with only Registered registrations (no Waitlisted)",
@@ -264,7 +300,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P2",
-      "traceability": ["FR-29", "AC-15"],
+      "traceability": [
+        "FR-29",
+        "AC-15"
+      ],
       "title": "Unauthenticated my registrations API request returns 401",
       "preconditions": [
         "API running",
@@ -282,7 +321,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-29", "AC-14"],
+      "traceability": [
+        "FR-29",
+        "AC-14"
+      ],
       "title": "My Registrations empty state shown when participant has no registrations",
       "preconditions": [
         "Authenticated participant with zero registrations",
@@ -301,7 +343,11 @@
       "layer": "e2e",
       "technique": "pagination",
       "priority": "P0",
-      "traceability": ["FR-29", "AC-13", "NFR-16"],
+      "traceability": [
+        "FR-29",
+        "AC-13",
+        "NFR-16"
+      ],
       "title": "My registrations never returns more than pageSize items per request",
       "preconditions": [
         "Participant with more than 500 registrations across events (or maximum practical seed count exceeding pageSize)",
@@ -321,7 +367,10 @@
       "layer": "integration",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["FR-29", "AC-14"],
+      "traceability": [
+        "FR-29",
+        "AC-14"
+      ],
       "title": "My registrations paginated list served by single batched query without N+1 fan-out per testing-plan §3",
       "preconditions": [
         "Participant with registrations across multiple events",
@@ -342,7 +391,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["FR-29", "NFR-16", "FR-31"],
+      "traceability": [
+        "FR-29",
+        "NFR-16",
+        "FR-31"
+      ],
       "title": "My registrations repository executes single paginated SELECT with JOIN at DB boundary for large participant scope",
       "preconditions": [
         "Database seeded with >500 registrations for one participant across events",

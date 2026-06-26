@@ -1,7 +1,7 @@
 {
   "productItemId": "FR-06",
   "version": 1,
-  "docFingerprint": "sha256:61772db2f0be7d5f91f9eccefef8b9d85ce957dbd55d47d9d14f933847b053f4",
+  "docFingerprint": "sha256:027175175545d05eacf412663c601ddc7b622e4741a2ff40633c8e332b7bd6aa",
   "generatedAt": "2026-06-26T12:02:39Z",
   "cases": [
     {
@@ -10,7 +10,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-06", "BR-01"],
+      "traceability": [
+        "FR-06",
+        "BR-01"
+      ],
       "title": "Participant first registration for an event succeeds with single active row",
       "preconditions": [
         "Event is in RegistrationOpen state with available seats",
@@ -31,7 +34,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-06", "AC-03"],
+      "traceability": [
+        "FR-06",
+        "AC-03"
+      ],
       "title": "POST registrations succeeds once for authenticated participant",
       "preconditions": [
         "Published event with registration opened and available capacity",
@@ -51,7 +57,11 @@
       "layer": "integration",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["FR-06", "BR-01", "AC-03"],
+      "traceability": [
+        "FR-06",
+        "BR-01",
+        "AC-03"
+      ],
       "title": "Duplicate registration attempt blocked per testing-plan §3",
       "preconditions": [
         "Event RegistrationOpen with available seats and active registration window",
@@ -70,7 +80,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-06", "AC-03", "FR-10"],
+      "traceability": [
+        "FR-06",
+        "AC-03",
+        "FR-10"
+      ],
       "title": "Duplicate POST registrations returns 409 with typed error envelope",
       "preconditions": [
         "Participant successfully POST /api/v1/events/{eventId}/registrations once",
@@ -89,7 +103,10 @@
       "layer": "unit",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-06", "BR-01"],
+      "traceability": [
+        "FR-06",
+        "BR-01"
+      ],
       "title": "Registration dedupe validator rejects existing active registration row",
       "preconditions": [
         "Existing registration row with active state Registered (or Waitlisted, CheckedIn per isActiveRegistrationState)"
@@ -106,7 +123,10 @@
       "layer": "unit",
       "technique": "state-transition",
       "priority": "P1",
-      "traceability": ["FR-06", "BR-01"],
+      "traceability": [
+        "FR-06",
+        "BR-01"
+      ],
       "title": "Dedupe validator permits registration when no active row exists",
       "preconditions": [
         "No existing registration row (null), or existing row in terminal inactive state such as CancelledByUser or Rejected"
@@ -123,7 +143,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-06", "AC-03"],
+      "traceability": [
+        "FR-06",
+        "AC-03"
+      ],
       "title": "Participant UI prevents duplicate registration with clear feedback",
       "preconditions": [
         "Participant logged in and already Registered for an open event",
@@ -143,7 +166,10 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-06", "BR-01"],
+      "traceability": [
+        "FR-06",
+        "BR-01"
+      ],
       "title": "Duplicate blocked when participant is already Waitlisted",
       "preconditions": [
         "Event is full with waitlistEnabled true",
@@ -161,7 +187,10 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-06", "BR-01"],
+      "traceability": [
+        "FR-06",
+        "BR-01"
+      ],
       "title": "Duplicate blocked when participant is already CheckedIn",
       "preconditions": [
         "Participant has active registration in CheckedIn state for the event",
@@ -179,7 +208,11 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["FR-06", "BR-01", "FR-11"],
+      "traceability": [
+        "FR-06",
+        "BR-01",
+        "FR-11"
+      ],
       "title": "Re-registration allowed after valid cancellation releases inactive state",
       "preconditions": [
         "Participant previously Registered then cancelled (CancelledByUser) before deadline per BR-07",
@@ -199,7 +232,10 @@
       "layer": "integration",
       "technique": "concurrency",
       "priority": "P0",
-      "traceability": ["FR-06", "BR-01"],
+      "traceability": [
+        "FR-06",
+        "BR-01"
+      ],
       "title": "Concurrent duplicate registration requests from same participant yield single active row",
       "preconditions": [
         "Event RegistrationOpen with available seats",
@@ -218,7 +254,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-06", "BR-01"],
+      "traceability": [
+        "FR-06",
+        "BR-01"
+      ],
       "title": "Duplicate POST with new Idempotency-Key still rejected",
       "preconditions": [
         "Participant successfully registered via POST with Idempotency-Key K1",
@@ -236,7 +275,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["FR-06", "BR-01"],
+      "traceability": [
+        "FR-06",
+        "BR-01"
+      ],
       "title": "Same participant may register for different events without duplicate conflict",
       "preconditions": [
         "Two distinct events EventA and EventB both RegistrationOpen with available seats",
@@ -255,7 +297,10 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["FR-06", "BR-01"],
+      "traceability": [
+        "FR-06",
+        "BR-01"
+      ],
       "title": "acceptRegistration state transition guard rejects when duplicate active registration exists",
       "preconditions": [
         "Registration state machine transition acceptRegistration invoked",
@@ -274,7 +319,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-06", "BR-01", "AC-03"],
+      "traceability": [
+        "FR-06",
+        "BR-01",
+        "AC-03"
+      ],
       "title": "Dedupe validation runs before capacity assignment in registration pipeline",
       "preconditions": [
         "Event full with waitlist disabled (would otherwise reject with REGISTRATION_REJECTED_FULL)",
@@ -293,7 +342,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-06", "BR-01", "AC-03"],
+      "traceability": [
+        "FR-06",
+        "BR-01",
+        "AC-03"
+      ],
       "title": "P0 invariant: at most one active registration per participant per event in persistence",
       "preconditions": [
         "Database with registration module constraints enabled including uq_active_registration partial index",
@@ -311,7 +364,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-06", "BR-01"],
+      "traceability": [
+        "FR-06",
+        "BR-01"
+      ],
       "title": "Database partial unique index prevents duplicate active registration at persistence layer",
       "preconditions": [
         "PostgreSQL with uq_active_registration partial index on (event_id, participant_id) for active states",
@@ -330,7 +386,10 @@
       "layer": "e2e",
       "technique": "flow-b",
       "priority": "P0",
-      "traceability": ["FR-06", "AC-03"],
+      "traceability": [
+        "FR-06",
+        "AC-03"
+      ],
       "title": "Flow B duplicate registration step blocked after waitlist entry",
       "preconditions": [
         "E2E Flow B fixture: participant already Waitlisted on a full event",
@@ -349,7 +408,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-06", "FR-25", "FR-26"],
+      "traceability": [
+        "FR-06",
+        "FR-25",
+        "FR-26"
+      ],
       "title": "OrganizerAdmin and OrganizerStaff denied POST registrations (cannot trigger duplicate path)",
       "preconditions": [
         "Event RegistrationOpen with available seats",

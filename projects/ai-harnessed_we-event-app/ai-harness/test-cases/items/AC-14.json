@@ -1,7 +1,7 @@
 {
   "productItemId": "AC-14",
   "version": 1,
-  "docFingerprint": "sha256:8baa9d6bbbb0500a77788a39f6ca1d164ddad256856ee4b85c9652b6a2a2d392",
+  "docFingerprint": "sha256:e02c1f2112398fe77830ccd62c814e9fb809075870195634fc99ea89db79c2fb",
   "generatedAt": "2026-06-26T11:24:09Z",
   "cases": [
     {
@@ -10,7 +10,10 @@
       "layer": "integration",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["AC-14", "FR-29"],
+      "traceability": [
+        "AC-14",
+        "FR-29"
+      ],
       "title": "My registrations paginated list served by single API call without N+1 fan-out per testing-plan §3",
       "preconditions": [
         "Participant with registrations across multiple events",
@@ -31,7 +34,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["AC-14", "FR-29", "FR-31"],
+      "traceability": [
+        "AC-14",
+        "FR-29",
+        "FR-31"
+      ],
       "title": "My registrations repository executes single paginated query at DB boundary",
       "preconditions": [
         "Participant with registrations across at least three events persisted in Postgres",
@@ -52,7 +59,11 @@
       "layer": "integration",
       "technique": "pagination",
       "priority": "P0",
-      "traceability": ["AC-14", "FR-29", "FR-31"],
+      "traceability": [
+        "AC-14",
+        "FR-29",
+        "FR-31"
+      ],
       "title": "My registrations page-2 boundary returns expected slice without full-dataset load",
       "preconditions": [
         "Participant with at least 21 registrations across events (exceeds default pageSize of 20)",
@@ -73,7 +84,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["AC-14", "FR-29", "FR-31"],
+      "traceability": [
+        "AC-14",
+        "FR-29",
+        "FR-31"
+      ],
       "title": "GET /api/v1/me/registrations returns HTTP 200 paginated envelope with page, pageSize, and total",
       "preconditions": [
         "Participant with at least one registration across events",
@@ -92,7 +107,11 @@
       "layer": "e2e",
       "technique": "pagination",
       "priority": "P0",
-      "traceability": ["AC-14", "FR-28", "FR-31"],
+      "traceability": [
+        "AC-14",
+        "FR-28",
+        "FR-31"
+      ],
       "title": "GET /api/v1/events returns bounded page slice not full unbounded catalog",
       "preconditions": [
         "At least 13 published events visible to participant (more than default pageSize of 12)",
@@ -112,7 +131,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["AC-14", "FR-29"],
+      "traceability": [
+        "AC-14",
+        "FR-29"
+      ],
       "title": "My Registrations page paginates with correct range, prev/next controls, and quick actions",
       "preconditions": [
         "Participant with more than 20 registrations across events",
@@ -134,7 +156,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["AC-14", "FR-28"],
+      "traceability": [
+        "AC-14",
+        "FR-28"
+      ],
       "title": "Participant event browse exposes Previous and Next pagination controls",
       "preconditions": [
         "At least 13 published events visible to the participant (more than default pageSize of 12)",
@@ -155,7 +180,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["AC-14", "FR-30"],
+      "traceability": [
+        "AC-14",
+        "FR-30"
+      ],
       "title": "Organizer operational tables expose server pagination controls without unbounded client render",
       "preconditions": [
         "Event with registrations, waitlist, attendance, or eligibility rows exceeding one page",
@@ -176,7 +204,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["AC-14", "FR-30"],
+      "traceability": [
+        "AC-14",
+        "FR-30"
+      ],
       "title": "Participant denied paginated organizer registrations list with HTTP 403",
       "preconditions": [
         "Event with registrations exceeding one page",
@@ -194,7 +225,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["AC-14", "FR-30"],
+      "traceability": [
+        "AC-14",
+        "FR-30"
+      ],
       "title": "OrganizerStaff denied paginated registrations list for unassigned event with HTTP 403",
       "preconditions": [
         "Event outside OrganizerStaff assigned scope with registrations",
@@ -212,7 +246,9 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["AC-14"],
+      "traceability": [
+        "AC-14"
+      ],
       "title": "Pagination disables Previous on first page and Next on last page",
       "preconditions": [
         "Listing page with at least two pages of data",
@@ -231,7 +267,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["AC-14", "FR-28"],
+      "traceability": [
+        "AC-14",
+        "FR-28"
+      ],
       "title": "Changing event browse filters resets pagination to page 1",
       "preconditions": [
         "Participant on event browse page navigated to page 2 or higher",
@@ -251,7 +290,9 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["AC-14"],
+      "traceability": [
+        "AC-14"
+      ],
       "title": "Single-page result set hides or disables next navigation appropriately",
       "preconditions": [
         "Listing page where total results fit within one page (totalPages=1)",
@@ -270,7 +311,9 @@
       "layer": "browser",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["AC-14"],
+      "traceability": [
+        "AC-14"
+      ],
       "title": "Rapid consecutive page clicks do not render overlapping unbounded row sets",
       "preconditions": [
         "Listing page with at least three pages of data",
@@ -289,7 +332,11 @@
       "layer": "integration",
       "technique": "pagination",
       "priority": "P0",
-      "traceability": ["AC-14", "FR-29", "NFR-16"],
+      "traceability": [
+        "AC-14",
+        "FR-29",
+        "NFR-16"
+      ],
       "title": "Listing pages fetch one server page per view when total exceeds 500 rows",
       "preconditions": [
         "Database seeded with >500 registrations for one participant across events",
@@ -309,7 +356,11 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["AC-14", "FR-28", "FR-31"],
+      "traceability": [
+        "AC-14",
+        "FR-28",
+        "FR-31"
+      ],
       "title": "Pagination metadata on UI matches API envelope total and totalPages",
       "preconditions": [
         "Listing page with known total row count exceeding one page",
@@ -329,7 +380,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["AC-14", "FR-30"],
+      "traceability": [
+        "AC-14",
+        "FR-30"
+      ],
       "title": "Organizer Staff assigned events list is paginated with page controls",
       "preconditions": [
         "OrganizerStaff assigned to more events than one page holds",
@@ -349,7 +403,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["AC-14", "AC-15"],
+      "traceability": [
+        "AC-14",
+        "AC-15"
+      ],
       "title": "Unauthenticated paginated list API request returns HTTP 401 not unbounded data leak",
       "preconditions": [
         "API running",

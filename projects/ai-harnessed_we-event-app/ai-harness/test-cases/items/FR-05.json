@@ -1,7 +1,7 @@
 {
   "productItemId": "FR-05",
   "version": 1,
-  "docFingerprint": "sha256:61772db2f0be7d5f91f9eccefef8b9d85ce957dbd55d47d9d14f933847b053f4",
+  "docFingerprint": "sha256:027175175545d05eacf412663c601ddc7b622e4741a2ff40633c8e332b7bd6aa",
   "generatedAt": "2026-06-26T12:01:30Z",
   "cases": [
     {
@@ -10,7 +10,9 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-05"],
+      "traceability": [
+        "FR-05"
+      ],
       "title": "Participant event listing query returns events in RegistrationOpen state",
       "preconditions": [
         "Seeded events in mixed states: at least one RegistrationOpen, one Published (not yet open), one Draft, one RegistrationClosed",
@@ -31,7 +33,9 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-05"],
+      "traceability": [
+        "FR-05"
+      ],
       "title": "GET /events returns paginated RegistrationOpen events for authenticated participant",
       "preconditions": [
         "At least one event published and registration opened (state RegistrationOpen)",
@@ -51,7 +55,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-05", "BR-02"],
+      "traceability": [
+        "FR-05",
+        "BR-02"
+      ],
       "title": "GET /events/{eventId} returns detail for RegistrationOpen event visible to participant",
       "preconditions": [
         "Event in RegistrationOpen state with complete basic metadata and valid ruleConfig registration window",
@@ -71,7 +78,9 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-05"],
+      "traceability": [
+        "FR-05"
+      ],
       "title": "GET /events?state=RegistrationOpen filters to open-for-registration catalog",
       "preconditions": [
         "Seeded RegistrationOpen and RegistrationClosed events discoverable to participants",
@@ -90,7 +99,9 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-05"],
+      "traceability": [
+        "FR-05"
+      ],
       "title": "Participant event discovery page displays RegistrationOpen events with availability context",
       "preconditions": [
         "Web app running with at least one RegistrationOpen seeded event",
@@ -111,7 +122,11 @@
       "layer": "e2e",
       "technique": "flow-a",
       "priority": "P0",
-      "traceability": ["FR-05", "FR-04", "FR-03"],
+      "traceability": [
+        "FR-05",
+        "FR-04",
+        "FR-03"
+      ],
       "title": "Flow A lifecycle prerequisite: only RegistrationOpen events appear after publish and open-registration",
       "preconditions": [
         "OrganizerAdmin JWT",
@@ -132,7 +147,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P1",
-      "traceability": ["FR-05", "FR-28"],
+      "traceability": [
+        "FR-05",
+        "FR-28"
+      ],
       "title": "Participant searches discovery list for RegistrationOpen event by name",
       "preconditions": [
         "RegistrationOpen event named uniquely (e.g. Campus Workshop Alpha)",
@@ -151,7 +169,9 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-05"],
+      "traceability": [
+        "FR-05"
+      ],
       "title": "Draft and Published-not-open events excluded from participant open-events discovery",
       "preconditions": [
         "Draft event and Published event (registration not yet opened) owned by organizer",
@@ -171,7 +191,10 @@
       "layer": "e2e",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["FR-05", "BR-02"],
+      "traceability": [
+        "FR-05",
+        "BR-02"
+      ],
       "title": "RegistrationClosed event not presented as open for registration",
       "preconditions": [
         "Event transitioned to RegistrationClosed after registration window ended or manual close",
@@ -191,7 +214,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-05", "AC-15"],
+      "traceability": [
+        "FR-05",
+        "AC-15"
+      ],
       "title": "Unauthenticated GET /events returns 401",
       "preconditions": [
         "API running",
@@ -210,7 +236,9 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P1",
-      "traceability": ["FR-05"],
+      "traceability": [
+        "FR-05"
+      ],
       "title": "Participant cannot view Draft event detail by direct eventId",
       "preconditions": [
         "Draft event exists with known eventId",
@@ -228,7 +256,9 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P2",
-      "traceability": ["FR-05"],
+      "traceability": [
+        "FR-05"
+      ],
       "title": "Invalid pagination parameters on GET /events return 400 INVALID_PAGINATION",
       "preconditions": [
         "Participant JWT",
@@ -247,7 +277,9 @@
       "layer": "e2e",
       "technique": "state-transition",
       "priority": "P1",
-      "traceability": ["FR-05"],
+      "traceability": [
+        "FR-05"
+      ],
       "title": "Cancelled event no longer discoverable as open for registration",
       "preconditions": [
         "Event was RegistrationOpen then cancelled via POST /events/{eventId}/cancel by OrganizerAdmin",
@@ -266,7 +298,11 @@
       "layer": "e2e",
       "technique": "pagination",
       "priority": "P1",
-      "traceability": ["FR-05", "NFR-05", "AC-14"],
+      "traceability": [
+        "FR-05",
+        "NFR-05",
+        "AC-14"
+      ],
       "title": "Events list returns single paginated page envelope not full catalog",
       "preconditions": [
         "More than 12 RegistrationOpen events seeded (exceeds default pageSize)",
@@ -285,7 +321,11 @@
       "layer": "integration",
       "technique": "pagination",
       "priority": "P2",
-      "traceability": ["FR-05", "AC-13", "NFR-16"],
+      "traceability": [
+        "FR-05",
+        "AC-13",
+        "NFR-16"
+      ],
       "title": "Paginated events list beyond last page returns empty items with valid metadata",
       "preconditions": [
         "Known count of RegistrationOpen events (e.g. 5 total)",
@@ -305,7 +345,10 @@
       "layer": "integration",
       "technique": "pagination",
       "priority": "P2",
-      "traceability": ["FR-05", "NFR-16"],
+      "traceability": [
+        "FR-05",
+        "NFR-16"
+      ],
       "title": "Large RegistrationOpen catalog list query returns one page within acceptable response time",
       "preconditions": [
         "Seeded RegistrationOpen events exceeding 500 rows",
@@ -325,7 +368,9 @@
       "layer": "unit",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-05"],
+      "traceability": [
+        "FR-05"
+      ],
       "title": "Participant-visible event state filter includes RegistrationOpen only among pre-registration discoverable states",
       "preconditions": [
         "Pure participant event visibility or list-filter function",
@@ -344,7 +389,10 @@
       "layer": "e2e",
       "technique": "scenario-matrix",
       "priority": "P1",
-      "traceability": ["FR-05", "AC-13"],
+      "traceability": [
+        "FR-05",
+        "AC-13"
+      ],
       "title": "Testing plan §3 Events list page 2 — participant views second page of RegistrationOpen events",
       "preconditions": [
         "At least 13 RegistrationOpen events seeded (exceeds default pageSize of 12)",

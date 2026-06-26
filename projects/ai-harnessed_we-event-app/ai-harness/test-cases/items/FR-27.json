@@ -1,7 +1,7 @@
 {
   "productItemId": "FR-27",
   "version": 1,
-  "docFingerprint": "sha256:9e3a1aeddf47dc551a5606803a672761c422c9beeb7fcdb1e4e55a7f23eb5c9b",
+  "docFingerprint": "sha256:8e59445691447471b0d38696b1b2d559ff61c4f46bb6ddbeca79a3fd83f91995",
   "generatedAt": "2026-06-26T12:37:14Z",
   "cases": [
     {
@@ -10,7 +10,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-27", "FR-13", "FR-25"],
+      "traceability": [
+        "FR-27",
+        "FR-13",
+        "FR-25"
+      ],
       "title": "OrganizerStaff performs check-in on assigned event",
       "preconditions": [
         "Event InProgress with active check-in window and Registered participant",
@@ -30,7 +34,11 @@
       "layer": "e2e",
       "technique": "pagination",
       "priority": "P0",
-      "traceability": ["FR-27", "FR-30", "FR-31"],
+      "traceability": [
+        "FR-27",
+        "FR-30",
+        "FR-31"
+      ],
       "title": "OrganizerStaff views paginated registrations list on assigned event",
       "preconditions": [
         "Event with multiple participant registrations exceeding one page",
@@ -49,7 +57,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P1",
-      "traceability": ["FR-27", "FR-30"],
+      "traceability": [
+        "FR-27",
+        "FR-30"
+      ],
       "title": "OrganizerStaff views waitlist and attendance lists on assigned event",
       "preconditions": [
         "Event at capacity with waitlist entries and at least one check-in record",
@@ -68,7 +79,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P1",
-      "traceability": ["FR-27", "FR-22"],
+      "traceability": [
+        "FR-27",
+        "FR-22"
+      ],
       "title": "OrganizerStaff views event dashboard on assigned event",
       "preconditions": [
         "Published event with operational activity (registrations, check-ins)",
@@ -87,7 +101,11 @@
       "layer": "e2e",
       "technique": "scenario-matrix",
       "priority": "P1",
-      "traceability": ["FR-27", "FR-23", "AC-12"],
+      "traceability": [
+        "FR-27",
+        "FR-23",
+        "AC-12"
+      ],
       "title": "OrganizerStaff retrieves status history on assigned event per testing-plan §3",
       "preconditions": [
         "Event with at least one registration status transition",
@@ -106,7 +124,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P1",
-      "traceability": ["FR-27", "FR-21", "AC-10"],
+      "traceability": [
+        "FR-27",
+        "FR-21",
+        "AC-10"
+      ],
       "title": "OrganizerStaff views eligibility list on assigned event",
       "preconditions": [
         "Completed event with evaluated eligibility for participants",
@@ -124,7 +146,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P1",
-      "traceability": ["FR-27", "FR-24"],
+      "traceability": [
+        "FR-27",
+        "FR-24"
+      ],
       "title": "OrganizerStaff exports operational data on assigned event",
       "preconditions": [
         "Event with exportable operational data",
@@ -142,7 +167,9 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-27"],
+      "traceability": [
+        "FR-27"
+      ],
       "title": "assertEventScope permits OrganizerStaff for assigned eventId at module boundary",
       "preconditions": [
         "JwtPayload role OrganizerStaff with assignedEventIds containing target eventId",
@@ -161,7 +188,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-27", "NFR-08"],
+      "traceability": [
+        "FR-27",
+        "NFR-08"
+      ],
       "title": "Event scope check runs before domain mutation on staff commands",
       "preconditions": [
         "Protected staff command handler wired with authorization decision pattern (authenticate, role, scope, guard, execute)",
@@ -182,7 +212,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-27", "NFR-08"],
+      "traceability": [
+        "FR-27",
+        "NFR-08"
+      ],
       "title": "Cross-event staff check-in classified as P0 unauthorized critical update",
       "preconditions": [
         "Event A InProgress with Registered participant and active check-in window",
@@ -202,7 +235,11 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-27", "NFR-08", "NFR-13"],
+      "traceability": [
+        "FR-27",
+        "NFR-08",
+        "NFR-13"
+      ],
       "title": "Out-of-scope staff denial uses typed error without leaking other event data",
       "preconditions": [
         "OrganizerStaff JWT scoped to event B only",
@@ -221,7 +258,9 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-27"],
+      "traceability": [
+        "FR-27"
+      ],
       "title": "assertEventScope rejects OrganizerStaff for unassigned event",
       "preconditions": [
         "JwtPayload role OrganizerStaff with assignedEventIds not containing target eventId",
@@ -239,7 +278,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-27", "FR-30"],
+      "traceability": [
+        "FR-27",
+        "FR-30"
+      ],
       "title": "OrganizerStaff denied registrations list on unassigned event",
       "preconditions": [
         "Event with registrations that staff actor is not assigned to",
@@ -257,7 +299,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-27", "FR-13"],
+      "traceability": [
+        "FR-27",
+        "FR-13"
+      ],
       "title": "OrganizerStaff outside assigned event scope cannot check in participant",
       "preconditions": [
         "Event A InProgress with active check-in window and Registered participant",
@@ -276,7 +321,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-27", "FR-22"],
+      "traceability": [
+        "FR-27",
+        "FR-22"
+      ],
       "title": "OrganizerStaff denied dashboard for unassigned event",
       "preconditions": [
         "Event with operational dashboard data not assigned to staff actor",
@@ -294,7 +342,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P1",
-      "traceability": ["FR-27", "FR-24"],
+      "traceability": [
+        "FR-27",
+        "FR-24"
+      ],
       "title": "OrganizerStaff cannot export data for out-of-scope event",
       "preconditions": [
         "Event with operational data not assigned to staff actor",
@@ -312,7 +363,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P1",
-      "traceability": ["FR-27", "FR-23", "AC-12"],
+      "traceability": [
+        "FR-27",
+        "FR-23",
+        "AC-12"
+      ],
       "title": "OrganizerStaff cannot retrieve status history for out-of-scope event",
       "preconditions": [
         "Event with status history entries not assigned to staff actor",
@@ -330,7 +385,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P1",
-      "traceability": ["FR-27", "FR-21"],
+      "traceability": [
+        "FR-27",
+        "FR-21"
+      ],
       "title": "OrganizerStaff cannot view eligibility list for out-of-scope event",
       "preconditions": [
         "Completed event with eligibility data not assigned to staff actor",
@@ -348,7 +406,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-27", "FR-30"],
+      "traceability": [
+        "FR-27",
+        "FR-30"
+      ],
       "title": "OrganizerStaff with empty assignedEventIds denied all event-scoped operational endpoints",
       "preconditions": [
         "Published event with registrations and check-in window",
@@ -368,7 +429,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P1",
-      "traceability": ["FR-27", "FR-30"],
+      "traceability": [
+        "FR-27",
+        "FR-30"
+      ],
       "title": "OrganizerStaff denied waitlist and attendance lists on unassigned event",
       "preconditions": [
         "Event with waitlist entries and attendance records not assigned to staff actor",
@@ -387,7 +451,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-27", "FR-13"],
+      "traceability": [
+        "FR-27",
+        "FR-13"
+      ],
       "title": "OrganizerStaff UI check-in console limited to assigned events only",
       "preconditions": [
         "Web app running with role-aware route guards and event scope enforcement",
@@ -408,7 +475,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-27", "FR-30"],
+      "traceability": [
+        "FR-27",
+        "FR-30"
+      ],
       "title": "OrganizerStaff operational list pages only surface assigned events",
       "preconditions": [
         "OrganizerStaff assigned to event A but not event B",

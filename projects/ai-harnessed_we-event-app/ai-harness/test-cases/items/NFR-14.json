@@ -1,7 +1,7 @@
 {
   "productItemId": "NFR-14",
   "version": 1,
-  "docFingerprint": "sha256:7dc141c77359e102a4e8c2f6ef581229d07bc466b6054a0c3af84404dffbe829",
+  "docFingerprint": "sha256:3ef34de51e629338bb80d28f095b60c3a35be925eaaedb8316f99080c3e69bb9",
   "generatedAt": "2026-06-26T13:06:57Z",
   "cases": [
     {
@@ -10,7 +10,12 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["NFR-14", "FR-02", "FR-03", "FR-18"],
+      "traceability": [
+        "NFR-14",
+        "FR-02",
+        "FR-03",
+        "FR-18"
+      ],
       "title": "OrganizerAdmin configures full EventRuleConfig on draft event via PATCH API",
       "preconditions": [
         "Draft event exists with default EventRuleConfig",
@@ -29,7 +34,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["NFR-14", "FR-02"],
+      "traceability": [
+        "NFR-14",
+        "FR-02"
+      ],
       "title": "OrganizerAdmin updates event capacity during Draft phase",
       "preconditions": [
         "Draft event with EventRuleConfig capacity 50",
@@ -48,7 +56,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["NFR-14", "FR-03", "FR-18"],
+      "traceability": [
+        "NFR-14",
+        "FR-03",
+        "FR-18"
+      ],
       "title": "OrganizerAdmin toggles waitlist and feedback policy without technical intervention",
       "preconditions": [
         "Draft event with waitlistEnabled false and feedbackRequired false",
@@ -67,7 +79,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["NFR-14", "FR-02", "FR-03"],
+      "traceability": [
+        "NFR-14",
+        "FR-02",
+        "FR-03"
+      ],
       "title": "EventRuleConfig version increments on each critical config update",
       "preconditions": [
         "Draft event with EventRuleConfig version 1",
@@ -88,7 +104,12 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["NFR-14", "FR-02", "FR-03", "FR-18"],
+      "traceability": [
+        "NFR-14",
+        "FR-02",
+        "FR-03",
+        "FR-18"
+      ],
       "title": "OrganizerAdmin completes multi-section event setup form without technical steps",
       "preconditions": [
         "Web app running with OrganizerAdmin authenticated",
@@ -108,7 +129,11 @@
       "layer": "e2e",
       "technique": "state-transition",
       "priority": "P1",
-      "traceability": ["NFR-14", "FR-08", "FR-09"],
+      "traceability": [
+        "NFR-14",
+        "FR-08",
+        "FR-09"
+      ],
       "title": "Updated waitlist policy takes effect on subsequent registrations",
       "preconditions": [
         "Published event RegistrationOpen at capacity with waitlistEnabled false",
@@ -128,7 +153,9 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["NFR-14"],
+      "traceability": [
+        "NFR-14"
+      ],
       "title": "EventRuleConfig persisted in Postgres via application service not ad-hoc SQL",
       "preconditions": [
         "Draft event with OrganizerAdmin actor",
@@ -148,7 +175,10 @@
       "layer": "unit",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["NFR-14", "NFR-13"],
+      "traceability": [
+        "NFR-14",
+        "NFR-13"
+      ],
       "title": "Cross-field window validator returns actionable error for conflicting ruleConfig times",
       "preconditions": [
         "Event rule config validator module available",
@@ -167,7 +197,11 @@
       "layer": "e2e",
       "technique": "flow-c",
       "priority": "P1",
-      "traceability": ["NFR-14", "AC-11", "BR-22"],
+      "traceability": [
+        "NFR-14",
+        "AC-11",
+        "BR-22"
+      ],
       "title": "Post-registration-open rule config update remains self-service for OrganizerAdmin with audit trail",
       "preconditions": [
         "Event in RegistrationOpen state",
@@ -186,7 +220,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["NFR-14", "BR-21"],
+      "traceability": [
+        "NFR-14",
+        "BR-21"
+      ],
       "title": "OrganizerStaff blocked from event rule config PATCH",
       "preconditions": [
         "Draft event with OrganizerStaff JWT assigned to eventId",
@@ -205,7 +242,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["NFR-14", "BR-21"],
+      "traceability": [
+        "NFR-14",
+        "BR-21"
+      ],
       "title": "Participant blocked from event rule config PATCH",
       "preconditions": [
         "Published event with valid Participant JWT registered for the event"
@@ -222,7 +262,11 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["NFR-14", "BR-22", "AC-11"],
+      "traceability": [
+        "NFR-14",
+        "BR-22",
+        "AC-11"
+      ],
       "title": "Post-open critical rule config change rejected without mandatory reason",
       "preconditions": [
         "Event in RegistrationOpen state",
@@ -240,7 +284,11 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["NFR-14", "BR-03", "FR-02"],
+      "traceability": [
+        "NFR-14",
+        "BR-03",
+        "FR-02"
+      ],
       "title": "Capacity reduction below current Registered count is rejected",
       "preconditions": [
         "RegistrationOpen event with capacity 20 and 15 Registered participants",
@@ -259,7 +307,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["NFR-14", "NFR-13"],
+      "traceability": [
+        "NFR-14",
+        "NFR-13"
+      ],
       "title": "Event setup form preserves entered values after cross-field validation failure",
       "preconditions": [
         "OrganizerAdmin on event setup form Section 4 check-in window",
@@ -279,7 +330,10 @@
       "layer": "unit",
       "technique": "rbac-negative",
       "priority": "P1",
-      "traceability": ["NFR-14", "BR-21"],
+      "traceability": [
+        "NFR-14",
+        "BR-21"
+      ],
       "title": "assertEventRuleConfigChangePermission rejects non-admin roles",
       "preconditions": [
         "Authorization helper assertEventRuleConfigChangePermission or equivalent available",

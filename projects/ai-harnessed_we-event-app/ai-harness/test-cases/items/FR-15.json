@@ -1,7 +1,7 @@
 {
   "productItemId": "FR-15",
   "version": 2,
-  "docFingerprint": "sha256:4ef9b21ee020318b8667ba54306d7c16fd1e1129e20152c62d596022b477de06",
+  "docFingerprint": "sha256:e2dfbabeeed703c3e91f7927502130070273c2e29f7eb78b92608b58e3a599e7",
   "generatedAt": "2026-06-26T18:00:00Z",
   "cases": [
     {
@@ -10,7 +10,11 @@
       "layer": "integration",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["FR-15", "AC-05", "BR-10"],
+      "traceability": [
+        "FR-15",
+        "AC-05",
+        "BR-10"
+      ],
       "title": "In-window check-in recorded with timestamp per testing-plan §3",
       "preconditions": [
         "Event is InProgress with check-in window active (fixed clock now between checkinOpenAt and checkinCloseAt)",
@@ -30,7 +34,11 @@
       "layer": "integration",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["FR-15", "AC-06", "BR-10"],
+      "traceability": [
+        "FR-15",
+        "AC-06",
+        "BR-10"
+      ],
       "title": "Out-of-window check-in rejected with code per testing-plan §3",
       "preconditions": [
         "Event is InProgress with configured check-in window not containing fixed clock now",
@@ -51,7 +59,12 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-15", "AC-05", "FR-13", "BR-10"],
+      "traceability": [
+        "FR-15",
+        "AC-05",
+        "FR-13",
+        "BR-10"
+      ],
       "title": "Staff check-in module persists record only when current time is inside configured window",
       "preconditions": [
         "Event InProgress with active check-in window",
@@ -71,7 +84,12 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-15", "AC-05", "FR-14", "BR-10"],
+      "traceability": [
+        "FR-15",
+        "AC-05",
+        "FR-14",
+        "BR-10"
+      ],
       "title": "Self check-in module persists record only when current time is inside configured window",
       "preconditions": [
         "Event rule config enables participant self check-in",
@@ -92,7 +110,11 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["FR-15", "AC-05", "BR-10"],
+      "traceability": [
+        "FR-15",
+        "AC-05",
+        "BR-10"
+      ],
       "title": "Valid in-window check-in transitions registration Registered to CheckedIn",
       "preconditions": [
         "Registration in Registered state before check-in",
@@ -113,7 +135,11 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["FR-15", "AC-06", "BR-10"],
+      "traceability": [
+        "FR-15",
+        "AC-06",
+        "BR-10"
+      ],
       "title": "Out-of-window check-in attempt preserves Registered state without transition",
       "preconditions": [
         "Registration in Registered state before check-in attempt",
@@ -134,7 +160,12 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-15", "AC-05", "FR-13", "BR-10"],
+      "traceability": [
+        "FR-15",
+        "AC-05",
+        "FR-13",
+        "BR-10"
+      ],
       "title": "POST /events/{eventId}/checkins returns HTTP 200 when inside configured window",
       "preconditions": [
         "E2E fixture event InProgress with active check-in window",
@@ -155,7 +186,12 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-15", "AC-05", "FR-14", "BR-10"],
+      "traceability": [
+        "FR-15",
+        "AC-05",
+        "FR-14",
+        "BR-10"
+      ],
       "title": "POST /events/{eventId}/self-checkin returns HTTP 200 when inside configured window",
       "preconditions": [
         "Event rule config enables participant self check-in",
@@ -176,7 +212,12 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-15", "AC-06", "FR-13", "BR-10"],
+      "traceability": [
+        "FR-15",
+        "AC-06",
+        "FR-13",
+        "BR-10"
+      ],
       "title": "POST /events/{eventId}/checkins returns HTTP 422 with CHECKIN_WINDOW_CLOSED when outside window",
       "preconditions": [
         "E2E fixture event InProgress with check-in window not containing current (or simulated) time",
@@ -197,7 +238,12 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-15", "AC-06", "FR-14", "BR-10"],
+      "traceability": [
+        "FR-15",
+        "AC-06",
+        "FR-14",
+        "BR-10"
+      ],
       "title": "POST /events/{eventId}/self-checkin returns HTTP 422 with CHECKIN_WINDOW_CLOSED when outside window",
       "preconditions": [
         "Event rule config enables participant self check-in",
@@ -217,7 +263,10 @@
       "layer": "e2e",
       "technique": "flow-a",
       "priority": "P0",
-      "traceability": ["FR-15", "AC-05"],
+      "traceability": [
+        "FR-15",
+        "AC-05"
+      ],
       "title": "Flow A lifecycle check-in step succeeds only when inside configured window",
       "preconditions": [
         "E2E Flow A fixture: event progressed through publish, open-registration, and participant Registered",
@@ -237,7 +286,10 @@
       "layer": "e2e",
       "technique": "flow-a",
       "priority": "P0",
-      "traceability": ["FR-15", "AC-06"],
+      "traceability": [
+        "FR-15",
+        "AC-06"
+      ],
       "title": "Flow A lifecycle blocks check-in step when outside configured window",
       "preconditions": [
         "E2E Flow A fixture: event progressed through publish, open-registration, and participant Registered",
@@ -257,7 +309,12 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-15", "AC-06", "FR-13", "BR-10"],
+      "traceability": [
+        "FR-15",
+        "AC-06",
+        "FR-13",
+        "BR-10"
+      ],
       "title": "Organizer staff check-in console blocks action when window is closed",
       "preconditions": [
         "OrganizerStaff logged in with assigned event scope",
@@ -278,7 +335,12 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-15", "AC-06", "FR-14", "BR-10"],
+      "traceability": [
+        "FR-15",
+        "AC-06",
+        "FR-14",
+        "BR-10"
+      ],
       "title": "Participant self check-in UI shows window-closed feedback when outside window",
       "preconditions": [
         "Event with self check-in enabled",
@@ -299,7 +361,11 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-15", "AC-06", "BR-10"],
+      "traceability": [
+        "FR-15",
+        "AC-06",
+        "BR-10"
+      ],
       "title": "Staff check-in before checkinOpenAt is rejected with CHECKIN_WINDOW_CLOSED",
       "preconditions": [
         "Event InProgress with checkinOpenAt in the future relative to fixed clock now",
@@ -320,7 +386,11 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-15", "AC-06", "BR-10"],
+      "traceability": [
+        "FR-15",
+        "AC-06",
+        "BR-10"
+      ],
       "title": "Staff check-in after checkinCloseAt is rejected with CHECKIN_WINDOW_CLOSED",
       "preconditions": [
         "Event InProgress or Completed with checkinCloseAt in the past relative to fixed clock now",
@@ -341,7 +411,11 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-15", "AC-05", "BR-10"],
+      "traceability": [
+        "FR-15",
+        "AC-05",
+        "BR-10"
+      ],
       "title": "Check-in at checkinOpenAt boundary instant is recorded when open boundary is inclusive",
       "preconditions": [
         "Event configured with known checkinOpenAt and checkinCloseAt",
@@ -361,7 +435,11 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-15", "AC-06", "BR-10"],
+      "traceability": [
+        "FR-15",
+        "AC-06",
+        "BR-10"
+      ],
       "title": "Check-in at checkinCloseAt boundary instant is rejected when close boundary is exclusive",
       "preconditions": [
         "Event configured with known checkinOpenAt and checkinCloseAt",
@@ -381,7 +459,12 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["FR-15", "AC-06", "BR-10", "BR-12"],
+      "traceability": [
+        "FR-15",
+        "AC-06",
+        "BR-10",
+        "BR-12"
+      ],
       "title": "Rejected out-of-window check-in leaves no valid record for attendance reconciliation",
       "preconditions": [
         "Event InProgress with closed check-in window (now after checkinCloseAt)",
@@ -402,7 +485,11 @@
       "layer": "integration",
       "technique": "concurrency",
       "priority": "P1",
-      "traceability": ["FR-15", "AC-06", "BR-10"],
+      "traceability": [
+        "FR-15",
+        "AC-06",
+        "BR-10"
+      ],
       "title": "Concurrent out-of-window check-in requests all fail without creating records",
       "preconditions": [
         "Registered participant with no prior check-in",
@@ -422,7 +509,11 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P2",
-      "traceability": ["FR-15", "AC-06", "BR-10"],
+      "traceability": [
+        "FR-15",
+        "AC-06",
+        "BR-10"
+      ],
       "title": "Idempotent retry while window remains closed does not record check-in",
       "preconditions": [
         "Registered participant with check-in window closed",
@@ -441,7 +532,12 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["FR-15", "AC-06", "BR-10", "NFR-02"],
+      "traceability": [
+        "FR-15",
+        "AC-06",
+        "BR-10",
+        "NFR-02"
+      ],
       "title": "Failed window validation does not partially persist CheckinRecord or transition registration",
       "preconditions": [
         "Database transaction boundary for check-in module validates window before persist",
@@ -460,7 +556,12 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P1",
-      "traceability": ["FR-15", "AC-06", "BR-10", "NFR-13"],
+      "traceability": [
+        "FR-15",
+        "AC-06",
+        "BR-10",
+        "NFR-13"
+      ],
       "title": "CHECKIN_WINDOW_CLOSED error includes configured window bounds in details",
       "preconditions": [
         "Event with known checkinOpenAt and checkinCloseAt ISO timestamps",
@@ -479,7 +580,10 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-15", "BR-10"],
+      "traceability": [
+        "FR-15",
+        "BR-10"
+      ],
       "title": "Window validation runs before duplicate-check-in check in check-in pipeline",
       "preconditions": [
         "Check-in validation pipeline order: auth, event check-in window, existing valid check-in check, persist",
@@ -499,7 +603,11 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-15", "AC-06", "BR-10"],
+      "traceability": [
+        "FR-15",
+        "AC-06",
+        "BR-10"
+      ],
       "title": "Self check-in UI disables primary action at checkinCloseAt when API excludes close instant",
       "preconditions": [
         "Event rule config enables participant self check-in",

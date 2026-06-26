@@ -1,7 +1,7 @@
 {
   "productItemId": "FR-24",
   "version": 1,
-  "docFingerprint": "sha256:f44c92d5b8e8208272ca20445a8ed22605865e55c323b1677af54c0c2242f917",
+  "docFingerprint": "sha256:aa1117f3b650d9449d7073916f7ca9b84a02286b19d61773de4e49196817a850",
   "generatedAt": "2026-06-26T12:32:40Z",
   "cases": [
     {
@@ -10,7 +10,9 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-24"],
+      "traceability": [
+        "FR-24"
+      ],
       "title": "OrganizerAdmin exports event operational eligibility data via GET export",
       "preconditions": [
         "Completed or post-event event with at least one registration and evaluated eligibility outcomes",
@@ -29,7 +31,13 @@
       "layer": "integration",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["FR-24", "FR-20", "FR-21", "AC-09", "AC-10"],
+      "traceability": [
+        "FR-24",
+        "FR-20",
+        "FR-21",
+        "AC-09",
+        "AC-10"
+      ],
       "title": "Export CSV includes eligibility result and reason for each registration row",
       "preconditions": [
         "Event with mix of Eligible and NotEligible registrations after eligibility evaluation",
@@ -49,7 +57,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-24", "FR-21", "AC-10"],
+      "traceability": [
+        "FR-24",
+        "FR-21",
+        "AC-10"
+      ],
       "title": "OrganizerAdmin exports Eligible-only list using eligibility filter",
       "preconditions": [
         "Event with at least one Eligible and one NotEligible registration",
@@ -68,7 +80,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-24", "FR-21", "AC-10"],
+      "traceability": [
+        "FR-24",
+        "FR-21",
+        "AC-10"
+      ],
       "title": "OrganizerAdmin exports NotEligible-only list using eligibility filter",
       "preconditions": [
         "Event with at least one Eligible and one NotEligible registration",
@@ -87,7 +103,11 @@
       "layer": "integration",
       "technique": "pagination",
       "priority": "P0",
-      "traceability": ["FR-24", "FR-31", "AC-13"],
+      "traceability": [
+        "FR-24",
+        "FR-31",
+        "AC-13"
+      ],
       "title": "Unfiltered export row count matches eligibility list total metadata",
       "preconditions": [
         "Event with multiple registrations spanning eligibility states",
@@ -107,7 +127,12 @@
       "layer": "integration",
       "technique": "flow-a",
       "priority": "P1",
-      "traceability": ["FR-24", "FR-17", "FR-19", "FR-20"],
+      "traceability": [
+        "FR-24",
+        "FR-17",
+        "FR-19",
+        "FR-20"
+      ],
       "title": "Export reflects attendance and feedback outcomes in eligibility evaluation",
       "preconditions": [
         "E2E Flow A progressed: register, check-in, complete event, submit feedback, eligibility evaluated",
@@ -127,7 +152,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P1",
-      "traceability": ["FR-24", "FR-30", "FR-27"],
+      "traceability": [
+        "FR-24",
+        "FR-30",
+        "FR-27"
+      ],
       "title": "OrganizerStaff on assigned event can export operational data",
       "preconditions": [
         "Event with eligibility data assigned to staff actor",
@@ -145,7 +174,11 @@
       "layer": "e2e",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["FR-24", "FR-22", "FR-23"],
+      "traceability": [
+        "FR-24",
+        "FR-22",
+        "FR-23"
+      ],
       "title": "Governance flow exports operational data after dashboard and history review",
       "preconditions": [
         "Event with registrations, status history entries, and dashboard metrics",
@@ -165,7 +198,9 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-24"],
+      "traceability": [
+        "FR-24"
+      ],
       "title": "Organizer eligibility list export action downloads CSV file",
       "preconditions": [
         "OrganizerAdmin logged in with scope to event with eligibility results",
@@ -185,7 +220,9 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P2",
-      "traceability": ["FR-24"],
+      "traceability": [
+        "FR-24"
+      ],
       "title": "Organizer export center triggers event operational data download",
       "preconditions": [
         "OrganizerAdmin logged in",
@@ -205,7 +242,12 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-24", "AC-15", "FR-25", "NFR-07"],
+      "traceability": [
+        "FR-24",
+        "AC-15",
+        "FR-25",
+        "NFR-07"
+      ],
       "title": "Unauthenticated GET export returns 401",
       "preconditions": [
         "Existing event with exportable operational data",
@@ -223,7 +265,13 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-24", "AC-15", "FR-25", "FR-26", "NFR-08"],
+      "traceability": [
+        "FR-24",
+        "AC-15",
+        "FR-25",
+        "FR-26",
+        "NFR-08"
+      ],
       "title": "Participant cannot export event operational data",
       "preconditions": [
         "Event with eligibility export data",
@@ -241,7 +289,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P1",
-      "traceability": ["FR-24", "FR-27", "NFR-08"],
+      "traceability": [
+        "FR-24",
+        "FR-27",
+        "NFR-08"
+      ],
       "title": "OrganizerStaff cannot export data for out-of-scope event",
       "preconditions": [
         "Event with operational data not assigned to staff actor",
@@ -259,7 +311,9 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-24"],
+      "traceability": [
+        "FR-24"
+      ],
       "title": "Export request for non-existent eventId returns 404",
       "preconditions": [
         "OrganizerAdmin JWT",
@@ -277,7 +331,9 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-24"],
+      "traceability": [
+        "FR-24"
+      ],
       "title": "Unsupported export type query parameter returns 400",
       "preconditions": [
         "Event with eligibility data",
@@ -295,7 +351,9 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P2",
-      "traceability": ["FR-24"],
+      "traceability": [
+        "FR-24"
+      ],
       "title": "Invalid eligibility filter value returns 400",
       "preconditions": [
         "Event with eligibility data",
@@ -313,7 +371,9 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P2",
-      "traceability": ["FR-24"],
+      "traceability": [
+        "FR-24"
+      ],
       "title": "Export for event with zero registrations returns header-only CSV",
       "preconditions": [
         "Published event with no participant registrations",
@@ -332,7 +392,11 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P1",
-      "traceability": ["FR-24", "FR-20", "BR-20"],
+      "traceability": [
+        "FR-24",
+        "FR-20",
+        "BR-20"
+      ],
       "title": "Export includes Revoked eligibility with override metadata when admin revoked",
       "preconditions": [
         "Registration with eligibility previously revoked by OrganizerAdmin with reason",
@@ -351,7 +415,10 @@
       "layer": "integration",
       "technique": "pagination",
       "priority": "P1",
-      "traceability": ["FR-24", "NFR-16"],
+      "traceability": [
+        "FR-24",
+        "NFR-16"
+      ],
       "title": "Export returns full dataset without pagination envelope truncation",
       "preconditions": [
         "Event with total registrations exceeding default list pageSize (20)",
@@ -370,7 +437,12 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["FR-24", "AC-09", "BR-17", "BR-19"],
+      "traceability": [
+        "FR-24",
+        "AC-09",
+        "BR-17",
+        "BR-19"
+      ],
       "title": "Export eligibility outcomes are deterministic for fixed event state",
       "preconditions": [
         "Event with fixed attendance and feedback fixture state",
@@ -389,7 +461,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P1",
-      "traceability": ["FR-24", "FR-25", "NFR-08"],
+      "traceability": [
+        "FR-24",
+        "FR-25",
+        "NFR-08"
+      ],
       "title": "Export response uses attachment disposition suitable for secure organizer download",
       "preconditions": [
         "Event with exportable eligibility data",

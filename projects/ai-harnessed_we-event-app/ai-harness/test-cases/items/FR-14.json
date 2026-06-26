@@ -1,7 +1,7 @@
 {
   "productItemId": "FR-14",
   "version": 3,
-  "docFingerprint": "sha256:4ef9b21ee020318b8667ba54306d7c16fd1e1129e20152c62d596022b477de06",
+  "docFingerprint": "sha256:e2dfbabeeed703c3e91f7927502130070273c2e29f7eb78b92608b58e3a599e7",
   "generatedAt": "2026-06-26T12:15:24Z",
   "cases": [
     {
@@ -10,7 +10,12 @@
       "layer": "integration",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["FR-14", "AC-05", "BR-10", "BR-13"],
+      "traceability": [
+        "FR-14",
+        "AC-05",
+        "BR-10",
+        "BR-13"
+      ],
       "title": "In-window participant self check-in stored with timestamp per testing-plan §3",
       "preconditions": [
         "Event rule config enables participant self check-in",
@@ -30,7 +35,12 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-14", "AC-05", "FR-15", "BR-10"],
+      "traceability": [
+        "FR-14",
+        "AC-05",
+        "FR-15",
+        "BR-10"
+      ],
       "title": "Participant self check-in transitions own Registered registration to CheckedIn when enabled and in window",
       "preconditions": [
         "Event rule config enables participant self check-in",
@@ -50,7 +60,11 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["FR-14", "AC-05", "BR-10"],
+      "traceability": [
+        "FR-14",
+        "AC-05",
+        "BR-10"
+      ],
       "title": "Self validCheckin transitions registration Registered to CheckedIn",
       "preconditions": [
         "Event rule config enables participant self check-in",
@@ -73,7 +87,12 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-14", "AC-05", "FR-16", "BR-10"],
+      "traceability": [
+        "FR-14",
+        "AC-05",
+        "FR-16",
+        "BR-10"
+      ],
       "title": "POST /events/{eventId}/self-checkin returns HTTP 200 with checkinAt and CheckedIn registration",
       "preconditions": [
         "E2E fixture event in InProgress state with active check-in window",
@@ -94,7 +113,11 @@
       "layer": "e2e",
       "technique": "flow-a",
       "priority": "P0",
-      "traceability": ["FR-14", "AC-05", "FR-15"],
+      "traceability": [
+        "FR-14",
+        "AC-05",
+        "FR-15"
+      ],
       "title": "Flow A lifecycle self check-in step succeeds after registration when self-service enabled",
       "preconditions": [
         "E2E Flow A fixture: event progressed through publish, open-registration, and participant Registered",
@@ -115,7 +138,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-14", "AC-05"],
+      "traceability": [
+        "FR-14",
+        "AC-05"
+      ],
       "title": "Participant completes self check-in via UI and sees success with timestamp",
       "preconditions": [
         "Event with self check-in enabled and check-in window currently open",
@@ -137,7 +163,9 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-14"],
+      "traceability": [
+        "FR-14"
+      ],
       "title": "POST self-checkin rejected when self-service check-in is disabled on event",
       "preconditions": [
         "Event rule config has participant self check-in disabled",
@@ -158,7 +186,12 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-14", "FR-15", "AC-06", "BR-10"],
+      "traceability": [
+        "FR-14",
+        "FR-15",
+        "AC-06",
+        "BR-10"
+      ],
       "title": "Self check-in outside configured window is rejected with CHECKIN_WINDOW_CLOSED",
       "preconditions": [
         "Event rule config enables participant self check-in",
@@ -179,7 +212,10 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-14", "BR-11"],
+      "traceability": [
+        "FR-14",
+        "BR-11"
+      ],
       "title": "Second self check-in attempt for same registration is rejected after first success",
       "preconditions": [
         "Event rule config enables participant self check-in",
@@ -200,7 +236,11 @@
       "layer": "integration",
       "technique": "concurrency",
       "priority": "P0",
-      "traceability": ["FR-14", "BR-11", "NFR-02"],
+      "traceability": [
+        "FR-14",
+        "BR-11",
+        "NFR-02"
+      ],
       "title": "Concurrent self check-in requests yield at most one valid record",
       "preconditions": [
         "Event rule config enables participant self check-in",
@@ -221,7 +261,12 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-14", "FR-25", "FR-26", "AC-15"],
+      "traceability": [
+        "FR-14",
+        "FR-25",
+        "FR-26",
+        "AC-15"
+      ],
       "title": "Unauthenticated POST self-checkin returns 401",
       "preconditions": [
         "Event rule config enables participant self check-in",
@@ -240,7 +285,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-14", "FR-25"],
+      "traceability": [
+        "FR-14",
+        "FR-25"
+      ],
       "title": "OrganizerStaff JWT cannot invoke participant self-checkin endpoint",
       "preconditions": [
         "Event rule config enables participant self check-in",
@@ -259,7 +307,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-14", "FR-26"],
+      "traceability": [
+        "FR-14",
+        "FR-26"
+      ],
       "title": "Participant without Registered registration for event cannot self check-in",
       "preconditions": [
         "Event rule config enables participant self check-in",
@@ -278,7 +329,9 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-14"],
+      "traceability": [
+        "FR-14"
+      ],
       "title": "Self check-in rejected when registration is not in Registered state",
       "preconditions": [
         "Event rule config enables participant self check-in",
@@ -297,7 +350,12 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-14", "FR-15", "AC-06", "BR-10"],
+      "traceability": [
+        "FR-14",
+        "FR-15",
+        "AC-06",
+        "BR-10"
+      ],
       "title": "Self check-in UI displays blocking reason when window is closed",
       "preconditions": [
         "Event with self check-in enabled",
@@ -318,7 +376,9 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-14"],
+      "traceability": [
+        "FR-14"
+      ],
       "title": "Self check-in UI unavailable or blocked when self-service is disabled",
       "preconditions": [
         "Event rule config has participant self check-in disabled",
@@ -338,7 +398,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["FR-14", "FR-16", "BR-13"],
+      "traceability": [
+        "FR-14",
+        "FR-16",
+        "BR-13"
+      ],
       "title": "Self check-in persists audit metadata with participant actor and method Self",
       "preconditions": [
         "Event rule config enables participant self check-in",
@@ -358,7 +422,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["FR-14", "NFR-02"],
+      "traceability": [
+        "FR-14",
+        "NFR-02"
+      ],
       "title": "Self check-in write and registration CheckedIn transition commit atomically",
       "preconditions": [
         "Database transaction boundary enabled for check-in module per cross-module contract",
@@ -378,7 +445,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P1",
-      "traceability": ["FR-14", "NFR-02"],
+      "traceability": [
+        "FR-14",
+        "NFR-02"
+      ],
       "title": "Idempotent self check-in retry with same Idempotency-Key returns consistent snapshot",
       "preconditions": [
         "Event rule config enables participant self check-in",
@@ -399,7 +469,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P1",
-      "traceability": ["FR-14", "NFR-13", "AC-05"],
+      "traceability": [
+        "FR-14",
+        "NFR-13",
+        "AC-05"
+      ],
       "title": "Self check-in success returns immediate actionable feedback without polling",
       "preconditions": [
         "Event rule config enables participant self check-in",
@@ -420,7 +494,11 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-14", "NFR-13", "BR-10"],
+      "traceability": [
+        "FR-14",
+        "NFR-13",
+        "BR-10"
+      ],
       "title": "Failed self check-in returns immediate reason code not generic error",
       "preconditions": [
         "Event rule config enables participant self check-in",
@@ -441,7 +519,12 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["FR-14", "FR-15", "AC-06", "BR-10"],
+      "traceability": [
+        "FR-14",
+        "FR-15",
+        "AC-06",
+        "BR-10"
+      ],
       "title": "Self check-in UI disables primary action at checkinCloseAt when API excludes close instant",
       "preconditions": [
         "Event rule config enables participant self check-in",
@@ -463,7 +546,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-14", "FR-26"],
+      "traceability": [
+        "FR-14",
+        "FR-26"
+      ],
       "title": "Dev JWT sub alias participant-1 self check-in succeeds when registration stored under resolved UUID",
       "preconditions": [
         "Event InProgress with active check-in window and self check-in enabled",

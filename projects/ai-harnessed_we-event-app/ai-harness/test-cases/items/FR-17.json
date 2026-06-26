@@ -1,7 +1,7 @@
 {
   "productItemId": "FR-17",
   "version": 1,
-  "docFingerprint": "sha256:4ef9b21ee020318b8667ba54306d7c16fd1e1129e20152c62d596022b477de06",
+  "docFingerprint": "sha256:e2dfbabeeed703c3e91f7927502130070273c2e29f7eb78b92608b58e3a599e7",
   "generatedAt": "2026-06-26T12:20:45Z",
   "cases": [
     {
@@ -10,7 +10,11 @@
       "layer": "integration",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["FR-17", "AC-07", "BR-12"],
+      "traceability": [
+        "FR-17",
+        "AC-07",
+        "BR-12"
+      ],
       "title": "Testing-plan §3 event completion attendance finalization yields Attended and Absent",
       "preconditions": [
         "Event progressed to InProgress with one CheckedIn participant and one Registered participant without check-in",
@@ -30,7 +34,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-17", "BR-12"],
+      "traceability": [
+        "FR-17",
+        "BR-12"
+      ],
       "title": "System marks Registered participant without valid check-in Absent when event completes",
       "preconditions": [
         "Event InProgress with at least one Registered participant who never checked in",
@@ -50,7 +57,11 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["FR-17", "AC-07", "BR-12"],
+      "traceability": [
+        "FR-17",
+        "AC-07",
+        "BR-12"
+      ],
       "title": "markAttendance transitions CheckedIn registration to Attended on event completion",
       "preconditions": [
         "Registration in CheckedIn state before event completion",
@@ -71,7 +82,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-17", "AC-07", "BR-12"],
+      "traceability": [
+        "FR-17",
+        "AC-07",
+        "BR-12"
+      ],
       "title": "POST /events/{eventId}/complete returns HTTP 200 and finalizes Attended and Absent states",
       "preconditions": [
         "E2E fixture event InProgress with one CheckedIn and one Registered-without-check-in participant",
@@ -90,7 +105,12 @@
       "layer": "e2e",
       "technique": "flow-a",
       "priority": "P0",
-      "traceability": ["FR-17", "AC-07", "FR-14", "BR-12"],
+      "traceability": [
+        "FR-17",
+        "AC-07",
+        "FR-14",
+        "BR-12"
+      ],
       "title": "Flow A completion step finalizes self check-in participant as Attended",
       "preconditions": [
         "E2E Flow A progressed through publish, registration, and self check-in (CheckedIn)",
@@ -111,7 +131,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P1",
-      "traceability": ["FR-17", "FR-22", "BR-12"],
+      "traceability": [
+        "FR-17",
+        "FR-22",
+        "BR-12"
+      ],
       "title": "GET /events/{eventId}/dashboard reflects Attended and Absent counts after completion",
       "preconditions": [
         "Event completed with mixed cohort: some CheckedIn, some Registered without check-in",
@@ -130,7 +154,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-17", "AC-07", "FR-25"],
+      "traceability": [
+        "FR-17",
+        "AC-07",
+        "FR-25"
+      ],
       "title": "Participant denied POST /events/{eventId}/complete",
       "preconditions": [
         "Event InProgress with participant in CheckedIn state",
@@ -148,7 +176,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P1",
-      "traceability": ["FR-17", "FR-27"],
+      "traceability": [
+        "FR-17",
+        "FR-27"
+      ],
       "title": "OrganizerStaff denied POST complete on unassigned event",
       "preconditions": [
         "Event InProgress in another organizing unit or outside staff assignment scope",
@@ -166,7 +197,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-17", "AC-07"],
+      "traceability": [
+        "FR-17",
+        "AC-07"
+      ],
       "title": "Organizer registrations view displays Attended and Absent badges after event completion",
       "preconditions": [
         "OrganizerAdmin logged in with event scope",
@@ -187,7 +221,9 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-17"],
+      "traceability": [
+        "FR-17"
+      ],
       "title": "Participant my registrations shows Attended or Absent terminal state after completion",
       "preconditions": [
         "Participant logged in with registration on a completed event",
@@ -207,7 +243,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-17", "BR-12"],
+      "traceability": [
+        "FR-17",
+        "BR-12"
+      ],
       "title": "Mixed cohort receives correct Attended and Absent assignments in single completion",
       "preconditions": [
         "Single event with multiple Registered participants",
@@ -227,7 +266,10 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-17", "BR-12"],
+      "traceability": [
+        "FR-17",
+        "BR-12"
+      ],
       "title": "Attendance status is not updated before event completion trigger",
       "preconditions": [
         "Event InProgress with participant in CheckedIn state",
@@ -246,7 +288,10 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-17", "BR-12"],
+      "traceability": [
+        "FR-17",
+        "BR-12"
+      ],
       "title": "Waitlisted registration is not assigned Attended or Absent on completion",
       "preconditions": [
         "Event at capacity with waitlist enabled",
@@ -266,7 +311,10 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-17", "BR-12"],
+      "traceability": [
+        "FR-17",
+        "BR-12"
+      ],
       "title": "Cancelled registration is excluded from Attended or Absent finalization",
       "preconditions": [
         "Participant cancelled registration (CancelledByUser) before check-in",
@@ -286,7 +334,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-17", "BR-12"],
+      "traceability": [
+        "FR-17",
+        "BR-12"
+      ],
       "title": "Repeated POST complete returns 409 and does not corrupt terminal states",
       "preconditions": [
         "Event already Completed with registrations in Attended and Absent states",
@@ -305,7 +356,11 @@
       "layer": "integration",
       "technique": "concurrency",
       "priority": "P1",
-      "traceability": ["FR-17", "BR-12", "NFR-02"],
+      "traceability": [
+        "FR-17",
+        "BR-12",
+        "NFR-02"
+      ],
       "title": "Concurrent event completion attempts produce consistent attendance outcomes",
       "preconditions": [
         "Event InProgress with CheckedIn and Registered-without-check-in participants",
@@ -324,7 +379,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["FR-17", "NFR-02", "BR-12"],
+      "traceability": [
+        "FR-17",
+        "NFR-02",
+        "BR-12"
+      ],
       "title": "Attendance finalization commits atomically with event completion",
       "preconditions": [
         "Multiple CheckedIn and Registered-without-check-in participants on same event",
@@ -343,7 +402,12 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P1",
-      "traceability": ["FR-17", "AC-12", "FR-23", "BR-12"],
+      "traceability": [
+        "FR-17",
+        "AC-12",
+        "FR-23",
+        "BR-12"
+      ],
       "title": "GET status-history records CheckedIn to Attended and Registered to Absent transitions",
       "preconditions": [
         "Event with CheckedIn and Registered-without-check-in participants",
@@ -362,7 +426,11 @@
       "layer": "e2e",
       "technique": "flow-a",
       "priority": "P1",
-      "traceability": ["FR-17", "BR-17", "AC-07"],
+      "traceability": [
+        "FR-17",
+        "BR-17",
+        "AC-07"
+      ],
       "title": "Attended status from completion satisfies downstream certificate eligibility attendance rule",
       "preconditions": [
         "Flow A progressed through check-in and event completion with participant marked Attended",
@@ -382,7 +450,12 @@
       "layer": "e2e",
       "technique": "pagination",
       "priority": "P1",
-      "traceability": ["FR-17", "FR-30", "AC-13", "NFR-16"],
+      "traceability": [
+        "FR-17",
+        "FR-30",
+        "AC-13",
+        "NFR-16"
+      ],
       "title": "Paginated attendance list reflects final Attended participants after completion",
       "preconditions": [
         "Event completed after in-window check-ins for multiple participants",

@@ -1,7 +1,7 @@
 {
   "productItemId": "FR-10",
   "version": 1,
-  "docFingerprint": "sha256:61772db2f0be7d5f91f9eccefef8b9d85ce957dbd55d47d9d14f933847b053f4",
+  "docFingerprint": "sha256:027175175545d05eacf412663c601ddc7b622e4741a2ff40633c8e332b7bd6aa",
   "generatedAt": "2026-06-26T14:30:00Z",
   "cases": [
     {
@@ -10,7 +10,9 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-10"],
+      "traceability": [
+        "FR-10"
+      ],
       "title": "registration-status returns null when participant has no registration for event",
       "preconditions": [
         "Event exists in RegistrationOpen state",
@@ -29,7 +31,11 @@
       "layer": "e2e",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["FR-10", "AC-01", "FR-07"],
+      "traceability": [
+        "FR-10",
+        "AC-01",
+        "FR-07"
+      ],
       "title": "GET registration-status reflects Registered immediately after successful registration",
       "preconditions": [
         "Published event with registration opened and available seats",
@@ -49,7 +55,11 @@
       "layer": "e2e",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["FR-10", "AC-02", "FR-08"],
+      "traceability": [
+        "FR-10",
+        "AC-02",
+        "FR-08"
+      ],
       "title": "GET registration-status reflects Waitlisted with queue position when event is full",
       "preconditions": [
         "Event RegistrationOpen at capacity with waitlistEnabled true",
@@ -69,7 +79,11 @@
       "layer": "integration",
       "technique": "flow-b",
       "priority": "P0",
-      "traceability": ["FR-10", "FR-12", "AC-02"],
+      "traceability": [
+        "FR-10",
+        "FR-12",
+        "AC-02"
+      ],
       "title": "registration-status updates from Waitlisted to Registered after waitlist promotion",
       "preconditions": [
         "Participant A is Registered and participant B is Waitlisted on a full event",
@@ -90,7 +104,11 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["FR-10", "AC-05", "FR-13"],
+      "traceability": [
+        "FR-10",
+        "AC-05",
+        "FR-13"
+      ],
       "title": "registration-status reflects CheckedIn after valid staff check-in",
       "preconditions": [
         "Participant has Registered state for an InProgress event",
@@ -110,7 +128,11 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["FR-10", "AC-07", "FR-17"],
+      "traceability": [
+        "FR-10",
+        "AC-07",
+        "FR-17"
+      ],
       "title": "registration-status reflects Attended or Absent after event completion",
       "preconditions": [
         "Event transitions to Completed",
@@ -130,7 +152,11 @@
       "layer": "e2e",
       "technique": "pagination",
       "priority": "P0",
-      "traceability": ["FR-10", "FR-29", "AC-14"],
+      "traceability": [
+        "FR-10",
+        "FR-29",
+        "AC-14"
+      ],
       "title": "GET me/registrations returns paginated list of participant registrations with current states",
       "preconditions": [
         "Authenticated participant registered for at least two distinct events in different states",
@@ -149,7 +175,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-10", "AC-01"],
+      "traceability": [
+        "FR-10",
+        "AC-01"
+      ],
       "title": "GET registration-status returns 200 with registration envelope for authenticated participant",
       "preconditions": [
         "Published event RegistrationOpen with available seats",
@@ -168,7 +197,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["FR-10", "AC-01"],
+      "traceability": [
+        "FR-10",
+        "AC-01"
+      ],
       "title": "Event detail page registration status panel reflects outcome after register action",
       "preconditions": [
         "Participant logged in on event detail page for RegistrationOpen event with available seats",
@@ -187,7 +219,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-10", "FR-28"],
+      "traceability": [
+        "FR-10",
+        "FR-28"
+      ],
       "title": "Event discovery cards surface per-event registration status for authenticated participant",
       "preconditions": [
         "Participant logged in viewing paginated event discovery list",
@@ -207,7 +242,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-10", "FR-29"],
+      "traceability": [
+        "FR-10",
+        "FR-29"
+      ],
       "title": "My Registrations page reflects latest status after registration outcome",
       "preconditions": [
         "Participant completes registration on an event yielding Registered or Waitlisted",
@@ -227,7 +265,12 @@
       "layer": "e2e",
       "technique": "flow-a",
       "priority": "P0",
-      "traceability": ["FR-10", "AC-01", "AC-05", "AC-07"],
+      "traceability": [
+        "FR-10",
+        "AC-01",
+        "AC-05",
+        "AC-07"
+      ],
       "title": "registration-status tracks lifecycle from Registered through CheckedIn to Attended",
       "preconditions": [
         "Event progressed through publish, open registration, register, start event",
@@ -248,7 +291,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-10", "NFR-07", "AC-15"],
+      "traceability": [
+        "FR-10",
+        "NFR-07",
+        "AC-15"
+      ],
       "title": "Unauthenticated registration-status request returns 401",
       "preconditions": [
         "Valid eventId exists",
@@ -266,7 +313,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-10", "FR-26", "FR-25"],
+      "traceability": [
+        "FR-10",
+        "FR-26",
+        "FR-25"
+      ],
       "title": "Unauthenticated GET me/registrations returns 401",
       "preconditions": [
         "Participant registrations exist in database",
@@ -284,7 +335,11 @@
       "layer": "integration",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-10", "FR-26", "NFR-08"],
+      "traceability": [
+        "FR-10",
+        "FR-26",
+        "NFR-08"
+      ],
       "title": "registration-status returns only the current actor registration not other participants",
       "preconditions": [
         "Two distinct participants A and B registered for the same event",
@@ -304,7 +359,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P1",
-      "traceability": ["FR-10", "FR-11", "BR-07"],
+      "traceability": [
+        "FR-10",
+        "FR-11",
+        "BR-07"
+      ],
       "title": "registration-status reflects CancelledByUser after valid participant cancellation",
       "preconditions": [
         "Participant Registered for event before CancellationDeadline",
@@ -323,7 +382,11 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-10", "FR-09", "BR-05"],
+      "traceability": [
+        "FR-10",
+        "FR-09",
+        "BR-05"
+      ],
       "title": "registration-status reflects Rejected when registration rejected on full event without waitlist",
       "preconditions": [
         "Event RegistrationOpen at capacity with waitlistEnabled false",
@@ -342,7 +405,9 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-10"],
+      "traceability": [
+        "FR-10"
+      ],
       "title": "registration-status for unknown eventId returns 404",
       "preconditions": [
         "Authenticated participant with valid JWT",
@@ -360,7 +425,11 @@
       "layer": "integration",
       "technique": "flow-b",
       "priority": "P1",
-      "traceability": ["FR-10", "FR-12", "BR-06"],
+      "traceability": [
+        "FR-10",
+        "FR-12",
+        "BR-06"
+      ],
       "title": "Both cancelled registrant and promoted waitlist participant see updated status on next query",
       "preconditions": [
         "Registered participant A and Waitlisted participant B on same full event",
@@ -380,7 +449,9 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P2",
-      "traceability": ["FR-10"],
+      "traceability": [
+        "FR-10"
+      ],
       "title": "UI shows status unavailable when registration-status lookup fails",
       "preconditions": [
         "Participant authenticated on event discovery",
@@ -399,7 +470,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P1",
-      "traceability": ["FR-10", "NFR-04"],
+      "traceability": [
+        "FR-10",
+        "NFR-04"
+      ],
       "title": "registration-status responds within acceptable latency under normal load",
       "preconditions": [
         "Event with moderate registration volume",
@@ -419,7 +493,10 @@
       "layer": "unit",
       "technique": "state-transition",
       "priority": "P1",
-      "traceability": ["FR-10", "NFR-12"],
+      "traceability": [
+        "FR-10",
+        "NFR-12"
+      ],
       "title": "Status token mapping produces consistent human-readable labels for each registration state",
       "preconditions": [
         "Status token or badge mapper module for participant-facing registration states"
@@ -437,7 +514,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-10", "NFR-13"],
+      "traceability": [
+        "FR-10",
+        "NFR-13"
+      ],
       "title": "Registration action provides immediate status feedback on success or failure",
       "preconditions": [
         "Participant on event detail with registration action available"
@@ -455,7 +535,10 @@
       "layer": "integration",
       "technique": "concurrency",
       "priority": "P0",
-      "traceability": ["FR-10", "NFR-02"],
+      "traceability": [
+        "FR-10",
+        "NFR-02"
+      ],
       "title": "registration-status snapshot matches latest committed registration row after concurrent writes",
       "preconditions": [
         "Event with capacity contention",
@@ -474,7 +557,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["FR-10", "NFR-09"],
+      "traceability": [
+        "FR-10",
+        "NFR-09"
+      ],
       "title": "registration-status exposes only participant-safe fields",
       "preconditions": [
         "Participant authenticated with active registration",
@@ -493,7 +579,9 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["FR-10"],
+      "traceability": [
+        "FR-10"
+      ],
       "title": "getStatus query is side-effect free and returns versioned registration snapshot",
       "preconditions": [
         "Registration module query contract: queries are side-effect free",
@@ -512,7 +600,10 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P1",
-      "traceability": ["FR-10", "BR-02"],
+      "traceability": [
+        "FR-10",
+        "BR-02"
+      ],
       "title": "Waitlisted participant status shows Expired when registration window closes without promotion",
       "preconditions": [
         "Participant Waitlisted on event",

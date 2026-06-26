@@ -1,7 +1,7 @@
 {
   "productItemId": "FR-11",
   "version": 1,
-  "docFingerprint": "sha256:61772db2f0be7d5f91f9eccefef8b9d85ce957dbd55d47d9d14f933847b053f4",
+  "docFingerprint": "sha256:027175175545d05eacf412663c601ddc7b622e4741a2ff40633c8e332b7bd6aa",
   "generatedAt": "2026-06-26T15:45:00Z",
   "cases": [
     {
@@ -10,7 +10,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-11", "BR-07", "BR-08"],
+      "traceability": [
+        "FR-11",
+        "BR-07",
+        "BR-08"
+      ],
       "title": "Registered participant cancels before CancellationDeadline transitions to CancelledByUser",
       "preconditions": [
         "Event RegistrationOpen with CancellationDeadline configured in the future (fixed clock before deadline)",
@@ -31,7 +35,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-11", "BR-07"],
+      "traceability": [
+        "FR-11",
+        "BR-07"
+      ],
       "title": "POST registrations cancel returns 200 with CancelledByUser for valid participant cancellation",
       "preconditions": [
         "Authenticated participant with Registered registration before CancellationDeadline",
@@ -51,7 +58,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-11", "BR-07"],
+      "traceability": [
+        "FR-11",
+        "BR-07"
+      ],
       "title": "Participant can cancel when event has no CancellationDeadline configured",
       "preconditions": [
         "Event RegistrationOpen with CancellationDeadline null or unset",
@@ -71,7 +81,12 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["FR-11", "BR-08", "BR-06", "FR-12"],
+      "traceability": [
+        "FR-11",
+        "BR-08",
+        "BR-06",
+        "FR-12"
+      ],
       "title": "Valid cancellation transitions Registered to CancelledByUser and promotes top waitlist atomically",
       "preconditions": [
         "Event at capacity with waitlistEnabled true",
@@ -92,7 +107,12 @@
       "layer": "e2e",
       "technique": "flow-b",
       "priority": "P0",
-      "traceability": ["FR-11", "AC-04", "BR-08", "FR-12"],
+      "traceability": [
+        "FR-11",
+        "AC-04",
+        "BR-08",
+        "FR-12"
+      ],
       "title": "Flow B cancellation step releases seat and enables waitlist promotion",
       "preconditions": [
         "Full event with one Waitlisted participant per Flow B setup",
@@ -113,7 +133,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-11", "BR-07"],
+      "traceability": [
+        "FR-11",
+        "BR-07"
+      ],
       "title": "Participant UI cancel registration flow per user Flow 2",
       "preconditions": [
         "Participant authenticated and viewing event detail where they are Registered",
@@ -134,7 +157,10 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["FR-11", "BR-07"],
+      "traceability": [
+        "FR-11",
+        "BR-07"
+      ],
       "title": "cancelByParticipant guard permits transition only from Registered before deadline",
       "preconditions": [
         "Fixed clock abstraction set to timestamp strictly before event CancellationDeadline",
@@ -153,7 +179,11 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-11", "BR-07", "BR-09"],
+      "traceability": [
+        "FR-11",
+        "BR-07",
+        "BR-09"
+      ],
       "title": "Cancellation after CancellationDeadline is rejected with CANCELLATION_DEADLINE_PASSED",
       "preconditions": [
         "Event with CancellationDeadline configured in the past relative to fixed clock",
@@ -173,7 +203,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-11", "BR-09"],
+      "traceability": [
+        "FR-11",
+        "BR-09"
+      ],
       "title": "Late cancellation blocked by event policy returns HTTP 422 CANCELLATION_NOT_ALLOWED",
       "preconditions": [
         "Event configured with post-deadline policy that blocks participant self-cancel without organizer approval",
@@ -193,7 +226,9 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-11"],
+      "traceability": [
+        "FR-11"
+      ],
       "title": "Duplicate cancel attempt on already cancelled registration returns HTTP 409 conflict",
       "preconditions": [
         "Participant registration already in CancelledByUser state from prior successful cancel",
@@ -212,7 +247,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-11", "FR-26"],
+      "traceability": [
+        "FR-11",
+        "FR-26"
+      ],
       "title": "Participant cannot cancel another participant registration",
       "preconditions": [
         "Participant A Registered for event",
@@ -231,7 +269,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-11", "AC-15"],
+      "traceability": [
+        "FR-11",
+        "AC-15"
+      ],
       "title": "OrganizerStaff denied from participant cancel endpoint returns HTTP 403",
       "preconditions": [
         "Participant has Registered registration for event assigned to OrganizerStaff scope",
@@ -250,7 +291,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-11", "AC-15"],
+      "traceability": [
+        "FR-11",
+        "AC-15"
+      ],
       "title": "Unauthenticated cancel request returns HTTP 401",
       "preconditions": [
         "Valid eventId and registrationId for an existing Registered row",
@@ -268,7 +312,9 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P1",
-      "traceability": ["FR-11"],
+      "traceability": [
+        "FR-11"
+      ],
       "title": "Cancel from CheckedIn registration is rejected as invalid transition",
       "preconditions": [
         "Participant registration in CheckedIn state after valid in-window check-in",
@@ -287,7 +333,9 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P1",
-      "traceability": ["FR-11"],
+      "traceability": [
+        "FR-11"
+      ],
       "title": "Idempotent cancel retry with same Idempotency-Key returns consistent HTTP 200 outcome",
       "preconditions": [
         "Participant Registered with valid cancellation policy",
@@ -306,7 +354,11 @@
       "layer": "integration",
       "technique": "concurrency",
       "priority": "P1",
-      "traceability": ["FR-11", "BR-06", "FR-12"],
+      "traceability": [
+        "FR-11",
+        "BR-06",
+        "FR-12"
+      ],
       "title": "Concurrent cancellations on full waitlisted event do not double-promote same waitlist slot",
       "preconditions": [
         "Event at capacity with multiple Waitlisted participants in FIFO order",
@@ -326,7 +378,10 @@
       "layer": "e2e",
       "technique": "scenario-matrix",
       "priority": "P1",
-      "traceability": ["FR-11", "AC-12"],
+      "traceability": [
+        "FR-11",
+        "AC-12"
+      ],
       "title": "Successful cancel writes traceable status history entry",
       "preconditions": [
         "Participant Registered then cancels before deadline",
@@ -345,7 +400,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-11", "BR-08"],
+      "traceability": [
+        "FR-11",
+        "BR-08"
+      ],
       "title": "Cancellation and waitlist promotion execute in single database transaction",
       "preconditions": [
         "Event at capacity with at least one Waitlisted participant",
@@ -366,7 +424,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["FR-11", "BR-08"],
+      "traceability": [
+        "FR-11",
+        "BR-08"
+      ],
       "title": "Cancellation deadline policy behavior covered in integration suite",
       "preconditions": [
         "Fixed clock abstraction wired for registration module integration tests",
@@ -385,7 +446,9 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P2",
-      "traceability": ["FR-11"],
+      "traceability": [
+        "FR-11"
+      ],
       "title": "Cancellation UI presents clear low-step flow on common viewport sizes",
       "preconditions": [
         "Participant Registered on mobile-width and desktop-width viewports",

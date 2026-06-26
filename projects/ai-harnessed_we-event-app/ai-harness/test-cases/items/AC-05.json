@@ -1,7 +1,7 @@
 {
   "productItemId": "AC-05",
   "version": 2,
-  "docFingerprint": "sha256:c6bd2470b2186d8b109b2fe04884f4802250d75d244124495523616faaa9e091",
+  "docFingerprint": "sha256:4d12785a73f71eae22ecc1c28abee1e2becca04b0528fdc2184d610d44dc34ff",
   "generatedAt": "2026-06-26T14:00:00Z",
   "cases": [
     {
@@ -10,7 +10,11 @@
       "layer": "integration",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["AC-05", "BR-10", "BR-13"],
+      "traceability": [
+        "AC-05",
+        "BR-10",
+        "BR-13"
+      ],
       "title": "In-window check-in stored with timestamp per testing-plan §3",
       "preconditions": [
         "Event is InProgress with check-in window active (current time between checkinOpenAt and checkinCloseAt)",
@@ -30,7 +34,13 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["AC-05", "FR-15", "FR-16", "BR-10", "BR-13"],
+      "traceability": [
+        "AC-05",
+        "FR-15",
+        "FR-16",
+        "BR-10",
+        "BR-13"
+      ],
       "title": "Check-in module persists CheckinRecord and registration transition in one DB transaction",
       "preconditions": [
         "Real database fixture with Registered participant and active check-in window",
@@ -50,7 +60,10 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["AC-05", "BR-10"],
+      "traceability": [
+        "AC-05",
+        "BR-10"
+      ],
       "title": "Valid in-window check-in transitions registration Registered to CheckedIn",
       "preconditions": [
         "Registration in Registered state before check-in",
@@ -71,7 +84,12 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["AC-05", "FR-13", "FR-16", "BR-10"],
+      "traceability": [
+        "AC-05",
+        "FR-13",
+        "FR-16",
+        "BR-10"
+      ],
       "title": "POST /events/{eventId}/checkins returns HTTP 200 with checkinAt timestamp",
       "preconditions": [
         "E2E fixture event InProgress with active check-in window",
@@ -92,7 +110,12 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["AC-05", "FR-14", "FR-15", "BR-10"],
+      "traceability": [
+        "AC-05",
+        "FR-14",
+        "FR-15",
+        "BR-10"
+      ],
       "title": "POST /events/{eventId}/self-checkin returns HTTP 200 with timestamp when self-service enabled",
       "preconditions": [
         "Event rule config enables participant self check-in",
@@ -112,7 +135,10 @@
       "layer": "e2e",
       "technique": "flow-a",
       "priority": "P0",
-      "traceability": ["AC-05", "FR-15"],
+      "traceability": [
+        "AC-05",
+        "FR-15"
+      ],
       "title": "Flow A lifecycle check-in step records timestamp after registration",
       "preconditions": [
         "E2E Flow A fixture: event progressed through publish, open-registration, and participant Registered",
@@ -132,7 +158,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["AC-05", "FR-14"],
+      "traceability": [
+        "AC-05",
+        "FR-14"
+      ],
       "title": "Participant self check-in UI shows success with recorded timestamp",
       "preconditions": [
         "Event with self check-in enabled and window currently open",
@@ -153,7 +182,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["AC-05", "FR-13"],
+      "traceability": [
+        "AC-05",
+        "FR-13"
+      ],
       "title": "Organizer staff check-in console records participant with timestamp",
       "preconditions": [
         "OrganizerStaff logged in with assigned event scope",
@@ -174,7 +206,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["AC-05", "FR-13"],
+      "traceability": [
+        "AC-05",
+        "FR-13"
+      ],
       "title": "Participant denied staff check-in endpoint for another registration",
       "preconditions": [
         "Event InProgress with active check-in window",
@@ -193,7 +228,9 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["AC-05"],
+      "traceability": [
+        "AC-05"
+      ],
       "title": "OrganizerStaff denied check-in on event outside assigned scope",
       "preconditions": [
         "Event InProgress with active check-in window but not assigned to staff actor",
@@ -212,7 +249,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["AC-05", "BR-11"],
+      "traceability": [
+        "AC-05",
+        "BR-11"
+      ],
       "title": "Second check-in attempt returns CHECKIN_ALREADY_RECORDED without altering timestamp",
       "preconditions": [
         "Participant already has one valid check-in recorded within the window",
@@ -232,7 +272,10 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["AC-05", "BR-10"],
+      "traceability": [
+        "AC-05",
+        "BR-10"
+      ],
       "title": "Check-in at CheckinOpenAt boundary is recorded with timestamp",
       "preconditions": [
         "Event configured with known checkinOpenAt and checkinCloseAt",
@@ -252,7 +295,11 @@
       "layer": "integration",
       "technique": "concurrency",
       "priority": "P0",
-      "traceability": ["AC-05", "BR-11", "NFR-02"],
+      "traceability": [
+        "AC-05",
+        "BR-11",
+        "NFR-02"
+      ],
       "title": "Concurrent duplicate check-in requests yield at most one valid record with timestamp",
       "preconditions": [
         "Registered participant with no prior check-in",
@@ -272,7 +319,9 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["AC-05"],
+      "traceability": [
+        "AC-05"
+      ],
       "title": "Check-in rejected when registration is not in Registered state",
       "preconditions": [
         "Event with active check-in window",
@@ -291,7 +340,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["AC-05", "NFR-13"],
+      "traceability": [
+        "AC-05",
+        "NFR-13"
+      ],
       "title": "Check-in page submit succeeds when UI gate shows check-in available",
       "preconditions": [
         "Event InProgress with active check-in window",

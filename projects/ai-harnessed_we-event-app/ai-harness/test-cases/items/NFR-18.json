@@ -1,7 +1,7 @@
 {
   "productItemId": "NFR-18",
   "version": 1,
-  "docFingerprint": "sha256:11ddf4c5c81698ee9aadf540af5c4b69e4286c60734018f2e40a3df142e2c12c",
+  "docFingerprint": "sha256:408321cae2e96b072282d6a467ef56479d3cf5f57fc5f2184cdae796d2ae49e1",
   "generatedAt": "2026-06-26T22:30:00Z",
   "cases": [
     {
@@ -10,7 +10,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["NFR-18", "FR-35", "AC-17"],
+      "traceability": [
+        "NFR-18",
+        "FR-35",
+        "AC-17"
+      ],
       "title": "POST cover-image and GET media/events/{key} honor allowed MIME types and controlled path contract",
       "preconditions": [
         "API server running at /api/v1",
@@ -33,7 +37,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["NFR-18", "FR-35"],
+      "traceability": [
+        "NFR-18",
+        "FR-35"
+      ],
       "title": "Uploaded cover file persisted under configured uploads directory with storage key format",
       "preconditions": [
         "OrganizerAdmin JWT and editable event",
@@ -55,7 +62,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["NFR-18", "FR-36"],
+      "traceability": [
+        "NFR-18",
+        "FR-36"
+      ],
       "title": "Event list and detail coverImageUrl uses API media route not raw filesystem path",
       "preconditions": [
         "Event with cover_image_key set from prior valid upload in Postgres",
@@ -75,7 +85,12 @@
       "layer": "e2e",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["NFR-18", "FR-35", "FR-36", "AC-17"],
+      "traceability": [
+        "NFR-18",
+        "FR-35",
+        "FR-36",
+        "AC-17"
+      ],
       "title": "Organizer uploads validated cover; participant retrieves image only via controlled media URL",
       "preconditions": [
         "API server running at /api/v1",
@@ -98,7 +113,10 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["NFR-18", "FR-35"],
+      "traceability": [
+        "NFR-18",
+        "FR-35"
+      ],
       "title": "API rejects oversized multipart upload before cover_image_key persistence",
       "preconditions": [
         "OrganizerAdmin JWT and editable event without cover",
@@ -118,7 +136,9 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["NFR-18"],
+      "traceability": [
+        "NFR-18"
+      ],
       "title": "Media handler serves files only from configured uploads directory via key lookup",
       "preconditions": [
         "Valid cover uploaded and cover_image_key known in Postgres",
@@ -139,7 +159,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P1",
-      "traceability": ["NFR-18", "FR-36", "AC-17"],
+      "traceability": [
+        "NFR-18",
+        "FR-36",
+        "AC-17"
+      ],
       "title": "Each allowed image format returns matching Content-Type on media GET",
       "preconditions": [
         "OrganizerAdmin JWT and three editable events (or sequential upload/delete)",
@@ -159,7 +183,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["NFR-18", "FR-35"],
+      "traceability": [
+        "NFR-18",
+        "FR-35"
+      ],
       "title": "Disallowed MIME type upload rejected with no storage side effects",
       "preconditions": [
         "OrganizerAdmin JWT and editable event",
@@ -178,7 +205,9 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["NFR-18"],
+      "traceability": [
+        "NFR-18"
+      ],
       "title": "Cover upload at exactly 5 MB accepted; one byte over rejected",
       "preconditions": [
         "OrganizerAdmin JWT and editable event without cover",
@@ -198,7 +227,9 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["NFR-18"],
+      "traceability": [
+        "NFR-18"
+      ],
       "title": "Media route rejects path traversal and invalid keys without filesystem escape",
       "preconditions": [
         "API server running with media handler",
@@ -217,7 +248,9 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["NFR-18"],
+      "traceability": [
+        "NFR-18"
+      ],
       "title": "GET media for deleted cover key returns not found without serving stale file",
       "preconditions": [
         "Event with uploaded cover and known cover_image_key",
@@ -236,7 +269,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["NFR-18", "NFR-08", "FR-35"],
+      "traceability": [
+        "NFR-18",
+        "NFR-08",
+        "FR-35"
+      ],
       "title": "Participant cannot upload event cover image",
       "preconditions": [
         "Editable event in organizer scope",
@@ -256,7 +293,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["NFR-18", "NFR-08", "FR-35"],
+      "traceability": [
+        "NFR-18",
+        "NFR-08",
+        "FR-35"
+      ],
       "title": "OrganizerStaff denied cover image upload on editable event",
       "preconditions": [
         "Draft event in OrganizerAdmin organizing unit",
@@ -275,7 +316,12 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["NFR-18", "FR-35", "FR-36", "AC-17"],
+      "traceability": [
+        "NFR-18",
+        "FR-35",
+        "FR-36",
+        "AC-17"
+      ],
       "title": "Organizer cover upload enforces type and size feedback; participant sees image via controlled URL",
       "preconditions": [
         "Web app running with organizer event create/edit form and participant discovery pages",
@@ -296,7 +342,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["NFR-18", "FR-35"],
+      "traceability": [
+        "NFR-18",
+        "FR-35"
+      ],
       "title": "Organizer form blocks oversize cover selection with clear error before API call",
       "preconditions": [
         "Web app event form with client-side or immediate server validation for cover upload",
@@ -317,7 +366,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["NFR-18", "FR-35"],
+      "traceability": [
+        "NFR-18",
+        "FR-35"
+      ],
       "title": "Malformed multipart upload rejected at API validation gate",
       "preconditions": [
         "OrganizerAdmin JWT and editable event",

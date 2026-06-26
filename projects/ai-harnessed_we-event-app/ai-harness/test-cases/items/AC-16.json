@@ -1,7 +1,7 @@
 {
   "productItemId": "AC-16",
   "version": 1,
-  "docFingerprint": "sha256:95b2130478acb06c85d10e9e25b8bd9fbb6f4ea0d832479d2adbe9e0d10ad022",
+  "docFingerprint": "sha256:5e79e4c58f0f91c5bbe4d59de7cf91990ac57ea7ff85ef3efbfb221ffac55c1f",
   "generatedAt": "2026-06-26T21:30:00Z",
   "cases": [
     {
@@ -10,7 +10,11 @@
       "layer": "e2e",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["AC-16", "FR-29", "AC-14"],
+      "traceability": [
+        "AC-16",
+        "FR-29",
+        "AC-14"
+      ],
       "title": "Testing-plan §3 my registrations paginated row after signup and login",
       "preconditions": [
         "API server running at /api/v1",
@@ -32,7 +36,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["AC-16", "FR-32"],
+      "traceability": [
+        "AC-16",
+        "FR-32"
+      ],
       "title": "POST /api/v1/auth/register returns JWT and Participant profile",
       "preconditions": [
         "API server running at /api/v1",
@@ -51,7 +58,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["AC-16", "FR-33"],
+      "traceability": [
+        "AC-16",
+        "FR-33"
+      ],
       "title": "POST /api/v1/auth/login returns JWT and profile with roles",
       "preconditions": [
         "Participant account exists via prior POST /auth/register"
@@ -69,7 +79,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["AC-16", "FR-29"],
+      "traceability": [
+        "AC-16",
+        "FR-29"
+      ],
       "title": "GET /api/v1/me/registrations returns 200 paginated envelope for authenticated participant",
       "preconditions": [
         "Participant logged in via POST /auth/login with at least one registration"
@@ -87,7 +100,12 @@
       "layer": "e2e",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["AC-16", "FR-32", "FR-33", "FR-29"],
+      "traceability": [
+        "AC-16",
+        "FR-32",
+        "FR-33",
+        "FR-29"
+      ],
       "title": "Signup → login → view own registrations succeeds end-to-end via API",
       "preconditions": [
         "API server running at /api/v1",
@@ -109,7 +127,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["AC-16", "FR-32", "FR-33"],
+      "traceability": [
+        "AC-16",
+        "FR-32",
+        "FR-33"
+      ],
       "title": "Auth module persists user with Participant role and login JWT sub matches users.id",
       "preconditions": [
         "Auth module and users table available with real DB transaction",
@@ -130,7 +152,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["AC-16", "FR-29", "NFR-08"],
+      "traceability": [
+        "AC-16",
+        "FR-29",
+        "NFR-08"
+      ],
       "title": "My registrations repository returns only current actor rows in DB transaction",
       "preconditions": [
         "Two distinct participants each with registrations on different events in database",
@@ -149,7 +175,12 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["AC-16", "FR-32", "FR-33", "FR-29"],
+      "traceability": [
+        "AC-16",
+        "FR-32",
+        "FR-33",
+        "FR-29"
+      ],
       "title": "Browser Flow 0 signup → Flow 0b login → My Registrations shows own registrations",
       "preconditions": [
         "Web app running with /signup, /login, and protected My Registrations route",
@@ -172,7 +203,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["AC-16", "FR-34"],
+      "traceability": [
+        "AC-16",
+        "FR-34"
+      ],
       "title": "Post-login redirect resumes intended My Registrations route after auth gate",
       "preconditions": [
         "Route guard preserves return URL when unauthenticated user hits protected route",
@@ -192,7 +226,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["AC-16", "FR-25"],
+      "traceability": [
+        "AC-16",
+        "FR-25"
+      ],
       "title": "Participant JWT denied organizer-only GET /events/{eventId}/registrations",
       "preconditions": [
         "Participant account created via signup and login flow",
@@ -211,7 +248,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["AC-16", "NFR-07", "AC-15"],
+      "traceability": [
+        "AC-16",
+        "NFR-07",
+        "AC-15"
+      ],
       "title": "Unauthenticated GET /me/registrations returns 401 before list query",
       "preconditions": [
         "API server running",
@@ -229,7 +270,11 @@
       "layer": "integration",
       "technique": "pagination",
       "priority": "P0",
-      "traceability": ["AC-16", "FR-29", "AC-13"],
+      "traceability": [
+        "AC-16",
+        "FR-29",
+        "AC-13"
+      ],
       "title": "My registrations paginated query returns correct total and page boundaries",
       "preconditions": [
         "Participant with at least two registrations across events in database",
@@ -249,7 +294,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["AC-16", "FR-32"],
+      "traceability": [
+        "AC-16",
+        "FR-32"
+      ],
       "title": "Duplicate signup with same email rejected with stable error code",
       "preconditions": [
         "Existing participant account with email user@example.com"
@@ -266,7 +314,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["AC-16", "FR-33"],
+      "traceability": [
+        "AC-16",
+        "FR-33"
+      ],
       "title": "Login with wrong password after signup fails without JWT",
       "preconditions": [
         "Participant account created via POST /auth/register with known password"
@@ -283,7 +334,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["AC-16", "AC-13"],
+      "traceability": [
+        "AC-16",
+        "AC-13"
+      ],
       "title": "Invalid page or pageSize on GET /me/registrations returns 400 INVALID_PAGINATION",
       "preconditions": [
         "Authenticated participant JWT from login"
@@ -301,7 +355,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["AC-16", "FR-32"],
+      "traceability": [
+        "AC-16",
+        "FR-32"
+      ],
       "title": "Newly signed-up participant with zero registrations receives empty paginated list",
       "preconditions": [
         "Fresh participant via POST /auth/register and POST /auth/login",
@@ -319,7 +376,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["AC-16", "FR-34"],
+      "traceability": [
+        "AC-16",
+        "FR-34"
+      ],
       "title": "Re-login after TopBar sign-out restores My Registrations access",
       "preconditions": [
         "Participant completed signup, registered for event, and viewed My Registrations",
@@ -339,7 +399,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["AC-16", "NFR-17"],
+      "traceability": [
+        "AC-16",
+        "NFR-17"
+      ],
       "title": "Signup persists password with adaptive hashing not plaintext",
       "preconditions": [
         "Database access to users credential storage column",

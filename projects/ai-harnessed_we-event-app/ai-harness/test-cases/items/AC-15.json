@@ -1,7 +1,7 @@
 {
   "productItemId": "AC-15",
   "version": 1,
-  "docFingerprint": "sha256:95b2130478acb06c85d10e9e25b8bd9fbb6f4ea0d832479d2adbe9e0d10ad022",
+  "docFingerprint": "sha256:5e79e4c58f0f91c5bbe4d59de7cf91990ac57ea7ff85ef3efbfb221ffac55c1f",
   "generatedAt": "2026-06-26T20:00:00Z",
   "cases": [
     {
@@ -10,7 +10,10 @@
       "layer": "e2e",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["AC-15", "NFR-07"],
+      "traceability": [
+        "AC-15",
+        "NFR-07"
+      ],
       "title": "Unauthenticated access to protected endpoints blocked as prerequisite gate for testing-plan §3 scenarios",
       "preconditions": [
         "API server running at /api/v1",
@@ -31,7 +34,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["AC-15", "FR-33", "NFR-07"],
+      "traceability": [
+        "AC-15",
+        "FR-33",
+        "NFR-07"
+      ],
       "title": "GET /api/v1/me without Authorization returns 401 with standard error envelope",
       "preconditions": [
         "API server running at /api/v1",
@@ -50,7 +57,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["AC-15", "NFR-07"],
+      "traceability": [
+        "AC-15",
+        "NFR-07"
+      ],
       "title": "POST /api/v1/events/{eventId}/registrations without auth returns 401 before domain execution",
       "preconditions": [
         "Published event in RegistrationOpen state with available capacity",
@@ -69,7 +79,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["AC-15", "FR-25", "NFR-07"],
+      "traceability": [
+        "AC-15",
+        "FR-25",
+        "NFR-07"
+      ],
       "title": "GET /api/v1/events/{eventId}/audit-logs without auth returns 401",
       "preconditions": [
         "Event with existing audit log entries",
@@ -87,7 +101,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["AC-15", "FR-28"],
+      "traceability": [
+        "AC-15",
+        "FR-28"
+      ],
       "title": "GET /api/v1/me/registrations without auth returns 401",
       "preconditions": [
         "Participant has registrations in the system",
@@ -105,7 +122,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["AC-15", "NFR-07"],
+      "traceability": [
+        "AC-15",
+        "NFR-07"
+      ],
       "title": "Auth middleware rejects unauthenticated POST /events before role or scope checks and DB write",
       "preconditions": [
         "Event management module mounted with authorization decision pattern (authenticate → role → scope)",
@@ -126,7 +146,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["AC-15", "FR-25", "NFR-07"],
+      "traceability": [
+        "AC-15",
+        "FR-25",
+        "NFR-07"
+      ],
       "title": "Unauthenticated request to organizer-only dashboard endpoint returns 401",
       "preconditions": [
         "Event with dashboard metrics available",
@@ -145,7 +169,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["AC-15", "FR-34"],
+      "traceability": [
+        "AC-15",
+        "FR-34"
+      ],
       "title": "Unauthenticated visit to protected participant My Registrations route redirects to login",
       "preconditions": [
         "Web app running with route guards enabled",
@@ -165,7 +192,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["AC-15", "NFR-08"],
+      "traceability": [
+        "AC-15",
+        "NFR-08"
+      ],
       "title": "Unauthenticated visit to organizer area redirects to login per Flow 6 governance entry",
       "preconditions": [
         "Web app running with role-aware route guards",
@@ -184,7 +214,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["AC-15", "NFR-07"],
+      "traceability": [
+        "AC-15",
+        "NFR-07"
+      ],
       "title": "Representative sensitive mutation endpoints consistently return 401 when unauthenticated",
       "preconditions": [
         "Seeded event in RegistrationOpen state",
@@ -205,7 +238,11 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["AC-15", "NFR-07", "NFR-13"],
+      "traceability": [
+        "AC-15",
+        "NFR-07",
+        "NFR-13"
+      ],
       "title": "401 responses use standard typed error contract with requestId",
       "preconditions": [
         "API error middleware enabled",
@@ -224,7 +261,9 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["AC-15"],
+      "traceability": [
+        "AC-15"
+      ],
       "title": "Malformed JWT bearer token returns 401 on protected endpoint",
       "preconditions": [
         "Protected endpoint available (GET /me)",
@@ -243,7 +282,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["AC-15", "FR-33"],
+      "traceability": [
+        "AC-15",
+        "FR-33"
+      ],
       "title": "Expired JWT returns 401 on protected endpoint",
       "preconditions": [
         "JWT issued with past exp claim or fixed-clock test fixture",
@@ -261,7 +303,11 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["AC-15", "FR-32", "FR-33"],
+      "traceability": [
+        "AC-15",
+        "FR-32",
+        "FR-33"
+      ],
       "title": "Public auth endpoints remain accessible without bearer token",
       "preconditions": [
         "No Authorization header",
@@ -280,7 +326,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["AC-15", "FR-34"],
+      "traceability": [
+        "AC-15",
+        "FR-34"
+      ],
       "title": "After sign-out from TopBar, protected route access redirects to login again (Flow 0b)",
       "preconditions": [
         "User previously signed in with valid credentials",
@@ -300,7 +349,9 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["AC-15"],
+      "traceability": [
+        "AC-15"
+      ],
       "title": "Empty Authorization bearer value returns 401",
       "preconditions": [
         "Protected endpoint GET /me available"
@@ -317,7 +368,9 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P2",
-      "traceability": ["AC-15"],
+      "traceability": [
+        "AC-15"
+      ],
       "title": "Public /login and /signup routes render without redirect-loop when unauthenticated",
       "preconditions": [
         "Fresh browser session with no JWT"

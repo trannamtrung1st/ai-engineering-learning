@@ -1,7 +1,7 @@
 {
   "productItemId": "NFR-17",
   "version": 1,
-  "docFingerprint": "sha256:36eb7ede51ffcb03df8f9b4c191e51a75639a1a971475a654f1ec32d95231414",
+  "docFingerprint": "sha256:cff33cca15ef6cab3bccc14f79d25f9da5a6809dfeed7b72d03730ab2b6fe8fb",
   "generatedAt": "2026-06-26T13:08:38Z",
   "cases": [
     {
@@ -10,7 +10,12 @@
       "layer": "e2e",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["NFR-17", "FR-32", "FR-33", "AC-16"],
+      "traceability": [
+        "NFR-17",
+        "FR-32",
+        "FR-33",
+        "AC-16"
+      ],
       "title": "Signup followed by login succeeds using stored adaptive hash verification",
       "preconditions": [
         "API server running at /api/v1",
@@ -30,7 +35,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["NFR-17", "FR-32"],
+      "traceability": [
+        "NFR-17",
+        "FR-32"
+      ],
       "title": "Registration persists non-null password_hash in users table",
       "preconditions": [
         "Auth module and users table available",
@@ -50,7 +58,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["NFR-17", "FR-32"],
+      "traceability": [
+        "NFR-17",
+        "FR-32"
+      ],
       "title": "Stored password_hash uses bcrypt or argon2 adaptive hash format",
       "preconditions": [
         "Fresh participant account created via POST /auth/register",
@@ -70,7 +81,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["NFR-17", "FR-32", "FR-33"],
+      "traceability": [
+        "NFR-17",
+        "FR-32",
+        "FR-33"
+      ],
       "title": "POST /auth/register and POST /auth/login responses never expose password or passwordHash",
       "preconditions": [
         "Fresh email for registration",
@@ -90,7 +105,10 @@
       "layer": "integration",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["NFR-17", "FR-33"],
+      "traceability": [
+        "NFR-17",
+        "FR-33"
+      ],
       "title": "GET /me profile serialization excludes password hash from user aggregate",
       "preconditions": [
         "Authenticated participant session via login JWT",
@@ -109,7 +127,9 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["NFR-17"],
+      "traceability": [
+        "NFR-17"
+      ],
       "title": "Seeded persona accounts store adaptive hashes not plaintext passwords",
       "preconditions": [
         "Local seed data loaded with OrganizerAdmin, OrganizerStaff, and Participant personas per local development setup",
@@ -128,7 +148,11 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["NFR-17", "FR-32", "AC-16"],
+      "traceability": [
+        "NFR-17",
+        "FR-32",
+        "AC-16"
+      ],
       "title": "Browser signup creates account and signs in without exposing stored hash in UI or network",
       "preconditions": [
         "Web app running with dedicated /signup route",
@@ -151,7 +175,11 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["NFR-17", "FR-33", "AC-16"],
+      "traceability": [
+        "NFR-17",
+        "FR-33",
+        "AC-16"
+      ],
       "title": "Browser login with valid credentials succeeds and profile view omits credential secrets",
       "preconditions": [
         "Participant account exists via prior signup with known password",
@@ -172,7 +200,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["NFR-17", "NFR-08", "FR-25"],
+      "traceability": [
+        "NFR-17",
+        "NFR-08",
+        "FR-25"
+      ],
       "title": "No role can retrieve password_hash via organizer export or participant APIs",
       "preconditions": [
         "OrganizerAdmin JWT for event with participant registrations",
@@ -193,7 +225,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["NFR-17", "FR-32"],
+      "traceability": [
+        "NFR-17",
+        "FR-32"
+      ],
       "title": "Identical passwords for different users produce distinct password_hash values",
       "preconditions": [
         "Two fresh unique emails",
@@ -213,7 +248,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["NFR-17", "FR-33"],
+      "traceability": [
+        "NFR-17",
+        "FR-33"
+      ],
       "title": "Login fails with HTTP 401 when password does not match stored hash",
       "preconditions": [
         "Existing participant registered with known password"
@@ -231,7 +269,10 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["NFR-17", "FR-32"],
+      "traceability": [
+        "NFR-17",
+        "FR-32"
+      ],
       "title": "Long or complex password values are hashed before persistence",
       "preconditions": [
         "Fresh signup email",
@@ -250,7 +291,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["NFR-17", "FR-32"],
+      "traceability": [
+        "NFR-17",
+        "FR-32"
+      ],
       "title": "Duplicate email registration does not overwrite existing password_hash with new plaintext",
       "preconditions": [
         "Existing account registered with email user@example.com and known password_hash in database"
@@ -268,7 +312,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["NFR-17", "FR-33"],
+      "traceability": [
+        "NFR-17",
+        "FR-33"
+      ],
       "title": "Browser login with wrong password shows error without leaking stored hash",
       "preconditions": [
         "Participant account exists with known password",

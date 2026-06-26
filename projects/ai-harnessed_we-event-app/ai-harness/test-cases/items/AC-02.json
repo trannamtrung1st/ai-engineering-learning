@@ -1,7 +1,7 @@
 {
   "productItemId": "AC-02",
   "version": 1,
-  "docFingerprint": "sha256:79bdbca423ea91c83496c623bf764b00d329b0edef3e6d130765edc4907c901b",
+  "docFingerprint": "sha256:821074ac696b804b1f73d0845dc12142be4e7113c91c417dae5b9ba1cbf42225",
   "generatedAt": "2026-06-26T11:06:58Z",
   "cases": [
     {
@@ -10,7 +10,11 @@
       "layer": "integration",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["AC-02", "FR-08", "BR-04"],
+      "traceability": [
+        "AC-02",
+        "FR-08",
+        "BR-04"
+      ],
       "title": "Register when full and waitlist enabled assigns Waitlisted per testing-plan §3",
       "preconditions": [
         "Event is in RegistrationOpen state with waitlistEnabled true",
@@ -31,7 +35,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["AC-02", "FR-08", "FR-10"],
+      "traceability": [
+        "AC-02",
+        "FR-08",
+        "FR-10"
+      ],
       "title": "POST registrations returns HTTP 200 with Waitlisted envelope when full",
       "preconditions": [
         "Published event with registration opened, capacity 1, waitlistEnabled true",
@@ -52,7 +60,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["AC-02", "FR-10"],
+      "traceability": [
+        "AC-02",
+        "FR-10"
+      ],
       "title": "Participant sees Waitlisted status with queue position in UI",
       "preconditions": [
         "Event visible on participant discovery with registration open, full capacity, and waitlist enabled",
@@ -73,7 +84,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["AC-02", "FR-08", "BR-04"],
+      "traceability": [
+        "AC-02",
+        "FR-08",
+        "BR-04"
+      ],
       "title": "Waitlist enqueue persists atomically with registration in one transaction",
       "preconditions": [
         "Event full with waitlistEnabled true",
@@ -93,7 +108,11 @@
       "layer": "e2e",
       "technique": "flow-b",
       "priority": "P0",
-      "traceability": ["AC-02", "FR-08", "FR-12"],
+      "traceability": [
+        "AC-02",
+        "FR-08",
+        "FR-12"
+      ],
       "title": "Flow B waitlist entry step yields Waitlisted before cancellation and promotion",
       "preconditions": [
         "E2E fixture: published event with capacity 1 and waitlistEnabled true",
@@ -113,7 +132,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["AC-02", "FR-25"],
+      "traceability": [
+        "AC-02",
+        "FR-25"
+      ],
       "title": "OrganizerAdmin and OrganizerStaff denied POST registrations on full waitlist-enabled event",
       "preconditions": [
         "Event RegistrationOpen, full capacity, waitlistEnabled true",
@@ -133,7 +155,11 @@
       "layer": "integration",
       "technique": "concurrency",
       "priority": "P0",
-      "traceability": ["AC-02", "BR-03", "BR-04"],
+      "traceability": [
+        "AC-02",
+        "BR-03",
+        "BR-04"
+      ],
       "title": "Concurrent registrations when full assign excess participants to Waitlisted without capacity overflow",
       "preconditions": [
         "Event capacity 1, waitlistEnabled true, one Registered participant",
@@ -153,7 +179,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["AC-02", "BR-04"],
+      "traceability": [
+        "AC-02",
+        "BR-04"
+      ],
       "title": "Registration at exact capacity boundary waitlists the next participant",
       "preconditions": [
         "Event capacity 2, waitlistEnabled true, zero Registered participants",
@@ -173,7 +202,10 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P1",
-      "traceability": ["AC-02", "BR-04"],
+      "traceability": [
+        "AC-02",
+        "BR-04"
+      ],
       "title": "queueWaitlist transition moves Requested to Waitlisted when full and waitlist enabled",
       "preconditions": [
         "Registration intake begins in Requested state",
@@ -194,7 +226,11 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["AC-02", "FR-09", "BR-05"],
+      "traceability": [
+        "AC-02",
+        "FR-09",
+        "BR-05"
+      ],
       "title": "Full event with waitlist disabled rejects registration instead of Waitlisted",
       "preconditions": [
         "Event capacity 1, waitlistEnabled false, one Registered participant",
@@ -213,7 +249,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["AC-02", "BR-04"],
+      "traceability": [
+        "AC-02",
+        "BR-04"
+      ],
       "title": "Multiple waitlist entrants receive FIFO positions by enqueue order",
       "preconditions": [
         "Event capacity 1, waitlistEnabled true, one Registered participant",
@@ -233,7 +272,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P1",
-      "traceability": ["AC-02", "FR-10"],
+      "traceability": [
+        "AC-02",
+        "FR-10"
+      ],
       "title": "Organizer GET waitlist includes newly waitlisted participant with correct position",
       "preconditions": [
         "Event full with waitlistEnabled true and at least one Waitlisted participant",

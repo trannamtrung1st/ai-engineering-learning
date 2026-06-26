@@ -1,7 +1,7 @@
 {
   "productItemId": "FR-16",
   "version": 1,
-  "docFingerprint": "sha256:4ef9b21ee020318b8667ba54306d7c16fd1e1129e20152c62d596022b477de06",
+  "docFingerprint": "sha256:e2dfbabeeed703c3e91f7927502130070273c2e29f7eb78b92608b58e3a599e7",
   "generatedAt": "2026-06-26T12:19:02Z",
   "cases": [
     {
@@ -10,7 +10,12 @@
       "layer": "integration",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["FR-16", "AC-05", "BR-13", "FR-13"],
+      "traceability": [
+        "FR-16",
+        "AC-05",
+        "BR-13",
+        "FR-13"
+      ],
       "title": "In-window check-in stores history with timestamp per testing-plan §3",
       "preconditions": [
         "Event InProgress with active check-in window (current time between checkinOpenAt and checkinCloseAt)",
@@ -30,7 +35,12 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-16", "FR-13", "AC-05", "BR-13"],
+      "traceability": [
+        "FR-16",
+        "FR-13",
+        "AC-05",
+        "BR-13"
+      ],
       "title": "Staff check-in persists check-in history with timestamp, method Staff, and operatorId",
       "preconditions": [
         "Event InProgress with active check-in window",
@@ -51,7 +61,12 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-16", "FR-14", "AC-05", "BR-13"],
+      "traceability": [
+        "FR-16",
+        "FR-14",
+        "AC-05",
+        "BR-13"
+      ],
       "title": "Self check-in persists check-in history with timestamp, method Self, and null operatorId",
       "preconditions": [
         "Event rule config enables participant self check-in",
@@ -71,7 +86,11 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["FR-16", "AC-05", "BR-10"],
+      "traceability": [
+        "FR-16",
+        "AC-05",
+        "BR-10"
+      ],
       "title": "validCheckin transition creates CheckinRecord history alongside Registered to CheckedIn",
       "preconditions": [
         "Registration in Registered state before check-in",
@@ -93,7 +112,12 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-16", "AC-05", "FR-13", "BR-10"],
+      "traceability": [
+        "FR-16",
+        "AC-05",
+        "FR-13",
+        "BR-10"
+      ],
       "title": "POST /events/{eventId}/checkins returns HTTP 200 with persisted history snapshot",
       "preconditions": [
         "E2E fixture event InProgress with active check-in window",
@@ -113,7 +137,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-16", "FR-30", "AC-05"],
+      "traceability": [
+        "FR-16",
+        "FR-30",
+        "AC-05"
+      ],
       "title": "GET /events/{eventId}/attendance returns stored check-in history fields per participant",
       "preconditions": [
         "Successful staff or self check-in recorded for a participant within the check-in window",
@@ -132,7 +160,12 @@
       "layer": "e2e",
       "technique": "flow-a",
       "priority": "P0",
-      "traceability": ["FR-16", "AC-05", "FR-13", "FR-15"],
+      "traceability": [
+        "FR-16",
+        "AC-05",
+        "FR-13",
+        "FR-15"
+      ],
       "title": "Flow A check-in step persists retrievable check-in history",
       "preconditions": [
         "E2E Flow A fixture: event progressed through publish, open-registration, and participant Registered",
@@ -152,7 +185,11 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-16", "FR-30", "AC-05"],
+      "traceability": [
+        "FR-16",
+        "FR-30",
+        "AC-05"
+      ],
       "title": "Organizer attendance list UI displays stored check-in timestamp and source for participant",
       "preconditions": [
         "OrganizerStaff logged in with assigned event scope",
@@ -173,7 +210,12 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-16", "FR-15", "AC-06", "BR-10"],
+      "traceability": [
+        "FR-16",
+        "FR-15",
+        "AC-06",
+        "BR-10"
+      ],
       "title": "Out-of-window check-in attempt leaves no check-in history record",
       "preconditions": [
         "Event InProgress with check-in window not containing current fixed clock time",
@@ -194,7 +236,10 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-16", "BR-11"],
+      "traceability": [
+        "FR-16",
+        "BR-11"
+      ],
       "title": "Duplicate check-in attempt preserves original history fields unchanged",
       "preconditions": [
         "Participant already has one valid CheckinRecord with known checkinAt, method, and operatorId",
@@ -215,7 +260,11 @@
       "layer": "integration",
       "technique": "concurrency",
       "priority": "P1",
-      "traceability": ["FR-16", "BR-11", "NFR-02"],
+      "traceability": [
+        "FR-16",
+        "BR-11",
+        "NFR-02"
+      ],
       "title": "Concurrent duplicate check-in attempts persist at most one history record",
       "preconditions": [
         "Registered participant with active check-in window and no prior CheckinRecord",
@@ -234,7 +283,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-16", "BR-11"],
+      "traceability": [
+        "FR-16",
+        "BR-11"
+      ],
       "title": "Idempotent check-in retry with same Idempotency-Key does not duplicate history",
       "preconditions": [
         "Registered participant with active check-in window",
@@ -255,7 +307,12 @@
       "layer": "e2e",
       "technique": "pagination",
       "priority": "P2",
-      "traceability": ["FR-16", "FR-30", "AC-13", "NFR-16"],
+      "traceability": [
+        "FR-16",
+        "FR-30",
+        "AC-13",
+        "NFR-16"
+      ],
       "title": "Paginated attendance list returns check-in history slice without unbounded payload",
       "preconditions": [
         "Event with more than default pageSize checked-in participants each having stored CheckinRecord history",
@@ -275,7 +332,12 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-16", "FR-25", "FR-26", "AC-15"],
+      "traceability": [
+        "FR-16",
+        "FR-25",
+        "FR-26",
+        "AC-15"
+      ],
       "title": "Unauthenticated GET attendance returns 401 without exposing check-in history",
       "preconditions": [
         "Event with at least one persisted CheckinRecord",
@@ -293,7 +355,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-16", "FR-25", "FR-26"],
+      "traceability": [
+        "FR-16",
+        "FR-25",
+        "FR-26"
+      ],
       "title": "Participant JWT cannot read organizer attendance list with other participants' history",
       "preconditions": [
         "Event with multiple participants including checked-in records with stored history",
@@ -312,7 +378,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["FR-16", "NFR-02"],
+      "traceability": [
+        "FR-16",
+        "NFR-02"
+      ],
       "title": "Check-in history record and registration CheckedIn transition commit atomically",
       "preconditions": [
         "Cross-module transaction boundary enabled for check-in write per module breakdown",
@@ -331,7 +400,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["FR-16", "BR-13", "NFR-10"],
+      "traceability": [
+        "FR-16",
+        "BR-13",
+        "NFR-10"
+      ],
       "title": "Every successful check-in write includes complete audit trail per BR-13",
       "preconditions": [
         "Check-in module integrated with audit module per module breakdown",
@@ -351,7 +424,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["FR-16", "BR-13"],
+      "traceability": [
+        "FR-16",
+        "BR-13"
+      ],
       "title": "Persisted check-in history metadata remains immutable after initial write",
       "preconditions": [
         "Valid CheckinRecord persisted with known checkinAt, method, and operatorId",

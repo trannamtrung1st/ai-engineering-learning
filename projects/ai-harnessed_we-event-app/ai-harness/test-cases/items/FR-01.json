@@ -1,7 +1,7 @@
 {
   "productItemId": "FR-01",
   "version": 1,
-  "docFingerprint": "sha256:f44c92d5b8e8208272ca20445a8ed22605865e55c323b1677af54c0c2242f917",
+  "docFingerprint": "sha256:aa1117f3b650d9449d7073916f7ca9b84a02286b19d61773de4e49196817a850",
   "generatedAt": "2026-06-26T11:55:01Z",
   "cases": [
     {
@@ -10,7 +10,9 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-01"],
+      "traceability": [
+        "FR-01"
+      ],
       "title": "Organizer Admin creates event with basic information in Draft state",
       "preconditions": [
         "Authenticated OrganizerAdmin actor with organization scope",
@@ -30,7 +32,9 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-01"],
+      "traceability": [
+        "FR-01"
+      ],
       "title": "POST /api/v1/events returns Draft event with all basic fields",
       "preconditions": [
         "Valid OrganizerAdmin JWT scoped to the organization",
@@ -49,7 +53,9 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-01"],
+      "traceability": [
+        "FR-01"
+      ],
       "title": "Organizer Admin creates event via create/edit form with basic fields",
       "preconditions": [
         "Web app running with organizer authenticated as OrganizerAdmin",
@@ -69,7 +75,9 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["FR-01"],
+      "traceability": [
+        "FR-01"
+      ],
       "title": "Event creation establishes initial Draft lifecycle state",
       "preconditions": [
         "Authenticated OrganizerAdmin actor",
@@ -89,7 +97,9 @@
       "layer": "e2e",
       "technique": "flow-a",
       "priority": "P0",
-      "traceability": ["FR-01"],
+      "traceability": [
+        "FR-01"
+      ],
       "title": "Flow A lifecycle begins with draft event creation",
       "preconditions": [
         "OrganizerAdmin JWT",
@@ -109,7 +119,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-01", "FR-25"],
+      "traceability": [
+        "FR-01",
+        "FR-25"
+      ],
       "title": "OrganizerStaff and Participant cannot create events",
       "preconditions": [
         "Authenticated JWT for OrganizerStaff and separately for Participant",
@@ -128,7 +141,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-01", "FR-25"],
+      "traceability": [
+        "FR-01",
+        "FR-25"
+      ],
       "title": "Unauthenticated POST /events is rejected before domain execution",
       "preconditions": [
         "No Authorization header on request",
@@ -146,7 +162,9 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-01"],
+      "traceability": [
+        "FR-01"
+      ],
       "title": "POST /events rejects missing or blank event name",
       "preconditions": [
         "OrganizerAdmin JWT",
@@ -164,7 +182,9 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-01"],
+      "traceability": [
+        "FR-01"
+      ],
       "title": "POST /events rejects startAt on or after endAt",
       "preconditions": [
         "OrganizerAdmin JWT",
@@ -182,7 +202,9 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-01"],
+      "traceability": [
+        "FR-01"
+      ],
       "title": "Create event rejects unknown organizing unit organizationId",
       "preconditions": [
         "Authenticated OrganizerAdmin actor",
@@ -201,7 +223,9 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["FR-01"],
+      "traceability": [
+        "FR-01"
+      ],
       "title": "Create validates input strictly before persisting to database",
       "preconditions": [
         "OrganizerAdmin actor context",
@@ -220,7 +244,9 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-01"],
+      "traceability": [
+        "FR-01"
+      ],
       "title": "POST /events rejects malformed ISO-8601 timestamps in time fields",
       "preconditions": [
         "OrganizerAdmin JWT",
@@ -238,7 +264,10 @@
       "layer": "integration",
       "technique": "rbac-negative",
       "priority": "P1",
-      "traceability": ["FR-01", "FR-25"],
+      "traceability": [
+        "FR-01",
+        "FR-25"
+      ],
       "title": "Event module enforces RBAC at service boundary for create command",
       "preconditions": [
         "Actor context with role other than OrganizerAdmin (e.g. OrganizerStaff)",

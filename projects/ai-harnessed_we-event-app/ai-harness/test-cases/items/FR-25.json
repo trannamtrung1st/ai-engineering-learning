@@ -1,7 +1,7 @@
 {
   "productItemId": "FR-25",
   "version": 1,
-  "docFingerprint": "sha256:9e3a1aeddf47dc551a5606803a672761c422c9beeb7fcdb1e4e55a7f23eb5c9b",
+  "docFingerprint": "sha256:8e59445691447471b0d38696b1b2d559ff61c4f46bb6ddbeca79a3fd83f91995",
   "generatedAt": "2026-06-26T12:34:10Z",
   "cases": [
     {
@@ -10,7 +10,9 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-25"],
+      "traceability": [
+        "FR-25"
+      ],
       "title": "OrganizerAdmin accesses admin-only protected route",
       "preconditions": [
         "API server running at /api/v1 with DEV_AUTH_ENABLED or credential-based JWT",
@@ -29,7 +31,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-25", "FR-01"],
+      "traceability": [
+        "FR-25",
+        "FR-01"
+      ],
       "title": "OrganizerAdmin can create event draft via POST /events",
       "preconditions": [
         "Authenticated OrganizerAdmin JWT with organization scope",
@@ -48,7 +53,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-25", "AC-11", "BR-21"],
+      "traceability": [
+        "FR-25",
+        "AC-11",
+        "BR-21"
+      ],
       "title": "OrganizerAdmin can read paginated audit logs for event",
       "preconditions": [
         "Event with at least one critical configuration audit entry",
@@ -67,7 +76,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-25", "FR-13"],
+      "traceability": [
+        "FR-25",
+        "FR-13"
+      ],
       "title": "OrganizerStaff can perform staff check-in on assigned event",
       "preconditions": [
         "Published event in check-in window with Registered participant",
@@ -86,7 +98,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-25", "FR-05", "FR-06"],
+      "traceability": [
+        "FR-25",
+        "FR-05",
+        "FR-06"
+      ],
       "title": "Participant can register for open event",
       "preconditions": [
         "Published event in RegistrationOpen state with available capacity",
@@ -105,7 +121,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-25", "FR-32", "AC-16"],
+      "traceability": [
+        "FR-25",
+        "FR-32",
+        "AC-16"
+      ],
       "title": "Self-service signup assigns Participant role only",
       "preconditions": [
         "No existing account for test email",
@@ -124,7 +144,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["FR-25", "FR-33"],
+      "traceability": [
+        "FR-25",
+        "FR-33"
+      ],
       "title": "GET /me returns authenticated actor profile with roles array",
       "preconditions": [
         "Valid JWT for known role (OrganizerAdmin, OrganizerStaff, or Participant)"
@@ -142,7 +165,9 @@
       "layer": "unit",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-25"],
+      "traceability": [
+        "FR-25"
+      ],
       "title": "assertEventScope allows OrganizerAdmin for any organization event",
       "preconditions": [
         "JwtPayload with role OrganizerAdmin and arbitrary sub",
@@ -160,7 +185,9 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-25"],
+      "traceability": [
+        "FR-25"
+      ],
       "title": "Participant denied access to admin-only protected route",
       "preconditions": [
         "Valid Participant JWT",
@@ -179,7 +206,9 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-25"],
+      "traceability": [
+        "FR-25"
+      ],
       "title": "Participant denied POST /events event creation",
       "preconditions": [
         "Valid Participant JWT",
@@ -198,7 +227,9 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-25"],
+      "traceability": [
+        "FR-25"
+      ],
       "title": "OrganizerStaff denied POST /events event creation",
       "preconditions": [
         "Valid OrganizerStaff JWT with assignedEventIds",
@@ -217,7 +248,11 @@
       "layer": "integration",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-25", "AC-12", "FR-23"],
+      "traceability": [
+        "FR-25",
+        "AC-12",
+        "FR-23"
+      ],
       "title": "OrganizerStaff denied audit logs but allowed status history on assigned event",
       "preconditions": [
         "Event with registration status transitions and audit entries",
@@ -236,7 +271,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-25", "FR-22"],
+      "traceability": [
+        "FR-25",
+        "FR-22"
+      ],
       "title": "Participant denied organizer event dashboard",
       "preconditions": [
         "Published event with operational data",
@@ -254,7 +292,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-25", "FR-20"],
+      "traceability": [
+        "FR-25",
+        "FR-20"
+      ],
       "title": "OrganizerStaff denied eligibility revocation override",
       "preconditions": [
         "Event with evaluated eligibility for a registration",
@@ -273,7 +314,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-25", "AC-15"],
+      "traceability": [
+        "FR-25",
+        "AC-15"
+      ],
       "title": "Participant session cannot access organizer management routes",
       "preconditions": [
         "Web app running with role-aware route guards",
@@ -292,7 +336,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-25", "NFR-08"],
+      "traceability": [
+        "FR-25",
+        "NFR-08"
+      ],
       "title": "Authorization decision pattern validates role permission before scope and domain execution",
       "preconditions": [
         "Protected command handler wired with standard authorization pipeline (authenticate, role, scope, guard, execute)",
@@ -311,7 +358,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-25", "NFR-08"],
+      "traceability": [
+        "FR-25",
+        "NFR-08"
+      ],
       "title": "Unauthorized critical event publish blocked for non-admin roles",
       "preconditions": [
         "Draft event owned by organization",
@@ -330,7 +380,11 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-25", "NFR-08", "NFR-13"],
+      "traceability": [
+        "FR-25",
+        "NFR-08",
+        "NFR-13"
+      ],
       "title": "403 role denial responses use standard typed error envelope",
       "preconditions": [
         "Participant JWT",
@@ -349,7 +403,10 @@
       "layer": "unit",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-25", "FR-27"],
+      "traceability": [
+        "FR-25",
+        "FR-27"
+      ],
       "title": "assertEventScope rejects OrganizerStaff for unassigned event",
       "preconditions": [
         "JwtPayload role OrganizerStaff with assignedEventIds not containing target eventId",
@@ -367,7 +424,9 @@
       "layer": "unit",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-25"],
+      "traceability": [
+        "FR-25"
+      ],
       "title": "assertEventScope rejects Participant for organizer event routes",
       "preconditions": [
         "JwtPayload role Participant",
@@ -385,7 +444,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-25", "FR-04"],
+      "traceability": [
+        "FR-25",
+        "FR-04"
+      ],
       "title": "Participant cannot publish or pause event",
       "preconditions": [
         "Draft or published event",
@@ -404,7 +466,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-25", "FR-30"],
+      "traceability": [
+        "FR-25",
+        "FR-30"
+      ],
       "title": "Participant cannot list organizer operational registrations for event",
       "preconditions": [
         "Event with multiple registrations",
@@ -422,7 +487,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-25", "FR-24"],
+      "traceability": [
+        "FR-25",
+        "FR-24"
+      ],
       "title": "Participant cannot export event operational data",
       "preconditions": [
         "Completed event with exportable operational data",
@@ -440,7 +508,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P1",
-      "traceability": ["FR-25", "FR-27"],
+      "traceability": [
+        "FR-25",
+        "FR-27"
+      ],
       "title": "OrganizerStaff denied staff operations on unassigned event returns forbidden or out-of-scope",
       "preconditions": [
         "Event exists that staff actor is not assigned to",
@@ -459,7 +530,9 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P2",
-      "traceability": ["FR-25"],
+      "traceability": [
+        "FR-25"
+      ],
       "title": "OrganizerStaff UI hides admin-only actions such as event create and publish",
       "preconditions": [
         "Web app running",

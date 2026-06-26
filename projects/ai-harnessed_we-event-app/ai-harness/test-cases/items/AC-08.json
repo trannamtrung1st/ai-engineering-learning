@@ -1,7 +1,7 @@
 {
   "productItemId": "AC-08",
   "version": 2,
-  "docFingerprint": "sha256:ac1db8b40211f70e028eb0b2e18e8a7c3e48283625918ed84f037849f363d057",
+  "docFingerprint": "sha256:0dd7c4f2e3b88af76edb911a1b6ebfe8322a801c39ef58ffab323b3297400201",
   "generatedAt": "2026-06-26T14:00:00Z",
   "cases": [
     {
@@ -10,7 +10,11 @@
       "layer": "integration",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["AC-08", "FR-19", "BR-15"],
+      "traceability": [
+        "AC-08",
+        "FR-19",
+        "BR-15"
+      ],
       "title": "Feedback in allowed window accepted per testing-plan §3",
       "preconditions": [
         "Event in Completed state with active feedback window (current time between feedbackOpenAt and feedbackCloseAt)",
@@ -30,7 +34,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["AC-08", "FR-19", "BR-15"],
+      "traceability": [
+        "AC-08",
+        "FR-19",
+        "BR-15"
+      ],
       "title": "Feedback submission persists atomically in feedback module transaction",
       "preconditions": [
         "Completed event with active feedback window",
@@ -50,7 +58,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["AC-08", "FR-19", "BR-15"],
+      "traceability": [
+        "AC-08",
+        "FR-19",
+        "BR-15"
+      ],
       "title": "POST /api/v1/events/{eventId}/feedback returns HTTP 200 with feedbackId and submittedAt",
       "preconditions": [
         "E2E fixture event in Completed state with feedback window active",
@@ -70,7 +82,11 @@
       "layer": "e2e",
       "technique": "flow-a",
       "priority": "P0",
-      "traceability": ["AC-08", "FR-19", "BR-15"],
+      "traceability": [
+        "AC-08",
+        "FR-19",
+        "BR-15"
+      ],
       "title": "Flow A lifecycle feedback step succeeds after event completion",
       "preconditions": [
         "E2E Flow A progressed through publish, registration, check-in, and event completion",
@@ -90,7 +106,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["AC-08", "FR-19"],
+      "traceability": [
+        "AC-08",
+        "FR-19"
+      ],
       "title": "Participant feedback form enabled and submission shows success for Attended registration",
       "preconditions": [
         "Participant logged in with Attended registration on a Completed event",
@@ -111,7 +130,10 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["AC-08", "BR-15"],
+      "traceability": [
+        "AC-08",
+        "BR-15"
+      ],
       "title": "Only Attended registration may submit feedback on Completed event",
       "preconditions": [
         "Event Completed with feedback window active",
@@ -130,7 +152,10 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["AC-08", "BR-15"],
+      "traceability": [
+        "AC-08",
+        "BR-15"
+      ],
       "title": "Feedback submission rejected after feedbackCloseAt",
       "preconditions": [
         "Event Completed with Attended participant",
@@ -149,7 +174,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["AC-08", "BR-15"],
+      "traceability": [
+        "AC-08",
+        "BR-15"
+      ],
       "title": "POST feedback outside configured window returns HTTP 422 with FEEDBACK_NOT_ALLOWED",
       "preconditions": [
         "Completed event with feedback window not yet open (feedbackOpenAt in the future) or already closed",
@@ -168,7 +196,10 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["AC-08", "BR-16"],
+      "traceability": [
+        "AC-08",
+        "BR-16"
+      ],
       "title": "Duplicate official feedback submission returns FEEDBACK_DUPLICATE",
       "preconditions": [
         "Attended participant already submitted one official feedback for the event within window",
@@ -187,7 +218,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["AC-08", "BR-15"],
+      "traceability": [
+        "AC-08",
+        "BR-15"
+      ],
       "title": "Empty answers object rejected with INVALID_INPUT at API boundary",
       "preconditions": [
         "Valid Attended registration and open feedback window",
@@ -205,7 +239,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P1",
-      "traceability": ["AC-08", "FR-25", "FR-26"],
+      "traceability": [
+        "AC-08",
+        "FR-25",
+        "FR-26"
+      ],
       "title": "OrganizerAdmin denied when submitting feedback on behalf of participant",
       "preconditions": [
         "Completed event with active feedback window and Attended participant",
@@ -223,7 +261,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P1",
-      "traceability": ["AC-08", "AC-15", "FR-26"],
+      "traceability": [
+        "AC-08",
+        "AC-15",
+        "FR-26"
+      ],
       "title": "Unauthenticated feedback POST returns HTTP 401",
       "preconditions": [
         "Completed event with open feedback window",
@@ -241,7 +283,10 @@
       "layer": "integration",
       "technique": "rbac-negative",
       "priority": "P2",
-      "traceability": ["AC-08", "FR-26"],
+      "traceability": [
+        "AC-08",
+        "FR-26"
+      ],
       "title": "Participant cannot submit feedback for another participant's registration",
       "preconditions": [
         "Completed event with two Attended participants A and B",
@@ -260,7 +305,10 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["AC-08", "BR-15"],
+      "traceability": [
+        "AC-08",
+        "BR-15"
+      ],
       "title": "Feedback submission rejected before feedbackOpenAt",
       "preconditions": [
         "Event Completed with Attended registration",
@@ -278,7 +326,11 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["AC-08", "BR-15", "FR-26"],
+      "traceability": [
+        "AC-08",
+        "BR-15",
+        "FR-26"
+      ],
       "title": "Participant without valid registration for event cannot submit feedback",
       "preconditions": [
         "Completed event with active feedback window",
@@ -296,7 +348,10 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P1",
-      "traceability": ["AC-08", "BR-16"],
+      "traceability": [
+        "AC-08",
+        "BR-16"
+      ],
       "title": "In-window feedback update allowed when configured per BR-16",
       "preconditions": [
         "Event rule config permits feedback updates within window",
@@ -315,7 +370,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P1",
-      "traceability": ["AC-08", "NFR-13"],
+      "traceability": [
+        "AC-08",
+        "NFR-13"
+      ],
       "title": "Successful feedback submission returns immediate synchronous success payload",
       "preconditions": [
         "Attended participant within feedback window on Completed event"
@@ -333,7 +391,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P2",
-      "traceability": ["AC-08", "NFR-13"],
+      "traceability": [
+        "AC-08",
+        "NFR-13"
+      ],
       "title": "Feedback form shows clear blocking reason when window is closed",
       "preconditions": [
         "Participant logged in with Attended registration",
@@ -352,7 +413,11 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["AC-08", "FR-19", "NFR-13"],
+      "traceability": [
+        "AC-08",
+        "FR-19",
+        "NFR-13"
+      ],
       "title": "Attended participant submits own feedback via browser without false ownership error",
       "preconditions": [
         "Completed event with active feedback window",

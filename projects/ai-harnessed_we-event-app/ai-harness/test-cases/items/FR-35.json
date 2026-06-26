@@ -1,7 +1,7 @@
 {
   "productItemId": "FR-35",
   "version": 1,
-  "docFingerprint": "sha256:20dc4744e6b360cadb5ea4206b636accdc3eed30db646a391487565a106b15eb",
+  "docFingerprint": "sha256:5087064824d0b6a4f531034dbe1fa0a232327bacca5de04922a3530f3e8e13cb",
   "generatedAt": "2026-06-26T12:49:24Z",
   "cases": [
     {
@@ -10,7 +10,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-35", "AC-17"],
+      "traceability": [
+        "FR-35",
+        "AC-17"
+      ],
       "title": "Organizer Admin uploads cover image to draft event via POST /events/{eventId}/cover-image",
       "preconditions": [
         "API server running at /api/v1",
@@ -31,7 +34,9 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-35"],
+      "traceability": [
+        "FR-35"
+      ],
       "title": "Organizer Admin replaces existing cover image with new upload",
       "preconditions": [
         "Event already has cover_image_key from prior OrganizerAdmin upload in Postgres",
@@ -53,7 +58,9 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["FR-35"],
+      "traceability": [
+        "FR-35"
+      ],
       "title": "Organizer Admin removes cover via DELETE /events/{eventId}/cover-image during edit",
       "preconditions": [
         "Event with existing cover_image_key set by OrganizerAdmin",
@@ -73,7 +80,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["FR-35", "AC-17"],
+      "traceability": [
+        "FR-35",
+        "AC-17"
+      ],
       "title": "Organizer Admin selects cover via file picker with preview on create/edit event form",
       "preconditions": [
         "Web app running with organizer event create/edit form per page-list §Organizer Admin Event management",
@@ -95,7 +105,9 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-35"],
+      "traceability": [
+        "FR-35"
+      ],
       "title": "Organizer Admin replaces and removes cover from edit form controls",
       "preconditions": [
         "Existing draft or editable event with uploaded cover image",
@@ -116,7 +128,9 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-35"],
+      "traceability": [
+        "FR-35"
+      ],
       "title": "Cover upload allowed on published event edit (not only draft create)",
       "preconditions": [
         "Published event owned by OrganizerAdmin organizing unit",
@@ -136,7 +150,10 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-35", "NFR-18"],
+      "traceability": [
+        "FR-35",
+        "NFR-18"
+      ],
       "title": "Cover upload rejects disallowed MIME types before persistence",
       "preconditions": [
         "OrganizerAdmin JWT and editable event",
@@ -155,7 +172,10 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-35", "NFR-18"],
+      "traceability": [
+        "FR-35",
+        "NFR-18"
+      ],
       "title": "Cover upload rejects files exceeding 5 MB maximum size",
       "preconditions": [
         "OrganizerAdmin JWT and editable event",
@@ -173,7 +193,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-35", "NFR-18"],
+      "traceability": [
+        "FR-35",
+        "NFR-18"
+      ],
       "title": "Uploaded cover stored under controlled path and served via GET /media/events/{key}",
       "preconditions": [
         "OrganizerAdmin JWT and editable event",
@@ -194,7 +217,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-35", "NFR-07", "NFR-08"],
+      "traceability": [
+        "FR-35",
+        "NFR-07",
+        "NFR-08"
+      ],
       "title": "Participant cannot upload or delete cover image (OrganizerAdmin only)",
       "preconditions": [
         "Editable event in organizer scope",
@@ -214,7 +241,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-35", "AC-15"],
+      "traceability": [
+        "FR-35",
+        "AC-15"
+      ],
       "title": "Unauthenticated cover upload returns 401",
       "preconditions": [
         "Existing event eligible for cover upload",
@@ -232,7 +262,9 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-35"],
+      "traceability": [
+        "FR-35"
+      ],
       "title": "OrganizerStaff cannot upload cover image (create/edit restricted to OrganizerAdmin)",
       "preconditions": [
         "Editable event in staff-assigned scope",
@@ -250,7 +282,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-35", "NFR-18"],
+      "traceability": [
+        "FR-35",
+        "NFR-18"
+      ],
       "title": "Invalid MIME type upload rejected before persistence",
       "preconditions": [
         "OrganizerAdmin JWT",
@@ -268,7 +303,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P1",
-      "traceability": ["FR-35", "NFR-08"],
+      "traceability": [
+        "FR-35",
+        "NFR-08"
+      ],
       "title": "Cover upload for event outside OrganizerAdmin scope returns 403 or 404",
       "preconditions": [
         "Event owned by organizing unit A",
@@ -286,7 +324,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-35", "NFR-18"],
+      "traceability": [
+        "FR-35",
+        "NFR-18"
+      ],
       "title": "Cover upload at exactly 5 MB boundary accepted; just over 5 MB rejected",
       "preconditions": [
         "OrganizerAdmin JWT and editable event without cover",
@@ -306,7 +347,9 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P2",
-      "traceability": ["FR-35"],
+      "traceability": [
+        "FR-35"
+      ],
       "title": "DELETE cover-image on event without cover is idempotent or returns clear not-found",
       "preconditions": [
         "Event with cover_image_key null",
@@ -325,7 +368,10 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-35", "NFR-18"],
+      "traceability": [
+        "FR-35",
+        "NFR-18"
+      ],
       "title": "Media route rejects path traversal attempts for cover keys",
       "preconditions": [
         "API server running with media handler",

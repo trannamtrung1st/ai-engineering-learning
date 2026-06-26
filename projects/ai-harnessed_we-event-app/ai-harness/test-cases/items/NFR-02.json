@@ -1,7 +1,7 @@
 {
   "productItemId": "NFR-02",
   "version": 1,
-  "docFingerprint": "sha256:165db3bf1b6e2d69c0247f57cf57e1ee618773a7367cf603d879d37786d9cb38",
+  "docFingerprint": "sha256:66c6c2a085e264c591d98e9f94a7c01e4a22963048aa3bd8ad16e51948bbc052",
   "generatedAt": "2026-06-26T13:15:00Z",
   "cases": [
     {
@@ -10,7 +10,12 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["NFR-02", "AC-01", "AC-04", "BR-03"],
+      "traceability": [
+        "NFR-02",
+        "AC-01",
+        "AC-04",
+        "BR-03"
+      ],
       "title": "Successful registration transaction preserves capacity invariant without double booking",
       "preconditions": [
         "Event is RegistrationOpen with capacity N and available seats",
@@ -30,7 +35,12 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["NFR-02", "AC-05", "BR-10", "BR-13"],
+      "traceability": [
+        "NFR-02",
+        "AC-05",
+        "BR-10",
+        "BR-13"
+      ],
       "title": "Check-in transaction atomically persists CheckinRecord and registration CheckedIn state",
       "preconditions": [
         "Event is InProgress with active check-in window",
@@ -50,7 +60,11 @@
       "layer": "integration",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["NFR-02", "AC-03", "BR-01"],
+      "traceability": [
+        "NFR-02",
+        "AC-03",
+        "BR-01"
+      ],
       "title": "Duplicate registration attempt blocked per testing-plan §3 without second active row",
       "preconditions": [
         "Event is RegistrationOpen with available seats",
@@ -69,7 +83,11 @@
       "layer": "integration",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["NFR-02", "AC-04", "BR-03"],
+      "traceability": [
+        "NFR-02",
+        "AC-04",
+        "BR-03"
+      ],
       "title": "Capacity under heavy concurrent requests never exceeds configured capacity per testing-plan §3",
       "preconditions": [
         "Event RegistrationOpen with capacity 3 and waitlistEnabled true",
@@ -89,7 +107,11 @@
       "layer": "e2e",
       "technique": "flow-a",
       "priority": "P0",
-      "traceability": ["NFR-02", "AC-01", "AC-05"],
+      "traceability": [
+        "NFR-02",
+        "AC-01",
+        "AC-05"
+      ],
       "title": "Flow A register-then-check-in maintains data consistency end-to-end",
       "preconditions": [
         "E2E Flow A fixture: published event with open registration then InProgress with check-in window",
@@ -110,7 +132,11 @@
       "layer": "integration",
       "technique": "concurrency",
       "priority": "P0",
-      "traceability": ["NFR-02", "AC-04", "BR-03"],
+      "traceability": [
+        "NFR-02",
+        "AC-04",
+        "BR-03"
+      ],
       "title": "Registration acceptance uses transactional row lock and in-transaction seat count",
       "preconditions": [
         "Event with capacity 3 and multiple concurrent registration attempts",
@@ -130,7 +156,11 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["NFR-02", "AC-04", "BR-08"],
+      "traceability": [
+        "NFR-02",
+        "AC-04",
+        "BR-08"
+      ],
       "title": "Cancellation and waitlist promotion run atomically without transient double booking",
       "preconditions": [
         "Event at capacity with Registered participants and at least one Waitlisted",
@@ -151,7 +181,11 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["NFR-02", "AC-03", "AC-04"],
+      "traceability": [
+        "NFR-02",
+        "AC-03",
+        "AC-04"
+      ],
       "title": "Domain invariants INV-01, INV-02, and INV-04 hold after mixed registration and check-in sequence",
       "preconditions": [
         "Database reset per test with registration and check-in modules enabled",
@@ -170,7 +204,13 @@
       "layer": "integration",
       "technique": "concurrency",
       "priority": "P0",
-      "traceability": ["NFR-02", "AC-03", "AC-04", "BR-01", "BR-03"],
+      "traceability": [
+        "NFR-02",
+        "AC-03",
+        "AC-04",
+        "BR-01",
+        "BR-03"
+      ],
       "title": "Heavy concurrent registration burst never produces double booking or duplicate active rows",
       "preconditions": [
         "Event RegistrationOpen with capacity 3 and waitlistEnabled true",
@@ -190,7 +230,11 @@
       "layer": "integration",
       "technique": "concurrency",
       "priority": "P0",
-      "traceability": ["NFR-02", "AC-05", "BR-10"],
+      "traceability": [
+        "NFR-02",
+        "AC-05",
+        "BR-10"
+      ],
       "title": "Concurrent check-in attempts for same registration yield at most one valid check-in",
       "preconditions": [
         "Registered participant with no prior check-in",
@@ -210,7 +254,11 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["NFR-02", "AC-04", "BR-03"],
+      "traceability": [
+        "NFR-02",
+        "AC-04",
+        "BR-03"
+      ],
       "title": "Failed registration rolls back entirely with no partial seat consumption",
       "preconditions": [
         "Registration path that fails post-insert capacity guard (CAPACITY_EXCEEDED) or mid-transaction error",
@@ -229,7 +277,11 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["NFR-02", "AC-06", "BR-10"],
+      "traceability": [
+        "NFR-02",
+        "AC-06",
+        "BR-10"
+      ],
       "title": "Rejected out-of-window check-in leaves registration and check-in tables unchanged",
       "preconditions": [
         "Registered participant with no check-in",
@@ -248,7 +300,11 @@
       "layer": "integration",
       "technique": "concurrency",
       "priority": "P0",
-      "traceability": ["NFR-02", "AC-03", "BR-01"],
+      "traceability": [
+        "NFR-02",
+        "AC-03",
+        "BR-01"
+      ],
       "title": "Concurrent duplicate registration from same participant yields single active row",
       "preconditions": [
         "Event RegistrationOpen with available seats",
@@ -267,7 +323,9 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["NFR-02"],
+      "traceability": [
+        "NFR-02"
+      ],
       "title": "Transactional consistency tests execute against Compose Postgres not in-memory stores",
       "preconditions": [
         "npm run aih:dev:db:up has started healthy db service",
@@ -287,7 +345,11 @@
       "layer": "e2e",
       "technique": "flow-b",
       "priority": "P0",
-      "traceability": ["NFR-02", "AC-04", "BR-08"],
+      "traceability": [
+        "NFR-02",
+        "AC-04",
+        "BR-08"
+      ],
       "title": "Flow B cancel-promote-check-in preserves capacity and check-in consistency",
       "preconditions": [
         "E2E Flow B fixture: full event (capacity 1), one Registered, one Waitlisted",
@@ -307,7 +369,13 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["NFR-02", "AC-03", "AC-04", "BR-01", "BR-03"],
+      "traceability": [
+        "NFR-02",
+        "AC-03",
+        "AC-04",
+        "BR-01",
+        "BR-03"
+      ],
       "title": "Concurrent POST registrations and organizer GET confirm capacity ceiling via HTTP contract",
       "preconditions": [
         "Published event with registration opened, capacity 3, waitlistEnabled true",
@@ -329,7 +397,12 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["NFR-02", "AC-03", "AC-04", "FR-06"],
+      "traceability": [
+        "NFR-02",
+        "AC-03",
+        "AC-04",
+        "FR-06"
+      ],
       "title": "Participant UI reflects capacity and blocks duplicate or in-flight double registration",
       "preconditions": [
         "Participant logged in on event detail page for an open event",
@@ -350,7 +423,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["NFR-02", "AC-05", "BR-10"],
+      "traceability": [
+        "NFR-02",
+        "AC-05",
+        "BR-10"
+      ],
       "title": "Participant denied staff check-in for another registration leaves check-in data unchanged",
       "preconditions": [
         "Event InProgress with active check-in window",

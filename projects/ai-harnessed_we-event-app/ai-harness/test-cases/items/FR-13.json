@@ -1,7 +1,7 @@
 {
   "productItemId": "FR-13",
   "version": 1,
-  "docFingerprint": "sha256:4ef9b21ee020318b8667ba54306d7c16fd1e1129e20152c62d596022b477de06",
+  "docFingerprint": "sha256:e2dfbabeeed703c3e91f7927502130070273c2e29f7eb78b92608b58e3a599e7",
   "generatedAt": "2026-06-26T16:30:00Z",
   "cases": [
     {
@@ -10,7 +10,12 @@
       "layer": "integration",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["FR-13", "AC-05", "BR-10", "BR-13"],
+      "traceability": [
+        "FR-13",
+        "AC-05",
+        "BR-10",
+        "BR-13"
+      ],
       "title": "In-window staff check-in stored with timestamp per testing-plan §3",
       "preconditions": [
         "Event is InProgress with check-in window active (current time between checkinOpenAt and checkinCloseAt)",
@@ -30,7 +35,12 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-13", "AC-05", "FR-15", "BR-10"],
+      "traceability": [
+        "FR-13",
+        "AC-05",
+        "FR-15",
+        "BR-10"
+      ],
       "title": "OrganizerStaff check-in transitions Registered participant to CheckedIn within window",
       "preconditions": [
         "Event is InProgress with check-in window active (current time between checkinOpenAt and checkinCloseAt)",
@@ -50,7 +60,11 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["FR-13", "AC-05", "BR-10"],
+      "traceability": [
+        "FR-13",
+        "AC-05",
+        "BR-10"
+      ],
       "title": "Staff validCheckin transitions registration Registered to CheckedIn",
       "preconditions": [
         "Registration in Registered state before check-in",
@@ -72,7 +86,12 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-13", "AC-05", "FR-16", "BR-10"],
+      "traceability": [
+        "FR-13",
+        "AC-05",
+        "FR-16",
+        "BR-10"
+      ],
       "title": "POST /events/{eventId}/checkins returns HTTP 200 with checkinAt and CheckedIn registration",
       "preconditions": [
         "E2E fixture event in InProgress state with active check-in window",
@@ -93,7 +112,11 @@
       "layer": "e2e",
       "technique": "flow-a",
       "priority": "P0",
-      "traceability": ["FR-13", "AC-05", "FR-15"],
+      "traceability": [
+        "FR-13",
+        "AC-05",
+        "FR-15"
+      ],
       "title": "Flow A lifecycle staff check-in step records participant after registration",
       "preconditions": [
         "E2E Flow A fixture: event progressed through publish, open-registration, and participant Registered",
@@ -113,7 +136,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-13", "AC-05"],
+      "traceability": [
+        "FR-13",
+        "AC-05"
+      ],
       "title": "Organizer staff check-in console records participant with immediate success feedback",
       "preconditions": [
         "OrganizerStaff logged in with assigned event scope",
@@ -134,7 +160,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P1",
-      "traceability": ["FR-13", "AC-05", "FR-25"],
+      "traceability": [
+        "FR-13",
+        "AC-05",
+        "FR-25"
+      ],
       "title": "OrganizerAdmin can check in participant via staff checkins endpoint",
       "preconditions": [
         "Event InProgress with active check-in window",
@@ -154,7 +184,11 @@
       "layer": "integration",
       "technique": "pagination",
       "priority": "P1",
-      "traceability": ["FR-13", "AC-05", "FR-30"],
+      "traceability": [
+        "FR-13",
+        "AC-05",
+        "FR-30"
+      ],
       "title": "Staff check-in appears in paginated attendance list for authorized event scope",
       "preconditions": [
         "Successful staff check-in recorded for a Registered participant",
@@ -173,7 +207,10 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-13", "BR-11"],
+      "traceability": [
+        "FR-13",
+        "BR-11"
+      ],
       "title": "Second staff check-in attempt for same registration is rejected",
       "preconditions": [
         "Participant already has one valid staff check-in recorded within the window",
@@ -194,7 +231,11 @@
       "layer": "integration",
       "technique": "concurrency",
       "priority": "P0",
-      "traceability": ["FR-13", "BR-11", "NFR-02"],
+      "traceability": [
+        "FR-13",
+        "BR-11",
+        "NFR-02"
+      ],
       "title": "Concurrent staff check-in requests yield at most one valid record",
       "preconditions": [
         "Registered participant with no prior check-in",
@@ -214,7 +255,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-13", "FR-25", "FR-26"],
+      "traceability": [
+        "FR-13",
+        "FR-25",
+        "FR-26"
+      ],
       "title": "Participant JWT cannot invoke staff checkins endpoint",
       "preconditions": [
         "Event InProgress with active check-in window",
@@ -233,7 +278,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-13", "FR-27"],
+      "traceability": [
+        "FR-13",
+        "FR-27"
+      ],
       "title": "OrganizerStaff outside assigned event scope cannot check in participant",
       "preconditions": [
         "Event A InProgress with active check-in window and Registered participant",
@@ -252,7 +300,9 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-13"],
+      "traceability": [
+        "FR-13"
+      ],
       "title": "Staff check-in rejected when registration is not in Registered state",
       "preconditions": [
         "Event with active check-in window",
@@ -272,7 +322,12 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-13", "FR-15", "AC-06", "BR-10"],
+      "traceability": [
+        "FR-13",
+        "FR-15",
+        "AC-06",
+        "BR-10"
+      ],
       "title": "Staff check-in outside configured window is rejected with CHECKIN_WINDOW_CLOSED",
       "preconditions": [
         "Event InProgress with check-in window not containing current fixed clock time",
@@ -293,7 +348,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["FR-13", "FR-16", "BR-13"],
+      "traceability": [
+        "FR-13",
+        "FR-16",
+        "BR-13"
+      ],
       "title": "Staff check-in persists audit metadata with operatorId and method Staff",
       "preconditions": [
         "In-window staff check-in about to be recorded",
@@ -312,7 +371,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P1",
-      "traceability": ["FR-13", "NFR-13", "AC-05"],
+      "traceability": [
+        "FR-13",
+        "NFR-13",
+        "AC-05"
+      ],
       "title": "Staff check-in success returns immediate actionable feedback without polling",
       "preconditions": [
         "Registered participant with active check-in window",
@@ -332,7 +395,11 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-13", "NFR-13", "BR-10"],
+      "traceability": [
+        "FR-13",
+        "NFR-13",
+        "BR-10"
+      ],
       "title": "Failed staff check-in returns immediate reason code not generic error",
       "preconditions": [
         "Registered participant on event with closed check-in window",
@@ -352,7 +419,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["FR-13", "NFR-02"],
+      "traceability": [
+        "FR-13",
+        "NFR-02"
+      ],
       "title": "Staff check-in write and registration CheckedIn transition commit atomically",
       "preconditions": [
         "Database transaction boundary enabled for check-in module per cross-module contract",
@@ -372,7 +442,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P1",
-      "traceability": ["FR-13", "NFR-02"],
+      "traceability": [
+        "FR-13",
+        "NFR-02"
+      ],
       "title": "Idempotent staff check-in retry with same Idempotency-Key returns consistent snapshot",
       "preconditions": [
         "Registered participant with active check-in window",
@@ -392,7 +465,12 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-13", "FR-15", "AC-06", "BR-10"],
+      "traceability": [
+        "FR-13",
+        "FR-15",
+        "AC-06",
+        "BR-10"
+      ],
       "title": "Staff check-in console displays blocking reason when window is closed",
       "preconditions": [
         "OrganizerStaff logged in with assigned event scope",

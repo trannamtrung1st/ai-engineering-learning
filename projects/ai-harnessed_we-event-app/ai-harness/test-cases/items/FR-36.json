@@ -1,7 +1,7 @@
 {
   "productItemId": "FR-36",
   "version": 1,
-  "docFingerprint": "sha256:20dc4744e6b360cadb5ea4206b636accdc3eed30db646a391487565a106b15eb",
+  "docFingerprint": "sha256:5087064824d0b6a4f531034dbe1fa0a232327bacca5de04922a3530f3e8e13cb",
   "generatedAt": "2026-06-26T12:52:11Z",
   "cases": [
     {
@@ -10,7 +10,10 @@
       "layer": "e2e",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["FR-36", "AC-17"],
+      "traceability": [
+        "FR-36",
+        "AC-17"
+      ],
       "title": "BRD §1.7 participant sees organizer-uploaded cover on event list and detail",
       "preconditions": [
         "Published discoverable event with cover_image_key set via prior OrganizerAdmin upload",
@@ -30,7 +33,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-36", "AC-17"],
+      "traceability": [
+        "FR-36",
+        "AC-17"
+      ],
       "title": "GET /api/v1/events list includes coverImageUrl; GET /media/events/{key} returns HTTP 200",
       "preconditions": [
         "Published event with cover_image_key set via organizer upload",
@@ -50,7 +56,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-36", "AC-17"],
+      "traceability": [
+        "FR-36",
+        "AC-17"
+      ],
       "title": "GET /api/v1/events/{eventId} detail includes coverImageUrl for participant",
       "preconditions": [
         "Event with uploaded cover image and known cover_image_key",
@@ -69,7 +78,9 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-36"],
+      "traceability": [
+        "FR-36"
+      ],
       "title": "Organizer Admin event list and detail include coverImageUrl when cover exists",
       "preconditions": [
         "Published event in organizer scope with cover_image_key set",
@@ -88,7 +99,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-36", "NFR-18"],
+      "traceability": [
+        "FR-36",
+        "NFR-18"
+      ],
       "title": "Event repository maps cover_image_key to coverImageUrl on list and detail reads",
       "preconditions": [
         "Event row in Postgres with cover_image_key and cover_image_updated_at set",
@@ -109,7 +123,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["FR-36", "NFR-18"],
+      "traceability": [
+        "FR-36",
+        "NFR-18"
+      ],
       "title": "Displayed cover media returns correct Content-Type for JPEG, PNG, and WebP uploads",
       "preconditions": [
         "Three events each with cover uploaded as JPEG, PNG, and WebP respectively in Postgres",
@@ -128,7 +145,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["FR-36", "AC-17"],
+      "traceability": [
+        "FR-36",
+        "AC-17"
+      ],
       "title": "Participant event discovery card renders 16:9 cover thumbnail via next/image",
       "preconditions": [
         "Web app running with participant event discovery page",
@@ -149,7 +169,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["FR-36", "AC-17"],
+      "traceability": [
+        "FR-36",
+        "AC-17"
+      ],
       "title": "Participant event detail header renders cover image hero",
       "preconditions": [
         "Published event with uploaded cover image",
@@ -168,7 +191,9 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-36"],
+      "traceability": [
+        "FR-36"
+      ],
       "title": "Organizer views cover on event detail when reviewing managed event",
       "preconditions": [
         "OrganizerAdmin logged in",
@@ -188,7 +213,9 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-36"],
+      "traceability": [
+        "FR-36"
+      ],
       "title": "Event list and detail omit coverImageUrl when cover_image_key is null",
       "preconditions": [
         "Published discoverable event without cover_image_key",
@@ -207,7 +234,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-36", "NFR-18"],
+      "traceability": [
+        "FR-36",
+        "NFR-18"
+      ],
       "title": "GET /media/events/{invalid-key} returns HTTP 404 for unknown storage key",
       "preconditions": [
         "API server running at /api/v1",
@@ -225,7 +255,9 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["FR-36"],
+      "traceability": [
+        "FR-36"
+      ],
       "title": "Discovery card shows fallback illustration when event has no cover",
       "preconditions": [
         "Published event without cover_image_key visible in discovery list",
@@ -245,7 +277,9 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-36"],
+      "traceability": [
+        "FR-36"
+      ],
       "title": "Event detail hero shows placeholder when navigating to event without cover",
       "preconditions": [
         "Published event without cover_image_key",
@@ -264,7 +298,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-36", "FR-35"],
+      "traceability": [
+        "FR-36",
+        "FR-35"
+      ],
       "title": "After organizer deletes cover, list and detail no longer expose coverImageUrl",
       "preconditions": [
         "Event previously had cover_image_key",
@@ -284,7 +321,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["FR-36", "FR-35"],
+      "traceability": [
+        "FR-36",
+        "FR-35"
+      ],
       "title": "After cover replace, participant list and detail reflect updated coverImageUrl",
       "preconditions": [
         "Event with existing cover_image_key in Postgres",
@@ -306,7 +346,9 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P1",
-      "traceability": ["FR-36"],
+      "traceability": [
+        "FR-36"
+      ],
       "title": "coverImageUrl consistent between list item and detail for same event",
       "preconditions": [
         "Event with cover on page 1 of participant browse list",
@@ -325,7 +367,10 @@
       "layer": "e2e",
       "technique": "pagination",
       "priority": "P2",
-      "traceability": ["FR-36", "AC-13"],
+      "traceability": [
+        "FR-36",
+        "AC-13"
+      ],
       "title": "Paginated page 2 list items include coverImageUrl when cover_image_key is set",
       "preconditions": [
         "At least 13 discoverable events with at least one covered event appearing on page 2",

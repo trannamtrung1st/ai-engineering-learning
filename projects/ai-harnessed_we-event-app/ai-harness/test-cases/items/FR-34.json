@@ -1,7 +1,7 @@
 {
   "productItemId": "FR-34",
   "version": 1,
-  "docFingerprint": "sha256:4df3b9fe5a47366f3a2e6893d54863d7ebd7808387ffd2e446a5608089ea8a67",
+  "docFingerprint": "sha256:1795587dc6c00a1833c45415b462d73fd4b8426dae103e6bff17f76a3aee2f8b",
   "generatedAt": "2026-06-26T12:48:01Z",
   "cases": [
     {
@@ -10,7 +10,9 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["FR-34"],
+      "traceability": [
+        "FR-34"
+      ],
       "title": "TopBar sign-out clears stored JWT and redirects to /login",
       "preconditions": [
         "Web app running with TopBar user menu per app-layout-components",
@@ -31,7 +33,9 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["FR-34"],
+      "traceability": [
+        "FR-34"
+      ],
       "title": "After sign-out TopBar reflects unauthenticated state",
       "preconditions": [
         "User previously signed in; TopBar account button showed display name",
@@ -51,7 +55,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-34", "AC-15"],
+      "traceability": [
+        "FR-34",
+        "AC-15"
+      ],
       "title": "GET /api/v1/me without Authorization returns 401 after client session cleared",
       "preconditions": [
         "User obtained valid JWT via POST /auth/login",
@@ -70,7 +77,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-34", "AC-15"],
+      "traceability": [
+        "FR-34",
+        "AC-15"
+      ],
       "title": "GET /api/v1/me/registrations without Authorization returns 401 after sign-out",
       "preconditions": [
         "Participant had registrations while signed in",
@@ -88,7 +98,9 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-34"],
+      "traceability": [
+        "FR-34"
+      ],
       "title": "MVP sign-out is client-side only with no server revocation endpoint",
       "preconditions": [
         "API server running at /api/v1",
@@ -107,7 +119,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-34", "NFR-07"],
+      "traceability": [
+        "FR-34",
+        "NFR-07"
+      ],
       "title": "Sign-out simulation via omitted bearer matches unauthenticated middleware rejection",
       "preconditions": [
         "Valid JWT previously issued via login",
@@ -127,7 +142,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-34", "AC-15", "NFR-07"],
+      "traceability": [
+        "FR-34",
+        "AC-15",
+        "NFR-07"
+      ],
       "title": "After sign-out unauthenticated caller denied on role-restricted organizer endpoint",
       "preconditions": [
         "OrganizerAdmin previously signed in and signed out (client JWT cleared)",
@@ -146,7 +165,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["FR-34", "NFR-08"],
+      "traceability": [
+        "FR-34",
+        "NFR-08"
+      ],
       "title": "Organizer session sign-out clears role context and redirects to login",
       "preconditions": [
         "OrganizerAdmin or OrganizerStaff account signed in via /login",
@@ -166,7 +188,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["FR-34", "AC-16"],
+      "traceability": [
+        "FR-34",
+        "AC-16"
+      ],
       "title": "Participant can sign out and sign back in to restore protected access",
       "preconditions": [
         "Participant signed in and has viewed My Registrations at least once",
@@ -186,7 +211,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["FR-34", "NFR-07"],
+      "traceability": [
+        "FR-34",
+        "NFR-07"
+      ],
       "title": "After sign-out client cannot perform sensitive operations without re-authentication",
       "preconditions": [
         "Participant signed in with at least one event registration",
@@ -205,7 +233,9 @@
       "layer": "browser",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-34"],
+      "traceability": [
+        "FR-34"
+      ],
       "title": "Double sign-out from login page is idempotent",
       "preconditions": [
         "User completed sign-out and is already on /login",
@@ -224,7 +254,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["FR-34", "AC-15"],
+      "traceability": [
+        "FR-34",
+        "AC-15"
+      ],
       "title": "After sign-out direct navigation to protected route redirects to login with return URL",
       "preconditions": [
         "User signed out via TopBar; JWT cleared",
@@ -243,7 +276,9 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-34"],
+      "traceability": [
+        "FR-34"
+      ],
       "title": "Retained JWT string still authenticates server until expiry in MVP (no revocation)",
       "preconditions": [
         "User logged in and JWT value captured before client sign-out",
@@ -262,7 +297,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-34", "AC-15"],
+      "traceability": [
+        "FR-34",
+        "AC-15"
+      ],
       "title": "Browser back navigation after sign-out does not restore authenticated protected view",
       "preconditions": [
         "User signed in and visited a protected page",

@@ -1,7 +1,7 @@
 {
   "productItemId": "FR-26",
   "version": 3,
-  "docFingerprint": "sha256:9e3a1aeddf47dc551a5606803a672761c422c9beeb7fcdb1e4e55a7f23eb5c9b",
+  "docFingerprint": "sha256:8e59445691447471b0d38696b1b2d559ff61c4f46bb6ddbeca79a3fd83f91995",
   "generatedAt": "2026-06-26T12:35:44Z",
   "cases": [
     {
@@ -10,7 +10,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-26", "FR-10"],
+      "traceability": [
+        "FR-26",
+        "FR-10"
+      ],
       "title": "Participant reads own registration status for an event",
       "preconditions": [
         "Published event in RegistrationOpen or later state",
@@ -30,7 +33,11 @@
       "layer": "e2e",
       "technique": "pagination",
       "priority": "P0",
-      "traceability": ["FR-26", "FR-29", "AC-16"],
+      "traceability": [
+        "FR-26",
+        "FR-29",
+        "AC-16"
+      ],
       "title": "GET /me/registrations returns only the authenticated actor registrations",
       "preconditions": [
         "Participant A registered for at least two events",
@@ -50,7 +57,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-26", "FR-05"],
+      "traceability": [
+        "FR-26",
+        "FR-05"
+      ],
       "title": "Event registration binds to JWT subject not caller-supplied participantId",
       "preconditions": [
         "Published event with available capacity",
@@ -70,7 +80,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-26", "FR-11"],
+      "traceability": [
+        "FR-26",
+        "FR-11"
+      ],
       "title": "Participant successfully cancels own registration before deadline",
       "preconditions": [
         "Participant A Registered for event before CancellationDeadline",
@@ -90,7 +103,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P1",
-      "traceability": ["FR-26", "AC-08"],
+      "traceability": [
+        "FR-26",
+        "AC-08"
+      ],
       "title": "Participant submits feedback on own attended registration",
       "preconditions": [
         "Completed event with active feedback window",
@@ -110,7 +126,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P1",
-      "traceability": ["FR-26", "FR-14"],
+      "traceability": [
+        "FR-26",
+        "FR-14"
+      ],
       "title": "Participant self-check-in succeeds on own registration when enabled",
       "preconditions": [
         "Event InProgress with self-check-in enabled and active check-in window",
@@ -130,7 +149,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-26", "AC-09"],
+      "traceability": [
+        "FR-26",
+        "AC-09"
+      ],
       "title": "GET eligibility/me returns only current actor eligibility",
       "preconditions": [
         "Completed event with evaluated eligibility for multiple participants",
@@ -149,7 +171,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-26", "NFR-08"],
+      "traceability": [
+        "FR-26",
+        "NFR-08"
+      ],
       "title": "Registration scope check runs before domain mutation on participant commands",
       "preconditions": [
         "Protected participant command handler wired with authorization decision pattern (authenticate, role, scope, guard, execute)",
@@ -168,7 +193,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-26", "NFR-08"],
+      "traceability": [
+        "FR-26",
+        "NFR-08"
+      ],
       "title": "Cross-participant registration mutation classified as P0 unauthorized critical update",
       "preconditions": [
         "Two participants A and B registered for same event",
@@ -188,7 +216,11 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-26", "NFR-08", "NFR-13"],
+      "traceability": [
+        "FR-26",
+        "NFR-08",
+        "NFR-13"
+      ],
       "title": "Out-of-scope registration denial uses typed error without leaking other participant data",
       "preconditions": [
         "Participant B JWT",
@@ -207,7 +239,9 @@
       "layer": "unit",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-26"],
+      "traceability": [
+        "FR-26"
+      ],
       "title": "assertRegistrationScope permits participant for own registrationId",
       "preconditions": [
         "JwtPayload role Participant with sub equal to registration participantId",
@@ -225,7 +259,9 @@
       "layer": "unit",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-26"],
+      "traceability": [
+        "FR-26"
+      ],
       "title": "assertRegistrationScope rejects participant for another participant registrationId",
       "preconditions": [
         "JwtPayload role Participant with sub for participant B",
@@ -243,7 +279,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-26", "FR-11"],
+      "traceability": [
+        "FR-26",
+        "FR-11"
+      ],
       "title": "Participant cannot cancel another participant registration",
       "preconditions": [
         "Participant A Registered for event",
@@ -262,7 +301,10 @@
       "layer": "integration",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-26", "AC-08"],
+      "traceability": [
+        "FR-26",
+        "AC-08"
+      ],
       "title": "Participant cannot submit feedback for another participant registration",
       "preconditions": [
         "Completed event with two Attended participants A and B",
@@ -281,7 +323,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-26", "FR-14"],
+      "traceability": [
+        "FR-26",
+        "FR-14"
+      ],
       "title": "Participant cannot self-check-in using another participant registration context",
       "preconditions": [
         "Event with self-check-in enabled and active window",
@@ -300,7 +345,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-26", "FR-05"],
+      "traceability": [
+        "FR-26",
+        "FR-05"
+      ],
       "title": "Register request with mismatched participantId does not create registration for another user",
       "preconditions": [
         "Published event with available capacity",
@@ -320,7 +368,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-26", "FR-30", "FR-25"],
+      "traceability": [
+        "FR-26",
+        "FR-30",
+        "FR-25"
+      ],
       "title": "Participant denied organizer operational registrations list for event",
       "preconditions": [
         "Event with multiple participant registrations",
@@ -338,7 +390,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P1",
-      "traceability": ["FR-26", "FR-30"],
+      "traceability": [
+        "FR-26",
+        "FR-30"
+      ],
       "title": "Participant denied organizer attendance and waitlist operational lists",
       "preconditions": [
         "Event with waitlist entries and attendance records including other participants",
@@ -357,7 +412,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["FR-26", "AC-09"],
+      "traceability": [
+        "FR-26",
+        "AC-09"
+      ],
       "title": "Participant cannot retrieve another participant eligibility via scoped endpoint",
       "preconditions": [
         "Completed event with eligibility evaluated for participants A and B",
@@ -376,7 +434,11 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-26", "AC-16", "FR-29"],
+      "traceability": [
+        "FR-26",
+        "AC-16",
+        "FR-29"
+      ],
       "title": "Participant my registrations UI shows only signed-in user registrations",
       "preconditions": [
         "Web app running with authenticated Participant session",
@@ -395,7 +457,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-26", "AC-08", "BR-15"],
+      "traceability": [
+        "FR-26",
+        "AC-08",
+        "BR-15"
+      ],
       "title": "Dev sub alias participant-1 submits feedback on own Attended registration with registrationId in body",
       "preconditions": [
         "Completed event with active feedback window",
@@ -416,7 +482,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-26", "FR-19"],
+      "traceability": [
+        "FR-26",
+        "FR-19"
+      ],
       "title": "POST feedback with dev token sub alias and own registrationId returns HTTP 200",
       "preconditions": [
         "Completed event with active feedback window",
@@ -437,7 +506,11 @@
       "layer": "e2e",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["FR-26", "AC-16", "FR-33"],
+      "traceability": [
+        "FR-26",
+        "AC-16",
+        "FR-33"
+      ],
       "title": "Signup login view own registrations end-to-end enforces participant scope",
       "preconditions": [
         "No existing account for test email",

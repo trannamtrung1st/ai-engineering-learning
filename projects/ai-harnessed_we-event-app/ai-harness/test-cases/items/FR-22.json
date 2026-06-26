@@ -1,7 +1,7 @@
 {
   "productItemId": "FR-22",
   "version": 1,
-  "docFingerprint": "sha256:f44c92d5b8e8208272ca20445a8ed22605865e55c323b1677af54c0c2242f917",
+  "docFingerprint": "sha256:aa1117f3b650d9449d7073916f7ca9b84a02286b19d61773de4e49196817a850",
   "generatedAt": "2026-06-26T12:29:15Z",
   "cases": [
     {
@@ -10,7 +10,9 @@
       "layer": "integration",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["FR-22"],
+      "traceability": [
+        "FR-22"
+      ],
       "title": "Organizer Admin reviews consolidated event overview per user-flow governance step",
       "preconditions": [
         "Published event with operational activity across registration, waitlist, check-in, and feedback domains",
@@ -29,7 +31,9 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-22"],
+      "traceability": [
+        "FR-22"
+      ],
       "title": "GET /api/v1/events/{eventId}/dashboard returns HTTP 200 with event overview envelope",
       "preconditions": [
         "Event in RegistrationOpen or later lifecycle state with known operational activity",
@@ -48,7 +52,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-22", "FR-31"],
+      "traceability": [
+        "FR-22",
+        "FR-31"
+      ],
       "title": "Dashboard registration count matches paginated registrations list total",
       "preconditions": [
         "Event with multiple registrations in mixed states (Registered, Waitlisted, Cancelled as applicable)",
@@ -68,7 +75,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-22", "FR-08", "FR-31"],
+      "traceability": [
+        "FR-22",
+        "FR-08",
+        "FR-31"
+      ],
       "title": "Dashboard waitlist count matches paginated waitlist list total",
       "preconditions": [
         "Event at capacity with waitlist enabled and at least one Waitlisted registration",
@@ -88,7 +99,12 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-22", "FR-13", "FR-14", "FR-16"],
+      "traceability": [
+        "FR-22",
+        "FR-13",
+        "FR-14",
+        "FR-16"
+      ],
       "title": "Dashboard check-in summary reflects checked-in and attended registration counts",
       "preconditions": [
         "In-progress or completed event with at least one CheckedIn registration and optionally Attended after completion",
@@ -107,7 +123,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-22", "FR-18", "FR-19"],
+      "traceability": [
+        "FR-22",
+        "FR-18",
+        "FR-19"
+      ],
       "title": "Dashboard exposes feedback completion summary for organizer review",
       "preconditions": [
         "Completed or post-event event with feedback window configured",
@@ -127,7 +147,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-22", "FR-02", "AC-04"],
+      "traceability": [
+        "FR-22",
+        "FR-02",
+        "AC-04"
+      ],
       "title": "Dashboard capacity summary shows registered seats never exceeding configured capacity",
       "preconditions": [
         "Event with configured capacity N and registrations at or near capacity",
@@ -146,7 +170,12 @@
       "layer": "e2e",
       "technique": "flow-a",
       "priority": "P0",
-      "traceability": ["FR-22", "FR-17", "FR-20", "FR-21"],
+      "traceability": [
+        "FR-22",
+        "FR-17",
+        "FR-20",
+        "FR-21"
+      ],
       "title": "Flow A dashboard after full lifecycle reflects registration through eligibility operational totals",
       "preconditions": [
         "E2E Flow A progressed: publish, open registration, register, check-in, complete event, submit feedback, eligibility evaluated",
@@ -165,7 +194,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-22", "AC-14"],
+      "traceability": [
+        "FR-22",
+        "AC-14"
+      ],
       "title": "Organizer operations dashboard page renders KPI blocks and drill-down navigation",
       "preconditions": [
         "OrganizerAdmin logged in with scope to an active event",
@@ -186,7 +218,9 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P2",
-      "traceability": ["FR-22"],
+      "traceability": [
+        "FR-22"
+      ],
       "title": "Organizer dashboard shows loading skeleton then populated KPIs on successful fetch",
       "preconditions": [
         "OrganizerAdmin logged in",
@@ -207,7 +241,12 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-22", "AC-15", "FR-25", "NFR-07"],
+      "traceability": [
+        "FR-22",
+        "AC-15",
+        "FR-25",
+        "NFR-07"
+      ],
       "title": "Unauthenticated GET dashboard returns 401",
       "preconditions": [
         "Existing event with operational data",
@@ -225,7 +264,13 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-22", "AC-15", "FR-25", "FR-26", "NFR-08"],
+      "traceability": [
+        "FR-22",
+        "AC-15",
+        "FR-25",
+        "FR-26",
+        "NFR-08"
+      ],
       "title": "Participant cannot access organizer dashboard endpoint",
       "preconditions": [
         "Event with registrations",
@@ -243,7 +288,11 @@
       "layer": "integration",
       "technique": "rbac-negative",
       "priority": "P1",
-      "traceability": ["FR-22", "FR-27", "NFR-08"],
+      "traceability": [
+        "FR-22",
+        "FR-27",
+        "NFR-08"
+      ],
       "title": "OrganizerAdmin outside event organization scope cannot view dashboard",
       "preconditions": [
         "Event owned by another organization",
@@ -261,7 +310,9 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-22"],
+      "traceability": [
+        "FR-22"
+      ],
       "title": "Dashboard request for non-existent eventId returns 404",
       "preconditions": [
         "OrganizerAdmin JWT",
@@ -279,7 +330,9 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P2",
-      "traceability": ["FR-22"],
+      "traceability": [
+        "FR-22"
+      ],
       "title": "Dashboard for newly published event with zero activity returns zero counts",
       "preconditions": [
         "Published event with no registrations, waitlist entries, check-ins, or feedback",
@@ -297,7 +350,11 @@
       "layer": "e2e",
       "technique": "flow-b",
       "priority": "P1",
-      "traceability": ["FR-22", "FR-12", "AC-04"],
+      "traceability": [
+        "FR-22",
+        "FR-12",
+        "AC-04"
+      ],
       "title": "Dashboard registration count updates after waitlist promotion when seat opens",
       "preconditions": [
         "Full event with waitlist enabled and at least one Waitlisted participant",
@@ -318,7 +375,11 @@
       "layer": "integration",
       "technique": "pagination",
       "priority": "P1",
-      "traceability": ["FR-22", "FR-31", "NFR-16"],
+      "traceability": [
+        "FR-22",
+        "FR-31",
+        "NFR-16"
+      ],
       "title": "Dashboard aggregation derives totals from paginated list contracts without loading full datasets",
       "preconditions": [
         "Event with total registrations, waitlist, or attendance rows exceeding default pageSize (20)",
@@ -338,7 +399,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["FR-22", "NFR-06"],
+      "traceability": [
+        "FR-22",
+        "NFR-06"
+      ],
       "title": "Dashboard metrics reflect new registration within near-real-time refresh window",
       "preconditions": [
         "Active event with registration open",
@@ -359,7 +423,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["FR-22", "FR-25", "NFR-08"],
+      "traceability": [
+        "FR-22",
+        "FR-25",
+        "NFR-08"
+      ],
       "title": "Dashboard query is read-only and does not mutate event or registration state",
       "preconditions": [
         "Event with known registration and audit state",
@@ -379,7 +447,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P2",
-      "traceability": ["FR-22", "NFR-06"],
+      "traceability": [
+        "FR-22",
+        "NFR-06"
+      ],
       "title": "Organizer dashboard live query polling refreshes KPI values during active event window",
       "preconditions": [
         "OrganizerAdmin logged in on event dashboard during RegistrationOpen or in-progress event",
@@ -399,7 +470,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["FR-22", "FR-27"],
+      "traceability": [
+        "FR-22",
+        "FR-27"
+      ],
       "title": "OrganizerStaff with dashboard.view can view assigned event overview",
       "preconditions": [
         "Event with operational activity",
@@ -417,7 +491,10 @@
       "layer": "integration",
       "technique": "rbac-negative",
       "priority": "P1",
-      "traceability": ["FR-22", "FR-27"],
+      "traceability": [
+        "FR-22",
+        "FR-27"
+      ],
       "title": "OrganizerStaff cannot view dashboard for unassigned event",
       "preconditions": [
         "Event with operational data",
@@ -435,7 +512,10 @@
       "layer": "integration",
       "technique": "concurrency",
       "priority": "P1",
-      "traceability": ["FR-22", "AC-04"],
+      "traceability": [
+        "FR-22",
+        "AC-04"
+      ],
       "title": "Dashboard totals remain consistent after concurrent registrations",
       "preconditions": [
         "Event RegistrationOpen with capacity well above concurrent request count",

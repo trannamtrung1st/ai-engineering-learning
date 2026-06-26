@@ -1,7 +1,7 @@
 {
   "productItemId": "FR-12",
   "version": 1,
-  "docFingerprint": "sha256:61772db2f0be7d5f91f9eccefef8b9d85ce957dbd55d47d9d14f933847b053f4",
+  "docFingerprint": "sha256:027175175545d05eacf412663c601ddc7b622e4741a2ff40633c8e332b7bd6aa",
   "generatedAt": "2026-06-26T12:12:05Z",
   "cases": [
     {
@@ -10,7 +10,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-12", "BR-06", "BR-08"],
+      "traceability": [
+        "FR-12",
+        "BR-06",
+        "BR-08"
+      ],
       "title": "System automatically promotes top waitlist participant to Registered when seat is released",
       "preconditions": [
         "Event RegistrationOpen at capacity with waitlistEnabled true",
@@ -31,7 +35,12 @@
       "layer": "integration",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["FR-12", "AC-04", "BR-03", "BR-08"],
+      "traceability": [
+        "FR-12",
+        "AC-04",
+        "BR-03",
+        "BR-08"
+      ],
       "title": "Testing-plan Flow B promotion segment keeps Registered count at capacity after auto-promotion",
       "preconditions": [
         "Full event with waitlistEnabled true per testing-plan §6 Flow B setup",
@@ -52,7 +61,10 @@
       "layer": "unit",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["FR-12", "BR-06"],
+      "traceability": [
+        "FR-12",
+        "BR-06"
+      ],
       "title": "promoteFromWaitlist state transition guard permits Waitlisted to Registered when seat available",
       "preconditions": [
         "Registration in Waitlisted state",
@@ -73,7 +85,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-12", "BR-06"],
+      "traceability": [
+        "FR-12",
+        "BR-06"
+      ],
       "title": "FIFO promotion selects position 1 waitlist entry when one seat opens",
       "preconditions": [
         "Event at capacity with three Waitlisted participants at positions 1, 2, and 3",
@@ -93,7 +108,11 @@
       "layer": "e2e",
       "technique": "flow-b",
       "priority": "P0",
-      "traceability": ["FR-12", "BR-08", "AC-04"],
+      "traceability": [
+        "FR-12",
+        "BR-08",
+        "AC-04"
+      ],
       "title": "Flow B auto-promotion step after cancellation promotes waitlisted participant via API",
       "preconditions": [
         "Full event with waitlistEnabled true per Flow B setup",
@@ -114,7 +133,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-12", "FR-10", "BR-08"],
+      "traceability": [
+        "FR-12",
+        "FR-10",
+        "BR-08"
+      ],
       "title": "GET registration-status returns HTTP 200 with Registered after automatic waitlist promotion",
       "preconditions": [
         "Event at capacity with waitlistEnabled true",
@@ -134,7 +157,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["FR-12", "BR-08"],
+      "traceability": [
+        "FR-12",
+        "BR-08"
+      ],
       "title": "Organizer-initiated cancellation triggers same automatic waitlist promotion",
       "preconditions": [
         "Event at capacity with waitlistEnabled true",
@@ -154,7 +180,10 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P1",
-      "traceability": ["FR-12", "AC-12"],
+      "traceability": [
+        "FR-12",
+        "AC-12"
+      ],
       "title": "Waitlisted to Registered promotion recorded in status history when promotion succeeds",
       "preconditions": [
         "Event at capacity with one Waitlisted participant at position 1",
@@ -173,7 +202,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["FR-12", "BR-06"],
+      "traceability": [
+        "FR-12",
+        "BR-06"
+      ],
       "title": "Sequential seat releases promote waitlist entries in FIFO order",
       "preconditions": [
         "Event capacity 2 with 2 Registered and 2 Waitlisted at positions 1 and 2",
@@ -193,7 +225,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-12", "FR-10"],
+      "traceability": [
+        "FR-12",
+        "FR-10"
+      ],
       "title": "Promoted and cancelling participants see updated statuses in UI per Flow 2",
       "preconditions": [
         "Full event with Registered participant A and Waitlisted participant B",
@@ -214,7 +249,11 @@
       "layer": "integration",
       "technique": "concurrency",
       "priority": "P0",
-      "traceability": ["FR-12", "BR-06", "AC-04"],
+      "traceability": [
+        "FR-12",
+        "BR-06",
+        "AC-04"
+      ],
       "title": "Concurrent cancellations with single waitlist entry prevent double promotion",
       "preconditions": [
         "Event capacity 2 with two Registered and exactly one Waitlisted",
@@ -235,7 +274,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-12", "FR-26", "FR-25"],
+      "traceability": [
+        "FR-12",
+        "FR-26",
+        "FR-25"
+      ],
       "title": "Waitlisted participant denied canceling another participant's registration to trigger promotion",
       "preconditions": [
         "Event at capacity with participant A Registered and participant B Waitlisted",
@@ -255,7 +298,10 @@
       "layer": "unit",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-12", "BR-03"],
+      "traceability": [
+        "FR-12",
+        "BR-03"
+      ],
       "title": "promoteFromWaitlist rejected when no seat is available",
       "preconditions": [
         "Registration in Waitlisted state",
@@ -275,7 +321,10 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-12", "BR-08"],
+      "traceability": [
+        "FR-12",
+        "BR-08"
+      ],
       "title": "No promotion attempted when waitlist is empty on seat release",
       "preconditions": [
         "Event at capacity with waitlistEnabled true",
@@ -295,7 +344,9 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P2",
-      "traceability": ["FR-12"],
+      "traceability": [
+        "FR-12"
+      ],
       "title": "Waitlisted registration does not promote when registration window closes before seat opens",
       "preconditions": [
         "Event at capacity with Waitlisted participant at position 1",
@@ -315,7 +366,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-12", "BR-08"],
+      "traceability": [
+        "FR-12",
+        "BR-08"
+      ],
       "title": "Cancellation and waitlist promotion execute atomically in one transaction",
       "preconditions": [
         "Event at capacity with one Waitlisted at position 1",
@@ -335,7 +389,11 @@
       "layer": "integration",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["FR-12", "AC-04", "BR-03"],
+      "traceability": [
+        "FR-12",
+        "AC-04",
+        "BR-03"
+      ],
       "title": "Registered count never exceeds capacity immediately after auto-promotion",
       "preconditions": [
         "Event at capacity with multiple Waitlisted participants",
@@ -355,7 +413,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P2",
-      "traceability": ["FR-12", "NFR-12"],
+      "traceability": [
+        "FR-12",
+        "NFR-12"
+      ],
       "title": "Promoted participant receives understandable and consistent Registered status messaging",
       "preconditions": [
         "Participant B promoted from Waitlisted to Registered after A cancels",

@@ -1,7 +1,7 @@
 {
   "productItemId": "AC-11",
   "version": 1,
-  "docFingerprint": "sha256:d7f6a976320b1aa92f16ec06ff6560b565944c1c9015956c4de24bcccdea65b2",
+  "docFingerprint": "sha256:1593c2ff42ceec9999c9e8d9b2cb30bad8891dfea6114e74ae8dff6eb463b47b",
   "generatedAt": "2026-06-26T11:19:37Z",
   "cases": [
     {
@@ -10,7 +10,10 @@
       "layer": "integration",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["AC-11", "BR-22"],
+      "traceability": [
+        "AC-11",
+        "BR-22"
+      ],
       "title": "Critical config change audit record persisted per testing-plan §3 scenario matrix",
       "preconditions": [
         "Event in RegistrationOpen state with initial capacity 10",
@@ -31,7 +34,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["AC-11", "BR-22", "FR-25"],
+      "traceability": [
+        "AC-11",
+        "BR-22",
+        "FR-25"
+      ],
       "title": "Post-open capacity change writes immutable audit row in audit_logs table",
       "preconditions": [
         "RegistrationOpen event with initial capacity 10",
@@ -52,7 +59,10 @@
       "layer": "e2e",
       "technique": "flow-c",
       "priority": "P0",
-      "traceability": ["AC-11", "BR-22"],
+      "traceability": [
+        "AC-11",
+        "BR-22"
+      ],
       "title": "Flow C admin critical rule change after registration open is verifiable via audit-logs API",
       "preconditions": [
         "E2E event progressed to RegistrationOpen with capacity 10",
@@ -72,7 +82,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["AC-11", "BR-21", "FR-25"],
+      "traceability": [
+        "AC-11",
+        "BR-21",
+        "FR-25"
+      ],
       "title": "GET /api/v1/events/{eventId}/audit-logs returns HTTP 200 paginated envelope",
       "preconditions": [
         "RegistrationOpen event with at least one prior critical rule config change audit entry",
@@ -91,7 +105,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["AC-11", "FR-30"],
+      "traceability": [
+        "AC-11",
+        "FR-30"
+      ],
       "title": "Organizer audit log page surfaces actor, action, and reason columns with pagination",
       "preconditions": [
         "OrganizerAdmin logged in with access to event that has audit log entries",
@@ -111,7 +128,10 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P1",
-      "traceability": ["AC-11", "BR-22"],
+      "traceability": [
+        "AC-11",
+        "BR-22"
+      ],
       "title": "Non-capacity rule config field change after registration open is audit logged with before/after diff",
       "preconditions": [
         "RegistrationOpen event with waitlistEnabled false",
@@ -131,7 +151,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["AC-11", "BR-22"],
+      "traceability": [
+        "AC-11",
+        "BR-22"
+      ],
       "title": "Critical config change without reason returns AUDIT_REQUIRED_FOR_CRITICAL_CHANGE",
       "preconditions": [
         "RegistrationOpen event",
@@ -149,7 +172,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["AC-11", "BR-21"],
+      "traceability": [
+        "AC-11",
+        "BR-21"
+      ],
       "title": "OrganizerStaff cannot modify event-level rule configuration",
       "preconditions": [
         "RegistrationOpen event",
@@ -167,7 +193,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P1",
-      "traceability": ["AC-11", "FR-25", "FR-27"],
+      "traceability": [
+        "AC-11",
+        "FR-25",
+        "FR-27"
+      ],
       "title": "Participant cannot read event audit logs",
       "preconditions": [
         "RegistrationOpen event with audit entries",
@@ -185,7 +215,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P1",
-      "traceability": ["AC-11", "FR-27"],
+      "traceability": [
+        "AC-11",
+        "FR-27"
+      ],
       "title": "OrganizerStaff cannot access audit logs endpoint",
       "preconditions": [
         "Event with audit log entries",
@@ -203,7 +236,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P1",
-      "traceability": ["AC-11", "AC-15", "FR-25"],
+      "traceability": [
+        "AC-11",
+        "AC-15",
+        "FR-25"
+      ],
       "title": "Unauthenticated GET audit-logs returns 401",
       "preconditions": [
         "Event with existing audit log entries",
@@ -221,7 +258,11 @@
       "layer": "integration",
       "technique": "pagination",
       "priority": "P2",
-      "traceability": ["AC-11", "AC-13", "FR-30"],
+      "traceability": [
+        "AC-11",
+        "AC-13",
+        "FR-30"
+      ],
       "title": "Audit log page beyond totalPages returns empty items with valid metadata",
       "preconditions": [
         "Event with known audit log count",
@@ -240,7 +281,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P2",
-      "traceability": ["AC-11", "AC-13"],
+      "traceability": [
+        "AC-11",
+        "AC-13"
+      ],
       "title": "Invalid pagination on audit-logs returns INVALID_PAGINATION",
       "preconditions": [
         "Event with audit log entries",
@@ -259,7 +303,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["AC-11", "BR-22"],
+      "traceability": [
+        "AC-11",
+        "BR-22"
+      ],
       "title": "Sequential critical config changes produce distinct immutable audit entries",
       "preconditions": [
         "RegistrationOpen event with capacity 10",
@@ -279,7 +326,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["AC-11", "NFR-10", "BR-22"],
+      "traceability": [
+        "AC-11",
+        "NFR-10",
+        "BR-22"
+      ],
       "title": "Every successful post-open critical config change has corresponding audit record",
       "preconditions": [
         "RegistrationOpen event",
@@ -299,7 +350,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["AC-11", "BR-22", "FR-25"],
+      "traceability": [
+        "AC-11",
+        "BR-22",
+        "FR-25"
+      ],
       "title": "Audit record includes minimum payload fields for operational review",
       "preconditions": [
         "RegistrationOpen event after successful critical config change"
@@ -317,7 +372,11 @@
       "layer": "integration",
       "technique": "pagination",
       "priority": "P1",
-      "traceability": ["AC-11", "AC-13", "FR-30"],
+      "traceability": [
+        "AC-11",
+        "AC-13",
+        "FR-30"
+      ],
       "title": "Audit logs list defaults to createdAt descending order",
       "preconditions": [
         "Event with multiple audit entries at different timestamps",

@@ -1,7 +1,7 @@
 {
   "productItemId": "FR-33",
   "version": 1,
-  "docFingerprint": "sha256:4df3b9fe5a47366f3a2e6893d54863d7ebd7808387ffd2e446a5608089ea8a67",
+  "docFingerprint": "sha256:1795587dc6c00a1833c45415b462d73fd4b8426dae103e6bff17f76a3aee2f8b",
   "generatedAt": "2026-06-26T22:15:00Z",
   "cases": [
     {
@@ -10,7 +10,9 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-33"],
+      "traceability": [
+        "FR-33"
+      ],
       "title": "Participant signs in with email and password via POST /auth/login",
       "preconditions": [
         "API server running at /api/v1",
@@ -30,7 +32,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-33", "AC-16"],
+      "traceability": [
+        "FR-33",
+        "AC-16"
+      ],
       "title": "Login-issued JWT authenticates GET /me for current actor",
       "preconditions": [
         "Existing user account with known credentials",
@@ -49,7 +54,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["FR-33", "AC-16"],
+      "traceability": [
+        "FR-33",
+        "AC-16"
+      ],
       "title": "Browser sign-in page issues JWT and enables protected navigation",
       "preconditions": [
         "Web app running with dedicated /login route",
@@ -71,7 +79,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-33", "AC-15"],
+      "traceability": [
+        "FR-33",
+        "AC-15"
+      ],
       "title": "POST /auth/login succeeds without prior authentication",
       "preconditions": [
         "Existing account with known credentials",
@@ -90,7 +101,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-33", "FR-25"],
+      "traceability": [
+        "FR-33",
+        "FR-25"
+      ],
       "title": "Login JWT sub claim maps to users.id UUID",
       "preconditions": [
         "Existing account with known credentials",
@@ -110,7 +124,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-33", "FR-25"],
+      "traceability": [
+        "FR-33",
+        "FR-25"
+      ],
       "title": "Login response profile includes roles array for authorization",
       "preconditions": [
         "Existing account with known role assignment (Participant, OrganizerStaff, or OrganizerAdmin)"
@@ -129,7 +146,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P1",
-      "traceability": ["FR-33", "FR-25"],
+      "traceability": [
+        "FR-33",
+        "FR-25"
+      ],
       "title": "OrganizerAdmin seed account login receives admin-role JWT session",
       "preconditions": [
         "OrganizerAdmin account provisioned via seed or admin provisioning (not public signup)",
@@ -149,7 +169,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-33", "NFR-07"],
+      "traceability": [
+        "FR-33",
+        "NFR-07"
+      ],
       "title": "Successful login enables access to sensitive protected operations",
       "preconditions": [
         "Participant account with at least one registration",
@@ -169,7 +192,11 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-33", "NFR-13", "NFR-07"],
+      "traceability": [
+        "FR-33",
+        "NFR-13",
+        "NFR-07"
+      ],
       "title": "Invalid login attempts return standard typed error envelope with immediate feedback",
       "preconditions": [
         "API server running",
@@ -188,7 +215,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-33", "NFR-17"],
+      "traceability": [
+        "FR-33",
+        "NFR-17"
+      ],
       "title": "Login response never exposes password hash or credential secrets",
       "preconditions": [
         "Existing account with known credentials"
@@ -206,7 +236,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-33", "NFR-07"],
+      "traceability": [
+        "FR-33",
+        "NFR-07"
+      ],
       "title": "Login with incorrect password is rejected",
       "preconditions": [
         "Existing account registered with known email and password"
@@ -223,7 +256,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-33", "NFR-07"],
+      "traceability": [
+        "FR-33",
+        "NFR-07"
+      ],
       "title": "Login with unknown email returns same invalid-credentials response as wrong password",
       "preconditions": [
         "Email not registered in users table"
@@ -241,7 +277,9 @@
       "layer": "unit",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-33"],
+      "traceability": [
+        "FR-33"
+      ],
       "title": "validateLoginInput rejects empty password",
       "preconditions": [
         "Auth validation module available"
@@ -259,7 +297,9 @@
       "layer": "unit",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-33"],
+      "traceability": [
+        "FR-33"
+      ],
       "title": "validateLoginInput rejects invalid email format",
       "preconditions": [
         "Auth validation module available"
@@ -277,7 +317,9 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-33"],
+      "traceability": [
+        "FR-33"
+      ],
       "title": "Login with mixed-case email succeeds against lowercase stored account",
       "preconditions": [
         "Account registered as user@example.com with known password"
@@ -294,7 +336,9 @@
       "layer": "unit",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-33"],
+      "traceability": [
+        "FR-33"
+      ],
       "title": "validateLoginInput normalizes email to lowercase trimmed form",
       "preconditions": [
         "Auth validation module available"
@@ -311,7 +355,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-33", "AC-15"],
+      "traceability": [
+        "FR-33",
+        "AC-15"
+      ],
       "title": "Login page preserves return URL for post-auth redirect",
       "preconditions": [
         "Web app running with route guards",
@@ -333,7 +380,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-33", "FR-25"],
+      "traceability": [
+        "FR-33",
+        "FR-25"
+      ],
       "title": "Participant login JWT denied on OrganizerAdmin-only endpoint",
       "preconditions": [
         "Participant account with known credentials (not OrganizerAdmin or OrganizerStaff)",

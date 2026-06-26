@@ -1,7 +1,7 @@
 {
   "productItemId": "AC-17",
   "version": 1,
-  "docFingerprint": "sha256:76ea7a27e8001767c130daca58d854080820cacf97cf62df887657fbfc028f2e",
+  "docFingerprint": "sha256:acbd62dbcf565def34dd64afff5a54fa280437d552a05240188b14dda78e5dd6",
   "generatedAt": "2026-06-26T11:53:40Z",
   "cases": [
     {
@@ -10,7 +10,11 @@
       "layer": "e2e",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["AC-17", "FR-35", "FR-36"],
+      "traceability": [
+        "AC-17",
+        "FR-35",
+        "FR-36"
+      ],
       "title": "BRD §1.7 organizer uploads cover; participant sees cover on event list and detail",
       "preconditions": [
         "API server running at /api/v1",
@@ -34,7 +38,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["AC-17", "FR-35"],
+      "traceability": [
+        "AC-17",
+        "FR-35"
+      ],
       "title": "POST /api/v1/events/{eventId}/cover-image returns success and persists cover metadata",
       "preconditions": [
         "API server running at /api/v1",
@@ -55,7 +62,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["AC-17", "FR-36"],
+      "traceability": [
+        "AC-17",
+        "FR-36"
+      ],
       "title": "GET /api/v1/events list and detail include coverImageUrl; GET /media/events/{key} serves image",
       "preconditions": [
         "Published event with cover_image_key set via organizer upload",
@@ -75,7 +85,11 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["AC-17", "FR-35", "FR-36"],
+      "traceability": [
+        "AC-17",
+        "FR-35",
+        "FR-36"
+      ],
       "title": "Organizer uploads cover in event form; participant sees 16:9 thumbnail on list and hero on detail",
       "preconditions": [
         "Web app running with organizer event create/edit form and participant discovery pages",
@@ -96,7 +110,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["AC-17", "FR-35"],
+      "traceability": [
+        "AC-17",
+        "FR-35"
+      ],
       "title": "Event media module replaces existing cover_image_key in real DB transaction",
       "preconditions": [
         "Event already has cover_image_key from prior upload in Postgres",
@@ -118,7 +135,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["AC-17", "FR-35"],
+      "traceability": [
+        "AC-17",
+        "FR-35"
+      ],
       "title": "DELETE cover-image clears cover_image_key at DB and storage boundary",
       "preconditions": [
         "Event with existing cover_image_key persisted in Postgres",
@@ -139,7 +159,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["AC-17", "NFR-18"],
+      "traceability": [
+        "AC-17",
+        "NFR-18"
+      ],
       "title": "Cover images served only from controlled GET /media/events/{key} storage path",
       "preconditions": [
         "Event with uploaded cover and known storage key under UPLOADS_DIR",
@@ -160,7 +183,10 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["AC-17", "NFR-18"],
+      "traceability": [
+        "AC-17",
+        "NFR-18"
+      ],
       "title": "Cover upload rejects files exceeding 5 MB maximum size",
       "preconditions": [
         "OrganizerAdmin JWT and editable event",
@@ -178,7 +204,12 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["AC-17", "NFR-07", "NFR-08", "FR-35"],
+      "traceability": [
+        "AC-17",
+        "NFR-07",
+        "NFR-08",
+        "FR-35"
+      ],
       "title": "Participant cannot upload or delete event cover image",
       "preconditions": [
         "Editable event in organizer scope",
@@ -199,7 +230,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["AC-17", "FR-35"],
+      "traceability": [
+        "AC-17",
+        "FR-35"
+      ],
       "title": "OrganizerStaff denied cover upload on create/edit event",
       "preconditions": [
         "Draft event in OrganizerAdmin organizing unit",
@@ -218,7 +252,11 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["AC-17", "FR-35", "AC-15"],
+      "traceability": [
+        "AC-17",
+        "FR-35",
+        "AC-15"
+      ],
       "title": "Unauthenticated POST /events/{eventId}/cover-image returns 401",
       "preconditions": [
         "Existing event eligible for cover upload",
@@ -237,7 +275,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["AC-17", "NFR-18"],
+      "traceability": [
+        "AC-17",
+        "NFR-18"
+      ],
       "title": "Invalid MIME type upload rejected before persistence",
       "preconditions": [
         "OrganizerAdmin JWT",
@@ -255,7 +296,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["AC-17", "FR-36"],
+      "traceability": [
+        "AC-17",
+        "FR-36"
+      ],
       "title": "Event without cover shows neutral placeholder on list and detail",
       "preconditions": [
         "Published event with cover_image_key null",
@@ -274,7 +318,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P1",
-      "traceability": ["AC-17", "NFR-08"],
+      "traceability": [
+        "AC-17",
+        "NFR-08"
+      ],
       "title": "Cover upload for event outside organizer scope returns 403 or 404",
       "preconditions": [
         "Event owned by organizing unit A",
@@ -293,7 +340,10 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P2",
-      "traceability": ["AC-17", "FR-35"],
+      "traceability": [
+        "AC-17",
+        "FR-35"
+      ],
       "title": "DELETE cover-image on event without cover is idempotent or returns clear not-found",
       "preconditions": [
         "Event with cover_image_key null in Postgres",
@@ -312,7 +362,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["AC-17", "NFR-18"],
+      "traceability": [
+        "AC-17",
+        "NFR-18"
+      ],
       "title": "Cover upload at exactly 5 MB boundary accepted; just over 5 MB rejected",
       "preconditions": [
         "OrganizerAdmin JWT and editable event without cover",

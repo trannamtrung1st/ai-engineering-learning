@@ -1,7 +1,7 @@
 {
   "productItemId": "NFR-07",
   "version": 1,
-  "docFingerprint": "sha256:36eb7ede51ffcb03df8f9b4c191e51a75639a1a971475a654f1ec32d95231414",
+  "docFingerprint": "sha256:cff33cca15ef6cab3bccc14f79d25f9da5a6809dfeed7b72d03730ab2b6fe8fb",
   "generatedAt": "2026-06-26T13:03:24Z",
   "cases": [
     {
@@ -10,7 +10,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["NFR-07", "AC-16", "FR-33"],
+      "traceability": [
+        "NFR-07",
+        "AC-16",
+        "FR-33"
+      ],
       "title": "Authenticated participant completes signup, login, and sensitive self-service read",
       "preconditions": [
         "API server running at /api/v1",
@@ -30,7 +34,11 @@
       "layer": "e2e",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["NFR-07", "AC-01", "FR-33"],
+      "traceability": [
+        "NFR-07",
+        "AC-01",
+        "FR-33"
+      ],
       "title": "Authenticated participant can register for event after login",
       "preconditions": [
         "Published event in RegistrationOpen state with available capacity",
@@ -50,7 +58,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["NFR-07", "FR-25"],
+      "traceability": [
+        "NFR-07",
+        "FR-25"
+      ],
       "title": "Authorization pipeline authenticates actor before role and scope validation",
       "preconditions": [
         "Command handler wired with authorization decision pattern: authenticate → role → scope → state guard",
@@ -69,7 +80,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["NFR-07", "AC-15", "FR-33"],
+      "traceability": [
+        "NFR-07",
+        "AC-15",
+        "FR-33"
+      ],
       "title": "Unauthenticated POST registration is rejected before domain execution",
       "preconditions": [
         "Event in RegistrationOpen with available seats",
@@ -88,7 +103,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["NFR-07", "AC-15", "FR-25"],
+      "traceability": [
+        "NFR-07",
+        "AC-15",
+        "FR-25"
+      ],
       "title": "Unauthenticated organizer read of audit logs returns 401",
       "preconditions": [
         "Event with persisted audit log entries",
@@ -107,7 +126,11 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["NFR-07", "AC-15", "FR-34"],
+      "traceability": [
+        "NFR-07",
+        "AC-15",
+        "FR-34"
+      ],
       "title": "Protected participant route blocks sensitive UI until user signs in",
       "preconditions": [
         "Web app running with route guards enabled",
@@ -126,7 +149,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["NFR-07", "AC-15"],
+      "traceability": [
+        "NFR-07",
+        "AC-15"
+      ],
       "title": "Representative sensitive write endpoints uniformly require authentication",
       "preconditions": [
         "Seeded event in RegistrationOpen state",
@@ -148,7 +174,11 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["NFR-07", "AC-15", "NFR-08"],
+      "traceability": [
+        "NFR-07",
+        "AC-15",
+        "NFR-08"
+      ],
       "title": "Unauthenticated requests receive 401 not 403 on sensitive endpoints",
       "preconditions": [
         "Protected endpoints available for participant and organizer operations",
@@ -168,7 +198,9 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["NFR-07"],
+      "traceability": [
+        "NFR-07"
+      ],
       "title": "Non-public API surface is protected by default per API design principle",
       "preconditions": [
         "API mounted at /api/v1 with auth middleware on protected routes",
@@ -187,7 +219,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P1",
-      "traceability": ["NFR-07", "AC-15", "NFR-13"],
+      "traceability": [
+        "NFR-07",
+        "AC-15",
+        "NFR-13"
+      ],
       "title": "401 authentication failures use standard typed error envelope",
       "preconditions": [
         "API error middleware enabled",
@@ -206,7 +242,11 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["NFR-07", "AC-15", "FR-33"],
+      "traceability": [
+        "NFR-07",
+        "AC-15",
+        "FR-33"
+      ],
       "title": "Malformed JWT bearer token blocks sensitive operation with 401",
       "preconditions": [
         "Protected endpoint available (GET /me or POST registrations)",
@@ -225,7 +265,11 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["NFR-07", "AC-15", "FR-33"],
+      "traceability": [
+        "NFR-07",
+        "AC-15",
+        "FR-33"
+      ],
       "title": "Expired JWT blocks sensitive read and write until re-login",
       "preconditions": [
         "JWT issued with past exp claim or fixed-clock test fixture",
@@ -244,7 +288,11 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["NFR-07", "FR-32", "FR-33"],
+      "traceability": [
+        "NFR-07",
+        "FR-32",
+        "FR-33"
+      ],
       "title": "Public auth endpoints remain reachable without prior session",
       "preconditions": [
         "No Authorization header on requests",
@@ -263,7 +311,11 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["NFR-07", "FR-34", "AC-15"],
+      "traceability": [
+        "NFR-07",
+        "FR-34",
+        "AC-15"
+      ],
       "title": "After sign-out, sensitive route access requires re-authentication",
       "preconditions": [
         "User previously signed in with valid credentials",
@@ -283,7 +335,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["NFR-07", "AC-15"],
+      "traceability": [
+        "NFR-07",
+        "AC-15"
+      ],
       "title": "Empty Authorization bearer value is rejected before sensitive handler execution",
       "preconditions": [
         "Protected endpoint GET /me available"
@@ -301,7 +356,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["NFR-07", "AC-15", "FR-25"],
+      "traceability": [
+        "NFR-07",
+        "AC-15",
+        "FR-25"
+      ],
       "title": "Sensitive organizer export and eligibility revoke require authenticated actor",
       "preconditions": [
         "Event with registrations and eligibility records",

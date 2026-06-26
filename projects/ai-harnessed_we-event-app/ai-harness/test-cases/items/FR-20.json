@@ -1,7 +1,7 @@
 {
   "productItemId": "FR-20",
   "version": 1,
-  "docFingerprint": "sha256:c8464a2daaed16ecde6f5b245103fd0bd13f2d0d45cf241a272a9e3647b9b40e",
+  "docFingerprint": "sha256:107397bd83cd034f847adc3aa5c281b5205685eb1f8283558c1614364f516122",
   "generatedAt": "2026-06-26T16:00:00Z",
   "cases": [
     {
@@ -10,7 +10,13 @@
       "layer": "integration",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["FR-20", "AC-09", "BR-17", "BR-18", "BR-19"],
+      "traceability": [
+        "FR-20",
+        "AC-09",
+        "BR-17",
+        "BR-18",
+        "BR-19"
+      ],
       "title": "System eligibility evaluation pass/fail deterministic with reason per testing-plan §3",
       "preconditions": [
         "Completed event with feedbackRequired true in EventRuleConfig",
@@ -30,7 +36,14 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-20", "AC-09", "BR-14", "BR-17", "BR-18", "BR-19"],
+      "traceability": [
+        "FR-20",
+        "AC-09",
+        "BR-14",
+        "BR-17",
+        "BR-18",
+        "BR-19"
+      ],
       "title": "System evaluates Eligible when mandatory feedback configured and participant submitted feedback",
       "preconditions": [
         "Completed event with EventRuleConfig.feedbackRequired true",
@@ -50,7 +63,13 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-20", "AC-09", "BR-14", "BR-18", "BR-19"],
+      "traceability": [
+        "FR-20",
+        "AC-09",
+        "BR-14",
+        "BR-18",
+        "BR-19"
+      ],
       "title": "System evaluates NotEligible when mandatory feedback configured but not submitted",
       "preconditions": [
         "Completed event with EventRuleConfig.feedbackRequired true",
@@ -70,7 +89,11 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["FR-20", "BR-17", "BR-19"],
+      "traceability": [
+        "FR-20",
+        "BR-17",
+        "BR-19"
+      ],
       "title": "CertificateEligibility transitions from PendingEvaluation to Eligible on passAllRules",
       "preconditions": [
         "Completed event with feedbackRequired false in EventRuleConfig",
@@ -91,7 +114,12 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-20", "AC-09", "BR-17", "BR-19"],
+      "traceability": [
+        "FR-20",
+        "AC-09",
+        "BR-17",
+        "BR-19"
+      ],
       "title": "System evaluates Eligible for Attended participant when feedback is optional in rule config",
       "preconditions": [
         "Completed event with EventRuleConfig.feedbackRequired false",
@@ -110,7 +138,13 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-20", "AC-09", "BR-17", "BR-18", "BR-19"],
+      "traceability": [
+        "FR-20",
+        "AC-09",
+        "BR-17",
+        "BR-18",
+        "BR-19"
+      ],
       "title": "GET /api/v1/events/{eventId}/eligibility/me returns HTTP 200 with Eligible and reason fields",
       "preconditions": [
         "E2E fixture: Completed event with Attended participant who submitted mandatory feedback",
@@ -129,7 +163,12 @@
       "layer": "e2e",
       "technique": "flow-a",
       "priority": "P0",
-      "traceability": ["FR-20", "AC-09", "BR-17", "BR-18"],
+      "traceability": [
+        "FR-20",
+        "AC-09",
+        "BR-17",
+        "BR-18"
+      ],
       "title": "Flow A system evaluates certificate eligibility after feedback in full lifecycle",
       "preconditions": [
         "E2E Flow A progressed through publish, registration, check-in, event completion, and feedback submission",
@@ -149,7 +188,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-20", "AC-09"],
+      "traceability": [
+        "FR-20",
+        "AC-09"
+      ],
       "title": "GET eligibility/me returns system-evaluated Eligible or NotEligible with reason",
       "preconditions": [
         "Completed event with attendance finalized to Attended or Absent",
@@ -169,7 +211,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-20", "AC-09"],
+      "traceability": [
+        "FR-20",
+        "AC-09"
+      ],
       "title": "Participant sees system-evaluated eligibility result with reason after Flow 5",
       "preconditions": [
         "Participant logged in with Attended registration on Completed event",
@@ -189,7 +234,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["FR-20", "FR-18", "BR-14"],
+      "traceability": [
+        "FR-20",
+        "FR-18",
+        "BR-14"
+      ],
       "title": "System reads EventRuleConfig feedbackRequired when evaluating eligibility per event",
       "preconditions": [
         "Two Completed events: Event A with feedbackRequired true, Event B with feedbackRequired false",
@@ -208,7 +257,10 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-20", "BR-17"],
+      "traceability": [
+        "FR-20",
+        "BR-17"
+      ],
       "title": "System evaluates Absent registration as NotEligible with attendance reason",
       "preconditions": [
         "Completed event with any feedback configuration",
@@ -227,7 +279,11 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-20", "BR-17", "BR-18"],
+      "traceability": [
+        "FR-20",
+        "BR-17",
+        "BR-18"
+      ],
       "title": "System evaluation order checks attendance before mandatory feedback rule",
       "preconditions": [
         "Event with feedbackRequired true in EventRuleConfig",
@@ -246,7 +302,9 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-20"],
+      "traceability": [
+        "FR-20"
+      ],
       "title": "GET eligibility/me before attendance finalization returns HTTP 404 NOT_FOUND",
       "preconditions": [
         "Published event with participant Registered but event not yet completed to Attended/Absent",
@@ -264,7 +322,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P1",
-      "traceability": ["FR-20", "AC-15"],
+      "traceability": [
+        "FR-20",
+        "AC-15"
+      ],
       "title": "Unauthenticated GET eligibility/me returns HTTP 401",
       "preconditions": [
         "Completed event with evaluated eligibility records",
@@ -282,7 +343,10 @@
       "layer": "integration",
       "technique": "concurrency",
       "priority": "P2",
-      "traceability": ["FR-20", "BR-19"],
+      "traceability": [
+        "FR-20",
+        "BR-19"
+      ],
       "title": "Concurrent system eligibility evaluations produce single consistent persisted result",
       "preconditions": [
         "Completed event with Attended participant meeting all configured rules",
@@ -302,7 +366,11 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P1",
-      "traceability": ["FR-20", "BR-18", "BR-19"],
+      "traceability": [
+        "FR-20",
+        "BR-18",
+        "BR-19"
+      ],
       "title": "System re-evaluates and updates stored result when feedback submitted after initial NotEligible",
       "preconditions": [
         "Completed event with mandatory feedback and Attended participant",
@@ -323,7 +391,13 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["FR-20", "AC-09", "BR-17", "BR-18", "BR-19"],
+      "traceability": [
+        "FR-20",
+        "AC-09",
+        "BR-17",
+        "BR-18",
+        "BR-19"
+      ],
       "title": "System eligibility rule evaluation is deterministic for identical inputs",
       "preconditions": [
         "Fixed registration, EventRuleConfig, and feedback fixtures",
@@ -342,7 +416,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-20", "BR-19"],
+      "traceability": [
+        "FR-20",
+        "BR-19"
+      ],
       "title": "Every system evaluation output includes reasonCode and reasonText per INV-05",
       "preconditions": [
         "Completed events covering Eligible and NotEligible outcomes",
@@ -363,7 +440,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P2",
-      "traceability": ["FR-20", "AC-09"],
+      "traceability": [
+        "FR-20",
+        "AC-09"
+      ],
       "title": "NotEligible participant sees reason text explaining missing mandatory feedback",
       "preconditions": [
         "Participant logged in with Attended registration on Completed event",
@@ -383,7 +463,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-20", "BR-18", "BR-19"],
+      "traceability": [
+        "FR-20",
+        "BR-18",
+        "BR-19"
+      ],
       "title": "GET eligibility/me returns HTTP 200 NotEligible with NOT_ELIGIBLE_FEEDBACK reason",
       "preconditions": [
         "Completed event with feedbackRequired true",

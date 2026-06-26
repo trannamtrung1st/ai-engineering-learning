@@ -1,7 +1,7 @@
 {
   "productItemId": "AC-12",
   "version": 1,
-  "docFingerprint": "sha256:d7f6a976320b1aa92f16ec06ff6560b565944c1c9015956c4de24bcccdea65b2",
+  "docFingerprint": "sha256:1593c2ff42ceec9999c9e8d9b2cb30bad8891dfea6114e74ae8dff6eb463b47b",
   "generatedAt": "2026-06-26T12:00:00Z",
   "cases": [
     {
@@ -10,7 +10,10 @@
       "layer": "integration",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["AC-12", "FR-23"],
+      "traceability": [
+        "AC-12",
+        "FR-23"
+      ],
       "title": "Status history retrieval makes registration transitions traceable per testing-plan §3",
       "preconditions": [
         "RegistrationOpen event with available capacity",
@@ -31,7 +34,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["AC-12", "FR-23"],
+      "traceability": [
+        "AC-12",
+        "FR-23"
+      ],
       "title": "Registration module writes append-only status history rows via audit module boundary",
       "preconditions": [
         "RegistrationOpen event with available capacity",
@@ -52,7 +58,10 @@
       "layer": "e2e",
       "technique": "flow-c",
       "priority": "P0",
-      "traceability": ["AC-12", "FR-23"],
+      "traceability": [
+        "AC-12",
+        "FR-23"
+      ],
       "title": "Flow C GET status-history over HTTP traces register-to-cancel transitions",
       "preconditions": [
         "E2E RegistrationOpen event with capacity 5",
@@ -72,7 +81,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["AC-12", "FR-23", "FR-30"],
+      "traceability": [
+        "AC-12",
+        "FR-23",
+        "FR-30"
+      ],
       "title": "GET /api/v1/events/{eventId}/status-history returns HTTP 200 paginated envelope",
       "preconditions": [
         "Event with at least one registration status change recorded",
@@ -91,7 +104,11 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["AC-12", "FR-23", "FR-30"],
+      "traceability": [
+        "AC-12",
+        "FR-23",
+        "FR-30"
+      ],
       "title": "Organizer registrations page opens status history dialog with transition columns",
       "preconditions": [
         "OrganizerAdmin logged in with access to event that has registrations with status history",
@@ -112,7 +129,12 @@
       "layer": "integration",
       "technique": "pagination",
       "priority": "P0",
-      "traceability": ["AC-12", "FR-23", "FR-30", "FR-31"],
+      "traceability": [
+        "AC-12",
+        "FR-23",
+        "FR-30",
+        "FR-31"
+      ],
       "title": "OrganizerAdmin lists event-wide status history with paginated envelope and default sort",
       "preconditions": [
         "Event with multiple registration status changes across participants",
@@ -131,7 +153,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["AC-12", "FR-23"],
+      "traceability": [
+        "AC-12",
+        "FR-23"
+      ],
       "title": "registrationId filter returns only that registration's transitions from repository",
       "preconditions": [
         "Event with two distinct participant registrations each having status history",
@@ -150,7 +175,12 @@
       "layer": "e2e",
       "technique": "flow-b",
       "priority": "P1",
-      "traceability": ["AC-12", "AC-02", "BR-04", "FR-12"],
+      "traceability": [
+        "AC-12",
+        "AC-02",
+        "BR-04",
+        "FR-12"
+      ],
       "title": "Waitlisted to Registered promotion is traceable in status history",
       "preconditions": [
         "Full event with waitlist enabled",
@@ -170,7 +200,12 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P1",
-      "traceability": ["AC-12", "AC-05", "AC-07", "BR-12"],
+      "traceability": [
+        "AC-12",
+        "AC-05",
+        "AC-07",
+        "BR-12"
+      ],
       "title": "Check-in and event completion produce CheckedIn and Attended history entries",
       "preconditions": [
         "Registered participant with valid in-window check-in recorded",
@@ -190,7 +225,12 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P1",
-      "traceability": ["AC-12", "FR-23", "FR-25", "FR-30"],
+      "traceability": [
+        "AC-12",
+        "FR-23",
+        "FR-25",
+        "FR-30"
+      ],
       "title": "OrganizerStaff on assigned event can read status history",
       "preconditions": [
         "Event with at least one registration status change",
@@ -208,7 +248,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["AC-12", "FR-25", "FR-26"],
+      "traceability": [
+        "AC-12",
+        "FR-25",
+        "FR-26"
+      ],
       "title": "Participant cannot read event status history",
       "preconditions": [
         "RegistrationOpen event with status history entries",
@@ -226,7 +270,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P1",
-      "traceability": ["AC-12", "AC-15", "FR-25"],
+      "traceability": [
+        "AC-12",
+        "AC-15",
+        "FR-25"
+      ],
       "title": "Unauthenticated GET status-history returns 401",
       "preconditions": [
         "Event with existing status history entries",
@@ -244,7 +292,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P2",
-      "traceability": ["AC-12", "AC-13"],
+      "traceability": [
+        "AC-12",
+        "AC-13"
+      ],
       "title": "Invalid pagination on status-history returns INVALID_PAGINATION",
       "preconditions": [
         "Event with status history entries",
@@ -263,7 +314,10 @@
       "layer": "integration",
       "technique": "pagination",
       "priority": "P2",
-      "traceability": ["AC-12", "AC-13"],
+      "traceability": [
+        "AC-12",
+        "AC-13"
+      ],
       "title": "Status history page beyond totalPages returns empty items with valid metadata",
       "preconditions": [
         "Event with known status history entry count",
@@ -282,7 +336,10 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P2",
-      "traceability": ["AC-12", "FR-23"],
+      "traceability": [
+        "AC-12",
+        "FR-23"
+      ],
       "title": "registrationId filter for registration with no history returns empty paginated result",
       "preconditions": [
         "Valid registrationId UUID that has never transitioned on the event",
@@ -300,7 +357,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P1",
-      "traceability": ["AC-12", "FR-27"],
+      "traceability": [
+        "AC-12",
+        "FR-27"
+      ],
       "title": "OrganizerStaff cannot read status history for out-of-scope event",
       "preconditions": [
         "Event with status history entries not assigned to staff actor",
@@ -318,7 +378,10 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P1",
-      "traceability": ["AC-12", "BR-12"],
+      "traceability": [
+        "AC-12",
+        "BR-12"
+      ],
       "title": "Sequential registration transitions produce distinct chronologically ordered history entries",
       "preconditions": [
         "RegistrationOpen event",
@@ -339,7 +402,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["AC-12", "NFR-10"],
+      "traceability": [
+        "AC-12",
+        "NFR-10"
+      ],
       "title": "Status history entries include actorId, actorRole, and occurredAt for audit correlation",
       "preconditions": [
         "Registration status change recorded by known Participant actor"
@@ -357,7 +423,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["AC-12", "NFR-13"],
+      "traceability": [
+        "AC-12",
+        "NFR-13"
+      ],
       "title": "Status history records are immutable with no mutation API",
       "preconditions": [
         "Existing status history entry persisted for an event",
@@ -376,7 +445,11 @@
       "layer": "integration",
       "technique": "pagination",
       "priority": "P2",
-      "traceability": ["AC-12", "FR-31", "AC-13"],
+      "traceability": [
+        "AC-12",
+        "FR-31",
+        "AC-13"
+      ],
       "title": "Status history list returns accurate total count across multiple registrations",
       "preconditions": [
         "Event with three or more participant registrations each producing at least one history entry"

@@ -1,7 +1,7 @@
 {
   "productItemId": "AC-10",
   "version": 1,
-  "docFingerprint": "sha256:ac1db8b40211f70e028eb0b2e18e8a7c3e48283625918ed84f037849f363d057",
+  "docFingerprint": "sha256:0dd7c4f2e3b88af76edb911a1b6ebfe8322a801c39ef58ffab323b3297400201",
   "generatedAt": "2026-06-26T16:00:00Z",
   "cases": [
     {
@@ -10,7 +10,13 @@
       "layer": "integration",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["AC-10", "FR-21", "BR-17", "BR-18", "BR-19"],
+      "traceability": [
+        "AC-10",
+        "FR-21",
+        "BR-17",
+        "BR-18",
+        "BR-19"
+      ],
       "title": "Organizer views certificate-eligible participant list with reasons per testing-plan §3",
       "preconditions": [
         "Completed event with mandatory feedback and at least one Attended participant who submitted feedback",
@@ -30,7 +36,13 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["AC-10", "FR-21", "BR-17", "BR-18", "BR-19"],
+      "traceability": [
+        "AC-10",
+        "FR-21",
+        "BR-17",
+        "BR-18",
+        "BR-19"
+      ],
       "title": "OrganizerAdmin listEligibility persists and returns Eligible row with reason from certificate_eligibilities",
       "preconditions": [
         "Completed event with mandatory feedback and at least one Attended participant who submitted feedback",
@@ -50,7 +62,13 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["AC-10", "FR-21", "BR-17", "BR-18", "BR-19"],
+      "traceability": [
+        "AC-10",
+        "FR-21",
+        "BR-17",
+        "BR-18",
+        "BR-19"
+      ],
       "title": "GET /api/v1/events/{eventId}/eligibility returns HTTP 200 paginated envelope with reason fields",
       "preconditions": [
         "Completed event with evaluated Eligible participant",
@@ -69,7 +87,13 @@
       "layer": "e2e",
       "technique": "flow-a",
       "priority": "P0",
-      "traceability": ["AC-10", "FR-21", "BR-17", "BR-18", "BR-19"],
+      "traceability": [
+        "AC-10",
+        "FR-21",
+        "BR-17",
+        "BR-18",
+        "BR-19"
+      ],
       "title": "Flow A organizer eligibility list shows Eligible row with reasons after full lifecycle",
       "preconditions": [
         "E2E Flow A progressed through publish, registration, check-in, event completion, and feedback submission",
@@ -89,7 +113,13 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["AC-10", "FR-21", "BR-17", "BR-18", "BR-19"],
+      "traceability": [
+        "AC-10",
+        "FR-21",
+        "BR-17",
+        "BR-18",
+        "BR-19"
+      ],
       "title": "Organizer lists NotEligible participants with attendance or feedback reason",
       "preconditions": [
         "Completed event with mandatory feedback",
@@ -109,7 +139,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["AC-10", "FR-21", "FR-30"],
+      "traceability": [
+        "AC-10",
+        "FR-21",
+        "FR-30"
+      ],
       "title": "OrganizerStaff can list eligibility for assigned event",
       "preconditions": [
         "Completed event with Attended/Absent registrations and evaluated eligibility",
@@ -128,7 +162,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["AC-10", "FR-21"],
+      "traceability": [
+        "AC-10",
+        "FR-21"
+      ],
       "title": "Organizer eligibility page displays result badge and reason text column",
       "preconditions": [
         "Organizer logged in with access to a Completed event",
@@ -149,7 +186,11 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P1",
-      "traceability": ["AC-10", "FR-21", "BR-20"],
+      "traceability": [
+        "AC-10",
+        "FR-21",
+        "BR-20"
+      ],
       "title": "Revoked eligibility appears in organizer list with override reason",
       "preconditions": [
         "Completed event with previously Eligible participant",
@@ -170,7 +211,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P1",
-      "traceability": ["AC-10", "FR-21"],
+      "traceability": [
+        "AC-10",
+        "FR-21"
+      ],
       "title": "GET eligibility with eligibility=Eligible filter returns only eligible rows",
       "preconditions": [
         "Completed event with mix of Eligible and NotEligible participants",
@@ -189,7 +233,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["AC-10", "FR-21"],
+      "traceability": [
+        "AC-10",
+        "FR-21"
+      ],
       "title": "GET eligibility with eligibility=NotEligible filter returns only not-eligible rows",
       "preconditions": [
         "Completed event with at least one NotEligible participant (e.g. missing mandatory feedback)",
@@ -208,7 +255,9 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["AC-10"],
+      "traceability": [
+        "AC-10"
+      ],
       "title": "Invalid eligibility filter value returns HTTP 400 INVALID_INPUT",
       "preconditions": [
         "Completed event with eligibility records",
@@ -226,7 +275,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P1",
-      "traceability": ["AC-10", "AC-15"],
+      "traceability": [
+        "AC-10",
+        "AC-15"
+      ],
       "title": "Unauthenticated GET eligibility list returns HTTP 401",
       "preconditions": [
         "Completed event with eligibility records",
@@ -244,7 +296,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P1",
-      "traceability": ["AC-10", "AC-15", "FR-26"],
+      "traceability": [
+        "AC-10",
+        "AC-15",
+        "FR-26"
+      ],
       "title": "Participant cannot access organizer eligibility list endpoint",
       "preconditions": [
         "Completed event with evaluated eligibility",
@@ -262,7 +318,10 @@
       "layer": "integration",
       "technique": "rbac-negative",
       "priority": "P1",
-      "traceability": ["AC-10", "FR-30"],
+      "traceability": [
+        "AC-10",
+        "FR-30"
+      ],
       "title": "OrganizerStaff outside event scope cannot list eligibility",
       "preconditions": [
         "Completed event owned by another organization or unassigned to staff actor",
@@ -280,7 +339,11 @@
       "layer": "integration",
       "technique": "pagination",
       "priority": "P2",
-      "traceability": ["AC-10", "AC-13", "FR-30"],
+      "traceability": [
+        "AC-10",
+        "AC-13",
+        "FR-30"
+      ],
       "title": "Eligibility list page beyond totalPages returns empty items with valid metadata",
       "preconditions": [
         "Completed event with known total eligibility row count",
@@ -299,7 +362,9 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P2",
-      "traceability": ["AC-10"],
+      "traceability": [
+        "AC-10"
+      ],
       "title": "Invalid pagination parameters on eligibility list return HTTP 400 INVALID_PAGINATION",
       "preconditions": [
         "Completed event",
@@ -318,7 +383,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["AC-10", "BR-19", "FR-30"],
+      "traceability": [
+        "AC-10",
+        "BR-19",
+        "FR-30"
+      ],
       "title": "Every terminal eligibility list entry includes non-empty reason code and text",
       "preconditions": [
         "Completed event with Eligible, NotEligible, and optionally Revoked participants",
@@ -337,7 +406,11 @@
       "layer": "integration",
       "technique": "pagination",
       "priority": "P1",
-      "traceability": ["AC-10", "FR-30", "NFR-16"],
+      "traceability": [
+        "AC-10",
+        "FR-30",
+        "NFR-16"
+      ],
       "title": "Eligibility list returns paginated envelope with correct total and page boundaries",
       "preconditions": [
         "Completed event with multiple Attended/Absent registrations",
@@ -356,7 +429,12 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["AC-10", "BR-17", "BR-18", "BR-19"],
+      "traceability": [
+        "AC-10",
+        "BR-17",
+        "BR-18",
+        "BR-19"
+      ],
       "title": "List operation evaluates and persists missing eligibility before returning rows",
       "preconditions": [
         "Completed event with Attended participant and no prior certificate_eligibilities row",

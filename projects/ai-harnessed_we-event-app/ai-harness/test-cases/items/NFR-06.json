@@ -1,7 +1,7 @@
 {
   "productItemId": "NFR-06",
   "version": 1,
-  "docFingerprint": "sha256:dd4156aac81bc7c84fb99bc512700e0e281e4b2cfc16a1c70c375415bf93c472",
+  "docFingerprint": "sha256:337c67e17b4a1e166df09202cfebf81b3e7bb5b8304526fd701bce7677aab3ef",
   "generatedAt": "2026-06-26T20:15:00Z",
   "cases": [
     {
@@ -10,7 +10,9 @@
       "layer": "unit",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["NFR-06"],
+      "traceability": [
+        "NFR-06"
+      ],
       "title": "getLiveQueryPolicy applies organizerDashboard polling shorter than event list discovery",
       "preconditions": [
         "query-config module exported with LIVE_REFRESH_INTERVALS per docs/ui-ux/02-ui-framework-tech-stack.md data refresh behavior"
@@ -29,7 +31,9 @@
       "layer": "unit",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["NFR-06"],
+      "traceability": [
+        "NFR-06"
+      ],
       "title": "useLiveQuery merges shared NFR-06 policy into TanStack Query options",
       "preconditions": [
         "useLiveQuery hook available with mode parameter",
@@ -48,7 +52,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["NFR-06", "FR-22"],
+      "traceability": [
+        "NFR-06",
+        "FR-22"
+      ],
       "title": "Organizer operations dashboard KPI values update without manual page reload",
       "preconditions": [
         "OrganizerAdmin authenticated on event operations dashboard for an active RegistrationOpen or in-progress event",
@@ -70,7 +77,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["NFR-06", "FR-22"],
+      "traceability": [
+        "NFR-06",
+        "FR-22"
+      ],
       "title": "GET /api/v1/events/{eventId}/dashboard returns HTTP 200 with updated registration count within one refresh window",
       "preconditions": [
         "Published event RegistrationOpen with known baseline registration count",
@@ -91,7 +101,9 @@
       "layer": "unit",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["NFR-06"],
+      "traceability": [
+        "NFR-06"
+      ],
       "title": "organizerDashboard polling interval meets near-real-time tech stack target",
       "preconditions": [
         "LIVE_REFRESH_INTERVALS constant defined per docs/ui-ux/02-ui-framework-tech-stack.md"
@@ -110,7 +122,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["NFR-06", "FR-22"],
+      "traceability": [
+        "NFR-06",
+        "FR-22"
+      ],
       "title": "Dashboard live refresh shows layout-preserving loading state during background poll",
       "preconditions": [
         "Organizer operations dashboard open with existing KPI data rendered",
@@ -130,7 +145,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["NFR-06", "FR-22", "AC-05"],
+      "traceability": [
+        "NFR-06",
+        "FR-22",
+        "AC-05"
+      ],
       "title": "Dashboard check-in KPI reflects new check-in within organizer refresh window",
       "preconditions": [
         "Event in valid check-in window with known baseline check-in count on dashboard",
@@ -151,7 +170,9 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["NFR-06"],
+      "traceability": [
+        "NFR-06"
+      ],
       "title": "Live dashboard updates use throttled polite aria-live region for assistive tech",
       "preconditions": [
         "Organizer dashboard or live-query panel with aria-live region for status changes",
@@ -171,7 +192,9 @@
       "layer": "unit",
       "technique": "http-contract",
       "priority": "P1",
-      "traceability": ["NFR-06"],
+      "traceability": [
+        "NFR-06"
+      ],
       "title": "Dashboard polling uses TanStack Query server state not module-level mock stores",
       "preconditions": [
         "Organizer dashboard page component under test",
@@ -191,7 +214,9 @@
       "layer": "unit",
       "technique": "state-transition",
       "priority": "P1",
-      "traceability": ["NFR-06"],
+      "traceability": [
+        "NFR-06"
+      ],
       "title": "checkInConsole mode pauses background polling while organizerDashboard continues in background",
       "preconditions": [
         "getLiveQueryPolicy exported for all LiveRefreshMode values"
@@ -209,7 +234,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["NFR-06", "FR-22"],
+      "traceability": [
+        "NFR-06",
+        "FR-22"
+      ],
       "title": "Returning to dashboard tab triggers immediate refetch on window focus",
       "preconditions": [
         "Organizer dashboard open with useLiveQuery policy refetchOnWindowFocus true",
@@ -230,7 +258,10 @@
       "layer": "browser",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["NFR-06", "NFR-13"],
+      "traceability": [
+        "NFR-06",
+        "NFR-13"
+      ],
       "title": "Failed dashboard poll shows inline error recovery and resumes polling on retry",
       "preconditions": [
         "Organizer dashboard using useLiveQuery with organizerDashboard mode",
@@ -251,7 +282,11 @@
       "layer": "e2e",
       "technique": "concurrency",
       "priority": "P2",
-      "traceability": ["NFR-06", "FR-22", "AC-04"],
+      "traceability": [
+        "NFR-06",
+        "FR-22",
+        "AC-04"
+      ],
       "title": "Rapid concurrent registrations reflected as consistent final KPI after poll coalescence",
       "preconditions": [
         "Event RegistrationOpen with available capacity for multiple concurrent registrations",
@@ -272,7 +307,9 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P2",
-      "traceability": ["NFR-06"],
+      "traceability": [
+        "NFR-06"
+      ],
       "title": "Design-system live-query panel demonstrates organizerDashboard polling policy",
       "preconditions": [
         "web-design-system-shell slice deployed with LiveQueryStatus component",
@@ -293,7 +330,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["NFR-06", "NFR-08"],
+      "traceability": [
+        "NFR-06",
+        "NFR-08"
+      ],
       "title": "Participant denied GET event dashboard — organizer near-real-time surface is role-scoped",
       "preconditions": [
         "Published event with operational activity",

@@ -1,7 +1,7 @@
 {
   "productItemId": "FR-30",
   "version": 1,
-  "docFingerprint": "sha256:5acfc070b54f77ab2ad0b419735f860b390f8a4b88a52809f83094992e0b94d3",
+  "docFingerprint": "sha256:0de96fd30f2643dda5e25a994fcb22af16db2170ec550701a09657db14127a0b",
   "generatedAt": "2026-06-26T12:41:51Z",
   "cases": [
     {
@@ -10,7 +10,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-30", "FR-31", "AC-13"],
+      "traceability": [
+        "FR-30",
+        "FR-31",
+        "AC-13"
+      ],
       "title": "OrganizerAdmin views paginated registrations list for authorized event",
       "preconditions": [
         "Event with multiple participant registrations in varied states",
@@ -29,7 +33,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-30", "FR-31", "AC-13"],
+      "traceability": [
+        "FR-30",
+        "FR-31",
+        "AC-13"
+      ],
       "title": "OrganizerAdmin views paginated waitlist queue for authorized event",
       "preconditions": [
         "Event at capacity with multiple waitlisted participants",
@@ -48,7 +56,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-30", "FR-31", "AC-13"],
+      "traceability": [
+        "FR-30",
+        "FR-31",
+        "AC-13"
+      ],
       "title": "OrganizerAdmin views paginated attendance list for authorized event",
       "preconditions": [
         "Event with at least one check-in record and absent participants",
@@ -67,7 +79,12 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-30", "FR-21", "AC-10", "FR-31"],
+      "traceability": [
+        "FR-30",
+        "FR-21",
+        "AC-10",
+        "FR-31"
+      ],
       "title": "OrganizerAdmin views paginated eligibility list for authorized event",
       "preconditions": [
         "Completed event with evaluated Eligible and NotEligible participants",
@@ -86,7 +103,12 @@
       "layer": "e2e",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["FR-30", "AC-11", "FR-31", "AC-13"],
+      "traceability": [
+        "FR-30",
+        "AC-11",
+        "FR-31",
+        "AC-13"
+      ],
       "title": "OrganizerAdmin views paginated audit logs for authorized event",
       "preconditions": [
         "Event with multiple audit log entries from critical configuration changes",
@@ -105,7 +127,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-30", "FR-27", "FR-31"],
+      "traceability": [
+        "FR-30",
+        "FR-27",
+        "FR-31"
+      ],
       "title": "OrganizerStaff views operational registrations and waitlist on assigned event",
       "preconditions": [
         "Event at capacity with registrations and waitlist entries",
@@ -124,7 +150,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P1",
-      "traceability": ["FR-30", "FR-27", "FR-31"],
+      "traceability": [
+        "FR-30",
+        "FR-27",
+        "FR-31"
+      ],
       "title": "OrganizerStaff views attendance and eligibility lists on assigned event",
       "preconditions": [
         "Completed event with check-in records and evaluated eligibility rows",
@@ -143,7 +173,10 @@
       "layer": "e2e",
       "technique": "pagination",
       "priority": "P1",
-      "traceability": ["FR-30", "FR-31"],
+      "traceability": [
+        "FR-30",
+        "FR-31"
+      ],
       "title": "OrganizerAdmin filters registrations operational list by state",
       "preconditions": [
         "Event with Registered and Waitlisted participants",
@@ -162,7 +195,11 @@
       "layer": "e2e",
       "technique": "pagination",
       "priority": "P1",
-      "traceability": ["FR-30", "FR-21", "AC-10"],
+      "traceability": [
+        "FR-30",
+        "FR-21",
+        "AC-10"
+      ],
       "title": "OrganizerAdmin filters eligibility operational list by eligibility result",
       "preconditions": [
         "Completed event with mix of Eligible and NotEligible participants",
@@ -181,7 +218,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["FR-30", "AC-14"],
+      "traceability": [
+        "FR-30",
+        "AC-14"
+      ],
       "title": "Organizer operational tables render server-driven paginated rows",
       "preconditions": [
         "Event with registrations, waitlist, attendance, or eligibility rows exceeding one page (default pageSize 20)",
@@ -201,7 +241,11 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-30", "FR-27", "AC-14"],
+      "traceability": [
+        "FR-30",
+        "FR-27",
+        "AC-14"
+      ],
       "title": "OrganizerStaff assigned events list is paginated and scoped",
       "preconditions": [
         "OrganizerStaff assigned to multiple events (more than one page if possible)",
@@ -221,7 +265,10 @@
       "layer": "unit",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-30", "FR-27"],
+      "traceability": [
+        "FR-30",
+        "FR-27"
+      ],
       "title": "Organizer scope rules permit admin on any event and restrict staff to assignments",
       "preconditions": [
         "SessionInfo for OrganizerAdmin with empty assignedEventIds",
@@ -242,7 +289,11 @@
       "layer": "unit",
       "technique": "pagination",
       "priority": "P1",
-      "traceability": ["FR-30", "FR-31", "AC-13"],
+      "traceability": [
+        "FR-30",
+        "FR-31",
+        "AC-13"
+      ],
       "title": "Local pagination helper produces correct envelope metadata for operational lists",
       "preconditions": [
         "Array of 25 synthetic list rows for client-side pagination helper"
@@ -260,7 +311,11 @@
       "layer": "integration",
       "technique": "scenario-matrix",
       "priority": "P1",
-      "traceability": ["FR-30", "NFR-16", "AC-13"],
+      "traceability": [
+        "FR-30",
+        "NFR-16",
+        "AC-13"
+      ],
       "title": "Operational list endpoint returns single page within acceptable time when total exceeds 500 rows",
       "preconditions": [
         "Database seeded with more than 500 rows for an organizer operational list endpoint (e.g. registrations or audit-logs)",
@@ -280,7 +335,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-30", "NFR-08", "AC-15"],
+      "traceability": [
+        "FR-30",
+        "NFR-08",
+        "AC-15"
+      ],
       "title": "Unauthenticated operational list request returns 401 before data exposure",
       "preconditions": [
         "Event with registrations and other operational data",
@@ -299,7 +358,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-30", "FR-25"],
+      "traceability": [
+        "FR-30",
+        "FR-25"
+      ],
       "title": "Participant denied access to organizer operational registrations list",
       "preconditions": [
         "Event with multiple registrations",
@@ -317,7 +379,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-30", "FR-27", "FR-25"],
+      "traceability": [
+        "FR-30",
+        "FR-27",
+        "FR-25"
+      ],
       "title": "OrganizerStaff denied operational lists on unassigned event",
       "preconditions": [
         "Event with operational data that staff actor is not assigned to",
@@ -336,7 +402,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-30", "FR-25", "FR-27"],
+      "traceability": [
+        "FR-30",
+        "FR-25",
+        "FR-27"
+      ],
       "title": "OrganizerStaff denied audit logs but permitted other operational lists on assigned event",
       "preconditions": [
         "Assigned event with audit log entries and registrations",
@@ -355,7 +425,11 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-30", "AC-13", "FR-31"],
+      "traceability": [
+        "FR-30",
+        "AC-13",
+        "FR-31"
+      ],
       "title": "Invalid pagination parameters on operational list return 400 INVALID_PAGINATION",
       "preconditions": [
         "Event with operational list data",
@@ -375,7 +449,12 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-30", "AC-13", "FR-31", "NFR-16"],
+      "traceability": [
+        "FR-30",
+        "AC-13",
+        "FR-31",
+        "NFR-16"
+      ],
       "title": "Operational list page beyond totalPages returns empty items with valid metadata",
       "preconditions": [
         "Event with exactly 25 registrations persisted in Postgres",

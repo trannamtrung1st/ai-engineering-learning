@@ -1,7 +1,7 @@
 {
   "productItemId": "FR-04",
   "version": 1,
-  "docFingerprint": "sha256:f44c92d5b8e8208272ca20445a8ed22605865e55c323b1677af54c0c2242f917",
+  "docFingerprint": "sha256:aa1117f3b650d9449d7073916f7ca9b84a02286b19d61773de4e49196817a850",
   "generatedAt": "2026-06-26T11:59:21Z",
   "cases": [
     {
@@ -10,7 +10,9 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-04"],
+      "traceability": [
+        "FR-04"
+      ],
       "title": "Organizer Admin publishes Draft event to Published state",
       "preconditions": [
         "Existing event in Draft state with complete required metadata (name, description, startAt, endAt, location, organizationId)",
@@ -30,7 +32,9 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-04"],
+      "traceability": [
+        "FR-04"
+      ],
       "title": "POST /api/v1/events/{eventId}/publish returns Published snapshot",
       "preconditions": [
         "Draft event with complete basic fields and valid ruleConfig",
@@ -49,7 +53,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-04", "AC-11"],
+      "traceability": [
+        "FR-04",
+        "AC-11"
+      ],
       "title": "Publish event writes audit log per Workflow A",
       "preconditions": [
         "Draft event with complete required fields and valid ruleConfig",
@@ -68,7 +75,9 @@
       "layer": "e2e",
       "technique": "flow-a",
       "priority": "P0",
-      "traceability": ["FR-04"],
+      "traceability": [
+        "FR-04"
+      ],
       "title": "Flow A lifecycle requires publish before open-registration",
       "preconditions": [
         "OrganizerAdmin JWT",
@@ -89,7 +98,9 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["FR-04"],
+      "traceability": [
+        "FR-04"
+      ],
       "title": "Organizer Admin pauses event while registration is open",
       "preconditions": [
         "Event in RegistrationOpen state with registrationPaused false",
@@ -109,7 +120,9 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-04"],
+      "traceability": [
+        "FR-04"
+      ],
       "title": "POST /api/v1/events/{eventId}/pause blocks new participant registrations",
       "preconditions": [
         "Event RegistrationOpen with available capacity and active registration window",
@@ -129,7 +142,9 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-04"],
+      "traceability": [
+        "FR-04"
+      ],
       "title": "Organizer Admin uses publish and pause controls on event detail",
       "preconditions": [
         "Web app running with organizer authenticated as OrganizerAdmin",
@@ -149,7 +164,9 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["FR-04"],
+      "traceability": [
+        "FR-04"
+      ],
       "title": "Publish transition guard permits Draft with complete required metadata",
       "preconditions": [
         "Event entity in Draft state persisted in database",
@@ -169,7 +186,9 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-04"],
+      "traceability": [
+        "FR-04"
+      ],
       "title": "Publish rejected when required event fields are incomplete",
       "preconditions": [
         "Draft event missing one or more required metadata fields (e.g. blank name or absent ruleConfig)",
@@ -188,7 +207,9 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-04"],
+      "traceability": [
+        "FR-04"
+      ],
       "title": "Publish rejected when rule config has invalid time windows",
       "preconditions": [
         "Draft event with basic fields present but ruleConfig windows fail chronological consistency (e.g. registrationOpenAt >= registrationCloseAt)",
@@ -207,7 +228,9 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-04"],
+      "traceability": [
+        "FR-04"
+      ],
       "title": "Publish from non-Draft state returns conflict without mutating state",
       "preconditions": [
         "Event already in Published or RegistrationOpen state",
@@ -226,7 +249,9 @@
       "layer": "e2e",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["FR-04"],
+      "traceability": [
+        "FR-04"
+      ],
       "title": "Pause rejected when event is not RegistrationOpen or already paused",
       "preconditions": [
         "Event in Draft, Published, RegistrationClosed, InProgress, Completed, or Cancelled state; OR RegistrationOpen with registrationPaused already true",
@@ -245,7 +270,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-04", "FR-25"],
+      "traceability": [
+        "FR-04",
+        "FR-25"
+      ],
       "title": "OrganizerStaff and Participant cannot publish or pause events",
       "preconditions": [
         "Draft event and separately RegistrationOpen event in organizer scope",
@@ -267,7 +295,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-04", "FR-25"],
+      "traceability": [
+        "FR-04",
+        "FR-25"
+      ],
       "title": "Unauthenticated publish and pause requests are rejected",
       "preconditions": [
         "Valid Draft and RegistrationOpen event IDs",
@@ -286,7 +317,9 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-04"],
+      "traceability": [
+        "FR-04"
+      ],
       "title": "Duplicate publish attempt on already Published event is idempotent or rejected",
       "preconditions": [
         "Event already in Published state from prior successful publish",
@@ -306,7 +339,9 @@
       "layer": "integration",
       "technique": "concurrency",
       "priority": "P1",
-      "traceability": ["FR-04"],
+      "traceability": [
+        "FR-04"
+      ],
       "title": "Concurrent pause and registration requests do not admit registrations after pause commits",
       "preconditions": [
         "Event RegistrationOpen with one remaining seat",
@@ -326,7 +361,10 @@
       "layer": "integration",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-04", "FR-25"],
+      "traceability": [
+        "FR-04",
+        "FR-25"
+      ],
       "title": "Publish and pause enforce RBAC at authorization decision pattern step 2",
       "preconditions": [
         "Actor contexts for OrganizerAdmin (allowed) and OrganizerStaff (denied)",
@@ -346,7 +384,10 @@
       "layer": "integration",
       "technique": "flow-c",
       "priority": "P1",
-      "traceability": ["FR-04", "AC-11"],
+      "traceability": [
+        "FR-04",
+        "AC-11"
+      ],
       "title": "Publish audit record is immutable after write",
       "preconditions": [
         "Successful publish with persisted audit log entry",
@@ -365,7 +406,10 @@
       "layer": "e2e",
       "technique": "flow-a",
       "priority": "P1",
-      "traceability": ["FR-04", "FR-05"],
+      "traceability": [
+        "FR-04",
+        "FR-05"
+      ],
       "title": "Published event becomes visible in participant event discovery when registration opens",
       "preconditions": [
         "Draft event created by OrganizerAdmin",
@@ -385,7 +429,9 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-04"],
+      "traceability": [
+        "FR-04"
+      ],
       "title": "POST pause on non-existent event returns 404",
       "preconditions": [
         "OrganizerAdmin JWT",

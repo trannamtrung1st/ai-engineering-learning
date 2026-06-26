@@ -1,7 +1,7 @@
 {
   "productItemId": "NFR-08",
   "version": 1,
-  "docFingerprint": "sha256:36eb7ede51ffcb03df8f9b4c191e51a75639a1a971475a654f1ec32d95231414",
+  "docFingerprint": "sha256:cff33cca15ef6cab3bccc14f79d25f9da5a6809dfeed7b72d03730ab2b6fe8fb",
   "generatedAt": "2026-06-26T13:05:19Z",
   "cases": [
     {
@@ -10,7 +10,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["NFR-08", "FR-25", "AC-16"],
+      "traceability": [
+        "NFR-08",
+        "FR-25",
+        "AC-16"
+      ],
       "title": "OrganizerAdmin publishes draft event within organization scope",
       "preconditions": [
         "Draft event owned by organization org-1",
@@ -30,7 +34,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["NFR-08", "FR-27", "AC-05"],
+      "traceability": [
+        "NFR-08",
+        "FR-27",
+        "AC-05"
+      ],
       "title": "OrganizerStaff performs check-in on assigned event",
       "preconditions": [
         "Event InProgress with active check-in window and Registered participant",
@@ -50,7 +58,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["NFR-08", "FR-33", "AC-16"],
+      "traceability": [
+        "NFR-08",
+        "FR-33",
+        "AC-16"
+      ],
       "title": "Participant registers and reads own registration status only",
       "preconditions": [
         "Published event in RegistrationOpen with available capacity",
@@ -70,7 +82,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["NFR-08", "FR-26", "AC-10"],
+      "traceability": [
+        "NFR-08",
+        "FR-26",
+        "AC-10"
+      ],
       "title": "OrganizerAdmin revokes eligibility with mandatory reason",
       "preconditions": [
         "Completed event with evaluated eligibility for a registration",
@@ -89,7 +105,11 @@
       "layer": "e2e",
       "technique": "pagination",
       "priority": "P1",
-      "traceability": ["NFR-08", "FR-27", "FR-30"],
+      "traceability": [
+        "NFR-08",
+        "FR-27",
+        "FR-30"
+      ],
       "title": "OrganizerStaff views paginated registrations on assigned event",
       "preconditions": [
         "Event with multiple participant registrations",
@@ -107,7 +127,10 @@
       "layer": "unit",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["NFR-08", "FR-26"],
+      "traceability": [
+        "NFR-08",
+        "FR-26"
+      ],
       "title": "JWT role selection uses highest-privilege role when user has multiple roles",
       "preconditions": [
         "User role rows include both Participant and OrganizerAdmin for same userId",
@@ -126,7 +149,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["NFR-08", "FR-25"],
+      "traceability": [
+        "NFR-08",
+        "FR-25"
+      ],
       "title": "Authorization pipeline validates role permission before event scope and domain execution",
       "preconditions": [
         "Protected command handler wired with authorization decision pattern: authenticate, role, scope, state guard, execute",
@@ -147,7 +173,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["NFR-08", "FR-25"],
+      "traceability": [
+        "NFR-08",
+        "FR-25"
+      ],
       "title": "Unauthorized critical event publish blocked for non-admin roles",
       "preconditions": [
         "Draft event owned by organization",
@@ -166,7 +195,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["NFR-08", "FR-27"],
+      "traceability": [
+        "NFR-08",
+        "FR-27"
+      ],
       "title": "Event scope check runs before domain mutation on staff commands",
       "preconditions": [
         "Protected staff command handler wired with authorization decision pattern",
@@ -187,7 +219,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["NFR-08", "NFR-13"],
+      "traceability": [
+        "NFR-08",
+        "NFR-13"
+      ],
       "title": "403 role denial responses use standard typed error envelope",
       "preconditions": [
         "Participant JWT",
@@ -206,7 +241,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["NFR-08", "FR-25"],
+      "traceability": [
+        "NFR-08",
+        "FR-25"
+      ],
       "title": "Participant cannot create or publish events",
       "preconditions": [
         "Valid Participant JWT",
@@ -225,7 +263,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["NFR-08", "FR-27"],
+      "traceability": [
+        "NFR-08",
+        "FR-27"
+      ],
       "title": "OrganizerStaff check-in on unassigned event is blocked",
       "preconditions": [
         "Event A InProgress with Registered participant and active check-in window",
@@ -245,7 +286,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["NFR-08", "FR-26"],
+      "traceability": [
+        "NFR-08",
+        "FR-26"
+      ],
       "title": "OrganizerStaff cannot revoke eligibility",
       "preconditions": [
         "Completed event with evaluated eligibility for a registration",
@@ -263,7 +307,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["NFR-08", "FR-32"],
+      "traceability": [
+        "NFR-08",
+        "FR-32"
+      ],
       "title": "Self-service signup provisions Participant role only",
       "preconditions": [
         "No existing account for test email",
@@ -283,7 +330,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P1",
-      "traceability": ["NFR-08", "FR-24", "AC-11"],
+      "traceability": [
+        "NFR-08",
+        "FR-24",
+        "AC-11"
+      ],
       "title": "Participant cannot read organizer audit logs",
       "preconditions": [
         "Event with persisted audit log entries",
@@ -301,7 +352,11 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["NFR-08", "FR-25", "FR-34"],
+      "traceability": [
+        "NFR-08",
+        "FR-25",
+        "FR-34"
+      ],
       "title": "Authenticated Participant blocked from organizer management routes",
       "preconditions": [
         "Web app running with role-aware route guards",
@@ -320,7 +375,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P1",
-      "traceability": ["NFR-08", "FR-25", "FR-24"],
+      "traceability": [
+        "NFR-08",
+        "FR-25",
+        "FR-24"
+      ],
       "title": "Participant cannot access organizer export or dashboard endpoints",
       "preconditions": [
         "Published event with operational data",
@@ -339,7 +398,10 @@
       "layer": "unit",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["NFR-08", "FR-27"],
+      "traceability": [
+        "NFR-08",
+        "FR-27"
+      ],
       "title": "assertEventScope rejects OrganizerStaff for unassigned event",
       "preconditions": [
         "JwtPayload role OrganizerStaff with assignedEventIds not containing target eventId",
@@ -357,7 +419,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["NFR-08", "FR-33"],
+      "traceability": [
+        "NFR-08",
+        "FR-33"
+      ],
       "title": "Participant cannot register on behalf of another user",
       "preconditions": [
         "Published event in RegistrationOpen with available capacity",
@@ -377,7 +442,11 @@
       "layer": "e2e",
       "technique": "flow-c",
       "priority": "P0",
-      "traceability": ["NFR-08", "FR-25", "AC-11"],
+      "traceability": [
+        "NFR-08",
+        "FR-25",
+        "AC-11"
+      ],
       "title": "OrganizerAdmin critical rule change after registration open requires authorized actor with reason",
       "preconditions": [
         "Event in RegistrationOpen with active registrations",

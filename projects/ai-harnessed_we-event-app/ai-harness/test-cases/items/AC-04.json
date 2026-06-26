@@ -1,7 +1,7 @@
 {
   "productItemId": "AC-04",
   "version": 1,
-  "docFingerprint": "sha256:79bdbca423ea91c83496c623bf764b00d329b0edef3e6d130765edc4907c901b",
+  "docFingerprint": "sha256:821074ac696b804b1f73d0845dc12142be4e7113c91c417dae5b9ba1cbf42225",
   "generatedAt": "2026-06-26T11:09:33Z",
   "cases": [
     {
@@ -10,7 +10,10 @@
       "layer": "integration",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["AC-04", "BR-03"],
+      "traceability": [
+        "AC-04",
+        "BR-03"
+      ],
       "title": "Capacity under heavy concurrent requests never exceeds EventCapacity per testing-plan §3",
       "preconditions": [
         "Event is RegistrationOpen with EventCapacity 3 and waitlistEnabled true",
@@ -30,7 +33,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["AC-04", "BR-03"],
+      "traceability": [
+        "AC-04",
+        "BR-03"
+      ],
       "title": "Concurrent POST registrations and organizer GET list confirm Registered count at capacity ceiling",
       "preconditions": [
         "Published event with registration opened, EventCapacity 3, waitlistEnabled true",
@@ -52,7 +58,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["AC-04", "BR-03", "FR-07"],
+      "traceability": [
+        "AC-04",
+        "BR-03",
+        "FR-07"
+      ],
       "title": "Sequential registrations fill seats up to EventCapacity without overflow",
       "preconditions": [
         "Event is RegistrationOpen with configured EventCapacity N (e.g. N=5)",
@@ -73,7 +83,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["AC-04", "BR-03", "BR-04"],
+      "traceability": [
+        "AC-04",
+        "BR-03",
+        "BR-04"
+      ],
       "title": "When event is full, new registrations do not increase Registered count beyond capacity",
       "preconditions": [
         "Event EventCapacity N with exactly N participants in Registered state",
@@ -94,7 +108,10 @@
       "layer": "integration",
       "technique": "concurrency",
       "priority": "P0",
-      "traceability": ["AC-04", "BR-03"],
+      "traceability": [
+        "AC-04",
+        "BR-03"
+      ],
       "title": "Heavy concurrent burst (12+ attempts, capacity 3) never exceeds capacity",
       "preconditions": [
         "Event RegistrationOpen with EventCapacity 3 and waitlistEnabled true",
@@ -114,7 +131,12 @@
       "layer": "e2e",
       "technique": "flow-b",
       "priority": "P0",
-      "traceability": ["AC-04", "BR-03", "BR-08", "FR-12"],
+      "traceability": [
+        "AC-04",
+        "BR-03",
+        "BR-08",
+        "FR-12"
+      ],
       "title": "Flow B lifecycle maintains capacity ceiling through cancel and promotion",
       "preconditions": [
         "E2E Flow B fixture: full event (EventCapacity 1), one Registered, one Waitlisted",
@@ -135,7 +157,12 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["AC-04", "BR-03", "BR-08", "FR-12"],
+      "traceability": [
+        "AC-04",
+        "BR-03",
+        "BR-08",
+        "FR-12"
+      ],
       "title": "Cancellation and FIFO promotion keep Registered count at or below capacity",
       "preconditions": [
         "Event EventCapacity 2 with two Registered participants and one Waitlisted",
@@ -157,7 +184,10 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["AC-04", "BR-03"],
+      "traceability": [
+        "AC-04",
+        "BR-03"
+      ],
       "title": "Post-insert capacity guard rolls back transaction on CAPACITY_EXCEEDED",
       "preconditions": [
         "Race condition or guard bypass attempt where insert would push Registered count above EventCapacity",
@@ -176,7 +206,10 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["AC-04", "BR-03"],
+      "traceability": [
+        "AC-04",
+        "BR-03"
+      ],
       "title": "EventCapacity boundary of 1 allows exactly one Registered participant",
       "preconditions": [
         "Event EventCapacity 1, RegistrationOpen, waitlistEnabled true",
@@ -196,7 +229,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["AC-04", "BR-05"],
+      "traceability": [
+        "AC-04",
+        "BR-05"
+      ],
       "title": "Full event without waitlist rejects registration without consuming a Registered seat",
       "preconditions": [
         "Event EventCapacity 2 with two Registered participants",
@@ -216,7 +252,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["AC-04", "BR-03"],
+      "traceability": [
+        "AC-04",
+        "BR-03"
+      ],
       "title": "Waitlisted participants are excluded from Registered seat-holder count",
       "preconditions": [
         "Event at EventCapacity with multiple Waitlisted registrations",
@@ -235,7 +274,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["AC-04", "BR-03"],
+      "traceability": [
+        "AC-04",
+        "BR-03"
+      ],
       "title": "Registration assignment and capacity check execute in one atomic transaction",
       "preconditions": [
         "Event with EventCapacity 5",
@@ -255,7 +297,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["AC-04", "FR-25", "FR-26"],
+      "traceability": [
+        "AC-04",
+        "FR-25",
+        "FR-26"
+      ],
       "title": "Unauthenticated registration attempts do not inflate Registered count",
       "preconditions": [
         "Event RegistrationOpen with EventCapacity 5 and one existing Registered participant",
@@ -274,7 +320,11 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P2",
-      "traceability": ["AC-04", "FR-02", "FR-22"],
+      "traceability": [
+        "AC-04",
+        "FR-02",
+        "FR-22"
+      ],
       "title": "Organizer capacity meter reflects Registered count never above configured capacity",
       "preconditions": [
         "Organizer logged in viewing event operations dashboard for an event at or near capacity",

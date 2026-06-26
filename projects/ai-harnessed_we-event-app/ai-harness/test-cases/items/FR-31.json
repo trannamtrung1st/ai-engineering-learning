@@ -1,7 +1,7 @@
 {
   "productItemId": "FR-31",
   "version": 1,
-  "docFingerprint": "sha256:5acfc070b54f77ab2ad0b419735f860b390f8a4b88a52809f83094992e0b94d3",
+  "docFingerprint": "sha256:0de96fd30f2643dda5e25a994fcb22af16db2170ec550701a09657db14127a0b",
   "generatedAt": "2026-06-26T12:43:21Z",
   "cases": [
     {
@@ -10,7 +10,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-31", "AC-13"],
+      "traceability": [
+        "FR-31",
+        "AC-13"
+      ],
       "title": "Every documented paginated list endpoint returns total in response envelope",
       "preconditions": [
         "Seeded data covering all eight paginated endpoints: GET /events, GET /events/{eventId}/registrations, waitlist, attendance, eligibility, audit-logs, status-history, and GET /me/registrations",
@@ -29,7 +32,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-31", "AC-13"],
+      "traceability": [
+        "FR-31",
+        "AC-13"
+      ],
       "title": "total reflects full matching row count before paging not current page length",
       "preconditions": [
         "Event with exactly 25 registrations persisted in Postgres",
@@ -50,7 +56,11 @@
       "layer": "e2e",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["FR-31", "FR-28", "AC-13"],
+      "traceability": [
+        "FR-31",
+        "FR-28",
+        "AC-13"
+      ],
       "title": "Events list page 2 returns unchanged total metadata per testing-plan §3",
       "preconditions": [
         "At least 13 published events visible to the requesting actor (more than default pageSize of 12)",
@@ -70,7 +80,11 @@
       "layer": "e2e",
       "technique": "pagination",
       "priority": "P0",
-      "traceability": ["FR-31", "FR-28", "AC-13"],
+      "traceability": [
+        "FR-31",
+        "FR-28",
+        "AC-13"
+      ],
       "title": "Events list total reflects search and state filter scope before paging",
       "preconditions": [
         "Mixed event catalog with searchable names and varied states",
@@ -91,7 +105,11 @@
       "layer": "integration",
       "technique": "pagination",
       "priority": "P0",
-      "traceability": ["FR-31", "FR-30", "AC-13"],
+      "traceability": [
+        "FR-31",
+        "FR-30",
+        "AC-13"
+      ],
       "title": "Registrations list total reflects optional state filter",
       "preconditions": [
         "Event with registrations in Registered, Waitlisted, and Cancelled states",
@@ -111,7 +129,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-31", "FR-29", "AC-13"],
+      "traceability": [
+        "FR-31",
+        "FR-29",
+        "AC-13"
+      ],
       "title": "My registrations total scoped to current actor only",
       "preconditions": [
         "Participant A with 3 registrations across events",
@@ -132,7 +154,11 @@
       "layer": "integration",
       "technique": "scenario-matrix",
       "priority": "P1",
-      "traceability": ["FR-31", "FR-30", "AC-12"],
+      "traceability": [
+        "FR-31",
+        "FR-30",
+        "AC-12"
+      ],
       "title": "Status history list total reflects all transitions for event scope",
       "preconditions": [
         "Event with multiple registration status change records",
@@ -151,7 +177,10 @@
       "layer": "integration",
       "technique": "scenario-matrix",
       "priority": "P1",
-      "traceability": ["FR-31", "AC-13"],
+      "traceability": [
+        "FR-31",
+        "AC-13"
+      ],
       "title": "Audit logs list total equals full matching row count per testing-plan §3",
       "preconditions": [
         "Event with multiple audit log entries from critical config changes",
@@ -170,7 +199,11 @@
       "layer": "integration",
       "technique": "pagination",
       "priority": "P1",
-      "traceability": ["FR-31", "FR-21", "AC-10"],
+      "traceability": [
+        "FR-31",
+        "FR-21",
+        "AC-10"
+      ],
       "title": "Eligibility list total reflects optional eligibility filter",
       "preconditions": [
         "Completed event with evaluated Eligible and NotEligible participants",
@@ -189,7 +222,10 @@
       "layer": "integration",
       "technique": "pagination",
       "priority": "P0",
-      "traceability": ["FR-31", "AC-13"],
+      "traceability": [
+        "FR-31",
+        "AC-13"
+      ],
       "title": "total remains identical across sequential page requests for same query",
       "preconditions": [
         "Paginated list endpoint with at least three pages of data at pageSize=10",
@@ -208,7 +244,10 @@
       "layer": "e2e",
       "technique": "pagination",
       "priority": "P0",
-      "traceability": ["FR-31", "AC-13"],
+      "traceability": [
+        "FR-31",
+        "AC-13"
+      ],
       "title": "Beyond-last-page request returns unchanged total with empty items",
       "preconditions": [
         "Paginated list endpoint with known total row count (e.g. GET /events with total <= 12)",
@@ -227,7 +266,10 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-31", "AC-13"],
+      "traceability": [
+        "FR-31",
+        "AC-13"
+      ],
       "title": "Empty matching result set returns total zero with valid envelope",
       "preconditions": [
         "Event with no registrations",
@@ -245,7 +287,10 @@
       "layer": "integration",
       "technique": "pagination",
       "priority": "P1",
-      "traceability": ["FR-31", "AC-13"],
+      "traceability": [
+        "FR-31",
+        "AC-13"
+      ],
       "title": "total unchanged when pageSize varies for same filter query",
       "preconditions": [
         "Event with 30 registrations",
@@ -265,7 +310,11 @@
       "layer": "integration",
       "technique": "pagination",
       "priority": "P1",
-      "traceability": ["FR-31", "FR-30", "AC-13"],
+      "traceability": [
+        "FR-31",
+        "FR-30",
+        "AC-13"
+      ],
       "title": "total increases after new registration added between list requests",
       "preconditions": [
         "Event with 10 existing registrations and available capacity",
@@ -286,7 +335,11 @@
       "layer": "e2e",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["FR-31", "AC-13", "NFR-16"],
+      "traceability": [
+        "FR-31",
+        "AC-13",
+        "NFR-16"
+      ],
       "title": "Registrations list total accurate when total exceeds pageSize per testing-plan §3",
       "preconditions": [
         "Event with 25 registrations (exceeds default pageSize of 20)",
@@ -305,7 +358,10 @@
       "layer": "unit",
       "technique": "pagination",
       "priority": "P1",
-      "traceability": ["FR-31", "AC-13"],
+      "traceability": [
+        "FR-31",
+        "AC-13"
+      ],
       "title": "Pagination envelope computes totalPages as ceil(total divided by pageSize)",
       "preconditions": [
         "Pure function or mapper that builds paginated response envelope from items, page, pageSize, and total"
@@ -324,7 +380,11 @@
       "layer": "integration",
       "technique": "pagination",
       "priority": "P1",
-      "traceability": ["FR-31", "NFR-16", "AC-13"],
+      "traceability": [
+        "FR-31",
+        "NFR-16",
+        "AC-13"
+      ],
       "title": "Large result set returns accurate total without loading all rows into response body",
       "preconditions": [
         "Database seeded with more than 500 rows for a paginated endpoint (e.g. audit-logs or registrations)",
@@ -345,7 +405,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["FR-31", "FR-22", "AC-13"],
+      "traceability": [
+        "FR-31",
+        "FR-22",
+        "AC-13"
+      ],
       "title": "Event overview registration count aligns with registrations list total metadata",
       "preconditions": [
         "Event with known registration count across states",
@@ -365,7 +429,11 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["FR-31", "AC-13", "FR-28"],
+      "traceability": [
+        "FR-31",
+        "AC-13",
+        "FR-28"
+      ],
       "title": "Participant event browse page displays server-driven total in pagination range label",
       "preconditions": [
         "At least 13 discoverable events seeded (exceeds default pageSize of 12)",
@@ -387,7 +455,11 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["FR-31", "AC-13", "FR-30"],
+      "traceability": [
+        "FR-31",
+        "AC-13",
+        "FR-30"
+      ],
       "title": "Organizer registrations table footer shows total count in range label across pages",
       "preconditions": [
         "Event with more than 20 registrations",
@@ -408,7 +480,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-31", "FR-30", "AC-13"],
+      "traceability": [
+        "FR-31",
+        "FR-30",
+        "AC-13"
+      ],
       "title": "Participant denied organizer paginated list before total envelope is returned",
       "preconditions": [
         "Event with registrations and audit log entries",
@@ -427,7 +503,11 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-31", "FR-29", "AC-13"],
+      "traceability": [
+        "FR-31",
+        "FR-29",
+        "AC-13"
+      ],
       "title": "GET /api/v1/me/registrations returns HTTP 200 with integer total field",
       "preconditions": [
         "Participant with at least one registration across events",
@@ -446,7 +526,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-31", "AC-13"],
+      "traceability": [
+        "FR-31",
+        "AC-13"
+      ],
       "title": "Invalid pagination parameters return HTTP 400 INVALID_PAGINATION without total envelope",
       "preconditions": [
         "Any paginated list endpoint accessible to authenticated actor",

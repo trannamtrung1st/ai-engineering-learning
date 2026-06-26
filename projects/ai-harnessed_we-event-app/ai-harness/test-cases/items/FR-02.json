@@ -1,7 +1,7 @@
 {
   "productItemId": "FR-02",
   "version": 1,
-  "docFingerprint": "sha256:f44c92d5b8e8208272ca20445a8ed22605865e55c323b1677af54c0c2242f917",
+  "docFingerprint": "sha256:aa1117f3b650d9449d7073916f7ca9b84a02286b19d61773de4e49196817a850",
   "generatedAt": "2026-06-26T11:56:18Z",
   "cases": [
     {
@@ -10,7 +10,9 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-02"],
+      "traceability": [
+        "FR-02"
+      ],
       "title": "Organizer Admin sets maximum capacity during event creation in Draft",
       "preconditions": [
         "Authenticated OrganizerAdmin actor with organization scope",
@@ -30,7 +32,9 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-02"],
+      "traceability": [
+        "FR-02"
+      ],
       "title": "POST /events persists ruleConfig.capacity and GET detail returns it",
       "preconditions": [
         "OrganizerAdmin JWT scoped to the organization",
@@ -49,7 +53,9 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["FR-02"],
+      "traceability": [
+        "FR-02"
+      ],
       "title": "Organizer Admin updates capacity on Draft event without audit reason",
       "preconditions": [
         "Existing event in Draft state with initial capacity 10",
@@ -70,7 +76,9 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-02"],
+      "traceability": [
+        "FR-02"
+      ],
       "title": "Organizer Admin configures maximum capacity in event setup Section 2",
       "preconditions": [
         "Web app running with organizer authenticated as OrganizerAdmin",
@@ -90,7 +98,9 @@
       "layer": "e2e",
       "technique": "flow-a",
       "priority": "P0",
-      "traceability": ["FR-02"],
+      "traceability": [
+        "FR-02"
+      ],
       "title": "Flow A step 2 configures EventRuleConfig capacity before publish",
       "preconditions": [
         "OrganizerAdmin JWT",
@@ -109,7 +119,11 @@
       "layer": "integration",
       "technique": "flow-c",
       "priority": "P0",
-      "traceability": ["FR-02", "BR-22", "AC-11"],
+      "traceability": [
+        "FR-02",
+        "BR-22",
+        "AC-11"
+      ],
       "title": "Post-registration-open capacity increase with reason updates EventRuleConfig and audit",
       "preconditions": [
         "Event published and RegistrationOpen with initial capacity 10",
@@ -130,7 +144,9 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-02"],
+      "traceability": [
+        "FR-02"
+      ],
       "title": "POST /events rejects negative capacity in API validation",
       "preconditions": [
         "OrganizerAdmin JWT",
@@ -148,7 +164,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-02", "BR-21", "FR-25"],
+      "traceability": [
+        "FR-02",
+        "BR-21",
+        "FR-25"
+      ],
       "title": "OrganizerStaff and Participant cannot configure event capacity",
       "preconditions": [
         "Existing Draft event owned by the organization",
@@ -168,7 +188,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-02", "FR-25"],
+      "traceability": [
+        "FR-02",
+        "FR-25"
+      ],
       "title": "Unauthenticated capacity configuration is rejected",
       "preconditions": [
         "Valid PATCH or POST body with ruleConfig.capacity",
@@ -187,7 +210,10 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-02", "BR-22"],
+      "traceability": [
+        "FR-02",
+        "BR-22"
+      ],
       "title": "Post-open capacity change without reason is rejected",
       "preconditions": [
         "Event in RegistrationOpen state with capacity 10",
@@ -207,7 +233,9 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-02"],
+      "traceability": [
+        "FR-02"
+      ],
       "title": "Capacity zero is accepted as minimum valid boundary",
       "preconditions": [
         "Draft event create or update payload with ruleConfig.capacity 0",
@@ -227,7 +255,9 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-02"],
+      "traceability": [
+        "FR-02"
+      ],
       "title": "PATCH rejects non-integer or out-of-range capacity in API schema validation",
       "preconditions": [
         "OrganizerAdmin JWT",
@@ -246,7 +276,10 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P1",
-      "traceability": ["FR-02", "BR-03"],
+      "traceability": [
+        "FR-02",
+        "BR-03"
+      ],
       "title": "Organizer capacity reduction triggers seat/waitlist rebalancing",
       "preconditions": [
         "RegistrationOpen event with capacity 10 and exactly 8 Registered participants",
@@ -266,7 +299,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-02", "AC-04", "BR-03"],
+      "traceability": [
+        "FR-02",
+        "AC-04",
+        "BR-03"
+      ],
       "title": "Configured capacity is the ceiling enforced by registration module (INV-02)",
       "preconditions": [
         "Event RegistrationOpen with configured capacity N (e.g. N=3)",
@@ -286,7 +323,9 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-02"],
+      "traceability": [
+        "FR-02"
+      ],
       "title": "PATCH /events/{eventId} updates capacity on Draft event",
       "preconditions": [
         "Draft event with EventRuleConfig capacity 50",
@@ -305,7 +344,12 @@
       "layer": "e2e",
       "technique": "concurrency",
       "priority": "P0",
-      "traceability": ["FR-02", "AC-04", "BR-03", "NFR-02"],
+      "traceability": [
+        "FR-02",
+        "AC-04",
+        "BR-03",
+        "NFR-02"
+      ],
       "title": "Admin-configured capacity is authoritative ceiling under concurrent registrations",
       "preconditions": [
         "Event with configured capacity 2, RegistrationOpen",

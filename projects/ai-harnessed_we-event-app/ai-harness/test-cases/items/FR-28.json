@@ -1,7 +1,7 @@
 {
   "productItemId": "FR-28",
   "version": 1,
-  "docFingerprint": "sha256:5acfc070b54f77ab2ad0b419735f860b390f8a4b88a52809f83094992e0b94d3",
+  "docFingerprint": "sha256:0de96fd30f2643dda5e25a994fcb22af16db2170ec550701a09657db14127a0b",
   "generatedAt": "2026-06-26T12:38:42Z",
   "cases": [
     {
@@ -10,7 +10,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-28", "FR-31"],
+      "traceability": [
+        "FR-28",
+        "FR-31"
+      ],
       "title": "GET /api/v1/events returns HTTP 200 paginated envelope for participant browse",
       "preconditions": [
         "At least three events in participant-visible states (e.g. RegistrationOpen)",
@@ -30,7 +33,11 @@
       "layer": "e2e",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["FR-28", "AC-13", "FR-31"],
+      "traceability": [
+        "FR-28",
+        "AC-13",
+        "FR-31"
+      ],
       "title": "Events list page 2 returns correct slice with total per testing-plan §3",
       "preconditions": [
         "At least 13 participant-visible events (exceeds default pageSize of 12)",
@@ -50,7 +57,9 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-28"],
+      "traceability": [
+        "FR-28"
+      ],
       "title": "Participant searches event browse list by name via q parameter",
       "preconditions": [
         "Discoverable event named uniquely (e.g. Campus Workshop Alpha)",
@@ -70,7 +79,9 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-28"],
+      "traceability": [
+        "FR-28"
+      ],
       "title": "Participant filters event browse list by state",
       "preconditions": [
         "Seeded events in RegistrationOpen and RegistrationClosed states visible to participants",
@@ -89,7 +100,10 @@
       "layer": "e2e",
       "technique": "pagination",
       "priority": "P1",
-      "traceability": ["FR-28", "FR-31"],
+      "traceability": [
+        "FR-28",
+        "FR-31"
+      ],
       "title": "Combined search, state filter, and pagination on event browse",
       "preconditions": [
         "Multiple RegistrationOpen events containing 'workshop' in name plus RegistrationOpen events without that term",
@@ -109,7 +123,11 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["FR-28", "AC-14", "AC-17"],
+      "traceability": [
+        "FR-28",
+        "AC-14",
+        "AC-17"
+      ],
       "title": "Participant event discovery page renders paginated card grid with search and filters",
       "preconditions": [
         "Web app running with at least 13 discoverable seeded events",
@@ -131,7 +149,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["FR-28", "AC-14"],
+      "traceability": [
+        "FR-28",
+        "AC-14"
+      ],
       "title": "Changing search or filter criteria resets browse list to page 1",
       "preconditions": [
         "More than 12 discoverable events seeded",
@@ -152,7 +173,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-28", "FR-31"],
+      "traceability": [
+        "FR-28",
+        "FR-31"
+      ],
       "title": "Event list service returns paginated envelope with correct total at DB boundary",
       "preconditions": [
         "Known count of participant-visible events (e.g. 15 total) persisted in PostgreSQL",
@@ -172,7 +196,10 @@
       "layer": "integration",
       "technique": "pagination",
       "priority": "P0",
-      "traceability": ["FR-28", "AC-13"],
+      "traceability": [
+        "FR-28",
+        "AC-13"
+      ],
       "title": "Event list repository applies search and state filter before OFFSET/LIMIT at DB boundary",
       "preconditions": [
         "Seeded mix of RegistrationOpen and RegistrationClosed events with overlapping name tokens",
@@ -192,7 +219,9 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-28"],
+      "traceability": [
+        "FR-28"
+      ],
       "title": "Search with no matching events returns empty items with valid pagination metadata",
       "preconditions": [
         "Discoverable events seeded with names not containing 'zzznomatch'",
@@ -210,7 +239,10 @@
       "layer": "e2e",
       "technique": "pagination",
       "priority": "P0",
-      "traceability": ["FR-28", "AC-13"],
+      "traceability": [
+        "FR-28",
+        "AC-13"
+      ],
       "title": "Event browse page beyond last page returns empty items with valid metadata",
       "preconditions": [
         "Five participant-visible events seeded (totalPages=1 at pageSize 12)",
@@ -229,7 +261,9 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["FR-28"],
+      "traceability": [
+        "FR-28"
+      ],
       "title": "Invalid pagination parameters on event browse return 400 INVALID_PAGINATION",
       "preconditions": [
         "Authenticated Participant JWT",
@@ -249,7 +283,9 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["FR-28"],
+      "traceability": [
+        "FR-28"
+      ],
       "title": "Invalid state filter value on event browse is rejected or ignored safely",
       "preconditions": [
         "Authenticated Participant JWT",
@@ -267,7 +303,10 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-28", "AC-14"],
+      "traceability": [
+        "FR-28",
+        "AC-14"
+      ],
       "title": "Empty browse result shows empty state when search or filter matches no events",
       "preconditions": [
         "Discoverable events seeded",
@@ -286,7 +325,10 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P2",
-      "traceability": ["FR-28", "AC-15"],
+      "traceability": [
+        "FR-28",
+        "AC-15"
+      ],
       "title": "Unauthenticated event browse API request returns 401",
       "preconditions": [
         "API running",
@@ -304,7 +346,9 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["FR-28"],
+      "traceability": [
+        "FR-28"
+      ],
       "title": "Participant browse excludes Draft events via role-filtered visibility at DB layer",
       "preconditions": [
         "Seeded Draft event and RegistrationOpen event in same organizing unit",
@@ -324,7 +368,11 @@
       "layer": "e2e",
       "technique": "pagination",
       "priority": "P1",
-      "traceability": ["FR-28", "NFR-05", "AC-14"],
+      "traceability": [
+        "FR-28",
+        "NFR-05",
+        "AC-14"
+      ],
       "title": "Event browse returns single paginated page not full catalog in one response",
       "preconditions": [
         "More than 12 participant-visible events seeded",
@@ -343,7 +391,11 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["FR-28", "AC-14", "NFR-05"],
+      "traceability": [
+        "FR-28",
+        "AC-14",
+        "NFR-05"
+      ],
       "title": "Event browse page change triggers single paginated API request not full dataset load",
       "preconditions": [
         "More than 12 discoverable events seeded",
