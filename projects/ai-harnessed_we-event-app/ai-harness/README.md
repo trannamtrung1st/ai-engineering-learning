@@ -44,9 +44,12 @@ npm run aih:loop -- 50                     # max 50 iterations
 | `AIH_MODEL` | `auto` | Implementer model |
 | `AIH_REVIEWER_MODEL` | `auto` | Reviewer model |
 | `AIH_TESTER_MODEL` | `auto` | Browser test agent model |
+| `AIH_TESTGEN_MODEL` | `auto` | Test case generator model |
 | `AIH_SKIP_AGENT` | — | Skip implementer (`1`) |
 | `AIH_SKIP_REVIEW` | — | Skip AI review (`1`) |
 | `AIH_SKIP_BROWSER_TEST` | — | Skip browser test gate (`1`) |
+| `AIH_SKIP_TESTGEN_GATE` | — | Skip test-case-current gate in implement loop (`1`) |
+| `AIH_SKIP_TESTGEN_AGENT` | — | Skip testgen agent (`1`) |
 | `AIH_BROWSER_MCP` | — | Enable Playwright MCP on any slice (`1`) |
 | `AIH_PLAYWRIGHT_MCP_KEEP` | `0` | Newest Playwright MCP files to keep per dir (`0` = wipe before browser slices) |
 | `AIH_SKIP_PLAYWRIGHT_MCP_CLEANUP` | — | Skip Playwright MCP artifact cleanup (`1`) |
@@ -70,6 +73,10 @@ Defaults live in `ai-harness/config/models.json`.
 | `npm run aih:preview:logs` | View preview logs (combined, api, web, db, stack) |
 | `npm run aih:preview:down` | Stop preview stack |
 | `npm run aih:playwright-mcp:clean` | Remove Playwright MCP page snapshots and console logs |
+| `npm run aih:testgen:once` | Generate test cases for one slice from docs |
+| `npm run aih:testgen:loop` | Autonomous TestGen loop until all slices have current test cases |
+| `npm run aih:testgen:drift` | Detect doc drift; reset passes + test case state |
+| `npm run aih:testgen:validate` | Validate generated test case JSON for a slice |
 
 ### Preview (API + web)
 
@@ -94,6 +101,19 @@ npm run aih:preview:down
 ```
 
 Startup success requires API `GET /api/v1/health` with `status=ok` and `db=connected`, and web `GET /` returning HTTP 200. See preview-runtime doc for timeouts and script contract.
+
+### Recommended workflow
+
+```bash
+# 1. Generate test cases from docs (run before implementation)
+npm run aih:testgen:loop
+
+# 2. Implement slices (blocked if test cases missing/stale)
+npm run aih:loop
+
+# 3. After editing docs — drift check resets passes; regenerate test cases
+npm run aih:testgen:drift && npm run aih:testgen:loop
+```
 
 ### Autonomous loop (hands-off)
 
@@ -143,13 +163,26 @@ AIH_SKIP_AGENT=1 AIH_SKIP_REVIEW=1 npm run aih:once
 
 ## Flow
 
+### TestGen (before implementation)
+
+1. Pick next requirement tag from backlog `acceptance` union where `test-case-index.json` is not current
+2. `check-test-case-drift.sh` compares doc fingerprint (from `testgen-docs-map.json`) per tag
+3. `build-prompt.sh testgen <tag>` injects into `testgen.prompt.md`
+4. `agent -p --force` writes `test-cases/items/<tag>.json`
+5. `validate-test-cases.sh` — schema + traceability
+6. `sync-test-cases-to-backlog.sh` — updates slices whose `acceptance` includes the tag
+7. Tag marked current in `test-case-index.json`; optional git commit
+
+### Implementation
+
 1. `pick-next-slice.sh` selects lowest-priority slice with `passes: false`
-2. `build-prompt.sh` injects slice into `implementer.prompt.md`
-3. `agent -p --force` implements one slice
-4. `run-checks.sh` — computational gates (see below)
-5. `run-browser-test.sh` — Playwright MCP functional/UI gate for `frontend`/`test` slices; must end with `BROWSER_TEST_PASS`
-6. `run-ai-review.sh` — static code review; must end with `REVIEW_PASS`
-7. Backlog updated, progress logged, optional git commit
+2. Test case gate — fails unless all product items in slice `acceptance` are current (skip with `AIH_SKIP_TESTGEN_GATE=1`)
+3. `build-prompt.sh` injects slice into `implementer.prompt.md`
+4. `agent -p --force` implements one slice
+5. `run-checks.sh` — computational gates (see below)
+6. `run-browser-test.sh` — Playwright MCP gate using generated browser cases; must end with `BROWSER_TEST_PASS`
+7. `run-ai-review.sh` — static code review; must end with `REVIEW_PASS`
+8. Backlog updated, progress logged, optional git commit
 
 ## Computational checks (`npm run aih:check`)
 
@@ -164,6 +197,7 @@ Gates run after every implementer iteration and can be run standalone:
 | `test:integration` | `apps/api` exists | Yes |
 | `test:e2e` | `tests/e2e` exists | Yes |
 | Slice `testRequirements` | Ralph iteration with slice id | Yes when field present |
+| Generated test case coverage | all slice `acceptance` product items current | Yes — unit/integration/e2e case tags must appear in test files |
 | DB health (Docker Compose) | `docker-compose.yml` exists | Yes when `apps/api` exists |
 | Stack startup (API health + web HTTP 200) | `apps/api` and `apps/web` exist | Yes — `verify-stack.sh --quick` via `run-checks.sh`; full poll with `AIH_VERIFY_STACK=1` |
 
@@ -175,6 +209,10 @@ On a docs-only repo (no `apps/`), `npm run aih:check` passes without code-qualit
 
 - `ai-harness/whole-app-backlog.json` — slice queue
 - `ai-harness/workflows/ralph-loop.json` — loop policy
+- `ai-harness/workflows/testgen-loop.json` — TestGen loop policy
+- `ai-harness/config/testgen-docs-map.json` — doc resolution rules per requirement tag
+- `ai-harness/test-case-index.json` — slim generation state (current, fingerprint)
+- `ai-harness/test-cases/items/` — generated test case artifacts per tag
 - `ai-harness/config/context-map.json` — which docs to read per slice
 - `ai-harness/state/guardrails.md` — lessons (Ralph Signs)
 - `ai-harness/HARNESS-DESIGN.md` — component index
@@ -189,6 +227,8 @@ On a docs-only repo (no `apps/`), `npm run aih:check` passes without code-qualit
 | `SLICE_BLOCKED <reason>` | Blocked |
 | `REVIEW_PASS` / `REVIEW_FAIL` | AI review outcome |
 | `BROWSER_TEST_PASS` / `BROWSER_TEST_FAIL` | Browser functional test outcome |
+| `TESTGEN_DONE <id>` / `TESTGEN_BLOCKED <reason>` | Test case generation outcome |
+| `TESTGEN_COMPLETE` | All slices have current test cases |
 | `COMPLETE` | All slices pass |
 | `HUMAN_REVIEW_PASS <id>` | Manual sign-off (merge-ready slices) |
 

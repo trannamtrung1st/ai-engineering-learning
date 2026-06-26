@@ -101,6 +101,42 @@ check_slice_test_requirements() {
   done < <(echo "$slice_json" | jq -r '.testRequirements.acceptanceTags[]?')
 }
 
+check_generated_test_case_coverage() {
+  [[ -z "$SLICE_ID" ]] && return 0
+  if ! slice_test_cases_current "$SLICE_ID"; then
+    return 0
+  fi
+
+  local ref artifact case_id layer tag found match
+  while IFS= read -r ref; do
+    [[ -z "$ref" ]] && continue
+    artifact="$(test_case_artifact_abs "$ref")"
+    [[ -f "$artifact" ]] || continue
+
+    while IFS=$'\t' read -r case_id layer tags; do
+      [[ -z "$case_id" ]] && continue
+      [[ "$layer" == "browser" ]] && continue
+
+      for tag in $(echo "$tags" | tr ',' ' '); do
+        [[ -z "$tag" ]] && continue
+        found=false
+        if command -v rg >/dev/null 2>&1; then
+          match="$(rg -l "$tag" apps/api tests/e2e apps/web packages/domain \
+            -g '*.test.ts' -g '*.test.tsx' -g '*.integration.test.ts' 2>/dev/null | head -1 || true)"
+        else
+          match="$(grep -Ril "$tag" apps/api tests/e2e apps/web packages/domain \
+            --include='*.test.ts' --include='*.test.tsx' --include='*.integration.test.ts' 2>/dev/null | head -1 || true)"
+        fi
+        [[ -n "$match" ]] && found=true
+        if [[ "$found" != true ]]; then
+          FAILURES+=("{\"type\":\"missing_test_case_coverage\",\"productItem\":\"$ref\",\"caseId\":\"$case_id\",\"layer\":\"$layer\",\"tag\":\"$tag\"}")
+          PASS=false
+        fi
+      done
+    done < <(jq -r '.cases[] | select(.layer != "browser") | [.id, .layer, (.traceability | join(","))] | @tsv' "$artifact")
+  done < <(slice_product_item_refs "$SLICE_ID")
+}
+
 check_npm_commands() {
   [[ -f package.json ]] || return 0
   local script optional active_when
@@ -222,6 +258,7 @@ check_stack_startup() {
 check_forbidden_patterns
 check_artifacts
 check_slice_test_requirements
+check_generated_test_case_coverage
 check_npm_commands
 refresh_preview_web_after_build
 check_db_runtime

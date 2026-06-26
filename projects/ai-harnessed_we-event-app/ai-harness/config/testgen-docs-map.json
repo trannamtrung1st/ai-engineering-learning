@@ -1,0 +1,223 @@
+{
+  "alwaysRead": [
+    "docs/brds/08-acceptance-mvp-future.md",
+    "docs/technical/11-testing-plan.md"
+  ],
+  "rules": [
+    {
+      "match": "^AC-0[1-4]$",
+      "docs": [
+        "docs/brds/03-functional-requirements.md",
+        "docs/brds/04-business-rules.md",
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/05-api-design.md"
+      ]
+    },
+    {
+      "match": "^AC-0[5-7]$",
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/07-state-machines.md",
+        "docs/technical/05-api-design.md"
+      ]
+    },
+    {
+      "match": "^AC-(08|09|10)$",
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/03-domain-model.md",
+        "docs/technical/05-api-design.md"
+      ]
+    },
+    {
+      "match": "^AC-1[12]$",
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/09-error-handling.md",
+        "docs/technical/05-api-design.md"
+      ]
+    },
+    {
+      "match": "^AC-1[34]$",
+      "docs": [
+        "docs/technical/05-api-design.md",
+        "docs/ui-ux/09-page-list.md"
+      ]
+    },
+    {
+      "match": "^AC-1[56]$",
+      "docs": [
+        "docs/technical/05-api-design.md",
+        "docs/ui-ux/10-user-flows.md",
+        "docs/technical/01-roles-permissions.md"
+      ]
+    },
+    {
+      "match": "^AC-17$",
+      "docs": [
+        "docs/technical/05-api-design.md",
+        "docs/ui-ux/07-event-specific-components.md"
+      ]
+    },
+    {
+      "match": "^NFR-0(2|4)$",
+      "docs": ["docs/technical/13-docker-compose-local-runtime.md"]
+    },
+    {
+      "match": "^NFR-06$",
+      "docs": [
+        "docs/ui-ux/00-production-ui-quality-bar.md",
+        "docs/ui-ux/04-design-tokens.md"
+      ]
+    },
+    {
+      "match": "^NFR-(07|08|17)$",
+      "docs": [
+        "docs/technical/01-roles-permissions.md",
+        "docs/technical/05-api-design.md"
+      ]
+    },
+    {
+      "match": "^NFR-14$",
+      "docs": ["docs/technical/12-backend-frontend-tech-stack.md"]
+    },
+    {
+      "match": "^NFR-18$",
+      "docs": [
+        "docs/technical/04-database-design.md",
+        "docs/technical/05-api-design.md"
+      ]
+    },
+    {
+      "match": "^FR-0[1-4]$",
+      "docs": [
+        "docs/brds/03-functional-requirements.md",
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/06-main-workflows.md"
+      ]
+    },
+    {
+      "match": "^FR-0[5-9]$|^FR-1[0-2]$",
+      "docs": [
+        "docs/brds/03-functional-requirements.md",
+        "docs/brds/04-business-rules.md",
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/07-state-machines.md"
+      ]
+    },
+    {
+      "match": "^FR-1[3-7]$",
+      "docs": [
+        "docs/brds/03-functional-requirements.md",
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/07-state-machines.md",
+        "docs/technical/05-api-design.md"
+      ]
+    },
+    {
+      "match": "^FR-1[89]$|^FR-2[01]$",
+      "docs": [
+        "docs/brds/03-functional-requirements.md",
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/03-domain-model.md",
+        "docs/technical/05-api-design.md"
+      ]
+    },
+    {
+      "match": "^FR-2[2-4]$",
+      "docs": [
+        "docs/brds/03-functional-requirements.md",
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/06-main-workflows.md"
+      ]
+    },
+    {
+      "match": "^FR-2[567]$",
+      "docs": [
+        "docs/brds/03-functional-requirements.md",
+        "docs/technical/01-roles-permissions.md",
+        "docs/technical/05-api-design.md"
+      ]
+    },
+    {
+      "match": "^FR-2[89]$|^FR-3[01]$",
+      "docs": [
+        "docs/brds/03-functional-requirements.md",
+        "docs/technical/05-api-design.md",
+        "docs/ui-ux/09-page-list.md"
+      ]
+    },
+    {
+      "match": "^FR-3[2-4]$",
+      "docs": [
+        "docs/brds/03-functional-requirements.md",
+        "docs/technical/05-api-design.md",
+        "docs/ui-ux/10-user-flows.md",
+        "docs/technical/01-roles-permissions.md"
+      ]
+    },
+    {
+      "match": "^FR-3[56]$",
+      "docs": [
+        "docs/brds/03-functional-requirements.md",
+        "docs/technical/05-api-design.md",
+        "docs/ui-ux/07-event-specific-components.md"
+      ]
+    }
+  ],
+  "catalog": {
+    "FR": [
+      "FR-01",
+      "FR-02",
+      "FR-03",
+      "FR-04",
+      "FR-05",
+      "FR-06",
+      "FR-07",
+      "FR-08",
+      "FR-09",
+      "FR-10",
+      "FR-11",
+      "FR-12",
+      "FR-13",
+      "FR-14",
+      "FR-15",
+      "FR-16",
+      "FR-17",
+      "FR-18",
+      "FR-19",
+      "FR-20",
+      "FR-21",
+      "FR-22",
+      "FR-23",
+      "FR-24",
+      "FR-25",
+      "FR-26",
+      "FR-27",
+      "FR-28",
+      "FR-29",
+      "FR-30",
+      "FR-31",
+      "FR-32",
+      "FR-33",
+      "FR-34",
+      "FR-35",
+      "FR-36"
+    ]
+  },
+  "prefixDefaults": {
+    "FR": [
+      "docs/brds/03-functional-requirements.md",
+      "docs/technical/05-api-design.md"
+    ],
+    "BR": [
+      "docs/brds/04-business-rules.md",
+      "docs/technical/08-validation-rules.md",
+      "docs/technical/03-domain-model.md"
+    ],
+    "NFR": ["docs/brds/07-non-functional-risk.md"]
+  }
+}

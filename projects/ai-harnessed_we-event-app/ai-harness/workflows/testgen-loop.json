@@ -1,0 +1,20 @@
+{
+  "loop": {
+    "maxIterations": 80,
+    "commitOnPass": true
+  },
+  "signals": {
+    "complete": "TESTGEN_COMPLETE",
+    "sliceDone": "TESTGEN_DONE",
+    "sliceBlocked": "TESTGEN_BLOCKED"
+  },
+  "validation": {
+    "schema": "ai-harness/schemas/test-cases.schema.json",
+    "minCasesPerCategory": {
+      "functional": 1,
+      "non-functional": 0,
+      "edge": 0
+    },
+    "requireTraceabilityMatch": true
+  }
+}

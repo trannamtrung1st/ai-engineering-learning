@@ -1,19 +1,58 @@
 #!/usr/bin/env bash
-# Build implementer, reviewer, or tester prompt for a slice
+# Build implementer/reviewer/tester prompt for a slice, or testgen prompt for a requirement tag
 # Usage: build-prompt.sh <sliceId> [implementer|reviewer|tester]
+#        build-prompt.sh testgen <requirementTag>
 set -euo pipefail
 source "$(dirname "$0")/lib/common.sh"
 
 require_harness_deps
 
-SLICE_ID="${1:?slice id required}"
 MODE="${2:-implementer}"
+SUBJECT_ID="${1:?id required}"
 
-if [[ "$MODE" != "implementer" && "$MODE" != "reviewer" && "$MODE" != "tester" ]]; then
-  echo "ERROR: mode must be implementer, reviewer, or tester" >&2
+if [[ "$SUBJECT_ID" == "testgen" ]]; then
+  MODE="testgen"
+  SUBJECT_ID="${2:?requirement tag required for testgen}"
+fi
+
+if [[ "$MODE" != "implementer" && "$MODE" != "reviewer" && "$MODE" != "tester" && "$MODE" != "testgen" ]]; then
+  echo "ERROR: mode must be implementer, reviewer, tester, or testgen" >&2
   exit 1
 fi
 
+if [[ "$MODE" == "testgen" ]]; then
+  REQUIREMENT_TAG="$SUBJECT_ID"
+  # shellcheck source=lib/doc-fingerprint.sh
+  source "$(dirname "$0")/lib/doc-fingerprint.sh"
+  # shellcheck source=lib/resolve-testgen-docs.sh
+  source "$(dirname "$0")/lib/resolve-testgen-docs.sh"
+
+  description="$REQUIREMENT_TAG — derive scenarios from docs below"
+  acceptance="$REQUIREMENT_TAG"
+  artifacts="$(test_case_artifact_path "$REQUIREMENT_TAG")"
+  docs_list="$(resolve_docs_list_for_requirement_tag "$REQUIREMENT_TAG" | sed 's/^/- /')"
+  doc_fp="$(compute_requirement_tag_doc_fingerprint "$REQUIREMENT_TAG")"
+  artifact_path="$(test_case_artifact_path "$REQUIREMENT_TAG")"
+
+  template_file="${HARNESS_ROOT}/agents/testgen.prompt.md"
+  prompt="$(cat "$template_file")"
+  prompt="${prompt//\{\{REQUIREMENT_TAG\}\}/$REQUIREMENT_TAG}"
+  prompt="${prompt//\{\{PRODUCT_ITEM_ID\}\}/$REQUIREMENT_TAG}"
+  prompt="${prompt//\{\{PRODUCT_ITEM_TITLE\}\}/$description}"
+  prompt="${prompt//\{\{PRODUCT_ITEM_TRACEABILITY\}\}/$acceptance}"
+  prompt="${prompt//\{\{SLICE_ID\}\}/$REQUIREMENT_TAG}"
+  prompt="${prompt//\{\{SLICE_DESCRIPTION\}\}/$description}"
+  prompt="${prompt//\{\{SLICE_ACCEPTANCE\}\}/$acceptance}"
+  prompt="${prompt//\{\{SLICE_ARTIFACTS\}\}/$artifacts}"
+  prompt="${prompt//\{\{SLICE_AGENT\}\}/testgen}"
+  prompt="${prompt//\{\{SLICE_DOCS\}\}/$docs_list}"
+  prompt="${prompt//\{\{DOC_FINGERPRINT\}\}/$doc_fp}"
+  prompt="${prompt//\{\{TEST_CASE_ARTIFACT\}\}/$artifact_path}"
+  printf '%s\n' "$prompt"
+  exit 0
+fi
+
+SLICE_ID="$SUBJECT_ID"
 slice_json="$(get_slice_json "$SLICE_ID")"
 if [[ -z "$slice_json" || "$slice_json" == "null" ]]; then
   echo "ERROR: slice not found: $SLICE_ID" >&2
@@ -27,10 +66,9 @@ agent_type="$(echo "$slice_json" | jq -r '.agent // "backend"')"
 prompt_agent="$agent_type"
 [[ "$MODE" == "tester" ]] && prompt_agent="tester"
 
-# Merge slice docs with agent alwaysRead from context-map
 docs_list="$(jq -r --arg id "$SLICE_ID" --arg agent "$prompt_agent" '
-  .slices[$id].docs // [] as $sliceDocs |
-  .agents[$agent].alwaysRead // [] as $always |
+  (.slices[$id].docs // []) as $sliceDocs |
+  (.agents[$agent].alwaysRead // []) as $always |
   ($always + $sliceDocs) | unique | .[] | "- " + .
 ' "$CONTEXT_MAP" 2>/dev/null || echo "$slice_json" | jq -r '.docs[]? | "- " + .')"
 

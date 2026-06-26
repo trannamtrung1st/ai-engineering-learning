@@ -102,3 +102,4 @@ Append-only log of completed iterations.
 - 2026-06-26T03:00:25Z | web-participant-journeys | browser: /events paginated browse (1–12→13–24 of 5503), event detail Registered badge, /registrations page 2 (21–40 of 122), check-in page — HTTP 200
 - 2026-06-26T03:09:58Z | web-participant-journeys | browser_test_failed
 - 2026-06-26T03:28:00Z | web-participant-journeys | browser: /events Registered badges per-card lookup, /events paginate (1–12 of 5652), attended participant feedback form enabled (AC-08), /registrations — HTTP 200
+- 2026-06-26T04:00:52Z | AC-01 | testgen_passed

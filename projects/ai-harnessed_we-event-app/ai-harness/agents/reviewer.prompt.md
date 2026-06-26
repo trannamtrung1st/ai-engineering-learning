@@ -49,7 +49,8 @@ Also read when relevant to this slice:
 2. **Forbidden patterns** — no in-memory repos, SQLite, mock fixtures, lorem ipsum (trust bundled checks; spot-check diff only)
 3. **Acceptance tags** — addressed with evidence in code/docs and, for frontend/test slices, trust bundled browser test report (`pass: true`, not `skipped`) for runtime UI verification
 4. **Test coverage** — for each path in `testRequirements` (unit, integration, component) and each `acceptanceTags` entry, confirm a matching test file exists and references the tag (read files only; trust computational gates for pass/fail)
-5. **Audit** — critical paths where applicable
+5. **Generated test cases** — for each tag in slice `acceptance`, when `ai-harness/test-cases/items/<tag>.json` exists and `test-case-index.json` marks it current, cross-check implementation covers each case's traceability tags
+6. **Audit** — critical paths where applicable
 
 ## Bundled harness evidence
 

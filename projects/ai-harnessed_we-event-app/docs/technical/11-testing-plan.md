@@ -77,19 +77,31 @@ Minimum pre-merge gates (enforced by `npm run aih:check` / `run-checks.sh`):
 
 Frontend/test slices: implementer uses Playwright MCP for interactive browser smoke verification (see `ai-harness/docs/browser-mcp.md`). A dedicated **browser test agent** gate (`run-browser-test.sh`) runs after computational checks and before AI code review for `frontend`/`test` slices.
 
-## 9. Defect Severity Model
+## 9. Harness-Generated Test Case Catalog
+
+Test cases are organized by **requirement tag** (AC/FR/BR/NFR) derived from the backlog and docs:
+
+| Artifact | Location |
+|---|---|
+| Doc resolution rules | `ai-harness/config/testgen-docs-map.json` |
+| Generation state | `ai-harness/test-case-index.json` |
+| Per-tag test cases | `ai-harness/test-cases/items/<tag>.json` |
+
+The work queue is the union of all `acceptance` tags in `whole-app-backlog.json`. Docs are the authority (`docs/brds/`, `docs/technical/11-testing-plan.md`); harness rules map each tag to which doc files to read.
+
+## 10. Defect Severity Model
 - **P0**: capacity overflow, duplicate active registration, unauthorized critical update.
 - **P1**: invalid attendance/eligibility outcomes, missing audit on sensitive actions.
 - **P2**: incorrect user messaging or non-blocking policy mismatch.
 
-## 10. Test Reporting Template
+## 11. Test Reporting Template
 Each run should report:
 - build metadata
 - passed/failed by layer
 - failed traceability tags (`BR-*`, `AC-*`)
 - regression trend notes
 
-## 11. BRD Traceability
+## 12. BRD Traceability
 - FR-01..FR-31
 - BR-01..BR-22
 - AC-01..AC-14

@@ -84,6 +84,16 @@ checks_summary="$(find_checks_report_for_slice "$SLICE_ID" "$RUN_ID")"
 artifacts_list="$(echo "$slice_json" | jq -r '.completionArtifacts[]? | "- " + .' 2>/dev/null || true)"
 browser_scenarios="$(echo "$slice_json" | jq -r '.browserTestScenarios[]? | "- " + .' 2>/dev/null || true)"
 
+generated_browser_cases=""
+test_cases_json=""
+if slice_test_cases_current "$SLICE_ID"; then
+  test_cases_json="$(load_test_cases_json_for_slice "$SLICE_ID" | jq -c '.')"
+  generated_browser_cases="$(load_test_cases_json_for_slice "$SLICE_ID" | jq -r '
+    .cases[]? | select(.layer == "browser")
+    | "- **\(.id)** [\(.category)/\(.priority)]: \(.title)\n  Product: \(.traceability | join(", "))\n  Preconditions: \(.preconditions | join("; "))\n  Steps: \(.steps | join(" → "))\n  Expected: \(.expected)"
+  ' 2>/dev/null || true)"
+fi
+
 WEB_PORT="${AIH_PREVIEW_WEB_PORT:-3000}"
 API_PORT="${AIH_PREVIEW_API_PORT:-3001}"
 
@@ -109,7 +119,17 @@ ${artifacts_list:-_(none listed)_}
 
 ## Explicit browser scenarios (if listed)
 
-${browser_scenarios:-_(derive from acceptance tags and slice docs)_}
+${browser_scenarios:-_(none — use generated cases below)_}
+
+## Generated browser test cases (mandatory when listed)
+
+${generated_browser_cases:-_(no current test case artifact — derive from acceptance tags)_}
+
+## Full test case artifact (reference)
+
+\`\`\`json
+${test_cases_json:-{}}
+\`\`\`
 
 ## Computational checks (already passed — trust this)
 

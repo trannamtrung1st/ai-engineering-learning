@@ -7,12 +7,14 @@ Concise index for the 12 harness components. Referenced by `docs/technical/13-do
 | Component | Location |
 |---|---|
 | Model | `config/models.json`, env `AIH_MODEL` |
-| Prompt | `agents/implementer.prompt.md`, `agents/tester.prompt.md`, `agents/reviewer.prompt.md` |
+| Prompt | `agents/implementer.prompt.md`, `agents/tester.prompt.md`, `agents/reviewer.prompt.md`, `agents/testgen.prompt.md` |
 | Context | `config/context-map.json` — doc pointers per slice/agent |
 | Tools | Cursor CLI (`agent -p --force`) + Playwright MCP on frontend/test slices |
-| Workflow | `workflows/ralph-loop.json` |
+| Workflow | `workflows/ralph-loop.json`, `workflows/testgen-loop.json` |
 | Memory/State | `state/progress.md`, `state/guardrails.md`, `whole-app-backlog.json` (in `ai-harness/`) |
+| Test cases | `config/testgen-docs-map.json`, `test-case-index.json`, `test-cases/items/<tag>.json` |
 | Validation | `scripts/run-checks.sh` — layered tests; `scripts/run-browser-test.sh` — Playwright MCP gate |
+| TestGen | `scripts/testgen-loop.sh`, `scripts/check-test-case-drift.sh` — docs-driven catalog per requirement tag |
 | Guardrails | `state/guardrails.md` + forbidden patterns in `ralph-loop.json` |
 | Observability | `generated/runs/<timestamp>-*.json` |
 | Feedback loops | Failed check/browser-test/review → guardrails append → retry |
@@ -27,10 +29,24 @@ Concise index for the 12 harness components. Referenced by `docs/technical/13-do
 Each iteration spawns a **fresh** agent context (no `--resume`). State lives on disk and in git.
 
 ```
-pick slice → build prompt → agent implement → run-checks → run-browser-test → run-ai-review → mark pass → commit
+pick slice → drift gate → build prompt → agent implement → run-checks → run-browser-test → run-ai-review → mark pass → commit
 ```
 
 Scripts: `ralph-loop.sh` (autonomous), `ralph-once.sh` (single step).
+
+## TestGen loop
+
+Separate loop that generates structured test cases from slice docs **before** implementation:
+
+```
+pick requirement tag (from backlog acceptance union) → doc fingerprint → testgen agent → validate JSON → sync slice metadata → mark tag in test-case-index → commit
+```
+
+Scripts: `testgen-loop.sh` (autonomous), `testgen-once.sh` (single step).
+
+Doc drift (`check-test-case-drift.sh`) resets tag state in `test-case-index.json` and `passes` on all slices whose `acceptance` references that tag.
+
+Recommended order: `npm run aih:testgen:loop` then `npm run aih:loop`.
 
 ## Backlog
 

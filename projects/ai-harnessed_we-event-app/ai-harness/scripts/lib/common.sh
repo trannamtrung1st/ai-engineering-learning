@@ -6,11 +6,15 @@ HARNESS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 REPO_ROOT="$(cd "${HARNESS_ROOT}/.." && pwd)"
 
 BACKLOG="${HARNESS_ROOT}/whole-app-backlog.json"
+TEST_CASE_INDEX="${HARNESS_ROOT}/test-case-index.json"
+TESTGEN_DOCS_MAP="${HARNESS_ROOT}/config/testgen-docs-map.json"
 LOOP_CONFIG="${HARNESS_ROOT}/workflows/ralph-loop.json"
+TESTGEN_CONFIG="${HARNESS_ROOT}/workflows/testgen-loop.json"
 MODELS_CONFIG="${HARNESS_ROOT}/config/models.json"
 CONTEXT_MAP="${HARNESS_ROOT}/config/context-map.json"
 STATE_DIR="${HARNESS_ROOT}/state"
 RUNS_DIR="${HARNESS_ROOT}/generated/runs"
+TEST_CASES_DIR="${HARNESS_ROOT}/test-cases"
 PREVIEW_PID_FILE="${RUNS_DIR}/preview-stack.pids"
 PREVIEW_AUX_PID_FILE="${RUNS_DIR}/preview-aux.pids"
 PREVIEW_WEB_LOG="${RUNS_DIR}/preview-web.log"
@@ -23,7 +27,7 @@ PREVIEW_WEB_REFRESH_FILE="${RUNS_DIR}/preview-web.refresh"
 PLAYWRIGHT_MCP_LEGACY_DIR="${REPO_ROOT}/.playwright-mcp"
 PLAYWRIGHT_MCP_OUTPUT_DIR="${RUNS_DIR}/playwright-mcp"
 
-export HARNESS_ROOT REPO_ROOT BACKLOG LOOP_CONFIG MODELS_CONFIG CONTEXT_MAP STATE_DIR RUNS_DIR
+export HARNESS_ROOT REPO_ROOT BACKLOG TEST_CASE_INDEX TESTGEN_DOCS_MAP LOOP_CONFIG TESTGEN_CONFIG MODELS_CONFIG CONTEXT_MAP STATE_DIR RUNS_DIR TEST_CASES_DIR
 export PREVIEW_PID_FILE PREVIEW_AUX_PID_FILE
 export PREVIEW_WEB_LOG PREVIEW_API_LOG PREVIEW_DB_LOG PREVIEW_STACK_LOG PREVIEW_COMBINED_LOG
 export PREVIEW_SUPERVISOR_STOP_FILE PREVIEW_WEB_REFRESH_FILE
@@ -179,6 +183,10 @@ get_model() {
     echo "$AIH_TESTER_MODEL"
     return
   fi
+  if [[ "$key" == "testgen" && -n "${AIH_TESTGEN_MODEL:-}" ]]; then
+    echo "$AIH_TESTGEN_MODEL"
+    return
+  fi
   jq -r --arg k "$key" '.[$k] // .default' "$MODELS_CONFIG"
 }
 
@@ -196,7 +204,7 @@ print_harness_env() {
   local bin
   bin="$(resolve_agent_bin)"
   if [[ -n "$bin" ]]; then
-    echo "Agent: ${bin} | Model: $(get_model default) | Reviewer: $(get_model reviewer) | Tester: $(get_model tester)"
+    echo "Agent: ${bin} | Model: $(get_model default) | Reviewer: $(get_model reviewer) | Tester: $(get_model tester) | TestGen: $(get_model testgen)"
   else
     echo "Agent: not installed (curl https://cursor.com/install -fsS | bash)"
   fi
@@ -246,6 +254,184 @@ mark_slice_passed() {
   jq --arg id "$slice_id" '
     .slices |= map(if .id == $id then .passes = true else . end)
   ' "$BACKLOG" > "$tmp" && mv "$tmp" "$BACKLOG"
+}
+
+test_case_artifact_path() {
+  local requirement_tag="$1"
+  printf 'ai-harness/test-cases/items/%s.json' "$requirement_tag"
+}
+
+test_case_artifact_abs() {
+  local requirement_tag="$1"
+  echo "${REPO_ROOT}/$(test_case_artifact_path "$requirement_tag")"
+}
+
+requirement_tag_priority() {
+  local tag="$1"
+  local num
+  if [[ "$tag" =~ ^AC-([0-9]+)$ ]]; then
+    num="${BASH_REMATCH[1]}"
+    echo $((10#$num))
+  elif [[ "$tag" =~ ^FR-([0-9]+)$ ]]; then
+    num="${BASH_REMATCH[1]}"
+    echo $((100 + 10#$num))
+  elif [[ "$tag" =~ ^BR-([0-9]+)$ ]]; then
+    num="${BASH_REMATCH[1]}"
+    echo $((200 + 10#$num))
+  elif [[ "$tag" =~ ^NFR-([0-9]+)$ ]]; then
+    num="${BASH_REMATCH[1]}"
+    echo $((300 + 10#$num))
+  else
+    echo 999
+  fi
+}
+
+all_requirement_tag_ids() {
+  {
+    jq -r '.slices[].acceptance[]?' "$BACKLOG" 2>/dev/null || true
+    jq -r '
+      [
+        (.catalog.FR // []),
+        (.catalog.BR // []),
+        (.catalog.AC // []),
+        (.catalog.NFR // [])
+      ] | add | .[]
+    ' "$TESTGEN_DOCS_MAP" 2>/dev/null || true
+  } | sort -u
+}
+
+all_requirement_tags_sorted() {
+  local tag prio
+  while IFS= read -r tag; do
+    [[ -z "$tag" ]] && continue
+    prio="$(requirement_tag_priority "$tag")"
+    printf '%05d\t%s\n' "$prio" "$tag"
+  done < <(all_requirement_tag_ids) | sort -n | cut -f2-
+}
+
+requirement_tag_test_cases_current() {
+  local requirement_tag="$1"
+  local current
+  current="$(jq -r --arg id "$requirement_tag" '.tags[$id].current // false' "$TEST_CASE_INDEX")"
+  [[ "$current" == "true" ]]
+}
+
+slice_test_cases_current() {
+  local slice_id="$1"
+  local ref
+  while IFS= read -r ref; do
+    [[ -z "$ref" ]] && continue
+    if ! requirement_tag_test_cases_current "$ref"; then
+      return 1
+    fi
+  done < <(slice_requirement_tag_refs "$slice_id")
+  return 0
+}
+
+all_test_cases_current() {
+  local tag
+  while IFS= read -r tag; do
+    [[ -z "$tag" ]] && continue
+    if ! requirement_tag_test_cases_current "$tag"; then
+      return 1
+    fi
+  done < <(all_requirement_tags_sorted)
+  return 0
+}
+
+pick_next_testgen_requirement_tag() {
+  local tag
+  while IFS= read -r tag; do
+    [[ -z "$tag" ]] && continue
+    if ! requirement_tag_test_cases_current "$tag"; then
+      echo "$tag"
+      return 0
+    fi
+  done < <(all_requirement_tags_sorted)
+  echo ""
+}
+
+mark_test_cases_current() {
+  local requirement_tag="$1"
+  local fingerprint="$2"
+  local generated_at="${3:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}"
+  local tmp
+  tmp="$(mktemp)"
+  jq --arg id "$requirement_tag" --arg fp "$fingerprint" --arg ts "$generated_at" '
+    .tags[$id] = {
+      current: true,
+      docFingerprint: $fp,
+      generatedAt: $ts
+    }
+  ' "$TEST_CASE_INDEX" > "$tmp" && mv "$tmp" "$TEST_CASE_INDEX"
+}
+
+reset_requirement_tag_on_doc_drift() {
+  local requirement_tag="$1"
+  local live_fp="$2"
+  local artifact_path
+  artifact_path="$(test_case_artifact_abs "$requirement_tag")"
+  if [[ -f "$artifact_path" ]]; then
+    mv -f "$artifact_path" "${artifact_path%.json}.stale.json" 2>/dev/null || true
+  fi
+  local tmp pi_tmp
+  tmp="$(mktemp)"
+  jq --arg id "$requirement_tag" --arg fp "$live_fp" '
+    .tags[$id] = {
+      current: false,
+      docFingerprint: $fp,
+      generatedAt: null
+    }
+  ' "$TEST_CASE_INDEX" > "$tmp" && mv "$tmp" "$TEST_CASE_INDEX"
+
+  pi_tmp="$(mktemp)"
+  jq --arg ref "$requirement_tag" '
+    .slices |= map(
+      if (.acceptance // [] | index($ref)) then .passes = false else . end
+    )
+  ' "$BACKLOG" > "$pi_tmp" && mv "$pi_tmp" "$BACKLOG"
+  append_guardrail "$requirement_tag" "Docs changed — test cases stale; affected slice passes reset (fingerprint=${live_fp})"
+}
+
+load_test_cases_json_for_slice() {
+  local slice_id="$1"
+  local refs merged="[]"
+  refs="$(jq -r --arg id "$slice_id" '.slices[] | select(.id == $id) | .acceptance[]?' "$BACKLOG")"
+  while IFS= read -r ref; do
+    [[ -z "$ref" ]] && continue
+    local artifact cases
+    artifact="$(test_case_artifact_abs "$ref")"
+    [[ -f "$artifact" ]] || continue
+    cases="$(jq -c '.cases // []' "$artifact")"
+    merged="$(jq -c --argjson c "$cases" '. + $c' <<< "$merged")"
+  done <<< "$refs"
+  jq -n --arg slice "$slice_id" --argjson cases "$merged" \
+    '{sliceId: $slice, requirementTags: [], cases: $cases}'
+}
+
+slice_requirement_tag_refs() {
+  local slice_id="$1"
+  jq -r --arg id "$slice_id" '.slices[] | select(.id == $id) | .acceptance[]?' "$BACKLOG"
+}
+
+# Back-compat aliases
+slice_product_item_refs() { slice_requirement_tag_refs "$@"; }
+product_item_test_cases_current() { requirement_tag_test_cases_current "$@"; }
+pick_next_testgen_product_item_id() { pick_next_testgen_requirement_tag; }
+reset_product_item_on_doc_drift() { reset_requirement_tag_on_doc_drift "$@"; }
+
+# Testgen agent: writes test case artifacts only (no Playwright MCP).
+agent_invoke_testgen() {
+  local model="$1"
+  local prompt="$2"
+  local outfile="${3:-}"
+  require_agent
+  local -a args=(-p --force --trust --output-format text --model "$model")
+  if [[ -n "$outfile" ]]; then
+    "$AGENT_BIN" "${args[@]}" "$prompt" | tee "$outfile"
+    return "${PIPESTATUS[0]}"
+  fi
+  "$AGENT_BIN" "${args[@]}" "$prompt"
 }
 
 append_guardrail() {

@@ -30,6 +30,12 @@
         "ai-harness/docs/browser-mcp.md",
         "docs/ui-ux/00-production-ui-quality-bar.md"
       ]
+    },
+    "testgen": {
+      "alwaysRead": [
+        "docs/technical/11-testing-plan.md",
+        "docs/brds/08-acceptance-mvp-future.md"
+      ]
     }
   },
   "slices": {

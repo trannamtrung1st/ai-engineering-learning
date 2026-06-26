@@ -170,7 +170,10 @@
           "FR-10"
         ]
       },
-      "description": "Registration module: capacity, waitlist FIFO, dedupe; paginated registrations and waitlist lists."
+      "description": "Registration module: capacity, waitlist FIFO, dedupe; paginated registrations and waitlist lists.",
+      "browserTestScenarios": [
+        "Participant registers via UI when seats are available"
+      ]
     },
     {
       "id": "module-checkin",
@@ -436,8 +439,9 @@
       },
       "browserTestScenarios": [
         "Browse paginated events list — prev/next changes page",
+        "My registrations — paginated list loads",
         "Open event detail and register — Registered status badge visible",
-        "My registrations — paginated list loads"
+        "Participant registers via UI when seats are available"
       ],
       "description": "Participant routes: paginated event browse, detail, registration, check-in, feedback, paginated my registrations."
     },
@@ -587,7 +591,15 @@
       "completionArtifacts": [
         "tests/e2e"
       ],
-      "description": "End-to-end scenario tests covering core acceptance matrix plus signup/login/logout, cover upload display, and badge color regression spot-checks."
+      "description": "End-to-end scenario tests covering core acceptance matrix plus signup/login/logout, cover upload display, and badge color regression spot-checks.",
+      "browserTestScenarios": [
+        "Participant registers via UI when seats are available"
+      ],
+      "testRequirements": {
+        "acceptanceTags": [
+          "AC-01"
+        ]
+      }
     }
   ]
 }
