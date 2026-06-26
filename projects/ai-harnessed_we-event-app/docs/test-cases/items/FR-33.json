@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-33",
   "version": 1,
-  "docFingerprint": "sha256:1795587dc6c00a1833c45415b462d73fd4b8426dae103e6bff17f76a3aee2f8b",
-  "generatedAt": "2026-06-26T22:15:00Z",
+  "docFingerprint": "sha256:32ba11492db28a31bc0f0f6dfba02adacb2f3f8674cf6e19ce91b104d3c20adc",
+  "generatedAt": "2026-06-26T17:42:38Z",
   "cases": [
     {
       "id": "TC-FR-33-001",
@@ -274,41 +274,41 @@
     {
       "id": "TC-FR-33-013",
       "category": "edge",
-      "layer": "unit",
+      "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
       "traceability": [
         "FR-33"
       ],
-      "title": "validateLoginInput rejects empty password",
+      "title": "Login with empty or missing password is rejected at API boundary",
       "preconditions": [
-        "Auth validation module available"
+        "Existing account with known email"
       ],
       "steps": [
-        "Call validateLoginInput with valid email and empty or missing password",
-        "Observe thrown ApiError"
+        "POST /api/v1/auth/login with valid email and empty or missing password",
+        "Parse JSON error body"
       ],
-      "expected": "ApiError with code INVALID_INPUT, statusCode 400, and details.field password; login rejected before credential lookup",
+      "expected": "HTTP 400 with error.code INVALID_INPUT and details.field password; no JWT returned; credential verification not attempted",
       "edgeCase": true
     },
     {
       "id": "TC-FR-33-014",
       "category": "edge",
-      "layer": "unit",
+      "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
       "traceability": [
         "FR-33"
       ],
-      "title": "validateLoginInput rejects invalid email format",
+      "title": "Login with invalid email format is rejected at API boundary",
       "preconditions": [
-        "Auth validation module available"
+        "API server running"
       ],
       "steps": [
-        "Call validateLoginInput with malformed email (missing @, empty string) and any password",
-        "Observe thrown ApiError"
+        "POST /api/v1/auth/login with malformed email (missing @ or empty string) and any password",
+        "Parse JSON error body"
       ],
-      "expected": "ApiError with code INVALID_INPUT, statusCode 400, and details.field email; no credential verification attempted",
+      "expected": "HTTP 400 with error.code INVALID_INPUT and details.field email; no credential verification attempted",
       "edgeCase": true
     },
     {
@@ -333,20 +333,23 @@
     {
       "id": "TC-FR-33-016",
       "category": "edge",
-      "layer": "unit",
-      "technique": "boundary-error",
+      "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P1",
       "traceability": [
         "FR-33"
       ],
-      "title": "validateLoginInput normalizes email to lowercase trimmed form",
+      "title": "Login form surfaces validation errors for invalid input without establishing session",
       "preconditions": [
-        "Auth validation module available"
+        "Web app running at /login",
+        "Fresh browser context with no stored JWT"
       ],
       "steps": [
-        "Call validateLoginInput with email '  User@Example.com  ' and non-empty password"
+        "Navigate to /login",
+        "Submit form with invalid email format or empty password",
+        "Observe inline or form-level error messaging"
       ],
-      "expected": "Returned email is 'user@example.com'; valid input passes validation for downstream credential lookup",
+      "expected": "User remains on login page; field-level validation errors displayed; no JWT stored and no redirect to protected routes until valid credentials submitted",
       "edgeCase": true
     },
     {
