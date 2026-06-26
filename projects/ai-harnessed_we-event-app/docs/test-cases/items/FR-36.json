@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-36",
   "version": 1,
-  "docFingerprint": "sha256:5087064824d0b6a4f531034dbe1fa0a232327bacca5de04922a3530f3e8e13cb",
-  "generatedAt": "2026-06-26T12:52:11Z",
+  "docFingerprint": "sha256:b1932c8f98ad822f8ce321e52d352f13a8e3d852d45a6bb71ba9c83d321fc738",
+  "generatedAt": "2026-06-26T17:47:38Z",
   "cases": [
     {
       "id": "TC-FR-36-001",
@@ -17,14 +17,14 @@
       "title": "BRD §1.7 participant sees organizer-uploaded cover on event list and detail",
       "preconditions": [
         "Published discoverable event with cover_image_key set via prior OrganizerAdmin upload",
-        "Participant JWT or public list/detail access per GET /events policy"
+        "Authenticated participant JWT per FR-28 or public GET /events policy per API design §2.0"
       ],
       "steps": [
         "GET /api/v1/events?page=1&pageSize=12 as participant and locate the covered event in items",
         "GET /api/v1/events/{eventId} as participant and read coverImageUrl",
         "GET coverImageUrl (or GET /api/v1/media/events/{key}) to fetch image bytes"
       ],
-      "expected": "Paginated list item includes non-null coverImageUrl when cover_image_key is set; event detail includes same coverImageUrl; media GET returns HTTP 200 with correct Content-Type and bytes matching upload — satisfies BRD AC-17 and FR-36 participant visibility on discovery and detail surfaces",
+      "expected": "Paginated list item includes non-null coverImageUrl when cover_image_key is set; event detail includes same coverImageUrl; media GET returns HTTP 200 with correct Content-Type and bytes matching upload — satisfies BRD §1.7 AC-17 and FR-36 participant visibility on discovery and detail surfaces",
       "edgeCase": false
     },
     {
@@ -40,7 +40,7 @@
       "title": "GET /api/v1/events list includes coverImageUrl; GET /media/events/{key} returns HTTP 200",
       "preconditions": [
         "Published event with cover_image_key set via organizer upload",
-        "Participant JWT or public list access per API policy"
+        "Authenticated participant JWT per FR-28 or public GET /events policy per API design §2.0"
       ],
       "steps": [
         "GET /api/v1/events?page=1&pageSize=12 as participant",
@@ -63,7 +63,7 @@
       "title": "GET /api/v1/events/{eventId} detail includes coverImageUrl for participant",
       "preconditions": [
         "Event with uploaded cover image and known cover_image_key",
-        "Participant authenticated or public detail access per API policy"
+        "Authenticated participant JWT or public GET /events/{eventId} policy per API design §2.0"
       ],
       "steps": [
         "GET /api/v1/events/{eventId} and read coverImageUrl from response",
@@ -88,7 +88,7 @@
       ],
       "steps": [
         "GET /api/v1/events/{eventId} with OrganizerAdmin bearer token",
-        "GET /api/v1/events?page=1&pageSize=12 scoped to organizer-visible events"
+        "GET /api/v1/events?page=1&pageSize=20 as OrganizerAdmin per organizer events listing contract (listing doc §2)"
       ],
       "expected": "Organizer detail and list responses return HTTP 200 and include coverImageUrl for events with cover; organizer reads the same cover metadata participants see per FR-36 organizers see cover on discovery and detail surfaces",
       "edgeCase": false
@@ -114,7 +114,7 @@
         "Invoke event list/detail read path via service or repository against real DB",
         "GET returned coverImageUrl via media route"
       ],
-      "expected": "Read path derives non-null coverImageUrl from cover_image_key on both list and detail DTOs; media GET returns HTTP 200 from controlled storage path; no raw filesystem URL exposed per NFR-18",
+      "expected": "Read path derives non-null coverImageUrl from cover_image_key on both list and detail DTOs; coverImageUrl uses /api/v1/media/events/{key} pattern; media GET returns HTTP 200 from controlled storage path; no raw filesystem URL exposed per NFR-18",
       "edgeCase": false
     },
     {
@@ -151,16 +151,16 @@
       ],
       "title": "Participant event discovery card renders 16:9 cover thumbnail via next/image",
       "preconditions": [
-        "Web app running with participant event discovery page",
+        "Web app running with participant event discovery at /events per page-list §Event discovery",
         "Published event with uploaded cover visible in browse list",
-        "Participant session or public browse enabled"
+        "Authenticated participant session per FR-28"
       ],
       "steps": [
-        "Navigate to participant event discovery (paginated card grid)",
+        "Navigate to /events event discovery (card grid, pageSize 12 per listing doc §2)",
         "Locate event card for seeded event with cover",
         "Inspect cover image region dimensions and rendered image source"
       ],
-      "expected": "Event card displays cover thumbnail in 16:9 aspect ratio using next/image; uploaded cover visible on discovery card per event-specific components spec and page-list discovery card grid",
+      "expected": "Event card displays cover thumbnail in 16:9 aspect ratio using next/image; uploaded cover visible on discovery card per event-specific components Event card and page-list §Event discovery",
       "edgeCase": false
     },
     {
@@ -176,10 +176,10 @@
       "title": "Participant event detail header renders cover image hero",
       "preconditions": [
         "Published event with uploaded cover image",
-        "Participant navigated to event detail page for that event"
+        "Authenticated participant navigated to /events/{eventId} per page-list §Event detail"
       ],
       "steps": [
-        "Open event detail from discovery card",
+        "Open event detail from discovery card at /events/{eventId}",
         "Observe event detail header cover hero region"
       ],
       "expected": "Event detail header renders cover image hero above event metadata; image matches uploaded cover; satisfies FR-36 event detail display and event-specific components Event detail header fields",
@@ -197,11 +197,11 @@
       "title": "Organizer views cover on event detail when reviewing managed event",
       "preconditions": [
         "OrganizerAdmin logged in",
-        "Managed event with uploaded cover image",
-        "Organizer navigates to event detail or preview for that event"
+        "Managed published event with uploaded cover image",
+        "Organizer navigates to /events/{eventId} or operational view that surfaces participant-facing header"
       ],
       "steps": [
-        "As OrganizerAdmin, open event detail or operational view that surfaces participant-facing header",
+        "As OrganizerAdmin, open event detail at /events/{eventId} or preview that shows participant-facing header",
         "Confirm cover hero or thumbnail is visible"
       ],
       "expected": "Organizer sees the same cover image on event detail as participants; FR-36 organizer visibility on event detail satisfied",
@@ -219,7 +219,7 @@
       "title": "Event list and detail omit coverImageUrl when cover_image_key is null",
       "preconditions": [
         "Published discoverable event without cover_image_key",
-        "Participant or public read access"
+        "Authenticated participant or public read access per API design §2.0"
       ],
       "steps": [
         "GET /api/v1/events?page=1&pageSize=12 and locate event without cover",
@@ -238,15 +238,16 @@
         "FR-36",
         "NFR-18"
       ],
-      "title": "GET /media/events/{invalid-key} returns HTTP 404 for unknown storage key",
+      "title": "GET /media/events/{invalid-key} returns HTTP 404; path traversal rejected",
       "preconditions": [
         "API server running at /api/v1",
         "Non-existent or orphaned media key not bound to any event"
       ],
       "steps": [
-        "GET /api/v1/media/events/{random-uuid-or-unknown-key}"
+        "GET /api/v1/media/events/{random-uuid-or-unknown-key}",
+        "GET /api/v1/media/events/../etc/passwd or similar traversal variant"
       ],
-      "expected": "HTTP 404 entity not found; typed error envelope with requestId; no filesystem path leakage in response per API error contract",
+      "expected": "Unknown key returns HTTP 404 entity not found; path traversal variants rejected with HTTP 404 or 400; typed error envelope with requestId; no filesystem path leakage in response per API error contract and NFR-18 controlled storage",
       "edgeCase": true
     },
     {
@@ -260,15 +261,15 @@
       ],
       "title": "Discovery card shows fallback illustration when event has no cover",
       "preconditions": [
-        "Published event without cover_image_key visible in discovery list",
-        "Participant on event discovery page"
+        "Published event without cover_image_key visible in discovery list at /events",
+        "Authenticated participant on event discovery page per FR-28"
       ],
       "steps": [
-        "Navigate to participant event discovery",
+        "Navigate to /events participant event discovery",
         "Locate card for event without cover",
         "Inspect cover thumbnail slot"
       ],
-      "expected": "Card renders neutral fallback illustration in 16:9 slot; no broken image icon; matches page-list fallback when no cover and event-specific components placeholder spec",
+      "expected": "Card renders neutral fallback illustration in 16:9 slot; no broken image icon; matches page-list §Event discovery fallback when no cover and event-specific components Event card placeholder spec",
       "edgeCase": true
     },
     {
@@ -283,13 +284,13 @@
       "title": "Event detail hero shows placeholder when navigating to event without cover",
       "preconditions": [
         "Published event without cover_image_key",
-        "Participant on event detail page for that event"
+        "Authenticated participant on /events/{eventId} per page-list §Event detail"
       ],
       "steps": [
-        "Navigate directly to event detail URL for no-cover event",
+        "Navigate directly to /events/{eventId} for no-cover event",
         "Inspect cover hero region in event detail header"
       ],
-      "expected": "Detail header renders without broken image; neutral placeholder or omitted hero per component spec; FR-36 graceful no-cover detail display",
+      "expected": "Detail header renders without broken image; neutral placeholder or omitted hero per event-specific components Event detail header; FR-36 graceful no-cover detail display",
       "edgeCase": true
     },
     {
@@ -380,7 +381,7 @@
         "GET /api/v1/events?page=2&pageSize=12&sort=startAt:asc",
         "Locate covered event on page 2 if present"
       ],
-      "expected": "Page-2 items with cover_image_key include coverImageUrl same as page 1 contract; pagination does not strip cover metadata per AC-13 correct slice semantics",
+      "expected": "Page-2 items with cover_image_key include coverImageUrl same as page 1 contract; pagination does not strip cover metadata per AC-13 correct slice semantics and listing doc §2 event discovery pageSize 12",
       "edgeCase": true
     }
   ]

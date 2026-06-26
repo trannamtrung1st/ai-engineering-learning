@@ -356,3 +356,4 @@ Append-only log of completed iterations.
 - 2026-06-26T17:43:18Z | FR-34 | testgen_failed
 - 2026-06-26T17:44:50Z | FR-34 | testgen_passed
 - 2026-06-26T17:46:28Z | FR-35 | testgen_passed
+- 2026-06-26T17:48:20Z | FR-36 | testgen_passed
