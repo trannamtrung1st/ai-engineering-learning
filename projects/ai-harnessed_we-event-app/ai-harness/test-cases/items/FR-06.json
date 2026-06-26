@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-06",
   "version": 1,
-  "docFingerprint": "sha256:027175175545d05eacf412663c601ddc7b622e4741a2ff40633c8e332b7bd6aa",
-  "generatedAt": "2026-06-26T12:02:39Z",
+  "docFingerprint": "sha256:87b20ee29539baa20adb28d25f392f7bf11c719437f7d84b899d86c14fe7f71b",
+  "generatedAt": "2026-06-26T16:42:21Z",
   "cases": [
     {
       "id": "TC-FR-06-001",
@@ -48,7 +48,7 @@
         "POST /api/v1/events/{eventId}/registrations with Participant Authorization bearer",
         "GET /api/v1/events/{eventId}/registration-status with same token"
       ],
-      "expected": "HTTP 201 or 200 with registrationId, state Registered, and participantId matching token; registration-status returns the same single active registration; participant has successfully registered once for the event",
+      "expected": "HTTP 200 with registrationId, state Registered, and participantId matching token; registration-status returns the same single active registration; participant has successfully registered once for the event",
       "edgeCase": false
     },
     {
@@ -94,47 +94,7 @@
         "POST /api/v1/events/{eventId}/registrations with same participant Authorization bearer a second time",
         "Parse error response body and re-fetch registration-status"
       ],
-      "expected": "HTTP 409 with error.code REGISTRATION_DUPLICATE_ACTIVE and user-safe message; GET registration-status still returns original registration unchanged; participant cannot register more than once per event",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-FR-06-005",
-      "category": "functional",
-      "layer": "unit",
-      "technique": "boundary-error",
-      "priority": "P0",
-      "traceability": [
-        "FR-06",
-        "BR-01"
-      ],
-      "title": "Registration dedupe validator rejects existing active registration row",
-      "preconditions": [
-        "Existing registration row with active state Registered (or Waitlisted, CheckedIn per isActiveRegistrationState)"
-      ],
-      "steps": [
-        "Call assertNoDuplicateActive(existingRegistrationRow) or equivalent dedupe validator"
-      ],
-      "expected": "Function throws ApiError with code REGISTRATION_DUPLICATE_ACTIVE and statusCode 409; details include existing registrationId and state; aligns with testing plan unit target registration dedupe validator",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-FR-06-006",
-      "category": "functional",
-      "layer": "unit",
-      "technique": "state-transition",
-      "priority": "P1",
-      "traceability": [
-        "FR-06",
-        "BR-01"
-      ],
-      "title": "Dedupe validator permits registration when no active row exists",
-      "preconditions": [
-        "No existing registration row (null), or existing row in terminal inactive state such as CancelledByUser or Rejected"
-      ],
-      "steps": [
-        "Call assertNoDuplicateActive(null) or assertNoDuplicateActive(cancelledRegistrationRow)"
-      ],
-      "expected": "Function completes without throwing; registration pipeline proceeds to capacity decision; participant without active registration may register once",
+      "expected": "HTTP 409 with error.code REGISTRATION_DUPLICATE_ACTIVE, user-safe message per API error contract, requestId, and details; GET registration-status still returns original registration unchanged; participant cannot register more than once per event",
       "edgeCase": false
     },
     {
@@ -150,14 +110,14 @@
       "title": "Participant UI prevents duplicate registration with clear feedback",
       "preconditions": [
         "Participant logged in and already Registered for an open event",
-        "Event detail page shows current Registered status"
+        "Event detail page shows current Registered status badge or label"
       ],
       "steps": [
         "Navigate to event detail for the event where participant is already registered",
         "Attempt to register again via UI (register button, retry, or equivalent action if exposed)",
         "Observe inline or toast error messaging and CTA state"
       ],
-      "expected": "UI does not create a second registration; participant sees clear duplicate-registration message or disabled register CTA with explanation; behavior consistent with server REGISTRATION_DUPLICATE_ACTIVE semantics",
+      "expected": "UI does not create a second registration; participant sees clear duplicate-registration message (inline error, disabled CTA, or toast) consistent with server REGISTRATION_DUPLICATE_ACTIVE semantics",
       "edgeCase": false
     },
     {
@@ -173,12 +133,13 @@
       "title": "Duplicate blocked when participant is already Waitlisted",
       "preconditions": [
         "Event is full with waitlistEnabled true",
-        "Participant already has active Waitlisted registration for the event"
+        "Participant already has active Waitlisted registration for the event",
+        "Active WaitlistEntry exists for the registration (BR-04b: promoted_at and expired_at both null)"
       ],
       "steps": [
         "Attempt registrationService.register for the same participant and event again"
       ],
-      "expected": "Rejected with REGISTRATION_DUPLICATE_ACTIVE (409); waitlistPosition and single Waitlisted row unchanged; no second waitlist entry; at-most-once applies to all active states not only Registered",
+      "expected": "Rejected with REGISTRATION_DUPLICATE_ACTIVE (409); waitlistPosition and single Waitlisted row unchanged; no second waitlist entry; active WaitlistEntry row count remains 1; at-most-once applies to all active states not only Registered",
       "edgeCase": true
     },
     {
@@ -370,7 +331,7 @@
       ],
       "title": "Database partial unique index prevents duplicate active registration at persistence layer",
       "preconditions": [
-        "PostgreSQL with uq_active_registration partial index on (event_id, participant_id) for active states",
+        "PostgreSQL with uq_active_registration partial index on (event_id, participant_id) for active states (Requested, Registered, Waitlisted, CheckedIn)",
         "One active Registered row already persisted for participant/event"
       ],
       "steps": [
@@ -392,14 +353,14 @@
       ],
       "title": "Flow B duplicate registration step blocked after waitlist entry",
       "preconditions": [
-        "E2E Flow B fixture: participant already Waitlisted on a full event",
+        "E2E Flow B fixture: participant already Waitlisted on a full event with active WaitlistEntry (BR-04b)",
         "Valid participant JWT and fresh idempotency key"
       ],
       "steps": [
         "POST /api/v1/events/{eventId}/registrations again for the waitlisted participant",
-        "Verify error response before proceeding with cancellation/promotion steps"
+        "Verify error response and GET /api/v1/events/{eventId}/registration-status before proceeding with cancellation/promotion steps"
       ],
-      "expected": "HTTP 409 with REGISTRATION_DUPLICATE_ACTIVE; original Waitlisted registration unchanged with same registrationId and waitlistPosition; core scenario matrix duplicate registration attempt blocked",
+      "expected": "HTTP 409 with REGISTRATION_DUPLICATE_ACTIVE; original Waitlisted registration unchanged with same registrationId and waitlistPosition; active WaitlistEntry row count remains 1; core scenario matrix duplicate registration attempt blocked",
       "edgeCase": false
     },
     {
