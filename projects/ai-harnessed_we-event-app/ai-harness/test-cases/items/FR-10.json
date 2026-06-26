@@ -2,12 +2,13 @@
   "productItemId": "FR-10",
   "version": 1,
   "docFingerprint": "sha256:61772db2f0be7d5f91f9eccefef8b9d85ce957dbd55d47d9d14f933847b053f4",
-  "generatedAt": "2026-06-26T12:00:00Z",
+  "generatedAt": "2026-06-26T14:30:00Z",
   "cases": [
     {
       "id": "TC-FR-10-001",
       "category": "functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["FR-10"],
       "title": "registration-status returns null when participant has no registration for event",
@@ -26,6 +27,7 @@
       "id": "TC-FR-10-002",
       "category": "functional",
       "layer": "e2e",
+      "technique": "scenario-matrix",
       "priority": "P0",
       "traceability": ["FR-10", "AC-01", "FR-07"],
       "title": "GET registration-status reflects Registered immediately after successful registration",
@@ -38,13 +40,14 @@
         "POST /api/v1/events/{eventId}/registrations with Authorization bearer token",
         "GET /api/v1/events/{eventId}/registration-status for the same participant"
       ],
-      "expected": "POST returns state Registered; GET returns HTTP 200 with registration object whose state is Registered, registrationId matches POST response, and updatedAt is present; participant can track confirmed seat status in near real-time",
+      "expected": "POST returns state Registered; GET returns HTTP 200 with registration object whose state is Registered, registrationId matches POST response, and updatedAt is present; testing-plan §3 row Register with available seat → Registered reflected in near real-time status query",
       "edgeCase": false
     },
     {
       "id": "TC-FR-10-003",
       "category": "functional",
       "layer": "e2e",
+      "technique": "scenario-matrix",
       "priority": "P0",
       "traceability": ["FR-10", "AC-02", "FR-08"],
       "title": "GET registration-status reflects Waitlisted with queue position when event is full",
@@ -57,13 +60,14 @@
         "POST /api/v1/events/{eventId}/registrations as the waitlisted participant",
         "GET /api/v1/events/{eventId}/registration-status for the same participant"
       ],
-      "expected": "GET returns registration with state Waitlisted and waitlistPosition reflecting queue order; status matches POST response body; participant can track waitlist position without organizer intervention",
+      "expected": "GET returns registration with state Waitlisted and waitlistPosition reflecting queue order; status matches POST response body; testing-plan §3 row Register when full + waitlist enabled → Waitlisted satisfied via status endpoint",
       "edgeCase": false
     },
     {
       "id": "TC-FR-10-004",
       "category": "functional",
       "layer": "integration",
+      "technique": "flow-b",
       "priority": "P0",
       "traceability": ["FR-10", "FR-12", "AC-02"],
       "title": "registration-status updates from Waitlisted to Registered after waitlist promotion",
@@ -77,13 +81,14 @@
         "Trigger cancellation and waitlist promotion for participant B",
         "GET registration-status for participant B after promotion completes"
       ],
-      "expected": "Initial status shows Waitlisted with queue position; subsequent GET shows state Registered with waitlistPosition cleared or null; participant B tracks promotion outcome without re-registering per Flow 2 step 5",
+      "expected": "Initial status shows Waitlisted with queue position; subsequent GET shows state Registered with waitlistPosition cleared or null; participant B tracks promotion outcome without re-registering per Flow B step 5",
       "edgeCase": false
     },
     {
       "id": "TC-FR-10-005",
       "category": "functional",
       "layer": "integration",
+      "technique": "state-transition",
       "priority": "P0",
       "traceability": ["FR-10", "AC-05", "FR-13"],
       "title": "registration-status reflects CheckedIn after valid staff check-in",
@@ -103,6 +108,7 @@
       "id": "TC-FR-10-006",
       "category": "functional",
       "layer": "integration",
+      "technique": "state-transition",
       "priority": "P0",
       "traceability": ["FR-10", "AC-07", "FR-17"],
       "title": "registration-status reflects Attended or Absent after event completion",
@@ -122,6 +128,7 @@
       "id": "TC-FR-10-007",
       "category": "functional",
       "layer": "e2e",
+      "technique": "pagination",
       "priority": "P0",
       "traceability": ["FR-10", "FR-29", "AC-14"],
       "title": "GET me/registrations returns paginated list of participant registrations with current states",
@@ -139,7 +146,27 @@
     {
       "id": "TC-FR-10-008",
       "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-10", "AC-01"],
+      "title": "GET registration-status returns 200 with registration envelope for authenticated participant",
+      "preconditions": [
+        "Published event RegistrationOpen with available seats",
+        "Authenticated participant with active Registered registration for the event"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/registration-status with Authorization bearer token",
+        "Inspect HTTP status and response body shape"
+      ],
+      "expected": "HTTP 200 with registration object containing registrationId, eventId, participantId, state, updatedAt, and waitlistPosition when applicable; typed JSON envelope per API design §2.2",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-10-009",
+      "category": "functional",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P0",
       "traceability": ["FR-10", "AC-01"],
       "title": "Event detail page registration status panel reflects outcome after register action",
@@ -155,9 +182,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-10-009",
+      "id": "TC-FR-10-010",
       "category": "functional",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["FR-10", "FR-28"],
       "title": "Event discovery cards surface per-event registration status for authenticated participant",
@@ -174,9 +202,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-10-010",
+      "id": "TC-FR-10-011",
       "category": "functional",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["FR-10", "FR-29"],
       "title": "My Registrations page reflects latest status after registration outcome",
@@ -193,9 +222,31 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-10-011",
+      "id": "TC-FR-10-012",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["FR-10", "AC-01", "AC-05", "AC-07"],
+      "title": "registration-status tracks lifecycle from Registered through CheckedIn to Attended",
+      "preconditions": [
+        "Event progressed through publish, open registration, register, start event",
+        "Participant Registered with available seat",
+        "Check-in window open and event can complete"
+      ],
+      "steps": [
+        "GET registration-status after registration — expect Registered",
+        "POST valid check-in for participant — GET registration-status — expect CheckedIn",
+        "Complete event — GET registration-status — expect Attended"
+      ],
+      "expected": "Each lifecycle milestone is reflected on the next status query without manual refresh beyond normal API poll; Flow A register → check-in → attendance finalization traceable via registration-status",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-10-013",
       "category": "edge",
       "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["FR-10", "NFR-07", "AC-15"],
       "title": "Unauthenticated registration-status request returns 401",
@@ -210,9 +261,28 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-10-012",
+      "id": "TC-FR-10-014",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-10", "FR-26", "FR-25"],
+      "title": "Unauthenticated GET me/registrations returns 401",
+      "preconditions": [
+        "Participant registrations exist in database",
+        "No Authorization header or expired JWT"
+      ],
+      "steps": [
+        "GET /api/v1/me/registrations?page=1&pageSize=20 without bearer token"
+      ],
+      "expected": "HTTP 401 with typed error envelope; paginated registration list not exposed; Participant-only endpoint denied to unauthenticated actors per permission matrix",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-10-015",
       "category": "edge",
       "layer": "integration",
+      "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["FR-10", "FR-26", "NFR-08"],
       "title": "registration-status returns only the current actor registration not other participants",
@@ -229,9 +299,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-10-013",
+      "id": "TC-FR-10-016",
       "category": "edge",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P1",
       "traceability": ["FR-10", "FR-11", "BR-07"],
       "title": "registration-status reflects CancelledByUser after valid participant cancellation",
@@ -243,13 +314,14 @@
         "POST /api/v1/events/{eventId}/registrations/{registrationId}/cancel with valid Idempotency-Key",
         "GET /api/v1/events/{eventId}/registration-status"
       ],
-      "expected": "GET returns registration with cancelled state (CancelledByUser or equivalent terminal cancel state); participant tracks cancellation outcome immediately after successful cancel",
+      "expected": "GET returns HTTP 200 with registration state CancelledByUser (or equivalent terminal cancel state); participant tracks cancellation outcome immediately after successful cancel",
       "edgeCase": true
     },
     {
-      "id": "TC-FR-10-014",
+      "id": "TC-FR-10-017",
       "category": "edge",
       "layer": "integration",
+      "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["FR-10", "FR-09", "BR-05"],
       "title": "registration-status reflects Rejected when registration rejected on full event without waitlist",
@@ -265,9 +337,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-10-015",
+      "id": "TC-FR-10-018",
       "category": "edge",
       "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["FR-10"],
       "title": "registration-status for unknown eventId returns 404",
@@ -282,9 +355,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-10-016",
+      "id": "TC-FR-10-019",
       "category": "edge",
       "layer": "integration",
+      "technique": "flow-b",
       "priority": "P1",
       "traceability": ["FR-10", "FR-12", "BR-06"],
       "title": "Both cancelled registrant and promoted waitlist participant see updated status on next query",
@@ -297,13 +371,14 @@
         "GET registration-status for A",
         "GET registration-status for B without delay or manual refresh beyond normal API poll"
       ],
-      "expected": "A sees cancelled terminal state; B sees Registered replacing prior Waitlisted; both affected users see updated statuses per user Flow 2 step 5 near real-time after atomic cancellation plus promotion transaction",
+      "expected": "A sees cancelled terminal state; B sees Registered replacing prior Waitlisted; both affected users see updated statuses per Flow B step 5 near real-time after atomic cancellation plus promotion transaction",
       "edgeCase": true
     },
     {
-      "id": "TC-FR-10-017",
+      "id": "TC-FR-10-020",
       "category": "edge",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P2",
       "traceability": ["FR-10"],
       "title": "UI shows status unavailable when registration-status lookup fails",
@@ -319,9 +394,10 @@
       "edgeCase": true
     },
     {
-      "id": "TC-FR-10-018",
+      "id": "TC-FR-10-021",
       "category": "non-functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P1",
       "traceability": ["FR-10", "NFR-04"],
       "title": "registration-status responds within acceptable latency under normal load",
@@ -338,9 +414,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-10-019",
+      "id": "TC-FR-10-022",
       "category": "non-functional",
       "layer": "unit",
+      "technique": "state-transition",
       "priority": "P1",
       "traceability": ["FR-10", "NFR-12"],
       "title": "Status token mapping produces consistent human-readable labels for each registration state",
@@ -355,9 +432,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-10-020",
+      "id": "TC-FR-10-023",
       "category": "non-functional",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["FR-10", "NFR-13"],
       "title": "Registration action provides immediate status feedback on success or failure",
@@ -372,9 +450,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-10-021",
+      "id": "TC-FR-10-024",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "concurrency",
       "priority": "P0",
       "traceability": ["FR-10", "NFR-02"],
       "title": "registration-status snapshot matches latest committed registration row after concurrent writes",
@@ -390,9 +469,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-10-022",
+      "id": "TC-FR-10-025",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P1",
       "traceability": ["FR-10", "NFR-09"],
       "title": "registration-status exposes only participant-safe fields",
@@ -408,9 +488,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-10-023",
+      "id": "TC-FR-10-026",
       "category": "functional",
-      "layer": "unit",
+      "layer": "integration",
+      "technique": "module-integration",
       "priority": "P1",
       "traceability": ["FR-10"],
       "title": "getStatus query is side-effect free and returns versioned registration snapshot",
@@ -426,9 +507,10 @@
       "edgeCase": false
     },
     {
-      "id": "TC-FR-10-024",
+      "id": "TC-FR-10-027",
       "category": "edge",
       "layer": "integration",
+      "technique": "state-transition",
       "priority": "P1",
       "traceability": ["FR-10", "BR-02"],
       "title": "Waitlisted participant status shows Expired when registration window closes without promotion",
