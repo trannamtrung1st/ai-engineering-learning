@@ -2,7 +2,7 @@
   "productItemId": "AC-05",
   "version": 2,
   "docFingerprint": "sha256:c08ad0039562ef88268aca8eda534df09d841c6763890b0568ed11fbf5e0e3fb",
-  "generatedAt": "2026-06-26T15:56:50Z",
+  "generatedAt": "2026-06-26T16:16:30Z",
   "cases": [
     {
       "id": "TC-AC-05-001",
@@ -118,7 +118,7 @@
         "BR-10",
         "BR-13"
       ],
-      "title": "POST /events/{eventId}/self-checkin returns HTTP 200 with timestamp when self-service enabled",
+      "title": "POST /events/{eventId}/self-checkin returns HTTP 200 with timestamp and audit metadata when self-service enabled",
       "preconditions": [
         "Event rule config enables participant self check-in",
         "Event InProgress with active check-in window",
@@ -128,7 +128,7 @@
         "POST /api/v1/events/{eventId}/self-checkin with participant Authorization bearer token and Idempotency-Key",
         "GET /api/v1/events/{eventId}/registration-status for the same participant"
       ],
-      "expected": "POST returns HTTP 200 with non-null checkinAt, registrationState CheckedIn, method Self; registration-status reflects CheckedIn with matching timestamp",
+      "expected": "POST returns HTTP 200 with non-null checkinAt, registrationState CheckedIn, method Self, and participant actorId per BR-13; registration-status reflects CheckedIn with matching timestamp",
       "edgeCase": false
     },
     {
@@ -168,7 +168,7 @@
       ],
       "title": "Participant self check-in UI shows success with recorded timestamp",
       "preconditions": [
-        "Event with self check-in enabled and window currently open",
+        "Event with self check-in enabled and window currently open (now >= checkinOpenAt and now < checkinCloseAt per exclusive close boundary)",
         "Participant logged in with Registered status for the event",
         "Event in InProgress state allowing check-in"
       ],
@@ -350,9 +350,9 @@
       ],
       "title": "Check-in page submit succeeds when UI gate shows check-in available",
       "preconditions": [
-        "Event InProgress with active check-in window",
+        "Event InProgress with active check-in window (now >= checkinOpenAt and now < checkinCloseAt)",
         "Participant logged in with Registered registration and no prior check-in",
-        "Self check-in page shows enabled primary check-in control (canSelfCheckIn true)"
+        "Self check-in page shows enabled primary check-in control (canSelfCheckIn true, mirroring API assertCheckinWindowOpen)"
       ],
       "steps": [
         "Navigate to /events/{eventId}/check-in",
