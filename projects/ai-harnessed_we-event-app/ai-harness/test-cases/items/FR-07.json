@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-07",
   "version": 1,
-  "docFingerprint": "sha256:027175175545d05eacf412663c601ddc7b622e4741a2ff40633c8e332b7bd6aa",
-  "generatedAt": "2026-06-26T12:04:32Z",
+  "docFingerprint": "sha256:87b20ee29539baa20adb28d25f392f7bf11c719437f7d84b899d86c14fe7f71b",
+  "generatedAt": "2026-06-26T16:43:42Z",
   "cases": [
     {
       "id": "TC-FR-07-001",
@@ -55,45 +55,48 @@
     {
       "id": "TC-FR-07-003",
       "category": "functional",
-      "layer": "unit",
+      "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
       "traceability": [
         "FR-07",
         "BR-03"
       ],
-      "title": "Capacity guard selects Registered when registeredCount is strictly less than capacity",
+      "title": "Registration pipeline selects Registered when registeredCount is below capacity",
       "preconditions": [
-        "Pure capacity decision inputs: registeredCount, capacity, waitlistEnabled"
+        "Event RegistrationOpen with capacity 5 and active registration window",
+        "Separate scenarios: registeredCount 0, 4, and 2 with waitlistEnabled true or false as applicable",
+        "Distinct participants with no prior registration per scenario"
       ],
       "steps": [
-        "Evaluate capacity decision for registeredCount=0, capacity=5, waitlistEnabled=true",
-        "Evaluate for registeredCount=4, capacity=5, waitlistEnabled=false",
-        "Evaluate for registeredCount=2, capacity=10, waitlistEnabled=true"
+        "Invoke registrationService.register for a participant when registeredCount is strictly less than capacity",
+        "Repeat for each seeded fill-level scenario and inspect returned registration state"
       ],
-      "expected": "Each evaluation returns Registered outcome; system routes to seat assignment not waitlist or rejection when seats remain; aligns with testing plan unit target capacity guard validator",
+      "expected": "Each registration is assigned Registered via acceptRegistration path; system routes to seat assignment not waitlist or rejection when seats remain; state machine guard seat available + rule checks satisfied at integration boundary",
       "edgeCase": false
     },
     {
       "id": "TC-FR-07-004",
       "category": "functional",
-      "layer": "unit",
+      "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
       "traceability": [
         "FR-07",
         "BR-02"
       ],
-      "title": "acceptRegistration state transition guard permits Registered when seat available",
+      "title": "acceptRegistration transition assigns Registered when window open and seat available",
       "preconditions": [
-        "Registration in Requested state",
-        "Registration window open, no duplicate active registration, registeredCount less than capacity"
+        "Event RegistrationOpen with available seats",
+        "Registration window open per BR-02",
+        "Participant with no duplicate active registration",
+        "PostgreSQL test database with registration state machine transitions"
       ],
       "steps": [
-        "Call acceptRegistration transition guard with preconditions above",
-        "Verify guard returns permitted transition to Registered"
+        "Invoke registrationService.register(eventId, participantId, actorContext)",
+        "Query registration row state after intake completes"
       ],
-      "expected": "Guard permits Requested to Registered transition; guard requires window open + no duplicate + seat available per state machine transition table",
+      "expected": "Registration transitions Requested to Registered via acceptRegistration; guard preconditions (window open + no duplicate + seat available) satisfied; persisted state is Registered per state machine transition table",
       "edgeCase": false
     },
     {
@@ -394,25 +397,26 @@
     },
     {
       "id": "TC-FR-07-018",
-      "category": "non-functional",
-      "layer": "unit",
+      "category": "edge",
+      "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
       "traceability": [
         "FR-07",
         "BR-03"
       ],
-      "title": "State transition guard rejects acceptRegistration when no seat available",
+      "title": "Full event registration routes to Waitlisted not Registered via state machine",
       "preconditions": [
-        "registeredCount equals capacity",
-        "Registration otherwise valid (window open, no duplicate)"
+        "Event RegistrationOpen at capacity (registeredCount equals capacity)",
+        "waitlistEnabled true",
+        "Registration window open and no duplicate for new participant"
       ],
       "steps": [
-        "Call acceptRegistration transition guard when registeredCount >= capacity",
-        "Verify guard denies Registered transition"
+        "Invoke registrationService.register for additional participant when event is full",
+        "Inspect returned state and persisted registration row"
       ],
-      "expected": "Guard rejects Requested to Registered transition; routes to waitlist or rejection path instead; confirms FR-07 seat-available precondition is enforced at state machine layer",
-      "edgeCase": false
+      "expected": "New registration receives Waitlisted via queueWaitlist path, not Registered; acceptRegistration transition not taken when no seat available; confirms FR-07 seat-available precondition enforced at integration/state-machine layer",
+      "edgeCase": true
     },
     {
       "id": "TC-FR-07-019",
