@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-15",
   "version": 1,
-  "docFingerprint": "sha256:5e79e4c58f0f91c5bbe4d59de7cf91990ac57ea7ff85ef3efbfb221ffac55c1f",
-  "generatedAt": "2026-06-26T20:00:00Z",
+  "docFingerprint": "sha256:ec951167b11f7b857de880da792108576199bef5665b828dc729878bf36b96e4",
+  "generatedAt": "2026-06-26T16:30:05Z",
   "cases": [
     {
       "id": "TC-AC-15-001",
