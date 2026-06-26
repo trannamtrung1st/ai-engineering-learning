@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-13",
   "version": 1,
-  "docFingerprint": "sha256:e02c1f2112398fe77830ccd62c814e9fb809075870195634fc99ea89db79c2fb",
-  "generatedAt": "2026-06-26T11:22:18Z",
+  "docFingerprint": "sha256:43a1316c7d0669030f2b3eac3b6b42994b9e6757f8b754368f1f5bbc574ab4b3",
+  "generatedAt": "2026-06-26T16:27:45Z",
   "cases": [
     {
       "id": "TC-AC-13-001",
@@ -167,7 +167,7 @@
         "Navigate to page 2 using pagination controls",
         "Observe updated range label reflecting second page slice"
       ],
-      "expected": "Page 1 displays range label such as 1–12 of N where N is total matching events; page 2 displays 13–N of N (or equivalent); UI does not render full unbounded dataset client-side; server-driven pagination per page list participant event discovery",
+      "expected": "Page 1 displays range label such as Showing 1–12 of N where N is total matching events; page 2 displays Showing 13–24 of N (or equivalent upper bound); prev/next controls disabled at bounds; UI does not render full unbounded dataset client-side per listing pages §3 and page list event discovery",
       "edgeCase": false
     },
     {
@@ -191,7 +191,7 @@
         "Navigate to page 2",
         "Verify range label updates to reflect second page boundaries"
       ],
-      "expected": "Page 1 shows range label such as 1–20 of N; page 2 shows 21–N of N; table renders only current page rows; pagination controls present per page list organizer registration management",
+      "expected": "Page 1 shows range label such as Showing 1–20 of N; page 2 shows Showing 21–40 of N (or equivalent); table renders only current page rows; prev/next pagination controls present per listing pages §3 and page list organizer registration management",
       "edgeCase": false
     },
     {
@@ -310,20 +310,22 @@
       "priority": "P1",
       "traceability": [
         "AC-13",
+        "AC-02f",
         "FR-30",
         "FR-31"
       ],
-      "title": "Waitlist module paginated query returns envelope with position-ordered slice",
+      "title": "Waitlist module paginated query preserves FIFO position order across pages",
       "preconditions": [
-        "Full event with waitlist enabled and multiple Waitlisted participants",
+        "Full event with waitlist enabled and more than 20 Waitlisted participants (exceeds default pageSize)",
         "Real Postgres test database",
         "Authenticated OrganizerAdmin with event scope"
       ],
       "steps": [
         "Invoke waitlist list query via registration/waitlist module with page=1, pageSize=20",
-        "Verify items ordering and total against persistence layer"
+        "Invoke same query with page=2, pageSize=20",
+        "Verify items ordering and total against persistence layer across both pages"
       ],
-      "expected": "Paginated envelope with items sorted by position ascending; total reflects waitlist queue length; module-integration exercises DB boundary for GET /events/{eventId}/waitlist contract",
+      "expected": "Paginated envelope with items sorted by position ascending on each page; page 1 positions 1–20 and page 2 continues FIFO without gaps or reordering; total reflects full waitlist queue length; module-integration exercises DB boundary for GET /events/{eventId}/waitlist per AC-02f",
       "edgeCase": false
     },
     {
@@ -458,6 +460,30 @@
         "Compare total and totalPages on each response"
       ],
       "expected": "total and totalPages are identical on every page; only items array differs between pages; supports reliable client-side pagination controls",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-13-021",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": [
+        "AC-13",
+        "FR-28"
+      ],
+      "title": "Organizer events paginated table shows range label (e.g. Showing 1–20 of N)",
+      "preconditions": [
+        "At least 21 organizer-visible events seeded (exceeds organizer events table pageSize of 20)",
+        "OrganizerAdmin logged in with access to /organizer/events"
+      ],
+      "steps": [
+        "Navigate to organizer event management list page",
+        "Observe pagination range label in table footer or toolbar",
+        "Navigate to page 2 using pagination controls",
+        "Verify range label updates to reflect second page boundaries"
+      ],
+      "expected": "Page 1 shows range label such as Showing 1–20 of N; page 2 shows Showing 21–40 of N (or equivalent); table renders only current page rows; server-driven pagination per listing pages §3 and page list organizer events table",
       "edgeCase": false
     }
   ]

@@ -465,6 +465,7 @@
           "tests/e2e/src/scenarios/ac-14-listing-ui.test.ts"
         ],
         "acceptanceTags": [
+          "AC-13",
           "AC-14",
           "FR-28",
           "FR-29"
@@ -716,6 +717,7 @@
         ],
         "acceptanceTags": [
           "AC-11",
+          "AC-13",
           "AC-14",
           "FR-01",
           "FR-02",
@@ -798,6 +800,7 @@
           "AC-05",
           "AC-06",
           "AC-07",
+          "AC-13",
           "FR-11",
           "FR-12",
           "FR-13",
