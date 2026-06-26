@@ -226,7 +226,7 @@ describe("registration integration (NFR-02, FR-31)", () => {
     assert.equal(waitlisted, attempts - capacity);
   });
 
-  it("FR-12 / BR-06: promotes waitlisted participant FIFO when a seat is released", async () => {
+  it("FR-12 / BR-06 / BR-08 / NFR-02: promotes waitlisted participant FIFO when a seat is released atomically", async () => {
     const event = await createRegistrationOpenEvent({
       capacity: 1,
       waitlistEnabled: true,

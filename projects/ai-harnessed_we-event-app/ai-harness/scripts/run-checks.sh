@@ -164,6 +164,29 @@ check_npm_commands() {
   done < <(jq -c '.computationalChecks.commands[]?' "$LOOP_CONFIG")
 }
 
+db_compose_status() {
+  local service="$1"
+  docker compose ps --status running --format json "$service" 2>/dev/null \
+    | jq -r '.Health // .State // empty' 2>/dev/null || true
+}
+
+wait_db_compose_healthy() {
+  local service="$1"
+  local timeout_ms="${2:-60000}"
+  local deadline=$(( $(date +%s) * 1000 + timeout_ms ))
+  local status
+  while true; do
+    status="$(db_compose_status "$service")"
+    if [[ "$status" == "healthy" || "$status" == "running" ]]; then
+      return 0
+    fi
+    if (( $(date +%s) * 1000 >= deadline )); then
+      return 1
+    fi
+    sleep 2
+  done
+}
+
 check_db_runtime() {
   local active_when
   active_when="$(jq -r '.computationalChecks.runtimeValidation.db.activeWhen // "docker-compose.yml"' "$LOOP_CONFIG")"
@@ -175,15 +198,22 @@ check_db_runtime() {
     return
   fi
 
-  local service
+  local service health_timeout_ms status
   service="$(jq -r '.computationalChecks.runtimeValidation.db.service // "db"' "$LOOP_CONFIG")"
-  local status
-  status="$(docker compose ps --status running --format json "$service" 2>/dev/null | jq -r '.Health // .State // empty' 2>/dev/null || true)"
+  health_timeout_ms="$(jq -r '.computationalChecks.runtimeValidation.db.healthTimeoutMs // 60000' "$LOOP_CONFIG")"
+  status="$(db_compose_status "$service")"
   if [[ "$status" != "healthy" && "$status" != "running" ]]; then
-    # Only fail if apps/api exists (implementation phase)
     if [[ -d apps/api ]]; then
-      FAILURES+=("{\"type\":\"runtime\",\"message\":\"db service not healthy (status: ${status:-not running})\"}")
-      PASS=false
+      if jq -e --arg s "aih:dev:db:up" '.scripts[$s]' package.json >/dev/null 2>&1; then
+        npm run aih:dev:db:up >/dev/null 2>&1 || docker compose up -d "$service" >/dev/null 2>&1 || true
+      else
+        docker compose up -d "$service" >/dev/null 2>&1 || true
+      fi
+      if ! wait_db_compose_healthy "$service" "$health_timeout_ms"; then
+        status="$(db_compose_status "$service")"
+        FAILURES+=("{\"type\":\"runtime\",\"message\":\"db service not healthy (status: ${status:-not running})\"}")
+        PASS=false
+      fi
     fi
   fi
 
@@ -259,9 +289,9 @@ check_forbidden_patterns
 check_artifacts
 check_slice_test_requirements
 check_generated_test_case_coverage
+check_db_runtime
 check_npm_commands
 refresh_preview_web_after_build
-check_db_runtime
 check_stack_startup
 
 # Build JSON report

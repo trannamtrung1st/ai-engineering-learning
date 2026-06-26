@@ -25,7 +25,7 @@ import {
  * Flow B (testing plan §6): full event → waitlist entry → cancellation →
  * auto promotion → check-in.
  */
-describe("Flow B — waitlist promotion (AC-02, AC-03, FR-11, BR-07, FR-12)", () => {
+describe("Flow B — waitlist promotion (AC-02, AC-03, FR-11, BR-07, BR-08, FR-12, NFR-02)", () => {
   let ctx: E2EContext;
   let organizerToken: string;
 

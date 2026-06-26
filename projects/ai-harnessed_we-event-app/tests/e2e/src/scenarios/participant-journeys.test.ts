@@ -24,7 +24,7 @@ import {
  * Participant journey API contracts for web-participant-journeys slice:
  * registration-status after attendance, paginated my registrations (FR-28, FR-29).
  */
-describe("Participant journeys — registration status and my registrations (FR-10, FR-28, FR-29, FR-31, AC-15)", () => {
+describe("Participant journeys — registration status and my registrations (FR-10, FR-28, FR-29, FR-31, AC-15, AC-16, NFR-04)", () => {
   let ctx: E2EContext;
   let organizerToken: string;
 
@@ -72,7 +72,7 @@ describe("Participant journeys — registration status and my registrations (FR-
     assert.equal(status.registration.state, "Attended");
   });
 
-  it("GET /me/registrations returns paginated envelope with gating context (FR-31, NFR-16)", async () => {
+  it("GET /me/registrations returns paginated envelope with gating context (FR-31, FR-29, AC-16, NFR-04, NFR-16)", async () => {
     const participantSub = randomUUID();
     const participantToken = await signDevToken(ctx.app, participantSub, "Participant");
 
