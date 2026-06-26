@@ -570,7 +570,12 @@
         "apps/web/src/lib/status-tokens.ts",
         "apps/web/src/app/globals.css"
       ],
-      "description": "Distinct semantic colors for all event lifecycle states and missing registration terminal states; EventStateBadge uses badgeStatus; extend tokens in globals.css and status-tokens.ts."
+      "description": "Distinct semantic colors for all event lifecycle states and missing registration terminal states; EventStateBadge uses badgeStatus; extend tokens in globals.css and status-tokens.ts.",
+      "testRequirements": {
+        "acceptanceTags": [
+          "NFR-06"
+        ]
+      }
     },
     {
       "id": "e2e-acceptance-suite",

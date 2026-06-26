@@ -1,0 +1,277 @@
+{
+  "productItemId": "NFR-06",
+  "version": 1,
+  "docFingerprint": "sha256:dd4156aac81bc7c84fb99bc512700e0e281e4b2cfc16a1c70c375415bf93c472",
+  "generatedAt": "2026-06-26T05:36:12Z",
+  "cases": [
+    {
+      "id": "TC-NFR-06-001",
+      "category": "functional",
+      "layer": "unit",
+      "priority": "P0",
+      "traceability": ["NFR-06"],
+      "title": "getLiveQueryPolicy applies organizerDashboard polling shorter than event list discovery",
+      "preconditions": [
+        "query-config module exported per docs/ui-ux/02-ui-framework-tech-stack.md data refresh behavior"
+      ],
+      "steps": [
+        "Call getLiveQueryPolicy('organizerDashboard') and getLiveQueryPolicy('eventList')",
+        "Compare refetchInterval values",
+        "Verify organizerDashboard interval is strictly less than eventList interval"
+      ],
+      "expected": "organizerDashboard refetchInterval is shorter than eventList periodic refresh; organizer operations surfaces poll more frequently than participant event discovery per near-real-time requirement",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-06-002",
+      "category": "functional",
+      "layer": "unit",
+      "priority": "P0",
+      "traceability": ["NFR-06"],
+      "title": "useLiveQuery merges shared NFR-06 policy into TanStack Query options",
+      "preconditions": [
+        "useLiveQuery hook available with mode parameter",
+        "Test harness can inspect useQuery invocation or resulting query options"
+      ],
+      "steps": [
+        "Invoke useLiveQuery with mode organizerDashboard, queryKey, and queryFn",
+        "Inspect applied refetchInterval, staleTime, refetchOnWindowFocus, and refetchIntervalInBackground"
+      ],
+      "expected": "useQuery receives getLiveQueryPolicy(organizerDashboard) values: refetchInterval matches LIVE_REFRESH_INTERVALS.organizerDashboard, staleTime is half the interval, refetchOnWindowFocus is true, refetchIntervalInBackground is true",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-06-003",
+      "category": "functional",
+      "layer": "browser",
+      "priority": "P0",
+      "traceability": ["NFR-06", "FR-22"],
+      "title": "Organizer operations dashboard KPI values update without manual page reload",
+      "preconditions": [
+        "OrganizerAdmin authenticated on event operations dashboard for an active RegistrationOpen or in-progress event",
+        "Dashboard displays KPI blocks for registrations, waitlist, check-ins, feedback, and eligibility per docs/ui-ux/09-page-list.md",
+        "Background registration or check-in activity occurs via separate API client"
+      ],
+      "steps": [
+        "Record baseline KPI values visible on dashboard",
+        "Trigger a registration or check-in that changes operational totals",
+        "Keep dashboard page open and wait for organizerDashboard polling interval to elapse",
+        "Observe KPI blocks without clicking browser refresh"
+      ],
+      "expected": "KPI values reflect latest operational totals after automatic poll cycle; organizer sees near-real-time dashboard updates without manual full-page reload",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-06-004",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["NFR-06", "FR-22"],
+      "title": "GET event dashboard returns updated registration count within one organizer refresh window",
+      "preconditions": [
+        "Published event RegistrationOpen with known baseline registration count",
+        "OrganizerAdmin actor authorized for event scope",
+        "Fixed clock or controlled timing for deterministic poll window assertions"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/dashboard and record registration KPI",
+        "Complete a new participant registration via API",
+        "Re-query dashboard endpoint within organizerDashboard refresh interval"
+      ],
+      "expected": "Dashboard response registration metric increments to reflect new registration; backend data is fresh enough for near-real-time organizer visibility on subsequent read",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-06-005",
+      "category": "non-functional",
+      "layer": "unit",
+      "priority": "P0",
+      "traceability": ["NFR-06"],
+      "title": "organizerDashboard polling interval meets near-real-time tech stack target",
+      "preconditions": [
+        "LIVE_REFRESH_INTERVALS constant defined per docs/ui-ux/02-ui-framework-tech-stack.md"
+      ],
+      "steps": [
+        "Read LIVE_REFRESH_INTERVALS.organizerDashboard value",
+        "Verify it is materially shorter than eventList (60s) and suitable for active event operations",
+        "Confirm staleTime derives as floor(refetchInterval / 2)"
+      ],
+      "expected": "organizerDashboard refetchInterval is 5000ms (5 seconds) with staleTime 2500ms; interval supports near-real-time organizer operations during event-active windows without excessive server load",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-06-006",
+      "category": "non-functional",
+      "layer": "browser",
+      "priority": "P1",
+      "traceability": ["NFR-06", "FR-22"],
+      "title": "Dashboard live refresh shows layout-preserving loading state during background poll",
+      "preconditions": [
+        "Organizer operations dashboard open with existing KPI data rendered",
+        "Network throttling or slow API response configured to observe in-flight fetch"
+      ],
+      "steps": [
+        "Wait for automatic poll cycle to trigger isFetching state",
+        "Observe KPI region during background refresh",
+        "Verify page does not collapse to spinner-only layout"
+      ],
+      "expected": "Existing KPI layout preserved with skeleton or subtle refreshing indicator per production UI quality bar; no full-page spinner-only state during periodic dashboard refresh",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-06-007",
+      "category": "non-functional",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["NFR-06", "FR-22", "AC-05"],
+      "title": "Dashboard check-in KPI reflects new check-in within organizer refresh window",
+      "preconditions": [
+        "Event in valid check-in window with known baseline check-in count on dashboard",
+        "OrganizerAdmin monitoring dashboard metrics",
+        "Participant with Registered status eligible for check-in"
+      ],
+      "steps": [
+        "Record dashboard check-in KPI baseline",
+        "POST check-in for participant via API",
+        "Re-fetch dashboard within organizerDashboard polling interval"
+      ],
+      "expected": "Check-in KPI increments on subsequent dashboard read; waitlist and registration KPIs remain consistent with authoritative backend state",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-06-008",
+      "category": "non-functional",
+      "layer": "browser",
+      "priority": "P1",
+      "traceability": ["NFR-06"],
+      "title": "Live dashboard updates use throttled polite aria-live region for assistive tech",
+      "preconditions": [
+        "Organizer dashboard or live-query panel with aria-live region for status changes",
+        "Screen reader or accessibility inspector available"
+      ],
+      "steps": [
+        "Open organizer live dashboard surface",
+        "Trigger multiple poll cycles that change connection or KPI summary text",
+        "Inspect aria-live attribute and announcement frequency"
+      ],
+      "expected": "aria-live is polite (not assertive); announcements are throttled so rapid polling does not flood assistive tech per docs/ui-ux/13-accessibility-basics.md near-real-time update guidance",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-06-009",
+      "category": "non-functional",
+      "layer": "unit",
+      "priority": "P1",
+      "traceability": ["NFR-06"],
+      "title": "Dashboard polling uses TanStack Query server state not module-level mock stores",
+      "preconditions": [
+        "Organizer dashboard page component under test",
+        "Production UI quality bar forbids hardcoded fixture arrays in page components"
+      ],
+      "steps": [
+        "Inspect organizer dashboard data fetching implementation",
+        "Verify useLiveQuery or equivalent TanStack Query hook fetches from /api/v1",
+        "Confirm no module-level mock event or KPI stores drive displayed values"
+      ],
+      "expected": "Dashboard KPI data sourced from live API via TanStack Query polling policy; no hardcoded const events or mock KPI arrays in page components",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-06-010",
+      "category": "edge",
+      "layer": "unit",
+      "priority": "P1",
+      "traceability": ["NFR-06"],
+      "title": "checkInConsole mode pauses background polling while organizerDashboard continues in background",
+      "preconditions": [
+        "getLiveQueryPolicy exported for all LiveRefreshMode values"
+      ],
+      "steps": [
+        "Call getLiveQueryPolicy('checkInConsole') and getLiveQueryPolicy('organizerDashboard')",
+        "Compare refetchIntervalInBackground for each mode"
+      ],
+      "expected": "checkInConsole refetchIntervalInBackground is false (polling pauses when tab backgrounded); organizerDashboard refetchIntervalInBackground is true; check-in console uses shortest interval (3s) per active-window policy",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-06-011",
+      "category": "edge",
+      "layer": "browser",
+      "priority": "P1",
+      "traceability": ["NFR-06", "FR-22"],
+      "title": "Returning to dashboard tab triggers immediate refetch on window focus",
+      "preconditions": [
+        "Organizer dashboard open with useLiveQuery policy refetchOnWindowFocus true",
+        "Backend state changed while browser tab was in background"
+      ],
+      "steps": [
+        "Open organizer dashboard and note KPI values",
+        "Switch to another browser tab for longer than one poll interval",
+        "Change operational totals via API while tab is backgrounded",
+        "Return focus to dashboard tab"
+      ],
+      "expected": "Dashboard refetches immediately on window focus and displays updated KPI values without waiting for next scheduled poll interval",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-06-012",
+      "category": "edge",
+      "layer": "browser",
+      "priority": "P1",
+      "traceability": ["NFR-06", "NFR-13"],
+      "title": "Failed dashboard poll shows inline error recovery and resumes polling on retry",
+      "preconditions": [
+        "Organizer dashboard using useLiveQuery with organizerDashboard mode",
+        "API temporarily unavailable or returns 5xx during one poll cycle"
+      ],
+      "steps": [
+        "Simulate API failure during scheduled dashboard poll",
+        "Observe error state and retry affordance",
+        "Restore API availability and click retry or wait for next poll",
+        "Verify KPI data recovers"
+      ],
+      "expected": "Inline error with retry action displayed per production UI quality bar; polling resumes after recovery; organizer receives immediate failure feedback without requiring full page reload per NFR-13",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-06-013",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P2",
+      "traceability": ["NFR-06", "FR-22", "AC-04"],
+      "title": "Rapid concurrent registrations reflected as consistent final KPI after poll coalescence",
+      "preconditions": [
+        "Event RegistrationOpen with available capacity for multiple concurrent registrations",
+        "OrganizerAdmin polling dashboard endpoint at organizerDashboard interval",
+        "Multiple participants register in parallel within one refresh window"
+      ],
+      "steps": [
+        "Record dashboard registration KPI baseline",
+        "Fire parallel registration requests from distinct participants",
+        "Query dashboard after one organizerDashboard interval elapses"
+      ],
+      "expected": "Dashboard registration KPI equals authoritative total Registered count; no stale partial count persists after poll cycle despite concurrent writes during the window",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-06-014",
+      "category": "edge",
+      "layer": "browser",
+      "priority": "P2",
+      "traceability": ["NFR-06"],
+      "title": "Design-system live-query panel demonstrates organizerDashboard polling policy",
+      "preconditions": [
+        "web-design-system-shell slice deployed with LiveQueryStatus component",
+        "API /api/v1/health reachable via same-origin proxy"
+      ],
+      "steps": [
+        "Navigate to design-system preview page",
+        "Verify live-query panel shows Connected or Degraded badge",
+        "Wait at least one organizerDashboard interval (5s)",
+        "Observe Refreshing indicator and updated request id without manual reload"
+      ],
+      "expected": "Live query panel polls health endpoint every 5 seconds using shared NFR-06 policy; demonstrates near-real-time infrastructure before full organizer dashboard ships in web-organizer-journeys slice",
+      "edgeCase": false
+    }
+  ]
+}
