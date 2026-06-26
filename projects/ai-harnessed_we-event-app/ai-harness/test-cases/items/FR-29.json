@@ -1,0 +1,341 @@
+{
+  "productItemId": "FR-29",
+  "version": 1,
+  "docFingerprint": "sha256:5acfc070b54f77ab2ad0b419735f860b390f8a4b88a52809f83094992e0b94d3",
+  "generatedAt": "2026-06-26T05:17:58Z",
+  "cases": [
+    {
+      "id": "TC-FR-29-001",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-29", "FR-31", "AC-13"],
+      "title": "Participant retrieves first page of own registrations with default pagination",
+      "preconditions": [
+        "Participant registered for at least three events in varied states",
+        "Authenticated Participant JWT"
+      ],
+      "steps": [
+        "GET /api/v1/me/registrations?page=1 with Participant Authorization bearer",
+        "Inspect response envelope and first item fields"
+      ],
+      "expected": "HTTP 200 with paginated envelope (items, page=1, pageSize=20, total, totalPages); items.length <= 20; each item includes registrationId, eventId, eventName, state, and updatedAt per API design example; satisfies FR-29 paginated list of own registrations across events and FR-31 total count metadata",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-29-002",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-29", "AC-13", "FR-31"],
+      "title": "Participant navigates to page 2 of my registrations list",
+      "preconditions": [
+        "Participant with at least 21 registrations across events (exceeds default pageSize of 20)",
+        "Authenticated Participant JWT",
+        "Registrations seeded with distinct updatedAt values for sort verification"
+      ],
+      "steps": [
+        "GET /api/v1/me/registrations?page=1&pageSize=20 and record total and totalPages",
+        "GET /api/v1/me/registrations?page=2&pageSize=20",
+        "Compare page-2 items to expected second slice ordered by updatedAt descending"
+      ],
+      "expected": "Page-2 response has page=2, pageSize=20, total matching page-1 total, totalPages=ceil(total/20), items are the correct contiguous slice per testing plan my registrations paginated scenario and AC-13",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-29-003",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-29"],
+      "title": "My registrations list aggregates registrations across multiple events",
+      "preconditions": [
+        "Participant registered for Event A (Registered) and Event B (Waitlisted) and Event C (CancelledByUser)",
+        "Authenticated Participant JWT"
+      ],
+      "steps": [
+        "GET /api/v1/me/registrations?page=1&pageSize=20 with Participant token",
+        "Verify items reference three distinct eventId values with correct eventName and state per event"
+      ],
+      "expected": "Single paginated response contains registrations from all enrolled events; each row ties registration to its event via eventId and eventName; cross-event aggregation satisfies FR-29 view registrations across events",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-29-004",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-29"],
+      "title": "Participant filters my registrations list by registration state",
+      "preconditions": [
+        "Participant with at least one Registered and one Waitlisted registration",
+        "Authenticated Participant JWT"
+      ],
+      "steps": [
+        "GET /api/v1/me/registrations?state=Registered&page=1&pageSize=20 with Participant token",
+        "GET /api/v1/me/registrations?state=Waitlisted&page=1&pageSize=20 with same token"
+      ],
+      "expected": "Registered filter returns only items with state Registered; Waitlisted filter returns only Waitlisted items; total reflects filtered row count; optional state filter on GET /me/registrations per API paginated list endpoints table",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-29-005",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["FR-29", "AC-13"],
+      "title": "My registrations default sort orders by updatedAt descending",
+      "preconditions": [
+        "Participant with at least three registrations with known updatedAt timestamps",
+        "Authenticated Participant JWT"
+      ],
+      "steps": [
+        "GET /api/v1/me/registrations?page=1&pageSize=20 without explicit sort parameter",
+        "Verify items[0].updatedAt >= items[1].updatedAt >= items[2].updatedAt"
+      ],
+      "expected": "Default sort updatedAt:desc applied; most recently updated registration appears first; matches API design default sort for GET /me/registrations",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-29-006",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-29", "FR-26"],
+      "title": "My registrations list includes current and past registration states",
+      "preconditions": [
+        "Participant with active Registered registration and terminal CancelledByUser or Expired registration",
+        "Authenticated Participant JWT"
+      ],
+      "steps": [
+        "GET /api/v1/me/registrations?page=1&pageSize=20 with Participant token",
+        "Locate items for active and terminal-state registrations"
+      ],
+      "expected": "Both current (active) and past (terminal) registrations appear in the list with correct state values; page list requirement to list current and past registrations with status is satisfied",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-29-007",
+      "category": "functional",
+      "layer": "browser",
+      "priority": "P0",
+      "traceability": ["FR-29", "AC-14"],
+      "title": "My Registrations page renders server-driven paginated status list",
+      "preconditions": [
+        "Participant with more than 20 registrations across events",
+        "Authenticated participant on /registrations (My Registrations) route"
+      ],
+      "steps": [
+        "Navigate to My Registrations page",
+        "Verify pagination controls and registration rows are visible",
+        "Click Next to advance to page 2",
+        "Observe network requests during page change"
+      ],
+      "expected": "Page renders at most pageSize registration rows with event name and status; prev/next pagination controls present; page change triggers single GET /me/registrations with updated page parameter per page list and AC-14 server-driven listing",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-29-008",
+      "category": "functional",
+      "layer": "browser",
+      "priority": "P0",
+      "traceability": ["FR-29"],
+      "title": "My Registrations page shows status timeline and contextual quick actions",
+      "preconditions": [
+        "Participant with Registered registration eligible for check-in and Attended registration eligible for feedback",
+        "Authenticated participant on My Registrations page"
+      ],
+      "steps": [
+        "Open My Registrations list",
+        "Inspect registration row for check-in-eligible event",
+        "Inspect registration row for feedback-eligible event"
+      ],
+      "expected": "Each row displays registration status timeline or status badge; check-in quick action visible when window open and state permits; feedback quick action visible when applicable per page list My registrations requirements",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-29-009",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-29", "FR-31", "AC-13"],
+      "title": "My registrations service returns paginated envelope with correct total and page boundaries",
+      "preconditions": [
+        "Known count of registrations for participant (e.g. 25 total across events)",
+        "Participant actor context",
+        "PostgreSQL test database with seeded registrations ordered by updatedAt desc"
+      ],
+      "steps": [
+        "Invoke participant registration list service with { page: 1, pageSize: 20 }",
+        "Invoke same service with { page: 2, pageSize: 20 }",
+        "Compare items.length, total, and totalPages to seeded row count"
+      ],
+      "expected": "Page 1 returns total=25, totalPages=2, items.length=20; page 2 returns items.length=5; total reflects full matching count before paging per integration target paginated list queries and FR-31",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-29-010",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-29", "AC-13"],
+      "title": "My registrations page beyond last page returns empty items with valid metadata",
+      "preconditions": [
+        "Participant with five registrations (totalPages=1 at default pageSize 20)",
+        "Authenticated Participant JWT"
+      ],
+      "steps": [
+        "GET /api/v1/me/registrations?page=1&pageSize=20 and record totalPages",
+        "GET /api/v1/me/registrations?page={totalPages+1}&pageSize=20"
+      ],
+      "expected": "Page beyond totalPages returns items: [] with unchanged total, totalPages, page, and pageSize per AC-13 paginated list boundary behavior for GET /me/registrations",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-29-011",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-29"],
+      "title": "Invalid pagination parameters on my registrations return 400 INVALID_PAGINATION",
+      "preconditions": [
+        "Authenticated Participant JWT",
+        "Participant with at least one registration"
+      ],
+      "steps": [
+        "GET /api/v1/me/registrations?page=0&pageSize=20 with Participant token",
+        "GET /api/v1/me/registrations?page=1&pageSize=101 with Participant token",
+        "GET /api/v1/me/registrations?page=abc&pageSize=20 with Participant token"
+      ],
+      "expected": "Each invalid request returns HTTP 400 with error code INVALID_PAGINATION; no partial registration data returned; pagination contract enforces page >= 1 and pageSize max 100",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-29-012",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["FR-29"],
+      "title": "Participant with no registrations receives empty paginated envelope",
+      "preconditions": [
+        "Newly registered participant with zero event registrations",
+        "Authenticated Participant JWT"
+      ],
+      "steps": [
+        "GET /api/v1/me/registrations?page=1&pageSize=20 with Participant token"
+      ],
+      "expected": "HTTP 200 with items: [], total=0, totalPages=0 (or equivalent), page=1, pageSize=20; empty registration history is a valid outcome with intact envelope",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-29-013",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["FR-29"],
+      "title": "State filter with no matching registrations returns empty items",
+      "preconditions": [
+        "Participant with only Registered registrations (no Waitlisted)",
+        "Authenticated Participant JWT"
+      ],
+      "steps": [
+        "GET /api/v1/me/registrations?state=Waitlisted&page=1&pageSize=20 with Participant token"
+      ],
+      "expected": "HTTP 200 with items: [], total=0, and valid page metadata; filter applied before paging without leaking non-matching states",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-29-014",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P2",
+      "traceability": ["FR-29", "AC-15"],
+      "title": "Unauthenticated my registrations API request returns 401",
+      "preconditions": [
+        "API running",
+        "No Authorization header"
+      ],
+      "steps": [
+        "GET /api/v1/me/registrations?page=1&pageSize=20 without credentials"
+      ],
+      "expected": "HTTP 401 with typed error envelope; unauthenticated access to protected GET /me/registrations rejected per AC-15",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-29-015",
+      "category": "edge",
+      "layer": "browser",
+      "priority": "P1",
+      "traceability": ["FR-29", "AC-14"],
+      "title": "My Registrations empty state shown when participant has no registrations",
+      "preconditions": [
+        "Authenticated participant with zero registrations",
+        "My Registrations route available"
+      ],
+      "steps": [
+        "Navigate to My Registrations page",
+        "Observe list region and pagination controls"
+      ],
+      "expected": "Page shows empty state messaging (not an error); no registration rows rendered; pagination hidden or indicates zero total; user can navigate to event discovery to register",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-29-016",
+      "category": "non-functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-29", "AC-13", "NFR-16"],
+      "title": "My registrations never returns more than pageSize items per request",
+      "preconditions": [
+        "Participant with more than 500 registrations across events (or maximum practical seed count exceeding pageSize)",
+        "Authenticated Participant JWT"
+      ],
+      "steps": [
+        "GET /api/v1/me/registrations?page=1&pageSize=20",
+        "GET /api/v1/me/registrations?page=2&pageSize=20",
+        "Verify items.length on each response"
+      ],
+      "expected": "Each response items.length <= pageSize regardless of total row count; satisfies testing plan registrations list beyond capacity scenario and NFR-16 single-page constraint",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-29-017",
+      "category": "non-functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-29", "AC-14"],
+      "title": "My registrations listing served by single paginated API call without N+1 fan-out",
+      "preconditions": [
+        "Participant with registrations across multiple events",
+        "Authenticated participant JWT",
+        "Ability to observe API calls during my registrations list load"
+      ],
+      "steps": [
+        "Load my registrations data via service or HTTP for page 1",
+        "Count list endpoint calls during the operation",
+        "Verify no per-event registration-status or event-detail fan-out loops"
+      ],
+      "expected": "Exactly one paginated GET /me/registrations call serves the list; no per-event registration fetch loops per testing plan my registrations paginated scenario and AC-14 server-driven requirement",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-29-018",
+      "category": "non-functional",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["FR-29", "NFR-16", "FR-31"],
+      "title": "My registrations endpoint returns single page within acceptable time when total exceeds 500",
+      "preconditions": [
+        "Database seeded with >500 registrations for one participant across events",
+        "Authenticated Participant JWT",
+        "Normal load test environment per NFR-16"
+      ],
+      "steps": [
+        "GET /api/v1/me/registrations?page=1&pageSize=20 and measure response time",
+        "Confirm response contains only one page of items with correct total metadata"
+      ],
+      "expected": "Response completes within acceptable response time threshold for paginated list endpoints; items.length=20; total reflects full count without returning all rows in one payload per NFR-16 and database index on participant_id, updated_at DESC",
+      "edgeCase": false
+    }
+  ]
+}
