@@ -131,3 +131,4 @@ Append-only log of completed iterations.
 - 2026-06-26T04:40:53Z | FR-09 | testgen_passed
 - 2026-06-26T04:42:40Z | FR-10 | testgen_passed
 - 2026-06-26T04:44:49Z | FR-11 | testgen_passed
+- 2026-06-26T04:46:01Z | FR-12 | testgen_passed
