@@ -7,6 +7,8 @@ import {
   DOMAIN_EVENTS,
   EVENT_STATE_TRANSITIONS,
   EVENT_STATES,
+  EXTENDED_BUSINESS_RULE_IDS,
+  EXTENDED_RULE_TO_ERROR_CODE,
   REGISTRATION_STATE_TRANSITIONS,
   REGISTRATION_STATES,
   RULE_TO_ERROR_CODE,
@@ -167,6 +169,27 @@ describe("validation rule identifiers", () => {
   it("BR-12 is an invariant rule without a public error code", () => {
     assert.equal(BUSINESS_RULE_IDS.BR_12, "BR-12");
     assert.equal(RULE_TO_ERROR_CODE["BR-12"], null);
+  });
+
+  it("BR-06b maps concurrent promotion guard to WAITLIST_ORDER_CONFLICT", () => {
+    assert.equal(EXTENDED_BUSINESS_RULE_IDS.BR_06B, "BR-06b");
+    assert.equal(
+      EXTENDED_RULE_TO_ERROR_CODE["BR-06b"],
+      VALIDATION_ERROR_CODES.WAITLIST_ORDER_CONFLICT,
+    );
+  });
+
+  it("BR-08b is an atomic seat-release invariant without a public error code", () => {
+    assert.equal(EXTENDED_BUSINESS_RULE_IDS.BR_08B, "BR-08b");
+    assert.equal(EXTENDED_RULE_TO_ERROR_CODE["BR-08b"], null);
+  });
+
+  it("covers BR-04a/b, BR-06a/b, and BR-08a/b extended sub-rule identifiers", () => {
+    const extendedIds = Object.values(EXTENDED_BUSINESS_RULE_IDS);
+    assert.equal(extendedIds.length, 6);
+    for (const ruleId of extendedIds) {
+      assert.ok(ruleId in EXTENDED_RULE_TO_ERROR_CODE);
+    }
   });
 
   it("covers BR-01 through BR-22 with stable error codes where defined", () => {

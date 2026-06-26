@@ -263,6 +263,24 @@ export const BUSINESS_RULE_IDS = {
 export type BusinessRuleId = (typeof BUSINESS_RULE_IDS)[keyof typeof BUSINESS_RULE_IDS];
 
 /**
+ * Extended sub-rule identifiers (BR-04a/b, BR-06a/b, BR-08a/b) from
+ * docs/technical/08-validation-rules.md.
+ */
+export const EXTENDED_BUSINESS_RULE_IDS = {
+  BR_04A: "BR-04a",
+  BR_04B: "BR-04b",
+  BR_06A: "BR-06a",
+  BR_06B: "BR-06b",
+  BR_08A: "BR-08a",
+  BR_08B: "BR-08b",
+} as const;
+
+export type ExtendedBusinessRuleId =
+  (typeof EXTENDED_BUSINESS_RULE_IDS)[keyof typeof EXTENDED_BUSINESS_RULE_IDS];
+
+export type AnyBusinessRuleId = BusinessRuleId | ExtendedBusinessRuleId;
+
+/**
  * Canonical validation error codes surfaced to clients.
  *
  * Only rules that explicitly define error codes in the catalog are included.
@@ -323,4 +341,19 @@ export const RULE_TO_ERROR_CODE: Record<BusinessRuleId, ValidationErrorCode | nu
     "BR-21": VALIDATION_ERROR_CODES.EVENT_RULE_CHANGE_FORBIDDEN,
     "BR-22": VALIDATION_ERROR_CODES.AUDIT_REQUIRED_FOR_CRITICAL_CHANGE,
   };
+
+/**
+ * Error codes for extended sub-rules where the catalog defines a public code.
+ */
+export const EXTENDED_RULE_TO_ERROR_CODE: Record<
+  ExtendedBusinessRuleId,
+  ValidationErrorCode | null
+> = {
+  "BR-04a": null,
+  "BR-04b": null,
+  "BR-06a": null,
+  "BR-06b": VALIDATION_ERROR_CODES.WAITLIST_ORDER_CONFLICT,
+  "BR-08a": null,
+  "BR-08b": null,
+};
 
