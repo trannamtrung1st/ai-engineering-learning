@@ -20,7 +20,12 @@
         "apps/web/package.json",
         "packages/domain/package.json"
       ],
-      "description": "Bootstrap npm workspaces monorepo: apps/api, apps/web, packages/domain, packages/config."
+      "description": "Bootstrap npm workspaces monorepo: apps/api, apps/web, packages/domain, packages/config.",
+      "testRequirements": {
+        "acceptanceTags": [
+          "NFR-14"
+        ]
+      }
     },
     {
       "id": "docker-compose-db",
