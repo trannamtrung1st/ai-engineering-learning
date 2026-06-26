@@ -1,0 +1,365 @@
+{
+  "productItemId": "AC-13",
+  "version": 1,
+  "docFingerprint": "sha256:8baa9d6bbbb0500a77788a39f6ca1d164ddad256856ee4b85c9652b6a2a2d392",
+  "generatedAt": "2026-06-26T04:21:25Z",
+  "cases": [
+    {
+      "id": "TC-AC-13-001",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["AC-13", "FR-28", "FR-31"],
+      "title": "Events list page 2 returns correct slice with total and totalPages",
+      "preconditions": [
+        "At least 13 published events visible to the requesting actor (more than default pageSize of 12)",
+        "Authenticated participant or public access per GET /events visibility rules"
+      ],
+      "steps": [
+        "GET /api/v1/events?page=1&pageSize=12&sort=startAt:asc and record total and totalPages",
+        "GET /api/v1/events?page=2&pageSize=12&sort=startAt:asc",
+        "Compare page-2 items to the expected second slice ordered by startAt ascending"
+      ],
+      "expected": "HTTP 200; page-2 response has page=2, pageSize=12, total matching page-1 total, totalPages=ceil(total/12), items.length <= 12, and items are the correct contiguous slice per testing plan scenario matrix",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-13-002",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["AC-13", "FR-30", "FR-31"],
+      "title": "Event registrations list returns paginated envelope with default sort",
+      "preconditions": [
+        "Event with multiple registrations in varied states",
+        "Authenticated OrganizerAdmin with event scope"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/registrations?page=1&pageSize=20",
+        "Inspect response envelope fields and items ordering"
+      ],
+      "expected": "HTTP 200 with items, page=1, pageSize=20, total, totalPages; items sorted by updatedAt descending per API design default; total reflects all matching registrations before paging",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-13-003",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["AC-13", "FR-29", "FR-31"],
+      "title": "My registrations list returns paginated participant registrations",
+      "preconditions": [
+        "Participant with registrations across at least two events",
+        "Authenticated participant JWT"
+      ],
+      "steps": [
+        "GET /api/v1/me/registrations?page=1&pageSize=20",
+        "Verify each item includes registrationId, eventId, eventName, state, and updatedAt"
+      ],
+      "expected": "HTTP 200 with paginated envelope; items contain only current actor's registrations; total and totalPages match row count; default sort updatedAt:desc applied",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-13-004",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["AC-13", "FR-30", "FR-31"],
+      "title": "Audit logs list returns ordered paginated rows with total count",
+      "preconditions": [
+        "Event with multiple audit log entries from critical config changes",
+        "Authenticated OrganizerAdmin with event scope"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/audit-logs?page=1&pageSize=20",
+        "Verify ordering and envelope metadata"
+      ],
+      "expected": "HTTP 200; items ordered by createdAt descending; total equals full matching audit row count; totalPages computed correctly per testing plan audit logs paginated scenario",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-13-005",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["AC-13", "FR-30", "FR-31"],
+      "title": "Waitlist list returns paginated entries ordered by position",
+      "preconditions": [
+        "Full event with waitlist enabled and multiple Waitlisted participants",
+        "Authenticated OrganizerAdmin with event scope"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/waitlist?page=1&pageSize=20"
+      ],
+      "expected": "HTTP 200 with paginated envelope; items sorted by position ascending; total reflects waitlist queue length",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-13-006",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["AC-13", "FR-30", "FR-31"],
+      "title": "Attendance list returns paginated check-in rows",
+      "preconditions": [
+        "Event with multiple recorded check-ins",
+        "Authenticated OrganizerAdmin or OrganizerStaff with event scope"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/attendance?page=1&pageSize=20"
+      ],
+      "expected": "HTTP 200 with paginated envelope; items sorted by checkinAt descending; total matches attendance row count",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-13-007",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["AC-13", "FR-30", "FR-31"],
+      "title": "Status history list returns paginated transition records",
+      "preconditions": [
+        "Event with registration status changes recorded in status history",
+        "Authenticated OrganizerAdmin with event scope"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/status-history?page=1&pageSize=20"
+      ],
+      "expected": "HTTP 200 with paginated envelope; items sorted by createdAt descending; total reflects all history rows for the event scope",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-13-008",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["AC-13", "FR-30", "FR-31"],
+      "title": "Eligibility list returns paginated envelope with default sort",
+      "preconditions": [
+        "Completed event with evaluated eligibility rows",
+        "Authenticated OrganizerAdmin with event scope"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/eligibility?page=1&pageSize=20"
+      ],
+      "expected": "HTTP 200 with items, page, pageSize, total, totalPages; items sorted by participantId ascending per endpoint default",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-13-009",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["AC-13", "FR-31"],
+      "title": "Paginated list endpoints share consistent envelope shape",
+      "preconditions": [
+        "Seeded data covering events, registrations, waitlist, attendance, eligibility, audit-logs, status-history, and me/registrations",
+        "Valid JWT tokens for participant and organizer actors"
+      ],
+      "steps": [
+        "Issue paginated GET requests to each documented list endpoint with page=1 and endpoint default pageSize",
+        "Assert each response body contains items (array), page, pageSize, total, and totalPages"
+      ],
+      "expected": "All eight paginated endpoints return the same envelope structure defined in API design section 3; no bare array responses",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-13-010",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["AC-13"],
+      "title": "Page beyond totalPages returns empty items with valid metadata",
+      "preconditions": [
+        "Paginated list endpoint with known total row count (e.g. GET /events with total <= 12)",
+        "Valid authentication where required"
+      ],
+      "steps": [
+        "GET list endpoint with page=1 and pageSize=20; record total and totalPages",
+        "GET same endpoint with page=totalPages+1 and same pageSize"
+      ],
+      "expected": "HTTP 200; beyond-last-page response has items: [], page equals requested page, pageSize unchanged, total and totalPages match page-1 metadata per AC-13 and API design section 3",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-13-011",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["AC-13"],
+      "title": "Invalid pagination parameters return 400 INVALID_PAGINATION",
+      "preconditions": [
+        "Any paginated list endpoint accessible to authenticated actor",
+        "Valid JWT where endpoint requires auth"
+      ],
+      "steps": [
+        "GET with page=0&pageSize=20",
+        "GET with page=1&pageSize=101",
+        "GET with page=abc&pageSize=20"
+      ],
+      "expected": "Each invalid request returns HTTP 400 with error.code INVALID_PAGINATION for non-integer, page < 1, or pageSize above max (100) per API design validation rules",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-13-012",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["AC-13", "NFR-16"],
+      "title": "Registrations list never returns more than pageSize items",
+      "preconditions": [
+        "Event with total registrations exceeding configured pageSize (e.g. 25 rows, pageSize=20)",
+        "Authenticated OrganizerAdmin with event scope"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/registrations?page=1&pageSize=20",
+        "GET /api/v1/events/{eventId}/registrations?page=2&pageSize=20"
+      ],
+      "expected": "Page 1 items.length=20; page 2 items.length=5; neither page exceeds pageSize; total=25 and totalPages=2 per testing plan registrations list beyond capacity scenario",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-13-013",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["AC-13", "FR-31"],
+      "title": "totalPages uses ceiling division when total is not divisible by pageSize",
+      "preconditions": [
+        "List endpoint with exactly total=25 rows available",
+        "pageSize=20"
+      ],
+      "steps": [
+        "Request page=1 with pageSize=20 and read totalPages",
+        "Request page=2 and verify non-empty items"
+      ],
+      "expected": "totalPages=2 (ceil(25/20)); page 2 contains remaining 5 items; metadata consistent across both pages",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-13-014",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P2",
+      "traceability": ["AC-13", "FR-31"],
+      "title": "totalPages is 1 when total is zero",
+      "preconditions": [
+        "Event with no registrations (or empty result set after filters)",
+        "Authenticated OrganizerAdmin with event scope"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/registrations?page=1&pageSize=20"
+      ],
+      "expected": "HTTP 200 with items: [], total=0, totalPages=1 (or consistent zero-total convention), page=1, pageSize=20",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-13-015",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P2",
+      "traceability": ["AC-13"],
+      "title": "Omitted page and pageSize use endpoint defaults",
+      "preconditions": [
+        "GET /events accessible with sufficient seeded events",
+        "Valid auth if required"
+      ],
+      "steps": [
+        "GET /api/v1/events without page or pageSize query parameters"
+      ],
+      "expected": "HTTP 200 with page=1, pageSize=12 (events endpoint default), and correctly paginated first slice",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-13-016",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P2",
+      "traceability": ["AC-13", "FR-28"],
+      "title": "Events list pagination respects optional q and state filters in total count",
+      "preconditions": [
+        "Mixed event catalog with searchable names and varied states",
+        "Authenticated actor with list visibility"
+      ],
+      "steps": [
+        "GET /api/v1/events?page=1&pageSize=12&q=workshop&state=RegistrationOpen",
+        "Compare total to unfiltered total"
+      ],
+      "expected": "total and totalPages reflect only rows matching q and state filters; items.length <= pageSize; filtered pagination metadata is internally consistent",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-13-017",
+      "category": "non-functional",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["AC-13", "NFR-16", "FR-31"],
+      "title": "Paginated list returns single page within acceptable time when total exceeds 500 rows",
+      "preconditions": [
+        "Database seeded with >500 rows for a paginated endpoint (e.g. audit-logs or registrations)",
+        "OrganizerAdmin actor with event scope",
+        "Test environment uses fixed clock and deterministic fixtures per testing plan section 7"
+      ],
+      "steps": [
+        "Record start time",
+        "GET paginated list with page=1 and pageSize=20",
+        "Record elapsed response time"
+      ],
+      "expected": "HTTP 200 with exactly one page of items (length <= pageSize); response completes within acceptable latency threshold per NFR-16; total reflects full matching row count without loading all rows into the response body",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-13-018",
+      "category": "non-functional",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["AC-13", "FR-31"],
+      "title": "total and totalPages remain stable across sequential page requests",
+      "preconditions": [
+        "List endpoint with at least three pages of data at pageSize=10",
+        "Authenticated actor with list access"
+      ],
+      "steps": [
+        "GET page=1, page=2, and page=3 with pageSize=10",
+        "Compare total and totalPages on each response"
+      ],
+      "expected": "total and totalPages are identical on every page; only items array differs between pages; supports reliable client-side pagination controls",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-13-019",
+      "category": "non-functional",
+      "layer": "unit",
+      "priority": "P1",
+      "traceability": ["AC-13"],
+      "title": "Pagination query validator rejects out-of-range page and pageSize",
+      "preconditions": [
+        "Unit test harness for pagination input validation module"
+      ],
+      "steps": [
+        "Validate page=0, page=-1, pageSize=0, pageSize=101, and non-numeric strings",
+        "Validate page=1, pageSize=100 as acceptable inputs"
+      ],
+      "expected": "Invalid inputs produce validation failure mapped to INVALID_PAGINATION; valid boundary inputs (page=1, pageSize=100) pass validation per API design guardrails",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-13-020",
+      "category": "non-functional",
+      "layer": "unit",
+      "priority": "P2",
+      "traceability": ["AC-13", "FR-31"],
+      "title": "Pagination envelope builder computes totalPages as ceil(total/pageSize)",
+      "preconditions": [
+        "Pure function or mapper that builds paginated response envelope from items, page, pageSize, and total"
+      ],
+      "steps": [
+        "Build envelope for total=0, pageSize=20",
+        "Build envelope for total=25, pageSize=20",
+        "Build envelope for total=40, pageSize=20"
+      ],
+      "expected": "totalPages=1 when total=0; totalPages=2 when total=25; totalPages=2 when total=40; page and pageSize echoed correctly in envelope",
+      "edgeCase": false
+    }
+  ]
+}
