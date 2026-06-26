@@ -27,9 +27,9 @@
       },
       {
         "id": "mock-events",
-        "pattern": "mockEvents|const events = \\[",
-        "paths": ["apps/web"],
-        "message": "Hardcoded event fixtures forbidden in page components"
+        "pattern": "mockEvents|MOCK_EVENTS|const (mock)?[Ee]vents = \\[\\s*\\{",
+        "paths": ["apps/web/src/app"],
+        "message": "Hardcoded event fixture arrays forbidden in page components"
       },
       {
         "id": "lorem-ipsum",
