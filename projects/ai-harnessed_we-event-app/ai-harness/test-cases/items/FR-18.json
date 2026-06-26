@@ -2,12 +2,13 @@
   "productItemId": "FR-18",
   "version": 1,
   "docFingerprint": "sha256:c8464a2daaed16ecde6f5b245103fd0bd13f2d0d45cf241a272a9e3647b9b40e",
-  "generatedAt": "2026-06-26T04:57:41Z",
+  "generatedAt": "2026-06-26T12:22:20Z",
   "cases": [
     {
       "id": "TC-FR-18-001",
       "category": "functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["FR-18"],
       "title": "Organizer Admin configures feedback as mandatory during event creation in Draft",
@@ -28,6 +29,7 @@
       "id": "TC-FR-18-002",
       "category": "functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
       "traceability": ["FR-18"],
       "title": "POST /events persists feedbackRequired true and GET detail returns mandatory policy",
@@ -46,6 +48,7 @@
       "id": "TC-FR-18-003",
       "category": "functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["FR-18"],
       "title": "Organizer Admin configures feedback as optional during event creation",
@@ -65,6 +68,7 @@
       "id": "TC-FR-18-004",
       "category": "functional",
       "layer": "integration",
+      "technique": "state-transition",
       "priority": "P0",
       "traceability": ["FR-18"],
       "title": "Organizer Admin updates feedbackRequired on Draft event before registration opens",
@@ -84,6 +88,7 @@
       "id": "TC-FR-18-005",
       "category": "functional",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["FR-18"],
       "title": "Organizer Admin toggles mandatory/optional feedback in event setup Section 5",
@@ -103,9 +108,10 @@
       "id": "TC-FR-18-006",
       "category": "functional",
       "layer": "integration",
+      "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["FR-18", "BR-14", "BR-18"],
-      "title": "Mandatory feedback config enforces eligibility requirement downstream",
+      "traceability": ["FR-18", "BR-14", "BR-18", "AC-09"],
+      "title": "Testing-plan §3 eligibility pass/fail reflects mandatory feedbackRequired config",
       "preconditions": [
         "Event completed with ruleConfig.feedbackRequired true",
         "Participant registration in Attended state with no Feedback submission",
@@ -115,13 +121,14 @@
         "Run eligibilityEvaluator for the attended participant without feedback",
         "Inspect CertificateEligibility result and reason payload"
       ],
-      "expected": "Eligibility resolves to NotEligible with reason code NOT_ELIGIBLE_FEEDBACK or FEEDBACK_REQUIRED per BR-14 and BR-18; passAllRules guard fails because feedback is mandatory but incomplete",
+      "expected": "Testing-plan §3 eligibility row satisfied: outcome is NotEligible with reason code NOT_ELIGIBLE_FEEDBACK or FEEDBACK_REQUIRED per BR-14 and BR-18; passAllRules guard fails because feedback is mandatory but incomplete",
       "edgeCase": false
     },
     {
       "id": "TC-FR-18-007",
       "category": "functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P0",
       "traceability": ["FR-18", "BR-14", "BR-17"],
       "title": "Optional feedback config does not block eligibility when feedback absent",
@@ -141,6 +148,7 @@
       "id": "TC-FR-18-008",
       "category": "functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P0",
       "traceability": ["FR-18", "BR-14", "AC-09"],
       "title": "GET eligibility/me reflects mandatory feedback policy from event rule config",
@@ -159,25 +167,28 @@
     {
       "id": "TC-FR-18-009",
       "category": "functional",
-      "layer": "unit",
-      "priority": "P1",
-      "traceability": ["FR-18"],
-      "title": "EventRuleConfig validator accepts boolean feedbackRequired with valid feedback window",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["FR-18", "BR-14", "AC-09"],
+      "title": "Flow A lifecycle with mandatory feedbackRequired blocks eligibility without submission",
       "preconditions": [
-        "Pure validator for EventRuleConfig or ruleConfig schema",
-        "feedbackRequired true and false with feedbackOpenAt < feedbackCloseAt"
+        "E2E Flow A progressed: draft created with feedbackRequired true, published, registered, checked in, event completed",
+        "Participant Attended with feedback window open but no feedback submitted",
+        "Participant and OrganizerAdmin tokens from prior flow steps"
       ],
       "steps": [
-        "Validate ruleConfig with feedbackRequired true and chronologically valid feedback window",
-        "Validate ruleConfig with feedbackRequired false and same window"
+        "GET /api/v1/events/{eventId} and confirm ruleConfig.feedbackRequired true",
+        "GET /api/v1/events/{eventId}/eligibility/me with participant token after event completion"
       ],
-      "expected": "Both configurations pass API schema and domain validation; feedbackRequired is stored as boolean without coercion errors",
+      "expected": "Flow A completes through check-in and completion; eligibility/me returns NotEligible with feedback-related reason because mandatory feedback policy configured at draft persists through lifecycle",
       "edgeCase": false
     },
     {
       "id": "TC-FR-18-010",
       "category": "edge",
       "layer": "integration",
+      "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["FR-18", "BR-21", "FR-25"],
       "title": "OrganizerStaff cannot change feedbackRequired policy",
@@ -197,6 +208,7 @@
       "id": "TC-FR-18-011",
       "category": "edge",
       "layer": "e2e",
+      "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["FR-18", "BR-21", "FR-25"],
       "title": "Participant cannot modify event feedback policy via PATCH",
@@ -215,6 +227,7 @@
       "id": "TC-FR-18-012",
       "category": "edge",
       "layer": "integration",
+      "technique": "flow-c",
       "priority": "P0",
       "traceability": ["FR-18", "BR-22", "AC-11"],
       "title": "Changing feedbackRequired after registration opens requires audit with reason",
@@ -232,26 +245,28 @@
     {
       "id": "TC-FR-18-013",
       "category": "edge",
-      "layer": "integration",
+      "layer": "e2e",
+      "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["FR-18"],
       "title": "Reject feedback policy save when feedback window has openAt >= closeAt",
       "preconditions": [
-        "Authenticated OrganizerAdmin actor",
+        "OrganizerAdmin JWT",
         "Draft event create or update payload with feedbackRequired true",
         "feedbackOpenAt equal to or after feedbackCloseAt"
       ],
       "steps": [
-        "Attempt eventService.create or update with invalid feedback window while setting feedbackRequired",
+        "POST /api/v1/events or PATCH /api/v1/events/{eventId} with invalid feedback window while setting feedbackRequired",
         "Verify no event_rule_configs row created or updated with invalid window"
       ],
-      "expected": "Validation fails with HTTP 400 and deterministic error; feedback_required and window are not persisted; satisfies TimeWindow invariant openAt < closeAt",
+      "expected": "HTTP 400 with deterministic invalid-input error code; feedback_required and window are not persisted; satisfies TimeWindow invariant openAt < closeAt",
       "edgeCase": true
     },
     {
       "id": "TC-FR-18-014",
       "category": "edge",
       "layer": "integration",
+      "technique": "state-transition",
       "priority": "P1",
       "traceability": ["FR-18", "BR-22"],
       "title": "Toggle feedbackRequired from mandatory to optional after registration open increments config version",
@@ -269,17 +284,18 @@
     {
       "id": "TC-FR-18-015",
       "category": "edge",
-      "layer": "e2e",
+      "layer": "integration",
+      "technique": "concurrency",
       "priority": "P1",
       "traceability": ["FR-18", "BR-22"],
       "title": "Concurrent feedbackRequired updates after registration open produce consistent config",
       "preconditions": [
         "Event RegistrationOpen with feedbackRequired false",
-        "Two parallel PATCH requests from authorized OrganizerAdmin with distinct reason payloads"
+        "Two parallel update requests from authorized OrganizerAdmin with distinct reason payloads"
       ],
       "steps": [
-        "Launch two concurrent PATCH /api/v1/events/{eventId} calls toggling feedbackRequired differently",
-        "GET event detail and audit logs after both settle"
+        "Launch two parallel eventService.update calls toggling feedbackRequired differently against real Postgres",
+        "Read event_rule_configs and audit logs after both settle"
       ],
       "expected": "Exactly one update wins; final feedback_required and version are consistent; no partial config state; audit log contains single critical-change record for the successful update",
       "edgeCase": true
@@ -287,17 +303,18 @@
     {
       "id": "TC-FR-18-016",
       "category": "non-functional",
-      "layer": "integration",
+      "layer": "e2e",
+      "technique": "flow-c",
       "priority": "P1",
       "traceability": ["FR-18", "AC-11", "BR-22"],
       "title": "Critical feedbackRequired change after registration open writes immutable audit record",
       "preconditions": [
         "Event RegistrationOpen",
-        "OrganizerAdmin actor with valid reasonCode and reasonText"
+        "OrganizerAdmin JWT with valid reasonCode and reasonText"
       ],
       "steps": [
-        "Update feedbackRequired from false to true with reason payload",
-        "Query GET /api/v1/events/{eventId}/audit-logs filtered by entityType EventRuleConfig"
+        "PATCH /api/v1/events/{eventId} setting feedbackRequired from false to true with reason payload",
+        "GET /api/v1/events/{eventId}/audit-logs?entityType=EventRuleConfig"
       ],
       "expected": "Audit record includes actorId, actorRole OrganizerAdmin, action event.rule_config.updated, entityType EventRuleConfig, before.feedbackRequired false, after.feedbackRequired true, reasonCode, reasonText, and occurredAt timestamp",
       "edgeCase": false
@@ -306,6 +323,7 @@
       "id": "TC-FR-18-017",
       "category": "non-functional",
       "layer": "integration",
+      "technique": "module-integration",
       "priority": "P1",
       "traceability": ["FR-18", "BR-14", "BR-18"],
       "title": "Eligibility evaluation order applies feedbackRequired before final result persist",
@@ -324,6 +342,7 @@
       "id": "TC-FR-18-018",
       "category": "non-functional",
       "layer": "browser",
+      "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["FR-18"],
       "title": "Feedback completion tracker shows mandatory outstanding count when feedbackRequired true",
@@ -343,6 +362,7 @@
       "id": "TC-FR-18-019",
       "category": "non-functional",
       "layer": "e2e",
+      "technique": "http-contract",
       "priority": "P1",
       "traceability": ["FR-18", "FR-22"],
       "title": "Event dashboard exposes configured feedback policy for organizer review",
@@ -354,7 +374,7 @@
         "GET /api/v1/events/{eventId}/dashboard with organizer token",
         "Verify feedback policy section or rule summary in response"
       ],
-      "expected": "Dashboard response includes feedbackRequired true and feedback window metadata so organizer can confirm mandatory policy is active per FR-22 operational overview",
+      "expected": "Dashboard returns HTTP 200 with feedbackRequired true and feedback window metadata so organizer can confirm mandatory policy is active per FR-22 operational overview",
       "edgeCase": false
     }
   ]
