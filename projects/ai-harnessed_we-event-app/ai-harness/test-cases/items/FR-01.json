@@ -1,0 +1,242 @@
+{
+  "productItemId": "FR-01",
+  "version": 1,
+  "docFingerprint": "sha256:f44c92d5b8e8208272ca20445a8ed22605865e55c323b1677af54c0c2242f917",
+  "generatedAt": "2026-06-26T04:27:28Z",
+  "cases": [
+    {
+      "id": "TC-FR-01-001",
+      "category": "functional",
+      "layer": "integration",
+      "priority": "P0",
+      "traceability": ["FR-01"],
+      "title": "Organizer Admin creates event with basic information in Draft state",
+      "preconditions": [
+        "Authenticated OrganizerAdmin actor with organization scope",
+        "Target organization exists in organizations table",
+        "Valid ruleConfig with non-negative capacity and chronologically consistent registration, check-in, and feedback windows"
+      ],
+      "steps": [
+        "Invoke eventService.create with name, description, startAt, endAt, location, organizationId, and ruleConfig",
+        "Read persisted event entity and linked EventRuleConfig snapshot"
+      ],
+      "expected": "Event is created with state Draft; returned snapshot includes eventId, organizationId (organizing unit), name, description, location, startAt, endAt, createdBy matching the admin actor, and associated ruleConfig; satisfies Workflow A step 1 (admin creates event in Draft)",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-01-002",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-01"],
+      "title": "POST /api/v1/events returns Draft event with all basic fields",
+      "preconditions": [
+        "Valid OrganizerAdmin JWT scoped to the organization",
+        "Request body includes name, description, startAt, endAt, location, organizationId, and valid ruleConfig"
+      ],
+      "steps": [
+        "POST /api/v1/events with Authorization bearer token and JSON body containing basic event information",
+        "GET /api/v1/events/{eventId} with the same organizer token"
+      ],
+      "expected": "POST returns HTTP 200 with versioned entity snapshot: state Draft, name, description, location, startAt, endAt, organizationId, and eventId; GET detail returns the same basic fields",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-01-003",
+      "category": "functional",
+      "layer": "browser",
+      "priority": "P1",
+      "traceability": ["FR-01"],
+      "title": "Organizer Admin creates event via create/edit form with basic fields",
+      "preconditions": [
+        "Web app running with organizer authenticated as OrganizerAdmin",
+        "Organizer navigates to event create page"
+      ],
+      "steps": [
+        "Fill event name, description, start/end time, location, and organizing unit (if exposed in form)",
+        "Submit save/create draft action",
+        "Observe confirmation and event detail or list entry"
+      ],
+      "expected": "UI shows newly created draft event with entered name, description, time, location, and organizing unit visible on detail or list view without data loss",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-01-004",
+      "category": "functional",
+      "layer": "unit",
+      "priority": "P1",
+      "traceability": ["FR-01"],
+      "title": "validateCreateInput accepts complete basic information payload",
+      "preconditions": [
+        "CreateEventInput with non-blank name, valid ISO-8601 startAt and endAt where startAt < endAt",
+        "description and location provided",
+        "organizationId set to a valid UUID",
+        "ruleConfig passes capacity and window validators"
+      ],
+      "steps": [
+        "Call validateCreateInput with the complete payload"
+      ],
+      "expected": "Function returns normalized input with trimmed name, description, and location; organizationId preserved; no validation error thrown",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-01-005",
+      "category": "edge",
+      "layer": "unit",
+      "priority": "P0",
+      "traceability": ["FR-01"],
+      "title": "validateCreateInput rejects missing or blank event name",
+      "preconditions": [
+        "CreateEventInput with name absent, empty, or whitespace-only",
+        "All other fields otherwise valid"
+      ],
+      "steps": [
+        "Call validateCreateInput with the invalid name payload"
+      ],
+      "expected": "ApiError thrown with code INVALID_INPUT, HTTP mapping 400, and message indicating name is required; no event entity produced",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-01-006",
+      "category": "edge",
+      "layer": "unit",
+      "priority": "P0",
+      "traceability": ["FR-01"],
+      "title": "validateCreateInput rejects startAt on or after endAt",
+      "preconditions": [
+        "CreateEventInput with valid name and ruleConfig",
+        "startAt equal to or later than endAt (fixed timestamps)"
+      ],
+      "steps": [
+        "Call validateCreateInput with invalid schedule"
+      ],
+      "expected": "ApiError thrown with semantic validation (422) indicating startAt must be before endAt per database constraint start_at < end_at and domain model TimeWindow rules",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-01-007",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-01", "FR-25"],
+      "title": "OrganizerStaff and Participant cannot create events",
+      "preconditions": [
+        "Authenticated JWT for OrganizerStaff and separately for Participant",
+        "Otherwise valid POST /api/v1/events body with basic fields"
+      ],
+      "steps": [
+        "POST /api/v1/events with OrganizerStaff bearer token",
+        "POST /api/v1/events with Participant bearer token"
+      ],
+      "expected": "Both requests return HTTP 403 unauthorized; no Draft event is created; permission matrix Create/edit event draft is OrganizerAdmin only",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-01-008",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-01", "FR-25"],
+      "title": "Unauthenticated POST /events is rejected before domain execution",
+      "preconditions": [
+        "No Authorization header on request",
+        "Valid create-event JSON body"
+      ],
+      "steps": [
+        "POST /api/v1/events without bearer token"
+      ],
+      "expected": "HTTP 401 unauthenticated response; event creation handler is not invoked; aligns with API auth-required principle for non-public endpoints",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-01-009",
+      "category": "edge",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["FR-01"],
+      "title": "Create event rejects unknown organizing unit organizationId",
+      "preconditions": [
+        "Authenticated OrganizerAdmin actor",
+        "organizationId UUID that does not exist in organizations table",
+        "Otherwise valid basic event payload"
+      ],
+      "steps": [
+        "Invoke eventService.create with the unknown organizationId"
+      ],
+      "expected": "Request fails with typed API error (404 or 400) referencing invalid organizationId; no event row persisted",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-01-010",
+      "category": "functional",
+      "layer": "e2e",
+      "priority": "P0",
+      "traceability": ["FR-01"],
+      "title": "Flow A lifecycle begins with draft event creation",
+      "preconditions": [
+        "OrganizerAdmin JWT",
+        "E2E fixture organization seeded",
+        "Valid ruleConfig suitable for subsequent publish and open-registration steps"
+      ],
+      "steps": [
+        "POST /api/v1/events with basic information to create Draft event",
+        "Verify response state is Draft before proceeding to publish in Flow A"
+      ],
+      "expected": "Created event is in Draft state with complete basic metadata, enabling Workflow A steps 2–4 (configure rules, validate completeness, publish)",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-01-011",
+      "category": "non-functional",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["FR-01"],
+      "title": "Create endpoint validates input strictly before persisting to database",
+      "preconditions": [
+        "OrganizerAdmin actor context",
+        "Create payload with invalid ruleConfig window where registrationOpenAt >= registrationCloseAt"
+      ],
+      "steps": [
+        "Attempt eventService.create with invalid ruleConfig",
+        "Query events table for a row matching the attempted name"
+      ],
+      "expected": "Validation fails with INVALID_INPUT or semantic 422 before any INSERT; no partial event or rule_config rows committed; API principle strict input validation before domain execution upheld",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-01-012",
+      "category": "edge",
+      "layer": "e2e",
+      "priority": "P1",
+      "traceability": ["FR-01"],
+      "title": "Create rejects malformed ISO-8601 timestamps in time fields",
+      "preconditions": [
+        "OrganizerAdmin JWT",
+        "Payload with name and location set but startAt or endAt is not valid ISO-8601"
+      ],
+      "steps": [
+        "POST /api/v1/events with invalid startAt or endAt string"
+      ],
+      "expected": "HTTP 400 with code INVALID_INPUT and field-level details; no Draft event created",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-01-013",
+      "category": "non-functional",
+      "layer": "integration",
+      "priority": "P1",
+      "traceability": ["FR-01", "FR-25"],
+      "title": "Event module enforces RBAC at service boundary for create command",
+      "preconditions": [
+        "Actor context with role other than OrganizerAdmin",
+        "Valid create payload"
+      ],
+      "steps": [
+        "Invoke create command through API layer with non-admin actor",
+        "Observe authorization guard outcome"
+      ],
+      "expected": "Access denied at API or service guard without mutating state; business invariants remain in domain services per module breakdown design principles",
+      "edgeCase": false
+    }
+  ]
+}
