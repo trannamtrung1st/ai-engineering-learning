@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-34",
   "version": 1,
-  "docFingerprint": "sha256:1795587dc6c00a1833c45415b462d73fd4b8426dae103e6bff17f76a3aee2f8b",
-  "generatedAt": "2026-06-26T12:48:01Z",
+  "docFingerprint": "sha256:32ba11492db28a31bc0f0f6dfba02adacb2f3f8674cf6e19ce91b104d3c20adc",
+  "generatedAt": "2026-06-27T00:00:00Z",
   "cases": [
     {
       "id": "TC-FR-34-001",
@@ -38,7 +38,7 @@
       ],
       "title": "After sign-out TopBar reflects unauthenticated state",
       "preconditions": [
-        "User previously signed in; TopBar account button showed display name",
+        "User previously signed in; TopBar account button showed display name from GET /me",
         "Sign-out completed via TopBar user menu"
       ],
       "steps": [
@@ -46,7 +46,7 @@
         "Verify account menu trigger no longer shows signed-in display name",
         "Confirm login page is reachable without redirect loop"
       ],
-      "expected": "TopBar no longer presents signed-in user chrome; display name hidden; user is in unauthenticated state consistent with cleared client session",
+      "expected": "TopBar no longer presents signed-in user chrome; display name hidden per app-layout-components; user is in unauthenticated state consistent with cleared client session",
       "edgeCase": false
     },
     {
@@ -61,14 +61,14 @@
       ],
       "title": "GET /api/v1/me without Authorization returns 401 after client session cleared",
       "preconditions": [
-        "User obtained valid JWT via POST /auth/login",
+        "User obtained valid JWT via POST /api/v1/auth/login",
         "Client session cleared (simulating sign-out: no Authorization header sent)"
       ],
       "steps": [
         "GET /api/v1/me without Authorization bearer header",
         "Inspect HTTP status and response envelope"
       ],
-      "expected": "HTTP 401 with standard unauthenticated error envelope; no profile or role data returned; cleared client session cannot access session endpoint per API design §2.6",
+      "expected": "HTTP 401 with standard unauthenticated error envelope (code, message, requestId); no profile or role data returned; cleared client session cannot access session endpoint per API design §2.6",
       "edgeCase": false
     },
     {
@@ -107,8 +107,8 @@
         "API design §2.6 auth endpoints available"
       ],
       "steps": [
-        "Inspect published auth routes for POST /auth/logout or equivalent revocation endpoint",
-        "Confirm documented auth surface includes register, login, and GET /me only (plus dev token when enabled)"
+        "Inspect published auth routes for POST /api/v1/auth/logout or equivalent revocation endpoint",
+        "Confirm documented auth surface includes POST /api/v1/auth/register, POST /api/v1/auth/login, GET /api/v1/me, and POST /api/v1/dev/token when DEV_AUTH_ENABLED"
       ],
       "expected": "No server logout/revocation endpoint in MVP; sign-out contract is client-side JWT clearing per API design §2.6; FR-34 fulfilled without backend session invalidation",
       "edgeCase": false
@@ -125,7 +125,7 @@
       ],
       "title": "Sign-out simulation via omitted bearer matches unauthenticated middleware rejection",
       "preconditions": [
-        "Valid JWT previously issued via login",
+        "Valid JWT previously issued via POST /api/v1/auth/login",
         "Integration test harness can call protected routes with and without Authorization header"
       ],
       "steps": [
@@ -177,7 +177,7 @@
       "steps": [
         "Select sign out from TopBar user menu while in organizer area",
         "Observe redirect destination",
-        "Attempt to navigate directly to an organizer-only route"
+        "Attempt to navigate directly to an organizer-only route (e.g. event dashboard or GET /api/v1/admin/status via UI)"
       ],
       "expected": "JWT cleared; redirect to /login; organizer routes no longer accessible without re-authentication; role and event-scope context removed from client session",
       "edgeCase": false
@@ -199,7 +199,7 @@
       ],
       "steps": [
         "Sign out from TopBar user menu",
-        "Navigate to /login and sign in with original credentials",
+        "Navigate to /login and sign in with original credentials via POST /api/v1/auth/login",
         "Open My Registrations"
       ],
       "expected": "Sign-out clears session; re-login issues new JWT; protected route accessible again; signup → login → view flow repeatable across sessions per AC-16 and Flow 0b",
@@ -267,7 +267,7 @@
         "Navigate directly to a protected participant route such as /my-registrations",
         "Observe browser URL and page content"
       ],
-      "expected": "User redirected to /login; intended destination preserved as return URL query parameter; protected page content does not render; consistent with AC-15 unauthenticated route handling after FR-34 session clear",
+      "expected": "User redirected to /login; intended destination preserved as return URL query parameter per page-list; protected page content does not render; consistent with AC-15 unauthenticated route handling after FR-34 session clear",
       "edgeCase": true
     },
     {
@@ -281,7 +281,7 @@
       ],
       "title": "Retained JWT string still authenticates server until expiry in MVP (no revocation)",
       "preconditions": [
-        "User logged in and JWT value captured before client sign-out",
+        "User logged in via POST /api/v1/auth/login and JWT value captured before client sign-out",
         "MVP has no server-side token revocation per API design §2.6"
       ],
       "steps": [
