@@ -109,16 +109,21 @@ function writeAssistantDelta(event, state, outfileFd) {
   const text = extractAssistantText(event);
   if (!text) return;
 
-  // stream-partial-output may send cumulative text; emit only the new suffix.
+  // stream-partial-output sends token deltas then a cumulative snapshot per turn.
+  // turnText tracks only the current turn; reset on tool_call completed / final assistant.
   let delta = text;
-  if (state.assistantText && text.startsWith(state.assistantText)) {
-    delta = text.slice(state.assistantText.length);
-    state.assistantText = text;
+  if (state.turnText && text.startsWith(state.turnText)) {
+    delta = text.slice(state.turnText.length);
+    state.turnText = text;
   } else {
-    state.assistantText = (state.assistantText ?? "") + text;
+    state.turnText = (state.turnText ?? "") + text;
   }
 
   writeAssistantText(delta, outfileFd);
+}
+
+function resetAssistantTurn(state) {
+  state.turnText = "";
 }
 
 function handleStreamEvent(event, state, options, outfileFd) {
@@ -134,7 +139,7 @@ function handleStreamEvent(event, state, options, outfileFd) {
     case "assistant": {
       // Partial deltas include timestamp_ms; the final cumulative message does not.
       if (event.timestamp_ms === undefined) {
-        state.assistantText = "";
+        resetAssistantTurn(state);
         break;
       }
 
@@ -143,6 +148,9 @@ function handleStreamEvent(event, state, options, outfileFd) {
     }
 
     case "tool_call":
+      if (event.subtype === "completed") {
+        resetAssistantTurn(state);
+      }
       if (!options.verbose) break;
       if (event.subtype === "started") {
         writeStderr(yellow(`[tool] start  ${extractToolLabel(event)}`));
@@ -176,7 +184,7 @@ async function main() {
 
   const agentBin = options.agentArgs[0];
   const agentArgs = options.agentArgs.slice(1);
-  const state = { result: null, assistantText: "" };
+  const state = { result: null, turnText: "" };
 
   fs.mkdirSync(path.dirname(options.outfile), { recursive: true });
   const outfileFd = fs.openSync(options.outfile, "w");
