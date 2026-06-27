@@ -5,7 +5,7 @@
     "commitOnPass": true
   },
   "agent": {
-    "timeoutMs": 1200000,
+    "timeoutMs": 3600000,
     "idleTimeoutMs": 300000
   },
   "signals": {

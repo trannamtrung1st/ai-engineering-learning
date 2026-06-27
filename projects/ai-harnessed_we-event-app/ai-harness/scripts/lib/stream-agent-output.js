@@ -15,7 +15,7 @@ const path = require("node:path");
 
 const AGENT_TIMEOUT_EXIT = 124;
 const DEFAULT_IDLE_TIMEOUT_MS = 300_000;
-const DEFAULT_MAX_TIMEOUT_MS = 1_200_000;
+const DEFAULT_MAX_TIMEOUT_MS = 3_600_000;
 const TIMEOUT_POLL_MS = 5_000;
 
 function colorEnabled() {
