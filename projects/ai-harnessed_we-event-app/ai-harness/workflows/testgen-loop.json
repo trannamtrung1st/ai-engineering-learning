@@ -5,7 +5,9 @@
   },
   "agent": {
     "timeoutMs": 3600000,
-    "idleTimeoutMs": 300000
+    "idleTimeoutMs": 300000,
+    "signalGraceMs": 15000,
+    "resultGraceMs": 5000
   },
   "signals": {
     "complete": "TESTGEN_COMPLETE",

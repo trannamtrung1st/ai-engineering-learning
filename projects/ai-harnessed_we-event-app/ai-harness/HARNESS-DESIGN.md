@@ -23,7 +23,7 @@ Concise index for the 12 harness components. Referenced by `docs/technical/13-do
 | Browser MCP | `.cursor/mcp.json`, `docs/browser-mcp.md` |
 | Startup verification | `scripts/verify-stack.sh` |
 | Runtime | `ralph-loop.json` → `runtimeValidation` (db, api, web) |
-| Agent timeout | `ralph-loop.json` / `testgen-loop.json` → `agent.idleTimeoutMs` (default 5m stream idle), `agent.timeoutMs` (default 1h max wall); override `AIH_AGENT_IDLE_TIMEOUT_MS` / `AIH_AGENT_TIMEOUT_MS` |
+| Agent timeout | `ralph-loop.json` / `testgen-loop.json` → `agent.idleTimeoutMs` (default 5m stream idle), `agent.timeoutMs` (default 1h max wall), `agent.signalGraceMs` / `agent.resultGraceMs` (early exit after completion signals / result event); override `AIH_AGENT_IDLE_TIMEOUT_MS` / `AIH_AGENT_TIMEOUT_MS` / `AIH_AGENT_SIGNAL_GRACE_MS` / `AIH_AGENT_RESULT_GRACE_MS` |
 
 ## Ralph loop
 

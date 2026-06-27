@@ -81,7 +81,8 @@ Append one line to `ai-harness/state/progress.md`:
 |---|---|
 | MCP not available | Run `agent mcp list`; enable with `agent mcp enable playwright` |
 | Web unreachable | `npm run aih:preview` then `npm run aih:preview:verify` |
-| Stale Next cache | `npm run aih:preview:down && rm -rf apps/web/.next && npm run aih:preview` |
+| Stale Next cache | `npm run aih:preview:down`; `rm -rf apps/web/.next`; `npm run aih:preview` (separate commands — never pipe preview through `tail`) |
+| Loop stuck after `SLICE_DONE` | Orphaned shell from `aih:preview \| tail` — run preview commands separately; harness now auto-terminates the agent process tree after completion signals |
 | Force MCP on implementer for any slice | `AIH_BROWSER_MCP=1 npm run aih:once` |
 | Skip browser test gate | `AIH_SKIP_BROWSER_TEST=1 npm run aih:once` |
 | Run browser test only | `npm run aih:browser-test -- <slice-id>` |

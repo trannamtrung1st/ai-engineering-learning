@@ -3,12 +3,19 @@
  * Harness adapter: spawn Cursor agent with stream-json, print assistant deltas
  * live to stdout, and append the same text to --outfile for signal parsing.
  *
+ * On completion signals (SLICE_DONE, REVIEW_PASS, etc.) or a stream `result`
+ * event, waits a short grace period then kills the agent process tree so
+ * orphaned shell/MCP children cannot block the Ralph loop.
+ *
  * Usage:
  *   node stream-agent-output.js --outfile path [--verbose] \
- *     [--idle-timeout-ms N] [--max-timeout-ms N] -- agent -p ... prompt
+ *     [--idle-timeout-ms N] [--max-timeout-ms N] \
+ *     [--signal-grace-ms N] [--result-grace-ms N] \
+ *     [--signals SLICE_DONE,REVIEW_PASS,...] \
+ *     -- agent -p ... prompt
  */
 
-const { spawn } = require("node:child_process");
+const { spawn, execSync } = require("node:child_process");
 const { createInterface } = require("node:readline");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -16,7 +23,23 @@ const path = require("node:path");
 const AGENT_TIMEOUT_EXIT = 124;
 const DEFAULT_IDLE_TIMEOUT_MS = 300_000;
 const DEFAULT_MAX_TIMEOUT_MS = 3_600_000;
+const DEFAULT_SIGNAL_GRACE_MS = 15_000;
+const DEFAULT_RESULT_GRACE_MS = 5_000;
 const TIMEOUT_POLL_MS = 5_000;
+const SIGNAL_SCAN_TAIL_CHARS = 4096;
+
+const DEFAULT_COMPLETION_SIGNALS = [
+  "SLICE_DONE",
+  "SLICE_BLOCKED",
+  "REVIEW_PASS",
+  "REVIEW_FAIL",
+  "BROWSER_TEST_PASS",
+  "BROWSER_TEST_FAIL",
+  "TESTGEN_DONE",
+  "TESTGEN_BLOCKED",
+  "TESTGEN_COMPLETE",
+  "COMPLETE",
+];
 
 function colorEnabled() {
   if (process.env.NO_COLOR || process.env.AIH_NO_COLOR) return false;
@@ -43,6 +66,57 @@ function parsePositiveInt(value, fallback) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function parseSignalList(raw) {
+  if (!raw) return [...DEFAULT_COMPLETION_SIGNALS];
+  const signals = raw
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return signals.length > 0 ? signals : [...DEFAULT_COMPLETION_SIGNALS];
+}
+
+function buildCompletionSignalRe(signals) {
+  const escaped = signals.map((signal) =>
+    signal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+  );
+  return new RegExp(`(?:^|\\n)(${escaped.join("|")})\\b[^\\n]*`, "m");
+}
+
+function detectCompletionSignal(text, signalRe) {
+  if (!text) return null;
+  const tail =
+    text.length > SIGNAL_SCAN_TAIL_CHARS
+      ? text.slice(-SIGNAL_SCAN_TAIL_CHARS)
+      : text;
+  const match = signalRe.exec(tail);
+  return match ? match[0].trim() : null;
+}
+
+function listChildPids(pid) {
+  try {
+    return execSync(`pgrep -P ${pid}`, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] })
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((value) => Number.parseInt(value, 10))
+      .filter((value) => Number.isFinite(value) && value > 0);
+  } catch {
+    return [];
+  }
+}
+
+function killProcessTree(pid, signal = "SIGTERM") {
+  if (!pid || pid <= 0) return;
+  for (const childPid of listChildPids(pid)) {
+    killProcessTree(childPid, signal);
+  }
+  try {
+    process.kill(pid, signal);
+  } catch {
+    // already exited
+  }
+}
+
 function parseArgs(argv) {
   const options = {
     outfile: "",
@@ -55,6 +129,15 @@ function parseArgs(argv) {
       process.env.AIH_AGENT_TIMEOUT_MS,
       DEFAULT_MAX_TIMEOUT_MS,
     ),
+    signalGraceMs: parsePositiveInt(
+      process.env.AIH_AGENT_SIGNAL_GRACE_MS,
+      DEFAULT_SIGNAL_GRACE_MS,
+    ),
+    resultGraceMs: parsePositiveInt(
+      process.env.AIH_AGENT_RESULT_GRACE_MS,
+      DEFAULT_RESULT_GRACE_MS,
+    ),
+    signals: [...DEFAULT_COMPLETION_SIGNALS],
     agentArgs: [],
   };
 
@@ -73,6 +156,21 @@ function parseArgs(argv) {
     }
     if (arg === "--max-timeout-ms") {
       options.maxTimeoutMs = parsePositiveInt(argv[++i], options.maxTimeoutMs);
+      i += 1;
+      continue;
+    }
+    if (arg === "--signal-grace-ms") {
+      options.signalGraceMs = parsePositiveInt(argv[++i], options.signalGraceMs);
+      i += 1;
+      continue;
+    }
+    if (arg === "--result-grace-ms") {
+      options.resultGraceMs = parsePositiveInt(argv[++i], options.resultGraceMs);
+      i += 1;
+      continue;
+    }
+    if (arg === "--signals") {
+      options.signals = parseSignalList(argv[++i] ?? "");
       i += 1;
       continue;
     }
@@ -95,6 +193,7 @@ function parseArgs(argv) {
     throw new Error("agent command required after --");
   }
 
+  options.signalRe = buildCompletionSignalRe(options.signals);
   return options;
 }
 
@@ -147,13 +246,15 @@ function writeAssistantDelta(event, state, outfileFd) {
   }
 
   writeAssistantText(delta, outfileFd);
+  state.outfileText = (state.outfileText ?? "") + delta;
+  return detectCompletionSignal(state.outfileText, state.signalRe);
 }
 
 function resetAssistantTurn(state) {
   state.turnText = "";
 }
 
-function handleStreamEvent(event, state, options, outfileFd) {
+function handleStreamEvent(event, state, options, outfileFd, hooks) {
   state.touchActivity();
 
   switch (event.type) {
@@ -171,7 +272,10 @@ function handleStreamEvent(event, state, options, outfileFd) {
         break;
       }
 
-      writeAssistantDelta(event, state, outfileFd);
+      const signal = writeAssistantDelta(event, state, outfileFd);
+      if (signal) {
+        hooks.onCompletionSignal(signal);
+      }
       break;
     }
 
@@ -194,6 +298,7 @@ function handleStreamEvent(event, state, options, outfileFd) {
           dim(cyan(`[agent] ${event.subtype} duration=${event.duration_ms}ms error=${event.is_error}`)),
         );
       }
+      hooks.onResultEvent(event);
       break;
 
     default:
@@ -223,10 +328,14 @@ async function main() {
   const state = {
     result: null,
     turnText: "",
+    outfileText: "",
+    signalRe: options.signalRe,
     lastActivityMs: Date.now(),
     startedMs: Date.now(),
     timedOut: false,
     timeoutReason: "",
+    earlyExit: false,
+    completionPending: false,
     touchActivity() {
       this.lastActivityMs = Date.now();
     },
@@ -239,6 +348,8 @@ async function main() {
     let settled = false;
     let idleTimer;
     let maxTimer;
+    let shutdownTimer;
+    let killTimer;
     let child;
 
     const finish = (code) => {
@@ -246,11 +357,56 @@ async function main() {
       settled = true;
       clearInterval(idleTimer);
       clearInterval(maxTimer);
+      clearTimeout(shutdownTimer);
+      clearTimeout(killTimer);
       resolvePromise(code);
     };
 
-    const killForTimeout = (reason) => {
+    const terminateAgentTree = (reason) => {
       if (settled || !child || child.killed) return;
+      state.earlyExit = true;
+      state.completionPending = true;
+      if (options.verbose) {
+        writeStderr(yellow(`[agent] terminating process tree (${reason})`));
+      }
+      killProcessTree(child.pid, "SIGTERM");
+      killTimer = setTimeout(() => {
+        if (!settled && child && !child.killed) {
+          killProcessTree(child.pid, "SIGKILL");
+        }
+      }, 2000);
+      killTimer.unref();
+    };
+
+    const scheduleShutdown = (reason, graceMs) => {
+      if (settled) return;
+      state.completionPending = true;
+      const dueAt = Date.now() + graceMs;
+      if (shutdownTimer && state.shutdownDueAt && dueAt >= state.shutdownDueAt) {
+        return;
+      }
+      state.shutdownDueAt = dueAt;
+      clearTimeout(shutdownTimer);
+      if (options.verbose) {
+        writeStderr(dim(yellow(`[agent] ${reason} — finishing in ${graceMs}ms`)));
+      }
+      shutdownTimer = setTimeout(() => {
+        terminateAgentTree(reason);
+      }, graceMs);
+    };
+
+    const hooks = {
+      onCompletionSignal(signalLine) {
+        scheduleShutdown(`completion signal (${signalLine})`, options.signalGraceMs);
+      },
+      onResultEvent(event) {
+        if (event.is_error) return;
+        scheduleShutdown(`result event (${event.subtype})`, options.resultGraceMs);
+      },
+    };
+
+    const killForTimeout = (reason) => {
+      if (settled || !child || child.killed || state.completionPending) return;
       state.timedOut = true;
       state.timeoutReason = reason;
       const ms =
@@ -262,12 +418,7 @@ async function main() {
       } catch {
         // outfile may already be closed
       }
-      child.kill("SIGTERM");
-      setTimeout(() => {
-        if (child && !child.killed) {
-          child.kill("SIGKILL");
-        }
-      }, 2000).unref();
+      terminateAgentTree(`timeout (${reason})`);
     };
 
     child = spawn(agentBin, agentArgs, {
@@ -278,12 +429,14 @@ async function main() {
     child.stderr.resume();
 
     idleTimer = setInterval(() => {
+      if (state.completionPending) return;
       if (Date.now() - state.lastActivityMs >= options.idleTimeoutMs) {
         killForTimeout("idle");
       }
     }, TIMEOUT_POLL_MS);
 
     maxTimer = setInterval(() => {
+      if (state.completionPending) return;
       if (Date.now() - state.startedMs >= options.maxTimeoutMs) {
         killForTimeout("max");
       }
@@ -298,7 +451,7 @@ async function main() {
       state.touchActivity();
 
       try {
-        handleStreamEvent(JSON.parse(trimmed), state, options, outfileFd);
+        handleStreamEvent(JSON.parse(trimmed), state, options, outfileFd, hooks);
       } catch {
         writeStderr(yellow(`[warn] non-json line: ${trimmed}`));
       }
@@ -309,6 +462,8 @@ async function main() {
       settled = true;
       clearInterval(idleTimer);
       clearInterval(maxTimer);
+      clearTimeout(shutdownTimer);
+      clearTimeout(killTimer);
       fs.closeSync(outfileFd);
       rejectPromise(
         new Error(
@@ -320,9 +475,15 @@ async function main() {
     child.on("close", (code) => {
       clearInterval(idleTimer);
       clearInterval(maxTimer);
+      clearTimeout(shutdownTimer);
+      clearTimeout(killTimer);
       fs.closeSync(outfileFd);
       if (state.timedOut) {
         finish(AGENT_TIMEOUT_EXIT);
+        return;
+      }
+      if (state.earlyExit && !state.result?.is_error) {
+        finish(0);
         return;
       }
       if (state.result?.is_error) {
@@ -337,7 +498,19 @@ async function main() {
   process.exit(exitCode);
 }
 
-main().catch((err) => {
-  console.error(err.message ?? err);
-  process.exit(1);
-});
+module.exports = {
+  AGENT_TIMEOUT_EXIT,
+  DEFAULT_COMPLETION_SIGNALS,
+  buildCompletionSignalRe,
+  detectCompletionSignal,
+  killProcessTree,
+  listChildPids,
+  parseSignalList,
+};
+
+if (require.main === module) {
+  main().catch((err) => {
+    console.error(err.message ?? err);
+    process.exit(1);
+  });
+}

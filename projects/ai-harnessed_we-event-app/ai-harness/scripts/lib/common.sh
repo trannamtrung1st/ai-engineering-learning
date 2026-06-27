@@ -240,6 +240,8 @@ print_harness_env() {
 AGENT_TIMEOUT_EXIT=124
 AGENT_TIMEOUT_DEFAULT_MS=3600000
 AGENT_IDLE_TIMEOUT_DEFAULT_MS=300000
+AGENT_SIGNAL_GRACE_DEFAULT_MS=15000
+AGENT_RESULT_GRACE_DEFAULT_MS=5000
 
 get_agent_timeout_ms() {
   local config="${1:-$LOOP_CONFIG}"
@@ -257,6 +259,29 @@ get_agent_idle_timeout_ms() {
     return
   fi
   jq -r ".agent.idleTimeoutMs // ${AGENT_IDLE_TIMEOUT_DEFAULT_MS}" "$config"
+}
+
+get_agent_signal_grace_ms() {
+  local config="${1:-${AIH_HARNESS_CONFIG:-$LOOP_CONFIG}}"
+  if [[ -n "${AIH_AGENT_SIGNAL_GRACE_MS:-}" ]]; then
+    echo "$AIH_AGENT_SIGNAL_GRACE_MS"
+    return
+  fi
+  jq -r ".agent.signalGraceMs // ${AGENT_SIGNAL_GRACE_DEFAULT_MS}" "$config"
+}
+
+get_agent_result_grace_ms() {
+  local config="${1:-${AIH_HARNESS_CONFIG:-$LOOP_CONFIG}}"
+  if [[ -n "${AIH_AGENT_RESULT_GRACE_MS:-}" ]]; then
+    echo "$AIH_AGENT_RESULT_GRACE_MS"
+    return
+  fi
+  jq -r ".agent.resultGraceMs // ${AGENT_RESULT_GRACE_DEFAULT_MS}" "$config"
+}
+
+agent_completion_signals_csv() {
+  local config="${1:-${AIH_HARNESS_CONFIG:-$LOOP_CONFIG}}"
+  jq -r '[.signals[]? // empty] | unique | join(",")' "$config"
 }
 
 agent_timeout_message() {
@@ -327,12 +352,21 @@ run_agent_with_timeout_ms() {
   local -a stream_cmd
 
   if [[ -n "$outfile" ]] && agent_stream_enabled && run_agent_uses_stream_json "$@"; then
-    local idle_ms
-    idle_ms="$(get_agent_idle_timeout_ms "${AIH_HARNESS_CONFIG:-$LOOP_CONFIG}")"
+    local idle_ms signal_grace_ms result_grace_ms signals_csv harness_config
+    harness_config="${AIH_HARNESS_CONFIG:-$LOOP_CONFIG}"
+    idle_ms="$(get_agent_idle_timeout_ms "$harness_config")"
+    signal_grace_ms="$(get_agent_signal_grace_ms "$harness_config")"
+    result_grace_ms="$(get_agent_result_grace_ms "$harness_config")"
+    signals_csv="$(agent_completion_signals_csv "$harness_config")"
     stream_cmd=(node "${HARNESS_ROOT}/scripts/lib/stream-agent-output.js" \
       --outfile "$outfile" \
       --idle-timeout-ms "$idle_ms" \
-      --max-timeout-ms "$timeout_ms")
+      --max-timeout-ms "$timeout_ms" \
+      --signal-grace-ms "$signal_grace_ms" \
+      --result-grace-ms "$result_grace_ms")
+    if [[ -n "$signals_csv" ]]; then
+      stream_cmd+=(--signals "$signals_csv")
+    fi
     if agent_verbose_enabled; then
       stream_cmd+=(--verbose)
     fi

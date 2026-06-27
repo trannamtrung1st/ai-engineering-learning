@@ -57,6 +57,16 @@ When the slice agent is `frontend` or `test`, Playwright MCP is available (`--ap
 
 See `ai-harness/docs/browser-mcp.md` for the full runbook. The harness will **re-verify** your work via a dedicated browser test agent gate after computational checks.
 
+### Preview stack shell commands (strict)
+
+The preview stack is **already running** for most harness iterations. Prefer `npm run aih:preview:verify` to confirm health.
+
+When you must restart preview:
+
+- Run `npm run aih:preview:down` and `npm run aih:preview` as **separate** shell commands — never chained with `&&` and **never piped through `tail` or `head`**
+- Do not wrap preview commands in subshell pipelines; orphaned `tail` processes can block the harness for minutes after `SLICE_DONE`
+- After starting preview, use `npm run aih:preview:verify` (exits) instead of waiting on `aih:preview` output
+
 ## Slice
 
 - **ID:** {{SLICE_ID}}
