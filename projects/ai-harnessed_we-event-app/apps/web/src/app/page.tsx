@@ -14,10 +14,10 @@ export default function HomePage() {
         actions={
           <div className="flex flex-wrap gap-2">
             <Button asChild>
-              <Link href="/events">Browse events</Link>
+              <Link href="/login">Sign in</Link>
             </Button>
             <Button asChild variant="secondary">
-              <Link href="/organizer/events">Organizer console</Link>
+              <Link href="/signup">Create account</Link>
             </Button>
           </div>
         }

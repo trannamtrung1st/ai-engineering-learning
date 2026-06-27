@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ToastProvider } from "@/components/ui/toast";
+import { AuthProvider } from "@/providers/auth-provider";
 import { QueryProvider } from "@/providers/query-provider";
 
 import "./globals.css";
@@ -17,9 +18,11 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en">
       <body className="min-h-dvh antialiased">
         <QueryProvider>
-          <TooltipProvider delayDuration={300}>
-            <ToastProvider>{children}</ToastProvider>
-          </TooltipProvider>
+          <AuthProvider>
+            <TooltipProvider delayDuration={300}>
+              <ToastProvider>{children}</ToastProvider>
+            </TooltipProvider>
+          </AuthProvider>
         </QueryProvider>
       </body>
     </html>

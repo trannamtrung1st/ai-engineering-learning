@@ -19,6 +19,7 @@ export interface TopBarProps {
   role: AppRole;
   organizationName?: string;
   userDisplayName?: string;
+  onSignOut?: () => void;
   className?: string;
 }
 
@@ -26,6 +27,7 @@ export function TopBar({
   role,
   organizationName,
   userDisplayName = "Signed in user",
+  onSignOut,
   className,
 }: TopBarProps) {
   return (
@@ -67,7 +69,10 @@ export function TopBar({
               <User className="h-4 w-4" aria-hidden />
               Account
             </DropdownMenuItem>
-            <DropdownMenuItem className="text-[var(--color-status-rejected)] focus:text-[var(--color-status-rejected)]">
+            <DropdownMenuItem
+              className="text-[var(--color-status-rejected)] focus:text-[var(--color-status-rejected)]"
+              onSelect={() => onSignOut?.()}
+            >
               <LogOut className="h-4 w-4" aria-hidden />
               Sign out
             </DropdownMenuItem>

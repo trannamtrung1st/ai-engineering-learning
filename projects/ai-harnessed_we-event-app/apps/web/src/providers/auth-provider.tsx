@@ -10,28 +10,42 @@ import {
   type ReactNode,
 } from "react";
 
-import { ApiClientError } from "@/lib/api-client";
 import {
   fetchSession,
-  requestDevToken,
+  loginWithCredentials,
+  registerAccount,
+  type AuthCredentials,
+  type RegisterInput,
   type SessionInfo,
-} from "@/lib/participant-api";
+} from "@/lib/session-api";
 
-const TOKEN_STORAGE_KEY = "we-event.auth.token";
-const SUB_STORAGE_KEY = "we-event.auth.sub";
-const DEFAULT_PARTICIPANT_SUB = "participant-1";
+export const TOKEN_STORAGE_KEY = "we-event.auth.token";
+const LEGACY_ORGANIZER_TOKEN_KEY = "we-event.organizer.auth.token";
 
 interface AuthContextValue {
   token: string | null;
   session: SessionInfo | null;
   participantId: string | null;
+  isAdmin: boolean;
+  isStaff: boolean;
   isLoading: boolean;
   error: string | null;
-  signIn: (sub: string) => Promise<void>;
+  signIn: (credentials: AuthCredentials) => Promise<SessionInfo>;
+  register: (input: RegisterInput) => Promise<SessionInfo>;
   signOut: () => void;
+  clearError: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
+
+function clearStoredAuth(): void {
+  sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+  sessionStorage.removeItem(LEGACY_ORGANIZER_TOKEN_KEY);
+  sessionStorage.removeItem("we-event.auth.sub");
+  sessionStorage.removeItem("we-event.organizer.auth.sub");
+  sessionStorage.removeItem("we-event.organizer.auth.role");
+  sessionStorage.removeItem("we-event.organizer.auth.assigned");
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
@@ -39,39 +53,71 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const loadSession = useCallback(async (authToken: string) => {
+  const loadSession = useCallback(async (authToken: string): Promise<SessionInfo> => {
     const me = await fetchSession(authToken);
-    if (me.role !== "Participant") {
-      throw new ApiClientError(
-        "Participant sign-in is required for this area.",
-        403,
-        "FORBIDDEN",
-      );
-    }
     setSession(me);
     setToken(authToken);
     sessionStorage.setItem(TOKEN_STORAGE_KEY, authToken);
+    return me;
   }, []);
 
-  const signIn = useCallback(
-    async (sub: string) => {
+  const establishSession = useCallback(
+    async (authToken: string) => {
       setIsLoading(true);
       setError(null);
       try {
-        const trimmed = sub.trim();
-        if (!trimmed) {
-          throw new Error("Participant ID is required.");
-        }
-        const { token: authToken } = await requestDevToken(trimmed);
-        sessionStorage.setItem(SUB_STORAGE_KEY, trimmed);
         await loadSession(authToken);
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Session could not be restored.";
+        setError(message);
+        setSession(null);
+        setToken(null);
+        clearStoredAuth();
+        throw err;
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [loadSession],
+  );
+
+  const signIn = useCallback(
+    async (credentials: AuthCredentials) => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const { token: authToken } = await loginWithCredentials(credentials);
+        return await loadSession(authToken);
       } catch (err) {
         const message =
           err instanceof Error ? err.message : "Sign-in failed. Try again.";
         setError(message);
         setSession(null);
         setToken(null);
-        sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+        clearStoredAuth();
+        throw err;
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [loadSession],
+  );
+
+  const register = useCallback(
+    async (input: RegisterInput) => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const { token: authToken } = await registerAccount(input);
+        return await loadSession(authToken);
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Sign-up failed. Try again.";
+        setError(message);
+        setSession(null);
+        setToken(null);
+        clearStoredAuth();
         throw err;
       } finally {
         setIsLoading(false);
@@ -84,30 +130,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(null);
     setSession(null);
     setError(null);
-    sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+    clearStoredAuth();
+  }, []);
+
+  const clearError = useCallback(() => {
+    setError(null);
   }, []);
 
   useEffect(() => {
     let cancelled = false;
 
     async function bootstrap() {
-      const storedToken = sessionStorage.getItem(TOKEN_STORAGE_KEY);
-      if (storedToken) {
-        try {
-          await loadSession(storedToken);
-          if (!cancelled) {
-            setIsLoading(false);
-          }
-          return;
-        } catch {
-          sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+      const storedToken =
+        sessionStorage.getItem(TOKEN_STORAGE_KEY) ??
+        sessionStorage.getItem(LEGACY_ORGANIZER_TOKEN_KEY);
+      if (!storedToken) {
+        if (!cancelled) {
+          setIsLoading(false);
         }
+        return;
       }
 
-      const storedSub =
-        sessionStorage.getItem(SUB_STORAGE_KEY) ?? DEFAULT_PARTICIPANT_SUB;
       try {
-        await signIn(storedSub);
+        await establishSession(storedToken);
       } catch {
         if (!cancelled) {
           setIsLoading(false);
@@ -119,19 +164,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [loadSession, signIn]);
+  }, [establishSession]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
       token,
       session,
       participantId: session?.actorId ?? null,
+      isAdmin: session?.role === "OrganizerAdmin",
+      isStaff: session?.role === "OrganizerStaff",
       isLoading,
       error,
       signIn,
+      register,
       signOut,
+      clearError,
     }),
-    [token, session, isLoading, error, signIn, signOut],
+    [token, session, isLoading, error, signIn, register, signOut, clearError],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

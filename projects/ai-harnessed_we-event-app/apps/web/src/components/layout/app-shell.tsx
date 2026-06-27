@@ -13,6 +13,7 @@ export interface AppShellProps {
   navItems?: NavItem[];
   organizationName?: string;
   userDisplayName?: string;
+  onSignOut?: () => void;
   aside?: ReactNode;
   className?: string;
 }
@@ -23,6 +24,7 @@ export function AppShell({
   navItems = [],
   organizationName,
   userDisplayName,
+  onSignOut,
   aside,
   className,
 }: AppShellProps) {
@@ -34,6 +36,7 @@ export function AppShell({
         role={role}
         organizationName={organizationName}
         userDisplayName={userDisplayName}
+        onSignOut={onSignOut}
       />
       <div className="flex flex-1 flex-col lg:flex-row">
         {showSideNav ? <SideNav items={navItems} role={role} /> : null}

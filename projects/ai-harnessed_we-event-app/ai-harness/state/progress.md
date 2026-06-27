@@ -432,3 +432,7 @@ Append-only log of completed iterations.
 - 2026-06-27T09:53:01Z | web-participant-feedback-eligibility | browser_test_failed
 - 2026-06-27T09:57:00Z | web-participant-feedback-eligibility | browser: TC-AC-08-018/TC-FR-19-022 closed-window fixture shows Outside feedback window + disabled submit; happy-path feedback submit + Eligible with reason; /registrations Attended rows show Feedback+Eligibility quick actions — HTTP 200
 - 2026-06-27T10:02:50Z | web-participant-feedback-eligibility | passed
+- 2026-06-27T10:11:00Z | web-auth-session-pages | browser: unauthenticated /registrations → /login?returnUrl; signup → My Registrations with TopBar displayName; TopBar sign-out → /login; organizer /organizer/events guard + credential login shows Organizer Admin — HTTP 200
+- 2026-06-27T10:20:23Z | web-auth-session-pages | browser_test_failed
+- 2026-06-27T10:25:00Z | web-auth-session-pages | browser: cleared stale .next; signup/login noValidate shows Zod field errors; signup→JWT+displayName; returnUrl login→/registrations; TopBar sign-out clears session; /registrations & /organizer/events guards redirect unauthenticated users; organizer credential login shows Organizer Admin — HTTP 200
+- 2026-06-27T10:35:47Z | web-auth-session-pages | passed
