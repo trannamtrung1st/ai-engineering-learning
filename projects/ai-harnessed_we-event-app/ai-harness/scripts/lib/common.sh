@@ -242,6 +242,7 @@ AGENT_TIMEOUT_DEFAULT_MS=3600000
 AGENT_IDLE_TIMEOUT_DEFAULT_MS=300000
 AGENT_SIGNAL_GRACE_DEFAULT_MS=15000
 AGENT_RESULT_GRACE_DEFAULT_MS=5000
+PREVIEW_VERIFY_GATE_DEFAULT_MS=10000
 
 get_agent_timeout_ms() {
   local config="${1:-$LOOP_CONFIG}"
@@ -1218,6 +1219,71 @@ preview_stack_is_running() {
     kill -0 "$pid" 2>/dev/null && return 0
   done < "$PREVIEW_PID_FILE"
   return 1
+}
+
+get_preview_verify_gate_timeout_ms() {
+  local config="${1:-$LOOP_CONFIG}"
+  if [[ -n "${AIH_VERIFY_GATE_TIMEOUT_MS:-}" ]]; then
+    echo "$AIH_VERIFY_GATE_TIMEOUT_MS"
+    return
+  fi
+  jq -r ".browserTest.previewVerifyGateTimeoutMs // ${PREVIEW_VERIFY_GATE_DEFAULT_MS}" "$config" 2>/dev/null \
+    || echo "$PREVIEW_VERIFY_GATE_DEFAULT_MS"
+}
+
+# Browser-test gate: start preview when down; gate-verify when up; restart once if unhealthy.
+ensure_preview_stack_for_browser_test() {
+  local verify_script="${HARNESS_ROOT}/scripts/verify-stack.sh"
+  local preview_script="${HARNESS_ROOT}/scripts/preview-stack.sh"
+  local gate_timeout_ms stack_out stack_status
+
+  gate_timeout_ms="$(get_preview_verify_gate_timeout_ms)"
+  export AIH_VERIFY_GATE_TIMEOUT_MS="$gate_timeout_ms"
+
+  if ! preview_stack_is_running; then
+    echo "==> Preview stack not running — starting dev preview"
+    set +e
+    stack_out="$("$preview_script" --mode dev 2>&1)"
+    stack_status=$?
+    set -e
+    echo "$stack_out"
+    if [[ "$stack_status" -ne 0 ]]; then
+      echo "ERROR: failed to start preview stack for browser test" >&2
+      return 1
+    fi
+    return 0
+  fi
+
+  set +e
+  stack_out="$("$verify_script" --gate 2>&1)"
+  stack_status=$?
+  set -e
+  echo "$stack_out"
+
+  if [[ "$stack_status" -eq 0 ]]; then
+    return 0
+  fi
+
+  echo "==> Preview stack unhealthy — restarting dev preview"
+  set +e
+  stack_out="$("$preview_script" --down 2>&1)"
+  stack_status=$?
+  set -e
+  echo "$stack_out"
+  if [[ "$stack_status" -ne 0 ]]; then
+    echo "WARN: preview down returned non-zero (${stack_status}); continuing with start" >&2
+  fi
+
+  set +e
+  stack_out="$("$preview_script" --mode dev 2>&1)"
+  stack_status=$?
+  set -e
+  echo "$stack_out"
+  if [[ "$stack_status" -ne 0 ]]; then
+    echo "ERROR: failed to restart preview stack for browser test" >&2
+    return 1
+  fi
+  return 0
 }
 
 read_preview_supervisor_pids() {

@@ -30,7 +30,7 @@ api_healthy() {
   [[ "$status" == "ok" && "$db" == "connected" ]]
 }
 
-health_body="$(curl -sf "${API_BASE}/health" 2>/dev/null || true)"
+health_body="$(curl --connect-timeout 2 --max-time 5 -sf "${API_BASE}/health" 2>/dev/null || true)"
 if [[ -z "$health_body" ]] || ! api_healthy "$health_body"; then
   if [[ "$QUICK" == true ]]; then
     echo "SKIP: API not running (participant scenario probe)"
@@ -43,7 +43,7 @@ if [[ -z "$health_body" ]] || ! api_healthy "$health_body"; then
 fi
 
 participant_id="${AIH_PARTICIPANT_SUB:-participant-1}"
-token_body="$(curl -sf -X POST "${API_BASE}/dev/token" \
+token_body="$(curl --connect-timeout 2 --max-time 5 -sf -X POST "${API_BASE}/dev/token" \
   -H "Content-Type: application/json" \
   -d "{\"sub\":\"${participant_id}\",\"role\":\"Participant\"}" 2>/dev/null || true)"
 
@@ -54,7 +54,7 @@ if [[ -z "$token" ]]; then
   exit 1
 fi
 
-events_body="$(curl -sf "${API_BASE}/events?state=RegistrationOpen&pageSize=1" \
+events_body="$(curl --connect-timeout 2 --max-time 5 -sf "${API_BASE}/events?state=RegistrationOpen&pageSize=1" \
   -H "Authorization: Bearer ${token}" 2>/dev/null || true)"
 event_id="$(echo "$events_body" | jq -r '.items[0].eventId // empty' 2>/dev/null || true)"
 
@@ -66,7 +66,7 @@ fi
 status_tmp="$(mktemp)"
 trap 'rm -f "$status_tmp"' EXIT
 
-status_code="$(curl -s -o "$status_tmp" -w '%{http_code}' \
+status_code="$(curl --connect-timeout 2 --max-time 5 -s -o "$status_tmp" -w '%{http_code}' \
   "${API_BASE}/events/${event_id}/registration-status" \
   -H "Authorization: Bearer ${token}")"
 
@@ -88,7 +88,7 @@ if [[ -z "$existing_state" ]]; then
   register_tmp="$(mktemp)"
   trap 'rm -f "$status_tmp" "$register_tmp"' EXIT
 
-  register_code="$(curl -s -o "$register_tmp" -w '%{http_code}' \
+  register_code="$(curl --connect-timeout 2 --max-time 5 -s -o "$register_tmp" -w '%{http_code}' \
     -X POST "${API_BASE}/events/${event_id}/registrations" \
     -H "Authorization: Bearer ${token}" \
     -H "Content-Type: application/json" \
@@ -104,7 +104,7 @@ else
   trap 'rm -f "$status_tmp"' EXIT
 fi
 
-after_body="$(curl -sf "${API_BASE}/events/${event_id}/registration-status" \
+after_body="$(curl --connect-timeout 2 --max-time 5 -sf "${API_BASE}/events/${event_id}/registration-status" \
   -H "Authorization: Bearer ${token}")"
 registration_state="$(echo "$after_body" | jq -r '.registration.state // empty')"
 

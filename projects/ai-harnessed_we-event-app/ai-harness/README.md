@@ -48,7 +48,9 @@ npm run aih:loop -- 50                     # max 50 iterations
 | `AIH_AGENT_TIMEOUT_MS` | `3600000` | Max wall time per agent invocation (1 hour); applies to streamed and buffered runs |
 | `AIH_AGENT_IDLE_TIMEOUT_MS` | `300000` | Stream idle timeout — no stream-json activity for this long ends the run (5 minutes) |
 | `AIH_AGENT_SIGNAL_GRACE_MS` | `15000` | After a completion signal (`SLICE_DONE`, `REVIEW_PASS`, etc.) in agent output, wait this long then terminate the agent process tree |
-| `AIH_AGENT_RESULT_GRACE_MS` | `5000` | After a stream `result` event, wait this long then terminate the agent process tree if still running |
+| `AIH_VERIFY_GATE_TIMEOUT_MS` | `10000` | Shared budget for `verify-stack.sh --gate` when preview supervisors are already running; also `browserTest.previewVerifyGateTimeoutMs` in `ralph-loop.json` |
+| `AIH_VERIFY_CURL_CONNECT_TIMEOUT_SEC` | `2` | Per-request curl connect timeout for stack probes |
+| `AIH_VERIFY_CURL_MAX_TIME_SEC` | `5` | Per-request curl max time for stack probes |
 | `AIH_STREAM_AGENT` | `1` | Live stream all harness agent output via stream-json (`0` = legacy buffered text) |
 | `AIH_AGENT_VERBOSE` | `1` | Show `[tool]` start/done lines on stderr during streamed agent runs (`0` to disable) |
 | `AIH_NO_COLOR` | — | Disable ANSI styling in harness output (`1`) |

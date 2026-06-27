@@ -51,14 +51,11 @@ cleanup_playwright_mcp_artifacts
 require_preview="$(jq -r '.browserTest.requirePreviewStack // true' "$LOOP_CONFIG")"
 if [[ "$require_preview" == "true" ]]; then
   echo "==> Verifying preview stack before browser test"
-  verify_script="$(dirname "$0")/verify-stack.sh"
   set +e
-  stack_out="$("$verify_script" 2>&1)"
+  ensure_preview_stack_for_browser_test
   stack_status=$?
   set -e
-  echo "$stack_out"
   if [[ "$stack_status" -ne 0 ]]; then
-    echo "ERROR: preview stack not healthy — start with: npm run aih:preview" >&2
     report="$(jq -n \
       --arg slice "$SLICE_ID" \
       --arg ts "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \

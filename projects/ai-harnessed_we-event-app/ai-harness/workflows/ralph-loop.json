@@ -87,6 +87,7 @@
     "modelKey": "tester",
     "activeWhenAgent": ["frontend", "test"],
     "requirePreviewStack": true,
+    "previewVerifyGateTimeoutMs": 10000,
     "inputs": [
       "slice-docs",
       "acceptance-tags",
