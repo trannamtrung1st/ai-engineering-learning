@@ -78,6 +78,95 @@ describe("ServerPaginatedTable", () => {
     assert.match(html, /Increased capacity for demand/);
   });
 
+  const registrationRows = [
+    {
+      registrationId: "reg-wl-1",
+      participantId: "participant-wait-1",
+      state: "Waitlisted" as const,
+      waitlistPosition: 2,
+      updatedAt: "2026-06-27T10:00:00.000Z",
+      reasonText: null,
+    },
+    {
+      registrationId: "reg-reg-1",
+      participantId: "participant-reg-1",
+      state: "Registered" as const,
+      waitlistPosition: null,
+      updatedAt: "2026-06-27T11:00:00.000Z",
+      reasonText: null,
+    },
+  ];
+
+  const attendanceRows = [
+    {
+      registrationId: "reg-checkin-1",
+      participantId: "participant-checkin-1",
+      state: "CheckedIn",
+      checkinAt: "2026-06-27T12:26:00.000Z",
+      checkinMethod: "Staff" as const,
+    },
+    {
+      registrationId: "reg-pending-1",
+      participantId: "participant-pending-1",
+      state: "Registered",
+      checkinAt: null,
+      checkinMethod: null,
+    },
+  ];
+
+  it("FR-12 / AC-13: surfaces waitlist position for Waitlisted registration rows", () => {
+    const html = renderToStaticMarkup(
+      <ServerPaginatedTable
+        columns={[
+          { id: "participant", header: "Participant", cell: (row) => row.participantId },
+          { id: "state", header: "Status", cell: (row) => row.state },
+          {
+            id: "waitlist",
+            header: "Waitlist #",
+            cell: (row) => row.waitlistPosition ?? "—",
+          },
+        ]}
+        items={registrationRows}
+        rowKey={(row) => row.registrationId}
+        page={1}
+        pageSize={20}
+        total={2}
+        totalPages={1}
+        onPageChange={() => {}}
+      />,
+    );
+    assert.match(html, /Waitlisted/);
+    assert.match(html, />2</);
+    assert.match(html, /participant-wait-1/);
+  });
+
+  it("AC-05 / FR-13: surfaces staff check-in timestamp and method in attendance rows", () => {
+    const html = renderToStaticMarkup(
+      <ServerPaginatedTable
+        columns={[
+          { id: "participant", header: "Participant", cell: (row) => row.participantId },
+          {
+            id: "checkin",
+            header: "Check-in",
+            cell: (row) =>
+              row.checkinAt
+                ? `${row.checkinAt} · ${row.checkinMethod ?? ""}`
+                : "Not checked in",
+          },
+        ]}
+        items={attendanceRows}
+        rowKey={(row) => row.registrationId}
+        page={1}
+        pageSize={20}
+        total={2}
+        totalPages={1}
+        onPageChange={() => {}}
+      />,
+    );
+    assert.match(html, /2026-06-27T12:26:00.000Z · Staff/);
+    assert.match(html, /Not checked in/);
+  });
+
   it("AC-10: surfaces eligibility reason text in operational rows", () => {
     const html = renderToStaticMarkup(
       <ServerPaginatedTable

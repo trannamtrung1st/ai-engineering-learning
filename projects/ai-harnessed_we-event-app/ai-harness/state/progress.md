@@ -406,3 +406,50 @@ Append-only log of completed iterations.
 - 2026-06-27T05:34:00Z | web-design-system-shell | checks: run-checks pass (typecheck/build/unit/integration); Badge semantic variant + domain-labels badgeStatus + KpiSummaryStrip TC-NFR-06-012 inline retry on organizer dashboard isRefetchError
 - 2026-06-27T06:00:00Z | web-design-system-shell | browser: homepage HTTP 200 — 18 semantic domain badges (`#15803d` registered/registrationOpen), NFR-06 Connected; aih:check web-design-system-shell pass (typecheck/build/unit/integration)
 - 2026-06-27T06:07:26Z | web-design-system-shell | passed
+- 2026-06-27T06:11:30Z | web-participant-discovery | browser: /events FilterBar (search, state, sort), card grid with cover placeholders + status badges, pagination 1–12→13–24 of 14986; event detail info panel + registration status, no register/check-in actions — HTTP 200
+- 2026-06-27T06:12:37Z | web-participant-discovery | checks_failed
+- 2026-06-27T06:27:07Z | web-participant-discovery | browser: /events HTTP 200 after .next cache recovery; e2e coverage for TC-FR-28-003/004/005/013/019/020 (AC-18a/b/d) and TC-FR-29-004/013/019 (AC-18b/c); integration TC-FR-28-009 — run-checks pass
+- 2026-06-27T06:39:07Z | web-participant-discovery | browser_test_failed
+- 2026-06-27T06:42:00Z | web-participant-discovery | browser: /registrations FilterBar shows status + sort select (Recently updated / Request date oldest first); page 2→sort change resets to page 1 (Showing 1–20 of 236); /events search+state+sort + pagination 1–12 of 16133 — HTTP 200
+- 2026-06-27T06:51:42Z | web-participant-discovery | browser_test_failed
+- 2026-06-27T07:07:00Z | web-participant-discovery | browser: /events empty search shows "No results match your filters"; /registrations Check-in+Feedback+Waitlist position fixtures; organizer registrations Showing 1–20 of 25 — HTTP 200
+- 2026-06-27T07:22:00Z | web-participant-discovery | checks: run-checks pass (typecheck/build/unit/integration/e2e); preview-stack forces SEED_ENABLED=true for browser fixtures (25 bulk regs, staff 25 assigned events, participant check-in/waitlist/feedback); organizer staff sign-in waits for /dev/fixtures before Continue
+- 2026-06-27T08:16:00Z | web-participant-discovery | browser: /events empty search "No results match your filters"; /registrations Check-in+Feedback+Waitlist position; organizer registrations 1–20 of 25; staff assigned events 1–20 of 25 with Next — aih:check pass
+- 2026-06-27T08:28:25Z | web-participant-discovery | passed
+- 2026-06-27T08:34:00Z | web-participant-registration | browser: event detail Registered panel shows Cancel registration + requested/updated timeline; /registrations paginated 1–20 of 251 with Waitlisted queue position 1, status timeline (Current status/Last updated), Feedback+Check-in quick actions rule-gated — HTTP 200
+- 2026-06-27T08:35:34Z | web-participant-registration | checks_failed
+- 2026-06-27T08:42:00Z | web-participant-registration | browser: /registrations paginated list with status timeline (Current status/Last updated), Waitlisted queue position 1, Registered quick actions; event detail Registered panel with Cancel registration — HTTP 200
+- 2026-06-27T08:53:22Z | web-participant-registration | browser_test_failed
+- 2026-06-27T09:01:00Z | web-participant-registration | browser: TC-AC-02-003 live register on waitlist fixture shows Queue position on event detail + My Registrations; dev/fixtures self-heals after promotion; new participant register HTTP 200 — aih:check pass
+- 2026-06-27T09:12:24Z | web-participant-registration | passed
+- 2026-06-27T09:15:00Z | web-participant-checkin | browser: /events/{checkinEventId}/check-in shows Registered badge + Check in now; submit succeeds with timestamp (Checked in at Jun 27, 2026, 4:15 PM) and CheckedIn status — HTTP 200
+- 2026-06-27T09:16:46Z | web-participant-checkin | checks_failed
+- 2026-06-27T09:19:00Z | web-participant-checkin | browser: /events/{checkinEventId}/check-in shows CheckedIn badge + "already checked in" copy; typecheck fix (unused EventState import); aih:check pass (typecheck/build/unit/integration/e2e) — HTTP 200
+- 2026-06-27T09:25:23Z | web-participant-checkin | browser_test_failed
+- 2026-06-27T09:30:00Z | web-participant-checkin | browser: check-in happy path (Registered + Check in now → success timestamp); TC-FR-14-016 self-disabled fixture shows blocking alert; TC-FR-14-022/TC-FR-15-025 close-boundary fixture shows Outside check-in window — dev seed adds checkinSelfDisabledEventId + checkinCloseBoundaryEventId with self-healing windows — HTTP 200
+- 2026-06-27T09:39:43Z | web-participant-checkin | passed
+- 2026-06-27T09:48:00Z | web-participant-feedback-eligibility | browser: /registrations Attended rows show Feedback+Eligibility quick actions; /events/{id}/feedback submit enabled → success timestamp + View eligibility; /events/{id}/eligibility shows Eligible with reason text (AC-08, AC-09, FR-19, FR-20) — HTTP 200
+- 2026-06-27T09:53:01Z | web-participant-feedback-eligibility | browser_test_failed
+- 2026-06-27T09:57:00Z | web-participant-feedback-eligibility | browser: TC-AC-08-018/TC-FR-19-022 closed-window fixture shows Outside feedback window + disabled submit; happy-path feedback submit + Eligible with reason; /registrations Attended rows show Feedback+Eligibility quick actions — HTTP 200
+- 2026-06-27T10:02:50Z | web-participant-feedback-eligibility | passed
+- 2026-06-27T10:11:00Z | web-auth-session-pages | browser: unauthenticated /registrations → /login?returnUrl; signup → My Registrations with TopBar displayName; TopBar sign-out → /login; organizer /organizer/events guard + credential login shows Organizer Admin — HTTP 200
+- 2026-06-27T10:20:23Z | web-auth-session-pages | browser_test_failed
+- 2026-06-27T10:25:00Z | web-auth-session-pages | browser: cleared stale .next; signup/login noValidate shows Zod field errors; signup→JWT+displayName; returnUrl login→/registrations; TopBar sign-out clears session; /registrations & /organizer/events guards redirect unauthenticated users; organizer credential login shows Organizer Admin — HTTP 200
+- 2026-06-27T10:35:47Z | web-auth-session-pages | passed
+- 2026-06-27T10:41:00Z | web-event-cover-image | browser: organizer edit form cover picker uploads PNG with Replace/Remove; participant /events 12×16:9 placeholders; /events/{id} hero via next/image after upload (DEV01) — HTTP 200
+- 2026-06-27T10:48:48Z | web-event-cover-image | browser_test_failed
+- 2026-06-27T10:52:00Z | web-event-cover-image | browser: TC-FR-36-009 organizer dashboard DEV01 shows event-cover-image hero via next/image; /events/{id} still access-denied for OrganizerAdmin (operational preview path) — HTTP 200
+- 2026-06-27T11:02:25Z | web-event-cover-image | passed
+- 2026-06-27T11:05:00Z | web-domain-status-badge-colors | browser: homepage 20 semantic domain badges — distinct terminal registration tokens (cancelledByUser/Organizer/expired), inProgress teal #0f766e, completed slate #475569; EventStateBadge uses badgeStatus — HTTP 200
+- 2026-06-27T11:16:45Z | web-domain-status-badge-colors | passed
+- 2026-06-27T11:27:00Z | web-organizer-events | browser: /organizer/events paginated table (1–20 of 28333) with Search/State/Sort filters + Create event; Draft dashboard Publish lifecycle + Edit form (capacity/windows); credential login — HTTP 200
+- 2026-06-27T11:39:24Z | web-organizer-events | passed
+- 2026-06-27T11:47:00Z | web-organizer-operations-dashboard | browser: feedback fixture dashboard shows 5 KPI blocks with drill-down links, Feedback completion tracker (100%), Export operational data, Completed semantic badge, bulk fixture 27 registrations — HTTP 200
+- 2026-06-27T12:04:31Z | web-organizer-operations-dashboard | browser_test_failed
+- 2026-06-27T12:13:00Z | web-organizer-operations-dashboard | browser: /organizer/export governance export center with event table + Export CSV; dashboard 503 poll shows inline "Could not refresh metrics" + Retry with stale KPIs, Retry recovers (TC-FR-24-010, TC-NFR-06-012) — HTTP 200
+- 2026-06-27T12:22:42Z | web-organizer-operations-dashboard | passed
+- 2026-06-27T12:30:00Z | web-organizer-registration-checkin | browser: admin registrations paginated 1–20 of 32 with state filter + status history; waitlist FIFO position 1; staff check-in success (Staff timestamp) + closed-window "Check-in blocked"; staff hub 1–12 of 25 assigned events; staff denied unassigned event registrations — HTTP 200
+- 2026-06-27T12:44:16Z | web-organizer-registration-checkin | browser_test_failed
+- 2026-06-27T12:56:00Z | web-organizer-registration-checkin | browser: staff check-in console happy path (Staff timestamp) + closed-window Check-in blocked; admin registrations Attended+Absent badges; dev fixtures expose staffCheckinEventId/staffCheckinCloseBoundaryEventId/attendedAbsentEventId/waitlistSeatHolderSub; resolveActorId accepts seed nil UUIDs — HTTP 200
+- 2026-06-27T13:10:29Z | web-organizer-registration-checkin | browser_test_failed
+- 2026-06-27T13:18:00Z | web-organizer-registration-checkin | browser: TC-FR-12-010/018 participant-2 (seat holder) cancel → participant-1 promoted to Registered on event detail + My Registrations; waitlist fixture self-heals when seat holder is anonymous UUID — HTTP 200

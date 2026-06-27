@@ -4,6 +4,7 @@ import type { AppConfig } from "../config.js";
 import { resolveActorId } from "../auth/resolve-actor-id.js";
 import type { ActorRole } from "../auth/types.js";
 import { buildErrorEnvelope } from "../errors/api-error.js";
+import { runDevSeed } from "../infra/dev-seed.js";
 import { ensureParticipantAccount } from "../modules/user/repository.js";
 
 interface DevTokenBody {
@@ -56,5 +57,11 @@ export function devAuthRoutes(config: AppConfig): FastifyPluginAsync {
 
       return { token, sub, role, assignedEventIds: assignedEventIds ?? [] };
     });
+
+    if (config.devAuthEnabled) {
+      app.post("/dev/seed", async () => runDevSeed());
+
+      app.get("/dev/fixtures", async () => runDevSeed());
+    }
   };
 }

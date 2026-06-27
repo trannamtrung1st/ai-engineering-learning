@@ -367,9 +367,32 @@ Lessons learned across harness iterations. Read before every implementer session
 - [web-design-system-shell] Browser test failed — see 20260627T040511Z-browser-test.json
 - [web-design-system-shell] Computational checks failed — see 20260627T041113Z-checks.json
 - [harness] Never pipe `npm run aih:preview` through `tail`/`head` or chain it with `&&` — orphaned shell children block the loop after `SLICE_DONE`; use separate commands and `npm run aih:preview:verify` instead.
+- [harness] Background preview supervisors/log followers must not inherit stdout — otherwise `preview-stack.sh` never exits when captured by browser-test gate command substitution.
+- [harness] Background preview supervisors/log followers must not inherit stdout — otherwise `preview-stack.sh` never exits when captured by browser-test gate command substitution.
 - [web-design-system-shell] Browser test failed — see 20260627T043154Z-browser-test.json
 - [web-design-system-shell] Browser test failed — see 20260627T044443Z-browser-test.json
 - [web-design-system-shell] Browser test failed — see 20260627T045127Z-browser-test.json
 - [web-design-system-shell] Browser test failed — see 20260627T045816Z-browser-test.json
 - [web-design-system-shell] Browser test failed — see 20260627T050525Z-browser-test.json
 - [web-design-system-shell] Browser test failed — see 20260627T051252Z-browser-test.json
+- [web-participant-discovery] Computational checks failed — see 20260627T060726Z-checks.json
+- [web-participant-discovery] Browser test failed — see 20260627T061237Z-browser-test.json
+- [web-participant-discovery] Browser test failed — see 20260627T063907Z-browser-test.json
+- [web-participant-discovery] Local `.env` with `SEED_ENABLED=false` disables preview browser fixtures (bulk registrations, staff pagination, participant check-in/waitlist/feedback); `preview-stack.sh` must force `SEED_ENABLED=true` after sourcing `.env`.
+- [web-participant-registration] Computational checks failed — see 20260627T082825Z-checks.json
+- [web-participant-registration] Browser test failed — see 20260627T083534Z-browser-test.json
+- [web-participant-registration] Legacy `uq_waitlist_event_position` (non-partial) blocks waitlist position reuse after promotion — drop in schema.sql; `ensureWaitlistFixture` must delete waitlist_entries before registrations and re-seed when participant-1 is no longer Waitlisted (do not cache fixtures across requests).
+- [web-participant-checkin] Computational checks failed — see 20260627T091224Z-checks.json
+- [web-participant-checkin] Browser test failed — see 20260627T091646Z-browser-test.json
+- [web-participant-checkin] Browser gate TC-FR-14-016/022 and TC-FR-15-025 need dev-seed fixtures: `checkinSelfDisabledEventId` (InProgress, selfCheckinEnabled=false, Registered) and `checkinCloseBoundaryEventId` (checkinCloseAt refreshed to ~30s ago on each seed run); scanning bulk events alone will not find boundary/disabled cases.
+- [web-participant-feedback-eligibility] Browser test failed — see 20260627T093943Z-browser-test.json
+- [web-participant-feedback-eligibility] Browser gate TC-AC-08-018 and TC-FR-19-022 need dev-seed fixture `feedbackCloseBoundaryEventId` (Completed + Attended, `feedbackCloseAt` refreshed to ~30s ago on each seed run); scanning bulk registrations alone will not find a closed-window case.
+- [web-auth-session-pages] Browser test failed — see 20260627T100250Z-browser-test.json
+- [web-auth-session-pages] Signup/login forms must set `noValidate` — native `type="email"` constraint validation blocks `onSubmit`, so Zod field errors never render (TC-FR-32-017, TC-FR-33-016).
+- [web-auth-session-pages] Stale `apps/web/.next` yields `_next/static/chunks/*.js` 404 and inoperative client auth (route guards stuck on Loading…, forms native GET submit); clear `.next` via `aih:preview` reset before browser gates.
+- [web-event-cover-image] Browser test failed — see 20260627T103547Z-browser-test.json
+- [web-organizer-operations-dashboard] Browser test failed — see 20260627T113924Z-browser-test.json
+- [web-organizer-registration-checkin] Browser test failed — see 20260627T122242Z-browser-test.json
+- [web-organizer-registration-checkin] Browser gates for staff check-in need dev-seed fixtures in staff scope (`staffCheckinEventId`, `staffCheckinCloseBoundaryEventId` on staff-assign-01/02), `attendedAbsentEventId` for Attended+Absent badges, and login-capable `waitlistSeatHolderSub` (participant-2) — not anonymous UUID seat-holders.
+- [web-organizer-registration-checkin] Seed organizer/staff UUIDs like `00000000-…-0098` fail RFC version-nibble check in `resolveActorId`; staff credential check-in 500s on `checkin_records_operator_id_fkey` unless UUID pattern accepts version 0.
+- [web-organizer-registration-checkin] Browser test failed — see 20260627T124416Z-browser-test.json

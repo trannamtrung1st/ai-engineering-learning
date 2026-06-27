@@ -35,4 +35,9 @@ describe("NFR-06 live query polling policy", () => {
     assert.equal(getLiveQueryPolicy("checkInConsole").refetchIntervalInBackground, false);
     assert.equal(getLiveQueryPolicy("organizerDashboard").refetchIntervalInBackground, true);
   });
+
+  it("disables retry on organizer dashboard polls so refetch errors surface immediately (TC-NFR-06-012)", () => {
+    assert.equal(getLiveQueryPolicy("organizerDashboard").retry, false);
+    assert.equal(getLiveQueryPolicy("eventList").retry, undefined);
+  });
 });

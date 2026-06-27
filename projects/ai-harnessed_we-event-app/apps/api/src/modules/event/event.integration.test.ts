@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, before, describe, it } from "node:test";
 import { VALIDATION_ERROR_CODES } from "@we-event/domain";
-import { closeDb, initDb } from "../../db/pool.js";
+import { closeDb, getPool, initDb } from "../../db/pool.js";
 import { ApiError } from "../../errors/api-error.js";
 import { ensureIdempotencySchema } from "../../idempotency/index.js";
 import { auditService } from "../audit/service.js";
@@ -691,5 +691,88 @@ describe("event integration", () => {
 
     assert.ok(result.total >= 2);
     assert.equal(result.items[0]?.name.startsWith("Alpha"), true);
+  });
+
+  it("TC-FR-28-009 / FR-28 / AC-13 / AC-18a: event list applies search and state filter before paging at DB boundary", async () => {
+    const marker = randomUUID();
+    const context = {
+      actorId: ACTOR_ID,
+      actorRole: "OrganizerAdmin" as const,
+    };
+
+    async function seedVisibleEvent(
+      name: string,
+      targetState: "RegistrationOpen" | "RegistrationClosed",
+    ) {
+      const draft = await createEvent(
+        createInput({ name: `${name} ${marker}`, location: "Workshop Hall" }),
+        ACTOR_ID,
+        "OrganizerAdmin",
+        ORG_ID,
+      );
+      await eventService.publish(draft.id, context);
+      await eventService.openRegistration(draft.id, context);
+      if (targetState === "RegistrationClosed") {
+        await eventService.closeRegistration(draft.id, context);
+      }
+      return draft.id;
+    }
+
+    await seedVisibleEvent("Open workshop alpha", "RegistrationOpen");
+    await seedVisibleEvent("Open workshop beta", "RegistrationOpen");
+    await seedVisibleEvent("Closed workshop gamma", "RegistrationClosed");
+
+    const participantVisibleStates = [
+      "Published",
+      "RegistrationOpen",
+      "RegistrationClosed",
+      "InProgress",
+      "Completed",
+      "Archived",
+    ];
+
+    const filtered = await eventService.list("Participant", {
+      q: "workshop",
+      state: "RegistrationOpen",
+      page: "1",
+      pageSize: "12",
+    });
+
+    const dbCount = await getPool().query<{ total: number }>(
+      `SELECT COUNT(*)::int AS total
+       FROM events e
+       WHERE e.state::text = 'RegistrationOpen'
+         AND (
+           e.name ILIKE $1 OR e.location ILIKE $1 OR e.description ILIKE $1
+         )
+         AND e.state::text = ANY($2::text[])`,
+      [`%workshop%`, participantVisibleStates],
+    );
+    const expectedTotal = (dbCount.rows[0]?.total ?? 0);
+
+    assert.equal(filtered.total, expectedTotal);
+    assert.ok(filtered.items.length >= 2);
+    assert.ok(filtered.items.every((item) => item.state === "RegistrationOpen"));
+    assert.ok(
+      filtered.items.every(
+        (item) =>
+          item.name.toLowerCase().includes("workshop") ||
+          item.location.toLowerCase().includes("workshop"),
+      ),
+    );
+
+    const locationOnly = await eventService.list("Participant", {
+      q: "Workshop Hall",
+      page: "1",
+      pageSize: "12",
+    });
+    const locationCount = await getPool().query<{ total: number }>(
+      `SELECT COUNT(*)::int AS total
+       FROM events e
+       WHERE e.location ILIKE $1
+         AND e.state::text = ANY($2::text[])`,
+      ["%Workshop Hall%", participantVisibleStates],
+    );
+    assert.equal(locationOnly.total, locationCount.rows[0]?.total ?? 0);
   });
 });

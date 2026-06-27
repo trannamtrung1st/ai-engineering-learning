@@ -6,6 +6,7 @@ import { loadConfig } from "./config.js";
 import { API_BASE_PATH, API_VERSION } from "./constants.js";
 import { closeDb, initDb } from "./db/pool.js";
 import { ApiError, buildErrorEnvelope } from "./errors/api-error.js";
+import { runDevSeed } from "./infra/dev-seed.js";
 import { registerRoutes } from "./routes/index.js";
 
 export { API_BASE_PATH, API_VERSION };
@@ -101,6 +102,12 @@ export async function startServer(): Promise<void> {
   process.on("SIGTERM", shutdown);
 
   await app.listen({ port: config.port, host: "0.0.0.0" });
+
+  if (config.seedEnabled) {
+    void runDevSeed().catch((error: unknown) => {
+      app.log.error({ err: error }, "dev seed failed");
+    });
+  }
 }
 
 const isMainModule =

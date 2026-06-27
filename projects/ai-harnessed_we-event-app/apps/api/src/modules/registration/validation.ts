@@ -103,12 +103,37 @@ export function assertParticipantCancellationAllowed(
 
   const now = Date.now();
   const closeAt = new Date(event.ruleConfig.registrationCloseAt).getTime();
-  if (now > closeAt) {
+  const pastDeadline = now > closeAt;
+  const registrationPhaseOpen =
+    event.state === "RegistrationOpen" || event.state === "Published";
+
+  if (pastDeadline) {
+    if (!registrationPhaseOpen) {
+      throw new ApiError({
+        code: VALIDATION_ERROR_CODES.CANCELLATION_NOT_ALLOWED,
+        message: "Cancellation is not allowed after the registration period has ended.",
+        statusCode: 422,
+        details: {
+          eventState: event.state,
+          registrationCloseAt: event.ruleConfig.registrationCloseAt,
+        },
+      });
+    }
+
     throw new ApiError({
       code: VALIDATION_ERROR_CODES.CANCELLATION_DEADLINE_PASSED,
       message: "Cancellation deadline has passed.",
       statusCode: 422,
       details: { registrationCloseAt: event.ruleConfig.registrationCloseAt },
+    });
+  }
+
+  if (!registrationPhaseOpen) {
+    throw new ApiError({
+      code: VALIDATION_ERROR_CODES.CANCELLATION_NOT_ALLOWED,
+      message: "Cancellation is not allowed after the registration period has ended.",
+      statusCode: 422,
+      details: { eventState: event.state },
     });
   }
 }

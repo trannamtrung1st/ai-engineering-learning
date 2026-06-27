@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { MapPin } from "lucide-react";
 
+import { EventCoverMedia } from "@/components/participant/event-cover-media";
 import { EventStateBadge } from "@/components/participant/event-state-badge";
 import { RegistrationStateBadge } from "@/components/participant/registration-state-badge";
 import { Button } from "@/components/ui/button";
@@ -27,6 +28,12 @@ export function EventCard({
 }: EventCardProps) {
   return (
     <article className="flex flex-col gap-4 rounded-[var(--radius-lg)] border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] p-6">
+      <EventCoverMedia
+        coverImageUrl={event.coverImageUrl}
+        alt={`Cover image for ${event.name}`}
+        variant="thumbnail"
+      />
+
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="space-y-1">
           <h2 className="text-[length:var(--font-size-lg)] font-[var(--font-weight-semibold)] text-[var(--color-text-primary)]">

@@ -5,11 +5,10 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, ClipboardCheck, MessageSquare, ShieldCheck } from "lucide-react";
 import type { RegistrationState } from "@we-event/domain";
 
-import { RegistrationStateBadge } from "@/components/participant/registration-state-badge";
+import { RegistrationStatusTimeline } from "@/components/participant/registration-status-timeline";
 import { FilterBar } from "@/components/layout/filter-bar";
 import { EmptyFailureBlock } from "@/components/layout/empty-failure-block";
 import { PageHeader } from "@/components/layout/page-header";
-import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Pagination } from "@/components/ui/pagination";
@@ -22,18 +21,19 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useLiveQuery } from "@/hooks/use-live-query";
-import { registrationStateLabel } from "@/lib/domain-labels";
-import { formatDateTime } from "@/lib/format";
-import { fetchMyRegistrations, type MyRegistrationListItem } from "@/lib/participant-api";
-import {
-  canSelfCheckIn,
-  canSubmitFeedback,
-  canViewEligibility,
-} from "@/lib/participant-rules";
+import { fetchMyRegistrations } from "@/lib/participant-api";
+import { deriveMyRegistrationQuickActions } from "@/lib/my-registration-actions";
 import { queryKeys } from "@/lib/query-keys";
 import { useAuth } from "@/providers/auth-provider";
 
 const REGISTRATION_PAGE_SIZE = 20;
+
+const REGISTRATION_SORT_OPTIONS = [
+  { value: "updatedAt:desc", label: "Recently updated" },
+  { value: "requestedAt:asc", label: "Request date (oldest first)" },
+] as const;
+
+type RegistrationSort = (typeof REGISTRATION_SORT_OPTIONS)[number]["value"];
 
 const REGISTRATION_STATE_FILTERS: Array<{
   value: "all" | RegistrationState;
@@ -48,44 +48,24 @@ const REGISTRATION_STATE_FILTERS: Array<{
   { value: "CancelledByUser", label: "Cancelled" },
 ];
 
-function showCheckInLink(item: MyRegistrationListItem): boolean {
-  return canSelfCheckIn(
-    item.eventState,
-    item.state,
-    item.checkinOpenAt,
-    item.checkinCloseAt,
-  );
-}
-
-function showFeedbackLink(item: MyRegistrationListItem): boolean {
-  return canSubmitFeedback(
-    item.eventState,
-    item.state,
-    item.feedbackOpenAt,
-    item.feedbackCloseAt,
-  );
-}
-
-function showEligibilityLink(item: MyRegistrationListItem): boolean {
-  return canViewEligibility(item.eventState, item.state);
-}
-
 export default function MyRegistrationsPage() {
   const { token } = useAuth();
   const [page, setPage] = useState(1);
   const [stateFilter, setStateFilter] = useState<"all" | RegistrationState>("all");
+  const [sort, setSort] = useState<RegistrationSort>("updatedAt:desc");
 
   useEffect(() => {
     setPage(1);
-  }, [stateFilter]);
+  }, [stateFilter, sort]);
 
   const listParams = useMemo(
     () => ({
       page,
       pageSize: REGISTRATION_PAGE_SIZE,
       state: stateFilter === "all" ? undefined : stateFilter,
+      sort,
     }),
-    [page, stateFilter],
+    [page, stateFilter, sort],
   );
 
   const registrationsQuery = useLiveQuery({
@@ -133,6 +113,20 @@ export default function MyRegistrationsPage() {
             </SelectContent>
           </Select>
         </Field>
+        <Field id="registration-sort" label="Sort by" className="min-w-[12rem]">
+          <Select value={sort} onValueChange={(value) => setSort(value as RegistrationSort)}>
+            <SelectTrigger id="registration-sort" aria-label="Sort by">
+              <SelectValue placeholder="Recently updated" />
+            </SelectTrigger>
+            <SelectContent>
+              {REGISTRATION_SORT_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
       </FilterBar>
 
       {registrationsQuery.isLoading ? (
@@ -157,12 +151,12 @@ export default function MyRegistrationsPage() {
         <EmptyFailureBlock
           variant="empty"
           title={
-            stateFilter === "all" ? "No registrations yet" : "No matching registrations"
+            stateFilter === "all" ? "No registrations yet" : "No registrations match this status"
           }
           description={
             stateFilter === "all"
               ? "Browse published events and register when registration is open."
-              : "Try choosing a different status filter."
+              : "Try choosing a different status filter or reset the filter."
           }
           actionLabel={stateFilter === "all" ? "Browse events" : "Clear filter"}
           onAction={() => {
@@ -170,6 +164,7 @@ export default function MyRegistrationsPage() {
               window.location.href = "/events";
             } else {
               setStateFilter("all");
+              setSort("updatedAt:desc");
               setPage(1);
             }
           }}
@@ -180,50 +175,32 @@ export default function MyRegistrationsPage() {
         <>
           <ul className="space-y-4">
             {items.map((item) => {
-              const statusLabel = registrationStateLabel(item.state);
-
+              const quickActions = deriveMyRegistrationQuickActions(item);
               return (
                 <li
                   key={item.registrationId}
                   className="rounded-[var(--radius-lg)] border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] p-6"
                 >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="space-y-1">
-                      <Link
-                        href={`/events/${item.eventId}`}
-                        className="text-[length:var(--font-size-lg)] font-[var(--font-weight-semibold)] text-[var(--color-text-primary)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-action-focus-ring)]"
-                      >
-                        {item.eventName}
-                      </Link>
-                      <p className="text-[length:var(--font-size-sm)] text-[var(--color-text-secondary)]">
-                        Registration updated {formatDateTime(item.updatedAt)}
-                      </p>
-                    </div>
-                    <RegistrationStateBadge state={item.state} />
+                  <div className="space-y-1">
+                    <Link
+                      href={`/events/${item.eventId}`}
+                      className="text-[length:var(--font-size-lg)] font-[var(--font-weight-semibold)] text-[var(--color-text-primary)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-action-focus-ring)]"
+                    >
+                      {item.eventName}
+                    </Link>
                   </div>
 
-                  {statusLabel.hint ? (
-                    <p className="mt-3 text-[length:var(--font-size-sm)] text-[var(--color-text-secondary)]">
-                      {statusLabel.hint}
-                    </p>
-                  ) : null}
-
-                  {item.waitlistPosition ? (
-                    <p className="mt-3 text-[length:var(--font-size-sm)] text-[var(--color-text-secondary)]">
-                      Queue position: {item.waitlistPosition}
-                    </p>
-                  ) : null}
-
-                  {item.reasonText ? (
-                    <div className="mt-3">
-                      <Alert variant="warning" title="Status note">
-                        {item.reasonText}
-                      </Alert>
-                    </div>
-                  ) : null}
+                  <div className="mt-4">
+                    <RegistrationStatusTimeline
+                      state={item.state}
+                      updatedAt={item.updatedAt}
+                      waitlistPosition={item.waitlistPosition}
+                      reasonText={item.reasonText}
+                    />
+                  </div>
 
                   <div className="mt-4 flex flex-wrap gap-2">
-                    {showCheckInLink(item) ? (
+                    {quickActions.showCheckIn ? (
                       <Button asChild size="sm" variant="secondary">
                         <Link href={`/events/${item.eventId}/check-in`}>
                           <ClipboardCheck className="h-4 w-4" aria-hidden />
@@ -232,7 +209,7 @@ export default function MyRegistrationsPage() {
                       </Button>
                     ) : null}
 
-                    {showFeedbackLink(item) ? (
+                    {quickActions.showFeedback ? (
                       <Button asChild size="sm" variant="secondary">
                         <Link href={`/events/${item.eventId}/feedback`}>
                           <MessageSquare className="h-4 w-4" aria-hidden />
@@ -241,7 +218,7 @@ export default function MyRegistrationsPage() {
                       </Button>
                     ) : null}
 
-                    {showEligibilityLink(item) ? (
+                    {quickActions.showEligibility ? (
                       <Button asChild size="sm" variant="ghost">
                         <Link href={`/events/${item.eventId}/eligibility`}>
                           <ShieldCheck className="h-4 w-4" aria-hidden />

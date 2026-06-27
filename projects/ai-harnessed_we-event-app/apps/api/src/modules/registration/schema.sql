@@ -38,6 +38,9 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_waitlist_event_position_active
   ON waitlist_entries(event_id, position)
   WHERE promoted_at IS NULL AND expired_at IS NULL;
 
+-- Legacy harness DBs used a non-partial unique index that blocked position reuse after promotion.
+DROP INDEX IF EXISTS uq_waitlist_event_position;
+
 CREATE INDEX IF NOT EXISTS idx_waitlist_event_queue
   ON waitlist_entries(event_id, position)
   WHERE promoted_at IS NULL AND expired_at IS NULL;

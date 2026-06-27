@@ -31,4 +31,17 @@ describe("semantic status tokens", () => {
       assert.match(globalsCss, new RegExp(`data-domain-status="${status}"`));
     }
   });
+
+  it("NFR-06: terminal registration tokens are distinct from active states", () => {
+    const terminal = ["cancelledByUser", "cancelledByOrganizer", "expired"] as const;
+    const active = ["registered", "waitlisted", "pending"] as const;
+
+    for (const status of terminal) {
+      assert.ok(statusTokenMap[status]);
+      assert.ok(!active.includes(status as (typeof active)[number]));
+    }
+
+    const terminalBgs = terminal.map((status) => statusTokenMap[status].bg);
+    assert.equal(new Set(terminalBgs).size, terminal.length);
+  });
 });

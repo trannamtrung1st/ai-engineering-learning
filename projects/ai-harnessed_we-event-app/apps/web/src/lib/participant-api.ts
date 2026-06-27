@@ -20,6 +20,7 @@ export interface EventListItem {
   state: EventState;
   startAt: string;
   location: string;
+  coverImageUrl?: string;
 }
 
 export interface MyRegistrationListItem {
@@ -35,6 +36,7 @@ export interface MyRegistrationListItem {
   checkinCloseAt: string;
   feedbackOpenAt: string;
   feedbackCloseAt: string;
+  selfCheckinEnabled?: boolean;
 }
 
 export interface FetchEventsParams {
@@ -78,6 +80,7 @@ export interface EventSummary {
   endAt: string;
   version: number;
   updatedAt: string;
+  coverImageUrl?: string;
   ruleConfig: EventRuleConfig;
 }
 
@@ -127,11 +130,7 @@ export interface EligibilityResult {
   updatedAt: string;
 }
 
-export interface SessionInfo {
-  actorId: string;
-  role: string;
-  assignedEventIds: string[];
-}
+export type { SessionInfo } from "@/lib/session-api";
 
 function authInit(token: string, init?: RequestInit): RequestInit & { token: string } {
   const headers = new Headers(init?.headers);
@@ -145,9 +144,7 @@ function idempotencyKey(): string {
   return crypto.randomUUID();
 }
 
-export function fetchSession(token: string): Promise<SessionInfo> {
-  return apiFetch<SessionInfo>("/me", { token });
-}
+export { fetchSession } from "@/lib/session-api";
 
 function buildQueryString(
   params: Record<string, string | number | undefined>,

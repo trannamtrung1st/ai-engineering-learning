@@ -154,7 +154,7 @@ export function EventLifecycleActions({ event }: EventLifecycleActionsProps) {
   );
 }
 
-function availableActions(
+export function availableActions(
   state: EventState,
   registrationPaused: boolean,
 ): Array<{

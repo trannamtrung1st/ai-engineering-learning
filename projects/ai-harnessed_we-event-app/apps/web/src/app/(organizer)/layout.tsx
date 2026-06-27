@@ -1,5 +1,7 @@
-import { OrganizerAuthProvider } from "@/providers/organizer-auth-provider";
+import { Suspense } from "react";
+
 import { OrganizerShell } from "@/components/organizer/organizer-shell";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function OrganizerLayout({
   children,
@@ -7,8 +9,15 @@ export default function OrganizerLayout({
   children: React.ReactNode;
 }) {
   return (
-    <OrganizerAuthProvider>
+    <Suspense
+      fallback={
+        <div className="space-y-4 p-6">
+          <Skeleton className="h-10 w-64" />
+          <Skeleton className="h-40 w-full" />
+        </div>
+      }
+    >
       <OrganizerShell>{children}</OrganizerShell>
-    </OrganizerAuthProvider>
+    </Suspense>
   );
 }

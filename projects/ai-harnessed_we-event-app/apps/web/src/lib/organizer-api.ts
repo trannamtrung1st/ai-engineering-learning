@@ -21,6 +21,26 @@ export const DEFAULT_ORGANIZATION_ID = "00000000-0000-0000-0000-000000000001";
 /** Seeded organizer admin — must be a UUID (audit log actor columns). */
 export const DEFAULT_ORGANIZER_ADMIN_ID =
   "00000000-0000-0000-0000-000000000099";
+/** Seeded organizer staff for browser fixture pagination. */
+export const DEFAULT_ORGANIZER_STAFF_ID =
+  "00000000-0000-0000-0000-000000000098";
+
+export interface DevSeedFixtures {
+  bulkRegistrationsEventId: string;
+  staffSub: string;
+  staffAssignedEventIds: string[];
+  staffCheckinEventId: string;
+  staffCheckinCloseBoundaryEventId: string;
+  participantSub: string;
+  waitlistSeatHolderSub: string;
+  checkinEventId: string;
+  checkinSelfDisabledEventId: string;
+  checkinCloseBoundaryEventId: string;
+  waitlistEventId: string;
+  feedbackEventId: string;
+  feedbackCloseBoundaryEventId: string;
+  attendedAbsentEventId: string;
+}
 
 export interface RuleConfigInput {
   capacity: number;
@@ -138,6 +158,9 @@ export interface EventDashboardMetrics {
   eligible: number;
   notEligible: number;
   pendingEligibility: number;
+  feedbackSubmitted: number;
+  feedbackRequired: boolean;
+  mandatoryFeedbackOutstanding: number;
 }
 
 export interface FetchEventsParams {
@@ -207,6 +230,10 @@ export function requestOrganizerDevToken(
     body: JSON.stringify({ sub, role, assignedEventIds }),
     headers: { "Content-Type": "application/json" },
   });
+}
+
+export function fetchDevFixtures(): Promise<DevSeedFixtures> {
+  return apiFetch<DevSeedFixtures>("/dev/fixtures");
 }
 
 export function fetchOrganizerEvents(
@@ -498,4 +525,81 @@ export function countRegisteredSeats(
     capacity: ruleConfig.capacity,
     waitlist,
   };
+}
+
+const API_PREFIX = "/api/v1";
+
+function coverUploadBaseUrl(): string {
+  if (typeof window !== "undefined") {
+    return "";
+  }
+  const base =
+    process.env.API_BASE_URL ??
+    process.env.NEXT_PUBLIC_API_BASE_URL ??
+    "http://localhost:3001";
+  return base.replace(/\/$/, "");
+}
+
+export function uploadEventCoverImage(
+  token: string,
+  eventId: string,
+  file: File,
+  onProgress?: (percent: number) => void,
+): Promise<EventSummary> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const formData = new FormData();
+    formData.append("file", file);
+
+    xhr.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable && onProgress) {
+        onProgress(Math.round((event.loaded / event.total) * 100));
+      }
+    });
+
+    xhr.addEventListener("load", () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText) as EventSummary);
+        } catch {
+          reject(new ApiClientError("Invalid upload response.", xhr.status));
+        }
+        return;
+      }
+
+      let message = `Upload failed (${xhr.status})`;
+      let code: string | undefined;
+      try {
+        const body = JSON.parse(xhr.responseText) as {
+          error?: { message?: string; code?: string };
+        };
+        message = body.error?.message ?? message;
+        code = body.error?.code;
+      } catch {
+        // Non-JSON error body — keep default message.
+      }
+      reject(new ApiClientError(message, xhr.status, code));
+    });
+
+    xhr.addEventListener("error", () => {
+      reject(new ApiClientError("Cover image upload failed.", 0));
+    });
+
+    xhr.open(
+      "POST",
+      `${coverUploadBaseUrl()}${API_PREFIX}/events/${eventId}/cover-image`,
+    );
+    xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    xhr.send(formData);
+  });
+}
+
+export function deleteEventCoverImage(
+  token: string,
+  eventId: string,
+): Promise<EventSummary> {
+  return apiFetch<EventSummary>(`/events/${eventId}/cover-image`, {
+    method: "DELETE",
+    token,
+  });
 }

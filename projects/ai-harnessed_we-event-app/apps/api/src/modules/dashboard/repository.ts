@@ -23,3 +23,21 @@ export async function countFeedbackSubmissionsForEvent(
   );
   return (result.rows[0] as { total: number }).total;
 }
+
+export async function countMandatoryFeedbackOutstanding(
+  eventId: string,
+  client: Pool | PoolClient = getPool(),
+): Promise<number> {
+  const result = await client.query(
+    `SELECT COUNT(*)::int AS total
+     FROM registrations r
+     WHERE r.event_id = $1
+       AND r.state::text = 'Attended'
+       AND NOT EXISTS (
+         SELECT 1 FROM feedback_submissions f
+         WHERE f.registration_id = r.id
+       )`,
+    [eventId],
+  );
+  return (result.rows[0] as { total: number }).total;
+}

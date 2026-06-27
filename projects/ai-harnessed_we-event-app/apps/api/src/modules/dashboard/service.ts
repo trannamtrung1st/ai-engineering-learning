@@ -5,7 +5,10 @@ import {
   listRegistrationsForEvent,
   listWaitlistForEvent,
 } from "../registration/repository.js";
-import { countFeedbackSubmissionsForEvent } from "./repository.js";
+import {
+  countFeedbackSubmissionsForEvent,
+  countMandatoryFeedbackOutstanding,
+} from "./repository.js";
 import type { EventDashboardSummary } from "./types.js";
 
 const LIST_OPTIONS = {
@@ -74,6 +77,10 @@ export class DashboardService {
       countFeedbackSubmissionsForEvent(eventId),
     ]);
 
+    const mandatoryFeedbackOutstanding = event.ruleConfig.feedbackRequired
+      ? await countMandatoryFeedbackOutstanding(eventId)
+      : 0;
+
     return {
       eventId,
       capacity: event.ruleConfig.capacity,
@@ -87,6 +94,7 @@ export class DashboardService {
       pendingEligibility: pendingEligibility.total,
       feedbackSubmitted,
       feedbackRequired: event.ruleConfig.feedbackRequired,
+      mandatoryFeedbackOutstanding,
     };
   }
 }

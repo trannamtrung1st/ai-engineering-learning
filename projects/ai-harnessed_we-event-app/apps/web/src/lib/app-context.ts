@@ -42,6 +42,11 @@ export const organizerNavItems: NavItem[] = [
     label: "Audit log",
     roles: ["organizer-admin"],
   },
+  {
+    href: "/organizer/export",
+    label: "Export center",
+    roles: ["organizer-admin"],
+  },
 ];
 
 export function roleLabel(role: AppRole): string {

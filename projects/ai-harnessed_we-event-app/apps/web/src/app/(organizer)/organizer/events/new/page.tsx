@@ -34,8 +34,12 @@ export default function CreateEventPage() {
       />
       <EventForm
         submitLabel="Create event"
-        onSubmit={async (values) => {
+        token={token!}
+        onSubmit={async (values, coverPicker) => {
           const created = await createEvent(token!, toCreateEventPayload(values));
+          if (coverPicker?.hasPendingFile()) {
+            await coverPicker.uploadPendingCover(created.eventId);
+          }
           await queryClient.invalidateQueries({
             queryKey: queryKeys.organizer.events.listRoot(),
           });

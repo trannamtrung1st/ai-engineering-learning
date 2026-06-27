@@ -722,4 +722,39 @@ describe("feedback and eligibility integration (FR-19, FR-21, BR-15, BR-16, BR-1
     assert.deepEqual(beyond.items, []);
     assert.equal(beyond.total, page.total);
   });
+
+  it("TC-FR-24-002 / FR-24 / FR-20 / FR-21 / AC-09 / AC-10 / AC-09a / AC-10a / BR-19: export CSV includes eligibility result and reason", async () => {
+    const { event, participantId, registrationId } =
+      await createCompletedEventWithAttendee();
+
+    await feedbackService.submit(
+      event.id,
+      participantId,
+      { answers: { q1: 5 } },
+      { actorId: participantId, actorRole: "Participant" },
+    );
+
+    const list = await eligibilityService.listEligibility(
+      event.id,
+      { page: "1", pageSize: "20" },
+      { actorId: ORG_ADMIN_ID, actorRole: "OrganizerAdmin" },
+    );
+    const entry = list.items.find(
+      (item) => item.registrationId === registrationId,
+    );
+    assert.ok(entry);
+    assert.equal(entry.eligibility.result, "Eligible");
+    assert.ok(entry.eligibility.reasonText);
+
+    const exported = await eligibilityService.exportEligibilityCsv(
+      event.id,
+      {},
+      { actorId: ORG_ADMIN_ID, actorRole: "OrganizerAdmin" },
+    );
+
+    assert.match(exported.csv, /participantId,registrationId,registrationState,eligibility,reason/);
+    assert.match(exported.csv, new RegExp(entry.eligibility.result));
+    assert.match(exported.csv, new RegExp(entry.eligibility.reasonText!));
+    assert.ok(exported.rowCount >= 1);
+  });
 });

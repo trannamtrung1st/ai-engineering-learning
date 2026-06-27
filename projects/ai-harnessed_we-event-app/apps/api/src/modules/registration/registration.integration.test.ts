@@ -96,6 +96,13 @@ async function newParticipantId(): Promise<string> {
   return participantId;
 }
 
+async function setRegistrationCloseAt(eventId: string, closeAt: string): Promise<void> {
+  await getPool().query(
+    `UPDATE event_rule_configs SET registration_close_at = $1 WHERE event_id = $2`,
+    [closeAt, eventId],
+  );
+}
+
 describe("registration integration (NFR-02, FR-31)", () => {
   before(async () => {
     const databaseUrl =
@@ -735,6 +742,130 @@ describe("registration integration (NFR-02, FR-31)", () => {
     });
     assert.deepEqual(beyond.items, []);
     assert.equal(beyond.total, 2);
+  });
+
+  it("TC-FR-11-008 / FR-11 / BR-07 / BR-09: cancellation after deadline rejected with CANCELLATION_DEADLINE_PASSED", async () => {
+    const event = await createRegistrationOpenEvent({ capacity: 5 });
+    const participantId = await newParticipantId();
+    const registered = await registrationService.register(
+      event.id,
+      participantId,
+      actorContext(participantId),
+    );
+
+    await setRegistrationCloseAt(
+      event.id,
+      new Date(Date.now() - 60_000).toISOString(),
+    );
+
+    await assert.rejects(
+      () =>
+        registrationService.cancel(
+          event.id,
+          registered.registrationId,
+          actorContext(participantId),
+        ),
+      (error: unknown) => {
+        assert.ok(error instanceof ApiError);
+        assert.equal(
+          error.code,
+          VALIDATION_ERROR_CODES.CANCELLATION_DEADLINE_PASSED,
+        );
+        assert.equal(error.statusCode, 422);
+        return true;
+      },
+    );
+
+    const row = await findRegistrationById(registered.registrationId);
+    assert.equal(row?.state, "Registered");
+    const registeredCount = await countSeatHolders(event.id, getPool());
+    assert.equal(registeredCount, 1);
+  });
+
+  it("TC-FR-11-019 / FR-11 / BR-07 / BR-09: cancellation deadline policy outcomes are deterministic", async () => {
+    const event = await createRegistrationOpenEvent({ capacity: 5 });
+    const participantId = await newParticipantId();
+    const registered = await registrationService.register(
+      event.id,
+      participantId,
+      actorContext(participantId),
+    );
+
+    const beforeDeadline = await registrationService.cancel(
+      event.id,
+      registered.registrationId,
+      actorContext(participantId),
+    );
+    assert.equal(beforeDeadline.cancelled.state, "CancelledByUser");
+
+    const lateEvent = await createRegistrationOpenEvent({ capacity: 5 });
+    const lateParticipant = await newParticipantId();
+    const lateRegistration = await registrationService.register(
+      lateEvent.id,
+      lateParticipant,
+      actorContext(lateParticipant),
+    );
+
+    await setRegistrationCloseAt(
+      lateEvent.id,
+      new Date(Date.now() - 60_000).toISOString(),
+    );
+
+    await assert.rejects(
+      () =>
+        registrationService.cancel(
+          lateEvent.id,
+          lateRegistration.registrationId,
+          actorContext(lateParticipant),
+        ),
+      (error: unknown) => {
+        assert.ok(error instanceof ApiError);
+        assert.equal(
+          error.code,
+          VALIDATION_ERROR_CODES.CANCELLATION_DEADLINE_PASSED,
+        );
+        return true;
+      },
+    );
+
+    const policyEvent = await createRegistrationOpenEvent({ capacity: 5 });
+    const policyParticipant = await newParticipantId();
+    const policyRegistration = await registrationService.register(
+      policyEvent.id,
+      policyParticipant,
+      actorContext(policyParticipant),
+    );
+
+    await setRegistrationCloseAt(
+      policyEvent.id,
+      new Date(Date.now() - 60_000).toISOString(),
+    );
+    await transitionEventState(policyEvent.id, "RegistrationClosed", {
+      actorId: ACTOR_ID,
+      actorRole: "OrganizerAdmin",
+      action: "event.registration_closed",
+    });
+
+    await assert.rejects(
+      () =>
+        registrationService.cancel(
+          policyEvent.id,
+          policyRegistration.registrationId,
+          actorContext(policyParticipant),
+        ),
+      (error: unknown) => {
+        assert.ok(error instanceof ApiError);
+        assert.equal(
+          error.code,
+          VALIDATION_ERROR_CODES.CANCELLATION_NOT_ALLOWED,
+        );
+        assert.equal(error.statusCode, 422);
+        return true;
+      },
+    );
+
+    const blocked = await findRegistrationById(policyRegistration.registrationId);
+    assert.equal(blocked?.state, "Registered");
   });
 
   it("FR-29 / FR-31 / NFR-16: my registrations includes gating context and waitlist details", async () => {

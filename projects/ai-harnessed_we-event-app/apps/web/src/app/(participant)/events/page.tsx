@@ -33,11 +33,19 @@ const EVENT_STATE_FILTERS: Array<{ value: "all" | EventState; label: string }> =
   { value: "Completed", label: "Completed" },
 ];
 
+const EVENT_SORT_OPTIONS = [
+  { value: "startAt:asc", label: "Start date (soonest)" },
+  { value: "updatedAt:desc", label: "Recently updated" },
+] as const;
+
+type EventSort = (typeof EVENT_SORT_OPTIONS)[number]["value"];
+
 export default function BrowseEventsPage() {
   const { token } = useAuth();
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [stateFilter, setStateFilter] = useState<"all" | EventState>("all");
+  const [sort, setSort] = useState<EventSort>("startAt:asc");
   const [page, setPage] = useState(1);
 
   useEffect(() => {
@@ -47,7 +55,7 @@ export default function BrowseEventsPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [search, stateFilter]);
+  }, [search, stateFilter, sort]);
 
   const listParams = useMemo(
     () => ({
@@ -55,8 +63,9 @@ export default function BrowseEventsPage() {
       pageSize: EVENT_PAGE_SIZE,
       q: search.trim() || undefined,
       state: stateFilter === "all" ? undefined : stateFilter,
+      sort,
     }),
-    [page, search, stateFilter],
+    [page, search, stateFilter, sort],
   );
 
   const eventsQuery = useLiveQuery({
@@ -85,7 +94,7 @@ export default function BrowseEventsPage() {
     <div className="space-y-8">
       <PageHeader
         title="Browse events"
-        subtitle="Discover published events, check availability, and see your registration status."
+        subtitle="Discover published events and review schedules, locations, and your registration status."
       />
 
       <FilterBar>
@@ -94,7 +103,7 @@ export default function BrowseEventsPage() {
             id="event-search"
             value={searchInput}
             onChange={(event) => setSearchInput(event.target.value)}
-            placeholder="Search by name or location"
+            placeholder="Search by name, location, or description"
           />
         </Field>
         <Field id="event-state-filter" label="Event state" className="min-w-[12rem]">
@@ -107,6 +116,20 @@ export default function BrowseEventsPage() {
             </SelectTrigger>
             <SelectContent>
               {EVENT_STATE_FILTERS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+        <Field id="event-sort" label="Sort by" className="min-w-[12rem]">
+          <Select value={sort} onValueChange={(value) => setSort(value as EventSort)}>
+            <SelectTrigger id="event-sort" aria-label="Sort by">
+              <SelectValue placeholder="Start date (soonest)" />
+            </SelectTrigger>
+            <SelectContent>
+              {EVENT_SORT_OPTIONS.map((option) => (
                 <SelectItem key={option.value} value={option.value}>
                   {option.label}
                 </SelectItem>
@@ -137,13 +160,14 @@ export default function BrowseEventsPage() {
       {eventsQuery.isSuccess && events.length === 0 ? (
         <EmptyFailureBlock
           variant="empty"
-          title="No events match your filters"
+          title="No results match your filters"
           description="Try clearing search or choosing a different event state."
           actionLabel="Clear filters"
           onAction={() => {
             setSearchInput("");
             setSearch("");
             setStateFilter("all");
+            setSort("startAt:asc");
             setPage(1);
           }}
         />
