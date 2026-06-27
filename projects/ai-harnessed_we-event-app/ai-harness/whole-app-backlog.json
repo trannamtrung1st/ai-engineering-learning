@@ -288,7 +288,7 @@
     },
     {
       "id": "module-audit",
-      "passes": false,
+      "passes": true,
       "priority": 24,
       "phase": 2,
       "agent": "backend",

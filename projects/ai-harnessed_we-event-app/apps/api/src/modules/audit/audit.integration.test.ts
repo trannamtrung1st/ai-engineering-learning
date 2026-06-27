@@ -95,7 +95,7 @@ describe("audit integration", () => {
     await closeDb();
   });
 
-  it("AC-11: critical rule config changes are audit logged with actor and reason", async () => {
+  it("AC-11 / TC-AC-11-001 / TC-AC-11-002: critical rule config changes are audit logged with actor and reason", async () => {
     const event = await createRegistrationOpenEvent({ capacity: 10 });
 
     await updateEvent(
@@ -124,9 +124,43 @@ describe("audit integration", () => {
     assert.equal(ruleChange.before.capacity, 10);
     assert.equal(ruleChange.after.capacity, 20);
     assert.ok(ruleChange.occurredAt);
+    assert.equal(ruleChange.entityType, "EventRuleConfig");
+    assert.equal(ruleChange.eventId, event.id);
+    assert.ok(ruleChange.entityId);
+    assert.equal(ruleChange.action, "event.rule_config.updated");
   });
 
-  it("AC-12: registration status changes are traceable via status history", async () => {
+  it("AC-11 / TC-AC-11-006: non-capacity rule config field change is audit logged with before/after diff", async () => {
+    const event = await createRegistrationOpenEvent({ capacity: 10 });
+
+    await updateEvent(
+      event.id,
+      {
+        ruleConfig: { waitlistEnabled: true },
+        reasonCode: "WAITLIST_ENABLED",
+        reasonText: "Enable waitlist after venue confirmation",
+      },
+      ACTOR_ID,
+      "OrganizerAdmin",
+    );
+
+    const { items } = await auditService.listAuditLogs(event.id, {
+      entityType: "EventRuleConfig",
+    });
+
+    const waitlistChange = items.find(
+      (entry) =>
+        entry.action === "event.rule_config.updated" &&
+        entry.reasonCode === "WAITLIST_ENABLED",
+    );
+    assert.ok(waitlistChange, "expected waitlist rule config audit entry");
+    assert.equal(waitlistChange.before.waitlistEnabled, false);
+    assert.equal(waitlistChange.after.waitlistEnabled, true);
+    assert.equal(waitlistChange.actorId, ACTOR_ID);
+    assert.equal(waitlistChange.reasonText, "Enable waitlist after venue confirmation");
+  });
+
+  it("AC-12 / TC-AC-12-001 / TC-AC-12-002: registration status changes are traceable via status history", async () => {
     const event = await createRegistrationOpenEvent({ capacity: 5 });
     const participantId = randomUUID();
     await ensureTestParticipant(participantId);
@@ -165,9 +199,94 @@ describe("audit integration", () => {
     assert.equal(cancelled.registrationId, registration.registrationId);
     assert.equal(cancelled.afterState, "CancelledByUser");
     assert.ok(cancelled.occurredAt);
+    assert.equal(accepted.actorId, participantId);
+    assert.equal(accepted.actorRole, "Participant");
   });
 
-  it("AC-13: paginated audit-logs and status-history return envelope metadata", async () => {
+  it("AC-12 / TC-AC-12-007: registrationId filter returns only that registration's transitions", async () => {
+    const event = await createRegistrationOpenEvent({ capacity: 10 });
+    const participantA = randomUUID();
+    const participantB = randomUUID();
+    await ensureTestParticipant(participantA);
+    await ensureTestParticipant(participantB);
+
+    const regA = await registrationService.register(event.id, participantA, {
+      actorId: participantA,
+      actorRole: "Participant",
+    });
+    await registrationService.register(event.id, participantB, {
+      actorId: participantB,
+      actorRole: "Participant",
+    });
+
+    const { items } = await auditService.listStatusHistory(event.id, {
+      registrationId: regA.registrationId,
+      pageSize: "100",
+    });
+
+    assert.ok(items.length >= 1);
+    for (const entry of items) {
+      assert.equal(entry.registrationId, regA.registrationId);
+    }
+  });
+
+  it("AC-12 / TC-AC-12-015: registrationId with no history returns empty paginated result", async () => {
+    const event = await createRegistrationOpenEvent({ capacity: 5 });
+    const unusedRegistrationId = randomUUID();
+
+    const result = await auditService.listStatusHistory(event.id, {
+      registrationId: unusedRegistrationId,
+    });
+
+    assert.deepEqual(result.items, []);
+    assert.equal(result.total, 0);
+    assert.equal(result.page, 1);
+    assert.equal(result.pageSize, 20);
+  });
+
+  it("AC-11 / TC-AC-11-017: audit logs default to newest-first when sort is omitted", async () => {
+    const event = await createRegistrationOpenEvent({ capacity: 10 });
+
+    await updateEvent(
+      event.id,
+      {
+        ruleConfig: { capacity: 15 },
+        reasonCode: "CAPACITY_CHANGE",
+        reasonText: "First expansion",
+      },
+      ACTOR_ID,
+      "OrganizerAdmin",
+    );
+
+    await updateEvent(
+      event.id,
+      {
+        ruleConfig: { capacity: 20 },
+        reasonCode: "CAPACITY_CHANGE",
+        reasonText: "Second expansion",
+      },
+      ACTOR_ID,
+      "OrganizerAdmin",
+    );
+
+    const { items } = await auditService.listAuditLogs(event.id, {
+      entityType: "EventRuleConfig",
+    });
+
+    const ruleChanges = items.filter(
+      (entry) => entry.action === "event.rule_config.updated",
+    );
+    assert.ok(ruleChanges.length >= 2, "expected two rule config audit entries");
+
+    for (let i = 1; i < ruleChanges.length; i++) {
+      assert.ok(
+        ruleChanges[i - 1]!.occurredAt >= ruleChanges[i]!.occurredAt,
+        "expected descending occurredAt order",
+      );
+    }
+  });
+
+  it("AC-13 / TC-AC-13-004 / TC-AC-11-012 / TC-AC-12-014: paginated audit-logs and status-history return envelope metadata", async () => {
     const event = await createRegistrationOpenEvent({ capacity: 3 });
     const participantIds = [randomUUID(), randomUUID(), randomUUID()];
 
@@ -207,5 +326,12 @@ describe("audit integration", () => {
     assert.ok(historyPage.total >= 3);
     assert.equal(historyPage.items.length, 2);
     assert.equal(historyPage.totalPages, Math.ceil(historyPage.total / 2));
+
+    const page2 = await auditService.listAuditLogs(event.id, {
+      page: "2",
+      pageSize: "2",
+    });
+    assert.equal(page2.total, auditPage.total);
+    assert.equal(page2.totalPages, auditPage.totalPages);
   });
 });
