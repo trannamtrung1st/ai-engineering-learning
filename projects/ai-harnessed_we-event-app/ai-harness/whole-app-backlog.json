@@ -322,7 +322,7 @@
     },
     {
       "id": "module-user-accounts",
-      "passes": false,
+      "passes": true,
       "priority": 25,
       "phase": 2,
       "agent": "backend",
