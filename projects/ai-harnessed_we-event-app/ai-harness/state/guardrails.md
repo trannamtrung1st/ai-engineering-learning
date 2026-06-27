@@ -361,3 +361,4 @@ Lessons learned across harness iterations. Read before every implementer session
 - [docker-compose-db] Do not cite generated case IDs (e.g. TC-NFR-02-019) on infra smoke tests; map each case ID to its real scenario in the owning module test file (waitlist concurrency → registration.integration.test.ts).
 - [api-foundation] AI review failed — see 20260626T184529Z-review.json
 - [module-event] Do not add AC-13 waitlist FIFO tests (TC-AC-13-014) in registration.integration.test.ts — module-event scope is apps/api/src/modules/event only; colocate cross-module pagination coverage in event.integration.test.ts.
+- [module-event-cover-image] Computational checks failed — see 20260627T033330Z-checks.json

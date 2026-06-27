@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { access, mkdtemp, rm } from "node:fs/promises";
+import { constants } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, describe, it } from "node:test";
@@ -101,7 +102,7 @@ describe("event cover image integration", () => {
     await rm(uploadsDir, { recursive: true, force: true });
   });
 
-  it("FR-35/FR-36: organizer uploads cover image and participant sees coverImageUrl", async () => {
+  it("TC-FR-35-001 / FR-35 / FR-36 / TC-NFR-18-006: organizer uploads cover image and participant sees coverImageUrl", async () => {
     const created = await eventService.create(
       createInput(),
       ACTOR_ID,
@@ -162,7 +163,7 @@ describe("event cover image integration", () => {
     assert.deepEqual(mediaResponse.rawPayload, MINIMAL_PNG);
   });
 
-  it("FR-35: replace deletes previous file and updates key", async () => {
+  it("TC-FR-35-002 / TC-FR-36-015 / FR-35: replace deletes previous file and updates key", async () => {
     const created = await eventService.create(
       createInput(),
       ACTOR_ID,
@@ -203,7 +204,7 @@ describe("event cover image integration", () => {
     assert.equal(staleMedia.statusCode, 404);
   });
 
-  it("DELETE /cover-image removes image and clears coverImageUrl", async () => {
+  it("TC-FR-35-003 / TC-NFR-18-011 / FR-35: DELETE /cover-image removes image and clears coverImageUrl", async () => {
     const created = await eventService.create(
       createInput(),
       ACTOR_ID,
@@ -239,7 +240,7 @@ describe("event cover image integration", () => {
     assert.equal(mediaResponse.statusCode, 404);
   });
 
-  it("NFR-18: rejects invalid MIME type and oversized uploads", async () => {
+  it("TC-FR-35-007 / TC-FR-35-008 / TC-NFR-18-005 / NFR-18: rejects invalid MIME type and oversized uploads", async () => {
     const created = await eventService.create(
       createInput(),
       ACTOR_ID,
@@ -283,5 +284,193 @@ describe("event cover image integration", () => {
       ),
     });
     assert.equal(oversized.statusCode, 400);
+  });
+
+  it("TC-FR-36-005 / TC-NFR-18-003 / FR-36: list and detail expose coverImageUrl on controlled media path", async () => {
+    const uniqueName = `Cover Image List Test ${Date.now()}`;
+    const input = { ...createInput(), name: uniqueName };
+    const created = await eventService.create(
+      input,
+      ACTOR_ID,
+      "OrganizerAdmin",
+    );
+    await eventService.publish(created.eventId, {
+      actorId: ACTOR_ID,
+      actorRole: "OrganizerAdmin",
+    });
+
+    const adminToken = await signDevToken(app, ACTOR_ID, "OrganizerAdmin");
+    const boundary = "we-event-list-boundary";
+    const uploadResponse = await app.inject({
+      method: "POST",
+      url: `${API_BASE_PATH}/events/${created.eventId}/cover-image`,
+      headers: {
+        authorization: `Bearer ${adminToken}`,
+        "content-type": `multipart/form-data; boundary=${boundary}`,
+      },
+      payload: multipartPayload(boundary, "cover.png", "image/png", MINIMAL_PNG),
+    });
+    assert.equal(uploadResponse.statusCode, 200, uploadResponse.body);
+    const uploaded = JSON.parse(uploadResponse.body) as { coverImageUrl: string };
+    assert.match(uploaded.coverImageUrl, /^\/api\/v1\/media\/events\/.+\.png$/);
+
+    const listResponse = await app.inject({
+      method: "GET",
+      url: `${API_BASE_PATH}/events?page=1&pageSize=12&q=${encodeURIComponent(uniqueName)}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    assert.equal(listResponse.statusCode, 200, listResponse.body);
+    const list = JSON.parse(listResponse.body) as {
+      items: Array<{ eventId: string; coverImageUrl?: string }>;
+    };
+    const listItem = list.items.find((item) => item.eventId === created.eventId);
+    assert.ok(listItem, listResponse.body);
+    assert.equal(listItem.coverImageUrl, uploaded.coverImageUrl);
+
+    const detailResponse = await app.inject({
+      method: "GET",
+      url: `${API_BASE_PATH}/events/${created.eventId}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    const detail = JSON.parse(detailResponse.body) as { coverImageUrl: string };
+    assert.equal(detail.coverImageUrl, uploaded.coverImageUrl);
+  });
+
+  it("TC-NFR-18-002 / NFR-18: uploaded cover file persisted under configured uploads directory", async () => {
+    const created = await eventService.create(
+      createInput(),
+      ACTOR_ID,
+      "OrganizerAdmin",
+    );
+    const adminToken = await signDevToken(app, ACTOR_ID, "OrganizerAdmin");
+    const boundary = "we-event-fs-boundary";
+
+    const uploadResponse = await app.inject({
+      method: "POST",
+      url: `${API_BASE_PATH}/events/${created.eventId}/cover-image`,
+      headers: {
+        authorization: `Bearer ${adminToken}`,
+        "content-type": `multipart/form-data; boundary=${boundary}`,
+      },
+      payload: multipartPayload(boundary, "cover.png", "image/png", MINIMAL_PNG),
+    });
+    assert.equal(uploadResponse.statusCode, 200, uploadResponse.body);
+    const uploaded = JSON.parse(uploadResponse.body) as { coverImageUrl: string };
+    const key = uploaded.coverImageUrl.replace(`${API_BASE_PATH}/media/events/`, "");
+    const filePath = join(uploadsDir, "events", key);
+    await access(filePath, constants.R_OK);
+  });
+
+  it("TC-FR-35-010 / TC-FR-35-011 / TC-FR-35-012 / FR-35: cover mutations require OrganizerAdmin", async () => {
+    const created = await eventService.create(
+      createInput(),
+      ACTOR_ID,
+      "OrganizerAdmin",
+    );
+    const adminToken = await signDevToken(app, ACTOR_ID, "OrganizerAdmin");
+    const participantToken = await signDevToken(
+      app,
+      "00000000-0000-0000-0000-000000000077",
+      "Participant",
+    );
+    const staffToken = await signDevToken(
+      app,
+      "00000000-0000-0000-0000-000000000066",
+      "OrganizerStaff",
+    );
+    const boundary = "we-event-rbac-boundary";
+    const payload = multipartPayload(
+      boundary,
+      "cover.png",
+      "image/png",
+      MINIMAL_PNG,
+    );
+
+    const unauthenticated = await app.inject({
+      method: "POST",
+      url: `${API_BASE_PATH}/events/${created.eventId}/cover-image`,
+      headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+      payload,
+    });
+    assert.equal(unauthenticated.statusCode, 401);
+
+    const participantUpload = await app.inject({
+      method: "POST",
+      url: `${API_BASE_PATH}/events/${created.eventId}/cover-image`,
+      headers: {
+        authorization: `Bearer ${participantToken}`,
+        "content-type": `multipart/form-data; boundary=${boundary}`,
+      },
+      payload,
+    });
+    assert.equal(participantUpload.statusCode, 403);
+
+    const staffUpload = await app.inject({
+      method: "POST",
+      url: `${API_BASE_PATH}/events/${created.eventId}/cover-image`,
+      headers: {
+        authorization: `Bearer ${staffToken}`,
+        "content-type": `multipart/form-data; boundary=${boundary}`,
+      },
+      payload,
+    });
+    assert.equal(staffUpload.statusCode, 403);
+
+    const adminUpload = await app.inject({
+      method: "POST",
+      url: `${API_BASE_PATH}/events/${created.eventId}/cover-image`,
+      headers: {
+        authorization: `Bearer ${adminToken}`,
+        "content-type": `multipart/form-data; boundary=${boundary}`,
+      },
+      payload,
+    });
+    assert.equal(adminUpload.statusCode, 200, adminUpload.body);
+
+    const participantDelete = await app.inject({
+      method: "DELETE",
+      url: `${API_BASE_PATH}/events/${created.eventId}/cover-image`,
+      headers: { authorization: `Bearer ${participantToken}` },
+    });
+    assert.equal(participantDelete.statusCode, 403);
+
+    const staffDelete = await app.inject({
+      method: "DELETE",
+      url: `${API_BASE_PATH}/events/${created.eventId}/cover-image`,
+      headers: { authorization: `Bearer ${staffToken}` },
+    });
+    assert.equal(staffDelete.statusCode, 403);
+  });
+
+  it("TC-FR-35-016 / FR-35: DELETE cover-image on event without cover succeeds without side effects", async () => {
+    const created = await eventService.create(
+      createInput(),
+      ACTOR_ID,
+      "OrganizerAdmin",
+    );
+    const adminToken = await signDevToken(app, ACTOR_ID, "OrganizerAdmin");
+
+    const deleteResponse = await app.inject({
+      method: "DELETE",
+      url: `${API_BASE_PATH}/events/${created.eventId}/cover-image`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    assert.equal(deleteResponse.statusCode, 200, deleteResponse.body);
+    const body = JSON.parse(deleteResponse.body) as { coverImageUrl?: string };
+    assert.equal(body.coverImageUrl, undefined);
+  });
+
+  it("TC-FR-35-017 / TC-NFR-18-010 / NFR-18: media route rejects path traversal and invalid keys", async () => {
+    const traversal = await app.inject({
+      method: "GET",
+      url: `${API_BASE_PATH}/media/events/../etc/passwd`,
+    });
+    assert.equal(traversal.statusCode, 404);
+
+    const invalidKey = await app.inject({
+      method: "GET",
+      url: `${API_BASE_PATH}/media/events/not-a-valid-key`,
+    });
+    assert.equal(invalidKey.statusCode, 404);
   });
 });

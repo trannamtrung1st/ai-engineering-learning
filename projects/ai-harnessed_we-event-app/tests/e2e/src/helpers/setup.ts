@@ -92,10 +92,53 @@ export async function signDevToken(
   return (JSON.parse(response.body) as { token: string }).token;
 }
 
+export function buildMultipartPayload(
+  boundary: string,
+  filename: string,
+  mimeType: string,
+  data: Buffer,
+): Buffer {
+  const prefix = Buffer.from(
+    `--${boundary}\r\n` +
+      `Content-Disposition: form-data; name="file"; filename="${filename}"\r\n` +
+      `Content-Type: ${mimeType}\r\n\r\n`,
+  );
+  const suffix = Buffer.from(`\r\n--${boundary}--\r\n`);
+  return Buffer.concat([prefix, data, suffix]);
+}
+
+export async function uploadCoverImage(
+  app: FastifyInstance,
+  options: {
+    eventId: string;
+    token: string;
+    filename: string;
+    mimeType: string;
+    data: Buffer;
+    boundary?: string;
+  },
+) {
+  const boundary = options.boundary ?? `we-event-cover-${randomUUID()}`;
+  return app.inject({
+    method: "POST",
+    url: `${API_PREFIX}/events/${options.eventId}/cover-image`,
+    headers: {
+      authorization: `Bearer ${options.token}`,
+      "content-type": `multipart/form-data; boundary=${boundary}`,
+    },
+    payload: buildMultipartPayload(
+      boundary,
+      options.filename,
+      options.mimeType,
+      options.data,
+    ),
+  });
+}
+
 export async function apiRequest(
   app: FastifyInstance,
   options: {
-    method: "GET" | "POST" | "PATCH";
+    method: "GET" | "POST" | "PATCH" | "DELETE";
     path: string;
     token?: string;
     payload?: unknown;

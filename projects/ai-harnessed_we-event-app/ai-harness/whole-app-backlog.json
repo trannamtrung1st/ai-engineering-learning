@@ -368,7 +368,7 @@
     },
     {
       "id": "module-event-cover-image",
-      "passes": false,
+      "passes": true,
       "priority": 26,
       "phase": 2,
       "agent": "backend",
@@ -391,6 +391,9 @@
         ],
         "integration": [
           "apps/api/src/modules/event/cover-image.integration.test.ts"
+        ],
+        "e2e": [
+          "tests/e2e/src/scenarios/cover-image.test.ts"
         ],
         "acceptanceTags": [
           "FR-35",
