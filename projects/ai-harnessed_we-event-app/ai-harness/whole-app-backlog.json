@@ -666,7 +666,7 @@
     },
     {
       "id": "web-event-cover-image",
-      "passes": false,
+      "passes": true,
       "priority": 36,
       "phase": 3,
       "agent": "frontend",
@@ -690,6 +690,15 @@
           "AC-17",
           "FR-35",
           "FR-36"
+        ],
+        "unit": [
+          "apps/web/src/lib/cover-image.test.ts"
+        ],
+        "component": [
+          "apps/web/src/components/organizer/event-cover-picker.test.tsx",
+          "apps/web/src/components/organizer/event-form.test.tsx",
+          "apps/web/src/components/participant/event-card.test.tsx",
+          "apps/web/src/components/participant/event-cover-media.test.tsx"
         ]
       }
     },

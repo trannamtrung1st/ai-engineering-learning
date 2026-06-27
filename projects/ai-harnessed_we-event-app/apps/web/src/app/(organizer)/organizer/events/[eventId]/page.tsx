@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
+import { EventCoverMedia } from "@/components/participant/event-cover-media";
 import { EventStateBadge } from "@/components/participant/event-state-badge";
 import { CapacityMeter } from "@/components/organizer/capacity-meter";
 import { EventLifecycleActions } from "@/components/organizer/event-lifecycle-actions";
@@ -86,6 +87,12 @@ export default function EventDashboardPage() {
         title={event.name}
         subtitle={`${formatDateTime(event.startAt)} · ${event.location || "Location TBD"}`}
         actions={<EventStateBadge state={event.state} />}
+      />
+
+      <EventCoverMedia
+        coverImageUrl={event.coverImageUrl}
+        alt={`Cover image for ${event.name}`}
+        variant="hero"
       />
 
       {isAdmin ? <EventLifecycleActions event={event} /> : null}

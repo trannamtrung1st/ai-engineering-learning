@@ -519,3 +519,80 @@ export function countRegisteredSeats(
     waitlist,
   };
 }
+
+const API_PREFIX = "/api/v1";
+
+function coverUploadBaseUrl(): string {
+  if (typeof window !== "undefined") {
+    return "";
+  }
+  const base =
+    process.env.API_BASE_URL ??
+    process.env.NEXT_PUBLIC_API_BASE_URL ??
+    "http://localhost:3001";
+  return base.replace(/\/$/, "");
+}
+
+export function uploadEventCoverImage(
+  token: string,
+  eventId: string,
+  file: File,
+  onProgress?: (percent: number) => void,
+): Promise<EventSummary> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const formData = new FormData();
+    formData.append("file", file);
+
+    xhr.upload.addEventListener("progress", (event) => {
+      if (event.lengthComputable && onProgress) {
+        onProgress(Math.round((event.loaded / event.total) * 100));
+      }
+    });
+
+    xhr.addEventListener("load", () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText) as EventSummary);
+        } catch {
+          reject(new ApiClientError("Invalid upload response.", xhr.status));
+        }
+        return;
+      }
+
+      let message = `Upload failed (${xhr.status})`;
+      let code: string | undefined;
+      try {
+        const body = JSON.parse(xhr.responseText) as {
+          error?: { message?: string; code?: string };
+        };
+        message = body.error?.message ?? message;
+        code = body.error?.code;
+      } catch {
+        // Non-JSON error body — keep default message.
+      }
+      reject(new ApiClientError(message, xhr.status, code));
+    });
+
+    xhr.addEventListener("error", () => {
+      reject(new ApiClientError("Cover image upload failed.", 0));
+    });
+
+    xhr.open(
+      "POST",
+      `${coverUploadBaseUrl()}${API_PREFIX}/events/${eventId}/cover-image`,
+    );
+    xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    xhr.send(formData);
+  });
+}
+
+export function deleteEventCoverImage(
+  token: string,
+  eventId: string,
+): Promise<EventSummary> {
+  return apiFetch<EventSummary>(`/events/${eventId}/cover-image`, {
+    method: "DELETE",
+    token,
+  });
+}

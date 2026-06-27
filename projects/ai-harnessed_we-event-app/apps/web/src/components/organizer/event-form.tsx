@@ -1,10 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useForm } from "react-hook-form";
 import type { EventState } from "@we-event/domain";
 import { z } from "zod";
 
+import {
+  EventCoverPicker,
+  type EventCoverPickerHandle,
+} from "@/components/organizer/event-cover-picker";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -187,15 +191,25 @@ export interface EventFormProps {
   initial?: EventFormInitialValues;
   eventState?: EventState;
   submitLabel: string;
-  onSubmit: (values: EventFormValues) => Promise<void>;
+  token?: string;
+  eventId?: string;
+  initialCoverImageUrl?: string;
+  onSubmit: (
+    values: EventFormValues,
+    coverPicker?: EventCoverPickerHandle,
+  ) => Promise<void>;
 }
 
 export function EventForm({
   initial,
   eventState,
   submitLabel,
+  token,
+  eventId,
+  initialCoverImageUrl,
   onSubmit,
 }: EventFormProps) {
+  const coverPickerRef = useRef<EventCoverPickerHandle>(null);
   const form = useForm<EventFormValues>({
     defaultValues: buildDefaults(initial),
     mode: "onBlur",
@@ -238,7 +252,7 @@ export function EventForm({
               return;
             }
           }
-          await onSubmit(parsed.data);
+          await onSubmit(parsed.data, coverPickerRef.current ?? undefined);
         } catch (error) {
           setSubmitError(
             error instanceof Error ? error.message : "Could not save event.",
@@ -316,6 +330,15 @@ export function EventForm({
           />
         </div>
       </section>
+
+      {token ? (
+        <EventCoverPicker
+          ref={coverPickerRef}
+          token={token}
+          eventId={eventId}
+          initialCoverImageUrl={initialCoverImageUrl}
+        />
+      ) : null}
 
       <section className="space-y-4">
         <h2 className="text-[length:var(--font-size-lg)] font-[var(--font-weight-semibold)]">

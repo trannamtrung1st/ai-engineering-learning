@@ -436,3 +436,7 @@ Append-only log of completed iterations.
 - 2026-06-27T10:20:23Z | web-auth-session-pages | browser_test_failed
 - 2026-06-27T10:25:00Z | web-auth-session-pages | browser: cleared stale .next; signup/login noValidate shows Zod field errors; signup→JWT+displayName; returnUrl login→/registrations; TopBar sign-out clears session; /registrations & /organizer/events guards redirect unauthenticated users; organizer credential login shows Organizer Admin — HTTP 200
 - 2026-06-27T10:35:47Z | web-auth-session-pages | passed
+- 2026-06-27T10:41:00Z | web-event-cover-image | browser: organizer edit form cover picker uploads PNG with Replace/Remove; participant /events 12×16:9 placeholders; /events/{id} hero via next/image after upload (DEV01) — HTTP 200
+- 2026-06-27T10:48:48Z | web-event-cover-image | browser_test_failed
+- 2026-06-27T10:52:00Z | web-event-cover-image | browser: TC-FR-36-009 organizer dashboard DEV01 shows event-cover-image hero via next/image; /events/{id} still access-denied for OrganizerAdmin (operational preview path) — HTTP 200
+- 2026-06-27T11:02:25Z | web-event-cover-image | passed

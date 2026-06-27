@@ -390,3 +390,4 @@ Lessons learned across harness iterations. Read before every implementer session
 - [web-auth-session-pages] Browser test failed — see 20260627T100250Z-browser-test.json
 - [web-auth-session-pages] Signup/login forms must set `noValidate` — native `type="email"` constraint validation blocks `onSubmit`, so Zod field errors never render (TC-FR-32-017, TC-FR-33-016).
 - [web-auth-session-pages] Stale `apps/web/.next` yields `_next/static/chunks/*.js` 404 and inoperative client auth (route guards stuck on Loading…, forms native GET submit); clear `.next` via `aih:preview` reset before browser gates.
+- [web-event-cover-image] Browser test failed — see 20260627T103547Z-browser-test.json

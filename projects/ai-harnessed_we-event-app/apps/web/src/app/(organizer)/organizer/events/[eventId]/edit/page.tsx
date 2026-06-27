@@ -75,6 +75,9 @@ export default function EditEventPage() {
           ruleConfig: event.ruleConfig,
         }}
         eventState={event.state}
+        eventId={eventId}
+        token={token!}
+        initialCoverImageUrl={event.coverImageUrl}
         submitLabel="Save changes"
         onSubmit={async (values) => {
           await updateEvent(token!, eventId, toUpdateEventPayload(values));
