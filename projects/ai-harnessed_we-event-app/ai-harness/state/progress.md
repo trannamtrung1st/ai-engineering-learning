@@ -379,3 +379,4 @@ Append-only log of completed iterations.
 - 2026-06-26T19:16:47Z | module-event | passed
 - 2026-06-27T02:43:45Z | module-registration | passed
 - 2026-06-27T02:50:29Z | module-checkin | passed
+- 2026-06-27T02:58:50Z | module-feedback-eligibility | passed

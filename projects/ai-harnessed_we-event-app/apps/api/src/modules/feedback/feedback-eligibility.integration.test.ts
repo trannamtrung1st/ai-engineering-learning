@@ -624,7 +624,7 @@ describe("feedback and eligibility integration (FR-19, FR-21, BR-15, BR-16, BR-1
     assert.ok(entry.eligibility.reasonText);
   });
 
-  it("TC-AC-10-008 / FR-21 / BR-20: revoked eligibility appears in organizer list", async () => {
+  it("TC-AC-10-008 / FR-21 / FR-37 / BR-20: revoked eligibility appears in organizer list", async () => {
     const { event, participantId, registrationId } =
       await createCompletedEventWithAttendee();
 
