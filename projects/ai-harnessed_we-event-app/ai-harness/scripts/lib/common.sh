@@ -231,6 +231,22 @@ agent_timeout_message() {
   echo "ERROR: Agent timed out after ${timeout_ms}ms (${timeout_min}m)"
 }
 
+agent_stream_enabled() {
+  [[ "${AIH_STREAM_AGENT:-1}" != "0" ]]
+}
+
+run_agent_uses_stream_json() {
+  local arg
+  for arg in "$@"; do
+    [[ "$arg" == "stream-json" ]] && return 0
+  done
+  return 1
+}
+
+agent_verbose_enabled() {
+  [[ "${AIH_AGENT_VERBOSE:-1}" == "1" ]]
+}
+
 run_command_with_timeout_ms() {
   local timeout_ms="$1"
   shift
@@ -260,6 +276,24 @@ run_agent_with_timeout_ms() {
   local outfile="$2"
   shift 2
   local status timeout_msg fifo tee_pid
+  local -a stream_cmd
+
+  if [[ -n "$outfile" ]] && agent_stream_enabled && run_agent_uses_stream_json "$@"; then
+    stream_cmd=(node "${HARNESS_ROOT}/scripts/lib/stream-agent-output.js" --outfile "$outfile")
+    if agent_verbose_enabled; then
+      stream_cmd+=(--verbose)
+    fi
+    stream_cmd+=(-- "$@")
+    set +e
+    run_command_with_timeout_ms "$timeout_ms" "${stream_cmd[@]}"
+    status=$?
+    set -e
+    if [[ "$status" -eq "$AGENT_TIMEOUT_EXIT" ]]; then
+      timeout_msg="$(agent_timeout_message "$timeout_ms")"
+      echo "$timeout_msg" | tee -a "$outfile" >&2
+    fi
+    return "$status"
+  fi
 
   if [[ -n "$outfile" ]]; then
     fifo="$(mktemp -u "${TMPDIR:-/tmp}/aih-agent.XXXXXX")"
@@ -792,7 +826,12 @@ agent_invoke() {
   local outfile="${3:-}"
   local slice_id="${4:-${AIH_CHECK_SLICE:-}}"
   require_agent
-  local -a args=(-p --force --output-format text --model "$model")
+  local -a args
+  if agent_stream_enabled; then
+    args=(-p --force --output-format stream-json --stream-partial-output --model "$model")
+  else
+    args=(-p --force --output-format text --model "$model")
+  fi
   if slice_uses_browser_mcp "$slice_id"; then
     args+=(--approve-mcps)
   fi
