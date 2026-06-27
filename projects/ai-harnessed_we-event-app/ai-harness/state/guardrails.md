@@ -392,3 +392,7 @@ Lessons learned across harness iterations. Read before every implementer session
 - [web-auth-session-pages] Stale `apps/web/.next` yields `_next/static/chunks/*.js` 404 and inoperative client auth (route guards stuck on Loading…, forms native GET submit); clear `.next` via `aih:preview` reset before browser gates.
 - [web-event-cover-image] Browser test failed — see 20260627T103547Z-browser-test.json
 - [web-organizer-operations-dashboard] Browser test failed — see 20260627T113924Z-browser-test.json
+- [web-organizer-registration-checkin] Browser test failed — see 20260627T122242Z-browser-test.json
+- [web-organizer-registration-checkin] Browser gates for staff check-in need dev-seed fixtures in staff scope (`staffCheckinEventId`, `staffCheckinCloseBoundaryEventId` on staff-assign-01/02), `attendedAbsentEventId` for Attended+Absent badges, and login-capable `waitlistSeatHolderSub` (participant-2) — not anonymous UUID seat-holders.
+- [web-organizer-registration-checkin] Seed organizer/staff UUIDs like `00000000-…-0098` fail RFC version-nibble check in `resolveActorId`; staff credential check-in 500s on `checkin_records_operator_id_fkey` unless UUID pattern accepts version 0.
+- [web-organizer-registration-checkin] Browser test failed — see 20260627T124416Z-browser-test.json

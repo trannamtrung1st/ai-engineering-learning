@@ -31,19 +31,27 @@ export const SEED_ORG_ID = "00000000-0000-0000-0000-000000000001";
 export const SEED_ORG_ADMIN_ID = "00000000-0000-0000-0000-000000000099";
 export const SEED_ORG_STAFF_ID = "00000000-0000-0000-0000-000000000098";
 export const SEED_PARTICIPANT_SUB = "participant-1";
+/** Seat holder for waitlist promotion browser journeys (login + cancel). */
+export const SEED_PARTICIPANT_B_SUB = "participant-2";
+/** Registered target for staff check-in console browser journeys. */
+export const SEED_STAFF_CHECKIN_TARGET_SUB = "participant-3";
 export const SEED_MARKER = "browser-fixture";
 
 export interface DevSeedFixtures {
   bulkRegistrationsEventId: string;
   staffSub: string;
   staffAssignedEventIds: string[];
+  staffCheckinEventId: string;
+  staffCheckinCloseBoundaryEventId: string;
   participantSub: string;
+  waitlistSeatHolderSub: string;
   checkinEventId: string;
   checkinSelfDisabledEventId: string;
   checkinCloseBoundaryEventId: string;
   waitlistEventId: string;
   feedbackEventId: string;
   feedbackCloseBoundaryEventId: string;
+  attendedAbsentEventId: string;
 }
 
 function seedWindows() {
@@ -128,8 +136,46 @@ async function ensureBulkRegistrationsEvent(
   return eventId;
 }
 
+async function ensureEventOpenForRegistration(
+  eventId: string,
+  context: { actorId: string; actorRole: "OrganizerAdmin" },
+): Promise<void> {
+  const eventService = new EventService();
+  const refreshed = await findEventById(eventId);
+  if (refreshed?.state === "Published") {
+    await eventService.openRegistration(eventId, context);
+  }
+}
+
+async function configureStaffCheckinHappyPath(
+  eventId: string,
+  participantId: string,
+  context: { actorId: string; actorRole: "OrganizerAdmin" },
+): Promise<void> {
+  const windows = seedWindows();
+  await ensureEventOpenForRegistration(eventId, context);
+  await ensureRegisteredNotCheckedIn(eventId, participantId);
+  await updateCheckinWindow(eventId, windows.open, windows.close);
+  await ensureEventInProgress(eventId, context);
+}
+
+async function configureStaffCheckinCloseBoundary(
+  eventId: string,
+  participantId: string,
+  context: { actorId: string; actorRole: "OrganizerAdmin" },
+): Promise<void> {
+  const now = Date.now();
+  const checkinOpenAt = new Date(now - 3_600_000).toISOString();
+  const checkinCloseAt = new Date(now - 30_000).toISOString();
+  await ensureEventOpenForRegistration(eventId, context);
+  await ensureRegisteredNotCheckedIn(eventId, participantId);
+  await updateCheckinWindow(eventId, checkinOpenAt, checkinCloseAt);
+  await ensureEventInProgress(eventId, context);
+}
+
 async function ensureStaffAssignedEvents(
   context: { actorId: string; actorRole: "OrganizerAdmin" },
+  staffCheckinTargetId: string,
 ): Promise<string[]> {
   const eventService = new EventService();
   const windows = seedWindows();
@@ -163,6 +209,17 @@ async function ensureStaffAssignedEvents(
       eventId = draft.id;
       await eventService.publish(eventId, context);
     }
+
+    if (index === 1) {
+      await configureStaffCheckinHappyPath(eventId, staffCheckinTargetId, context);
+    } else if (index === 2) {
+      await configureStaffCheckinCloseBoundary(
+        eventId,
+        staffCheckinTargetId,
+        context,
+      );
+    }
+
     assignedIds.push(eventId);
   }
 
@@ -418,51 +475,83 @@ async function ensureCheckinCloseBoundaryFixture(
   return eventId;
 }
 
+async function isWaitlistFixtureValid(
+  eventId: string,
+  waitlistedParticipantId: string,
+  seatHolderParticipantId: string,
+): Promise<boolean> {
+  const result = await getPool().query<{
+    participant_id: string;
+    state: string;
+  }>(
+    `SELECT participant_id, state::text AS state FROM registrations
+     WHERE event_id = $1 AND participant_id = ANY($2::uuid[])`,
+    [eventId, [waitlistedParticipantId, seatHolderParticipantId]],
+  );
+  const byParticipant = new Map(
+    result.rows.map((row) => [row.participant_id, row.state]),
+  );
+  return (
+    byParticipant.get(waitlistedParticipantId) === "Waitlisted" &&
+    byParticipant.get(seatHolderParticipantId) === "Registered"
+  );
+}
+
 async function seedWaitlistParticipants(
   eventId: string,
-  participantId: string,
+  waitlistedParticipantId: string,
+  seatHolderParticipantId: string,
 ): Promise<void> {
   const registrationService = new RegistrationService();
-  const seatHolderId = randomUUID();
-  await ensureTestParticipant(seatHolderId);
-  await registrationService.register(eventId, seatHolderId, {
-    actorId: seatHolderId,
+  await ensureTestParticipant(seatHolderParticipantId);
+  await ensureTestParticipant(waitlistedParticipantId);
+  await registrationService.register(eventId, seatHolderParticipantId, {
+    actorId: seatHolderParticipantId,
     actorRole: "Participant",
   });
 
-  await registrationService.register(eventId, participantId, {
-    actorId: participantId,
+  await registrationService.register(eventId, waitlistedParticipantId, {
+    actorId: waitlistedParticipantId,
     actorRole: "Participant",
   });
 }
 
 async function resetWaitlistFixture(
   eventId: string,
-  participantId: string,
+  waitlistedParticipantId: string,
+  seatHolderParticipantId: string,
 ): Promise<void> {
   await getPool().query("DELETE FROM waitlist_entries WHERE event_id = $1", [eventId]);
   await getPool().query("DELETE FROM registrations WHERE event_id = $1", [eventId]);
-  await seedWaitlistParticipants(eventId, participantId);
+  await seedWaitlistParticipants(
+    eventId,
+    waitlistedParticipantId,
+    seatHolderParticipantId,
+  );
 }
 
 async function ensureWaitlistFixture(
-  participantId: string,
+  waitlistedParticipantId: string,
+  seatHolderParticipantId: string,
   context: { actorId: string; actorRole: "OrganizerAdmin" },
 ): Promise<string> {
   const name = `SEED ${SEED_MARKER} waitlist`;
   const existingId = await findEventIdByName(name);
   if (existingId) {
-    const waitlisted = await getPool().query(
-      `SELECT id FROM registrations
-       WHERE event_id = $1 AND participant_id = $2 AND state = 'Waitlisted'
-       LIMIT 1`,
-      [existingId, participantId],
+    const valid = await isWaitlistFixtureValid(
+      existingId,
+      waitlistedParticipantId,
+      seatHolderParticipantId,
     );
-    if (waitlisted.rows.length > 0) {
+    if (valid) {
       return existingId;
     }
 
-    await resetWaitlistFixture(existingId, participantId);
+    await resetWaitlistFixture(
+      existingId,
+      waitlistedParticipantId,
+      seatHolderParticipantId,
+    );
     return existingId;
   }
 
@@ -499,7 +588,133 @@ async function ensureWaitlistFixture(
     await eventService.openRegistration(eventId, context);
   }
 
-  await seedWaitlistParticipants(eventId, participantId);
+  await seedWaitlistParticipants(
+    eventId,
+    waitlistedParticipantId,
+    seatHolderParticipantId,
+  );
+
+  return eventId;
+}
+
+async function ensureAttendedAbsentFixture(
+  attendedParticipantId: string,
+  absentParticipantId: string,
+  context: { actorId: string; actorRole: "OrganizerAdmin" },
+): Promise<string> {
+  const name = `SEED ${SEED_MARKER} attended-absent`;
+  const existingId = await findEventIdByName(name);
+  if (existingId) {
+    const states = await getPool().query<{ participant_id: string; state: string }>(
+      `SELECT participant_id, state::text AS state FROM registrations
+       WHERE event_id = $1 AND participant_id = ANY($2::uuid[])`,
+      [existingId, [attendedParticipantId, absentParticipantId]],
+    );
+    const byParticipant = new Map(
+      states.rows.map((row) => [row.participant_id, row.state]),
+    );
+    if (
+      byParticipant.get(attendedParticipantId) === "Attended" &&
+      byParticipant.get(absentParticipantId) === "Absent"
+    ) {
+      return existingId;
+    }
+  }
+
+  const windows = seedWindows();
+  const eventService = new EventService();
+  const registrationService = new RegistrationService();
+  const checkinService = new CheckinService();
+
+  if (existingId) {
+    await getPool().query("DELETE FROM checkin_records WHERE event_id = $1", [
+      existingId,
+    ]);
+    await getPool().query("DELETE FROM registrations WHERE event_id = $1", [
+      existingId,
+    ]);
+    await getPool().query(
+      `UPDATE events SET state = 'Published', updated_at = NOW() WHERE id = $1`,
+      [existingId],
+    );
+  }
+
+  const draft = existingId
+    ? (await findEventById(existingId))!
+    : await createEvent(
+        {
+          name,
+          description:
+            "Browser fixture — completed event with Attended and Absent rows (TC-FR-17-009/010)",
+          location: "Completion Hall",
+          startAt: windows.open,
+          endAt: windows.close,
+          ruleConfig: {
+            capacity: 20,
+            waitlistEnabled: false,
+            registrationOpenAt: windows.open,
+            registrationCloseAt: windows.close,
+            checkinOpenAt: windows.open,
+            checkinCloseAt: windows.close,
+            feedbackOpenAt: windows.open,
+            feedbackCloseAt: windows.close,
+          },
+        },
+        context.actorId,
+        context.actorRole,
+        SEED_ORG_ID,
+      );
+
+  const eventId = draft.id;
+
+  if (draft.state === "Draft") {
+    await eventService.publish(eventId, context);
+    await eventService.openRegistration(eventId, context);
+  } else if (draft.state === "Published") {
+    await eventService.openRegistration(eventId, context);
+  }
+
+  await ensureTestParticipant(attendedParticipantId);
+  await ensureTestParticipant(absentParticipantId);
+
+  const attendedRegistration = await registrationService.register(
+    eventId,
+    attendedParticipantId,
+    {
+      actorId: attendedParticipantId,
+      actorRole: "Participant",
+    },
+  );
+  await registrationService.register(eventId, absentParticipantId, {
+    actorId: absentParticipantId,
+    actorRole: "Participant",
+  });
+
+  const refreshed = await findEventById(eventId);
+  if (refreshed?.state === "RegistrationOpen") {
+    await eventService.closeRegistration(eventId, context);
+  }
+
+  const afterClose = await findEventById(eventId);
+  if (
+    afterClose?.state !== "InProgress" &&
+    afterClose?.state !== "Completed"
+  ) {
+    await transitionEventState(eventId, "InProgress", {
+      ...context,
+      action: "event.started",
+    });
+  }
+
+  const beforeComplete = await findEventById(eventId);
+  if (beforeComplete?.state === "InProgress") {
+    await checkinService.staffCheckin(
+      eventId,
+      { registrationId: attendedRegistration.registrationId },
+      context,
+    );
+    await eventService.complete(eventId, context);
+  }
 
   return eventId;
 }
@@ -719,43 +934,67 @@ export async function runDevSeed(): Promise<DevSeedFixtures> {
   await ensureTestOrganizerAdmin(SEED_ORG_ADMIN_ID);
 
   const participantId = resolveActorId(SEED_PARTICIPANT_SUB);
+  const seatHolderParticipantId = resolveActorId(SEED_PARTICIPANT_B_SUB);
+  const staffCheckinTargetId = resolveActorId(SEED_STAFF_CHECKIN_TARGET_SUB);
+
   await ensureTestParticipant(SEED_PARTICIPANT_SUB);
+  await ensureTestParticipant(SEED_PARTICIPANT_B_SUB);
+  await ensureTestParticipant(SEED_STAFF_CHECKIN_TARGET_SUB);
 
   const context = {
     actorId: SEED_ORG_ADMIN_ID,
     actorRole: "OrganizerAdmin" as const,
   };
 
+  const staffAssignedEventIds = await ensureStaffAssignedEvents(
+    context,
+    staffCheckinTargetId,
+  );
+  const staffCheckinEventId = staffAssignedEventIds[0]!;
+  const staffCheckinCloseBoundaryEventId = staffAssignedEventIds[1]!;
+
   const [
     bulkRegistrationsEventId,
-    staffAssignedEventIds,
     checkinEventId,
     checkinSelfDisabledEventId,
     checkinCloseBoundaryEventId,
     waitlistEventId,
     feedbackEventId,
     feedbackCloseBoundaryEventId,
+    attendedAbsentEventId,
   ] = await Promise.all([
     ensureBulkRegistrationsEvent(context),
-    ensureStaffAssignedEvents(context),
     ensureCheckinFixture(participantId, context),
     ensureCheckinSelfDisabledFixture(participantId, context),
     ensureCheckinCloseBoundaryFixture(participantId, context),
-    ensureWaitlistFixture(participantId, context),
+    ensureWaitlistFixture(
+      participantId,
+      seatHolderParticipantId,
+      context,
+    ),
     ensureFeedbackFixture(participantId, context),
     ensureFeedbackCloseBoundaryFixture(participantId, context),
+    ensureAttendedAbsentFixture(
+      participantId,
+      seatHolderParticipantId,
+      context,
+    ),
   ]);
 
   return {
     bulkRegistrationsEventId,
     staffSub: SEED_ORG_STAFF_ID,
     staffAssignedEventIds,
+    staffCheckinEventId,
+    staffCheckinCloseBoundaryEventId,
     participantSub: SEED_PARTICIPANT_SUB,
+    waitlistSeatHolderSub: SEED_PARTICIPANT_B_SUB,
     checkinEventId,
     checkinSelfDisabledEventId,
     checkinCloseBoundaryEventId,
     waitlistEventId,
     feedbackEventId,
     feedbackCloseBoundaryEventId,
+    attendedAbsentEventId,
   };
 }

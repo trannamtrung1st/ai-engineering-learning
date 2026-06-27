@@ -29,13 +29,17 @@ export interface DevSeedFixtures {
   bulkRegistrationsEventId: string;
   staffSub: string;
   staffAssignedEventIds: string[];
+  staffCheckinEventId: string;
+  staffCheckinCloseBoundaryEventId: string;
   participantSub: string;
+  waitlistSeatHolderSub: string;
   checkinEventId: string;
   checkinSelfDisabledEventId: string;
   checkinCloseBoundaryEventId: string;
   waitlistEventId: string;
   feedbackEventId: string;
   feedbackCloseBoundaryEventId: string;
+  attendedAbsentEventId: string;
 }
 
 export interface RuleConfigInput {

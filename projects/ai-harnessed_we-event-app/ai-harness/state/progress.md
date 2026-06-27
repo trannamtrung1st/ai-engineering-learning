@@ -448,3 +448,8 @@ Append-only log of completed iterations.
 - 2026-06-27T12:04:31Z | web-organizer-operations-dashboard | browser_test_failed
 - 2026-06-27T12:13:00Z | web-organizer-operations-dashboard | browser: /organizer/export governance export center with event table + Export CSV; dashboard 503 poll shows inline "Could not refresh metrics" + Retry with stale KPIs, Retry recovers (TC-FR-24-010, TC-NFR-06-012) — HTTP 200
 - 2026-06-27T12:22:42Z | web-organizer-operations-dashboard | passed
+- 2026-06-27T12:30:00Z | web-organizer-registration-checkin | browser: admin registrations paginated 1–20 of 32 with state filter + status history; waitlist FIFO position 1; staff check-in success (Staff timestamp) + closed-window "Check-in blocked"; staff hub 1–12 of 25 assigned events; staff denied unassigned event registrations — HTTP 200
+- 2026-06-27T12:44:16Z | web-organizer-registration-checkin | browser_test_failed
+- 2026-06-27T12:56:00Z | web-organizer-registration-checkin | browser: staff check-in console happy path (Staff timestamp) + closed-window Check-in blocked; admin registrations Attended+Absent badges; dev fixtures expose staffCheckinEventId/staffCheckinCloseBoundaryEventId/attendedAbsentEventId/waitlistSeatHolderSub; resolveActorId accepts seed nil UUIDs — HTTP 200
+- 2026-06-27T13:10:29Z | web-organizer-registration-checkin | browser_test_failed
+- 2026-06-27T13:18:00Z | web-organizer-registration-checkin | browser: TC-FR-12-010/018 participant-2 (seat holder) cancel → participant-1 promoted to Registered on event detail + My Registrations; waitlist fixture self-heals when seat holder is anonymous UUID — HTTP 200

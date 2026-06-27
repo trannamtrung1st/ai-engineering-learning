@@ -864,6 +864,10 @@
         "component": [
           "apps/web/src/components/organizer/server-paginated-table.test.tsx"
         ],
+        "unit": [
+          "apps/web/src/lib/organizer-rules.test.ts",
+          "apps/api/src/auth/resolve-actor-id.test.ts"
+        ],
         "acceptanceTags": [
           "AC-05",
           "AC-06",
