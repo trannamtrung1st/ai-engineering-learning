@@ -48,6 +48,9 @@ npm run aih:loop -- 50                     # max 50 iterations
 | `AIH_AGENT_TIMEOUT_MS` | `1200000` | Max wall time per agent invocation (20 minutes) |
 | `AIH_STREAM_AGENT` | `1` | Live stream implementer output via stream-json (`0` = legacy buffered text) |
 | `AIH_AGENT_VERBOSE` | `1` | Show `[tool]` start/done lines on stderr during implementer runs (`0` to disable) |
+| `AIH_NO_COLOR` | — | Disable ANSI styling in harness output (`1`) |
+| `NO_COLOR` | — | Standard env var; also disables harness styling when set |
+| `FORCE_COLOR` | — | Force ANSI styling even when stdout is not a TTY (e.g. under `npm run`) |
 | `AIH_SKIP_AGENT` | — | Skip implementer (`1`) |
 | `AIH_SKIP_REVIEW` | — | Skip AI review (`1`) |
 | `AIH_SKIP_BROWSER_TEST` | — | Skip browser test gate (`1`) |

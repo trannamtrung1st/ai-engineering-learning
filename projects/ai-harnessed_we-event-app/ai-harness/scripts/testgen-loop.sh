@@ -10,7 +10,7 @@ cd "$REPO_ROOT"
 max="${1:-$(jq -r '.loop.maxIterations // 30' "$TESTGEN_CONFIG")}"
 iter=0
 
-echo "==> TestGen loop starting (max=${max})"
+aih_section "TestGen loop (max=${max})" loop
 print_harness_env
 
 while [[ "$iter" -lt "$max" ]]; do
@@ -20,8 +20,7 @@ while [[ "$iter" -lt "$max" ]]; do
   fi
 
   iter=$((iter + 1))
-  echo ""
-  echo "========== TestGen iteration ${iter}/${max} =========="
+  aih_section "TestGen iteration ${iter}/${max}" iteration
 
   set +e
   ./ai-harness/scripts/testgen-once.sh
@@ -29,7 +28,7 @@ while [[ "$iter" -lt "$max" ]]; do
   set -e
 
   if [[ "$status" -ne 0 ]]; then
-    echo "==> TestGen iteration ${iter} did not pass; continuing with fresh context"
+    aih_warn "TestGen iteration ${iter} did not pass; continuing with fresh context"
   fi
 
   if all_test_cases_current; then
@@ -38,7 +37,7 @@ while [[ "$iter" -lt "$max" ]]; do
   fi
 done
 
-echo "==> Max TestGen iterations (${max}) reached"
+aih_err "Max TestGen iterations (${max}) reached"
 remaining=0
 pending=0
 tag=""
@@ -49,5 +48,5 @@ while IFS= read -r tag; do
     pending=$((pending + 1))
   fi
 done < <(all_requirement_tags_sorted)
-echo "Remaining requirement tags without test cases: ${pending} / ${remaining}"
+aih_info "Remaining requirement tags without test cases: ${pending} / ${remaining}"
 exit 1

@@ -11,7 +11,7 @@ cd "$REPO_ROOT"
 max="${1:-$(jq -r '.loop.maxIterations // 30' "$LOOP_CONFIG")}"
 iter=0
 
-echo "==> Ralph loop starting (max=${max})"
+aih_section "Ralph loop (max=${max})" loop
 print_harness_env
 
 while [[ "$iter" -lt "$max" ]]; do
@@ -21,8 +21,7 @@ while [[ "$iter" -lt "$max" ]]; do
   fi
 
   iter=$((iter + 1))
-  echo ""
-  echo "========== Iteration ${iter}/${max} =========="
+  aih_section "Iteration ${iter}/${max}" iteration
 
   set +e
   ./ai-harness/scripts/ralph-once.sh
@@ -30,7 +29,7 @@ while [[ "$iter" -lt "$max" ]]; do
   set -e
 
   if [[ "$status" -ne 0 ]]; then
-    echo "==> Iteration ${iter} did not pass; continuing with fresh context"
+    aih_warn "Iteration ${iter} did not pass; continuing with fresh context"
   fi
 
   if all_slices_pass; then
@@ -39,7 +38,7 @@ while [[ "$iter" -lt "$max" ]]; do
   fi
 done
 
-echo "==> Max iterations (${max}) reached"
+aih_err "Max iterations (${max}) reached"
 remaining="$(jq '[.slices[] | select(.passes == false)] | length' "$BACKLOG")"
-echo "Remaining slices: ${remaining}"
+aih_info "Remaining slices: ${remaining}"
 exit 1

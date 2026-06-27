@@ -2,6 +2,9 @@
 # Shared harness utilities
 set -euo pipefail
 
+# shellcheck source=console.sh
+source "$(dirname "${BASH_SOURCE[0]}")/console.sh"
+
 HARNESS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 REPO_ROOT="$(cd "${HARNESS_ROOT}/.." && pwd)"
 
@@ -203,14 +206,19 @@ resolve_agent_bin() {
 print_harness_env() {
   local bin
   bin="$(resolve_agent_bin)"
+  echo "$(aih_bold "$(aih_cyan "Harness")")"
   if [[ -n "$bin" ]]; then
-    echo "Agent: ${bin} | Model: $(get_model default) | Reviewer: $(get_model reviewer) | Tester: $(get_model tester) | TestGen: $(get_model testgen)"
+    aih_kv "Agent" "$bin"
+    aih_kv "Model" "$(get_model default)"
+    aih_kv "Reviewer" "$(get_model reviewer)"
+    aih_kv "Tester" "$(get_model tester)"
+    aih_kv "TestGen" "$(get_model testgen)"
   else
-    echo "Agent: not installed (curl https://cursor.com/install -fsS | bash)"
+    aih_kv "Agent" "not installed (curl https://cursor.com/install -fsS | bash)"
   fi
-  echo "Auth: agent login (OAuth, one-time per machine)"
-  echo "Agent timeout: $(get_agent_timeout_ms)ms (override: AIH_AGENT_TIMEOUT_MS)"
-  echo "Overrides: AIH_MODEL=... AIH_SKIP_AGENT=1 AIH_SKIP_REVIEW=1"
+  aih_kv "Auth" "agent login (OAuth, one-time per machine)"
+  aih_kv "Timeout" "$(get_agent_timeout_ms)ms (override: AIH_AGENT_TIMEOUT_MS)"
+  aih_kv "Overrides" "AIH_MODEL=... AIH_SKIP_AGENT=1 AIH_SKIP_REVIEW=1"
 }
 
 AGENT_TIMEOUT_EXIT=124

@@ -19,7 +19,7 @@ if [[ -z "$REQUIREMENT_TAG" ]]; then
   exit 0
 fi
 
-echo "==> TestGen iteration: requirementTag=${REQUIREMENT_TAG}"
+aih_step "TestGen iteration: requirementTag=${REQUIREMENT_TAG}"
 
 RID="$(run_id)"
 ensure_runs_dir
@@ -30,7 +30,7 @@ set +e
 drift_status=$?
 set -e
 if [[ "$drift_status" -ne 0 ]]; then
-  echo "==> Doc drift reset applied for ${REQUIREMENT_TAG}"
+  aih_info "Doc drift reset applied for ${REQUIREMENT_TAG}"
 fi
 
 DOC_FP="$(compute_requirement_tag_doc_fingerprint "$REQUIREMENT_TAG")"
@@ -38,7 +38,7 @@ ARTIFACT="$(test_case_artifact_abs "$REQUIREMENT_TAG")"
 ensure_test_case_artifact_restored "$REQUIREMENT_TAG"
 
 if [[ "${AIH_SKIP_TESTGEN_AGENT:-}" == "1" ]]; then
-  echo "WARN: AIH_SKIP_TESTGEN_AGENT=1 — skipping testgen agent"
+  aih_warn "AIH_SKIP_TESTGEN_AGENT=1 — skipping testgen agent"
   agent_out="${RUNS_DIR}/${RID}-testgen.txt"
   echo "TESTGEN_DONE ${REQUIREMENT_TAG}" > "$agent_out"
 else
@@ -51,7 +51,7 @@ else
   if [[ -f "$ARTIFACT" && "$(testgen_regeneration_mode)" == "incremental" ]]; then
     review_reminder="
 Review and update the existing artifact at \`$(test_case_artifact_path "$REQUIREMENT_TAG")\` — change only what docs require."
-    echo "==> Incremental review: existing artifact for ${REQUIREMENT_TAG}"
+    aih_step "Incremental review: existing artifact for ${REQUIREMENT_TAG}"
   fi
 
   full_prompt="${prompt}
@@ -66,19 +66,20 @@ Do not edit any other files.${review_reminder}
 After writing the artifact, end with: TESTGEN_DONE ${REQUIREMENT_TAG}
 "
 
-  echo "==> Running testgen agent (${AGENT_BIN}, model=${model})"
+  aih_step "Running testgen agent (${AGENT_BIN}, model=${model})"
+  aih_agent_begin "testgen (${model})"
   set +e
   agent_invoke_testgen "$model" "$full_prompt" "$agent_out"
   agent_status=$?
   set -e
-  echo "==> Agent exit: ${agent_status}"
+  aih_agent_end "${agent_status}"
 fi
 
 if [[ "${agent_status:-0}" -eq "$AGENT_TIMEOUT_EXIT" ]]; then
   timeout_ms="$(get_agent_timeout_ms "$TESTGEN_CONFIG")"
   append_guardrail "$REQUIREMENT_TAG" "TestGen agent timed out after ${timeout_ms}ms — see ${RID}-testgen.txt"
   append_progress "$REQUIREMENT_TAG" "testgen_timeout"
-  echo "TestGen agent timed out. See guardrails.md"
+  aih_err "TestGen agent timed out. See guardrails.md"
   exit 1
 fi
 
@@ -87,18 +88,18 @@ if echo "$agent_text" | grep -q "TESTGEN_BLOCKED"; then
   reason="$(echo "$agent_text" | grep "TESTGEN_BLOCKED" | tail -1)"
   append_guardrail "$REQUIREMENT_TAG" "$reason"
   append_progress "$REQUIREMENT_TAG" "testgen_blocked"
-  echo "TestGen blocked. See guardrails.md"
+  aih_err "TestGen blocked. See guardrails.md"
   exit 1
 fi
 
 if ! echo "$agent_text" | grep -q "TESTGEN_DONE"; then
   append_guardrail "$REQUIREMENT_TAG" "TestGen agent did not emit TESTGEN_DONE"
   append_progress "$REQUIREMENT_TAG" "testgen_failed"
-  echo "ERROR: TestGen agent did not signal TESTGEN_DONE" >&2
+  aih_err "TestGen agent did not signal TESTGEN_DONE"
   exit 1
 fi
 
-echo "==> Validating test cases"
+aih_step "Validating test cases"
 set +e
 validate_out="$(./ai-harness/scripts/validate-test-cases.sh "$REQUIREMENT_TAG" 2>&1)"
 validate_status=$?
@@ -124,5 +125,5 @@ fi
 if all_test_cases_current; then
   echo "TESTGEN_COMPLETE"
 else
-  echo "Test cases generated for ${REQUIREMENT_TAG}. Next: $(pick_next_testgen_requirement_tag)"
+  aih_ok "Test cases generated for ${REQUIREMENT_TAG}. Next: $(pick_next_testgen_requirement_tag)"
 fi

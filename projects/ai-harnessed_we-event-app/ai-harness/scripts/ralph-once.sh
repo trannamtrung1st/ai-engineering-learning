@@ -18,7 +18,7 @@ if [[ -z "$SLICE_ID" ]]; then
   exit 0
 fi
 
-echo "==> Ralph iteration: slice=${SLICE_ID}"
+aih_step "Ralph iteration: slice=${SLICE_ID}"
 
 RID="$(run_id)"
 ensure_runs_dir
@@ -38,31 +38,31 @@ while IFS= read -r ref; do
   fi
 done < <(slice_product_item_refs "$SLICE_ID")
 if [[ "$drift_failed" == true ]]; then
-  echo "==> Doc drift detected for product items referenced by ${SLICE_ID} — run: npm run aih:testgen:loop"
+  aih_err "Doc drift detected for product items referenced by ${SLICE_ID} — run: npm run aih:testgen:loop"
   exit 1
 fi
 if [[ "$drift_checked" -gt 0 ]]; then
-  echo "==> Doc drift check: ${drift_checked} tag(s) ok for ${SLICE_ID}"
+  aih_ok "Doc drift check: ${drift_checked} tag(s) ok for ${SLICE_ID}"
 fi
 
 # --- Test case gate ---
 if ! slice_test_cases_current "$SLICE_ID"; then
   gate_mode="$(test_case_gate_mode)"
   if [[ "$gate_mode" == "required" ]]; then
-    echo "ERROR: test cases not current for all product items referenced by slice ${SLICE_ID}" >&2
-    echo "Missing items — run: npm run aih:testgen:loop" >&2
-    echo "Skip gate: AIH_SKIP_TESTGEN_GATE=1" >&2
+    aih_err "test cases not current for all product items referenced by slice ${SLICE_ID}"
+    aih_err "Missing items — run: npm run aih:testgen:loop"
+    aih_err "Skip gate: AIH_SKIP_TESTGEN_GATE=1"
     exit 1
   fi
   missing_tags="$(slice_missing_test_case_tags "$SLICE_ID" | tr '\n' ', ' | sed 's/, $//')"
-  echo "WARN: test cases not current for slice ${SLICE_ID} — continuing (mode=${gate_mode})"
-  echo "WARN: missing tags: ${missing_tags:-_(none listed)_}"
-  echo "WARN: set passes: false in whole-app-backlog.json to re-run after TestGen completes"
+  aih_warn "test cases not current for slice ${SLICE_ID} — continuing (mode=${gate_mode})"
+  aih_warn "missing tags: ${missing_tags:-_(none listed)_}"
+  aih_warn "set passes: false in whole-app-backlog.json to re-run after TestGen completes"
 fi
 
 # --- Implement ---
 if [[ "${AIH_SKIP_AGENT:-}" == "1" ]]; then
-  echo "WARN: AIH_SKIP_AGENT=1 — skipping implementer agent"
+  aih_warn "AIH_SKIP_AGENT=1 — skipping implementer agent"
   agent_out="${RUNS_DIR}/${RID}-agent.txt"
   echo "SLICE_DONE ${SLICE_ID}" > "$agent_out"
 else
@@ -73,19 +73,20 @@ else
   if slice_uses_browser_mcp "$SLICE_ID"; then
     cleanup_playwright_mcp_artifacts
   fi
-  echo "==> Running implementer (${AGENT_BIN}, model=${model})"
+  aih_step "Running implementer (${AGENT_BIN}, model=${model})"
+  aih_agent_begin "implementer (${model})"
   set +e
   agent_invoke "$model" "$prompt" "$agent_out" "$SLICE_ID"
   agent_status=$?
   set -e
-  echo "==> Agent exit: ${agent_status}"
+  aih_agent_end "${agent_status}"
 fi
 
 if [[ "${agent_status:-0}" -eq "$AGENT_TIMEOUT_EXIT" ]]; then
   timeout_ms="$(get_agent_timeout_ms "$LOOP_CONFIG")"
   append_guardrail "$SLICE_ID" "Implementer agent timed out after ${timeout_ms}ms — see ${RID}-agent.txt"
   append_progress "$SLICE_ID" "agent_timeout"
-  echo "Implementer agent timed out. See guardrails.md"
+  aih_err "Implementer agent timed out. See guardrails.md"
   exit 1
 fi
 
@@ -94,12 +95,12 @@ if echo "$agent_text" | grep -q "SLICE_BLOCKED"; then
   reason="$(echo "$agent_text" | grep "SLICE_BLOCKED" | tail -1)"
   append_guardrail "$SLICE_ID" "$reason"
   append_progress "$SLICE_ID" "blocked"
-  echo "Slice blocked. See guardrails.md"
+  aih_err "Slice blocked. See guardrails.md"
   exit 1
 fi
 
 # --- Computational checks ---
-echo "==> Running computational checks"
+aih_step "Running computational checks"
 set +e
 check_out="$(./ai-harness/scripts/run-checks.sh "$SLICE_ID" 2>&1)"
 check_status=$?
@@ -114,7 +115,7 @@ fi
 
 # --- Browser functional test (Playwright MCP) ---
 if [[ "${AIH_SKIP_BROWSER_TEST:-}" != "1" ]]; then
-  echo "==> Running browser functional test (Playwright MCP)"
+  aih_step "Running browser functional test (Playwright MCP)"
   set +e
   AIH_RUN_ID="$RID" ./ai-harness/scripts/run-browser-test.sh "$SLICE_ID" "$RID"
   browser_test_status=$?
@@ -128,9 +129,9 @@ fi
 
 # --- AI review ---
 if [[ "${AIH_SKIP_REVIEW:-}" == "1" ]]; then
-  echo "WARN: AIH_SKIP_REVIEW=1 — skipping AI review"
+  aih_warn "AIH_SKIP_REVIEW=1 — skipping AI review"
 else
-  echo "==> Running AI code review (read-only static pass)"
+  aih_step "Running AI code review (read-only static pass)"
   set +e
   AIH_RUN_ID="$RID" ./ai-harness/scripts/run-ai-review.sh "$SLICE_ID" "$RID"
   review_status=$?
@@ -156,14 +157,14 @@ fi
 
 merge_ready="$(get_slice_field "$SLICE_ID" mergeReady 2>/dev/null || echo "false")"
 if [[ "$merge_ready" == "true" ]]; then
-  echo ""
-  echo "==> HUMAN REVIEW REQUIRED for merge-ready slice: ${SLICE_ID}"
-  echo "    Complete: ai-harness/workflows/human-review-checklist.md"
-  echo "    Sign-off: HUMAN_REVIEW_PASS ${SLICE_ID}"
+  aih_blank
+  aih_section "HUMAN REVIEW REQUIRED: ${SLICE_ID}" alert
+  aih_info "    Complete: ai-harness/workflows/human-review-checklist.md"
+  aih_info "    Sign-off: HUMAN_REVIEW_PASS ${SLICE_ID}"
 fi
 
 if all_slices_pass; then
   echo "COMPLETE"
 else
-  echo "Slice ${SLICE_ID} passed. Next: $(pick_next_slice_id)"
+  aih_ok "Slice ${SLICE_ID} passed. Next: $(pick_next_slice_id)"
 fi

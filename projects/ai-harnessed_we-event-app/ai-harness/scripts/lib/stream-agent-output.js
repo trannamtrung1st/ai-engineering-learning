@@ -12,6 +12,26 @@ const { createInterface } = require("node:readline");
 const fs = require("node:fs");
 const path = require("node:path");
 
+function colorEnabled() {
+  if (process.env.NO_COLOR || process.env.AIH_NO_COLOR) return false;
+  if (process.env.FORCE_COLOR) return true;
+  return Boolean(process.stdout.isTTY || process.stderr.isTTY);
+}
+
+function color(code, text) {
+  if (!colorEnabled()) return text;
+  return `\u001b[${code}m${text}\u001b[0m`;
+}
+
+const dim = (text) => color("2", text);
+const cyan = (text) => color("36", text);
+const yellow = (text) => color("33", text);
+const green = (text) => color("32", text);
+
+function writeStderr(line) {
+  process.stderr.write(`${line}\n`);
+}
+
 function parseArgs(argv) {
   const options = {
     outfile: "",
@@ -105,8 +125,8 @@ function handleStreamEvent(event, state, options, outfileFd) {
   switch (event.type) {
     case "system":
       if (options.verbose && event.subtype === "init") {
-        process.stderr.write(
-          `[agent] session=${event.session_id} model=${event.model} cwd=${event.cwd}\n`,
+        writeStderr(
+          dim(cyan(`[agent] session=${event.session_id} model=${event.model} cwd=${event.cwd}`)),
         );
       }
       break;
@@ -125,17 +145,17 @@ function handleStreamEvent(event, state, options, outfileFd) {
     case "tool_call":
       if (!options.verbose) break;
       if (event.subtype === "started") {
-        process.stderr.write(`[tool] start  ${extractToolLabel(event)}\n`);
+        writeStderr(yellow(`[tool] start  ${extractToolLabel(event)}`));
       } else if (event.subtype === "completed") {
-        process.stderr.write(`[tool] done   ${extractToolLabel(event)}\n`);
+        writeStderr(green(`[tool] done   ${extractToolLabel(event)}`));
       }
       break;
 
     case "result":
       state.result = event;
       if (options.verbose) {
-        process.stderr.write(
-          `[agent] ${event.subtype} duration=${event.duration_ms}ms error=${event.is_error}\n`,
+        writeStderr(
+          dim(cyan(`[agent] ${event.subtype} duration=${event.duration_ms}ms error=${event.is_error}`)),
         );
       }
       break;
@@ -179,7 +199,7 @@ async function main() {
       try {
         handleStreamEvent(JSON.parse(trimmed), state, options, outfileFd);
       } catch {
-        process.stderr.write(`[warn] non-json line: ${trimmed}\n`);
+        writeStderr(yellow(`[warn] non-json line: ${trimmed}`));
       }
     });
 
