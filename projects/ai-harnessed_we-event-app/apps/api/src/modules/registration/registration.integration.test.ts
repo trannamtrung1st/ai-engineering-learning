@@ -126,7 +126,7 @@ describe("registration integration (NFR-02, FR-31)", () => {
     assert.equal(result.waitlistPosition, null);
   });
 
-  it("AC-02 / FR-09: rejects registration when full and waitlist disabled (BR-05)", async () => {
+  it("AC-02 / AC-02b / TC-AC-02-010 / FR-09: rejects registration when full and waitlist disabled (BR-05)", async () => {
     const event = await createRegistrationOpenEvent({
       capacity: 1,
       waitlistEnabled: false,
@@ -151,7 +151,7 @@ describe("registration integration (NFR-02, FR-31)", () => {
     );
   });
 
-  it("AC-02 / BR-04: assigns Waitlisted when full and waitlist enabled", async () => {
+  it("AC-02 / AC-02a / TC-AC-02-001 / TC-AC-02-004 / BR-04 / BR-04b: assigns Waitlisted when full and waitlist enabled", async () => {
     const event = await createRegistrationOpenEvent({
       capacity: 1,
       waitlistEnabled: true,
@@ -174,6 +174,151 @@ describe("registration integration (NFR-02, FR-31)", () => {
     );
     assert.equal(waitlisted.state, "Waitlisted");
     assert.equal(waitlisted.waitlistPosition, 1);
+
+    const waitlistEntry = await getPool().query(
+      `SELECT position, promoted_at, expired_at
+       FROM waitlist_entries
+       WHERE registration_id = $1`,
+      [waitlisted.registrationId],
+    );
+    assert.equal(waitlistEntry.rowCount, 1);
+    assert.equal(waitlistEntry.rows[0]?.position, 1);
+    assert.equal(waitlistEntry.rows[0]?.promoted_at, null);
+    assert.equal(waitlistEntry.rows[0]?.expired_at, null);
+  });
+
+  it("TC-AC-02-009 / AC-02a / BR-04: assigns Waitlisted when registeredCount equals EventCapacity", async () => {
+    const event = await createRegistrationOpenEvent({
+      capacity: 1,
+      waitlistEnabled: true,
+    });
+
+    const registeredParticipant = await newParticipantId();
+    const waitlistedParticipant = await newParticipantId();
+
+    const registered = await registrationService.register(
+      event.id,
+      registeredParticipant,
+      actorContext(registeredParticipant),
+    );
+    assert.equal(registered.state, "Registered");
+
+    const registeredCountBefore = await countSeatHolders(event.id, getPool());
+    assert.equal(registeredCountBefore, 1);
+
+    const waitlisted = await registrationService.register(
+      event.id,
+      waitlistedParticipant,
+      actorContext(waitlistedParticipant),
+    );
+    assert.equal(waitlisted.state, "Waitlisted");
+    assert.ok((waitlisted.waitlistPosition ?? 0) >= 1);
+
+    const registeredCountAfter = await countSeatHolders(event.id, getPool());
+    assert.equal(registeredCountAfter, 1);
+  });
+
+  it("TC-AC-02-007 / AC-02a / BR-04: concurrent registrations when full assign Waitlisted without capacity overflow", async () => {
+    const event = await createRegistrationOpenEvent({
+      capacity: 1,
+      waitlistEnabled: true,
+    });
+
+    const first = await newParticipantId();
+    await registrationService.register(event.id, first, actorContext(first));
+
+    const extras = await Promise.all(
+      Array.from({ length: 5 }, () => newParticipantId()),
+    );
+    const results = await Promise.all(
+      extras.map((participantId) =>
+        registrationService.register(event.id, participantId, actorContext(participantId)),
+      ),
+    );
+
+    assert.ok(results.every((row) => row.state === "Waitlisted"));
+    const registeredCount = await countSeatHolders(event.id, getPool());
+    assert.equal(registeredCount, 1);
+  });
+
+  it("TC-AC-02-011 / AC-02a / BR-04 / BR-04a: multiple waitlist entrants receive FIFO positions by enqueue order", async () => {
+    const event = await createRegistrationOpenEvent({
+      capacity: 1,
+      waitlistEnabled: true,
+    });
+
+    const registeredParticipant = await newParticipantId();
+    await registrationService.register(
+      event.id,
+      registeredParticipant,
+      actorContext(registeredParticipant),
+    );
+
+    const waitlistedIds: string[] = [];
+    for (let index = 0; index < 3; index += 1) {
+      const participantId = await newParticipantId();
+      waitlistedIds.push(participantId);
+      const result = await registrationService.register(
+        event.id,
+        participantId,
+        actorContext(participantId),
+      );
+      assert.equal(result.state, "Waitlisted");
+      assert.equal(result.waitlistPosition, index + 1);
+    }
+  });
+
+  it("TC-AC-02-015 / AC-02d / FR-11a / BR-08a: waitlisted cancel expires queue entry without promotion", async () => {
+    const event = await createRegistrationOpenEvent({
+      capacity: 1,
+      waitlistEnabled: true,
+    });
+
+    const registeredParticipant = await newParticipantId();
+    const firstWaitlisted = await newParticipantId();
+    const secondWaitlisted = await newParticipantId();
+
+    await registrationService.register(
+      event.id,
+      registeredParticipant,
+      actorContext(registeredParticipant),
+    );
+    const first = await registrationService.register(
+      event.id,
+      firstWaitlisted,
+      actorContext(firstWaitlisted),
+    );
+    const second = await registrationService.register(
+      event.id,
+      secondWaitlisted,
+      actorContext(secondWaitlisted),
+    );
+
+    assert.equal(first.waitlistPosition, 1);
+    assert.equal(second.waitlistPosition, 2);
+
+    const cancelResult = await registrationService.cancel(
+      event.id,
+      first.registrationId,
+      actorContext(firstWaitlisted),
+    );
+
+    assert.equal(cancelResult.cancelled.state, "CancelledByUser");
+    assert.equal(cancelResult.promoted, null);
+
+    const registeredCount = await countSeatHolders(event.id, getPool());
+    assert.equal(registeredCount, 1);
+
+    const stillWaitlisted = await findRegistrationById(second.registrationId);
+    assert.equal(stillWaitlisted?.state, "Waitlisted");
+
+    const waitlist = await registrationService.listWaitlist(event.id, {
+      page: "1",
+      pageSize: "10",
+    });
+    assert.equal(waitlist.items.length, 1);
+    assert.equal(waitlist.items[0]?.registrationId, second.registrationId);
+    assert.equal(waitlist.items[0]?.position, 2);
   });
 
   it("AC-03 / BR-01: blocks duplicate registration for same participant and event", async () => {
@@ -230,7 +375,7 @@ describe("registration integration (NFR-02, FR-31)", () => {
     assert.equal(waitlisted, attempts - capacity);
   });
 
-  it("FR-12 / BR-06 / BR-08 / NFR-02: promotes waitlisted participant FIFO when a seat is released atomically", async () => {
+  it("AC-02c / TC-AC-02-014 / FR-12 / BR-06 / BR-06a / BR-08 / BR-08b / NFR-02: promotes waitlisted participant FIFO when a seat is released atomically", async () => {
     const event = await createRegistrationOpenEvent({
       capacity: 1,
       waitlistEnabled: true,
@@ -280,7 +425,7 @@ describe("registration integration (NFR-02, FR-31)", () => {
     assert.equal(waitlist.items[0]?.position, 2);
   });
 
-  it("TC-NFR-02-019 / AC-02g / NFR-02 / BR-08: concurrent cancel handlers promote one waitlisted participant without queue corruption", async () => {
+  it("TC-NFR-02-019 / TC-AC-02-016 / AC-02g / NFR-02 / BR-06b / BR-08: concurrent cancel handlers promote one waitlisted participant without queue corruption", async () => {
     const event = await createRegistrationOpenEvent({
       capacity: 1,
       waitlistEnabled: true,

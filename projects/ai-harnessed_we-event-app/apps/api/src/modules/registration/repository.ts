@@ -105,7 +105,7 @@ export async function findActiveRegistration(
      FROM registrations
      WHERE event_id = $1
        AND participant_id = $2
-       AND state IN ('Requested', 'Registered', 'Waitlisted', 'CheckedIn')
+       AND state::text IN ('Requested', 'Registered', 'Waitlisted', 'CheckedIn')
      ORDER BY requested_at DESC
      LIMIT 1`,
     [eventId, participantId],

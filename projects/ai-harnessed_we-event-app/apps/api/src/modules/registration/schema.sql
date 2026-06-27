@@ -42,6 +42,24 @@ CREATE INDEX IF NOT EXISTS idx_waitlist_event_queue
   ON waitlist_entries(event_id, position)
   WHERE promoted_at IS NULL AND expired_at IS NULL;
 
+-- Legacy harness DBs may use registration_state enum column name
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'registrations'
+      AND column_name = 'registration_state'
+  ) AND NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'registrations'
+      AND column_name = 'state'
+  ) THEN
+    ALTER TABLE registrations RENAME COLUMN registration_state TO state;
+  END IF;
+END $$;
+
 -- Idempotent column adds for harness iterations that created schema without audit columns
 ALTER TABLE registrations
   ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
