@@ -9,6 +9,9 @@ describe("Badge", () => {
     const html = renderToStaticMarkup(<Badge status="registered" />);
     assert.match(html, /Registered/);
     assert.match(html, /data-domain-status="registered"/);
+    assert.match(html, /--status-bg/);
+    assert.match(html, /--status-fg/);
+    assert.doesNotMatch(html, /--color-bg-subtle/);
     assert.match(html, /aria-hidden/);
   });
 

@@ -4,9 +4,9 @@ import { Badge } from "@/components/ui/badge";
 import { eventStateLabel } from "@/lib/domain-labels";
 
 export function EventStateBadge({ state }: { state: EventState }) {
-  const { label } = eventStateLabel(state);
+  const { label, badgeStatus } = eventStateLabel(state);
   return (
-    <Badge variant="outline" aria-label={`Event status: ${label}`}>
+    <Badge status={badgeStatus} aria-label={`Event status: ${label}`}>
       {label}
     </Badge>
   );

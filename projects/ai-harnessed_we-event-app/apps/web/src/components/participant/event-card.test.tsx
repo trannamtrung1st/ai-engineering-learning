@@ -18,6 +18,7 @@ describe("EventCard", () => {
     assert.match(html, /We Event Summit/);
     assert.match(html, /href="\/events\/evt-1"/);
     assert.match(html, /Registration open/i);
+    assert.match(html, /data-domain-status="registrationOpen"/);
     assert.match(html, /Not registered/);
   });
 
@@ -26,6 +27,7 @@ describe("EventCard", () => {
       <EventCard event={event} registrationState="Registered" />,
     );
     assert.match(html, /Registered/);
+    assert.match(html, /data-domain-status="registered"/);
     assert.doesNotMatch(html, /Not registered/);
   });
 

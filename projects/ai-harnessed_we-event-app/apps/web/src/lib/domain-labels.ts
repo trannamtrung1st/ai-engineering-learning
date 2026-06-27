@@ -15,21 +15,21 @@ export interface StateLabel {
 export function eventStateLabel(state: EventState): StateLabel {
   switch (state) {
     case "Draft":
-      return { label: "Draft", hint: "Not yet visible to participants." };
+      return { label: "Draft", badgeStatus: "draft", hint: "Not yet visible to participants." };
     case "Published":
-      return { label: "Published", hint: "Registration has not opened yet." };
+      return { label: "Published", badgeStatus: "published", hint: "Registration has not opened yet." };
     case "RegistrationOpen":
-      return { label: "Registration open", hint: "You can register now." };
+      return { label: "Registration open", badgeStatus: "registrationOpen", hint: "You can register now." };
     case "RegistrationClosed":
-      return { label: "Registration closed", hint: "Check-in opens at the scheduled time." };
+      return { label: "Registration closed", badgeStatus: "registrationClosed", hint: "Check-in opens at the scheduled time." };
     case "InProgress":
-      return { label: "In progress", hint: "The event is underway." };
+      return { label: "In progress", badgeStatus: "inProgress", hint: "The event is underway." };
     case "Completed":
-      return { label: "Completed", hint: "Feedback and eligibility may be available." };
+      return { label: "Completed", badgeStatus: "completed", hint: "Feedback and eligibility may be available." };
     case "Archived":
-      return { label: "Archived", hint: "This event is read-only." };
+      return { label: "Archived", badgeStatus: "archived", hint: "This event is read-only." };
     case "Cancelled":
-      return { label: "Cancelled", hint: "This event will not take place." };
+      return { label: "Cancelled", badgeStatus: "cancelledEvent", hint: "This event will not take place." };
   }
 }
 
@@ -44,9 +44,9 @@ export function registrationStateLabel(state: RegistrationState): StateLabel {
     case "Rejected":
       return { label: "Rejected", badgeStatus: "rejected", hint: "Registration was not accepted." };
     case "CancelledByUser":
-      return { label: "Cancelled by you", hint: "You cancelled this registration." };
+      return { label: "Cancelled by you", badgeStatus: "cancelled", hint: "You cancelled this registration." };
     case "CancelledByOrganizer":
-      return { label: "Cancelled by organizer", hint: "The organizer cancelled your registration." };
+      return { label: "Cancelled by organizer", badgeStatus: "cancelled", hint: "The organizer cancelled your registration." };
     case "CheckedIn":
       return { label: "Checked in", badgeStatus: "attended", hint: "Attendance will be finalized after the event." };
     case "Attended":
@@ -54,7 +54,7 @@ export function registrationStateLabel(state: RegistrationState): StateLabel {
     case "Absent":
       return { label: "Absent", badgeStatus: "absent", hint: "No check-in was recorded." };
     case "Expired":
-      return { label: "Expired", hint: "Waitlist entry expired when registration closed." };
+      return { label: "Expired", badgeStatus: "cancelled", hint: "Waitlist entry expired when registration closed." };
   }
 }
 

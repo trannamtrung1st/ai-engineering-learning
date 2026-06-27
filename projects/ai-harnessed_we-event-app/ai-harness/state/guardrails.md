@@ -362,3 +362,14 @@ Lessons learned across harness iterations. Read before every implementer session
 - [api-foundation] AI review failed — see 20260626T184529Z-review.json
 - [module-event] Do not add AC-13 waitlist FIFO tests (TC-AC-13-014) in registration.integration.test.ts — module-event scope is apps/api/src/modules/event only; colocate cross-module pagination coverage in event.integration.test.ts.
 - [module-event-cover-image] Computational checks failed — see 20260627T033330Z-checks.json
+- [web-design-system-shell] Browser test failed — see 20260627T035053Z-browser-test.json
+- [web-design-system-shell] Domain status `Badge` must use `variant: semantic` (`bg-[var(--status-bg)]`) — `default`/`outline` Tailwind bg utilities override `@layer base` `[data-domain-status]` rules so semantic tokens never paint.
+- [web-design-system-shell] Browser test failed — see 20260627T040511Z-browser-test.json
+- [web-design-system-shell] Computational checks failed — see 20260627T041113Z-checks.json
+- [harness] Never pipe `npm run aih:preview` through `tail`/`head` or chain it with `&&` — orphaned shell children block the loop after `SLICE_DONE`; use separate commands and `npm run aih:preview:verify` instead.
+- [web-design-system-shell] Browser test failed — see 20260627T043154Z-browser-test.json
+- [web-design-system-shell] Browser test failed — see 20260627T044443Z-browser-test.json
+- [web-design-system-shell] Browser test failed — see 20260627T045127Z-browser-test.json
+- [web-design-system-shell] Browser test failed — see 20260627T045816Z-browser-test.json
+- [web-design-system-shell] Browser test failed — see 20260627T050525Z-browser-test.json
+- [web-design-system-shell] Browser test failed — see 20260627T051252Z-browser-test.json

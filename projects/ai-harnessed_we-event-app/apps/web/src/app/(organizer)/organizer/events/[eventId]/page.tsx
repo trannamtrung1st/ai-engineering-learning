@@ -47,7 +47,7 @@ export default function EventDashboardPage() {
     return <Skeleton className="h-64 w-full" />;
   }
 
-  if (eventQuery.isError || metricsQuery.isError) {
+  if (eventQuery.isLoadingError || metricsQuery.isLoadingError) {
     return (
       <EmptyFailureBlock
         variant="failure"
@@ -67,6 +67,12 @@ export default function EventDashboardPage() {
   if (!event || !metrics) {
     return null;
   }
+
+  const metricsRefreshError = metricsQuery.isRefetchError
+    ? (metricsQuery.failureReason?.message ??
+      metricsQuery.error?.message ??
+      "Dashboard metrics could not be refreshed.")
+    : undefined;
 
   const capacity = countRegisteredSeats(
     event.ruleConfig,
@@ -92,6 +98,14 @@ export default function EventDashboardPage() {
 
       <KpiSummaryStrip
         isRefreshing={metricsQuery.isFetching && !metricsQuery.isLoading}
+        refreshError={metricsRefreshError}
+        onRetryRefresh={
+          metricsQuery.isRefetchError
+            ? () => {
+                void metricsQuery.refetch();
+              }
+            : undefined
+        }
         items={[
           {
             label: "Registrations",

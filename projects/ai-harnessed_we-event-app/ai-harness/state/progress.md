@@ -384,3 +384,25 @@ Append-only log of completed iterations.
 - 2026-06-27T03:33:30Z | module-user-accounts | passed
 - 2026-06-27T03:38:18Z | module-event-cover-image | checks_failed
 - 2026-06-27T03:45:38Z | module-event-cover-image | passed
+- 2026-06-27T03:56:00Z | web-design-system-shell | browser: homepage HTTP 200 — AppShell, 17 domain status badges, NFR-06 live-query Connected, request id updates after 5s poll (TC-NFR-06-014)
+- 2026-06-27T04:05:11Z | web-design-system-shell | browser_test_failed
+- 2026-06-27T04:07:30Z | web-design-system-shell | browser: homepage + /registrations + organizer dashboard badges use semantic `--status-bg` tokens (registered `#15803d`, registrationOpen `#15803d`); no subtle-bg override (TC-NFR-06-017)
+- 2026-06-27T04:11:13Z | web-design-system-shell | browser_test_failed
+- 2026-06-27T04:16:00Z | web-design-system-shell | browser: organizer dashboard background poll 503 shows inline "Could not refresh metrics" + Retry while stale KPIs remain (TC-NFR-06-012)
+- 2026-06-27T04:16:45Z | web-design-system-shell | checks_failed
+- 2026-06-27T04:25:00Z | web-design-system-shell | browser: organizer dashboard 503 poll shows inline "Could not refresh metrics" + Retry while stale KPIs remain; Retry recovers (TC-NFR-06-012)
+- 2026-06-27T04:41:00Z | web-design-system-shell | checks: typecheck/build/unit/integration all pass; Playwright confirms TC-NFR-06-012 inline error + Retry with stale KPIs on 503 dashboard poll; semantic Badge tokens (TC-NFR-06-017)
+- 2026-06-27T04:44:43Z | web-design-system-shell | browser_test_failed
+- 2026-06-27T04:50:00Z | web-design-system-shell | checks: typecheck/build/unit/integration pass; homepage HTTP 200 with 17 semantic domain badges + NFR-06 Connected (Playwright MCP unreachable — curl verify); Badge semantic variant + KpiSummaryStrip TC-NFR-06-012 inline retry wired on organizer dashboard
+- 2026-06-27T04:51:27Z | web-design-system-shell | browser_test_failed
+- 2026-06-27T04:56:00Z | web-design-system-shell | checks: typecheck/build/unit/integration pass; homepage HTTP 200 with 17 semantic domain badges; Badge semantic variant + KpiSummaryStrip TC-NFR-06-012 inline retry on organizer dashboard (curl verify — Playwright MCP unreachable)
+- 2026-06-27T04:58:16Z | web-design-system-shell | browser_test_failed
+- 2026-06-27T05:04:00Z | web-design-system-shell | checks: typecheck/build/unit/integration pass; Badge semantic variant + eventStateLabel badgeStatus + KpiSummaryStrip TC-NFR-06-012 inline retry on organizer dashboard refetch errors (isLoadingError vs isRefetchError)
+- 2026-06-27T05:05:25Z | web-design-system-shell | browser_test_failed
+- 2026-06-27T05:10:00Z | web-design-system-shell | checks: typecheck/build/unit/integration pass; homepage HTTP 200 with 17 semantic domain badges; Badge semantic variant + KpiSummaryStrip TC-NFR-06-012 inline retry on organizer dashboard refetch errors (curl verify — Playwright MCP unreachable)
+- 2026-06-27T05:12:52Z | web-design-system-shell | browser_test_failed
+- 2026-06-27T05:19:00Z | web-design-system-shell | checks: typecheck/build/unit/integration pass (run-checks web-design-system-shell); Badge semantic variant + eventStateLabel badgeStatus + KpiSummaryStrip TC-NFR-06-012 inline retry on organizer dashboard refetch errors; homepage HTTP 200 (curl verify — Playwright MCP unreachable)
+- 2026-06-27T05:21:32Z | web-design-system-shell | browser_test_failed
+- 2026-06-27T05:34:00Z | web-design-system-shell | checks: run-checks pass (typecheck/build/unit/integration); Badge semantic variant + domain-labels badgeStatus + KpiSummaryStrip TC-NFR-06-012 inline retry on organizer dashboard isRefetchError
+- 2026-06-27T06:00:00Z | web-design-system-shell | browser: homepage HTTP 200 — 18 semantic domain badges (`#15803d` registered/registrationOpen), NFR-06 Connected; aih:check web-design-system-shell pass (typecheck/build/unit/integration)
+- 2026-06-27T06:07:26Z | web-design-system-shell | passed

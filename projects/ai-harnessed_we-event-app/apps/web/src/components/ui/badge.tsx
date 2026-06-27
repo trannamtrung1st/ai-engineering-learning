@@ -16,6 +16,8 @@ const badgeVariants = cva(
           "bg-[var(--color-bg-subtle)] text-[var(--color-text-primary)]",
         outline:
           "border border-[var(--color-border-default)] bg-transparent text-[var(--color-text-primary)]",
+        semantic:
+          "bg-[var(--status-bg)] text-[var(--status-fg)]",
       },
     },
     defaultVariants: {
@@ -41,7 +43,7 @@ export function Badge({
     const tokens = statusTokenMap[status];
     return (
       <span
-        className={cn(badgeVariants({ variant: "default" }), className)}
+        className={cn(badgeVariants({ variant: "semantic" }), className)}
         data-domain-status={status}
         {...props}
       >

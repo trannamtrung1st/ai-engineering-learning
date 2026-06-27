@@ -29,4 +29,20 @@ describe("KpiSummaryStrip", () => {
     assert.match(html, /aria-busy="true"/);
     assert.match(html, /Registrations/);
   });
+
+  it("shows inline error with retry while preserving stale KPI layout (TC-NFR-06-012)", () => {
+    const html = renderToStaticMarkup(
+      <KpiSummaryStrip
+        items={items}
+        refreshError="Service unavailable"
+        onRetryRefresh={() => undefined}
+      />,
+    );
+
+    assert.match(html, /Could not refresh metrics/);
+    assert.match(html, /Service unavailable/);
+    assert.match(html, /Retry/);
+    assert.match(html, /Registrations/);
+    assert.match(html, /Waitlist/);
+  });
 });
