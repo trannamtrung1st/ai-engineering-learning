@@ -440,3 +440,5 @@ Append-only log of completed iterations.
 - 2026-06-27T10:48:48Z | web-event-cover-image | browser_test_failed
 - 2026-06-27T10:52:00Z | web-event-cover-image | browser: TC-FR-36-009 organizer dashboard DEV01 shows event-cover-image hero via next/image; /events/{id} still access-denied for OrganizerAdmin (operational preview path) — HTTP 200
 - 2026-06-27T11:02:25Z | web-event-cover-image | passed
+- 2026-06-27T11:05:00Z | web-domain-status-badge-colors | browser: homepage 20 semantic domain badges — distinct terminal registration tokens (cancelledByUser/Organizer/expired), inProgress teal #0f766e, completed slate #475569; EventStateBadge uses badgeStatus — HTTP 200
+- 2026-06-27T11:16:45Z | web-domain-status-badge-colors | passed

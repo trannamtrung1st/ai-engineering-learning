@@ -9,6 +9,9 @@ export type DomainStatus =
   | "notEligible"
   | "pending"
   | "cancelled"
+  | "cancelledByUser"
+  | "cancelledByOrganizer"
+  | "expired"
   | "draft"
   | "published"
   | "registrationOpen"
@@ -66,6 +69,21 @@ export const statusTokenMap: Record<
     bg: "var(--color-status-cancelled)",
     fg: "var(--color-status-cancelled-fg)",
     label: "Cancelled",
+  },
+  cancelledByUser: {
+    bg: "var(--color-status-cancelled-by-user)",
+    fg: "var(--color-status-cancelled-by-user-fg)",
+    label: "Cancelled by you",
+  },
+  cancelledByOrganizer: {
+    bg: "var(--color-status-cancelled-by-organizer)",
+    fg: "var(--color-status-cancelled-by-organizer-fg)",
+    label: "Cancelled by organizer",
+  },
+  expired: {
+    bg: "var(--color-status-expired)",
+    fg: "var(--color-status-expired-fg)",
+    label: "Expired",
   },
   draft: {
     bg: "var(--color-status-draft)",

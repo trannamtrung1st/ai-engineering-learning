@@ -40,6 +40,12 @@
   --color-status-pending-fg: #ffffff;
   --color-status-cancelled: #9f1239;
   --color-status-cancelled-fg: #ffffff;
+  --color-status-cancelled-by-user: #9f1239;
+  --color-status-cancelled-by-user-fg: #ffffff;
+  --color-status-cancelled-by-organizer: #881337;
+  --color-status-cancelled-by-organizer-fg: #ffffff;
+  --color-status-expired: #57534e;
+  --color-status-expired-fg: #ffffff;
   --color-status-draft: #475569;
   --color-status-draft-fg: #ffffff;
   --color-status-published: #1d4ed8;
@@ -48,9 +54,9 @@
   --color-status-registration-open-fg: #ffffff;
   --color-status-registration-closed: #b45309;
   --color-status-registration-closed-fg: #ffffff;
-  --color-status-in-progress: #0369a1;
+  --color-status-in-progress: #0f766e;
   --color-status-in-progress-fg: #ffffff;
-  --color-status-completed: #0f766e;
+  --color-status-completed: #475569;
   --color-status-completed-fg: #ffffff;
   --color-status-archived: #64748b;
   --color-status-archived-fg: #ffffff;
@@ -228,6 +234,21 @@
   [data-domain-status="cancelled"] {
     --status-bg: var(--color-status-cancelled);
     --status-fg: var(--color-status-cancelled-fg);
+  }
+
+  [data-domain-status="cancelledByUser"] {
+    --status-bg: var(--color-status-cancelled-by-user);
+    --status-fg: var(--color-status-cancelled-by-user-fg);
+  }
+
+  [data-domain-status="cancelledByOrganizer"] {
+    --status-bg: var(--color-status-cancelled-by-organizer);
+    --status-fg: var(--color-status-cancelled-by-organizer-fg);
+  }
+
+  [data-domain-status="expired"] {
+    --status-bg: var(--color-status-expired);
+    --status-fg: var(--color-status-expired-fg);
   }
 
   [data-domain-status="draft"] {

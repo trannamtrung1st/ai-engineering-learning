@@ -48,9 +48,13 @@ export function registrationStateLabel(state: RegistrationState): StateLabel {
     case "Rejected":
       return { label: "Rejected", badgeStatus: "rejected", hint: "Registration was not accepted." };
     case "CancelledByUser":
-      return { label: "Cancelled by you", badgeStatus: "cancelled", hint: "You cancelled this registration." };
+      return { label: "Cancelled by you", badgeStatus: "cancelledByUser", hint: "You cancelled this registration." };
     case "CancelledByOrganizer":
-      return { label: "Cancelled by organizer", badgeStatus: "cancelled", hint: "The organizer cancelled your registration." };
+      return {
+        label: "Cancelled by organizer",
+        badgeStatus: "cancelledByOrganizer",
+        hint: "The organizer cancelled your registration.",
+      };
     case "CheckedIn":
       return { label: "Checked in", badgeStatus: "attended", hint: "Attendance will be finalized after the event." };
     case "Attended":
@@ -58,7 +62,7 @@ export function registrationStateLabel(state: RegistrationState): StateLabel {
     case "Absent":
       return { label: "Absent", badgeStatus: "absent", hint: "No check-in was recorded." };
     case "Expired":
-      return { label: "Expired", badgeStatus: "cancelled", hint: "Waitlist entry expired when registration closed." };
+      return { label: "Expired", badgeStatus: "expired", hint: "Waitlist entry expired when registration closed." };
   }
 }
 

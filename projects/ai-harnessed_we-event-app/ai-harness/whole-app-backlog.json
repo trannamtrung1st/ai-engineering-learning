@@ -704,7 +704,7 @@
     },
     {
       "id": "web-domain-status-badge-colors",
-      "passes": false,
+      "passes": true,
       "priority": 37,
       "phase": 3,
       "agent": "frontend",
@@ -726,6 +726,13 @@
       "testRequirements": {
         "acceptanceTags": [
           "NFR-06"
+        ],
+        "unit": [
+          "apps/web/src/lib/status-tokens.test.ts",
+          "apps/web/src/lib/domain-labels.test.ts"
+        ],
+        "component": [
+          "apps/web/src/components/participant/event-state-badge.test.tsx"
         ]
       }
     },
