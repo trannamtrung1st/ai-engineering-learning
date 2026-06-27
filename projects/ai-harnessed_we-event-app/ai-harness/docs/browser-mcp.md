@@ -83,6 +83,7 @@ Append one line to `ai-harness/state/progress.md`:
 | Web unreachable | `npm run aih:preview` then `npm run aih:preview:verify` |
 | Stale Next cache | `npm run aih:preview:down`; `rm -rf apps/web/.next`; `npm run aih:preview` (separate commands — never pipe preview through `tail`) |
 | Loop stuck after `SLICE_DONE` | Orphaned shell from `aih:preview \| tail` — run preview commands separately; harness now auto-terminates the agent process tree after completion signals |
+| Loop stuck at `starting dev preview` | Fixed: background supervisors/log followers no longer inherit stdout (was blocking browser-test gate); restart loop to pick up fix |
 | Force MCP on implementer for any slice | `AIH_BROWSER_MCP=1 npm run aih:once` |
 | Skip browser test gate | `AIH_SKIP_BROWSER_TEST=1 npm run aih:once` |
 | Run browser test only | `npm run aih:browser-test -- <slice-id>` |

@@ -37,9 +37,12 @@ load_preview_env() {
     # shellcheck disable=SC1091
     source "$REPO_ROOT/.env"
     set +a
+    # Preview always seeds browser fixtures; do not inherit SEED_ENABLED=false from local .env.
+    export SEED_ENABLED=true
     return
   fi
   echo "WARN: no .env at repo root — copy .env.example and adjust DATABASE_URL" >&2
+  export SEED_ENABLED=true
 }
 
 stop_dev_processes() {

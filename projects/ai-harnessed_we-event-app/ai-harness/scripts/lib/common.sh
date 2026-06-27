@@ -124,7 +124,7 @@ start_preview_db_log_follower() {
   : > "$PREVIEW_AUX_PID_FILE"
   (
     docker compose logs -f --tail=50 db 2>&1 | preview_tee_process_log "db" "$PREVIEW_DB_LOG"
-  ) &
+  ) </dev/null >/dev/null 2>&1 &
   echo $! >> "$PREVIEW_AUX_PID_FILE"
   preview_log_stack "db log follower started (pid=$!)"
 }
@@ -138,7 +138,7 @@ start_preview_compose_log_follower() {
   : > "$PREVIEW_AUX_PID_FILE"
   (
     docker compose --profile full-preview logs -f --tail=100 2>&1 | preview_tee_process_log "compose" "$PREVIEW_STACK_LOG"
-  ) &
+  ) </dev/null >/dev/null 2>&1 &
   echo $! >> "$PREVIEW_AUX_PID_FILE"
   preview_log_stack "compose log follower started (pid=$!)"
 }
@@ -1221,6 +1221,35 @@ preview_stack_is_running() {
   return 1
 }
 
+preview_stack_reachable() {
+  local api_port="${AIH_PREVIEW_API_PORT:-3001}"
+  local web_port="${AIH_PREVIEW_WEB_PORT:-3000}"
+  local body status db code
+
+  body="$(curl --connect-timeout 1 --max-time 2 -sf "http://localhost:${api_port}/api/v1/health" 2>/dev/null || true)"
+  status="$(echo "$body" | jq -r '.status // empty' 2>/dev/null || true)"
+  db="$(echo "$body" | jq -r '.db // empty' 2>/dev/null || true)"
+  [[ "$status" == "ok" && "$db" == "connected" ]] || return 1
+
+  code="$(curl --connect-timeout 1 --max-time 2 -s -o /dev/null -w '%{http_code}' "http://localhost:${web_port}/" 2>/dev/null || true)"
+  [[ "$code" == "200" ]]
+}
+
+run_preview_stack_script() {
+  local preview_script="$1"
+  shift
+  local log_tmp status
+
+  log_tmp="$(mktemp "${TMPDIR:-/tmp}/aih-preview-cmd.XXXXXX")"
+  set +e
+  "$preview_script" "$@" >"$log_tmp" 2>&1
+  status=$?
+  set -e
+  cat "$log_tmp"
+  rm -f "$log_tmp"
+  return "$status"
+}
+
 get_preview_verify_gate_timeout_ms() {
   local config="${1:-$LOOP_CONFIG}"
   if [[ -n "${AIH_VERIFY_GATE_TIMEOUT_MS:-}" ]]; then
@@ -1235,52 +1264,47 @@ get_preview_verify_gate_timeout_ms() {
 ensure_preview_stack_for_browser_test() {
   local verify_script="${HARNESS_ROOT}/scripts/verify-stack.sh"
   local preview_script="${HARNESS_ROOT}/scripts/preview-stack.sh"
-  local gate_timeout_ms stack_out stack_status
+  local gate_timeout_ms stack_status
 
   gate_timeout_ms="$(get_preview_verify_gate_timeout_ms)"
   export AIH_VERIFY_GATE_TIMEOUT_MS="$gate_timeout_ms"
 
-  if ! preview_stack_is_running; then
-    echo "==> Preview stack not running — starting dev preview"
+  if preview_stack_reachable; then
+    echo "==> Preview stack reachable (API + web healthy)"
+    return 0
+  fi
+
+  if preview_stack_is_running; then
+    echo "==> Preview supervisors running but stack not healthy — gate verify (${gate_timeout_ms}ms)"
     set +e
-    stack_out="$("$preview_script" --mode dev 2>&1)"
+    "$verify_script" --gate 2>&1
     stack_status=$?
     set -e
-    echo "$stack_out"
-    if [[ "$stack_status" -ne 0 ]]; then
-      echo "ERROR: failed to start preview stack for browser test" >&2
-      return 1
+    if [[ "$stack_status" -eq 0 ]]; then
+      return 0
     fi
-    return 0
+    echo "==> Preview stack unhealthy — restarting dev preview"
+    set +e
+    run_preview_stack_script "$preview_script" --down
+    stack_status=$?
+    set -e
+    if [[ "$stack_status" -ne 0 ]]; then
+      echo "WARN: preview down returned non-zero (${stack_status}); continuing with start" >&2
+    fi
+  else
+    echo "==> Preview stack not running — starting dev preview"
   fi
 
   set +e
-  stack_out="$("$verify_script" --gate 2>&1)"
+  run_preview_stack_script "$preview_script" --mode dev
   stack_status=$?
   set -e
-  echo "$stack_out"
-
-  if [[ "$stack_status" -eq 0 ]]; then
-    return 0
-  fi
-
-  echo "==> Preview stack unhealthy — restarting dev preview"
-  set +e
-  stack_out="$("$preview_script" --down 2>&1)"
-  stack_status=$?
-  set -e
-  echo "$stack_out"
   if [[ "$stack_status" -ne 0 ]]; then
-    echo "WARN: preview down returned non-zero (${stack_status}); continuing with start" >&2
+    echo "ERROR: failed to start preview stack for browser test" >&2
+    return 1
   fi
-
-  set +e
-  stack_out="$("$preview_script" --mode dev 2>&1)"
-  stack_status=$?
-  set -e
-  echo "$stack_out"
-  if [[ "$stack_status" -ne 0 ]]; then
-    echo "ERROR: failed to restart preview stack for browser test" >&2
+  if ! preview_stack_reachable; then
+    echo "ERROR: preview start finished but API/web are not healthy" >&2
     return 1
   fi
   return 0
@@ -1401,10 +1425,10 @@ start_preview_supervisors() {
   rm -f "$PREVIEW_SUPERVISOR_STOP_FILE" "$PREVIEW_WEB_REFRESH_FILE"
   : > "$PREVIEW_PID_FILE"
 
-  "$supervisor_script" api &
+  "$supervisor_script" api </dev/null >/dev/null 2>&1 &
   echo $! >> "$PREVIEW_PID_FILE"
   local api_sup=$!
-  "$supervisor_script" web &
+  "$supervisor_script" web </dev/null >/dev/null 2>&1 &
   echo $! >> "$PREVIEW_PID_FILE"
   local web_sup=$!
   preview_log_stack "supervisors started (api=${api_sup}, web=${web_sup})"
