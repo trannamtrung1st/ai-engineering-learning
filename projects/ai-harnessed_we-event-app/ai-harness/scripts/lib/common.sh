@@ -271,6 +271,15 @@ agent_verbose_enabled() {
   [[ "${AIH_AGENT_VERBOSE:-1}" == "1" ]]
 }
 
+agent_append_output_format_args() {
+  local -n _args=$1
+  if agent_stream_enabled; then
+    _args+=(--output-format stream-json --stream-partial-output)
+  else
+    _args+=(--output-format text)
+  fi
+}
+
 run_command_with_timeout_ms() {
   local timeout_ms="$1"
   shift
@@ -764,7 +773,8 @@ agent_invoke_testgen() {
   local prompt="$2"
   local outfile="${3:-}"
   require_agent
-  local -a args=(-p --force --trust --output-format text --model "$model")
+  local -a args=(-p --force --trust --model "$model")
+  agent_append_output_format_args args
   local timeout_ms
   timeout_ms="$(get_agent_timeout_ms "$TESTGEN_CONFIG")"
   run_agent_with_timeout_ms "$timeout_ms" "$outfile" "$AGENT_BIN" "${args[@]}" "$prompt"
@@ -850,12 +860,8 @@ agent_invoke() {
   local outfile="${3:-}"
   local slice_id="${4:-${AIH_CHECK_SLICE:-}}"
   require_agent
-  local -a args
-  if agent_stream_enabled; then
-    args=(-p --force --output-format stream-json --stream-partial-output --model "$model")
-  else
-    args=(-p --force --output-format text --model "$model")
-  fi
+  local -a args=(-p --force --model "$model")
+  agent_append_output_format_args args
   if slice_uses_browser_mcp "$slice_id"; then
     args+=(--approve-mcps)
   fi
@@ -870,7 +876,8 @@ agent_invoke_review() {
   local prompt="$2"
   local outfile="${3:-}"
   require_agent
-  local -a args=(-p --force --trust --output-format text --model "$model" --mode plan)
+  local -a args=(-p --force --trust --model "$model" --mode plan)
+  agent_append_output_format_args args
   local timeout_ms
   timeout_ms="$(get_agent_timeout_ms "$LOOP_CONFIG")"
   run_agent_with_timeout_ms "$timeout_ms" "$outfile" "$AGENT_BIN" "${args[@]}" "$prompt"
@@ -882,7 +889,8 @@ agent_invoke_browser_test() {
   local prompt="$2"
   local outfile="${3:-}"
   require_agent
-  local -a args=(-p --force --trust --approve-mcps --output-format text --model "$model")
+  local -a args=(-p --force --trust --approve-mcps --model "$model")
+  agent_append_output_format_args args
   local timeout_ms
   timeout_ms="$(get_agent_timeout_ms "$LOOP_CONFIG")"
   run_agent_with_timeout_ms "$timeout_ms" "$outfile" "$AGENT_BIN" "${args[@]}" "$prompt"

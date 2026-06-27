@@ -156,12 +156,13 @@ Do not edit any other files.${review_reminder}
 After writing the artifact, end with: TESTGEN_DONE ${REQUIREMENT_TAG}
 "
 
-  echo "==> Running testgen enhance agent (${AGENT_BIN}, model=${model})"
+  aih_step "Running testgen enhance agent (${AGENT_BIN}, model=${model})"
+  aih_agent_begin "testgen enhance (${model})"
   set +e
   agent_invoke_testgen "$model" "$full_prompt" "$agent_out"
   agent_status=$?
   set -e
-  echo "==> Agent exit: ${agent_status}"
+  aih_agent_end "${agent_status}"
 fi
 
 if [[ "${agent_status:-0}" -eq "$AGENT_TIMEOUT_EXIT" ]]; then

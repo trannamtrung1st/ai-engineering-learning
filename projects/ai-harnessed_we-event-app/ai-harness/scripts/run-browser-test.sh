@@ -141,14 +141,18 @@ ${checks_summary}
 outfile="${RUNS_DIR}/${RID}-browser-test.txt"
 model="$(get_model tester)"
 
-echo "==> Running browser test agent (${AGENT_BIN}, model=${model})"
+aih_step "Running browser test agent (${AGENT_BIN}, model=${model})"
+aih_agent_begin "tester (${model})"
 set +e
 agent_invoke_browser_test "$model" "$full_prompt" "$outfile"
 agent_status=$?
 set -e
+aih_agent_end "${agent_status}"
 
 test_text="$(cat "$outfile")"
-echo "$test_text"
+if ! agent_stream_enabled; then
+  echo "$test_text"
+fi
 
 test_pass=false
 if echo "$test_text" | grep -q 'BROWSER_TEST_PASS'; then

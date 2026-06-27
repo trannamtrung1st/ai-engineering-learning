@@ -71,13 +71,17 @@ ${diff_context}
 outfile="${RUNS_DIR}/${RID}-review.txt"
 model="$(get_model reviewer)"
 
+aih_agent_begin "reviewer (${model})"
 set +e
 agent_invoke_review "$model" "$full_prompt" "$outfile"
 agent_status=$?
 set -e
+aih_agent_end "${agent_status}"
 
 review_text="$(cat "$outfile")"
-echo "$review_text"
+if ! agent_stream_enabled; then
+  echo "$review_text"
+fi
 
 review_pass=false
 if echo "$review_text" | grep -q 'REVIEW_PASS'; then
