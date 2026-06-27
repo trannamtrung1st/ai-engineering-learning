@@ -757,6 +757,7 @@ export async function listRegistrationsForParticipant(
             c.checkin_close_at,
             c.feedback_open_at,
             c.feedback_close_at,
+            c.self_checkin_enabled,
             w.position AS waitlist_position
      FROM registrations r
      INNER JOIN events e ON e.id = r.event_id
@@ -785,6 +786,7 @@ export async function listRegistrationsForParticipant(
       checkinCloseAt: (row.checkin_close_at as Date).toISOString(),
       feedbackOpenAt: (row.feedback_open_at as Date).toISOString(),
       feedbackCloseAt: (row.feedback_close_at as Date).toISOString(),
+      selfCheckinEnabled: (row.self_checkin_enabled as boolean | undefined) ?? true,
     })),
     total,
   };

@@ -416,3 +416,9 @@ Append-only log of completed iterations.
 - 2026-06-27T07:22:00Z | web-participant-discovery | checks: run-checks pass (typecheck/build/unit/integration/e2e); preview-stack forces SEED_ENABLED=true for browser fixtures (25 bulk regs, staff 25 assigned events, participant check-in/waitlist/feedback); organizer staff sign-in waits for /dev/fixtures before Continue
 - 2026-06-27T08:16:00Z | web-participant-discovery | browser: /events empty search "No results match your filters"; /registrations Check-in+Feedback+Waitlist position; organizer registrations 1–20 of 25; staff assigned events 1–20 of 25 with Next — aih:check pass
 - 2026-06-27T08:28:25Z | web-participant-discovery | passed
+- 2026-06-27T08:34:00Z | web-participant-registration | browser: event detail Registered panel shows Cancel registration + requested/updated timeline; /registrations paginated 1–20 of 251 with Waitlisted queue position 1, status timeline (Current status/Last updated), Feedback+Check-in quick actions rule-gated — HTTP 200
+- 2026-06-27T08:35:34Z | web-participant-registration | checks_failed
+- 2026-06-27T08:42:00Z | web-participant-registration | browser: /registrations paginated list with status timeline (Current status/Last updated), Waitlisted queue position 1, Registered quick actions; event detail Registered panel with Cancel registration — HTTP 200
+- 2026-06-27T08:53:22Z | web-participant-registration | browser_test_failed
+- 2026-06-27T09:01:00Z | web-participant-registration | browser: TC-AC-02-003 live register on waitlist fixture shows Queue position on event detail + My Registrations; dev/fixtures self-heals after promotion; new participant register HTTP 200 — aih:check pass
+- 2026-06-27T09:12:24Z | web-participant-registration | passed

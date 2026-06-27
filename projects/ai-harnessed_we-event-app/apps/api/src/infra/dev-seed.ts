@@ -43,8 +43,6 @@ export interface DevSeedFixtures {
   feedbackEventId: string;
 }
 
-let cachedFixtures: DevSeedFixtures | null = null;
-
 function seedWindows() {
   const now = Date.now();
   return {
@@ -258,6 +256,33 @@ async function ensureCheckinFixture(
   return eventId;
 }
 
+async function seedWaitlistParticipants(
+  eventId: string,
+  participantId: string,
+): Promise<void> {
+  const registrationService = new RegistrationService();
+  const seatHolderId = randomUUID();
+  await ensureTestParticipant(seatHolderId);
+  await registrationService.register(eventId, seatHolderId, {
+    actorId: seatHolderId,
+    actorRole: "Participant",
+  });
+
+  await registrationService.register(eventId, participantId, {
+    actorId: participantId,
+    actorRole: "Participant",
+  });
+}
+
+async function resetWaitlistFixture(
+  eventId: string,
+  participantId: string,
+): Promise<void> {
+  await getPool().query("DELETE FROM waitlist_entries WHERE event_id = $1", [eventId]);
+  await getPool().query("DELETE FROM registrations WHERE event_id = $1", [eventId]);
+  await seedWaitlistParticipants(eventId, participantId);
+}
+
 async function ensureWaitlistFixture(
   participantId: string,
   context: { actorId: string; actorRole: "OrganizerAdmin" },
@@ -274,36 +299,36 @@ async function ensureWaitlistFixture(
     if (waitlisted.rows.length > 0) {
       return existingId;
     }
+
+    await resetWaitlistFixture(existingId, participantId);
+    return existingId;
   }
 
   const windows = seedWindows();
   const eventService = new EventService();
-  const registrationService = new RegistrationService();
 
-  const draft = existingId
-    ? (await findEventById(existingId))!
-    : await createEvent(
-        {
-          name,
-          description: "Browser fixture — waitlist position display",
-          location: "Queue Room",
-          startAt: windows.open,
-          endAt: windows.close,
-          ruleConfig: {
-            capacity: 1,
-            waitlistEnabled: true,
-            registrationOpenAt: windows.open,
-            registrationCloseAt: windows.close,
-            checkinOpenAt: windows.open,
-            checkinCloseAt: windows.close,
-            feedbackOpenAt: windows.open,
-            feedbackCloseAt: windows.close,
-          },
-        },
-        context.actorId,
-        context.actorRole,
-        SEED_ORG_ID,
-      );
+  const draft = await createEvent(
+    {
+      name,
+      description: "Browser fixture — waitlist position display",
+      location: "Queue Room",
+      startAt: windows.open,
+      endAt: windows.close,
+      ruleConfig: {
+        capacity: 1,
+        waitlistEnabled: true,
+        registrationOpenAt: windows.open,
+        registrationCloseAt: windows.close,
+        checkinOpenAt: windows.open,
+        checkinCloseAt: windows.close,
+        feedbackOpenAt: windows.open,
+        feedbackCloseAt: windows.close,
+      },
+    },
+    context.actorId,
+    context.actorRole,
+    SEED_ORG_ID,
+  );
 
   const eventId = draft.id;
 
@@ -312,17 +337,7 @@ async function ensureWaitlistFixture(
     await eventService.openRegistration(eventId, context);
   }
 
-  const seatHolderId = randomUUID();
-  await ensureTestParticipant(seatHolderId);
-  await registrationService.register(eventId, seatHolderId, {
-    actorId: seatHolderId,
-    actorRole: "Participant",
-  });
-
-  await registrationService.register(eventId, participantId, {
-    actorId: participantId,
-    actorRole: "Participant",
-  });
+  await seedWaitlistParticipants(eventId, participantId);
 
   return eventId;
 }
@@ -431,10 +446,6 @@ async function ensureFeedbackFixture(
 }
 
 export async function runDevSeed(): Promise<DevSeedFixtures> {
-  if (cachedFixtures) {
-    return cachedFixtures;
-  }
-
   await ensureEventSchema();
   await ensureRegistrationSchema();
   await ensureCheckinSchema();
@@ -464,7 +475,7 @@ export async function runDevSeed(): Promise<DevSeedFixtures> {
     ensureFeedbackFixture(participantId, context),
   ]);
 
-  cachedFixtures = {
+  return {
     bulkRegistrationsEventId,
     staffSub: SEED_ORG_STAFF_ID,
     staffAssignedEventIds,
@@ -473,6 +484,4 @@ export async function runDevSeed(): Promise<DevSeedFixtures> {
     waitlistEventId,
     feedbackEventId,
   };
-
-  return cachedFixtures;
 }

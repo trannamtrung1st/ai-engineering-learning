@@ -486,7 +486,7 @@
     },
     {
       "id": "web-participant-registration",
-      "passes": false,
+      "passes": true,
       "priority": 32,
       "phase": 3,
       "agent": "frontend",
@@ -512,7 +512,8 @@
       ],
       "testRequirements": {
         "unit": [
-          "apps/web/src/lib/participant-rules.test.ts"
+          "apps/web/src/lib/participant-rules.test.ts",
+          "apps/web/src/components/participant/registration-status-panel.test.tsx"
         ],
         "integration": [
           "apps/api/src/modules/registration/registration.integration.test.ts"

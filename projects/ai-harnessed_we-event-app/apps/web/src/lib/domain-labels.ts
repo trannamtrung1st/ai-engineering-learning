@@ -40,7 +40,11 @@ export function registrationStateLabel(state: RegistrationState): StateLabel {
     case "Registered":
       return { label: "Registered", badgeStatus: "registered", hint: "Your seat is confirmed." };
     case "Waitlisted":
-      return { label: "Waitlisted", badgeStatus: "waitlisted", hint: "You are in the queue." };
+      return {
+        label: "Waitlisted",
+        badgeStatus: "waitlisted",
+        hint: "You are in the queue. You will be registered automatically when a seat opens.",
+      };
     case "Rejected":
       return { label: "Rejected", badgeStatus: "rejected", hint: "Registration was not accepted." };
     case "CancelledByUser":

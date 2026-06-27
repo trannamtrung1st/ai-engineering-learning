@@ -89,6 +89,57 @@ describe("Flow B — waitlist promotion (AC-02, AC-03, FR-11, BR-07, BR-08, FR-1
     );
   });
 
+  it("TC-FR-11-009 / FR-11 / BR-09: late cancellation blocked after registration period ends", async () => {
+    const { eventId } = await createRegistrationOpenEvent(ctx.app, organizerToken, {
+      capacity: 5,
+    });
+
+    const participantSub = randomUUID();
+    const participantToken = await signDevToken(ctx.app, participantSub, "Participant");
+    const registered = await registerParticipant(ctx.app, participantToken, eventId);
+
+    const pastClose = new Date(Date.now() - 60_000).toISOString();
+    const patchResponse = await apiRequest(ctx.app, {
+      method: "PATCH",
+      path: `/events/${eventId}`,
+      token: organizerToken,
+      payload: {
+        ruleConfig: { registrationCloseAt: pastClose },
+        reasonCode: "TEST_POLICY",
+        reasonText: "Fixture: advance cancellation deadline for BR-09 policy test",
+      },
+    });
+    assertOk(patchResponse.statusCode, patchResponse.body, "patch registration close");
+
+    await transitionEvent(ctx.app, organizerToken, eventId, "close-registration");
+
+    const cancelResponse = await apiRequest(ctx.app, {
+      method: "POST",
+      path: `/events/${eventId}/registrations/${registered.registrationId}/cancel`,
+      token: participantToken,
+      payload: {},
+      idempotencyKey: newIdempotencyKey(),
+    });
+    assert.equal(cancelResponse.statusCode, 422, cancelResponse.body);
+    const error = parseJson<ErrorEnvelope>(cancelResponse.body);
+    assert.equal(
+      error.error.code,
+      VALIDATION_ERROR_CODES.CANCELLATION_NOT_ALLOWED,
+    );
+
+    const statusResponse = await apiRequest(ctx.app, {
+      method: "GET",
+      path: `/events/${eventId}/registration-status`,
+      token: participantToken,
+    });
+    assertOk(statusResponse.statusCode, statusResponse.body, "registration-status");
+    const status = parseJson<{ registration: { state: string } | null }>(
+      statusResponse.body,
+    );
+    assert.ok(status.registration);
+    assert.equal(status.registration.state, "Registered");
+  });
+
   it("promotes waitlisted participant after cancellation and allows check-in", async () => {
     const { eventId } = await createRegistrationOpenEvent(ctx.app, organizerToken, {
       capacity: 1,

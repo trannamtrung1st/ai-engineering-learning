@@ -5,17 +5,14 @@ import { Calendar, MapPin } from "lucide-react";
 
 import { EventCoverMedia } from "@/components/participant/event-cover-media";
 import { EventStateBadge } from "@/components/participant/event-state-badge";
-import { RegistrationStateBadge } from "@/components/participant/registration-state-badge";
+import { RegistrationStatusPanel } from "@/components/participant/registration-status-panel";
 import { EmptyFailureBlock } from "@/components/layout/empty-failure-block";
 import { PageHeader } from "@/components/layout/page-header";
 import { Alert } from "@/components/ui/alert";
 import { Skeleton, SkeletonText } from "@/components/ui/skeleton";
 import { useLiveQuery } from "@/hooks/use-live-query";
 import { ApiClientError } from "@/lib/api-client";
-import {
-  eventStateLabel,
-  registrationStateLabel,
-} from "@/lib/domain-labels";
+import { eventStateLabel } from "@/lib/domain-labels";
 import { formatDateTime } from "@/lib/format";
 import { fetchEvent, fetchRegistrationStatus } from "@/lib/participant-api";
 import { queryKeys } from "@/lib/query-keys";
@@ -43,9 +40,6 @@ export default function EventDetailPage() {
   const event = eventQuery.data;
   const registration = registrationQuery.data?.registration ?? null;
   const eventLabel = event ? eventStateLabel(event.state) : null;
-  const registrationLabel = registration
-    ? registrationStateLabel(registration.state)
-    : null;
 
   return (
     <div className="space-y-8">
@@ -158,45 +152,17 @@ export default function EventDetailPage() {
                 <h2 className="text-[length:var(--font-size-lg)] font-[var(--font-weight-semibold)]">
                   Your registration
                 </h2>
-                {registrationQuery.isLoading ? (
-                  <Skeleton className="mt-4 h-8 w-32" />
-                ) : registrationQuery.isError ? (
-                  <div className="mt-4">
-                    <EmptyFailureBlock
-                      variant="failure"
-                      title="Could not load registration status"
-                      description={registrationQuery.error.message}
-                      actionLabel="Retry"
-                      onAction={() => void registrationQuery.refetch()}
-                    />
-                  </div>
-                ) : registration ? (
-                  <div className="mt-4 space-y-3">
-                    <RegistrationStateBadge state={registration.state} />
-                    {registrationLabel?.hint ? (
-                      <p className="text-[length:var(--font-size-sm)] text-[var(--color-text-secondary)]">
-                        {registrationLabel.hint}
-                      </p>
-                    ) : null}
-                    {registration.waitlistPosition ? (
-                      <p className="text-[length:var(--font-size-sm)] text-[var(--color-text-secondary)]">
-                        Queue position: {registration.waitlistPosition}
-                      </p>
-                    ) : null}
-                    {registration.reasonText ? (
-                      <Alert variant="warning" title="Status note">
-                        {registration.reasonText}
-                      </Alert>
-                    ) : null}
-                    <p className="text-[length:var(--font-size-xs)] text-[var(--color-text-secondary)]">
-                      Last updated {formatDateTime(registration.updatedAt)}
-                    </p>
-                  </div>
-                ) : (
-                  <p className="mt-4 text-[length:var(--font-size-sm)] text-[var(--color-text-secondary)]">
-                    You have not registered for this event yet.
-                  </p>
-                )}
+                <div className="mt-4">
+                  <RegistrationStatusPanel
+                    eventId={eventId}
+                    event={event}
+                    registration={registration}
+                    isLoading={registrationQuery.isLoading}
+                    isError={registrationQuery.isError}
+                    error={registrationQuery.error}
+                    onRetry={() => void registrationQuery.refetch()}
+                  />
+                </div>
               </section>
             </aside>
           </div>

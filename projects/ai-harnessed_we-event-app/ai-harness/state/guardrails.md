@@ -379,3 +379,6 @@ Lessons learned across harness iterations. Read before every implementer session
 - [web-participant-discovery] Browser test failed — see 20260627T061237Z-browser-test.json
 - [web-participant-discovery] Browser test failed — see 20260627T063907Z-browser-test.json
 - [web-participant-discovery] Local `.env` with `SEED_ENABLED=false` disables preview browser fixtures (bulk registrations, staff pagination, participant check-in/waitlist/feedback); `preview-stack.sh` must force `SEED_ENABLED=true` after sourcing `.env`.
+- [web-participant-registration] Computational checks failed — see 20260627T082825Z-checks.json
+- [web-participant-registration] Browser test failed — see 20260627T083534Z-browser-test.json
+- [web-participant-registration] Legacy `uq_waitlist_event_position` (non-partial) blocks waitlist position reuse after promotion — drop in schema.sql; `ensureWaitlistFixture` must delete waitlist_entries before registrations and re-seed when participant-1 is no longer Waitlisted (do not cache fixtures across requests).

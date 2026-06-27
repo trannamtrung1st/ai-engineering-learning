@@ -87,6 +87,7 @@ export interface MyRegistrationListItem {
   checkinCloseAt: string;
   feedbackOpenAt: string;
   feedbackCloseAt: string;
+  selfCheckinEnabled?: boolean;
 }
 
 export interface WaitlistListItem {

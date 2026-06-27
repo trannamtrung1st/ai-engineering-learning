@@ -5,11 +5,10 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowRight, ClipboardCheck, MessageSquare, ShieldCheck } from "lucide-react";
 import type { RegistrationState } from "@we-event/domain";
 
-import { RegistrationStateBadge } from "@/components/participant/registration-state-badge";
+import { RegistrationStatusTimeline } from "@/components/participant/registration-status-timeline";
 import { FilterBar } from "@/components/layout/filter-bar";
 import { EmptyFailureBlock } from "@/components/layout/empty-failure-block";
 import { PageHeader } from "@/components/layout/page-header";
-import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
 import { Pagination } from "@/components/ui/pagination";
@@ -22,8 +21,6 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useLiveQuery } from "@/hooks/use-live-query";
-import { registrationStateLabel } from "@/lib/domain-labels";
-import { formatDateTime } from "@/lib/format";
 import { fetchMyRegistrations, type MyRegistrationListItem } from "@/lib/participant-api";
 import {
   canSelfCheckIn,
@@ -61,6 +58,7 @@ function showCheckInLink(item: MyRegistrationListItem): boolean {
     item.state,
     item.checkinOpenAt,
     item.checkinCloseAt,
+    item.selfCheckinEnabled ?? true,
   );
 }
 
@@ -180,12 +178,12 @@ export default function MyRegistrationsPage() {
         <EmptyFailureBlock
           variant="empty"
           title={
-            stateFilter === "all" ? "No registrations yet" : "No matching registrations"
+            stateFilter === "all" ? "No registrations yet" : "No registrations match this status"
           }
           description={
             stateFilter === "all"
               ? "Browse published events and register when registration is open."
-              : "Try choosing a different status filter."
+              : "Try choosing a different status filter or reset the filter."
           }
           actionLabel={stateFilter === "all" ? "Browse events" : "Clear filter"}
           onAction={() => {
@@ -203,48 +201,28 @@ export default function MyRegistrationsPage() {
       {registrationsQuery.isSuccess && items.length > 0 ? (
         <>
           <ul className="space-y-4">
-            {items.map((item) => {
-              const statusLabel = registrationStateLabel(item.state);
-
-              return (
+            {items.map((item) => (
                 <li
                   key={item.registrationId}
                   className="rounded-[var(--radius-lg)] border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] p-6"
                 >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="space-y-1">
-                      <Link
-                        href={`/events/${item.eventId}`}
-                        className="text-[length:var(--font-size-lg)] font-[var(--font-weight-semibold)] text-[var(--color-text-primary)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-action-focus-ring)]"
-                      >
-                        {item.eventName}
-                      </Link>
-                      <p className="text-[length:var(--font-size-sm)] text-[var(--color-text-secondary)]">
-                        Registration updated {formatDateTime(item.updatedAt)}
-                      </p>
-                    </div>
-                    <RegistrationStateBadge state={item.state} />
+                  <div className="space-y-1">
+                    <Link
+                      href={`/events/${item.eventId}`}
+                      className="text-[length:var(--font-size-lg)] font-[var(--font-weight-semibold)] text-[var(--color-text-primary)] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-action-focus-ring)]"
+                    >
+                      {item.eventName}
+                    </Link>
                   </div>
 
-                  {statusLabel.hint ? (
-                    <p className="mt-3 text-[length:var(--font-size-sm)] text-[var(--color-text-secondary)]">
-                      {statusLabel.hint}
-                    </p>
-                  ) : null}
-
-                  {item.waitlistPosition ? (
-                    <p className="mt-3 text-[length:var(--font-size-sm)] text-[var(--color-text-secondary)]">
-                      Queue position: {item.waitlistPosition}
-                    </p>
-                  ) : null}
-
-                  {item.reasonText ? (
-                    <div className="mt-3">
-                      <Alert variant="warning" title="Status note">
-                        {item.reasonText}
-                      </Alert>
-                    </div>
-                  ) : null}
+                  <div className="mt-4">
+                    <RegistrationStatusTimeline
+                      state={item.state}
+                      updatedAt={item.updatedAt}
+                      waitlistPosition={item.waitlistPosition}
+                      reasonText={item.reasonText}
+                    />
+                  </div>
 
                   <div className="mt-4 flex flex-wrap gap-2">
                     {showCheckInLink(item) ? (
@@ -282,8 +260,7 @@ export default function MyRegistrationsPage() {
                     </Button>
                   </div>
                 </li>
-              );
-            })}
+            ))}
           </ul>
 
           <Pagination
