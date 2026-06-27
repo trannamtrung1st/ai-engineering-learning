@@ -305,7 +305,7 @@ Override restart delay: `PREVIEW_RESTART_DELAY_SEC=5`
 
 ### Logging (all processes)
 
-Every preview session writes timestamped, tagged logs under `ai-harness/generated/runs/`:
+Every preview session **truncates** the preview log files, writes a session banner, then appends fresh timestamped, tagged lines under `ai-harness/generated/runs/`:
 
 | File | Tag | Contents |
 |---|---|---|

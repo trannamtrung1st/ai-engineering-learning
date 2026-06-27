@@ -63,11 +63,27 @@ preview_write_log() {
   fi
 }
 
+preview_clear_logs() {
+  ensure_runs_dir
+  local log_file
+  while IFS= read -r log_file; do
+    : > "$log_file"
+  done < <(preview_log_files)
+}
+
 preview_log_session_start() {
   local mode="${1:-dev}"
+  # Stop stale followers/supervisors before truncate so they cannot repopulate old lines.
+  stop_preview_log_followers
+  if [[ "$mode" != "full" ]]; then
+    stop_preview_supervisors
+    stop_stray_preview_supervisors
+    stop_preview_port_listeners
+    wait_for_preview_ports_free
+  fi
+  preview_clear_logs
   local banner
   banner="======== preview session start mode=${mode} $(preview_log_ts) pid=$$ ========"
-  ensure_runs_dir
   local log_file
   while IFS= read -r log_file; do
     echo "$banner" >> "$log_file"

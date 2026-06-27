@@ -107,10 +107,10 @@ if [[ "$MODE" == "full" ]]; then
   fi
   start_preview_compose_log_follower
 else
-  preview_log_session_start "$MODE"
-  preview_log_stack "starting dev preview stack"
   load_preview_env
   reset_dev_preview_stack
+  preview_log_session_start "$MODE"
+  preview_log_stack "starting dev preview stack"
   preview_log_stack "bringing up database"
   npm run aih:dev:db:up 2>&1 | preview_tee_process_log "stack" "$PREVIEW_STACK_LOG" || true
   preview_log_stack "waiting for database health"
@@ -142,19 +142,19 @@ preview_log_stack "startup verification passed"
 
 API_PORT="${AIH_PREVIEW_API_PORT:-3001}"
 WEB_PORT="${AIH_PREVIEW_WEB_PORT:-3000}"
-echo ""
-echo "Preview stack ready (mode=$MODE)"
-echo "  API: http://localhost:${API_PORT}/api/v1/health"
-echo "  Web: http://localhost:${WEB_PORT}/"
+aih_blank
+aih_section "Preview stack ready (mode=${MODE})" loop
+aih_kv "API" "http://localhost:${API_PORT}/api/v1/health"
+aih_kv "Web" "http://localhost:${WEB_PORT}/"
 if [[ -f "$PID_FILE" || -f "$PREVIEW_AUX_PID_FILE" || "$MODE" == "full" ]]; then
-  echo "  Logs: npm run aih:preview:logs -- --follow"
-  echo "    combined: ${PREVIEW_COMBINED_LOG}"
-  echo "    stack:    ${PREVIEW_STACK_LOG}"
+  aih_kv "Logs" "npm run aih:preview:logs -- --follow"
+  aih_info "combined: ${PREVIEW_COMBINED_LOG}"
+  aih_info "stack:    ${PREVIEW_STACK_LOG}"
   if [[ "$MODE" == "dev" && -f "$PID_FILE" ]]; then
-    echo "  Supervisors: $(tr '\n' ' ' < "$PID_FILE") (auto-restart on crash)"
-    echo "    api:      ${PREVIEW_API_LOG}"
-    echo "    web:      ${PREVIEW_WEB_LOG}"
-    echo "    db:       ${PREVIEW_DB_LOG}"
+    aih_info "supervisors: $(tr '\n' ' ' < "$PID_FILE") (auto-restart on crash)"
+    aih_info "api: ${PREVIEW_API_LOG}"
+    aih_info "web: ${PREVIEW_WEB_LOG}"
+    aih_info "db:  ${PREVIEW_DB_LOG}"
   fi
 fi
-echo "  Stop: npm run aih:preview:down"
+aih_kv "Stop" "npm run aih:preview:down"
