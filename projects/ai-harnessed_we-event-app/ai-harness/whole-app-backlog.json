@@ -538,7 +538,7 @@
     },
     {
       "id": "web-participant-checkin",
-      "passes": false,
+      "passes": true,
       "priority": 33,
       "phase": 3,
       "agent": "frontend",
@@ -559,6 +559,18 @@
         "apps/web/src/app/(participant)/events/[eventId]/check-in"
       ],
       "testRequirements": {
+        "unit": [
+          "apps/web/src/lib/participant-rules.test.ts"
+        ],
+        "component": [
+          "apps/web/src/components/participant/check-in-panel.test.tsx"
+        ],
+        "integration": [
+          "apps/api/src/modules/checkin/checkin.integration.test.ts"
+        ],
+        "e2e": [
+          "tests/e2e/src/scenarios/checkin-module.test.ts"
+        ],
         "acceptanceTags": [
           "AC-05",
           "AC-06",

@@ -31,6 +31,8 @@ export interface DevSeedFixtures {
   staffAssignedEventIds: string[];
   participantSub: string;
   checkinEventId: string;
+  checkinSelfDisabledEventId: string;
+  checkinCloseBoundaryEventId: string;
   waitlistEventId: string;
   feedbackEventId: string;
 }

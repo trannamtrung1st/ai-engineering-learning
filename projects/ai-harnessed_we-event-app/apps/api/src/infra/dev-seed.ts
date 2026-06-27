@@ -39,6 +39,8 @@ export interface DevSeedFixtures {
   staffAssignedEventIds: string[];
   participantSub: string;
   checkinEventId: string;
+  checkinSelfDisabledEventId: string;
+  checkinCloseBoundaryEventId: string;
   waitlistEventId: string;
   feedbackEventId: string;
 }
@@ -177,22 +179,82 @@ async function ensureStaffAssignedEvents(
   return assignedIds;
 }
 
+async function ensureRegisteredNotCheckedIn(
+  eventId: string,
+  participantId: string,
+): Promise<void> {
+  const registrationService = new RegistrationService();
+  const existing = await getPool().query<{ id: string; state: string }>(
+    `SELECT id, state::text AS state FROM registrations
+     WHERE event_id = $1 AND participant_id = $2
+     ORDER BY updated_at DESC
+     LIMIT 1`,
+    [eventId, participantId],
+  );
+
+  const row = existing.rows[0];
+  if (!row) {
+    await registrationService.register(eventId, participantId, {
+      actorId: participantId,
+      actorRole: "Participant",
+    });
+    return;
+  }
+
+  if (row.state === "Registered") {
+    return;
+  }
+
+  if (row.state === "CheckedIn" || row.state === "Attended") {
+    await getPool().query("DELETE FROM checkin_records WHERE registration_id = $1", [
+      row.id,
+    ]);
+    await getPool().query(
+      `UPDATE registrations SET state = 'Registered', updated_at = NOW() WHERE id = $1`,
+      [row.id],
+    );
+  }
+}
+
+async function ensureEventInProgress(
+  eventId: string,
+  context: { actorId: string; actorRole: "OrganizerAdmin" },
+): Promise<void> {
+  const eventService = new EventService();
+  const refreshed = await findEventById(eventId);
+  if (refreshed?.state === "RegistrationOpen") {
+    await eventService.closeRegistration(eventId, context);
+  }
+  const afterClose = await findEventById(eventId);
+  if (afterClose?.state !== "InProgress") {
+    await transitionEventState(eventId, "InProgress", {
+      ...context,
+      action: "event.started",
+    });
+  }
+}
+
+async function updateCheckinWindow(
+  eventId: string,
+  checkinOpenAt: string,
+  checkinCloseAt: string,
+): Promise<void> {
+  await getPool().query(
+    `UPDATE event_rule_configs
+     SET checkin_open_at = $1, checkin_close_at = $2
+     WHERE event_id = $3`,
+    [checkinOpenAt, checkinCloseAt, eventId],
+  );
+}
+
 async function ensureCheckinFixture(
   participantId: string,
   context: { actorId: string; actorRole: "OrganizerAdmin" },
 ): Promise<string> {
   const name = `SEED ${SEED_MARKER} check-in`;
   const existingId = await findEventIdByName(name);
-  if (existingId) {
-    const event = await findEventById(existingId);
-    if (event?.state === "InProgress") {
-      return existingId;
-    }
-  }
-
   const windows = seedWindows();
   const eventService = new EventService();
-  const registrationService = new RegistrationService();
 
   const draft = existingId
     ? (await findEventById(existingId))!
@@ -227,31 +289,117 @@ async function ensureCheckinFixture(
     await eventService.openRegistration(eventId, context);
   }
 
-  const existingRegistration = await getPool().query(
-    `SELECT id FROM registrations
-     WHERE event_id = $1 AND participant_id = $2 AND state = 'Registered'
-     LIMIT 1`,
-    [eventId, participantId],
+  await getPool().query(
+    "UPDATE event_rule_configs SET self_checkin_enabled = true WHERE event_id = $1",
+    [eventId],
   );
+  await updateCheckinWindow(eventId, windows.open, windows.close);
+  await ensureRegisteredNotCheckedIn(eventId, participantId);
+  await ensureEventInProgress(eventId, context);
 
-  if (existingRegistration.rows.length === 0) {
-    await registrationService.register(eventId, participantId, {
-      actorId: participantId,
-      actorRole: "Participant",
-    });
+  return eventId;
+}
+
+async function ensureCheckinSelfDisabledFixture(
+  participantId: string,
+  context: { actorId: string; actorRole: "OrganizerAdmin" },
+): Promise<string> {
+  const name = `SEED ${SEED_MARKER} check-in-disabled`;
+  const windows = seedWindows();
+  const eventService = new EventService();
+
+  let eventId = await findEventIdByName(name);
+  if (!eventId) {
+    const draft = await createEvent(
+      {
+        name,
+        description: "Browser fixture — self check-in disabled (TC-FR-14-016)",
+        location: "Staff Desk",
+        startAt: windows.open,
+        endAt: windows.close,
+        ruleConfig: {
+          capacity: 20,
+          waitlistEnabled: false,
+          registrationOpenAt: windows.open,
+          registrationCloseAt: windows.close,
+          checkinOpenAt: windows.open,
+          checkinCloseAt: windows.close,
+          feedbackOpenAt: windows.open,
+          feedbackCloseAt: windows.close,
+          selfCheckinEnabled: false,
+        },
+      },
+      context.actorId,
+      context.actorRole,
+      SEED_ORG_ID,
+    );
+    eventId = draft.id;
+    await eventService.publish(eventId, context);
+    await eventService.openRegistration(eventId, context);
+  } else {
+    await getPool().query(
+      "UPDATE event_rule_configs SET self_checkin_enabled = false WHERE event_id = $1",
+      [eventId],
+    );
+    await updateCheckinWindow(eventId, windows.open, windows.close);
   }
 
-  const refreshed = await findEventById(eventId);
-  if (refreshed?.state === "RegistrationOpen") {
-    await eventService.closeRegistration(eventId, context);
+  await ensureRegisteredNotCheckedIn(eventId, participantId);
+  await ensureEventInProgress(eventId, context);
+
+  return eventId;
+}
+
+async function ensureCheckinCloseBoundaryFixture(
+  participantId: string,
+  context: { actorId: string; actorRole: "OrganizerAdmin" },
+): Promise<string> {
+  const name = `SEED ${SEED_MARKER} check-in-close-boundary`;
+  const now = Date.now();
+  const checkinOpenAt = new Date(now - 3_600_000).toISOString();
+  const checkinCloseAt = new Date(now - 30_000).toISOString();
+  const windows = seedWindows();
+  const eventService = new EventService();
+
+  let eventId = await findEventIdByName(name);
+  if (!eventId) {
+    const draft = await createEvent(
+      {
+        name,
+        description:
+          "Browser fixture — check-in window closed at boundary (TC-FR-14-022, TC-FR-15-025)",
+        location: "Boundary Gate",
+        startAt: windows.open,
+        endAt: windows.close,
+        ruleConfig: {
+          capacity: 20,
+          waitlistEnabled: false,
+          registrationOpenAt: windows.open,
+          registrationCloseAt: windows.close,
+          checkinOpenAt,
+          checkinCloseAt,
+          feedbackOpenAt: windows.open,
+          feedbackCloseAt: windows.close,
+          selfCheckinEnabled: true,
+        },
+      },
+      context.actorId,
+      context.actorRole,
+      SEED_ORG_ID,
+    );
+    eventId = draft.id;
+    await eventService.publish(eventId, context);
+    await eventService.openRegistration(eventId, context);
+  } else {
+    await getPool().query(
+      "UPDATE event_rule_configs SET self_checkin_enabled = true WHERE event_id = $1",
+      [eventId],
+    );
+    await updateCheckinWindow(eventId, checkinOpenAt, checkinCloseAt);
   }
-  const afterClose = await findEventById(eventId);
-  if (afterClose?.state !== "InProgress") {
-    await transitionEventState(eventId, "InProgress", {
-      ...context,
-      action: "event.started",
-    });
-  }
+
+  await ensureRegisteredNotCheckedIn(eventId, participantId);
+  await ensureEventInProgress(eventId, context);
 
   return eventId;
 }
@@ -465,12 +613,16 @@ export async function runDevSeed(): Promise<DevSeedFixtures> {
     bulkRegistrationsEventId,
     staffAssignedEventIds,
     checkinEventId,
+    checkinSelfDisabledEventId,
+    checkinCloseBoundaryEventId,
     waitlistEventId,
     feedbackEventId,
   ] = await Promise.all([
     ensureBulkRegistrationsEvent(context),
     ensureStaffAssignedEvents(context),
     ensureCheckinFixture(participantId, context),
+    ensureCheckinSelfDisabledFixture(participantId, context),
+    ensureCheckinCloseBoundaryFixture(participantId, context),
     ensureWaitlistFixture(participantId, context),
     ensureFeedbackFixture(participantId, context),
   ]);
@@ -481,6 +633,8 @@ export async function runDevSeed(): Promise<DevSeedFixtures> {
     staffAssignedEventIds,
     participantSub: SEED_PARTICIPANT_SUB,
     checkinEventId,
+    checkinSelfDisabledEventId,
+    checkinCloseBoundaryEventId,
     waitlistEventId,
     feedbackEventId,
   };

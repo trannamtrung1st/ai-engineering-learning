@@ -422,3 +422,9 @@ Append-only log of completed iterations.
 - 2026-06-27T08:53:22Z | web-participant-registration | browser_test_failed
 - 2026-06-27T09:01:00Z | web-participant-registration | browser: TC-AC-02-003 live register on waitlist fixture shows Queue position on event detail + My Registrations; dev/fixtures self-heals after promotion; new participant register HTTP 200 — aih:check pass
 - 2026-06-27T09:12:24Z | web-participant-registration | passed
+- 2026-06-27T09:15:00Z | web-participant-checkin | browser: /events/{checkinEventId}/check-in shows Registered badge + Check in now; submit succeeds with timestamp (Checked in at Jun 27, 2026, 4:15 PM) and CheckedIn status — HTTP 200
+- 2026-06-27T09:16:46Z | web-participant-checkin | checks_failed
+- 2026-06-27T09:19:00Z | web-participant-checkin | browser: /events/{checkinEventId}/check-in shows CheckedIn badge + "already checked in" copy; typecheck fix (unused EventState import); aih:check pass (typecheck/build/unit/integration/e2e) — HTTP 200
+- 2026-06-27T09:25:23Z | web-participant-checkin | browser_test_failed
+- 2026-06-27T09:30:00Z | web-participant-checkin | browser: check-in happy path (Registered + Check in now → success timestamp); TC-FR-14-016 self-disabled fixture shows blocking alert; TC-FR-14-022/TC-FR-15-025 close-boundary fixture shows Outside check-in window — dev seed adds checkinSelfDisabledEventId + checkinCloseBoundaryEventId with self-healing windows — HTTP 200
+- 2026-06-27T09:39:43Z | web-participant-checkin | passed

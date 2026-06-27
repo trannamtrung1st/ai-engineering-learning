@@ -382,3 +382,6 @@ Lessons learned across harness iterations. Read before every implementer session
 - [web-participant-registration] Computational checks failed — see 20260627T082825Z-checks.json
 - [web-participant-registration] Browser test failed — see 20260627T083534Z-browser-test.json
 - [web-participant-registration] Legacy `uq_waitlist_event_position` (non-partial) blocks waitlist position reuse after promotion — drop in schema.sql; `ensureWaitlistFixture` must delete waitlist_entries before registrations and re-seed when participant-1 is no longer Waitlisted (do not cache fixtures across requests).
+- [web-participant-checkin] Computational checks failed — see 20260627T091224Z-checks.json
+- [web-participant-checkin] Browser test failed — see 20260627T091646Z-browser-test.json
+- [web-participant-checkin] Browser gate TC-FR-14-016/022 and TC-FR-15-025 need dev-seed fixtures: `checkinSelfDisabledEventId` (InProgress, selfCheckinEnabled=false, Registered) and `checkinCloseBoundaryEventId` (checkinCloseAt refreshed to ~30s ago on each seed run); scanning bulk events alone will not find boundary/disabled cases.
