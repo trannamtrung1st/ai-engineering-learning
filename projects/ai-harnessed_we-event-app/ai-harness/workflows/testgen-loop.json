@@ -4,7 +4,8 @@
     "commitOnPass": true
   },
   "agent": {
-    "timeoutMs": 1200000
+    "timeoutMs": 1200000,
+    "idleTimeoutMs": 300000
   },
   "signals": {
     "complete": "TESTGEN_COMPLETE",

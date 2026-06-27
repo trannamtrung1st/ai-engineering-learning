@@ -45,7 +45,8 @@ npm run aih:loop -- 50                     # max 50 iterations
 | `AIH_REVIEWER_MODEL` | `auto` | Reviewer model |
 | `AIH_TESTER_MODEL` | `auto` | Browser test agent model |
 | `AIH_TESTGEN_MODEL` | `auto` | Test case generator model |
-| `AIH_AGENT_TIMEOUT_MS` | `1200000` | Max wall time per agent invocation (20 minutes) |
+| `AIH_AGENT_TIMEOUT_MS` | `1200000` | Max wall time per agent invocation (20 minutes); applies to streamed and buffered runs |
+| `AIH_AGENT_IDLE_TIMEOUT_MS` | `300000` | Stream idle timeout — no stream-json activity for this long ends the run (5 minutes) |
 | `AIH_STREAM_AGENT` | `1` | Live stream all harness agent output via stream-json (`0` = legacy buffered text) |
 | `AIH_AGENT_VERBOSE` | `1` | Show `[tool]` start/done lines on stderr during streamed agent runs (`0` to disable) |
 | `AIH_NO_COLOR` | — | Disable ANSI styling in harness output (`1`) |

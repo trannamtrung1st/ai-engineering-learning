@@ -4,13 +4,19 @@
  * live to stdout, and append the same text to --outfile for signal parsing.
  *
  * Usage:
- *   node stream-agent-output.js --outfile path [--verbose] -- agent -p ... prompt
+ *   node stream-agent-output.js --outfile path [--verbose] \
+ *     [--idle-timeout-ms N] [--max-timeout-ms N] -- agent -p ... prompt
  */
 
 const { spawn } = require("node:child_process");
 const { createInterface } = require("node:readline");
 const fs = require("node:fs");
 const path = require("node:path");
+
+const AGENT_TIMEOUT_EXIT = 124;
+const DEFAULT_IDLE_TIMEOUT_MS = 300_000;
+const DEFAULT_MAX_TIMEOUT_MS = 1_200_000;
+const TIMEOUT_POLL_MS = 5_000;
 
 function colorEnabled() {
   if (process.env.NO_COLOR || process.env.AIH_NO_COLOR) return false;
@@ -32,10 +38,23 @@ function writeStderr(line) {
   process.stderr.write(`${line}\n`);
 }
 
+function parsePositiveInt(value, fallback) {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 function parseArgs(argv) {
   const options = {
     outfile: "",
     verbose: false,
+    idleTimeoutMs: parsePositiveInt(
+      process.env.AIH_AGENT_IDLE_TIMEOUT_MS,
+      DEFAULT_IDLE_TIMEOUT_MS,
+    ),
+    maxTimeoutMs: parsePositiveInt(
+      process.env.AIH_AGENT_TIMEOUT_MS,
+      DEFAULT_MAX_TIMEOUT_MS,
+    ),
     agentArgs: [],
   };
 
@@ -44,6 +63,16 @@ function parseArgs(argv) {
     const arg = argv[i];
     if (arg === "--outfile") {
       options.outfile = argv[++i] ?? "";
+      i += 1;
+      continue;
+    }
+    if (arg === "--idle-timeout-ms") {
+      options.idleTimeoutMs = parsePositiveInt(argv[++i], options.idleTimeoutMs);
+      i += 1;
+      continue;
+    }
+    if (arg === "--max-timeout-ms") {
+      options.maxTimeoutMs = parsePositiveInt(argv[++i], options.maxTimeoutMs);
       i += 1;
       continue;
     }
@@ -109,8 +138,6 @@ function writeAssistantDelta(event, state, outfileFd) {
   const text = extractAssistantText(event);
   if (!text) return;
 
-  // stream-partial-output sends token deltas then a cumulative snapshot per turn.
-  // turnText tracks only the current turn; reset on tool_call completed / final assistant.
   let delta = text;
   if (state.turnText && text.startsWith(state.turnText)) {
     delta = text.slice(state.turnText.length);
@@ -127,6 +154,8 @@ function resetAssistantTurn(state) {
 }
 
 function handleStreamEvent(event, state, options, outfileFd) {
+  state.touchActivity();
+
   switch (event.type) {
     case "system":
       if (options.verbose && event.subtype === "init") {
@@ -137,7 +166,6 @@ function handleStreamEvent(event, state, options, outfileFd) {
       break;
 
     case "assistant": {
-      // Partial deltas include timestamp_ms; the final cumulative message does not.
       if (event.timestamp_ms === undefined) {
         resetAssistantTurn(state);
         break;
@@ -173,6 +201,14 @@ function handleStreamEvent(event, state, options, outfileFd) {
   }
 }
 
+function timeoutMessage(idleMs, reason) {
+  const minutes = Math.round(idleMs / 60_000);
+  if (reason === "idle") {
+    return `ERROR: Agent timed out after ${idleMs}ms idle (no stream output for ${minutes}m)`;
+  }
+  return `ERROR: Agent timed out after ${idleMs}ms (${minutes}m max wall time)`;
+}
+
 async function main() {
   let options;
   try {
@@ -184,25 +220,82 @@ async function main() {
 
   const agentBin = options.agentArgs[0];
   const agentArgs = options.agentArgs.slice(1);
-  const state = { result: null, turnText: "" };
+  const state = {
+    result: null,
+    turnText: "",
+    lastActivityMs: Date.now(),
+    startedMs: Date.now(),
+    timedOut: false,
+    timeoutReason: "",
+    touchActivity() {
+      this.lastActivityMs = Date.now();
+    },
+  };
 
   fs.mkdirSync(path.dirname(options.outfile), { recursive: true });
   const outfileFd = fs.openSync(options.outfile, "w");
 
   const exitCode = await new Promise((resolvePromise, rejectPromise) => {
-    const child = spawn(agentBin, agentArgs, {
+    let settled = false;
+    let idleTimer;
+    let maxTimer;
+    let child;
+
+    const finish = (code) => {
+      if (settled) return;
+      settled = true;
+      clearInterval(idleTimer);
+      clearInterval(maxTimer);
+      resolvePromise(code);
+    };
+
+    const killForTimeout = (reason) => {
+      if (settled || !child || child.killed) return;
+      state.timedOut = true;
+      state.timeoutReason = reason;
+      const ms =
+        reason === "idle" ? options.idleTimeoutMs : options.maxTimeoutMs;
+      const message = timeoutMessage(ms, reason);
+      writeStderr(yellow(message));
+      try {
+        fs.writeSync(outfileFd, `\n${message}\n`);
+      } catch {
+        // outfile may already be closed
+      }
+      child.kill("SIGTERM");
+      setTimeout(() => {
+        if (child && !child.killed) {
+          child.kill("SIGKILL");
+        }
+      }, 2000).unref();
+    };
+
+    child = spawn(agentBin, agentArgs, {
       stdio: ["ignore", "pipe", "pipe"],
       env: process.env,
     });
 
-    // Ignore agent stderr — it mirrors assistant text. Tool activity comes from stdout JSON.
     child.stderr.resume();
+
+    idleTimer = setInterval(() => {
+      if (Date.now() - state.lastActivityMs >= options.idleTimeoutMs) {
+        killForTimeout("idle");
+      }
+    }, TIMEOUT_POLL_MS);
+
+    maxTimer = setInterval(() => {
+      if (Date.now() - state.startedMs >= options.maxTimeoutMs) {
+        killForTimeout("max");
+      }
+    }, TIMEOUT_POLL_MS);
 
     const rl = createInterface({ input: child.stdout, crlfDelay: Infinity });
 
     rl.on("line", (line) => {
       const trimmed = line.trim();
       if (!trimmed) return;
+
+      state.touchActivity();
 
       try {
         handleStreamEvent(JSON.parse(trimmed), state, options, outfileFd);
@@ -212,6 +305,10 @@ async function main() {
     });
 
     child.on("error", (err) => {
+      if (settled) return;
+      settled = true;
+      clearInterval(idleTimer);
+      clearInterval(maxTimer);
       fs.closeSync(outfileFd);
       rejectPromise(
         new Error(
@@ -221,12 +318,18 @@ async function main() {
     });
 
     child.on("close", (code) => {
+      clearInterval(idleTimer);
+      clearInterval(maxTimer);
       fs.closeSync(outfileFd);
-      if (state.result?.is_error) {
-        resolvePromise(2);
+      if (state.timedOut) {
+        finish(AGENT_TIMEOUT_EXIT);
         return;
       }
-      resolvePromise(code ?? 1);
+      if (state.result?.is_error) {
+        finish(2);
+        return;
+      }
+      finish(code ?? 1);
     });
   });
 

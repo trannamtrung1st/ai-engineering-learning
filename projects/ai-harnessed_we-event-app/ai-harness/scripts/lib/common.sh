@@ -233,12 +233,13 @@ print_harness_env() {
     aih_kv "Agent" "not installed (curl https://cursor.com/install -fsS | bash)"
   fi
   aih_kv "Auth" "agent login (OAuth, one-time per machine)"
-  aih_kv "Timeout" "$(get_agent_timeout_ms)ms (override: AIH_AGENT_TIMEOUT_MS)"
+  aih_kv "Timeout" "idle $(get_agent_idle_timeout_ms)ms / max $(get_agent_timeout_ms)ms (AIH_AGENT_IDLE_TIMEOUT_MS / AIH_AGENT_TIMEOUT_MS)"
   aih_kv "Overrides" "AIH_MODEL=... AIH_SKIP_AGENT=1 AIH_SKIP_REVIEW=1"
 }
 
 AGENT_TIMEOUT_EXIT=124
 AGENT_TIMEOUT_DEFAULT_MS=1200000
+AGENT_IDLE_TIMEOUT_DEFAULT_MS=300000
 
 get_agent_timeout_ms() {
   local config="${1:-$LOOP_CONFIG}"
@@ -249,10 +250,25 @@ get_agent_timeout_ms() {
   jq -r ".agent.timeoutMs // ${AGENT_TIMEOUT_DEFAULT_MS}" "$config"
 }
 
+get_agent_idle_timeout_ms() {
+  local config="${1:-${AIH_HARNESS_CONFIG:-$LOOP_CONFIG}}"
+  if [[ -n "${AIH_AGENT_IDLE_TIMEOUT_MS:-}" ]]; then
+    echo "$AIH_AGENT_IDLE_TIMEOUT_MS"
+    return
+  fi
+  jq -r ".agent.idleTimeoutMs // ${AGENT_IDLE_TIMEOUT_DEFAULT_MS}" "$config"
+}
+
 agent_timeout_message() {
   local timeout_ms="$1"
   local timeout_min=$(( timeout_ms / 60000 ))
   echo "ERROR: Agent timed out after ${timeout_ms}ms (${timeout_min}m)"
+}
+
+agent_idle_timeout_message() {
+  local idle_ms="$1"
+  local idle_min=$(( idle_ms / 60000 ))
+  echo "ERROR: Agent timed out after ${idle_ms}ms idle (no stream output for ${idle_min}m)"
 }
 
 agent_stream_enabled() {
@@ -271,12 +287,11 @@ agent_verbose_enabled() {
   [[ "${AIH_AGENT_VERBOSE:-1}" == "1" ]]
 }
 
-agent_append_output_format_args() {
-  local -n _args=$1
+agent_output_format_args() {
   if agent_stream_enabled; then
-    _args+=(--output-format stream-json --stream-partial-output)
+    echo '--output-format stream-json --stream-partial-output'
   else
-    _args+=(--output-format text)
+    echo '--output-format text'
   fi
 }
 
@@ -312,16 +327,21 @@ run_agent_with_timeout_ms() {
   local -a stream_cmd
 
   if [[ -n "$outfile" ]] && agent_stream_enabled && run_agent_uses_stream_json "$@"; then
-    stream_cmd=(node "${HARNESS_ROOT}/scripts/lib/stream-agent-output.js" --outfile "$outfile")
+    local idle_ms
+    idle_ms="$(get_agent_idle_timeout_ms "${AIH_HARNESS_CONFIG:-$LOOP_CONFIG}")"
+    stream_cmd=(node "${HARNESS_ROOT}/scripts/lib/stream-agent-output.js" \
+      --outfile "$outfile" \
+      --idle-timeout-ms "$idle_ms" \
+      --max-timeout-ms "$timeout_ms")
     if agent_verbose_enabled; then
       stream_cmd+=(--verbose)
     fi
     stream_cmd+=(-- "$@")
     set +e
-    run_command_with_timeout_ms "$timeout_ms" "${stream_cmd[@]}"
+    "${stream_cmd[@]}"
     status=$?
     set -e
-    if [[ "$status" -eq "$AGENT_TIMEOUT_EXIT" ]]; then
+    if [[ "$status" -eq "$AGENT_TIMEOUT_EXIT" ]] && [[ -n "$outfile" ]] && ! grep -q "ERROR: Agent timed out" "$outfile" 2>/dev/null; then
       timeout_msg="$(agent_timeout_message "$timeout_ms")"
       echo "$timeout_msg" | tee -a "$outfile" >&2
     fi
@@ -773,11 +793,14 @@ agent_invoke_testgen() {
   local prompt="$2"
   local outfile="${3:-}"
   require_agent
-  local -a args=(-p --force --trust --model "$model")
-  agent_append_output_format_args args
-  local timeout_ms
-  timeout_ms="$(get_agent_timeout_ms "$TESTGEN_CONFIG")"
-  run_agent_with_timeout_ms "$timeout_ms" "$outfile" "$AGENT_BIN" "${args[@]}" "$prompt"
+  local -a args fmt
+  args=(-p --force --trust --model "$model")
+  read -ra fmt <<< "$(agent_output_format_args)"
+  args+=("${fmt[@]}")
+  local timeout_ms idle_config
+  idle_config="$TESTGEN_CONFIG"
+  timeout_ms="$(get_agent_timeout_ms "$idle_config")"
+  AIH_HARNESS_CONFIG="$idle_config" run_agent_with_timeout_ms "$timeout_ms" "$outfile" "$AGENT_BIN" "${args[@]}" "$prompt"
 }
 
 append_guardrail() {
@@ -860,14 +883,17 @@ agent_invoke() {
   local outfile="${3:-}"
   local slice_id="${4:-${AIH_CHECK_SLICE:-}}"
   require_agent
-  local -a args=(-p --force --model "$model")
-  agent_append_output_format_args args
+  local -a args fmt
+  args=(-p --force --model "$model")
+  read -ra fmt <<< "$(agent_output_format_args)"
+  args+=("${fmt[@]}")
   if slice_uses_browser_mcp "$slice_id"; then
     args+=(--approve-mcps)
   fi
-  local timeout_ms
-  timeout_ms="$(get_agent_timeout_ms "$LOOP_CONFIG")"
-  run_agent_with_timeout_ms "$timeout_ms" "$outfile" "$AGENT_BIN" "${args[@]}" "$prompt"
+  local timeout_ms idle_config
+  idle_config="$LOOP_CONFIG"
+  timeout_ms="$(get_agent_timeout_ms "$idle_config")"
+  AIH_HARNESS_CONFIG="$idle_config" run_agent_with_timeout_ms "$timeout_ms" "$outfile" "$AGENT_BIN" "${args[@]}" "$prompt"
 }
 
 # Read-only reviewer: plan mode blocks edits; prompt forbids shell/tests.
@@ -876,11 +902,14 @@ agent_invoke_review() {
   local prompt="$2"
   local outfile="${3:-}"
   require_agent
-  local -a args=(-p --force --trust --model "$model" --mode plan)
-  agent_append_output_format_args args
-  local timeout_ms
-  timeout_ms="$(get_agent_timeout_ms "$LOOP_CONFIG")"
-  run_agent_with_timeout_ms "$timeout_ms" "$outfile" "$AGENT_BIN" "${args[@]}" "$prompt"
+  local -a args fmt
+  args=(-p --force --trust --model "$model" --mode plan)
+  read -ra fmt <<< "$(agent_output_format_args)"
+  args+=("${fmt[@]}")
+  local timeout_ms idle_config
+  idle_config="$LOOP_CONFIG"
+  timeout_ms="$(get_agent_timeout_ms "$idle_config")"
+  AIH_HARNESS_CONFIG="$idle_config" run_agent_with_timeout_ms "$timeout_ms" "$outfile" "$AGENT_BIN" "${args[@]}" "$prompt"
 }
 
 # Browser tester: Playwright MCP enabled; prompt forbids file edits.
@@ -889,11 +918,14 @@ agent_invoke_browser_test() {
   local prompt="$2"
   local outfile="${3:-}"
   require_agent
-  local -a args=(-p --force --trust --approve-mcps --model "$model")
-  agent_append_output_format_args args
-  local timeout_ms
-  timeout_ms="$(get_agent_timeout_ms "$LOOP_CONFIG")"
-  run_agent_with_timeout_ms "$timeout_ms" "$outfile" "$AGENT_BIN" "${args[@]}" "$prompt"
+  local -a args fmt
+  args=(-p --force --trust --approve-mcps --model "$model")
+  read -ra fmt <<< "$(agent_output_format_args)"
+  args+=("${fmt[@]}")
+  local timeout_ms idle_config
+  idle_config="$LOOP_CONFIG"
+  timeout_ms="$(get_agent_timeout_ms "$idle_config")"
+  AIH_HARNESS_CONFIG="$idle_config" run_agent_with_timeout_ms "$timeout_ms" "$outfile" "$AGENT_BIN" "${args[@]}" "$prompt"
 }
 
 git_changed_files() {
