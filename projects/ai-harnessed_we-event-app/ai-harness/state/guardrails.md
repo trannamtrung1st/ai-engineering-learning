@@ -367,9 +367,15 @@ Lessons learned across harness iterations. Read before every implementer session
 - [web-design-system-shell] Browser test failed — see 20260627T040511Z-browser-test.json
 - [web-design-system-shell] Computational checks failed — see 20260627T041113Z-checks.json
 - [harness] Never pipe `npm run aih:preview` through `tail`/`head` or chain it with `&&` — orphaned shell children block the loop after `SLICE_DONE`; use separate commands and `npm run aih:preview:verify` instead.
+- [harness] Background preview supervisors/log followers must not inherit stdout — otherwise `preview-stack.sh` never exits when captured by browser-test gate command substitution.
+- [harness] Background preview supervisors/log followers must not inherit stdout — otherwise `preview-stack.sh` never exits when captured by browser-test gate command substitution.
 - [web-design-system-shell] Browser test failed — see 20260627T043154Z-browser-test.json
 - [web-design-system-shell] Browser test failed — see 20260627T044443Z-browser-test.json
 - [web-design-system-shell] Browser test failed — see 20260627T045127Z-browser-test.json
 - [web-design-system-shell] Browser test failed — see 20260627T045816Z-browser-test.json
 - [web-design-system-shell] Browser test failed — see 20260627T050525Z-browser-test.json
 - [web-design-system-shell] Browser test failed — see 20260627T051252Z-browser-test.json
+- [web-participant-discovery] Computational checks failed — see 20260627T060726Z-checks.json
+- [web-participant-discovery] Browser test failed — see 20260627T061237Z-browser-test.json
+- [web-participant-discovery] Browser test failed — see 20260627T063907Z-browser-test.json
+- [web-participant-discovery] Local `.env` with `SEED_ENABLED=false` disables preview browser fixtures (bulk registrations, staff pagination, participant check-in/waitlist/feedback); `preview-stack.sh` must force `SEED_ENABLED=true` after sourcing `.env`.

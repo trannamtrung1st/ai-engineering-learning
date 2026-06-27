@@ -20,6 +20,7 @@ export interface EventListItem {
   state: EventState;
   startAt: string;
   location: string;
+  coverImageUrl?: string;
 }
 
 export interface MyRegistrationListItem {
@@ -78,6 +79,7 @@ export interface EventSummary {
   endAt: string;
   version: number;
   updatedAt: string;
+  coverImageUrl?: string;
   ruleConfig: EventRuleConfig;
 }
 

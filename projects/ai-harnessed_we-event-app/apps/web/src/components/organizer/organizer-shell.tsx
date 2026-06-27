@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 
 import { AppShell } from "@/components/layout/app-shell";
 import { EmptyFailureBlock } from "@/components/layout/empty-failure-block";
@@ -16,7 +16,11 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { organizerNavItems } from "@/lib/app-context";
-import { DEFAULT_ORGANIZER_ADMIN_ID } from "@/lib/organizer-api";
+import {
+  DEFAULT_ORGANIZER_ADMIN_ID,
+  DEFAULT_ORGANIZER_STAFF_ID,
+  fetchDevFixtures,
+} from "@/lib/organizer-api";
 import {
   useOrganizerAuth,
   type OrganizerRole,
@@ -29,6 +33,38 @@ export function OrganizerShell({ children }: { children: ReactNode }) {
   const [role, setRole] = useState<OrganizerRole>("OrganizerAdmin");
   const [assignedEvents, setAssignedEvents] = useState("");
   const [signingIn, setSigningIn] = useState(false);
+  const [staffFixturesLoading, setStaffFixturesLoading] = useState(false);
+
+  useEffect(() => {
+    if (role !== "OrganizerStaff") {
+      setStaffFixturesLoading(false);
+      return;
+    }
+    setOrganizerId(DEFAULT_ORGANIZER_STAFF_ID);
+    let cancelled = false;
+    setStaffFixturesLoading(true);
+    void fetchDevFixtures()
+      .then((fixtures) => {
+        if (cancelled) {
+          return;
+        }
+        setOrganizerId(fixtures.staffSub);
+        setAssignedEvents(fixtures.staffAssignedEventIds.join(", "));
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setOrganizerId(DEFAULT_ORGANIZER_STAFF_ID);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setStaffFixturesLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [role]);
 
   const appRole = isAdmin ? "organizer-admin" : "organizer-staff";
 
@@ -114,8 +150,15 @@ export function OrganizerShell({ children }: { children: ReactNode }) {
                 />
               </Field>
             ) : null}
-            <Button type="submit" disabled={signingIn}>
-              {signingIn ? "Signing in…" : "Continue"}
+            <Button
+              type="submit"
+              disabled={signingIn || (role === "OrganizerStaff" && staffFixturesLoading)}
+            >
+              {signingIn
+                ? "Signing in…"
+                : role === "OrganizerStaff" && staffFixturesLoading
+                  ? "Loading staff fixtures…"
+                  : "Continue"}
             </Button>
           </form>
         </div>

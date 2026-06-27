@@ -406,3 +406,13 @@ Append-only log of completed iterations.
 - 2026-06-27T05:34:00Z | web-design-system-shell | checks: run-checks pass (typecheck/build/unit/integration); Badge semantic variant + domain-labels badgeStatus + KpiSummaryStrip TC-NFR-06-012 inline retry on organizer dashboard isRefetchError
 - 2026-06-27T06:00:00Z | web-design-system-shell | browser: homepage HTTP 200 — 18 semantic domain badges (`#15803d` registered/registrationOpen), NFR-06 Connected; aih:check web-design-system-shell pass (typecheck/build/unit/integration)
 - 2026-06-27T06:07:26Z | web-design-system-shell | passed
+- 2026-06-27T06:11:30Z | web-participant-discovery | browser: /events FilterBar (search, state, sort), card grid with cover placeholders + status badges, pagination 1–12→13–24 of 14986; event detail info panel + registration status, no register/check-in actions — HTTP 200
+- 2026-06-27T06:12:37Z | web-participant-discovery | checks_failed
+- 2026-06-27T06:27:07Z | web-participant-discovery | browser: /events HTTP 200 after .next cache recovery; e2e coverage for TC-FR-28-003/004/005/013/019/020 (AC-18a/b/d) and TC-FR-29-004/013/019 (AC-18b/c); integration TC-FR-28-009 — run-checks pass
+- 2026-06-27T06:39:07Z | web-participant-discovery | browser_test_failed
+- 2026-06-27T06:42:00Z | web-participant-discovery | browser: /registrations FilterBar shows status + sort select (Recently updated / Request date oldest first); page 2→sort change resets to page 1 (Showing 1–20 of 236); /events search+state+sort + pagination 1–12 of 16133 — HTTP 200
+- 2026-06-27T06:51:42Z | web-participant-discovery | browser_test_failed
+- 2026-06-27T07:07:00Z | web-participant-discovery | browser: /events empty search shows "No results match your filters"; /registrations Check-in+Feedback+Waitlist position fixtures; organizer registrations Showing 1–20 of 25 — HTTP 200
+- 2026-06-27T07:22:00Z | web-participant-discovery | checks: run-checks pass (typecheck/build/unit/integration/e2e); preview-stack forces SEED_ENABLED=true for browser fixtures (25 bulk regs, staff 25 assigned events, participant check-in/waitlist/feedback); organizer staff sign-in waits for /dev/fixtures before Continue
+- 2026-06-27T08:16:00Z | web-participant-discovery | browser: /events empty search "No results match your filters"; /registrations Check-in+Feedback+Waitlist position; organizer registrations 1–20 of 25; staff assigned events 1–20 of 25 with Next — aih:check pass
+- 2026-06-27T08:28:25Z | web-participant-discovery | passed

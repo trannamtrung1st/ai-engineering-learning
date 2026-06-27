@@ -4,6 +4,7 @@ export interface AppConfig {
   jwtSecret: string;
   timezone: string;
   devAuthEnabled: boolean;
+  seedEnabled: boolean;
   uploadsDir: string;
 }
 
@@ -27,6 +28,7 @@ export function loadConfig(): AppConfig {
     jwtSecret: requireEnv("JWT_SECRET"),
     timezone: process.env.TIMEZONE ?? "UTC",
     devAuthEnabled: process.env.DEV_AUTH_ENABLED === "true",
+    seedEnabled: process.env.SEED_ENABLED === "true",
     uploadsDir: process.env.UPLOADS_DIR ?? "./uploads",
   };
 }

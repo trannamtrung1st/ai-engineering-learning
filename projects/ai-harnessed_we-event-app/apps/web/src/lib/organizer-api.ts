@@ -21,6 +21,19 @@ export const DEFAULT_ORGANIZATION_ID = "00000000-0000-0000-0000-000000000001";
 /** Seeded organizer admin — must be a UUID (audit log actor columns). */
 export const DEFAULT_ORGANIZER_ADMIN_ID =
   "00000000-0000-0000-0000-000000000099";
+/** Seeded organizer staff for browser fixture pagination. */
+export const DEFAULT_ORGANIZER_STAFF_ID =
+  "00000000-0000-0000-0000-000000000098";
+
+export interface DevSeedFixtures {
+  bulkRegistrationsEventId: string;
+  staffSub: string;
+  staffAssignedEventIds: string[];
+  participantSub: string;
+  checkinEventId: string;
+  waitlistEventId: string;
+  feedbackEventId: string;
+}
 
 export interface RuleConfigInput {
   capacity: number;
@@ -207,6 +220,10 @@ export function requestOrganizerDevToken(
     body: JSON.stringify({ sub, role, assignedEventIds }),
     headers: { "Content-Type": "application/json" },
   });
+}
+
+export function fetchDevFixtures(): Promise<DevSeedFixtures> {
+  return apiFetch<DevSeedFixtures>("/dev/fixtures");
 }
 
 export function fetchOrganizerEvents(

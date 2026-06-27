@@ -35,6 +35,13 @@ import { useAuth } from "@/providers/auth-provider";
 
 const REGISTRATION_PAGE_SIZE = 20;
 
+const REGISTRATION_SORT_OPTIONS = [
+  { value: "updatedAt:desc", label: "Recently updated" },
+  { value: "requestedAt:asc", label: "Request date (oldest first)" },
+] as const;
+
+type RegistrationSort = (typeof REGISTRATION_SORT_OPTIONS)[number]["value"];
+
 const REGISTRATION_STATE_FILTERS: Array<{
   value: "all" | RegistrationState;
   label: string;
@@ -74,18 +81,20 @@ export default function MyRegistrationsPage() {
   const { token } = useAuth();
   const [page, setPage] = useState(1);
   const [stateFilter, setStateFilter] = useState<"all" | RegistrationState>("all");
+  const [sort, setSort] = useState<RegistrationSort>("updatedAt:desc");
 
   useEffect(() => {
     setPage(1);
-  }, [stateFilter]);
+  }, [stateFilter, sort]);
 
   const listParams = useMemo(
     () => ({
       page,
       pageSize: REGISTRATION_PAGE_SIZE,
       state: stateFilter === "all" ? undefined : stateFilter,
+      sort,
     }),
-    [page, stateFilter],
+    [page, stateFilter, sort],
   );
 
   const registrationsQuery = useLiveQuery({
@@ -133,6 +142,20 @@ export default function MyRegistrationsPage() {
             </SelectContent>
           </Select>
         </Field>
+        <Field id="registration-sort" label="Sort by" className="min-w-[12rem]">
+          <Select value={sort} onValueChange={(value) => setSort(value as RegistrationSort)}>
+            <SelectTrigger id="registration-sort" aria-label="Sort by">
+              <SelectValue placeholder="Recently updated" />
+            </SelectTrigger>
+            <SelectContent>
+              {REGISTRATION_SORT_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
       </FilterBar>
 
       {registrationsQuery.isLoading ? (
@@ -170,6 +193,7 @@ export default function MyRegistrationsPage() {
               window.location.href = "/events";
             } else {
               setStateFilter("all");
+              setSort("updatedAt:desc");
               setPage(1);
             }
           }}

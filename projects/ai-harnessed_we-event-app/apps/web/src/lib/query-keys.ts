@@ -8,6 +8,7 @@ export const queryKeys = {
       pageSize?: number;
       q?: string;
       state?: string;
+      sort?: string;
     }) => [...queryKeys.events.all, "list", params ?? {}] as const,
     listRoot: () => [...queryKeys.events.all, "list"] as const,
     detail: (eventId: string) => [...queryKeys.events.all, "detail", eventId] as const,
@@ -16,8 +17,12 @@ export const queryKeys = {
     all: ["registrations"] as const,
     status: (eventId: string) =>
       [...queryKeys.registrations.all, "status", eventId] as const,
-    mine: (params?: { page?: number; pageSize?: number; state?: string }) =>
-      [...queryKeys.registrations.all, "mine", params ?? {}] as const,
+    mine: (params?: {
+      page?: number;
+      pageSize?: number;
+      state?: string;
+      sort?: string;
+    }) => [...queryKeys.registrations.all, "mine", params ?? {}] as const,
     mineAll: () => [...queryKeys.registrations.all, "mine"] as const,
   },
   eligibility: {

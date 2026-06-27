@@ -20,9 +20,19 @@ describe("EventCard", () => {
     assert.match(html, /Registration open/i);
     assert.match(html, /data-domain-status="registrationOpen"/);
     assert.match(html, /Not registered/);
+    assert.match(html, /event-cover-placeholder/);
   });
 
-  it("FR-10: surfaces participant registration status when provided", () => {
+  it("FR-28 / AC-17: renders cover thumbnail when coverImageUrl is provided", () => {
+    const html = renderToStaticMarkup(
+      <EventCard event={{ ...event, coverImageUrl: "/api/v1/media/events/cover.png" }} />,
+    );
+    assert.match(html, /event-cover-image/);
+    assert.match(html, /Cover image for We Event Summit/);
+    assert.doesNotMatch(html, /event-cover-placeholder/);
+  });
+
+  it("AC-14: surfaces participant registration status badge when provided", () => {
     const html = renderToStaticMarkup(
       <EventCard event={event} registrationState="Registered" />,
     );
