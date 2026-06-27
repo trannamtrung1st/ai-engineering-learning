@@ -428,3 +428,7 @@ Append-only log of completed iterations.
 - 2026-06-27T09:25:23Z | web-participant-checkin | browser_test_failed
 - 2026-06-27T09:30:00Z | web-participant-checkin | browser: check-in happy path (Registered + Check in now → success timestamp); TC-FR-14-016 self-disabled fixture shows blocking alert; TC-FR-14-022/TC-FR-15-025 close-boundary fixture shows Outside check-in window — dev seed adds checkinSelfDisabledEventId + checkinCloseBoundaryEventId with self-healing windows — HTTP 200
 - 2026-06-27T09:39:43Z | web-participant-checkin | passed
+- 2026-06-27T09:48:00Z | web-participant-feedback-eligibility | browser: /registrations Attended rows show Feedback+Eligibility quick actions; /events/{id}/feedback submit enabled → success timestamp + View eligibility; /events/{id}/eligibility shows Eligible with reason text (AC-08, AC-09, FR-19, FR-20) — HTTP 200
+- 2026-06-27T09:53:01Z | web-participant-feedback-eligibility | browser_test_failed
+- 2026-06-27T09:57:00Z | web-participant-feedback-eligibility | browser: TC-AC-08-018/TC-FR-19-022 closed-window fixture shows Outside feedback window + disabled submit; happy-path feedback submit + Eligible with reason; /registrations Attended rows show Feedback+Eligibility quick actions — HTTP 200
+- 2026-06-27T10:02:50Z | web-participant-feedback-eligibility | passed

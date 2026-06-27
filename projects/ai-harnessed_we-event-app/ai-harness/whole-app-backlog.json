@@ -584,7 +584,7 @@
     },
     {
       "id": "web-participant-feedback-eligibility",
-      "passes": false,
+      "passes": true,
       "priority": 34,
       "phase": 3,
       "agent": "frontend",
@@ -604,6 +604,11 @@
         "apps/web/src/app/(participant)/events/[eventId]/eligibility"
       ],
       "testRequirements": {
+        "component": [
+          "apps/web/src/components/participant/feedback-panel-view.test.tsx",
+          "apps/web/src/components/participant/eligibility-result-panel-view.test.tsx",
+          "apps/web/src/lib/my-registration-actions.test.ts"
+        ],
         "e2e": [
           "tests/e2e/src/scenarios/flow-a-lifecycle.test.ts"
         ],

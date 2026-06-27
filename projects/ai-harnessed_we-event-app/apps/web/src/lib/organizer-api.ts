@@ -35,6 +35,7 @@ export interface DevSeedFixtures {
   checkinCloseBoundaryEventId: string;
   waitlistEventId: string;
   feedbackEventId: string;
+  feedbackCloseBoundaryEventId: string;
 }
 
 export interface RuleConfigInput {

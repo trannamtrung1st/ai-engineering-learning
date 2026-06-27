@@ -21,12 +21,8 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useLiveQuery } from "@/hooks/use-live-query";
-import { fetchMyRegistrations, type MyRegistrationListItem } from "@/lib/participant-api";
-import {
-  canSelfCheckIn,
-  canSubmitFeedback,
-  canViewEligibility,
-} from "@/lib/participant-rules";
+import { fetchMyRegistrations } from "@/lib/participant-api";
+import { deriveMyRegistrationQuickActions } from "@/lib/my-registration-actions";
 import { queryKeys } from "@/lib/query-keys";
 import { useAuth } from "@/providers/auth-provider";
 
@@ -51,29 +47,6 @@ const REGISTRATION_STATE_FILTERS: Array<{
   { value: "Rejected", label: "Rejected" },
   { value: "CancelledByUser", label: "Cancelled" },
 ];
-
-function showCheckInLink(item: MyRegistrationListItem): boolean {
-  return canSelfCheckIn(
-    item.eventState,
-    item.state,
-    item.checkinOpenAt,
-    item.checkinCloseAt,
-    item.selfCheckinEnabled ?? true,
-  );
-}
-
-function showFeedbackLink(item: MyRegistrationListItem): boolean {
-  return canSubmitFeedback(
-    item.eventState,
-    item.state,
-    item.feedbackOpenAt,
-    item.feedbackCloseAt,
-  );
-}
-
-function showEligibilityLink(item: MyRegistrationListItem): boolean {
-  return canViewEligibility(item.eventState, item.state);
-}
 
 export default function MyRegistrationsPage() {
   const { token } = useAuth();
@@ -201,7 +174,9 @@ export default function MyRegistrationsPage() {
       {registrationsQuery.isSuccess && items.length > 0 ? (
         <>
           <ul className="space-y-4">
-            {items.map((item) => (
+            {items.map((item) => {
+              const quickActions = deriveMyRegistrationQuickActions(item);
+              return (
                 <li
                   key={item.registrationId}
                   className="rounded-[var(--radius-lg)] border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] p-6"
@@ -225,7 +200,7 @@ export default function MyRegistrationsPage() {
                   </div>
 
                   <div className="mt-4 flex flex-wrap gap-2">
-                    {showCheckInLink(item) ? (
+                    {quickActions.showCheckIn ? (
                       <Button asChild size="sm" variant="secondary">
                         <Link href={`/events/${item.eventId}/check-in`}>
                           <ClipboardCheck className="h-4 w-4" aria-hidden />
@@ -234,7 +209,7 @@ export default function MyRegistrationsPage() {
                       </Button>
                     ) : null}
 
-                    {showFeedbackLink(item) ? (
+                    {quickActions.showFeedback ? (
                       <Button asChild size="sm" variant="secondary">
                         <Link href={`/events/${item.eventId}/feedback`}>
                           <MessageSquare className="h-4 w-4" aria-hidden />
@@ -243,7 +218,7 @@ export default function MyRegistrationsPage() {
                       </Button>
                     ) : null}
 
-                    {showEligibilityLink(item) ? (
+                    {quickActions.showEligibility ? (
                       <Button asChild size="sm" variant="ghost">
                         <Link href={`/events/${item.eventId}/eligibility`}>
                           <ShieldCheck className="h-4 w-4" aria-hidden />
@@ -260,7 +235,8 @@ export default function MyRegistrationsPage() {
                     </Button>
                   </div>
                 </li>
-            ))}
+              );
+            })}
           </ul>
 
           <Pagination

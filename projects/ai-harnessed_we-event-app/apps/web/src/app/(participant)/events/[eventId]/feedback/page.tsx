@@ -6,13 +6,14 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
 
+import {
+  deriveFeedbackPanelState,
+  FeedbackPanelView,
+  type FeedbackFormValues,
+} from "@/components/participant/feedback-panel-view";
 import { EmptyFailureBlock } from "@/components/layout/empty-failure-block";
 import { PageHeader } from "@/components/layout/page-header";
-import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { Form, FormField } from "@/components/ui/form";
-import { NumberInput } from "@/components/ui/field";
-import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/components/ui/toast";
 import { useLiveQuery } from "@/hooks/use-live-query";
@@ -23,7 +24,6 @@ import {
   fetchRegistrationStatus,
   submitFeedback,
 } from "@/lib/participant-api";
-import { canSubmitFeedback } from "@/lib/participant-rules";
 import { queryKeys } from "@/lib/query-keys";
 import { useAuth } from "@/providers/auth-provider";
 
@@ -38,8 +38,6 @@ const feedbackFormSchema = z.object({
     .max(4000, "Comments must be 4000 characters or fewer.")
     .optional(),
 });
-
-type FeedbackFormValues = z.infer<typeof feedbackFormSchema>;
 
 export default function FeedbackPage() {
   const params = useParams<{ eventId: string }>();
@@ -101,14 +99,31 @@ export default function FeedbackPage() {
 
   const event = eventQuery.data;
   const registration = registrationQuery.data?.registration ?? null;
-  const feedbackAllowed = event
-    ? canSubmitFeedback(
-        event.state,
-        registration?.state,
-        event.ruleConfig.feedbackOpenAt,
-        event.ruleConfig.feedbackCloseAt,
-      )
-    : false;
+  const panelState = event ? deriveFeedbackPanelState(event, registration) : null;
+
+  const submitError =
+    feedbackMutation.error instanceof ApiClientError
+      ? feedbackMutation.error.message
+      : feedbackMutation.error instanceof Error
+        ? feedbackMutation.error.message
+        : null;
+
+  const handleSubmit = () => {
+    const values = form.getValues();
+    const parsed = feedbackFormSchema.safeParse(values);
+    if (!parsed.success) {
+      for (const issue of parsed.error.issues) {
+        const field = issue.path[0];
+        if (typeof field === "string") {
+          form.setError(field as keyof FeedbackFormValues, {
+            message: issue.message,
+          });
+        }
+      }
+      return;
+    }
+    feedbackMutation.mutate(parsed.data);
+  };
 
   return (
     <div className="space-y-8">
@@ -151,113 +166,31 @@ export default function FeedbackPage() {
       ) : null}
 
       {feedbackMutation.isSuccess ? (
-        <Alert variant="success" title="Thank you for your feedback">
-          Your response was recorded at{" "}
-          {formatDateTime(feedbackMutation.data.submittedAt)}.
-          <div className="mt-4">
-            <Button asChild variant="secondary" size="sm">
-              <Link href={`/events/${eventId}/eligibility`}>View eligibility</Link>
-            </Button>
-          </div>
-        </Alert>
+        <div className="max-w-xl space-y-4">
+          <FeedbackPanelView
+            event={event!}
+            registration={registration}
+            panelState={panelState!}
+            form={form}
+            submitSuccess
+            successTimestamp={feedbackMutation.data.submittedAt}
+          />
+          <Button asChild variant="secondary" size="sm">
+            <Link href={`/events/${eventId}/eligibility`}>View eligibility</Link>
+          </Button>
+        </div>
       ) : null}
 
-      {event && registrationQuery.isSuccess && !feedbackMutation.isSuccess ? (
-        <Form
+      {event && panelState && registrationQuery.isSuccess && !feedbackMutation.isSuccess ? (
+        <FeedbackPanelView
+          event={event}
+          registration={registration}
+          panelState={panelState}
           form={form}
-          className="max-w-xl space-y-6 rounded-[var(--radius-lg)] border border-[var(--color-border-default)] bg-[var(--color-bg-surface)] p-6"
-          onSubmit={(values) => {
-            const parsed = feedbackFormSchema.safeParse(values);
-            if (!parsed.success) {
-              for (const issue of parsed.error.issues) {
-                const field = issue.path[0];
-                if (typeof field === "string") {
-                  form.setError(field as keyof FeedbackFormValues, {
-                    message: issue.message,
-                  });
-                }
-              }
-              return;
-            }
-            feedbackMutation.mutate(parsed.data);
-          }}
-        >
-          <p className="text-[length:var(--font-size-sm)] text-[var(--color-text-secondary)]">
-            Feedback window: {formatDateTime(event.ruleConfig.feedbackOpenAt)} –{" "}
-            {formatDateTime(event.ruleConfig.feedbackCloseAt)}
-          </p>
-
-          {registration?.state !== "Attended" ? (
-            <Alert variant="warning" title="Feedback not available">
-              Only attended participants can submit feedback after the event is completed.
-            </Alert>
-          ) : null}
-
-          {registration?.state === "Attended" && event.state !== "Completed" ? (
-            <Alert variant="warning" title="Feedback not open yet">
-              Feedback is only available after the event is completed.
-            </Alert>
-          ) : null}
-
-          {registration?.state === "Attended" &&
-          event.state === "Completed" &&
-          !feedbackAllowed ? (
-            <Alert variant="warning" title="Outside feedback window">
-              Feedback is not available at this time. Submit during the configured window
-              above.
-            </Alert>
-          ) : null}
-
-          {feedbackMutation.isError ? (
-            <Alert variant="error" title="Submission blocked">
-              {feedbackMutation.error instanceof ApiClientError
-                ? feedbackMutation.error.message
-                : "Unable to submit feedback."}
-            </Alert>
-          ) : null}
-
-          <FormField
-            name="overallRating"
-            control={form.control}
-            label="Overall rating"
-            required
-            render={({ field }) => (
-              <NumberInput
-                id="overall-rating"
-                min={1}
-                max={5}
-                value={field.value}
-                onChange={(changeEvent) => field.onChange(Number(changeEvent.target.value))}
-                onBlur={field.onBlur}
-                name={field.name}
-                ref={field.ref}
-                error={Boolean(form.formState.errors.overallRating)}
-              />
-            )}
-          />
-
-          <FormField
-            name="comments"
-            control={form.control}
-            label="Comments"
-            helperText="Optional — share highlights or suggestions."
-            render={({ field }) => (
-              <Textarea
-                id="feedback-comments"
-                rows={5}
-                value={field.value ?? ""}
-                onChange={field.onChange}
-                onBlur={field.onBlur}
-                name={field.name}
-                ref={field.ref}
-              />
-            )}
-          />
-
-          <Button type="submit" loading={feedbackMutation.isPending} disabled={!feedbackAllowed}>
-            Submit feedback
-          </Button>
-        </Form>
+          submitError={submitError}
+          submitPending={feedbackMutation.isPending}
+          onSubmit={handleSubmit}
+        />
       ) : null}
     </div>
   );

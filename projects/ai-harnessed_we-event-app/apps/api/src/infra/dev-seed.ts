@@ -43,6 +43,7 @@ export interface DevSeedFixtures {
   checkinCloseBoundaryEventId: string;
   waitlistEventId: string;
   feedbackEventId: string;
+  feedbackCloseBoundaryEventId: string;
 }
 
 function seedWindows() {
@@ -244,6 +245,19 @@ async function updateCheckinWindow(
      SET checkin_open_at = $1, checkin_close_at = $2
      WHERE event_id = $3`,
     [checkinOpenAt, checkinCloseAt, eventId],
+  );
+}
+
+async function updateFeedbackWindow(
+  eventId: string,
+  feedbackOpenAt: string,
+  feedbackCloseAt: string,
+): Promise<void> {
+  await getPool().query(
+    `UPDATE event_rule_configs
+     SET feedback_open_at = $1, feedback_close_at = $2
+     WHERE event_id = $3`,
+    [feedbackOpenAt, feedbackCloseAt, eventId],
   );
 }
 
@@ -593,6 +607,109 @@ async function ensureFeedbackFixture(
   return eventId;
 }
 
+async function ensureAttendedOnCompletedEvent(
+  eventId: string,
+  participantId: string,
+  context: { actorId: string; actorRole: "OrganizerAdmin" },
+): Promise<void> {
+  const eventService = new EventService();
+  const registrationService = new RegistrationService();
+  const checkinService = new CheckinService();
+
+  let registrationId: string | undefined;
+  const existingRegistration = await getPool().query<{ id: string }>(
+    `SELECT id FROM registrations
+     WHERE event_id = $1 AND participant_id = $2
+     ORDER BY updated_at DESC
+     LIMIT 1`,
+    [eventId, participantId],
+  );
+  registrationId = existingRegistration.rows[0]?.id;
+
+  if (!registrationId) {
+    const registered = await registrationService.register(eventId, participantId, {
+      actorId: participantId,
+      actorRole: "Participant",
+    });
+    registrationId = registered.registrationId;
+  }
+
+  const refreshed = await findEventById(eventId);
+  if (refreshed?.state === "RegistrationOpen") {
+    await eventService.closeRegistration(eventId, context);
+  }
+
+  const afterClose = await findEventById(eventId);
+  if (
+    afterClose?.state !== "InProgress" &&
+    afterClose?.state !== "Completed"
+  ) {
+    await transitionEventState(eventId, "InProgress", {
+      ...context,
+      action: "event.started",
+    });
+  }
+
+  const beforeComplete = await findEventById(eventId);
+  if (beforeComplete?.state === "InProgress") {
+    await checkinService.staffCheckin(
+      eventId,
+      { registrationId: registrationId! },
+      context,
+    );
+    await eventService.complete(eventId, context);
+  }
+}
+
+async function ensureFeedbackCloseBoundaryFixture(
+  participantId: string,
+  context: { actorId: string; actorRole: "OrganizerAdmin" },
+): Promise<string> {
+  const name = `SEED ${SEED_MARKER} feedback-close-boundary`;
+  const now = Date.now();
+  const feedbackOpenAt = new Date(now - 3_600_000).toISOString();
+  const feedbackCloseAt = new Date(now - 30_000).toISOString();
+  const windows = seedWindows();
+  const eventService = new EventService();
+
+  let eventId = await findEventIdByName(name);
+  if (!eventId) {
+    const draft = await createEvent(
+      {
+        name,
+        description:
+          "Browser fixture — feedback window closed at boundary (TC-AC-08-018, TC-FR-19-022)",
+        location: "Archive Hall",
+        startAt: windows.open,
+        endAt: windows.close,
+        ruleConfig: {
+          capacity: 20,
+          waitlistEnabled: false,
+          registrationOpenAt: windows.open,
+          registrationCloseAt: windows.close,
+          checkinOpenAt: windows.open,
+          checkinCloseAt: windows.close,
+          feedbackOpenAt,
+          feedbackCloseAt,
+          feedbackRequired: true,
+        },
+      },
+      context.actorId,
+      context.actorRole,
+      SEED_ORG_ID,
+    );
+    eventId = draft.id;
+    await eventService.publish(eventId, context);
+    await eventService.openRegistration(eventId, context);
+  } else {
+    await updateFeedbackWindow(eventId, feedbackOpenAt, feedbackCloseAt);
+  }
+
+  await ensureAttendedOnCompletedEvent(eventId, participantId, context);
+
+  return eventId;
+}
+
 export async function runDevSeed(): Promise<DevSeedFixtures> {
   await ensureEventSchema();
   await ensureRegistrationSchema();
@@ -617,6 +734,7 @@ export async function runDevSeed(): Promise<DevSeedFixtures> {
     checkinCloseBoundaryEventId,
     waitlistEventId,
     feedbackEventId,
+    feedbackCloseBoundaryEventId,
   ] = await Promise.all([
     ensureBulkRegistrationsEvent(context),
     ensureStaffAssignedEvents(context),
@@ -625,6 +743,7 @@ export async function runDevSeed(): Promise<DevSeedFixtures> {
     ensureCheckinCloseBoundaryFixture(participantId, context),
     ensureWaitlistFixture(participantId, context),
     ensureFeedbackFixture(participantId, context),
+    ensureFeedbackCloseBoundaryFixture(participantId, context),
   ]);
 
   return {
@@ -637,5 +756,6 @@ export async function runDevSeed(): Promise<DevSeedFixtures> {
     checkinCloseBoundaryEventId,
     waitlistEventId,
     feedbackEventId,
+    feedbackCloseBoundaryEventId,
   };
 }

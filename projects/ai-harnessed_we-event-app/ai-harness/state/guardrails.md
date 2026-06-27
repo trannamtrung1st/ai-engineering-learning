@@ -385,3 +385,5 @@ Lessons learned across harness iterations. Read before every implementer session
 - [web-participant-checkin] Computational checks failed — see 20260627T091224Z-checks.json
 - [web-participant-checkin] Browser test failed — see 20260627T091646Z-browser-test.json
 - [web-participant-checkin] Browser gate TC-FR-14-016/022 and TC-FR-15-025 need dev-seed fixtures: `checkinSelfDisabledEventId` (InProgress, selfCheckinEnabled=false, Registered) and `checkinCloseBoundaryEventId` (checkinCloseAt refreshed to ~30s ago on each seed run); scanning bulk events alone will not find boundary/disabled cases.
+- [web-participant-feedback-eligibility] Browser test failed — see 20260627T093943Z-browser-test.json
+- [web-participant-feedback-eligibility] Browser gate TC-AC-08-018 and TC-FR-19-022 need dev-seed fixture `feedbackCloseBoundaryEventId` (Completed + Attended, `feedbackCloseAt` refreshed to ~30s ago on each seed run); scanning bulk registrations alone will not find a closed-window case.
