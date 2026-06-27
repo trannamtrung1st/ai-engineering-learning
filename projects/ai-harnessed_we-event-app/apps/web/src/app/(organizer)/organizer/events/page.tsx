@@ -38,11 +38,19 @@ const EVENT_STATE_FILTERS: Array<{ value: "all" | EventState; label: string }> =
   { value: "Cancelled", label: "Cancelled" },
 ];
 
+const EVENT_SORT_OPTIONS = [
+  { value: "startAt:asc", label: "Start date (soonest)" },
+  { value: "updatedAt:desc", label: "Recently updated" },
+] as const;
+
+type EventSort = (typeof EVENT_SORT_OPTIONS)[number]["value"];
+
 export default function OrganizerEventsPage() {
   const { token, session, isAdmin } = useOrganizerAuth();
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [stateFilter, setStateFilter] = useState<"all" | EventState>("all");
+  const [sort, setSort] = useState<EventSort>("startAt:asc");
   const [page, setPage] = useState(1);
 
   useEffect(() => {
@@ -52,7 +60,7 @@ export default function OrganizerEventsPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [search, stateFilter]);
+  }, [search, stateFilter, sort]);
 
   const listParams = useMemo(
     () => ({
@@ -60,8 +68,9 @@ export default function OrganizerEventsPage() {
       pageSize: EVENT_PAGE_SIZE,
       q: search.trim() || undefined,
       state: stateFilter === "all" ? undefined : stateFilter,
+      sort,
     }),
-    [page, search, stateFilter],
+    [page, search, stateFilter, sort],
   );
 
   const eventsQuery = useLiveQuery({
@@ -109,6 +118,20 @@ export default function OrganizerEventsPage() {
             </SelectTrigger>
             <SelectContent>
               {EVENT_STATE_FILTERS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+        <Field id="organizer-event-sort" label="Sort" className="min-w-[12rem]">
+          <Select value={sort} onValueChange={(value) => setSort(value as EventSort)}>
+            <SelectTrigger id="organizer-event-sort">
+              <SelectValue placeholder="Start date (soonest)" />
+            </SelectTrigger>
+            <SelectContent>
+              {EVENT_SORT_OPTIONS.map((option) => (
                 <SelectItem key={option.value} value={option.value}>
                   {option.label}
                 </SelectItem>

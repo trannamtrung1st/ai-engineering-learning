@@ -12,13 +12,15 @@ function toListItem(event: {
   name: string;
   state: EventState;
   startAt: string;
+  updatedAt?: string;
   location?: string;
-}): EventListItem {
+}): EventListItem & { updatedAt?: string } {
   return {
     eventId: event.eventId,
     name: event.name,
     state: event.state,
     startAt: event.startAt,
+    updatedAt: event.updatedAt,
     location: event.location ?? "",
   };
 }
@@ -38,6 +40,28 @@ export function matchesEventListFilters(
     event.name.toLowerCase().includes(query) ||
     event.location.toLowerCase().includes(query)
   );
+}
+
+export type EventListSort = "startAt:asc" | "updatedAt:desc";
+
+export function sortEventListItems<T extends { startAt: string; updatedAt?: string }>(
+  items: T[],
+  sort: EventListSort = "startAt:asc",
+): T[] {
+  const sorted = [...items];
+  if (sort === "updatedAt:desc") {
+    sorted.sort(
+      (left, right) =>
+        new Date(right.updatedAt ?? right.startAt).getTime() -
+        new Date(left.updatedAt ?? left.startAt).getTime(),
+    );
+    return sorted;
+  }
+  sorted.sort(
+    (left, right) =>
+      new Date(left.startAt).getTime() - new Date(right.startAt).getTime(),
+  );
+  return sorted;
 }
 
 export function paginateLocally<T>(
@@ -89,14 +113,14 @@ export async function fetchScopedOrganizerEvents(
     }),
   );
 
-  const items = loaded
-    .filter((event): event is NonNullable<typeof event> => event !== null)
-    .map(toListItem)
-    .filter((event) => matchesEventListFilters(event, params))
-    .sort(
-      (left, right) =>
-        new Date(right.startAt).getTime() - new Date(left.startAt).getTime(),
-    );
+  const sort = (params.sort as EventListSort | undefined) ?? "startAt:asc";
+  const items = sortEventListItems(
+    loaded
+      .filter((event): event is NonNullable<typeof event> => event !== null)
+      .map(toListItem)
+      .filter((event) => matchesEventListFilters(event, params)),
+    sort,
+  );
 
   return paginateLocally(items, page, pageSize);
 }

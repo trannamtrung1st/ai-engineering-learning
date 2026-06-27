@@ -442,3 +442,5 @@ Append-only log of completed iterations.
 - 2026-06-27T11:02:25Z | web-event-cover-image | passed
 - 2026-06-27T11:05:00Z | web-domain-status-badge-colors | browser: homepage 20 semantic domain badges — distinct terminal registration tokens (cancelledByUser/Organizer/expired), inProgress teal #0f766e, completed slate #475569; EventStateBadge uses badgeStatus — HTTP 200
 - 2026-06-27T11:16:45Z | web-domain-status-badge-colors | passed
+- 2026-06-27T11:27:00Z | web-organizer-events | browser: /organizer/events paginated table (1–20 of 28333) with Search/State/Sort filters + Create event; Draft dashboard Publish lifecycle + Edit form (capacity/windows); credential login — HTTP 200
+- 2026-06-27T11:39:24Z | web-organizer-events | passed
