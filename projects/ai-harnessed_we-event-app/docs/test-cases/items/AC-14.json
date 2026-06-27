@@ -1,0 +1,448 @@
+{
+  "productItemId": "AC-14",
+  "version": 1,
+  "docFingerprint": "sha256:43a1316c7d0669030f2b3eac3b6b42994b9e6757f8b754368f1f5bbc574ab4b3",
+  "generatedAt": "2026-06-26T16:28:38Z",
+  "cases": [
+    {
+      "id": "TC-AC-14-001",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": [
+        "AC-14",
+        "FR-29"
+      ],
+      "title": "My registrations paginated list served by single API call without N+1 fan-out per testing-plan §3",
+      "preconditions": [
+        "Participant with registrations across multiple events",
+        "Authenticated participant JWT",
+        "Ability to observe API calls during my registrations list load"
+      ],
+      "steps": [
+        "Load my registrations data for page 1 via service or HTTP",
+        "Count list endpoint calls during the operation",
+        "Verify no per-event registration-status or event-detail fan-out loops"
+      ],
+      "expected": "Exactly one paginated GET /me/registrations call serves the list; no per-event registration fetch loops per testing-plan §3 row: My registrations paginated → single API call, no N+1 fan-out (AC-14, FR-29)",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-14-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": [
+        "AC-14",
+        "FR-29",
+        "FR-31"
+      ],
+      "title": "My registrations repository executes single paginated query at DB boundary",
+      "preconditions": [
+        "Participant with registrations across at least three events persisted in Postgres",
+        "Real database test harness with transaction rollback per test",
+        "Authenticated participant actor"
+      ],
+      "steps": [
+        "Invoke my-registrations list query via registration module/service with page=1, pageSize=20",
+        "Verify query plan or call count shows one paginated SELECT with JOIN for event metadata",
+        "Compare returned items to direct COUNT and OFFSET/LIMIT expectations"
+      ],
+      "expected": "Module returns paginated envelope from a single database query with event name denormalized or joined; no N+1 per-registration or per-event follow-up queries; module-integration boundary exercises real DB transaction without loading unbounded dataset",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-14-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "pagination",
+      "priority": "P0",
+      "traceability": [
+        "AC-14",
+        "FR-29",
+        "FR-31"
+      ],
+      "title": "My registrations page-2 boundary returns expected slice without full-dataset load",
+      "preconditions": [
+        "Participant with at least 21 registrations across events (exceeds default pageSize of 20)",
+        "Authenticated participant JWT",
+        "Registrations seeded with distinct updatedAt values for sort verification"
+      ],
+      "steps": [
+        "GET /api/v1/me/registrations?page=1&pageSize=20 and record total and totalPages",
+        "GET /api/v1/me/registrations?page=2&pageSize=20",
+        "Compare page-2 items to expected second slice ordered by updatedAt descending"
+      ],
+      "expected": "Page-2 response has page=2, pageSize=20, total matching page-1 total, items are the correct contiguous slice; each response contains at most pageSize rows; server returns one page at a time per AC-14 server-driven listing",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-14-004",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "AC-14",
+        "FR-29",
+        "FR-31"
+      ],
+      "title": "GET /api/v1/me/registrations returns HTTP 200 paginated envelope with page, pageSize, and total",
+      "preconditions": [
+        "Participant with at least one registration across events",
+        "Authenticated Participant JWT"
+      ],
+      "steps": [
+        "GET /api/v1/me/registrations?page=1&pageSize=20 with Participant Authorization bearer",
+        "Verify HTTP status code and response body shape"
+      ],
+      "expected": "HTTP 200 with items (array), page=1, pageSize=20, total (integer), and totalPages per API design §3 response envelope; each item includes registrationId, eventId, eventName, state, updatedAt, and waitlistPosition when state is Waitlisted; no bare array response",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-14-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "pagination",
+      "priority": "P0",
+      "traceability": [
+        "AC-14",
+        "FR-28",
+        "FR-31"
+      ],
+      "title": "GET /api/v1/events returns bounded page slice not full unbounded catalog",
+      "preconditions": [
+        "At least 13 published events visible to participant (more than default pageSize of 12)",
+        "Authenticated participant JWT"
+      ],
+      "steps": [
+        "GET /api/v1/events?page=1&pageSize=12 and record total and items.length",
+        "GET /api/v1/events?page=2&pageSize=12",
+        "Verify neither response items.length exceeds pageSize while total reflects full catalog"
+      ],
+      "expected": "Each response contains at most pageSize items; total reflects full matching row count; client receives one page at a time per AC-14 (no unbounded full-catalog payload in a single call)",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-14-006",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": [
+        "AC-14",
+        "FR-29"
+      ],
+      "title": "My Registrations page paginates with correct range, prev/next controls, and quick actions",
+      "preconditions": [
+        "Participant with more than 20 registrations across events",
+        "Authenticated participant on /registrations (My Registrations) route",
+        "At least one registration eligible for check-in or feedback quick action"
+      ],
+      "steps": [
+        "Navigate to My Registrations page (/registrations)",
+        "Verify FilterBar with state filter and sort select per page list §My registrations",
+        "Verify pagination controls, item range summary (e.g. Showing 1–20 of N), and registration rows with status",
+        "Confirm waitlistPosition displayed on Waitlisted rows and contextual quick-action links where applicable (check-in or feedback)",
+        "Click Next to advance to page 2 and observe network requests"
+      ],
+      "expected": "Page renders at most pageSize (20) registration rows with event name, status, waitlistPosition when Waitlisted, and quick actions; prev/next pagination controls present; page change triggers single GET /me/registrations with updated page parameter; only current page rows rendered client-side per page list, listing-pages §3, and AC-14",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-14-007",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": [
+        "AC-14",
+        "FR-28"
+      ],
+      "title": "Participant event browse exposes Previous and Next pagination controls",
+      "preconditions": [
+        "At least 13 published events visible to the participant (more than default pageSize of 12)",
+        "Authenticated participant on /events browse page"
+      ],
+      "steps": [
+        "Navigate to participant event browse list",
+        "Verify pagination region is visible with page metadata and item range",
+        "Click Next to advance to page 2",
+        "Verify displayed event cards update to the second page slice only"
+      ],
+      "expected": "Pagination controls include Previous and Next (or equivalent page navigation); page indicator shows current page; only one page of event cards is rendered at a time per AC-14 and page list event discovery requirements",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-14-008",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": [
+        "AC-14",
+        "FR-30"
+      ],
+      "title": "Organizer operational tables expose server pagination controls without unbounded client render",
+      "preconditions": [
+        "Event with registrations, waitlist, attendance, or eligibility rows exceeding one page",
+        "Authenticated OrganizerAdmin with event scope on registrations, eligibility, check-in, or audit log listing page"
+      ],
+      "steps": [
+        "Open organizer operational listing (registrations, waitlist, attendance, eligibility, or audit logs)",
+        "Verify table renders pagination controls with page metadata",
+        "Navigate forward one page via Next",
+        "Count rendered table rows during and after navigation"
+      ],
+      "expected": "Table exposes prev/next page controls and displays only the current server page of rows; rendered row count never exceeds pageSize; no table renders an unbounded full dataset client-side per AC-14 and page list organizer sections",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-14-009",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": [
+        "AC-14",
+        "FR-30"
+      ],
+      "title": "Participant denied paginated organizer registrations list with HTTP 403",
+      "preconditions": [
+        "Event with registrations exceeding one page",
+        "Authenticated Participant JWT without organizer list permissions per 01-roles-permissions.md"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/registrations?page=1&pageSize=20 with Participant Authorization bearer token"
+      ],
+      "expected": "HTTP 403 unauthorized; Participant role cannot view organizer operational registration lists per permission matrix; paginated listing endpoint enforces RBAC before returning envelope",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-14-010",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": [
+        "AC-14",
+        "FR-30"
+      ],
+      "title": "OrganizerStaff denied paginated registrations list for unassigned event with HTTP 403",
+      "preconditions": [
+        "Event outside OrganizerStaff assigned scope with registrations",
+        "Authenticated OrganizerStaff JWT for a different assigned event set"
+      ],
+      "steps": [
+        "GET /api/v1/events/{unassignedEventId}/registrations?page=1&pageSize=20 with OrganizerStaff Authorization bearer token"
+      ],
+      "expected": "HTTP 403 unauthorized; OrganizerStaff scope constraint blocks paginated list access for events outside assigned scope per 01-roles-permissions.md §3",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-14-011",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": [
+        "AC-14"
+      ],
+      "title": "Pagination disables Previous on first page and Next on last page",
+      "preconditions": [
+        "Listing page with at least two pages of data",
+        "Authenticated actor with access to the listing"
+      ],
+      "steps": [
+        "Load listing page on page 1 and verify Previous control is disabled",
+        "Navigate to the last page and verify Next control is disabled"
+      ],
+      "expected": "Previous is disabled when page=1; Next is disabled when page equals totalPages; prevents navigation beyond available pages per AC-14 page control contract",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-14-012",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": [
+        "AC-14",
+        "AC-18a",
+        "FR-28"
+      ],
+      "title": "Changing event browse search, filter, or sort resets pagination to page 1",
+      "preconditions": [
+        "Participant on event browse page navigated to page 2 or higher",
+        "Search, state filter, and sort controls available per listing-pages §2"
+      ],
+      "steps": [
+        "Navigate to page 2 of event browse results",
+        "Change search query, state filter, or sort select",
+        "Observe pagination state and API request page parameter"
+      ],
+      "expected": "Search, filter, or sort change resets displayed page to 1; subsequent GET /events uses page=1 with updated query parameters; avoids stale page index on new result set per AC-18a, listing-pages §3, and page list event discovery",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-14-013",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": [
+        "AC-14"
+      ],
+      "title": "Single-page result set hides or disables next navigation appropriately",
+      "preconditions": [
+        "Listing page where total results fit within one page (totalPages=1)",
+        "Authenticated actor with access to the listing"
+      ],
+      "steps": [
+        "Load listing page with totalPages=1",
+        "Inspect pagination controls and rendered row count"
+      ],
+      "expected": "Next control is disabled or pagination indicates no further pages; client renders all available items for the single page without attempting to fetch or render additional pages",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-14-014",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": [
+        "AC-14"
+      ],
+      "title": "Rapid consecutive page clicks do not render overlapping unbounded row sets",
+      "preconditions": [
+        "Listing page with at least three pages of data",
+        "Network throttling or request observation enabled"
+      ],
+      "steps": [
+        "Click Next twice in quick succession",
+        "Observe DOM row/card count during and after navigation settles"
+      ],
+      "expected": "Rendered list length never exceeds pageSize during navigation; final view reflects the latest requested page only; no accumulation of prior page rows in the client DOM per AC-14 unbounded dataset prohibition",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-14-015",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "pagination",
+      "priority": "P0",
+      "traceability": [
+        "AC-14",
+        "FR-29",
+        "NFR-16"
+      ],
+      "title": "Listing pages fetch one server page per view when total exceeds 500 rows",
+      "preconditions": [
+        "Database seeded with >500 registrations for one participant across events",
+        "Authenticated participant JWT"
+      ],
+      "steps": [
+        "Load my registrations page 1 and record response payload item count",
+        "Navigate to page 2",
+        "Compare number of list items in each API response to total row count"
+      ],
+      "expected": "Each page load retrieves exactly one paginated API response with items.length <= pageSize; client never receives or renders the full >500-row dataset in a single response per AC-14 and NFR-16 single-page constraint",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-14-016",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": [
+        "AC-14",
+        "FR-28",
+        "FR-31"
+      ],
+      "title": "Pagination metadata on UI matches API envelope total and totalPages",
+      "preconditions": [
+        "Listing page with known total row count exceeding one page",
+        "Authenticated actor with list access"
+      ],
+      "steps": [
+        "Load listing page and capture GET list API response (items, total, totalPages, page, pageSize)",
+        "Compare UI page indicator and item range text to API metadata",
+        "Navigate to page 2 and re-compare"
+      ],
+      "expected": "UI displays page count and item range consistent with API total and totalPages; metadata remains stable when navigating between pages per reliable client-side pagination control requirements",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-14-017",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": [
+        "AC-14",
+        "FR-30"
+      ],
+      "title": "Organizer Staff assigned events list is paginated with page controls",
+      "preconditions": [
+        "OrganizerStaff assigned to more events than one page holds",
+        "Authenticated staff user on assigned events list"
+      ],
+      "steps": [
+        "Open assigned events list",
+        "Verify pagination controls are present",
+        "Navigate to next page if available"
+      ],
+      "expected": "Staff assigned events list exposes prev/next page controls and renders only the current page of events per page list organizer staff section and AC-14",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-14-018",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": [
+        "AC-14",
+        "AC-15"
+      ],
+      "title": "Unauthenticated paginated list API request returns HTTP 401 not unbounded data leak",
+      "preconditions": [
+        "API running",
+        "No Authorization header"
+      ],
+      "steps": [
+        "GET /api/v1/me/registrations?page=1&pageSize=20 without credentials"
+      ],
+      "expected": "HTTP 401 with typed error envelope; unauthenticated access to protected paginated endpoint rejected per AC-15; no partial list data returned",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-14-019",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": [
+        "AC-14",
+        "AC-18c",
+        "FR-29"
+      ],
+      "title": "Changing My Registrations state filter or sort resets pagination to page 1",
+      "preconditions": [
+        "Participant on /registrations navigated to page 2 or higher",
+        "State filter and sort select controls available per page list"
+      ],
+      "steps": [
+        "Navigate to page 2 of My Registrations results",
+        "Change registration state filter or sort option",
+        "Observe pagination state and network request query parameters"
+      ],
+      "expected": "Filter or sort change resets displayed page to 1; subsequent GET /me/registrations uses page=1 with updated state and sort parameters applied server-side per AC-18c and listing-pages §3 shared UX; client does not retain stale page index on new result set",
+      "edgeCase": true
+    }
+  ]
+}

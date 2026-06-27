@@ -1,0 +1,445 @@
+{
+  "productItemId": "FR-07",
+  "version": 1,
+  "docFingerprint": "sha256:87b20ee29539baa20adb28d25f392f7bf11c719437f7d84b899d86c14fe7f71b",
+  "generatedAt": "2026-06-26T16:43:42Z",
+  "cases": [
+    {
+      "id": "TC-FR-07-001",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": [
+        "FR-07",
+        "AC-01",
+        "BR-03"
+      ],
+      "title": "System automatically assigns Registered when seats remain available",
+      "preconditions": [
+        "Event is RegistrationOpen with configured capacity greater than current Registered count",
+        "Registration window is active per BR-02",
+        "Participant has no active registration for the event"
+      ],
+      "steps": [
+        "Invoke registrationService.register(eventId, participantId, actorContext)",
+        "Read returned registration entity state and waitlistPosition"
+      ],
+      "expected": "System assigns state Registered automatically without organizer intervention; waitlistPosition is null; Registered seat-holder count increments by one; testing-plan §3 row Register with available seat → Registered satisfied",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-07-002",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "FR-07",
+        "AC-01",
+        "FR-10"
+      ],
+      "title": "POST registrations returns Registered when event has available capacity",
+      "preconditions": [
+        "Published event with registration opened, capacity 5, zero Registered participants",
+        "Valid participant JWT",
+        "Fresh Idempotency-Key header"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/registrations with Authorization bearer token",
+        "GET /api/v1/events/{eventId}/registration-status for the same participant"
+      ],
+      "expected": "POST returns HTTP 200 with state Registered, reasonCode null, registrationId, eventId, and participantId; GET registration-status reflects the same Registered assignment; system auto-statusing per FR-07",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-07-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": [
+        "FR-07",
+        "BR-03"
+      ],
+      "title": "Registration pipeline selects Registered when registeredCount is below capacity",
+      "preconditions": [
+        "Event RegistrationOpen with capacity 5 and active registration window",
+        "Separate scenarios: registeredCount 0, 4, and 2 with waitlistEnabled true or false as applicable",
+        "Distinct participants with no prior registration per scenario"
+      ],
+      "steps": [
+        "Invoke registrationService.register for a participant when registeredCount is strictly less than capacity",
+        "Repeat for each seeded fill-level scenario and inspect returned registration state"
+      ],
+      "expected": "Each registration is assigned Registered via acceptRegistration path; system routes to seat assignment not waitlist or rejection when seats remain; state machine guard seat available + rule checks satisfied at integration boundary",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-07-004",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": [
+        "FR-07",
+        "BR-02"
+      ],
+      "title": "acceptRegistration transition assigns Registered when window open and seat available",
+      "preconditions": [
+        "Event RegistrationOpen with available seats",
+        "Registration window open per BR-02",
+        "Participant with no duplicate active registration",
+        "PostgreSQL test database with registration state machine transitions"
+      ],
+      "steps": [
+        "Invoke registrationService.register(eventId, participantId, actorContext)",
+        "Query registration row state after intake completes"
+      ],
+      "expected": "Registration transitions Requested to Registered via acceptRegistration; guard preconditions (window open + no duplicate + seat available) satisfied; persisted state is Registered per state machine transition table",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-07-005",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": [
+        "FR-07",
+        "AC-01"
+      ],
+      "title": "acceptRegistration transition persists Registered state and records transition",
+      "preconditions": [
+        "Event RegistrationOpen with available seats",
+        "New registration request passes auth, window, and dedupe checks"
+      ],
+      "steps": [
+        "Execute acceptRegistration via registration module pipeline",
+        "Query registration row state and optional status history"
+      ],
+      "expected": "Registration row persisted with state Registered; transition from Requested to Registered recorded; system outcome matches Workflow B step 3 Registered if seat available",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-07-006",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": [
+        "FR-07",
+        "FR-10",
+        "AC-01"
+      ],
+      "title": "Participant UI reflects system-assigned Registered status after registration",
+      "preconditions": [
+        "Event detail page shows open registration with available seats",
+        "Participant logged in with no existing registration for the event"
+      ],
+      "steps": [
+        "Navigate to event detail and initiate registration via UI",
+        "Observe registration status panel or badge after action completes"
+      ],
+      "expected": "UI displays Registered status (positive confirmation per common UI components) reflecting system auto-assignment; no manual organizer approval step required",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-07-007",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": [
+        "FR-07",
+        "BR-03",
+        "AC-01"
+      ],
+      "title": "Last available seat triggers Registered assignment filling capacity exactly",
+      "preconditions": [
+        "Event capacity N with exactly N-1 participants in Registered state",
+        "Event RegistrationOpen with active registration window",
+        "New participant with no active registration"
+      ],
+      "steps": [
+        "Register one additional participant via registrationService.register",
+        "Query count of Registered participants for the event"
+      ],
+      "expected": "System assigns Registered to the new participant; total Registered count equals EventCapacity exactly (N); FR-07 applies at capacity boundary when one seat remains",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-07-008",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P0",
+      "traceability": [
+        "FR-07",
+        "BR-03",
+        "AC-04"
+      ],
+      "title": "Concurrent registrations with available seats assign Registered up to remaining capacity",
+      "preconditions": [
+        "Event capacity 5 with zero Registered participants",
+        "Eight distinct participantIds with no prior registration",
+        "Parallel registrationService.register calls fired simultaneously"
+      ],
+      "steps": [
+        "Execute Promise.allSettled on all concurrent register calls",
+        "Count registrations with state Registered versus Waitlisted"
+      ],
+      "expected": "Exactly five registrations receive Registered from system auto-assignment; remaining three receive Waitlisted per FR-08; no more than capacity assigned Registered under contention",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-07-009",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": [
+        "FR-07",
+        "BR-04"
+      ],
+      "title": "Available seats with waitlist enabled still assigns Registered not Waitlisted",
+      "preconditions": [
+        "Event RegistrationOpen with capacity 10 and 3 Registered participants",
+        "waitlistEnabled true",
+        "New participant with no active registration"
+      ],
+      "steps": [
+        "Register participant via registrationService.register",
+        "Inspect returned state and waitlistPosition"
+      ],
+      "expected": "System assigns Registered because seats are available; participant is not Waitlisted; waitlist path applies only when full per BR-04 not FR-07",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-07-010",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": [
+        "FR-07",
+        "BR-02"
+      ],
+      "title": "Registration outside window does not assign Registered despite available seats",
+      "preconditions": [
+        "Event has available seats (Registered count below capacity)",
+        "Current time is before registrationOpenAt or after registrationCloseAt via fixed clock",
+        "Participant has no active registration"
+      ],
+      "steps": [
+        "Attempt registrationService.register for the participant",
+        "Observe error and absence of Registered assignment"
+      ],
+      "expected": "Registration rejected with REGISTRATION_WINDOW_CLOSED; no Registered state assigned; FR-07 precondition (valid registration request) not met when window closed",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-07-011",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": [
+        "FR-07",
+        "BR-08"
+      ],
+      "title": "New registrant receives Registered after cancellation frees an available seat",
+      "preconditions": [
+        "Event at capacity with one Registered participant who cancels before deadline",
+        "Cancellation completes freeing one seat",
+        "Different new participant with no prior registration (not waitlist promotion path)"
+      ],
+      "steps": [
+        "Complete valid cancellation to release seat",
+        "Register new participant via registrationService.register",
+        "Verify state of new registration"
+      ],
+      "expected": "New participant registration is automatically assigned Registered; seat consumption reflects freed capacity; distinct from FR-12 waitlist promotion which handles existing Waitlisted rows",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-07-012",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": [
+        "FR-07",
+        "BR-03"
+      ],
+      "title": "Capacity 1 event assigns exactly one Registered participant automatically",
+      "preconditions": [
+        "Event capacity 1, RegistrationOpen, waitlistEnabled true",
+        "Three distinct participants with no prior registration"
+      ],
+      "steps": [
+        "Register first participant and verify state",
+        "Attempt registration for second and third participants",
+        "Query Registered count"
+      ],
+      "expected": "First participant receives Registered from system; subsequent participants do not receive Registered; exactly one Registered row exists; FR-07 applies only while the single seat is available",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-07-013",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": [
+        "FR-07",
+        "BR-03"
+      ],
+      "title": "Registered assignment executes atomically within capacity guard transaction",
+      "preconditions": [
+        "Event with capacity 5 and available seats",
+        "Registration module uses BEGIN/COMMIT with row lock on event rule config"
+      ],
+      "steps": [
+        "Complete successful registration that system assigns Registered",
+        "Verify transaction wraps insert, in-transaction registered count, and commit"
+      ],
+      "expected": "Registered assignment and capacity check commit atomically; no intermediate state where Registered count exceeds capacity; aligns with database design transactional seat assignment guardrails",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-07-014",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": [
+        "FR-07",
+        "AC-01"
+      ],
+      "title": "Capacity decision in validation pipeline assigns Registered before persist",
+      "preconditions": [
+        "Registration request passes auth, event state, window, and dedupe checks",
+        "registeredCount less than capacity"
+      ],
+      "steps": [
+        "Trace registration pipeline steps 4 (capacity decision) and 5 (assign state and persist)",
+        "Confirm state chosen before database write"
+      ],
+      "expected": "Pipeline step 4 selects Registered outcome; step 5 persists Registered state transactionally; system auto-assignment is deterministic per validation pipeline registration request flow",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-07-015",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": [
+        "FR-07"
+      ],
+      "title": "Registered assignment requires no organizer manual approval or intervention",
+      "preconditions": [
+        "Event RegistrationOpen with available seats",
+        "Only Participant actor initiates registration; no Organizer Admin or Staff action"
+      ],
+      "steps": [
+        "Participant invokes registrationService.register without any prior organizer seat assignment",
+        "Verify registration state and audit that no manual override was required"
+      ],
+      "expected": "System actor automatically assigns Registered per FR-07 functional requirement format (Actor: System); participant registration succeeds without organizer workflow step",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-07-016",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": [
+        "FR-07",
+        "AC-01"
+      ],
+      "title": "Flow A register step yields system-assigned Registered status",
+      "preconditions": [
+        "E2E fixture: draft event created with capacity 5",
+        "Organizer transitions event through publish and open-registration",
+        "Fresh participant token and idempotency key"
+      ],
+      "steps": [
+        "Execute Flow A step: POST /api/v1/events/{eventId}/registrations after open-registration",
+        "Verify response state before proceeding to check-in steps"
+      ],
+      "expected": "Registration response state is Registered assigned automatically by system; enables subsequent check-in, feedback, and eligibility steps; core scenario matrix Register with available seat maps to Registered",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-07-017",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": [
+        "FR-07",
+        "BR-02"
+      ],
+      "title": "POST rejected when event not RegistrationOpen despite available seats",
+      "preconditions": [
+        "Event is Published but registration not yet opened, or registration is closed",
+        "Capacity has available seats by count",
+        "Authenticated participant with no active registration"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/registrations while event state disallows registration intake"
+      ],
+      "expected": "HTTP 409 or 422 with typed error; response body state is not Registered; system does not auto-assign Registered when registration intake is blocked",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-07-018",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": [
+        "FR-07",
+        "BR-03"
+      ],
+      "title": "Full event registration routes to Waitlisted not Registered via state machine",
+      "preconditions": [
+        "Event RegistrationOpen at capacity (registeredCount equals capacity)",
+        "waitlistEnabled true",
+        "Registration window open and no duplicate for new participant"
+      ],
+      "steps": [
+        "Invoke registrationService.register for additional participant when event is full",
+        "Inspect returned state and persisted registration row"
+      ],
+      "expected": "New registration receives Waitlisted via queueWaitlist path, not Registered; acceptRegistration transition not taken when no seat available; confirms FR-07 seat-available precondition enforced at integration/state-machine layer",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-07-019",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": [
+        "FR-07",
+        "FR-25"
+      ],
+      "title": "OrganizerAdmin and OrganizerStaff denied POST registrations — no Registered assignment",
+      "preconditions": [
+        "Event RegistrationOpen with available seats",
+        "Valid JWT for OrganizerAdmin (or OrganizerStaff scoped to the event)",
+        "Actor has no participant registration for the event"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/registrations with OrganizerAdmin bearer token and Idempotency-Key",
+        "Repeat POST with OrganizerStaff bearer token for the same event"
+      ],
+      "expected": "Both requests return HTTP 403 unauthorized; no registration row created and no Registered state assigned; Register for event capability is Participant-only per roles-permissions matrix",
+      "edgeCase": true
+    }
+  ]
+}

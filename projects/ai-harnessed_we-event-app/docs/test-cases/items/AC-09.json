@@ -1,0 +1,537 @@
+{
+  "productItemId": "AC-09",
+  "version": 1,
+  "docFingerprint": "sha256:f89a34da7eb813f03345d90e0b972381aee6ca035fb8ff5dcfe017ee862eb3e0",
+  "generatedAt": "2026-06-26T16:21:41Z",
+  "cases": [
+    {
+      "id": "TC-AC-09-001",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": [
+        "AC-09",
+        "FR-20",
+        "BR-17",
+        "BR-18",
+        "BR-19"
+      ],
+      "title": "Eligibility evaluation pass/fail deterministic with reason per testing-plan §3",
+      "preconditions": [
+        "Completed event with feedbackRequired true in rule config",
+        "Two Attended registrations: one with mandatory feedback submitted, one without",
+        "Authenticated Participant actors for each registration"
+      ],
+      "steps": [
+        "Invoke eligibilityService.getMyEligibility for participant with feedback",
+        "Invoke eligibilityService.getMyEligibility for participant without feedback"
+      ],
+      "expected": "First call returns Eligible with non-empty reasonCode and reasonText (AC-09a); second returns NotEligible with NOT_ELIGIBLE_FEEDBACK (AC-09c); aligns with testing-plan §3 row: Eligibility evaluation pass/fail → deterministic with reason (AC-09, BR-17..BR-19)",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-09-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": [
+        "AC-09",
+        "FR-20",
+        "BR-17",
+        "BR-18",
+        "BR-19"
+      ],
+      "title": "getMyEligibility persists Eligible result with reason in certificate_eligibilities transaction",
+      "preconditions": [
+        "Completed event with Attended participant and submitted mandatory feedback",
+        "No prior certificate_eligibilities row for the registration",
+        "Authenticated Participant actor for own registration"
+      ],
+      "steps": [
+        "Invoke eligibilityService.getMyEligibility(eventId, participantId, participantContext)",
+        "Query certificate_eligibilities row by registrationId in the same database session after commit"
+      ],
+      "expected": "Response result is Eligible with reasonCode, reasonText, and evaluatedAt (AC-09a); persisted row matches evaluation output in one transaction per eligibility module contract (section 4 cross-module boundaries)",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-09-003",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "AC-09",
+        "FR-20",
+        "FR-20a",
+        "BR-17",
+        "BR-18",
+        "BR-19"
+      ],
+      "title": "GET /api/v1/events/{eventId}/eligibility/me returns HTTP 200 with Eligible and reason fields",
+      "preconditions": [
+        "E2E fixture: Completed event with Attended participant who submitted mandatory feedback",
+        "Attendance finalized; participant JWT for the registration"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/eligibility/me with Authorization bearer token",
+        "Verify response status code and payload fields per API design §2.4"
+      ],
+      "expected": "HTTP 200 with result Eligible, non-empty reasonCode, non-empty reasonText, and evaluatedAt (ISO-8601) in response envelope; satisfies AC-09a and AC-09e (participant views own result with reason after attendance finalization)",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-09-004",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": [
+        "AC-09",
+        "FR-20",
+        "FR-20a",
+        "BR-17",
+        "BR-18",
+        "BR-19"
+      ],
+      "title": "Flow A GET eligibility/me returns Eligible with reason after full lifecycle",
+      "preconditions": [
+        "E2E Flow A progressed through publish, registration, check-in, event completion, and feedback submission",
+        "Participant JWT from prior flow steps",
+        "Event configured with mandatory feedback"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/eligibility/me with participant Authorization bearer token",
+        "Parse response payload fields"
+      ],
+      "expected": "HTTP 200 with result Eligible, non-empty reasonCode, and non-empty reasonText; completes Flow A eligibility step per testing plan Flow A and scenario matrix (AC-09a, AC-09e)",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-09-005",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": [
+        "AC-09",
+        "FR-20",
+        "BR-18",
+        "BR-19"
+      ],
+      "title": "getMyEligibility returns NotEligible when mandatory feedback is missing",
+      "preconditions": [
+        "Completed event with feedbackRequired true",
+        "Participant registration in Attended state with no feedback submission",
+        "Authenticated Participant actor"
+      ],
+      "steps": [
+        "Invoke eligibilityService.getMyEligibility(eventId, participantId, participantContext)",
+        "Query certificate_eligibilities row for the registration"
+      ],
+      "expected": "Response result is NotEligible with reasonCode NOT_ELIGIBLE_FEEDBACK and explanatory reasonText (AC-09c); outcome persisted with reason per BR-19 and INV-05",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-09-006",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": [
+        "AC-09",
+        "BR-17",
+        "BR-19"
+      ],
+      "title": "CertificateEligibility transitions from PendingEvaluation to Eligible on pass",
+      "preconditions": [
+        "Completed event with optional feedback (feedbackRequired false)",
+        "Attended registration with no prior eligibility evaluation",
+        "certificate_eligibilities row in PendingEvaluation or absent (first evaluation)"
+      ],
+      "steps": [
+        "Read certificate_eligibilities beforeState for registrationId",
+        "Invoke eligibilityService.getMyEligibility for Attended participant",
+        "Read certificate_eligibilities afterState"
+      ],
+      "expected": "beforeState is PendingEvaluation or row created; afterState result is Eligible with non-empty reason fields (AC-09a); terminal transition per state machine §6 Eligibility lifecycle",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-09-007",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": [
+        "AC-09",
+        "FR-20",
+        "BR-17",
+        "BR-19"
+      ],
+      "title": "Eligible for Attended participant when feedback is optional",
+      "preconditions": [
+        "Completed event with feedbackRequired false in rule config",
+        "Registration in Attended state with no feedback row",
+        "Authenticated Participant actor"
+      ],
+      "steps": [
+        "Invoke eligibilityService.getMyEligibility(eventId, participantId, participantContext)"
+      ],
+      "expected": "Returns result Eligible with reasonCode ELIGIBLE and reasonText (AC-09b); optional feedback does not block eligibility when attendance baseline passes per workflow E guardrails",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-09-008",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": [
+        "AC-09",
+        "FR-20",
+        "FR-20a"
+      ],
+      "title": "Participant eligibility result panel shows Eligible or NotEligible with reason",
+      "preconditions": [
+        "Participant logged in with Attended registration on a Completed event",
+        "Attendance finalized; eligibility evaluation has run (via API or prior navigation)",
+        "Participation history or event detail exposes eligibility result panel"
+      ],
+      "steps": [
+        "Navigate to participation history or event detail eligibility section",
+        "Observe displayed eligibility status badge and reason text or tags"
+      ],
+      "expected": "UI shows terminal result Eligible or NotEligible (not PendingEvaluation) with human-readable reason per Flow 5, eligibility result panel spec, and AC-09e (FR-20a)",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-09-009",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": [
+        "AC-09",
+        "BR-17"
+      ],
+      "title": "Absent registration evaluates to NotEligible with NOT_ELIGIBLE_ATTENDANCE",
+      "preconditions": [
+        "Completed event with any feedback configuration",
+        "Registration in Absent state after attendance finalization",
+        "Feedback may or may not exist"
+      ],
+      "steps": [
+        "Invoke eligibilityService.getMyEligibility for Absent participant"
+      ],
+      "expected": "Returns result NotEligible with reasonCode NOT_ELIGIBLE_ATTENDANCE and explanatory reasonText (AC-09d); attendance rule fails per BR-17 baseline",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-09-010",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": [
+        "AC-09",
+        "BR-17",
+        "BR-18"
+      ],
+      "title": "Evaluation order checks attendance before mandatory feedback",
+      "preconditions": [
+        "Event with feedbackRequired true",
+        "Registration in Absent state with no feedback submitted"
+      ],
+      "steps": [
+        "Invoke eligibilityService.getMyEligibility for non-Attended registration"
+      ],
+      "expected": "Returns NotEligible with reasonCode NOT_ELIGIBLE_ATTENDANCE (not NOT_ELIGIBLE_FEEDBACK); deterministic rule order per validation rules and eligibility module guardrails",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-09-011",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": [
+        "AC-09",
+        "FR-20",
+        "FR-20a",
+        "BR-17"
+      ],
+      "title": "GET eligibility/me before attendance finalization returns HTTP 403 or 404",
+      "preconditions": [
+        "Published event with participant Registered but attendance not yet finalized to Attended/Absent",
+        "Participant JWT for that registration"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/eligibility/me with participant token before attendance finalization"
+      ],
+      "expected": "HTTP 403 or 404 per FR-20a/FR-20 rejection contract; no Eligible/NotEligible payload returned prematurely; satisfies AC-09f (eligibility unavailable before attendance finalization)",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-09-012",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P1",
+      "traceability": [
+        "AC-09",
+        "FR-20",
+        "BR-19"
+      ],
+      "title": "Repeated eligibility evaluation refreshes stored result when inputs change",
+      "preconditions": [
+        "Completed event with mandatory feedback and Attended participant",
+        "Initial getMyEligibility returned NotEligible (no feedback)",
+        "Participant subsequently submits feedback within window"
+      ],
+      "steps": [
+        "Call getMyEligibility before feedback (observe NotEligible)",
+        "Submit feedback via feedbackService.submit",
+        "Call getMyEligibility again and read certificate_eligibilities row"
+      ],
+      "expected": "Second evaluation returns Eligible (AC-09g); certificate_eligibilities row updated with new evaluatedAt and reason fields; prior NotEligible outcome superseded per FR-20 re-evaluation policy",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-09-013",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P1",
+      "traceability": [
+        "AC-09",
+        "AC-15",
+        "FR-20",
+        "FR-20a"
+      ],
+      "title": "Unauthenticated GET eligibility/me returns HTTP 401",
+      "preconditions": [
+        "Completed event with evaluated eligibility records",
+        "No Authorization header on request"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/eligibility/me without bearer token"
+      ],
+      "expected": "HTTP 401 unauthenticated per FR-20a; no eligibility data leaked",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-09-014",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "rbac-negative",
+      "priority": "P1",
+      "traceability": [
+        "AC-09",
+        "FR-20a",
+        "FR-26"
+      ],
+      "title": "getMyEligibility scoped to actor identity only returns own eligibility",
+      "preconditions": [
+        "Completed event with two Attended participants A and B",
+        "Eligibility evaluated for both",
+        "Authenticated as participant A"
+      ],
+      "steps": [
+        "Call getMyEligibility with participant A context (service enforces actor.sub)",
+        "Verify response participantId or registrationId matches A only"
+      ],
+      "expected": "Returns only participant A's eligibility; no cross-participant data exposure; actor scope enforced per FR-20a and permission matrix §3",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-09-015",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P2",
+      "traceability": [
+        "AC-09",
+        "BR-19"
+      ],
+      "title": "Concurrent getMyEligibility calls produce consistent terminal result",
+      "preconditions": [
+        "Completed event with Attended participant and submitted mandatory feedback",
+        "Fixed inputs across parallel requests"
+      ],
+      "steps": [
+        "Issue multiple concurrent getMyEligibility calls for the same participant and event",
+        "Compare API responses and persisted certificate_eligibilities rows"
+      ],
+      "expected": "All calls return same result Eligible with consistent reasonCode; no duplicate conflicting rows; evaluation is idempotent under concurrency",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-09-016",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": [
+        "AC-09",
+        "BR-17",
+        "BR-18",
+        "BR-19"
+      ],
+      "title": "Eligibility rule evaluation is deterministic for identical inputs",
+      "preconditions": [
+        "Fixed registration, event rule config, and feedback fixtures",
+        "Deterministic test controls per testing plan section 7 (fixed clock, seeded IDs)"
+      ],
+      "steps": [
+        "Invoke getMyEligibility twice with identical preconditions",
+        "Compare result, reasonCode, and reasonText across both responses"
+      ],
+      "expected": "Both invocations return identical result and reason fields; satisfies scenario matrix 'deterministic with reason' and eligibility module deterministic rule evaluation order",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-09-017",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": [
+        "AC-09",
+        "BR-19"
+      ],
+      "title": "Every terminal eligibility evaluation persists non-empty reason code and text",
+      "preconditions": [
+        "Completed event with Attended and Absent participants",
+        "Mix of feedback-complete and feedback-missing registrations"
+      ],
+      "steps": [
+        "Evaluate eligibility for Eligible and NotEligible scenarios via getMyEligibility",
+        "Inspect persisted certificate_eligibilities rows and API responses"
+      ],
+      "expected": "All terminal outcomes include non-empty reasonCode and reasonText (AC-09a); INV-05 and BR-19 satisfied; ELIGIBILITY_REASON_MISSING never returned on valid evaluation paths",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-09-018",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P1",
+      "traceability": [
+        "AC-09",
+        "NFR-13"
+      ],
+      "title": "GET eligibility/me returns synchronous actionable result payload",
+      "preconditions": [
+        "Completed event with Attended participant who submitted mandatory feedback",
+        "Participant JWT"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/eligibility/me",
+        "Inspect response body without polling"
+      ],
+      "expected": "Synchronous HTTP 200 with result, reasonCode, reasonText, and evaluatedAt in one response; client receives immediate eligibility outcome without polling per NFR-13",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-09-019",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "AC-09",
+        "FR-20a",
+        "BR-18",
+        "BR-19"
+      ],
+      "title": "GET eligibility/me returns HTTP 200 NotEligible with NOT_ELIGIBLE_FEEDBACK reason",
+      "preconditions": [
+        "Completed event with feedbackRequired true",
+        "Attended participant with no feedback submission",
+        "Attendance finalized; participant JWT"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/eligibility/me with participant bearer token",
+        "Parse response eligibility fields"
+      ],
+      "expected": "HTTP 200 with result NotEligible, reasonCode NOT_ELIGIBLE_FEEDBACK, and non-empty reasonText (AC-09c); persisted evaluation accessible on subsequent reads",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-09-020",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P2",
+      "traceability": [
+        "AC-09",
+        "FR-20a",
+        "FR-26"
+      ],
+      "title": "OrganizerAdmin without registration receives HTTP 403 or 404 on eligibility/me",
+      "preconditions": [
+        "Completed event with evaluated participant eligibility",
+        "OrganizerAdmin JWT with no participant registration on the event"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/eligibility/me with organizer Authorization bearer token"
+      ],
+      "expected": "HTTP 403 or 404 per FR-20a; eligibility/me is participant-scoped to own registration only per permission matrix (Evaluate eligibility = System; view own = Participant)",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-09-021",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P2",
+      "traceability": [
+        "AC-09",
+        "FR-20",
+        "FR-20a"
+      ],
+      "title": "NotEligible participant sees reason text explaining missing mandatory feedback",
+      "preconditions": [
+        "Participant logged in with Attended registration on Completed event",
+        "Event configured with mandatory feedback; participant has not submitted feedback",
+        "Attendance finalized; eligibility evaluation triggered via navigation or prior API call"
+      ],
+      "steps": [
+        "Navigate to participation history or event detail eligibility section",
+        "Observe NotEligible badge and reason messaging"
+      ],
+      "expected": "UI displays NotEligible status with human-readable reason referencing feedback requirement (AC-09c, AC-09e); not a raw error code; aligns with microcopy and eligibility result panel spec",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-09-022",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "AC-09",
+        "FR-20",
+        "FR-20a",
+        "BR-19"
+      ],
+      "title": "GET eligibility/me re-evaluates to Eligible after mandatory feedback submitted post initial NotEligible",
+      "preconditions": [
+        "Completed event with feedbackRequired true",
+        "Attended participant with no feedback submission yet",
+        "Attendance finalized; active feedback window; participant JWT"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/eligibility/me — observe HTTP 200 NotEligible with NOT_ELIGIBLE_FEEDBACK",
+        "POST /api/v1/events/{eventId}/feedback with valid in-window answers payload",
+        "GET /api/v1/events/{eventId}/eligibility/me again"
+      ],
+      "expected": "First GET returns NotEligible; after feedback POST, second GET returns HTTP 200 Eligible with updated reasonCode, reasonText, and evaluatedAt; satisfies AC-09g and FR-20 re-evaluation on input change",
+      "edgeCase": true
+    }
+  ]
+}

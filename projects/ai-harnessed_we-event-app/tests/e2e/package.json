@@ -1,0 +1,19 @@
+{
+  "name": "@we-event/e2e",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:e2e": "node --import tsx --test --test-concurrency=1 'src/**/*.test.ts'",
+    "test": "npm run test:e2e"
+  },
+  "dependencies": {
+    "@we-event/domain": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@we-event/config": "*",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

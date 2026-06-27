@@ -1,0 +1,490 @@
+{
+  "productItemId": "AC-13",
+  "version": 1,
+  "docFingerprint": "sha256:43a1316c7d0669030f2b3eac3b6b42994b9e6757f8b754368f1f5bbc574ab4b3",
+  "generatedAt": "2026-06-26T16:27:45Z",
+  "cases": [
+    {
+      "id": "TC-AC-13-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": [
+        "AC-13",
+        "FR-28",
+        "FR-31"
+      ],
+      "title": "Events list page 2 returns correct slice with total and totalPages per testing-plan §3",
+      "preconditions": [
+        "At least 13 published events visible to the requesting actor (more than default pageSize of 12)",
+        "Authenticated participant or public access per GET /events visibility rules"
+      ],
+      "steps": [
+        "GET /api/v1/events?page=1&pageSize=12&sort=startAt:asc and record total and totalPages",
+        "GET /api/v1/events?page=2&pageSize=12&sort=startAt:asc",
+        "Compare page-2 items to the expected second slice ordered by startAt ascending"
+      ],
+      "expected": "HTTP 200; page-2 response has page=2, pageSize=12, total matching page-1 total, totalPages=ceil(total/12), items.length <= 12, and items are the correct contiguous slice per testing-plan §3 row: Events list page 2 → correct slice + total (AC-13)",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-13-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": [
+        "AC-13",
+        "FR-30",
+        "FR-31"
+      ],
+      "title": "Registration repository paginated query returns correct total and page-2 slice at DB boundary",
+      "preconditions": [
+        "Event with exactly 25 registrations persisted in Postgres",
+        "Real database test harness with transaction rollback per test",
+        "Authenticated OrganizerAdmin actor with event scope"
+      ],
+      "steps": [
+        "Invoke registration list query via registration module/service with page=1, pageSize=20",
+        "Invoke same query with page=2, pageSize=20",
+        "Compare returned items to direct COUNT and OFFSET/LIMIT expectations in persistence layer"
+      ],
+      "expected": "Page 1 returns 20 items with total=25 and totalPages=2; page 2 returns 5 items with same total metadata; module-integration boundary exercises real DB transaction without loading full unbounded dataset",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-13-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "pagination",
+      "priority": "P0",
+      "traceability": [
+        "AC-13",
+        "FR-29",
+        "FR-31"
+      ],
+      "title": "My registrations list returns paginated envelope with correct page-2 boundaries",
+      "preconditions": [
+        "Participant with more than 20 registrations across events (or pageSize boundary fixture)",
+        "Authenticated participant JWT"
+      ],
+      "steps": [
+        "GET /api/v1/me/registrations?page=1&pageSize=20",
+        "GET /api/v1/me/registrations?page=2&pageSize=20",
+        "Verify each item includes registrationId, eventId, eventName, state, and updatedAt"
+      ],
+      "expected": "HTTP 200 with paginated envelope; page 1 items.length=20; page 2 contains remaining rows; total and totalPages consistent across pages; default sort updatedAt:desc applied; items scoped to current actor only",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-13-004",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": [
+        "AC-13",
+        "FR-30",
+        "FR-31"
+      ],
+      "title": "Audit logs list returns ordered paginated rows with total count per testing-plan §3",
+      "preconditions": [
+        "Event with multiple audit log entries from critical config changes",
+        "Authenticated OrganizerAdmin with event scope"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/audit-logs?page=1&pageSize=20",
+        "Verify ordering and envelope metadata against persistence row count"
+      ],
+      "expected": "HTTP 200; items ordered by createdAt descending; total equals full matching audit row count; totalPages computed correctly per testing-plan §3 row: Audit logs paginated → ordered + total count (AC-13)",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-13-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "AC-13",
+        "FR-28",
+        "FR-31"
+      ],
+      "title": "GET /api/v1/events returns HTTP 200 paginated envelope with required fields",
+      "preconditions": [
+        "At least one discoverable event seeded",
+        "Authenticated participant JWT or public access per endpoint rules"
+      ],
+      "steps": [
+        "GET /api/v1/events?page=1&pageSize=12 with Authorization bearer when required",
+        "Verify HTTP status code and response body shape"
+      ],
+      "expected": "HTTP 200 with items (array), page=1, pageSize=12, total (integer), and totalPages per API design §3 response envelope; no bare array response",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-13-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "AC-13",
+        "FR-31"
+      ],
+      "title": "All eight paginated list endpoints share consistent envelope shape over HTTP",
+      "preconditions": [
+        "Seeded data covering events, registrations, waitlist, attendance, eligibility, audit-logs, status-history, and me/registrations",
+        "Valid JWT tokens for participant and organizer actors with required scopes"
+      ],
+      "steps": [
+        "Issue paginated GET requests to each documented list endpoint with page=1 and endpoint default pageSize",
+        "Assert each response body contains items (array), page, pageSize, total, and totalPages"
+      ],
+      "expected": "All eight paginated endpoints return the same envelope structure defined in API design section 3; HTTP 200 for authorized requests; no bare array responses",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-13-007",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": [
+        "AC-13",
+        "FR-28"
+      ],
+      "title": "Participant event browse paginated card grid shows range label (e.g. 1–12 of N)",
+      "preconditions": [
+        "At least 13 discoverable events seeded (exceeds default pageSize of 12)",
+        "Authenticated participant logged in",
+        "Participant event discovery browse page reachable"
+      ],
+      "steps": [
+        "Navigate to participant event browse list page",
+        "Observe pagination range label or equivalent summary text",
+        "Navigate to page 2 using pagination controls",
+        "Observe updated range label reflecting second page slice"
+      ],
+      "expected": "Page 1 displays range label such as Showing 1–12 of N where N is total matching events; page 2 displays Showing 13–24 of N (or equivalent upper bound); prev/next controls disabled at bounds; UI does not render full unbounded dataset client-side per listing pages §3 and page list event discovery",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-13-008",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": [
+        "AC-13",
+        "FR-30"
+      ],
+      "title": "Organizer registrations paginated table shows range label (e.g. 1–20 of N)",
+      "preconditions": [
+        "Event with more than 20 registrations",
+        "OrganizerAdmin logged in with access to event registrations page at /organizer/events/{eventId}/registrations"
+      ],
+      "steps": [
+        "Navigate to organizer event registrations page",
+        "Observe pagination range label in table footer or toolbar",
+        "Navigate to page 2",
+        "Verify range label updates to reflect second page boundaries"
+      ],
+      "expected": "Page 1 shows range label such as Showing 1–20 of N; page 2 shows Showing 21–40 of N (or equivalent); table renders only current page rows; prev/next pagination controls present per listing pages §3 and page list organizer registration management",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-13-009",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": [
+        "AC-13",
+        "FR-30"
+      ],
+      "title": "Participant denied paginated GET audit-logs with HTTP 403",
+      "preconditions": [
+        "Event with audit log entries",
+        "Authenticated Participant JWT without audit log read permission per 01-roles-permissions.md"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/audit-logs?page=1&pageSize=20 with Participant Authorization bearer token"
+      ],
+      "expected": "HTTP 403 unauthorized; Participant role cannot read audit logs per permission matrix; paginated endpoint enforces RBAC before returning envelope",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-13-010",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": [
+        "AC-13",
+        "FR-30"
+      ],
+      "title": "OrganizerStaff denied paginated registrations list for unassigned event with HTTP 403",
+      "preconditions": [
+        "Event outside OrganizerStaff assigned scope with registrations",
+        "Authenticated OrganizerStaff JWT for a different assigned event set"
+      ],
+      "steps": [
+        "GET /api/v1/events/{unassignedEventId}/registrations?page=1&pageSize=20 with OrganizerStaff Authorization bearer token"
+      ],
+      "expected": "HTTP 403 unauthorized; OrganizerStaff scope constraint blocks paginated list access for events outside assigned scope per 01-roles-permissions.md §3",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-13-011",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": [
+        "AC-13"
+      ],
+      "title": "Invalid pagination parameters return HTTP 400 INVALID_PAGINATION",
+      "preconditions": [
+        "Any paginated list endpoint accessible to authenticated actor",
+        "Valid JWT where endpoint requires auth"
+      ],
+      "steps": [
+        "GET with page=0&pageSize=20",
+        "GET with page=1&pageSize=101",
+        "GET with page=abc&pageSize=20"
+      ],
+      "expected": "Each invalid request returns HTTP 400 with error.code INVALID_PAGINATION for page < 1, pageSize above max (100), or non-integer values per API design §3 validation rules",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-13-012",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "pagination",
+      "priority": "P0",
+      "traceability": [
+        "AC-13"
+      ],
+      "title": "Page beyond totalPages returns empty items with valid metadata",
+      "preconditions": [
+        "Paginated list endpoint with known total row count (e.g. GET /events with total <= 12)",
+        "Valid authentication where required"
+      ],
+      "steps": [
+        "GET list endpoint with page=1 and pageSize=20; record total and totalPages",
+        "GET same endpoint with page=totalPages+1 and same pageSize"
+      ],
+      "expected": "HTTP 200; beyond-last-page response has items: [], page equals requested page, pageSize unchanged, total and totalPages match page-1 metadata per AC-13 and API design section 3",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-13-013",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": [
+        "AC-13",
+        "NFR-16",
+        "FR-31"
+      ],
+      "title": "Registrations list never returns more than pageSize items per testing-plan §3",
+      "preconditions": [
+        "Event with total registrations exceeding configured pageSize (e.g. 25 rows, pageSize=20)",
+        "Authenticated OrganizerAdmin with event scope"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/registrations?page=1&pageSize=20",
+        "GET /api/v1/events/{eventId}/registrations?page=2&pageSize=20"
+      ],
+      "expected": "Page 1 items.length=20; page 2 items.length=5; neither page exceeds pageSize; total=25 and totalPages=2 per testing-plan §3 row: Registrations list beyond capacity → never returns more than pageSize items (AC-13, NFR-16)",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-13-014",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": [
+        "AC-13",
+        "AC-02f",
+        "FR-30",
+        "FR-31"
+      ],
+      "title": "Waitlist module paginated query preserves FIFO position order across pages",
+      "preconditions": [
+        "Full event with waitlist enabled and more than 20 Waitlisted participants (exceeds default pageSize)",
+        "Real Postgres test database",
+        "Authenticated OrganizerAdmin with event scope"
+      ],
+      "steps": [
+        "Invoke waitlist list query via registration/waitlist module with page=1, pageSize=20",
+        "Invoke same query with page=2, pageSize=20",
+        "Verify items ordering and total against persistence layer across both pages"
+      ],
+      "expected": "Paginated envelope with items sorted by position ascending on each page; page 1 positions 1–20 and page 2 continues FIFO without gaps or reordering; total reflects full waitlist queue length; module-integration exercises DB boundary for GET /events/{eventId}/waitlist per AC-02f",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-13-015",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "pagination",
+      "priority": "P1",
+      "traceability": [
+        "AC-13",
+        "FR-30",
+        "FR-31"
+      ],
+      "title": "Attendance list returns paginated check-in rows with checkinAt descending sort",
+      "preconditions": [
+        "Event with multiple recorded check-ins",
+        "Authenticated OrganizerAdmin or OrganizerStaff with event scope"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/attendance?page=1&pageSize=20",
+        "GET /api/v1/events/{eventId}/attendance?page=2&pageSize=20 when total exceeds 20"
+      ],
+      "expected": "HTTP 200 with paginated envelope; items sorted by checkinAt descending; total matches attendance row count; page boundaries correct when multiple pages exist",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-13-016",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "pagination",
+      "priority": "P1",
+      "traceability": [
+        "AC-13",
+        "FR-31"
+      ],
+      "title": "totalPages uses ceiling division when total is not divisible by pageSize",
+      "preconditions": [
+        "List endpoint with exactly total=25 rows available",
+        "pageSize=20"
+      ],
+      "steps": [
+        "Request page=1 with pageSize=20 and read totalPages",
+        "Request page=2 and verify non-empty items"
+      ],
+      "expected": "totalPages=2 (ceil(25/20)); page 2 contains remaining 5 items; metadata consistent across both pages",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-13-017",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "pagination",
+      "priority": "P2",
+      "traceability": [
+        "AC-13",
+        "FR-31"
+      ],
+      "title": "Empty matching result set returns total zero with valid envelope",
+      "preconditions": [
+        "Event with no registrations (or empty result set after filters)",
+        "Authenticated OrganizerAdmin with event scope"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/registrations?page=1&pageSize=20"
+      ],
+      "expected": "HTTP 200 with items: [], total=0, totalPages=1 (or consistent zero-total convention), page=1, pageSize=20",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-13-018",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "pagination",
+      "priority": "P2",
+      "traceability": [
+        "AC-13",
+        "FR-28"
+      ],
+      "title": "Omitted page and pageSize use endpoint defaults on GET /events",
+      "preconditions": [
+        "GET /events accessible with sufficient seeded events",
+        "Valid auth if required"
+      ],
+      "steps": [
+        "GET /api/v1/events without page or pageSize query parameters"
+      ],
+      "expected": "HTTP 200 with page=1, pageSize=12 (events endpoint default), and correctly paginated first slice",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-13-019",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "pagination",
+      "priority": "P1",
+      "traceability": [
+        "AC-13",
+        "NFR-16",
+        "FR-31"
+      ],
+      "title": "Paginated list returns single page within acceptable time when total exceeds 500 rows",
+      "preconditions": [
+        "Database seeded with >500 rows for a paginated endpoint (e.g. audit-logs or registrations)",
+        "OrganizerAdmin actor with event scope",
+        "Test environment uses fixed clock and deterministic fixtures per testing plan section 7"
+      ],
+      "steps": [
+        "Record start time",
+        "GET paginated list with page=1 and pageSize=20",
+        "Record elapsed response time"
+      ],
+      "expected": "HTTP 200 with exactly one page of items (length <= pageSize); response completes within acceptable latency threshold per NFR-16; total reflects full matching row count without loading all rows into the response body",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-13-020",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "pagination",
+      "priority": "P1",
+      "traceability": [
+        "AC-13",
+        "FR-31"
+      ],
+      "title": "total and totalPages remain stable across sequential page requests",
+      "preconditions": [
+        "List endpoint with at least three pages of data at pageSize=10",
+        "Authenticated actor with list access"
+      ],
+      "steps": [
+        "GET page=1, page=2, and page=3 with pageSize=10",
+        "Compare total and totalPages on each response"
+      ],
+      "expected": "total and totalPages are identical on every page; only items array differs between pages; supports reliable client-side pagination controls",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-13-021",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": [
+        "AC-13",
+        "FR-28"
+      ],
+      "title": "Organizer events paginated table shows range label (e.g. Showing 1–20 of N)",
+      "preconditions": [
+        "At least 21 organizer-visible events seeded (exceeds organizer events table pageSize of 20)",
+        "OrganizerAdmin logged in with access to /organizer/events"
+      ],
+      "steps": [
+        "Navigate to organizer event management list page",
+        "Observe pagination range label in table footer or toolbar",
+        "Navigate to page 2 using pagination controls",
+        "Verify range label updates to reflect second page boundaries"
+      ],
+      "expected": "Page 1 shows range label such as Showing 1–20 of N; page 2 shows Showing 21–40 of N (or equivalent); table renders only current page rows; server-driven pagination per listing pages §3 and page list organizer events table",
+      "edgeCase": false
+    }
+  ]
+}

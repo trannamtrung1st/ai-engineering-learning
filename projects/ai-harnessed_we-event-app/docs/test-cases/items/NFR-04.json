@@ -1,0 +1,388 @@
+{
+  "productItemId": "NFR-04",
+  "version": 1,
+  "docFingerprint": "sha256:51dc60c0a80dd45f020b6136d15c7a17807e81a26c2da8531d8688cc9ff1e1bf",
+  "generatedAt": "2026-06-26T17:55:37Z",
+  "cases": [
+    {
+      "id": "TC-NFR-04-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": [
+        "NFR-04",
+        "AC-01",
+        "FR-07"
+      ],
+      "title": "POST registration succeeds with quick response under normal single-user load",
+      "preconditions": [
+        "Published event RegistrationOpen with available seats",
+        "Authenticated participant with no active registration",
+        "Normal load test environment (single user, not peak spike per R-01)",
+        "Compose Postgres db service healthy via npm run aih:dev:db:up; schema bootstrapped on first API use per docker-compose §4.2"
+      ],
+      "steps": [
+        "Record start time immediately before POST /api/v1/events/{eventId}/registrations with Authorization and Idempotency-Key",
+        "Await HTTP response and record elapsed time",
+        "Verify response body contains state Registered and registrationId"
+      ],
+      "expected": "HTTP 200 with Registered assignment; elapsed time meets NFR-04 quick response under normal load; testing-plan §3 row 'Register with available seat → Registered' satisfied without perceptible delay blocking participant flow",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-04-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": [
+        "NFR-04",
+        "AC-01",
+        "FR-07",
+        "BR-03"
+      ],
+      "title": "registrationService.register completes promptly with correct state on Postgres",
+      "preconditions": [
+        "Event RegistrationOpen with seats available",
+        "Participant has no active registration",
+        "DATABASE_URL=postgresql://we_event:we_event@localhost:5432/we_event with schema bootstrapped via first API use per docker-compose §4.2",
+        "Normal load (sequential single call, no burst)"
+      ],
+      "steps": [
+        "Measure elapsed time for registrationService.register(eventId, participantId, actorContext)",
+        "Inspect returned registration state and database row"
+      ],
+      "expected": "Registration commits with state Registered; service call completes within acceptable latency for NFR-04 under normal load; transactional path on Postgres does not introduce unnecessary round-trips",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-04-003",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "NFR-04",
+        "AC-01",
+        "FR-06",
+        "FR-07"
+      ],
+      "title": "POST registrations p95 latency under normal load",
+      "preconditions": [
+        "Event RegistrationOpen with moderate existing registration volume (well below capacity)",
+        "Pool of authenticated participants each without active registration for the event",
+        "Normal load profile: steady sequential or low-concurrency requests, not R-01 peak spike"
+      ],
+      "steps": [
+        "Execute at least 50 POST /api/v1/events/{eventId}/registrations requests from distinct participants",
+        "Collect per-request elapsed times from client to complete HTTP response",
+        "Compute p95 latency across successful registrations"
+      ],
+      "expected": "p95 response time meets NFR-04 quick response under normal load; all successful responses return HTTP 200 with valid registration payload; no systematic slowdown as moderate volume accumulates",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-04-004",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "NFR-04",
+        "FR-10",
+        "AC-01"
+      ],
+      "title": "GET registration-status p95 latency under normal load",
+      "preconditions": [
+        "Event with moderate registration volume",
+        "Authenticated participants with existing Registered or Waitlisted registrations",
+        "Normal load environment suitable for near real-time status refresh per FR-10"
+      ],
+      "steps": [
+        "Execute at least 50 GET /api/v1/events/{eventId}/registration-status requests across participants with known registrations",
+        "Collect per-request elapsed times",
+        "Compute p95 latency"
+      ],
+      "expected": "p95 response time meets NFR-04 quick response under normal load; status queries remain suitable for participant UI refresh without blocking interaction",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-04-005",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P1",
+      "traceability": [
+        "NFR-04",
+        "FR-11",
+        "AC-01",
+        "AC-02"
+      ],
+      "title": "POST cancel registration responds within acceptable latency under normal load",
+      "preconditions": [
+        "Registered participants eligible to cancel before CancellationDeadline",
+        "Event at capacity with waitlistEnabled true and at least one Waitlisted participant (Flow B promotion path)",
+        "Normal load environment (single or low-concurrency cancellations)"
+      ],
+      "steps": [
+        "Execute POST /api/v1/events/{eventId}/registrations/{registrationId}/cancel for eligible Registered participants",
+        "Measure elapsed time per request from client to complete HTTP response",
+        "Verify FIFO waitlist promotion to Registered completes within the same transactional response when applicable (AC-02c)",
+        "Compute p95 latency across successful cancellations"
+      ],
+      "expected": "p95 cancel response time meets NFR-04 quick response under normal load; HTTP 200 with CancelledByUser returned without undue delay; cancel-with-promotion path (testing-plan Flow B) remains responsive under normal load",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-04-006",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": [
+        "NFR-04",
+        "BR-03",
+        "NFR-02"
+      ],
+      "title": "Registration transactional path avoids N+1 queries that would slow normal-load responses",
+      "preconditions": [
+        "Registration module wired to Postgres adapter per docker-compose local runtime policy",
+        "Event with existing registrations below capacity",
+        "Database query logging or profiler enabled for test run"
+      ],
+      "steps": [
+        "Invoke registrationService.register for a new participant",
+        "Inspect SQL/query count for the registration transaction (capacity check, insert, state transition)",
+        "Measure service-layer elapsed time for the operation"
+      ],
+      "expected": "Registration completes in bounded query count without N+1 fan-out; service elapsed time consistent with NFR-04 quick response under normal load; row-lock and in-transaction seat count pattern does not add excessive latency",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-04-007",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P1",
+      "traceability": [
+        "NFR-04",
+        "AC-02",
+        "FR-08",
+        "BR-04"
+      ],
+      "title": "Waitlisted registration POST responds within acceptable latency",
+      "preconditions": [
+        "Event at capacity with waitlistEnabled true",
+        "Authenticated participant with no active registration",
+        "Normal load (single request, not concurrent burst)"
+      ],
+      "steps": [
+        "Measure elapsed time for POST /api/v1/events/{eventId}/registrations when event is full",
+        "Inspect response state and waitlistPosition"
+      ],
+      "expected": "HTTP 200 with state Waitlisted and waitlistPosition >= 1 returned within NFR-04 quick response threshold; testing-plan §3 row 'Register when full + waitlist enabled → Waitlisted' satisfied; waitlist path is not materially slower than Registered path under normal load",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-04-008",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "concurrency",
+      "priority": "P1",
+      "traceability": [
+        "NFR-04",
+        "AC-04",
+        "BR-03",
+        "R-01"
+      ],
+      "title": "Moderate concurrent registration burst maintains acceptable p95 without peak-spike degradation",
+      "preconditions": [
+        "Event RegistrationOpen with capacity comfortably above concurrent attempt count",
+        "10–20 unique participants without prior registration",
+        "Normal-to-moderate load (below R-01 peak spike scenario); not stress-test overload"
+      ],
+      "steps": [
+        "Fire parallel POST /api/v1/events/{eventId}/registrations from all participants simultaneously",
+        "Collect elapsed times for all settled responses",
+        "Compute p95 latency and verify capacity invariant"
+      ],
+      "expected": "p95 remains within NFR-04 quick response under normal load; Registered count never exceeds capacity per testing-plan §3 'Capacity under heavy concurrent requests'; no request hangs beyond acceptable timeout; distinguishes normal concurrent load from R-01 overload mitigation",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-04-009",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": [
+        "NFR-04",
+        "AC-03",
+        "BR-01",
+        "FR-06"
+      ],
+      "title": "Duplicate registration rejection responds quickly without lock-induced delay",
+      "preconditions": [
+        "Participant with existing active Registered registration for the event",
+        "Normal load environment"
+      ],
+      "steps": [
+        "Measure elapsed time for POST /api/v1/events/{eventId}/registrations from participant with active registration",
+        "Repeat several times to capture p95 for rejection path"
+      ],
+      "expected": "HTTP 409 (or equivalent conflict) returned within NFR-04 quick response threshold; testing-plan §3 row 'Duplicate registration attempt → blocked' satisfied on error path; duplicate guard does not block on long-held locks; error path remains responsive per NFR-13 immediate feedback expectation",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-04-010",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": [
+        "NFR-04",
+        "AC-04",
+        "BR-03",
+        "NFR-02"
+      ],
+      "title": "Registration at near-capacity event responds within acceptable latency",
+      "preconditions": [
+        "Event with capacity N and exactly N-1 Registered participants",
+        "One remaining seat available",
+        "Normal load single registration attempt"
+      ],
+      "steps": [
+        "Measure elapsed time for registrationService.register claiming the last available seat",
+        "Verify Registered state and capacity invariant after commit"
+      ],
+      "expected": "Last-seat registration completes within NFR-04 quick response under normal load; transactional row lock and in-transaction seat count do not cause unacceptable latency for the final seat assignment",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-04-011",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P2",
+      "traceability": [
+        "NFR-04",
+        "AC-02",
+        "FR-08"
+      ],
+      "title": "Registration rejection when full without waitlist responds quickly",
+      "preconditions": [
+        "Event at capacity with waitlistEnabled false",
+        "Authenticated participant with no active registration",
+        "Normal load environment"
+      ],
+      "steps": [
+        "Measure elapsed time for POST /api/v1/events/{eventId}/registrations",
+        "Inspect error response code and message"
+      ],
+      "expected": "HTTP rejection with code REGISTRATION_REJECTED_FULL returned within NFR-04 quick response threshold per AC-02b; participant receives prompt failure feedback without waiting through slow capacity scans",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-04-012",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": [
+        "NFR-04",
+        "NFR-13",
+        "AC-01",
+        "FR-10"
+      ],
+      "title": "Participant registration UI provides immediate feedback under normal campus-network conditions",
+      "preconditions": [
+        "Web and API running locally (dev mode per docker-compose §3.1) or full-preview stack via npm run aih:preview:full",
+        "Event detail page with registration open and available seats",
+        "Participant logged in on typical campus-network latency profile (not throttled to failure)"
+      ],
+      "steps": [
+        "Navigate to event detail and click register (or equivalent primary action)",
+        "Observe time until success or failure feedback appears (badge, toast, or status change)",
+        "Verify no prolonged spinner without resolution beyond acceptable interactive threshold"
+      ],
+      "expected": "UI reflects registration outcome with immediate feedback per NFR-13; end-to-end registration action perceived as quick under normal load aligning with NFR-04; status updates to Registered without requiring manual page reload",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-04-013",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": [
+        "NFR-04"
+      ],
+      "title": "Registration performance assertions execute against Compose Postgres not in-memory stores",
+      "preconditions": [
+        "npm run aih:dev:db:up has started healthy db service",
+        "DATABASE_URL=postgresql://we_event:we_event@localhost:5432/we_event per docker-compose §4.2",
+        "API health GET /api/v1/health returns status ok and db connected per runtimeValidation policy",
+        "Forbidden persistence modes (in-memory Map, SQLite, mock-only repos) are not used per docker-compose §4.3"
+      ],
+      "steps": [
+        "Verify API health endpoint reports db connected before latency scenarios",
+        "Run integration or e2e latency scenarios for registration actions against Postgres",
+        "Verify measurements reflect real database I/O and transactional behavior"
+      ],
+      "expected": "NFR-04 latency measurements are meaningful against durable Postgres storage with schema bootstrapped on first API use; performance regressions from in-memory shortcuts are prevented by harness runtime policy",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-04-014",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "pagination",
+      "priority": "P1",
+      "traceability": [
+        "NFR-04",
+        "FR-29",
+        "AC-14",
+        "AC-16"
+      ],
+      "title": "GET my registrations responds within acceptable latency for registration status browsing",
+      "preconditions": [
+        "Authenticated participant with multiple registrations across events",
+        "Normal load environment",
+        "Paginated request page=1 pageSize=20"
+      ],
+      "steps": [
+        "Measure elapsed time for GET /api/v1/me/registrations?page=1&pageSize=20",
+        "Repeat at least 30 times or across representative participants",
+        "Compute p95 latency"
+      ],
+      "expected": "p95 response time meets NFR-04 quick response under normal load; single API call returns paginated slice without N+1 fan-out per testing-plan §3 'My registrations paginated' row; suitable for participant registration list views",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-04-015",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": [
+        "NFR-04",
+        "AC-15",
+        "NFR-07"
+      ],
+      "title": "Unauthenticated POST registration returns 401 quickly without slow auth probe",
+      "preconditions": [
+        "Published event RegistrationOpen with available seats",
+        "No Authorization header or expired/invalid token",
+        "Normal load environment (single request)"
+      ],
+      "steps": [
+        "Record start time immediately before POST /api/v1/events/{eventId}/registrations without Authorization",
+        "Await HTTP response and record elapsed time",
+        "Verify no registration row is created for the attempt"
+      ],
+      "expected": "HTTP 401 Unauthorized returned within NFR-04 quick response threshold; AC-15 unauthenticated access denial satisfied; auth rejection path does not block on expensive downstream work; no registration side effects",
+      "edgeCase": false
+    }
+  ]
+}

@@ -1,0 +1,366 @@
+{
+  "productItemId": "FR-02",
+  "version": 1,
+  "docFingerprint": "sha256:d5426bd8235ae44f8d8c17ffb86670943a993f20178df22df9dcadf4ea6c6df5",
+  "generatedAt": "2026-06-26T16:36:09Z",
+  "cases": [
+    {
+      "id": "TC-FR-02-001",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": [
+        "FR-02"
+      ],
+      "title": "Organizer Admin sets maximum capacity during event creation in Draft",
+      "preconditions": [
+        "Authenticated OrganizerAdmin actor with organization scope",
+        "Valid create payload with ruleConfig.capacity set to a positive integer (e.g. 50)",
+        "Other ruleConfig windows are chronologically consistent"
+      ],
+      "steps": [
+        "Invoke eventService.create with name, basic fields, and ruleConfig including capacity within a real DB transaction",
+        "Read persisted event_rule_configs row linked to the new event"
+      ],
+      "expected": "Event is created in Draft state; EventRuleConfig.capacity equals the configured value; satisfies Workflow A step 2 (admin configures EventRuleConfig including capacity) and Event Module rule config ownership",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-02-002",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "FR-02"
+      ],
+      "title": "POST /events persists ruleConfig.capacity and GET detail returns it",
+      "preconditions": [
+        "OrganizerAdmin JWT scoped to the organization",
+        "POST body includes ruleConfig with capacity 100 and valid time windows"
+      ],
+      "steps": [
+        "POST /api/v1/events with Authorization bearer and ruleConfig.capacity in JSON body",
+        "GET /api/v1/events/{eventId} with the same organizer token"
+      ],
+      "expected": "POST returns HTTP 200 with ruleConfig.capacity 100 in the entity snapshot; GET returns HTTP 200 with the same capacity value on the linked EventRuleConfig per API design §2.1 Event Management",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-02-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": [
+        "FR-02"
+      ],
+      "title": "Organizer Admin updates capacity on Draft event without audit reason",
+      "preconditions": [
+        "Existing event in Draft state with initial capacity 10",
+        "Authenticated OrganizerAdmin actor with event scope",
+        "Registration has not yet been opened"
+      ],
+      "steps": [
+        "Record event_rule_configs.capacity before update (beforeState: 10)",
+        "Invoke eventService.update(eventId, { ruleConfig: { capacity: 25 } }, organizerAdminContext)",
+        "Read event_rule_configs.capacity after update (afterState: 25)"
+      ],
+      "expected": "Update succeeds without mandatory reason payload; beforeState capacity 10 transitions to afterState 25; no AUDIT_REQUIRED_FOR_CRITICAL_CHANGE error because registration is not yet open",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-02-004",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": [
+        "FR-02"
+      ],
+      "title": "Organizer Admin configures maximum capacity in event setup Section 2",
+      "preconditions": [
+        "Web app running with organizer authenticated as OrganizerAdmin",
+        "Organizer navigates to event create or edit flow"
+      ],
+      "steps": [
+        "Complete Section 1 basic event details",
+        "In Section 2 (capacity and waitlist policy), enter maximum capacity value (e.g. 30)",
+        "Save draft and open event detail or edit view"
+      ],
+      "expected": "UI persists and displays the entered maximum capacity on event detail; capacity field is editable by Organizer Admin per forms Section 2 layout and capacity hint components",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-02-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": [
+        "FR-02"
+      ],
+      "title": "Flow A step 2 configures EventRuleConfig capacity before publish",
+      "preconditions": [
+        "OrganizerAdmin JWT",
+        "Draft event created via POST /api/v1/events with initial capacity 20"
+      ],
+      "steps": [
+        "PATCH /api/v1/events/{eventId} with ruleConfig.capacity 40 on the Draft event",
+        "GET /api/v1/events/{eventId} and verify capacity before proceeding to publish in Flow A"
+      ],
+      "expected": "HTTP 200 on PATCH; GET returns capacity 40; admin-configured maximum is in place for subsequent publish and open-registration steps in testing-plan Flow A",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-02-006",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "flow-c",
+      "priority": "P0",
+      "traceability": [
+        "FR-02",
+        "BR-22",
+        "AC-11"
+      ],
+      "title": "Post-registration-open capacity increase with reason updates EventRuleConfig and audit",
+      "preconditions": [
+        "Event published and RegistrationOpen with initial capacity 10",
+        "Authenticated OrganizerAdmin actor",
+        "Mandatory reasonCode and reasonText available for critical change"
+      ],
+      "steps": [
+        "Invoke eventService.update(eventId, { ruleConfig: { capacity: 20 }, reasonCode: \"CAPACITY_CHANGE\", reasonText: \"Expanded seats due to venue update\" }, context)",
+        "Read event_rule_configs.capacity and version for the event",
+        "Query audit logs for entityType EventRuleConfig"
+      ],
+      "expected": "Update succeeds; capacity persisted as 20; event_rule_configs.version incremented; audit record written with before.capacity 10, after.capacity 20, actor, and reason per BR-22 and roles-permissions minimum audit payload; satisfies Flow C critical config change verification",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-02-007",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": [
+        "FR-02"
+      ],
+      "title": "POST /events rejects negative capacity in API validation",
+      "preconditions": [
+        "OrganizerAdmin JWT",
+        "POST body with ruleConfig.capacity set to -1; all other fields otherwise valid"
+      ],
+      "steps": [
+        "POST /api/v1/events with ruleConfig.capacity -1"
+      ],
+      "expected": "HTTP 400 with error code INVALID_INPUT; no event_rule_configs row created with negative capacity; violates capacity >= 0 database constraint",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-02-008",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": [
+        "FR-02",
+        "BR-21",
+        "FR-25"
+      ],
+      "title": "OrganizerStaff and Participant cannot configure event capacity",
+      "preconditions": [
+        "Existing Draft event owned by the organization",
+        "Authenticated JWTs for OrganizerStaff and Participant separately",
+        "PATCH body with ruleConfig.capacity change"
+      ],
+      "steps": [
+        "PATCH /api/v1/events/{eventId} with OrganizerStaff bearer token and capacity change",
+        "PATCH /api/v1/events/{eventId} with Participant bearer token and capacity change"
+      ],
+      "expected": "Both requests return HTTP 403 with code EVENT_RULE_CHANGE_FORBIDDEN; capacity remains unchanged; permission matrix Configure rules/capacity/windows is OrganizerAdmin only per roles-permissions §2 and BR-21",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-02-009",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": [
+        "FR-02",
+        "FR-25"
+      ],
+      "title": "Unauthenticated capacity configuration is rejected",
+      "preconditions": [
+        "Valid PATCH or POST body with ruleConfig.capacity",
+        "No Authorization header on request"
+      ],
+      "steps": [
+        "POST /api/v1/events without bearer token including ruleConfig.capacity",
+        "PATCH /api/v1/events/{eventId} without bearer token changing capacity"
+      ],
+      "expected": "Both requests return HTTP 401 unauthenticated; capacity configuration handler is not invoked for unauthenticated actors",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-02-010",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": [
+        "FR-02",
+        "BR-22"
+      ],
+      "title": "Post-open capacity change without reason is rejected",
+      "preconditions": [
+        "Event in RegistrationOpen state with capacity 10",
+        "Authenticated OrganizerAdmin actor",
+        "Update payload changes capacity to 20 but omits reasonCode and reasonText"
+      ],
+      "steps": [
+        "Attempt eventService.update(eventId, { ruleConfig: { capacity: 20 } }, context) without reason fields",
+        "Verify event_rule_configs.capacity unchanged"
+      ],
+      "expected": "ApiError with code AUDIT_REQUIRED_FOR_CRITICAL_CHANGE (HTTP 422 semantic rule violation); capacity remains 10; satisfies sensitive-action guardrail for rule/capacity change after registration opens per BR-22",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-02-011",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": [
+        "FR-02"
+      ],
+      "title": "Capacity zero is accepted as minimum valid boundary",
+      "preconditions": [
+        "Draft event create or update payload with ruleConfig.capacity 0",
+        "Authenticated OrganizerAdmin actor",
+        "Valid time windows in ruleConfig"
+      ],
+      "steps": [
+        "Create or update event with capacity 0",
+        "Read persisted event_rule_configs.capacity"
+      ],
+      "expected": "Configuration succeeds; capacity stored as 0; event accepts zero-seat capacity per capacity >= 0 database constraint",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-02-012",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": [
+        "FR-02"
+      ],
+      "title": "PATCH rejects non-integer or out-of-range capacity in API schema validation",
+      "preconditions": [
+        "OrganizerAdmin JWT",
+        "Draft event exists",
+        "PATCH body with ruleConfig.capacity as string, float, or null"
+      ],
+      "steps": [
+        "PATCH /api/v1/events/{eventId} with capacity \"fifty\" or 3.5 or null"
+      ],
+      "expected": "HTTP 400 with code INVALID_INPUT before workflow execution; capacity unchanged; API strict input validation before domain execution per §5",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-02-013",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": [
+        "FR-02",
+        "BR-03"
+      ],
+      "title": "Capacity reduction below current Registered count is rejected",
+      "preconditions": [
+        "RegistrationOpen event with capacity 20 and 15 Registered participants",
+        "Authenticated OrganizerAdmin actor with mandatory reasonCode and reasonText for post-open change"
+      ],
+      "steps": [
+        "Attempt eventService.update(eventId, { ruleConfig: { capacity: 10 }, reasonCode: \"CAPACITY_DECREASE\", reasonText: \"Attempt to reduce below registered count\" }, context)",
+        "Verify event_rule_configs.capacity remains 20 in Postgres"
+      ],
+      "expected": "ApiError with code CAPACITY_EXCEEDED (HTTP 422 semantic rule violation); capacity not reduced below active Registered count; BR-03 invariant prevents misconfigured capacity ceiling per validation rules §2",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-02-014",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": [
+        "FR-02",
+        "AC-04",
+        "BR-03"
+      ],
+      "title": "Configured capacity is the ceiling enforced by registration module (INV-02)",
+      "preconditions": [
+        "Event RegistrationOpen with configured capacity N (e.g. N=3)",
+        "N+2 distinct participants with no prior registration"
+      ],
+      "steps": [
+        "Register participants until Registered count reaches N via registrationService.register",
+        "Attempt one additional registration with waitlistEnabled true",
+        "Compare Registered count to event_rule_configs.capacity in the database"
+      ],
+      "expected": "Registered count never exceeds the configured capacity N; additional registrants receive Waitlisted or rejection per policy; INV-02 count(Registered) <= EventRuleConfig.capacity holds using admin-configured ceiling",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-02-015",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "FR-02"
+      ],
+      "title": "PATCH /events/{eventId} updates capacity on Draft event",
+      "preconditions": [
+        "Draft event with EventRuleConfig capacity 50",
+        "OrganizerAdmin JWT authorized for eventId"
+      ],
+      "steps": [
+        "PATCH /api/v1/events/{eventId} with JSON body { \"ruleConfig\": { \"capacity\": 100 } }",
+        "GET /api/v1/events/{eventId} with OrganizerAdmin Authorization bearer"
+      ],
+      "expected": "PATCH returns HTTP 200 with ruleConfig.capacity 100 in response snapshot; GET returns HTTP 200 confirming persisted capacity 100 per API design §2.1",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-02-016",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "concurrency",
+      "priority": "P0",
+      "traceability": [
+        "FR-02",
+        "AC-04",
+        "BR-03",
+        "NFR-02"
+      ],
+      "title": "Admin-configured capacity is authoritative ceiling under concurrent registrations",
+      "preconditions": [
+        "Event with configured capacity 2, RegistrationOpen",
+        "Five or more distinct participant JWTs with no prior registration",
+        "Each POST uses a unique Idempotency-Key header"
+      ],
+      "steps": [
+        "Fire parallel POST /api/v1/events/{eventId}/registrations while capacity is fixed at configured value 2",
+        "Count Registered responses and GET /api/v1/events/{eventId}/registrations?state=Registered with organizer token"
+      ],
+      "expected": "Under concurrent load Registered count never exceeds the admin-configured capacity 2; exactly 2 HTTP 200 Registered responses; remaining are Waitlisted or rejected per policy; configured maximum is authoritative for NFR-02 consistency",
+      "edgeCase": false
+    }
+  ]
+}

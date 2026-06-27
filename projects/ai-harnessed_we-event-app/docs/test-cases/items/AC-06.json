@@ -1,0 +1,480 @@
+{
+  "productItemId": "AC-06",
+  "version": 2,
+  "docFingerprint": "sha256:c08ad0039562ef88268aca8eda534df09d841c6763890b0568ed11fbf5e0e3fb",
+  "generatedAt": "2026-06-26T16:17:17Z",
+  "cases": [
+    {
+      "id": "TC-AC-06-001",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": [
+        "AC-06",
+        "BR-10"
+      ],
+      "title": "Out-of-window check-in rejected with code per testing-plan §3",
+      "preconditions": [
+        "Event is InProgress with configured check-in window not containing fixed clock now",
+        "Participant has registration in Registered state with no prior check-in",
+        "Authenticated staff actor with check-in capability for the event"
+      ],
+      "steps": [
+        "Set fixed clock to a time outside checkinOpenAt..checkinCloseAt",
+        "Invoke checkinService.staffCheckin(eventId, { registrationId }, actorContext)",
+        "Inspect thrown error code and database state"
+      ],
+      "expected": "Testing-plan §3 row satisfied: out-of-window check-in is rejected with stable error code CHECKIN_WINDOW_CLOSED; no CheckinRecord persisted; registration remains Registered",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-06-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": [
+        "AC-06",
+        "FR-15",
+        "BR-10"
+      ],
+      "title": "Staff check-in before check-in window opens is rejected at module boundary",
+      "preconditions": [
+        "Event is InProgress with configured checkinOpenAt in the future relative to fixed clock now",
+        "Participant has registration in Registered state with no prior check-in",
+        "Authenticated OrganizerStaff or OrganizerAdmin with check-in capability"
+      ],
+      "steps": [
+        "Set fixed clock to a time strictly before checkinOpenAt",
+        "Invoke checkinService.staffCheckin(eventId, { registrationId }, actorContext) against real Postgres",
+        "Query checkin_records and registration state for the participant"
+      ],
+      "expected": "Request fails with CHECKIN_WINDOW_CLOSED; no CheckinRecord persisted; registration remains Registered",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-06-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": [
+        "AC-06",
+        "FR-15",
+        "BR-10"
+      ],
+      "title": "Staff check-in after check-in window closes is rejected at module boundary",
+      "preconditions": [
+        "Event is InProgress or Completed with checkinCloseAt in the past relative to fixed clock now",
+        "Participant has registration in Registered state with no prior check-in",
+        "Authenticated staff actor with check-in capability"
+      ],
+      "steps": [
+        "Set fixed clock to a time strictly after checkinCloseAt",
+        "Invoke checkinService.staffCheckin(eventId, { registrationId }, actorContext) against real Postgres",
+        "Verify database state for check-in and registration"
+      ],
+      "expected": "Request fails with CHECKIN_WINDOW_CLOSED; no CheckinRecord created; registration state unchanged (Registered)",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-06-004",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": [
+        "AC-06",
+        "BR-10"
+      ],
+      "title": "Out-of-window check-in attempt preserves Registered state without transition",
+      "preconditions": [
+        "Registration in Registered state before check-in attempt",
+        "Fixed clock now outside checkinOpenAt..checkinCloseAt",
+        "No prior valid check-in on the registration"
+      ],
+      "steps": [
+        "Record beforeState as Registered from registration repository",
+        "Submit out-of-window check-in via checkinService",
+        "Read afterState from registration repository and count CheckinRecord rows"
+      ],
+      "expected": "beforeState Registered, afterState Registered per state machine invalid-transition policy; validCheckin guard fails on window; no CheckedIn transition occurs",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-06-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "AC-06",
+        "FR-13",
+        "BR-10"
+      ],
+      "title": "POST /events/{eventId}/checkins returns HTTP 422 with CHECKIN_WINDOW_CLOSED when window not open",
+      "preconditions": [
+        "E2E fixture event InProgress with check-in window not containing current (or simulated) time",
+        "Registered participant with valid registrationId",
+        "Staff or admin JWT with scope for the event",
+        "Fresh Idempotency-Key header value"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/checkins with body { registrationId } while outside the configured window",
+        "Parse error envelope from response body"
+      ],
+      "expected": "HTTP 422 with error.code CHECKIN_WINDOW_CLOSED and user-safe message per error contract; no successful check-in payload returned",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-06-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "AC-06",
+        "FR-14",
+        "FR-15",
+        "BR-10"
+      ],
+      "title": "POST /events/{eventId}/self-checkin returns HTTP 422 with CHECKIN_WINDOW_CLOSED when outside window",
+      "preconditions": [
+        "Event rule config enables participant self check-in",
+        "Event InProgress but current time is outside checkinOpenAt..checkinCloseAt",
+        "Authenticated participant JWT for a Registered registration with no prior check-in"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/self-checkin with participant Authorization bearer token",
+        "Inspect response status, error.code, and registration-status endpoint"
+      ],
+      "expected": "HTTP 422 with error.code CHECKIN_WINDOW_CLOSED; registration remains Registered; no checkinAt returned",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-06-007",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": [
+        "AC-06",
+        "FR-15",
+        "BR-10"
+      ],
+      "title": "Flow A lifecycle blocks check-in step when outside configured window",
+      "preconditions": [
+        "E2E Flow A fixture: event progressed through publish, open-registration, and participant Registered",
+        "Event started (InProgress) but fixed clock is outside check-in window",
+        "Participant or staff token from prior registration step"
+      ],
+      "steps": [
+        "Execute Flow A check-in step: POST /api/v1/events/{eventId}/self-checkin or staff checkins while window is closed",
+        "Attempt to proceed to feedback step"
+      ],
+      "expected": "Check-in step fails with CHECKIN_WINDOW_CLOSED; registration remains Registered; subsequent feedback step cannot proceed without valid check-in",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-06-008",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": [
+        "AC-06",
+        "FR-13"
+      ],
+      "title": "Participant denied staff check-in endpoint even when outside window",
+      "preconditions": [
+        "Event InProgress with check-in window closed (now outside bounds)",
+        "Registered participant with valid registrationId",
+        "Authenticated JWT for participant only (no staff check-in capability)"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/checkins with participant JWT and body { registrationId } for own registration"
+      ],
+      "expected": "HTTP 403 unauthorized per roles matrix; insufficient check-in capability; no CheckinRecord created regardless of window state",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-06-009",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": [
+        "AC-06"
+      ],
+      "title": "OrganizerStaff denied check-in on event outside assigned scope when window closed",
+      "preconditions": [
+        "Event InProgress with check-in window closed but event not assigned to staff actor",
+        "Registered participant on that event",
+        "Authenticated OrganizerStaff JWT without scope for eventId"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/checkins with staff JWT and valid registrationId while outside window"
+      ],
+      "expected": "HTTP 403 or 404 per scope policy before or instead of window success; no CheckinRecord persisted; registration state unchanged",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-06-010",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": [
+        "AC-06",
+        "FR-14",
+        "BR-10"
+      ],
+      "title": "Participant self check-in UI shows window-closed feedback when outside window",
+      "preconditions": [
+        "Event with self check-in enabled",
+        "Current time outside configured check-in window",
+        "Participant logged in with Registered status for the event"
+      ],
+      "steps": [
+        "Navigate to /events/{eventId}/check-in for the registered event",
+        "Attempt check-in action or observe disabled state and messaging",
+        "Confirm no success timestamp is displayed"
+      ],
+      "expected": "UI communicates that check-in is unavailable (window closed or not yet open) with actionable messaging; participant remains not checked in",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-06-011",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": [
+        "AC-06",
+        "FR-13",
+        "BR-10"
+      ],
+      "title": "Organizer staff check-in console blocks action when window is closed",
+      "preconditions": [
+        "OrganizerStaff logged in with assigned event scope",
+        "Event InProgress but check-in window closed",
+        "Target participant in Registered state listed in console"
+      ],
+      "steps": [
+        "Open organizer check-in operations console at /organizer/events/{eventId}/check-in",
+        "Attempt staff check-in for a registered participant",
+        "Observe error or disabled control feedback"
+      ],
+      "expected": "Console prevents successful check-in and surfaces window-closed policy to staff; participant row remains unchecked-in",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-06-012",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": [
+        "AC-06",
+        "BR-10"
+      ],
+      "title": "Check-in at checkinCloseAt boundary is rejected per exclusive close boundary",
+      "preconditions": [
+        "Event configured with known checkinOpenAt and checkinCloseAt",
+        "Fixed clock set exactly to checkinCloseAt (now >= checkinOpenAt and now < checkinCloseAt is false)",
+        "Registered participant with no prior check-in"
+      ],
+      "steps": [
+        "Submit staff or self check-in at the close boundary instant",
+        "Query CheckinRecord and registration state"
+      ],
+      "expected": "Check-in rejected with CHECKIN_WINDOW_CLOSED; exclusive close boundary treats checkinCloseAt as out-of-window (valid window is checkinOpenAt <= now < checkinCloseAt); registration stays Registered",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-06-013",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": [
+        "AC-06",
+        "FR-15",
+        "BR-10"
+      ],
+      "title": "Check-in window validator rejects time before checkinOpenAt",
+      "preconditions": [
+        "Configured checkinOpenAt and checkinCloseAt with openAt < closeAt",
+        "Fixed clock now set to a time strictly before checkinOpenAt"
+      ],
+      "steps": [
+        "Call assertCheckinWindowOpen (or equivalent isWithinCheckinWindow) with event config and now before open"
+      ],
+      "expected": "Validator throws or returns failure with CHECKIN_WINDOW_CLOSED; check-in processing is blocked per BR-10",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-06-014",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": [
+        "AC-06",
+        "FR-15",
+        "BR-10"
+      ],
+      "title": "Check-in window validator rejects time after checkinCloseAt",
+      "preconditions": [
+        "Configured checkinOpenAt and checkinCloseAt",
+        "Fixed clock now set to a time strictly after checkinCloseAt"
+      ],
+      "steps": [
+        "Call check-in window validator with now after close boundary"
+      ],
+      "expected": "Validator fails with CHECKIN_WINDOW_CLOSED, enforcing configured window rule for late check-in attempts",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-06-015",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": [
+        "AC-06",
+        "BR-10",
+        "BR-12"
+      ],
+      "title": "Out-of-window rejection preserves Registered state for later attendance reconciliation",
+      "preconditions": [
+        "Event InProgress with closed check-in window (now after checkinCloseAt)",
+        "Registered participant never checked in",
+        "Event completion workflow available in test harness"
+      ],
+      "steps": [
+        "Attempt and fail check-in outside window",
+        "Complete event and run attendance finalization",
+        "Inspect registration terminal state"
+      ],
+      "expected": "Failed check-in leaves no valid CheckinRecord; after event completion participant without valid check-in is marked Absent per BR-12, not Attended",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-06-016",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P1",
+      "traceability": [
+        "AC-06",
+        "BR-10"
+      ],
+      "title": "Concurrent out-of-window check-in requests all fail without creating records",
+      "preconditions": [
+        "Registered participant with no prior check-in",
+        "Check-in window closed (now outside bounds)",
+        "Two or more parallel check-in requests for the same registrationId"
+      ],
+      "steps": [
+        "Fire concurrent staffCheckin (or API POST) calls while window is closed",
+        "Count checkin_records rows and inspect registration state after all requests settle"
+      ],
+      "expected": "All requests fail with CHECKIN_WINDOW_CLOSED; zero CheckinRecord rows created; registration remains Registered",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-06-017",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": [
+        "AC-06",
+        "FR-15"
+      ],
+      "title": "Out-of-window check-in on non-Registered registration still rejected before state checks pass",
+      "preconditions": [
+        "Event with check-in window currently open initially",
+        "Registration in Waitlisted or CancelledByUser state",
+        "Valid authenticated actor attempting check-in"
+      ],
+      "steps": [
+        "Advance clock to outside check-in window",
+        "POST /api/v1/events/{eventId}/checkins for the ineligible registrationId"
+      ],
+      "expected": "HTTP 422 with CHECKIN_WINDOW_CLOSED when window validation runs; no CheckinRecord regardless of registration state eligibility",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-06-018",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P1",
+      "traceability": [
+        "AC-06",
+        "BR-10",
+        "NFR-13",
+        "NFR-15"
+      ],
+      "title": "CHECKIN_WINDOW_CLOSED error includes window bounds in details for user action",
+      "preconditions": [
+        "Event with known checkinOpenAt and checkinCloseAt",
+        "Out-of-window check-in attempt via API"
+      ],
+      "steps": [
+        "POST check-in endpoint outside window",
+        "Inspect error envelope fields in response body"
+      ],
+      "expected": "HTTP 422 with error.code CHECKIN_WINDOW_CLOSED, user-safe message, details.checkinOpenAt and details.checkinCloseAt ISO timestamps, non-empty requestId, and timestamp per error-handling §3 standard envelope",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-06-019",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": [
+        "AC-06",
+        "BR-10",
+        "NFR-02"
+      ],
+      "title": "Failed out-of-window check-in does not partially write CheckinRecord or transition state",
+      "preconditions": [
+        "Database transaction boundary for check-in module (validate window before persist)",
+        "Registered participant, window closed, no prior check-in"
+      ],
+      "steps": [
+        "Attempt out-of-window check-in that fails at window validation",
+        "Query checkin_records and registration in same database session"
+      ],
+      "expected": "No orphaned CheckinRecord and no registration state change; transaction rolled back preserving invariants",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-06-020",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P2",
+      "traceability": [
+        "AC-06",
+        "BR-10"
+      ],
+      "title": "Idempotent retry after window-closed failure does not auto-succeed when window still closed",
+      "preconditions": [
+        "Registered participant, check-in window closed",
+        "Fixed Idempotency-Key header value for check-in write endpoint"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/checkins with Idempotency-Key K; receive CHECKIN_WINDOW_CLOSED failure",
+        "Repeat POST with same Idempotency-Key K while window remains closed"
+      ],
+      "expected": "Both responses fail with CHECKIN_WINDOW_CLOSED; no CheckinRecord created; time-window policy requires user action rather than blind retry success",
+      "edgeCase": true
+    }
+  ]
+}

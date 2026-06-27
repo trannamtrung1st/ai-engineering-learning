@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Arena Duel FPS</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <main class="layout">
+      <header class="header">
+        <h1>Arena Duel FPS</h1>
+        <p>WASD move, mouse aims left/right + up/down (click to lock), Space shoots.</p>
+      </header>
+
+      <section class="game-wrap">
+        <canvas id="gameCanvas" width="960" height="540" aria-label="3D arena game view"></canvas>
+        <div id="overlay" class="overlay"></div>
+        <section class="hud-panel" aria-label="Game HUD">
+          <div class="bar-row">
+            <span class="label">Player</span>
+            <div class="bar-track"><div id="playerHpBar" class="bar-fill player"></div></div>
+            <span id="playerHp">100</span>
+          </div>
+          <div class="bar-row">
+            <span class="label">Enemy</span>
+            <div class="bar-track"><div id="enemyHpBar" class="bar-fill enemy"></div></div>
+            <span id="enemyHp">100</span>
+          </div>
+          <div class="stats-row">
+            <span>Shots: <span id="shotsCount">0</span></span>
+            <span>Hits: <span id="hitsCount">0</span></span>
+            <span>CD: <span id="cooldownText">0.00s</span></span>
+          </div>
+        </section>
+      </section>
+
+      <section class="hud">
+        <div id="statusText">Find and defeat the bot.</div>
+      </section>
+    </main>
+
+    <script src="./game.js"></script>
+  </body>
+</html>

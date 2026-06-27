@@ -1,0 +1,513 @@
+{
+  "productItemId": "FR-26",
+  "version": 4,
+  "docFingerprint": "sha256:2671fa81c2f3b979341bed7f23df01d8c48eb829f62b5e0f85a501d6c63e4e0a",
+  "generatedAt": "2026-06-26T17:30:55Z",
+  "cases": [
+    {
+      "id": "TC-FR-26-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "FR-26",
+        "FR-10"
+      ],
+      "title": "Participant reads own registration status for an event",
+      "preconditions": [
+        "Published event in RegistrationOpen or later state",
+        "Participant A registered for the event",
+        "Valid Participant A JWT with sub matching registration participantId"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/registration-status with Participant A Authorization bearer",
+        "Inspect response registrationId and participantId fields"
+      ],
+      "expected": "HTTP 200 with registration snapshot for Participant A only; participantId in response matches JWT sub; satisfies FR-26 own registration data access",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-26-002",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "pagination",
+      "priority": "P0",
+      "traceability": [
+        "FR-26",
+        "FR-29",
+        "AC-16"
+      ],
+      "title": "GET /me/registrations returns only the authenticated actor registrations",
+      "preconditions": [
+        "Participant A registered for at least two events",
+        "Participant B registered for a different event not shared with A",
+        "Valid Participant A JWT"
+      ],
+      "steps": [
+        "GET /api/v1/me/registrations?page=1&pageSize=20 with Participant A Authorization bearer",
+        "Verify every item registrationId belongs to Participant A"
+      ],
+      "expected": "HTTP 200 paginated envelope; items contain only Participant A registrations across events; no Participant B rows; AC-16 view own registrations flow supported",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-26-003",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "FR-26",
+        "FR-05"
+      ],
+      "title": "Event registration binds to JWT subject not caller-supplied participantId",
+      "preconditions": [
+        "Published event with available capacity",
+        "Valid Participant A JWT",
+        "Optional participantId field in request body set to a different user UUID"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/registrations with Participant A Authorization bearer and body containing foreign participantId if supported",
+        "Read returned registration participantId"
+      ],
+      "expected": "HTTP 200; created registration participantId equals JWT sub (Participant A); foreign participantId ignored or rejected; participant operates only on own registration data per API register contract",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-26-004",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "FR-26",
+        "FR-11"
+      ],
+      "title": "Participant successfully cancels own registration before deadline",
+      "preconditions": [
+        "Participant A Registered for event before CancellationDeadline",
+        "Valid Participant A JWT",
+        "Fresh Idempotency-Key header"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/registrations/{ownRegistrationId}/cancel with Participant A Authorization bearer",
+        "GET registration-status for Participant A"
+      ],
+      "expected": "HTTP 200; registration transitions to CancelledByUser; only own registration affected; Cancel own registration capability per permission matrix",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-26-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P1",
+      "traceability": [
+        "FR-26",
+        "AC-08"
+      ],
+      "title": "Participant submits feedback on own attended registration",
+      "preconditions": [
+        "Completed event with active feedback window",
+        "Participant A in Attended state with own registrationId",
+        "Valid Participant A JWT"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/feedback with Participant A token and own registrationId in body",
+        "Verify feedback persisted for that registration"
+      ],
+      "expected": "HTTP 200 with feedbackId and submittedAt; feedback linked to Participant A registration only; Submit feedback own registration only per permission matrix",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-26-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P1",
+      "traceability": [
+        "FR-26",
+        "FR-14"
+      ],
+      "title": "Participant self-check-in succeeds on own registration when enabled",
+      "preconditions": [
+        "Event InProgress with self-check-in enabled and active check-in window",
+        "Participant A Registered with no prior check-in",
+        "Valid Participant A JWT"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/self-checkin with Participant A Authorization bearer",
+        "GET registration-status for Participant A"
+      ],
+      "expected": "HTTP 200; check-in recorded for Participant A registration only; registration moves to CheckedIn; self-check-in scoped to current actor per permission matrix",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-26-007",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": [
+        "FR-26",
+        "FR-20a",
+        "AC-09"
+      ],
+      "title": "GET eligibility/me returns only current actor eligibility",
+      "preconditions": [
+        "Completed event with evaluated eligibility for multiple participants",
+        "Participant A authenticated with known eligibility outcome"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/eligibility/me with Participant A Authorization bearer",
+        "Compare result to organizer eligibility list entry for same participantId only"
+      ],
+      "expected": "HTTP 200 with eligibility snapshot for Participant A; participantId matches JWT sub; no other participant eligibility data exposed",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-26-008",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": [
+        "FR-26",
+        "NFR-08"
+      ],
+      "title": "Registration scope check runs before domain mutation on participant commands",
+      "preconditions": [
+        "Protected participant command handler wired with authorization decision pattern (authenticate, role, scope, guard, execute)",
+        "Participant B JWT attempting mutation on Participant A registrationId"
+      ],
+      "steps": [
+        "Invoke cancel or feedback submit with Participant B token targeting A registrationId",
+        "Confirm handler short-circuits at scope validation (authorization decision pattern step 3)"
+      ],
+      "expected": "HTTP 403 or 404 returned before state-transition validators or domain transaction; no registration mutation; satisfies NFR-08 authorization by role and event scope at decision pattern step 3",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-26-009",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": [
+        "FR-26",
+        "NFR-08"
+      ],
+      "title": "Cross-participant registration mutation classified as P0 unauthorized critical update",
+      "preconditions": [
+        "Two participants A and B registered for same event",
+        "Valid Participant B JWT",
+        "Participant A registration in Registered state"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/registrations/{registrationIdOfA}/cancel with Participant B Authorization bearer",
+        "Verify Participant A registration state unchanged"
+      ],
+      "expected": "HTTP 403 or 404; Participant A registration remains Registered; classified P0 defect if cancel succeeded per testing plan defect severity model unauthorized critical update",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-26-010",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": [
+        "FR-26",
+        "NFR-08",
+        "NFR-13"
+      ],
+      "title": "Out-of-scope registration denial uses typed error without leaking other participant data",
+      "preconditions": [
+        "Participant B JWT",
+        "Known registrationId belonging to Participant A"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/registrations/{registrationIdOfA}/cancel with Participant B token",
+        "Parse JSON error body"
+      ],
+      "expected": "HTTP 403 or 404 with error.code FORBIDDEN or not-found equivalent, user-safe message, and requestId; response does not include Participant A PII or registration details; immediate fail feedback per NFR-13",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-26-013",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": [
+        "FR-26",
+        "FR-11"
+      ],
+      "title": "Participant cannot cancel another participant registration",
+      "preconditions": [
+        "Participant A Registered for event",
+        "Participant B authenticated with valid JWT",
+        "Participant B does not own registrationId of A"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/registrations/{registrationIdOfA}/cancel using Participant B Authorization bearer"
+      ],
+      "expected": "HTTP 403 or 404; Participant A registration state unchanged Registered; FR-26 own-data scope prevents cross-participant cancellation",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-26-014",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": [
+        "FR-26",
+        "AC-08"
+      ],
+      "title": "Participant cannot submit feedback for another participant registration",
+      "preconditions": [
+        "Completed event with two Attended participants A and B",
+        "Active feedback window",
+        "Authenticated as participant A"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/feedback with Participant A token and registrationId belonging to participant B"
+      ],
+      "expected": "HTTP 403 unauthorized per AC-08f; no feedback row created for B; FR-26 own-registration scope enforced",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-26-015",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": [
+        "FR-26",
+        "FR-14"
+      ],
+      "title": "Participant cannot self-check-in using another participant registration context",
+      "preconditions": [
+        "Event with self-check-in enabled and active window",
+        "Participant A Registered; Participant B also Registered",
+        "Participant B JWT"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/self-checkin with Participant B token while attempting to target or infer Participant A registration if body allows registrationId"
+      ],
+      "expected": "Only Participant B own registration checked in or request rejected if spoofing attempted; Participant A registration remains Registered without check-in; FR-26 own-data scope on check-in records",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-26-016",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": [
+        "FR-26",
+        "FR-05"
+      ],
+      "title": "Register request with mismatched participantId does not create registration for another user",
+      "preconditions": [
+        "Published event with available capacity",
+        "Participant A JWT",
+        "Request body participantId set to Participant C UUID (not A)"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/registrations with Participant A token and foreign participantId",
+        "Query registrations for Participant C"
+      ],
+      "expected": "Registration created for Participant A only or request rejected with INVALID_INPUT; no registration row created under Participant C identity; participantId optional-if-derived-from-token per API contract",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-26-017",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": [
+        "FR-26",
+        "FR-30",
+        "FR-25"
+      ],
+      "title": "Participant denied organizer operational registrations list for event",
+      "preconditions": [
+        "Event with multiple participant registrations",
+        "Valid Participant JWT"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/registrations?page=1&pageSize=20 with Participant Authorization bearer"
+      ],
+      "expected": "HTTP 403 FORBIDDEN; no cross-participant operational registration data returned; participant scope limited to own records not organizer paginated list",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-26-018",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P1",
+      "traceability": [
+        "FR-26",
+        "FR-30"
+      ],
+      "title": "Participant denied organizer attendance and waitlist operational lists",
+      "preconditions": [
+        "Event with waitlist entries and attendance records including other participants",
+        "Valid Participant JWT"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/waitlist with Participant token",
+        "GET /api/v1/events/{eventId}/attendance with Participant token"
+      ],
+      "expected": "Both requests return HTTP 403 FORBIDDEN; participant cannot browse other participants operational check-in or waitlist data",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-26-019",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": [
+        "FR-26",
+        "FR-20a",
+        "AC-09"
+      ],
+      "title": "Participant cannot retrieve another participant eligibility via scoped endpoint",
+      "preconditions": [
+        "Completed event with eligibility evaluated for participants A and B",
+        "Authenticated as participant A"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/eligibility/me as participant A",
+        "Verify service enforces actor.sub and does not accept foreign participantId parameter"
+      ],
+      "expected": "Returns only participant A eligibility; no cross-participant data exposure; actor scope enforced per permission matrix Participant can only access own eligibility records",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-26-020",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": [
+        "FR-26",
+        "AC-16",
+        "FR-29"
+      ],
+      "title": "Participant my registrations UI shows only signed-in user registrations",
+      "preconditions": [
+        "Web app running with authenticated Participant session",
+        "Seed data includes registrations for current user and at least one other participant"
+      ],
+      "steps": [
+        "Navigate to My Registrations page after login",
+        "Inspect listed event rows and registration states"
+      ],
+      "expected": "UI lists only registrations belonging to signed-in participant; no other participant names or registration identifiers visible; AC-16 signup login view own registrations end-to-end satisfied",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-26-021",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": [
+        "FR-26",
+        "AC-08",
+        "BR-15"
+      ],
+      "title": "Dev sub alias participant-1 submits feedback on own Attended registration with registrationId in body",
+      "preconditions": [
+        "Completed event with active feedback window",
+        "Participant registered and Attended under resolveActorId(participant-1)",
+        "Dev JWT sub participant-1 with Participant role",
+        "Request body includes registrationId for that Attended row"
+      ],
+      "steps": [
+        "Invoke feedbackService.submit(eventId, participant-1, { registrationId, answers: { overallRating: 4 } }, participantContext)",
+        "Query persisted feedback row for the registration"
+      ],
+      "expected": "Submission succeeds with feedbackId and submittedAt; not rejected with FORBIDDEN or message about own registration; ownership check uses actorIdsMatch (alias-aware), not strict string compare on participantId",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-26-022",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "FR-26",
+        "FR-19"
+      ],
+      "title": "POST feedback with dev token sub alias and own registrationId returns HTTP 200",
+      "preconditions": [
+        "Completed event with active feedback window",
+        "Attended registration for dev sub participant-1 (stored UUID participant_id)",
+        "Dev JWT issued via POST /dev/token with sub participant-1 when DEV_AUTH_ENABLED=true",
+        "Request body { registrationId: ownAttendedRegistrationId, answers: { overallRating: 5 } }"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/feedback with dev participant-1 Authorization bearer and own registrationId",
+        "Parse response status and body"
+      ],
+      "expected": "HTTP 200 with feedbackId and submittedAt; response must not be HTTP 403 with ownership message when registrationId belongs to the authenticated participant; FR-26 own-registration scope satisfied for dev auth aliases",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-26-023",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": [
+        "FR-26",
+        "AC-16",
+        "FR-33"
+      ],
+      "title": "Signup login view own registrations end-to-end enforces participant scope",
+      "preconditions": [
+        "No existing account for test email",
+        "Published event with open registration",
+        "API and web app available"
+      ],
+      "steps": [
+        "POST /api/v1/auth/register then POST /api/v1/auth/login for new participant",
+        "POST /api/v1/events/{eventId}/registrations with issued JWT",
+        "GET /api/v1/me/registrations with same JWT"
+      ],
+      "expected": "Registration created under authenticated user only; my registrations list contains exactly that event registration for the signed-in participant; AC-16 identity-to-own-data flow passes with FR-26 scope invariant",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-26-024",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": [
+        "FR-26",
+        "FR-21",
+        "AC-10"
+      ],
+      "title": "Participant denied organizer eligibility list for event",
+      "preconditions": [
+        "Completed event with evaluated eligibility for multiple participants",
+        "Valid Participant JWT"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/eligibility?page=1&pageSize=20 with Participant Authorization bearer"
+      ],
+      "expected": "HTTP 403 FORBIDDEN per AC-10e; no cross-participant eligibility rows returned; participant scoped to GET /eligibility/me for own registration only per permission matrix §3",
+      "edgeCase": true
+    }
+  ]
+}

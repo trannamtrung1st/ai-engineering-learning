@@ -1,0 +1,542 @@
+{
+  "productItemId": "FR-27",
+  "version": 1,
+  "docFingerprint": "sha256:2671fa81c2f3b979341bed7f23df01d8c48eb829f62b5e0f85a501d6c63e4e0a",
+  "generatedAt": "2026-06-26T17:33:00Z",
+  "cases": [
+    {
+      "id": "TC-FR-27-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "FR-27",
+        "FR-13",
+        "FR-25"
+      ],
+      "title": "OrganizerStaff performs check-in on assigned event",
+      "preconditions": [
+        "Event InProgress with active check-in window and Registered participant",
+        "OrganizerStaff JWT with assignedEventIds including eventId",
+        "Fresh Idempotency-Key header value"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/checkins with staff Authorization bearer and target registrationId",
+        "Verify check-in persisted for the registration"
+      ],
+      "expected": "HTTP 200; check-in recorded with timestamp; staff operates within assigned event scope per FR-27 and Check in participant Yes (assigned events) per permission matrix",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-27-002",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "pagination",
+      "priority": "P0",
+      "traceability": [
+        "FR-27",
+        "FR-30",
+        "FR-31"
+      ],
+      "title": "OrganizerStaff views paginated registrations list on assigned event",
+      "preconditions": [
+        "Event with multiple participant registrations exceeding one page",
+        "OrganizerStaff JWT with assignedEventIds including eventId"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/registrations?page=1&pageSize=20 with staff Authorization bearer",
+        "Verify paginated envelope contains items, page, pageSize, total, totalPages"
+      ],
+      "expected": "HTTP 200 with paginated envelope; items sorted by updatedAt descending per API design default; operational registrations list returned for assigned event only; total reflects full row count before paging per FR-30 and FR-31",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-27-003",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P1",
+      "traceability": [
+        "FR-27",
+        "FR-30"
+      ],
+      "title": "OrganizerStaff views waitlist and attendance lists on assigned event",
+      "preconditions": [
+        "Event at capacity with waitlist entries and at least one check-in record",
+        "OrganizerStaff JWT assigned to eventId"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/waitlist?page=1&pageSize=20 with staff token",
+        "GET /api/v1/events/{eventId}/attendance?page=1&pageSize=20 with staff token"
+      ],
+      "expected": "Both requests return HTTP 200 paginated envelopes; waitlist items ordered by position ascending and attendance by checkinAt descending per API design defaults; staff can read operational waitlist and attendance data within assigned event scope",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-27-004",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P1",
+      "traceability": [
+        "FR-27",
+        "FR-22"
+      ],
+      "title": "OrganizerStaff views event dashboard on assigned event",
+      "preconditions": [
+        "Published event with operational activity (registrations, check-ins)",
+        "OrganizerStaff JWT with assignedEventIds including eventId"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/dashboard with staff Authorization bearer",
+        "Inspect summary fields for registrations and check-ins"
+      ],
+      "expected": "HTTP 200 with event overview metrics; staff can monitor assigned event operations within authorized scope",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-27-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P1",
+      "traceability": [
+        "FR-27",
+        "FR-23",
+        "AC-12"
+      ],
+      "title": "OrganizerStaff retrieves status history on assigned event per testing-plan §3",
+      "preconditions": [
+        "Event with at least one registration status transition",
+        "OrganizerStaff JWT assigned to the event"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/status-history?page=1&pageSize=10 with staff Authorization bearer token",
+        "Verify transitions are traceable in returned items"
+      ],
+      "expected": "HTTP 200 with paginated status history items; testing-plan §3 Status history retrieval row satisfied within assigned event scope; staff traceability read permitted per limited audit read rules",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-27-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P1",
+      "traceability": [
+        "FR-27",
+        "FR-21",
+        "AC-10"
+      ],
+      "title": "OrganizerStaff views eligibility list on assigned event",
+      "preconditions": [
+        "Completed event with evaluated eligibility for participants",
+        "OrganizerStaff JWT with assignedEventIds including eventId"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/eligibility?page=1&pageSize=20 with staff Authorization bearer"
+      ],
+      "expected": "HTTP 200 with paginated eligibility items including Eligible, NotEligible, and Revoked rows; each row exposes participant identity, registrationId, terminal result, and non-empty reasonCode/reasonText; default sort participantId ascending; staff reads eligibility within assigned event scope per FR-21 and GET /events/{eventId}/eligibility admin/staff-scope contract",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-27-007",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P1",
+      "traceability": [
+        "FR-27",
+        "FR-24"
+      ],
+      "title": "OrganizerStaff exports operational data on assigned event",
+      "preconditions": [
+        "Event with exportable operational data",
+        "OrganizerStaff JWT with assignedEventIds including eventId"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/export with staff Authorization bearer token"
+      ],
+      "expected": "HTTP 200 with export payload; scoped staff export permitted on assigned event per permission matrix Export reports Scoped/optional",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-27-008",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": [
+        "FR-27"
+      ],
+      "title": "assertEventScope permits OrganizerStaff for assigned eventId at module boundary",
+      "preconditions": [
+        "JwtPayload role OrganizerStaff with assignedEventIds containing target eventId",
+        "Valid eventId UUID for an assigned event in seeded Postgres fixture"
+      ],
+      "steps": [
+        "Call assertEventScope(staffActor, assignedEventId) against scope module with real actor context",
+        "Confirm no domain handler is invoked when scope passes"
+      ],
+      "expected": "No exception thrown; scope module returns without error; OrganizerStaff may operate on assigned events per scope constraints section 3",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-27-009",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": [
+        "FR-27",
+        "NFR-08"
+      ],
+      "title": "Event scope check runs before domain mutation on staff commands",
+      "preconditions": [
+        "Protected staff command handler wired with authorization decision pattern (authenticate, role, scope, guard, execute)",
+        "OrganizerStaff JWT scoped to event B attempting mutation on event A",
+        "Real Postgres transaction boundary for check-in handler"
+      ],
+      "steps": [
+        "Invoke staff check-in handler with staff token targeting unassigned eventId registration",
+        "Query checkin_records table for event A registration",
+        "Confirm handler short-circuits at event scope step before state-transition validators"
+      ],
+      "expected": "HTTP 403 or 404 returned before domain transaction commits; no CheckinRecord row inserted; satisfies NFR-08 authorization by role and event scope step 3",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-27-010",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": [
+        "FR-27",
+        "NFR-08"
+      ],
+      "title": "Cross-event staff check-in classified as P0 unauthorized critical update",
+      "preconditions": [
+        "Event A InProgress with Registered participant and active check-in window",
+        "OrganizerStaff JWT assigned only to event B",
+        "Fresh Idempotency-Key header value"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventAId}/checkins with staff token and valid registrationId on event A",
+        "Verify event A registration state unchanged"
+      ],
+      "expected": "HTTP 403 or 404; no CheckinRecord created on event A; classified P0 defect if check-in succeeded per testing plan defect severity model unauthorized critical update",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-27-011",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": [
+        "FR-27",
+        "NFR-08",
+        "NFR-13"
+      ],
+      "title": "Out-of-scope staff denial uses typed error without leaking other event data",
+      "preconditions": [
+        "OrganizerStaff JWT scoped to event B only",
+        "Known event A with operational registrations not assigned to staff actor"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventAId}/registrations with staff Authorization bearer",
+        "Parse JSON error body"
+      ],
+      "expected": "HTTP 403 or 404 with error.code FORBIDDEN or not-found equivalent, user-safe message, and requestId; response does not include event A participant PII or registration details; immediate fail feedback per NFR-13",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-27-012",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": [
+        "FR-27"
+      ],
+      "title": "assertEventScope rejects OrganizerStaff for unassigned event",
+      "preconditions": [
+        "JwtPayload role OrganizerStaff with assignedEventIds not containing target eventId",
+        "Valid eventId UUID for another event"
+      ],
+      "steps": [
+        "Call assertEventScope(staffActor, unassignedEventId)"
+      ],
+      "expected": "ApiError thrown with code FORBIDDEN and statusCode 403; staff limited to assigned events per scope constraints section 3",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-27-013",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": [
+        "FR-27",
+        "FR-30"
+      ],
+      "title": "OrganizerStaff denied registrations list on unassigned event",
+      "preconditions": [
+        "Event with registrations that staff actor is not assigned to",
+        "OrganizerStaff JWT without eventId in assignedEventIds"
+      ],
+      "steps": [
+        "GET /api/v1/events/{unassignedEventId}/registrations?page=1&pageSize=20 with staff Authorization bearer"
+      ],
+      "expected": "HTTP 403 FORBIDDEN or HTTP 404 when entity not in actor scope per API error mapping; no cross-event registration data returned; FR-27 assigned event scope enforced",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-27-014",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": [
+        "FR-27",
+        "FR-13"
+      ],
+      "title": "OrganizerStaff outside assigned event scope cannot check in participant",
+      "preconditions": [
+        "Event A InProgress with active check-in window and Registered participant",
+        "OrganizerStaff JWT assigned only to a different event B, not event A",
+        "Fresh Idempotency-Key header value"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventAId}/checkins with staff JWT scoped to event B only and valid registrationId on event A"
+      ],
+      "expected": "HTTP 403 or 404 per authorization decision pattern; no CheckinRecord created; registration on event A unchanged; scope constraint FR-27 enforced",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-27-015",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": [
+        "FR-27",
+        "FR-22"
+      ],
+      "title": "OrganizerStaff denied dashboard for unassigned event",
+      "preconditions": [
+        "Event with operational dashboard data not assigned to staff actor",
+        "OrganizerStaff JWT scoped to a different event"
+      ],
+      "steps": [
+        "GET /api/v1/events/{unassignedEventId}/dashboard with staff Authorization bearer token"
+      ],
+      "expected": "HTTP 403 or 404 per scope-hiding policy; no cross-event operational metrics leakage",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-27-016",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P1",
+      "traceability": [
+        "FR-27",
+        "FR-24"
+      ],
+      "title": "OrganizerStaff cannot export data for out-of-scope event",
+      "preconditions": [
+        "Event with operational data not assigned to staff actor",
+        "OrganizerStaff JWT scoped to a different event"
+      ],
+      "steps": [
+        "GET /api/v1/events/{unassignedEventId}/export with staff Authorization bearer token"
+      ],
+      "expected": "HTTP 403 or 404 per scope-hiding policy; no cross-event operational data leakage via export",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-27-017",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P1",
+      "traceability": [
+        "FR-27",
+        "FR-23",
+        "AC-12"
+      ],
+      "title": "OrganizerStaff cannot retrieve status history for out-of-scope event",
+      "preconditions": [
+        "Event with status history entries not assigned to staff actor",
+        "OrganizerStaff JWT scoped to a different event"
+      ],
+      "steps": [
+        "GET /api/v1/events/{unassignedEventId}/status-history with staff Authorization bearer token"
+      ],
+      "expected": "HTTP 403 or 404 per scope-hiding policy; status history not exposed outside assigned event scope",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-27-018",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P1",
+      "traceability": [
+        "FR-27",
+        "FR-21"
+      ],
+      "title": "OrganizerStaff cannot view eligibility list for out-of-scope event",
+      "preconditions": [
+        "Completed event with eligibility data not assigned to staff actor",
+        "OrganizerStaff JWT scoped to a different event"
+      ],
+      "steps": [
+        "GET /api/v1/events/{unassignedEventId}/eligibility?page=1&pageSize=20 with staff Authorization bearer"
+      ],
+      "expected": "HTTP 403 out-of-scope or 404 per assertEventScope and FR-21 rejections; no cross-event eligibility participant data leakage",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-27-019",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": [
+        "FR-27",
+        "FR-30"
+      ],
+      "title": "OrganizerStaff with empty assignedEventIds denied all event-scoped operational endpoints",
+      "preconditions": [
+        "Published event with registrations and check-in window",
+        "OrganizerStaff JWT with assignedEventIds empty array"
+      ],
+      "steps": [
+        "GET /api/v1/events?page=1&pageSize=20 with staff token",
+        "GET /api/v1/events/{eventId} with staff token",
+        "GET /api/v1/events/{eventId}/registrations with staff token",
+        "POST /api/v1/events/{eventId}/checkins with staff token and valid registrationId",
+        "GET /api/v1/events/{eventId}/dashboard with staff token"
+      ],
+      "expected": "Each request returns HTTP 403 or 404, or GET /events returns HTTP 200 with empty items when no assignments match; staff with empty assignedEventIds cannot operate on any event; FR-27 boundary enforced for empty assignment set",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-27-020",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P1",
+      "traceability": [
+        "FR-27",
+        "FR-30"
+      ],
+      "title": "OrganizerStaff denied waitlist and attendance lists on unassigned event",
+      "preconditions": [
+        "Event with waitlist entries and attendance records not assigned to staff actor",
+        "OrganizerStaff JWT scoped to a different event"
+      ],
+      "steps": [
+        "GET /api/v1/events/{unassignedEventId}/waitlist with staff token",
+        "GET /api/v1/events/{unassignedEventId}/attendance with staff token"
+      ],
+      "expected": "Both requests return HTTP 403 or 404; staff cannot browse operational waitlist or attendance data outside assigned event scope",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-27-021",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": [
+        "FR-27",
+        "FR-13"
+      ],
+      "title": "OrganizerStaff UI check-in console limited to assigned events only",
+      "preconditions": [
+        "Web app running with role-aware route guards and event scope enforcement",
+        "Browser authenticated as OrganizerStaff with assignedEventIds containing event A only",
+        "Seed data includes event B not assigned to staff actor"
+      ],
+      "steps": [
+        "Navigate to organizer event list or shell",
+        "Attempt to open check-in console for unassigned event B via direct URL",
+        "Open check-in console for assigned event A"
+      ],
+      "expected": "Assigned event A check-in console renders and accepts staff actions; unassigned event B route shows access denied or redirect; UI enforces staff can only operate within assigned event scope per route guards",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-27-022",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": [
+        "FR-27",
+        "FR-30"
+      ],
+      "title": "OrganizerStaff operational list pages only surface assigned events",
+      "preconditions": [
+        "OrganizerStaff assigned to event A but not event B",
+        "Both events have registrations visible to admin",
+        "Browser session authenticated as OrganizerStaff"
+      ],
+      "steps": [
+        "Navigate to organizer staff assigned events list",
+        "Confirm event B is absent from navigable event links",
+        "Open registrations operational table for assigned event A and verify rows render",
+        "Attempt direct navigation to event B registrations URL"
+      ],
+      "expected": "Assigned event A operational pages load with paginated table rows; event B is not listed and direct URL shows access denied or redirect; FR-27 staff event scope enforced in UI journey",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-27-023",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "FR-27",
+        "FR-30"
+      ],
+      "title": "OrganizerStaff GET /events list returns only assigned events",
+      "preconditions": [
+        "Events A and B exist with organizer-visible states",
+        "OrganizerStaff JWT with assignedEventIds containing event A only, not event B"
+      ],
+      "steps": [
+        "GET /api/v1/events?page=1&pageSize=20 with staff Authorization bearer",
+        "Inspect returned items eventId values against assignedEventIds claim"
+      ],
+      "expected": "HTTP 200 with paginated envelope; every returned eventId is in staff assignedEventIds; event B absent; role-filtered GET /events scoped to assigned events per API design §2.0 and FR-27",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-27-024",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": [
+        "FR-27"
+      ],
+      "title": "OrganizerStaff denied event detail for unassigned event",
+      "preconditions": [
+        "Published or RegistrationOpen event B not in staff assignedEventIds",
+        "OrganizerStaff JWT scoped to a different assigned event A"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventBId} with staff Authorization bearer"
+      ],
+      "expected": "HTTP 403 or 404 per scope-hiding policy; event B metadata not exposed outside assigned event scope; FR-27 enforced at single-event read boundary",
+      "edgeCase": true
+    }
+  ]
+}

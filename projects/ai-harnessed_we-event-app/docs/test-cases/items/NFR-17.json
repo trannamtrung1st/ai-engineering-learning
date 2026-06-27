@@ -1,0 +1,334 @@
+{
+  "productItemId": "NFR-17",
+  "version": 1,
+  "docFingerprint": "sha256:ec35d07745935d43ede5bc23381533cb15ad15eb3a8347bf5c6bc75ca315ea0f",
+  "generatedAt": "2026-06-26T18:04:55Z",
+  "cases": [
+    {
+      "id": "TC-NFR-17-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": [
+        "NFR-17",
+        "FR-32",
+        "FR-33",
+        "AC-16"
+      ],
+      "title": "Signup followed by login succeeds using stored adaptive hash verification",
+      "preconditions": [
+        "API server running at /api/v1",
+        "Fresh unique email not yet registered"
+      ],
+      "steps": [
+        "POST /api/v1/auth/register with { email, password, displayName }",
+        "POST /api/v1/auth/login with the same email and password",
+        "GET /api/v1/me with returned login JWT"
+      ],
+      "expected": "Register returns HTTP 200 or 201 with JWT; login returns HTTP 200 with JWT; GET /me returns matching profile; credential verification uses stored hash not plaintext comparison, proving NFR-17 adaptive hashing supports the identity/session flow per AC-16",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-17-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": [
+        "NFR-17",
+        "FR-32"
+      ],
+      "title": "Registration persists non-null password_hash in users table",
+      "preconditions": [
+        "Auth module and users table available",
+        "Database read access to users.password_hash column",
+        "Fresh signup email"
+      ],
+      "steps": [
+        "POST /api/v1/auth/register with known password value",
+        "Query users row for the new account by normalized email"
+      ],
+      "expected": "User row exists with password_hash column populated and not null per database design; plaintext password is not stored in any users column",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-17-003",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": [
+        "NFR-17",
+        "FR-32"
+      ],
+      "title": "Stored password_hash uses bcrypt or argon2 adaptive hash format",
+      "preconditions": [
+        "Fresh participant account created via POST /auth/register",
+        "Database access to users.password_hash"
+      ],
+      "steps": [
+        "Register with a known plaintext password",
+        "Read password_hash from users table",
+        "Validate hash string against bcrypt ($2a$, $2b$, $2y$) or argon2 ($argon2) prefix and expected encoded length"
+      ],
+      "expected": "password_hash matches recognized adaptive hashing algorithm prefix and structure; value is not equal to submitted plaintext; satisfies NFR-17 bcrypt-or-argon2 requirement",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-17-004",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "NFR-17",
+        "FR-32",
+        "FR-33"
+      ],
+      "title": "POST /auth/register and POST /auth/login responses never expose password or passwordHash",
+      "preconditions": [
+        "Fresh email for registration",
+        "Existing account with known credentials for login test"
+      ],
+      "steps": [
+        "POST /api/v1/auth/register and parse full JSON response",
+        "POST /api/v1/auth/login and parse full JSON response",
+        "Search response bodies for keys or values matching password, passwordHash, or stored hash material"
+      ],
+      "expected": "HTTP 200 on both calls; responses contain token and profile only; no password, passwordHash, or credential secret fields per domain model rule that passwordHash is never exposed in API responses",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-17-005",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "NFR-17",
+        "FR-33"
+      ],
+      "title": "GET /me profile serialization excludes password hash from user aggregate",
+      "preconditions": [
+        "Authenticated participant session via login JWT",
+        "User row with password_hash in database"
+      ],
+      "steps": [
+        "GET /api/v1/me with valid bearer token",
+        "Parse JSON response and inspect all keys at root and nested profile object"
+      ],
+      "expected": "HTTP 200; profile payload includes userId, email, displayName, and roles only; password_hash and password fields are absent; sensitive credential material is not leaked on authenticated read",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-17-006",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": [
+        "NFR-17"
+      ],
+      "title": "Seeded persona accounts store adaptive hashes not plaintext passwords",
+      "preconditions": [
+        "Local seed data loaded with OrganizerAdmin, OrganizerStaff, and Participant personas per local development setup",
+        "Database access to users.password_hash for seeded accounts"
+      ],
+      "steps": [
+        "Query password_hash for each seeded credential-based user",
+        "Verify each value matches bcrypt or argon2 prefix and is not a human-readable plaintext password string"
+      ],
+      "expected": "All seeded users comply with NFR-17; no seed script or fixture inserts plaintext passwords into users.password_hash",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-17-007",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": [
+        "NFR-17",
+        "FR-32",
+        "AC-16"
+      ],
+      "title": "Browser signup creates account and signs in without exposing stored hash in UI or network",
+      "preconditions": [
+        "Web app running with dedicated /signup route",
+        "Fresh browser context with no stored JWT",
+        "Fresh unregistered email available",
+        "Browser network inspection enabled"
+      ],
+      "steps": [
+        "Navigate to /signup",
+        "Enter email, password, and display name and submit the form",
+        "Inspect register API response in network tab and rendered DOM after redirect",
+        "Confirm TopBar shows signed-in display name"
+      ],
+      "expected": "Account created with Participant role; user is signed in; register response contains JWT and profile only with no passwordHash or hash material; password field value is not echoed in page source after submit; NFR-17 hashing occurs server-side only",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-17-008",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": [
+        "NFR-17",
+        "FR-33",
+        "AC-16"
+      ],
+      "title": "Browser login with valid credentials succeeds and profile view omits credential secrets",
+      "preconditions": [
+        "Participant account exists via prior signup with known password",
+        "Fresh browser context with no stored JWT"
+      ],
+      "steps": [
+        "Navigate to /login",
+        "Submit valid email and password",
+        "After redirect, open account or profile surface if available",
+        "Inspect login API response in network tab"
+      ],
+      "expected": "Login succeeds; JWT stored client-side; login response has no password or passwordHash fields; UI never displays stored hash or plaintext password from server; adaptive hash verification enables session without credential leakage",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-17-009",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": [
+        "NFR-17",
+        "NFR-08",
+        "FR-25"
+      ],
+      "title": "No role can retrieve password_hash via organizer export or participant APIs",
+      "preconditions": [
+        "OrganizerAdmin JWT for event with participant registrations",
+        "Participant JWT for own account",
+        "Users table contains password_hash values"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/export with OrganizerAdmin bearer token and scan response",
+        "GET /api/v1/events/{eventId}/registrations with OrganizerAdmin bearer token and scan response",
+        "GET /api/v1/me with Participant bearer token and scan response",
+        "GET /api/v1/me/registrations with Participant bearer token and scan response"
+      ],
+      "expected": "All responses return HTTP 200 where authorized but contain no password, passwordHash, or bcrypt/argon2 hash strings; RBAC grants organizer and participant data access per role without exposing credential storage material per NFR-17 and roles-permissions sensitive-data boundaries",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-17-010",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": [
+        "NFR-17",
+        "FR-32"
+      ],
+      "title": "Identical passwords for different users produce distinct password_hash values",
+      "preconditions": [
+        "Two fresh unique emails",
+        "Same plaintext password submitted for both registrations"
+      ],
+      "steps": [
+        "POST /api/v1/auth/register for user A with password P",
+        "POST /api/v1/auth/register for user B with the same password P",
+        "Read password_hash for both user rows"
+      ],
+      "expected": "Both hashes are valid adaptive hashes but not equal to each other or to plaintext P; per-user salting prevents hash reuse attacks",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-17-011",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": [
+        "NFR-17",
+        "FR-33"
+      ],
+      "title": "Login fails with HTTP 401 when password does not match stored hash",
+      "preconditions": [
+        "Existing participant registered with known password"
+      ],
+      "steps": [
+        "POST /api/v1/auth/login with correct email and incorrect password",
+        "Inspect HTTP status and error body"
+      ],
+      "expected": "HTTP 401 with error.code INVALID_CREDENTIALS and user-safe message; no JWT issued; failed attempt does not reveal stored hash; hash verification rejects mismatch without exposing credential material",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-17-012",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": [
+        "NFR-17",
+        "FR-32"
+      ],
+      "title": "Long or complex password values are hashed before persistence",
+      "preconditions": [
+        "Fresh signup email",
+        "Password at or above minimum length with special characters"
+      ],
+      "steps": [
+        "POST /api/v1/auth/register with maximum-allowed-length or complex password",
+        "Read users.password_hash for the new account"
+      ],
+      "expected": "password_hash is adaptive hash string; full plaintext password is not stored in database column; boundary-length input still protected by NFR-17",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-17-013",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": [
+        "NFR-17",
+        "FR-32"
+      ],
+      "title": "Duplicate email registration does not overwrite existing password_hash with new plaintext",
+      "preconditions": [
+        "Existing account registered with email user@example.com and known password_hash in database"
+      ],
+      "steps": [
+        "POST /api/v1/auth/register with same email and different password",
+        "Read password_hash for original user row after rejected request"
+      ],
+      "expected": "HTTP 409 EMAIL_ALREADY_REGISTERED; original password_hash unchanged; no second user row; conflict path does not persist attacker-supplied password in any form",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-17-014",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": [
+        "NFR-17",
+        "FR-33"
+      ],
+      "title": "Browser login with wrong password shows error without leaking stored hash",
+      "preconditions": [
+        "Participant account exists with known password",
+        "Fresh browser context on /login"
+      ],
+      "steps": [
+        "Enter valid email and incorrect password on login form",
+        "Submit and observe inline error or toast",
+        "Inspect login API error response in network tab and page DOM"
+      ],
+      "expected": "Login rejected with HTTP 401 error.code INVALID_CREDENTIALS and user-safe invalid-credentials messaging; no JWT stored; response and DOM contain no password_hash, bcrypt, or argon2 strings; NFR-17 hash material never exposed on failed authentication",
+      "edgeCase": true
+    }
+  ]
+}

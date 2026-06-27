@@ -1,0 +1,599 @@
+{
+  "productItemId": "FR-31",
+  "version": 1,
+  "docFingerprint": "sha256:b0ca474f51982b8e84b8aa043459a5098edb01c33a8ccd58f134a734cb0bdd8b",
+  "generatedAt": "2026-06-26T17:39:30Z",
+  "cases": [
+    {
+      "id": "TC-FR-31-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "FR-31",
+        "AC-13"
+      ],
+      "title": "Every documented paginated list endpoint returns total in response envelope",
+      "preconditions": [
+        "Seeded data covering all eight paginated endpoints: GET /events, GET /events/{eventId}/registrations, waitlist, attendance, eligibility, audit-logs, status-history, and GET /me/registrations",
+        "Valid JWT tokens for participant and organizer actors with required scopes"
+      ],
+      "steps": [
+        "Issue paginated GET requests to each endpoint with page=1 and endpoint default pageSize",
+        "Assert each response body includes items (array), page, pageSize, total (integer), and totalPages"
+      ],
+      "expected": "All eight paginated endpoints return HTTP 200 with the envelope shape from API design section 3 including a present total field; no bare array responses; satisfies FR-31 total count metadata on every paginated list response",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-31-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": [
+        "FR-31",
+        "AC-13"
+      ],
+      "title": "total reflects full matching row count before paging not current page length",
+      "preconditions": [
+        "Event with exactly 25 registrations persisted in Postgres",
+        "Real database test harness with transaction rollback per test",
+        "Authenticated OrganizerAdmin with event scope"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/registrations?page=1&pageSize=20",
+        "GET /api/v1/events/{eventId}/registrations?page=2&pageSize=20",
+        "Compare total to items.length on each page and to direct COUNT in persistence layer"
+      ],
+      "expected": "Page 1 has items.length=20 and total=25; page 2 has items.length=5 and total=25; total equals full matching row count per API design total definition and testing plan paginated list queries integration target",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-31-003",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": [
+        "FR-31",
+        "FR-28",
+        "AC-13"
+      ],
+      "title": "Events list page 2 returns unchanged total metadata per testing-plan §3",
+      "preconditions": [
+        "At least 13 published events visible to the requesting actor (more than default pageSize of 12)",
+        "Authenticated participant or public access per GET /events visibility rules"
+      ],
+      "steps": [
+        "GET /api/v1/events?page=1&pageSize=12&sort=startAt:asc and record total and totalPages",
+        "GET /api/v1/events?page=2&pageSize=12&sort=startAt:asc",
+        "Compare page-2 total to page-1 total"
+      ],
+      "expected": "Page-2 response has total matching page-1 total, totalPages=ceil(total/12), and items are the correct second slice per testing-plan §3 row: Events list page 2 → correct slice + total (AC-13, FR-31)",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-31-004",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "pagination",
+      "priority": "P0",
+      "traceability": [
+        "FR-31",
+        "FR-28",
+        "AC-13"
+      ],
+      "title": "Events list total reflects search and state filter scope before paging",
+      "preconditions": [
+        "Mixed event catalog with searchable names and varied states",
+        "At least 13 RegistrationOpen events matching q=workshop plus additional non-matching events",
+        "Authenticated participant or actor with list visibility"
+      ],
+      "steps": [
+        "GET /api/v1/events?page=1&pageSize=12 and record unfiltered total",
+        "GET /api/v1/events?q=workshop&state=RegistrationOpen&page=1&pageSize=12",
+        "Compare filtered total to unfiltered total and to manually counted matching rows"
+      ],
+      "expected": "Filtered response total equals count of events matching both q and state filters only; total is less than or equal to unfiltered total; totalPages=ceil(filtered total/pageSize); FR-31 total metadata scoped to applied filters",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-31-005",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "pagination",
+      "priority": "P0",
+      "traceability": [
+        "FR-31",
+        "FR-30",
+        "AC-13"
+      ],
+      "title": "Registrations list total reflects optional state filter",
+      "preconditions": [
+        "Event with registrations in Registered, Waitlisted, and Cancelled states",
+        "Authenticated OrganizerAdmin with event scope"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/registrations?page=1&pageSize=20 and record unfiltered total",
+        "GET /api/v1/events/{eventId}/registrations?state=Registered&page=1&pageSize=20",
+        "Count Registered rows in database for the event"
+      ],
+      "expected": "State-filtered total equals count of registrations with state=Registered only; unfiltered total equals all registration rows for the event; satisfies FR-31 total on organizer operational registrations list per API design optional state filter",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-31-006",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": [
+        "FR-31",
+        "FR-29",
+        "AC-13"
+      ],
+      "title": "My registrations total scoped to current actor only",
+      "preconditions": [
+        "Participant A with 3 registrations across events",
+        "Participant B with 5 registrations across events",
+        "Authenticated JWT for Participant A",
+        "Real Postgres test database"
+      ],
+      "steps": [
+        "GET /api/v1/me/registrations?page=1&pageSize=20 as Participant A",
+        "Independently count Participant A registration rows in persistence layer"
+      ],
+      "expected": "HTTP 200 with total=3 matching Participant A rows only; total does not include Participant B registrations; FR-31 total on participant own registrations list per GET /me/registrations contract",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-31-007",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P1",
+      "traceability": [
+        "FR-31",
+        "FR-30",
+        "AC-12"
+      ],
+      "title": "Status history list total reflects all transitions for event scope",
+      "preconditions": [
+        "Event with multiple registration status change records",
+        "Authenticated OrganizerAdmin with event scope"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/status-history?page=1&pageSize=20",
+        "Count status history rows for the event in persistence layer"
+      ],
+      "expected": "Response total equals full status history row count for the event before paging; supports FR-23 traceability and FR-31 total on operational status history list per testing plan status history retrieval scenario",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-31-008",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P1",
+      "traceability": [
+        "FR-31",
+        "AC-13"
+      ],
+      "title": "Audit logs list total equals full matching row count per testing-plan §3",
+      "preconditions": [
+        "Event with multiple audit log entries from critical config changes",
+        "Authenticated OrganizerAdmin with event scope"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/audit-logs?page=1&pageSize=20",
+        "Verify total against persistence row count"
+      ],
+      "expected": "HTTP 200; total equals full matching audit row count before paging; totalPages computed correctly per testing-plan §3 row: Audit logs paginated → ordered + total count (AC-13, FR-31)",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-31-009",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "pagination",
+      "priority": "P1",
+      "traceability": [
+        "FR-31",
+        "FR-21",
+        "AC-10"
+      ],
+      "title": "Eligibility list total reflects optional eligibility filter",
+      "preconditions": [
+        "Completed event with evaluated Eligible and NotEligible participants",
+        "Authenticated OrganizerAdmin with event scope"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/eligibility?page=1&pageSize=20 and record unfiltered total",
+        "GET /api/v1/events/{eventId}/eligibility?eligibility=Eligible&page=1&pageSize=20"
+      ],
+      "expected": "Unfiltered total equals all evaluated eligibility rows; Eligible filter total equals Eligible row count only; FR-31 total metadata respects eligibility filter on organizer eligibility operational list",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-31-010",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "pagination",
+      "priority": "P0",
+      "traceability": [
+        "FR-31",
+        "AC-13"
+      ],
+      "title": "total remains identical across sequential page requests for same query",
+      "preconditions": [
+        "Paginated list endpoint with at least three pages of data at pageSize=10",
+        "Authenticated actor with list access"
+      ],
+      "steps": [
+        "GET page=1, page=2, and page=3 with pageSize=10 on the same endpoint and filters",
+        "Compare total on each response"
+      ],
+      "expected": "total is identical on every page response; only items array differs between pages; enables reliable client pagination controls per FR-31 and AC-13",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-31-011",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "pagination",
+      "priority": "P0",
+      "traceability": [
+        "FR-31",
+        "AC-13"
+      ],
+      "title": "Beyond-last-page request returns unchanged total with empty items",
+      "preconditions": [
+        "Paginated list endpoint with known total row count (e.g. GET /events with total <= 12)",
+        "Valid authentication where required"
+      ],
+      "steps": [
+        "GET list endpoint with page=1 and pageSize=20; record total and totalPages",
+        "GET same endpoint with page=totalPages+1 and same pageSize"
+      ],
+      "expected": "Beyond-last-page response has items: [], page equals requested page, total and totalPages match page-1 metadata; FR-31 total still returned on empty page per API design section 3",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-31-012",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": [
+        "FR-31",
+        "AC-13"
+      ],
+      "title": "Empty matching result set returns total zero with valid envelope",
+      "preconditions": [
+        "Event with no registrations",
+        "Authenticated OrganizerAdmin with event scope"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/registrations?page=1&pageSize=20"
+      ],
+      "expected": "HTTP 200 with items: [], total=0, totalPages=1 (or consistent zero-total convention), page=1, pageSize=20; FR-31 total count present even when no rows match",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-31-013",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "pagination",
+      "priority": "P1",
+      "traceability": [
+        "FR-31",
+        "AC-13"
+      ],
+      "title": "total unchanged when pageSize varies for same filter query",
+      "preconditions": [
+        "Event with 30 registrations",
+        "Authenticated OrganizerAdmin with event scope"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/registrations?page=1&pageSize=10 and record total",
+        "GET /api/v1/events/{eventId}/registrations?page=1&pageSize=20 with same filters",
+        "GET /api/v1/events/{eventId}/registrations?page=1&pageSize=100 with same filters"
+      ],
+      "expected": "total=30 on all three responses; only totalPages and items.length differ; total is independent of pageSize per FR-31 matching-rows-before-paging semantics",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-31-014",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "pagination",
+      "priority": "P1",
+      "traceability": [
+        "FR-31",
+        "FR-30",
+        "AC-13"
+      ],
+      "title": "total increases after new registration added between list requests",
+      "preconditions": [
+        "Event with 10 existing registrations and available capacity",
+        "Authenticated OrganizerAdmin for list queries",
+        "Separate participant available to register"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/registrations?page=1&pageSize=20 and record total",
+        "Participant registers for the event successfully",
+        "GET /api/v1/events/{eventId}/registrations?page=1&pageSize=20 again"
+      ],
+      "expected": "Second response total equals first total plus one; total reflects current matching row count after data mutation; FR-31 total is authoritative for organizer operational list freshness",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-31-015",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": [
+        "FR-31",
+        "AC-13",
+        "NFR-16"
+      ],
+      "title": "Registrations list total accurate when total exceeds pageSize per testing-plan §3",
+      "preconditions": [
+        "Event with 25 registrations (exceeds default pageSize of 20)",
+        "Authenticated OrganizerAdmin with event scope"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/registrations?page=1&pageSize=20",
+        "GET /api/v1/events/{eventId}/registrations?page=2&pageSize=20"
+      ],
+      "expected": "Page 1 items.length=20 with total=25; page 2 items.length=5 with total=25; totalPages=2 per testing-plan §3 row: Registrations list beyond capacity → never returns more than pageSize items (AC-13, NFR-16, FR-31)",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-31-017",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "pagination",
+      "priority": "P1",
+      "traceability": [
+        "FR-31",
+        "NFR-16",
+        "AC-13"
+      ],
+      "title": "Large result set returns accurate total without loading all rows into response body",
+      "preconditions": [
+        "Database seeded with more than 500 rows for a paginated endpoint (e.g. audit-logs or registrations)",
+        "OrganizerAdmin actor with event scope",
+        "Test environment uses deterministic fixtures per testing plan section 7"
+      ],
+      "steps": [
+        "Record start time",
+        "GET paginated list with page=1 and pageSize=20",
+        "Verify response body size and total field against known seeded row count"
+      ],
+      "expected": "HTTP 200 with items.length <= pageSize; total equals full seeded matching row count (>500); response completes within acceptable latency per NFR-16; FR-31 total metadata returned via efficient count query not full row materialization",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-31-018",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": [
+        "FR-31",
+        "FR-22",
+        "AC-13"
+      ],
+      "title": "Event overview registration count aligns with registrations list total metadata",
+      "preconditions": [
+        "Event with known registration count across states",
+        "Authenticated OrganizerAdmin with event scope"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/overview or dashboard aggregate endpoint",
+        "GET /api/v1/events/{eventId}/registrations?page=1&pageSize=20",
+        "Compare overview registration count to list total"
+      ],
+      "expected": "Dashboard or overview registration count equals registrations list total metadata; operational summary and paginated list share authoritative count per FR-22 and FR-31 consistency",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-31-019",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": [
+        "FR-31",
+        "AC-13",
+        "FR-28"
+      ],
+      "title": "Participant event browse page displays server-driven total in pagination range label",
+      "preconditions": [
+        "At least 13 discoverable events seeded (exceeds default pageSize of 12)",
+        "Authenticated participant logged in",
+        "Participant event discovery browse page reachable"
+      ],
+      "steps": [
+        "Navigate to participant event browse list page",
+        "Observe pagination range label or equivalent summary text (e.g. 1–12 of N)",
+        "Navigate to page 2 using pagination controls",
+        "Observe updated range label reflecting second page slice and same total N"
+      ],
+      "expected": "Page 1 displays range label such as 1–12 of N where N matches API total metadata; page 2 displays 13–N of N; UI derives display from server total not client-side full-dataset length per page list participant event discovery and FR-31",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-31-020",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": [
+        "FR-31",
+        "AC-13",
+        "FR-30"
+      ],
+      "title": "Organizer registrations table footer shows total count in range label across pages",
+      "preconditions": [
+        "Event with more than 20 registrations",
+        "OrganizerAdmin logged in with access to event registrations page at /organizer/events/{eventId}/registrations"
+      ],
+      "steps": [
+        "Navigate to organizer event registrations page",
+        "Observe pagination range label in table footer or toolbar (e.g. 1–20 of N)",
+        "Navigate to page 2",
+        "Verify range label updates to 21–N of N with same total N"
+      ],
+      "expected": "Page 1 shows range label such as 1–20 of N; page 2 shows 21–N of N where N matches GET /events/{eventId}/registrations total; table renders only current page rows per page list organizer registration management and FR-31",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-31-021",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": [
+        "FR-31",
+        "FR-30",
+        "AC-13"
+      ],
+      "title": "Participant denied organizer paginated list before total envelope is returned",
+      "preconditions": [
+        "Event with registrations and audit log entries",
+        "Authenticated Participant JWT without organizer operational list permissions per 01-roles-permissions.md"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/audit-logs?page=1&pageSize=20 with Participant Authorization bearer token",
+        "GET /api/v1/events/{eventId}/registrations?page=1&pageSize=20 with Participant Authorization bearer token"
+      ],
+      "expected": "HTTP 403 for each unauthorized organizer-scoped paginated list; RBAC enforced before paginated envelope with total is returned; no partial total metadata leaked on denial",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-31-022",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "FR-31",
+        "FR-29",
+        "AC-13"
+      ],
+      "title": "GET /api/v1/me/registrations returns HTTP 200 with integer total field",
+      "preconditions": [
+        "Participant with at least one registration across events",
+        "Authenticated Participant JWT"
+      ],
+      "steps": [
+        "GET /api/v1/me/registrations?page=1&pageSize=20 with Participant Authorization bearer",
+        "Verify HTTP status code and total field type in response body"
+      ],
+      "expected": "HTTP 200 with items (array), page=1, pageSize=20, total as non-negative integer, and totalPages per API design §3 example; total equals participant-scoped registration row count per FR-31",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-31-023",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": [
+        "FR-31",
+        "AC-13"
+      ],
+      "title": "Invalid pagination parameters return HTTP 400 INVALID_PAGINATION without total envelope",
+      "preconditions": [
+        "Any paginated list endpoint accessible to authenticated actor",
+        "Valid JWT where endpoint requires auth"
+      ],
+      "steps": [
+        "GET with page=0&pageSize=20",
+        "GET with page=1&pageSize=101"
+      ],
+      "expected": "Each invalid request returns HTTP 400 with error.code INVALID_PAGINATION per API design §3; no paginated envelope with total returned for invalid page or pageSize parameters",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-31-024",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "pagination",
+      "priority": "P1",
+      "traceability": [
+        "FR-31",
+        "AC-13"
+      ],
+      "title": "Paginated list API returns totalPages as ceil(total divided by pageSize)",
+      "preconditions": [
+        "Real Postgres test harness with transaction rollback per test",
+        "Paginated list endpoint with seedable matching row counts (e.g. GET /api/v1/events/{eventId}/registrations)",
+        "Authenticated OrganizerAdmin with event scope"
+      ],
+      "steps": [
+        "GET list endpoint with page=1 and pageSize=20 when matching row count is 0; record total and totalPages",
+        "Seed fixture with 25 matching rows; GET page=1 pageSize=20; record total and totalPages",
+        "Seed or use fixture with 40 matching rows; GET page=1 pageSize=20; record total and totalPages"
+      ],
+      "expected": "totalPages=1 when total=0; totalPages=2 when total=25; totalPages=2 when total=40; total echoed unchanged in envelope per API design §3 totalPages formula and FR-31",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-31-025",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "pagination",
+      "priority": "P1",
+      "traceability": [
+        "FR-31",
+        "FR-30a",
+        "AC-02f",
+        "AC-13"
+      ],
+      "title": "Waitlist list total equals full FIFO queue row count before paging",
+      "preconditions": [
+        "Event at capacity with at least 25 active waitlist entries",
+        "Authenticated OrganizerAdmin with event scope",
+        "Real Postgres test database"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/waitlist?page=1&pageSize=20",
+        "GET /api/v1/events/{eventId}/waitlist?page=2&pageSize=20",
+        "Count active waitlist entries for the event in persistence layer"
+      ],
+      "expected": "Page 1 items.length=20 with total matching full waitlist row count; page 2 carries same total metadata; total equals active waitlist entry count before paging per FR-30a dedicated waitlist view and FR-31 total on organizer waitlist list",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-31-026",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "pagination",
+      "priority": "P1",
+      "traceability": [
+        "FR-31",
+        "FR-29",
+        "AC-18c",
+        "AC-13"
+      ],
+      "title": "My registrations total reflects optional state filter applied server-side",
+      "preconditions": [
+        "Participant with registrations in Registered, Waitlisted, and Cancelled states",
+        "Authenticated Participant JWT"
+      ],
+      "steps": [
+        "GET /api/v1/me/registrations?page=1&pageSize=20 and record unfiltered total",
+        "GET /api/v1/me/registrations?state=Waitlisted&page=1&pageSize=20",
+        "Count Waitlisted registration rows for the participant in persistence layer"
+      ],
+      "expected": "Waitlisted filter total equals participant Waitlisted row count only; unfiltered total equals all participant registration rows; totalPages computed from filtered total per AC-18c server-side state filter and FR-31 total metadata",
+      "edgeCase": false
+    }
+  ]
+}

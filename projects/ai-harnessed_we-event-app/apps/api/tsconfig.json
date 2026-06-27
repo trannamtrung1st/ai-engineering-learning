@@ -1,0 +1,9 @@
+{
+  "extends": "@we-event/config/tsconfig/base.json",
+  "include": ["src"],
+  "files": ["src/types/fastify.d.ts"],
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist"
+  }
+}

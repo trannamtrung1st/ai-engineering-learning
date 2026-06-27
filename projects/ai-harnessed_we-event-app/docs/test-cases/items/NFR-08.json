@@ -1,0 +1,490 @@
+{
+  "productItemId": "NFR-08",
+  "version": 1,
+  "docFingerprint": "sha256:ec35d07745935d43ede5bc23381533cb15ad15eb3a8347bf5c6bc75ca315ea0f",
+  "generatedAt": "2026-06-26T18:01:52Z",
+  "cases": [
+    {
+      "id": "TC-NFR-08-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "NFR-08",
+        "FR-25",
+        "AC-16"
+      ],
+      "title": "OrganizerAdmin publishes draft event within organization scope",
+      "preconditions": [
+        "Draft event owned by organization org-1",
+        "OrganizerAdmin JWT with organizationId org-1",
+        "Event state is Draft and publish preconditions satisfied"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/publish with OrganizerAdmin Authorization bearer",
+        "GET /api/v1/events/{eventId} with same token"
+      ],
+      "expected": "HTTP 200; event state transitions to Published; OrganizerAdmin role grants publish capability per permission matrix; authorization by role and org-owned event scope succeeds",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-08-002",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "NFR-08",
+        "FR-27",
+        "AC-05"
+      ],
+      "title": "OrganizerStaff performs check-in on assigned event",
+      "preconditions": [
+        "Event InProgress with active check-in window and Registered participant",
+        "OrganizerStaff JWT with assignedEventIds including eventId",
+        "Fresh Idempotency-Key header value"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/checkins with staff Authorization bearer and target registrationId",
+        "Verify check-in persisted for the registration"
+      ],
+      "expected": "HTTP 200; check-in recorded with timestamp; staff operates within assigned event scope per permission matrix Check in participant Yes (assigned events)",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-08-003",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "NFR-08",
+        "FR-33",
+        "AC-16"
+      ],
+      "title": "Participant registers and reads own registration status only",
+      "preconditions": [
+        "Published event in RegistrationOpen with available capacity",
+        "Participant JWT with no active registration for the event"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/registrations with Participant Authorization bearer",
+        "GET /api/v1/events/{eventId}/registration-status with same token",
+        "GET /api/v1/me/registrations with same token"
+      ],
+      "expected": "Registration succeeds with Registered state; registration-status and /me/registrations reflect only the authenticated participant's records; Participant scope limited to own registration per scope constraints section 3",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-08-004",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "NFR-08",
+        "FR-26",
+        "AC-10"
+      ],
+      "title": "OrganizerAdmin revokes eligibility with mandatory reason",
+      "preconditions": [
+        "Completed event with evaluated eligibility for a registration",
+        "OrganizerAdmin JWT with scope over eventId"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/eligibility/{registrationId}/revoke with OrganizerAdmin bearer and body containing reasonCode and reasonText",
+        "GET /api/v1/events/{eventId}/eligibility with admin token"
+      ],
+      "expected": "HTTP 200; eligibility state updated to Revoked; only OrganizerAdmin may override eligibility per permission matrix; sensitive action authorized by role with reason guardrail",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-08-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "pagination",
+      "priority": "P1",
+      "traceability": [
+        "NFR-08",
+        "FR-27",
+        "FR-30"
+      ],
+      "title": "OrganizerStaff views paginated registrations on assigned event",
+      "preconditions": [
+        "Event with multiple participant registrations",
+        "OrganizerStaff JWT with assignedEventIds including eventId"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/registrations?page=1&pageSize=20 with staff Authorization bearer"
+      ],
+      "expected": "HTTP 200 with paginated envelope (items, page, pageSize, total, totalPages); operational registrations list returned for assigned event within authorized staff scope",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-08-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "NFR-08",
+        "FR-32"
+      ],
+      "title": "Multi-role user JWT grants highest-privilege organizer capabilities",
+      "preconditions": [
+        "User account with both Participant and OrganizerAdmin role rows",
+        "Draft event owned by user's organization",
+        "Dual-role user credentials available for login"
+      ],
+      "steps": [
+        "POST /api/v1/auth/login with dual-role user credentials",
+        "Inspect JWT profile roles in login response",
+        "POST /api/v1/events/{eventId}/publish with returned bearer token"
+      ],
+      "expected": "Login response reflects OrganizerAdmin as effective role; publish succeeds with HTTP 200; authorization decisions use highest-privilege role so organizer capabilities are not downgraded to Participant",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-08-007",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": [
+        "NFR-08",
+        "FR-25"
+      ],
+      "title": "Authorization pipeline validates role permission before event scope and domain execution",
+      "preconditions": [
+        "Protected command handler wired with authorization decision pattern: authenticate, role, scope, state guard, execute",
+        "Real database test harness with transaction rollback",
+        "Authenticated Participant actor attempting organizer-only mutation"
+      ],
+      "steps": [
+        "Invoke organizer-only command (e.g. POST /events/{eventId}/publish) with valid Participant JWT and body",
+        "Confirm handler short-circuits at role permission step before scope validators",
+        "Query events table to confirm no state mutation occurred"
+      ],
+      "expected": "HTTP 403 returned before event scope or state-transition validators run; no domain mutation or audit side effects; satisfies NFR-08 authorization by role at decision pattern step 2",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-08-008",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": [
+        "NFR-08",
+        "FR-25"
+      ],
+      "title": "Unauthorized critical event publish blocked for non-admin roles",
+      "preconditions": [
+        "Draft event owned by organization",
+        "Valid Participant or OrganizerStaff JWT (not OrganizerAdmin)"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/publish with non-admin Authorization bearer",
+        "Verify event state unchanged in database"
+      ],
+      "expected": "HTTP 403 FORBIDDEN; event remains Draft; classified as P0 defect if publish succeeded per testing plan defect severity model unauthorized critical update",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-08-009",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": [
+        "NFR-08",
+        "FR-27"
+      ],
+      "title": "Event scope check runs before domain mutation on staff commands",
+      "preconditions": [
+        "Protected staff command handler wired with authorization decision pattern",
+        "Real database test harness with transaction rollback",
+        "OrganizerStaff JWT scoped to event B attempting mutation on unassigned event A"
+      ],
+      "steps": [
+        "Invoke staff check-in or registrations list handler with staff token targeting unassigned eventId",
+        "Confirm handler short-circuits at event scope step before state-transition validators",
+        "Verify no CheckinRecord or registration mutation rows created for unassigned event"
+      ],
+      "expected": "HTTP 403 or 404 returned before domain transaction; no mutation or data exposure; satisfies NFR-08 authorization by event scope at decision pattern step 3",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-08-010",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": [
+        "NFR-08",
+        "NFR-13"
+      ],
+      "title": "403 role denial responses use standard typed error envelope",
+      "preconditions": [
+        "Participant JWT",
+        "Organizer-only endpoint available (e.g. POST /events/{eventId}/publish or GET /events/{eventId}/export)"
+      ],
+      "steps": [
+        "Invoke organizer-only endpoint with Participant Authorization bearer",
+        "Parse JSON error body"
+      ],
+      "expected": "HTTP 403 with error.code FORBIDDEN, user-safe error.message, and requestId; no sensitive organizer data leaked; immediate fail feedback per NFR-13",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-08-011",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": [
+        "NFR-08",
+        "FR-25"
+      ],
+      "title": "Participant cannot create or publish events",
+      "preconditions": [
+        "Valid Participant JWT",
+        "No organizer role on actor account"
+      ],
+      "steps": [
+        "POST /api/v1/events with Participant Authorization bearer and valid draft payload",
+        "POST /api/v1/events/{existingEventId}/publish with Participant bearer on a draft event"
+      ],
+      "expected": "Both requests return HTTP 403 FORBIDDEN; no event created or published; Create/edit event draft and Publish/pause event denied for Participant per permission matrix",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-08-012",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": [
+        "NFR-08",
+        "FR-27"
+      ],
+      "title": "OrganizerStaff check-in on unassigned event is blocked",
+      "preconditions": [
+        "Event A InProgress with Registered participant and active check-in window",
+        "OrganizerStaff JWT assigned only to event B (not event A)",
+        "Fresh Idempotency-Key header value"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventAId}/checkins with staff token and valid registrationId on event A",
+        "Verify event A registration state and check-in records unchanged"
+      ],
+      "expected": "HTTP 403 or 404; no CheckinRecord created on event A; cross-event staff mutation blocked per OrganizerStaff assigned events scope constraint",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-08-013",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": [
+        "NFR-08",
+        "FR-26"
+      ],
+      "title": "OrganizerStaff cannot revoke eligibility",
+      "preconditions": [
+        "Completed event with evaluated eligibility for a registration",
+        "OrganizerStaff JWT assigned to eventId"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/eligibility/{registrationId}/revoke with staff Authorization bearer and valid reason payload"
+      ],
+      "expected": "HTTP 403 FORBIDDEN; eligibility state unchanged; Override eligibility Revoked is OrganizerAdmin only per permission matrix",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-08-014",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": [
+        "NFR-08",
+        "FR-32"
+      ],
+      "title": "Self-service signup provisions Participant role only",
+      "preconditions": [
+        "No existing account for test email",
+        "Public signup endpoint available"
+      ],
+      "steps": [
+        "POST /api/v1/auth/register with valid email, password, displayName",
+        "Inspect JWT profile roles from response",
+        "Attempt POST /api/v1/events with returned JWT"
+      ],
+      "expected": "Signup succeeds with Participant role only; POST /events returns HTTP 403; OrganizerAdmin and OrganizerStaff are not assignable via public signup per account provisioning section 3.1",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-08-015",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P1",
+      "traceability": [
+        "NFR-08",
+        "FR-24",
+        "AC-11"
+      ],
+      "title": "Participant cannot read organizer audit logs",
+      "preconditions": [
+        "Event with persisted audit log entries",
+        "Valid Participant JWT with registration on the event"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/audit-logs with Participant Authorization bearer"
+      ],
+      "expected": "HTTP 403 FORBIDDEN; audit log items and actor metadata not returned; Read audit logs denied for Participant per permission matrix",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-08-016",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": [
+        "NFR-08",
+        "FR-25",
+        "FR-34"
+      ],
+      "title": "Authenticated Participant blocked from organizer management routes",
+      "preconditions": [
+        "Web app running with role-aware route guards",
+        "Browser authenticated as Participant via login flow"
+      ],
+      "steps": [
+        "Navigate directly to an organizer-only route (e.g. event create or organizer dashboard path)",
+        "Observe redirect or access-denied behavior"
+      ],
+      "expected": "Organizer UI does not render for Participant; user is redirected or shown access denied; client-side role guard complements API RBAC per NFR-08",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-08-017",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P1",
+      "traceability": [
+        "NFR-08",
+        "FR-25",
+        "FR-24"
+      ],
+      "title": "Participant cannot access organizer export or dashboard endpoints",
+      "preconditions": [
+        "Published event with operational data",
+        "Valid Participant JWT"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/dashboard with Participant Authorization bearer",
+        "GET /api/v1/events/{eventId}/export with Participant Authorization bearer"
+      ],
+      "expected": "Both requests return HTTP 403 FORBIDDEN; no operational metrics or export payload exposed; Export reports and dashboard access denied for Participant per permission matrix",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-08-018",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": [
+        "NFR-08",
+        "FR-25"
+      ],
+      "title": "OrganizerAdmin cannot mutate events outside own organization scope",
+      "preconditions": [
+        "Draft event owned by organization org-2",
+        "OrganizerAdmin JWT with organizationId org-1 (different organization)"
+      ],
+      "steps": [
+        "POST /api/v1/events/{org2EventId}/publish with org-1 OrganizerAdmin bearer",
+        "Verify event state unchanged in database"
+      ],
+      "expected": "HTTP 403 or 404; event remains Draft; OrganizerAdmin scope limited to organization-owned events per scope constraints section 3",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-08-019",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": [
+        "NFR-08",
+        "FR-33"
+      ],
+      "title": "Participant cannot register on behalf of another user",
+      "preconditions": [
+        "Published event in RegistrationOpen with available capacity",
+        "Participant A JWT authenticated",
+        "Known Participant B userId distinct from actor"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/registrations with Participant A bearer and body participantId set to Participant B userId",
+        "Query registrations for Participant B"
+      ],
+      "expected": "HTTP 403 FORBIDDEN or registration created only for authenticated actor (Participant A); Participant cannot affect another participant's registration records per scope constraint section 3",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-08-020",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-c",
+      "priority": "P0",
+      "traceability": [
+        "NFR-08",
+        "FR-25",
+        "AC-11"
+      ],
+      "title": "OrganizerAdmin critical rule change after registration open requires authorized actor with reason",
+      "preconditions": [
+        "Event in RegistrationOpen with active registrations",
+        "OrganizerAdmin JWT with scope over eventId",
+        "Capacity or rule config mutation endpoint available"
+      ],
+      "steps": [
+        "PATCH /api/v1/events/{eventId} or rule-config endpoint with OrganizerAdmin bearer changing capacity after registration opened",
+        "Include mandatory reasonCode and reasonText in request per sensitive action guardrails",
+        "GET /api/v1/events/{eventId}/audit-logs with OrganizerAdmin bearer"
+      ],
+      "expected": "HTTP 200; config change applied; audit record includes actorId, actorRole OrganizerAdmin, before/after diff, and reason fields; only authorized admin within event scope may perform sensitive config change per roles-permissions sections 4 and 5",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-08-021",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P1",
+      "traceability": [
+        "NFR-08",
+        "FR-26",
+        "AC-10"
+      ],
+      "title": "Out-of-scope OrganizerStaff cannot read eligibility list",
+      "preconditions": [
+        "Completed event with evaluated eligibility rows",
+        "OrganizerStaff JWT assigned to a different event (not target eventId)"
+      ],
+      "steps": [
+        "GET /api/v1/events/{eventId}/eligibility?page=1&pageSize=20 with out-of-scope staff Authorization bearer"
+      ],
+      "expected": "HTTP 403 FORBIDDEN; eligibility items and participant reason fields not returned; out-of-scope staff denied per AC-10e and OrganizerStaff assigned-events scope constraint",
+      "edgeCase": true
+    }
+  ]
+}

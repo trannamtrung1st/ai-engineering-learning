@@ -1,0 +1,375 @@
+# Guardrails (Ralph Signs)
+
+Lessons learned across harness iterations. Read before every implementer session.
+
+## Signs
+
+<!-- Agent appends entries here after failures. Format: - [slice-id] lesson -->
+- [repo-monorepo-bootstrap] Computational checks failed — see 20260625T082434Z-checks.json
+- [repo-monorepo-bootstrap] Computational checks failed — see 20260625T083048Z-checks.json
+- [repo-monorepo-bootstrap] Computational checks failed — see 20260625T083048Z-checks.json
+- [repo-monorepo-bootstrap] Computational checks failed — see 20260625T083048Z-checks.json
+- [repo-monorepo-bootstrap] Computational checks failed — see 20260625T083048Z-checks.json
+- [repo-monorepo-bootstrap] Computational checks failed — see 20260625T083048Z-checks.json
+- [repo-monorepo-bootstrap] Computational checks failed — see 20260625T083048Z-checks.json
+- [repo-monorepo-bootstrap] Computational checks failed — see 20260625T083048Z-checks.json
+- [repo-monorepo-bootstrap] Computational checks failed — see 20260625T083048Z-checks.json
+- [repo-monorepo-bootstrap] Computational checks failed — see 20260625T083048Z-checks.json
+- [repo-monorepo-bootstrap] Computational checks failed — see 20260625T083048Z-checks.json
+- [repo-monorepo-bootstrap] Computational checks failed — see 20260625T083048Z-checks.json
+- [repo-monorepo-bootstrap] Computational checks failed — see 20260625T083048Z-checks.json
+- [repo-monorepo-bootstrap] Computational checks failed — see 20260625T083049Z-checks.json
+- [repo-monorepo-bootstrap] Computational checks failed — see 20260625T083049Z-checks.json
+- [repo-monorepo-bootstrap] Computational checks failed — see 20260625T083049Z-checks.json
+- [repo-monorepo-bootstrap] Computational checks failed — see 20260625T083049Z-checks.json
+- [repo-monorepo-bootstrap] Computational checks failed — see 20260625T083049Z-checks.json
+- [repo-monorepo-bootstrap] Computational checks failed — see 20260625T083049Z-checks.json
+- [repo-monorepo-bootstrap] Computational checks failed — see 20260625T083049Z-checks.json
+- [repo-monorepo-bootstrap] Computational checks failed — see 20260625T083049Z-checks.json
+- [repo-monorepo-bootstrap] Computational checks failed — see 20260625T083049Z-checks.json
+- [repo-monorepo-bootstrap] Computational checks failed — see 20260625T083049Z-checks.json
+- [repo-monorepo-bootstrap] Computational checks failed — see 20260625T083049Z-checks.json
+- [repo-monorepo-bootstrap] Computational checks failed — see 20260625T083049Z-checks.json
+- [repo-monorepo-bootstrap] Computational checks failed — see 20260625T083049Z-checks.json
+- [repo-monorepo-bootstrap] Computational checks failed — see 20260625T083050Z-checks.json
+- [repo-monorepo-bootstrap] Computational checks failed — see 20260625T083050Z-checks.json
+- [docker-compose-db] Computational checks failed — see 20260625T091348Z-checks.json
+- [api-foundation] AI review failed — see 20260625T092300Z-review.json
+- [module-event] AI review failed — see 20260625T093544Z-review.json
+- [module-registration] AI review failed — see 20260625T095129Z-review.json
+- [web-design-system-shell] AI review failed — see 20260625T103226Z-review.json
+- [web-design-system-shell] AI review failed — see 20260625T110259Z-review.json
+- [web-design-system-shell] AI review failed — see 20260625T110938Z-review.json
+- [web-design-system-shell] AI review failed — see 20260625T111833Z-review.json
+- [web-participant-journeys] AI review failed — see 20260625T140938Z-review.json
+- [web-participant-journeys] AI review failed — see 20260625T142403Z-review.json
+- [pagination] List endpoints must return the paginated envelope (`items`, `page`, `pageSize`, `total`, `totalPages`) per `docs/technical/05-api-design.md` §3; bare arrays are deprecated.
+- [pagination] Listing pages must not client-fetch all events then fan out N+1 registration calls for my-registrations; use `GET /me/registrations` with server-driven pagination.
+- [module-event] AI review failed — see 20260625T150028Z-review.json
+- [web-participant-journeys] AI review failed — see 20260625T153514Z-review.json
+- [web-participant-journeys] AI review failed — see 20260625T154212Z-review.json
+- [web-organizer-journeys] AI review failed — see 20260625T155640Z-review.json
+- [module-registration] Computational checks failed — see 20260625T162337Z-checks.json
+- [module-registration] Computational checks failed — see 20260625T170113Z-checks.json
+- [module-registration] AI review failed — see 20260625T171051Z-review.json
+- [web-organizer-journeys] AI review failed — see 20260625T174157Z-review.json
+- [web-organizer-journeys] Computational checks failed — see 20260625T175157Z-checks.json
+- [web-organizer-journeys] Computational checks failed — see 20260625T175615Z-checks.json
+- [e2e-acceptance-suite] HTTP e2e dev tokens must use UUID `sub` values for organizers (DB actor columns) and participants (idempotency/feedback paths); non-UUID subs like `e2e-organizer-*` cause Postgres 22P02 errors.
+- [web-organizer-journeys] Organizer dev sign-in default sub must be a UUID (`00000000-0000-0000-0000-000000000099`); legacy `organizer-admin-1` breaks eligibility dashboard metrics (audit log 22P02 on PendingEvaluation).
+- [module-user-accounts] Computational checks failed — see 20260625T183152Z-checks.json
+- [module-user-accounts] Computational checks failed — see 20260625T191632Z-checks.json
+- [web-design-system-shell] Computational checks failed — see 20260625T193720Z-checks.json
+- [web-design-system-shell] AI review failed — see 20260626T014840Z-review.json
+- [web-organizer-journeys] Computational checks failed — see 20260626T022552Z-checks.json
+- [web-participant-journeys] Browser test failed — see 20260626T025805Z-browser-test.json
+- [web-participant-journeys] `GET /events/:eventId/registration-status` must use latest participant registration (include `Attended`/`Absent`); `findActiveRegistration` alone breaks feedback UI when post-event status is no longer "active".
+- [FR-18] TestGen agent did not emit TESTGEN_DONE
+- [FR-20] TestGen agent did not emit TESTGEN_DONE
+- [FR-20] Test case validation failed — see 20260626T050026Z-testgen.txt
+- [FR-25] TestGen agent did not emit TESTGEN_DONE
+- [web-design-system-shell] Computational checks failed — see 20260626T061748Z-checks.json
+- [web-design-system-shell] Computational checks failed — see 20260626T061841Z-checks.json
+- [web-design-system-shell] Browser test failed — see 20260626T062246Z-browser-test.json
+- [web-design-system-shell] Browser test failed — see 20260626T063415Z-browser-test.json
+- [web-design-system-shell] Browser test failed — see 20260626T065542Z-browser-test.json
+- [web-design-system-shell] Browser test failed — see 20260626T071239Z-browser-test.json
+- [web-design-system-shell] Browser test failed — see 20260626T072443Z-browser-test.json
+- [web-participant-journeys] Computational checks failed — see 20260626T074243Z-checks.json
+- [web-participant-journeys] Computational checks failed — see 20260626T075027Z-checks.json
+- [web-participant-journeys] Browser test failed — see 20260626T080428Z-browser-test.json
+- [repo-monorepo-bootstrap] AI review failed — see 20260626T090637Z-review.json
+- [api-foundation] Computational checks failed — see 20260626T094242Z-checks.json
+- [module-event] Computational checks failed — see 20260626T095859Z-checks.json
+- [module-event] AI review failed — see 20260626T100217Z-review.json
+- [module-registration] Registration insert requires users.id FK — call ensureParticipantAccount (resolve dev subs to UUID) before createRegistration; audit actorId must be resolved UUID too.
+- [AC-17] TestGen agent did not emit TESTGEN_DONE
+- [module-checkin] Self check-in routes/service must `resolveActorId(actor.sub)` before `findActiveRegistration` and ownership checks; registration `getStatus` already resolves — mismatch causes UI-enabled/API-404.
+- [module-checkin] `canSelfCheckIn` window must mirror API `assertCheckinWindowOpen` (exclusive `checkinCloseAt`: reject when `now >= closeAt`); UI `now <= close` vs API `now >= close` causes UI-enabled/API-422.
+- [module-checkin] FR-14 TC-006/015 expect `selfCheckinEnabled` on event rule config; do not mark slice done without the flag in schema/API or an explicit doc exception.
+- [module-feedback-eligibility] Feedback ownership must use `actorIdsMatch`, not strict string compare on `participantId`; dev sub `participant-1` + body `registrationId` is a required happy path.
+- [web-participant-journeys] Browser journeys for check-in and feedback must assert submit succeeds when UI gate is open (NFR-13 parity); see TC-AC-05-021, TC-AC-08-022, TC-FR-14-021.
+- [AC-01] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:821074ac696b804b1f73d0845dc12142be4e7113c91c417dae5b9ba1cbf42225)
+- [AC-02] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:821074ac696b804b1f73d0845dc12142be4e7113c91c417dae5b9ba1cbf42225)
+- [AC-03] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:821074ac696b804b1f73d0845dc12142be4e7113c91c417dae5b9ba1cbf42225)
+- [AC-04] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:821074ac696b804b1f73d0845dc12142be4e7113c91c417dae5b9ba1cbf42225)
+- [AC-13] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:e02c1f2112398fe77830ccd62c814e9fb809075870195634fc99ea89db79c2fb)
+- [FR-10] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:027175175545d05eacf412663c601ddc7b622e4741a2ff40633c8e332b7bd6aa)
+- [AC-11] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:1593c2ff42ceec9999c9e8d9b2cb30bad8891dfea6114e74ae8dff6eb463b47b)
+- [AC-05] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:4d12785a73f71eae22ecc1c28abee1e2becca04b0528fdc2184d610d44dc34ff)
+- [AC-06] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:4d12785a73f71eae22ecc1c28abee1e2becca04b0528fdc2184d610d44dc34ff)
+- [AC-07] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:4d12785a73f71eae22ecc1c28abee1e2becca04b0528fdc2184d610d44dc34ff)
+- [AC-08] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:0dd7c4f2e3b88af76edb911a1b6ebfe8322a801c39ef58ffab323b3297400201)
+- [AC-09] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:0dd7c4f2e3b88af76edb911a1b6ebfe8322a801c39ef58ffab323b3297400201)
+- [AC-10] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:0dd7c4f2e3b88af76edb911a1b6ebfe8322a801c39ef58ffab323b3297400201)
+- [AC-12] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:1593c2ff42ceec9999c9e8d9b2cb30bad8891dfea6114e74ae8dff6eb463b47b)
+- [AC-14] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:e02c1f2112398fe77830ccd62c814e9fb809075870195634fc99ea89db79c2fb)
+- [AC-15] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:5e79e4c58f0f91c5bbe4d59de7cf91990ac57ea7ff85ef3efbfb221ffac55c1f)
+- [AC-16] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:5e79e4c58f0f91c5bbe4d59de7cf91990ac57ea7ff85ef3efbfb221ffac55c1f)
+- [AC-17] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:acbd62dbcf565def34dd64afff5a54fa280437d552a05240188b14dda78e5dd6)
+- [FR-01] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:aa1117f3b650d9449d7073916f7ca9b84a02286b19d61773de4e49196817a850)
+- [FR-02] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:aa1117f3b650d9449d7073916f7ca9b84a02286b19d61773de4e49196817a850)
+- [FR-03] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:aa1117f3b650d9449d7073916f7ca9b84a02286b19d61773de4e49196817a850)
+- [FR-04] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:aa1117f3b650d9449d7073916f7ca9b84a02286b19d61773de4e49196817a850)
+- [FR-05] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:027175175545d05eacf412663c601ddc7b622e4741a2ff40633c8e332b7bd6aa)
+- [FR-06] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:027175175545d05eacf412663c601ddc7b622e4741a2ff40633c8e332b7bd6aa)
+- [FR-07] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:027175175545d05eacf412663c601ddc7b622e4741a2ff40633c8e332b7bd6aa)
+- [FR-08] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:027175175545d05eacf412663c601ddc7b622e4741a2ff40633c8e332b7bd6aa)
+- [FR-09] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:027175175545d05eacf412663c601ddc7b622e4741a2ff40633c8e332b7bd6aa)
+- [FR-11] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:027175175545d05eacf412663c601ddc7b622e4741a2ff40633c8e332b7bd6aa)
+- [FR-12] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:027175175545d05eacf412663c601ddc7b622e4741a2ff40633c8e332b7bd6aa)
+- [FR-13] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:e2dfbabeeed703c3e91f7927502130070273c2e29f7eb78b92608b58e3a599e7)
+- [FR-14] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:e2dfbabeeed703c3e91f7927502130070273c2e29f7eb78b92608b58e3a599e7)
+- [FR-15] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:e2dfbabeeed703c3e91f7927502130070273c2e29f7eb78b92608b58e3a599e7)
+- [FR-16] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:e2dfbabeeed703c3e91f7927502130070273c2e29f7eb78b92608b58e3a599e7)
+- [FR-17] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:e2dfbabeeed703c3e91f7927502130070273c2e29f7eb78b92608b58e3a599e7)
+- [FR-18] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:107397bd83cd034f847adc3aa5c281b5205685eb1f8283558c1614364f516122)
+- [FR-19] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:107397bd83cd034f847adc3aa5c281b5205685eb1f8283558c1614364f516122)
+- [FR-20] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:107397bd83cd034f847adc3aa5c281b5205685eb1f8283558c1614364f516122)
+- [FR-21] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:107397bd83cd034f847adc3aa5c281b5205685eb1f8283558c1614364f516122)
+- [FR-22] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:aa1117f3b650d9449d7073916f7ca9b84a02286b19d61773de4e49196817a850)
+- [FR-23] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:aa1117f3b650d9449d7073916f7ca9b84a02286b19d61773de4e49196817a850)
+- [FR-24] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:aa1117f3b650d9449d7073916f7ca9b84a02286b19d61773de4e49196817a850)
+- [FR-25] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:8e59445691447471b0d38696b1b2d559ff61c4f46bb6ddbeca79a3fd83f91995)
+- [FR-26] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:8e59445691447471b0d38696b1b2d559ff61c4f46bb6ddbeca79a3fd83f91995)
+- [FR-27] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:8e59445691447471b0d38696b1b2d559ff61c4f46bb6ddbeca79a3fd83f91995)
+- [FR-28] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:0de96fd30f2643dda5e25a994fcb22af16db2170ec550701a09657db14127a0b)
+- [FR-29] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:0de96fd30f2643dda5e25a994fcb22af16db2170ec550701a09657db14127a0b)
+- [FR-30] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:0de96fd30f2643dda5e25a994fcb22af16db2170ec550701a09657db14127a0b)
+- [FR-31] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:0de96fd30f2643dda5e25a994fcb22af16db2170ec550701a09657db14127a0b)
+- [FR-32] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:1795587dc6c00a1833c45415b462d73fd4b8426dae103e6bff17f76a3aee2f8b)
+- [FR-33] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:1795587dc6c00a1833c45415b462d73fd4b8426dae103e6bff17f76a3aee2f8b)
+- [FR-34] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:1795587dc6c00a1833c45415b462d73fd4b8426dae103e6bff17f76a3aee2f8b)
+- [FR-35] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:5087064824d0b6a4f531034dbe1fa0a232327bacca5de04922a3530f3e8e13cb)
+- [FR-36] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:5087064824d0b6a4f531034dbe1fa0a232327bacca5de04922a3530f3e8e13cb)
+- [BR-01] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:2fa3a34949c25751d10f6f5b2619c6638b110526abebebb7f1b83749ae9b087b)
+- [BR-03] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:2fa3a34949c25751d10f6f5b2619c6638b110526abebebb7f1b83749ae9b087b)
+- [BR-10] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:2fa3a34949c25751d10f6f5b2619c6638b110526abebebb7f1b83749ae9b087b)
+- [NFR-02] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:66c6c2a085e264c591d98e9f94a7c01e4a22963048aa3bd8ad16e51948bbc052)
+- [NFR-04] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:66c6c2a085e264c591d98e9f94a7c01e4a22963048aa3bd8ad16e51948bbc052)
+- [NFR-06] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:337c67e17b4a1e166df09202cfebf81b3e7bb5b8304526fd701bce7677aab3ef)
+- [NFR-07] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:cff33cca15ef6cab3bccc14f79d25f9da5a6809dfeed7b72d03730ab2b6fe8fb)
+- [NFR-08] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:cff33cca15ef6cab3bccc14f79d25f9da5a6809dfeed7b72d03730ab2b6fe8fb)
+- [NFR-14] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:3ef34de51e629338bb80d28f095b60c3a35be925eaaedb8316f99080c3e69bb9)
+- [NFR-17] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:cff33cca15ef6cab3bccc14f79d25f9da5a6809dfeed7b72d03730ab2b6fe8fb)
+- [NFR-18] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:408321cae2e96b072282d6a467ef56479d3cf5f57fc5f2184cdae796d2ae49e1)
+- [AC-01] TestGen agent did not emit TESTGEN_DONE
+- [module-registration] Legacy Postgres may use enum columns (`registration_state`, `event_state`) and omit module columns (`events.version`, `registrations.created_at`); use idempotent `ALTER TABLE … ADD COLUMN IF NOT EXISTS` in schema.sql and compare enums via `state::text` in queries.
+- [module-checkin] AI review failed — see 20260626T145401Z-review.json
+- [module-feedback-eligibility] Computational checks failed — see 20260626T151207Z-checks.json
+- [AC-01] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:d207212e847f357de4af2b3c008db1c9e7f161eff8554cb5216006d77323e49b)
+- [AC-02] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:d207212e847f357de4af2b3c008db1c9e7f161eff8554cb5216006d77323e49b)
+- [AC-03] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:d207212e847f357de4af2b3c008db1c9e7f161eff8554cb5216006d77323e49b)
+- [AC-04] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:d207212e847f357de4af2b3c008db1c9e7f161eff8554cb5216006d77323e49b)
+- [AC-05] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:91f10fb3a5f48713b1478da630fe55a11206528138326a918eab90d3bd3c5c80)
+- [AC-06] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:91f10fb3a5f48713b1478da630fe55a11206528138326a918eab90d3bd3c5c80)
+- [AC-07] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:91f10fb3a5f48713b1478da630fe55a11206528138326a918eab90d3bd3c5c80)
+- [AC-08] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:7dd500c0928c5d21420bf8f45115bec4c9b6c13b5ae2d47cbe3ea81d26fc5309)
+- [AC-09] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:7dd500c0928c5d21420bf8f45115bec4c9b6c13b5ae2d47cbe3ea81d26fc5309)
+- [AC-10] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:7dd500c0928c5d21420bf8f45115bec4c9b6c13b5ae2d47cbe3ea81d26fc5309)
+- [AC-11] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:3396fa3a7f30834839ab360fe405dc419eac28707a002368ce02285f6931db34)
+- [AC-12] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:3396fa3a7f30834839ab360fe405dc419eac28707a002368ce02285f6931db34)
+- [AC-13] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:7b2ef50fc58c8bb293ae614db8798aa9ce0c6c76aab6c6c837abe18586872819)
+- [AC-14] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:7b2ef50fc58c8bb293ae614db8798aa9ce0c6c76aab6c6c837abe18586872819)
+- [AC-15] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:430d11e1c9ce022150663e69ebe5c45df6a85c17c9bcd5fd4494744d47c50f02)
+- [AC-16] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:430d11e1c9ce022150663e69ebe5c45df6a85c17c9bcd5fd4494744d47c50f02)
+- [AC-17] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:896875b640d4160872c5182621e5a9ce838f9f948c0938f7f301c47a42cf77ea)
+- [FR-01] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:d30b5a19511642771585ca78dc4bfb43671a10f241860a9ecd6890cb558c95c9)
+- [FR-02] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:d30b5a19511642771585ca78dc4bfb43671a10f241860a9ecd6890cb558c95c9)
+- [FR-03] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:d30b5a19511642771585ca78dc4bfb43671a10f241860a9ecd6890cb558c95c9)
+- [FR-04] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:d30b5a19511642771585ca78dc4bfb43671a10f241860a9ecd6890cb558c95c9)
+- [FR-05] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:090f7c180f797d87abf554315beaccd258439d38fd7ce72c9812f7ce28ac7c60)
+- [FR-06] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:090f7c180f797d87abf554315beaccd258439d38fd7ce72c9812f7ce28ac7c60)
+- [FR-07] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:090f7c180f797d87abf554315beaccd258439d38fd7ce72c9812f7ce28ac7c60)
+- [FR-08] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:090f7c180f797d87abf554315beaccd258439d38fd7ce72c9812f7ce28ac7c60)
+- [FR-09] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:090f7c180f797d87abf554315beaccd258439d38fd7ce72c9812f7ce28ac7c60)
+- [FR-18] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:82a1f3e3fd3833ec7311c0a55bafece3819fcdcebaa3a1da24b3d9bc417de17c)
+- [FR-19] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:82a1f3e3fd3833ec7311c0a55bafece3819fcdcebaa3a1da24b3d9bc417de17c)
+- [FR-20] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:82a1f3e3fd3833ec7311c0a55bafece3819fcdcebaa3a1da24b3d9bc417de17c)
+- [FR-21] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:82a1f3e3fd3833ec7311c0a55bafece3819fcdcebaa3a1da24b3d9bc417de17c)
+- [FR-22] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:d30b5a19511642771585ca78dc4bfb43671a10f241860a9ecd6890cb558c95c9)
+- [AC-01] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:e5fe6c876730dc2692555528b2f33e1afc4105ef98b3d84c4363464150dbd711)
+- [AC-02] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:e5fe6c876730dc2692555528b2f33e1afc4105ef98b3d84c4363464150dbd711)
+- [AC-03] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:e5fe6c876730dc2692555528b2f33e1afc4105ef98b3d84c4363464150dbd711)
+- [AC-04] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:e5fe6c876730dc2692555528b2f33e1afc4105ef98b3d84c4363464150dbd711)
+- [AC-05] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:c08ad0039562ef88268aca8eda534df09d841c6763890b0568ed11fbf5e0e3fb)
+- [AC-06] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:c08ad0039562ef88268aca8eda534df09d841c6763890b0568ed11fbf5e0e3fb)
+- [AC-07] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:c08ad0039562ef88268aca8eda534df09d841c6763890b0568ed11fbf5e0e3fb)
+- [AC-08] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:f89a34da7eb813f03345d90e0b972381aee6ca035fb8ff5dcfe017ee862eb3e0)
+- [AC-09] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:f89a34da7eb813f03345d90e0b972381aee6ca035fb8ff5dcfe017ee862eb3e0)
+- [AC-10] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:f89a34da7eb813f03345d90e0b972381aee6ca035fb8ff5dcfe017ee862eb3e0)
+- [AC-11] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:8c0de822d8fa2e988a5b739aaa107d3850c16ef1e948d222e29778ba9b67ebde)
+- [AC-12] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:8c0de822d8fa2e988a5b739aaa107d3850c16ef1e948d222e29778ba9b67ebde)
+- [AC-13] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:43a1316c7d0669030f2b3eac3b6b42994b9e6757f8b754368f1f5bbc574ab4b3)
+- [AC-14] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:43a1316c7d0669030f2b3eac3b6b42994b9e6757f8b754368f1f5bbc574ab4b3)
+- [AC-15] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:ec951167b11f7b857de880da792108576199bef5665b828dc729878bf36b96e4)
+- [AC-16] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:ec951167b11f7b857de880da792108576199bef5665b828dc729878bf36b96e4)
+- [AC-17] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:7a9d111cfd09cb9b493187cefe6a7aba58b72f6b9f4ee6e0acaf3c7335da20a3)
+- [FR-01] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:d5426bd8235ae44f8d8c17ffb86670943a993f20178df22df9dcadf4ea6c6df5)
+- [FR-02] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:d5426bd8235ae44f8d8c17ffb86670943a993f20178df22df9dcadf4ea6c6df5)
+- [FR-03] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:d5426bd8235ae44f8d8c17ffb86670943a993f20178df22df9dcadf4ea6c6df5)
+- [FR-04] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:d5426bd8235ae44f8d8c17ffb86670943a993f20178df22df9dcadf4ea6c6df5)
+- [FR-05] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:87b20ee29539baa20adb28d25f392f7bf11c719437f7d84b899d86c14fe7f71b)
+- [FR-06] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:87b20ee29539baa20adb28d25f392f7bf11c719437f7d84b899d86c14fe7f71b)
+- [FR-07] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:87b20ee29539baa20adb28d25f392f7bf11c719437f7d84b899d86c14fe7f71b)
+- [FR-08] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:87b20ee29539baa20adb28d25f392f7bf11c719437f7d84b899d86c14fe7f71b)
+- [FR-09] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:87b20ee29539baa20adb28d25f392f7bf11c719437f7d84b899d86c14fe7f71b)
+- [FR-10] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:87b20ee29539baa20adb28d25f392f7bf11c719437f7d84b899d86c14fe7f71b)
+- [FR-11] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:87b20ee29539baa20adb28d25f392f7bf11c719437f7d84b899d86c14fe7f71b)
+- [FR-12] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:87b20ee29539baa20adb28d25f392f7bf11c719437f7d84b899d86c14fe7f71b)
+- [FR-13] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:68f2c4552cc6dcc13ce1b482b9a47e1143a7132a55a89fac06d18dcf47d8106b)
+- [FR-14] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:68f2c4552cc6dcc13ce1b482b9a47e1143a7132a55a89fac06d18dcf47d8106b)
+- [FR-15] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:68f2c4552cc6dcc13ce1b482b9a47e1143a7132a55a89fac06d18dcf47d8106b)
+- [FR-16] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:68f2c4552cc6dcc13ce1b482b9a47e1143a7132a55a89fac06d18dcf47d8106b)
+- [FR-17] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:68f2c4552cc6dcc13ce1b482b9a47e1143a7132a55a89fac06d18dcf47d8106b)
+- [FR-18] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:a88273429c8bfea2eb7f46c9590bda0aa15d0f7c39465ea4d747421d441ec970)
+- [FR-19] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:a88273429c8bfea2eb7f46c9590bda0aa15d0f7c39465ea4d747421d441ec970)
+- [FR-20] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:a88273429c8bfea2eb7f46c9590bda0aa15d0f7c39465ea4d747421d441ec970)
+- [FR-21] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:a88273429c8bfea2eb7f46c9590bda0aa15d0f7c39465ea4d747421d441ec970)
+- [FR-22] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:d5426bd8235ae44f8d8c17ffb86670943a993f20178df22df9dcadf4ea6c6df5)
+- [FR-23] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:d5426bd8235ae44f8d8c17ffb86670943a993f20178df22df9dcadf4ea6c6df5)
+- [FR-24] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:d5426bd8235ae44f8d8c17ffb86670943a993f20178df22df9dcadf4ea6c6df5)
+- [FR-25] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:e74c35f26b4734b8e2c76e63dfa6d88d8b047f36327d9cfdfe8a0fcc60cd6152)
+- [FR-26] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:e74c35f26b4734b8e2c76e63dfa6d88d8b047f36327d9cfdfe8a0fcc60cd6152)
+- [FR-27] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:e74c35f26b4734b8e2c76e63dfa6d88d8b047f36327d9cfdfe8a0fcc60cd6152)
+- [FR-28] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:5773daadf4db1bba8ee3675cdb6814920473805d2f00a2db7a33f8a45d9dc102)
+- [FR-29] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:5773daadf4db1bba8ee3675cdb6814920473805d2f00a2db7a33f8a45d9dc102)
+- [FR-30] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:5773daadf4db1bba8ee3675cdb6814920473805d2f00a2db7a33f8a45d9dc102)
+- [FR-31] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:5773daadf4db1bba8ee3675cdb6814920473805d2f00a2db7a33f8a45d9dc102)
+- [FR-32] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:f7e3c4d779baf141e3f75bc11ce8faebdacb476df8cbb90cefce14190cc0ec97)
+- [FR-33] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:f7e3c4d779baf141e3f75bc11ce8faebdacb476df8cbb90cefce14190cc0ec97)
+- [FR-34] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:f7e3c4d779baf141e3f75bc11ce8faebdacb476df8cbb90cefce14190cc0ec97)
+- [FR-35] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:8f4e4e97139ee188edd379ade66ae47f74144179a39d78c4cd8420f519521741)
+- [FR-36] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:8f4e4e97139ee188edd379ade66ae47f74144179a39d78c4cd8420f519521741)
+- [BR-01] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:79f93e953d18f4fb8acc8bf1926bcb6353b13f249251d97437a3e71e85857c61)
+- [BR-03] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:79f93e953d18f4fb8acc8bf1926bcb6353b13f249251d97437a3e71e85857c61)
+- [BR-10] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:79f93e953d18f4fb8acc8bf1926bcb6353b13f249251d97437a3e71e85857c61)
+- [NFR-02] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:947ab45f5f48da3265afbd9c3cbbfeddba9c5e57454a62f55622b3c6e0c6be20)
+- [NFR-04] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:947ab45f5f48da3265afbd9c3cbbfeddba9c5e57454a62f55622b3c6e0c6be20)
+- [NFR-06] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:811f4d770b558dcfb915aa7b035c7054a12c86d6513ad54bc3bb97018584824d)
+- [NFR-07] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:c89abc37237f79771544560a1b8a425c035270edde6acd40a302cdd057f28b9c)
+- [NFR-08] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:c89abc37237f79771544560a1b8a425c035270edde6acd40a302cdd057f28b9c)
+- [NFR-14] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:ef8af7610faaa1ef09c735d42be44aaef001ee9a0ac07cfabd9a39a68dee1931)
+- [NFR-17] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:c89abc37237f79771544560a1b8a425c035270edde6acd40a302cdd057f28b9c)
+- [NFR-18] Docs changed — test cases stale; affected slice passes reset (fingerprint=sha256:23d5de68c108484ea1801ea48413a197788e20f8f722ff8dda5fa5cd6e7f03db)
+- [AC-07] TestGen agent did not emit TESTGEN_DONE
+- [AC-06] TestGen agent did not emit TESTGEN_DONE
+- [FR-05] Docs changed — test cases need review (index current=false; fingerprint=sha256:87b20ee29539baa20adb28d25f392f7bf11c719437f7d84b899d86c14fe7f71b)
+- [FR-05] TestGen policy: artifact contained forbidden layer unit — regenerate without unit cases
+- [FR-06] Docs changed — test cases need review (index current=false; fingerprint=sha256:87b20ee29539baa20adb28d25f392f7bf11c719437f7d84b899d86c14fe7f71b)
+- [FR-06] TestGen policy: artifact contained forbidden layer unit — regenerate without unit cases
+- [FR-07] Docs changed — test cases need review (index current=false; fingerprint=sha256:87b20ee29539baa20adb28d25f392f7bf11c719437f7d84b899d86c14fe7f71b)
+- [FR-07] TestGen policy: artifact contained forbidden layer unit — regenerate without unit cases
+- [FR-08] Docs changed — test cases need review (index current=false; fingerprint=sha256:87b20ee29539baa20adb28d25f392f7bf11c719437f7d84b899d86c14fe7f71b)
+- [FR-08] TestGen policy: artifact contained forbidden layer unit — regenerate without unit cases
+- [FR-09] Docs changed — test cases need review (index current=false; fingerprint=sha256:87b20ee29539baa20adb28d25f392f7bf11c719437f7d84b899d86c14fe7f71b)
+- [FR-09] TestGen policy: artifact contained forbidden layer unit — regenerate without unit cases
+- [FR-10] Docs changed — test cases need review (index current=false; fingerprint=sha256:87b20ee29539baa20adb28d25f392f7bf11c719437f7d84b899d86c14fe7f71b)
+- [FR-10] TestGen policy: artifact contained forbidden layer unit — regenerate without unit cases
+- [FR-12] Docs changed — test cases need review (index current=false; fingerprint=sha256:87b20ee29539baa20adb28d25f392f7bf11c719437f7d84b899d86c14fe7f71b)
+- [FR-12] TestGen policy: artifact contained forbidden layer unit — regenerate without unit cases
+- [FR-19] Docs changed — test cases need review (index current=false; fingerprint=sha256:a88273429c8bfea2eb7f46c9590bda0aa15d0f7c39465ea4d747421d441ec970)
+- [FR-19] TestGen policy: artifact contained forbidden layer unit — regenerate without unit cases
+- [FR-25] Docs changed — test cases need review (index current=false; fingerprint=sha256:e74c35f26b4734b8e2c76e63dfa6d88d8b047f36327d9cfdfe8a0fcc60cd6152)
+- [FR-25] TestGen policy: artifact contained forbidden layer unit — regenerate without unit cases
+- [FR-26] Docs changed — test cases need review (index current=false; fingerprint=sha256:e74c35f26b4734b8e2c76e63dfa6d88d8b047f36327d9cfdfe8a0fcc60cd6152)
+- [FR-26] TestGen policy: artifact contained forbidden layer unit — regenerate without unit cases
+- [FR-30] Docs changed — test cases need review (index current=false; fingerprint=sha256:5773daadf4db1bba8ee3675cdb6814920473805d2f00a2db7a33f8a45d9dc102)
+- [FR-30] TestGen policy: artifact contained forbidden layer unit — regenerate without unit cases
+- [FR-31] Docs changed — test cases need review (index current=false; fingerprint=sha256:5773daadf4db1bba8ee3675cdb6814920473805d2f00a2db7a33f8a45d9dc102)
+- [FR-31] TestGen policy: artifact contained forbidden layer unit — regenerate without unit cases
+- [FR-32] Docs changed — test cases need review (index current=false; fingerprint=sha256:f7e3c4d779baf141e3f75bc11ce8faebdacb476df8cbb90cefce14190cc0ec97)
+- [FR-32] TestGen policy: artifact contained forbidden layer unit — regenerate without unit cases
+- [FR-33] Docs changed — test cases need review (index current=false; fingerprint=sha256:f7e3c4d779baf141e3f75bc11ce8faebdacb476df8cbb90cefce14190cc0ec97)
+- [FR-33] TestGen policy: artifact contained forbidden layer unit — regenerate without unit cases
+- [NFR-06] Docs changed — test cases need review (index current=false; fingerprint=sha256:811f4d770b558dcfb915aa7b035c7054a12c86d6513ad54bc3bb97018584824d)
+- [NFR-06] TestGen policy: artifact contained forbidden layer unit — regenerate without unit cases
+- [NFR-08] Docs changed — test cases need review (index current=false; fingerprint=sha256:c89abc37237f79771544560a1b8a425c035270edde6acd40a302cdd057f28b9c)
+- [NFR-08] TestGen policy: artifact contained forbidden layer unit — regenerate without unit cases
+- [NFR-14] Docs changed — test cases need review (index current=false; fingerprint=sha256:ef8af7610faaa1ef09c735d42be44aaef001ee9a0ac07cfabd9a39a68dee1931)
+- [NFR-14] TestGen policy: artifact contained forbidden layer unit — regenerate without unit cases
+- [FR-08] Test case validation failed after enhance — see 20260626T160227Z-testgen-enhance.txt
+- [FR-09] TestGen agent did not emit TESTGEN_DONE
+- [FR-09] Docs changed — test cases need review (index current=false; fingerprint=sha256:f601725c26e22adca80d48f9fae45d3bcf9dc70f757edfc29c65352770d3803e)
+- [AC-01] Docs changed — test cases need review (index current=false; fingerprint=sha256:04bfa0de11a3f891ff5c5300286b94aa9559fde233726603791b240ffaa83cd1)
+- [AC-02] Docs changed — test cases need review (index current=false; fingerprint=sha256:04bfa0de11a3f891ff5c5300286b94aa9559fde233726603791b240ffaa83cd1)
+- [AC-03] Docs changed — test cases need review (index current=false; fingerprint=sha256:04bfa0de11a3f891ff5c5300286b94aa9559fde233726603791b240ffaa83cd1)
+- [AC-04] Docs changed — test cases need review (index current=false; fingerprint=sha256:04bfa0de11a3f891ff5c5300286b94aa9559fde233726603791b240ffaa83cd1)
+- [AC-05] Docs changed — test cases need review (index current=false; fingerprint=sha256:285e582cf8635422eefb8597610bf3065834a008bb3dfb07a2aebe620822c70e)
+- [AC-06] Docs changed — test cases need review (index current=false; fingerprint=sha256:285e582cf8635422eefb8597610bf3065834a008bb3dfb07a2aebe620822c70e)
+- [AC-07] Docs changed — test cases need review (index current=false; fingerprint=sha256:285e582cf8635422eefb8597610bf3065834a008bb3dfb07a2aebe620822c70e)
+- [AC-08] Docs changed — test cases need review (index current=false; fingerprint=sha256:44d648f10791077ea66666059f9b8a5e560c8431ea9ce23fc3b66a07d58d171c)
+- [AC-09] Docs changed — test cases need review (index current=false; fingerprint=sha256:44d648f10791077ea66666059f9b8a5e560c8431ea9ce23fc3b66a07d58d171c)
+- [AC-10] Docs changed — test cases need review (index current=false; fingerprint=sha256:44d648f10791077ea66666059f9b8a5e560c8431ea9ce23fc3b66a07d58d171c)
+- [AC-11] Docs changed — test cases need review (index current=false; fingerprint=sha256:bc6cb16d0aff8aa9db467de2d4d83299b775f048cae1db8dff66edbe82dea21c)
+- [AC-12] Docs changed — test cases need review (index current=false; fingerprint=sha256:bc6cb16d0aff8aa9db467de2d4d83299b775f048cae1db8dff66edbe82dea21c)
+- [AC-13] Docs changed — test cases need review (index current=false; fingerprint=sha256:16b7187ddcf22cf11a9664482820500ba999bf7f33a71634842f982bd94f20a7)
+- [AC-14] Docs changed — test cases need review (index current=false; fingerprint=sha256:16b7187ddcf22cf11a9664482820500ba999bf7f33a71634842f982bd94f20a7)
+- [AC-15] Docs changed — test cases need review (index current=false; fingerprint=sha256:4b46624fe298e67f702726479b3a968d2d2da8ed6c35e3f0fc7078b83cae6de3)
+- [AC-16] Docs changed — test cases need review (index current=false; fingerprint=sha256:4b46624fe298e67f702726479b3a968d2d2da8ed6c35e3f0fc7078b83cae6de3)
+- [AC-17] Docs changed — test cases need review (index current=false; fingerprint=sha256:e0b23fa0d7649dccc4ae02aa7013217a78d874386b5ec7fbc9614d383bf371a5)
+- [FR-01] Docs changed — test cases need review (index current=false; fingerprint=sha256:984a9eaa4cc519175977be0c09a3e92ab246bfda71a445ec868b145cb22df20b)
+- [FR-02] Docs changed — test cases need review (index current=false; fingerprint=sha256:984a9eaa4cc519175977be0c09a3e92ab246bfda71a445ec868b145cb22df20b)
+- [FR-03] Docs changed — test cases need review (index current=false; fingerprint=sha256:984a9eaa4cc519175977be0c09a3e92ab246bfda71a445ec868b145cb22df20b)
+- [FR-04] Docs changed — test cases need review (index current=false; fingerprint=sha256:984a9eaa4cc519175977be0c09a3e92ab246bfda71a445ec868b145cb22df20b)
+- [FR-05] Docs changed — test cases need review (index current=false; fingerprint=sha256:f601725c26e22adca80d48f9fae45d3bcf9dc70f757edfc29c65352770d3803e)
+- [FR-06] Docs changed — test cases need review (index current=false; fingerprint=sha256:f601725c26e22adca80d48f9fae45d3bcf9dc70f757edfc29c65352770d3803e)
+- [FR-07] Docs changed — test cases need review (index current=false; fingerprint=sha256:f601725c26e22adca80d48f9fae45d3bcf9dc70f757edfc29c65352770d3803e)
+- [FR-08] Docs changed — test cases need review (index current=false; fingerprint=sha256:f601725c26e22adca80d48f9fae45d3bcf9dc70f757edfc29c65352770d3803e)
+- [FR-10] Docs changed — test cases need review (index current=false; fingerprint=sha256:f601725c26e22adca80d48f9fae45d3bcf9dc70f757edfc29c65352770d3803e)
+- [FR-11] Docs changed — test cases need review (index current=false; fingerprint=sha256:f601725c26e22adca80d48f9fae45d3bcf9dc70f757edfc29c65352770d3803e)
+- [FR-12] Docs changed — test cases need review (index current=false; fingerprint=sha256:f601725c26e22adca80d48f9fae45d3bcf9dc70f757edfc29c65352770d3803e)
+- [FR-13] Docs changed — test cases need review (index current=false; fingerprint=sha256:8fc81cab4e7b769ab81d7f566d602cbb40696b9b602ef66c13fdf3a69a441ddf)
+- [FR-14] Docs changed — test cases need review (index current=false; fingerprint=sha256:8fc81cab4e7b769ab81d7f566d602cbb40696b9b602ef66c13fdf3a69a441ddf)
+- [FR-15] Docs changed — test cases need review (index current=false; fingerprint=sha256:8fc81cab4e7b769ab81d7f566d602cbb40696b9b602ef66c13fdf3a69a441ddf)
+- [FR-16] Docs changed — test cases need review (index current=false; fingerprint=sha256:8fc81cab4e7b769ab81d7f566d602cbb40696b9b602ef66c13fdf3a69a441ddf)
+- [FR-17] Docs changed — test cases need review (index current=false; fingerprint=sha256:8fc81cab4e7b769ab81d7f566d602cbb40696b9b602ef66c13fdf3a69a441ddf)
+- [FR-18] Docs changed — test cases need review (index current=false; fingerprint=sha256:7433a3d750e43b22d11a68701a7f1b5c84cd70f9e0c73887fcb4bbc85d306aed)
+- [FR-19] Docs changed — test cases need review (index current=false; fingerprint=sha256:7433a3d750e43b22d11a68701a7f1b5c84cd70f9e0c73887fcb4bbc85d306aed)
+- [FR-20] Docs changed — test cases need review (index current=false; fingerprint=sha256:7433a3d750e43b22d11a68701a7f1b5c84cd70f9e0c73887fcb4bbc85d306aed)
+- [FR-21] Docs changed — test cases need review (index current=false; fingerprint=sha256:7433a3d750e43b22d11a68701a7f1b5c84cd70f9e0c73887fcb4bbc85d306aed)
+- [FR-22] Docs changed — test cases need review (index current=false; fingerprint=sha256:984a9eaa4cc519175977be0c09a3e92ab246bfda71a445ec868b145cb22df20b)
+- [FR-23] Docs changed — test cases need review (index current=false; fingerprint=sha256:984a9eaa4cc519175977be0c09a3e92ab246bfda71a445ec868b145cb22df20b)
+- [FR-24] Docs changed — test cases need review (index current=false; fingerprint=sha256:984a9eaa4cc519175977be0c09a3e92ab246bfda71a445ec868b145cb22df20b)
+- [FR-25] Docs changed — test cases need review (index current=false; fingerprint=sha256:2671fa81c2f3b979341bed7f23df01d8c48eb829f62b5e0f85a501d6c63e4e0a)
+- [FR-26] Docs changed — test cases need review (index current=false; fingerprint=sha256:2671fa81c2f3b979341bed7f23df01d8c48eb829f62b5e0f85a501d6c63e4e0a)
+- [FR-27] Docs changed — test cases need review (index current=false; fingerprint=sha256:2671fa81c2f3b979341bed7f23df01d8c48eb829f62b5e0f85a501d6c63e4e0a)
+- [FR-28] Docs changed — test cases need review (index current=false; fingerprint=sha256:b0ca474f51982b8e84b8aa043459a5098edb01c33a8ccd58f134a734cb0bdd8b)
+- [FR-29] Docs changed — test cases need review (index current=false; fingerprint=sha256:b0ca474f51982b8e84b8aa043459a5098edb01c33a8ccd58f134a734cb0bdd8b)
+- [FR-30] Docs changed — test cases need review (index current=false; fingerprint=sha256:b0ca474f51982b8e84b8aa043459a5098edb01c33a8ccd58f134a734cb0bdd8b)
+- [FR-31] Docs changed — test cases need review (index current=false; fingerprint=sha256:b0ca474f51982b8e84b8aa043459a5098edb01c33a8ccd58f134a734cb0bdd8b)
+- [FR-32] Docs changed — test cases need review (index current=false; fingerprint=sha256:32ba11492db28a31bc0f0f6dfba02adacb2f3f8674cf6e19ce91b104d3c20adc)
+- [FR-33] Docs changed — test cases need review (index current=false; fingerprint=sha256:32ba11492db28a31bc0f0f6dfba02adacb2f3f8674cf6e19ce91b104d3c20adc)
+- [FR-34] Docs changed — test cases need review (index current=false; fingerprint=sha256:32ba11492db28a31bc0f0f6dfba02adacb2f3f8674cf6e19ce91b104d3c20adc)
+- [FR-35] Docs changed — test cases need review (index current=false; fingerprint=sha256:b1932c8f98ad822f8ce321e52d352f13a8e3d852d45a6bb71ba9c83d321fc738)
+- [FR-36] Docs changed — test cases need review (index current=false; fingerprint=sha256:b1932c8f98ad822f8ce321e52d352f13a8e3d852d45a6bb71ba9c83d321fc738)
+- [BR-01] Docs changed — test cases need review (index current=false; fingerprint=sha256:e657fa128204c24311efead507e2ee01c1ac8f6463cc06d66184862bf864665e)
+- [BR-03] Docs changed — test cases need review (index current=false; fingerprint=sha256:e657fa128204c24311efead507e2ee01c1ac8f6463cc06d66184862bf864665e)
+- [BR-10] Docs changed — test cases need review (index current=false; fingerprint=sha256:e657fa128204c24311efead507e2ee01c1ac8f6463cc06d66184862bf864665e)
+- [NFR-02] Docs changed — test cases need review (index current=false; fingerprint=sha256:51dc60c0a80dd45f020b6136d15c7a17807e81a26c2da8531d8688cc9ff1e1bf)
+- [NFR-04] Docs changed — test cases need review (index current=false; fingerprint=sha256:51dc60c0a80dd45f020b6136d15c7a17807e81a26c2da8531d8688cc9ff1e1bf)
+- [NFR-06] Docs changed — test cases need review (index current=false; fingerprint=sha256:f354deb70c59e7cbd050db735f2e0d4f1aeac7ee78805d9594052f0027ce0339)
+- [NFR-07] Docs changed — test cases need review (index current=false; fingerprint=sha256:ec35d07745935d43ede5bc23381533cb15ad15eb3a8347bf5c6bc75ca315ea0f)
+- [NFR-08] Docs changed — test cases need review (index current=false; fingerprint=sha256:ec35d07745935d43ede5bc23381533cb15ad15eb3a8347bf5c6bc75ca315ea0f)
+- [NFR-14] Docs changed — test cases need review (index current=false; fingerprint=sha256:760d931f03571cf7d36ca7d48482931be0c8d73890d7d000688eb1ec0072b034)
+- [NFR-17] Docs changed — test cases need review (index current=false; fingerprint=sha256:ec35d07745935d43ede5bc23381533cb15ad15eb3a8347bf5c6bc75ca315ea0f)
+- [NFR-18] Docs changed — test cases need review (index current=false; fingerprint=sha256:09e78b258de4c46281d1d59df150219c140d7f6f90933662ab83c157d8a7910b)
+- [FR-09] TestGen agent did not emit TESTGEN_DONE
+- [FR-34] TestGen agent did not emit TESTGEN_DONE
+- [docker-compose-db] AI review failed — see 20260626T181528Z-review.json
+- [docker-compose-db] AI review failed — see 20260626T182649Z-review.json
+- [docker-compose-db] Do not cite generated case IDs (e.g. TC-NFR-02-019) on infra smoke tests; map each case ID to its real scenario in the owning module test file (waitlist concurrency → registration.integration.test.ts).
+- [api-foundation] AI review failed — see 20260626T184529Z-review.json
+- [module-event] Do not add AC-13 waitlist FIFO tests (TC-AC-13-014) in registration.integration.test.ts — module-event scope is apps/api/src/modules/event only; colocate cross-module pagination coverage in event.integration.test.ts.
+- [module-event-cover-image] Computational checks failed — see 20260627T033330Z-checks.json
+- [web-design-system-shell] Browser test failed — see 20260627T035053Z-browser-test.json
+- [web-design-system-shell] Domain status `Badge` must use `variant: semantic` (`bg-[var(--status-bg)]`) — `default`/`outline` Tailwind bg utilities override `@layer base` `[data-domain-status]` rules so semantic tokens never paint.
+- [web-design-system-shell] Browser test failed — see 20260627T040511Z-browser-test.json
+- [web-design-system-shell] Computational checks failed — see 20260627T041113Z-checks.json
+- [harness] Never pipe `npm run aih:preview` through `tail`/`head` or chain it with `&&` — orphaned shell children block the loop after `SLICE_DONE`; use separate commands and `npm run aih:preview:verify` instead.
+- [web-design-system-shell] Browser test failed — see 20260627T043154Z-browser-test.json
+- [web-design-system-shell] Browser test failed — see 20260627T044443Z-browser-test.json
+- [web-design-system-shell] Browser test failed — see 20260627T045127Z-browser-test.json
+- [web-design-system-shell] Browser test failed — see 20260627T045816Z-browser-test.json
+- [web-design-system-shell] Browser test failed — see 20260627T050525Z-browser-test.json
+- [web-design-system-shell] Browser test failed — see 20260627T051252Z-browser-test.json

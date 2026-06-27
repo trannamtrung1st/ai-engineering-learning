@@ -1,0 +1,511 @@
+{
+  "productItemId": "BR-10",
+  "version": 1,
+  "docFingerprint": "sha256:e657fa128204c24311efead507e2ee01c1ac8f6463cc06d66184862bf864665e",
+  "generatedAt": "2026-06-26T17:52:15Z",
+  "cases": [
+    {
+      "id": "TC-BR-10-001",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": [
+        "BR-10",
+        "AC-05",
+        "BR-13"
+      ],
+      "title": "In-window check-in stored with timestamp per testing-plan §3",
+      "preconditions": [
+        "Event is InProgress with check-in window active (fixed clock now satisfies checkinOpenAt <= now < checkinCloseAt)",
+        "Participant has registration in Registered state with no prior valid check-in",
+        "Authenticated OrganizerStaff or OrganizerAdmin with check-in capability for the event"
+      ],
+      "steps": [
+        "Invoke checkinService.staffCheckin(eventId, { registrationId }, actorContext) at in-window time",
+        "Query checkin_records and registration state for the participant"
+      ],
+      "expected": "Testing-plan §3 row satisfied: CheckinRecord persisted with non-null checkinAt timestamp; registration transitions to CheckedIn; BR-10 satisfied because check-in occurred within valid window (checkinOpenAt <= now < checkinCloseAt); audit metadata persisted per BR-13",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-10-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": [
+        "BR-10",
+        "AC-06"
+      ],
+      "title": "Out-of-window check-in rejected with CHECKIN_WINDOW_CLOSED per testing-plan §3",
+      "preconditions": [
+        "Event is InProgress with configured check-in window not containing fixed clock now",
+        "Participant has registration in Registered state with no prior check-in",
+        "Authenticated staff actor with check-in capability for the event"
+      ],
+      "steps": [
+        "Set fixed clock to a time outside checkinOpenAt..checkinCloseAt",
+        "Invoke checkinService.staffCheckin(eventId, { registrationId }, actorContext)",
+        "Inspect thrown error code and database state"
+      ],
+      "expected": "Testing-plan §3 row satisfied: out-of-window check-in is rejected with stable error code CHECKIN_WINDOW_CLOSED; no CheckinRecord persisted; registration remains Registered",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-10-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": [
+        "BR-10",
+        "AC-05",
+        "FR-15"
+      ],
+      "title": "Staff check-in within window persists CheckinRecord and state transition in one DB transaction",
+      "preconditions": [
+        "Real database fixture with Registered participant and active check-in window",
+        "No existing CheckinRecord for the registration",
+        "Staff actor context with operatorId",
+        "Fixed clock now satisfies checkinOpenAt <= now < checkinCloseAt"
+      ],
+      "steps": [
+        "Execute staff check-in through checkinService against real Postgres",
+        "Query checkin_records row and registrations.state in the same database session immediately after commit"
+      ],
+      "expected": "Exactly one CheckinRecord row with checkinAt within window bounds; registration state is CheckedIn; no partial write (record without state change or vice versa)",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-10-004",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": [
+        "BR-10",
+        "AC-06",
+        "FR-15"
+      ],
+      "title": "Check-in before CheckinOpenAt is rejected at module boundary",
+      "preconditions": [
+        "Event is InProgress with checkinOpenAt in the future relative to fixed clock now",
+        "Participant has Registered registration with no prior check-in",
+        "Authenticated OrganizerStaff or OrganizerAdmin with check-in capability"
+      ],
+      "steps": [
+        "Set fixed clock to a time strictly before checkinOpenAt",
+        "Invoke checkinService.staffCheckin(eventId, { registrationId }, actorContext) against real Postgres",
+        "Query checkin_records and registration state for the participant"
+      ],
+      "expected": "Request fails with CHECKIN_WINDOW_CLOSED; no CheckinRecord persisted; registration remains Registered",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-10-005",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": [
+        "BR-10",
+        "AC-06",
+        "FR-15"
+      ],
+      "title": "Check-in after CheckinCloseAt is rejected at module boundary",
+      "preconditions": [
+        "Event is InProgress or Completed with checkinCloseAt in the past relative to fixed clock now",
+        "Participant has Registered registration with no prior check-in",
+        "Authenticated staff actor with check-in capability"
+      ],
+      "steps": [
+        "Set fixed clock to a time strictly after checkinCloseAt",
+        "Invoke checkinService.staffCheckin(eventId, { registrationId }, actorContext) against real Postgres",
+        "Verify database state for check-in and registration"
+      ],
+      "expected": "Request fails with CHECKIN_WINDOW_CLOSED; no CheckinRecord created; registration state unchanged (Registered)",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-10-006",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": [
+        "BR-10",
+        "AC-05"
+      ],
+      "title": "Valid in-window check-in transitions registration Registered to CheckedIn",
+      "preconditions": [
+        "Registration in Registered state before check-in",
+        "Event check-in window contains fixed clock now (checkinOpenAt <= now < checkinCloseAt)",
+        "No prior valid check-in on the registration"
+      ],
+      "steps": [
+        "Record beforeState as Registered from registration repository",
+        "Submit valid in-window check-in via checkinService",
+        "Read afterState from registration repository and CheckinRecord"
+      ],
+      "expected": "beforeState Registered, afterState CheckedIn per state machine; validCheckin guard satisfied (in-window per BR-10); checkinAt timestamp recorded",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-10-007",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "BR-10",
+        "AC-05",
+        "FR-13",
+        "FR-16"
+      ],
+      "title": "POST /events/{eventId}/checkins returns HTTP 200 when within check-in window",
+      "preconditions": [
+        "E2E fixture event InProgress with active check-in window containing current (or simulated) time",
+        "Registered participant with valid registrationId",
+        "OrganizerStaff or OrganizerAdmin JWT scoped to the event",
+        "Fresh Idempotency-Key header value"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/checkins with body { registrationId } and Authorization bearer token",
+        "Read response body and registration state"
+      ],
+      "expected": "HTTP 200 with non-null checkinAt, registrationState CheckedIn; check-in recorded within BR-10 window bounds",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-10-008",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "BR-10",
+        "AC-06",
+        "FR-13"
+      ],
+      "title": "POST /events/{eventId}/checkins returns HTTP 422 with CHECKIN_WINDOW_CLOSED when outside window",
+      "preconditions": [
+        "E2E fixture event InProgress with check-in window not containing current (or simulated) time",
+        "Registered participant with valid registrationId",
+        "Staff or admin JWT with scope for the event",
+        "Fresh Idempotency-Key header value"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/checkins with body { registrationId } while outside configured window",
+        "Parse error envelope from response body"
+      ],
+      "expected": "HTTP 422 with error.code CHECKIN_WINDOW_CLOSED and user-safe message; no successful check-in payload returned",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-10-009",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "BR-10",
+        "AC-05",
+        "AC-06",
+        "FR-14",
+        "FR-15"
+      ],
+      "title": "POST /events/{eventId}/self-checkin succeeds in-window and rejects out-of-window",
+      "preconditions": [
+        "Event rule config enables participant self check-in",
+        "Event InProgress with known checkinOpenAt and checkinCloseAt",
+        "Authenticated participant JWT for Registered registration with no prior check-in"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/self-checkin with participant Authorization bearer token at in-window time",
+        "Repeat with clock or fixture moved outside window for a fresh registration"
+      ],
+      "expected": "In-window request returns HTTP 200 with checkinAt and CheckedIn state; out-of-window request rejected with CHECKIN_WINDOW_CLOSED per BR-10",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-10-010",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": [
+        "BR-10",
+        "AC-05",
+        "FR-15"
+      ],
+      "title": "Flow A lifecycle check-in step succeeds only when within configured window",
+      "preconditions": [
+        "E2E Flow A fixture: event progressed through publish, open-registration, and participant Registered",
+        "Event started (InProgress) with check-in window open",
+        "Participant or staff token from prior registration step"
+      ],
+      "steps": [
+        "Execute Flow A check-in step: POST /api/v1/events/{eventId}/self-checkin or staff checkins for the registered participant while window is open",
+        "Verify response before proceeding to feedback step"
+      ],
+      "expected": "Check-in response HTTP 200 with non-null checkinAt and CheckedIn state within BR-10 window, enabling subsequent feedback and eligibility steps",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-10-011",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": [
+        "BR-10",
+        "FR-13"
+      ],
+      "title": "Participant denied staff check-in endpoint regardless of window state",
+      "preconditions": [
+        "Event InProgress with check-in window open",
+        "Registered participant with valid registrationId",
+        "Authenticated JWT for participant only (no staff check-in capability)"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/checkins with participant JWT and body { registrationId } for own registration"
+      ],
+      "expected": "HTTP 403 unauthorized per roles matrix; insufficient check-in capability; no CheckinRecord created even when BR-10 window is open",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-10-012",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": [
+        "BR-10",
+        "FR-13"
+      ],
+      "title": "OrganizerStaff denied check-in on event outside assigned scope",
+      "preconditions": [
+        "Event InProgress with check-in window open but event not assigned to staff actor",
+        "Registered participant on that event",
+        "Authenticated OrganizerStaff JWT without scope for eventId"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/checkins with staff JWT and valid registrationId while window is open"
+      ],
+      "expected": "HTTP 403 or 404 per scope policy; no CheckinRecord persisted; registration state unchanged despite open check-in window",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-10-013",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": [
+        "BR-10",
+        "AC-06",
+        "FR-13"
+      ],
+      "title": "Organizer check-in console blocks submission when check-in window is closed",
+      "preconditions": [
+        "OrganizerStaff logged in on event check-in screen with assigned event scope",
+        "Event InProgress but current time is outside checkinOpenAt..checkinCloseAt",
+        "Registered participant visible in attendance list"
+      ],
+      "steps": [
+        "Open organizer check-in operations console at /organizer/events/{eventId}/check-in",
+        "Attempt to check in a registered participant via UI control",
+        "Observe inline or toast error messaging"
+      ],
+      "expected": "UI does not record check-in; participant row remains unchecked-in; window-closed feedback consistent with CHECKIN_WINDOW_CLOSED server semantics",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-10-014",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": [
+        "BR-10",
+        "AC-05",
+        "FR-14"
+      ],
+      "title": "Participant self check-in UI succeeds when check-in window is open",
+      "preconditions": [
+        "Event with self check-in enabled and window currently open (now >= checkinOpenAt and now < checkinCloseAt)",
+        "Participant logged in with Registered status for the event",
+        "Event in InProgress state allowing check-in"
+      ],
+      "steps": [
+        "Navigate to event self check-in page for the registered event",
+        "Trigger primary check-in action control",
+        "Observe success confirmation and check-in status display"
+      ],
+      "expected": "UI shows check-in succeeded with visible timestamp or checked-in indicator; registration status reflects CheckedIn state per BR-10 in-window policy",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-10-015",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": [
+        "BR-10",
+        "AC-05"
+      ],
+      "title": "Check-in at CheckinOpenAt boundary is recorded with timestamp",
+      "preconditions": [
+        "Event configured with known checkinOpenAt and checkinCloseAt",
+        "Fixed clock set exactly to checkinOpenAt",
+        "Registered participant with no prior check-in"
+      ],
+      "steps": [
+        "Submit staff or self check-in at the boundary instant checkinOpenAt",
+        "Query CheckinRecord and registration state"
+      ],
+      "expected": "Check-in succeeds per BR-10 window policy (inclusive open boundary); checkinAt is persisted at or after checkinOpenAt and registration is CheckedIn",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-10-016",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": [
+        "BR-10",
+        "AC-06"
+      ],
+      "title": "Check-in at checkinCloseAt boundary is rejected per exclusive close boundary",
+      "preconditions": [
+        "Event configured with known checkinOpenAt and checkinCloseAt",
+        "Fixed clock set exactly to checkinCloseAt (now >= checkinOpenAt and now < checkinCloseAt is false)",
+        "Registered participant with no prior check-in"
+      ],
+      "steps": [
+        "Submit staff or self check-in at the close boundary instant",
+        "Query CheckinRecord and registration state"
+      ],
+      "expected": "Check-in rejected with CHECKIN_WINDOW_CLOSED; exclusive close boundary treats checkinCloseAt as out-of-window (valid window is checkinOpenAt <= now < checkinCloseAt); registration stays Registered",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-10-017",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": [
+        "BR-10",
+        "AC-06",
+        "BR-12"
+      ],
+      "title": "Out-of-window rejection preserves Registered state for attendance reconciliation",
+      "preconditions": [
+        "Event InProgress with closed check-in window (now after checkinCloseAt)",
+        "Registered participant never checked in",
+        "Event completion workflow available in test harness"
+      ],
+      "steps": [
+        "Attempt check-in after window close and confirm rejection",
+        "Run event completion / attendance finalization for the event",
+        "Query registration terminal state for the participant"
+      ],
+      "expected": "No CheckinRecord exists; after completion participant is marked Absent (not Attended) because BR-10 prevented valid check-in",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-10-018",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": [
+        "BR-10",
+        "AC-06"
+      ],
+      "title": "Duplicate POST checkins outside window return CHECKIN_WINDOW_CLOSED not CHECKIN_ALREADY_RECORDED",
+      "preconditions": [
+        "Event outside check-in window",
+        "Registered participant with no prior check-in",
+        "Staff JWT and two distinct Idempotency-Key values"
+      ],
+      "steps": [
+        "POST /api/v1/events/{eventId}/checkins twice with different Idempotency-Key headers while window is closed",
+        "Inspect both error responses"
+      ],
+      "expected": "Both attempts return CHECKIN_WINDOW_CLOSED; BR-10 window guard applies before BR-11 duplicate check-in evaluation",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-10-019",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P1",
+      "traceability": [
+        "BR-10",
+        "AC-06"
+      ],
+      "title": "Concurrent out-of-window check-in requests all fail without creating records",
+      "preconditions": [
+        "Registered participant with no prior check-in",
+        "Check-in window closed (now outside bounds)",
+        "Two or more parallel check-in requests for the same registrationId"
+      ],
+      "steps": [
+        "Fire concurrent staffCheckin (or API POST) calls while window is closed",
+        "Count checkin_records rows and inspect registration state after all requests settle"
+      ],
+      "expected": "All requests fail with CHECKIN_WINDOW_CLOSED; zero CheckinRecord rows created; registration remains Registered",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-10-020",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": [
+        "BR-10"
+      ],
+      "title": "Check-in window validation runs before duplicate check-in guard in pipeline",
+      "preconditions": [
+        "Registered participant with existing valid CheckinRecord (BR-11 would apply)",
+        "Event InProgress but current time outside checkinOpenAt..checkinCloseAt"
+      ],
+      "steps": [
+        "Attempt second check-in for the same registration while window is closed",
+        "Inspect error code on failure"
+      ],
+      "expected": "Failure code is CHECKIN_WINDOW_CLOSED (not CHECKIN_ALREADY_RECORDED), confirming pipeline step 2 (event check-in window) executes before step 3 (existing valid check-in check)",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-10-021",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": [
+        "BR-10",
+        "NFR-13"
+      ],
+      "title": "Fixed clock abstraction drives all BR-10 window boundary tests consistently",
+      "preconditions": [
+        "Test harness provides injectable clock abstraction per testing plan deterministic controls",
+        "Event with known checkinOpenAt and checkinCloseAt boundaries"
+      ],
+      "steps": [
+        "Set clock to one second before open, attempt check-in, observe rejection",
+        "Set clock to in-window, attempt check-in, observe success",
+        "Set clock to one second after close, attempt check-in on a fresh registration, observe rejection"
+      ],
+      "expected": "All three outcomes are reproducible across test runs with identical clock fixtures; no flaky time-dependent BR-10 results",
+      "edgeCase": false
+    }
+  ]
+}
