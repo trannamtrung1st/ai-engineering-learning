@@ -74,6 +74,14 @@ After writing the artifact, end with: TESTGEN_DONE ${REQUIREMENT_TAG}
   echo "==> Agent exit: ${agent_status}"
 fi
 
+if [[ "${agent_status:-0}" -eq "$AGENT_TIMEOUT_EXIT" ]]; then
+  timeout_ms="$(get_agent_timeout_ms "$TESTGEN_CONFIG")"
+  append_guardrail "$REQUIREMENT_TAG" "TestGen agent timed out after ${timeout_ms}ms — see ${RID}-testgen.txt"
+  append_progress "$REQUIREMENT_TAG" "testgen_timeout"
+  echo "TestGen agent timed out. See guardrails.md"
+  exit 1
+fi
+
 agent_text="$(cat "$agent_out")"
 if echo "$agent_text" | grep -q "TESTGEN_BLOCKED"; then
   reason="$(echo "$agent_text" | grep "TESTGEN_BLOCKED" | tail -1)"

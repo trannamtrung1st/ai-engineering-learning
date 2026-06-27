@@ -81,6 +81,14 @@ else
   echo "==> Agent exit: ${agent_status}"
 fi
 
+if [[ "${agent_status:-0}" -eq "$AGENT_TIMEOUT_EXIT" ]]; then
+  timeout_ms="$(get_agent_timeout_ms "$LOOP_CONFIG")"
+  append_guardrail "$SLICE_ID" "Implementer agent timed out after ${timeout_ms}ms — see ${RID}-agent.txt"
+  append_progress "$SLICE_ID" "agent_timeout"
+  echo "Implementer agent timed out. See guardrails.md"
+  exit 1
+fi
+
 agent_text="$(cat "$agent_out")"
 if echo "$agent_text" | grep -q "SLICE_BLOCKED"; then
   reason="$(echo "$agent_text" | grep "SLICE_BLOCKED" | tail -1)"

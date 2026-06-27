@@ -45,6 +45,7 @@ npm run aih:loop -- 50                     # max 50 iterations
 | `AIH_REVIEWER_MODEL` | `auto` | Reviewer model |
 | `AIH_TESTER_MODEL` | `auto` | Browser test agent model |
 | `AIH_TESTGEN_MODEL` | `auto` | Test case generator model |
+| `AIH_AGENT_TIMEOUT_MS` | `1200000` | Max wall time per agent invocation (20 minutes) |
 | `AIH_SKIP_AGENT` | — | Skip implementer (`1`) |
 | `AIH_SKIP_REVIEW` | — | Skip AI review (`1`) |
 | `AIH_SKIP_BROWSER_TEST` | — | Skip browser test gate (`1`) |

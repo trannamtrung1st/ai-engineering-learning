@@ -3,6 +3,9 @@
     "maxIterations": 80,
     "commitOnPass": true
   },
+  "agent": {
+    "timeoutMs": 1200000
+  },
   "signals": {
     "complete": "TESTGEN_COMPLETE",
     "sliceDone": "TESTGEN_DONE",

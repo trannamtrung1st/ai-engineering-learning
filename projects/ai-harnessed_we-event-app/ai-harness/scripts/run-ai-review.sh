@@ -84,12 +84,22 @@ if echo "$review_text" | grep -q 'REVIEW_PASS'; then
   review_pass=true
 fi
 
+timed_out=false
+timeout_reason=""
+if [[ "$agent_status" -eq "$AGENT_TIMEOUT_EXIT" ]]; then
+  timed_out=true
+  timeout_ms="$(get_agent_timeout_ms "$LOOP_CONFIG")"
+  timeout_reason="Agent timed out after ${timeout_ms}ms"
+fi
+
 report="$(jq -n \
   --arg slice "$SLICE_ID" \
   --arg ts "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
   --argjson pass "$([ "$review_pass" = true ] && echo true || echo false)" \
+  --argjson timedOut "$timed_out" \
+  --arg reason "$timeout_reason" \
   --arg agentStatus "$agent_status" \
-  '{slice: $slice, timestamp: $ts, pass: $pass, agentExitCode: ($agentStatus | tonumber)}')"
+  '{slice: $slice, timestamp: $ts, pass: $pass, timedOut: $timedOut, reason: (if $reason == "" then null else $reason end), agentExitCode: ($agentStatus | tonumber)}')"
 
 write_run_report "${RID}-review.json" "$report"
 

@@ -155,13 +155,23 @@ if echo "$test_text" | grep -q 'BROWSER_TEST_PASS'; then
   test_pass=true
 fi
 
+timed_out=false
+timeout_reason=""
+if [[ "$agent_status" -eq "$AGENT_TIMEOUT_EXIT" ]]; then
+  timed_out=true
+  timeout_ms="$(get_agent_timeout_ms "$LOOP_CONFIG")"
+  timeout_reason="Agent timed out after ${timeout_ms}ms"
+fi
+
 report="$(jq -n \
   --arg slice "$SLICE_ID" \
   --arg ts "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
   --argjson pass "$([ "$test_pass" = true ] && echo true || echo false)" \
   --argjson skipped false \
+  --argjson timedOut "$timed_out" \
+  --arg reason "$timeout_reason" \
   --arg agentStatus "$agent_status" \
-  '{slice: $slice, timestamp: $ts, pass: $pass, skipped: $skipped, agentExitCode: ($agentStatus | tonumber)}')"
+  '{slice: $slice, timestamp: $ts, pass: $pass, skipped: $skipped, timedOut: $timedOut, reason: (if $reason == "" then null else $reason end), agentExitCode: ($agentStatus | tonumber)}')"
 
 write_run_report "${RID}-browser-test.json" "$report"
 

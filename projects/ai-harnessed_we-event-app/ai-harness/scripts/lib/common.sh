@@ -209,7 +209,84 @@ print_harness_env() {
     echo "Agent: not installed (curl https://cursor.com/install -fsS | bash)"
   fi
   echo "Auth: agent login (OAuth, one-time per machine)"
+  echo "Agent timeout: $(get_agent_timeout_ms)ms (override: AIH_AGENT_TIMEOUT_MS)"
   echo "Overrides: AIH_MODEL=... AIH_SKIP_AGENT=1 AIH_SKIP_REVIEW=1"
+}
+
+AGENT_TIMEOUT_EXIT=124
+AGENT_TIMEOUT_DEFAULT_MS=1200000
+
+get_agent_timeout_ms() {
+  local config="${1:-$LOOP_CONFIG}"
+  if [[ -n "${AIH_AGENT_TIMEOUT_MS:-}" ]]; then
+    echo "$AIH_AGENT_TIMEOUT_MS"
+    return
+  fi
+  jq -r ".agent.timeoutMs // ${AGENT_TIMEOUT_DEFAULT_MS}" "$config"
+}
+
+agent_timeout_message() {
+  local timeout_ms="$1"
+  local timeout_min=$(( timeout_ms / 60000 ))
+  echo "ERROR: Agent timed out after ${timeout_ms}ms (${timeout_min}m)"
+}
+
+run_command_with_timeout_ms() {
+  local timeout_ms="$1"
+  shift
+  local deadline=$(( $(date +%s) * 1000 + timeout_ms ))
+  local cmd_pid
+
+  "$@" &
+  cmd_pid=$!
+
+  while kill -0 "$cmd_pid" 2>/dev/null; do
+    if (( $(date +%s) * 1000 >= deadline )); then
+      echo "==> Agent timed out after ${timeout_ms}ms" >&2
+      kill -TERM "$cmd_pid" 2>/dev/null || true
+      sleep 2
+      kill -KILL "$cmd_pid" 2>/dev/null || true
+      wait "$cmd_pid" 2>/dev/null || true
+      return "$AGENT_TIMEOUT_EXIT"
+    fi
+    sleep 2
+  done
+
+  wait "$cmd_pid"
+}
+
+run_agent_with_timeout_ms() {
+  local timeout_ms="$1"
+  local outfile="$2"
+  shift 2
+  local status timeout_msg fifo tee_pid
+
+  if [[ -n "$outfile" ]]; then
+    fifo="$(mktemp -u "${TMPDIR:-/tmp}/aih-agent.XXXXXX")"
+    mkfifo "$fifo"
+    tee "$outfile" < "$fifo" &
+    tee_pid=$!
+    set +e
+    run_command_with_timeout_ms "$timeout_ms" "$@" > "$fifo"
+    status=$?
+    set -e
+    wait "$tee_pid" 2>/dev/null || true
+    rm -f "$fifo"
+    if [[ "$status" -eq "$AGENT_TIMEOUT_EXIT" ]]; then
+      timeout_msg="$(agent_timeout_message "$timeout_ms")"
+      echo "$timeout_msg" | tee -a "$outfile" >&2
+    fi
+    return "$status"
+  fi
+
+  set +e
+  run_command_with_timeout_ms "$timeout_ms" "$@"
+  status=$?
+  set -e
+  if [[ "$status" -eq "$AGENT_TIMEOUT_EXIT" ]]; then
+    agent_timeout_message "$timeout_ms" >&2
+  fi
+  return "$status"
 }
 
 run_id() {
@@ -630,11 +707,9 @@ agent_invoke_testgen() {
   local outfile="${3:-}"
   require_agent
   local -a args=(-p --force --trust --output-format text --model "$model")
-  if [[ -n "$outfile" ]]; then
-    "$AGENT_BIN" "${args[@]}" "$prompt" | tee "$outfile"
-    return "${PIPESTATUS[0]}"
-  fi
-  "$AGENT_BIN" "${args[@]}" "$prompt"
+  local timeout_ms
+  timeout_ms="$(get_agent_timeout_ms "$TESTGEN_CONFIG")"
+  run_agent_with_timeout_ms "$timeout_ms" "$outfile" "$AGENT_BIN" "${args[@]}" "$prompt"
 }
 
 append_guardrail() {
@@ -721,11 +796,9 @@ agent_invoke() {
   if slice_uses_browser_mcp "$slice_id"; then
     args+=(--approve-mcps)
   fi
-  if [[ -n "$outfile" ]]; then
-    "$AGENT_BIN" "${args[@]}" "$prompt" | tee "$outfile"
-    return "${PIPESTATUS[0]}"
-  fi
-  "$AGENT_BIN" "${args[@]}" "$prompt"
+  local timeout_ms
+  timeout_ms="$(get_agent_timeout_ms "$LOOP_CONFIG")"
+  run_agent_with_timeout_ms "$timeout_ms" "$outfile" "$AGENT_BIN" "${args[@]}" "$prompt"
 }
 
 # Read-only reviewer: plan mode blocks edits; prompt forbids shell/tests.
@@ -735,11 +808,9 @@ agent_invoke_review() {
   local outfile="${3:-}"
   require_agent
   local -a args=(-p --force --trust --output-format text --model "$model" --mode plan)
-  if [[ -n "$outfile" ]]; then
-    "$AGENT_BIN" "${args[@]}" "$prompt" | tee "$outfile"
-    return "${PIPESTATUS[0]}"
-  fi
-  "$AGENT_BIN" "${args[@]}" "$prompt"
+  local timeout_ms
+  timeout_ms="$(get_agent_timeout_ms "$LOOP_CONFIG")"
+  run_agent_with_timeout_ms "$timeout_ms" "$outfile" "$AGENT_BIN" "${args[@]}" "$prompt"
 }
 
 # Browser tester: Playwright MCP enabled; prompt forbids file edits.
@@ -749,11 +820,9 @@ agent_invoke_browser_test() {
   local outfile="${3:-}"
   require_agent
   local -a args=(-p --force --trust --approve-mcps --output-format text --model "$model")
-  if [[ -n "$outfile" ]]; then
-    "$AGENT_BIN" "${args[@]}" "$prompt" | tee "$outfile"
-    return "${PIPESTATUS[0]}"
-  fi
-  "$AGENT_BIN" "${args[@]}" "$prompt"
+  local timeout_ms
+  timeout_ms="$(get_agent_timeout_ms "$LOOP_CONFIG")"
+  run_agent_with_timeout_ms "$timeout_ms" "$outfile" "$AGENT_BIN" "${args[@]}" "$prompt"
 }
 
 git_changed_files() {

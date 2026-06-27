@@ -248,7 +248,11 @@ check_stack_startup() {
   fi
 
   set +e
-  stack_out="$("$verify_script" "${verify_args[@]}" 2>&1)"
+  if [[ ${#verify_args[@]} -gt 0 ]]; then
+    stack_out="$("$verify_script" "${verify_args[@]}" 2>&1)"
+  else
+    stack_out="$("$verify_script" 2>&1)"
+  fi
   local stack_status=$?
   set -e
   echo "$stack_out"
@@ -274,7 +278,11 @@ check_stack_startup() {
   fi
 
   set +e
-  scenario_out="$("$scenario_script" "${scenario_args[@]}" 2>&1)"
+  if [[ ${#scenario_args[@]} -gt 0 ]]; then
+    scenario_out="$("$scenario_script" "${scenario_args[@]}" 2>&1)"
+  else
+    scenario_out="$("$scenario_script" 2>&1)"
+  fi
   local scenario_status=$?
   set -e
   echo "$scenario_out"

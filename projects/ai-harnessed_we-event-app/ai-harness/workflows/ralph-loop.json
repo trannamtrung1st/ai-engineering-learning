@@ -4,6 +4,9 @@
     "branchPrefix": "aih/",
     "commitOnPass": true
   },
+  "agent": {
+    "timeoutMs": 1200000
+  },
   "signals": {
     "complete": "COMPLETE",
     "sliceDone": "SLICE_DONE",
