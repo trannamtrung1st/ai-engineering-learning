@@ -37,7 +37,11 @@ export class CheckinService {
     input: StaffCheckinInput,
     context: ActorContext,
   ) {
-    assertAuditMetadata(context);
+    const resolvedContext: ActorContext = {
+      ...context,
+      actorId: resolveActorId(context.actorId),
+    };
+    assertAuditMetadata(resolvedContext);
 
     const event = await this.requireEvent(eventId);
     assertCheckinWindowOpen(event);
@@ -54,8 +58,8 @@ export class CheckinService {
     const result = await recordCheckin(
       registration,
       "Staff",
-      context,
-      context.actorId,
+      resolvedContext,
+      resolvedContext.actorId,
     );
 
     return toCheckinResponse(

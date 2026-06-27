@@ -37,7 +37,7 @@ describe("Check-in module — window validation, attendance, pagination (AC-05, 
     await destroyE2EContext(ctx);
   });
 
-  it("AC-05 / TC-AC-05-004: POST checkins returns HTTP 200 with checkinAt and attendance row", async () => {
+  it("AC-05 / TC-AC-05-004 / TC-AC-05-006: POST checkins returns HTTP 200 with checkinAt and attendance row", async () => {
     const { eventId } = await createRegistrationOpenEvent(ctx.app, organizerToken, {
       capacity: 5,
     });
@@ -80,6 +80,35 @@ describe("Check-in module — window validation, attendance, pagination (AC-05, 
     );
     assert.ok(row);
     assert.equal(row.checkinAt, checkin.checkinAt);
+  });
+
+  it("FR-14 / TC-FR-14-021: dev participant sub resolves for self check-in HTTP path", async () => {
+    const devSub = "participant-checkin-e2e-dev-1";
+    const { eventId } = await createRegistrationOpenEvent(ctx.app, organizerToken, {
+      capacity: 5,
+      selfCheckinEnabled: true,
+    });
+    const participantToken = await signDevToken(ctx.app, devSub, "Participant");
+    await registerParticipant(ctx.app, participantToken, eventId);
+
+    await transitionEvent(ctx.app, organizerToken, eventId, "close-registration");
+    await transitionEvent(ctx.app, organizerToken, eventId, "start");
+
+    const checkinResponse = await apiRequest(ctx.app, {
+      method: "POST",
+      path: `/events/${eventId}/self-checkin`,
+      token: participantToken,
+      idempotencyKey: newIdempotencyKey(),
+    });
+    assertOk(checkinResponse.statusCode, checkinResponse.body, "dev sub self check-in");
+    const checkin = parseJson<{
+      checkinAt: string;
+      registrationState: string;
+      method: string;
+    }>(checkinResponse.body);
+    assert.ok(checkin.checkinAt);
+    assert.equal(checkin.registrationState, "CheckedIn");
+    assert.equal(checkin.method, "Self");
   });
 
   it("AC-05 / FR-14 / TC-AC-05-005: POST self-checkin returns HTTP 200 with CheckedIn state", async () => {
@@ -362,7 +391,133 @@ describe("Check-in module — window validation, attendance, pagination (AC-05, 
     assert.equal(attended.state, "Attended");
   });
 
-  it("AC-13: paginated attendance list returns envelope metadata and empty page beyond totalPages", async () => {
+  it("TC-AC-05-013 / AC-05 / BR-11 / NFR-02: concurrent duplicate check-in yields at most one record", async () => {
+    const { eventId } = await createRegistrationOpenEvent(ctx.app, organizerToken, {
+      capacity: 5,
+    });
+    const participantToken = await signDevToken(ctx.app, randomUUID(), "Participant");
+    const registered = await registerParticipant(ctx.app, participantToken, eventId);
+
+    await transitionEvent(ctx.app, organizerToken, eventId, "close-registration");
+    await transitionEvent(ctx.app, organizerToken, eventId, "start");
+
+    const responses = await Promise.all(
+      Array.from({ length: 3 }, () =>
+        apiRequest(ctx.app, {
+          method: "POST",
+          path: `/events/${eventId}/checkins`,
+          token: organizerToken,
+          payload: { registrationId: registered.registrationId },
+          idempotencyKey: newIdempotencyKey(),
+        }),
+      ),
+    );
+
+    const success = responses.filter((response) => response.statusCode === 200);
+    const conflicts = responses.filter((response) => response.statusCode === 409);
+    assert.equal(success.length, 1, "exactly one concurrent check-in succeeds");
+    assert.equal(conflicts.length, 2, "duplicate requests conflict");
+
+    for (const response of conflicts) {
+      const error = parseJson<ErrorEnvelope>(response.body);
+      assert.equal(error.error.code, VALIDATION_ERROR_CODES.CHECKIN_ALREADY_RECORDED);
+    }
+
+    const checkin = parseJson<{ checkinAt: string; registrationState: string }>(
+      success[0]!.body,
+    );
+    assert.ok(checkin.checkinAt);
+    assert.equal(checkin.registrationState, "CheckedIn");
+
+    const attendanceResponse = await apiRequest(ctx.app, {
+      method: "GET",
+      path: `/events/${eventId}/attendance?page=1&pageSize=20`,
+      token: organizerToken,
+    });
+    assertOk(attendanceResponse.statusCode, attendanceResponse.body, "attendance list");
+    const attendance = parseJson<
+      PaginatedEnvelope<{ registrationId: string; checkinAt: string | null }>
+    >(attendanceResponse.body);
+    const rowsWithCheckin = attendance.items.filter(
+      (item) =>
+        item.registrationId === registered.registrationId && item.checkinAt !== null,
+    );
+    assert.equal(rowsWithCheckin.length, 1, "single check-in record in attendance list");
+  });
+
+  it("TC-AC-05-009 / AC-05 / FR-13: participant denied staff check-in endpoint", async () => {
+    const { eventId } = await createRegistrationOpenEvent(ctx.app, organizerToken, {
+      capacity: 5,
+    });
+    const participantAToken = await signDevToken(ctx.app, randomUUID(), "Participant");
+    const participantBToken = await signDevToken(ctx.app, randomUUID(), "Participant");
+    const registeredB = await registerParticipant(ctx.app, participantBToken, eventId);
+
+    await transitionEvent(ctx.app, organizerToken, eventId, "close-registration");
+    await transitionEvent(ctx.app, organizerToken, eventId, "start");
+
+    const checkinResponse = await apiRequest(ctx.app, {
+      method: "POST",
+      path: `/events/${eventId}/checkins`,
+      token: participantAToken,
+      payload: { registrationId: registeredB.registrationId },
+      idempotencyKey: newIdempotencyKey(),
+    });
+    assert.equal(checkinResponse.statusCode, 403, checkinResponse.body);
+    const error = parseJson<ErrorEnvelope>(checkinResponse.body);
+    assert.equal(error.error.code, "FORBIDDEN");
+
+    const attendanceResponse = await apiRequest(ctx.app, {
+      method: "GET",
+      path: `/events/${eventId}/attendance?page=1&pageSize=20`,
+      token: organizerToken,
+    });
+    assertOk(attendanceResponse.statusCode, attendanceResponse.body, "attendance list");
+    const attendance = parseJson<
+      PaginatedEnvelope<{ registrationId: string; checkinAt: string | null }>
+    >(attendanceResponse.body);
+    const row = attendance.items.find(
+      (item) => item.registrationId === registeredB.registrationId,
+    );
+    assert.ok(row);
+    assert.equal(row.checkinAt, null, "no check-in record created for participant B");
+  });
+
+  it("TC-AC-05-010 / AC-05: OrganizerStaff denied check-in on event outside assigned scope", async () => {
+    const assignedEventId = (
+      await createRegistrationOpenEvent(ctx.app, organizerToken, { capacity: 5 })
+    ).eventId;
+    const unassignedEventId = (
+      await createRegistrationOpenEvent(ctx.app, organizerToken, { capacity: 5 })
+    ).eventId;
+    const participantToken = await signDevToken(ctx.app, randomUUID(), "Participant");
+    const registered = await registerParticipant(
+      ctx.app,
+      participantToken,
+      unassignedEventId,
+    );
+
+    await transitionEvent(ctx.app, organizerToken, unassignedEventId, "close-registration");
+    await transitionEvent(ctx.app, organizerToken, unassignedEventId, "start");
+
+    const staffSub = randomUUID();
+    const staffToken = await signDevToken(ctx.app, staffSub, "OrganizerStaff", [
+      assignedEventId,
+    ]);
+
+    const checkinResponse = await apiRequest(ctx.app, {
+      method: "POST",
+      path: `/events/${unassignedEventId}/checkins`,
+      token: staffToken,
+      payload: { registrationId: registered.registrationId },
+      idempotencyKey: newIdempotencyKey(),
+    });
+    assert.equal(checkinResponse.statusCode, 403, checkinResponse.body);
+    const error = parseJson<ErrorEnvelope>(checkinResponse.body);
+    assert.equal(error.error.code, "FORBIDDEN");
+  });
+
+  it("AC-13 / TC-AC-13-012: paginated attendance list returns envelope metadata and empty page beyond totalPages", async () => {
     const { eventId } = await createRegistrationOpenEvent(ctx.app, organizerToken, {
       capacity: 10,
     });

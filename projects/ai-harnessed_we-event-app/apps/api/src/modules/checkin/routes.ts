@@ -68,7 +68,8 @@ export const checkinRoutes: FastifyPluginAsync = async (app) => {
           });
         }
 
-        const context = { actorId: actor.sub, actorRole: actor.role };
+        const resolvedSub = resolveActorId(actor.sub);
+        const context = { actorId: resolvedSub, actorRole: actor.role };
         const fingerprint = JSON.stringify({
           eventId,
           registrationId: body.registrationId,
@@ -76,7 +77,7 @@ export const checkinRoutes: FastifyPluginAsync = async (app) => {
 
         return executeIdempotent(
           request.headers,
-          actor.sub,
+          resolvedSub,
           `checkin.staff:${eventId}:${body.registrationId}`,
           fingerprint,
           () => checkinService.staffCheckin(eventId, body, context),

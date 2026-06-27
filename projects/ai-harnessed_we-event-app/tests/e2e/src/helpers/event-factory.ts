@@ -19,6 +19,7 @@ export interface EventFactoryOptions {
   checkinCloseAt?: string;
   feedbackOpenAt?: string;
   feedbackCloseAt?: string;
+  selfCheckinEnabled?: boolean;
 }
 
 export interface CreatedEvent {
@@ -52,6 +53,7 @@ export async function createDraftEvent(
         feedbackRequired: options.feedbackRequired ?? true,
         feedbackOpenAt: options.feedbackOpenAt ?? windows.open,
         feedbackCloseAt: options.feedbackCloseAt ?? windows.close,
+        selfCheckinEnabled: options.selfCheckinEnabled ?? true,
       },
     },
   });

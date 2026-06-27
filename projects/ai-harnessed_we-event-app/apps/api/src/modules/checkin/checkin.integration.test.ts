@@ -506,7 +506,7 @@ describe("checkin integration (NFR-02, BR-13)", () => {
     assert.equal(result.operatorId, null);
   });
 
-  it("AC-13: paginated attendance list returns envelope metadata", async () => {
+  it("AC-13 / TC-AC-13-015: paginated attendance list returns envelope metadata", async () => {
     const windows = checkinWindows();
     const ctx = {
       actorId: ORG_ADMIN_ID,
