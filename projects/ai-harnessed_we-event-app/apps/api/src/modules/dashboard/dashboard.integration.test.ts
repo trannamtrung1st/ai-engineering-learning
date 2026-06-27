@@ -209,4 +209,35 @@ describe("NFR-06 / FR-22 event dashboard integration", () => {
     assert.equal(dashboard.registrations, list.total);
     assert.equal(dashboard.registrations, 2);
   });
+
+  it("TC-FR-22-006: dashboard exposes feedback policy and mandatory outstanding count", async () => {
+    const windows = eventWindows();
+    const draft = await createEvent(
+      {
+        name: `Dashboard Feedback ${randomUUID()}`,
+        startAt: windows.open,
+        endAt: windows.close,
+        ruleConfig: {
+          capacity: 10,
+          waitlistEnabled: false,
+          registrationOpenAt: windows.open,
+          registrationCloseAt: windows.close,
+          checkinOpenAt: windows.open,
+          checkinCloseAt: windows.close,
+          feedbackRequired: true,
+          feedbackOpenAt: windows.open,
+          feedbackCloseAt: windows.close,
+        },
+      },
+      ORG_ADMIN_ID,
+      "OrganizerAdmin",
+      ORG_ID,
+    );
+
+    const dashboard = await dashboardService.getEventDashboard(draft.id);
+
+    assert.equal(dashboard.feedbackSubmitted, 0);
+    assert.equal(dashboard.feedbackRequired, true);
+    assert.equal(dashboard.mandatoryFeedbackOutstanding, 0);
+  });
 });

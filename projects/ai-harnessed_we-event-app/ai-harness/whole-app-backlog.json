@@ -789,7 +789,7 @@
     },
     {
       "id": "web-organizer-operations-dashboard",
-      "passes": false,
+      "passes": true,
       "priority": 39,
       "phase": 3,
       "agent": "frontend",
@@ -808,11 +808,19 @@
         "apps/web/src/app/(organizer)/organizer/events/[eventId]"
       ],
       "testRequirements": {
+        "unit": [
+          "apps/web/src/lib/event-dashboard-kpis.test.ts"
+        ],
         "integration": [
-          "apps/api/src/modules/dashboard/dashboard.integration.test.ts"
+          "apps/api/src/modules/dashboard/dashboard.integration.test.ts",
+          "apps/api/src/modules/feedback/feedback-eligibility.integration.test.ts"
+        ],
+        "component": [
+          "apps/web/src/components/organizer/feedback-completion-tracker.test.tsx"
         ],
         "e2e": [
-          "tests/e2e/src/scenarios/nfr-06-dashboard-refresh.test.ts"
+          "tests/e2e/src/scenarios/nfr-06-dashboard-refresh.test.ts",
+          "tests/e2e/src/scenarios/api-foundation-rbac.test.ts"
         ],
         "acceptanceTags": [
           "FR-22",

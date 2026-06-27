@@ -154,6 +154,9 @@ export interface EventDashboardMetrics {
   eligible: number;
   notEligible: number;
   pendingEligibility: number;
+  feedbackSubmitted: number;
+  feedbackRequired: boolean;
+  mandatoryFeedbackOutstanding: number;
 }
 
 export interface FetchEventsParams {

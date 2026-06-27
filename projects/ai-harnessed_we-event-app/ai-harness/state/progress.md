@@ -444,3 +444,7 @@ Append-only log of completed iterations.
 - 2026-06-27T11:16:45Z | web-domain-status-badge-colors | passed
 - 2026-06-27T11:27:00Z | web-organizer-events | browser: /organizer/events paginated table (1–20 of 28333) with Search/State/Sort filters + Create event; Draft dashboard Publish lifecycle + Edit form (capacity/windows); credential login — HTTP 200
 - 2026-06-27T11:39:24Z | web-organizer-events | passed
+- 2026-06-27T11:47:00Z | web-organizer-operations-dashboard | browser: feedback fixture dashboard shows 5 KPI blocks with drill-down links, Feedback completion tracker (100%), Export operational data, Completed semantic badge, bulk fixture 27 registrations — HTTP 200
+- 2026-06-27T12:04:31Z | web-organizer-operations-dashboard | browser_test_failed
+- 2026-06-27T12:13:00Z | web-organizer-operations-dashboard | browser: /organizer/export governance export center with event table + Export CSV; dashboard 503 poll shows inline "Could not refresh metrics" + Retry with stale KPIs, Retry recovers (TC-FR-24-010, TC-NFR-06-012) — HTTP 200
+- 2026-06-27T12:22:42Z | web-organizer-operations-dashboard | passed

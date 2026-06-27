@@ -11,4 +11,6 @@ export interface EventDashboardSummary {
   pendingEligibility: number;
   feedbackSubmitted: number;
   feedbackRequired: boolean;
+  /** Attended participants missing required feedback when feedbackRequired is true. */
+  mandatoryFeedbackOutstanding: number;
 }

@@ -104,7 +104,7 @@ describe("API foundation RBAC (FR-25, FR-01, FR-20, FR-24, FR-27)", () => {
     assert.equal(body.error.code, "FORBIDDEN");
   });
 
-  it("FR-24: Participant cannot export event operational data", async () => {
+  it("TC-FR-24-012 / FR-24 / AC-10e / AC-15 / FR-25 / FR-26 / NFR-08: Participant cannot export event operational data", async () => {
     const { eventId } = await createDraftEvent(ctx.app, adminToken);
 
     const response = await apiRequest(ctx.app, {
@@ -116,6 +116,32 @@ describe("API foundation RBAC (FR-25, FR-01, FR-20, FR-24, FR-27)", () => {
     assert.equal(response.statusCode, 403);
     const body = parseJson<{ error: { code: string } }>(response.body);
     assert.equal(body.error.code, "FORBIDDEN");
+  });
+
+  it("TC-FR-24-013 / FR-24 / FR-27 / AC-10e / NFR-08: OrganizerStaff cannot export data for out-of-scope event", async () => {
+    const assignedEventId = (
+      await createRegistrationOpenEvent(ctx.app, adminToken, { capacity: 5 })
+    ).eventId;
+    const unassignedEventId = (
+      await createRegistrationOpenEvent(ctx.app, adminToken, { capacity: 5 })
+    ).eventId;
+
+    const staffSub = randomUUID();
+    const staffToken = await signDevToken(ctx.app, staffSub, "OrganizerStaff", [
+      assignedEventId,
+    ]);
+
+    const response = await apiRequest(ctx.app, {
+      method: "GET",
+      path: `/events/${unassignedEventId}/export?type=eligibility`,
+      token: staffToken,
+    });
+
+    assert.equal(response.statusCode, 403);
+    assert.equal(
+      parseJson<{ error: { code: string } }>(response.body).error.code,
+      "FORBIDDEN",
+    );
   });
 
   it("FR-27: OrganizerStaff denied staff operations on unassigned event", async () => {

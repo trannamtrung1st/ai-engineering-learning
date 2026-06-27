@@ -22,5 +22,7 @@ export function getLiveQueryPolicy(mode: LiveRefreshMode) {
     refetchIntervalInBackground: mode !== "checkInConsole",
     refetchOnWindowFocus: true,
     staleTime: Math.floor(refetchInterval / 2),
+    // Surface background poll failures immediately (TC-NFR-06-012); global retry would mask transient 503s.
+    retry: mode === "organizerDashboard" ? false : undefined,
   } as const;
 }
