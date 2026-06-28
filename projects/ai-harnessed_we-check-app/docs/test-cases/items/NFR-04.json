@@ -1,0 +1,292 @@
+{
+  "productItemId": "NFR-04",
+  "version": 1,
+  "docFingerprint": "sha256:115bb9b9ee2cffbc7f45928b9de1dcb4f61fc3273e43f0feadf51807c4d787c0",
+  "generatedAt": "2026-06-29T14:30:00Z",
+  "cases": [
+    {
+      "id": "TC-NFR-04-001",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["NFR-04", "AC-07", "FR-07"],
+      "title": "TS-20: Successful POST /check-in response latency meets p95 ≤ 2000 ms under normal network",
+      "preconditions": [
+        "API and Compose PostgreSQL running per 13-docker-compose-local-runtime.md",
+        "Active session with valid room GPS and enrolled Student with Pending attendance",
+        "Valid unexpired QrToken from GET /api/v1/sessions/:sessionId/qr/current",
+        "Student authenticated with in-radius coordinates (10.762700, 106.660200)",
+        "Normal network profile (no artificial throttling)"
+      ],
+      "steps": [
+        "Execute at least 20 sequential POST /api/v1/check-in requests with unique enrolled students and valid tokens each",
+        "Record wall-clock latency from request start to full response body received for each HTTP 200 Success",
+        "Compute p95 latency across successful responses",
+        "Assert p95 ≤ 2000 ms",
+        "Assert each Success response contains outcome Success and attendance.status Present"
+      ],
+      "expected": "Testing-plan §3 TS-20 satisfied: check-in API p95 ≤ 2 s under normal pilot network per NFR-04 and AC-07a confirmation SLA",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-04-002",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P0",
+      "traceability": ["NFR-04", "FR-07", "AC-07"],
+      "title": "150 parallel unique-student check-ins achieve p95 ≤ 2000 ms with error rate < 0.1%",
+      "preconditions": [
+        "ConcurrentCheckIn load fixture per testing-plan §7 Peak concurrent check-in",
+        "Active session with 150 enrolled students each with Pending attendance and unique Valid QrToken",
+        "Real PostgreSQL via Compose; API or CheckInService invocable in parallel",
+        "Staggered submission window 0–5 minutes; normal network profile"
+      ],
+      "steps": [
+        "Launch 150 parallel POST /api/v1/check-in requests (one per unique studentId) with in-radius coordinates",
+        "Record response latency and HTTP status for each request",
+        "Compute p95 latency across HTTP 200 Success responses",
+        "Compute error rate as (non-200 responses + business failures) / 150",
+        "Assert p95 ≤ 2000 ms and error rate < 0.1%"
+      ],
+      "expected": "NFR-04 verification method satisfied: load test with 150 concurrent users meets p95 ≤ 2 s target per 07-non-functional-risk §2.2 and testing-plan §7",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-04-003",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-04", "FR-07", "FR-09"],
+      "title": "CheckInService.submit completes PostgreSQL transaction within 2000 ms at module boundary",
+      "preconditions": [
+        "Real PostgreSQL test database running via Compose",
+        "Active session with enrolled student Pending attendance and Valid qr_tokens row",
+        "CheckInService wired to AttendanceRecordRepository and QrTokenRepository",
+        "High-resolution timer available around CheckInService.submit invocation"
+      ],
+      "steps": [
+        "Record timestamp T0 immediately before CheckInService.submit(tokenId, locationPayload, studentId)",
+        "Invoke submit with valid in-radius coordinates",
+        "Record timestamp T1 when submit promise resolves with outcome Success",
+        "Assert T1 minus T0 ≤ 2000 ms",
+        "Query attendance_records and qr_tokens and assert Present + Consumed persisted"
+      ],
+      "expected": "Module-level check-in submission including DB commit completes within NFR-04 latency budget excluding client network overhead",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-04-004",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-04", "FR-07", "AC-07"],
+      "title": "POST /api/v1/check-in returns HTTP 200 Success within 2000 ms for valid submission",
+      "preconditions": [
+        "API running on port 3001 against healthy Compose PostgreSQL",
+        "Authenticated enrolled Student session cookie set",
+        "Active sessionId with Valid QrToken and student Pending attendance",
+        "In-radius coordinates supplied in request body"
+      ],
+      "steps": [
+        "Record T0 before sending POST /api/v1/check-in with body { tokenId, latitude: 10.762700, longitude: 106.660200, spoofMetadata: { mockLocationDetected: false, platform: \"android\" } }",
+        "Await HTTP response and record T1 when response body fully received",
+        "Assert HTTP status 200 OK",
+        "Assert response body outcome Success with attendance.status Present",
+        "Assert T1 minus T0 ≤ 2000 ms"
+      ],
+      "expected": "HTTP 200 Success contract delivered within NFR-04 p95 target for single check-in submission under normal conditions",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-04-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["NFR-04", "FR-07", "AC-07"],
+      "title": "Flow A step 4: enrolled student check-in completes within 2000 ms in workshop lifecycle",
+      "preconditions": [
+        "Flow A steps 1–3 complete: roster seeded, session opened Active, QR token polled via GET /sessions/:id/qr/current",
+        "Authenticated enrolled Student session with in-radius GPS fixture",
+        "Normal network; full E2E stack on ports 3000/3001 with Compose db healthy"
+      ],
+      "steps": [
+        "Record T0 before POST /api/v1/check-in with tokenId from Flow A step 3 and in-radius coordinates",
+        "Assert HTTP 200 outcome Success with attendance Present",
+        "Record T1 when response received",
+        "Assert T1 minus T0 ≤ 2000 ms",
+        "Instructor GET /api/v1/sessions/:sessionId/attendance shows present count incremented within same request window"
+      ],
+      "expected": "Flow A happy-path check-in step meets NFR-04 latency SLA tied to AC-07a confirmation within 2 s under normal network",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-04-006",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-04", "FR-07", "NFR-02"],
+      "title": "CheckInTransaction integration suite measures submit duration against 2000 ms budget on real Postgres",
+      "preconditions": [
+        "CheckInTransaction integration suite per testing-plan §5 against Compose PostgreSQL",
+        "Active session fixture with Pending attendance and Valid QrToken",
+        "DATABASE_URL=postgresql://wecheck:wecheck@localhost:5432/wecheck",
+        "Harness docker-compose-db slice acceptance tag NFR-04"
+      ],
+      "steps": [
+        "Run integration test harness wrapping CheckInService.submit with performance assertion hook",
+        "Execute submit for valid enrolled student with in-radius payload",
+        "Assert transaction commit completes within 2000 ms measured at service boundary",
+        "Assert attendance Present and qr_token Consumed after timing assertion passes",
+        "Store latency sample in test report artifact for pilot APM baseline comparison"
+      ],
+      "expected": "Integration layer validates NFR-04 at DB/module boundary using real Postgres per 11-testing-plan §5 and 13-docker-compose §5.2 persistence policy",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-04-007",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-04", "AC-07", "FR-07"],
+      "title": "Mobile check-in success confirmation UI visible within 2000 ms of submit tap",
+      "preconditions": [
+        "Authenticated Student on mobile viewport 375×812 with GPS permission granted",
+        "Active session with valid check-in deep link /check-in?token=:tokenId&session=:sessionId",
+        "Normal network profile (no throttling); web on port 3000, API healthy",
+        "In-radius geolocation mocked or granted (10.762700, 106.660200)"
+      ],
+      "steps": [
+        "Navigate to /check-in deep link on mobile viewport",
+        "Wait for GPS coordinates captured and submit control enabled",
+        "Record timestamp T0 immediately before clicking Xác nhận điểm danh submit control",
+        "Click submit and wait for success confirmation element (Điểm danh thành công or Present badge)",
+        "Record timestamp T1 when success UI is visible",
+        "Assert T1 minus T0 ≤ 2000 ms"
+      ],
+      "expected": "Student confirmation UI within 2 seconds under normal conditions per NFR-04 target and AC-07a; server-authoritative outcome reflected in UI",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-04-008",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-04", "FR-07", "NFR-18"],
+      "title": "Mobile check-in page shows loading state during submit without premature success before API completes",
+      "preconditions": [
+        "Authenticated Student on mobile viewport with valid check-in deep link",
+        "GPS permission granted with in-radius coordinates",
+        "Network request to POST /api/v1/check-in observable in browser devtools or Playwright network log"
+      ],
+      "steps": [
+        "Navigate to /check-in page and complete GPS capture step",
+        "Click submit control",
+        "Assert loading or pending indicator visible while POST /check-in request is in-flight",
+        "Assert success confirmation (Điểm danh thành công) appears only after network response completes",
+        "Measure elapsed time from submit click to success UI and assert ≤ 2000 ms under normal network"
+      ],
+      "expected": "UI respects server authority and NFR-04 timing: confirmation appears after successful API response within 2 s budget per ui-states slow-network guidance",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-04-009",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["NFR-04", "FR-07"],
+      "title": "Load test gate fails when measured p95 exceeds 2000 ms (NFR-04 boundary)",
+      "preconditions": [
+        "Load test harness (k6, Artillery, or equivalent) configured per testing-plan §7",
+        "150 virtual users with valid check-in payloads against Active session",
+        "Baseline environment documented in docs/test-reports/load-test-YYYY-MM-DD.md template"
+      ],
+      "steps": [
+        "Run peak concurrent check-in scenario with 150 VUs staggered 0–5 min",
+        "Collect latency histogram for HTTP 200 Success responses",
+        "Compute p95 latency and error rate",
+        "If p95 > 2000 ms or error rate ≥ 0.1%, mark test FAIL and record remediation plan",
+        "If p95 ≤ 2000 ms and error rate < 0.1%, mark test PASS for NFR-04 pilot gate"
+      ],
+      "expected": "NFR-04 pass/fail boundary enforced at p95 = 2000 ms and error rate < 0.1% per 07-non-functional-risk §2.2 verification and testing-plan §7 pass criteria",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-04-010",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P1",
+      "traceability": ["NFR-04", "FR-07", "NFR-23"],
+      "title": "Under 500 concurrent users multi-session stress, check-in p95 remains ≤ 3000 ms (NFR-23 ceiling) without breaching NFR-04 pilot target on 150 VU slice",
+      "preconditions": [
+        "Multi-session stress configuration per testing-plan §7: 500 concurrent users across 4 Active sessions",
+        "Subset of 150 VUs dedicated to single-session NFR-04 measurement",
+        "Full-preview stack with PostgreSQL, API, and web containers healthy"
+      ],
+      "steps": [
+        "Launch 500 concurrent check-in requests across 4 sessions",
+        "Isolate latency samples from the 150-user single-session cohort",
+        "Assert 150-user cohort p95 ≤ 2000 ms (NFR-04 pilot target)",
+        "Assert overall 500-user p95 ≤ 3000 ms per NFR-23",
+        "Assert combined error rate < 0.1%"
+      ],
+      "expected": "NFR-04 pilot latency target holds for 150-user peak while broader stress test validates scalability headroom per testing-plan §7 multi-session row",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-04-011",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P1",
+      "traceability": ["NFR-04", "FR-07", "AC-07"],
+      "title": "POST /api/v1/check-in business rejection (409 DuplicateCheckIn) still responds within 2000 ms",
+      "preconditions": [
+        "Student already Present for Active session",
+        "Fresh Valid QrToken available",
+        "Authenticated Student session with in-radius coordinates"
+      ],
+      "steps": [
+        "Record T0 before POST /api/v1/check-in with fresh tokenId for already-Present student",
+        "Assert HTTP status 409 with outcome DuplicateCheckIn",
+        "Record T1 when response body received",
+        "Assert T1 minus T0 ≤ 2000 ms",
+        "Verify fast rejection does not block subsequent valid check-ins for other students"
+      ],
+      "expected": "Error-path check-in responses remain within NFR-04 latency budget; slow duplicate rejection would degrade cohort completion per NFR-05 risk",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-04-012",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["NFR-04", "AC-07", "FR-07"],
+      "title": "Integration load sample: 20 CheckInService.submit calls report median ≤ 1000 ms and p95 ≤ 2000 ms",
+      "preconditions": [
+        "Real PostgreSQL with 20 enrolled students Pending on Active session",
+        "20 unique Valid QrTokens",
+        "CheckInService directly invocable without HTTP overhead"
+      ],
+      "steps": [
+        "Execute 20 sequential CheckInService.submit calls with unique studentId each",
+        "Record service-boundary duration for each Success outcome",
+        "Compute median and p95 across samples",
+        "Assert median ≤ 1000 ms (operational headroom below NFR-04 ceiling)",
+        "Assert p95 ≤ 2000 ms"
+      ],
+      "expected": "Module integration layer provides latency headroom below NFR-04 p95 ceiling before HTTP and mobile client overhead applied",
+      "edgeCase": false
+    }
+  ]
+}
