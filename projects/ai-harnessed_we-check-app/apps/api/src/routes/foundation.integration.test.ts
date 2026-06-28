@@ -10,6 +10,14 @@ import {
   truncateAuthTables,
 } from "../auth/session-store.js";
 import { resetClock, setClock } from "../infra/clock.js";
+import { truncateRosterTables } from "../modules/roster-enrollment/roster-service.js";
+import { truncateReportingTables } from "../modules/reporting-export/repositories.js";
+import { truncateSessionTables } from "../modules/session-management/session-service.js";
+
+const CLASS_HESD_01 = "10000000-0000-4000-8000-000000000101";
+const CLASS_HESD_02 = "10000000-0000-4000-8000-000000000102";
+const SUBJECT_SWE_101 = "20000000-0000-4000-8000-000000000201";
+const SUBJECT_SWE_102 = "20000000-0000-4000-8000-000000000202";
 
 const DEFAULT_DATABASE_URL =
   process.env.DATABASE_URL ??
@@ -40,7 +48,35 @@ describe("api foundation integration (FR-02, FR-03, NFR-10, NFR-11, NFR-16)", ()
     await closePool();
   });
 
+  async function seedReportReferenceData(
+    instructorUserId?: string,
+  ): Promise<void> {
+    await truncateSessionTables(db);
+    await truncateReportingTables(db);
+    await truncateRosterTables(db);
+    await db.query(
+      `INSERT INTO classes (id, code, name) VALUES
+       ($1, 'HESD-01', 'HESD Cohort A'),
+       ($2, 'HESD-02', 'HESD Cohort B')`,
+      [CLASS_HESD_01, CLASS_HESD_02],
+    );
+    await db.query(
+      `INSERT INTO subjects (id, code, name) VALUES
+       ($1, 'SWE-101', 'Software Engineering 101'),
+       ($2, 'SWE-102', 'Software Engineering 102')`,
+      [SUBJECT_SWE_101, SUBJECT_SWE_102],
+    );
+    if (instructorUserId) {
+      await db.query(
+        `INSERT INTO class_assignments (instructor_id, class_id, subject_id)
+         VALUES ($1, $2, $3)`,
+        [instructorUserId, CLASS_HESD_01, SUBJECT_SWE_101],
+      );
+    }
+  }
+
   async function seedSession(role: UserRole): Promise<{ sessionId: string; userId: string }> {
+    await truncateReportingTables(db);
     await truncateAuthTables(db);
     resetClock();
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -148,7 +184,12 @@ describe("api foundation integration (FR-02, FR-03, NFR-10, NFR-11, NFR-16)", ()
       method: "POST",
       url: "/api/v1/reports/export",
       headers: { cookie: `${SESSION_COOKIE_NAME}=${instructor.sessionId}` },
-      payload: { classCode: "HESD-01", subjectCode: "SWE-101" },
+      payload: {
+        classCode: "HESD-01",
+        subjectCode: "SWE-101",
+        from: "2026-06-01",
+        to: "2026-06-30",
+      },
     });
     assert.equal(response.statusCode, 403);
     assert.equal(
@@ -336,6 +377,7 @@ describe("api foundation integration (FR-02, FR-03, NFR-10, NFR-11, NFR-16)", ()
 
   it("Instructor GET /reports/summary allowed; Student denied (TC-NFR-11-004, AC-12)", async () => {
     const instructor = await seedSession(UserRole.Instructor);
+    await seedReportReferenceData(instructor.userId);
     const instructorRes = await app.inject({
       method: "GET",
       url: "/api/v1/reports/summary?classCode=HESD-01&subjectCode=SWE-101&from=2026-06-01&to=2026-06-30",
@@ -358,6 +400,7 @@ describe("api foundation integration (FR-02, FR-03, NFR-10, NFR-11, NFR-16)", ()
 
   it("unassigned instructor report returns 403 ReportAccessDenied (TC-NFR-11-007, AC-12)", async () => {
     const instructor = await seedSession(UserRole.Instructor);
+    await seedReportReferenceData(instructor.userId);
     const response = await app.inject({
       method: "GET",
       url: "/api/v1/reports/summary?classCode=HESD-02&subjectCode=SWE-102&from=2026-06-01&to=2026-06-30",
@@ -372,11 +415,17 @@ describe("api foundation integration (FR-02, FR-03, NFR-10, NFR-11, NFR-16)", ()
 
   it("TrainingOfficeAdmin POST /reports/export succeeds (TC-NFR-11-005, AC-13)", async () => {
     const admin = await seedSession(UserRole.TrainingOfficeAdmin);
+    await seedReportReferenceData();
     const response = await app.inject({
       method: "POST",
       url: "/api/v1/reports/export",
       headers: { cookie: `${SESSION_COOKIE_NAME}=${admin.sessionId}` },
-      payload: { classCode: "HESD-01", subjectCode: "SWE-101" },
+      payload: {
+        classCode: "HESD-01",
+        subjectCode: "SWE-101",
+        from: "2026-06-01",
+        to: "2026-06-30",
+      },
     });
     assert.equal(response.statusCode, 200);
     assert.match(response.headers["content-type"] ?? "", /text\/csv/);
@@ -384,11 +433,17 @@ describe("api foundation integration (FR-02, FR-03, NFR-10, NFR-11, NFR-16)", ()
 
   it("Student denied report export (TC-NFR-11-005, AC-13)", async () => {
     const student = await seedSession(UserRole.Student);
+    await seedReportReferenceData();
     const response = await app.inject({
       method: "POST",
       url: "/api/v1/reports/export",
       headers: { cookie: `${SESSION_COOKIE_NAME}=${student.sessionId}` },
-      payload: { classCode: "HESD-01", subjectCode: "SWE-101" },
+      payload: {
+        classCode: "HESD-01",
+        subjectCode: "SWE-101",
+        from: "2026-06-01",
+        to: "2026-06-30",
+      },
     });
     assert.equal(response.statusCode, 403);
     assert.equal(
@@ -399,6 +454,7 @@ describe("api foundation integration (FR-02, FR-03, NFR-10, NFR-11, NFR-16)", ()
 
   it("Flow D RBAC: report scope and export authorization (TC-NFR-11-014, AC-12, AC-13)", async () => {
     const instructor = await seedSession(UserRole.Instructor);
+    await seedReportReferenceData(instructor.userId);
     const assignedReport = await app.inject({
       method: "GET",
       url: "/api/v1/reports/summary?classCode=HESD-01&subjectCode=SWE-101&from=2026-06-01&to=2026-06-30",
@@ -417,16 +473,27 @@ describe("api foundation integration (FR-02, FR-03, NFR-10, NFR-11, NFR-16)", ()
       method: "POST",
       url: "/api/v1/reports/export",
       headers: { cookie: `${SESSION_COOKIE_NAME}=${instructor.sessionId}` },
-      payload: { classCode: "HESD-01", subjectCode: "SWE-101" },
+      payload: {
+        classCode: "HESD-01",
+        subjectCode: "SWE-101",
+        from: "2026-06-01",
+        to: "2026-06-30",
+      },
     });
     assert.equal(instructorExport.statusCode, 403);
 
     const admin = await seedSession(UserRole.TrainingOfficeAdmin);
+    await seedReportReferenceData();
     const adminExport = await app.inject({
       method: "POST",
       url: "/api/v1/reports/export",
       headers: { cookie: `${SESSION_COOKIE_NAME}=${admin.sessionId}` },
-      payload: { classCode: "HESD-01", subjectCode: "SWE-101" },
+      payload: {
+        classCode: "HESD-01",
+        subjectCode: "SWE-101",
+        from: "2026-06-01",
+        to: "2026-06-30",
+      },
     });
     assert.equal(adminExport.statusCode, 200);
   });

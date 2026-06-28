@@ -10,6 +10,7 @@ import { registerRosterEnrollmentRoutes } from "./modules/roster-enrollment/rout
 import { registerSessionManagementRoutes } from "./modules/session-management/routes.js";
 import { registerAttendanceRoutes } from "./modules/attendance/routes.js";
 import { registerCheckInQrRoutes } from "./modules/checkin-qr/routes.js";
+import { registerReportingExportRoutes } from "./modules/reporting-export/routes.js";
 import type { AutoCloseScheduler } from "./modules/session-management/auto-close-scheduler.js";
 import { SessionStore } from "./auth/session-store.js";
 import { loadEnv } from "./config/env.js";
@@ -65,6 +66,7 @@ export async function buildApp(options: BuildAppOptions) {
       );
       await registerAttendanceRoutes(api, options.db, store);
       await registerCheckInQrRoutes(api, options.db, store);
+      await registerReportingExportRoutes(api, options.db, store);
       await registerFoundationRoutes(api, store);
     },
     { prefix: API_BASE_PATH },

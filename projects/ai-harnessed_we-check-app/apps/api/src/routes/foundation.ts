@@ -5,7 +5,6 @@ import {
   requirePermission,
 } from "../auth/middleware.js";
 import type { SessionStore } from "../auth/session-store.js";
-import { reportAccessDenied } from "../errors/api-error.js";
 
 /** Stub handlers for foundation RBAC and auth gate tests (NFR-10, NFR-11). */
 export async function registerFoundationRoutes(
@@ -13,26 +12,6 @@ export async function registerFoundationRoutes(
   store: SessionStore,
 ): Promise<void> {
   const auth = createAuthMiddleware(store);
-
-  app.get(
-    "/reports/summary",
-    { preHandler: [auth, requirePermission(Permission.ReportRead, { reportAccess: true })] },
-    async (request) => {
-      const query = request.query as { classCode?: string };
-      if (query.classCode === "HESD-02") {
-        throw reportAccessDenied();
-      }
-      return { items: [], totalCount: 0 };
-    },
-  );
-
-  app.post(
-    "/reports/export",
-    { preHandler: [auth, requirePermission(Permission.ReportExport, { exportAccess: true })] },
-    async (_request, reply) => {
-      return reply.type("text/csv").send("institutional_id,display_name\n");
-    },
-  );
 
   app.get(
     "/attendance/:recordId",

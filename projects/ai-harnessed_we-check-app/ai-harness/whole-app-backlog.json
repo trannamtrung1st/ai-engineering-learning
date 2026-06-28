@@ -368,7 +368,7 @@
     },
     {
       "id": "module-reporting-export",
-      "passes": false,
+      "passes": true,
       "priority": 16,
       "phase": 1,
       "agent": "backend",

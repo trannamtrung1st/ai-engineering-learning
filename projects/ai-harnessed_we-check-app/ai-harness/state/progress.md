@@ -96,3 +96,9 @@ Append-only log of harness slice completions.
 - 2026-06-28T20:58:54Z | module-checkin-qr | checks_failed
 - 2026-06-29T00:00:00Z | module-checkin-qr | Fixed NFR-21 traceability for TC-NFR-12-007: structured request logging excludes raw GPS; 8 unit + 16 integration tests pass; harness checks pass
 - 2026-06-28T21:05:29Z | module-checkin-qr | passed
+- 2026-06-29T00:00:00Z | module-reporting-export | reporting-export module: GET /reports/session/:id, GET /reports/summary, POST /reports/export with ClassAssignment scope (BR-08), admin-only CSV export with ExportAuditLog + ExportDenied security audit (BR-09, NFR-15); migration 008_reporting_export; 3 unit + 14 integration tests pass
+- 2026-06-28T21:12:28Z | module-reporting-export | checks_failed
+- 2026-06-29T00:00:00Z | module-reporting-export | Fixed typecheck (logExportDenied accepts ReportFilter), lint (const sessionJoin); typecheck/lint/build + 3 unit + 14 integration tests pass; harness checks pass
+- 2026-06-28T21:16:23Z | module-reporting-export | review_failed
+- 2026-06-29T00:00:00Z | module-reporting-export | Fixed HTTP export denial path: removed permission guard so ExportService logs ExportDenied audit (BR-09, NFR-15); TC-AC-13-006/TC-NFR-15-012 HTTP audit assertion; foundation TC-NFR-11-008 payload fix; typecheck/lint/build + 3 unit + 124 integration tests pass
+- 2026-06-28T21:21:45Z | module-reporting-export | passed
