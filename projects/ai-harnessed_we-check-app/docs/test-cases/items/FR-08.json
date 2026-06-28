@@ -1,0 +1,446 @@
+{
+  "productItemId": "FR-08",
+  "version": 1,
+  "docFingerprint": "sha256:26c62c98b20c67a8bcd34920efd8e38f5ae53682841c9bc3c07d32eba6d290e5",
+  "generatedAt": "2026-06-29T20:00:00.000Z",
+  "cases": [
+    {
+      "id": "TC-FR-08-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["FR-08", "AC-08", "BR-02"],
+      "title": "TS-22: Student check-in with coordinates within session gpsRadiusMeters passes radius verification",
+      "preconditions": [
+        "Active session with room GPS (10.762622, 106.660172) and gpsRadiusMeters 100",
+        "Authenticated enrolled Student with Pending attendance",
+        "Valid unexpired QrToken from GET /api/v1/sessions/:sessionId/qr/current",
+        "Student device coordinates inside radius (10.762700, 106.660200)",
+        "TestClock within attendance window; spoofMetadata.mockLocationDetected false"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with tokenId, latitude 10.762700, longitude 106.660200 using Student session",
+        "Assert HTTP status 200 and outcome Success",
+        "Assert attendance.status Present in response",
+        "Query check_in_attempts for latest attempt and assert outcome Success with distance_meters ≤ 100",
+        "Verify GeoVerificationService radius check passed per BR-02 before attendance update"
+      ],
+      "expected": "FR-08 satisfied: server computes Haversine distance ≤ session radius; check-in succeeds when all other pipeline rules pass",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-08-002",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["FR-08", "AC-08", "BR-02"],
+      "title": "TS-23: Coordinates outside configured radius return OutOfRadius without Present attendance",
+      "preconditions": [
+        "Active session with room GPS (10.762622, 106.660172) and gpsRadiusMeters 100",
+        "Authenticated enrolled Student with Pending attendance",
+        "Valid unexpired QrToken",
+        "Student coordinates outside radius (~167 m north: 10.764122, 106.660172)"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with tokenId, latitude 10.764122, longitude 106.660172 using Student session",
+        "Assert HTTP status 400",
+        "Assert response outcome OutOfRadius and errorCode OutOfRadius",
+        "Assert localized message contains Bạn đang ngoài phạm vi phòng học per API design §6.2",
+        "Query attendance_records for studentId and sessionId and assert status remains Pending (not Present)",
+        "Query check_in_attempts and assert outcome OutOfRadius with distance_meters logged (no raw lat/lng persisted)"
+      ],
+      "expected": "FR-08 rejects check-in when Haversine distance > gpsRadiusMeters; attendance not set to Present per BR-02",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-08-003",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["FR-08", "AC-08", "BR-12"],
+      "title": "TS-24: Missing GPS coordinates on check-in submit returns GpsDisabled before radius check",
+      "preconditions": [
+        "Active session with valid room GPS and enrolled authenticated Student",
+        "Valid unexpired QrToken",
+        "Request body omits latitude/longitude (client GPS unavailable per BR-12)"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with tokenId only (no latitude/longitude fields) using Student session",
+        "Assert HTTP status 400",
+        "Assert response outcome GpsDisabled and errorCode GpsDisabled",
+        "Assert message Vui lòng bật GPS và cấp quyền định vị để điểm danh per AC-08c",
+        "Query attendance_records and assert status remains Pending",
+        "Verify check-in pipeline short-circuits at step 11 (before BR-02 radius evaluation) per validation-rules §5.1"
+      ],
+      "expected": "FR-08 server path: GPS disabled or permission denied rejects with GpsDisabled before radius check; no Present attendance",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-08-004",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["FR-08", "AC-08", "NFR-12"],
+      "title": "TS-25: Successful radius-validated check-in does not persist raw latitude/longitude in attendance tables",
+      "preconditions": [
+        "Real PostgreSQL test database running",
+        "Active session, enrolled student, Valid QrToken, Pending attendance",
+        "CheckInService.submit callable with in-radius coordinates (10.762700, 106.660200)"
+      ],
+      "steps": [
+        "Inspect attendance_records schema and confirm no latitude/longitude columns per domain model §4 and database design",
+        "Invoke CheckInService.submit with valid tokenId and in-radius coordinates",
+        "Assert attendance transitions to Present",
+        "Query attendance_records row for sessionId and studentId and assert no raw client coordinates stored",
+        "Query check_in_attempts for outcome Success and assert distance_meters populated but no raw lat/lng columns",
+        "Verify coordinates discarded after validation per FR-08 and NFR-12"
+      ],
+      "expected": "FR-08 privacy invariant: raw latitude/longitude used for validation only and not stored in long-term attendance tables; only distance_meters on check_in_attempts",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-08-005",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-08", "BR-02"],
+      "title": "GeoVerificationService.verifyLocation computes Haversine distance and withinRadius against session room point",
+      "preconditions": [
+        "GeoVerificationService wired in checkin-qr module per domain model §7.1",
+        "Room coordinates (10.762622, 106.660172) and gpsRadiusMeters 100 loaded from Session fixture",
+        "ClientGeoMetadata with mockLocationDetected false"
+      ],
+      "steps": [
+        "Call verifyLocation(roomLat, roomLng, clientLat 10.762700, clientLng 106.660200, radiusMeters 100, metadata)",
+        "Assert result.withinRadius true and distanceMeters ≤ 100",
+        "Call verifyLocation with outside client coords (10.764122, 106.660172)",
+        "Assert result.withinRadius false and distanceMeters > 100",
+        "Assert client coordinates exist only in memory during call (not written to DB)"
+      ],
+      "expected": "GeoVerificationService enforces FR-08 Haversine ≤ gpsRadiusMeters at module boundary; coordinates not persisted during computation",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-08-006",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-08", "NFR-12"],
+      "title": "CheckInService GpsNotPersisted: PostgreSQL transaction marks Present without writing client coordinates",
+      "preconditions": [
+        "Real PostgreSQL with Active session, enrollment, Valid QrToken, Pending attendance",
+        "CheckInService orchestrates GeoVerificationService then serializable transaction per domain model §5.2"
+      ],
+      "steps": [
+        "Record beforeState: attendance Pending, no Present row with coordinate fields",
+        "Invoke CheckInService.submit with in-radius locationPayload (latitude 10.762700, longitude 106.660200)",
+        "Query attendance_records and assert afterState Present with checkedInAt set",
+        "Assert attendance_records and related long-term tables contain no latitude or longitude values",
+        "Query check_in_attempts and assert distance_meters is numeric and spoof_flags present where applicable"
+      ],
+      "expected": "Module-integration GpsNotPersisted suite per testing-plan §5: FR-08 coordinates used for validation only then discarded at DB boundary",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-08-007",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["FR-08", "BR-02"],
+      "title": "OutOfRadius rejection leaves Attendance Pending per SM-04 retryable outcomes",
+      "preconditions": [
+        "Pending attendance_records row in PostgreSQL for enrolled student and Active session",
+        "Valid QrToken; CheckInService.submit callable with out-of-radius coordinates"
+      ],
+      "steps": [
+        "Record beforeState Attendance status Pending",
+        "Invoke CheckInService.submit with outside-radius coordinates (10.764122, 106.660172)",
+        "Assert CheckInAttempt outcome OutOfRadius inserted",
+        "Query attendance_records and assert afterState remains Pending (not Present or Absent)",
+        "Verify SM-04 per 07-state-machines.md: OutOfRadius allows student retry after moving within radius"
+      ],
+      "expected": "beforeState Pending; afterState Pending on OutOfRadius; FR-08 failure does not finalize attendance — student may retry",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-08-008",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-08", "BR-02"],
+      "title": "POST /check-in with in-radius coordinates returns 200 Success envelope after GPS verification",
+      "preconditions": [
+        "Authenticated enrolled Student session cookie set",
+        "Active sessionId with Valid QrToken and in-radius coordinates available"
+      ],
+      "steps": [
+        "Send POST /api/v1/check-in with body { tokenId, latitude: 10.762700, longitude: 106.660200, spoofMetadata: { mockLocationDetected: false, platform: \"android\" } }",
+        "Assert HTTP status 200",
+        "Assert Content-Type application/json; charset=utf-8",
+        "Assert response outcome Success and attendance.status Present",
+        "Assert no errorCode field on success per API design §6.2"
+      ],
+      "expected": "HTTP 200 Success contract when FR-08 GPS within radius and all pipeline steps pass",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-08-009",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-08", "BR-02"],
+      "title": "POST /check-in with out-of-radius coordinates returns 400 OutOfRadius envelope",
+      "preconditions": [
+        "Authenticated enrolled Student session",
+        "Active session with gpsRadiusMeters 100 and room (10.762622, 106.660172)",
+        "Valid unexpired QrToken",
+        "Outside coordinates (10.764122, 106.660172)"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with tokenId and outside-radius latitude/longitude",
+        "Assert HTTP status 400",
+        "Assert response body outcome OutOfRadius and errorCode OutOfRadius",
+        "Assert message field contains Vietnamese out-of-radius guidance per §6.3 mapping",
+        "Assert no attendance Present in response body"
+      ],
+      "expected": "HTTP 400 OutOfRadius per API design §6.3; canonical failure envelope for FR-08 radius rejection",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-08-010",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-08", "BR-12"],
+      "title": "POST /check-in without coordinates returns 400 GpsDisabled envelope",
+      "preconditions": [
+        "Authenticated enrolled Student session",
+        "Active session with Valid QrToken",
+        "Request body missing latitude and longitude (simulates client GPS disabled)"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with body { tokenId } only (no latitude/longitude)",
+        "Assert HTTP status 400",
+        "Assert response outcome GpsDisabled and errorCode GpsDisabled",
+        "Assert message Vui lòng bật GPS và cấp quyền định vị để điểm danh"
+      ],
+      "expected": "HTTP 400 GpsDisabled per API design §6.3; FR-08 BR-12 enforced before radius check",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-08-011",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-08", "BR-02", "FR-04"],
+      "title": "Session gpsRadiusMeters override 200 m accepts student at ~167 m from room point",
+      "preconditions": [
+        "Active session with room (10.762622, 106.660172) and gpsRadiusMeters 200 (instructor override per FR-04)",
+        "Authenticated enrolled Student with coordinates (10.764122, 106.660172) ~167 m from room",
+        "Valid unexpired QrToken; all non-GPS pipeline checks pass"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with tokenId and coordinates (10.764122, 106.660172)",
+        "Assert HTTP status 200 outcome Success (would fail with default 100 m radius)",
+        "Assert attendance Present",
+        "Verify distance ~167 m ≤ 200 m override radius"
+      ],
+      "expected": "FR-08 honors session-specific gpsRadiusMeters override: distance ≤ configured radius (not only default 100 m) per BR-02",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-08-012",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["FR-08", "BR-02"],
+      "title": "GPS at Haversine boundary distance equal to gpsRadiusMeters passes radius check",
+      "preconditions": [
+        "Active session with room (10.762622, 106.660172) and gpsRadiusMeters 100",
+        "Client coordinates at ~100 m from room point (10.763520, 106.660172) per geo fixture math",
+        "Authenticated enrolled Student, Valid QrToken, Pending attendance"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with boundary coordinates (10.763520, 106.660172)",
+        "Assert HTTP status 200 outcome Success",
+        "Assert distanceMeters on check_in_attempts ≤ 100 (inclusive boundary per HaversineDistance unit tests)",
+        "Contrast: coordinates at 10.764122 (~167 m) with same session assert 400 OutOfRadius"
+      ],
+      "expected": "FR-08 uses ≤ comparison; student at exactly radius boundary passes; just outside fails — boundary invariant for geo verification",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-08-013",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["FR-08"],
+      "title": "Invalid latitude/longitude schema values rejected before radius evaluation",
+      "preconditions": [
+        "Authenticated enrolled Student session",
+        "Active session with Valid QrToken",
+        "Request body with latitude 91.0 (out of −90 to 90 range) and valid longitude"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with tokenId, latitude 91.0, longitude 106.660200 using Student session",
+        "Assert HTTP status 400 or 422 with schema validation error (InvalidFormat or equivalent)",
+        "Assert response does not contain outcome OutOfRadius (radius check not reached)",
+        "Repeat with longitude 181.0 and valid latitude; assert same schema rejection",
+        "Verify attendance remains Pending"
+      ],
+      "expected": "FR-08 inputs validated at Layer 1 per validation-rules §3.6 (−90 to 90 lat, −180 to 180 lng); invalid coordinates rejected before Haversine computation",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-08-014",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["FR-08"],
+      "title": "Flow A step 4: GPS coordinates within radius complete workshop check-in verification",
+      "preconditions": [
+        "Flow A steps 1–3 complete: roster seeded, session opened Active with room GPS, QR token polled",
+        "Authenticated enrolled Student session established",
+        "Student coordinates within session gpsRadiusMeters (10.762700, 106.660200)",
+        "tokenId extracted from qrPayload returned in step 3"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with tokenId from Flow A step 3 and in-radius latitude/longitude using Student session",
+        "Assert HTTP 200 outcome Success with attendance Present",
+        "Query check_in_attempts and assert distance_meters ≤ session gpsRadiusMeters",
+        "Verify no raw lat/lng persisted in attendance or attempt tables"
+      ],
+      "expected": "Flow A happy-path includes FR-08 GPS radius verification before Present attendance in workshop lifecycle",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-08-015",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-08"],
+      "title": "Instructor denied POST /check-in with GPS payload (lacks checkin:submit)",
+      "preconditions": [
+        "Authenticated Instructor session available",
+        "Active session with valid room GPS and QrToken",
+        "Instructor role lacks checkin:submit per roles-permissions §2.2"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with valid tokenId and in-radius coordinates using Instructor session",
+        "Assert HTTP status 403 Forbidden and errorCode Forbidden",
+        "Verify no GPS radius evaluation creates Present attendance for instructor userId",
+        "Assert permission guard runs before Layer 4 domain GPS checks per validation pipeline step 3"
+      ],
+      "expected": "FR-08 actor is Student only; GPS verification endpoint restricted via checkin:submit; Instructor cannot submit coordinates",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-08-016",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-08", "AC-08", "BR-02", "NFR-18"],
+      "title": "Mobile check-in journey: GPS permission granted and in-radius coordinates enable successful submit",
+      "preconditions": [
+        "Authenticated Student on mobile viewport 375×812 (iOS Safari or Android Chrome)",
+        "Active session check-in deep link /check-in?token=:tokenId&session=:sessionId",
+        "Browser geolocation granted with in-radius mock coordinates (10.762700, 106.660200)"
+      ],
+      "steps": [
+        "Navigate to check-in page on mobile viewport",
+        "Verify GpsCaptureStep shows coordinates acquired per ui-ux §07-event-specific-components",
+        "Tap submit control (Xác nhận điểm danh)",
+        "Verify success panel with Present status after server radius validation passes",
+        "Verify no raw GPS coordinates displayed in UI beyond transient capture state"
+      ],
+      "expected": "FR-08 mobile web path: client requests geolocation permission, sends coordinates, server validates radius, success confirmation shown",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-08-017",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-08", "BR-02"],
+      "title": "Mobile check-in OutOfRadius outcome panel shows Vietnamese message and retry guidance",
+      "preconditions": [
+        "Authenticated Student on mobile viewport with GPS permission granted",
+        "Active session check-in deep link with valid token",
+        "Browser geolocation mocked to outside-radius coordinates (10.764122, 106.660172)"
+      ],
+      "steps": [
+        "Navigate to /check-in page and wait for GPS capture with outside coordinates",
+        "Submit check-in",
+        "Verify outcome panel displays OutOfRadius state with message Bạn đang ngoài phạm vi phòng học",
+        "Verify distance hint or move-closer guidance visible per user-flows §3",
+        "Verify no Present success badge; student can retry after moving closer"
+      ],
+      "expected": "FR-08 OutOfRadius outcome surfaced in mobile UI with localized message and recovery action",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-08-018",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-08", "BR-12", "NFR-19"],
+      "title": "GPS permission denied shows GpsDisabled UX with help link without API call within 15 s timeout",
+      "preconditions": [
+        "Authenticated Student on mobile viewport 375×812",
+        "Active session check-in deep link with valid token",
+        "Browser geolocation permission denied or GPS disabled in device settings",
+        "Playwright geolocation permission set to denied"
+      ],
+      "steps": [
+        "Navigate to /check-in page",
+        "Wait up to 15 seconds for geolocation timeout per validation-rules §6",
+        "Verify GpsDisabled outcome panel displays Vui lòng bật GPS và cấp quyền định vị để điểm danh",
+        "Verify Hướng dẫn cấp quyền or PermissionGuideModal link to device settings per AC-08c",
+        "Assert no POST /check-in network request sent while GPS unavailable (client-side gate)",
+        "After granting permission and in-radius coords, verify student can retry successfully"
+      ],
+      "expected": "FR-08 client path: permission denied or 15 s timeout shows GpsDisabled Vietnamese message with help link; no server call until coordinates available",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-08-019",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-08", "NFR-12"],
+      "title": "check_in_attempts stores distance_meters but never raw client latitude/longitude after radius validation",
+      "preconditions": [
+        "Real PostgreSQL; successful check-in transaction completed via CheckInService",
+        "check_in_attempts table schema per database design §checkin-qr"
+      ],
+      "steps": [
+        "Complete successful check-in with in-radius coordinates via integration harness",
+        "SELECT columns from check_in_attempts for the attempt row",
+        "Assert distance_meters is NOT NULL and within expected range",
+        "Assert no latitude or longitude columns exist or are populated on check_in_attempts or attendance_records",
+        "Verify privacy baseline NFR-12: coordinates used only in request handler memory"
+      ],
+      "expected": "FR-08 and NFR-12 enforced at persistence layer: distance logged for audit without long-term coordinate storage",
+      "edgeCase": false
+    }
+  ]
+}
