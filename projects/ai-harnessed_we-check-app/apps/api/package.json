@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@fastify/cookie": "^9.4.0",
+    "@fastify/multipart": "^8.3.1",
     "@wecheck/domain": "*",
     "bcrypt": "^6.0.0",
     "fastify": "^4.29.0",

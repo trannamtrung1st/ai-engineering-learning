@@ -46,24 +46,6 @@ export async function registerFoundationRoutes(
     },
   );
 
-  app.get(
-    "/enrollments",
-    { preHandler: [auth, requirePermission(Permission.RosterRead, { reportAccess: true })] },
-    async (request) => {
-      const query = request.query as { classId?: string };
-      if (query.classId === "HESD-02") {
-        throw reportAccessDenied();
-      }
-      return { items: [] };
-    },
-  );
-
-  app.post(
-    "/roster/import",
-    { preHandler: [auth, requirePermission(Permission.RosterWrite)] },
-    async (_request, reply) => reply.status(202).send({ status: "Processing" }),
-  );
-
   app.post(
     "/sessions/:sessionId/open",
     { preHandler: [auth, requirePermission(Permission.SessionWrite)] },

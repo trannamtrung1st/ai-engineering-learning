@@ -88,6 +88,14 @@ export function validationFailed(
   return new ApiError(422, ErrorCode.ValidationFailed, message, details);
 }
 
+export function invalidFile(message?: string): ApiError {
+  return new ApiError(
+    422,
+    ErrorCode.InvalidFile,
+    message ?? ERROR_MESSAGES[ErrorCode.InvalidFile],
+  );
+}
+
 export function notFound(message?: string): ApiError {
   return new ApiError(
     404,

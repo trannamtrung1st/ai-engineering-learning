@@ -156,6 +156,15 @@ export async function createTestUser(
 }
 
 export async function truncateAuthTables(db: DbPool): Promise<void> {
+  await db.query(`
+    TRUNCATE TABLE
+      roster_import_batches,
+      enrollments,
+      class_assignments,
+      classes,
+      subjects
+    RESTART IDENTITY CASCADE
+  `);
   await db.query("DELETE FROM user_audit_logs");
   await db.query("DELETE FROM auth_sessions");
   await db.query(

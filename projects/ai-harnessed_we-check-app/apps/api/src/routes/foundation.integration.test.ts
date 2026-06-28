@@ -293,22 +293,41 @@ describe("api foundation integration (FR-02, FR-03, NFR-10, NFR-11, NFR-16)", ()
     );
   });
 
-  it("Instructor GET /enrollments allowed with roster:read (TC-NFR-11-006, AC-03, FR-03)", async () => {
+  it("Instructor GET /enrollments allowed with roster:read when assigned (TC-NFR-11-006, AC-03, FR-03)", async () => {
     const instructor = await seedSession(UserRole.Instructor);
+    await db.query(
+      `INSERT INTO classes (id, code, name) VALUES ($1, 'HESD-01', 'HESD Cohort A')`,
+      ["10000000-0000-4000-8000-000000000101"],
+    );
+    await db.query(
+      `INSERT INTO subjects (id, code, name) VALUES ($1, 'SWE-101', 'Software Engineering 101')`,
+      ["20000000-0000-4000-8000-000000000201"],
+    );
+
+    await db.query(
+      `INSERT INTO class_assignments (instructor_id, class_id, subject_id)
+       VALUES ($1, $2, $3)`,
+      [
+        instructor.userId,
+        "10000000-0000-4000-8000-000000000101",
+        "20000000-0000-4000-8000-000000000201",
+      ],
+    );
+
     const response = await app.inject({
       method: "GET",
-      url: "/api/v1/enrollments?classId=stub&subjectId=stub",
+      url: "/api/v1/enrollments?classId=10000000-0000-4000-8000-000000000101&subjectId=20000000-0000-4000-8000-000000000201",
       headers: { cookie: `${SESSION_COOKIE_NAME}=${instructor.sessionId}` },
     });
     assert.equal(response.statusCode, 200);
-    assert.deepEqual(response.json<{ items: unknown[] }>().items, []);
+    assert.equal(response.json<{ totalCount: number }>().totalCount, 0);
   });
 
   it("Student denied GET /enrollments without roster:read (TC-NFR-11-006, AC-03)", async () => {
     const student = await seedSession(UserRole.Student);
     const response = await app.inject({
       method: "GET",
-      url: "/api/v1/enrollments?classId=stub&subjectId=stub",
+      url: "/api/v1/enrollments?classId=10000000-0000-4000-8000-000000000101&subjectId=20000000-0000-4000-8000-000000000201",
       headers: { cookie: `${SESSION_COOKIE_NAME}=${student.sessionId}` },
     });
     assert.equal(response.statusCode, 403);
