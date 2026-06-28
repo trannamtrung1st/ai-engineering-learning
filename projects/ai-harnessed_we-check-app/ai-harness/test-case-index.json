@@ -161,6 +161,11 @@
       "current": true,
       "docFingerprint": "sha256:12b3b1aa21d64578ab37d3cb8f433407386737f89a7075419daeefd2d9c19925",
       "generatedAt": "2026-06-28T18:15:16Z"
+    },
+    "BR-01": {
+      "current": true,
+      "docFingerprint": "sha256:4deda16c175af0ca34aadf938abcd5f11203e186585e68a48a77093b8e87aac5",
+      "generatedAt": "2026-06-28T18:16:58Z"
     }
   }
 }
