@@ -1,0 +1,237 @@
+{
+  "agents": {
+    "backend": {
+      "alwaysRead": [
+        "docs/technical/00-system-overview.md",
+        "docs/technical/08-validation-rules.md",
+        "docs/technical/12-backend-frontend-tech-stack.md"
+      ]
+    },
+    "frontend": {
+      "alwaysRead": [
+        "docs/ui-ux/00-production-ui-quality-bar.md",
+        "docs/ui-ux/01-ui-ux-foundation.md"
+      ]
+    },
+    "infra": {
+      "alwaysRead": [
+        "docs/technical/10-local-development-setup.md"
+      ]
+    },
+    "test": {
+      "alwaysRead": [
+        "docs/technical/11-testing-plan.md",
+        "docs/brds/08-acceptance-mvp-future.md"
+      ]
+    },
+    "tester": {
+      "alwaysRead": [
+        "docs/technical/11-testing-plan.md",
+        "docs/brds/08-acceptance-mvp-future.md",
+        "ai-harness/docs/browser-mcp.md",
+        "docs/ui-ux/00-production-ui-quality-bar.md"
+      ]
+    },
+    "testgen": {
+      "alwaysRead": [
+        "docs/technical/11-testing-plan.md",
+        "docs/brds/08-acceptance-mvp-future.md"
+      ]
+    }
+  },
+  "slices": {
+    "repo-monorepo-bootstrap": {
+      "agent": "infra",
+      "docs": [
+        "docs/technical/12-backend-frontend-tech-stack.md",
+        "docs/technical/10-local-development-setup.md"
+      ]
+    },
+    "docker-compose-db": {
+      "agent": "infra",
+      "docs": [
+        "docs/technical/13-docker-compose-local-runtime.md",
+        "docs/technical/04-database-design.md"
+      ]
+    },
+    "domain-package": {
+      "agent": "infra",
+      "docs": [
+        "docs/technical/03-domain-model.md",
+        "docs/technical/07-state-machines.md",
+        "docs/technical/08-validation-rules.md"
+      ]
+    },
+    "api-foundation": {
+      "agent": "backend",
+      "docs": [
+        "docs/technical/05-api-design.md",
+        "docs/technical/09-error-handling.md",
+        "docs/technical/01-roles-permissions.md"
+      ]
+    },
+    "module-identity-auth": {
+      "agent": "backend",
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/04-database-design.md"
+      ]
+    },
+    "module-roster-enrollment": {
+      "agent": "backend",
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/08-validation-rules.md"
+      ]
+    },
+    "module-session-management": {
+      "agent": "backend",
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/06-main-workflows.md",
+        "docs/technical/07-state-machines.md"
+      ]
+    },
+    "module-attendance": {
+      "agent": "backend",
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/07-state-machines.md"
+      ]
+    },
+    "module-checkin-qr": {
+      "agent": "backend",
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/08-validation-rules.md",
+        "docs/technical/06-main-workflows.md"
+      ]
+    },
+    "module-reporting-export": {
+      "agent": "backend",
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/06-main-workflows.md"
+      ]
+    },
+    "module-notifications": {
+      "agent": "backend",
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/05-api-design.md"
+      ]
+    },
+    "web-design-system-shell": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/00-production-ui-quality-bar.md",
+        "docs/ui-ux/04-design-tokens.md",
+        "docs/ui-ux/06-app-layout-components.md",
+        "docs/ui-ux/05-common-ui-components.md"
+      ]
+    },
+    "web-auth-login": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/10-user-flows.md",
+        "docs/ui-ux/08-forms-validation-ux.md"
+      ]
+    },
+    "web-student-checkin": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/10-user-flows.md",
+        "docs/ui-ux/07-event-specific-components.md",
+        "docs/ui-ux/12-ui-states.md"
+      ]
+    },
+    "web-student-history": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/12-ui-states.md"
+      ]
+    },
+    "web-instructor-sessions": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/08-forms-validation-ux.md",
+        "docs/ui-ux/07-event-specific-components.md"
+      ]
+    },
+    "web-instructor-qr-display": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/07-event-specific-components.md",
+        "docs/ui-ux/11-wireframes.md"
+      ]
+    },
+    "web-instructor-session-monitor": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/07-event-specific-components.md",
+        "docs/ui-ux/12-ui-states.md"
+      ]
+    },
+    "web-instructor-attendance-roster": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/07-event-specific-components.md",
+        "docs/ui-ux/08-forms-validation-ux.md"
+      ]
+    },
+    "web-instructor-reports": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/14-listing-pages-search-filter-sort.md"
+      ]
+    },
+    "web-admin-users": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/08-forms-validation-ux.md"
+      ]
+    },
+    "web-admin-rosters": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/08-forms-validation-ux.md"
+      ]
+    },
+    "web-admin-reports-export": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/14-listing-pages-search-filter-sort.md"
+      ]
+    },
+    "web-admin-policy": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/08-forms-validation-ux.md"
+      ]
+    },
+    "e2e-acceptance-suite": {
+      "agent": "test",
+      "docs": [
+        "docs/technical/11-testing-plan.md",
+        "docs/brds/08-acceptance-mvp-future.md"
+      ]
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "current": [],
+  "docFingerprint": null,
+  "tags": {
+    "AC-01": {
+      "current": true,
+      "docFingerprint": "sha256:2668a9e5528c7792c1487646faad8fb595d13fa43185d7cf976e318818385f70",
+      "generatedAt": "2026-06-28T17:17:11Z"
+    },
+    "AC-02": {
+      "current": true,
+      "docFingerprint": "sha256:2668a9e5528c7792c1487646faad8fb595d13fa43185d7cf976e318818385f70",
+      "generatedAt": "2026-06-28T17:18:13Z"
+    },
+    "AC-03": {
+      "current": true,
+      "docFingerprint": "sha256:2668a9e5528c7792c1487646faad8fb595d13fa43185d7cf976e318818385f70",
+      "generatedAt": "2026-06-28T17:20:19Z"
+    }
+  }
+}

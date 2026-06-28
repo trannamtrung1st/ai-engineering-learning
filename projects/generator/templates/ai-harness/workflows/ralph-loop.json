@@ -1,0 +1,128 @@
+{
+  "loop": {
+    "maxIterations": 30,
+    "branchPrefix": "aih/",
+    "commitOnPass": true
+  },
+  "agent": {
+    "timeoutMs": 3600000,
+    "idleTimeoutMs": 300000,
+    "signalGraceMs": 15000,
+    "resultGraceMs": 5000
+  },
+  "signals": {
+    "complete": "COMPLETE",
+    "sliceDone": "SLICE_DONE",
+    "sliceBlocked": "SLICE_BLOCKED",
+    "reviewPass": "REVIEW_PASS",
+    "reviewFail": "REVIEW_FAIL",
+    "testPass": "BROWSER_TEST_PASS",
+    "testFail": "BROWSER_TEST_FAIL"
+  },
+  "computationalChecks": {
+    "forbiddenPatterns": [
+      {
+        "id": "in-memory-map-repo",
+        "pattern": "new Map\\(\\).*repository|repository.*new Map\\(\\)",
+        "paths": ["apps", "packages"],
+        "message": "In-memory Map repository forbidden as system of record"
+      },
+      {
+        "id": "sqlite",
+        "pattern": "better-sqlite3|sqlite3",
+        "paths": ["apps", "packages"],
+        "message": "SQLite forbidden; use Postgres via Docker Compose"
+      },
+      {
+        "id": "mock-events",
+        "pattern": "mockEvents|MOCK_EVENTS|const (mock)?[Ee]vents = \\[\\s*\\{",
+        "paths": ["apps/web/src/app"],
+        "message": "Hardcoded event fixture arrays forbidden in page components"
+      },
+      {
+        "id": "lorem-ipsum",
+        "pattern": "lorem ipsum",
+        "paths": ["apps"],
+        "message": "Placeholder lorem ipsum content forbidden"
+      },
+      {
+        "id": "demo-event",
+        "pattern": "demo-event|Annual summit",
+        "paths": ["apps/web"],
+        "message": "Demo copy forbidden in production UI"
+      }
+    ],
+    "commands": [
+      { "script": "typecheck", "activeWhen": "apps", "optional": false },
+      { "script": "lint", "activeWhen": "apps", "optional": false },
+      { "script": "build", "activeWhen": "apps", "optional": false },
+      { "script": "test:unit", "activeWhen": "apps/api", "optional": false },
+      { "script": "test:integration", "activeWhen": "apps/api", "optional": false },
+      { "script": "test:e2e", "activeWhen": "tests/e2e", "optional": false }
+    ],
+    "runtimeValidation": {
+      "db": {
+        "strategy": "docker-compose",
+        "service": "db",
+        "healthTimeoutMs": 60000,
+        "requiredBeforeApi": true,
+        "activeWhen": "docker-compose.yml"
+      },
+      "api": {
+        "activeWhen": "apps/api",
+        "url": "http://localhost:3001/api/v1/health",
+        "expectJson": { "status": "ok", "db": "connected" },
+        "timeoutMs": 60000
+      },
+      "web": {
+        "activeWhen": "apps/web",
+        "url": "http://localhost:3000",
+        "expectStatus": 200,
+        "timeoutMs": 120000
+      }
+    }
+  },
+  "browserTest": {
+    "required": true,
+    "modelKey": "tester",
+    "activeWhenAgent": ["frontend", "test"],
+    "requirePreviewStack": true,
+    "previewVerifyGateTimeoutMs": 10000,
+    "inputs": [
+      "slice-docs",
+      "acceptance-tags",
+      "checks-report",
+      "changed-files",
+      "completion-artifacts"
+    ]
+  },
+  "aiReview": {
+    "required": true,
+    "modelKey": "reviewer",
+    "mode": "read-only-static",
+    "forbidden": [
+      "shell",
+      "npm",
+      "docker",
+      "tests",
+      "builds",
+      "servers",
+      "file-writes"
+    ],
+    "inputs": [
+      "git-diff",
+      "changed-files",
+      "completion-artifacts",
+      "checks-report",
+      "browser-test-report",
+      "slice-docs"
+    ]
+  },
+  "humanReview": {
+    "requiredForMergeReady": true,
+    "signal": "HUMAN_REVIEW_PASS"
+  },
+  "testCaseGate": {
+    "mode": "optional"
+  }
+}

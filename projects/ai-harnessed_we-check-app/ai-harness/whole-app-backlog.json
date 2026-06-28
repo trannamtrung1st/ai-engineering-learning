@@ -1,0 +1,954 @@
+{
+  "branchName": "aih/we-check-mvp",
+  "slices": [
+    {
+      "id": "repo-monorepo-bootstrap",
+      "passes": false,
+      "priority": 0,
+      "phase": 0,
+      "agent": "infra",
+      "acceptance": [
+        "NFR-14"
+      ],
+      "docs": [
+        "docs/technical/12-backend-frontend-tech-stack.md",
+        "docs/technical/10-local-development-setup.md"
+      ],
+      "completionArtifacts": [
+        "package.json",
+        "apps/api/package.json",
+        "apps/web/package.json",
+        "packages/domain/package.json"
+      ],
+      "description": "Bootstrap npm workspaces monorepo: apps/api, apps/web, packages/domain, shared tooling scripts.",
+      "testRequirements": {
+        "unit": [
+          "packages/domain/src/index.test.ts"
+        ],
+        "acceptanceTags": [
+          "NFR-14"
+        ]
+      }
+    },
+    {
+      "id": "docker-compose-db",
+      "passes": false,
+      "priority": 1,
+      "phase": 0,
+      "agent": "infra",
+      "acceptance": [
+        "NFR-02",
+        "NFR-04"
+      ],
+      "docs": [
+        "docs/technical/13-docker-compose-local-runtime.md",
+        "docs/technical/04-database-design.md"
+      ],
+      "completionArtifacts": [
+        "docker-compose.yml",
+        ".env.example"
+      ],
+      "description": "Add docker-compose.yml with PostgreSQL service and aih:dev:db:up/down npm scripts.",
+      "testRequirements": {
+        "integration": [
+          "apps/api/src/infra/docker-compose-db.integration.test.ts"
+        ],
+        "acceptanceTags": [
+          "NFR-02",
+          "NFR-04"
+        ]
+      }
+    },
+    {
+      "id": "domain-package",
+      "passes": false,
+      "priority": 2,
+      "phase": 0,
+      "agent": "infra",
+      "acceptance": [
+        "BR-01",
+        "BR-02",
+        "BR-03",
+        "BR-04",
+        "BR-10"
+      ],
+      "docs": [
+        "docs/technical/03-domain-model.md",
+        "docs/technical/07-state-machines.md",
+        "docs/technical/08-validation-rules.md"
+      ],
+      "completionArtifacts": [
+        "packages/domain/src/index.ts"
+      ],
+      "description": "Shared domain enums, state machines, Haversine geo helpers, and validation rule identifiers.",
+      "testRequirements": {
+        "unit": [
+          "packages/domain/src/index.test.ts",
+          "packages/domain/src/geo/haversine.test.ts",
+          "packages/domain/src/session/state-guard.test.ts"
+        ],
+        "acceptanceTags": [
+          "BR-01",
+          "BR-02",
+          "BR-03",
+          "BR-04",
+          "BR-10"
+        ]
+      }
+    },
+    {
+      "id": "api-foundation",
+      "passes": false,
+      "priority": 10,
+      "phase": 1,
+      "agent": "backend",
+      "acceptance": [
+        "FR-02",
+        "NFR-10",
+        "NFR-11",
+        "NFR-16"
+      ],
+      "docs": [
+        "docs/technical/05-api-design.md",
+        "docs/technical/09-error-handling.md",
+        "docs/technical/01-roles-permissions.md"
+      ],
+      "completionArtifacts": [
+        "apps/api/src/index.ts",
+        "apps/api/src/routes",
+        "apps/api/src/auth"
+      ],
+      "description": "API skeleton: /api/v1, session auth middleware, RBAC permission guard, error envelope, Postgres connection.",
+      "testRequirements": {
+        "unit": [
+          "apps/api/src/errors/api-error.test.ts",
+          "apps/api/src/auth/middleware.test.ts",
+          "apps/api/src/auth/permissions.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/routes/foundation.integration.test.ts"
+        ],
+        "acceptanceTags": [
+          "FR-02",
+          "NFR-10",
+          "NFR-11",
+          "NFR-16"
+        ]
+      }
+    },
+    {
+      "id": "module-identity-auth",
+      "passes": false,
+      "priority": 11,
+      "phase": 1,
+      "agent": "backend",
+      "acceptance": [
+        "AC-01",
+        "AC-02",
+        "FR-01",
+        "FR-02",
+        "BR-06",
+        "NFR-14",
+        "NFR-16"
+      ],
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/04-database-design.md"
+      ],
+      "completionArtifacts": [
+        "apps/api/src/modules/identity-auth"
+      ],
+      "description": "Identity-auth module: user provisioning, email/password login, session lifecycle, deactivation enforcement.",
+      "testRequirements": {
+        "unit": [
+          "apps/api/src/modules/identity-auth/validation.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/modules/identity-auth/identity-auth.integration.test.ts"
+        ],
+        "acceptanceTags": [
+          "AC-01",
+          "AC-02",
+          "BR-06",
+          "FR-01",
+          "FR-02",
+          "NFR-14",
+          "NFR-16"
+        ]
+      }
+    },
+    {
+      "id": "module-roster-enrollment",
+      "passes": false,
+      "priority": 12,
+      "phase": 1,
+      "agent": "backend",
+      "acceptance": [
+        "AC-03",
+        "FR-03",
+        "BR-08"
+      ],
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/08-validation-rules.md"
+      ],
+      "completionArtifacts": [
+        "apps/api/src/modules/roster-enrollment"
+      ],
+      "description": "Roster-enrollment module: class/subject reference data, CSV import with row validation, instructor assignment scope.",
+      "testRequirements": {
+        "unit": [
+          "apps/api/src/modules/roster-enrollment/csv-validator.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/modules/roster-enrollment/roster-enrollment.integration.test.ts"
+        ],
+        "acceptanceTags": [
+          "AC-03",
+          "BR-08",
+          "FR-03"
+        ]
+      }
+    },
+    {
+      "id": "module-session-management",
+      "passes": false,
+      "priority": 13,
+      "phase": 1,
+      "agent": "backend",
+      "acceptance": [
+        "AC-04",
+        "AC-05",
+        "FR-04",
+        "FR-05",
+        "BR-01",
+        "BR-07",
+        "NFR-01"
+      ],
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/06-main-workflows.md",
+        "docs/technical/07-state-machines.md"
+      ],
+      "completionArtifacts": [
+        "apps/api/src/modules/session-management"
+      ],
+      "description": "Session-management module: draft/active/closed/cancelled lifecycle, room GPS validation, auto-close scheduler.",
+      "testRequirements": {
+        "unit": [
+          "apps/api/src/modules/session-management/state-guard.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/modules/session-management/session-management.integration.test.ts"
+        ],
+        "acceptanceTags": [
+          "AC-04",
+          "AC-05",
+          "FR-04",
+          "FR-05",
+          "BR-01",
+          "BR-07",
+          "NFR-01"
+        ]
+      }
+    },
+    {
+      "id": "module-attendance",
+      "passes": false,
+      "priority": 14,
+      "phase": 1,
+      "agent": "backend",
+      "acceptance": [
+        "AC-11",
+        "AC-14",
+        "FR-11",
+        "FR-14",
+        "BR-10",
+        "NFR-15"
+      ],
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/07-state-machines.md"
+      ],
+      "completionArtifacts": [
+        "apps/api/src/modules/attendance"
+      ],
+      "description": "Attendance module: Pending seed on open, Present/Absent transitions, manual edits with audit log, student history.",
+      "testRequirements": {
+        "unit": [
+          "apps/api/src/modules/attendance/edit-window-policy.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/modules/attendance/attendance.integration.test.ts"
+        ],
+        "acceptanceTags": [
+          "AC-11",
+          "AC-14",
+          "FR-11",
+          "FR-14",
+          "BR-10",
+          "NFR-15"
+        ]
+      }
+    },
+    {
+      "id": "module-checkin-qr",
+      "passes": false,
+      "priority": 15,
+      "phase": 1,
+      "agent": "backend",
+      "acceptance": [
+        "AC-06",
+        "AC-07",
+        "AC-08",
+        "AC-09",
+        "AC-10",
+        "FR-06",
+        "FR-07",
+        "FR-08",
+        "FR-09",
+        "FR-10",
+        "BR-02",
+        "BR-03",
+        "BR-04",
+        "BR-11",
+        "BR-12",
+        "NFR-02",
+        "NFR-06",
+        "NFR-12"
+      ],
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/08-validation-rules.md",
+        "docs/technical/06-main-workflows.md"
+      ],
+      "completionArtifacts": [
+        "apps/api/src/modules/checkin-qr"
+      ],
+      "description": "Checkin-qr module: 30-second rotating tokens, check-in pipeline, GPS radius, duplicate prevention, spoof heuristics.",
+      "testRequirements": {
+        "unit": [
+          "apps/api/src/modules/checkin-qr/qr-token-expiry.test.ts",
+          "apps/api/src/modules/checkin-qr/spoof-heuristics.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/modules/checkin-qr/checkin-qr.integration.test.ts",
+          "apps/api/src/modules/checkin-qr/concurrent-checkin.integration.test.ts"
+        ],
+        "acceptanceTags": [
+          "AC-06",
+          "AC-07",
+          "AC-08",
+          "AC-09",
+          "AC-10",
+          "FR-06",
+          "FR-07",
+          "FR-08",
+          "FR-09",
+          "FR-10",
+          "BR-02",
+          "BR-03",
+          "BR-04",
+          "BR-11",
+          "BR-12",
+          "NFR-02",
+          "NFR-06",
+          "NFR-12"
+        ]
+      }
+    },
+    {
+      "id": "module-reporting-export",
+      "passes": false,
+      "priority": 16,
+      "phase": 1,
+      "agent": "backend",
+      "acceptance": [
+        "AC-12",
+        "AC-13",
+        "FR-12",
+        "FR-13",
+        "BR-08",
+        "BR-09",
+        "NFR-07",
+        "NFR-11",
+        "NFR-15"
+      ],
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/06-main-workflows.md"
+      ],
+      "completionArtifacts": [
+        "apps/api/src/modules/reporting-export"
+      ],
+      "description": "Reporting-export module: class/subject reports with assignment scope, admin CSV export with audit logging.",
+      "testRequirements": {
+        "unit": [
+          "apps/api/src/modules/reporting-export/csv-formatter.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/modules/reporting-export/reporting-export.integration.test.ts"
+        ],
+        "acceptanceTags": [
+          "AC-12",
+          "AC-13",
+          "FR-12",
+          "FR-13",
+          "BR-08",
+          "BR-09",
+          "NFR-07",
+          "NFR-11",
+          "NFR-15"
+        ]
+      }
+    },
+    {
+      "id": "module-notifications",
+      "passes": false,
+      "priority": 17,
+      "phase": 1,
+      "agent": "backend",
+      "acceptance": [
+        "AC-16",
+        "FR-16",
+        "BR-05"
+      ],
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/05-api-design.md"
+      ],
+      "completionArtifacts": [
+        "apps/api/src/modules/notifications"
+      ],
+      "description": "Notifications module: 20% unexcused absence threshold evaluation and in-app alerts (Should capability).",
+      "testRequirements": {
+        "unit": [
+          "apps/api/src/modules/notifications/absence-threshold.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/modules/notifications/notifications.integration.test.ts"
+        ],
+        "acceptanceTags": [
+          "AC-16",
+          "FR-16",
+          "BR-05"
+        ]
+      }
+    },
+    {
+      "id": "web-design-system-shell",
+      "passes": false,
+      "priority": 20,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": [
+        "NFR-17",
+        "NFR-06"
+      ],
+      "docs": [
+        "docs/ui-ux/00-production-ui-quality-bar.md",
+        "docs/ui-ux/04-design-tokens.md",
+        "docs/ui-ux/06-app-layout-components.md",
+        "docs/ui-ux/05-common-ui-components.md"
+      ],
+      "completionArtifacts": [
+        "apps/web/src/app/layout.tsx",
+        "apps/web/src/components"
+      ],
+      "description": "Design tokens, role layouts (Student, Instructor, Admin), shared primitives — no feature pages yet.",
+      "testRequirements": {
+        "component": [
+          "apps/web/src/components/layout/app-shell.test.tsx",
+          "apps/web/src/components/ui/badge.test.tsx"
+        ],
+        "acceptanceTags": [
+          "NFR-17",
+          "NFR-06"
+        ]
+      }
+    },
+    {
+      "id": "web-auth-login",
+      "passes": false,
+      "priority": 21,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": [
+        "AC-02",
+        "FR-02",
+        "BR-06",
+        "NFR-16"
+      ],
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/10-user-flows.md",
+        "docs/ui-ux/08-forms-validation-ux.md"
+      ],
+      "completionArtifacts": [
+        "apps/web/src/app/login",
+        "apps/web/src/app/forbidden"
+      ],
+      "description": "Login page with returnUrl deep-link preservation, role-based redirect, forbidden and not-found pages.",
+      "testRequirements": {
+        "unit": [
+          "apps/web/src/lib/auth-redirect.test.ts"
+        ],
+        "component": [
+          "apps/web/src/components/auth/login-form.test.tsx"
+        ],
+        "acceptanceTags": [
+          "AC-02",
+          "BR-06",
+          "FR-02",
+          "NFR-16"
+        ]
+      }
+    },
+    {
+      "id": "web-student-checkin",
+      "passes": false,
+      "priority": 22,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": [
+        "AC-02",
+        "AC-07",
+        "AC-08",
+        "AC-09",
+        "AC-10",
+        "FR-07",
+        "FR-08",
+        "FR-09",
+        "FR-10",
+        "BR-02",
+        "BR-03",
+        "BR-04",
+        "BR-11",
+        "BR-12",
+        "NFR-18",
+        "NFR-19"
+      ],
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/10-user-flows.md",
+        "docs/ui-ux/07-event-specific-components.md",
+        "docs/ui-ux/12-ui-states.md"
+      ],
+      "completionArtifacts": [
+        "apps/web/src/app/check-in"
+      ],
+      "description": "Student mobile check-in flow: QR scan, GPS capture, outcome panel, permission guidance, token deep link.",
+      "testRequirements": {
+        "unit": [
+          "apps/web/src/lib/checkin-outcome.test.ts"
+        ],
+        "component": [
+          "apps/web/src/components/student/check-in-flow.test.tsx"
+        ],
+        "acceptanceTags": [
+          "AC-02",
+          "AC-07",
+          "AC-08",
+          "AC-09",
+          "AC-10",
+          "BR-02",
+          "BR-03",
+          "BR-04",
+          "BR-11",
+          "BR-12",
+          "FR-07",
+          "FR-08",
+          "FR-09",
+          "FR-10",
+          "NFR-18",
+          "NFR-19"
+        ]
+      }
+    },
+    {
+      "id": "web-student-history",
+      "passes": false,
+      "priority": 23,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": [
+        "AC-14",
+        "FR-14"
+      ],
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/12-ui-states.md"
+      ],
+      "completionArtifacts": [
+        "apps/web/src/app/history"
+      ],
+      "description": "Student personal attendance history: paginated list with status badges and empty state.",
+      "testRequirements": {
+        "component": [
+          "apps/web/src/components/student/attendance-history-list.test.tsx"
+        ],
+        "acceptanceTags": [
+          "AC-14",
+          "FR-14"
+        ]
+      }
+    },
+    {
+      "id": "web-instructor-sessions",
+      "passes": false,
+      "priority": 24,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": [
+        "AC-04",
+        "AC-05",
+        "FR-04",
+        "FR-05",
+        "BR-07"
+      ],
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/08-forms-validation-ux.md",
+        "docs/ui-ux/07-event-specific-components.md"
+      ],
+      "completionArtifacts": [
+        "apps/web/src/app/sessions"
+      ],
+      "description": "Instructor session list, create form with GPS map picker, session detail hub with lifecycle actions.",
+      "testRequirements": {
+        "component": [
+          "apps/web/src/components/instructor/session-form.test.tsx",
+          "apps/web/src/components/instructor/session-lifecycle-actions.test.tsx"
+        ],
+        "acceptanceTags": [
+          "AC-04",
+          "AC-05",
+          "FR-04",
+          "FR-05",
+          "BR-07"
+        ]
+      }
+    },
+    {
+      "id": "web-instructor-qr-display",
+      "passes": false,
+      "priority": 25,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": [
+        "AC-06",
+        "FR-06",
+        "NFR-06",
+        "NFR-20"
+      ],
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/07-event-specific-components.md",
+        "docs/ui-ux/11-wireframes.md"
+      ],
+      "completionArtifacts": [
+        "apps/web/src/app/sessions/[sessionId]/qr-present"
+      ],
+      "description": "Instructor QR tab and fullscreen projection mode with 30-second countdown and auto-refresh.",
+      "testRequirements": {
+        "component": [
+          "apps/web/src/components/instructor/qr-display-panel.test.tsx",
+          "apps/web/src/components/instructor/qr-fullscreen-presentation.test.tsx"
+        ],
+        "acceptanceTags": [
+          "AC-06",
+          "FR-06",
+          "NFR-06",
+          "NFR-20"
+        ]
+      }
+    },
+    {
+      "id": "web-instructor-session-monitor",
+      "passes": false,
+      "priority": 26,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": [
+        "AC-15",
+        "FR-15",
+        "NFR-08"
+      ],
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/07-event-specific-components.md",
+        "docs/ui-ux/12-ui-states.md"
+      ],
+      "completionArtifacts": [
+        "apps/web/src/app/sessions/[sessionId]/monitor"
+      ],
+      "description": "Live session monitor dashboard with 5-second poll, present/absent counts, roster sort (Should capability).",
+      "testRequirements": {
+        "component": [
+          "apps/web/src/components/instructor/session-monitor-dashboard.test.tsx"
+        ],
+        "acceptanceTags": [
+          "AC-15",
+          "FR-15",
+          "NFR-08"
+        ]
+      }
+    },
+    {
+      "id": "web-instructor-attendance-roster",
+      "passes": false,
+      "priority": 27,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": [
+        "AC-11",
+        "FR-11",
+        "BR-10",
+        "NFR-15"
+      ],
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/07-event-specific-components.md",
+        "docs/ui-ux/08-forms-validation-ux.md"
+      ],
+      "completionArtifacts": [
+        "apps/web/src/app/sessions/[sessionId]/roster"
+      ],
+      "description": "Session attendance roster grid with manual edit dialog, 24-hour instructor window, audit trail display.",
+      "testRequirements": {
+        "component": [
+          "apps/web/src/components/instructor/attendance-roster-table.test.tsx",
+          "apps/web/src/components/instructor/attendance-edit-dialog.test.tsx"
+        ],
+        "acceptanceTags": [
+          "AC-11",
+          "FR-11",
+          "BR-10",
+          "NFR-15"
+        ]
+      }
+    },
+    {
+      "id": "web-instructor-reports",
+      "passes": false,
+      "priority": 28,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": [
+        "AC-12",
+        "FR-12",
+        "BR-08"
+      ],
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/14-listing-pages-search-filter-sort.md"
+      ],
+      "completionArtifacts": [
+        "apps/web/src/app/reports"
+      ],
+      "description": "Instructor attendance reports scoped to assigned class-subject pairs with filters and summary cards.",
+      "testRequirements": {
+        "component": [
+          "apps/web/src/components/instructor/report-filter-bar.test.tsx"
+        ],
+        "acceptanceTags": [
+          "AC-12",
+          "FR-12",
+          "BR-08"
+        ]
+      }
+    },
+    {
+      "id": "web-admin-users",
+      "passes": false,
+      "priority": 29,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": [
+        "AC-01",
+        "FR-01",
+        "NFR-11"
+      ],
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/08-forms-validation-ux.md"
+      ],
+      "completionArtifacts": [
+        "apps/web/src/app/admin/users"
+      ],
+      "description": "Admin user list and create/edit forms for student, instructor, and admin account provisioning.",
+      "testRequirements": {
+        "component": [
+          "apps/web/src/components/admin/user-form.test.tsx",
+          "apps/web/src/components/admin/user-list-table.test.tsx"
+        ],
+        "acceptanceTags": [
+          "AC-01",
+          "FR-01",
+          "NFR-11"
+        ]
+      }
+    },
+    {
+      "id": "web-admin-rosters",
+      "passes": false,
+      "priority": 30,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": [
+        "AC-03",
+        "FR-03"
+      ],
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/08-forms-validation-ux.md"
+      ],
+      "completionArtifacts": [
+        "apps/web/src/app/admin/rosters"
+      ],
+      "description": "Admin class roster views and CSV import flow with validation preview and import summary.",
+      "testRequirements": {
+        "component": [
+          "apps/web/src/components/admin/roster-import-panel.test.tsx"
+        ],
+        "acceptanceTags": [
+          "AC-03",
+          "FR-03"
+        ]
+      }
+    },
+    {
+      "id": "web-admin-reports-export",
+      "passes": false,
+      "priority": 31,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": [
+        "AC-12",
+        "AC-13",
+        "FR-12",
+        "FR-13",
+        "BR-09",
+        "NFR-07",
+        "NFR-11"
+      ],
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/14-listing-pages-search-filter-sort.md"
+      ],
+      "completionArtifacts": [
+        "apps/web/src/app/admin/reports",
+        "apps/web/src/app/admin/export"
+      ],
+      "description": "Admin institution-wide reports and dedicated CSV export page with filter bar and confirm dialog.",
+      "testRequirements": {
+        "component": [
+          "apps/web/src/components/admin/csv-export-panel.test.tsx"
+        ],
+        "acceptanceTags": [
+          "AC-12",
+          "AC-13",
+          "FR-12",
+          "FR-13",
+          "BR-09",
+          "NFR-07",
+          "NFR-11"
+        ]
+      }
+    },
+    {
+      "id": "web-admin-policy",
+      "passes": false,
+      "priority": 32,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": [
+        "AC-16",
+        "FR-16",
+        "BR-05"
+      ],
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/08-forms-validation-ux.md"
+      ],
+      "completionArtifacts": [
+        "apps/web/src/app/admin/policy"
+      ],
+      "description": "Admin attendance policy page: absence threshold configuration and auto-warning toggle (Should capability).",
+      "testRequirements": {
+        "component": [
+          "apps/web/src/components/admin/attendance-policy-form.test.tsx"
+        ],
+        "acceptanceTags": [
+          "AC-16",
+          "FR-16",
+          "BR-05"
+        ]
+      }
+    },
+    {
+      "id": "e2e-acceptance-suite",
+      "passes": false,
+      "priority": 40,
+      "phase": 3,
+      "agent": "test",
+      "acceptance": [
+        "AC-01",
+        "AC-02",
+        "AC-03",
+        "AC-04",
+        "AC-05",
+        "AC-06",
+        "AC-07",
+        "AC-08",
+        "AC-09",
+        "AC-10",
+        "AC-11",
+        "AC-12",
+        "AC-13",
+        "AC-14",
+        "AC-15",
+        "AC-16"
+      ],
+      "docs": [
+        "docs/technical/11-testing-plan.md",
+        "docs/brds/08-acceptance-mvp-future.md"
+      ],
+      "completionArtifacts": [
+        "tests/e2e"
+      ],
+      "description": "End-to-end API and browser scenario tests covering flows A–D from testing plan and full AC-01–AC-16 matrix.",
+      "testRequirements": {
+        "e2e": [
+          "tests/e2e/src/scenarios/flow-a-happy-path.test.ts",
+          "tests/e2e/src/scenarios/flow-b-anti-fraud.test.ts",
+          "tests/e2e/src/scenarios/flow-c-manual-fallback.test.ts",
+          "tests/e2e/src/scenarios/flow-d-reporting-auth.test.ts"
+        ],
+        "acceptanceTags": [
+          "AC-01",
+          "AC-02",
+          "AC-03",
+          "AC-04",
+          "AC-05",
+          "AC-06",
+          "AC-07",
+          "AC-08",
+          "AC-09",
+          "AC-10",
+          "AC-11",
+          "AC-12",
+          "AC-13",
+          "AC-14",
+          "AC-15",
+          "AC-16"
+        ]
+      }
+    }
+  ]
+}

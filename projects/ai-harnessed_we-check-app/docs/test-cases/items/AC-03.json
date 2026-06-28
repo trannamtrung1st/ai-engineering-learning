@@ -1,0 +1,392 @@
+{
+  "productItemId": "AC-03",
+  "version": 1,
+  "docFingerprint": "sha256:2668a9e5528c7792c1487646faad8fb595d13fa43185d7cf976e318818385f70",
+  "generatedAt": "2026-06-28T17:19:07Z",
+  "cases": [
+    {
+      "id": "TC-AC-03-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["AC-03", "FR-03"],
+      "title": "TS-07: Valid CSV roster import creates enrollments and returns summary counts",
+      "preconditions": [
+        "TrainingOfficeAdmin is authenticated with roster:write permission",
+        "Reference data exists for class_code HESD-01 and subject_code SWE-101",
+        "CSV file contains required columns institutional_id, display_name, class_code, subject_code with three valid unique rows"
+      ],
+      "steps": [
+        "POST /roster/import as multipart/form-data with file field set to valid CSV",
+        "Assert HTTP status 202 and response includes batchId and status Processing",
+        "Poll GET /roster/imports/:batchId until status is Complete",
+        "Assert batch summary shows successRows=3 and errorRows=0",
+        "GET /enrollments?classId=<HESD-01-id>&subjectId=<SWE-101-id> with admin session"
+      ],
+      "expected": "Three enrollment rows persisted and linked to student users; import batch reports accepted and rejected row counts per AC-03a; GET /enrollments returns all three students with totalCount=3",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-03-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["AC-03", "FR-03"],
+      "title": "RosterService.importCsv persists enrollments in Postgres transaction with row-level summary",
+      "preconditions": [
+        "Real PostgreSQL test database is running",
+        "roster-enrollment module RosterService is wired to EnrollmentRepository",
+        "Class HESD-01 and subject SWE-101 reference rows exist",
+        "CSV buffer contains two valid enrollment rows for distinct institutional IDs"
+      ],
+      "steps": [
+        "Invoke RosterService.importCsv with valid CSV buffer under admin context",
+        "Query enrollments table for class-subject pair within the same transaction scope",
+        "Verify RosterImportBatch row records successRows=2 and errorRows=0",
+        "Verify each enrollment links to an existing or newly provisioned student user row"
+      ],
+      "expected": "Exactly two enrollment rows committed with correct classId, subjectId, and studentId foreign keys; ImportSummary reflects accepted count with no silent partial failure",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-03-003",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["AC-03", "FR-03"],
+      "title": "POST /roster/import returns 202 Accepted with batch envelope",
+      "preconditions": [
+        "TrainingOfficeAdmin session cookie is set",
+        "Valid CSV file with required columns is prepared"
+      ],
+      "steps": [
+        "Send POST /roster/import with Content-Type multipart/form-data and file field",
+        "Assert HTTP status 202 Accepted",
+        "Assert response body contains batchId (uuid), status Processing, and Vietnamese message",
+        "Assert response body does not contain row-level enrollment data"
+      ],
+      "expected": "HTTP 202 Accepted with standard async-import envelope per API design §4.3; client must poll GET /roster/imports/:batchId for results",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-03-004",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["AC-03", "FR-03"],
+      "title": "TS-08: Duplicate enrollment row rejected while valid rows import successfully",
+      "preconditions": [
+        "TrainingOfficeAdmin is authenticated",
+        "Class HESD-01 and subject SWE-101 exist in reference data",
+        "CSV contains two valid unique rows and one duplicate row (same institutional_id, class_code, subject_code as row 1)"
+      ],
+      "steps": [
+        "POST /roster/import with the mixed valid-and-duplicate CSV",
+        "Poll GET /roster/imports/:batchId until Complete",
+        "Assert successRows=2 and errorRows=1",
+        "Assert errorDetails contains row index and errorCode DuplicateEnrollment for the duplicate row",
+        "GET /enrollments for HESD-01 / SWE-101 and count results"
+      ],
+      "expected": "Valid rows import; duplicate row rejected with row-level error per AC-03b; no silent partial failure; exactly two enrollments exist for the class-subject pair",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-03-005",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["AC-03", "FR-03"],
+      "title": "Duplicate enrollment within same class-subject rejected with DuplicateEnrollment row error",
+      "preconditions": [
+        "Enrollment already exists for student SV2026001 in class HESD-01 subject SWE-101",
+        "RosterService.importCsv is invoked with admin context"
+      ],
+      "steps": [
+        "Import CSV row with institutional_id SV2026001, class_code HESD-01, subject_code SWE-101",
+        "Capture ImportSummary errorDetails for the rejected row",
+        "Query enrollments count for SV2026001 in HESD-01 / SWE-101"
+      ],
+      "expected": "Row rejected with errorCode DuplicateEnrollment; enrollment count remains exactly one; no duplicate enrollment row created",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-03-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["AC-03", "FR-03", "BR-08"],
+      "title": "TS-09: Instructor assigned to HESD-01 denied roster for unassigned class",
+      "preconditions": [
+        "Instructor is authenticated and has ClassAssignment only for class HESD-01",
+        "Class HESD-02 and subject SWE-101 exist with enrollments",
+        "Instructor lacks assignment to HESD-02"
+      ],
+      "steps": [
+        "GET /enrollments?classId=<HESD-02-id>&subjectId=<SWE-101-id> with Instructor session cookie",
+        "Assert HTTP status 403",
+        "Assert response errorCode Forbidden with localized permission-denied message",
+        "Verify response body contains no enrollment or student data"
+      ],
+      "expected": "HTTP 403 Forbidden per AC-03c and BR-08; no roster data returned for out-of-scope class",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-03-007",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["AC-03", "FR-03", "BR-08"],
+      "title": "Instructor denied GET /enrollments for unassigned class-subject with 403 Forbidden",
+      "preconditions": [
+        "Authenticated Instructor session with assignment scoped to HESD-01 only",
+        "Enrollments exist for HESD-02 / SWE-101"
+      ],
+      "steps": [
+        "GET /enrollments?classId=<HESD-02-id>&subjectId=<SWE-101-id> using Instructor session",
+        "Assert response status 403 and errorCode Forbidden"
+      ],
+      "expected": "Access denied with Vietnamese permission error; zero enrollment records exposed",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-03-008",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["AC-03", "FR-03"],
+      "title": "Instructor and Student denied POST /roster/import with 403 Forbidden",
+      "preconditions": [
+        "Valid CSV file is prepared",
+        "Authenticated Instructor session and separate Student session are available",
+        "Neither role has roster:write permission"
+      ],
+      "steps": [
+        "POST /roster/import with valid CSV using Instructor session cookie",
+        "Assert HTTP 403 Forbidden and no batchId created",
+        "POST /roster/import with valid CSV using Student session cookie",
+        "Assert HTTP 403 Forbidden and no RosterImportBatch row created"
+      ],
+      "expected": "Both non-admin roles receive HTTP 403 with errorCode Forbidden; no import batch or enrollment rows created",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-03-009",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["AC-03", "FR-03"],
+      "title": "GET /roster/imports/:batchId returns successRows, errorRows, and errorDetails",
+      "preconditions": [
+        "TrainingOfficeAdmin completed POST /roster/import with a CSV containing one valid and one invalid row",
+        "batchId from 202 response is known"
+      ],
+      "steps": [
+        "GET /roster/imports/:batchId with admin session",
+        "Assert HTTP status 200",
+        "Assert response body contains batchId, status Complete, successRows, errorRows, and errorDetails array",
+        "Assert each errorDetails entry includes rowNumber, errorCode, and message"
+      ],
+      "expected": "HTTP 200 with RosterImportBatch DTO per API design §4.4; summary counts match actual import outcome",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-03-010",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P1",
+      "traceability": ["AC-03", "FR-03"],
+      "title": "GET /enrollments returns 200 with enrollment list for assigned class-subject",
+      "preconditions": [
+        "Instructor is authenticated with ClassAssignment for HESD-01 / SWE-101",
+        "At least one enrollment exists for that class-subject pair"
+      ],
+      "steps": [
+        "GET /enrollments?classId=<HESD-01-id>&subjectId=<SWE-101-id> with Instructor session",
+        "Assert HTTP status 200",
+        "Assert response contains class, subject, enrollments array, and totalCount",
+        "Assert each enrollment entry has enrollmentId, student (id, institutionalId, displayName), and enrolledAt"
+      ],
+      "expected": "HTTP 200 with scoped enrollment list per API design §4.2; instructor sees only assigned class-subject roster",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-03-011",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["AC-03", "FR-03"],
+      "title": "Flow A step 1: Admin seeds cohort roster via CSV import before session creation",
+      "preconditions": [
+        "TrainingOfficeAdmin is authenticated",
+        "Empty class HESD-01 / SWE-101 reference data exists",
+        "CSV contains enrollments for all pilot cohort students (≥10 rows)"
+      ],
+      "steps": [
+        "POST /roster/import with cohort CSV file",
+        "Poll GET /roster/imports/:batchId until Complete with successRows matching CSV row count",
+        "GET /enrollments for HESD-01 / SWE-101 and verify totalCount matches imported count",
+        "Proceed to instructor session creation using the seeded class and subject (Flow A continuation)"
+      ],
+      "expected": "Roster seeded successfully as Flow A prerequisite; all valid enrollments persisted and visible for downstream session open and check-in steps",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-03-012",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["AC-03", "FR-03"],
+      "title": "CSV missing required columns rejects all rows in batch summary",
+      "preconditions": [
+        "TrainingOfficeAdmin is authenticated",
+        "CSV file omits subject_code column but includes other fields"
+      ],
+      "steps": [
+        "POST /roster/import with malformed-column CSV",
+        "Poll GET /roster/imports/:batchId until Complete",
+        "Assert errorRows equals total data row count and successRows=0",
+        "Verify no new enrollment rows were created"
+      ],
+      "expected": "All rows rejected with column validation errors per validation rules §3.3; no enrollments persisted; summary surfaces rejected count without silent failure",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-03-013",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["AC-03", "FR-03"],
+      "title": "POST /roster/import without file field returns 422 InvalidFile",
+      "preconditions": [
+        "TrainingOfficeAdmin is authenticated"
+      ],
+      "steps": [
+        "POST /roster/import as multipart/form-data with no file field",
+        "Assert HTTP status 422",
+        "Assert response errorCode InvalidFile with Vietnamese message File CSV không hợp lệ hoặc quá lớn"
+      ],
+      "expected": "HTTP 422 InvalidFile per error handling catalog; no import batch created",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-03-014",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["AC-03", "FR-03"],
+      "title": "Unknown class_code row rejected with UnknownClassCode error",
+      "preconditions": [
+        "RosterService.importCsv invoked under admin context",
+        "CSV row references class_code NONEXIST-99 with otherwise valid fields"
+      ],
+      "steps": [
+        "Import CSV with one row containing unknown class_code NONEXIST-99",
+        "Capture ImportSummary errorDetails",
+        "Query enrollments table for any row referencing NONEXIST-99"
+      ],
+      "expected": "Row rejected with errorCode UnknownClassCode; zero enrollment rows created for unknown class",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-03-015",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": ["AC-03", "FR-03"],
+      "title": "dryRun=true validates CSV and returns summary without persisting enrollments",
+      "preconditions": [
+        "Real PostgreSQL test database is running",
+        "Valid CSV with three rows is prepared",
+        "No prior enrollments exist for the CSV students in target class-subject"
+      ],
+      "steps": [
+        "Invoke RosterService.importCsv with dryRun=true flag",
+        "Assert ImportSummary reports successRows=3",
+        "Query enrollments table for the target class-subject pair",
+        "Re-run import with dryRun=false and verify enrollments are now persisted"
+      ],
+      "expected": "dryRun pass returns validation summary only with no DB writes; subsequent non-dry-run import commits the three enrollment rows",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-03-016",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["AC-03", "FR-03"],
+      "title": "Admin uploads CSV via RosterImportForm and sees import summary counts",
+      "preconditions": [
+        "TrainingOfficeAdmin is logged in to admin SPA",
+        "Admin navigates to roster import page",
+        "Valid CSV file with required columns is available for upload"
+      ],
+      "steps": [
+        "Open RosterImportPanel and select valid CSV file via file input",
+        "Click confirm import action",
+        "Wait for import processing to complete",
+        "Verify summary screen displays accepted and rejected row counts per AC-03a (e.g. Đã nhập {n} dòng; {m} dòng lỗi)"
+      ],
+      "expected": "Import completes with visible summary counts matching API batch result; success state shown when all rows accepted",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-03-017",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["AC-03", "FR-03"],
+      "title": "Partial import failure shows expandable per-row error list",
+      "preconditions": [
+        "TrainingOfficeAdmin is logged in to admin SPA",
+        "CSV file contains mix of valid rows and duplicate enrollment rows"
+      ],
+      "steps": [
+        "Upload the mixed CSV via RosterImportForm and submit",
+        "Wait for import summary screen",
+        "Verify summary shows both accepted and rejected counts",
+        "Expand the error list section and verify each rejected row displays row number and error reason"
+      ],
+      "expected": "Partial failure UI per AC-03b shows expandable error list with row-level DuplicateEnrollment details; valid rows reflected in accepted count",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-03-018",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["AC-03", "FR-03"],
+      "title": "Instructor views enrolled students table for assigned class only",
+      "preconditions": [
+        "Instructor is logged in with assignment to HESD-01 / SWE-101",
+        "Enrollments exist for assigned class-subject",
+        "Instructor navigates to roster view for HESD-01"
+      ],
+      "steps": [
+        "Select class HESD-01 and subject SWE-101 in roster filter controls",
+        "Verify roster table renders student ID, display name, and enrollment columns",
+        "Attempt to navigate or filter to unassigned class HESD-02",
+        "Observe permission-denied state or empty/disabled class option"
+      ],
+      "expected": "Assigned class roster displays enrolled students in table; unassigned class access blocked in UI consistent with AC-03c",
+      "edgeCase": false
+    }
+  ]
+}
