@@ -16,6 +16,11 @@
       "current": true,
       "docFingerprint": "sha256:2668a9e5528c7792c1487646faad8fb595d13fa43185d7cf976e318818385f70",
       "generatedAt": "2026-06-28T17:20:19Z"
+    },
+    "AC-04": {
+      "current": true,
+      "docFingerprint": "sha256:1ac4798df6d9455def54fdb258e16300f8a5e0c63b97d141244c054696ce7c48",
+      "generatedAt": "2026-06-28T17:24:58Z"
     }
   }
 }
