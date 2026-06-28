@@ -1,0 +1,396 @@
+{
+  "productItemId": "BR-11",
+  "version": 1,
+  "docFingerprint": "sha256:4deda16c175af0ca34aadf938abcd5f11203e186585e68a48a77093b8e87aac5",
+  "generatedAt": "2026-06-29T23:45:00Z",
+  "cases": [
+    {
+      "id": "TC-BR-11-001",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["BR-11", "FR-06", "FR-09", "AC-09"],
+      "title": "TS-27: Second student submitting Consumed token rejected with security log entry",
+      "preconditions": [
+        "Active session with two enrolled students Student A and Student B",
+        "Student A successfully checked in; QrToken status Consumed with consumedByStudentId Student A",
+        "Token still within 30-second validity window (TestClock fixed before expires_at)",
+        "Student B authenticated with in-radius coordinates and Pending attendance"
+      ],
+      "steps": [
+        "POST /api/v1/check-in as Student B using same tokenId consumed by Student A",
+        "Assert HTTP status 400 Bad Request",
+        "Assert response outcome TokenAlreadyUsed and errorCode TokenAlreadyUsed",
+        "Assert message Mã QR đã được sử dụng per error-handling §4",
+        "Assert Student B attendance remains Pending (not Present)",
+        "Verify security log entry contains sessionId, tokenId, and submitting Student B id per BR-11 outcome specification",
+        "Query check_in_attempts for Student B and assert outcome TokenAlreadyUsed"
+      ],
+      "expected": "BR-11 enforced: consumed token reuse rejected within validity window; append-only security log with session ID, token ID, and submitting student ID",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-11-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-11", "FR-06", "FR-09"],
+      "title": "CheckInService rejects Consumed token at pipeline step 8 before duplicate and GPS checks",
+      "preconditions": [
+        "Real PostgreSQL test database is running",
+        "Active session with qr_tokens row status Consumed linked to sessionId",
+        "Enrolled Student B with Pending attendance and in-radius coordinates",
+        "CheckInService wired per validation-rules §5.1 with TestClock within token TTL"
+      ],
+      "steps": [
+        "Invoke CheckInService.submitCheckIn with Consumed tokenId and valid locationPayload for Student B",
+        "Assert result outcome TokenAlreadyUsed without Present transition",
+        "Query attendance_records for Student B and assert status remains Pending",
+        "Query qr_tokens and assert status remains Consumed (no double-consumption)",
+        "Insert check_in_attempts row and assert outcome TokenAlreadyUsed logged",
+        "Verify pipeline short-circuits at step 8 before BR-04 duplicate evaluation per rule interaction matrix order 4"
+      ],
+      "expected": "BR-11 enforced at Layer 4 step 8; TokenAlreadyUsed returned without consuming token again or creating Present record",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-11-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-11", "NFR-02"],
+      "title": "CheckInTransaction atomically sets QrToken Consumed only on Success not on TokenAlreadyUsed",
+      "preconditions": [
+        "Real PostgreSQL with qr_tokens row status Consumed by Student A",
+        "Enrolled Student B with Pending attendance",
+        "CheckInTransaction suite per testing-plan §5 with serializable transaction and row lock on qr_tokens"
+      ],
+      "steps": [
+        "Begin transaction context and invoke CheckInService.submit with Consumed tokenId for Student B",
+        "Assert outcome TokenAlreadyUsed and transaction rolled back without Present update for Student B",
+        "Assert qr_tokens row remains Consumed with consumedByStudentId still Student A",
+        "Contrast: invoke CheckInService.submit on Valid token for Student C and assert single commit sets Consumed and Present atomically",
+        "Verify domain model §5.2: at most one successful consumption per token"
+      ],
+      "expected": "BR-11 one-time-use invariant: Present + token Consumed atomically on Success only; reuse rejected without corrupting attendance or token state",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-11-004",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-11"],
+      "title": "POST /check-in returns 400 TokenAlreadyUsed envelope for Consumed token submission",
+      "preconditions": [
+        "QrToken row with status Consumed linked to Active session",
+        "Authenticated enrolled Student B who did not consume the token",
+        "Token issuedAt within 30-second window (not ExpiredQr path)",
+        "Student B coordinates within session gpsRadiusMeters"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with consumed tokenId, latitude 10.762700, longitude 106.660200 using Student B session",
+        "Assert HTTP status 400 Bad Request",
+        "Assert Content-Type application/json; charset=utf-8",
+        "Assert response body outcome TokenAlreadyUsed and errorCode TokenAlreadyUsed",
+        "Assert response body message Mã QR đã được sử dụng per validation-rules §4 BR-11 mapping",
+        "Verify CheckInAttempt row inserted with outcome TokenAlreadyUsed"
+      ],
+      "expected": "HTTP 400 TokenAlreadyUsed contract for one-time-use token violation; distinct from 409 DuplicateCheckIn per BR-11",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-11-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P0",
+      "traceability": ["BR-11", "FR-09", "AC-09"],
+      "title": "Flow B step 4: Student B same-token reuse rejected in anti-fraud path",
+      "preconditions": [
+        "Flow B steps 1–3 complete: Active session with valid QR, Student A checked in successfully",
+        "Student A attendance Present; tokenId from step 2 status Consumed",
+        "Student B enrolled and authenticated with in-radius coordinates",
+        "TestClock within 30-second token validity window"
+      ],
+      "steps": [
+        "Student B POST /api/v1/check-in with same tokenId consumed in step 2",
+        "Assert HTTP 400 with outcome TokenAlreadyUsed and errorCode TokenAlreadyUsed",
+        "Verify security log entry for Student B attempt with sessionId, tokenId, studentId",
+        "Assert Student B attendance remains Pending",
+        "Confirm Flow B anti-fraud rejection path per testing-plan §6 Flow B step 4 tags BR-11"
+      ],
+      "expected": "Flow B validates BR-11 token-sharing rejection after first successful consumption in anti-fraud e2e flow",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-11-006",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["BR-11", "FR-06"],
+      "title": "QrToken transitions Valid to Consumed only on first successful check-in not on reuse rejection",
+      "preconditions": [
+        "Real PostgreSQL with qr_tokens row status Valid linked to Active session",
+        "Student A enrolled with Pending attendance",
+        "Student B enrolled with Pending attendance",
+        "CheckInService.submit callable with in-radius coordinates"
+      ],
+      "steps": [
+        "Record beforeState: qr_token status Valid, consumedAt null",
+        "Invoke CheckInService.submit for Student A and assert Success",
+        "Assert afterState: qr_token status Consumed with consumedAt and consumedByStudentId Student A",
+        "Invoke CheckInService.submit for Student B with same tokenId",
+        "Assert outcome TokenAlreadyUsed; qr_token afterState remains Consumed (no re-transition)",
+        "Verify security audit entry created for Student B attempt per BR-11 outcome"
+      ],
+      "expected": "beforeState Valid → afterState Consumed on first Success only; reuse attempts do not alter token state but create security log",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-11-007",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P0",
+      "traceability": ["BR-11", "FR-09", "NFR-02"],
+      "title": "Parallel check-in with same token from two students yields one Success and one TokenAlreadyUsed",
+      "preconditions": [
+        "Real PostgreSQL test database with serializable or SELECT FOR UPDATE on qr_tokens",
+        "Active session with Valid QrToken T1 and two enrolled students Student A and Student B",
+        "Both students authenticated with in-radius coordinates and Pending attendance",
+        "TestClock within attendance window and token TTL"
+      ],
+      "steps": [
+        "Fire two parallel POST /check-in or CheckInService.submit calls using identical tokenId T1 from Student A and Student B",
+        "Collect both HTTP responses or CheckInResult outcomes",
+        "Assert exactly one response is HTTP 200 outcome Success with attendance Present",
+        "Assert the other response is HTTP 400 outcome TokenAlreadyUsed",
+        "Query qr_tokens for T1 and assert status Consumed with exactly one consumedByStudentId",
+        "Query attendance_records and assert exactly one Present row among the two students",
+        "Verify security log entry for the losing student's attempt"
+      ],
+      "expected": "BR-11 concurrency invariant: row lock on qr_tokens ensures at most one successful consumption; loser receives TokenAlreadyUsed per NFR-02",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-11-008",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-11"],
+      "title": "Security log entry persisted on token reuse with sessionId, tokenId, and submitting studentId",
+      "preconditions": [
+        "Real PostgreSQL test database is running",
+        "Active session with Consumed qr_tokens row consumed by Student A",
+        "Student B enrolled with Pending attendance",
+        "Security audit or check_in_attempts append-only store queryable"
+      ],
+      "steps": [
+        "Record security log or check_in_attempts count before reuse attempt",
+        "Invoke CheckInService.submit with Consumed tokenId for Student B",
+        "Assert outcome TokenAlreadyUsed",
+        "Query security audit store and assert new entry contains sessionId matching token sessionId",
+        "Assert entry contains tokenId and submitting studentId Student B",
+        "Assert entry is append-only (no update or delete of prior entries)"
+      ],
+      "expected": "BR-11 outcome requires security log with session ID, token ID, and submitting student ID on every consumed-token reuse attempt",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-11-009",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-11"],
+      "title": "TokenAlreadyUsed evaluated at pipeline step 8 before DuplicateCheckIn when token already Consumed",
+      "preconditions": [
+        "Student A consumed token T1 and is Present for Active session",
+        "Fresh scenario: Student A attempts check-in again with same consumed tokenId T1",
+        "TestClock within 30-second validity window",
+        "Student A coordinates within session gpsRadiusMeters"
+      ],
+      "steps": [
+        "POST /api/v1/check-in as Student A with same consumed tokenId T1",
+        "Assert HTTP status 400 with outcome TokenAlreadyUsed (not 409 DuplicateCheckIn)",
+        "Assert errorCode TokenAlreadyUsed takes precedence per validation-rules §5.1 step 8 before step 10",
+        "Verify check_in_attempts logged with outcome TokenAlreadyUsed not DuplicateCheckIn",
+        "Query qr_tokens for T1 and assert status remains Consumed"
+      ],
+      "expected": "BR-11 evaluated at pipeline step 8 before BR-04 DuplicateCheckIn (step 10); Consumed token short-circuits per rule interaction matrix order 4",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-11-010",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-11", "BR-03"],
+      "title": "Consumed token reuse within 30s window returns TokenAlreadyUsed not ExpiredQr",
+      "preconditions": [
+        "QrToken consumed by Student A at time T with expires_at T + 30 s",
+        "TestClock fixed at T + 20 seconds (within validity window)",
+        "Student B enrolled, authenticated, with in-radius coordinates"
+      ],
+      "steps": [
+        "POST /api/v1/check-in as Student B with consumed tokenId at TestClock T + 20 s",
+        "Assert HTTP 400 with outcome TokenAlreadyUsed (not ExpiredQr)",
+        "Assert errorCode TokenAlreadyUsed per BR-11 condition: token Consumed while still within 30-second window",
+        "Verify Student B attendance remains Pending",
+        "Verify security log entry created for reuse attempt"
+      ],
+      "expected": "BR-11 applies when token state is Consumed regardless of remaining TTL; distinct from BR-03 ExpiredQr path for expired-but-not-consumed tokens",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-11-011",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-11", "FR-09"],
+      "title": "Instructor denied POST /check-in with Consumed token — BR-11 not bypassed via staff role",
+      "preconditions": [
+        "Authenticated Instructor session available",
+        "Active session with Consumed QrToken within validity window",
+        "Instructor role lacks checkin:submit per roles-permissions §2.2"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with consumed tokenId and in-radius coordinates using Instructor session cookie",
+        "Assert HTTP status 403 Forbidden and errorCode Forbidden",
+        "Verify no Present attendance created for instructor userId",
+        "Verify no security log entry implying successful token consumption by instructor",
+        "Assert permission guard runs at pipeline step 3 before BR-11 token consumption evaluation"
+      ],
+      "expected": "Only Student role triggers BR-11 check-in pipeline; staff accounts cannot consume or reuse QR tokens preventing proxy attendance",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-11-012",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-11", "FR-09", "AC-09"],
+      "title": "Mobile check-in shows token reuse rejection when scanning shared Consumed QR",
+      "preconditions": [
+        "Student B authenticated on mobile viewport 375×812",
+        "QrToken already Consumed by Student A within current 30-second window",
+        "Deep link or scanned QR contains consumed tokenId for Active session",
+        "GPS permission granted with in-radius coordinates"
+      ],
+      "steps": [
+        "Student B opens /check-in?token=:consumedTokenId&session=:sessionId",
+        "Complete GPS capture and submit check-in",
+        "Verify CheckInOutcomePanel displays error-level TokenAlreadyUsed state",
+        "Verify message Mã QR đã được sử dụng per error-handling §4",
+        "Verify no success confirmation or Present badge shown",
+        "Verify submit control remains disabled or offers guidance to scan fresh QR from projector"
+      ],
+      "expected": "BR-11 anti-proxy token sharing rejection visible in mobile web UI; student directed to obtain new rotating QR",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-11-013",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["BR-11", "FR-09"],
+      "title": "Instructor session monitor may surface code-sharing alert after token reuse attempt",
+      "preconditions": [
+        "Active session with instructor viewing live attendance monitor at /sessions/:sessionId/monitor",
+        "Student A checked in successfully consuming token T1",
+        "Student B attempted check-in with same consumed token T1 (TokenAlreadyUsed logged per BR-11)"
+      ],
+      "steps": [
+        "As Instructor, open session monitor page for Active session",
+        "Trigger Student B token reuse attempt via API or second mobile browser",
+        "Poll or wait for monitor refresh (≤5 s per FR-15 polling interval)",
+        "Verify code-sharing or token-reuse alert indicator visible on instructor monitor per BR-11 instructor alert",
+        "Verify Student B remains Pending in roster grid",
+        "Verify Student A remains Present in roster grid"
+      ],
+      "expected": "BR-11 security log entry for token reuse may surface instructor-facing code-sharing alert during Active session monitor",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-11-014",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-11", "FR-06"],
+      "title": "QrTokenRepository findByIdForUpdate prevents double consumption under concurrent Success attempts",
+      "preconditions": [
+        "Real PostgreSQL test database is running",
+        "Active session with Valid qr_tokens row T1",
+        "QrTokenRepository.findByIdForUpdate wired per domain model §6",
+        "Two enrolled students with Pending attendance"
+      ],
+      "steps": [
+        "Simulate two concurrent repository transactions both calling findByIdForUpdate on T1",
+        "First transaction completes CheckInService Success path setting status Consumed",
+        "Second transaction attempts consumption on same tokenId",
+        "Assert second transaction receives TokenAlreadyUsed or blocks until first commits then rejects",
+        "Query qr_tokens for T1 and assert exactly one Consumed state with single consumedByStudentId"
+      ],
+      "expected": "BR-11 at-most-one-consumption enforced at persistence layer via row-level lock on qr_tokens per domain model §5.2",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-11-015",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-11"],
+      "title": "TokenAlreadyUsed response distinct from DuplicateCheckIn when different students share consumed token",
+      "preconditions": [
+        "Student A Present from prior successful check-in consuming token T1",
+        "Student B authenticated with Pending attendance",
+        "Token T1 status Consumed within validity window"
+      ],
+      "steps": [
+        "Student B POST /api/v1/check-in with tokenId T1 and assert HTTP 400 TokenAlreadyUsed",
+        "Student A POST /api/v1/check-in with fresh Valid tokenId T2 and assert HTTP 409 DuplicateCheckIn",
+        "Compare response envelopes: TokenAlreadyUsed uses 400; DuplicateCheckIn uses 409",
+        "Assert distinct errorCode and Vietnamese messages per error-handling §4",
+        "Verify both failures create check_in_attempts rows with correct outcomes"
+      ],
+      "expected": "BR-11 TokenAlreadyUsed (400) contract is distinguishable from BR-04 DuplicateCheckIn (409) for correct client handling of token-sharing vs duplicate-student scenarios",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-11-016",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["BR-11"],
+      "title": "Third sequential reuse attempt on same Consumed token creates additional security log without state change",
+      "preconditions": [
+        "QrToken T1 Consumed by Student A",
+        "Student B and Student C enrolled with Pending attendance",
+        "TestClock within 30-second validity window"
+      ],
+      "steps": [
+        "Student B CheckInService.submit with T1 and assert TokenAlreadyUsed",
+        "Student C CheckInService.submit with T1 and assert TokenAlreadyUsed",
+        "Query security log or check_in_attempts and assert two distinct entries for Student B and Student C",
+        "Query qr_tokens for T1 and assert status remains Consumed with consumedByStudentId Student A",
+        "Assert no Present records created for Student B or Student C"
+      ],
+      "expected": "BR-11 has no exceptions: each token supports at most one successful consumption; every reuse attempt rejected and logged",
+      "edgeCase": true
+    }
+  ]
+}
