@@ -1,0 +1,416 @@
+{
+  "productItemId": "BR-02",
+  "version": 1,
+  "docFingerprint": "sha256:4deda16c175af0ca34aadf938abcd5f11203e186585e68a48a77093b8e87aac5",
+  "generatedAt": "2026-06-29T21:00:00Z",
+  "cases": [
+    {
+      "id": "TC-BR-02-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["BR-02", "FR-08", "AC-08"],
+      "title": "TS-22: Device coordinates within session gpsRadiusMeters pass Haversine radius check",
+      "preconditions": [
+        "Active session with room GPS (10.762622, 106.660172) and gpsRadiusMeters 100",
+        "Authenticated enrolled Student with Pending attendance",
+        "Valid unexpired QrToken from GET /sessions/:sessionId/qr/current",
+        "Student device coordinates inside radius (10.762700, 106.660200)",
+        "TestClock within attendance window; spoofMetadata.mockLocationDetected false"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with tokenId, latitude 10.762700, longitude 106.660200 using Student session",
+        "Assert HTTP status 200 and outcome Success",
+        "Assert attendance.status Present in response",
+        "Query check_in_attempts for latest attempt and assert outcome Success with distance_meters ≤ 100",
+        "Verify GeoVerificationService radius check passed per BR-02 before attendance update"
+      ],
+      "expected": "Haversine distance ≤ session gpsRadiusMeters; BR-02 radius check passes and flow continues to Present when all other pipeline steps pass",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-02-002",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["BR-02", "FR-08", "AC-08"],
+      "title": "TS-23: Device coordinates outside configured radius return OutOfRadius without Present",
+      "preconditions": [
+        "Active session with room GPS (10.762622, 106.660172) and gpsRadiusMeters 100",
+        "Authenticated enrolled Student with Pending attendance",
+        "Valid unexpired QrToken",
+        "Student coordinates outside radius (~167 m north: 10.764122, 106.660172)"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with tokenId, latitude 10.764122, longitude 106.660172 using Student session",
+        "Assert HTTP status 400",
+        "Assert response outcome OutOfRadius and errorCode OutOfRadius",
+        "Query attendance_records for studentId and sessionId and assert status remains Pending (not Present)",
+        "Query check_in_attempts and assert outcome OutOfRadius with distance_meters logged and no raw lat/lng persisted"
+      ],
+      "expected": "BR-02 rejects check-in when Haversine distance > gpsRadiusMeters; attendance not set to Present; distance value logged for audit",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-02-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-02", "FR-08"],
+      "title": "GeoVerificationService.verifyLocation enforces Haversine ≤ gpsRadiusMeters at module boundary",
+      "preconditions": [
+        "GeoVerificationService wired in checkin-qr module per domain model §7.1",
+        "Room coordinates (10.762622, 106.660172) and gpsRadiusMeters 100 loaded from Session fixture",
+        "ClientGeoMetadata with mockLocationDetected false"
+      ],
+      "steps": [
+        "Call verifyLocation(roomLat, roomLng, clientLat 10.762700, clientLng 106.660200, radiusMeters 100, metadata)",
+        "Assert result.withinRadius true and distanceMeters ≤ 100",
+        "Call verifyLocation with outside client coords (10.764122, 106.660172)",
+        "Assert result.withinRadius false and distanceMeters > 100",
+        "Assert client coordinates exist only in memory during call (not written to DB)"
+      ],
+      "expected": "GeoVerificationService implements BR-02 Haversine distance comparison against session room point and configurable radius",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-02-004",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-02"],
+      "title": "CheckInService OutOfRadius persists distance_meters on check_in_attempts without raw coordinates",
+      "preconditions": [
+        "Real PostgreSQL with Active session, enrollment, Valid QrToken, Pending attendance",
+        "CheckInService orchestrates GeoVerificationService then serializable transaction per domain model §5.2",
+        "Out-of-radius coordinates (10.764122, 106.660172) for room (10.762622, 106.660172)"
+      ],
+      "steps": [
+        "Invoke CheckInService.submit with valid tokenId and out-of-radius coordinates",
+        "Query check_in_attempts for the attempt row",
+        "Assert outcome OutOfRadius and distance_meters is NOT NULL and greater than session gpsRadiusMeters",
+        "Assert attendance_records row remains Pending",
+        "Assert no latitude or longitude columns populated on check_in_attempts or attendance_records"
+      ],
+      "expected": "BR-02 outcome logs distance for audit without persisting raw device coordinates long-term per domain model §4.10 privacy rule",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-02-005",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["BR-02"],
+      "title": "OutOfRadius rejection leaves Attendance Pending allowing retry after moving within radius",
+      "preconditions": [
+        "Pending attendance_records row in PostgreSQL for enrolled student and Active session",
+        "Valid QrToken; CheckInService.submit callable with out-of-radius coordinates"
+      ],
+      "steps": [
+        "Record beforeState Attendance status Pending",
+        "Invoke CheckInService.submit with outside-radius coordinates (10.764122, 106.660172)",
+        "Assert CheckInAttempt outcome OutOfRadius inserted",
+        "Query attendance_records and assert afterState remains Pending (not Present or Absent)",
+        "Invoke CheckInService.submit again with in-radius coordinates and fresh token; assert Success and Present"
+      ],
+      "expected": "beforeState Pending; afterState Pending on OutOfRadius per BR-02; student may retry when within radius",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-02-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-02", "FR-08"],
+      "title": "POST /check-in with in-radius coordinates returns 200 Success envelope after BR-02 pass",
+      "preconditions": [
+        "Authenticated enrolled Student session cookie set",
+        "Active sessionId with Valid QrToken and in-radius coordinates available"
+      ],
+      "steps": [
+        "Send POST /api/v1/check-in with body { tokenId, latitude: 10.762700, longitude: 106.660200, spoofMetadata: { mockLocationDetected: false, platform: \"android\" } }",
+        "Assert HTTP status 200",
+        "Assert Content-Type application/json; charset=utf-8",
+        "Assert response outcome Success and attendance.status Present",
+        "Assert no errorCode field on success per API design §6.2"
+      ],
+      "expected": "HTTP 200 Success contract when GPS within radius per BR-02 and all prior pipeline steps pass",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-02-007",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-02"],
+      "title": "POST /check-in with out-of-radius coordinates returns 400 OutOfRadius envelope",
+      "preconditions": [
+        "Authenticated enrolled Student session",
+        "Active session with gpsRadiusMeters 100 and room (10.762622, 106.660172)",
+        "Valid unexpired QrToken",
+        "Outside coordinates (10.764122, 106.660172)"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with tokenId and outside-radius latitude/longitude",
+        "Assert HTTP status 400",
+        "Assert response body outcome OutOfRadius and errorCode OutOfRadius",
+        "Assert message field contains Vietnamese out-of-radius guidance per validation-rules §4 BR-02 mapping",
+        "Assert no attendance Present in response body"
+      ],
+      "expected": "HTTP 400 OutOfRadius per validation-rules §4 and API design §6.3; canonical BR-02 failure envelope",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-02-008",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-02"],
+      "title": "GPS at Haversine distance equal to gpsRadiusMeters passes inclusive radius check",
+      "preconditions": [
+        "Active session with room (10.762622, 106.660172) and gpsRadiusMeters 100",
+        "Client coordinates at ~100 m from room point (10.763520, 106.660172) per geo fixture math",
+        "Authenticated enrolled Student, Valid QrToken, Pending attendance"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with boundary coordinates (10.763520, 106.660172)",
+        "Assert HTTP status 200 outcome Success",
+        "Assert distanceMeters on check_in_attempts ≤ 100 (inclusive boundary per HaversineDistance unit tests)",
+        "Contrast: coordinates at 10.764122 (~167 m) with same session assert 400 OutOfRadius"
+      ],
+      "expected": "BR-02 uses ≤ comparison; student at exactly radius boundary passes; just outside fails",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-02-009",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-02", "FR-04", "FR-08"],
+      "title": "Session gpsRadiusMeters override 200 m accepts student at ~167 m from room point",
+      "preconditions": [
+        "Active session with room (10.762622, 106.660172) and gpsRadiusMeters 200 (instructor override at session creation)",
+        "Authenticated enrolled Student with coordinates (10.764122, 106.660172) ~167 m from room",
+        "Valid unexpired QrToken; all non-GPS pipeline checks pass"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with tokenId and coordinates (10.764122, 106.660172)",
+        "Assert HTTP status 200 outcome Success (would fail with default 100 m radius)",
+        "Assert attendance Present",
+        "Verify distance ~167 m ≤ 200 m override radius per session gpsRadiusMeters field"
+      ],
+      "expected": "BR-02 honors instructor-adjustable gpsRadiusMeters (default 100 m, range 20–500); distance ≤ configured radius not fixed default",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-02-010",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["BR-02"],
+      "title": "Minimum session gpsRadiusMeters 20 m rejects student at 25 m from room point",
+      "preconditions": [
+        "Active session with room (10.762622, 106.660172) and gpsRadiusMeters 20 (minimum allowed)",
+        "Authenticated enrolled Student with coordinates ~25 m from room (10.762847, 106.660172)",
+        "Valid unexpired QrToken"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with tokenId and coordinates ~25 m from room",
+        "Assert HTTP status 400 outcome OutOfRadius",
+        "Assert distance_meters on check_in_attempts > 20",
+        "Repeat with coordinates ~15 m from room and assert HTTP 200 Success"
+      ],
+      "expected": "BR-02 enforces session-specific minimum radius boundary; distance just outside 20 m fails",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-02-011",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P0",
+      "traceability": ["BR-02", "AC-08"],
+      "title": "Flow B step 5: Student C outside radius receives OutOfRadius in anti-fraud rejection path",
+      "preconditions": [
+        "Flow B steps 1–4 complete: Active session, Student A checked in, Student A duplicate rejected",
+        "Student B same-token rejection already exercised",
+        "Student C authenticated and enrolled with outside-radius coordinates (10.764122, 106.660172)",
+        "Fresh Valid QrToken issued for Student C"
+      ],
+      "steps": [
+        "POST /api/v1/check-in as Student C with outside-radius coordinates and fresh tokenId",
+        "Assert HTTP 400 outcome OutOfRadius",
+        "Assert Student C attendance remains Pending",
+        "Verify Flow B anti-fraud path includes GPS rejection per testing-plan §6 Flow B"
+      ],
+      "expected": "Flow B step 5 validates BR-02 alongside anti-fraud scenarios; OutOfRadius without Present",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-02-012",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-02", "FR-10"],
+      "title": "Check-in pipeline evaluates spoof heuristics at step 12 before BR-02 radius at step 13",
+      "preconditions": [
+        "CheckInService with injectable pipeline steps per validation-rules §5.1",
+        "Active session, enrolled student, Valid QrToken, in-radius coordinates",
+        "spoofMetadata.mockLocationDetected true (SpoofSuspected path)"
+      ],
+      "steps": [
+        "Invoke CheckInService.submit with in-radius coordinates and mockLocationDetected true",
+        "Assert outcome SpoofSuspected (not OutOfRadius)",
+        "Assert GeoVerificationService radius check was not reached or did not determine final outcome",
+        "Query check_in_attempts and assert outcome SpoofSuspected without Present attendance"
+      ],
+      "expected": "BR-02 exception clause: FR-10 spoof handling runs before radius check per rule interaction matrix order 7 then 8",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-02-013",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-02", "FR-08"],
+      "title": "Instructor denied POST /check-in with GPS payload (lacks checkin:submit)",
+      "preconditions": [
+        "Authenticated Instructor session available",
+        "Active session with valid room GPS and QrToken",
+        "Instructor role lacks checkin:submit per roles-permissions §2.2"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with valid tokenId and in-radius coordinates using Instructor session",
+        "Assert HTTP status 403 Forbidden and errorCode Forbidden",
+        "Verify no GPS radius evaluation creates Present attendance for instructor userId",
+        "Assert permission guard runs before Layer 4 BR-02 domain checks"
+      ],
+      "expected": "BR-02 applies to Student check-in submissions only; Instructor cannot invoke radius verification via check-in endpoint",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-02-014",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-02", "FR-08", "AC-08", "NFR-18"],
+      "title": "Mobile check-in journey: in-radius GPS coordinates enable successful submit after server validation",
+      "preconditions": [
+        "Authenticated Student on mobile viewport 375×812 (iOS Safari or Android Chrome)",
+        "Active session check-in deep link /check-in?token=:tokenId&session=:sessionId",
+        "Browser geolocation granted with in-radius mock coordinates (10.762700, 106.660200)"
+      ],
+      "steps": [
+        "Navigate to check-in page on mobile viewport",
+        "Verify GPS capture indicator shows coordinates acquired",
+        "Tap submit control (Xác nhận điểm danh)",
+        "Verify success panel with Present status after BR-02 radius validation passes on server",
+        "Verify no raw GPS coordinates displayed in UI beyond transient capture state"
+      ],
+      "expected": "Mobile web path: client captures GPS, server enforces BR-02 Haversine check, success confirmation shown",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-02-015",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-02", "AC-08"],
+      "title": "Mobile check-in OutOfRadius outcome panel shows Vietnamese message and retry guidance",
+      "preconditions": [
+        "Authenticated Student on mobile viewport with GPS permission granted",
+        "Active session check-in deep link with valid token",
+        "Browser geolocation mocked to outside-radius coordinates (10.764122, 106.660172)"
+      ],
+      "steps": [
+        "Navigate to /check-in page and wait for GPS capture with outside coordinates",
+        "Submit check-in",
+        "Verify outcome panel displays OutOfRadius state with message Bạn đang ngoài phạm vi phòng học",
+        "Verify distance hint or move-closer guidance visible per user-flows §3",
+        "Verify no Present success badge; student can retry after moving closer within radius"
+      ],
+      "expected": "BR-02 OutOfRadius outcome surfaced in mobile UI with localized message and recovery action",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-02-016",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": ["BR-02", "BR-10", "FR-11"],
+      "title": "Instructor manual override to Present after OutOfRadius per BR-02 exception and BR-10",
+      "preconditions": [
+        "Active session with student attendance Pending after OutOfRadius check_in_attempt",
+        "Session Closed within 24 hours of closedAt",
+        "Assigned Instructor session with attendance:write permission"
+      ],
+      "steps": [
+        "Verify student attendance status Pending with prior OutOfRadius attempt logged",
+        "Instructor PATCH /attendance/:recordId with status Present and note physical verification",
+        "Assert HTTP 200 and attendance status Present",
+        "Query attendance_audit_logs and assert editorId, previousStatus Pending, newStatus Present, and note captured"
+      ],
+      "expected": "BR-02 exception: instructor manual override to Present after physical verification per BR-10 edit window",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-02-017",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["BR-02", "FR-08"],
+      "title": "Flow A step 4: in-radius GPS coordinates complete workshop check-in after radius verification",
+      "preconditions": [
+        "Flow A steps 1–3 complete: roster seeded, session opened Active with room GPS, QR token polled",
+        "Authenticated enrolled Student session established",
+        "Student coordinates within session gpsRadiusMeters (10.762700, 106.660200)",
+        "tokenId extracted from qrPayload returned in step 3"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with tokenId from Flow A step 3 and in-radius latitude/longitude using Student session",
+        "Assert HTTP 200 outcome Success with attendance Present",
+        "Query check_in_attempts and assert distance_meters ≤ session gpsRadiusMeters",
+        "Verify no raw lat/lng persisted in attendance or attempt tables"
+      ],
+      "expected": "Flow A happy-path includes BR-02 GPS radius verification before Present attendance in workshop lifecycle",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-02-018",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["BR-02"],
+      "title": "OutOfRadius only applies while session status is Active per BR-02 scope",
+      "preconditions": [
+        "Closed session with student attendance Absent",
+        "Valid or expired QrToken for closed session",
+        "In-radius coordinates (10.762700, 106.660200) available"
+      ],
+      "steps": [
+        "Invoke CheckInService.submit or POST /api/v1/check-in with in-radius coordinates for Closed session",
+        "Assert outcome SessionNotActive (not OutOfRadius)",
+        "Verify BR-02 radius evaluation not reached because session state guard fails first per pipeline step 5"
+      ],
+      "expected": "BR-02 scope is all check-in attempts while session Active; Closed session rejects before radius check with SessionNotActive",
+      "edgeCase": true
+    }
+  ]
+}
