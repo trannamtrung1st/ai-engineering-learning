@@ -102,3 +102,4 @@ Append-only log of harness slice completions.
 - 2026-06-28T21:16:23Z | module-reporting-export | review_failed
 - 2026-06-29T00:00:00Z | module-reporting-export | Fixed HTTP export denial path: removed permission guard so ExportService logs ExportDenied audit (BR-09, NFR-15); TC-AC-13-006/TC-NFR-15-012 HTTP audit assertion; foundation TC-NFR-11-008 payload fix; typecheck/lint/build + 3 unit + 124 integration tests pass
 - 2026-06-28T21:21:45Z | module-reporting-export | passed
+- 2026-06-28T21:28:31Z | module-notifications | passed

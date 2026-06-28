@@ -21,6 +21,7 @@ import { AssignmentRepository } from "../roster-enrollment/assignment-repository
 import { ReferenceRepository } from "../roster-enrollment/reference-repository.js";
 import { AttendanceService } from "../attendance/attendance-service.js";
 import { QrScheduler } from "../checkin-qr/qr-scheduler.js";
+import type { NotificationService } from "../notifications/notification-service.js";
 import { SessionRepository } from "./session-repository.js";
 import type {
   AttendanceRecordDto,
@@ -66,7 +67,10 @@ export class SessionService {
   private readonly assignments: AssignmentRepository;
   readonly qr: QrScheduler;
 
-  constructor(private readonly db: DbPool) {
+  constructor(
+    private readonly db: DbPool,
+    private readonly notifications?: NotificationService,
+  ) {
     this.sessions = new SessionRepository(db);
     this.attendance = new AttendanceService(db);
     this.references = new ReferenceRepository(db);
@@ -383,6 +387,12 @@ export class SessionService {
       await client.query("COMMIT");
 
       this.qr.stop(sessionId);
+
+      void this.notifications
+        ?.evaluateAbsenceThresholds(sessionId)
+        .catch(() => {
+          /* async threshold job — errors logged by harness in production */
+        });
 
       return toSessionDto(updated);
     } catch (error) {

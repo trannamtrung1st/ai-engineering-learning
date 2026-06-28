@@ -10,6 +10,7 @@ import type { SessionStore } from "../../auth/session-store.js";
 import { validationFailed } from "../../errors/api-error.js";
 import { AutoCloseScheduler } from "./auto-close-scheduler.js";
 import { SessionService } from "./session-service.js";
+import type { NotificationService } from "../notifications/notification-service.js";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -18,8 +19,9 @@ export async function registerSessionManagementRoutes(
   app: FastifyInstance,
   db: DbPool,
   store: SessionStore,
+  notifications?: NotificationService,
 ): Promise<AutoCloseScheduler> {
-  const sessionService = new SessionService(db);
+  const sessionService = new SessionService(db, notifications);
   const autoClose = new AutoCloseScheduler(db, sessionService);
   const auth = createAuthMiddleware(store);
 

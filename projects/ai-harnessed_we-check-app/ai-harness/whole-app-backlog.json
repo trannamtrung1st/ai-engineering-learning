@@ -414,7 +414,7 @@
     },
     {
       "id": "module-notifications",
-      "passes": false,
+      "passes": true,
       "priority": 17,
       "phase": 1,
       "agent": "backend",

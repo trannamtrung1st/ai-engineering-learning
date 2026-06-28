@@ -11,6 +11,7 @@ import { registerSessionManagementRoutes } from "./modules/session-management/ro
 import { registerAttendanceRoutes } from "./modules/attendance/routes.js";
 import { registerCheckInQrRoutes } from "./modules/checkin-qr/routes.js";
 import { registerReportingExportRoutes } from "./modules/reporting-export/routes.js";
+import { registerNotificationRoutes } from "./modules/notifications/routes.js";
 import type { AutoCloseScheduler } from "./modules/session-management/auto-close-scheduler.js";
 import { SessionStore } from "./auth/session-store.js";
 import { loadEnv } from "./config/env.js";
@@ -59,10 +60,16 @@ export async function buildApp(options: BuildAppOptions) {
       await registerHealthRoutes(api, options.db);
       await registerIdentityAuthRoutes(api, options.db, store);
       await registerRosterEnrollmentRoutes(api, options.db, store);
+      const notificationService = await registerNotificationRoutes(
+        api,
+        options.db,
+        store,
+      );
       autoCloseScheduler = await registerSessionManagementRoutes(
         api,
         options.db,
         store,
+        notificationService,
       );
       await registerAttendanceRoutes(api, options.db, store);
       await registerCheckInQrRoutes(api, options.db, store);
