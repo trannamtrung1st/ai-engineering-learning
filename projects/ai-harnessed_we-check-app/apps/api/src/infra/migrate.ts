@@ -9,6 +9,7 @@ const MIGRATION_FILES = [
   "001_foundation.sql",
   "002_user_audit.sql",
   "003_roster_enrollment.sql",
+  "004_session_management.sql",
 ] as const;
 
 export async function runMigrations(db: DbPool): Promise<void> {

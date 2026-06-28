@@ -84,3 +84,7 @@ Append-only log of harness slice completions.
 - 2026-06-28T19:58:14Z | module-identity-auth | passed
 - 2026-06-29T00:00:00Z | module-roster-enrollment | roster-enrollment module: classes/subjects reference data, CSV import with row validation, ClassAssignment scope for GET /enrollments, async import batches; 12 integration + 8 unit tests pass
 - 2026-06-28T20:08:26Z | module-roster-enrollment | passed
+- 2026-06-29T00:00:00Z | module-session-management | session-management module: Draft/Active/Closed/Cancelled lifecycle, room GPS validation (BR-07), attendance bootstrap on open, QR token scheduler, auto-close at scheduledStart+10min (BR-01); migration 004_session_management; 8 unit + 19 integration tests pass
+- 2026-06-28T20:30:36Z | module-session-management | checks_failed
+- 2026-06-29T00:00:00Z | module-session-management | Fixed NFR-22 e2e traceability: TC-NFR-01-003 health polling during Active session, TC-NFR-01-010 db disconnect 503/recovery; 21 integration + 8 unit tests pass; harness checks pass
+- 2026-06-28T20:34:17Z | module-session-management | passed

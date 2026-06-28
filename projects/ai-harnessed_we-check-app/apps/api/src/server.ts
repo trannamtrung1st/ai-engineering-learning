@@ -6,6 +6,8 @@ import { registerHealthRoutes, registerRequestIdHook } from "./routes/health.js"
 import { registerFoundationRoutes } from "./routes/foundation.js";
 import { registerIdentityAuthRoutes } from "./modules/identity-auth/routes.js";
 import { registerRosterEnrollmentRoutes } from "./modules/roster-enrollment/routes.js";
+import { registerSessionManagementRoutes } from "./modules/session-management/routes.js";
+import type { AutoCloseScheduler } from "./modules/session-management/auto-close-scheduler.js";
 import { SessionStore } from "./auth/session-store.js";
 import { loadEnv } from "./config/env.js";
 
@@ -29,16 +31,30 @@ export async function buildApp(options: BuildAppOptions) {
   await app.register(cookie);
 
   const store = new SessionStore(options.db);
+  let autoCloseScheduler: AutoCloseScheduler | undefined;
 
   await app.register(
     async (api) => {
       await registerHealthRoutes(api, options.db);
       await registerIdentityAuthRoutes(api, options.db, store);
       await registerRosterEnrollmentRoutes(api, options.db, store);
+      autoCloseScheduler = await registerSessionManagementRoutes(
+        api,
+        options.db,
+        store,
+      );
       await registerFoundationRoutes(api, store);
     },
     { prefix: API_BASE_PATH },
   );
+
+  if (autoCloseScheduler && env.nodeEnv !== "test") {
+    autoCloseScheduler.start();
+  }
+
+  app.addHook("onClose", async () => {
+    autoCloseScheduler?.stop();
+  });
 
   return app;
 }

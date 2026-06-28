@@ -136,6 +136,22 @@ export function serviceUnavailable(): ApiError {
   );
 }
 
+export function roomGpsRequired(): ApiError {
+  return new ApiError(
+    422,
+    ErrorCode.RoomGpsRequired,
+    ERROR_MESSAGES[ErrorCode.RoomGpsRequired],
+  );
+}
+
+export function invalidSessionState(): ApiError {
+  return new ApiError(
+    409,
+    ErrorCode.InvalidSessionState,
+    ERROR_MESSAGES[ErrorCode.InvalidSessionState],
+  );
+}
+
 /** Vietnamese default messages per docs/technical/09-error-handling.md §4 */
 export const ERROR_MESSAGES: Readonly<Record<ErrorCodeType, string>> = {
   [ErrorCode.InvalidFormat]: "Định dạng trường không hợp lệ",

@@ -46,24 +46,6 @@ export async function registerFoundationRoutes(
     },
   );
 
-  app.post(
-    "/sessions/:sessionId/open",
-    { preHandler: [auth, requirePermission(Permission.SessionWrite)] },
-    async () => ({ status: "Active" }),
-  );
-
-  app.post(
-    "/sessions",
-    { preHandler: [auth, requirePermission(Permission.SessionWrite)] },
-    async (_request, reply) => reply.status(201).send({ status: "Draft" }),
-  );
-
-  app.get(
-    "/sessions/:sessionId/qr/current",
-    { preHandler: [auth, requirePermission(Permission.QrDisplay)] },
-    async () => ({ qrPayload: "stub" }),
-  );
-
   app.get(
     "/attendance/:recordId",
     { preHandler: [auth, requirePermission(Permission.AttendanceRead)] },
