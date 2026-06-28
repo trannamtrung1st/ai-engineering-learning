@@ -397,10 +397,10 @@
         "acceptanceTags": [
           "AC-12",
           "AC-13",
-          "FR-12",
-          "FR-13",
           "BR-08",
           "BR-09",
+          "FR-12",
+          "FR-13",
           "NFR-07",
           "NFR-11",
           "NFR-15"
@@ -758,8 +758,8 @@
         ],
         "acceptanceTags": [
           "AC-12",
-          "FR-12",
-          "BR-08"
+          "BR-08",
+          "FR-12"
         ]
       }
     },
@@ -853,9 +853,9 @@
         "acceptanceTags": [
           "AC-12",
           "AC-13",
+          "BR-09",
           "FR-12",
           "FR-13",
-          "BR-09",
           "NFR-07",
           "NFR-11"
         ]
