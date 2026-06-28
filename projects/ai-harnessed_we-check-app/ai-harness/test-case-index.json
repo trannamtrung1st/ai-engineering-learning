@@ -31,6 +31,11 @@
       "current": true,
       "docFingerprint": "sha256:1ac4798df6d9455def54fdb258e16300f8a5e0c63b97d141244c054696ce7c48",
       "generatedAt": "2026-06-28T17:29:09Z"
+    },
+    "AC-07": {
+      "current": true,
+      "docFingerprint": "sha256:0d73282a1cdb989d80f39ac5119b0cf25b1a8cdaecf5bf1c99651680f31cc6b9",
+      "generatedAt": "2026-06-28T17:30:41Z"
     }
   }
 }
