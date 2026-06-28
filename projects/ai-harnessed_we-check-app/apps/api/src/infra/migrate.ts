@@ -5,7 +5,7 @@ import type { DbPool } from "./db.js";
 
 const SQL_DIR = join(dirname(fileURLToPath(import.meta.url)), "../../sql");
 
-const MIGRATION_FILES = ["001_foundation.sql"] as const;
+const MIGRATION_FILES = ["001_foundation.sql", "002_user_audit.sql"] as const;
 
 export async function runMigrations(db: DbPool): Promise<void> {
   await db.query(`

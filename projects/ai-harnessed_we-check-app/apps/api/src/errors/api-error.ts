@@ -65,6 +65,37 @@ export function forbidden(message?: string): ApiError {
   );
 }
 
+export function invalidCredentials(): ApiError {
+  return new ApiError(
+    401,
+    ErrorCode.InvalidCredentials,
+    ERROR_MESSAGES[ErrorCode.InvalidCredentials],
+  );
+}
+
+export function accountDeactivated(): ApiError {
+  return new ApiError(
+    403,
+    ErrorCode.AccountDeactivated,
+    ERROR_MESSAGES[ErrorCode.AccountDeactivated],
+  );
+}
+
+export function validationFailed(
+  details: ErrorDetail[],
+  message = ERROR_MESSAGES[ErrorCode.ValidationFailed],
+): ApiError {
+  return new ApiError(422, ErrorCode.ValidationFailed, message, details);
+}
+
+export function notFound(message?: string): ApiError {
+  return new ApiError(
+    404,
+    ErrorCode.NotFound,
+    message ?? ERROR_MESSAGES[ErrorCode.NotFound],
+  );
+}
+
 export function exportNotAllowed(): ApiError {
   return new ApiError(
     403,

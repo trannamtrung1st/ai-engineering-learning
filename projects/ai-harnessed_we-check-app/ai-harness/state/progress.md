@@ -80,3 +80,5 @@ Append-only log of harness slice completions.
 - 2026-06-28T19:40:52Z | api-foundation | checks_failed
 - 2026-06-29T00:00:00Z | api-foundation | Fixed lint (unused reply params), added e2e traceability coverage for FR-03 AC-03 AC-12 AC-13 AC-14; 22 integration tests pass; harness checks pass
 - 2026-06-28T19:45:23Z | api-foundation | passed
+- 2026-06-29T00:00:00Z | module-identity-auth | identity-auth module: bcrypt password hashing, user provisioning (POST/PATCH/GET /users), login/logout/me, session 8h sliding expiry, deactivation revokes sessions + audit log, admin session-inactivity policy; 13 integration + 11 unit tests pass
+- 2026-06-28T19:58:14Z | module-identity-auth | passed

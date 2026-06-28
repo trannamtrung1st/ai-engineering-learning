@@ -4,6 +4,7 @@ import type { DbPool } from "./infra/db.js";
 import { registerErrorHandler } from "./errors/error-handler.js";
 import { registerHealthRoutes, registerRequestIdHook } from "./routes/health.js";
 import { registerFoundationRoutes } from "./routes/foundation.js";
+import { registerIdentityAuthRoutes } from "./modules/identity-auth/routes.js";
 import { SessionStore } from "./auth/session-store.js";
 import { loadEnv } from "./config/env.js";
 
@@ -31,6 +32,7 @@ export async function buildApp(options: BuildAppOptions) {
   await app.register(
     async (api) => {
       await registerHealthRoutes(api, options.db);
+      await registerIdentityAuthRoutes(api, options.db, store);
       await registerFoundationRoutes(api, store);
     },
     { prefix: API_BASE_PATH },

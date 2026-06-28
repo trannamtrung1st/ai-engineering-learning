@@ -47,15 +47,15 @@ export async function registerFoundationRoutes(
   );
 
   app.get(
-    "/users",
-    { preHandler: [auth, requirePermission(Permission.UserWrite)] },
-    async () => ({ items: [] }),
-  );
-
-  app.post(
-    "/users",
-    { preHandler: [auth, requirePermission(Permission.UserWrite)] },
-    async (_request, reply) => reply.status(201).send({ id: "stub" }),
+    "/enrollments",
+    { preHandler: [auth, requirePermission(Permission.RosterRead, { reportAccess: true })] },
+    async (request) => {
+      const query = request.query as { classId?: string };
+      if (query.classId === "HESD-02") {
+        throw reportAccessDenied();
+      }
+      return { items: [] };
+    },
   );
 
   app.post(
@@ -80,33 +80,6 @@ export async function registerFoundationRoutes(
     "/sessions/:sessionId/qr/current",
     { preHandler: [auth, requirePermission(Permission.QrDisplay)] },
     async () => ({ qrPayload: "stub" }),
-  );
-
-  app.get(
-    "/auth/me",
-    { preHandler: [auth, requirePermission(Permission.UserRead)] },
-    async (request) => {
-      const { user } = request.auth!;
-      return {
-        id: user.id,
-        institutionalId: user.institutionalId,
-        displayName: user.displayName,
-        email: user.email,
-        role: user.role,
-      };
-    },
-  );
-
-  app.get(
-    "/enrollments",
-    { preHandler: [auth, requirePermission(Permission.RosterRead, { reportAccess: true })] },
-    async (request) => {
-      const query = request.query as { classId?: string };
-      if (query.classId === "HESD-02") {
-        throw reportAccessDenied();
-      }
-      return { items: [] };
-    },
   );
 
   app.get(

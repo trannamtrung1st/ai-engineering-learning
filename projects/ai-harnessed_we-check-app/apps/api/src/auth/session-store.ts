@@ -117,6 +117,14 @@ export class SessionStore {
       [sessionId, now()],
     );
   }
+
+  async revokeAllSessionsForUser(userId: string): Promise<void> {
+    await this.db.query(
+      `UPDATE auth_sessions SET revoked_at = $2
+       WHERE user_id = $1 AND revoked_at IS NULL`,
+      [userId, now()],
+    );
+  }
 }
 
 export interface TestUserInput {
@@ -148,6 +156,14 @@ export async function createTestUser(
 }
 
 export async function truncateAuthTables(db: DbPool): Promise<void> {
+  await db.query("DELETE FROM user_audit_logs");
   await db.query("DELETE FROM auth_sessions");
+  await db.query(
+    "UPDATE policy_settings SET updated_by_id = NULL WHERE updated_by_id IS NOT NULL",
+  );
   await db.query("DELETE FROM users");
+  await db.query(
+    `UPDATE policy_settings SET value = '8', updated_by_id = NULL
+     WHERE key = 'session_inactivity_hours'`,
+  );
 }
