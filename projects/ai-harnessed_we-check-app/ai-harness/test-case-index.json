@@ -266,6 +266,11 @@
       "current": true,
       "docFingerprint": "sha256:9e1460900a69a9b4493be4e286bcd7d1823652cd7aff6f47163d6846238a1c2c",
       "generatedAt": "2026-06-28T18:54:15Z"
+    },
+    "NFR-14": {
+      "current": true,
+      "docFingerprint": "sha256:094662fb9298eea2ff9bd0525951550a0c69f428a26ed4f8bef2679526947d21",
+      "generatedAt": "2026-06-28T18:55:19Z"
     }
   }
 }
