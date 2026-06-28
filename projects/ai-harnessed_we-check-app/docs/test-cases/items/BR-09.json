@@ -1,0 +1,311 @@
+{
+  "productItemId": "BR-09",
+  "version": 1,
+  "docFingerprint": "sha256:4deda16c175af0ca34aadf938abcd5f11203e186585e68a48a77093b8e87aac5",
+  "generatedAt": "2026-06-29T12:00:00Z",
+  "cases": [
+    {
+      "id": "TC-BR-09-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["BR-09", "FR-13", "AC-13"],
+      "title": "TS-32: Non-admin POST /reports/export returns 403 Forbidden with ExportNotAllowed",
+      "preconditions": [
+        "Authenticated Instructor session (role is not TrainingOfficeAdmin per BR-09 condition)",
+        "Attendance data exists for export-eligible class-subject filters HESD-01 / SWE-101"
+      ],
+      "steps": [
+        "POST /api/v1/reports/export with body { classCode: HESD-01, subjectCode: SWE-101, from: 2026-06-01, to: 2026-06-30 } using Instructor session",
+        "Assert HTTP status 403 Forbidden",
+        "Assert response errorCode ExportNotAllowed per validation-rules §4 BR-09 and roles-permissions §2.5",
+        "Assert Vietnamese message Chỉ phòng đào tạo mới có quyền xuất dữ liệu",
+        "Assert response body is not text/csv and contains no attendance data",
+        "Verify ExportDenied security audit entry created with actor instructorId per BR-09 outcome"
+      ],
+      "expected": "Testing-plan TS-32 satisfied: BR-09 blocks non-admin CSV export with localized permission error and denied attempt logged",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-09-002",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["BR-09", "FR-13", "AC-13"],
+      "title": "TS-33: TrainingOfficeAdmin CSV export permitted and audit-logged",
+      "preconditions": [
+        "Authenticated TrainingOfficeAdmin session (role satisfies BR-09 exception)",
+        "Closed sessions with mixed attendance exist for HESD-01 / SWE-101 in June 2026"
+      ],
+      "steps": [
+        "POST /api/v1/reports/export with body { classCode: HESD-01, subjectCode: SWE-101, from: 2026-06-01, to: 2026-06-30 } using TrainingOfficeAdmin session",
+        "Assert HTTP status 200 OK",
+        "Assert Content-Type text/csv; charset=utf-8",
+        "Assert CSV header contains institutional_id, display_name, class_code, subject_code, session_date, attendance_status, checked_in_at per API design §8.3",
+        "Query ExportAuditLog and assert success entry with adminId, filterSummary, and rowCount per domain model §4.12"
+      ],
+      "expected": "BR-09 allows TrainingOfficeAdmin export: TS-33 satisfied with UTF-8 CSV download and ExportAuditLog on success",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-09-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-09", "FR-13"],
+      "title": "ExportService.exportCsv rejects non-admin caller at role guard with real PostgreSQL",
+      "preconditions": [
+        "Real PostgreSQL test database with Closed sessions and attendance records for HESD-01 / SWE-101",
+        "ExportService wired with reporting-export module per domain model §7",
+        "Instructor userId with role Instructor (not TrainingOfficeAdmin)"
+      ],
+      "steps": [
+        "Invoke ExportService.exportCsv({ classCode: HESD-01, subjectCode: SWE-101, from, to }, instructorId)",
+        "Assert BR-09 role guard throws or returns denial before CSV generation",
+        "Assert no ExportAuditLog success row created for instructorId",
+        "Invoke ExportService.exportCsv with same filters and TrainingOfficeAdmin userId",
+        "Assert CSV buffer returned and ExportAuditLog success entry persisted in same DB transaction boundary"
+      ],
+      "expected": "Module-integration boundary: ExportService enforces BR-09 admin-only role guard at service layer with real DB; non-admin rejected, admin succeeds",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-09-004",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-09", "FR-13", "NFR-11"],
+      "title": "Denied export attempt writes ExportDenied security audit with actor and reason",
+      "preconditions": [
+        "Real PostgreSQL with attendance data for export filters",
+        "ExportService or permission guard configured to log failed export per roles-permissions §2.6",
+        "Student userId with role Student"
+      ],
+      "steps": [
+        "Record security audit / ExportDenied log count before export attempt",
+        "Invoke export path with Student userId and valid filter body",
+        "Assert BR-09 denial before any CSV rows emitted",
+        "Query security audit store for new ExportDenied entry with actor studentId",
+        "Assert audit record includes denial reason referencing non-admin role per error-handling §6.2",
+        "Assert no ExportAuditLog success entry created for the denied attempt"
+      ],
+      "expected": "BR-09 outcome: denied export attempt audit-logged with actor and reason per business rule and NFR-11",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-09-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-09", "FR-13"],
+      "title": "POST /reports/export returns 403 Forbidden envelope for Instructor role",
+      "preconditions": [
+        "Authenticated Instructor session cookie",
+        "Valid export filter body with classCode, subjectCode, from, to"
+      ],
+      "steps": [
+        "Send POST /api/v1/reports/export with JSON filter body and Instructor session cookie",
+        "Assert HTTP status 403 Forbidden",
+        "Assert Content-Type application/json (not text/csv)",
+        "Assert response body contains errorCode ExportNotAllowed",
+        "Assert response body contains message Chỉ phòng đào tạo mới có quyền xuất dữ liệu",
+        "Assert response body does not contain CSV header row or attendance rows"
+      ],
+      "expected": "HTTP 403 contract for POST /reports/export when BR-09 role check fails; JSON error envelope with ExportNotAllowed",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-09-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-09", "FR-13"],
+      "title": "POST /reports/export returns 200 with CSV attachment for TrainingOfficeAdmin",
+      "preconditions": [
+        "Authenticated TrainingOfficeAdmin session cookie",
+        "Closed session attendance data exists within requested filter range"
+      ],
+      "steps": [
+        "Send POST /api/v1/reports/export with JSON body { classCode: HESD-01, subjectCode: SWE-101, from: 2026-06-01, to: 2026-06-30 } and admin session cookie",
+        "Assert HTTP status 200 OK",
+        "Assert Content-Type text/csv; charset=utf-8",
+        "Assert Content-Disposition attachment; filename=\"attendance-export-<date>.csv\" per API design §8.3",
+        "Assert response body is raw CSV text with header row as first line",
+        "Assert response body does not contain errorCode on success"
+      ],
+      "expected": "HTTP 200 success contract for POST /reports/export when BR-09 passes; CSV file stream returned to TrainingOfficeAdmin",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-09-007",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-09", "FR-13", "AC-13", "NFR-11"],
+      "title": "Instructor with report:read but without report:export denied CSV export",
+      "preconditions": [
+        "Instructor A assigned to HESD-01 / SWE-101 with report:read per BR-08",
+        "Instructor A lacks report:export per roles-permissions §2.2",
+        "Attendance data exists for assigned class-subject filters"
+      ],
+      "steps": [
+        "GET /api/v1/reports/summary for HESD-01 / SWE-101 using Instructor A session and assert HTTP 200 (report:read allowed)",
+        "POST /api/v1/reports/export with same filters using Instructor A session",
+        "Assert HTTP status 403 Forbidden with errorCode ExportNotAllowed",
+        "Assert message Chỉ phòng đào tạo mới có quyền xuất dữ liệu",
+        "Assert no CSV attachment in response",
+        "Verify ExportDenied audit log entry with actor instructorAId per BR-09"
+      ],
+      "expected": "BR-09 rbac-negative: report:read does not imply report:export; instructor denied despite assigned report access",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-09-008",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-09", "FR-13", "AC-13", "NFR-11"],
+      "title": "Student POST /reports/export rejected with no peer data leak",
+      "preconditions": [
+        "Authenticated Student session (no report:export or report:read per roles-permissions §2.2)",
+        "Attendance data exists in system for other students in HESD-01 / SWE-101"
+      ],
+      "steps": [
+        "POST /api/v1/reports/export with valid filter body using Student session",
+        "Assert HTTP status 403 Forbidden",
+        "Assert errorCode ExportNotAllowed",
+        "Assert message Chỉ phòng đào tạo mới có quyền xuất dữ liệu",
+        "Assert response contains no peer attendance or roster data",
+        "Verify ExportDenied security audit entry created per BR-09 and error-handling §6.2"
+      ],
+      "expected": "BR-09 rbac-negative: Student role denied CSV export with localized message; denied attempt logged; no data leak",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-09-009",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["BR-09", "FR-13", "BR-08", "AC-13"],
+      "title": "Flow D steps 3–4: Instructor export 403 versus TrainingOfficeAdmin export 200",
+      "preconditions": [
+        "Instructor A assigned to HESD-01 / SWE-101 with report:read",
+        "TrainingOfficeAdmin authenticated",
+        "Closed session with attendance in HESD-01 / SWE-101"
+      ],
+      "steps": [
+        "Instructor A POST /api/v1/reports/export for HESD-01 / SWE-101 filters and assert HTTP 403 ExportNotAllowed",
+        "TrainingOfficeAdmin POST /api/v1/reports/export for same filters and assert HTTP 200 with valid CSV",
+        "Assert admin export CSV contains attendance rows for session scope",
+        "Assert ExportAuditLog written for admin success and ExportDenied for instructor attempt",
+        "Confirm Flow D steps 3–4 per testing-plan §6 tags BR-09"
+      ],
+      "expected": "Flow D export authorization: BR-09 denies instructor export, permits admin export with audit per testing-plan §6",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-09-010",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["BR-09", "FR-13"],
+      "title": "Direct API export bypassing UI still blocked for non-admin with no CSV payload",
+      "preconditions": [
+        "Authenticated Instructor session with valid session cookie",
+        "Known attendance data that would be included if export were permitted",
+        "No UI interaction — raw HTTP client only"
+      ],
+      "steps": [
+        "POST /api/v1/reports/export directly via HTTP client (no browser, no admin UI) using Instructor credentials",
+        "Assert HTTP status 403 Forbidden before any CSV stream begins",
+        "Assert errorCode ExportNotAllowed per validation-rules §4 BR-09",
+        "Assert response body length consistent with JSON error envelope only (no multi-kilobyte CSV leak)",
+        "Verify ExportDenied audit entry created proving server-side BR-09 enforcement independent of UI guard"
+      ],
+      "expected": "BR-09 enforced at API layer: UI bypass attempt still denied with no CSV data returned; audit records denied attempt",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-09-011",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-09", "FR-13", "AC-13"],
+      "title": "TrainingOfficeAdmin completes /admin/export filter, confirm, and CSV download journey",
+      "preconditions": [
+        "Authenticated TrainingOfficeAdmin on desktop viewport",
+        "Closed sessions with attendance in HESD-01 / SWE-101 for June 2026",
+        "Admin sidebar shows Xuất CSV navigation per page-list §5.6"
+      ],
+      "steps": [
+        "Navigate to /admin/export",
+        "Set class HESD-01, subject SWE-101, and date range 2026-06-01 to 2026-06-30 in ReportFilterBar",
+        "Verify CsvExportPanel shows Ready state with estimated row count",
+        "Click Xuất CSV and confirm export in ConfirmDialog with compliance note per forms-validation §4.7",
+        "Wait for browser download and verify success toast Đã tải xuống per ui-states §12",
+        "Open downloaded attendance-export CSV and verify required header columns",
+        "Verify export action visible only for admin role per ui-ux foundation BR-09 guard"
+      ],
+      "expected": "BR-09 allows admin browser journey: filter → confirm → CSV download with required columns; export control admin-only in UI",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-09-012",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-09", "FR-13", "AC-13", "NFR-11"],
+      "title": "Instructor sees export denial with Vietnamese message; no CSV download",
+      "preconditions": [
+        "Authenticated Instructor on desktop viewport assigned to HESD-01 / SWE-101",
+        "Instructor may access /reports but lacks report:export",
+        "Export UI entry hidden or guarded per listing-pages §10 and ui-ux foundation BR-09"
+      ],
+      "steps": [
+        "Verify Xuất CSV navigation entry is hidden or disabled in instructor sidebar per page-list §10",
+        "Attempt to navigate to /admin/export or trigger export action if exposed",
+        "Verify UI shows ForbiddenPage, route guard redirect, or denial modal per page-list §2.2 and ui-states §12 Denied state",
+        "If export API invoked from UI, verify modal displays Chỉ phòng đào tạo mới có quyền xuất dữ liệu with admin contact hint per error-handling §7",
+        "Verify no CSV file download initiated",
+        "Verify network tab shows API 403 ExportNotAllowed matching BR-09 rbac-negative behavior"
+      ],
+      "expected": "BR-09 UI journey: instructor export denied with localized Vietnamese message; no CSV download; mirrors API denial",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-09-013",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-09", "FR-13"],
+      "title": "Permission guard on POST /reports/export evaluates report:export before handler",
+      "preconditions": [
+        "API route wired with permission guard per roles-permissions §2.4",
+        "Real PostgreSQL with export-eligible attendance data",
+        "Test fixtures for Instructor and TrainingOfficeAdmin AuthSession rows"
+      ],
+      "steps": [
+        "Dispatch POST /reports/export request context with Instructor role through permission guard middleware",
+        "Assert guard returns 403 ExportNotAllowed without invoking ExportService CSV generation",
+        "Dispatch same request with TrainingOfficeAdmin role",
+        "Assert guard passes to ExportService handler",
+        "Assert only TrainingOfficeAdmin requests reach export_audit_logs insert path"
+      ],
+      "expected": "Integration boundary: permission guard enforces BR-09 report:export admin-only before domain handler; deny by default per roles-permissions §2.4",
+      "edgeCase": false
+    }
+  ]
+}
