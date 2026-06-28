@@ -291,6 +291,11 @@
       "current": true,
       "docFingerprint": "sha256:ed424942563a5e9625e83c96c0c61499539e2f54ef867814277995eab1e690cb",
       "generatedAt": "2026-06-28T19:07:52Z"
+    },
+    "NFR-19": {
+      "current": true,
+      "docFingerprint": "sha256:ed424942563a5e9625e83c96c0c61499539e2f54ef867814277995eab1e690cb",
+      "generatedAt": "2026-06-28T19:10:04Z"
     }
   }
 }
