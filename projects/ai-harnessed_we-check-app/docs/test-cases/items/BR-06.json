@@ -1,0 +1,422 @@
+{
+  "productItemId": "BR-06",
+  "version": 1,
+  "docFingerprint": "sha256:4deda16c175af0ca34aadf938abcd5f11203e186585e68a48a77093b8e87aac5",
+  "generatedAt": "2026-06-28T18:23:05.000Z",
+  "cases": [
+    {
+      "id": "TC-BR-06-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["BR-06", "FR-02", "AC-02"],
+      "title": "TS-04: Unauthenticated POST /check-in returns 401 Unauthenticated before domain rules run",
+      "preconditions": [
+        "No session cookie or Authorization header is present",
+        "Active session exists with valid QR token and enrolled student context for payload"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with valid tokenId, latitude, and longitude and no auth credentials",
+        "Assert HTTP status 401 and errorCode Unauthenticated",
+        "Assert response message is Vui lòng đăng nhập để tiếp tục per error-handling §4.1",
+        "Query attendance_records and check_in_attempts for the session to confirm no Present status or Success outcome"
+      ],
+      "expected": "BR-06 blocks check-in at Layer 2 authentication before session state, token, or GPS evaluation; HTTP 401 Unauthenticated; no attendance record created or updated",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-06-002",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["BR-06", "FR-02", "AC-02"],
+      "title": "TS-05: Login with returnUrl preserves check-in deep link and establishes authenticated session",
+      "preconditions": [
+        "Active student account exists with valid credentials",
+        "Check-in deep link path is /check-in?token=<valid-token-id>"
+      ],
+      "steps": [
+        "POST /api/v1/auth/login with student email, password, and returnUrl /check-in?token=<valid-token-id>",
+        "Assert HTTP status 200 and response includes redirectTo matching returnUrl",
+        "Assert Set-Cookie header sets wecheck_session HttpOnly cookie",
+        "GET /api/v1/auth/me using the issued session cookie"
+      ],
+      "expected": "After BR-06 redirect path, login returns 200 with user profile, session object, and redirectTo /check-in?token=<valid-token-id>; session cookie issued; /auth/me returns authenticated student identity",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-06-003",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["BR-06", "FR-02", "AC-02", "NFR-16"],
+      "title": "TS-06: Session idle beyond 8 hours rejects protected check-in with SessionExpired",
+      "preconditions": [
+        "Student has AuthSession row with lastActivityAt more than 8 hours before fixed test clock",
+        "TestClock is injected and set to current time",
+        "Active session with valid QR token exists"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with expired session cookie or bearer token and valid check-in payload",
+        "Assert HTTP status 401 and errorCode SessionExpired",
+        "Attempt GET /api/v1/auth/me with the same expired session"
+      ],
+      "expected": "Expired session treated as lacking valid authenticated session per BR-06; check-in returns HTTP 401 SessionExpired with message Phiên đăng nhập đã hết hạn; /auth/me also returns 401",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-06-004",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["BR-06", "FR-01", "AC-01"],
+      "title": "TS-03: Deactivated user login rejected with AccountDeactivated and no session issued",
+      "preconditions": [
+        "Student account exists with active=false and otherwise valid credentials",
+        "No valid AuthSession exists for the user"
+      ],
+      "steps": [
+        "POST /api/v1/auth/login with deactivated student email and correct password",
+        "Assert HTTP status 403 and errorCode AccountDeactivated",
+        "Verify no Set-Cookie wecheck_session header is returned",
+        "POST /api/v1/check-in without session to confirm still Unauthenticated"
+      ],
+      "expected": "Deactivated user cannot obtain valid authenticated session per BR-06; HTTP 403 AccountDeactivated; no AuthSession created; subsequent protected actions remain blocked",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-06-005",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-06", "FR-02"],
+      "title": "Auth middleware rejects unauthenticated request before CheckInService domain pipeline executes",
+      "preconditions": [
+        "Real PostgreSQL test database is running",
+        "Auth middleware wired to identity-auth AuthSession repository",
+        "Active session with valid QR token exists in database",
+        "CheckInService instrumented or spied to detect invocation"
+      ],
+      "steps": [
+        "Invoke POST /check-in route handler or CheckInService entry without session credentials",
+        "Assert middleware returns 401 Unauthenticated before CheckInService.validateAndSubmit is called",
+        "Query attendance_records for the session and confirm no status change",
+        "Query check_in_attempts and confirm no Success or domain-failure outcomes logged for this request"
+      ],
+      "expected": "BR-06 enforced at Layer 2 auth middleware; CheckInService and BR-01 through BR-12 domain rules never execute for unauthenticated callers; no side effects in attendance or check-in tables",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-06-006",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-06", "FR-02", "FR-01"],
+      "title": "AuthService.requireUser rejects deactivated user stale AuthSession row in Postgres",
+      "preconditions": [
+        "Student user exists with active=false in users table",
+        "Stale auth_sessions row still present for that user_id from prior activation",
+        "AuthService and AuthSession repository integrated with real DB"
+      ],
+      "steps": [
+        "Invoke AuthService.requireUser(sessionId) with stale session id for deactivated user",
+        "Assert requireUser fails with unauthenticated or session-invalid semantics",
+        "Invoke auth middleware with session cookie for the stale session against protected route",
+        "Query attendance_records to confirm no Present record created"
+      ],
+      "expected": "Deactivated user cannot hold valid authenticated session per BR-06 and domain model §4.1; middleware returns 401 before protected handler; no attendance mutations",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-06-007",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["BR-06", "FR-02"],
+      "title": "AuthSession transitions from valid to unusable after 8-hour inactivity threshold",
+      "preconditions": [
+        "Valid AuthSession exists with last_activity_at at T0",
+        "TestClock fixture controls current time",
+        "AuthService.requireUser available for session validation"
+      ],
+      "steps": [
+        "Verify AuthService.requireUser(sessionId) succeeds at T0 + 7h 59m",
+        "Advance clock to T0 + 8h 1m without updating last_activity_at",
+        "Call AuthService.requireUser(sessionId) again",
+        "Attempt protected API call with the session at advanced clock time"
+      ],
+      "expected": "beforeState: session valid for protected actions; afterState: session expired and BR-06 blocks protected operations with 401 SessionExpired semantics",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-06-008",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-06", "FR-02", "AC-02"],
+      "title": "POST /check-in without credentials returns 401 Unauthenticated error envelope",
+      "preconditions": [
+        "API server is running",
+        "Valid check-in request body prepared per API design §6.2"
+      ],
+      "steps": [
+        "POST /api/v1/check-in without Cookie and without Authorization header",
+        "Assert HTTP status 401",
+        "Assert response JSON contains errorCode Unauthenticated, message Vui lòng đăng nhập để tiếp tục, and requestId"
+      ],
+      "expected": "HTTP 401 with standard error envelope per validation rules §4 BR-06 mapping; outcome Unauthenticated when check-in response uses outcome field",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-06-009",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-06", "FR-02"],
+      "title": "GET /auth/me without session returns 401 Unauthenticated",
+      "preconditions": [
+        "No session cookie or bearer token present",
+        "API server is running"
+      ],
+      "steps": [
+        "GET /api/v1/auth/me without authentication headers",
+        "Assert HTTP status 401 and errorCode Unauthenticated"
+      ],
+      "expected": "HTTP 401 with errorCode Unauthenticated; no user profile returned; protected self-service route blocked per BR-06",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-06-010",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-06", "FR-04"],
+      "title": "POST /sessions without authentication returns 401 before session creation",
+      "preconditions": [
+        "No session cookie or Authorization header",
+        "Valid session create payload with classId, subjectId, room GPS, and schedule"
+      ],
+      "steps": [
+        "POST /api/v1/sessions with valid JSON body and no auth credentials",
+        "Assert HTTP status 401 and errorCode Unauthenticated",
+        "Query sessions table and confirm no new row created for the payload"
+      ],
+      "expected": "Instructor protected action blocked at authentication layer per BR-06 scope; HTTP 401; no session record persisted",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-06-011",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-06", "FR-12", "BR-08"],
+      "title": "Unauthenticated GET /reports/summary returns 401 before report authorization runs",
+      "preconditions": [
+        "No session cookie or Authorization header is present",
+        "Closed sessions with attendance data exist in database"
+      ],
+      "steps": [
+        "GET /api/v1/reports/summary?classCode=HESD-2026-PILOT&subjectCode=HESD-WSD&from=2026-06-01&to=2026-06-30 without auth",
+        "Assert HTTP status 401 and errorCode Unauthenticated"
+      ],
+      "expected": "BR-06 denies unauthenticated access before BR-08 report scope check; HTTP 401 Unauthenticated; no report data returned",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-06-012",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-06", "FR-13", "BR-09"],
+      "title": "Unauthenticated POST /reports/export returns 401 before admin role guard",
+      "preconditions": [
+        "No session cookie or Authorization header",
+        "Attendance data exists for export filter parameters"
+      ],
+      "steps": [
+        "POST /api/v1/reports/export with valid filter body and no auth credentials",
+        "Assert HTTP status 401 and errorCode Unauthenticated",
+        "Query export_audit_logs and confirm no new export audit row"
+      ],
+      "expected": "CSV export endpoint requires authentication per BR-06 before BR-09 admin-only guard; HTTP 401; no export file or audit log created",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-06-013",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-06", "FR-02"],
+      "title": "POST /auth/logout then reuse revoked session cookie returns 401 Unauthenticated",
+      "preconditions": [
+        "Authenticated student session established via POST /auth/login",
+        "Session cookie value captured before logout"
+      ],
+      "steps": [
+        "POST /api/v1/auth/logout with valid session cookie",
+        "Assert HTTP status 204 No Content",
+        "POST /api/v1/check-in with previously captured session cookie and valid payload",
+        "Assert HTTP status 401 and errorCode Unauthenticated"
+      ],
+      "expected": "Revoked session no longer satisfies BR-06 valid authenticated session requirement; check-in blocked with 401 Unauthenticated",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-06-014",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-06", "FR-02"],
+      "title": "Malformed or unknown session cookie returns 401 Unauthenticated on protected route",
+      "preconditions": [
+        "No valid session exists for the test client",
+        "API server is running"
+      ],
+      "steps": [
+        "GET /api/v1/auth/me with Cookie wecheck_session=not-a-valid-uuid",
+        "Assert HTTP status 401 and errorCode Unauthenticated",
+        "GET /api/v1/auth/me with Authorization Bearer invalid-token-value",
+        "Assert HTTP status 401 and errorCode Unauthenticated"
+      ],
+      "expected": "Invalid session identifiers fail BR-06 authentication check; HTTP 401 for both cookie and bearer variants; no user data leaked",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-06-015",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["BR-06", "FR-02"],
+      "title": "Invalid login credentials leave caller unauthenticated for subsequent check-in",
+      "preconditions": [
+        "Student account exists with known email",
+        "No valid session is established"
+      ],
+      "steps": [
+        "POST /api/v1/auth/login with correct email and wrong password",
+        "Assert HTTP status 401 and errorCode InvalidCredentials",
+        "Verify no Set-Cookie wecheck_session header is returned",
+        "POST /api/v1/check-in without session and assert HTTP 401 Unauthenticated"
+      ],
+      "expected": "Failed login does not establish session; BR-06 continues to block check-in with 401 Unauthenticated",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-06-016",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-06", "FR-02", "AC-02"],
+      "title": "Unauthenticated check-in deep link redirects to login preserving returnUrl",
+      "preconditions": [
+        "User is not logged in (no wecheck_session cookie)",
+        "Mobile browser navigates to /check-in?token=<token-id> from scanned QR deep link"
+      ],
+      "steps": [
+        "Open /check-in?token=<token-id> in mobile viewport",
+        "Observe browser URL changes to /login with returnUrl query parameter encoding the check-in path",
+        "Verify check-in page content is not shown and no success confirmation appears"
+      ],
+      "expected": "Browser enforces BR-06 auth gate: redirects to /login?returnUrl=%2Fcheck-in%3Ftoken%3D<token-id>; no attendance action occurs; login form displayed",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-06-017",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-06", "FR-02", "AC-02"],
+      "title": "Successful login after redirect returns student to check-in flow with session established",
+      "preconditions": [
+        "Student landed on login page with returnUrl pointing to /check-in?token=<token-id>",
+        "Student has valid active account credentials"
+      ],
+      "steps": [
+        "Enter valid email and password on LoginForm",
+        "Submit login",
+        "Observe post-login navigation URL and page content",
+        "Verify authenticated shell or check-in UI loads with token context preserved"
+      ],
+      "expected": "After BR-06 login redirect, browser navigates to /check-in?token=<token-id>; session established; check-in flow UI renders per user flows §1",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-06-018",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-06", "FR-02", "AC-02", "NFR-16"],
+      "title": "Expired session on check-in page shows toast and redirects to login with returnUrl",
+      "preconditions": [
+        "Student session cookie exists but server treats session as expired (lastActivityAt > 8h ago via TestClock)",
+        "Student is on /check-in page attempting submission"
+      ],
+      "steps": [
+        "Trigger check-in submit action on expired session",
+        "Observe toast or alert with message Phiên đăng nhập đã hết hạn",
+        "Verify redirect to /login with returnUrl preserving check-in path"
+      ],
+      "expected": "UI handles BR-06 session expiry: session-expired toast displayed; user redirected to login with returnUrl; check-in does not complete until re-authentication",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-06-019",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["BR-06", "FR-02"],
+      "title": "Protected instructor route redirects unauthenticated user to login",
+      "preconditions": [
+        "User is not logged in",
+        "Instructor session list route exists at /instructor/sessions or equivalent protected path"
+      ],
+      "steps": [
+        "Navigate directly to instructor sessions list URL without authentication",
+        "Observe redirect to /login with returnUrl encoding the instructor path",
+        "Verify session management UI content is not rendered"
+      ],
+      "expected": "BR-06 applies to all protected instructor actions in SPA; unauthenticated navigation blocked with login redirect and returnUrl preserved",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-06-020",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P1",
+      "traceability": ["BR-06", "FR-02", "AC-02", "FR-07"],
+      "title": "Flow A authentication gate: unauthenticated student cannot check in until login completes",
+      "preconditions": [
+        "Instructor has opened Active session with valid QR token per Flow A steps 1–3",
+        "Student is unauthenticated when opening check-in deep link from QR"
+      ],
+      "steps": [
+        "Student opens check-in deep link from QR payload and is redirected to login",
+        "Complete login with valid student credentials and returnUrl preserved",
+        "POST /api/v1/check-in with authenticated session and valid coordinates",
+        "Verify instructor GET /api/v1/sessions/:id/attendance shows Present count incremented"
+      ],
+      "expected": "BR-06 enforced as first gate in Flow A workshop path; check-in succeeds only after valid authenticated session established; identity binding prerequisite for anti-proxy controls",
+      "edgeCase": false
+    }
+  ]
+}
