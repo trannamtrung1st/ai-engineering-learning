@@ -18,3 +18,11 @@ Verification failures and remediation notes for harness agents.
 - [module-checkin-qr] Computational checks failed — see 20260628T205057Z-checks.json
 - [module-reporting-export] Computational checks failed — see 20260628T210529Z-checks.json
 - [module-reporting-export] AI review failed — see 20260628T211228Z-review.json
+- [web-design-system-shell] Browser test failed — see 20260628T212831Z-browser-test.json
+- [web-design-system-shell] Browser test failed — see 20260628T213809Z-browser-test.json
+
+## Signs
+
+- **Sonner toast + React StrictMode:** Do not guard session-expired (or bootstrap) toasts with a `useRef` "shown once" flag. StrictMode remounts `<Toaster />` and drops the first toast; the ref blocks the second `toast.error` call. Use `toast.error(..., { id })` and defer with `setTimeout(0)` in `useEffect` so the toast fires after the remount.
+- **Preview seed idempotency:** Do not gate `runPreviewSeed` on a policy_settings marker alone — integration tests truncate auth tables but can leave `preview_seed_version` set, causing browser gates to skip seed and miss deactivated/student fixtures. Verify fixture rows (e.g. `deactivated@example.edu.vn`) exist before skipping.
+- [web-design-system-shell] Browser test failed — see 20260628T215822Z-browser-test.json

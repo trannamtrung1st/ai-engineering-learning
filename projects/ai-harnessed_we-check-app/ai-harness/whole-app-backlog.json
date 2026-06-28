@@ -447,7 +447,7 @@
     },
     {
       "id": "web-design-system-shell",
-      "passes": false,
+      "passes": true,
       "priority": 20,
       "phase": 2,
       "agent": "frontend",
@@ -467,9 +467,16 @@
       ],
       "description": "Design tokens, role layouts (Student, Instructor, Admin), shared primitives — no feature pages yet.",
       "testRequirements": {
+        "integration": [
+          "apps/api/src/infra/preview-seed.integration.test.ts"
+        ],
+        "unit": [
+          "apps/web/src/lib/check-in-api.test.ts"
+        ],
         "component": [
           "apps/web/src/components/layout/app-shell.test.tsx",
-          "apps/web/src/components/ui/badge.test.tsx"
+          "apps/web/src/components/ui/badge.test.tsx",
+          "apps/web/src/components/domain/check-in/check-in-outcome-panel.test.tsx"
         ],
         "acceptanceTags": [
           "NFR-06",

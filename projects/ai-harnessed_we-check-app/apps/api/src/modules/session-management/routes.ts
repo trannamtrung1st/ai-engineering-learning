@@ -20,7 +20,7 @@ export async function registerSessionManagementRoutes(
   db: DbPool,
   store: SessionStore,
   notifications?: NotificationService,
-): Promise<AutoCloseScheduler> {
+): Promise<{ autoCloseScheduler: AutoCloseScheduler; sessionService: SessionService }> {
   const sessionService = new SessionService(db, notifications);
   const autoClose = new AutoCloseScheduler(db, sessionService);
   const auth = createAuthMiddleware(store);
@@ -116,5 +116,5 @@ export async function registerSessionManagementRoutes(
     },
   );
 
-  return autoClose;
+  return { autoCloseScheduler: autoClose, sessionService };
 }

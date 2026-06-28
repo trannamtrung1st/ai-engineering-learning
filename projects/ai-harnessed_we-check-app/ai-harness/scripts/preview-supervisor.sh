@@ -25,6 +25,7 @@ log_supervisor() {
 }
 
 run_api() {
+  export SEED_ENABLED=true
   PORT="${AIH_PREVIEW_API_PORT:-3001}" node "$REPO_ROOT/apps/api/dist/index.js"
 }
 

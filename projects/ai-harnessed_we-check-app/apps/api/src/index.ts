@@ -2,6 +2,7 @@ import { PASSWORD_POLICY } from "@wecheck/domain";
 import { loadEnv } from "./config/env.js";
 import { createPool, setPool, closePool } from "./infra/db.js";
 import { runMigrations } from "./infra/migrate.js";
+import { runPreviewSeed } from "./infra/preview-seed.js";
 import { buildApp, getApiMetadata, API_BASE_PATH, API_VERSION } from "./server.js";
 
 export { getApiMetadata, API_BASE_PATH, API_VERSION };
@@ -13,10 +14,18 @@ export async function startServer(): Promise<void> {
 
   try {
     await runMigrations(pool);
+    if (env.seedEnabled) {
+      await runPreviewSeed(pool);
+    }
     const app = await buildApp({ db: pool, logger: env.logLevel !== "silent" });
     await app.listen({ port: env.port, host: "0.0.0.0" });
     app.log.info(
-      { port: env.port, basePath: API_BASE_PATH, passwordMinLength: PASSWORD_POLICY.MIN_LENGTH },
+      {
+        port: env.port,
+        basePath: API_BASE_PATH,
+        passwordMinLength: PASSWORD_POLICY.MIN_LENGTH,
+        seedEnabled: env.seedEnabled,
+      },
       "We Check API started",
     );
   } catch (error) {

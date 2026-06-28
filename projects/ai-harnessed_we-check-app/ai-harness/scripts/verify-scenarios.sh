@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Participant browse + registration-status scenario probe (live stack).
+# We Check live-stack scenario probe (auth envelope smoke test).
 # Usage: verify-scenarios.sh [--quick]
 set -euo pipefail
 source "$(dirname "$0")/lib/common.sh"
@@ -33,85 +33,42 @@ api_healthy() {
 health_body="$(curl --connect-timeout 2 --max-time 5 -sf "${API_BASE}/health" 2>/dev/null || true)"
 if [[ -z "$health_body" ]] || ! api_healthy "$health_body"; then
   if [[ "$QUICK" == true ]]; then
-    echo "SKIP: API not running (participant scenario probe)"
+    echo "SKIP: API not running (We Check scenario probe)"
     exit 0
   fi
-  echo "ERROR: API unhealthy — cannot run participant scenario probe" >&2
+  echo "ERROR: API unhealthy — cannot run We Check scenario probe" >&2
   echo "  URL: ${API_BASE}/health" >&2
   echo "  Last response: ${health_body:-"(no response)"}" >&2
   exit 1
 fi
 
-participant_id="${AIH_PARTICIPANT_SUB:-participant-1}"
-token_body="$(curl --connect-timeout 2 --max-time 5 -sf -X POST "${API_BASE}/dev/token" \
+login_tmp="$(mktemp)"
+trap 'rm -f "$login_tmp"' EXIT
+
+login_code="$(curl --connect-timeout 2 --max-time 5 -s -o "$login_tmp" -w '%{http_code}' \
+  -X POST "${API_BASE}/auth/login" \
   -H "Content-Type: application/json" \
-  -d "{\"sub\":\"${participant_id}\",\"role\":\"Participant\"}" 2>/dev/null || true)"
+  -d '{"email":"probe@example.edu.vn","password":"wrong-password"}')"
 
-token="$(echo "$token_body" | jq -r '.token // empty' 2>/dev/null || true)"
-if [[ -z "$token" ]]; then
-  echo "ERROR: could not obtain participant dev token (is DEV_AUTH_ENABLED=true?)" >&2
-  echo "  Response: ${token_body:-"(no response)"}" >&2
+if [[ "$login_code" != "401" ]]; then
+  echo "ERROR: auth/login probe expected HTTP 401, got ${login_code}" >&2
+  cat "$login_tmp" >&2
   exit 1
 fi
 
-events_body="$(curl --connect-timeout 2 --max-time 5 -sf "${API_BASE}/events?state=RegistrationOpen&pageSize=1" \
-  -H "Authorization: Bearer ${token}" 2>/dev/null || true)"
-event_id="$(echo "$events_body" | jq -r '.items[0].eventId // empty' 2>/dev/null || true)"
+error_code="$(jq -r '.errorCode // empty' "$login_tmp" 2>/dev/null || true)"
+message="$(jq -r '.message // empty' "$login_tmp" 2>/dev/null || true)"
 
-if [[ -z "$event_id" ]]; then
-  echo "SKIP: no RegistrationOpen events available for participant scenario probe"
-  exit 0
-fi
-
-status_tmp="$(mktemp)"
-trap 'rm -f "$status_tmp"' EXIT
-
-status_code="$(curl --connect-timeout 2 --max-time 5 -s -o "$status_tmp" -w '%{http_code}' \
-  "${API_BASE}/events/${event_id}/registration-status" \
-  -H "Authorization: Bearer ${token}")"
-
-if [[ "$status_code" != "200" ]]; then
-  echo "ERROR: registration-status returned HTTP ${status_code} for event ${event_id}" >&2
-  cat "$status_tmp" >&2
+if [[ "$error_code" != "InvalidCredentials" ]]; then
+  echo "ERROR: auth/login probe expected errorCode InvalidCredentials, got '${error_code}'" >&2
+  cat "$login_tmp" >&2
   exit 1
 fi
 
-if ! jq -e 'has("registration")' "$status_tmp" >/dev/null 2>&1; then
-  echo "ERROR: registration-status response missing registration field" >&2
-  cat "$status_tmp" >&2
+if [[ -z "$message" ]] || [[ "$message" == "InvalidCredentials" ]]; then
+  echo "ERROR: auth/login probe expected Vietnamese message, got '${message}'" >&2
+  cat "$login_tmp" >&2
   exit 1
 fi
 
-existing_state="$(jq -r '.registration.state // empty' "$status_tmp" 2>/dev/null || true)"
-
-if [[ -z "$existing_state" ]]; then
-  register_tmp="$(mktemp)"
-  trap 'rm -f "$status_tmp" "$register_tmp"' EXIT
-
-  register_code="$(curl --connect-timeout 2 --max-time 5 -s -o "$register_tmp" -w '%{http_code}' \
-    -X POST "${API_BASE}/events/${event_id}/registrations" \
-    -H "Authorization: Bearer ${token}" \
-    -H "Content-Type: application/json" \
-    -H "Idempotency-Key: $(uuidgen | tr '[:upper:]' '[:lower:]')" \
-    -d '{}')"
-
-  if [[ "$register_code" != "200" && "$register_code" != "201" ]]; then
-    echo "ERROR: register returned HTTP ${register_code} for event ${event_id}" >&2
-    cat "$register_tmp" >&2
-    exit 1
-  fi
-else
-  trap 'rm -f "$status_tmp"' EXIT
-fi
-
-after_body="$(curl --connect-timeout 2 --max-time 5 -sf "${API_BASE}/events/${event_id}/registration-status" \
-  -H "Authorization: Bearer ${token}")"
-registration_state="$(echo "$after_body" | jq -r '.registration.state // empty')"
-
-if [[ -z "$registration_state" ]]; then
-  echo "ERROR: registration-status after register missing registration.state" >&2
-  echo "$after_body" >&2
-  exit 1
-fi
-
-echo "Participant registration scenario passed (event=${event_id}, state=${registration_state})"
+echo "We Check auth scenario passed (InvalidCredentials localized, message=${message})"

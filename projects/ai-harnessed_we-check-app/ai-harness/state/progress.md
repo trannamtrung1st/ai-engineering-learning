@@ -103,3 +103,10 @@ Append-only log of harness slice completions.
 - 2026-06-29T00:00:00Z | module-reporting-export | Fixed HTTP export denial path: removed permission guard so ExportService logs ExportDenied audit (BR-09, NFR-15); TC-AC-13-006/TC-NFR-15-012 HTTP audit assertion; foundation TC-NFR-11-008 payload fix; typecheck/lint/build + 3 unit + 124 integration tests pass
 - 2026-06-28T21:21:45Z | module-reporting-export | passed
 - 2026-06-28T21:28:31Z | module-notifications | passed
+- 2026-06-29T04:35:00Z | web-design-system-shell | browser_verified: shell overview at /, StudentLayout bottom nav at /check-in, InstructorLayout sidebar at /sessions, AdminLayout nav at /admin/users — all Vietnamese copy- 2026-06-28T21:38:09Z | web-design-system-shell | browser_test_failed
+- 2026-06-29T04:42:00Z | web-design-system-shell | browser_verified: /login form + InvalidCredentials alert, /check-in outcome showcase, /sessions/:id tabs + live QrCountdown, /sessions/demo/qr-present 5s decrement (28→23), /forbidden Vietnamese, /admin/rosters/import drop zone — all Vietnamese copy
+- 2026-06-28T21:58:22Z | web-design-system-shell | browser_test_failed
+- 2026-06-29T05:02:00Z | web-design-system-shell | browser_verified: /login?sessionExpired=1 sonner toast + alert, Email hoặc tên đăng nhập label, /sessions/sess-1 Mã QR tab, qr-present overlay exit (click + Esc) returns to session detail, check-in POST /api/v1/check-in wired for stale token rejection
+- 2026-06-28T22:11:22Z | web-design-system-shell | browser_test_failed
+- 2026-06-29T05:18:00Z | web-design-system-shell | browser_verified: deactivated@example.edu.vn → Tài khoản đã bị vô hiệu hóa; student login + /check-in?token=stale-token-id → ExpiredQr Mã QR đã hết hạn + Quét lại; preview seed fixtures (SEED_ENABLED) with stale token 40000000-0000-4000-8000-000000000401
+- 2026-06-28T22:29:05Z | web-design-system-shell | passed

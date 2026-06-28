@@ -13,8 +13,10 @@ import { registerCheckInQrRoutes } from "./modules/checkin-qr/routes.js";
 import { registerReportingExportRoutes } from "./modules/reporting-export/routes.js";
 import { registerNotificationRoutes } from "./modules/notifications/routes.js";
 import type { AutoCloseScheduler } from "./modules/session-management/auto-close-scheduler.js";
+import type { SessionService } from "./modules/session-management/session-service.js";
 import { SessionStore } from "./auth/session-store.js";
 import { loadEnv } from "./config/env.js";
+import { resumePreviewQrSchedulers } from "./infra/preview-seed.js";
 
 export const API_VERSION = "v1";
 export const API_BASE_PATH = "/api/v1";
@@ -54,6 +56,7 @@ export async function buildApp(options: BuildAppOptions) {
 
   const store = new SessionStore(options.db);
   let autoCloseScheduler: AutoCloseScheduler | undefined;
+  let sessionService: SessionService | undefined;
 
   await app.register(
     async (api) => {
@@ -65,12 +68,14 @@ export async function buildApp(options: BuildAppOptions) {
         options.db,
         store,
       );
-      autoCloseScheduler = await registerSessionManagementRoutes(
+      const sessionRegistration = await registerSessionManagementRoutes(
         api,
         options.db,
         store,
         notificationService,
       );
+      autoCloseScheduler = sessionRegistration.autoCloseScheduler;
+      sessionService = sessionRegistration.sessionService;
       await registerAttendanceRoutes(api, options.db, store);
       await registerCheckInQrRoutes(api, options.db, store);
       await registerReportingExportRoutes(api, options.db, store);
@@ -81,6 +86,10 @@ export async function buildApp(options: BuildAppOptions) {
 
   if (autoCloseScheduler && env.nodeEnv !== "test") {
     autoCloseScheduler.start();
+  }
+
+  if (sessionService && env.seedEnabled && env.nodeEnv !== "test") {
+    await resumePreviewQrSchedulers(options.db, sessionService.qr);
   }
 
   app.addHook("onClose", async () => {
