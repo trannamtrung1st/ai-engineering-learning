@@ -1,0 +1,428 @@
+{
+  "productItemId": "BR-10",
+  "version": 1,
+  "docFingerprint": "sha256:4deda16c175af0ca34aadf938abcd5f11203e186585e68a48a77093b8e87aac5",
+  "generatedAt": "2026-06-29T12:00:00.000Z",
+  "cases": [
+    {
+      "id": "TC-BR-10-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["BR-10", "FR-11", "AC-11", "NFR-15"],
+      "title": "TS-30: Instructor manual edit within 24 h of closedAt updates status and creates audit log",
+      "preconditions": [
+        "Closed session with closedAt set to TestClock now minus 2 hours",
+        "Assigned Instructor A authenticated with attendance:write for session scope",
+        "Student attendance record with status Absent for enrolled student in session roster",
+        "Session class-subject pair assigned to Instructor A via ClassAssignment"
+      ],
+      "steps": [
+        "Record attendance recordId for student with status Absent",
+        "PATCH /api/v1/attendance/:recordId with body { status: \"Present\", note: \"Xác minh trực tiếp tại lớp\" } using Instructor A session",
+        "Assert HTTP status 200 with updated record status Present",
+        "Query attendance_records and assert status Present for recordId",
+        "Query attendance_audit_logs and assert entry with editorId Instructor A, previousStatus Absent, newStatus Present, note, and editedAt timestamp",
+        "Verify append-only audit: no UPDATE on prior audit rows for same attendanceRecordId"
+      ],
+      "expected": "BR-10 satisfied: instructor edit within 24 h of closedAt updates status; append-only AttendanceAuditLog captures editor ID, timestamp, previous and new status per testing-plan TS-30 and AC-11a",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-10-002",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-c",
+      "priority": "P0",
+      "traceability": ["BR-10", "FR-11", "AC-11", "NFR-15"],
+      "title": "Flow C: Close session with Pending students, instructor marks Present within 24 h, audit verified",
+      "preconditions": [
+        "Active session owned by Instructor A with enrolled students",
+        "At least one student remains Pending after session close (no check-in)",
+        "TestClock within 24 h of session closedAt"
+      ],
+      "steps": [
+        "POST /api/v1/sessions/:sessionId/close using Instructor A session",
+        "Assert session status Closed and Pending students transitioned to Absent per BR-01",
+        "Instructor A GET /api/v1/sessions/:sessionId/attendance and identify Absent recordId for target student",
+        "Instructor A PATCH /api/v1/attendance/:recordId { status: \"Present\", note: \"Điểm danh thủ công sau khi đóng buổi\" }",
+        "Assert HTTP 200 and attendance status Present",
+        "Verify audit log actor Instructor A, previousStatus Absent, newStatus Present, timestamps within edit window",
+        "Confirm Flow C steps 1–3 satisfied per testing-plan §6"
+      ],
+      "expected": "BR-10 manual fallback: closed session roster correction within 24 h with full audit trail per Flow C and business rules §6",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-10-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-10", "FR-11", "NFR-15"],
+      "title": "AttendanceService.manualEdit persists status change and AttendanceAuditLog row in PostgreSQL transaction",
+      "preconditions": [
+        "Real PostgreSQL test database with Closed session row closedAt within 24 h of TestClock",
+        "attendance_records row with status Absent for known studentId and sessionId",
+        "AttendanceService wired with AttendanceRecordRepository and audit writer per attendance module",
+        "Editor context: assigned Instructor userId"
+      ],
+      "steps": [
+        "Record beforeState: attendance_records.status Absent",
+        "Invoke AttendanceService.manualEdit(recordId, Present, editorId, note) under Instructor context",
+        "Query attendance_records and assert afterState status Present",
+        "Query attendance_audit_logs filtered by attendance_record_id and assert exactly one new row",
+        "Assert audit row fields: editor_id, previous_status Absent, new_status Present, note, edited_at per AuditOnManualEdit suite",
+        "Assert audit write is append-only (no UPDATE on prior audit rows)"
+      ],
+      "expected": "BR-10 module boundary: status update and before/after audit row persisted atomically in real DB transaction per testing-plan §5 AuditOnManualEdit",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-10-004",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["BR-10", "FR-11"],
+      "title": "Manual edit transitions attendance beforeState Absent to afterState Present on Closed session within window",
+      "preconditions": [
+        "Closed session within instructor edit window (closedAt < 24 h ago)",
+        "attendance_records row with beforeState Absent and checked_in_at null",
+        "AttendanceService.manualEdit callable with assigned Instructor editorId"
+      ],
+      "steps": [
+        "Record beforeState: status Absent, checkedInAt null on attendance_records row",
+        "Invoke AttendanceService.manualEdit(recordId, Present, editorId, optional note)",
+        "Query attendance_records and assert afterState status Present",
+        "Verify SM-02 manualEdit transition Absent → Present permitted per 07-state-machines.md §3.4",
+        "Assert AttendanceAuditLog entry with previousStatus Absent and newStatus Present"
+      ],
+      "expected": "BR-10 state transition: beforeState Absent; afterState Present; manualEdit transition satisfied for instructor within 24 h window",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-10-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-10", "FR-11"],
+      "title": "PATCH /attendance/:recordId returns 200 with updated AttendanceRecord envelope on valid instructor edit",
+      "preconditions": [
+        "Authenticated assigned Instructor session cookie",
+        "Closed session within 24 h of closedAt",
+        "Known attendance recordId with status Absent"
+      ],
+      "steps": [
+        "Send PATCH /api/v1/attendance/:recordId with body { status: \"Present\", note: \"Ghi chú điểm danh\" } and Instructor session",
+        "Assert HTTP status 200 OK",
+        "Assert Content-Type application/json; charset=utf-8",
+        "Assert response body contains id, status Present, student reference, and updated timestamps per API design §7.2",
+        "Assert response body does not contain errorCode on success"
+      ],
+      "expected": "HTTP 200 success contract for PATCH /attendance/:recordId per API design §7.2; updated AttendanceRecord DTO returned on valid BR-10 manual edit",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-10-006",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-10", "FR-11", "AC-11"],
+      "title": "Instructor edit at 25 h after closedAt returns 403 EditWindowExpired",
+      "preconditions": [
+        "Closed session with closedAt set to TestClock now minus 25 hours",
+        "Assigned Instructor A authenticated with attendance:write",
+        "Student attendance record with status Absent",
+        "BR-10 instructor window is 24 h elapsed since closedAt"
+      ],
+      "steps": [
+        "PATCH /api/v1/attendance/:recordId with body { status: \"Present\", note: \"Late override attempt\" } using Instructor A session",
+        "Assert HTTP status 403 Forbidden",
+        "Assert response errorCode EditWindowExpired",
+        "Query attendance_records and assert status remains Absent unchanged",
+        "Assert no AttendanceAuditLog entry created for this edit attempt"
+      ],
+      "expected": "BR-10 instructor 24-hour window enforced: instructor blocked after window; EditWindowExpired per Flow C step 4 and AC-11b",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-10-007",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["BR-10", "FR-11", "AC-11", "NFR-15"],
+      "title": "TrainingOfficeAdmin edits attendance after 24 h window with audit log per BR-10 admin exception",
+      "preconditions": [
+        "Closed session with closedAt set to TestClock now minus 48 hours (outside instructor window)",
+        "Authenticated TrainingOfficeAdmin session with attendance:write",
+        "Student attendance record with status Absent"
+      ],
+      "steps": [
+        "PATCH /api/v1/attendance/:recordId with body { status: \"Excused\", note: \"Admin correction — có giấy phép\" } using TrainingOfficeAdmin session",
+        "Assert HTTP status 200 with updated record status Excused",
+        "Query attendance_audit_logs and assert entry with editorId admin userId, previousStatus Absent, newStatus Excused, note",
+        "Contrast: same request with Instructor session on same record returns 403 EditWindowExpired per AC-11b"
+      ],
+      "expected": "BR-10 admin exception: TrainingOfficeAdmin edit succeeds beyond 24 h with full audit log; instructor denied on same record per AC-11c",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-10-008",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-c",
+      "priority": "P0",
+      "traceability": ["BR-10", "FR-11", "AC-11", "NFR-15"],
+      "title": "Flow C complete: instructor 25 h denial then admin edit succeeds",
+      "preconditions": [
+        "Closed session with closedAt 25 hours before TestClock",
+        "Student attendance Absent after session close",
+        "Instructor A assigned; TrainingOfficeAdmin account available"
+      ],
+      "steps": [
+        "Instructor A PATCH /api/v1/attendance/:recordId { status: \"Present\" } and assert HTTP 403 EditWindowExpired",
+        "TrainingOfficeAdmin PATCH /api/v1/attendance/:recordId { status: \"Present\", note: \"Admin override sau 24h\" }",
+        "Assert HTTP 200 and attendance status Present",
+        "Verify audit log for admin edit with previousStatus Absent, newStatus Present",
+        "Confirm Flow C steps 4–5 satisfied per testing-plan §6"
+      ],
+      "expected": "BR-10 role split end-to-end: instructor blocked at 25 h; admin edit succeeds with audit per business rules §6 exception",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-10-009",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-10", "FR-11"],
+      "title": "Student denied PATCH /attendance preventing self-service manual status change",
+      "preconditions": [
+        "Closed session within 24 h with student attendance Absent",
+        "Authenticated Student session (lacks attendance:write per roles-permissions §2.3)",
+        "Known attendance recordId for own Absent row"
+      ],
+      "steps": [
+        "PATCH /api/v1/attendance/:recordId with body { status: \"Present\", note: \"Self mark\" } using Student session cookie",
+        "Assert HTTP status 403 Forbidden and errorCode Forbidden",
+        "Verify attendance status remains Absent",
+        "Assert no AttendanceAuditLog entry created for student actor"
+      ],
+      "expected": "BR-10 scope: only Instructor or TrainingOfficeAdmin may trigger manual edits; students cannot self-correct attendance",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-10-010",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-10", "BR-08", "FR-11"],
+      "title": "Unassigned instructor denied manual edit on another instructor session roster",
+      "preconditions": [
+        "Closed session within 24 h owned by Instructor A",
+        "Student attendance Absent on Instructor A session",
+        "Authenticated Instructor B not assigned to session class-subject pair"
+      ],
+      "steps": [
+        "PATCH /api/v1/attendance/:recordId with body { status: \"Present\", note: \"Cross-instructor edit\" } using Instructor B session",
+        "Assert HTTP status 403 Forbidden",
+        "Verify attendance status remains Absent",
+        "Assert no AttendanceAuditLog entry for Instructor B"
+      ],
+      "expected": "BR-10 scope: manual edit requires assigned instructor for owned sessions; cross-instructor edit denied even within 24 h window",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-10-011",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-10", "FR-11", "AC-11"],
+      "title": "Instructor opens AttendanceEditDialog and submits Absent to Present with note within edit window",
+      "preconditions": [
+        "Authenticated Instructor on desktop viewport assigned to Closed session within 24 h of closedAt",
+        "Session attendance roster page /sessions/:sessionId/attendance loaded",
+        "At least one student row with status Absent and Chỉnh sửa action enabled per BR-10"
+      ],
+      "steps": [
+        "Navigate to session attendance roster for Closed session within edit window",
+        "Click Chỉnh sửa on Absent student row to open AttendanceEditDialog",
+        "Verify dialog displays student name, current status Absent, status selector with Present/Absent/Excused/Rejected, and note field per AttendanceEditForm spec",
+        "Select status Present, enter note Xác minh trực tiếp tại lớp, and submit",
+        "Verify success toast and roster row updates to Present badge",
+        "Verify AttendanceAuditTrail or audit notice visible per BR-10 audit-sensitive action UX"
+      ],
+      "expected": "BR-10 UI journey: manual edit via AttendanceEditDialog within 24 h window; roster refreshes with Present status after successful submit",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-10-012",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-10", "FR-11"],
+      "title": "AttendanceEditDialog disabled with 24-hour window notice when instructor edit window expired",
+      "preconditions": [
+        "Authenticated Instructor assigned to session Closed more than 24 h ago",
+        "Session attendance roster page loaded",
+        "Student row with status Absent; edit window expired for Instructor role per BR-10"
+      ],
+      "steps": [
+        "Navigate to session attendance roster for session closed 25+ hours ago",
+        "Verify Chỉnh sửa action is disabled or hidden on roster rows per ui-states Editable state",
+        "If dialog trigger attempted, verify AttendanceEditDialog shows 24-hour window expired notice",
+        "Verify inline message Đã hết thời hạn chỉnh sửa điểm danh per forms-validation-ux §4.3",
+        "Contrast: TrainingOfficeAdmin on same page sees Chỉnh sửa enabled for same row"
+      ],
+      "expected": "BR-10 UI gating: instructor sees disabled edit and window notice after 24 h; admin retains edit capability per business rules exception",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-10-013",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["BR-10", "FR-11"],
+      "title": "Instructor edit at exactly 24 h boundary: at-window succeeds, one second past fails",
+      "preconditions": [
+        "Closed session with closedAt precisely 24 hours before TestClock",
+        "Assigned Instructor A with attendance:write",
+        "Two distinct Absent attendance records on same session for boundary comparison"
+      ],
+      "steps": [
+        "Set TestClock to closedAt plus exactly 24 hours minus 1 second",
+        "PATCH /api/v1/attendance/:recordId1 { status: \"Present\" } using Instructor A and assert HTTP 200",
+        "Advance TestClock to closedAt plus 24 hours plus 1 second",
+        "PATCH /api/v1/attendance/:recordId2 { status: \"Present\" } using Instructor A",
+        "Assert HTTP 403 EditWindowExpired on recordId2",
+        "Verify recordId1 Present and recordId2 remains Absent"
+      ],
+      "expected": "BR-10 boundary: instructor edit permitted up to 24 h inclusive; rejected immediately after window closes",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-10-014",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-10", "FR-11"],
+      "title": "EditWindowPolicy denies instructor manualEdit when closedAt exceeds 24 h; admin override succeeds",
+      "preconditions": [
+        "AttendanceService with EditWindowPolicy injected per testing-plan §4 EditWindowPolicy",
+        "Session entity with status Closed and closedAt 25 hours before TestClock",
+        "Editor role Instructor (not TrainingOfficeAdmin)"
+      ],
+      "steps": [
+        "Invoke AttendanceService.manualEdit(recordId, Present, instructorEditorId, note) against session outside window",
+        "Assert domain rejection EditWindowExpired (mapped to HTTP 403 at API layer)",
+        "Assert attendance_records status unchanged",
+        "Repeat with editor role TrainingOfficeAdmin and assert edit succeeds without window rejection",
+        "Assert AttendanceAuditLog created only for successful admin edit"
+      ],
+      "expected": "BR-10 EditWindowPolicy module boundary enforces instructor 24 h limit and admin unlimited override at service layer",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-10-015",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-10", "FR-11"],
+      "title": "PATCH /attendance/:recordId returns 403 EditWindowExpired envelope when instructor past window",
+      "preconditions": [
+        "Authenticated assigned Instructor session",
+        "Closed session with closedAt more than 24 h ago",
+        "Known attendance recordId with status Absent"
+      ],
+      "steps": [
+        "Send PATCH /api/v1/attendance/:recordId with body { status: \"Present\" } and Instructor session",
+        "Assert HTTP status 403 Forbidden",
+        "Assert Content-Type application/json; charset=utf-8",
+        "Assert response body errorCode EditWindowExpired",
+        "Assert response body contains requestId UUID"
+      ],
+      "expected": "HTTP 403 EditWindowExpired contract per API design §7.2 and validation rules §4 for instructor past BR-10 window",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-10-016",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P1",
+      "traceability": ["BR-10", "FR-10", "FR-11"],
+      "title": "Rejected to Present manual edit allowed as spoof override per BR-10 exception",
+      "preconditions": [
+        "Closed session within 24 h edit window",
+        "attendance_records row with beforeState Rejected from prior SpoofSuspected check-in",
+        "Assigned Instructor with attendance:write and physical verification note"
+      ],
+      "steps": [
+        "Record beforeState: status Rejected on attendance_records row",
+        "Invoke AttendanceService.manualEdit(recordId, Present, instructorEditorId, note: \"Xác minh có mặt sau cảnh báo GPS\")",
+        "Query attendance_records and assert afterState status Present",
+        "Assert AttendanceAuditLog with previousStatus Rejected, newStatus Present, editorId, note",
+        "Verify BR-10 exception path for Rejected → Present spoof override per AC-10b"
+      ],
+      "expected": "BR-10 exception: Rejected → Present manual override permitted within instructor window with full audit trail",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-10-017",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P1",
+      "traceability": ["BR-10", "FR-11"],
+      "title": "Manual edit on Active session transitions Pending to Present before close",
+      "preconditions": [
+        "Active session with attendance_records row status Pending",
+        "Assigned Instructor within BR-10 edit policy (Active session editable per roles-permissions §2.3)",
+        "AttendanceService.manualEdit callable"
+      ],
+      "steps": [
+        "Record beforeState: status Pending on attendance_records row",
+        "Invoke AttendanceService.manualEdit(recordId, Present, instructorEditorId, note) while session Active",
+        "Query attendance_records and assert afterState status Present",
+        "Verify session status remains Active (edit does not close session)",
+        "Assert AttendanceAuditLog entry with previousStatus Pending, newStatus Present"
+      ],
+      "expected": "BR-10 allows instructor correction during Active session; Pending → Present manualEdit transition with audit",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-10-018",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["BR-10", "FR-11"],
+      "title": "PATCH /attendance/:recordId rejects note exceeding 500 chars with 422 ValidationFailed",
+      "preconditions": [
+        "Authenticated assigned Instructor session",
+        "Closed session within 24 h with known attendance recordId",
+        "VAL-10 note max 500 chars per 08-validation-rules.md"
+      ],
+      "steps": [
+        "Send PATCH /api/v1/attendance/:recordId with body { status: \"Present\", note: \"<501-char string>\" }",
+        "Assert HTTP status 422 Unprocessable Entity",
+        "Assert response errorCode ValidationFailed",
+        "Query attendance_records and assert status unchanged",
+        "Assert no AttendanceAuditLog entry created"
+      ],
+      "expected": "BR-10 manual edit note bounded by VAL-10; invalid input rejected without state change or audit",
+      "edgeCase": true
+    }
+  ]
+}
