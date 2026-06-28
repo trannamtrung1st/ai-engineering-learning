@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { type UserRole as UserRoleType } from "@wecheck/domain";
 import { toast } from "sonner";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -7,12 +8,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { authMessages } from "@/lib/copy/checkin-messages";
 import { appCopy } from "@/lib/copy/status-labels";
+import { isSafeReturnUrl, resolvePostLoginRedirect } from "@/lib/auth-redirect";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
 
 type LoginError = "InvalidCredentials" | "AccountDeactivated" | null;
 
-/** NFR-17 / FR-02 — login form with Vietnamese labels and error states */
+interface LoginSuccessBody {
+  user: {
+    id: string;
+    role: UserRoleType;
+  };
+  redirectTo?: string;
+}
+
+/** FR-02 / BR-06 / AC-02 / NFR-16 — login with returnUrl preservation and role-based redirect */
 export function LoginForm() {
   const [searchParams] = useSearchParams();
   const [email, setEmail] = useState("");
@@ -21,6 +31,7 @@ export function LoginForm() {
   const [error, setError] = useState<LoginError>(null);
 
   const sessionExpired = searchParams.get("sessionExpired") === "1";
+  const returnUrl = searchParams.get("returnUrl");
 
   useEffect(() => {
     if (!sessionExpired) return;
@@ -38,15 +49,24 @@ export function LoginForm() {
     setLoading(true);
     setError(null);
 
+    const safeReturnUrl = isSafeReturnUrl(returnUrl) ? returnUrl : undefined;
+
     try {
       const res = await fetch(`${API_BASE}/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include",
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({
+          email,
+          password,
+          ...(safeReturnUrl ? { returnUrl: safeReturnUrl } : {}),
+        }),
       });
 
-      const data = (await res.json()) as { errorCode?: string; message?: string };
+      const data = (await res.json()) as LoginSuccessBody & {
+        errorCode?: string;
+        message?: string;
+      };
 
       if (res.status === 401 && data.errorCode === "InvalidCredentials") {
         setError("InvalidCredentials");
@@ -58,9 +78,12 @@ export function LoginForm() {
         return;
       }
 
-      if (res.ok) {
-        const returnUrl = searchParams.get("returnUrl") ?? "/";
-        window.location.href = returnUrl;
+      if (res.ok && data.user?.role) {
+        const destination = resolvePostLoginRedirect(data.user.role, {
+          returnUrl: safeReturnUrl,
+          redirectTo: data.redirectTo,
+        });
+        window.location.href = destination;
         return;
       }
 
@@ -106,6 +129,7 @@ export function LoginForm() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
+          aria-required="true"
         />
       </div>
 
@@ -118,10 +142,11 @@ export function LoginForm() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
+          aria-required="true"
         />
       </div>
 
-      <Button type="submit" loading={loading} className="w-full">
+      <Button type="submit" loading={loading} className="w-full" aria-busy={loading}>
         {authMessages.submitLabel}
       </Button>
     </form>

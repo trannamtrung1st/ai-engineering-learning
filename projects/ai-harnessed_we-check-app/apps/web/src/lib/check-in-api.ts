@@ -21,6 +21,7 @@ export interface CheckInSubmitResult {
   outcome: CheckInOutcomeCode;
   message?: string;
   requiresAuth?: boolean;
+  sessionExpired?: boolean;
 }
 
 const OUTCOME_MAP: Record<string, CheckInOutcomeCode> = {
@@ -77,7 +78,11 @@ export async function submitCheckIn(
 
   const errorCode = res.data.errorCode;
   if (res.status === 401 && (errorCode === "Unauthenticated" || errorCode === "SessionExpired")) {
-    return { outcome: "NetworkError", requiresAuth: true };
+    return {
+      outcome: "NetworkError",
+      requiresAuth: true,
+      sessionExpired: errorCode === "SessionExpired",
+    };
   }
 
   return {

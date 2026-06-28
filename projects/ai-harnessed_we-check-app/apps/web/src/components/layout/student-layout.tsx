@@ -4,6 +4,7 @@ import { UserRole } from "@wecheck/domain";
 import { AppHeader } from "@/components/layout/app-header";
 import { PageContent } from "@/components/layout/page-content";
 import { NavLink } from "@/components/shared/navigation/nav-link";
+import { useAuthUser } from "@/components/auth/require-auth";
 import { studentNavItems } from "@/lib/copy/status-labels";
 
 const navIcons = {
@@ -17,9 +18,9 @@ export interface StudentLayoutProps {
 }
 
 export function StudentLayout({
-  displayName = "Sinh viên",
   hideBottomNav = false,
-}: StudentLayoutProps) {
+}: Omit<StudentLayoutProps, "displayName">) {
+  const user = useAuthUser();
   const location = useLocation();
   const suppressNav =
     hideBottomNav || location.pathname.startsWith("/check-in/scan");
@@ -30,7 +31,7 @@ export function StudentLayout({
         homeTo="/check-in"
         compact
         user={{
-          displayName,
+          displayName: user.displayName,
           role: UserRole.Student,
         }}
       />

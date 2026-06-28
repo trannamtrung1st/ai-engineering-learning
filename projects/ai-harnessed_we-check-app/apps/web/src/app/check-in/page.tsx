@@ -46,7 +46,7 @@ export function CheckInPage() {
 
     const authed = await isAuthenticated();
     if (!authed) {
-      const returnPath = `/check-in?token=${rawTokenId ?? tokenId}`;
+      const returnPath = `/check-in?token=${encodeURIComponent(rawTokenId ?? tokenId ?? "")}`;
       window.location.href = loginReturnUrl(returnPath);
       return;
     }
@@ -58,7 +58,10 @@ export function CheckInPage() {
         ...DEFAULT_CHECKIN_COORDS,
       });
       if (result.requiresAuth) {
-        window.location.href = loginReturnUrl(`/check-in?token=${rawTokenId ?? tokenId}`);
+        const returnPath = `/check-in?token=${encodeURIComponent(rawTokenId ?? tokenId ?? "")}`;
+        window.location.href = loginReturnUrl(returnPath, {
+          sessionExpired: result.sessionExpired,
+        });
         return;
       }
       setOutcome(result.outcome);

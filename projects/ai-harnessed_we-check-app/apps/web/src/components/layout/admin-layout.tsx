@@ -14,6 +14,7 @@ import { Breadcrumb } from "@/components/shared/navigation/breadcrumb";
 import { NavLink } from "@/components/shared/navigation/nav-link";
 import { UserMenu } from "@/components/shared/navigation/user-menu";
 import { IconButton } from "@/components/ui/icon-button";
+import { useAuthUser } from "@/components/auth/require-auth";
 import { adminNavItems, appCopy } from "@/lib/copy/status-labels";
 import { cn } from "@/lib/cn";
 
@@ -29,7 +30,8 @@ export interface AdminLayoutProps {
   displayName?: string;
 }
 
-export function AdminLayout({ displayName = "Quản trị viên" }: AdminLayoutProps) {
+export function AdminLayout() {
+  const user = useAuthUser();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   return (
@@ -75,7 +77,7 @@ export function AdminLayout({ displayName = "Quản trị viên" }: AdminLayoutP
               ]}
             />
           </div>
-          <UserMenu displayName={displayName} role={UserRole.TrainingOfficeAdmin} />
+          <UserMenu displayName={user.displayName} role={UserRole.TrainingOfficeAdmin} />
         </header>
         <main id="main-content" className="flex-1">
           <PageContent variant="wide">

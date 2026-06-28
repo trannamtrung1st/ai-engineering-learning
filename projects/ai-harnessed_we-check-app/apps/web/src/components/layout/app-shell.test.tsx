@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
+import { MemoryRouter, Outlet, Route, Routes } from "react-router-dom";
+import { UserRole } from "@wecheck/domain";
 import { AdminLayout } from "@/components/layout/admin-layout";
 import { FullscreenLayout } from "@/components/layout/fullscreen-layout";
 import { InstructorLayout } from "@/components/layout/instructor-layout";
 import { StudentLayout } from "@/components/layout/student-layout";
 import { QrCountdown } from "@/components/ui/qr-countdown";
+import type { AuthOutletContext } from "@/components/auth/require-auth";
 import {
   adminNavItems,
   appCopy,
@@ -13,12 +15,24 @@ import {
   studentNavItems,
 } from "@/lib/copy/status-labels";
 
+const mockAuthUser: AuthOutletContext = {
+  user: {
+    id: "test-user",
+    institutionalId: "SV001",
+    displayName: "Sinh viên thử",
+    email: "student@example.edu.vn",
+    role: UserRole.Student,
+  },
+};
+
 function renderWithOutlet(ui: React.ReactElement, path = "/") {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
-        <Route path="*" element={ui}>
-          <Route index element={<p>Nội dung trang</p>} />
+        <Route path="*" element={<Outlet context={mockAuthUser} />}>
+          <Route path="*" element={ui}>
+            <Route index element={<p>Nội dung trang</p>} />
+          </Route>
         </Route>
       </Routes>
     </MemoryRouter>,

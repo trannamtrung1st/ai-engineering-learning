@@ -1,6 +1,9 @@
 import { ForbiddenPage } from "@/components/layout/forbidden-page";
+import { useRoleHome } from "@/hooks/use-role-home";
 
-/** NFR-17 — permission denied page at /forbidden */
+/** BR-08 / FR-12 — permission denied page at /forbidden */
 export function ForbiddenRoutePage() {
-  return <ForbiddenPage />;
+  const homeTo = useRoleHome("/");
+
+  return <ForbiddenPage homeTo={homeTo} />;
 }

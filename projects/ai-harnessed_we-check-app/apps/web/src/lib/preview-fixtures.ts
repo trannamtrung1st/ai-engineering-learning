@@ -29,6 +29,4 @@ export function resolvePreviewId(aliasOrId: string | null | undefined): string |
   return PREVIEW_ALIASES[aliasOrId] ?? aliasOrId;
 }
 
-export function loginReturnUrl(path: string): string {
-  return `/login?returnUrl=${encodeURIComponent(path)}`;
-}
+export { loginReturnUrl } from "@/lib/auth-redirect";

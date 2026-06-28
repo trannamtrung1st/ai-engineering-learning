@@ -110,3 +110,5 @@ Append-only log of harness slice completions.
 - 2026-06-28T22:11:22Z | web-design-system-shell | browser_test_failed
 - 2026-06-29T05:18:00Z | web-design-system-shell | browser_verified: deactivated@example.edu.vn → Tài khoản đã bị vô hiệu hóa; student login + /check-in?token=stale-token-id → ExpiredQr Mã QR đã hết hạn + Quét lại; preview seed fixtures (SEED_ENABLED) with stale token 40000000-0000-4000-8000-000000000401
 - 2026-06-28T22:29:05Z | web-design-system-shell | passed
+- 2026-06-29T06:36:00Z | web-auth-login | browser_verified: cleared cookies → /check-in?token=stale-token-id redirects to /login?returnUrl=…; student login returns to check-in; invalid creds alert; instructor→/sessions admin→/admin/users role homes; /sessions unauth→login; /forbidden and 404 Vietnamese copy
+- 2026-06-28T22:40:30Z | web-auth-login | passed

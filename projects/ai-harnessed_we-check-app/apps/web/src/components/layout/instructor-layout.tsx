@@ -10,6 +10,7 @@ import {
 import { NavLink } from "@/components/shared/navigation/nav-link";
 import { UserMenu } from "@/components/shared/navigation/user-menu";
 import { IconButton } from "@/components/ui/icon-button";
+import { useAuthUser } from "@/components/auth/require-auth";
 import { instructorNavItems } from "@/lib/copy/status-labels";
 import { cn } from "@/lib/cn";
 
@@ -24,9 +25,9 @@ export interface InstructorLayoutProps {
 }
 
 export function InstructorLayout({
-  displayName = "Giảng viên",
   breadcrumbs = [{ label: "Buổi học", to: "/sessions" }],
-}: InstructorLayoutProps) {
+}: Omit<InstructorLayoutProps, "displayName">) {
+  const user = useAuthUser();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   return (
@@ -67,7 +68,7 @@ export function InstructorLayout({
             </IconButton>
             <Breadcrumb items={breadcrumbs} />
           </div>
-          <UserMenu displayName={displayName} role={UserRole.Instructor} />
+          <UserMenu displayName={user.displayName} role={UserRole.Instructor} />
         </header>
         <main id="main-content" className="flex-1">
           <PageContent variant="wide">

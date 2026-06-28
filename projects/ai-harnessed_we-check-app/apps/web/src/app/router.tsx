@@ -7,10 +7,12 @@ import { CheckInPage } from "@/app/check-in/page";
 import { ForbiddenRoutePage } from "@/app/forbidden/page";
 import { HistoryPage } from "@/app/history/page";
 import { LoginPage } from "@/app/login/page";
+import { NotFoundRoutePage } from "@/app/not-found/page";
 import { ReportsPage } from "@/app/reports/page";
 import { QrPresentPage } from "@/app/sessions/qr-present-page";
 import { SessionDetailPage } from "@/app/sessions/session-detail-page";
 import { SessionsListPage } from "@/app/sessions/page";
+import { RequireAuth } from "@/components/auth/require-auth";
 import { AdminLayout } from "@/components/layout/admin-layout";
 import { AuthLayout } from "@/components/layout/auth-layout";
 import { InstructorLayout } from "@/components/layout/instructor-layout";
@@ -83,43 +85,44 @@ const router = createBrowserRouter([
         element: <ForbiddenRoutePage />,
       },
       {
-        element: <StudentLayout />,
+        element: <RequireAuth />,
         children: [
-          { path: "check-in", element: <CheckInPage /> },
-          { path: "history", element: <HistoryPage /> },
-        ],
-      },
-      {
-        element: <InstructorLayout />,
-        children: [
-          { path: "sessions", element: <SessionsListPage /> },
-          { path: "sessions/:id", element: <SessionDetailPage /> },
-          { path: "reports", element: <ReportsPage /> },
-        ],
-      },
-      {
-        path: "sessions/:id/qr-present",
-        element: <QrPresentPage />,
-      },
-      {
-        path: "admin",
-        element: <AdminLayout />,
-        children: [
-          { path: "users", element: <PlaceholderPage title="Người dùng" /> },
-          { path: "rosters", element: <PlaceholderPage title="Danh sách lớp" /> },
-          { path: "rosters/import", element: <RosterImportPage /> },
-          { path: "reports", element: <PlaceholderPage title="Báo cáo quản trị" /> },
-          { path: "export", element: <AdminExportPage /> },
-          { path: "policy", element: <PlaceholderPage title="Chính sách" /> },
+          {
+            element: <StudentLayout />,
+            children: [
+              { path: "check-in", element: <CheckInPage /> },
+              { path: "history", element: <HistoryPage /> },
+            ],
+          },
+          {
+            element: <InstructorLayout />,
+            children: [
+              { path: "sessions", element: <SessionsListPage /> },
+              { path: "sessions/:id", element: <SessionDetailPage /> },
+              { path: "reports", element: <ReportsPage /> },
+            ],
+          },
+          {
+            path: "sessions/:id/qr-present",
+            element: <QrPresentPage />,
+          },
+          {
+            path: "admin",
+            element: <AdminLayout />,
+            children: [
+              { path: "users", element: <PlaceholderPage title="Người dùng" /> },
+              { path: "rosters", element: <PlaceholderPage title="Danh sách lớp" /> },
+              { path: "rosters/import", element: <RosterImportPage /> },
+              { path: "reports", element: <PlaceholderPage title="Báo cáo quản trị" /> },
+              { path: "export", element: <AdminExportPage /> },
+              { path: "policy", element: <PlaceholderPage title="Chính sách" /> },
+            ],
+          },
         ],
       },
       {
         path: "*",
-        element: (
-          <main id="main-content" className="mx-auto max-w-[720px] px-4 py-8">
-            <NotFoundPage />
-          </main>
-        ),
+        element: <NotFoundRoutePage />,
       },
     ],
   },
