@@ -246,6 +246,11 @@
       "current": true,
       "docFingerprint": "sha256:889c55844c8fb62f755b7bfe0012c8f4045a89dd93449f95fb5979804ca7fbd8",
       "generatedAt": "2026-06-28T18:46:48Z"
+    },
+    "NFR-08": {
+      "current": true,
+      "docFingerprint": "sha256:889c55844c8fb62f755b7bfe0012c8f4045a89dd93449f95fb5979804ca7fbd8",
+      "generatedAt": "2026-06-28T18:47:53Z"
     }
   }
 }

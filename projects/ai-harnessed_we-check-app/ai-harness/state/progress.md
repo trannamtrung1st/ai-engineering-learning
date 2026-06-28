@@ -55,3 +55,4 @@ Append-only log of harness slice completions.
 - 2026-06-28T18:42:41Z | NFR-06 | testgen_passed
 - 2026-06-28T18:44:56Z | NFR-07 | testgen_validation_failed
 - 2026-06-28T18:46:48Z | NFR-07 | testgen_passed
+- 2026-06-28T18:47:53Z | NFR-08 | testgen_passed
