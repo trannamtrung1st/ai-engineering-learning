@@ -14,3 +14,4 @@ Verification failures and remediation notes for harness agents.
 - [domain-package] Computational checks failed — see 20260628T192740Z-checks.json
 - [api-foundation] Computational checks failed — see 20260628T193455Z-checks.json
 - [module-session-management] Computational checks failed — see 20260628T200826Z-checks.json
+- [module-attendance] Computational checks failed — see 20260628T203417Z-checks.json

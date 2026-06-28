@@ -19,7 +19,7 @@ import {
 } from "../../errors/api-error.js";
 import { AssignmentRepository } from "../roster-enrollment/assignment-repository.js";
 import { ReferenceRepository } from "../roster-enrollment/reference-repository.js";
-import { AttendanceBootstrap } from "./attendance-bootstrap.js";
+import { AttendanceService } from "../attendance/attendance-service.js";
 import { QrScheduler } from "./qr-scheduler.js";
 import { SessionRepository } from "./session-repository.js";
 import type {
@@ -61,14 +61,14 @@ export function toSessionDto(
 
 export class SessionService {
   private readonly sessions: SessionRepository;
-  private readonly attendance: AttendanceBootstrap;
+  private readonly attendance: AttendanceService;
   private readonly references: ReferenceRepository;
   private readonly assignments: AssignmentRepository;
   readonly qr: QrScheduler;
 
   constructor(private readonly db: DbPool) {
     this.sessions = new SessionRepository(db);
-    this.attendance = new AttendanceBootstrap(db);
+    this.attendance = new AttendanceService(db);
     this.references = new ReferenceRepository(db);
     this.assignments = new AssignmentRepository(db);
     this.qr = new QrScheduler(db);
@@ -489,6 +489,6 @@ export class SessionService {
 
 export async function truncateSessionTables(db: DbPool): Promise<void> {
   await db.query(
-    "TRUNCATE qr_tokens, attendance_records, sessions RESTART IDENTITY CASCADE",
+    "TRUNCATE attendance_audit_logs, qr_tokens, attendance_records, sessions RESTART IDENTITY CASCADE",
   );
 }

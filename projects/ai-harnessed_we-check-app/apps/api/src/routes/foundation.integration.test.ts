@@ -438,9 +438,14 @@ describe("api foundation integration (FR-02, FR-03, NFR-10, NFR-11, NFR-16)", ()
       headers: { cookie: `${SESSION_COOKIE_NAME}=${student.sessionId}` },
     });
     assert.equal(response.statusCode, 200);
-    const body = response.json<{ items: { ownerId: string }[] }>();
-    assert.equal(body.items.length, 1);
-    assert.equal(body.items[0]?.ownerId, student.userId);
+    const body = response.json<{
+      items: unknown[];
+      nextCursor: string | null;
+      totalCount: number;
+    }>();
+    assert.ok(Array.isArray(body.items));
+    assert.equal(body.totalCount, body.items.length);
+    assert.equal(body.nextCursor, null);
   });
 
   it("Instructor denied audit:read (TC-NFR-11-011)", async () => {

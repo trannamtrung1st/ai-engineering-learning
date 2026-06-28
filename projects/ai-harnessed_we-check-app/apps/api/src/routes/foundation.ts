@@ -56,15 +56,6 @@ export async function registerFoundationRoutes(
   );
 
   app.get(
-    "/attendance/me/history",
-    { preHandler: [auth, requirePermission(Permission.AttendanceRead)] },
-    async (request) => {
-      const { user } = request.auth!;
-      return { items: [{ ownerId: user.id }] };
-    },
-  );
-
-  app.get(
     "/audit/logs",
     { preHandler: [auth, requirePermission(Permission.AuditRead)] },
     async () => ({ items: [] }),

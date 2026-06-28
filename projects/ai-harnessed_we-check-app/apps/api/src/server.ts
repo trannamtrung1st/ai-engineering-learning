@@ -7,6 +7,7 @@ import { registerFoundationRoutes } from "./routes/foundation.js";
 import { registerIdentityAuthRoutes } from "./modules/identity-auth/routes.js";
 import { registerRosterEnrollmentRoutes } from "./modules/roster-enrollment/routes.js";
 import { registerSessionManagementRoutes } from "./modules/session-management/routes.js";
+import { registerAttendanceRoutes } from "./modules/attendance/routes.js";
 import type { AutoCloseScheduler } from "./modules/session-management/auto-close-scheduler.js";
 import { SessionStore } from "./auth/session-store.js";
 import { loadEnv } from "./config/env.js";
@@ -43,6 +44,7 @@ export async function buildApp(options: BuildAppOptions) {
         options.db,
         store,
       );
+      await registerAttendanceRoutes(api, options.db, store);
       await registerFoundationRoutes(api, store);
     },
     { prefix: API_BASE_PATH },

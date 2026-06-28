@@ -152,6 +152,22 @@ export function invalidSessionState(): ApiError {
   );
 }
 
+export function editWindowExpired(): ApiError {
+  return new ApiError(
+    403,
+    ErrorCode.EditWindowExpired,
+    ERROR_MESSAGES[ErrorCode.EditWindowExpired],
+  );
+}
+
+export function invalidPagination(message?: string): ApiError {
+  return new ApiError(
+    400,
+    ErrorCode.InvalidPagination,
+    message ?? ERROR_MESSAGES[ErrorCode.InvalidPagination],
+  );
+}
+
 /** Vietnamese default messages per docs/technical/09-error-handling.md §4 */
 export const ERROR_MESSAGES: Readonly<Record<ErrorCodeType, string>> = {
   [ErrorCode.InvalidFormat]: "Định dạng trường không hợp lệ",

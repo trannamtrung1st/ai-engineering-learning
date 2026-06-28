@@ -88,3 +88,7 @@ Append-only log of harness slice completions.
 - 2026-06-28T20:30:36Z | module-session-management | checks_failed
 - 2026-06-29T00:00:00Z | module-session-management | Fixed NFR-22 e2e traceability: TC-NFR-01-003 health polling during Active session, TC-NFR-01-010 db disconnect 503/recovery; 21 integration + 8 unit tests pass; harness checks pass
 - 2026-06-28T20:34:17Z | module-session-management | passed
+- 2026-06-29T00:00:00Z | module-attendance | attendance module: Pending seed on open, finalize Pending→Absent on close, manual edits with append-only audit log (BR-10), student history pagination; migration 005_attendance; 6 unit + 17 integration tests pass
+- 2026-06-28T20:46:09Z | module-attendance | checks_failed
+- 2026-06-29T00:00:00Z | module-attendance | Fixed typecheck (removed invalid errorCode assertion), AC-10 traceability for NFR-15 cases TC-NFR-15-004/009/017, append-only trigger on attendance_audit_logs (migration 006); 6 unit + 19 integration tests pass; harness checks pass
+- 2026-06-28T20:50:57Z | module-attendance | passed
