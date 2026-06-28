@@ -66,6 +66,14 @@ export const ErrorCode = {
   InvalidSessionState: "InvalidSessionState",
   EditWindowExpired: "EditWindowExpired",
   RateLimitExceeded: "RateLimitExceeded",
+  SessionExpired: "SessionExpired",
+  NotFound: "NotFound",
+  Conflict: "Conflict",
+  InternalError: "InternalError",
+  ServiceUnavailable: "ServiceUnavailable",
+  ReportAccessDenied: "ReportAccessDenied",
+  ExportNotAllowed: "ExportNotAllowed",
+  MalformedJson: "MalformedJson",
 } as const;
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
 

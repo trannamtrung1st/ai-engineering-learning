@@ -76,3 +76,7 @@ Append-only log of harness slice completions.
 - 2026-06-28T19:32:09Z | domain-package | checks_failed
 - 2026-06-29T00:00:00Z | domain-package | traceability tags added for BR-01/02/03/10 harness gates; unit tests 49 pass; computational checks pass
 - 2026-06-28T19:34:54Z | domain-package | passed
+- 2026-06-29T00:00:00Z | api-foundation | Fastify /api/v1 skeleton with session auth middleware, RBAC permission guard, error envelope, Postgres migrations; unit + integration tests pass
+- 2026-06-28T19:40:52Z | api-foundation | checks_failed
+- 2026-06-29T00:00:00Z | api-foundation | Fixed lint (unused reply params), added e2e traceability coverage for FR-03 AC-03 AC-12 AC-13 AC-14; 22 integration tests pass; harness checks pass
+- 2026-06-28T19:45:23Z | api-foundation | passed

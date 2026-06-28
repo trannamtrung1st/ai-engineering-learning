@@ -16,7 +16,9 @@
     "test": "npm run test:unit && npm run test:integration"
   },
   "dependencies": {
+    "@fastify/cookie": "^9.4.0",
     "@wecheck/domain": "*",
+    "fastify": "^4.29.0",
     "pg": "^8.13.1"
   },
   "devDependencies": {
