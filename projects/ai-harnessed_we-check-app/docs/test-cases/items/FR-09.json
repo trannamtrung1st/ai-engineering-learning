@@ -1,0 +1,476 @@
+{
+  "productItemId": "FR-09",
+  "version": 1,
+  "docFingerprint": "sha256:26c62c98b20c67a8bcd34920efd8e38f5ae53682841c9bc3c07d32eba6d290e5",
+  "generatedAt": "2026-06-28T18:03:39.000Z",
+  "cases": [
+    {
+      "id": "TC-FR-09-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["FR-09", "AC-09", "BR-04"],
+      "title": "TS-26: Second check-in from same student account returns 409 DuplicateCheckIn",
+      "preconditions": [
+        "Active session with valid room GPS and enrolled authenticated Student A",
+        "Student A attendance status is Present from prior successful check-in",
+        "Fresh Valid unexpired QrToken from GET /api/v1/sessions/:sessionId/qr/current",
+        "Student A coordinates within session gpsRadiusMeters"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with tokenId, in-radius coordinates, and spoofMetadata using Student A session",
+        "Assert HTTP status 409 Conflict",
+        "Assert response outcome DuplicateCheckIn and errorCode DuplicateCheckIn",
+        "Assert message Bạn đã điểm danh buổi học này rồi per FR-09 and AC-09a",
+        "Query attendance_records for Student A and sessionId and assert exactly one Present row unchanged",
+        "Query check_in_attempts and assert latest attempt outcome DuplicateCheckIn"
+      ],
+      "expected": "FR-09 satisfied: exactly one successful check-in per student per session; second attempt returns HTTP 409 DuplicateCheckIn per BR-04",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-09-002",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["FR-09", "AC-09", "BR-11"],
+      "title": "TS-27: Second student submitting Consumed token rejected with security log entry",
+      "preconditions": [
+        "Active session with two enrolled students Student A and Student B",
+        "Student A successfully checked in; QrToken status Consumed by Student A",
+        "Token still within 30-second validity window (TestClock fixed before expiry)",
+        "Student B authenticated with in-radius coordinates"
+      ],
+      "steps": [
+        "POST /api/v1/check-in as Student B using same tokenId consumed by Student A",
+        "Assert HTTP status 400",
+        "Assert response outcome TokenAlreadyUsed and errorCode TokenAlreadyUsed",
+        "Assert message Mã QR đã được sử dụng per validation-rules §4 BR-11 mapping",
+        "Assert Student B attendance remains Pending (not Present)",
+        "Verify security log entry contains sessionId, tokenId, and submitting Student B id per FR-09 and BR-11",
+        "Query check_in_attempts for Student B and assert outcome TokenAlreadyUsed"
+      ],
+      "expected": "FR-09 satisfied: each QR token consumed by at most one successful check-in; subsequent scan of Consumed token rejected and logged as potential code sharing",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-09-003",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["FR-09", "AC-09", "NFR-02"],
+      "title": "TS-28: Parallel duplicate check-in requests from same student yield exactly one Present",
+      "preconditions": [
+        "Real PostgreSQL test database running with serializable or row-lock isolation",
+        "Active session, enrolled student with Pending attendance, Valid QrToken",
+        "DuplicateRace integration suite per testing-plan §5",
+        "TestClock within attendance window and token TTL"
+      ],
+      "steps": [
+        "Fire two parallel POST /check-in or CheckInService.submit calls for same studentId and sessionId",
+        "Collect both HTTP responses or CheckInResult outcomes",
+        "Assert exactly one response is HTTP 200 outcome Success with attendance Present",
+        "Assert the other response is HTTP 409 outcome DuplicateCheckIn",
+        "Query attendance_records and assert exactly one Present row for studentId and sessionId",
+        "Query check_in_attempts and assert one Success and one DuplicateCheckIn outcome"
+      ],
+      "expected": "FR-09 concurrency invariant: exactly one Present per student per session under parallel load per AC-09c and NFR-02",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-09-004",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-09", "BR-04", "NFR-02"],
+      "title": "CheckInService.submit enforces one Present per student per session in PostgreSQL transaction",
+      "preconditions": [
+        "Real PostgreSQL with Active session, enrollment, Pending attendance_records row",
+        "Valid qr_tokens row with status Valid",
+        "CheckInService wired with AttendanceRecordRepository and QrTokenRepository per checkin-qr module §2.4"
+      ],
+      "steps": [
+        "Invoke CheckInService.submit with valid tokenId and in-radius locationPayload for studentId (first call)",
+        "Assert attendance transitions to Present and qr_token status Consumed",
+        "Invoke CheckInService.submit again for same studentId with new Valid tokenId",
+        "Assert second call returns DuplicateCheckIn without creating second Present row",
+        "Verify unique constraint on (session_id, student_id) per domain model §4.2"
+      ],
+      "expected": "Module boundary enforces FR-09: at most one automated Present per student per session; duplicate rejected at CheckInService layer per BR-04",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-09-005",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-09", "BR-11", "NFR-02"],
+      "title": "CheckInTransaction atomically consumes QrToken only on Success not on TokenAlreadyUsed",
+      "preconditions": [
+        "Real PostgreSQL with qr_tokens row status Consumed",
+        "Enrolled Student B with Pending attendance",
+        "CheckInTransaction suite per testing-plan §5"
+      ],
+      "steps": [
+        "Invoke CheckInService.submit with Consumed tokenId for Student B",
+        "Assert outcome TokenAlreadyUsed and transaction rolled back without Present update",
+        "Assert qr_tokens row remains Consumed (no double-consumption attempt persisted)",
+        "Contrast: successful submit on Valid token atomically sets Consumed and Present in single commit"
+      ],
+      "expected": "FR-09 one-time-use token: Present + token consumed atomically on Success only; token reuse rejected without corrupting attendance state per BR-11",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-09-006",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P0",
+      "traceability": ["FR-09", "AC-09", "NFR-02"],
+      "title": "DuplicateRace: 20 concurrent CheckInService.submit calls for same student produce one Present",
+      "preconditions": [
+        "DuplicateRace integration suite per testing-plan §5",
+        "Active session with enrolled student Pending attendance",
+        "20 parallel workers each holding valid tokenId (unique tokens or controlled race fixture)",
+        "TestClock within attendance window and token TTL"
+      ],
+      "steps": [
+        "Launch 20 parallel CheckInService.submit invocations for identical studentId and sessionId",
+        "Await all completions",
+        "Count Success vs DuplicateCheckIn outcomes across results",
+        "Assert exactly 1 Success and remainder DuplicateCheckIn",
+        "Query attendance_records and assert single Present row with one checkedInAt timestamp"
+      ],
+      "expected": "FR-09 anti-proxy integrity under load: row-level lock on attendance prevents double Present per concurrent duplicate submissions",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-09-007",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-09", "BR-04"],
+      "title": "POST /check-in returns 409 DuplicateCheckIn envelope when student already Present",
+      "preconditions": [
+        "Authenticated enrolled Student session with Present attendance for target session",
+        "Valid unexpired QrToken for Active session"
+      ],
+      "steps": [
+        "Send POST /api/v1/check-in with body { tokenId, latitude: 10.762700, longitude: 106.660200, spoofMetadata: { mockLocationDetected: false } }",
+        "Assert HTTP status 409 Conflict",
+        "Assert Content-Type application/json; charset=utf-8",
+        "Assert response body outcome DuplicateCheckIn and errorCode DuplicateCheckIn",
+        "Assert response body message Bạn đã điểm danh buổi học này rồi",
+        "Assert no attendance field with updated Present on failure envelope per API design §6.2"
+      ],
+      "expected": "HTTP 409 DuplicateCheckIn contract per API design §6.3 and §1 idempotency note; canonical failure envelope for FR-09 duplicate student",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-09-008",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-09", "BR-11"],
+      "title": "POST /check-in returns 400 TokenAlreadyUsed envelope for Consumed token submission",
+      "preconditions": [
+        "QrToken row with status Consumed linked to Active session",
+        "Authenticated enrolled Student B who did not consume the token",
+        "Token issuedAt within 30-second window (not ExpiredQr path)"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with consumed tokenId and in-radius coordinates using Student B session",
+        "Assert HTTP status 400 Bad Request",
+        "Assert response body outcome TokenAlreadyUsed and errorCode TokenAlreadyUsed",
+        "Assert response body message Mã QR đã được sử dụng",
+        "Verify CheckInAttempt row inserted with outcome TokenAlreadyUsed per FR-09"
+      ],
+      "expected": "HTTP 400 TokenAlreadyUsed contract for one-time-use token violation; distinct from 409 DuplicateCheckIn per FR-09 and BR-11",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-09-009",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P0",
+      "traceability": ["FR-09", "BR-04", "BR-11"],
+      "title": "Flow B steps 3–4: Student A duplicate retry then Student B same-token reuse in anti-fraud path",
+      "preconditions": [
+        "Flow B steps 1–2 complete: Active session with valid QR, Student A checked in successfully",
+        "Student A attendance Present; tokenId from step 2 status Consumed",
+        "Student B enrolled and authenticated with in-radius coordinates"
+      ],
+      "steps": [
+        "Student A POST /api/v1/check-in again with fresh Valid tokenId and assert HTTP 409 DuplicateCheckIn",
+        "Student B POST /api/v1/check-in with same tokenId consumed in step 2 and assert HTTP 400 TokenAlreadyUsed",
+        "Verify security log entry for Student B attempt with sessionId, tokenId, studentId",
+        "Assert Student B attendance remains Pending",
+        "Confirm Flow B anti-fraud rejection path per testing-plan §6 Flow B tags FR-09, BR-04, BR-11"
+      ],
+      "expected": "Flow B validates FR-09 duplicate student and token-sharing rejection in sequence within anti-fraud e2e flow",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-09-010",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["FR-09", "BR-04"],
+      "title": "Duplicate check-in leaves attendance afterState Present unchanged (no second transition)",
+      "preconditions": [
+        "attendance_records row with beforeState Present and non-null checkedInAt",
+        "Active session and Valid QrToken for duplicate attempt",
+        "CheckInService.submit callable for same studentId"
+      ],
+      "steps": [
+        "Record beforeState: status Present, checkedInAt T0",
+        "Invoke CheckInService.submit with new valid tokenId",
+        "Assert result outcome DuplicateCheckIn (not Success)",
+        "Query attendance_records and assert afterState status still Present",
+        "Assert checkedInAt unchanged at T0 (no overwrite)",
+        "Verify SM-04 outcome DuplicateCheckIn maps to no attendance state change per 07-state-machines.md §5"
+      ],
+      "expected": "beforeState Present; afterState Present unchanged; FR-09 DuplicateCheckIn is terminal rejection without duplicate Present record",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-09-011",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-09"],
+      "title": "Instructor denied POST /check-in preventing proxy check-in via staff account",
+      "preconditions": [
+        "Authenticated Instructor session available",
+        "Active session with Valid QrToken and in-radius coordinates",
+        "Instructor role lacks checkin:submit per roles-permissions §2.2"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with valid tokenId and coordinates using Instructor session cookie",
+        "Assert HTTP status 403 Forbidden and errorCode Forbidden",
+        "Verify no Present attendance created for instructor userId",
+        "Assert permission guard runs at pipeline step 3 before BR-04 duplicate evaluation"
+      ],
+      "expected": "FR-09 actor is Student; staff accounts cannot bypass one-student-per-account rule via instructor login per anti-proxy identity binding",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-09-012",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-09", "BR-04"],
+      "title": "Duplicate check-in by Present student does not consume submitted token for other students",
+      "preconditions": [
+        "Student A already Present for session",
+        "Fresh Valid QrToken T1 not yet consumed",
+        "Student B enrolled with Pending attendance awaiting check-in"
+      ],
+      "steps": [
+        "Student A POST /api/v1/check-in with tokenId T1 and assert HTTP 409 DuplicateCheckIn",
+        "Query qr_tokens for T1 and assert status remains Valid (not Consumed)",
+        "Student B POST /api/v1/check-in with same tokenId T1 and in-radius coordinates",
+        "Assert Student B HTTP 200 outcome Success and attendance Present",
+        "Query qr_tokens for T1 and assert status Consumed after Student B success"
+      ],
+      "expected": "FR-09 DuplicateCheckIn failure does not consume token per domain model §5.2; token remains available for legitimate second student until successful consumption",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-09-013",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["FR-09", "BR-04"],
+      "title": "Sequential duplicate submissions: first 200 Success then second 409 without duplicate Present rows",
+      "preconditions": [
+        "Authenticated enrolled Student with Pending attendance",
+        "Two sequential Valid QrTokens T1 and T2 for Active session",
+        "In-radius coordinates and TestClock within window"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with tokenId T1 and assert HTTP 200 outcome Success",
+        "Immediately POST /api/v1/check-in with tokenId T2 for same student",
+        "Assert HTTP 409 outcome DuplicateCheckIn on second request",
+        "Query attendance_records and assert count of Present rows for studentId and sessionId equals 1",
+        "Verify first successful check-in is the sole Present record per FR-09"
+      ],
+      "expected": "FR-09 sequential boundary: first submission wins Present; immediate retry returns 409 DuplicateCheckIn with no duplicate record",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-09-014",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-09", "BR-04"],
+      "title": "Student with Excused status after successful check-in receives DuplicateCheckIn on retry",
+      "preconditions": [
+        "Student A checked in successfully then instructor set status to Excused within edit window",
+        "Active session still open with Valid QrToken",
+        "BR-04 condition: Present or Excused set after successful check-in blocks duplicate"
+      ],
+      "steps": [
+        "POST /api/v1/check-in as Student A with fresh Valid tokenId and in-radius coordinates",
+        "Assert HTTP status 409 outcome DuplicateCheckIn",
+        "Query attendance_records and assert status remains Excused (not second Present)",
+        "Verify BR-04 exception scope: Excused after check-in still counts as one successful check-in per session"
+      ],
+      "expected": "FR-09 via BR-04: Excused status following successful check-in still blocks duplicate automated check-in attempts",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-09-015",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["FR-09"],
+      "title": "Flow A step 4: First successful check-in creates sole Present record and consumes token",
+      "preconditions": [
+        "Flow A steps 1–3 complete: roster seeded, session opened Active, QR token polled",
+        "Authenticated enrolled Student with Pending attendance",
+        "In-radius coordinates; tokenId from qrPayload in step 3"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with tokenId from Flow A step 3 and in-radius coordinates using Student session",
+        "Assert HTTP 200 outcome Success with attendance Present",
+        "Query qr_tokens and assert token status Consumed",
+        "Query attendance_records and assert exactly one Present row for studentId and sessionId",
+        "Verify FR-09 baseline: first check-in establishes the single allowed Present per student per session"
+      ],
+      "expected": "Flow A happy-path establishes FR-09 invariant: one Present record and one-time token consumption on first successful check-in",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-09-016",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-09", "BR-04"],
+      "title": "Mobile check-in shows DuplicateCheckIn message with prior check-in time and history link",
+      "preconditions": [
+        "Authenticated Student on mobile viewport 375×812 with Present attendance for session",
+        "Active session with valid check-in deep link /check-in?token=:tokenId&session=:sessionId",
+        "GPS permission granted with in-radius coordinates"
+      ],
+      "steps": [
+        "Navigate to /check-in deep link for session where student is already Present",
+        "Complete GPS capture and tap submit control",
+        "Verify CheckInOutcomePanel displays info-level DuplicateCheckIn state",
+        "Verify message Bạn đã điểm danh buổi học này rồi per user-flows §WF-03",
+        "Verify prior check-in timestamp displayed",
+        "Verify Xem lịch sử link navigates to /history per ui-states DuplicateCheckIn action"
+      ],
+      "expected": "FR-09 duplicate rejection surfaced in mobile web UI; student informed of prior check-in with history navigation",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-09-017",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-09", "BR-11"],
+      "title": "Mobile check-in shows token reuse rejection when scanning shared Consumed QR",
+      "preconditions": [
+        "Student B authenticated on mobile viewport",
+        "QrToken already Consumed by Student A within current 30-second window",
+        "Deep link or scanned QR contains consumed tokenId for Active session",
+        "GPS permission granted with in-radius coordinates"
+      ],
+      "steps": [
+        "Student B opens /check-in?token=:consumedTokenId&session=:sessionId",
+        "Complete GPS capture and submit check-in",
+        "Verify error panel displays TokenAlreadyUsed outcome with message Mã QR đã được sử dụng",
+        "Verify no success confirmation or Present badge shown",
+        "Verify submit control remains disabled or offers guidance to scan fresh QR from projector"
+      ],
+      "expected": "FR-09 anti-proxy token sharing rejection visible in mobile web UI; student directed to obtain new rotating QR per BR-11",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-09-018",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["FR-09", "BR-11"],
+      "title": "Instructor session monitor may surface code-sharing alert after token reuse attempt",
+      "preconditions": [
+        "Active session with instructor viewing live attendance monitor at /sessions/:sessionId/monitor",
+        "Student A checked in successfully consuming token T1",
+        "Student B attempted check-in with same consumed token T1 (TokenAlreadyUsed logged)"
+      ],
+      "steps": [
+        "As Instructor, open session monitor page for Active session",
+        "Trigger Student B token reuse attempt via API or second mobile browser",
+        "Poll or wait for monitor refresh (≤5 s per FR-15 polling interval)",
+        "Verify code-sharing or token-reuse alert indicator visible on instructor monitor per BR-11 instructor alert",
+        "Verify Student B remains Pending in roster grid"
+      ],
+      "expected": "FR-09 security log entry for token reuse may surface instructor-facing code-sharing alert during Active session monitor",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-09-019",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["FR-09", "BR-11"],
+      "title": "QrToken transitions Valid to Consumed only on first successful check-in not on reuse rejection",
+      "preconditions": [
+        "Real PostgreSQL with qr_tokens row status Valid linked to Active session",
+        "Student A enrolled with Pending attendance",
+        "CheckInService.submit callable with in-radius coordinates"
+      ],
+      "steps": [
+        "Record beforeState: qr_token status Valid",
+        "Invoke CheckInService.submit for Student A and assert Success",
+        "Assert afterState: qr_token status Consumed",
+        "Invoke CheckInService.submit for Student B with same tokenId",
+        "Assert outcome TokenAlreadyUsed; qr_token afterState remains Consumed (no re-transition)",
+        "Verify security audit entry created for Student B attempt"
+      ],
+      "expected": "FR-09 token state machine: Valid → Consumed on first Success only; reuse attempts do not alter token state but create security log",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-09-020",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P1",
+      "traceability": ["FR-09"],
+      "title": "TrainingOfficeAdmin denied POST /check-in (lacks checkin:submit student-only permission)",
+      "preconditions": [
+        "Authenticated TrainingOfficeAdmin session available",
+        "Active session with Valid QrToken and in-radius coordinates",
+        "Admin role lacks checkin:submit per roles-permissions §2.2 matrix"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with valid tokenId and coordinates using TrainingOfficeAdmin session",
+        "Assert HTTP status 403 Forbidden and errorCode Forbidden",
+        "Verify no Present attendance created for admin userId",
+        "Assert anti-proxy controls require Student role identity binding per FR-09"
+      ],
+      "expected": "FR-09 enforced via Student-only checkin:submit; admin cannot perform check-in on behalf of students preventing proxy attendance",
+      "edgeCase": false
+    }
+  ]
+}
