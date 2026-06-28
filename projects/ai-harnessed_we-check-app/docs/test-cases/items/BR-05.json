@@ -1,0 +1,493 @@
+{
+  "productItemId": "BR-05",
+  "version": 1,
+  "docFingerprint": "sha256:4deda16c175af0ca34aadf938abcd5f11203e186585e68a48a77093b8e87aac5",
+  "generatedAt": "2026-06-29T12:00:00Z",
+  "cases": [
+    {
+      "id": "TC-BR-05-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["BR-05", "FR-16", "AC-16"],
+      "title": "TS-36: In-app absence threshold notification sent to student and instructor after session close when unexcused rate exceeds 20%",
+      "preconditions": [
+        "Student A enrolled in class HESD-2026-A / subject SWE-101 with assigned Instructor I via ClassAssignment",
+        "Four prior Closed sessions for Student A in SWE-101: 3 Present, 1 unexcused Absent (25% rate before next session)",
+        "Fifth session created, opened Active, and Student A remains Pending (will become Absent on close)",
+        "Should-capability enabled; default policy absence_threshold_percent = 20 per BR-05",
+        "Authenticated Instructor I session with session:write"
+      ],
+      "steps": [
+        "POST /api/v1/sessions/:sessionId/close using Instructor I session cookie",
+        "Assert HTTP 200 and session status Closed with closedAt populated",
+        "Wait for asynchronous NotificationService.evaluateAbsenceThresholds to complete (poll or test hook)",
+        "GET /api/v1/notifications using Student A session cookie",
+        "Assert at least one notification with type AbsenceThresholdWarning referencing subjectCode SWE-101",
+        "Assert notification payload absenceRate > 0.20, threshold 0.20, unexcusedAbsenceCount and sessionCount reflect 2 Absent of 5 completed sessions",
+        "GET /api/v1/notifications using Instructor I session cookie",
+        "Assert Instructor I receives AbsenceThresholdWarning notification for Student A in SWE-101"
+      ],
+      "expected": "BR-05 and testing-plan TS-36 satisfied: in-app notification sent to affected student and assigned instructor when session closes and unexcused absence rate exceeds 20%",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-05-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-05", "FR-16"],
+      "title": "NotificationService.evaluateAbsenceThresholds persists Notification rows when rate exceeds policy after session close",
+      "preconditions": [
+        "Real PostgreSQL test database with Student C enrolled in subject with ClassAssignment linking Instructor C",
+        "Five Closed attendance_records for Student C: 2 Absent, 3 Present; no Excused rows",
+        "Newly closed sessionId with Student C finalized Absent (sixth completed session, third Absent → 50% rate)",
+        "PolicySetting absence_threshold_percent = 20 seeded per database design §10",
+        "NotificationService wired per notifications module §2.7"
+      ],
+      "steps": [
+        "Invoke NotificationService.evaluateAbsenceThresholds(sessionId) after session close commit",
+        "Query notifications table for userId = Student C and type AbsenceThresholdWarning",
+        "Assert one notification row created with payload JSONB containing subjectCode, absenceRate, threshold, sessionCount, unexcusedAbsenceCount",
+        "Query notifications table for assigned Instructor C userId",
+        "Assert instructor notification row created referencing same student and subject",
+        "Assert absenceRate = unexcusedAbsenceCount / sessionCount with Excused excluded per BR-05"
+      ],
+      "expected": "Module-integration boundary: BR-05 post-session job persists Notification rows for student and instructor when unexcused absence rate exceeds policy threshold",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-05-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-05", "AC-16"],
+      "title": "Excused absences excluded from unexcused absence rate numerator",
+      "preconditions": [
+        "Real PostgreSQL with Student D enrolled in subject TEST-101",
+        "Five completed Closed sessions for Student D: 1 Absent, 1 Excused, 3 Present",
+        "Sixth session just closed with Student D Present (6 total completed sessions)",
+        "Policy threshold 20%; without Excused exclusion rate would be 2/6 = 33%; with exclusion 1/6 ≈ 17%"
+      ],
+      "steps": [
+        "Query attendance_records for Student D in TEST-101 where session status Closed",
+        "Count records with status Absent (numerator) and total completed sessions (denominator)",
+        "Assert Excused records are not included in unexcusedAbsenceCount",
+        "Invoke NotificationService.evaluateAbsenceThresholds for the closed session",
+        "Query notifications for Student D and assert no AbsenceThresholdWarning created",
+        "Change one Present record to Absent via attendance write and re-evaluate; assert notification now created when rate exceeds 20%"
+      ],
+      "expected": "BR-05 exception: Excused absences excluded from numerator; rate 1/6 does not trigger notification; additional Absent pushes rate above threshold",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-05-004",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["BR-05", "FR-16"],
+      "title": "Session Active to Closed transition triggers absence threshold recalculation",
+      "preconditions": [
+        "Real PostgreSQL with Active session; attendance_records in Pending state for enrolled students",
+        "Student E has prior Closed sessions yielding unexcused rate above 20% threshold",
+        "SessionStateGuard allows Active → Closed per state machines §2",
+        "AttendanceService.finalizeOnClose configured per API design §5.5 side effects"
+      ],
+      "steps": [
+        "Assert session beforeState Active and attendance summary pending > 0",
+        "Execute session close transition (AttendanceService.finalizeOnClose: Pending → Absent)",
+        "Assert session afterState Closed with closedAt set",
+        "Assert attendance summary absent count incremented and pending count zeroed",
+        "Verify SessionClosed domain event emitted and consumed by NotificationService",
+        "Assert threshold evaluation runs post-close and creates notifications when rate exceeds policy"
+      ],
+      "expected": "BR-05 trigger satisfied: recalculation runs asynchronously after each session transitions to Closed",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-05-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-05", "FR-16"],
+      "title": "GET /notifications returns 200 JSON list with AbsenceThresholdWarning payload fields",
+      "preconditions": [
+        "Student G with existing AbsenceThresholdWarning notification seeded after threshold exceeded",
+        "Authenticated Student G session with notification:read (self) permission"
+      ],
+      "steps": [
+        "Send GET /api/v1/notifications with Student G session cookie",
+        "Assert HTTP status 200 OK",
+        "Assert Content-Type application/json; charset=utf-8",
+        "Assert response body contains items array per API design §10.1 success list envelope",
+        "Assert at least one item has type AbsenceThresholdWarning with payload containing subjectCode, subjectName, absenceRate, threshold, sessionCount, unexcusedAbsenceCount per domain model §4.13",
+        "Assert readAt is null for unread notification and createdAt is ISO 8601 UTC",
+        "PATCH /api/v1/notifications/:notificationId/read and assert HTTP 204; re-GET and assert readAt populated"
+      ],
+      "expected": "HTTP 200 success contract for GET /notifications and PATCH read per API design §9.1–§9.2; AbsenceThresholdWarning DTO complete",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-05-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-05", "FR-16"],
+      "title": "PUT /policy/absence-threshold returns 200 when admin sets valid thresholdPercent",
+      "preconditions": [
+        "Authenticated TrainingOfficeAdmin session with policy:write permission",
+        "Default policy absence_threshold_percent = 20 seeded per BR-05"
+      ],
+      "steps": [
+        "GET /api/v1/policy/absence-threshold using Admin session and record current thresholdPercent",
+        "Send PUT /api/v1/policy/absence-threshold with body { \"thresholdPercent\": 25 } and Admin session cookie",
+        "Assert HTTP status 200 OK",
+        "Assert response body thresholdPercent === 25",
+        "GET /api/v1/policy/absence-threshold and assert persisted value 25",
+        "Restore PUT with thresholdPercent 20 for test isolation"
+      ],
+      "expected": "HTTP contract for admin policy configuration per API design §9.3; threshold persisted in PolicySetting and drives BR-05 evaluation",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-05-007",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-05", "FR-16", "NFR-11"],
+      "title": "Instructor denied PUT /policy/absence-threshold with 403 Forbidden",
+      "preconditions": [
+        "Authenticated Instructor session without policy:write per roles-permissions §2.2",
+        "Default absence threshold policy exists"
+      ],
+      "steps": [
+        "Send PUT /api/v1/policy/absence-threshold with body { \"thresholdPercent\": 15 } using Instructor session cookie",
+        "Assert HTTP status 403 Forbidden",
+        "Assert response errorCode Forbidden",
+        "Assert message Bạn không có quyền thực hiện thao tác này per roles-permissions §2.5",
+        "GET /api/v1/policy/absence-threshold using Instructor session and assert 403 or read denied per product policy",
+        "Verify policy value unchanged in database (still 20)"
+      ],
+      "expected": "Only TrainingOfficeAdmin holds policy:write; instructor threshold configuration denied per RBAC matrix for BR-05 policy inputs",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-05-008",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-05", "FR-16", "NFR-11"],
+      "title": "Student GET /notifications returns only self-scoped notifications with no peer data",
+      "preconditions": [
+        "Student H and Student I enrolled in same subject; Student I has AbsenceThresholdWarning notification",
+        "Student H has no threshold notifications",
+        "Both students authenticated with notification:read (self)"
+      ],
+      "steps": [
+        "GET /api/v1/notifications using Student H session cookie",
+        "Assert HTTP 200 and items array contains no notification with userId or payload referencing Student I",
+        "GET /api/v1/notifications using Student I session cookie",
+        "Assert HTTP 200 and items contain Student I's AbsenceThresholdWarning only",
+        "Attempt PATCH /api/v1/notifications/:studentINotificationId/read as Student H",
+        "Assert HTTP 403 Forbidden; Student I notification readAt remains null"
+      ],
+      "expected": "BR-05 notifications scoped to authenticated user; students cannot read or mark peer absence warnings per notification:read (self)",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-05-009",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-05", "FR-16"],
+      "title": "No notification at exactly 20% unexcused rate; notification fires above 20% boundary",
+      "preconditions": [
+        "Student J enrolled in subject with policy threshold 20%",
+        "Scenario A: 10 completed Closed sessions with exactly 2 Absent (rate = 0.20, not > 0.20 per BR-05 condition)",
+        "Scenario B: 10 completed Closed sessions with 3 Absent (rate = 0.30 > 0.20)",
+        "Should-capability enabled"
+      ],
+      "steps": [
+        "For Scenario A: close eleventh session without adding new Absent for Student J; run threshold evaluation",
+        "GET /api/v1/notifications for Student J and assert no AbsenceThresholdWarning (rate exactly 20% does not exceed threshold)",
+        "For Scenario B: with 3 Absent of 10 completed, close next session adding fourth Absent (4/11 ≈ 36%)",
+        "Run threshold evaluation after close",
+        "GET /api/v1/notifications for Student J and assert AbsenceThresholdWarning created",
+        "Assert payload.absenceRate > payload.threshold (0.20)"
+      ],
+      "expected": "BR-05 boundary: condition requires rate strictly greater than 20%; at exactly 20% no notification; above 20% notification fires",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-05-010",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["BR-05", "FR-16"],
+      "title": "PUT /policy/absence-threshold with thresholdPercent 0 or 101 returns 422 ValidationFailed",
+      "preconditions": [
+        "Authenticated TrainingOfficeAdmin session",
+        "Validation rules §3.9: thresholdPercent integer 1–100"
+      ],
+      "steps": [
+        "PUT /api/v1/policy/absence-threshold with body { \"thresholdPercent\": 0 } using Admin session",
+        "Assert HTTP status 422 Unprocessable Entity",
+        "Assert errorCode ValidationFailed with field detail for thresholdPercent",
+        "PUT /api/v1/policy/absence-threshold with body { \"thresholdPercent\": 101 }",
+        "Assert HTTP 422 ValidationFailed",
+        "Verify policy setting unchanged at default 20"
+      ],
+      "expected": "Invalid policy threshold boundaries rejected with ValidationFailed; policy unchanged per validation rules §3.9",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-05-011",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P1",
+      "traceability": ["BR-05", "AC-16"],
+      "title": "No notification when unexcused absence rate remains at or below 20% after session close",
+      "preconditions": [
+        "Student K with 8 completed Closed sessions: 7 Present, 1 Absent (12.5% rate)",
+        "Ninth session closed with Student K Present",
+        "Should-capability enabled; threshold 20%"
+      ],
+      "steps": [
+        "POST /api/v1/sessions/:sessionId/close for ninth session",
+        "Await threshold evaluation job",
+        "GET /api/v1/notifications for Student K",
+        "Assert items array contains no AbsenceThresholdWarning for subject",
+        "GET /api/v1/notifications for assigned instructor",
+        "Assert no AbsenceThresholdWarning notification for Student K"
+      ],
+      "expected": "Below-threshold students receive no absence warning notification after session close per BR-05 condition",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-05-012",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-05", "AC-16", "FR-16"],
+      "title": "Student sees in-app absence threshold warning toast and persistent badge on /history",
+      "preconditions": [
+        "Student L authenticated in browser; unexcused rate exceeds 20% after instructor closes session",
+        "AbsenceThresholdWarning notification created for Student L",
+        "Should-capability UI enabled per user flows §11"
+      ],
+      "steps": [
+        "Trigger session close via API or instructor action so threshold notification is created for Student L",
+        "Navigate Student L browser to /history or poll notification bell",
+        "Assert in-app toast/banner displays absence warning with subject name and rate per user flows §11 step 1",
+        "Navigate to /history and locate affected subject row",
+        "Assert persistent warning badge visible on subject with high absence rate per user flows §11 step 2",
+        "Tap notification or badge and verify detail shows unexcused count and threshold percentage"
+      ],
+      "expected": "BR-05 UI outcome: student receives in-app absence threshold warning with optional persistent badge on affected subject in history",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-05-013",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-05", "FR-16"],
+      "title": "Instructor receives in-app notification after closing session that triggers absence threshold for enrolled student",
+      "preconditions": [
+        "Authenticated Instructor on /sessions/:sessionId session detail for Active session",
+        "Student M enrolled with unexcused rate above 20% before this session close",
+        "Student M will be Absent when session closes (Pending → Absent)",
+        "Should-capability enabled"
+      ],
+      "steps": [
+        "Navigate to /sessions/:sessionId and confirm session Active with roster showing Student M Pending",
+        "Click Đóng buổi học and confirm close dialog",
+        "Assert session status badge transitions to Closed",
+        "Wait for notification delivery (poll inbox or toast within reasonable async window)",
+        "Assert in-app notification appears for Instructor referencing Student M and subject with absence rate above threshold",
+        "Open notification center and verify AbsenceThresholdWarning entry with subjectCode, absenceRate, and student identifier"
+      ],
+      "expected": "BR-05 outcome: instructor receives in-app absence threshold warning when session close recalculates rate above 20%",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-05-014",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["BR-05", "FR-16"],
+      "title": "Admin configures absence threshold via AttendancePolicyForm at /admin/policy",
+      "preconditions": [
+        "Authenticated TrainingOfficeAdmin on desktop viewport",
+        "Should-capability UI enabled; AttendancePolicyForm interactive per page-list §4.8",
+        "Default threshold 20% displayed per BR-05"
+      ],
+      "steps": [
+        "Navigate to /admin/policy",
+        "Verify form displays current absence threshold default 20% and auto-warning toggle",
+        "Change threshold input to 25 and click Lưu",
+        "Assert success toast confirms policy saved",
+        "Reload page and verify threshold displays 25%",
+        "Restore threshold to 20% for test isolation"
+      ],
+      "expected": "BR-05 policy threshold configurable by admin via UI; persisted value drives absence warning evaluation",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-05-015",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P1",
+      "traceability": ["BR-05", "FR-16"],
+      "title": "Flow A extension: session close after workshop triggers threshold evaluation when rate exceeded",
+      "preconditions": [
+        "Flow A completed through step 6: roster seeded, session opened, students checked in, instructor closes session",
+        "At least one student with cumulative unexcused Absent rate > 20% in subject after close",
+        "Should-capability enabled"
+      ],
+      "steps": [
+        "Complete Flow A steps 1–6 per testing-plan §6 including POST /sessions/:id/close",
+        "Await NotificationService.evaluateAbsenceThresholds triggered by SessionClosed",
+        "GET /api/v1/notifications for affected student",
+        "Assert AbsenceThresholdWarning notification present with correct subject and rate payload",
+        "GET /api/v1/notifications for session instructor",
+        "Assert instructor warning notification references affected student"
+      ],
+      "expected": "Flow A lifecycle close step integrates BR-05 absence threshold notification per WF-06 when Should-capability enabled",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-05-016",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": ["BR-05", "FR-16"],
+      "title": "Draft and Active sessions excluded from completed session denominator",
+      "preconditions": [
+        "Real PostgreSQL with Student N: 2 Absent of 4 Closed sessions (50% rate)",
+        "One Draft session and one Active session with Absent-equivalent Pending rows exist for same subject",
+        "Draft and Active sessions must not count toward sessionCount denominator per BR-05 exceptions"
+      ],
+      "steps": [
+        "Query completed sessions count for Student N in subject (status Closed only)",
+        "Assert sessionCount === 4 excluding Draft and Active sessions",
+        "Invoke evaluateAbsenceThresholds after closing a fifth session where Student N is Present",
+        "Assert rate calculated as 2/5 = 40% not inflated by non-closed sessions",
+        "Assert notification created because 40% > 20%",
+        "Verify Draft session attendance status does not affect numerator or denominator"
+      ],
+      "expected": "BR-05 scope: only Closed sessions count as completed; Draft and Active excluded from threshold denominator",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-05-017",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": ["BR-05", "FR-16"],
+      "title": "Custom admin threshold from PolicySetting applied during absence rate evaluation",
+      "preconditions": [
+        "Real PostgreSQL with Student O: 2 Absent of 9 completed Closed sessions (22.2% rate)",
+        "PolicySetting absence_threshold_percent updated to 25 via PolicyService.setAbsenceThreshold",
+        "Tenth session just closed with Student O Present (10 total completed, 2 Absent = 20%)"
+      ],
+      "steps": [
+        "Assert policy_settings row absence_threshold_percent = 25",
+        "Invoke NotificationService.evaluateAbsenceThresholds for closed session",
+        "Query notifications for Student O and assert no AbsenceThresholdWarning (20% < 25% threshold)",
+        "Update policy to thresholdPercent 15 via PolicyService",
+        "Re-invoke evaluateAbsenceThresholds for same session context",
+        "Assert AbsenceThresholdWarning notification created because 20% > 15%"
+      ],
+      "expected": "BR-05 evaluation uses admin-configured policy threshold from PolicySetting, not hardcoded 20%",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-05-018",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P1",
+      "traceability": ["BR-05", "FR-16"],
+      "title": "Parallel session close evaluations do not duplicate absence threshold notifications",
+      "preconditions": [
+        "Real PostgreSQL with Student Q exceeding 20% threshold after close",
+        "Two concurrent invocations of NotificationService.evaluateAbsenceThresholds for same sessionId",
+        "Unique constraint or idempotency guard on student-subject notification deduplication"
+      ],
+      "steps": [
+        "Close session triggering threshold for Student Q in subject",
+        "Invoke evaluateAbsenceThresholds twice in parallel for same sessionId",
+        "Query notifications for Student Q and count AbsenceThresholdWarning rows for subject",
+        "Assert exactly one student notification created (no duplicate on concurrent evaluation)",
+        "Query notifications for assigned instructor and assert exactly one instructor notification",
+        "Re-run single evaluateAbsenceThresholds call and assert notification count unchanged"
+      ],
+      "expected": "Concurrent BR-05 threshold evaluation is idempotent; no duplicate warnings for same student-subject pair",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-05-019",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P1",
+      "traceability": ["BR-05"],
+      "title": "Manual attendance edit to Excused removes absence from numerator on subsequent recalculation",
+      "preconditions": [
+        "Real PostgreSQL with Student R: 3 Absent of 5 Closed sessions (60% rate, above threshold)",
+        "AbsenceThresholdWarning notification already exists for Student R",
+        "Instructor changes one Absent record to Excused within 24-hour edit window per BR-10"
+      ],
+      "steps": [
+        "Invoke AttendanceService.manualEdit to change one Absent to Excused with note",
+        "Assert AttendanceManuallyEdited domain event emitted",
+        "Invoke NotificationService.evaluateAbsenceThresholds for most recent closed session",
+        "Recalculate rate: 2 Absent of 5 = 40% (still above 20%)",
+        "Change second Absent to Excused; recalculate: 1 Absent of 5 = 20% (not > 20%)",
+        "Assert no new AbsenceThresholdWarning created after rate drops to exactly 20%"
+      ],
+      "expected": "BR-05 recalculation after manual Excused edit excludes those absences from numerator; rate drops accordingly",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-05-020",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P1",
+      "traceability": ["BR-05", "FR-16", "NFR-11"],
+      "title": "Unauthenticated GET /notifications returns 401 Unauthenticated",
+      "preconditions": [
+        "AbsenceThresholdWarning notifications exist in database",
+        "No valid session cookie or bearer token"
+      ],
+      "steps": [
+        "GET /api/v1/notifications without authentication headers",
+        "Assert HTTP status 401 Unauthorized",
+        "Assert errorCode Unauthenticated",
+        "Assert message Vui lòng đăng nhập để tiếp tục per BR-06",
+        "Assert response contains no items array or notification payload data"
+      ],
+      "expected": "Notification inbox requires authentication; unauthenticated callers denied with no absence warning data leaked",
+      "edgeCase": false
+    }
+  ]
+}
