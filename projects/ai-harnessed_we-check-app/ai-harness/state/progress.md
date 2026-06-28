@@ -43,3 +43,4 @@ Append-only log of harness slice completions.
 - 2026-06-28T18:22:15Z | BR-05 | testgen_passed
 - 2026-06-28T18:24:21Z | BR-06 | testgen_passed
 - 2026-06-28T18:25:45Z | BR-07 | testgen_passed
+- 2026-06-28T18:27:34Z | BR-08 | testgen_passed
