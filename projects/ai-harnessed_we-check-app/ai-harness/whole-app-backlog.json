@@ -36,7 +36,7 @@
     },
     {
       "id": "docker-compose-db",
-      "passes": false,
+      "passes": true,
       "priority": 1,
       "phase": 0,
       "agent": "infra",
