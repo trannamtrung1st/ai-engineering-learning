@@ -1,0 +1,350 @@
+{
+  "productItemId": "NFR-07",
+  "version": 1,
+  "docFingerprint": "sha256:889c55844c8fb62f755b7bfe0012c8f4045a89dd93449f95fb5979804ca7fbd8",
+  "generatedAt": "2026-06-29T18:46:10Z",
+  "cases": [
+    {
+      "id": "TC-NFR-07-001",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["NFR-07", "FR-12", "AC-12"],
+      "title": "Testing-plan §7 Report after close: per-session report available within 10 minutes of closedAt",
+      "preconditions": [
+        "Active session with enrolled students and mixed attendance (Present, Pending) for assigned class-subject",
+        "Authenticated assigned Instructor session with report:read scope",
+        "TestClock controllable or wall-clock timing harness per testing-plan §11",
+        "Full E2E stack: PostgreSQL, API on port 3001"
+      ],
+      "steps": [
+        "POST /api/v1/sessions/:sessionId/close and record closedAt timestamp T_close",
+        "Immediately poll GET /api/v1/reports/session/:sessionId every 30 seconds until HTTP 200 with complete roster or 10-minute timeout",
+        "Assert first successful response includes all enrolled students with finalized statuses (no Pending rows)",
+        "Assert summary counts (present, absent, excused) reflect SessionCloseFinalize (Pending → Absent)",
+        "Record elapsed wall time T_elapsed from T_close to first complete report response",
+        "Assert T_elapsed ≤ 600 seconds (10 minutes) per NFR-07 and testing-plan §7 Report after close row"
+      ],
+      "expected": "NFR-07 verification method satisfied: instructor can view complete session report within 10 minutes of session close per 07-non-functional-risk §2.2 and OBJ-03",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-07-002",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-07", "FR-12"],
+      "title": "ReportService.getSessionRoster returns complete roster from PostgreSQL within 10 minutes after SessionService.close",
+      "preconditions": [
+        "Real PostgreSQL test database running via Compose",
+        "Active session with 50+ enrolled students and mixed attendance records",
+        "SessionService.close and ReportService.getSessionRoster wired to real repositories",
+        "High-resolution timer around close → first successful getSessionRoster call"
+      ],
+      "steps": [
+        "Record T0 and invoke SessionService.close(sessionId) to transition Active → Closed and finalize Pending → Absent",
+        "Poll ReportService.getSessionRoster(sessionId, instructorId) every 5 seconds until complete ReportDto returned or 10-minute timeout",
+        "Assert ReportDto contains one row per enrolled student with no Pending status",
+        "Assert aggregation counts match attendance_records table after finalizeOnClose",
+        "Record T1 when first complete roster returned",
+        "Assert T1 minus T0 ≤ 600000 ms (10 minutes)"
+      ],
+      "expected": "Module-integration boundary: report read model materializes complete session roster within NFR-07 latency budget after close side effects commit",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-07-003",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["NFR-07", "FR-12", "FR-05"],
+      "title": "Session Active → Closed transition makes finalized attendance visible in report within 10 minutes",
+      "preconditions": [
+        "Real PostgreSQL with session beforeState Active and N students with mix of Present and Pending attendance",
+        "SessionService.close triggers AttendanceService.finalizeOnClose per API design §5.5",
+        "ReportService queries attendance_records and sessions tables"
+      ],
+      "steps": [
+        "Record beforeState: session status Active; count Pending attendance rows",
+        "Invoke SessionService.close(sessionId) and assert afterState session status Closed with closedAt set",
+        "Assert Pending rows transitioned to Absent in attendance_records",
+        "Poll ReportService.getSessionRoster until roster reflects afterState (zero Pending, correct absent count)",
+        "Measure elapsed time from close commit to first accurate report",
+        "Assert elapsed time ≤ 10 minutes per NFR-07"
+      ],
+      "expected": "beforeState Active+Pending; afterState Closed+Absent finalized; complete session report available within NFR-07 window",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-07-004",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-07", "FR-12", "AC-12"],
+      "title": "GET /api/v1/reports/session/:sessionId returns HTTP 200 with complete roster within 10 minutes of close",
+      "preconditions": [
+        "API running against healthy Compose PostgreSQL",
+        "Closed session fixture: instructor closes Active session with enrolled cohort",
+        "Authenticated assigned Instructor session cookie set",
+        "SessionId known with closedAt recorded"
+      ],
+      "steps": [
+        "Record T0 at POST /api/v1/sessions/:sessionId/close completion (HTTP 200 status Closed)",
+        "Poll GET /api/v1/reports/session/:sessionId with Instructor session every 30 s",
+        "On HTTP 200, assert response body contains sessionId, summary counts, and records array per API design §8.1",
+        "Assert records array length equals enrolled student count with no Pending status values",
+        "Record T1 on first HTTP 200 with complete roster",
+        "Assert T1 minus T0 ≤ 600 seconds"
+      ],
+      "expected": "HTTP 200 report contract delivered within NFR-07 target: complete per-session roster accessible to authorized instructor ≤ 10 minutes after close",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-07-005",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-07", "FR-12", "AC-12"],
+      "title": "GET /api/v1/reports/summary returns HTTP 200 with class-subject aggregation within 10 minutes of session close",
+      "preconditions": [
+        "TrainingOfficeAdmin authenticated with report:read institution-wide",
+        "Active session for HESD-01 / SWE-101 with attendance data",
+        "Date range filter covers session scheduled date"
+      ],
+      "steps": [
+        "POST /api/v1/sessions/:sessionId/close and record closedAt T_close",
+        "Poll GET /api/v1/reports/summary?classCode=HESD-01&subjectCode=SWE-101&from=:date&to=:date every 30 s",
+        "Assert first HTTP 200 includes sessionsHeld ≥ 1 and students array with presentCount/absentCount reflecting closed session",
+        "Assert closed session attendance reflected in aggregation (no stale Pending-only counts)",
+        "Record elapsed time from T_close to first successful summary",
+        "Assert elapsed time ≤ 10 minutes per AC-12c and NFR-07"
+      ],
+      "expected": "Institution-wide summary report HTTP contract available within NFR-07 latency target after session close per 08-acceptance-mvp-future AC-12c",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-07-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["NFR-07", "FR-12", "AC-12"],
+      "title": "Flow A steps 6–7: instructor closes session and accesses complete report within 10 minutes",
+      "preconditions": [
+        "Flow A steps 1–5 complete: roster seeded, session opened Active, students checked in, instructor viewed live attendance",
+        "Authenticated Instructor assigned to session class-subject",
+        "Full E2E stack healthy on ports 3000/3001 with Compose db"
+      ],
+      "steps": [
+        "Instructor POST /api/v1/sessions/:sessionId/close (Flow A step 6) and record closedAt",
+        "Poll GET /api/v1/reports/session/:sessionId until HTTP 200 with complete roster (Flow A report verification)",
+        "Assert present count matches successful check-ins from step 4–5",
+        "Assert remaining enrolled students show Absent (finalized from Pending)",
+        "Record elapsed time from close to first complete report",
+        "Assert elapsed time ≤ 10 minutes per NFR-07 and MVP exit indicator Report readiness"
+      ],
+      "expected": "Flow A workshop lifecycle end-to-end: session close followed by instructor report access within NFR-07 SLA tied to OBJ-03",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-07-007",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-07", "FR-12"],
+      "title": "150-student cohort session report materializes within 10 minutes after close on real PostgreSQL",
+      "preconditions": [
+        "Real PostgreSQL with Active session and 150 enrolled students (pilot-scale per OBJ-01)",
+        "Mixed attendance: ~140 Present, ~10 Pending before close",
+        "ReportService and SessionService integration suite per testing-plan §5",
+        "Timing harness records close-to-report latency"
+      ],
+      "steps": [
+        "Invoke SessionService.close(sessionId) for 150-student session and record T0",
+        "Poll ReportService.getSessionRoster(sessionId, instructorId) until 150 student rows returned with finalized statuses",
+        "Assert query completes without timeout and all Pending rows appear as Absent in report",
+        "Record T1 on first complete roster",
+        "Assert T1 minus T0 ≤ 600 seconds",
+        "Log latency sample in docs/test-reports/load-test-YYYY-MM-DD.md template for pilot baseline"
+      ],
+      "expected": "NFR-07 holds at MVP pilot scale (100–150 participants): complete session report available within 10 minutes per 07-non-functional-risk §2.2 verification",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-07-008",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-07", "FR-12", "AC-12"],
+      "title": "Instructor /reports/sessions/:sessionId UI shows complete roster within 10 minutes of session close",
+      "preconditions": [
+        "Authenticated Instructor on desktop viewport assigned to session class-subject",
+        "Active session with enrolled students and at least one Present check-in",
+        "Web on port 3000, API + PostgreSQL healthy",
+        "Session close performed via instructor UI or API with closedAt recorded"
+      ],
+      "steps": [
+        "Record T0 when instructor closes session (POST close or UI Đóng buổi học action completes)",
+        "Navigate to /reports/sessions/:sessionId (or drill-down from /reports filter)",
+        "Poll page reload or wait for ReportSummaryCards and AttendanceRosterTable to render complete data every 30 s",
+        "Assert ReportSummaryCards show present, absent, excused counts matching finalized attendance",
+        "Assert AttendanceRosterTable lists all enrolled students with status badges (no Pending rows)",
+        "Record T1 when complete roster visible; assert T1 minus T0 ≤ 600 seconds"
+      ],
+      "expected": "Browser journey: instructor views complete session report UI within NFR-07 10-minute window per 07-non-functional-risk timed report access verification",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-07-009",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-07", "FR-12", "FR-13", "AC-12", "AC-13"],
+      "title": "TrainingOfficeAdmin CSV export and summary report UI available within 10 minutes of session close",
+      "preconditions": [
+        "Authenticated TrainingOfficeAdmin on desktop viewport",
+        "Closed session with attendance data for HESD-01 / SWE-101",
+        "closedAt timestamp recorded at session close",
+        "Admin sidebar Báo cáo navigation available per page-list §5.5"
+      ],
+      "steps": [
+        "Record T0 at session close completion",
+        "Navigate to /admin/reports and apply date filter covering closed session",
+        "Wait until ReportSummaryCards and SessionReportTable render closed session with correct counts (poll up to 10 min)",
+        "Click CSV export control and assert download succeeds with attendance-export filename",
+        "Assert CSV contains institutional_id, display_name, attendance_status columns per API design §8.3",
+        "Record T1 when both summary UI and CSV export succeed; assert T1 minus T0 ≤ 600 seconds per MVP exit §9 Report readiness"
+      ],
+      "expected": "MVP exit indicator satisfied: attendance report and admin CSV both available within 10 minutes of close per 08-acceptance-mvp-future §9 and NFR-07",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-07-010",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P1",
+      "traceability": ["NFR-07", "FR-13", "AC-13"],
+      "title": "POST /api/v1/reports/export returns HTTP 200 CSV within 10 minutes of session close",
+      "preconditions": [
+        "TrainingOfficeAdmin authenticated with report:export permission",
+        "Session just closed with attendance records for target class-subject and date",
+        "Export filter params match closed session scope"
+      ],
+      "steps": [
+        "Record T0 at POST /api/v1/sessions/:sessionId/close completion",
+        "Poll POST /api/v1/reports/export with matching filter body every 60 s until HTTP 200 or 10-minute timeout",
+        "On HTTP 200, assert Content-Type text/csv; charset=utf-8 and Content-Disposition attachment filename",
+        "Assert CSV rows include closed session students with attendance_status and checked_in_at where Present",
+        "Record T1 on first successful export",
+        "Assert T1 minus T0 ≤ 600 seconds"
+      ],
+      "expected": "Admin CSV export HTTP contract available within NFR-07 window alongside summary report per MVP exit timed export evidence",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-07-011",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["NFR-07", "FR-12"],
+      "title": "Load test gate fails when per-session report not ready within 10 minutes of close (NFR-07 boundary)",
+      "preconditions": [
+        "Load test harness configured per testing-plan §7 Report after close row",
+        "Pilot-scale session (100–150 students) with realistic attendance mix",
+        "Timing instrumentation records close-to-report latency",
+        "docs/test-reports/load-test-YYYY-MM-DD.md template available"
+      ],
+      "steps": [
+        "Close session and start wall-clock timer at closedAt",
+        "Poll GET /api/v1/reports/session/:sessionId until complete roster or 10-minute timeout",
+        "If complete report not available within 600 seconds, mark test FAIL and record remediation plan",
+        "If complete report available within 600 seconds, mark test PASS for NFR-07 pilot gate",
+        "Document latency percentile (p50, p95) in load test report artifact",
+        "Assert risk monitoring metric Report generation latency ≤ 10 minutes per 07-non-functional-risk §5"
+      ],
+      "expected": "NFR-07 pass/fail boundary enforced at 10 minutes; pilot blocked if report readiness SLA missed per testing-plan §7 and risk monitoring §5",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-07-012",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["NFR-07", "FR-12"],
+      "title": "Immediate post-close poll may return incomplete roster until finalizeOnClose completes; complete data within 10 minutes",
+      "preconditions": [
+        "Real PostgreSQL with Active session and Pending attendance rows",
+        "SessionService.close invoked; finalizeOnClose runs asynchronously or in same transaction",
+        "ReportService.getSessionRoster callable immediately after close returns"
+      ],
+      "steps": [
+        "Invoke SessionService.close(sessionId) and immediately call ReportService.getSessionRoster",
+        "If immediate response contains Pending statuses or partial enrollment, record as pre-finalization state (acceptable transient)",
+        "Continue polling getSessionRoster every 5 s for up to 10 minutes",
+        "Assert eventual response has zero Pending statuses and full enrollment count",
+        "Assert transition from incomplete to complete occurs within 600 seconds",
+        "Fail if still incomplete after 10 minutes"
+      ],
+      "expected": "NFR-07 allows brief post-close materialization window but mandates complete report within 10 minutes; immediate incomplete state is edge, not SLA violation if finalized in time",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-07-013",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P1",
+      "traceability": ["NFR-07", "FR-12", "NFR-11"],
+      "title": "Student receives immediate 403 on report endpoints; NFR-07 latency applies only to authorized instructor report access",
+      "preconditions": [
+        "Session Closed with complete attendance data available to instructor",
+        "Authenticated Student session (no report:read per roles-permissions §2.2)",
+        "Authenticated assigned Instructor session for same sessionId"
+      ],
+      "steps": [
+        "Student GET /api/v1/reports/session/:sessionId and assert immediate HTTP 403 with errorCode Forbidden or ReportAccessDenied (no 10-minute wait)",
+        "Student GET /api/v1/reports/summary and assert immediate HTTP 403 with localized permission-denied message per roles-permissions §2.5",
+        "Instructor GET /api/v1/reports/session/:sessionId and assert HTTP 200 with complete roster within 10 minutes of closedAt",
+        "Verify NFR-07 timing measurement uses authorized actor only",
+        "Assert Student denial does not leak roster data regardless of elapsed time since close"
+      ],
+      "expected": "NFR-07 report availability SLA targets authorized instructor/admin viewers; unauthorized roles denied immediately per BR-08 and roles-permissions §2.5 without exposing report data during latency window",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-07-014",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["NFR-07", "FR-12", "AC-12"],
+      "title": "ReportService.getClassSubjectSummary aggregation available within 10 minutes after session close for date range",
+      "preconditions": [
+        "Real PostgreSQL with Closed session in HESD-01 / SWE-101 within June 2026",
+        "ReportService.getClassSubjectSummary wired with attendance read models",
+        "Instructor assigned to class-subject via ClassAssignment"
+      ],
+      "steps": [
+        "Close session and record closedAt T0",
+        "Poll ReportService.getClassSubjectSummary({ classCode: HESD-01, subjectCode: SWE-101, from, to }, instructorId) every 10 s",
+        "Assert SummaryDto sessionsHeld includes newly closed session",
+        "Assert student presentCount/absentCount reflect finalized attendance from close",
+        "Record T1 on first accurate aggregation",
+        "Assert T1 minus T0 ≤ 600 seconds"
+      ],
+      "expected": "Integration scenario: class-subject summary aggregation materializes within NFR-07 window after session close per FR-12 reporting requirement",
+      "edgeCase": false
+    }
+  ]
+}
