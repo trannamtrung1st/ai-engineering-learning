@@ -1,10 +1,11 @@
 /**
- * Shared domain package — enums, validators, and error identifiers.
+ * Shared domain package — enums, state machines, geo helpers, validation identifiers.
  *
  * Framework-agnostic exports shared by API and web workspaces.
+ * @see docs/technical/03-domain-model.md
  */
 
-export const DOMAIN_PACKAGE_VERSION = "0.0.1";
+export const DOMAIN_PACKAGE_VERSION = "0.1.0";
 
 /** VAL-03 / NFR-14 password policy bounds for local accounts. */
 export const PASSWORD_POLICY = {
@@ -22,3 +23,13 @@ export function isPasswordLengthValid(length: number): boolean {
     length <= PASSWORD_POLICY.MAX_LENGTH
   );
 }
+
+export * from "./enums.js";
+export * from "./constants.js";
+export * from "./validation/rule-ids.js";
+export * from "./geo/haversine.js";
+export * from "./session/state-guard.js";
+export * from "./session/attendance-window.js";
+export * from "./qr/token-expiry.js";
+export * from "./attendance/duplicate-check.js";
+export * from "./attendance/edit-window.js";

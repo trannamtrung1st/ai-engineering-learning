@@ -65,7 +65,7 @@
     },
     {
       "id": "domain-package",
-      "passes": false,
+      "passes": true,
       "priority": 2,
       "phase": 0,
       "agent": "infra",
@@ -89,7 +89,8 @@
         "unit": [
           "packages/domain/src/index.test.ts",
           "packages/domain/src/geo/haversine.test.ts",
-          "packages/domain/src/session/state-guard.test.ts"
+          "packages/domain/src/session/state-guard.test.ts",
+          "apps/api/src/domain/domain-traceability.test.ts"
         ],
         "acceptanceTags": [
           "BR-01",

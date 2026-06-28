@@ -11,3 +11,4 @@ Verification failures and remediation notes for harness agents.
 - [NFR-16] Test case validation failed — see 20260628T185943Z-testgen.txt
 - [NFR-17] Test case validation failed — see 20260628T190253Z-testgen.txt
 - [NFR-20] Test case validation failed — see 20260628T191006Z-testgen.txt
+- [domain-package] Computational checks failed — see 20260628T192740Z-checks.json

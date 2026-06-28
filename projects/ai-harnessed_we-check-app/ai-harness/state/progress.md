@@ -73,3 +73,6 @@ Append-only log of harness slice completions.
 - 2026-06-28T19:13:24Z | NFR-20 | testgen_passed
 - 2026-06-28T19:23:23Z | repo-monorepo-bootstrap | passed
 - 2026-06-28T19:27:40Z | docker-compose-db | passed
+- 2026-06-28T19:32:09Z | domain-package | checks_failed
+- 2026-06-29T00:00:00Z | domain-package | traceability tags added for BR-01/02/03/10 harness gates; unit tests 49 pass; computational checks pass
+- 2026-06-28T19:34:54Z | domain-package | passed
