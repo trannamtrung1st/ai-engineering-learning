@@ -1,0 +1,436 @@
+{
+  "productItemId": "NFR-02",
+  "version": 1,
+  "docFingerprint": "sha256:115bb9b9ee2cffbc7f45928b9de1dcb4f61fc3273e43f0feadf51807c4d787c0",
+  "generatedAt": "2026-06-28T18:37:30Z",
+  "cases": [
+    {
+      "id": "TC-NFR-02-001",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-02", "FR-09", "BR-04", "BR-11"],
+      "title": "CheckInTransaction atomically commits Present attendance and Consumed QrToken in single PostgreSQL transaction",
+      "preconditions": [
+        "Real PostgreSQL test database running via Compose (not in-memory store)",
+        "Active session with enrolled student Pending attendance and Valid qr_tokens row",
+        "CheckInTransaction integration suite per testing-plan §5",
+        "CheckInService wired with AttendanceRecordRepository and QrTokenRepository"
+      ],
+      "steps": [
+        "Record beforeState: attendance status Pending, qr_token status Valid",
+        "Invoke CheckInService.submit with valid tokenId and in-radius locationPayload",
+        "Assert result outcome Success within single transaction boundary",
+        "Query attendance_records and assert status Present with non-null checkedInAt",
+        "Query qr_tokens and assert status Consumed with consumedByStudentId set",
+        "Verify both updates share same transaction commit timestamp (no intermediate visible state)"
+      ],
+      "expected": "NFR-02 core invariant: successful check-in commits exactly one Present record and marks token Consumed atomically per 07-non-functional-risk §2.1 NFR-02",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-02-002",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P0",
+      "traceability": ["NFR-02", "FR-09", "AC-09", "BR-04"],
+      "title": "DuplicateRace: 20 parallel CheckInService.submit calls for same student produce exactly one Present",
+      "preconditions": [
+        "DuplicateRace integration suite per testing-plan §5",
+        "Real PostgreSQL with row-level lock on attendance_records",
+        "Active session, enrolled student with Pending attendance",
+        "20 parallel workers each holding valid tokenId",
+        "TestClock within attendance window and token TTL"
+      ],
+      "steps": [
+        "Launch 20 parallel CheckInService.submit invocations for identical studentId and sessionId",
+        "Await all completions and collect outcomes",
+        "Assert exactly 1 Success and 19 DuplicateCheckIn outcomes",
+        "Query attendance_records and assert single Present row with one checkedInAt timestamp",
+        "Query qr_tokens and assert exactly one token Consumed for the winning submission"
+      ],
+      "expected": "100% concurrent duplicate attempts produce correct final state: no double Present, no lost success per NFR-02 target and AC-09c",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-02-003",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P0",
+      "traceability": ["NFR-02", "FR-09", "NFR-05"],
+      "title": "ConcurrentCheckIn: 150 parallel unique-student submissions each commit one Present without data loss",
+      "preconditions": [
+        "ConcurrentCheckIn integration suite per testing-plan §5",
+        "Active session with 150 enrolled students each with Pending attendance",
+        "150 unique Valid QrTokens (one per student)",
+        "Real PostgreSQL via Compose; API or CheckInService directly invocable",
+        "Each student has in-radius GPS fixture"
+      ],
+      "steps": [
+        "Launch 150 parallel check-in submissions staggered over 0–5 minutes (one per unique studentId)",
+        "Collect all outcomes and HTTP status codes",
+        "Assert 150 Success outcomes (zero lost successes)",
+        "Query attendance_records for sessionId and assert exactly 150 Present rows",
+        "Query qr_tokens and assert exactly 150 Consumed tokens matching successful submissions",
+        "Assert zero duplicate Present rows for any studentId"
+      ],
+      "expected": "NFR-02 load target: 150 concurrent check-ins produce correct final state with 100% success rate and no double Present per verification method in 07-non-functional-risk §2.1",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-02-004",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["NFR-02", "AC-09", "FR-09", "BR-04"],
+      "title": "TS-28: Parallel duplicate check-in requests from same student yield exactly one Present",
+      "preconditions": [
+        "Real PostgreSQL test database with serializable or row-lock isolation",
+        "Active session, enrolled student with Pending attendance, Valid QrToken",
+        "Two parallel submission channels ready (HTTP or CheckInService.submit)"
+      ],
+      "steps": [
+        "Fire two parallel POST /check-in or CheckInService.submit calls for same studentId and sessionId",
+        "Collect both HTTP responses or CheckInResult outcomes",
+        "Assert exactly one response is HTTP 200 outcome Success with attendance Present",
+        "Assert the other response is HTTP 409 outcome DuplicateCheckIn",
+        "Query attendance_records and assert exactly one Present row for studentId and sessionId",
+        "Query check_in_attempts and assert one Success and one DuplicateCheckIn outcome"
+      ],
+      "expected": "Testing-plan §3 TS-28 satisfied: concurrent duplicate requests produce exactly one Present; integrity preserved per NFR-02 and AC-09c",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-02-005",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-02", "FR-09"],
+      "title": "Integration tests use real Compose PostgreSQL adapter; in-memory persistence fails NFR-02 ACID requirement",
+      "preconditions": [
+        "Docker Compose db service running with postgres:15-alpine",
+        "DATABASE_URL=postgresql://wecheck:wecheck@localhost:5432/wecheck",
+        "Harness guardrail per docker-compose §5.2 forbids in-memory Map/SQLite as system of record"
+      ],
+      "steps": [
+        "Run integration test suite with Compose PostgreSQL connection",
+        "Execute CheckInTransaction test and assert Present + Consumed persisted after commit",
+        "Stop test DB connection and restart Compose db; re-run migration and seed",
+        "Verify attendance_records and qr_tokens tables receive durable writes (not process-local memory)",
+        "Confirm harness completion criteria reject in-memory-only repository adapters per §5.2"
+      ],
+      "expected": "Real PostgreSQL required for NFR-02 ACID check-in transactions; in-memory stores cannot satisfy data integrity verification per 13-docker-compose-local-runtime §5.2",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-02-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-02", "FR-09", "AC-07"],
+      "title": "POST /api/v1/check-in returns 200 Success with Present attendance when transaction commits atomically",
+      "preconditions": [
+        "API running against Compose PostgreSQL",
+        "Authenticated enrolled Student with Pending attendance",
+        "Active session with Valid unexpired QrToken",
+        "In-radius coordinates (10.762700, 106.660200)"
+      ],
+      "steps": [
+        "Send POST /api/v1/check-in with body { tokenId, latitude, longitude, spoofMetadata: { mockLocationDetected: false } }",
+        "Assert HTTP status 200 OK",
+        "Assert response body outcome Success with attendance.status Present and non-null checkedInAt",
+        "Query qr_tokens for tokenId and assert status Consumed",
+        "Re-query attendance_records and confirm Present persisted (not transient response-only state)"
+      ],
+      "expected": "HTTP 200 Success contract reflects committed transaction: Present record and Consumed token both durable per NFR-02 atomic commit requirement",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-02-007",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["NFR-02", "FR-09", "BR-04", "BR-11"],
+      "title": "Check-in state transition: Pending attendance + Valid token → Present + Consumed in single atomic step",
+      "preconditions": [
+        "Real PostgreSQL with attendance_records row beforeState Pending",
+        "qr_tokens row beforeState Valid linked to Active session",
+        "CheckInService.submit callable with in-radius coordinates"
+      ],
+      "steps": [
+        "Record beforeState: attendance Pending, qr_token Valid",
+        "Invoke CheckInService.submit for enrolled student",
+        "Assert afterState: attendance Present with checkedInAt set",
+        "Assert afterState: qr_token Consumed with consumedAt timestamp",
+        "Verify no intermediate state where Present exists but token remains Valid",
+        "Verify no intermediate state where token Consumed but attendance remains Pending"
+      ],
+      "expected": "beforeState Pending+Valid; afterState Present+Consumed atomically; no partial commit visible per NFR-02 and validation-rules §5.1 transaction boundary",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-02-008",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["NFR-02", "FR-09"],
+      "title": "Simulated transaction failure rolls back both attendance and token updates; no orphaned partial state",
+      "preconditions": [
+        "Real PostgreSQL with injectable failure hook after attendance update but before token consume (or constraint violation fixture)",
+        "Active session with Pending attendance and Valid QrToken",
+        "CheckInService transaction wrapper per error-handling §1 data integrity"
+      ],
+      "steps": [
+        "Trigger CheckInService.submit with failure injection mid-transaction",
+        "Assert thrown error or failure outcome (not Success)",
+        "Query attendance_records and assert status remains Pending (rolled back)",
+        "Query qr_tokens and assert status remains Valid (not Consumed)",
+        "Verify check_in_attempts may log failure but no Present row exists"
+      ],
+      "expected": "Transaction rollback on partial domain failure per NFR-02 and error-handling data integrity; no lost-success false negatives or partial commits",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-02-009",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P0",
+      "traceability": ["NFR-02", "FR-09", "BR-11"],
+      "title": "Parallel same-token submissions from two students: exactly one Present, one TokenAlreadyUsed",
+      "preconditions": [
+        "Real PostgreSQL with row-level lock on qr_tokens",
+        "Active session with two enrolled students Student A and Student B",
+        "Single Valid QrToken shared by parallel submission fixture",
+        "Both students have in-radius coordinates and authenticated sessions"
+      ],
+      "steps": [
+        "Launch two parallel CheckInService.submit calls: Student A and Student B with identical tokenId",
+        "Collect both outcomes",
+        "Assert exactly one Success with Present for winning student",
+        "Assert exactly one TokenAlreadyUsed for losing student",
+        "Query qr_tokens and assert single Consumed row (not double-consumed)",
+        "Query attendance_records and assert exactly one new Present row"
+      ],
+      "expected": "BR-11 one-time-use token enforced under concurrency: atomic first-wins consumption; no double Present or token corruption per NFR-02",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-02-010",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-02", "FR-09", "BR-04"],
+      "title": "Unique constraint on (session_id, student_id) prevents double Present at database boundary",
+      "preconditions": [
+        "Real PostgreSQL with attendance_records unique index on (session_id, student_id) per domain model §4.2",
+        "Active session with student already Present",
+        "Attempt to insert second Present row bypassing application layer (direct SQL or race without lock)"
+      ],
+      "steps": [
+        "Confirm existing Present row for studentId and sessionId",
+        "Attempt direct INSERT of second attendance_records row with status Present for same pair",
+        "Assert PostgreSQL raises unique violation (23505) and transaction aborts",
+        "Re-query attendance_records and assert still exactly one Present row",
+        "Verify application-layer CheckInService returns DuplicateCheckIn before constraint if lock acquired first"
+      ],
+      "expected": "Database-level integrity backstop for NFR-02: at most one Present per student per session even under application bypass attempts",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-02-011",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["NFR-02", "FR-09", "AC-07"],
+      "title": "Flow A step 4: first successful check-in establishes atomic Present + Consumed integrity baseline",
+      "preconditions": [
+        "Flow A steps 1–3 complete: roster seeded, session opened Active, QR token polled",
+        "Authenticated enrolled Student with Pending attendance",
+        "In-radius coordinates; tokenId from qrPayload in step 3"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with tokenId from Flow A step 3 and in-radius coordinates",
+        "Assert HTTP 200 outcome Success with attendance Present",
+        "Query qr_tokens and assert token status Consumed",
+        "Query attendance_records and assert exactly one Present row for studentId and sessionId",
+        "Instructor GET /api/v1/sessions/:sessionId/attendance shows Present count incremented by 1"
+      ],
+      "expected": "Flow A happy-path check-in satisfies NFR-02 baseline: one Present record and one-time token consumption committed atomically",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-02-012",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P0",
+      "traceability": ["NFR-02", "FR-09", "BR-04", "BR-11"],
+      "title": "Flow B anti-fraud path preserves transaction invariants after duplicate and token-reuse rejections",
+      "preconditions": [
+        "Flow B steps 1–2 complete: Active session, Student A checked in successfully",
+        "Student A Present; token from step 2 Consumed",
+        "Student B enrolled with Pending attendance"
+      ],
+      "steps": [
+        "Student A POST /api/v1/check-in with fresh Valid token and assert HTTP 409 DuplicateCheckIn",
+        "Verify Student A still has exactly one Present row unchanged",
+        "Student B POST /api/v1/check-in with same Consumed tokenId and assert HTTP 400 TokenAlreadyUsed",
+        "Verify Student B attendance remains Pending (no partial Present)",
+        "Verify security log entry for Student B without corrupting Student A Present state"
+      ],
+      "expected": "Flow B rejection paths maintain NFR-02 invariants: failed attempts do not corrupt committed Present/Consumed state or create duplicate records",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-02-013",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-02", "FR-09", "BR-04"],
+      "title": "POST /api/v1/check-in returns 409 DuplicateCheckIn without consuming token or altering Present timestamp",
+      "preconditions": [
+        "Student already Present for session with checkedInAt T0",
+        "Fresh Valid QrToken T1 not yet consumed",
+        "Authenticated Student session"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with tokenId T1 and in-radius coordinates",
+        "Assert HTTP status 409 Conflict with outcome DuplicateCheckIn",
+        "Query qr_tokens for T1 and assert status remains Valid",
+        "Query attendance_records and assert checkedInAt unchanged at T0",
+        "Assert response envelope contains no attendance.status Present update on failure"
+      ],
+      "expected": "DuplicateCheckIn HTTP contract preserves NFR-02 integrity: rejection does not partially consume token or mutate committed Present record",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-02-014",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-02", "FR-09", "NFR-05"],
+      "title": "150 staggered POST /api/v1/check-in requests return 200 Success with zero 5xx data-corruption responses",
+      "preconditions": [
+        "Full E2E stack: PostgreSQL, API on port 3001",
+        "Active session with 150 enrolled students and unique Valid tokens each",
+        "Load generator or parallel test harness with staggered 0–5 minute window"
+      ],
+      "steps": [
+        "Launch 150 concurrent POST /api/v1/check-in requests (one per unique student)",
+        "Collect all HTTP status codes and response outcomes",
+        "Assert 150 responses with HTTP 200 outcome Success",
+        "Assert zero HTTP 500, 502, or 503 responses indicating transaction corruption",
+        "Final DB query: exactly 150 Present rows, 150 Consumed tokens, zero duplicates"
+      ],
+      "expected": "NFR-02 under pilot-scale load: 100% of valid concurrent check-ins produce correct committed final state with no lost successes per 07-non-functional-risk §2.1 verification",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-02-015",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-02", "FR-07", "AC-07"],
+      "title": "Student mobile check-in shows success confirmation only after server commits Present transaction",
+      "preconditions": [
+        "Full-preview or dev stack with web on port 3000 and API + PostgreSQL healthy",
+        "Authenticated Student on mobile viewport (375×812)",
+        "Active session with valid check-in deep link and in-radius GPS mock",
+        "Student attendance beforeState Pending"
+      ],
+      "steps": [
+        "Navigate to /check-in deep link with valid tokenId and sessionId",
+        "Complete GPS capture and tap submit control",
+        "Wait for server response (no optimistic success before network completes)",
+        "Assert Vietnamese success confirmation appears with Present status",
+        "Navigate to /history and assert session shows Present with check-in timestamp",
+        "Refresh page and verify Present status persists (committed to DB, not client cache only)"
+      ],
+      "expected": "UI reflects NFR-02 server-authoritative state: success confirmation and history badge appear only after atomic transaction commit; refresh confirms durable Present record",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-02-016",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-02", "FR-09", "AC-09"],
+      "title": "Duplicate mobile check-in shows DuplicateCheckIn UI without creating second Present in history",
+      "preconditions": [
+        "Authenticated Student on mobile viewport already Present for session",
+        "Active session with valid check-in deep link",
+        "GPS permission granted with in-radius coordinates"
+      ],
+      "steps": [
+        "Navigate to /check-in deep link for session where student is already Present",
+        "Complete GPS capture and tap submit control",
+        "Verify CheckInOutcomePanel displays DuplicateCheckIn with message Bạn đã điểm danh buổi học này rồi",
+        "Navigate to /history and assert exactly one Present entry for the session (no duplicate rows)",
+        "Verify prior check-in timestamp unchanged from first successful submission"
+      ],
+      "expected": "NFR-02 integrity visible in UI: duplicate attempt rejected client-side after server 409; history confirms single committed Present record per student per session",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-02-017",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["NFR-02", "FR-09", "BR-11"],
+      "title": "TokenAlreadyUsed rejection leaves qr_token Consumed state unchanged and loser attendance Pending",
+      "preconditions": [
+        "QrToken already Consumed by Student A",
+        "Student B enrolled with Pending attendance",
+        "Token within 30-second validity window (not ExpiredQr path)"
+      ],
+      "steps": [
+        "Invoke CheckInService.submit for Student B with Consumed tokenId",
+        "Assert outcome TokenAlreadyUsed (not Success)",
+        "Query qr_tokens and assert status remains Consumed (no re-transition or corruption)",
+        "Query attendance_records for Student B and assert status Pending",
+        "Verify security audit entry created without altering Student A Present record"
+      ],
+      "expected": "NFR-02 failure path preserves committed state: TokenAlreadyUsed does not roll back winner transaction or create partial Present for loser",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-02-018",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-02", "FR-09", "BR-11"],
+      "title": "CheckInTransaction consumes QrToken only on Success; TokenAlreadyUsed path rolls back without Present update",
+      "preconditions": [
+        "Real PostgreSQL with qr_tokens row status Consumed",
+        "Enrolled Student B with Pending attendance",
+        "CheckInTransaction suite per testing-plan §5"
+      ],
+      "steps": [
+        "Invoke CheckInService.submit with Consumed tokenId for Student B",
+        "Assert outcome TokenAlreadyUsed and no Present update for Student B",
+        "Assert qr_tokens row remains Consumed (no double-consumption attempt persisted)",
+        "Contrast: successful submit on Valid token atomically sets Consumed and Present in single commit",
+        "Verify check_in_attempts row logged with outcome TokenAlreadyUsed"
+      ],
+      "expected": "CheckInTransaction NFR-02 target: Present + token consumed atomically on Success only; reuse rejection does not corrupt attendance or token state",
+      "edgeCase": false
+    }
+  ]
+}
