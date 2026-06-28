@@ -6,7 +6,16 @@ import {
 } from "@wecheck/domain";
 import type { DbPool } from "../../infra/db.js";
 import { now } from "../../infra/clock.js";
-import type { QrTokenDisplayDto } from "./types.js";
+
+export interface QrTokenDisplayDto {
+  sessionId: string;
+  tokenId: string;
+  qrPayload: string;
+  issuedAt: string;
+  expiresAt: string;
+  secondsRemaining: number;
+  attendanceWindowClosesAt: string;
+}
 
 const ROTATION_INTERVAL_MS = QR_TOKEN_TTL_MS;
 

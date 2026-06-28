@@ -101,7 +101,7 @@ describe("api foundation integration (FR-02, FR-03, NFR-10, NFR-11, NFR-16)", ()
     assert.equal(body.message, "Vui lòng đăng nhập để tiếp tục");
   });
 
-  it("Student can access check-in stub; Instructor denied checkin:submit (TC-FR-02-011, NFR-11)", async () => {
+  it("Student can submit check-in; Instructor denied checkin:submit (TC-FR-02-011, NFR-11)", async () => {
     const student = await seedSession(UserRole.Student);
     const studentRes = await app.inject({
       method: "POST",
@@ -109,7 +109,8 @@ describe("api foundation integration (FR-02, FR-03, NFR-10, NFR-11, NFR-16)", ()
       headers: { cookie: `${SESSION_COOKIE_NAME}=${student.sessionId}` },
       payload: { tokenId: "00000000-0000-4000-8000-000000000099" },
     });
-    assert.equal(studentRes.statusCode, 200);
+    assert.notEqual(studentRes.statusCode, 403, "Student should not be forbidden");
+    assert.notEqual(studentRes.statusCode, 401, "Student should be authenticated");
 
     const instructor = await seedSession(UserRole.Instructor);
     const instructorRes = await app.inject({

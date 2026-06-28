@@ -14,18 +14,6 @@ export async function registerFoundationRoutes(
 ): Promise<void> {
   const auth = createAuthMiddleware(store);
 
-  app.post(
-    "/check-in",
-    { preHandler: [auth, requirePermission(Permission.CheckinSubmit)] },
-    async (request, reply) => {
-      return reply.send({
-        outcome: "Success",
-        message: "Điểm danh thành công",
-        requestId: request.requestId,
-      });
-    },
-  );
-
   app.get(
     "/reports/summary",
     { preHandler: [auth, requirePermission(Permission.ReportRead, { reportAccess: true })] },

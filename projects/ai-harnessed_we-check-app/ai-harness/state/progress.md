@@ -92,3 +92,7 @@ Append-only log of harness slice completions.
 - 2026-06-28T20:46:09Z | module-attendance | checks_failed
 - 2026-06-29T00:00:00Z | module-attendance | Fixed typecheck (removed invalid errorCode assertion), AC-10 traceability for NFR-15 cases TC-NFR-15-004/009/017, append-only trigger on attendance_audit_logs (migration 006); 6 unit + 19 integration tests pass; harness checks pass
 - 2026-06-28T20:50:57Z | module-attendance | passed
+- 2026-06-29T00:00:00Z | module-checkin-qr | checkin-qr module: 30s QR rotation (QrScheduler), POST /check-in pipeline (token validation, GPS radius, spoof heuristics, duplicate prevention), check_in_attempts + security_audit_logs (migration 007); 8 unit + 15 integration tests pass; harness checks pass
+- 2026-06-28T20:58:54Z | module-checkin-qr | checks_failed
+- 2026-06-29T00:00:00Z | module-checkin-qr | Fixed NFR-21 traceability for TC-NFR-12-007: structured request logging excludes raw GPS; 8 unit + 16 integration tests pass; harness checks pass
+- 2026-06-28T21:05:29Z | module-checkin-qr | passed

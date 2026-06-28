@@ -20,7 +20,7 @@ import {
 import { AssignmentRepository } from "../roster-enrollment/assignment-repository.js";
 import { ReferenceRepository } from "../roster-enrollment/reference-repository.js";
 import { AttendanceService } from "../attendance/attendance-service.js";
-import { QrScheduler } from "./qr-scheduler.js";
+import { QrScheduler } from "../checkin-qr/qr-scheduler.js";
 import { SessionRepository } from "./session-repository.js";
 import type {
   AttendanceRecordDto,
