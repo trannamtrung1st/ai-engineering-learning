@@ -91,6 +91,11 @@
       "current": true,
       "docFingerprint": "sha256:ad6d8932a7d965179de36908dc7ca72681057a8551a7f0f58eae388cc409ed40",
       "generatedAt": "2026-06-28T17:53:31Z"
+    },
+    "FR-03": {
+      "current": true,
+      "docFingerprint": "sha256:ad6d8932a7d965179de36908dc7ca72681057a8551a7f0f58eae388cc409ed40",
+      "generatedAt": "2026-06-28T17:55:25Z"
     }
   }
 }
