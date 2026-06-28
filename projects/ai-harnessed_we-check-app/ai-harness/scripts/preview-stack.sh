@@ -120,7 +120,7 @@ else
   wait_db_healthy
   preview_log_stack "building API workspace"
   set +e
-  npm run build --workspace @we-event/api 2>&1 | preview_tee_process_log "stack" "$PREVIEW_STACK_LOG"
+  npm run build --workspace @wecheck/api 2>&1 | preview_tee_process_log "stack" "$PREVIEW_STACK_LOG"
   build_status=${PIPESTATUS[0]}
   set -e
   if [[ "$build_status" -ne 0 ]]; then

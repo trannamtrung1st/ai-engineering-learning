@@ -3,7 +3,7 @@
   "slices": [
     {
       "id": "repo-monorepo-bootstrap",
-      "passes": false,
+      "passes": true,
       "priority": 0,
       "phase": 0,
       "agent": "infra",
@@ -23,7 +23,11 @@
       "description": "Bootstrap npm workspaces monorepo: apps/api, apps/web, packages/domain, shared tooling scripts.",
       "testRequirements": {
         "unit": [
-          "packages/domain/src/index.test.ts"
+          "packages/domain/src/index.test.ts",
+          "apps/api/src/workspace.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/monorepo.integration.test.ts"
         ],
         "acceptanceTags": [
           "NFR-14"

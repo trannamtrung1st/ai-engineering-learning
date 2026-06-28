@@ -1,0 +1,8 @@
+{
+  "extends": "./tsconfig/base.json",
+  "include": ["src", "eslint.config.mjs", "eslint.react.config.mjs"],
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist"
+  }
+}

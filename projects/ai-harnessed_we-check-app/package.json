@@ -12,12 +12,13 @@
     "node": ">=20"
   },
   "scripts": {
-    "typecheck": "npm run typecheck -ws --if-present",
+    "typecheck": "npm run build --workspace @wecheck/domain --if-present && npm run typecheck -ws --if-present",
     "lint": "npm run lint -ws --if-present",
-    "build": "npm run build -ws --if-present",
+    "build": "npm run build --workspace @wecheck/config --if-present && npm run build --workspace @wecheck/domain && npm run build --workspace @wecheck/api --workspace @wecheck/web --if-present",
     "test:unit": "npm run test:unit -ws --if-present",
     "test:integration": "npm run test:integration -ws --if-present",
-    "test:e2e": "npm run test:e2e -w @we-check/e2e --if-present",
+    "test:e2e": "npm run test:e2e -w @wecheck/e2e --if-present",
+    "dev": "npm run dev --workspace @wecheck/api --workspace @wecheck/web --if-present",
     "test": "npm run test:unit && npm run test:integration && npm run test:e2e",
     "aih:once": "./ai-harness/scripts/ralph-once.sh",
     "aih:loop": "./ai-harness/scripts/ralph-loop.sh",

@@ -1521,20 +1521,20 @@ run_build_for_checks() {
   local ws
   local pkg
   local -a workspaces=(
-    "@we-event/api:apps/api"
-    "@we-event/domain:packages/domain"
-    "@we-event/config:packages/config"
-    "@we-event/web:apps/web"
+    "@wecheck/api:apps/api"
+    "@wecheck/domain:packages/domain"
+    "@wecheck/config:packages/config"
+    "@wecheck/web:apps/web"
   )
 
   if preview_stack_is_running; then
-    echo "Preview stack running — skipping @we-event/web build to preserve dev .next cache"
+    echo "Preview stack running — skipping @wecheck/web build to preserve dev server cache"
     for ws in "${workspaces[@]}"; do
       [[ "${ws##*:}" == "apps/web" ]] && continue
       pkg="${ws%%:*}"
       if [[ -f "$REPO_ROOT/${ws##*:}/package.json" ]] && jq -e --arg s "build" '.scripts[$s] // empty' "$REPO_ROOT/${ws##*:}/package.json" >/dev/null 2>&1; then
         npm run build --workspace "$pkg" || return 1
-        if [[ "$pkg" == "@we-event/api" ]]; then
+        if [[ "$pkg" == "@wecheck/api" ]]; then
           nudge_preview_api_restart
         fi
       fi

@@ -29,7 +29,7 @@ run_api() {
 }
 
 run_web() {
-  PORT="${AIH_PREVIEW_WEB_PORT:-3000}" npm run dev --workspace @we-event/web
+  PORT="${AIH_PREVIEW_WEB_PORT:-3000}" npm run dev --workspace @wecheck/web
 }
 
 maybe_refresh_web_cache() {

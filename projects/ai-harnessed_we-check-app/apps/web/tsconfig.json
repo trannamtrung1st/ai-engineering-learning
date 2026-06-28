@@ -1,0 +1,7 @@
+{
+  "extends": "@wecheck/config/tsconfig/react.json",
+  "include": ["src"],
+  "compilerOptions": {
+    "rootDir": "src"
+  }
+}
