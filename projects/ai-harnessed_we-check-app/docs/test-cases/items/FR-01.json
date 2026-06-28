@@ -1,0 +1,369 @@
+{
+  "productItemId": "FR-01",
+  "version": 1,
+  "docFingerprint": "sha256:ad6d8932a7d965179de36908dc7ca72681057a8551a7f0f58eae388cc409ed40",
+  "generatedAt": "2026-06-28T17:50:57Z",
+  "cases": [
+    {
+      "id": "TC-FR-01-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["FR-01", "AC-01"],
+      "title": "TS-01: TrainingOfficeAdmin provisions student account and student authenticates",
+      "preconditions": [
+        "TrainingOfficeAdmin is authenticated with valid session",
+        "No user exists with institutionalId SV2026999"
+      ],
+      "steps": [
+        "POST /api/v1/users with institutionalId SV2026999, displayName, email, password (≥8 chars), role Student",
+        "Verify response status 201 and body includes active=true",
+        "POST /api/v1/auth/login with the new student's email and password",
+        "GET /api/v1/auth/me with the issued session cookie"
+      ],
+      "expected": "User row persisted with active=true and role Student; login returns 200 with user profile and session; /auth/me returns the same student identity",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-01-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-01"],
+      "title": "UserService.provision persists user with hashed password and active=true in Postgres",
+      "preconditions": [
+        "Real PostgreSQL test database is running",
+        "identity-auth module UserService is wired to UserRepository"
+      ],
+      "steps": [
+        "Invoke UserService.provision with valid student DTO (unique institutionalId, email, displayName, role Student)",
+        "Query users table by institutionalId within the same transaction",
+        "Verify password_hash is stored (bcrypt/argon2, not plaintext) and active column is true"
+      ],
+      "expected": "Exactly one user row committed with active=true, correct user_role enum, and hashed password; transaction rolls back cleanly on validation failure",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-01-003",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-01"],
+      "title": "POST /users returns 201 Created with User DTO envelope",
+      "preconditions": [
+        "TrainingOfficeAdmin session cookie is set",
+        "Request body contains all required fields per API design §3.2"
+      ],
+      "steps": [
+        "Send POST /api/v1/users with Content-Type application/json and valid student payload",
+        "Assert HTTP status 201",
+        "Assert response body contains id, institutionalId, displayName, email, role, active, createdAt",
+        "Assert response body does not contain password or passwordHash"
+      ],
+      "expected": "HTTP 201 Created with User DTO; password fields absent from response",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-01-004",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-01", "AC-01"],
+      "title": "TS-02: Duplicate institutionalId rejected with 422 ValidationFailed",
+      "preconditions": [
+        "TrainingOfficeAdmin is authenticated",
+        "User with institutionalId SV2026001 already exists in database"
+      ],
+      "steps": [
+        "POST /api/v1/users with institutionalId SV2026001 and a different email",
+        "Capture response status and error envelope",
+        "Query users table count for institutionalId SV2026001"
+      ],
+      "expected": "HTTP 422 with errorCode ValidationFailed and field-level detail for institutionalId; exactly one user row remains for that ID",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-01-005",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["FR-01", "AC-01", "BR-06"],
+      "title": "TS-03: Deactivated user login returns 403 AccountDeactivated",
+      "preconditions": [
+        "Student account exists with active=false",
+        "Credentials are otherwise valid"
+      ],
+      "steps": [
+        "POST /api/v1/auth/login with deactivated student's email and correct password",
+        "Assert no session cookie is set",
+        "Attempt POST /api/v1/check-in with any valid-looking payload without session"
+      ],
+      "expected": "Login returns HTTP 403 with errorCode AccountDeactivated; no session issued; check-in not permitted for deactivated account",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-01-006",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["FR-01"],
+      "title": "Deactivating user transitions active true to false and revokes all AuthSession rows",
+      "preconditions": [
+        "Active student user exists with at least one valid auth_sessions row",
+        "TrainingOfficeAdmin context available for UserService.update"
+      ],
+      "steps": [
+        "PATCH /api/v1/users/:userId with active=false via UserService.update",
+        "Query users row for active flag",
+        "Query auth_sessions table for user_id and verify all rows have revoked_at set or are deleted"
+      ],
+      "expected": "User active transitions from true to false; all AuthSession rows for that user are invalidated per API design §3.3; deactivated user cannot obtain new session",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-01-007",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-01"],
+      "title": "Student denied POST /users with 403 Forbidden",
+      "preconditions": [
+        "Authenticated Student session is established",
+        "Student lacks user:write permission per roles matrix §2.2"
+      ],
+      "steps": [
+        "POST /api/v1/users with valid student payload using Student session cookie",
+        "Assert response status and error envelope"
+      ],
+      "expected": "HTTP 403 with errorCode Forbidden and Vietnamese permission-denied message; no user row created",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-01-008",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-01"],
+      "title": "Instructor denied POST /users and PATCH /users/:userId with 403 Forbidden",
+      "preconditions": [
+        "Authenticated Instructor session is established",
+        "Instructor lacks user:write permission per roles matrix §2.2"
+      ],
+      "steps": [
+        "POST /api/v1/users with valid student payload using Instructor session cookie",
+        "PATCH /api/v1/users/:existingUserId with displayName change using Instructor session",
+        "Assert response status and error envelope for both requests"
+      ],
+      "expected": "Both requests return HTTP 403 Forbidden; no user rows created or modified",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-01-009",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-01"],
+      "title": "Admin creates student via UserForm and sees active badge in UserListTable",
+      "preconditions": [
+        "TrainingOfficeAdmin is logged in to admin SPA",
+        "Admin navigates to user management page"
+      ],
+      "steps": [
+        "Click create-user action to open UserForm",
+        "Fill institutionalId, displayName, email, password, and select role Student",
+        "Submit the form",
+        "Verify success toast or redirect and new row appears in UserListTable with active badge"
+      ],
+      "expected": "UserForm submits successfully; table shows new student with active status badge; institutionalId and email columns match submitted values",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-01-010",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["FR-01", "AC-01"],
+      "title": "Duplicate student ID shows inline field error on UserForm",
+      "preconditions": [
+        "TrainingOfficeAdmin is logged in",
+        "User with institutionalId SV2026001 already exists"
+      ],
+      "steps": [
+        "Open UserForm and enter institutionalId SV2026001 with other valid fields",
+        "Submit the form",
+        "Observe institutionalId field error state and form remains open"
+      ],
+      "expected": "Inline field error displayed on institutionalId per AC-01b; form not cleared; no duplicate row in UserListTable",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-01-011",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["FR-01", "BR-06"],
+      "title": "Deactivated user sees localized login error on sign-in page",
+      "preconditions": [
+        "Student account with active=false exists",
+        "User is on the login page (unauthenticated)"
+      ],
+      "steps": [
+        "Enter deactivated student's email and valid password",
+        "Click login button",
+        "Observe error banner or inline message on login form"
+      ],
+      "expected": "Login page displays Vietnamese deactivated-account message; user remains on login page with no redirect to check-in or dashboard",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-01-012",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["FR-01"],
+      "title": "Duplicate email on POST /users returns 422 with field details",
+      "preconditions": [
+        "TrainingOfficeAdmin is authenticated",
+        "User with email existing@example.edu.vn already exists"
+      ],
+      "steps": [
+        "POST /api/v1/users with unique institutionalId but email existing@example.edu.vn",
+        "Assert response status and error envelope",
+        "Verify no second user row with that email"
+      ],
+      "expected": "HTTP 422 ValidationFailed with email field detail; only one user row retains that email address",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-01-013",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P1",
+      "traceability": ["FR-01"],
+      "title": "PATCH /users/:userId updates displayName, email, role, and active flag",
+      "preconditions": [
+        "TrainingOfficeAdmin is authenticated",
+        "Target user exists with role Student and active=true"
+      ],
+      "steps": [
+        "PATCH /api/v1/users/:userId with updated displayName and role Instructor",
+        "Assert HTTP status 200 and response body reflects changes",
+        "GET /api/v1/users/:userId or list filter and verify persisted values"
+      ],
+      "expected": "HTTP 200 with updated User DTO; users table reflects new displayName and role Instructor",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-01-014",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P1",
+      "traceability": ["FR-01"],
+      "title": "Admin provisions Instructor account with unique staff institutionalId",
+      "preconditions": [
+        "TrainingOfficeAdmin is authenticated",
+        "No user exists with institutionalId GV2026100"
+      ],
+      "steps": [
+        "POST /api/v1/users with institutionalId GV2026100, displayName, email, password, role Instructor",
+        "Verify response status 201 and role Instructor with active=true",
+        "POST /api/v1/auth/login with the new instructor credentials",
+        "GET /api/v1/auth/me and verify role Instructor"
+      ],
+      "expected": "Instructor account persisted with active=true; instructor can authenticate and /auth/me returns role Instructor",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-01-015",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "pagination",
+      "priority": "P1",
+      "traceability": ["FR-01"],
+      "title": "GET /users cursor pagination returns items, nextCursor, and respects limit",
+      "preconditions": [
+        "Database seeded with more than 50 users across Student and Instructor roles",
+        "TrainingOfficeAdmin session available"
+      ],
+      "steps": [
+        "GET /api/v1/users?limit=50 and capture items length and nextCursor",
+        "If nextCursor is non-null, GET /api/v1/users?cursor={nextCursor}&limit=50",
+        "Verify no duplicate user ids across pages and total distinct ids equals seed count"
+      ],
+      "expected": "First page returns up to 50 items with nextCursor when more rows exist; second page returns remaining users without overlap; cursor-based pagination invariant holds",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-01-016",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["FR-01"],
+      "title": "Admin deactivates user from UserListTable and active badge updates",
+      "preconditions": [
+        "TrainingOfficeAdmin is logged in",
+        "Active student user visible in UserListTable"
+      ],
+      "steps": [
+        "Locate student row in UserListTable",
+        "Open deactivate action or edit form and set active to false",
+        "Confirm deactivation in dialog if prompted",
+        "Observe row active badge changes to inactive state"
+      ],
+      "expected": "User deactivated successfully; table shows inactive badge; subsequent login attempt for that user shows deactivated error",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-01-017",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P1",
+      "traceability": ["FR-01"],
+      "title": "Student denied GET /users list with 403 Forbidden",
+      "preconditions": [
+        "Authenticated Student session is established",
+        "Student has user:read (self) only, not user:read (all)"
+      ],
+      "steps": [
+        "GET /api/v1/users with Student session cookie",
+        "Assert response status and error envelope"
+      ],
+      "expected": "HTTP 403 Forbidden; no institution-wide user list returned to Student role",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-01-018",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["FR-01"],
+      "title": "POST /users with invalid role enum returns 422 ValidationFailed",
+      "preconditions": [
+        "TrainingOfficeAdmin is authenticated"
+      ],
+      "steps": [
+        "POST /api/v1/users with valid fields but role set to an invalid enum value",
+        "Assert response status and error envelope"
+      ],
+      "expected": "HTTP 422 ValidationFailed with role field detail; no user row created",
+      "edgeCase": true
+    }
+  ]
+}
