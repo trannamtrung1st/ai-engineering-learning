@@ -61,6 +61,11 @@
       "current": true,
       "docFingerprint": "sha256:afbe2aa9ef400c457d2c5f1d33c0e247689c80fed7de7af16ae41f23378a9104",
       "generatedAt": "2026-06-28T17:38:48Z"
+    },
+    "AC-13": {
+      "current": true,
+      "docFingerprint": "sha256:3fa2046089493c308025f4a4d5334944f8eb54fc5cb4dabcbe3fee07b649a95d",
+      "generatedAt": "2026-06-28T17:44:03Z"
     }
   }
 }
