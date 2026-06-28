@@ -1,0 +1,426 @@
+{
+  "productItemId": "BR-12",
+  "version": 1,
+  "docFingerprint": "sha256:4deda16c175af0ca34aadf938abcd5f11203e186585e68a48a77093b8e87aac5",
+  "generatedAt": "2026-06-28T18:32:13Z",
+  "cases": [
+    {
+      "id": "TC-BR-12-001",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["BR-12", "FR-08", "AC-08"],
+      "title": "TS-24: Missing GPS coordinates on check-in submit returns GpsDisabled before radius check",
+      "preconditions": [
+        "Active session with valid room GPS and enrolled authenticated Student",
+        "Valid unexpired QrToken from GET /api/v1/sessions/:sessionId/qr/current",
+        "Request body omits latitude and longitude (client GPS unavailable per BR-12)",
+        "TestClock within attendance window"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with body { tokenId } only (no latitude/longitude) using Student session",
+        "Assert HTTP status 400",
+        "Assert response outcome GpsDisabled and errorCode GpsDisabled",
+        "Assert message Vui lòng bật GPS và cấp quyền định vị để điểm danh per AC-08c",
+        "Query attendance_records and assert status remains Pending",
+        "Verify check-in pipeline short-circuits at step 11 before BR-02 radius evaluation per validation-rules §5.1"
+      ],
+      "expected": "BR-12 rejects check-in when client cannot supply geolocation; outcome GpsDisabled; no Present attendance; radius check not reached",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-12-002",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["BR-12", "FR-08", "AC-08"],
+      "title": "TS-24 variant: null latitude/longitude on check-in submit returns GpsDisabled",
+      "preconditions": [
+        "Active session with valid room GPS and enrolled authenticated Student",
+        "Valid unexpired QrToken",
+        "Request body sends latitude: null and longitude: null (GPS disabled on device)"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with body { tokenId, latitude: null, longitude: null } using Student session",
+        "Assert HTTP status 400 outcome GpsDisabled and errorCode GpsDisabled",
+        "Assert Vietnamese message Vui lòng bật GPS và cấp quyền định vị để điểm danh",
+        "Query check_in_attempts and assert outcome GpsDisabled logged",
+        "Assert QrToken status remains Valid (not Consumed)"
+      ],
+      "expected": "BR-12 treats null coordinates as GPS unavailable; GpsDisabled outcome; token not consumed",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-12-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-12", "FR-08"],
+      "title": "CheckInService.submit rejects missing coordinates with GpsDisabled at module boundary",
+      "preconditions": [
+        "Real PostgreSQL with Active session, enrollment, Valid QrToken, Pending attendance",
+        "CheckInService wired per domain model §5.2 check-in transaction",
+        "CheckInRequest payload with tokenId but no latitude/longitude fields"
+      ],
+      "steps": [
+        "Invoke CheckInService.submit with tokenId only (coordinates absent)",
+        "Assert returned outcome GpsDisabled without throwing unhandled exception",
+        "Query check_in_attempts and assert row inserted with outcome GpsDisabled",
+        "Query attendance_records and assert status remains Pending",
+        "Assert GeoVerificationService.verifyLocation was not invoked (no distance_meters computed)"
+      ],
+      "expected": "BR-12 enforced inside CheckInService at pipeline step 11; module rejects before GeoVerificationService radius evaluation",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-12-004",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-12"],
+      "title": "GpsDisabled attempt persists CheckInAttempt without consuming QrToken or marking Present",
+      "preconditions": [
+        "Real PostgreSQL with Active session, enrolled student, Valid QrToken status Valid",
+        "Pending attendance_records row for student and session",
+        "CheckInService.submit callable with missing GPS payload"
+      ],
+      "steps": [
+        "Record beforeState: QrToken status Valid, attendance Pending",
+        "Invoke CheckInService.submit without coordinates",
+        "Query check_in_attempts and assert outcome GpsDisabled with attempted_at set",
+        "Query qr_tokens and assert afterState status remains Valid (not Consumed)",
+        "Query attendance_records and assert afterState remains Pending"
+      ],
+      "expected": "BR-12 failure logs attempt for audit but does not consume token or create Present attendance per rule interaction matrix step 6",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-12-005",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["BR-12"],
+      "title": "GpsDisabled rejection leaves Attendance Pending allowing retry after GPS enabled",
+      "preconditions": [
+        "Pending attendance_records row in PostgreSQL for enrolled student and Active session",
+        "Valid QrToken; CheckInService.submit callable",
+        "In-radius coordinates (10.762700, 106.660200) available for retry fixture"
+      ],
+      "steps": [
+        "Record beforeState Attendance status Pending",
+        "Invoke CheckInService.submit with tokenId only (no coordinates)",
+        "Assert CheckInAttempt outcome GpsDisabled inserted",
+        "Query attendance_records and assert afterState remains Pending",
+        "Invoke CheckInService.submit again with same or fresh token and valid in-radius coordinates",
+        "Assert afterState Present on successful retry"
+      ],
+      "expected": "beforeState Pending; afterState Pending on GpsDisabled per SM-04; student may retry when GPS becomes available",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-12-006",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-12", "FR-08"],
+      "title": "POST /check-in without coordinates returns 400 GpsDisabled envelope",
+      "preconditions": [
+        "Authenticated enrolled Student session cookie set",
+        "Active session with Valid QrToken",
+        "Request body missing latitude and longitude (simulates client GPS disabled)"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with body { tokenId } only using Student session",
+        "Assert HTTP status 400",
+        "Assert Content-Type application/json; charset=utf-8",
+        "Assert response outcome GpsDisabled and errorCode GpsDisabled",
+        "Assert message Vui lòng bật GPS và cấp quyền định vị để điểm danh per API design §6.3"
+      ],
+      "expected": "HTTP 400 GpsDisabled canonical failure envelope per validation-rules §4 BR-12 mapping and error-handling §4",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-12-007",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-12"],
+      "title": "POST /check-in with gpsAvailable false flag returns 400 GpsDisabled when client signals denial",
+      "preconditions": [
+        "Authenticated enrolled Student session",
+        "Active session with Valid QrToken",
+        "API accepts optional client GPS availability flag per check-in DTO extension"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with body { tokenId, gpsAvailable: false } (no coordinates)",
+        "Assert HTTP status 400 outcome GpsDisabled",
+        "Assert errorCode GpsDisabled in response envelope",
+        "Contrast: same request with gpsAvailable true and valid coordinates returns 200 Success"
+      ],
+      "expected": "BR-12 server-side guard rejects when client explicitly signals geolocation unavailable before radius check",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-12-008",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-12", "BR-02"],
+      "title": "GpsDisabled short-circuits at pipeline step 11 before BR-02 OutOfRadius at step 13",
+      "preconditions": [
+        "Active session with room GPS (10.762622, 106.660172) and gpsRadiusMeters 100",
+        "Authenticated enrolled Student with Pending attendance and Valid QrToken",
+        "Request omits coordinates (would be out-of-radius if submitted with 10.764122, 106.660172)"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with tokenId only (no coordinates)",
+        "Assert outcome GpsDisabled (not OutOfRadius)",
+        "Query check_in_attempts and assert outcome GpsDisabled with distance_meters NULL",
+        "Verify pipeline order per rule interaction matrix: step 6 BR-12 before step 8 BR-02"
+      ],
+      "expected": "BR-12 evaluated before BR-02 radius check; missing GPS yields GpsDisabled not OutOfRadius even when hypothetical coords would fail radius",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-12-009",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-12", "BR-04"],
+      "title": "GpsDisabled evaluated after DuplicateCheckIn per pipeline step 10 then 11 ordering",
+      "preconditions": [
+        "Student already has attendance status Present for the Active session",
+        "Valid unexpired QrToken available",
+        "Second check-in request omits coordinates (GPS disabled scenario)"
+      ],
+      "steps": [
+        "POST /api/v1/check-in as same student with tokenId only (no coordinates)",
+        "Assert HTTP status 409 outcome DuplicateCheckIn (not GpsDisabled)",
+        "Assert errorCode DuplicateCheckIn per BR-04 pipeline step 10 precedence",
+        "Verify BR-12 step 11 not reached when duplicate detected at step 10"
+      ],
+      "expected": "BR-12 applies only when prior pipeline steps pass; DuplicateCheckIn takes precedence over GpsDisabled for already-Present student",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-12-010",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-12", "FR-10", "BR-02"],
+      "title": "Check-in pipeline evaluates GpsDisabled at step 11 before spoof at step 12 and radius at step 13",
+      "preconditions": [
+        "CheckInService with injectable pipeline steps per validation-rules §5.1",
+        "Active session, enrolled student, Valid QrToken, Pending attendance",
+        "Request missing coordinates; spoof and radius mocks instrumented"
+      ],
+      "steps": [
+        "Invoke CheckInService.submit with tokenId only (no latitude/longitude)",
+        "Assert outcome GpsDisabled",
+        "Assert spoof heuristics step was not reached (no SpoofSuspected outcome)",
+        "Assert GeoVerificationService.verifyLocation was not called",
+        "Verify short-circuit order: BR-12 before FR-10 spoof and BR-02 radius"
+      ],
+      "expected": "BR-12 pipeline position step 11 per validation-rules §5.1; GpsDisabled short-circuits before spoof and radius checks",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-12-011",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-12", "FR-08"],
+      "title": "Instructor denied POST /check-in without GPS payload (lacks checkin:submit before BR-12)",
+      "preconditions": [
+        "Authenticated Instructor session available",
+        "Active session with valid room GPS and QrToken",
+        "Instructor role lacks checkin:submit per roles-permissions §2.2",
+        "Request body with tokenId only (no coordinates)"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with tokenId only using Instructor session",
+        "Assert HTTP status 403 Forbidden and errorCode Forbidden",
+        "Verify no GpsDisabled or Present outcome created for instructor userId",
+        "Assert permission guard at Layer 3 runs before Layer 4 BR-12 domain check"
+      ],
+      "expected": "BR-12 applies to Student mobile check-in only; Instructor cannot invoke check-in endpoint regardless of GPS availability",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-12-012",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-12", "FR-08", "AC-08", "NFR-19"],
+      "title": "GPS permission denied shows GpsDisabled panel with help link without API call within 15 s",
+      "preconditions": [
+        "Authenticated Student on mobile viewport 375×812 (iOS Safari or Android Chrome)",
+        "Active session check-in deep link /check-in?token=:tokenId&session=:sessionId",
+        "Playwright geolocation permission set to denied",
+        "Browser GPS disabled or location permission blocked"
+      ],
+      "steps": [
+        "Navigate to /check-in page on mobile viewport",
+        "Wait up to 15 seconds for geolocation timeout per validation-rules §6 client-side wait",
+        "Verify GpsDisabled outcome panel displays Vui lòng bật GPS và cấp quyền định vị để điểm danh",
+        "Verify Hướng dẫn cấp quyền or PermissionGuideModal link to device settings per AC-08c",
+        "Assert no POST /api/v1/check-in network request sent while GPS unavailable (client-side gate)",
+        "Verify submit control (Xác nhận điểm danh) remains disabled or shows GPS-required state"
+      ],
+      "expected": "BR-12 client path: permission denied shows Vietnamese GpsDisabled message with permission help link; no server call until coordinates available per NFR-19",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-12-013",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-12", "AC-08", "NFR-18"],
+      "title": "GPS acquisition timeout after 15 seconds shows GpsDisabled UX without premature API submit",
+      "preconditions": [
+        "Authenticated Student on mobile viewport 375×812",
+        "Active session check-in deep link with valid token",
+        "Playwright geolocation mock configured to hang (no resolve within 15 s)",
+        "Test harness controls client geolocation timeout constant"
+      ],
+      "steps": [
+        "Navigate to /check-in page and observe GpsCaptureStep loading state",
+        "Wait exactly 15 seconds without geolocation resolving",
+        "Verify GpsDisabled panel appears with message Vui lòng bật GPS và cấp quyền định vị để điểm danh",
+        "Verify permission help link visible per user-flows §WF-03 GpsDisabled row",
+        "Assert network log shows zero POST /check-in requests during timeout window"
+      ],
+      "expected": "BR-12 client timeout after configured 15-second wait triggers GpsDisabled UX without server round-trip",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-12-014",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-12", "FR-08", "AC-08"],
+      "title": "Check-in form gates submit until GPS permission granted and coordinates captured",
+      "preconditions": [
+        "Authenticated Student on mobile viewport",
+        "Active session check-in deep link with valid token",
+        "Initial geolocation permission prompt state (not yet granted)"
+      ],
+      "steps": [
+        "Navigate to /check-in page",
+        "Verify GpsCaptureStep shows acquiring-location indicator",
+        "Verify submit button disabled or shows GPS-required badge before coordinates acquired",
+        "Grant geolocation permission with in-radius mock coordinates (10.762700, 106.660200)",
+        "Verify submit control becomes enabled after coordinates captured",
+        "Tap submit and verify success panel after server validates BR-02 and other rules"
+      ],
+      "expected": "BR-12 UI gating: check-in submit blocked until device geolocation available; happy path proceeds after permission grant",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-12-015",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-12", "AC-08"],
+      "title": "After granting GPS permission student retries check-in successfully from GpsDisabled state",
+      "preconditions": [
+        "Authenticated Student on mobile viewport with initial geolocation permission denied",
+        "Active session check-in deep link with valid token",
+        "GpsDisabled panel already displayed from prior denied state"
+      ],
+      "steps": [
+        "From GpsDisabled panel tap permission help link or retry control",
+        "Update Playwright geolocation permission to granted with in-radius coordinates",
+        "Tap retry or navigate refresh on check-in page",
+        "Verify GpsCaptureStep acquires coordinates and submit becomes enabled",
+        "Submit check-in and verify Present success confirmation",
+        "Verify no stale GpsDisabled message remains on screen"
+      ],
+      "expected": "BR-12 recovery path: student enables GPS and retries; check-in succeeds when coordinates available and other rules pass",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-12-016",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": ["BR-12", "BR-10", "FR-11"],
+      "title": "Instructor manual attendance override is fallback when student GPS unavailable per BR-12 exception",
+      "preconditions": [
+        "Active session with student attendance Pending after GpsDisabled check_in_attempt",
+        "Session Closed within 24 hours of closedAt",
+        "Assigned Instructor session with attendance:write permission",
+        "Student unable to obtain GPS (BR-12 blocks automated check-in)"
+      ],
+      "steps": [
+        "Verify student has CheckInAttempt outcome GpsDisabled and attendance status Pending",
+        "Instructor PATCH /api/v1/attendance/:recordId with status Present and note GPS unavailable — physical verification",
+        "Assert HTTP 200 and attendance status Present",
+        "Query attendance_audit_logs and assert editorId, previousStatus Pending, newStatus Present, and note captured"
+      ],
+      "expected": "BR-12 exception: no automated check-in without GPS; instructor manual override to Present per BR-10 edit window is the documented fallback",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-12-017",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["BR-12"],
+      "title": "Schema validation rejects non-finite latitude before BR-12 GpsDisabled domain outcome",
+      "preconditions": [
+        "Authenticated enrolled Student session",
+        "Active session with Valid QrToken",
+        "Request sends latitude NaN or longitude Infinity (malformed numeric)"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with body { tokenId, latitude: NaN, longitude: 106.660172 }",
+        "Assert HTTP status 400 or 422 with ValidationFailed or InvalidFormat at Layer 1 schema",
+        "Assert outcome is not GpsDisabled (schema failure precedes domain BR-12)",
+        "Contrast: omitting coordinates entirely yields GpsDisabled at Layer 4 step 11"
+      ],
+      "expected": "BR-12 GpsDisabled applies to missing/unavailable GPS; malformed coordinate types fail schema validation at Layer 1 before domain pipeline",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-12-018",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["BR-12", "FR-08"],
+      "title": "Flow A step 4 requires GPS coordinates; missing coords block workshop check-in at BR-12",
+      "preconditions": [
+        "Flow A steps 1–3 complete: roster seeded, session opened Active with room GPS, QR token polled",
+        "Authenticated enrolled Student session established",
+        "tokenId extracted from qrPayload returned in step 3",
+        "Simulated client with GPS permission denied (no coordinates to send)"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with tokenId only (no latitude/longitude) using Student session from Flow A",
+        "Assert HTTP 400 outcome GpsDisabled",
+        "Verify Flow A cannot proceed to step 5 Present count increment without valid GPS",
+        "Retry Flow A step 4 with in-radius coordinates and assert HTTP 200 Success to complete happy path"
+      ],
+      "expected": "Flow A workshop check-in includes BR-12 GPS availability gate; GpsDisabled blocks lifecycle until coordinates supplied",
+      "edgeCase": false
+    }
+  ]
+}
