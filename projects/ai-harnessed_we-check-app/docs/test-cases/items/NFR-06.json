@@ -1,0 +1,434 @@
+{
+  "productItemId": "NFR-06",
+  "version": 1,
+  "docFingerprint": "sha256:6fec45f47962eb75b4b29aad748c75aadb4fa23c919c08d698a6a466804c4f4c",
+  "generatedAt": "2026-06-28T18:41:55Z",
+  "cases": [
+    {
+      "id": "TC-NFR-06-001",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["NFR-06", "AC-06", "FR-06", "BR-03"],
+      "title": "TS-17: QR scheduler issues successive tokens at 30 s ± 1 s intervals on real PostgreSQL",
+      "preconditions": [
+        "Active session with QrService scheduler started after SessionService.open",
+        "Real PostgreSQL test database running via Compose",
+        "TestClock injectable and advanced in controlled 30-second increments",
+        "qr_tokens table accessible for issued_at timestamp inspection"
+      ],
+      "steps": [
+        "Record issued_at of first token at T0 after session open bootstrap",
+        "Advance TestClock 30 s and trigger QrService.rotateTokens scheduler tick; record second token issued_at at T1",
+        "Advance TestClock 30 s and trigger scheduler tick; record third token issued_at at T2",
+        "Assert T1 minus T0 is between 29 and 31 seconds inclusive",
+        "Assert T2 minus T1 is between 29 and 31 seconds inclusive",
+        "Assert each token has expires_at equal to issued_at plus 30 seconds"
+      ],
+      "expected": "Testing-plan §3 TS-17 satisfied: token issuance cadence meets NFR-06 target of new token every 30 s ± 1 s per 07-non-functional-risk §2.2",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-06-002",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-06", "FR-06", "BR-03"],
+      "title": "QrService.rotateTokens persists new Valid token and expires previous token at 30 s boundary",
+      "preconditions": [
+        "Real PostgreSQL test database is running",
+        "Active session row exists with status Active",
+        "One Valid qr_tokens row exists for sessionId issued at T with expires_at T + 30 s",
+        "QrService.rotateTokens wired to QrTokenRepository with TestClock at T + 30 s"
+      ],
+      "steps": [
+        "Count qr_tokens rows with status Valid for sessionId (expect 1)",
+        "Invoke QrService.rotateTokens(sessionId) at TestClock T + 30 s",
+        "Query qr_tokens for sessionId ordered by issued_at DESC",
+        "Assert newest row has status Valid with expires_at minus issued_at equal to 30 seconds",
+        "Assert previous token row status is Expired",
+        "Assert interval between consecutive issued_at timestamps is between 29 and 31 seconds"
+      ],
+      "expected": "Module boundary enforces NFR-06 rotation cadence: one Valid token at a time; previous Valid → Expired at each 30 s cycle per SM-03 §4.4",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-06-003",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-06", "FR-06", "FR-05"],
+      "title": "SessionService.open bootstrap starts QR scheduler and issues first token within 1 s of openedAt",
+      "preconditions": [
+        "Real PostgreSQL test database running",
+        "Draft session with valid room GPS configured",
+        "SessionService.open orchestrates QrService.startScheduler per SM-01 §6.1",
+        "TestClock fixed at session open instant T"
+      ],
+      "steps": [
+        "Invoke SessionService.open(sessionId) at T",
+        "Query qr_tokens for sessionId ordered by issued_at ASC",
+        "Assert first Valid token exists with issued_at within 1 second of session openedAt",
+        "Assert first token expires_at equals issued_at plus 30 seconds",
+        "Verify QrService scheduler registered for sessionId"
+      ],
+      "expected": "QR issuance begins immediately on session open; first token available within NFR-06 ± 1 s tolerance of Active transition per FR-05 side effect",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-06-004",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-06", "FR-06", "BR-03"],
+      "title": "Five consecutive rotation cycles maintain 30 s ± 1 s cadence without scheduler drift",
+      "preconditions": [
+        "Active session with QrService scheduler running in test environment",
+        "TestClock advances in 30-second increments across five cycles",
+        "qr_tokens table records all issued_at timestamps"
+      ],
+      "steps": [
+        "Record issued_at timestamps T0 through T5 across five rotateTokens invocations",
+        "Compute delta between each consecutive pair (T1-T0, T2-T1, T3-T2, T4-T3, T5-T4)",
+        "Assert every delta is between 29 and 31 seconds inclusive",
+        "Assert cumulative drift from T0 to T5 is at most 5 seconds (5 cycles × ±1 s tolerance)",
+        "Assert exactly one Valid token exists after each rotation"
+      ],
+      "expected": "NFR-06 verification method satisfied: automated test of token issue timestamps shows stable 30 s ± 1 s cadence over extended Active session",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-06-005",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-06", "FR-06", "AC-06"],
+      "title": "GET /api/v1/sessions/:sessionId/qr/current returns secondsRemaining accurate to ± 1 s of expiresAt",
+      "preconditions": [
+        "Instructor session cookie is set",
+        "Active sessionId with QR scheduler running and Valid token just issued at T",
+        "TestClock or server time synchronized with test harness"
+      ],
+      "steps": [
+        "Send GET /api/v1/sessions/:sessionId/qr/current with Instructor session at T + 5 s",
+        "Assert HTTP status 200",
+        "Assert response body contains issuedAt, expiresAt, and secondsRemaining",
+        "Compute expected secondsRemaining as floor((expiresAt - now) in seconds)",
+        "Assert abs(secondsRemaining - expected) ≤ 1",
+        "Assert secondsRemaining is between 24 and 26 at T + 5 s (30 s TTL minus 5 s elapsed ± 1 s)"
+      ],
+      "expected": "HTTP 200 QrTokenDisplay contract delivers countdown accurate ± 1 s per NFR-06 instructor display countdown accuracy target",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-06-006",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-06", "FR-06", "BR-03"],
+      "title": "Consecutive GET /qr/current polls detect token rotation after 30 s with new tokenId",
+      "preconditions": [
+        "Instructor session cookie is set",
+        "Active session with QR scheduler running",
+        "TestClock or wall-clock timing controlled for 30-second wait"
+      ],
+      "steps": [
+        "GET /api/v1/sessions/:sessionId/qr/current at T and capture tokenId1, issuedAt1, secondsRemaining1",
+        "Assert secondsRemaining1 is between 29 and 30 inclusive immediately after issuance",
+        "Wait 30 seconds (or advance TestClock 30 s and trigger scheduler)",
+        "GET /api/v1/sessions/:sessionId/qr/current at T + 30 s and capture tokenId2, issuedAt2, secondsRemaining2",
+        "Assert tokenId2 differs from tokenId1",
+        "Assert issuedAt2 minus issuedAt1 is between 29 and 31 seconds",
+        "Assert secondsRemaining2 is between 29 and 30 inclusive"
+      ],
+      "expected": "API polling confirms NFR-06 rotation: new token every 30 s ± 1 s with fresh countdown per AC-06a and testing-plan TS-17",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-06-007",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["NFR-06", "FR-06", "BR-03"],
+      "title": "QrToken scheduler tick transitions previous Valid to Expired and issues new Valid at 30 s mark",
+      "preconditions": [
+        "Valid qr_tokens row in PostgreSQL with issued_at at T and expires_at at T + 30 s",
+        "QrService.rotateTokens callable at TestClock T + 30 s",
+        "Active session parent row exists"
+      ],
+      "steps": [
+        "Record beforeState: one Valid token with tokenId1",
+        "Invoke QrService.rotateTokens(sessionId) at T + 30 s",
+        "Query qr_tokens for tokenId1 and assert afterState Expired",
+        "Query newest qr_tokens row and assert status Valid with fresh 30 s window",
+        "Assert issued_at of new token is between T + 29 s and T + 31 s"
+      ],
+      "expected": "SM-03 rotation sequence per §4.4: previous Valid → Expired; new Valid issued at NFR-06 cadence boundary",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-06-008",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P1",
+      "traceability": ["NFR-06", "FR-06"],
+      "title": "Concurrent rotateTokens calls at scheduler tick yield single new Valid token without cadence disruption",
+      "preconditions": [
+        "Active session in PostgreSQL with one Valid qr_tokens row issued at T",
+        "QrService.rotateTokens invocable concurrently from parallel test workers",
+        "TestClock fixed at T + 30 s"
+      ],
+      "steps": [
+        "Launch two parallel QrService.rotateTokens(sessionId) calls at T + 30 s",
+        "Await both operations to settle",
+        "Count qr_tokens rows with status Valid for sessionId",
+        "Assert exactly one Valid token exists",
+        "Assert previous Valid token is Expired",
+        "Assert new token issued_at is between T + 29 s and T + 31 s"
+      ],
+      "expected": "NFR-06 cadence preserved under concurrent scheduler triggers; no duplicate Valid tokens or skipped rotation cycle",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-06-009",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["NFR-06", "BR-03", "AC-06"],
+      "title": "NFR-06 gate fails when measured issuance interval falls outside 29–31 second tolerance",
+      "preconditions": [
+        "Active session with QrService scheduler instrumented for timestamp capture",
+        "Test harness capable of detecting cadence violations",
+        "At least two consecutive token issued_at timestamps recorded"
+      ],
+      "steps": [
+        "Record consecutive token issuance timestamps T0 and T1 from qr_tokens table",
+        "Compute interval delta = T1 minus T0 in seconds",
+        "If delta < 29 or delta > 31, mark NFR-06 verification FAIL and record remediation",
+        "If delta between 29 and 31 inclusive, mark NFR-06 verification PASS for that cycle",
+        "Repeat across minimum 3 rotation cycles for pilot gate evidence"
+      ],
+      "expected": "NFR-06 pass/fail boundary enforced at 30 s ± 1 s; intervals outside 29–31 s block pilot sign-off per 07-non-functional-risk §2.2 verification",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-06-010",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["NFR-06", "BR-03", "AC-06"],
+      "title": "Expired token rejected at T + 31 s confirms NFR-06 expiry enforcement per BR-03",
+      "preconditions": [
+        "Active session with enrolled Student authenticated",
+        "QrToken issued at time T with status Valid",
+        "TestClock fixed at T + 31 seconds",
+        "Student coordinates within session gpsRadiusMeters"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with tokenId from token issued at T using Student session",
+        "Assert HTTP status 400 with outcome ExpiredQr and errorCode ExpiredQr",
+        "Assert response message is Mã QR đã hết hạn, vui lòng quét mã mới",
+        "Verify attendance remains Pending",
+        "Confirm token age exceeds 30 s absolute window per NFR-06 expired-token rejection target"
+      ],
+      "expected": "NFR-06 requires expired tokens rejected per BR-03; 31 s scan fails with ExpiredQr confirming 30 s hard window",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-06-011",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["NFR-06", "FR-06", "AC-06"],
+      "title": "Flow A step 3: QR poll returns token with secondsRemaining ≥ 20 within NFR-06 validity window",
+      "preconditions": [
+        "Instructor opened Draft session to Active (Flow A steps 1–2 complete)",
+        "Authenticated Instructor session available",
+        "QR scheduler started on session open"
+      ],
+      "steps": [
+        "Poll GET /api/v1/sessions/:sessionId/qr/current every 5 seconds with Instructor session until HTTP 200",
+        "Capture tokenId, issuedAt, expiresAt, and secondsRemaining from first successful response",
+        "Assert secondsRemaining is between 1 and 30 inclusive",
+        "Assert expiresAt minus issuedAt equals 30 seconds",
+        "Pass tokenId to student check-in within captured secondsRemaining window"
+      ],
+      "expected": "Flow A QR polling delivers token within NFR-06 30 s window with accurate countdown for timely student scan per testing-plan §6 Flow A",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-06-012",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P1",
+      "traceability": ["NFR-06", "FR-06"],
+      "title": "Student denied GET /api/v1/sessions/:sessionId/qr/current — countdown endpoint restricted to Instructor",
+      "preconditions": [
+        "Authenticated Student session is available",
+        "Active sessionId with valid rotating QR token",
+        "Student role lacks qr:display permission per roles-permissions §2.3"
+      ],
+      "steps": [
+        "GET /api/v1/sessions/:sessionId/qr/current using Student session cookie",
+        "Assert HTTP status 403 Forbidden",
+        "Assert response errorCode Forbidden with localized permission-denied message",
+        "Verify no qrPayload, tokenId, or secondsRemaining returned in response body"
+      ],
+      "expected": "QR countdown and rotation data accessible only to Instructor with qr:display; Student cannot observe token refresh cadence via API",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-06-013",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-06", "AC-06", "FR-06"],
+      "title": "Instructor QR display countdown decrements each second and refreshes within ± 1 s of 30 s cycle",
+      "preconditions": [
+        "Instructor is logged in to instructor SPA",
+        "Active session exists for assigned class HESD-01",
+        "Instructor navigates to session detail QR tab with QrCountdown visible"
+      ],
+      "steps": [
+        "Verify QrCountdown shows seconds remaining (Mã mới sau X giây) between 1 and 30 on load",
+        "Observe countdown decrement by 1 each second for at least 5 consecutive seconds",
+        "Record browser timestamp when countdown shows 1 second remaining",
+        "Wait for QR image or token payload to change (rotation event)",
+        "Assert elapsed time from countdown-at-1 to QR refresh is between 0 and 2 seconds",
+        "Assert countdown resets to approximately 30 seconds (29–30 inclusive) after refresh"
+      ],
+      "expected": "Instructor display countdown accuracy meets NFR-06 ± 1 s target; auto-refresh every 30 s per AC-06a and manual projector display check verification method",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-06-014",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-06", "FR-06", "NFR-20"],
+      "title": "Fullscreen QR presentation at 1280×720 rotates every 30 s with visible countdown timer",
+      "preconditions": [
+        "Instructor is logged in with Active session in progress",
+        "Browser viewport set to 1280×720 per device matrix and NFR-20 field test spec",
+        "Instructor navigates to /sessions/:id/qr-present fullscreen mode"
+      ],
+      "steps": [
+        "Verify large QR code renders on --color-qr-bg inverse surface per design tokens §3.4",
+        "Verify countdown timer (--color-qr-countdown) visible and updating each second",
+        "Record timestamp T_start when countdown shows 30",
+        "Wait one full rotation cycle until QR image updates",
+        "Assert elapsed time T_rotate minus T_start is between 29 and 31 seconds",
+        "Verify countdown resets to approximately 30 after rotation without full page reload"
+      ],
+      "expected": "Projector display check per NFR-06 verification: 30 s ± 1 s rotation with visible countdown at 1280×720 per NFR-20 and ui-ux quality bar §2",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-06-015",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-06", "FR-06", "BR-03"],
+      "title": "QR countdown warning accent switches to --color-qr-warning at ≤ 10 s remaining",
+      "preconditions": [
+        "Instructor is logged in with Active session QR tab open",
+        "QrCountdown component visible with countdown above 10 seconds",
+        "Design tokens §3.4 define --color-qr-accent for > 10 s and --color-qr-warning for ≤ 10 s"
+      ],
+      "steps": [
+        "Observe QrCountdown text color uses --color-qr-accent (green) when secondsRemaining > 10",
+        "Wait until countdown reaches 10 seconds or below",
+        "Verify countdown text color switches to --color-qr-warning (yellow)",
+        "Verify countdown continues decrementing each second through warning state",
+        "Verify QR rotates and countdown resets to accent color after 30 s cycle completes"
+      ],
+      "expected": "Countdown visual state aligns with remaining validity window; warning at ≤ 10 s gives instructor and students timely refresh cue per design tokens and NFR-06 timeliness",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-06-016",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["NFR-06", "BR-03", "AC-06"],
+      "title": "Student receives ExpiredQr after instructor display rotates away from scanned QR",
+      "preconditions": [
+        "Instructor Active session with QR display rotating every 30 s",
+        "Authenticated Student on mobile viewport 375px with GPS permission granted",
+        "Student captures deep link with tokenId from current QR display"
+      ],
+      "steps": [
+        "Student opens check-in deep link with tokenId captured from instructor display",
+        "Wait until instructor QR display completes one 30 s rotation cycle (countdown reaches 0 and QR changes)",
+        "Student submits check-in after GPS capture with stale tokenId",
+        "Verify error panel displays Mã QR đã hết hạn, vui lòng quét mã mới",
+        "Verify Quét lại action returns student to scanner for fresh QR within new 30 s window"
+      ],
+      "expected": "End-to-end NFR-06 enforcement: UI rotation invalidates stale codes; expired tokens rejected with Vietnamese message per BR-03 and AC-06b",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-06-017",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": ["NFR-06", "FR-06"],
+      "title": "QrService.stopScheduler on session close halts token issuance immediately",
+      "preconditions": [
+        "Active session with QrService scheduler running and Valid token issued at T",
+        "SessionService.close orchestrates QrService.stopScheduler per SM-01 §6.2",
+        "Real PostgreSQL test database"
+      ],
+      "steps": [
+        "Record qr_tokens count and newest issued_at before close",
+        "Invoke SessionService.close(sessionId) at T + 15 s",
+        "Advance TestClock to T + 45 s (past next scheduled rotation)",
+        "Query qr_tokens for sessionId and assert no new Valid tokens created after close",
+        "Assert session status is Closed and scheduler no longer registered"
+      ],
+      "expected": "Token refresh cadence stops on session close; no spurious issuances after Active ends preserving NFR-06 scope to live check-in window only",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-06-018",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["NFR-06", "BR-03"],
+      "title": "Check-in at T + 29 s succeeds; at T + 31 s returns ExpiredQr confirming 30 s absolute window",
+      "preconditions": [
+        "Active session with two enrolled Students authenticated",
+        "QrToken issued at T for first check-in; fresh token at T2 for second",
+        "Both students have in-radius coordinates and Pending attendance",
+        "TestClock controllable to T + 29 s and T2 + 31 s"
+      ],
+      "steps": [
+        "Set TestClock to T + 29 seconds and POST /api/v1/check-in with token from T using Student A session",
+        "Assert HTTP 200 with outcome Success (within 30 s window)",
+        "Set TestClock to T2 + 31 seconds and POST /api/v1/check-in with token from T2 using Student B session",
+        "Assert HTTP 400 with outcome ExpiredQr",
+        "Verify interval between token issuance and rejection aligns with NFR-06 30 s ± 1 s expiry boundary"
+      ],
+      "expected": "NFR-06 and BR-03 boundary: token valid at 29 s, rejected at 31 s; no exceptions to 30-second absolute validity window",
+      "edgeCase": true
+    }
+  ]
+}

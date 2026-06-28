@@ -467,8 +467,8 @@
           "apps/web/src/components/ui/badge.test.tsx"
         ],
         "acceptanceTags": [
-          "NFR-17",
-          "NFR-06"
+          "NFR-06",
+          "NFR-17"
         ]
       }
     },

@@ -236,6 +236,11 @@
       "current": true,
       "docFingerprint": "sha256:115bb9b9ee2cffbc7f45928b9de1dcb4f61fc3273e43f0feadf51807c4d787c0",
       "generatedAt": "2026-06-28T18:41:34Z"
+    },
+    "NFR-06": {
+      "current": true,
+      "docFingerprint": "sha256:6fec45f47962eb75b4b29aad748c75aadb4fa23c919c08d698a6a466804c4f4c",
+      "generatedAt": "2026-06-28T18:42:41Z"
     }
   }
 }
