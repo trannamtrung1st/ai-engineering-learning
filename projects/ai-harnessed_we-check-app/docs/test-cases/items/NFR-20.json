@@ -1,0 +1,378 @@
+{
+  "productItemId": "NFR-20",
+  "version": 1,
+  "docFingerprint": "sha256:ed424942563a5e9625e83c96c0c61499539e2f54ef867814277995eab1e690cb",
+  "generatedAt": "2026-06-28T19:13:07Z",
+  "cases": [
+    {
+      "id": "TC-NFR-20-001",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["NFR-20", "FR-06", "AC-06"],
+      "title": "Device matrix row: Active session QrService returns projection-ready token DTO for instructor display",
+      "preconditions": [
+        "Real PostgreSQL test database running via Compose",
+        "Active session with QrService scheduler issuing Valid qr_tokens row",
+        "QrService.getCurrentToken wired to QrTokenRepository with TestClock within token validity window",
+        "Testing-plan §9 device matrix: instructor laptop Chrome/Edge QR projector display 1280×720 traceability NFR-20"
+      ],
+      "steps": [
+        "Invoke QrService.getCurrentToken(sessionId) for Active session with assigned Instructor context",
+        "Assert returned DTO contains sessionId, tokenId, qrPayload matching wecheck://check-in?token=:tokenId&session=:sessionId",
+        "Assert issuedAt and expiresAt are ISO 8601 UTC with expiresAt minus issuedAt equal to 30 seconds",
+        "Assert secondsRemaining is between 1 and 30 inclusive for countdown UI sync",
+        "Assert attendanceWindowClosesAt present for instructor metadata strip per API design §6.1"
+      ],
+      "expected": "Testing-plan §9 instructor-laptop projector row satisfied at module boundary: token DTO supplies all fields required for QrCodeImage and QrCountdown projection UI per NFR-20 and FR-06",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-20-002",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-20", "FR-06"],
+      "title": "QrCodeImage encoder uses error correction level H and minimum 4-module quiet zone for projection readability",
+      "preconditions": [
+        "QrCodeImage encoding module or shared QR utility loaded in integration test harness",
+        "Sample qrPayload from Active session token: wecheck://check-in?token=uuid&session=uuid",
+        "Fullscreen size prop 480 px per event-specific-components §3.6"
+      ],
+      "steps": [
+        "Invoke QR encoder with qrPayload, size 480, and errorCorrectionLevel H",
+        "Assert generated matrix uses high error correction (H) per projection readability spec",
+        "Assert quiet zone margin is at least 4 modules on all sides",
+        "Assert output dimensions are 480×480 px for fullscreen presenter mode",
+        "Decode generated image/matrix and assert payload matches input qrPayload"
+      ],
+      "expected": "NFR-20 module boundary: QR encoding parameters meet classroom projection scannability requirements (error correction H, quiet zone, fullscreen pixel size) per ui-ux §3.6",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-20-003",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-20", "FR-06", "AC-06"],
+      "title": "Session open to first projection token available within 1 s for instructor QR tab bootstrap",
+      "preconditions": [
+        "Real PostgreSQL test database running",
+        "Draft session with valid room GPS configured",
+        "SessionService.open orchestrates QrService.startScheduler per state-machines SM-03",
+        "TestClock fixed at session open instant T"
+      ],
+      "steps": [
+        "Invoke SessionService.open(sessionId) at T",
+        "Immediately invoke QrService.getCurrentToken(sessionId) within 1 second of openedAt",
+        "Assert Valid token returned with non-empty qrPayload suitable for QrCodeImage render",
+        "Assert secondsRemaining between 29 and 30 on first poll (fresh token)",
+        "Verify token exists in qr_tokens with status Valid linked to sessionId"
+      ],
+      "expected": "Instructor QR display can bootstrap projection UI immediately on session Active transition; first scannable token available without perceptible delay per NFR-20 field-test readiness",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-20-004",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-20", "FR-06", "AC-06"],
+      "title": "GET /api/v1/sessions/:sessionId/qr/current returns 200 QrTokenDisplay DTO for Active session projection",
+      "preconditions": [
+        "API running on port 3001 against Compose PostgreSQL",
+        "Authenticated Instructor session cookie with qr:display permission",
+        "Active sessionId with Valid QrToken issued within last 30 seconds"
+      ],
+      "steps": [
+        "Send GET /api/v1/sessions/:sessionId/qr/current with Instructor session cookie",
+        "Assert HTTP status 200 OK and Content-Type application/json; charset=utf-8",
+        "Assert response body contains sessionId, tokenId, qrPayload, issuedAt, expiresAt, secondsRemaining, attendanceWindowClosesAt",
+        "Assert qrPayload matches pattern wecheck://check-in?token=:uuid&session=:uuid",
+        "Assert secondsRemaining is integer between 1 and 30 inclusive"
+      ],
+      "expected": "HTTP contract supplies projection-ready QR payload and countdown sync fields per API design §6.1; instructor display polls this endpoint for QrFullscreenPresentation per NFR-20",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-20-005",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-20", "FR-06"],
+      "title": "GET /api/v1/sessions/:sessionId/qr/current returns 403 when session not Active — no projection token for Draft or Closed",
+      "preconditions": [
+        "Authenticated Instructor session with qr:display permission",
+        "Draft sessionId with valid GPS configured but status Draft",
+        "Closed sessionId from prior workshop"
+      ],
+      "steps": [
+        "GET /api/v1/sessions/:draftSessionId/qr/current with Instructor session",
+        "Assert HTTP 403 or 422 with no valid qrPayload in body per AC-06c",
+        "GET /api/v1/sessions/:closedSessionId/qr/current with Instructor session",
+        "Assert no valid token issued; response indicates session-not-active",
+        "Verify QrFullscreenPresentation must not render scannable QR for non-Active sessions"
+      ],
+      "expected": "Projection endpoint withholds scannable token when session not Active; prevents misleading classroom display per ui-states §7.2 and NFR-20 honest-state requirement",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-20-006",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["NFR-20", "FR-06"],
+      "title": "Student denied GET /api/v1/sessions/:sessionId/qr/current — QR projection restricted to Instructor",
+      "preconditions": [
+        "Active session with Valid QrToken",
+        "Authenticated Student session cookie without qr:display permission",
+        "Student enrolled in session for contrast (check-in allowed but display denied)"
+      ],
+      "steps": [
+        "GET /api/v1/sessions/:sessionId/qr/current using Student session cookie",
+        "Assert HTTP status 403 Forbidden and errorCode Forbidden",
+        "Assert localized Vietnamese permission-denied message returned",
+        "Verify response body does not contain qrPayload or tokenId",
+        "Confirm Student cannot access instructor projection route data via API"
+      ],
+      "expected": "RBAC prevents students from fetching projection QR token; instructor-only display per FR-06 actor and roles-permissions qr:display scope",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-20-007",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["NFR-20", "FR-06", "BR-08"],
+      "title": "Instructor denied GET /qr/current for unassigned session — no cross-class projection token",
+      "preconditions": [
+        "Active session for class HESD-02 assigned to Instructor B only",
+        "Authenticated Instructor A session cookie (assigned to HESD-01 only)",
+        "Session has Valid QrToken for Instructor B"
+      ],
+      "steps": [
+        "GET /api/v1/sessions/:sessionId/qr/current using Instructor A session cookie",
+        "Assert HTTP status 403 Forbidden",
+        "Assert no qrPayload or tokenId returned in response body",
+        "Verify audit or access log records denied attempt if applicable"
+      ],
+      "expected": "Out-of-scope instructor cannot retrieve projection QR for unassigned session; protects classroom display integrity per BR-08 and NFR-20 instructor-only access",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-20-008",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["NFR-20", "FR-06", "AC-06", "AC-07"],
+      "title": "Flow A step 3: Instructor polls qr/current and student scans projection-encoded payload successfully",
+      "preconditions": [
+        "Flow A steps 1–2 complete: roster seeded, session opened Active",
+        "Instructor GET /api/v1/sessions/:sessionId/qr/current returns valid qrPayload",
+        "Authenticated enrolled Student with in-radius coordinates",
+        "Browser or device simulating student scan decodes qrPayload to tokenId"
+      ],
+      "steps": [
+        "Instructor polls GET /qr/current and capture qrPayload from response",
+        "Decode qrPayload to extract tokenId for check-in submission",
+        "Student POST /api/v1/check-in with extracted tokenId and in-radius coordinates",
+        "Assert HTTP 200 outcome Success and attendance Present",
+        "Verify token scannability chain: projection payload → student check-in succeeds per 5 m classroom use case"
+      ],
+      "expected": "NFR-20 end-to-end scannability: QR payload displayed for projection is consumable by student mobile check-in per Flow A and field-test verification method",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-20-009",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-20", "FR-06", "AC-06"],
+      "title": "Fullscreen /sessions/:id/qr-present at 1280×720 renders large QR on high-contrast inverse surface",
+      "preconditions": [
+        "Authenticated Instructor with Active session in progress",
+        "Browser viewport set to 1280×720 per testing-plan §9 device matrix and NFR-20 minimum projection spec",
+        "Instructor navigates to /sessions/:id/qr-present via Trình chiếu QR or direct route"
+      ],
+      "steps": [
+        "Verify FullscreenLayout renders with background --color-qr-bg (#000000) per design tokens §3.4",
+        "Verify QrCodeImage renders white modules on black with minimum rendered size ≥ 280×280 px per wireframes §9",
+        "Verify session metadata (class, subject) and Quét mã để điểm danh helper text visible below QR",
+        "Verify minimal chrome: no sidebar or navigation obscuring QR; Thoát control accessible",
+        "Verify QrCountdown numeric display visible and updating each second"
+      ],
+      "expected": "NFR-20 projector display: fullscreen presenter at 1280×720 uses high-contrast inverse QR surface with large scannable code and visible countdown per ui-states §13 and quality bar §2",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-20-010",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-20", "FR-06"],
+      "title": "QrCountdown fullscreen variant uses ≥32 px bold numerals on --color-qr-countdown",
+      "preconditions": [
+        "Authenticated Instructor on /sessions/:id/qr-present at 1280×720 viewport",
+        "Active session with Valid token; countdown between 10 and 30 seconds remaining",
+        "Computed styles inspectable via browser devtools or Playwright evaluate"
+      ],
+      "steps": [
+        "Locate QrCountdown element with variant fullscreen on qr-present route",
+        "Assert computed font-size ≥ 32 px and font-weight bold per accessibility-basics §3 QR fullscreen spec",
+        "Assert color uses --color-qr-countdown (#ffffff) on --color-qr-bg (#000000)",
+        "When secondsRemaining ≤ 10, assert accent switches to --color-qr-warning (#facc15) per design tokens §3.4",
+        "Verify countdown remains legible without zoom at 1280×720"
+      ],
+      "expected": "NFR-20 countdown visibility: timer numerals meet minimum 32 px bold size for classroom projection distance per 13-accessibility-basics and 07-non-functional-risk §2.4",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-20-011",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-20"],
+      "title": "axe-core contrast audit: QrCountdown text meets 4.5:1 minimum on fullscreen presenter",
+      "preconditions": [
+        "Authenticated Instructor on /sessions/:id/qr-present at 1280×720",
+        "Active session with countdown visible",
+        "axe-core or equivalent accessibility engine available in Playwright test harness"
+      ],
+      "steps": [
+        "Run axe-core color-contrast rule scoped to QrCountdown and session metadata text on qr-present page",
+        "Assert no contrast violations for countdown numerals against --color-qr-bg",
+        "Assert contrast ratio ≥ 4.5:1 for timer text per NFR-20 target and quality bar §4 Not acceptable negation",
+        "Repeat audit when countdown switches to --color-qr-warning at ≤ 10 s remaining",
+        "Assert warning-state countdown still meets 4.5:1 against black background"
+      ],
+      "expected": "NFR-20 measurable target satisfied: countdown timer text contrast ratio ≥ 4.5:1 on projector fullscreen per 07-non-functional-risk §2.4 and production-ui-quality-bar §2",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-20-012",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-20", "FR-06", "AC-06"],
+      "title": "Session detail QR tab preview meets projection minimum before fullscreen launch",
+      "preconditions": [
+        "Authenticated Instructor with Active session",
+        "Desktop viewport 1280×800 per wireframes instructor viewport",
+        "Instructor on /sessions/:sessionId QR tab with Active QR state"
+      ],
+      "steps": [
+        "Verify QrDisplayPanel renders QrCodeImage with default preview size ≥ 280 px per event-specific-components §3.6",
+        "Verify Trình chiếu QR button visible and navigates to /sessions/:id/qr-present",
+        "Verify QrCountdown shows Mã mới sau X giây label in Vietnamese",
+        "Verify high-contrast QR presentation mode (dark background option or inverse modules) available per quality bar §3 Acceptable",
+        "Click Trình chiếu QR and verify transition to fullscreen without layout shift losing QR visibility"
+      ],
+      "expected": "Instructor QR tab provides projection-ready preview and one-click fullscreen launch per user-flows §WF-03 and NFR-20 classroom workflow",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-20-013",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-20", "AC-06", "FR-06"],
+      "title": "Field test gate: QR scannable from 5 m at 1280×720 in ≥2 pilot classrooms",
+      "preconditions": [
+        "Active session running on instructor laptop connected to classroom projector at 1280×720 resolution",
+        "≥2 distinct pilot classroom environments with typical seating layout",
+        "Student test device (iOS Safari or Android Chrome) at 5 m distance from projection screen",
+        "Field test checklist template per NFR-20 verification method"
+      ],
+      "steps": [
+        "Classroom 1: Project /sessions/:id/qr-present fullscreen at native 1280×720 on projector",
+        "Student at 5 m scans QR with mobile camera or in-app scanner; record scan success within 30 s token window",
+        "Verify countdown timer readable by instructor at lectern without squinting",
+        "Classroom 2: Repeat projection and 5 m scan test in second room with different lighting",
+        "Record pass/fail for each classroom; both must pass for NFR-20 field verification sign-off"
+      ],
+      "expected": "NFR-20 verification method satisfied: field test in ≥2 pilot classrooms confirms QR scannable from 5 m at 1280×720 with visible countdown per 07-non-functional-risk §2.4",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-20-014",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["NFR-20", "FR-06"],
+      "title": "QR fullscreen state transitions: Entering → Live → Token refresh → Session ended overlay",
+      "preconditions": [
+        "Authenticated Instructor with Active session",
+        "Viewport 1280×720 on /sessions/:id/qr-present",
+        "Ability to close session during test or simulate session end"
+      ],
+      "steps": [
+        "Navigate to qr-present and verify Entering state fades to Live with large QR and countdown per ui-states §13",
+        "Wait one 30 s token refresh cycle and verify cross-fade QR image with countdown reset (Token refresh state)",
+        "Close session from another tab or API while fullscreen open",
+        "Verify Session ended overlay Buổi học đã kết thúc appears with semi-transparent overlay",
+        "Press Esc or Thoát and verify exit returns to session detail without stale QR displayed"
+      ],
+      "expected": "Fullscreen presenter state machine honest across token rotation and session close; projection UI does not show stale scannable QR after session ends per ui-states §13",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-20-015",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["NFR-20"],
+      "title": "Viewport below 1280×720 on qr-present: QR maintains ≥280 px minimum or shows projection resolution warning",
+      "preconditions": [
+        "Authenticated Instructor with Active session on /sessions/:id/qr-present",
+        "Browser resizable to sub-minimum projection dimensions (e.g., 1024×576)"
+      ],
+      "steps": [
+        "Resize viewport to 1024×576 (below NFR-20 1280×720 minimum projection spec)",
+        "Assert QrCodeImage rendered size remains ≥ 280×280 px per wireframes §9 minimum",
+        "If layout provides resolution warning, verify Vietnamese message advises 1280×720 projector setting",
+        "Assert countdown remains visible with computed font-size ≥ 32 px or scales proportionally",
+        "Restore viewport to 1280×720 and verify fullscreen layout returns to nominal projection spec"
+      ],
+      "expected": "NFR-20 boundary: sub-minimum viewport does not shrink QR below scannable wireframe minimum; instructor warned when projection resolution below 1280×720 target",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-20-016",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["NFR-20"],
+      "title": "Low-contrast countdown styling fails quality gate — blocks merge per Not acceptable list",
+      "preconditions": [
+        "Test harness can render QrCountdown with intentionally degraded contrast (e.g., #666 on #000)",
+        "axe-core color-contrast rule enabled",
+        "Simulates regression where design tokens bypassed"
+      ],
+      "steps": [
+        "Render qr-present with countdown text color below 4.5:1 contrast against --color-qr-bg",
+        "Run axe-core color-contrast audit on countdown element",
+        "Assert audit reports violation with contrast ratio below 4.5:1",
+        "Verify test fails CI browser gate per production-ui-quality-bar §4 Not acceptable: QR countdown below 4.5:1",
+        "Restore --color-qr-countdown token and re-run audit to confirm pass"
+      ],
+      "expected": "NFR-20 contrast boundary enforced: countdown below 4.5:1 contrast detected as merge-blocking defect per quality bar §4 and NFR-20 measurable target",
+      "edgeCase": true
+    }
+  ]
+}
