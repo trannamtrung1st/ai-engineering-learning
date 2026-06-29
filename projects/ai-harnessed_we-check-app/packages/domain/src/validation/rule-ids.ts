@@ -74,6 +74,8 @@ export const ErrorCode = {
   ReportAccessDenied: "ReportAccessDenied",
   ExportNotAllowed: "ExportNotAllowed",
   MalformedJson: "MalformedJson",
+  DuplicateClassCode: "DuplicateClassCode",
+  DuplicateSubjectCode: "DuplicateSubjectCode",
 } as const;
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
 

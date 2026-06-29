@@ -264,3 +264,7 @@ Append-only log of harness slice completions.
 - 2026-06-29T20:14:05Z | api-foundation | passed
 - 2026-06-29T20:16:00Z | module-identity-auth | aih:check pass — bcrypt provisioning, login/logout/me, 8h sliding session expiry, deactivation revokes sessions + audit, admin session-inactivity policy; 13 integration + 11 unit tests; traceability for AC-01 AC-02 FR-01 FR-02 BR-06 NFR-14 NFR-16
 - 2026-06-29T20:20:58Z | module-identity-auth | passed
+- 2026-06-29T20:23:13Z | module-roster-enrollment | aih:check pass — classes/subjects reference data, CSV import with row validation + async batches, GET /enrollments with ClassAssignment scope (BR-08); 8 unit + 12 integration tests; traceability AC-03 FR-03 BR-08
+- 2026-06-29T20:27:12Z | module-roster-enrollment | review_failed
+- 2026-06-29T21:00:00Z | module-roster-enrollment | aih:check pass — POST /classes and POST /subjects with uppercase code validation, DuplicateClassCode/DuplicateSubjectCode (422), CSV import + async batches, GET /enrollments ClassAssignment scope (BR-08); 12 unit + 19 integration tests; traceability AC-03 FR-03 BR-08
+- 2026-06-29T20:37:02Z | module-roster-enrollment | passed

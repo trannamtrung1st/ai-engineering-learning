@@ -16,6 +16,7 @@ import {
 } from "../../errors/api-error.js";
 import { validateCsvFile } from "./csv-validator.js";
 import { RosterService } from "./roster-service.js";
+import { parseCreateReferenceBody } from "./validation.js";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -49,6 +50,33 @@ export async function registerRosterEnrollmentRoutes(
     },
   );
 
+  app.post(
+    "/classes",
+    { preHandler: [auth, requirePermission(Permission.RosterWrite)] },
+    async (request, reply) => {
+      if (request.auth?.user.role !== UserRole.TrainingOfficeAdmin) {
+        throw forbidden();
+      }
+
+      const parsed = parseCreateReferenceBody(request.body);
+      if (!parsed.ok) {
+        throw validationFailed(parsed.details);
+      }
+
+      const created = await rosterService.createClass(
+        parsed.value.code,
+        parsed.value.name,
+      );
+
+      return reply.status(201).send({
+        id: created.id,
+        code: created.code,
+        name: created.name,
+        term: created.term,
+      });
+    },
+  );
+
   app.get(
     "/subjects",
     { preHandler: [auth, requirePermission(Permission.RosterRead)] },
@@ -56,6 +84,32 @@ export async function registerRosterEnrollmentRoutes(
       const { user } = request.auth!;
       const items = await rosterService.listSubjects(user.id, user.role);
       return { items, totalCount: items.length };
+    },
+  );
+
+  app.post(
+    "/subjects",
+    { preHandler: [auth, requirePermission(Permission.RosterWrite)] },
+    async (request, reply) => {
+      if (request.auth?.user.role !== UserRole.TrainingOfficeAdmin) {
+        throw forbidden();
+      }
+
+      const parsed = parseCreateReferenceBody(request.body);
+      if (!parsed.ok) {
+        throw validationFailed(parsed.details);
+      }
+
+      const created = await rosterService.createSubject(
+        parsed.value.code,
+        parsed.value.name,
+      );
+
+      return reply.status(201).send({
+        id: created.id,
+        code: created.code,
+        name: created.name,
+      });
     },
   );
 

@@ -185,7 +185,7 @@
     },
     {
       "id": "module-roster-enrollment",
-      "passes": false,
+      "passes": true,
       "priority": 12,
       "phase": 1,
       "agent": "backend",
@@ -205,7 +205,8 @@
       "description": "Roster-enrollment module: class/subject reference data, CSV import with row validation, instructor assignment scope.",
       "testRequirements": {
         "unit": [
-          "apps/api/src/modules/roster-enrollment/csv-validator.test.ts"
+          "apps/api/src/modules/roster-enrollment/csv-validator.test.ts",
+          "apps/api/src/modules/roster-enrollment/validation.test.ts"
         ],
         "integration": [
           "apps/api/src/modules/roster-enrollment/roster-enrollment.integration.test.ts"
