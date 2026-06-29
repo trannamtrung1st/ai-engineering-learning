@@ -318,9 +318,9 @@
       "generatedAt": "2026-06-29T18:14:26Z"
     },
     "FR-18": {
-      "current": false,
+      "current": true,
       "docFingerprint": "sha256:6657f09e6c2c9036a31a09cbf66226b0385b690ddb340e7751f826dda6088416",
-      "generatedAt": null
+      "generatedAt": "2026-06-29T18:16:02Z"
     },
     "BR-13": {
       "current": false,
