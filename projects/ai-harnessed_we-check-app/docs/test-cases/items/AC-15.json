@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-15",
   "version": 1,
-  "docFingerprint": "sha256:740b628592fe5edbcf822518ecefb1b0e961ebeb3e1c3caca300cea6c3db17ce",
-  "generatedAt": "2026-06-29T14:00:00Z",
+  "docFingerprint": "sha256:570e2b7cf71ee69f846fdb406de6f277c232d53e0884fc69a5623d1f12d0f82a",
+  "generatedAt": "2026-06-29T17:33:24Z",
   "cases": [
     {
       "id": "TC-AC-15-001",
@@ -134,13 +134,13 @@
       "title": "Instructor Theo dõi tab StatCards refresh within 5 seconds after student check-in",
       "preconditions": [
         "Authenticated Instructor on desktop viewport at /sessions/:sessionId (Theo dõi tab)",
-        "Active session with SessionMonitorDashboard polling every 5 seconds per UI states §4.2",
-        "Should-capability FR-15 enabled; baseline StatCard Đã điểm danh shows 3 of 10 enrolled",
+        "Active session with SessionMonitorDashboard polling every 5 seconds per 12-ui-states §7.3 and §15",
+        "Should-capability FR-15 enabled; StatCard row shows Đã điểm danh 3, Chưa điểm danh 7, Vắng 0 of 10 enrolled",
         "Student A can complete check-in in parallel browser context or via API trigger"
       ],
       "steps": [
         "Navigate to /sessions/:sessionId and select Theo dõi tab",
-        "Verify StatCard row displays Đã điểm danh count 3 and Chưa điểm danh count 7 matching initial API poll",
+        "Verify StatCard row displays Đã điểm danh 3, Chưa điểm danh 7, and Vắng 0 matching initial API poll per 07-event-specific-components §3.9",
         "Trigger successful check-in for Student A (mobile context or API)",
         "Wait up to 5 seconds without manual page reload for StatCard Đã điểm danh to update to 4",
         "Verify roster grid row for Student A shows Present StatusBadge and check-in timestamp",
