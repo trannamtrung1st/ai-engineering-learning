@@ -113,3 +113,20 @@ aih_agent_end() {
     printf '%s%s%s\n' "$(aih_dim "─── ")" "$(aih_red "failed (exit ${exit_status})")" "$(aih_dim " ───")"
   fi
 }
+
+# Computational check progress (run-checks.sh)
+aih_check_begin() {
+  printf '  %s %s\n' "$(aih_cyan "→")" "$(aih_bold "$*")"
+}
+
+aih_check_ok() {
+  printf '  %s %s\n' "$(aih_green "✓")" "$*"
+}
+
+aih_check_fail() {
+  printf '  %s %s\n' "$(aih_red "✗")" "$*" >&2
+}
+
+aih_check_skip() {
+  printf '  %s %s\n' "$(aih_dim "⊘")" "$(aih_dim "$*")"
+}

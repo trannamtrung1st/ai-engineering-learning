@@ -15,15 +15,39 @@ PASS=true
 
 cd "$REPO_ROOT"
 
+# Run a shell command with begin → output → pass/fail logging.
+run_shell_check() {
+  local label="$1"
+  shift
+  aih_check_begin "$label"
+  local out status
+  set +e
+  out="$("$@" 2>&1)"
+  status=$?
+  set -e
+  if [[ -n "$out" ]]; then
+    echo "$out"
+  fi
+  if [[ "$status" -eq 0 ]]; then
+    aih_check_ok "$label"
+    return 0
+  fi
+  aih_check_fail "$label (exit ${status})"
+  return 1
+}
+
 check_forbidden_patterns() {
   local has_code=false
   for dir in apps packages; do
     [[ -d "$dir" ]] && has_code=true
   done
   if [[ "$has_code" == false ]]; then
+    aih_check_skip "forbidden pattern scan (no apps/ or packages/)"
     return 0
   fi
 
+  aih_check_begin "forbidden pattern scan"
+  local failed=false
   while IFS= read -r entry; do
     [[ -z "$entry" ]] && continue
     local id pattern paths message
@@ -43,42 +67,69 @@ check_forbidden_patterns() {
       match="$(search_files "$pattern" "${search_paths[@]}" | head -3 | tr '\n' ', ')"
       FAILURES+=("{\"type\":\"forbidden_pattern\",\"id\":\"$id\",\"message\":\"$message\",\"files\":\"$match\"}")
       PASS=false
+      failed=true
+      aih_err "forbidden pattern ${id}: ${message} (${match})"
     fi
   done < <(jq -c '.computationalChecks.forbiddenPatterns[]' "$LOOP_CONFIG")
+
+  if [[ "$failed" == true ]]; then
+    aih_check_fail "forbidden pattern scan"
+  else
+    aih_check_ok "forbidden pattern scan"
+  fi
 }
 
 check_artifacts() {
-  [[ -z "$SLICE_ID" ]] && return 0
+  if [[ -z "$SLICE_ID" ]]; then
+    aih_check_skip "slice completion artifacts (no slice id)"
+    return 0
+  fi
   local slice_json
   slice_json="$(get_slice_json "$SLICE_ID")"
   [[ -z "$slice_json" || "$slice_json" == "null" ]] && return 0
 
-  local artifact
+  aih_check_begin "slice completion artifacts (${SLICE_ID})"
+  local failed=false artifact
   while IFS= read -r artifact; do
     [[ -z "$artifact" ]] && continue
     if [[ ! -e "$REPO_ROOT/$artifact" ]]; then
       FAILURES+=("{\"type\":\"missing_artifact\",\"path\":\"$artifact\"}")
       PASS=false
+      failed=true
+      aih_err "missing artifact: ${artifact}"
     fi
   done < <(echo "$slice_json" | jq -r '.completionArtifacts[]?')
+
+  if [[ "$failed" == true ]]; then
+    aih_check_fail "slice completion artifacts (${SLICE_ID})"
+  else
+    aih_check_ok "slice completion artifacts (${SLICE_ID})"
+  fi
 }
 
 check_slice_test_requirements() {
-  [[ -z "$SLICE_ID" ]] && return 0
+  if [[ -z "$SLICE_ID" ]]; then
+    aih_check_skip "slice testRequirements (no slice id)"
+    return 0
+  fi
   local slice_json
   slice_json="$(get_slice_json "$SLICE_ID")"
   [[ -z "$slice_json" || "$slice_json" == "null" ]] && return 0
   if ! echo "$slice_json" | jq -e '.testRequirements' >/dev/null 2>&1; then
+    aih_check_skip "slice testRequirements (none declared)"
     return 0
   fi
 
-  local layer path tag
+  aih_check_begin "slice testRequirements (${SLICE_ID})"
+  local failed=false layer path tag
   for layer in unit integration component; do
     while IFS= read -r path; do
       [[ -z "$path" ]] && continue
       if [[ ! -e "$REPO_ROOT/$path" ]]; then
         FAILURES+=("{\"type\":\"missing_test\",\"layer\":\"$layer\",\"path\":\"$path\"}")
         PASS=false
+        failed=true
+        aih_err "missing ${layer} test file: ${path}"
       fi
     done < <(echo "$slice_json" | jq -r --arg layer "$layer" '.testRequirements[$layer][]?')
   done
@@ -97,17 +148,30 @@ check_slice_test_requirements() {
     if [[ "$found" != true ]]; then
       FAILURES+=("{\"type\":\"missing_test\",\"layer\":\"acceptance\",\"tag\":\"$tag\"}")
       PASS=false
+      failed=true
+      aih_err "acceptance tag not referenced in tests: ${tag}"
     fi
   done < <(echo "$slice_json" | jq -r '.testRequirements.acceptanceTags[]?')
+
+  if [[ "$failed" == true ]]; then
+    aih_check_fail "slice testRequirements (${SLICE_ID})"
+  else
+    aih_check_ok "slice testRequirements (${SLICE_ID})"
+  fi
 }
 
 check_generated_test_case_coverage() {
-  [[ -z "$SLICE_ID" ]] && return 0
+  if [[ -z "$SLICE_ID" ]]; then
+    aih_check_skip "generated test case coverage (no slice id)"
+    return 0
+  fi
   if ! slice_test_cases_current "$SLICE_ID"; then
+    aih_check_skip "generated test case coverage (test cases not current)"
     return 0
   fi
 
-  local ref artifact case_id layer tag found match
+  aih_check_begin "generated test case coverage (${SLICE_ID})"
+  local failed=false ref artifact case_id layer tag found match
   while IFS= read -r ref; do
     [[ -z "$ref" ]] && continue
     artifact="$(test_case_artifact_abs "$ref")"
@@ -131,35 +195,69 @@ check_generated_test_case_coverage() {
         if [[ "$found" != true ]]; then
           FAILURES+=("{\"type\":\"missing_test_case_coverage\",\"productItem\":\"$ref\",\"caseId\":\"$case_id\",\"layer\":\"$layer\",\"tag\":\"$tag\"}")
           PASS=false
+          failed=true
+          aih_err "missing coverage for ${case_id} (${layer}, tag ${tag})"
         fi
       done
     done < <(jq -r '.cases[] | select(.layer == "integration" or .layer == "e2e") | [.id, .layer, (.traceability | join(","))] | @tsv' "$artifact")
   done < <(slice_product_item_refs "$SLICE_ID")
+
+  if [[ "$failed" == true ]]; then
+    aih_check_fail "generated test case coverage (${SLICE_ID})"
+  else
+    aih_check_ok "generated test case coverage (${SLICE_ID})"
+  fi
 }
 
 check_npm_commands() {
-  [[ -f package.json ]] || return 0
-  local script optional active_when
+  if [[ ! -f package.json ]]; then
+    aih_check_skip "npm scripts (no package.json)"
+    return 0
+  fi
+
+  local script optional active_when label
   while IFS= read -r line; do
     script="$(echo "$line" | jq -r '.script')"
     optional="$(echo "$line" | jq -r '.optional // true')"
     active_when="$(echo "$line" | jq -r '.activeWhen // empty')"
     if [[ -n "$active_when" && ! -e "$REPO_ROOT/$active_when" ]]; then
+      aih_check_skip "npm run ${script} (inactive — ${active_when} missing)"
       continue
     fi
     if jq -e --arg s "$script" '.scripts[$s]' package.json >/dev/null 2>&1; then
       if [[ "$script" == "build" ]]; then
-        if ! run_build_for_checks 2>&1; then
+        label="npm run build (preview-aware workspace build)"
+        aih_check_begin "$label"
+        local out status
+        set +e
+        out="$(run_build_for_checks 2>&1)"
+        status=$?
+        set -e
+        if [[ -n "$out" ]]; then
+          echo "$out"
+        fi
+        if [[ "$status" -ne 0 ]]; then
+          aih_check_fail "$label (exit ${status})"
+          FAILURES+=("{\"type\":\"npm_script\",\"script\":\"$script\"}")
+          PASS=false
+        else
+          aih_check_ok "$label"
+        fi
+      else
+        label="npm run ${script}"
+        if ! run_shell_check "$label" npm run "$script"; then
           FAILURES+=("{\"type\":\"npm_script\",\"script\":\"$script\"}")
           PASS=false
         fi
-      elif ! npm run "$script" 2>&1; then
-        FAILURES+=("{\"type\":\"npm_script\",\"script\":\"$script\"}")
-        PASS=false
       fi
     elif [[ "$optional" != "true" ]]; then
+      label="npm run ${script}"
+      aih_check_begin "$label"
+      aih_check_fail "required npm script missing from package.json"
       FAILURES+=("{\"type\":\"npm_script_missing\",\"script\":\"$script\"}")
       PASS=false
+    else
+      aih_check_skip "npm run ${script} (optional script missing)"
     fi
   done < <(jq -c '.computationalChecks.commands[]?' "$LOOP_CONFIG")
 }
@@ -190,20 +288,29 @@ wait_db_compose_healthy() {
 check_db_runtime() {
   local active_when
   active_when="$(jq -r '.computationalChecks.runtimeValidation.db.activeWhen // "docker-compose.yml"' "$LOOP_CONFIG")"
-  [[ -f "$REPO_ROOT/$active_when" ]] || return 0
+  if [[ ! -f "$REPO_ROOT/$active_when" ]]; then
+    aih_check_skip "db runtime validation (${active_when} missing)"
+    return 0
+  fi
+
+  local service health_timeout_ms status label
+  service="$(jq -r '.computationalChecks.runtimeValidation.db.service // "db"' "$LOOP_CONFIG")"
+  label="db runtime validation (docker compose service: ${service})"
+  aih_check_begin "$label"
+  local failed=false
 
   if ! command -v docker >/dev/null 2>&1; then
     FAILURES+=("{\"type\":\"runtime\",\"message\":\"docker not available for db validation\"}")
     PASS=false
+    aih_check_fail "docker not available"
     return
   fi
 
-  local service health_timeout_ms status
-  service="$(jq -r '.computationalChecks.runtimeValidation.db.service // "db"' "$LOOP_CONFIG")"
   health_timeout_ms="$(jq -r '.computationalChecks.runtimeValidation.db.healthTimeoutMs // 60000' "$LOOP_CONFIG")"
   status="$(db_compose_status "$service")"
   if [[ "$status" != "healthy" && "$status" != "running" ]]; then
     if [[ -d apps/api ]]; then
+      aih_info "    starting ${service} (status: ${status:-not running})"
       if jq -e --arg s "aih:dev:db:up" '.scripts[$s]' package.json >/dev/null 2>&1; then
         npm run aih:dev:db:up >/dev/null 2>&1 || docker compose up -d "$service" >/dev/null 2>&1 || true
       else
@@ -213,40 +320,77 @@ check_db_runtime() {
         status="$(db_compose_status "$service")"
         FAILURES+=("{\"type\":\"runtime\",\"message\":\"db service not healthy (status: ${status:-not running})\"}")
         PASS=false
+        failed=true
+        aih_err "db service not healthy (status: ${status:-not running})"
       fi
     fi
+  else
+    aih_info "    ${service} status: ${status}"
   fi
 
   if [[ -f package-lock.json ]] && file_contains 'better-sqlite3|sqlite3' package-lock.json; then
     FAILURES+=("{\"type\":\"runtime\",\"message\":\"SQLite dependency found in lockfile\"}")
     PASS=false
+    failed=true
+    aih_err "SQLite dependency found in package-lock.json"
   fi
+
+  if [[ "$failed" == true ]]; then
+    aih_check_fail "$label"
+  else
+    aih_check_ok "$label"
+  fi
+}
+
+refresh_preview_web_after_build_logged() {
+  [[ -d "$REPO_ROOT/apps/web" ]] || return 0
+  if preview_stack_is_running; then
+    aih_check_skip "refresh preview web cache (preview stack running)"
+    return 0
+  fi
+  aih_check_begin "refresh preview web cache (post-build)"
+  stop_preview_web_process
+  clean_web_next_cache
+  aih_check_ok "refresh preview web cache (post-build)"
 }
 
 check_stack_startup() {
   local api_when web_when
   api_when="$(jq -r '.computationalChecks.runtimeValidation.api.activeWhen // empty' "$LOOP_CONFIG")"
   web_when="$(jq -r '.computationalChecks.runtimeValidation.web.activeWhen // empty' "$LOOP_CONFIG")"
-  [[ -n "$api_when" && -d "$REPO_ROOT/$api_when" ]] || return 0
-  [[ -n "$web_when" && -d "$REPO_ROOT/$web_when" ]] || return 0
+  if [[ -z "$api_when" || ! -d "$REPO_ROOT/$api_when" ]]; then
+    aih_check_skip "stack startup probe (api inactive)"
+    return 0
+  fi
+  if [[ -z "$web_when" || ! -d "$REPO_ROOT/$web_when" ]]; then
+    aih_check_skip "stack startup probe (web inactive)"
+    return 0
+  fi
 
   local verify_script scenario_script
   local verify_args=()
-  local stack_out scenario_out
+  local stack_out scenario_out stack_label scenario_label
   verify_script="$(dirname "$0")/verify-stack.sh"
   scenario_script="$(dirname "$0")/verify-scenarios.sh"
-  [[ -x "$verify_script" ]] || return 0
+  if [[ ! -x "$verify_script" ]]; then
+    aih_check_skip "stack startup probe (verify-stack.sh missing)"
+    return 0
+  fi
 
   if [[ "${AIH_VERIFY_STACK:-}" == "1" ]]; then
     verify_args=()
+    stack_label="./ai-harness/scripts/verify-stack.sh"
   else
     verify_args=(--quick)
+    stack_label="./ai-harness/scripts/verify-stack.sh --quick"
   fi
 
   if ! slice_requires_web_runtime "$SLICE_ID"; then
     verify_args+=(--api-only)
+    stack_label="${stack_label} --api-only"
   fi
 
+  aih_check_begin "$stack_label"
   set +e
   if [[ ${#verify_args[@]} -gt 0 ]]; then
     stack_out="$("$verify_script" "${verify_args[@]}" 2>&1)"
@@ -255,7 +399,9 @@ check_stack_startup() {
   fi
   local stack_status=$?
   set -e
-  echo "$stack_out"
+  if [[ -n "$stack_out" ]]; then
+    echo "$stack_out"
+  fi
 
   if [[ "$stack_status" -ne 0 ]]; then
     local failure_msg="stack startup verification failed"
@@ -264,19 +410,27 @@ check_stack_startup() {
     elif echo "$stack_out" | grep -q "Web unhealthy"; then
       failure_msg="web startup verification failed"
     fi
+    aih_check_fail "$stack_label (exit ${stack_status})"
     FAILURES+=("{\"type\":\"runtime\",\"message\":\"${failure_msg}\"}")
     PASS=false
+  else
+    aih_check_ok "$stack_label"
   fi
 
   if [[ ! -x "$scenario_script" ]]; then
+    aih_check_skip "scenario probe (verify-scenarios.sh missing)"
     return 0
   fi
 
   local scenario_args=()
   if [[ "${AIH_VERIFY_STACK:-}" != "1" ]]; then
     scenario_args=(--quick)
+    scenario_label="./ai-harness/scripts/verify-scenarios.sh --quick"
+  else
+    scenario_label="./ai-harness/scripts/verify-scenarios.sh"
   fi
 
+  aih_check_begin "$scenario_label"
   set +e
   if [[ ${#scenario_args[@]} -gt 0 ]]; then
     scenario_out="$("$scenario_script" "${scenario_args[@]}" 2>&1)"
@@ -285,13 +439,25 @@ check_stack_startup() {
   fi
   local scenario_status=$?
   set -e
-  echo "$scenario_out"
+  if [[ -n "$scenario_out" ]]; then
+    echo "$scenario_out"
+  fi
 
   if [[ "$scenario_status" -ne 0 ]]; then
+    aih_check_fail "$scenario_label (exit ${scenario_status})"
     FAILURES+=("{\"type\":\"runtime\",\"message\":\"participant registration scenario probe failed\"}")
     PASS=false
+  else
+    aih_check_ok "$scenario_label"
   fi
 }
+
+if [[ -n "$SLICE_ID" ]]; then
+  aih_info "Computational checks for slice: ${SLICE_ID}"
+else
+  aih_info "Computational checks (global — no slice id)"
+fi
+aih_blank
 
 check_forbidden_patterns
 check_artifacts
@@ -299,8 +465,15 @@ check_slice_test_requirements
 check_generated_test_case_coverage
 check_db_runtime
 check_npm_commands
-refresh_preview_web_after_build
+refresh_preview_web_after_build_logged
 check_stack_startup
+
+aih_blank
+if [[ "$PASS" == true ]]; then
+  aih_ok "All computational checks passed"
+else
+  aih_err "Computational checks failed (${#FAILURES[@]} failure(s))"
+fi
 
 # Build JSON report
 failures_json="[]"
@@ -316,6 +489,7 @@ report="$(jq -n \
   '{slice: $slice, timestamp: $ts, pass: $pass, failures: $failures}')"
 
 write_run_report "${RID}-checks.json" "$report"
+aih_info "Report: ${RID}-checks.json"
 echo "$report"
 
 if [[ "$PASS" == true ]]; then

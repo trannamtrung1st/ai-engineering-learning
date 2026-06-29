@@ -102,10 +102,9 @@ fi
 # --- Computational checks ---
 aih_step "Running computational checks"
 set +e
-check_out="$(./ai-harness/scripts/run-checks.sh "$SLICE_ID" 2>&1)"
+./ai-harness/scripts/run-checks.sh "$SLICE_ID"
 check_status=$?
 set -e
-echo "$check_out"
 
 if [[ "$check_status" -ne 0 ]]; then
   append_guardrail "$SLICE_ID" "Computational checks failed — see ${RID}-checks.json"
