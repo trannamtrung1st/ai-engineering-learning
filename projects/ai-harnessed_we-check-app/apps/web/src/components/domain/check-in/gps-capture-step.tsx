@@ -3,6 +3,7 @@ import { Spinner } from "@/components/ui/spinner";
 export type GpsCaptureState =
   | "requesting"
   | "acquiring"
+  | "ready"
   | "submitting"
   | "denied";
 
@@ -14,6 +15,7 @@ export interface GpsCaptureStepProps {
 const stateMessages: Record<GpsCaptureState, string> = {
   requesting: "Đang yêu cầu quyền định vị…",
   acquiring: "Đang xác minh vị trí…",
+  ready: "Vị trí đã sẵn sàng",
   submitting: "Đang gửi điểm danh…",
   denied: "Không thể truy cập vị trí",
 };

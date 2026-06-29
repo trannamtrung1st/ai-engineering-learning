@@ -1,4 +1,5 @@
 import type { CheckInOutcomeCode } from "@/lib/copy/checkin-messages";
+import { checkInOutcomeMessages } from "@/lib/copy/checkin-messages";
 import { mapCheckInOutcome } from "@/lib/check-in-api";
 
 export type CheckInFlowAction =
@@ -80,4 +81,18 @@ export function markCameraConsent(): void {
   } catch {
     // ignore storage failures
   }
+}
+
+/** Format duplicate check-in detail with prior timestamp (AC-09, TC-AC-09-012). */
+export function formatDuplicateCheckInDetail(priorCheckedInAt?: string): string {
+  const base = checkInOutcomeMessages.DuplicateCheckIn.message;
+  if (!priorCheckedInAt) return base;
+  const formatted = new Date(priorCheckedInAt).toLocaleString("vi-VN", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return `${base} lúc ${formatted}`;
 }

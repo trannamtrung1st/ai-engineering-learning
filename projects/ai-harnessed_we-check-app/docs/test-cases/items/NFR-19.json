@@ -296,6 +296,7 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
+      "harnessSkip": "physical-device",
       "traceability": ["NFR-19", "NFR-18"],
       "title": "UX walkthrough: iOS physical device with camera and GPS denied completes recovery guidance review",
       "preconditions": [
@@ -320,6 +321,7 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
+      "harnessSkip": "physical-device",
       "traceability": ["NFR-19", "NFR-18"],
       "title": "UX walkthrough: Android physical device with camera and GPS denied completes recovery guidance review",
       "preconditions": [

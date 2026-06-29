@@ -22,6 +22,8 @@ export interface CheckInFailureResponse {
   outcome: string;
   message: string;
   errorCode: ErrorCode;
+  /** Present for DuplicateCheckIn — prior successful check-in time (AC-09). */
+  priorCheckedInAt?: string;
 }
 
 export type CheckInResponse = CheckInSuccessResponse | CheckInFailureResponse;

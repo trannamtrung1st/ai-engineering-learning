@@ -33,7 +33,14 @@ export function QrScannerView({
       return;
     }
 
-    if (readCameraSimMode() === "deny") {
+    const cameraSim = readCameraSimMode();
+    if (cameraSim === "grant") {
+      setCameraReady(true);
+      setCameraDenied(false);
+      return;
+    }
+
+    if (cameraSim === "deny") {
       setCameraDenied(true);
       onCameraDenied?.();
       return;

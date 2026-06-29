@@ -369,9 +369,15 @@ describe("checkin-qr integration (AC-06–AC-10, FR-06–FR-10, BR-02–BR-04, B
     });
 
     assert.equal(response.statusCode, 409);
-    const body = response.json<{ outcome: string; errorCode: string; message: string }>();
+    const body = response.json<{
+      outcome: string;
+      errorCode: string;
+      message: string;
+      priorCheckedInAt?: string;
+    }>();
     assert.equal(body.outcome, ErrorCode.DuplicateCheckIn);
     assert.equal(body.message, "Bạn đã điểm danh buổi học này rồi");
+    assert.ok(body.priorCheckedInAt);
 
     const attempts = await db.query<{ outcome: string }>(
       `SELECT outcome FROM check_in_attempts

@@ -1,4 +1,4 @@
-import { apiFetch } from "@/lib/api-client";
+import { apiFetch, type ApiErrorBody } from "@/lib/api-client";
 import { detectMobilePlatform } from "@/lib/detect-platform";
 import type { CheckInOutcomeCode } from "@/lib/copy/checkin-messages";
 
@@ -28,6 +28,7 @@ export interface CheckInSubmitInput {
 export interface CheckInSubmitResult {
   outcome: CheckInOutcomeCode;
   message?: string;
+  priorCheckedInAt?: string;
   requiresAuth?: boolean;
   sessionExpired?: boolean;
 }
@@ -98,6 +99,7 @@ export async function submitCheckIn(
     outcome: string;
     message?: string;
     errorCode?: string;
+    priorCheckedInAt?: string;
   }>("/check-in", {
     method: "POST",
     body: JSON.stringify(body),
@@ -116,9 +118,11 @@ export async function submitCheckIn(
     };
   }
 
+  const failure = res.data as ApiErrorBody & { priorCheckedInAt?: string };
   return {
-    outcome: mapCheckInOutcome(res.data.outcome ?? "", errorCode),
-    message: res.data.message,
+    outcome: mapCheckInOutcome(failure.outcome ?? "", errorCode),
+    message: failure.message,
+    priorCheckedInAt: failure.priorCheckedInAt,
   };
 }
 

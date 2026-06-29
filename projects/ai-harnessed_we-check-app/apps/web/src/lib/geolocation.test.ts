@@ -123,4 +123,45 @@ describe("captureGeolocation (AC-08c, BR-12, NFR-19)", () => {
       value: originalLocation,
     });
   });
+
+  it("returns in-room coordinates after gpsSim=delay (TC-BR-12-014)", async () => {
+    const originalLocation = window.location;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...originalLocation, search: "?gpsSim=delay&gpsTimeoutMs=500" },
+    });
+
+    const resultPromise = captureGeolocation({ timeoutMs: 500 });
+    await vi.advanceTimersByTimeAsync(500);
+    const result = await resultPromise;
+
+    expect(result).toEqual({
+      ok: true,
+      position: { latitude: 10.762622, longitude: 106.660172, accuracyMeters: 12 },
+    });
+
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: originalLocation,
+    });
+  });
+
+  it("honors gpsDelayMs before preview harness auto-resolve (TC-BR-12-014)", async () => {
+    const originalLocation = window.location;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...originalLocation, search: "?token=valid-token-id&gpsDelayMs=800" },
+    });
+
+    const resultPromise = captureGeolocation();
+    await vi.advanceTimersByTimeAsync(800);
+    const result = await resultPromise;
+
+    expect(result.ok).toBe(true);
+
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: originalLocation,
+    });
+  });
 });

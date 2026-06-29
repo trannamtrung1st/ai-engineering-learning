@@ -35,6 +35,7 @@ interface FailureContext {
   qrTokenId?: string | null;
   distanceMeters?: number | null;
   spoofFlags?: Record<string, unknown> | null;
+  priorCheckedInAt?: string;
 }
 
 export class CheckInService {
@@ -152,7 +153,11 @@ export class CheckInService {
     ) {
       return this.fail(
         ErrorCode.DuplicateCheckIn,
-        { sessionId: session.id, qrTokenId: token.id },
+        {
+          sessionId: session.id,
+          qrTokenId: token.id,
+          priorCheckedInAt: attendance.checkedInAt?.toISOString(),
+        },
         studentId,
         current,
         clientUserAgent,
@@ -310,6 +315,7 @@ export class CheckInService {
           outcome: ErrorCode.DuplicateCheckIn,
           message: checkInFailureMessage(ErrorCode.DuplicateCheckIn),
           errorCode: ErrorCode.DuplicateCheckIn,
+          priorCheckedInAt: attendance.checked_in_at?.toISOString(),
         };
       }
 
@@ -422,6 +428,7 @@ export class CheckInService {
       outcome: errorCode,
       message: checkInFailureMessage(errorCode),
       errorCode,
+      ...(ctx.priorCheckedInAt ? { priorCheckedInAt: ctx.priorCheckedInAt } : {}),
     };
   }
 

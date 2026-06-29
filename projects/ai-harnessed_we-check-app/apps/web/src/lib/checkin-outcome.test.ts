@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   geoFailureToOutcome,
+  formatDuplicateCheckInDetail,
   hasLocationConsent,
   markLocationConsent,
   resolveOutcomeAction,
@@ -53,6 +54,13 @@ describe("checkin-outcome (AC-07, AC-08, AC-09, AC-10, BR-02, BR-03, BR-04, FR-0
     expect(ios.steps.join(" ")).toMatch(/Safari/i);
     expect(android.steps.join(" ")).toMatch(/Chrome/i);
     expect(ios.steps).not.toEqual(android.steps);
+  });
+
+  it("formats duplicate check-in detail with prior timestamp (TC-AC-09-012)", () => {
+    expect(formatDuplicateCheckInDetail()).toBe("Bạn đã điểm danh buổi học này rồi");
+    expect(formatDuplicateCheckInDetail("2026-06-29T10:30:00.000Z")).toMatch(
+      /Bạn đã điểm danh buổi học này rồi lúc/,
+    );
   });
 
   it("persists location consent in localStorage (NFR-12)", () => {

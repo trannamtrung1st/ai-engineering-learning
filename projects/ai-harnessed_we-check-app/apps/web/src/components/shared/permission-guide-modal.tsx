@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { getPermissionGuideContent, type PermissionGuideType } from "@/lib/copy/permission-guide";
 import type { MobilePlatform } from "@/lib/detect-platform";
@@ -24,11 +24,19 @@ export function PermissionGuideModal({
   className,
 }: PermissionGuideModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
-  const closeRef = useRef<HTMLButtonElement>(null);
+  const triggerRef = useRef<HTMLElement | null>(null);
   const content = getPermissionGuideContent(type, platform);
+
+  const handleClose = useCallback(() => {
+    onClose();
+    window.requestAnimationFrame(() => {
+      triggerRef.current?.focus();
+    });
+  }, [onClose]);
 
   useEffect(() => {
     if (!open) return;
+    triggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     panelRef.current?.focus();
   }, [open]);
 
@@ -37,7 +45,7 @@ export function PermissionGuideModal({
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
-        onClose();
+        handleClose();
         return;
       }
 
@@ -62,7 +70,7 @@ export function PermissionGuideModal({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, onClose]);
+  }, [open, handleClose]);
 
   if (!open) return null;
 
@@ -80,6 +88,7 @@ export function PermissionGuideModal({
           className,
         )}
         data-testid={`permission-guide-modal-${type}`}
+        data-axe-scope="permission-guide-modal"
         data-platform={platform}
       >
         <h2 id="permission-guide-title" className="text-heading text-text-primary">
@@ -95,10 +104,9 @@ export function PermissionGuideModal({
         </ol>
         <div className="mt-6 flex flex-col gap-2">
           <Button
-            ref={closeRef}
             type="button"
             className="w-full min-h-touch"
-            onClick={onClose}
+            onClick={handleClose}
           >
             Đóng
           </Button>

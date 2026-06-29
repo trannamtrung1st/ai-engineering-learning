@@ -1,6 +1,7 @@
 import {
   markGpsSimOnceConsumed,
   readGpsCoordinateOverride,
+  readGpsDelayOverride,
   readGpsSimMode,
   readGpsTimeoutOverride,
 } from "@/lib/preview-sim";
@@ -77,6 +78,21 @@ function simulateGpsCapture(
     });
   }
 
+  if (mode === "delay") {
+    return new Promise((resolve) => {
+      window.setTimeout(() => {
+        resolve({
+          ok: true,
+          position: {
+            latitude: PREVIEW_ROOM_GPS.latitude,
+            longitude: PREVIEW_ROOM_GPS.longitude,
+            accuracyMeters: 12,
+          },
+        });
+      }, timeoutMs);
+    });
+  }
+
   return Promise.resolve({ ok: false, reason: "unavailable" });
 }
 
@@ -86,9 +102,20 @@ function readPreviewTokenDeepLink(): string | null {
   return resolvePreviewId(raw);
 }
 
+function resolvePreviewHarnessToken(
+  tokenId?: string | null,
+): string | null {
+  const fromUrl = readPreviewTokenDeepLink();
+  if (fromUrl && isPreviewHarnessTokenId(fromUrl)) return fromUrl;
+  if (tokenId && isPreviewHarnessTokenId(tokenId)) return tokenId;
+  return null;
+}
+
 /** AC-08c / BR-12 — single GPS attempt with 15 s timeout; UI handles retries */
 export async function captureGeolocation(options?: {
   timeoutMs?: number;
+  /** Scanned token from QR flow when URL has no ?token= (TC-FR-07-013). */
+  tokenId?: string | null;
 }): Promise<GeoCaptureResult> {
   const timeoutMs =
     options?.timeoutMs ?? readGpsTimeoutOverride() ?? GPS_CAPTURE_TIMEOUT_MS;
@@ -110,8 +137,14 @@ export async function captureGeolocation(options?: {
     return simulateGpsCapture(simMode, timeoutMs);
   }
 
-  const previewToken = readPreviewTokenDeepLink();
-  if (isPreviewHarnessTokenId(previewToken)) {
+  const previewToken = resolvePreviewHarnessToken(options?.tokenId);
+  if (previewToken) {
+    const delayMs = readGpsDelayOverride();
+    if (delayMs && delayMs > 0) {
+      await new Promise((resolve) => {
+        window.setTimeout(resolve, delayMs);
+      });
+    }
     return {
       ok: true,
       position: {

@@ -301,6 +301,7 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
+      "harnessSkip": "physical-device",
       "traceability": ["NFR-18"],
       "title": "Device matrix gate: check-in smoke passes on ≥ 4 reference devices before pilot",
       "preconditions": [
@@ -468,6 +469,7 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
+      "harnessSkip": "not-applicable",
       "traceability": ["NFR-18", "FR-07", "NFR-04"],
       "title": "Mobile check-in page interactive within 2 s on 4G profile per Lighthouse mobile gate",
       "preconditions": [

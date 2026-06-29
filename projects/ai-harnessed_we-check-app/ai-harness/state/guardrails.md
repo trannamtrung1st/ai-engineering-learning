@@ -44,3 +44,14 @@ Verification failures and remediation notes for harness agents.
 - **Preview seed vs integration truncate:** `truncateAuthTables` must truncate sessions/QR/attendance before `DELETE FROM users` when preview stack runs — preview fixture `class_assignments` and `sessions` rows otherwise race integration resets.
 - **Integration test fixture IDs:** Never use preview `PREVIEW_INSTITUTIONAL_IDS` values (`ADMIN001`, `SV2026001`, etc.) in integration tests — `clearPreviewUserConflicts` during concurrent preview re-seed deletes them and breaks duplicate/RBAC assertions.
 - [web-design-system-shell] Computational checks failed — see 20260629T045336Z-checks.json
+- [web-student-checkin] Browser test failed — see 20260629T054958Z-browser-test.json
+- **QR deep link alias parsing:** `parseCheckInQrPayload` must resolve preview aliases (`valid-token-id`, `sess-1`) — strict UUID-only parsing breaks manual QR paste and TC-FR-07-013 browser gates (GpsDisabled instead of API submit).
+- [web-student-checkin] Browser test failed — see 20260629T060953Z-browser-test.json
+- [web-student-checkin] Computational checks failed — see 20260629T064007Z-checks.json
+- **cameraSim scanner consent:** When `cameraSim=deny|grant` forces scanner entry via `readForceScannerEntry()`, treat camera as consented for `QrScannerView` (`scannerCameraConsented`) — otherwise sim denial never runs and browser gates see the consent banner instead of `camera_denied` + PermissionGuideModal (TC-NFR-19-016).
+- [web-student-checkin] Browser test failed — see 20260629T065246Z-browser-test.json
+- **BR-12 submit gating:** Separate GPS capture from API submit on deep-link auto-flow — always render `Xác nhận điểm danh` on GPS step (disabled + `gps-required-badge` until coords ready); never auto-submit after capture (TC-BR-12-014).
+- [web-student-checkin] Computational checks failed — see 20260629T075110Z-checks.json
+- **Unit test deferred GPS mock:** When testing TC-BR-12-014 submit gating, create the deferred `Promise` before `renderFlow` and `await waitFor(() => expect(captureGeolocation).toHaveBeenCalled())` before resolving — assigning `resolveGeo` inside `mockImplementation` races React `useEffect`.
+- [web-student-checkin] Browser test failed — see 20260629T075909Z-browser-test.json
+- **TC-NFR-18-013 physical device matrix:** Cases with `harnessSkip: physical-device` in test artifacts (TC-NFR-18-013, TC-NFR-19-013/014) must be reported `SKIP — physical-device`, never `FAIL`, in Playwright MCP gates. Pre-pilot emulation evidence: `ai-harness/generated/runs/pilot-device-matrix-nfr-18.json`.

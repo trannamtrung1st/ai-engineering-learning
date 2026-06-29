@@ -2,9 +2,14 @@ import { describe, expect, it, beforeEach, afterEach } from "vitest";
 import {
   markGpsSimOnceConsumed,
   readCameraSimMode,
+  readClearConsentOnEntry,
+  readExpireSessionOnSubmit,
+  readForceScannerEntry,
   readGpsCoordinateOverride,
+  readGpsDelayOverride,
   readGpsSimMode,
   readGpsTimeoutOverride,
+  readMockLocationDetected,
   readPlatformOverride,
   readUnsupportedBrowserOverride,
 } from "@/lib/preview-sim";
@@ -44,6 +49,15 @@ describe("preview-sim (NFR-18, NFR-19, BR-02, BR-12)", () => {
     expect(readGpsSimMode()).toBe("timeout");
     setSearch("?gpsSim=hang");
     expect(readGpsSimMode()).toBe("hang");
+    setSearch("?gpsSim=delay");
+    expect(readGpsSimMode()).toBe("delay");
+  });
+
+  it("reads gpsDelayMs for deep-link submit gating (TC-BR-12-014)", () => {
+    setSearch("?gpsDelayMs=1500");
+    expect(readGpsDelayOverride()).toBe(1500);
+    setSearch("?gpsDelayMs=-1");
+    expect(readGpsDelayOverride()).toBeNull();
   });
 
   it("reads gpsTimeoutMs override for browser gates (TC-BR-12-013)", () => {
@@ -74,8 +88,38 @@ describe("preview-sim (NFR-18, NFR-19, BR-02, BR-12)", () => {
     expect(readUnsupportedBrowserOverride()).toBe(true);
   });
 
-  it("reads cameraSim deny (TC-NFR-19-007)", () => {
+  it("reads cameraSim deny and grant (TC-NFR-19-007, TC-NFR-18-011)", () => {
     setSearch("?cameraSim=deny");
     expect(readCameraSimMode()).toBe("deny");
+    setSearch("?cameraSim=grant");
+    expect(readCameraSimMode()).toBe("grant");
+  });
+
+  it("reads force scanner entry for cameraSim and scannerOnly (TC-FR-07-013, TC-NFR-19-016)", () => {
+    setSearch("?cameraSim=deny&token=valid-token-id");
+    expect(readForceScannerEntry()).toBe(true);
+    setSearch("?scannerOnly=1&token=valid-token-id");
+    expect(readForceScannerEntry()).toBe(true);
+    setSearch("?token=valid-token-id");
+    expect(readForceScannerEntry()).toBe(false);
+  });
+
+  it("reads clearConsent for camera consent gates (TC-NFR-19-020)", () => {
+    setSearch("?clearConsent=1");
+    expect(readClearConsentOnEntry()).toBe(true);
+  });
+
+  it("reads mockLocation for SpoofSuspected browser gates (TC-AC-10-009, FR-10)", () => {
+    setSearch("?mockLocation=1");
+    expect(readMockLocationDetected()).toBe(true);
+    setSearch("?mockLocationDetected=true");
+    expect(readMockLocationDetected()).toBe(true);
+  });
+
+  it("reads expireSessionOnSubmit for AC-02c submit-time expiry (TC-AC-02-013)", () => {
+    setSearch("?expireSessionOnSubmit=1");
+    expect(readExpireSessionOnSubmit()).toBe(true);
+    setSearch("?previewExpireSession=1");
+    expect(readExpireSessionOnSubmit()).toBe(true);
   });
 });

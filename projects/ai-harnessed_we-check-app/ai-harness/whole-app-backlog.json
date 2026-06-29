@@ -524,7 +524,7 @@
     },
     {
       "id": "web-student-checkin",
-      "passes": false,
+      "passes": true,
       "priority": 22,
       "phase": 2,
       "agent": "frontend",
@@ -561,10 +561,12 @@
           "apps/web/src/lib/checkin-outcome.test.ts",
           "apps/web/src/lib/detect-browser-support.test.ts",
           "apps/web/src/lib/geolocation.test.ts",
-          "apps/web/src/lib/preview-sim.test.ts"
+          "apps/web/src/lib/preview-sim.test.ts",
+          "apps/web/src/lib/qr-deeplink.test.ts"
         ],
         "component": [
-          "apps/web/src/components/student/check-in-flow.test.tsx"
+          "apps/web/src/components/student/check-in-flow.test.tsx",
+          "apps/web/src/components/shared/permission-guide-modal.test.tsx"
         ],
         "acceptanceTags": [
           "AC-02",

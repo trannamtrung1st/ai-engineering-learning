@@ -11,7 +11,10 @@ import { PermissionGuideModal } from "@/components/shared/permission-guide-modal
 import { submitCheckInWithRetry } from "@/lib/check-in-api";
 import { fetchAuthUser } from "@/lib/auth-session";
 import {
+  CAMERA_CONSENT_KEY,
+  LOCATION_CONSENT_KEY,
   geoFailureToOutcome,
+  formatDuplicateCheckInDetail,
   hasCameraConsent,
   hasLocationConsent,
   markCameraConsent,
@@ -22,12 +25,23 @@ import type { CheckInOutcomeCode } from "@/lib/copy/checkin-messages";
 import { authMessages } from "@/lib/copy/checkin-messages";
 import { resolveBrowserSupport } from "@/lib/detect-browser-support";
 import { resolveMobilePlatform } from "@/lib/detect-platform";
-import { captureGeolocation, GPS_MAX_ATTEMPTS } from "@/lib/geolocation";
+import {
+  captureGeolocation,
+  GPS_MAX_ATTEMPTS,
+  type GeoPosition,
+} from "@/lib/geolocation";
 import { loginReturnUrl, resolvePreviewId } from "@/lib/preview-fixtures";
 import {
+  readClearAllConsentOnEntry,
+  readClearConsentOnEntry,
+  readCameraSimMode,
+  readExpireSessionOnSubmit,
+  readForceScannerEntry,
+  readMockLocationDetected,
   readPlatformOverride,
   readUnsupportedBrowserOverride,
 } from "@/lib/preview-sim";
+import { previewExpireSession } from "@/lib/session-monitor-api";
 import { parseCheckInQrPayload } from "@/lib/qr-deeplink";
 import type { PermissionGuideType } from "@/lib/copy/permission-guide";
 
@@ -57,8 +71,28 @@ function buildReturnPath(rawTokenId: string | null, sessionId: string | null): s
   return query ? `/check-in?${query}` : "/check-in";
 }
 
+function clearPreviewConsentIfRequested(): void {
+  try {
+    if (readClearConsentOnEntry()) {
+      localStorage.removeItem(CAMERA_CONSENT_KEY);
+    }
+    if (readClearAllConsentOnEntry()) {
+      localStorage.removeItem(LOCATION_CONSENT_KEY);
+      localStorage.removeItem(CAMERA_CONSENT_KEY);
+    }
+  } catch {
+    // ignore storage failures
+  }
+}
+
 /** FR-07/FR-08 orchestrator: consent → scan → GPS → outcome (ui-states §4.1) */
 export function CheckInFlow({ initialTokenId, previewOutcome }: CheckInFlowProps = {}) {
+  const consentCleared = useRef(false);
+  if (!consentCleared.current) {
+    clearPreviewConsentIfRequested();
+    consentCleared.current = true;
+  }
+
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const platformParam = searchParams.get("platform");
@@ -66,8 +100,23 @@ export function CheckInFlow({ initialTokenId, previewOutcome }: CheckInFlowProps
   const browserSimParam = searchParams.get("browserSim");
   const rawTokenParam = searchParams.get("token");
   const rawTokenId = initialTokenId ?? rawTokenParam;
-  const tokenId = resolvePreviewId(rawTokenId);
+  const resolvedTokenId = resolvePreviewId(rawTokenId);
+  const forceScanner = readForceScannerEntry();
+  const cameraSim = readCameraSimMode();
+  const deepLinkTokenId = forceScanner ? null : resolvedTokenId;
   const sessionId = resolvePreviewId(searchParams.get("session"));
+  const scannerCameraConsented = hasCameraConsent() || cameraSim !== null;
+
+  const resolveInitialStep = (): CheckInStep => {
+    if (previewOutcome) return "outcome";
+    if (forceScanner) {
+      if (readClearConsentOnEntry() && !hasCameraConsent()) return "camera_consent";
+      return "scan";
+    }
+    if (deepLinkTokenId) return hasLocationConsent() ? "gps" : "consent";
+    if (hasLocationConsent()) return hasCameraConsent() ? "scan" : "camera_consent";
+    return "consent";
+  };
   const platform = useMemo(
     () =>
       resolveMobilePlatform(
@@ -87,25 +136,25 @@ export function CheckInFlow({ initialTokenId, previewOutcome }: CheckInFlowProps
     [unsupportedBrowserParam, browserSimParam],
   );
 
-  const [step, setStep] = useState<CheckInStep>(() => {
-    if (previewOutcome) return "outcome";
-    if (tokenId) return hasLocationConsent() ? "gps" : "consent";
-    if (hasLocationConsent()) return hasCameraConsent() ? "scan" : "camera_consent";
-    return "consent";
-  });
-  const [showConsent, setShowConsent] = useState(() => !hasLocationConsent() && !previewOutcome);
-  const [showCameraConsent, setShowCameraConsent] = useState(
-    () => !tokenId && !hasCameraConsent() && !previewOutcome,
+  const [step, setStep] = useState<CheckInStep>(resolveInitialStep);
+  const [showConsent, setShowConsent] = useState(
+    () => !previewOutcome && !forceScanner && !hasLocationConsent(),
   );
+  const [showCameraConsent, setShowCameraConsent] = useState(() => {
+    if (previewOutcome) return false;
+    if (forceScanner) return readClearConsentOnEntry() && !hasCameraConsent();
+    return !deepLinkTokenId && !hasCameraConsent();
+  });
   const [gpsState, setGpsState] = useState<GpsCaptureState>("requesting");
   const [gpsAttempt, setGpsAttempt] = useState(0);
+  const [capturedCoords, setCapturedCoords] = useState<GeoPosition | null>(null);
   const [outcome, setOutcome] = useState<CheckInOutcomeCode>(previewOutcome ?? "Present");
   const [outcomeDetail, setOutcomeDetail] = useState<string | undefined>();
   const [permissionGuide, setPermissionGuide] = useState<PermissionGuideType | null>(null);
-  const [scannedTokenId, setScannedTokenId] = useState<string | null>(tokenId);
+  const [scannedTokenId, setScannedTokenId] = useState<string | null>(deepLinkTokenId);
   const autoGpsStarted = useRef(false);
 
-  const activeTokenId = scannedTokenId ?? tokenId;
+  const activeTokenId = scannedTokenId ?? deepLinkTokenId;
 
   const redirectToLogin = useCallback(
     (options?: { sessionExpired?: boolean }) => {
@@ -137,8 +186,12 @@ export function CheckInFlow({ initialTokenId, previewOutcome }: CheckInFlowProps
   }, [redirectToLogin]);
 
   const submitToApi = useCallback(
-    async (coords: { latitude: number; longitude: number; accuracyMeters?: number }) => {
-      if (!activeTokenId) {
+    async (
+      coords: { latitude: number; longitude: number; accuracyMeters?: number },
+      tokenOverride?: string | null,
+    ) => {
+      const submitTokenId = tokenOverride ?? activeTokenId;
+      if (!submitTokenId) {
         setOutcome("Present");
         setStep("outcome");
         return;
@@ -148,12 +201,17 @@ export function CheckInFlow({ initialTokenId, previewOutcome }: CheckInFlowProps
 
       setGpsState("submitting");
       try {
+        if (readExpireSessionOnSubmit()) {
+          await previewExpireSession();
+        }
+
         const result = await submitCheckInWithRetry({
-          tokenId: activeTokenId,
+          tokenId: submitTokenId,
           latitude: coords.latitude,
           longitude: coords.longitude,
           spoofMetadata: {
             accuracyMeters: coords.accuracyMeters,
+            mockLocationDetected: readMockLocationDetected(),
           },
         });
 
@@ -163,7 +221,11 @@ export function CheckInFlow({ initialTokenId, previewOutcome }: CheckInFlowProps
         }
 
         setOutcome(result.outcome);
-        setOutcomeDetail(result.message);
+        setOutcomeDetail(
+          result.outcome === "DuplicateCheckIn"
+            ? formatDuplicateCheckInDetail(result.priorCheckedInAt)
+            : result.message,
+        );
       } catch {
         setOutcome("NetworkError");
         setOutcomeDetail(undefined);
@@ -175,7 +237,9 @@ export function CheckInFlow({ initialTokenId, previewOutcome }: CheckInFlowProps
     [activeTokenId, ensureAuthenticated, redirectToLogin],
   );
 
-  const runGpsCapture = useCallback(async () => {
+  const runGpsCapture = useCallback(async (tokenOverride?: string | null) => {
+    const captureTokenId = tokenOverride ?? activeTokenId;
+
     if (previewOutcome) {
       setOutcome(previewOutcome);
       setStep("outcome");
@@ -191,12 +255,13 @@ export function CheckInFlow({ initialTokenId, previewOutcome }: CheckInFlowProps
       return;
     }
 
+    setCapturedCoords(null);
     setGpsState("requesting");
     setGpsAttempt((attempt) => attempt + 1);
 
     await waitForGpsRequestingUi();
 
-    const geo = await captureGeolocation();
+    const geo = await captureGeolocation({ tokenId: captureTokenId });
     if (!geo.ok) {
       setGpsState("denied");
       setOutcome(geoFailureToOutcome(geo.reason));
@@ -205,13 +270,21 @@ export function CheckInFlow({ initialTokenId, previewOutcome }: CheckInFlowProps
       return;
     }
 
-    setGpsState("acquiring");
-    await submitToApi(geo.position);
-  }, [ensureAuthenticated, gpsAttempt, previewOutcome, submitToApi]);
+    setCapturedCoords(geo.position);
+    setGpsState("ready");
+  }, [activeTokenId, ensureAuthenticated, gpsAttempt, previewOutcome]);
+
+  const handleGpsSubmit = useCallback(
+    (tokenOverride?: string | null) => {
+      if (!capturedCoords) return;
+      void submitToApi(capturedCoords, tokenOverride ?? activeTokenId);
+    },
+    [activeTokenId, capturedCoords, submitToApi],
+  );
 
   useEffect(() => {
     if (
-      tokenId &&
+      deepLinkTokenId &&
       step === "gps" &&
       !previewOutcome &&
       !autoGpsStarted.current &&
@@ -220,7 +293,7 @@ export function CheckInFlow({ initialTokenId, previewOutcome }: CheckInFlowProps
       autoGpsStarted.current = true;
       void runGpsCapture();
     }
-  }, [tokenId, step, previewOutcome, gpsAttempt, runGpsCapture]);
+  }, [deepLinkTokenId, step, previewOutcome, gpsAttempt, runGpsCapture]);
 
   const handleScan = useCallback(
     (payload: string) => {
@@ -232,7 +305,7 @@ export function CheckInFlow({ initialTokenId, previewOutcome }: CheckInFlowProps
       setStep("gps");
       setGpsState("requesting");
       setGpsAttempt(0);
-      void runGpsCapture();
+      void runGpsCapture(nextToken);
     },
     [runGpsCapture],
   );
@@ -241,6 +314,7 @@ export function CheckInFlow({ initialTokenId, previewOutcome }: CheckInFlowProps
     setScannedTokenId(null);
     autoGpsStarted.current = false;
     setOutcomeDetail(undefined);
+    setCapturedCoords(null);
     setStep(hasCameraConsent() ? "scan" : "camera_consent");
     setShowCameraConsent(!hasCameraConsent());
     setGpsState("requesting");
@@ -269,6 +343,7 @@ export function CheckInFlow({ initialTokenId, previewOutcome }: CheckInFlowProps
         setStep("gps");
         setGpsState("requesting");
         setGpsAttempt(0);
+        setCapturedCoords(null);
         setOutcomeDetail(undefined);
         void runGpsCapture();
         return;
@@ -285,7 +360,7 @@ export function CheckInFlow({ initialTokenId, previewOutcome }: CheckInFlowProps
   const acceptConsent = useCallback(() => {
     markLocationConsent();
     setShowConsent(false);
-    if (tokenId || scannedTokenId) {
+    if ((deepLinkTokenId || scannedTokenId) && !readForceScannerEntry()) {
       setStep("gps");
       setGpsAttempt(0);
       void runGpsCapture();
@@ -297,7 +372,7 @@ export function CheckInFlow({ initialTokenId, previewOutcome }: CheckInFlowProps
       setStep("camera_consent");
       setShowCameraConsent(true);
     }
-  }, [runGpsCapture, scannedTokenId, tokenId]);
+  }, [deepLinkTokenId, runGpsCapture, scannedTokenId]);
 
   const acceptCameraConsent = useCallback(() => {
     markCameraConsent();
@@ -335,19 +410,19 @@ export function CheckInFlow({ initialTokenId, previewOutcome }: CheckInFlowProps
           onCameraDenied={() => setPermissionGuide("camera")}
           onOpenCameraGuide={() => setPermissionGuide("camera")}
           disabled={gpsState === "submitting"}
-          cameraConsented={hasCameraConsent()}
+          cameraConsented={scannerCameraConsented}
         />
       ) : null}
 
       {step === "gps" ? (
         <>
           <GpsCaptureStep state={gpsState} attempt={gpsAttempt} />
-          {gpsState === "requesting" || gpsState === "acquiring" ? (
-            <ButtonRow
-              label="Xác nhận điểm danh"
-              onClick={() => void runGpsCapture()}
-            />
-          ) : null}
+          <ButtonRow
+            label="Xác nhận điểm danh"
+            disabled={gpsState !== "ready" || !capturedCoords}
+            gpsRequired={gpsState !== "ready"}
+            onClick={() => handleGpsSubmit()}
+          />
         </>
       ) : null}
 
@@ -394,20 +469,33 @@ function ButtonRow({
   label,
   onClick,
   disabled,
+  gpsRequired,
 }: {
   label: string;
   onClick: () => void;
   disabled?: boolean;
+  gpsRequired?: boolean;
 }) {
   return (
-    <button
-      type="button"
-      className="mt-4 w-full min-h-touch rounded-md bg-primary-600 px-4 py-3 text-primary-foreground disabled:opacity-50"
-      onClick={onClick}
-      disabled={disabled}
-      data-testid="check-in-submit"
-    >
-      {label}
-    </button>
+    <div className="mt-4 space-y-2">
+      {gpsRequired ? (
+        <p
+          className="text-center text-small text-text-secondary"
+          data-testid="gps-required-badge"
+        >
+          Cần bật GPS để điểm danh
+        </p>
+      ) : null}
+      <button
+        type="button"
+        className="w-full min-h-touch rounded-md bg-primary-600 px-4 py-3 text-primary-foreground disabled:opacity-50"
+        onClick={onClick}
+        disabled={disabled}
+        data-testid="check-in-submit"
+        aria-disabled={disabled}
+      >
+        {label}
+      </button>
+    </div>
   );
 }
