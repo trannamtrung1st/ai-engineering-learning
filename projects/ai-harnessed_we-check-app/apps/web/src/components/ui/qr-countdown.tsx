@@ -21,7 +21,9 @@ export function QrCountdown({
       data-testid="qr-countdown"
       data-seconds-remaining={clamped}
       className={cn(
-        presentation ? "text-display font-semibold" : "text-h2 font-semibold",
+        presentation
+          ? "text-[2rem] font-bold leading-10"
+          : "text-h2 font-semibold",
         presentation && (isWarning ? "text-qr-warning" : "text-qr-countdown"),
         !presentation && isWarning && "text-qr-warning",
         !presentation && !isWarning && "text-qr-accent",

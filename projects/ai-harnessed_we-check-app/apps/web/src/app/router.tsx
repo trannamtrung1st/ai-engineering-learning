@@ -11,7 +11,7 @@ import { LoginPage } from "@/app/login/page";
 import { NotFoundRoutePage } from "@/app/not-found/page";
 import { ReportsPage } from "@/app/reports/page";
 import { CreateSessionPage } from "@/app/sessions/create-session-page";
-import { QrPresentPage } from "@/app/sessions/qr-present-page";
+import { QrPresentPage } from "@/app/sessions/[sessionId]/qr-present/page";
 import { SessionDetailPage } from "@/app/sessions/session-detail-page";
 import { SessionMonitorPage } from "@/app/sessions/session-monitor-page";
 import { SessionsListPage } from "@/app/sessions/page";
@@ -108,7 +108,7 @@ const router = createBrowserRouter([
             ],
           },
           {
-            path: "sessions/:id/qr-present",
+            path: "sessions/:sessionId/qr-present",
             element: <QrPresentPage />,
           },
           {

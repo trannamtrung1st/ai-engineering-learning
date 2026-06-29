@@ -657,7 +657,7 @@
     },
     {
       "id": "web-instructor-qr-display",
-      "passes": false,
+      "passes": true,
       "priority": 25,
       "phase": 2,
       "agent": "frontend",
