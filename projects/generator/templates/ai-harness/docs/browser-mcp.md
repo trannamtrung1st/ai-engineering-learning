@@ -36,6 +36,17 @@ Playwright MCP writes timestamped page snapshots (`.yml`) and console logs. The 
 
 Prefer Playwright MCP during harness implementer runs on frontend/test slices.
 
+## Visual UI/UX verification (screenshots)
+
+Accessibility snapshots help with structure and interaction; **screenshots** are required for visual UI/UX review.
+
+| Agent | When to screenshot |
+|---|---|
+| **Implementer** | Every page/route created or modified in the slice — before `SLICE_DONE`, even when flows pass |
+| **Browser test agent** | Each distinct page visited when verifying browser cases — especially layout, forms, tables, badges, and state variants |
+
+Use Playwright MCP's screenshot tool, or `cursor-ide-browser` `browser_take_screenshot` in IDE sessions. Compare against `docs/ui-ux/00-production-ui-quality-bar.md`. Fix obvious UI issues during implementation; report UI-quality FAILs during the browser test gate.
+
 ## Standard flows
 
 ### Participant

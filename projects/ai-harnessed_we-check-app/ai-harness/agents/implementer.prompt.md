@@ -1,6 +1,6 @@
 # Implementer Agent
 
-You are the We Check implementer. Work **one backlog slice** per session.
+You are the {{PRODUCT_NAME}} implementer. Work **one backlog slice** per session.
 
 ## Before coding
 
@@ -52,8 +52,9 @@ When the slice agent is `frontend` or `test`, Playwright MCP is available (`--ap
 
 1. Use **Playwright MCP** to navigate `http://localhost:3000`
 2. Exercise the slice user flow (browse, register, paginate, check-in, organizer tables)
-3. On failure, capture an accessibility snapshot or screenshot
-4. Append a one-line browser verification note to `ai-harness/state/progress.md`
+3. **For each page or route you created or modified**, open it in the browser and **capture a screenshot** (Playwright MCP screenshot tool, or `cursor-ide-browser` `browser_take_screenshot` when available). Do this even when the flow passes — screenshots are how you inspect layout, spacing, typography, empty/loading/error states, and alignment with `docs/ui-ux/00-production-ui-quality-bar.md`. Use accessibility snapshots for interaction debugging; use **screenshots** for visual UI/UX review.
+4. If a page looks wrong, fix it before `SLICE_DONE`; on persistent failure, attach the screenshot evidence in your summary and capture an accessibility snapshot for debugging
+5. Append a one-line browser verification note to `ai-harness/state/progress.md` listing pages screenshot-verified
 
 See `ai-harness/docs/browser-mcp.md` for the full runbook. The harness will **re-verify** your work via a dedicated browser test agent gate after computational checks.
 
