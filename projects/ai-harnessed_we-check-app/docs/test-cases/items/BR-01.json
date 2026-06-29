@@ -1,8 +1,8 @@
 {
   "productItemId": "BR-01",
   "version": 1,
-  "docFingerprint": "sha256:4deda16c175af0ca34aadf938abcd5f11203e186585e68a48a77093b8e87aac5",
-  "generatedAt": "2026-06-29T16:00:00Z",
+  "docFingerprint": "sha256:7fa6e5f0fa1fb178b99256355a681409f9ca3b3a224ea6b785c745d780059c2e",
+  "generatedAt": "2026-06-29T18:17:17Z",
   "cases": [
     {
       "id": "TC-BR-01-001",
@@ -13,8 +13,8 @@
       "traceability": ["BR-01", "FR-05", "AC-05"],
       "title": "TS-14: Check-in allowed while session Active and now ≤ scheduledStart + 10 minutes",
       "preconditions": [
-        "Active session with scheduledStart in the past and status Active",
-        "Test clock fixed so now is strictly before scheduledStart + 10 minutes",
+        "Active session with openedAt set, scheduledStart in the past, and status Active",
+        "Test clock fixed so openedAt ≤ now ≤ scheduledStart + 10 minutes per state-machines §2.4",
         "Authenticated enrolled Student with valid unexpired QR token",
         "Student coordinates within session gpsRadiusMeters"
       ],
@@ -305,8 +305,8 @@
         "Instructor navigates to session monitor or detail page"
       ],
       "steps": [
-        "Click Kết thúc buổi học (close session) action",
-        "Confirm close in dialog prompt",
+        "Click Đóng buổi học (close session) action",
+        "Confirm close in dialog prompt (*Kết thúc điểm danh?*)",
         "Wait for status badge update to Đã kết thúc (Closed)",
         "Verify roster table shows remaining Pending students marked Vắng (Absent)",
         "Verify QR display and check-in actions are unavailable"
@@ -446,6 +446,72 @@
         "Verify no attendance finalize side effects occurred"
       ],
       "expected": "Close trigger applies only to Active sessions per validation-rules §3.5; illegal transitions blocked",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-01-021",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-01", "BR-15", "AC-05"],
+      "title": "GET preflight returns 403 SessionNotActive when Active session past attendance window",
+      "preconditions": [
+        "Active session with scheduledStart in the past and status still Active",
+        "Test clock fixed at scheduledStart + 10 minutes + 1 second before auto-close scheduler runs",
+        "Authenticated enrolled Student with valid unexpired QR token"
+      ],
+      "steps": [
+        "GET /api/v1/check-in/tokens/:tokenId/preflight using Student session",
+        "Assert HTTP status 403 with outcome SessionNotActive and errorCode SessionNotActive",
+        "Assert localized Vietnamese message indicates session is not active",
+        "Query attendance_records and qr_tokens and assert no writes occurred (read-only preflight per validation-rules §3.6a)"
+      ],
+      "expected": "Preflight attendance window guard per validation-rules §3.6a step 4 enforces BR-01 before GPS capture; SessionNotActive returned without side effects",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-01-022",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P1",
+      "traceability": ["BR-01", "FR-05", "AC-05"],
+      "title": "GET /sessions/:sessionId/qr/current exposes attendanceWindowClosesAt at scheduledStart + 10 minutes",
+      "preconditions": [
+        "Instructor session cookie is set",
+        "Active session with scheduledStart known and QR scheduler running",
+        "Current time within attendance window (openedAt ≤ now ≤ scheduledStart + 10 min)"
+      ],
+      "steps": [
+        "GET /api/v1/sessions/:sessionId/qr/current with Instructor session",
+        "Assert HTTP status 200",
+        "Assert response body contains qrPayload, tokenId, issuedAt, expiresAt, secondsRemaining, and attendanceWindowClosesAt",
+        "Assert attendanceWindowClosesAt equals scheduledStart + 10 minutes per BR-01 window end and API design §6.1"
+      ],
+      "expected": "QR current endpoint publishes nominal attendance window close time during Active session per BR-01; instructor display can show countdown to window end",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-01-023",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-01", "BR-15", "AC-05"],
+      "title": "Student check-in preflight blocks GPS step when attendance window has elapsed",
+      "preconditions": [
+        "Active session with scheduledStart in the past; auto-close scheduler not yet run",
+        "Test clock fixed at scheduledStart + 10 minutes + 1 second",
+        "Authenticated Student navigates to check-in deep link with valid QR token"
+      ],
+      "steps": [
+        "Student opens check-in page and wait for GET /api/v1/check-in/tokens/:tokenId/preflight",
+        "Verify SessionNotActive outcome shown inline or on scan step",
+        "Verify data-testid gps-capture-step is absent (GpsCaptureStep never mounts per BR-15)",
+        "Verify Vietnamese message indicates session not active or attendance window ended"
+      ],
+      "expected": "UI enforces BR-01 attendance window at preflight gate per validation-rules §3.6a; student cannot reach GPS capture after window end while session still Active",
       "edgeCase": true
     }
   ]
