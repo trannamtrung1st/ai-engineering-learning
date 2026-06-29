@@ -1,8 +1,8 @@
 {
   "productItemId": "NFR-11",
   "version": 1,
-  "docFingerprint": "sha256:e28b1e3bba6d51203530607cc8d0f33e0a2c6f8b946d630f5faf2597e4b2a423",
-  "generatedAt": "2026-06-29T18:30:00.000Z",
+  "docFingerprint": "sha256:7c3a06eac41d3ebaa216e1eb9eeeb0ecc9411edcf1cbcb0a135ac6fd55757a5f",
+  "generatedAt": "2026-06-29T20:00:00.000Z",
   "cases": [
     {
       "id": "TC-NFR-11-001",
@@ -352,20 +352,22 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["NFR-11", "FR-12", "FR-13", "AC-12", "AC-13"],
+      "traceability": ["NFR-11", "FR-12", "FR-13", "FR-18", "AC-12", "AC-13", "AC-18", "BR-14"],
       "title": "Instructor UI hides export controls and shows ForbiddenPage on admin-only report routes",
       "preconditions": [
         "Authenticated Instructor session in browser",
-        "Instructor layout renders report navigation per UI page list",
+        "Instructor layout renders SidebarNav per UI layout components §6",
         "Admin export route /admin/export exists but is not in instructor nav"
       ],
       "steps": [
         "Navigate to instructor-scoped report page for assigned class-subject and verify report table renders",
+        "Query SidebarNav DOM and assert zero anchor elements with href matching /admin/* anywhere in instructor layout chrome",
+        "Verify SidebarNav renders only Buổi học and Báo cáo items per usePermittedNav() — unauthorized items omitted not disabled",
         "Verify CSV export button or link is not visible in instructor report view",
         "Navigate directly to /admin/export or /admin/reports/export URL as Instructor",
-        "Observe ForbiddenPage or redirect with message Bạn không có quyền thực hiện thao tác này; no export form rendered"
+        "Observe ForbiddenPage with title Không có quyền truy cập; no export form or admin SidebarNav rendered"
       ],
-      "expected": "NFR-11 browser RBAC: UI route guard mirrors API report:export denial; instructor cannot access admin export surface per roles-permissions §2.4",
+      "expected": "NFR-11 UI nav negative matrix: instructor chrome contains zero /admin/* links per AC-18a and BR-14; direct URL blocked by route guard per roles-permissions §2.4",
       "edgeCase": false
     },
     {
@@ -374,19 +376,21 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["NFR-11", "FR-01", "AC-01"],
+      "traceability": ["NFR-11", "FR-01", "FR-18", "AC-18", "BR-14"],
       "title": "Student UI hides admin navigation and blocks direct admin user list URL",
       "preconditions": [
         "Authenticated Student session in browser",
-        "Admin user management route /admin/users exists"
+        "Admin user management route /admin/users exists",
+        "StudentLayout renders BottomNav per UI layout components §5.3"
       ],
       "steps": [
-        "Open student home or check-in layout and verify admin Users or Reports nav entries are absent",
+        "Open student check-in layout and query BottomNav DOM — assert zero anchor elements with href matching /admin/* or /sessions or /reports",
+        "Verify BottomNav renders only permitted items (Điểm danh, Lịch sử) — items lacking permission omitted from DOM not disabled per BR-14",
         "Navigate directly to /admin/users URL as Student",
-        "Observe ForbiddenPage or login redirect with 403-equivalent UX; user list table not rendered",
+        "Observe ForbiddenPage with title Không có quyền truy cập per AC-18b; user list table and admin chrome not rendered",
         "Verify no user roster data visible in DOM"
       ],
-      "expected": "NFR-11 browser journey: Student denied user:read (all) and user:write; admin routes blocked by UI guard matching API RBAC",
+      "expected": "NFR-11 UI nav negative matrix: student chrome contains zero forbidden-route-prefix links per AC-18b and BR-14; direct admin URL blocked by UI guard",
       "edgeCase": false
     },
     {
@@ -430,6 +434,50 @@
         "Compute denial rate across full matrix sample and assert equals 100%"
       ],
       "expected": "NFR-11 verification criterion met: RBAC negative test matrix per role denies 100% of out-of-scope access attempts per testing-plan §5 RbacNegativeMatrix",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-11-021",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["NFR-11", "AC-18", "FR-18", "BR-14"],
+      "title": "TS-21f: Instructor layout chrome audit — zero /admin/* href values in SidebarNav and hub",
+      "preconditions": [
+        "Authenticated Instructor session with report:read for at least one class-subject",
+        "Instructor lands on /sessions with InstructorLayout rendered"
+      ],
+      "steps": [
+        "On /sessions inspect SidebarNav, TopBar, and RoleHomeHub card links",
+        "Assert document.querySelectorAll('a[href^=\"/admin\"]') count is zero across entire instructor layout chrome",
+        "Verify RoleHomeHub shows Tạo buổi học mới and Báo cáo links per AC-18d with no admin hub cards",
+        "Open mobile drawer (< md breakpoint) and repeat href audit — zero /admin/* links in drawer nav",
+        "Navigate to /reports and confirm SidebarNav still omits all admin-only routes from roles-permissions §2.3a"
+      ],
+      "expected": "NFR-11 scenario-matrix TS-21f: instructor UI nav negative matrix satisfied — zero forbidden route-prefix links in chrome per AC-18a, BR-14, and NFR-11 verification criteria",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-11-022",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-11", "AC-18", "FR-18", "BR-14"],
+      "title": "SidebarNav and BottomNav omit unauthorized items from DOM — not disabled or hidden via CSS",
+      "preconditions": [
+        "Authenticated Student and Instructor sessions available in separate browser contexts",
+        "usePermittedNav() wired per roles-permissions §2.3a and UI layout components §5.3, §6.2"
+      ],
+      "steps": [
+        "As Student on /check-in count BottomNav list items — expect exactly permitted entries (Điểm danh, Lịch sử); assert no display:none or aria-disabled on omitted admin/instructor routes",
+        "As Student verify no SidebarNav element exists in StudentLayout",
+        "As Instructor on /sessions count SidebarNav items — expect Buổi học and Báo cáo only; assert Người dùng, Xuất CSV, and other admin nav labels absent from DOM",
+        "As Instructor verify BottomNav is not rendered in InstructorLayout",
+        "As TrainingOfficeAdmin on /admin verify SidebarNav includes admin items and zero student-only /check-in nav in admin chrome"
+      ],
+      "expected": "NFR-11 component nav enforcement: SidebarNav and BottomNav filter via usePermittedNav(); unauthorized destinations omitted from DOM per BR-14 — showing forbidden nav items is a spec violation",
       "edgeCase": false
     }
   ]
