@@ -24,6 +24,7 @@ Concise index for the 12 harness components. Referenced by `docs/technical/13-do
 | Startup verification | `scripts/verify-stack.sh` |
 | Runtime | `ralph-loop.json` → `runtimeValidation` (db, api, web) |
 | Agent timeout | `ralph-loop.json` / `testgen-loop.json` → `agent.idleTimeoutMs` (default 5m stream idle), `agent.timeoutMs` (default 1h max wall), `agent.signalGraceMs` / `agent.resultGraceMs` (early exit after completion signals / result event); override `AIH_AGENT_IDLE_TIMEOUT_MS` / `AIH_AGENT_TIMEOUT_MS` / `AIH_AGENT_SIGNAL_GRACE_MS` / `AIH_AGENT_RESULT_GRACE_MS` |
+| Computational check timeout | `ralph-loop.json` → `computationalChecks.commandTimeoutMs` (default 10m) and `commandTimeouts` per npm script; override `AIH_CHECK_TIMEOUT_MS` or `AIH_CHECK_TIMEOUT_<script>_MS`; on timeout the harness kills the process tree and records `timedOut: true` in the checks report |
 
 ## Ralph loop
 
@@ -71,7 +72,17 @@ Harness hard-fails: in-memory repos, SQLite, mock page data, lorem ipsum. See `r
 ## DB runtime (when compose exists)
 
 ```json
-"runtimeValidation": {
+"computationalChecks": {
+  "commandTimeoutMs": 600000,
+  "commandTimeouts": {
+    "typecheck": 300000,
+    "lint": 300000,
+    "build": 600000,
+    "test:unit": 600000,
+    "test:integration": 900000,
+    "test:e2e": 900000
+  },
+  "runtimeValidation": {
   "db": {
     "strategy": "docker-compose",
     "service": "db",

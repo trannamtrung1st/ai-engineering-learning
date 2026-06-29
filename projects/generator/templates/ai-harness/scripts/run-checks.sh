@@ -15,25 +15,40 @@ PASS=true
 
 cd "$REPO_ROOT"
 
-# Run a shell command with begin → output → pass/fail logging.
+# Run a shell command with begin → output → pass/fail logging and wall-clock timeout.
 run_shell_check() {
   local label="$1"
-  shift
-  aih_check_begin "$label"
-  local out status
+  local timeout_ms="$2"
+  shift 2
+  local timeout_sec=$(( timeout_ms / 1000 ))
+
+  aih_check_begin "${label} (timeout: ${timeout_sec}s)"
   set +e
-  out="$("$@" 2>&1)"
-  status=$?
+  run_check_with_timeout_ms "$timeout_ms" "$@"
+  local status=$?
   set -e
-  if [[ -n "$out" ]]; then
-    echo "$out"
+
+  if [[ "$status" -eq "$AGENT_TIMEOUT_EXIT" ]]; then
+    check_timeout_message "$timeout_ms" "$label"
+    aih_check_fail "${label} (timed out after ${timeout_sec}s)"
+    return "$AGENT_TIMEOUT_EXIT"
   fi
   if [[ "$status" -eq 0 ]]; then
     aih_check_ok "$label"
     return 0
   fi
-  aih_check_fail "$label (exit ${status})"
+  aih_check_fail "${label} (exit ${status})"
   return 1
+}
+
+record_npm_check_failure() {
+  local script="$1"
+  local status="$2"
+  local timeout_ms="$3"
+  local timed_out="false"
+  [[ "$status" -eq "$AGENT_TIMEOUT_EXIT" ]] && timed_out="true"
+  FAILURES+=("{\"type\":\"npm_script\",\"script\":\"${script}\",\"timedOut\":${timed_out},\"timeoutMs\":${timeout_ms}}")
+  PASS=false
 }
 
 check_forbidden_patterns() {
@@ -215,11 +230,13 @@ check_npm_commands() {
     return 0
   fi
 
-  local script optional active_when label
+  local script optional active_when label timeout_ms timeout_sec status
   while IFS= read -r line; do
     script="$(echo "$line" | jq -r '.script')"
     optional="$(echo "$line" | jq -r '.optional // true')"
     active_when="$(echo "$line" | jq -r '.activeWhen // empty')"
+    timeout_ms="$(get_check_command_timeout_ms "$script")"
+    timeout_sec=$(( timeout_ms / 1000 ))
     if [[ -n "$active_when" && ! -e "$REPO_ROOT/$active_when" ]]; then
       aih_check_skip "npm run ${script} (inactive — ${active_when} missing)"
       continue
@@ -227,27 +244,29 @@ check_npm_commands() {
     if jq -e --arg s "$script" '.scripts[$s]' package.json >/dev/null 2>&1; then
       if [[ "$script" == "build" ]]; then
         label="npm run build (preview-aware workspace build)"
-        aih_check_begin "$label"
-        local out status
+        aih_check_begin "${label} (timeout: ${timeout_sec}s)"
         set +e
-        out="$(run_build_for_checks 2>&1)"
+        run_check_with_timeout_ms "$timeout_ms" --fn run_build_for_checks
         status=$?
         set -e
-        if [[ -n "$out" ]]; then
-          echo "$out"
-        fi
-        if [[ "$status" -ne 0 ]]; then
-          aih_check_fail "$label (exit ${status})"
-          FAILURES+=("{\"type\":\"npm_script\",\"script\":\"$script\"}")
-          PASS=false
+        if [[ "$status" -eq "$AGENT_TIMEOUT_EXIT" ]]; then
+          check_timeout_message "$timeout_ms" "$label"
+          aih_check_fail "${label} (timed out after ${timeout_sec}s)"
+          record_npm_check_failure "$script" "$status" "$timeout_ms"
+        elif [[ "$status" -ne 0 ]]; then
+          aih_check_fail "${label} (exit ${status})"
+          record_npm_check_failure "$script" "$status" "$timeout_ms"
         else
           aih_check_ok "$label"
         fi
       else
         label="npm run ${script}"
-        if ! run_shell_check "$label" npm run "$script"; then
-          FAILURES+=("{\"type\":\"npm_script\",\"script\":\"$script\"}")
-          PASS=false
+        set +e
+        run_shell_check "$label" "$timeout_ms" npm run "$script"
+        status=$?
+        set -e
+        if [[ "$status" -ne 0 ]]; then
+          record_npm_check_failure "$script" "$status" "$timeout_ms"
         fi
       fi
     elif [[ "$optional" != "true" ]]; then

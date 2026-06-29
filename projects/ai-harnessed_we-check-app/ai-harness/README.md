@@ -51,6 +51,8 @@ npm run aih:loop -- 50                     # max 50 iterations
 | `AIH_VERIFY_GATE_TIMEOUT_MS` | `10000` | Shared budget for `verify-stack.sh --gate` when preview supervisors are already running; also `browserTest.previewVerifyGateTimeoutMs` in `ralph-loop.json` |
 | `AIH_VERIFY_CURL_CONNECT_TIMEOUT_SEC` | `2` | Per-request curl connect timeout for stack probes |
 | `AIH_VERIFY_CURL_MAX_TIME_SEC` | `5` | Per-request curl max time for stack probes |
+| `AIH_CHECK_TIMEOUT_MS` | `600000` | Default wall-clock timeout for each computational npm script (10 minutes); kills hung test/build processes |
+| `AIH_CHECK_TIMEOUT_<script>_MS` | — | Per-script override (`:` → `_`, e.g. `AIH_CHECK_TIMEOUT_test_integration_MS=1200000`) |
 | `AIH_STREAM_AGENT` | `1` | Live stream all harness agent output via stream-json (`0` = legacy buffered text) |
 | `AIH_AGENT_VERBOSE` | `1` | Show `[tool]` start/done lines on stderr during streamed agent runs (`0` to disable) |
 | `AIH_NO_COLOR` | — | Disable ANSI styling in harness output (`1`) |
@@ -226,7 +228,7 @@ Gates run after every implementer iteration and can be run standalone:
 |---|---|---|
 | Forbidden patterns (in-memory repos, SQLite, mock data) | `apps/` or `packages/` exists | Yes |
 | Slice completion artifacts | Ralph iteration with slice id | Yes |
-| `typecheck`, `lint`, `build` | `apps/` exists | Yes — root scripts must exist and pass |
+| `typecheck`, `lint`, `build` | `apps/` exists | Yes — root scripts must exist and pass; each has a wall-clock timeout (default 10m, integration/e2e 15m) |
 | `test:unit` | `apps/api` exists (and `apps/web` when it defines `test:unit`) | Yes |
 | `test:integration` | `apps/api` exists | Yes |
 | `test:e2e` | `tests/e2e` exists | Yes |

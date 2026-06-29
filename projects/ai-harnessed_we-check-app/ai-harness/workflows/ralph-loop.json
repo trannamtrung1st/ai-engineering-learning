@@ -20,6 +20,15 @@
     "testFail": "BROWSER_TEST_FAIL"
   },
   "computationalChecks": {
+    "commandTimeoutMs": 600000,
+    "commandTimeouts": {
+      "typecheck": 300000,
+      "lint": 300000,
+      "build": 600000,
+      "test:unit": 600000,
+      "test:integration": 900000,
+      "test:e2e": 900000
+    },
     "forbiddenPatterns": [
       {
         "id": "in-memory-map-repo",

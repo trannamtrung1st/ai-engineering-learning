@@ -243,6 +243,121 @@ AGENT_IDLE_TIMEOUT_DEFAULT_MS=300000
 AGENT_SIGNAL_GRACE_DEFAULT_MS=15000
 AGENT_RESULT_GRACE_DEFAULT_MS=5000
 PREVIEW_VERIFY_GATE_DEFAULT_MS=10000
+CHECK_COMMAND_TIMEOUT_DEFAULT_MS=600000
+CHECK_COMMAND_TIMEOUT_POLL_MS=2000
+
+get_check_command_timeout_ms() {
+  local script="${1:-}"
+  local config_timeout env_key
+
+  if [[ -n "${AIH_CHECK_TIMEOUT_MS:-}" ]]; then
+    echo "$AIH_CHECK_TIMEOUT_MS"
+    return 0
+  fi
+
+  if [[ -n "$script" ]]; then
+    env_key="AIH_CHECK_TIMEOUT_${script//[:]/_}_MS"
+    if [[ -n "${!env_key:-}" ]]; then
+      echo "${!env_key}"
+      return 0
+    fi
+  fi
+
+  config_timeout="$(jq -r --arg s "$script" \
+    '.computationalChecks.commandTimeouts[$s] // .computationalChecks.commandTimeoutMs // empty' \
+    "$LOOP_CONFIG" 2>/dev/null || true)"
+  if [[ -n "$config_timeout" && "$config_timeout" != "null" ]]; then
+    echo "$config_timeout"
+    return 0
+  fi
+
+  echo "$CHECK_COMMAND_TIMEOUT_DEFAULT_MS"
+}
+
+check_timeout_message() {
+  local timeout_ms="$1"
+  local label="${2:-check}"
+  local timeout_sec=$(( timeout_ms / 1000 ))
+  echo "ERROR: ${label} timed out after ${timeout_ms}ms (${timeout_sec}s) — process tree terminated" >&2
+}
+
+kill_process_tree() {
+  local pid="$1"
+  local sig="${2:-TERM}"
+  local child
+
+  if ! kill -0 "$pid" 2>/dev/null; then
+    return 0
+  fi
+
+  while IFS= read -r child; do
+    [[ -z "$child" ]] && continue
+    kill_process_tree "$child" "$sig"
+  done < <(pgrep -P "$pid" 2>/dev/null || true)
+
+  if [[ "$sig" == "KILL" ]]; then
+    kill -KILL "$pid" 2>/dev/null || true
+  else
+    kill -TERM "$pid" 2>/dev/null || true
+  fi
+}
+
+wait_cmd_with_timeout_ms() {
+  local cmd_pid="$1"
+  local timeout_ms="$2"
+  local deadline=$(( $(date +%s) * 1000 + timeout_ms ))
+
+  while kill -0 "$cmd_pid" 2>/dev/null; do
+    if (( $(date +%s) * 1000 >= deadline )); then
+      kill_process_tree "$cmd_pid" TERM
+      sleep 2
+      kill_process_tree "$cmd_pid" KILL
+      wait "$cmd_pid" 2>/dev/null || true
+      return "$AGENT_TIMEOUT_EXIT"
+    fi
+    sleep $(( CHECK_COMMAND_TIMEOUT_POLL_MS / 1000 ))
+  done
+
+  wait "$cmd_pid"
+}
+
+# Run a check command with wall-clock timeout; streams stdout/stderr live.
+# Usage: run_check_with_timeout_ms MS cmd [args...]
+#        run_check_with_timeout_ms MS --fn function_name [args...]
+run_check_with_timeout_ms() {
+  local timeout_ms="$1"
+  shift
+  local fifo tee_pid status cmd_pid use_fn=false
+
+  if [[ "${1:-}" == "--fn" ]]; then
+    use_fn=true
+    shift
+  fi
+
+  fifo="$(mktemp -u "${TMPDIR:-/tmp}/aih-check.XXXXXX")"
+  mkfifo "$fifo"
+  tee < "$fifo" &
+  tee_pid=$!
+
+  if [[ "$use_fn" == true ]]; then
+    local fn="$1"
+    shift
+    ( "$fn" "$@" ) > "$fifo" 2>&1 &
+    cmd_pid=$!
+  else
+    "$@" > "$fifo" 2>&1 &
+    cmd_pid=$!
+  fi
+
+  set +e
+  wait_cmd_with_timeout_ms "$cmd_pid" "$timeout_ms"
+  status=$?
+  set -e
+
+  wait "$tee_pid" 2>/dev/null || true
+  rm -f "$fifo"
+  return "$status"
+}
 
 get_agent_timeout_ms() {
   local config="${1:-$LOOP_CONFIG}"
@@ -324,25 +439,16 @@ agent_output_format_args() {
 run_command_with_timeout_ms() {
   local timeout_ms="$1"
   shift
-  local deadline=$(( $(date +%s) * 1000 + timeout_ms ))
   local cmd_pid
 
   "$@" &
   cmd_pid=$!
 
-  while kill -0 "$cmd_pid" 2>/dev/null; do
-    if (( $(date +%s) * 1000 >= deadline )); then
-      echo "==> Agent timed out after ${timeout_ms}ms" >&2
-      kill -TERM "$cmd_pid" 2>/dev/null || true
-      sleep 2
-      kill -KILL "$cmd_pid" 2>/dev/null || true
-      wait "$cmd_pid" 2>/dev/null || true
-      return "$AGENT_TIMEOUT_EXIT"
-    fi
-    sleep 2
-  done
-
-  wait "$cmd_pid"
+  set +e
+  wait_cmd_with_timeout_ms "$cmd_pid" "$timeout_ms"
+  local status=$?
+  set -e
+  return "$status"
 }
 
 run_agent_with_timeout_ms() {
@@ -1521,20 +1627,20 @@ run_build_for_checks() {
   local ws
   local pkg
   local -a workspaces=(
-    "@wecheck/api:apps/api"
-    "@wecheck/domain:packages/domain"
-    "@wecheck/config:packages/config"
-    "@wecheck/web:apps/web"
+    "@we-event/api:apps/api"
+    "@we-event/domain:packages/domain"
+    "@we-event/config:packages/config"
+    "@we-event/web:apps/web"
   )
 
   if preview_stack_is_running; then
-    echo "Preview stack running — skipping @wecheck/web build to preserve dev server cache"
+    echo "Preview stack running — skipping @we-event/web build to preserve dev .next cache"
     for ws in "${workspaces[@]}"; do
       [[ "${ws##*:}" == "apps/web" ]] && continue
       pkg="${ws%%:*}"
       if [[ -f "$REPO_ROOT/${ws##*:}/package.json" ]] && jq -e --arg s "build" '.scripts[$s] // empty' "$REPO_ROOT/${ws##*:}/package.json" >/dev/null 2>&1; then
         npm run build --workspace "$pkg" || return 1
-        if [[ "$pkg" == "@wecheck/api" ]]; then
+        if [[ "$pkg" == "@we-event/api" ]]; then
           nudge_preview_api_restart
         fi
       fi
