@@ -372,7 +372,7 @@
     },
     {
       "id": "module-reporting-export",
-      "passes": false,
+      "passes": true,
       "priority": 16,
       "phase": 1,
       "agent": "backend",
@@ -402,6 +402,9 @@
         ],
         "integration": [
           "apps/api/src/modules/reporting-export/reporting-export.integration.test.ts"
+        ],
+        "e2e": [
+          "tests/e2e/src/scenarios/flow-d-reporting-auth.test.ts"
         ],
         "acceptanceTags": [
           "AC-12",

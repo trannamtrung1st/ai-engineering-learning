@@ -273,3 +273,5 @@ Append-only log of harness slice completions.
 - 2026-06-29T20:53:35Z | module-attendance | passed
 - 2026-06-29T21:00:00Z | module-checkin-qr | aih:check pass — prior gate failures resolved: NFR-21 traceability TC-NFR-12-007 structured logging excludes raw GPS in checkin-qr.integration.test.ts; NFR-24 e2e traceability TC-AC-07-024/TC-AC-08-019/TC-AC-10-018/TC-FR-08-024 in flow-b-anti-fraud.test.ts; 8 unit + 16 integration + 31 e2e pass
 - 2026-06-29T21:03:08Z | module-checkin-qr | passed
+- 2026-06-29T21:08:07Z | module-reporting-export | aih:check pass — prior gate failures resolved: typecheck/lint/build; HTTP export denial path logs ExportDenied audit via ExportService (BR-09, NFR-15); e2e TC-NFR-07-013 BR-14 student report denial + instructor NFR-07 latency in flow-d-reporting-auth.test.ts; 3 unit + 14 integration + 32 e2e pass
+- 2026-06-29T21:12:10Z | module-reporting-export | passed

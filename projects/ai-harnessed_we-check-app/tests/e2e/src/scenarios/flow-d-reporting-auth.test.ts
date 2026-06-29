@@ -8,9 +8,9 @@ import { buildCsv, multipartPayload } from "../support/multipart.js";
 /**
  * Flow D — Reporting authorization (testing-plan §6)
  * Traceability: AC-01 AC-02 AC-03 AC-12 AC-13 AC-14
- * FR-01 FR-02 FR-03 FR-04 FR-06 FR-12 FR-13 FR-14 BR-06 BR-08 BR-09 NFR-10 NFR-11 NFR-15
+ * FR-01 FR-02 FR-03 FR-04 FR-06 FR-12 FR-13 FR-14 BR-06 BR-08 BR-09 BR-14 NFR-07 NFR-10 NFR-11 NFR-15
  * Cases: TC-AC-01-004 TC-AC-01-005 TC-AC-03-004 TC-AC-03-006 TC-AC-12-003
- * TC-AC-13-002 TC-AC-14-003 TC-AC-14-005 TC-NFR-10-009 TC-NFR-11-004
+ * TC-AC-13-002 TC-AC-14-003 TC-AC-14-005 TC-NFR-07-013 TC-NFR-10-009 TC-NFR-11-004
  * TC-NFR-11-005 TC-NFR-11-006 TC-NFR-11-007 TC-NFR-11-008 TC-NFR-11-012
  * TC-NFR-11-013 TC-NFR-11-014
  */
@@ -291,6 +291,87 @@ describe("Flow D — reporting authorization (AC-01, AC-02, AC-03, AC-12–AC-14
       headers: { cookie: instructor.cookie },
     });
     assert.equal(denied.statusCode, 403);
+  });
+
+  it("student denied report endpoints immediately; instructor session report within NFR-07 (TC-NFR-07-013, BR-14, NFR-07, NFR-11, FR-12)", async () => {
+    await ctx.resetDb(ctx.seedReferenceData.bind(ctx));
+    const instructor = await ctx.seedInstructor();
+    const student = await ctx.seedStudent("SV-RPT-DENY", "report-deny@example.edu.vn");
+    const studentB = await ctx.seedStudent("SV-RPT-PEER", "report-peer@example.edu.vn");
+    await ctx.enrollStudent(student.userId);
+    await ctx.enrollStudent(studentB.userId);
+
+    const sessionId = await ctx.createDraftSession(instructor);
+    await ctx.openSession(sessionId, instructor);
+    await ctx.closeSession(sessionId, instructor);
+
+    const sessionDeniedStart = performance.now();
+    const sessionDenied = await ctx.app.inject({
+      method: "GET",
+      url: `/api/v1/reports/session/${sessionId}`,
+      headers: { cookie: student.cookie },
+    });
+    const sessionDeniedElapsed = performance.now() - sessionDeniedStart;
+    assert.equal(sessionDenied.statusCode, 403);
+    assert.equal(
+      sessionDenied.json<{ errorCode: string }>().errorCode,
+      ErrorCode.ReportAccessDenied,
+    );
+    assert.ok(
+      sessionDeniedElapsed < 5000,
+      `student session report denial took ${sessionDeniedElapsed.toFixed(1)}ms`,
+    );
+    assert.equal(sessionDenied.json<{ records?: unknown }>().records, undefined);
+
+    const summaryDeniedStart = performance.now();
+    const summaryDenied = await ctx.app.inject({
+      method: "GET",
+      url: "/api/v1/reports/summary?classCode=HESD-01&subjectCode=SWE-101&from=2026-01-01&to=2026-12-31",
+      headers: { cookie: student.cookie },
+    });
+    const summaryDeniedElapsed = performance.now() - summaryDeniedStart;
+    assert.equal(summaryDenied.statusCode, 403);
+    assert.equal(
+      summaryDenied.json<{ errorCode: string; message: string }>().errorCode,
+      ErrorCode.ReportAccessDenied,
+    );
+    assert.match(
+      summaryDenied.json<{ message: string }>().message,
+      /quyền xem báo cáo/i,
+    );
+    assert.ok(
+      summaryDeniedElapsed < 5000,
+      `student summary report denial took ${summaryDeniedElapsed.toFixed(1)}ms`,
+    );
+
+    const closedAt = await ctx.db.query<{ closed_at: Date }>(
+      `SELECT closed_at FROM sessions WHERE id = $1`,
+      [sessionId],
+    );
+    const closedAtMs = closedAt.rows[0]!.closed_at.getTime();
+
+    const instructorReportStart = performance.now();
+    const instructorReport = await ctx.app.inject({
+      method: "GET",
+      url: `/api/v1/reports/session/${sessionId}`,
+      headers: { cookie: instructor.cookie },
+    });
+    const instructorReportElapsed = performance.now() - instructorReportStart;
+    assert.equal(instructorReport.statusCode, 200);
+    const reportBody = instructorReport.json<{
+      summary: { present: number; absent: number; pending: number };
+      records: Array<{ status: string }>;
+    }>();
+    assert.equal(reportBody.summary.pending, 0);
+    assert.equal(reportBody.records.length, 2);
+    assert.ok(
+      instructorReportElapsed <= 600_000,
+      `instructor report took ${instructorReportElapsed.toFixed(1)}ms (NFR-07 budget 600000ms)`,
+    );
+    assert.ok(
+      Date.now() - closedAtMs <= 600_000,
+      "instructor report available within 10 minutes of closedAt",
+    );
   });
 
   it("student denied session management and qr:display (TC-NFR-11-012, FR-04, FR-06)", async () => {
