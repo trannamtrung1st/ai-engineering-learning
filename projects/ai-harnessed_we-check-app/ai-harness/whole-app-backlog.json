@@ -65,7 +65,7 @@
     },
     {
       "id": "domain-package",
-      "passes": false,
+      "passes": true,
       "priority": 2,
       "phase": 0,
       "agent": "infra",

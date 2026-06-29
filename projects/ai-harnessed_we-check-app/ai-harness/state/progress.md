@@ -254,3 +254,5 @@ Append-only log of harness slice completions.
 - 2026-06-29T19:28:25Z | repo-monorepo-bootstrap | passed
 - 2026-06-29T19:35:00Z | docker-compose-db | Fixed TC-NFR-04-005 BR-15 e2e traceability in flow-a + docker-compose-db integration tests; NFR-04 2000ms latency assertion; aih:check pass (147 integration, 25 e2e)
 - 2026-06-29T19:39:28Z | docker-compose-db | passed
+- 2026-06-29T19:41:46Z | domain-package | aih:check pass — shared domain enums/state machines/Haversine/validation IDs; BR-01/02/03/04/10 traceability in packages/domain unit tests + apps/api/domain-traceability.test.ts; 147 integration + 25 e2e pass
+- 2026-06-29T19:45:49Z | domain-package | passed
