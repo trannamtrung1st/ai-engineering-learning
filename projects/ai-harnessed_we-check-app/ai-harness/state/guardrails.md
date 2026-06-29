@@ -183,3 +183,7 @@ Verification failures and remediation notes for harness agents.
 - [module-roster-enrollment] AI review failed — see 20260629T202058Z-review.json
 - [web-auth-login] Browser test failed — see 20260629T212002Z-browser-test.json
 - **Preview seed core auth:** Integration `truncateAuthTables` wipes admin/student/instructor while `isSeedApplied` early-return only refreshed deactivated/instructor2 — call `ensurePreviewCoreAuthFixtures` on preview refresh and include admin/instructor in `isSeedApplied` checks (TC-FR-02-021).
+- **Preview history fixtures:** `ensurePreviewHistoryFixtures` must upsert ≥25 Closed sessions with mixed Present/Absent/Excused for `student@example.edu.vn`; include in `isSeedApplied` count check and `startPreviewTokenRefresh` — single `sessionClosed` row is insufficient for TC-AC-14-008 pagination gates.
+- **Preview refresh FK order:** In `startPreviewTokenRefresh`, call `ensurePreviewReferenceData` and `ensurePreviewHistoryFixtures` **before** `ensurePreviewTokenFixtures` — after integration `truncateAuthTables`, token upserts fail on missing `session_id` FK and abort refresh before history is restored (TC-AC-14-008 empty `/history`).
+- [web-student-history] Browser test failed — see 20260629T215142Z-browser-test.json
+- [web-student-history] Browser test failed — see 20260629T220249Z-browser-test.json

@@ -613,7 +613,7 @@
     },
     {
       "id": "web-student-history",
-      "passes": false,
+      "passes": true,
       "priority": 23,
       "phase": 2,
       "agent": "frontend",

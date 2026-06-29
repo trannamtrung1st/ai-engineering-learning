@@ -1,4 +1,5 @@
 import {
+  AttendanceStatus,
   QrTokenStatus,
   SessionStatus,
   UserRole,
@@ -112,7 +113,15 @@ async function isSeedApplied(db: DbPool): Promise<boolean> {
     "SELECT status FROM sessions WHERE id = $1",
     [PREVIEW_IDS.sessionActive],
   );
-  return activeSession.rows[0]?.status === SessionStatus.Active;
+  if (activeSession.rows[0]?.status !== SessionStatus.Active) return false;
+
+  const historyCount = await db.query<{ count: string }>(
+    `SELECT COUNT(*)::text AS count FROM attendance_records ar
+     INNER JOIN sessions s ON s.id = ar.session_id
+     WHERE ar.student_id = $1 AND s.status = $2`,
+    [PREVIEW_IDS.student, SessionStatus.Closed],
+  );
+  return Number(historyCount.rows[0]?.count ?? "0") >= PREVIEW_HISTORY_MIN_COUNT;
 }
 
 const PREVIEW_USER_IDS = [
@@ -598,19 +607,89 @@ export async function ensurePreviewUserFixtures(db: DbPool): Promise<void> {
   );
 }
 
+/** Closed-session count for /history pagination browser gates (TC-AC-14-008). */
+const PREVIEW_HISTORY_SESSION_COUNT = 30;
+
+/** Minimum closed history rows before preview refresh skips history upsert. */
+const PREVIEW_HISTORY_MIN_COUNT = 25;
+
+const PREVIEW_HISTORY_STATUSES = [
+  AttendanceStatus.Present,
+  AttendanceStatus.Absent,
+  AttendanceStatus.Excused,
+] as const;
+
+function previewHistorySessionId(index: number): string {
+  return `31000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
+}
+
 /** Upsert closed-session attendance for student history browser gates (AC-14, FR-14). */
 export async function ensurePreviewHistoryFixtures(db: DbPool): Promise<void> {
-  const checkedInAt = new Date(now().getTime() - 2 * 60 * 60 * 1000);
+  await ensurePreviewReferenceData(db);
 
   await db.query(
-    `INSERT INTO attendance_records (id, session_id, student_id, status, checked_in_at)
-     VALUES (gen_random_uuid(), $1, $2, 'Present', $3)
-     ON CONFLICT (session_id, student_id) DO UPDATE SET
-       status = EXCLUDED.status,
-       checked_in_at = EXCLUDED.checked_in_at,
-       updated_at = NOW()`,
-    [PREVIEW_IDS.sessionClosed, PREVIEW_IDS.student, checkedInAt],
+    `INSERT INTO enrollments (student_id, class_id, subject_id)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (student_id, class_id, subject_id) DO NOTHING`,
+    [PREVIEW_IDS.student, PREVIEW_IDS.classHesd01, PREVIEW_IDS.subjectSwe102],
   );
+
+  const baseMs = now().getTime();
+
+  for (let i = 0; i < PREVIEW_HISTORY_SESSION_COUNT; i++) {
+    const sessionId =
+      i === 0 ? PREVIEW_IDS.sessionClosed : previewHistorySessionId(i);
+    const daysAgo = i + 1;
+    const scheduledStart = new Date(baseMs - daysAgo * 24 * 60 * 60 * 1000);
+    const openedAt = scheduledStart;
+    const closedAt = new Date(scheduledStart.getTime() + 2 * 60 * 60 * 1000);
+    const subjectId =
+      i % 2 === 0 ? PREVIEW_IDS.subjectSwe101 : PREVIEW_IDS.subjectSwe102;
+    const status = PREVIEW_HISTORY_STATUSES[i % PREVIEW_HISTORY_STATUSES.length]!;
+    const checkedInAt =
+      status === AttendanceStatus.Present
+        ? new Date(scheduledStart.getTime() + 15 * 60 * 1000)
+        : null;
+
+    await db.query(
+      `INSERT INTO sessions (
+         id, instructor_id, class_id, subject_id, title, room_name,
+         room_latitude, room_longitude, gps_radius_meters, scheduled_start,
+         status, opened_at, closed_at, version
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 100, $9, $10, $11, $12, 1)
+       ON CONFLICT (id) DO UPDATE SET
+         status = EXCLUDED.status,
+         subject_id = EXCLUDED.subject_id,
+         scheduled_start = EXCLUDED.scheduled_start,
+         opened_at = EXCLUDED.opened_at,
+         closed_at = EXCLUDED.closed_at,
+         updated_at = NOW()`,
+      [
+        sessionId,
+        PREVIEW_IDS.instructor,
+        PREVIEW_IDS.classHesd01,
+        subjectId,
+        `SWE — Buổi lịch sử ${i + 1}`,
+        `Phòng H${String(i + 1).padStart(3, "0")}`,
+        ROOM_LAT,
+        ROOM_LNG,
+        scheduledStart,
+        SessionStatus.Closed,
+        openedAt,
+        closedAt,
+      ],
+    );
+
+    await db.query(
+      `INSERT INTO attendance_records (id, session_id, student_id, status, checked_in_at)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4)
+       ON CONFLICT (session_id, student_id) DO UPDATE SET
+         status = EXCLUDED.status,
+         checked_in_at = EXCLUDED.checked_in_at,
+         updated_at = NOW()`,
+      [sessionId, PREVIEW_IDS.student, status, checkedInAt],
+    );
+  }
 }
 
 /** Upsert non-enrolled student B for NotEnrolled / TokenAlreadyUsed browser gates. */
@@ -684,16 +763,31 @@ export async function resumePreviewQrSchedulers(
 
 const PREVIEW_TOKEN_REFRESH_MS = 20_000;
 
+/** Lightweight refresh after integration truncates sessions — history before QR tokens (FK order). */
+export async function refreshPreviewBrowserFixtures(db: DbPool): Promise<void> {
+  await ensurePreviewCoreAuthFixtures(db);
+  await ensurePreviewDeactivatedUser(db);
+  await ensurePreviewInstructor2Fixtures(db);
+  await ensurePreviewDisplayNames(db);
+  await ensurePreviewReferenceData(db);
+
+  const historyCount = await db.query<{ count: string }>(
+    `SELECT COUNT(*)::text AS count FROM attendance_records ar
+     INNER JOIN sessions s ON s.id = ar.session_id
+     WHERE ar.student_id = $1 AND s.status = $2`,
+    [PREVIEW_IDS.student, SessionStatus.Closed],
+  );
+  if (Number(historyCount.rows[0]?.count ?? "0") < PREVIEW_HISTORY_MIN_COUNT) {
+    await ensurePreviewHistoryFixtures(db);
+  }
+
+  await ensurePreviewTokenFixtures(db);
+}
+
 /** Keep browser-gate QR fixtures within 30 s TTL while preview stack runs. */
 export function startPreviewTokenRefresh(db: DbPool): () => void {
   const handle = setInterval(() => {
-    void runWhenPreviewDbIdle(db, async () => {
-      await ensurePreviewCoreAuthFixtures(db);
-      await ensurePreviewDeactivatedUser(db);
-      await ensurePreviewInstructor2Fixtures(db);
-      await ensurePreviewDisplayNames(db);
-      await ensurePreviewTokenFixtures(db);
-    }).catch(
+    void runWhenPreviewDbIdle(db, () => refreshPreviewBrowserFixtures(db)).catch(
       (error: unknown) => {
         console.error("Preview token fixture refresh failed:", error);
       },
@@ -706,14 +800,7 @@ export function startPreviewTokenRefresh(db: DbPool): () => void {
 /** Idempotent preview fixtures for browser gates (NFR-17, NFR-06). */
 export async function runPreviewSeed(db: DbPool): Promise<void> {
   if (await isSeedApplied(db)) {
-    await runWhenPreviewDbIdle(db, async () => {
-      await ensurePreviewCoreAuthFixtures(db);
-      await ensurePreviewDeactivatedUser(db);
-      await ensurePreviewInstructor2Fixtures(db);
-      await ensurePreviewDisplayNames(db);
-      await ensurePreviewTokenFixtures(db);
-      await ensurePreviewHistoryFixtures(db);
-    });
+    await runWhenPreviewDbIdle(db, () => refreshPreviewBrowserFixtures(db));
     return;
   }
 
