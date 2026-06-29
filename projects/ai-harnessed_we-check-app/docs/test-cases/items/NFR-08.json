@@ -1,8 +1,8 @@
 {
   "productItemId": "NFR-08",
   "version": 1,
-  "docFingerprint": "sha256:889c55844c8fb62f755b7bfe0012c8f4045a89dd93449f95fb5979804ca7fbd8",
-  "generatedAt": "2026-06-29T16:00:00Z",
+  "docFingerprint": "sha256:0d26880a4e8810f84506707bdccda5daa34c51f30d098691abe2c1b678fecb37",
+  "generatedAt": "2026-06-29T20:15:00Z",
   "cases": [
     {
       "id": "TC-NFR-08-001",
@@ -91,7 +91,7 @@
       "traceability": ["NFR-08", "AC-15", "FR-15"],
       "title": "Instructor Theo dõi tab StatCards refresh within 5 seconds after student check-in without page reload",
       "preconditions": [
-        "Authenticated Instructor on desktop viewport at /sessions/:sessionId (Theo dõi tab)",
+        "Authenticated Instructor on desktop viewport at /sessions/:sessionId with Active session defaulting to Theo dõi tab per layout §11",
         "Active session with SessionMonitorDashboard polling every 5 seconds per API design §11",
         "Should-capability FR-15 enabled; baseline StatCard Đã điểm danh shows 3 of 10 enrolled",
         "Student A can complete check-in in parallel browser context or via API trigger"
@@ -223,9 +223,10 @@
         "Record timestamps of consecutive GET /api/v1/sessions/:sessionId/attendance requests over 15 seconds",
         "Assert poll interval is approximately 5 seconds (4–6 s tolerance) per API design §11",
         "Verify no manual refresh button click or full page reload occurs between polls",
-        "Assert poll status indicator shows last refresh timestamp updating automatically"
+        "Assert polling status bar displays Cập nhật lúc HH:mm:ss after each successful poll per layout §12",
+        "Close session via instructor action; assert attendance polls cease and status bar no longer updates"
       ],
-      "expected": "UI polling cadence aligns with 5-second server poll interval so NFR-08 refresh target is achievable without manual reload per API design §11 and error-handling §7 instructor dashboard guidance",
+      "expected": "UI polling cadence aligns with 5-second server poll interval and layout §12 live-region chrome; polls stop when session is no longer Active so NFR-08 refresh target applies only during live monitor window per API design §11",
       "edgeCase": false
     },
     {
@@ -315,8 +316,8 @@
       ],
       "steps": [
         "Navigate to Theo dõi tab and verify initial StatCard counts from successful poll",
-        "Simulate one GET /sessions/:sessionId/attendance failure; verify toast per error-handling §7 instructor dashboard guidance",
-        "Verify polling resumes automatically without instructor manual page reload",
+        "Simulate one GET /sessions/:sessionId/attendance failure; verify toast per error-handling §7 and status bar Không thể cập nhật — thử lại per layout §12",
+        "Click retry or wait for automatic poll resume without instructor manual page reload",
         "Trigger successful check-in for Student A",
         "Assert StatCard Đã điểm danh updates within 5 seconds of check-in on next successful poll cycle",
         "Assert URL unchanged and no full document navigation occurred"
@@ -346,6 +347,29 @@
       ],
       "expected": "NFR-08 near-real-time refresh applies only during Active session; Closed session poll returns static final counts with no post-close increment boundary per BR-01",
       "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-08-015",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["NFR-08", "FR-15", "AC-15", "NFR-11"],
+      "title": "Instructor Theo dõi monitor layout omits /admin nav links and permission-gated SidebarNav items",
+      "preconditions": [
+        "Authenticated Instructor with session:read and attendance:read for assigned Active session",
+        "Instructor on /sessions/:sessionId Theo dõi tab with SessionMonitorDashboard mounted",
+        "Instructor lacks all admin permissions (user:read all, roster:write, report:export, policy:write)"
+      ],
+      "steps": [
+        "Navigate to /sessions/:sessionId and confirm Theo dõi tab is active for Active session",
+        "Query SidebarNav and full layout DOM for anchor elements with href matching /admin",
+        "Assert zero /admin/* navigation links anywhere in layout chrome per BR-14 and roles-permissions §2.3a",
+        "Assert SidebarNav renders only Buổi học and Báo cáo items when instructor holds session:read and report:read; admin-only items omitted from DOM not disabled",
+        "Assert BottomNav is absent in InstructorLayout (desktop shell) and student-only routes are not shown"
+      ],
+      "expected": "Tag-specific browser-journey hint satisfied: instructor live monitor context exposes no forbidden admin route prefixes; SidebarNav omits items lacking required permission so NFR-08 dashboard testing occurs within correctly scoped instructor chrome",
+      "edgeCase": false
     }
   ]
 }
