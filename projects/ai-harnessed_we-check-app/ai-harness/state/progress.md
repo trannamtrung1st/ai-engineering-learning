@@ -250,3 +250,5 @@ Append-only log of harness slice completions.
 - 2026-06-29T19:16:03Z | NFR-19 | testgen_passed
 - 2026-06-29T19:17:51Z | NFR-20 | testgen_passed
 - 2026-06-29T19:19:15Z | NFR-24 | testgen_passed
+- 2026-06-29T19:24:23Z | repo-monorepo-bootstrap | aih:check pass after AC-17/FR-17 NFR-14 traceability in domain + monorepo integration tests (TestGen TC-NFR-14-019/020)
+- 2026-06-29T19:28:25Z | repo-monorepo-bootstrap | passed
