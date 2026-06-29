@@ -25,6 +25,26 @@ export async function registerAttendanceRoutes(
   const attendanceService = new AttendanceService(db);
   const auth = createAuthMiddleware(store);
 
+  app.get(
+    "/attendance/:recordId/audit-logs",
+    { preHandler: [auth, requirePermission(Permission.AttendanceRead)] },
+    async (request) => {
+      const { recordId } = request.params as { recordId: string };
+      if (!UUID_RE.test(recordId)) {
+        throw validationFailed([
+          {
+            field: "recordId",
+            code: ErrorCode.InvalidFormat,
+            message: "Định dạng trường không hợp lệ",
+          },
+        ]);
+      }
+
+      const { user } = request.auth!;
+      return attendanceService.getAuditLogs(recordId, user.id, user.role);
+    },
+  );
+
   app.patch(
     "/attendance/:recordId",
     { preHandler: [auth, requirePermission(Permission.AttendanceWrite)] },

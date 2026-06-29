@@ -44,6 +44,45 @@ export class AuditRepository {
     return Number.parseInt(result.rows[0]?.count ?? "0", 10);
   }
 
+  async listForRecord(attendanceRecordId: string): Promise<
+    Array<{
+      id: string;
+      editorId: string;
+      editorDisplayName: string;
+      previousStatus: AttendanceStatus;
+      newStatus: AttendanceStatus;
+      note: string | null;
+      editedAt: Date;
+    }>
+  > {
+    const result = await this.db.query<{
+      id: string;
+      editor_id: string;
+      editor_display_name: string;
+      previous_status: AttendanceStatus;
+      new_status: AttendanceStatus;
+      note: string | null;
+      edited_at: Date;
+    }>(
+      `SELECT a.id, a.editor_id, u.display_name AS editor_display_name,
+              a.previous_status, a.new_status, a.note, a.edited_at
+       FROM attendance_audit_logs a
+       JOIN users u ON u.id = a.editor_id
+       WHERE a.attendance_record_id = $1
+       ORDER BY a.edited_at DESC`,
+      [attendanceRecordId],
+    );
+    return result.rows.map((row) => ({
+      id: row.id,
+      editorId: row.editor_id,
+      editorDisplayName: row.editor_display_name,
+      previousStatus: row.previous_status,
+      newStatus: row.new_status,
+      note: row.note,
+      editedAt: row.edited_at,
+    }));
+  }
+
   async findLatestForRecord(attendanceRecordId: string): Promise<{
     editorId: string;
     previousStatus: AttendanceStatus;

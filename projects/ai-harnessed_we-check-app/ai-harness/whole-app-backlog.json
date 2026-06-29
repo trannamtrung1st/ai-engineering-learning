@@ -725,7 +725,7 @@
     },
     {
       "id": "web-instructor-attendance-roster",
-      "passes": false,
+      "passes": true,
       "priority": 27,
       "phase": 2,
       "agent": "frontend",

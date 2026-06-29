@@ -8,6 +8,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { useSessionDetail } from "@/hooks/use-session-detail";
 import { PageHeader } from "@/components/layout/page-header";
 import { SessionMonitorDashboard } from "@/components/domain/session/session-monitor-dashboard";
+import { AttendanceRosterTable } from "@/components/instructor/attendance-roster-table";
 import { QrDisplayPanel } from "@/components/instructor/qr-display-panel";
 import { SessionForm } from "@/components/instructor/session-form";
 import { SessionLifecycleActions } from "@/components/instructor/session-lifecycle-actions";
@@ -164,18 +165,18 @@ export function SessionDetailPage() {
         </div>
       ) : null}
 
-      {tab === "roster" ? (
-        <div>
+      {tab === "roster" && id ? (
+        <div className="flex flex-col gap-4">
           {session.status === SessionStatus.Closed ? (
-            <p
-              className="text-small text-text-secondary"
-              title="Chỉ phòng đào tạo có thể chỉnh sửa sau 24 giờ"
-            >
-              Chỉ phòng đào tạo có thể chỉnh sửa sau 24 giờ
-            </p>
-          ) : (
-            <p className="text-body">Danh sách điểm danh</p>
-          )}
+            <Alert variant="info" title="Buổi học đã kết thúc">
+              Buổi học đã kết thúc. Bạn có thể chỉnh sửa điểm danh trong vòng 24 giờ sau khi đóng.
+            </Alert>
+          ) : null}
+          <AttendanceRosterTable
+            sessionId={id}
+            sessionStatus={session.status}
+            closedAt={session.closedAt}
+          />
         </div>
       ) : null}
 
