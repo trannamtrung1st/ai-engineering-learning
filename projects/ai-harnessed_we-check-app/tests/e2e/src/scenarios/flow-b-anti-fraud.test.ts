@@ -20,8 +20,8 @@ import { advanceClock } from "../../../../apps/api/src/infra/clock.js";
 /**
  * Flow B — Anti-fraud rejection paths (testing-plan §6)
  * Traceability: AC-02 AC-06 AC-08 AC-09 AC-10
- * FR-02 FR-06 FR-08 FR-09 FR-10 BR-02 BR-03 BR-04 BR-06 BR-11 BR-12 NFR-02 NFR-12
- * Cases: TC-AC-02-001 TC-AC-06-002 TC-AC-08-002 TC-AC-09-001 TC-AC-09-002 TC-AC-10-001
+ * FR-02 FR-06 FR-07 FR-08 FR-09 FR-10 BR-02 BR-03 BR-04 BR-06 BR-11 BR-12 NFR-02 NFR-12 NFR-24
+ * Cases: TC-AC-02-001 TC-AC-06-002 TC-AC-07-024 TC-AC-08-002 TC-AC-08-019 TC-AC-09-001 TC-AC-09-002 TC-AC-10-001 TC-AC-10-018 TC-FR-08-024
  */
 describe("Flow B — anti-fraud rejection paths (AC-02, AC-06, AC-08–AC-10)", () => {
   before(async () => {
@@ -210,5 +210,39 @@ describe("Flow B — anti-fraud rejection paths (AC-02, AC-06, AC-08–AC-10)", 
       payload: ctx.checkInPayload(tokenId),
     });
     assert.equal(response.statusCode, 403);
+  });
+
+  it("POST /check-in requires body GPS; client gpsSim URL params are out of API scope (TC-AC-07-024, TC-AC-08-019, TC-FR-08-024, NFR-24)", async () => {
+    const { studentA, tokenId } = await seedActiveWorkshop();
+
+    const noCoords = await ctx.app.inject({
+      method: "POST",
+      url: "/api/v1/check-in",
+      headers: { cookie: studentA.cookie },
+      payload: { tokenId },
+    });
+    assert.equal(noCoords.statusCode, 422);
+
+    const success = await ctx.checkIn(studentA, tokenId, {
+      latitude: IN_RADIUS_LAT,
+      longitude: IN_RADIUS_LNG,
+    });
+    assert.equal(success.statusCode, 200);
+    const body = success.json<Record<string, unknown>>();
+    assert.ok(!("latitude" in body));
+    assert.ok(!("longitude" in body));
+    assert.ok(!("gpsSim" in body));
+  });
+
+  it("SpoofSuspected requires spoofMetadata in POST body, not URL sim params (TC-AC-10-018, NFR-24, FR-10)", async () => {
+    const { studentB, tokenId } = await seedActiveWorkshop();
+
+    const spoof = await ctx.checkIn(studentB, tokenId, {
+      latitude: IN_RADIUS_LAT,
+      longitude: IN_RADIUS_LNG,
+      spoofMetadata: { mockLocationDetected: true, accuracyMeters: 1, platform: "android" },
+    });
+    assert.equal(spoof.statusCode, 400);
+    assert.equal(spoof.json<{ outcome: string }>().outcome, ErrorCode.SpoofSuspected);
   });
 });

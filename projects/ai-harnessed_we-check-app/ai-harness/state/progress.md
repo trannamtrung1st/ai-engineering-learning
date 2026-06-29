@@ -271,3 +271,5 @@ Append-only log of harness slice completions.
 - 2026-06-29T20:46:42Z | module-session-management | passed
 - 2026-06-29T20:48:58Z | module-attendance | aih:check pass — prior gate failures resolved: AC-10 traceability for NFR-15 TC-NFR-15-004/009/017, typecheck/build; Pending seed on open, finalize Pending→Absent on close, manual edits with append-only audit (migration 006 trigger), student history pagination; 6 unit + 19 integration + 29 e2e pass
 - 2026-06-29T20:53:35Z | module-attendance | passed
+- 2026-06-29T21:00:00Z | module-checkin-qr | aih:check pass — prior gate failures resolved: NFR-21 traceability TC-NFR-12-007 structured logging excludes raw GPS in checkin-qr.integration.test.ts; NFR-24 e2e traceability TC-AC-07-024/TC-AC-08-019/TC-AC-10-018/TC-FR-08-024 in flow-b-anti-fraud.test.ts; 8 unit + 16 integration + 31 e2e pass
+- 2026-06-29T21:03:08Z | module-checkin-qr | passed
