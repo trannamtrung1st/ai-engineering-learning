@@ -47,6 +47,18 @@ Accessibility snapshots help with structure and interaction; **screenshots** are
 
 Use Playwright MCP's screenshot tool, or `cursor-ide-browser` `browser_take_screenshot` in IDE sessions. Compare against `docs/ui-ux/00-production-ui-quality-bar.md`. Fix obvious UI issues during implementation; report UI-quality FAILs during the browser test gate.
 
+## Agent timeout discipline
+
+Implementer smoke tests and the browser test gate can hang on stuck pages, permissions, or deadlocked UI. **Agents must apply wall-clock limits themselves** — do not wait indefinitely.
+
+| Agent | Limit | On timeout |
+|---|---|---|
+| **Implementer (browser smoke)** | **30s** per navigation/action | Stop automation, note URL/state, fix or `SLICE_BLOCKED` |
+| **Browser test agent** | **30s** per case step; **15 min** whole pass | FAIL case or emit `BROWSER_TEST_FAIL` |
+| **Implementer (npm checks)** | Budgets in `ralph-loop.json` — prefer `npm run aih:check -- <slice-id>` | Kill process tree; fix deadlock before `SLICE_DONE` |
+
+See implementer/tester prompts for full rules. Computational timeouts are enforced automatically by `run-checks.sh`; browser timeouts are agent-enforced.
+
 ## Standard flows
 
 ### Participant

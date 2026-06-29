@@ -31,6 +31,17 @@ Before signaling `SLICE_DONE`, all applicable layers must pass locally:
 - `npm run test:integration` — backend slices with DB behavior (`apps/api`)
 - `npm run test:e2e` — acceptance/scenario slices (`tests/e2e`)
 
+### Self-check command timeouts (required)
+
+Computational gates enforce wall-clock timeouts. **Apply the same discipline when you run checks yourself** — unbounded `npm run test:*` / `typecheck` / `lint` / `build` can deadlock and waste the iteration.
+
+1. **Final verification (preferred):** `npm run aih:check -- {{SLICE_ID}}` — same script, slice scope, and timeouts as the harness gate
+2. **Ad-hoc single script:** use the matching budget below, e.g. `AIH_CHECK_TIMEOUT_test_integration_MS=900000 npm run test:integration`
+3. **If a command exceeds its budget:** stop the process tree (kill the terminal job and child test workers), treat as failure, fix the hang/deadlock before `SLICE_DONE`; use `SLICE_BLOCKED` if you cannot resolve
+4. Do **not** wait on hung tests hoping they finish — the gate will timeout and fail the slice anyway
+
+{{CHECK_TIMEOUT_BUDGETS}}
+
 Read the generated test case artifacts for each product item in this slice's `acceptance` list when present (`docs/test-cases/items/<AC|FR|BR|NFR-id>.json`). Every case with `layer` of `integration` or `e2e` must have its `traceability` tags covered in colocated test files.
 
 **Unit and component tests** are implementer-written: colocated `*.test.ts` / `*.test.tsx`, listed under `testRequirements.unit` / `component`, and must reference acceptance tags.
@@ -53,8 +64,9 @@ When the slice agent is `frontend` or `test`, Playwright MCP is available (`--ap
 1. Use **Playwright MCP** to navigate `http://localhost:3000`
 2. Exercise the slice user flow (browse, register, paginate, check-in, organizer tables)
 3. **For each page or route you created or modified**, open it in the browser and **capture a screenshot** (Playwright MCP screenshot tool, or `cursor-ide-browser` `browser_take_screenshot` when available). Do this even when the flow passes — screenshots are how you inspect layout, spacing, typography, empty/loading/error states, and alignment with `docs/ui-ux/00-production-ui-quality-bar.md`. Use accessibility snapshots for interaction debugging; use **screenshots** for visual UI/UX review.
-4. If a page looks wrong, fix it before `SLICE_DONE`; on persistent failure, attach the screenshot evidence in your summary and capture an accessibility snapshot for debugging
-5. Append a one-line browser verification note to `ai-harness/state/progress.md` listing pages screenshot-verified
+4. **Apply browser timeouts** — abandon a navigation or action after **30s** without expected content; do not wait on infinite spinners or stuck camera/GPS prompts; kill hung browser automation and fix before `SLICE_DONE`
+5. If a page looks wrong, fix it before `SLICE_DONE`; on persistent failure, attach the screenshot evidence in your summary and capture an accessibility snapshot for debugging
+6. Append a one-line browser verification note to `ai-harness/state/progress.md` listing pages screenshot-verified
 
 See `ai-harness/docs/browser-mcp.md` for the full runbook. The harness will **re-verify** your work via a dedicated browser test agent gate after computational checks.
 

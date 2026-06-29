@@ -112,6 +112,9 @@ ${missing_tags}
 fi
 
 if [[ "$MODE" == "implementer" ]]; then
+  check_timeout_budgets="$(format_check_timeout_budgets_block 2>/dev/null || true)"
+  prompt="${prompt//\{\{CHECK_TIMEOUT_BUDGETS\}\}/$check_timeout_budgets}"
+
   prior_gate_feedback="$(build_implementer_prior_gate_feedback "$SLICE_ID" 2>/dev/null || true)"
   if [[ -n "$prior_gate_feedback" ]]; then
     prompt="${prompt}

@@ -274,6 +274,20 @@ get_check_command_timeout_ms() {
   echo "$CHECK_COMMAND_TIMEOUT_DEFAULT_MS"
 }
 
+# Markdown bullet list of computational check timeouts for agent prompts.
+format_check_timeout_budgets_block() {
+  jq -r '
+    (.computationalChecks.commandTimeoutMs // 600000) as $default |
+    "**Harness command timeout budgets** (from `ai-harness/workflows/ralph-loop.json`):\n",
+    "- default npm script: \($default / 1000)s",
+    (.computationalChecks.commandTimeouts // {} | to_entries | sort_by(.key)[] |
+      "- \(.key): \(.value / 1000)s"),
+    "- override env: `AIH_CHECK_TIMEOUT_MS` or `AIH_CHECK_TIMEOUT_<script>_MS` (see `ai-harness/README.md`)"
+  ' "$LOOP_CONFIG" 2>/dev/null || cat <<'EOF'
+**Harness command timeout budgets:** default 600s per npm script (see `ai-harness/workflows/ralph-loop.json`)
+EOF
+}
+
 check_timeout_message() {
   local timeout_ms="$1"
   local label="${2:-check}"
