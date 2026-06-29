@@ -303,9 +303,9 @@
       "generatedAt": null
     },
     "AC-17": {
-      "current": false,
+      "current": true,
       "docFingerprint": "sha256:5635926769e586240ee89e384bc4287ca605296a8741a7581bffe5cd4ae311fe",
-      "generatedAt": null
+      "generatedAt": "2026-06-29T17:39:42Z"
     },
     "AC-18": {
       "current": false,
