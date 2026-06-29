@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-07",
   "version": 1,
-  "docFingerprint": "sha256:0d73282a1cdb989d80f39ac5119b0cf25b1a8cdaecf5bf1c99651680f31cc6b9",
-  "generatedAt": "2026-06-29T12:00:00Z",
+  "docFingerprint": "sha256:f2be054127cda5ab7ddfda342c8e7b3e55526aeddccbbae25889d8502f5dbe96",
+  "generatedAt": "2026-06-29T17:16:31Z",
   "cases": [
     {
       "id": "TC-AC-07-001",
@@ -21,6 +21,7 @@
         "TestClock within attendance window (scheduledStart + 10 min)"
       ],
       "steps": [
+        "GET /api/v1/check-in/tokens/:tokenId/preflight using Student session and assert HTTP 200 with outcome Valid and session summary",
         "Record wall-clock start time before POST /check-in",
         "POST /check-in with tokenId, latitude 10.762700, longitude 106.660200, spoofMetadata.platform android using Student session",
         "Assert HTTP status 200",
@@ -30,7 +31,7 @@
         "GET /sessions/:sessionId/attendance scoped to student and assert status Present",
         "Query qr_tokens for tokenId and assert status Consumed"
       ],
-      "expected": "AC-07a satisfied: mobile web check-in succeeds; attendance Present; confirmation within 2 s p95 per NFR-04; QrToken Consumed atomically",
+      "expected": "AC-07a satisfied: preflight passes; mobile web check-in succeeds; attendance Present; confirmation within 2 s p95 per NFR-04; QrToken Consumed atomically",
       "edgeCase": false
     },
     {
@@ -48,13 +49,15 @@
         "Student B coordinates within session gpsRadiusMeters"
       ],
       "steps": [
+        "GET /api/v1/check-in/tokens/:tokenId/preflight using Student B session",
+        "Assert HTTP status 403 with outcome NotEnrolled and errorCode NotEnrolled",
         "POST /check-in with valid tokenId and in-radius coordinates using Student B session",
         "Assert HTTP status 403",
         "Assert response outcome NotEnrolled and errorCode NotEnrolled",
         "GET /sessions/:sessionId/attendance for Student B context and assert no Present record",
         "Query attendance_records for Student B and sessionId and assert status is not Present (no row or Pending unchanged)"
       ],
-      "expected": "AC-07b satisfied: check-in rejected for non-enrolled student; no Present attendance created per API design §6.3 NotEnrolled mapping",
+      "expected": "AC-07b and AC-07e satisfied: preflight and submit reject non-enrolled student with message Bạn không thuộc danh sách lớp của buổi học này; no Present attendance created per API design §6.2–6.3",
       "edgeCase": true
     },
     {
@@ -114,7 +117,8 @@
       "title": "POST /check-in returns 200 with Success outcome and attendance DTO for valid submission",
       "preconditions": [
         "Authenticated enrolled Student session cookie is set",
-        "Active sessionId with Valid QrToken and student Pending attendance"
+        "Active sessionId with Valid QrToken and student Pending attendance",
+        "GET /api/v1/check-in/tokens/:tokenId/preflight already returned 200 outcome Valid"
       ],
       "steps": [
         "Send POST /api/v1/check-in with body { tokenId, latitude: 10.762700, longitude: 106.660200, spoofMetadata: { mockLocationDetected: false, platform: \"android\" } }",
@@ -122,7 +126,7 @@
         "Assert Content-Type application/json; charset=utf-8",
         "Assert response body contains outcome Success, message Điểm danh thành công",
         "Assert response body attendance object contains status Present and checkedInAt ISO 8601 UTC string",
-        "Assert no errorCode field present on success envelope per API design §6.2"
+        "Assert no errorCode field present on success envelope per API design §6.3"
       ],
       "expected": "HTTP 200 Success contract per API design §6.2 and §6.3; full check-in success envelope for mobile web client",
       "edgeCase": false
@@ -144,7 +148,7 @@
         "POST /check-in with valid tokenId and coordinates using non-enrolled Student session",
         "Assert HTTP status 403",
         "Assert response body outcome NotEnrolled and errorCode NotEnrolled",
-        "Assert response body contains localized Vietnamese permission or enrollment message",
+        "Assert response body message contains Bạn không thuộc danh sách lớp của buổi học này",
         "Verify CheckInAttempt row inserted with outcome NotEnrolled per FR-09"
       ],
       "expected": "HTTP 403 NotEnrolled per API design §6.3; canonical failure envelope; no Present attendance per AC-07b",
@@ -164,12 +168,13 @@
         "Instructor role lacks checkin:submit permission per roles-permissions §2.2"
       ],
       "steps": [
+        "GET /api/v1/check-in/tokens/:tokenId/preflight using Instructor session and assert HTTP 403 Forbidden",
         "POST /check-in with valid tokenId and in-radius coordinates using Instructor session cookie",
         "Assert HTTP status 403 Forbidden",
         "Assert response errorCode Forbidden with localized permission-denied message",
         "Verify no attendance record for instructor userId transitions to Present"
       ],
-      "expected": "Only Student role holds checkin:submit; Instructor check-in attempt denied with HTTP 403 per §2.3 Check-in permissions",
+      "expected": "Only Student role holds checkin:submit; Instructor preflight and check-in attempt denied with HTTP 403 per §2.3 Check-in permissions",
       "edgeCase": false
     },
     {
@@ -207,13 +212,15 @@
         "Both students have in-radius GPS coordinates"
       ],
       "steps": [
+        "GET /api/v1/check-in/tokens/:tokenId/preflight as Student A and assert HTTP 200 outcome Valid",
         "POST /check-in as Student A with tokenId and assert HTTP 200 outcome Success (control: enrolled path works)",
         "Issue fresh Valid token for second assertion",
+        "GET /api/v1/check-in/tokens/:newTokenId/preflight as Student B and assert HTTP 403 NotEnrolled",
         "POST /check-in as Student B with new tokenId and in-radius coordinates",
         "Assert HTTP 403 with outcome NotEnrolled",
         "Query attendance for Student B and sessionId and assert status is not Present"
       ],
-      "expected": "Enrollment boundary enforced at Layer 4 per validation-rules §5.1; enrolled succeeds, non-enrolled rejected without Present per AC-07b",
+      "expected": "Enrollment boundary enforced at preflight and submit per validation-rules §3.6a; enrolled succeeds, non-enrolled rejected without Present per AC-07b and AC-07e",
       "edgeCase": true
     },
     {
@@ -223,19 +230,20 @@
       "technique": "flow-a",
       "priority": "P0",
       "traceability": ["AC-07", "FR-07"],
-      "title": "Flow A step 4: Enrolled student POST /check-in after QR poll completes workshop check-in",
+      "title": "Flow A step 4: Enrolled student POST /check-in after QR poll and preflight pass",
       "preconditions": [
         "Flow A steps 1–3 complete: roster seeded, session opened Active, QR token polled via GET /sessions/:id/qr/current",
         "Authenticated enrolled Student session established (login with returnUrl preserving deep link)",
         "Student coordinates within session radius"
       ],
       "steps": [
+        "GET /api/v1/check-in/tokens/:tokenId/preflight using Student session and assert HTTP 200 outcome Valid with session summary",
         "POST /check-in with tokenId from Flow A step 3, latitude 10.762700, longitude 106.660200 using Student session",
         "Assert HTTP 200 outcome Success with attendance Present",
         "Instructor GET /sessions/:sessionId/attendance and assert present count incremented by 1",
         "Verify tokenId status Consumed in database"
       ],
-      "expected": "Flow A happy-path check-in step succeeds per testing-plan §6 Flow A; AC-07a validated end-to-end in workshop lifecycle",
+      "expected": "Flow A happy-path check-in step succeeds per testing-plan §6 Flow A; AC-07a validated end-to-end in workshop lifecycle after preflight gate",
       "edgeCase": false
     },
     {
@@ -289,7 +297,7 @@
       "technique": "browser-journey",
       "priority": "P0",
       "traceability": ["AC-07", "FR-07", "NFR-18"],
-      "title": "Mobile web QR scan check-in journey: scan deep link → GPS capture → success confirmation",
+      "title": "Mobile web QR scan check-in journey: scan deep link → preflight → GPS capture → success confirmation",
       "preconditions": [
         "Authenticated Student logged in on mobile viewport 375×812 (iOS Safari user-agent or Android Chrome)",
         "Active session with instructor QR displayed; valid qrPayload wecheck://check-in?token=uuid&session=uuid",
@@ -297,13 +305,15 @@
       ],
       "steps": [
         "Student scans QR or navigates to /check-in?token=:tokenId&session=:sessionId",
-        "Verify check-in page loads with session context and GPS permission prompt or status indicator",
+        "Verify validating_token inline spinner on scan step while GET /api/v1/check-in/tokens/:tokenId/preflight is in flight",
+        "Verify GpsCaptureStep mounts only after preflight returns 200 outcome Valid",
+        "Verify session summary (class code, subject code, room name) visible in GPS step header per AC-07c",
         "Grant location permission and wait for coordinates capture",
         "Tap Xác nhận điểm danh or equivalent submit control",
         "Verify success panel displays Điểm danh thành công with Present status and checked-in timestamp",
         "Verify page renders correctly on mobile viewport without horizontal scroll per NFR-18"
       ],
-      "expected": "AC-07a mobile web check-in UX complete on iOS Safari or Android Chrome; no native app required per FR-07 and MVP scope §7.3",
+      "expected": "AC-07a and AC-07c mobile web check-in UX complete on iOS Safari or Android Chrome; preflight gate before GPS; no native app required per FR-07 and MVP scope §7.3",
       "edgeCase": false
     },
     {
@@ -317,10 +327,12 @@
       "preconditions": [
         "Authenticated Student on mobile viewport with GPS permission granted",
         "Active session and valid unexpired token deep-linked to /check-in page",
+        "Preflight already passed and GpsCaptureStep in ready state",
         "Network throttling disabled (normal network profile)"
       ],
       "steps": [
         "Navigate to /check-in?token=:tokenId&session=:sessionId on mobile viewport",
+        "Wait for preflight pass and GPS ready state (Vị trí đã sẵn sàng)",
         "Record timestamp T0 immediately before clicking submit button",
         "Click submit after GPS coordinates captured",
         "Wait for success confirmation element (Điểm danh thành công or Present badge)",
@@ -337,20 +349,20 @@
       "technique": "browser-journey",
       "priority": "P0",
       "traceability": ["AC-07", "FR-07", "FR-03"],
-      "title": "Mobile check-in page shows enrollment error when student not enrolled in session",
+      "title": "Mobile check-in page shows NotEnrolled at preflight without mounting GPS step",
       "preconditions": [
-        "Authenticated Student B not enrolled in target session on mobile viewport 375px width",
-        "Valid check-in deep link with tokenId and sessionId for Active session",
-        "GPS permission granted with in-radius coordinates"
+        "Authenticated Student B (studentb) not enrolled in target session on mobile viewport 375px width",
+        "Valid check-in deep link with tokenId and sessionId for Active session"
       ],
       "steps": [
         "Student B opens /check-in?token=:tokenId&session=:sessionId",
-        "Complete GPS capture and submit check-in",
-        "Verify error panel displays localized not-enrolled or permission message (NotEnrolled outcome)",
+        "Verify GET /api/v1/check-in/tokens/:tokenId/preflight returns 403 with errorCode NotEnrolled",
+        "Verify GpsCaptureStep does not mount (no data-testid gps-capture-step or GPS permission prompt)",
+        "Verify error panel displays Bạn không thuộc danh sách lớp của buổi học này (NotEnrolled outcome)",
         "Verify no success confirmation or Present badge shown",
-        "Verify student can navigate back or retry with valid enrollment context"
+        "Verify student can navigate back or close outcome panel"
       ],
-      "expected": "AC-07b surfaced in mobile web UI; non-enrolled student sees rejection without Present confirmation per user-flows §WF-03",
+      "expected": "AC-07b and AC-07e surfaced in mobile web UI at preflight; non-enrolled student sees rejection without GPS capture per user-flows §WF-03 and BR-15",
       "edgeCase": true
     },
     {
@@ -371,9 +383,198 @@
         "Verify redirect to /login with returnUrl preserving check-in query params",
         "Complete login with valid student credentials",
         "Verify redirect back to /check-in?token=:tokenId&session=:sessionId with session established",
+        "Verify preflight runs and passes before GpsCaptureStep mounts",
         "Complete GPS capture and submit; verify success confirmation"
       ],
-      "expected": "Mobile QR scan flow integrates auth gate per AC-02b and FR-07; student completes check-in after login without re-scanning QR",
+      "expected": "Mobile QR scan flow integrates auth gate per AC-02b and FR-07; student completes check-in after login without re-scanning QR; preflight gate enforced per BR-15",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-07-017",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["AC-07", "FR-07"],
+      "title": "GET /check-in/tokens/:tokenId/preflight returns 200 with session summary for enrolled student on Active session",
+      "preconditions": [
+        "Real PostgreSQL with Active session for class HESD-01 / subject SWE-101",
+        "Enrolled studentId with Pending attendance for session",
+        "Valid qr_tokens row with status Valid linked to sessionId",
+        "CheckInPreflightService or equivalent read-only handler wired to repositories"
+      ],
+      "steps": [
+        "Invoke GET /api/v1/check-in/tokens/:tokenId/preflight with authenticated enrolled Student session",
+        "Assert HTTP status 200",
+        "Assert response outcome Valid, tokenId and sessionId match fixture",
+        "Assert response session object contains classCode HESD-01, subjectCode SWE-101, roomName, status Active",
+        "Query attendance_records and qr_tokens and assert no writes occurred (read-only preflight)"
+      ],
+      "expected": "AC-07c satisfied: preflight returns 200 with session context for GPS step header; no database mutations per API design §6.2 and BR-15",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-07-018",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["AC-07", "FR-07"],
+      "title": "Preflight rejects ExpiredQr, NotEnrolled, SessionMismatch, and TokenNotFound before GPS step",
+      "preconditions": [
+        "Real PostgreSQL with Active session, enrolled Student A, non-enrolled Student B",
+        "Fixtures: expired qr_token (>30 s), unknown tokenId UUID, valid token with mismatched sessionId query param",
+        "CheckInPreflightService evaluates validation-rules §3.6a chain"
+      ],
+      "steps": [
+        "GET /api/v1/check-in/tokens/:expiredTokenId/preflight as Student A; assert HTTP 403 errorCode ExpiredQr",
+        "GET /api/v1/check-in/tokens/:validTokenId/preflight as Student B; assert HTTP 403 errorCode NotEnrolled",
+        "GET /api/v1/check-in/tokens/:validTokenId/preflight?sessionId=:wrongSessionId as Student A; assert HTTP 403 errorCode SessionMismatch",
+        "GET /api/v1/check-in/tokens/:unknownUuid/preflight as Student A; assert HTTP 404 errorCode TokenNotFound",
+        "Verify no attendance_records or qr_tokens rows modified by any preflight call"
+      ],
+      "expected": "AC-07d, AC-07e, AC-07f satisfied: all preflight failure outcomes reject before GPS capture; read-only chain per validation-rules §3.6a",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-07-019",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["AC-07", "FR-07"],
+      "title": "TS-21a: QR preflight valid token for enrolled student returns 200 with session summary",
+      "preconditions": [
+        "Active session with class HESD-01, subject SWE-101, room Phòng A201",
+        "Authenticated enrolled Student session",
+        "Valid unexpired QrToken from GET /sessions/:sessionId/qr/current"
+      ],
+      "steps": [
+        "GET /api/v1/check-in/tokens/:tokenId/preflight using Student session",
+        "Assert HTTP status 200 and Content-Type application/json",
+        "Assert response outcome Valid with session.classCode, session.subjectCode, session.roomName populated",
+        "Assert response session.status is Active",
+        "Verify no check-in attempt row created by preflight alone"
+      ],
+      "expected": "TS-21a and AC-07c: preflight 200 enables client transition to gps_capture with session summary visible",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-07-020",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["AC-07", "FR-07", "FR-06"],
+      "title": "TS-21b: QR preflight expired or unknown token rejects without advancing to GPS",
+      "preconditions": [
+        "Active session exists",
+        "Authenticated enrolled Student session",
+        "Expired QrToken (issued >30 s ago) and random unknown tokenId UUID available"
+      ],
+      "steps": [
+        "GET /api/v1/check-in/tokens/:expiredTokenId/preflight using Student session",
+        "Assert HTTP status 403 with errorCode ExpiredQr and message Mã QR đã hết hạn, vui lòng quét mã mới",
+        "GET /api/v1/check-in/tokens/:unknownTokenId/preflight using Student session",
+        "Assert HTTP status 404 with errorCode TokenNotFound",
+        "Verify no Present attendance created for either call"
+      ],
+      "expected": "TS-21b and AC-07d: expired or unknown token preflight fails; client must remain on scan step without GPS mount per BR-15",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-07-021",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["AC-07", "FR-07"],
+      "title": "TS-21c: QR preflight session mismatch rejects with SessionMismatch",
+      "preconditions": [
+        "Active session A with valid QrToken bound to session A",
+        "Second session B exists with different sessionId",
+        "Authenticated enrolled Student enrolled in session A class-subject"
+      ],
+      "steps": [
+        "GET /api/v1/check-in/tokens/:tokenId/preflight?sessionId=:sessionBId using Student session",
+        "Assert HTTP status 403 with errorCode SessionMismatch",
+        "Assert response message indicates QR session does not match token bound session",
+        "Verify no attendance status change and token remains Valid"
+      ],
+      "expected": "TS-21c and AC-07f: deep-link session id mismatch rejected at preflight; GpsCaptureStep must not mount",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-07-022",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["AC-07", "FR-07"],
+      "title": "CheckInFlow does not mount GpsCaptureStep until preflight returns outcome Valid",
+      "preconditions": [
+        "Authenticated enrolled Student on mobile viewport 375px",
+        "Active session with valid tokenId for happy-path assertion",
+        "Stale expired tokenId fixture for rejection assertion"
+      ],
+      "steps": [
+        "Navigate to /check-in?token=:expiredTokenId&session=:sessionId",
+        "Assert data-testid gps-capture-step is absent while validating_token spinner visible",
+        "Wait for preflight failure; assert student remains on scan step with ExpiredQr outcome",
+        "Navigate to /check-in?token=:validTokenId&session=:sessionId",
+        "Assert validating_token state then gps-capture-step mounts after preflight 200",
+        "Assert session summary strip shows class, subject, and room per AC-07c"
+      ],
+      "expected": "BR-15 enforced in UI: GpsCaptureStep mounts only after preflight pass; failures keep user on scan step per AC-07c and AC-07d",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-07-023",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["AC-07", "FR-07", "FR-08"],
+      "title": "GpsCaptureStep ready state shows check icon without Spinner; aria-busy false; submit enabled",
+      "preconditions": [
+        "Authenticated enrolled Student on mobile viewport",
+        "Valid token deep link; preflight passes",
+        "VITE_ENABLE_DEVICE_SIMULATION=true with gpsSim=delay query param for harness",
+        "GpsCaptureStep reaches gpsState ready with captured coordinates"
+      ],
+      "steps": [
+        "Navigate to /check-in?token=:tokenId&session=:sessionId&gpsSim=delay",
+        "Wait for GpsCaptureStep to reach ready substate",
+        "Assert copy Vị trí đã sẵn sàng is visible",
+        "Assert no Spinner element in GPS step region",
+        "Assert submit region aria-busy is false",
+        "Assert Xác nhận điểm danh button is enabled and clickable"
+      ],
+      "expected": "GPS ready-state UX per ui-states §4.2 and ui-ux §2.2: static check icon, no spinner, submit enabled immediately when coordinates acquired after preflight pass",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-07-024",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["AC-07", "FR-07", "NFR-24"],
+      "title": "gpsSim query params ignored when VITE_ENABLE_DEVICE_SIMULATION=false",
+      "preconditions": [
+        "Web build compiled with VITE_ENABLE_DEVICE_SIMULATION=false (production default)",
+        "Authenticated enrolled Student session",
+        "Active session with valid QrToken; preflight returns 200",
+        "Check-in deep link includes gpsSim=delay and gpsLat/gpsLng in-room coordinates"
+      ],
+      "steps": [
+        "Load /check-in?token=:tokenId&session=:sessionId&gpsSim=delay&gpsLat=10.762700&gpsLng=106.660200 in browser with simulation flag off",
+        "Verify client does not auto-resolve simulated coordinates from query params",
+        "Verify browser geolocation API is invoked (or permission prompt shown) instead of simulation layer",
+        "Without granting real GPS, assert check-in cannot proceed to success solely from gpsSim params",
+        "Optionally grant mocked geolocation in test harness and complete successful POST /check-in"
+      ],
+      "expected": "AC-08e and NFR-24: production builds ignore gpsSim/cameraSim URL params; client uses real navigator.geolocation per demo-guides §7 and testing-plan §8",
       "edgeCase": false
     }
   ]

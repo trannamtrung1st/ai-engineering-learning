@@ -1132,9 +1132,9 @@
           "apps/web/src/components/layout/app-shell.test.tsx"
         ],
         "acceptanceTags": [
+          "AC-07",
           "NFR-17",
-          "NFR-18",
-          "AC-07"
+          "NFR-18"
         ]
       }
     },
