@@ -12,6 +12,7 @@ import type {
   SessionReportDto,
   SessionReportRecord,
   SessionReportSummary,
+  SessionSummaryRow,
   StudentSummaryRow,
 } from "./types.js";
 
@@ -249,6 +250,95 @@ export class ReportRepository {
       sessionsHeld,
       students,
     };
+  }
+
+  async listClosedSessionSummaries(
+    filters: ReportFilter,
+    classId?: string,
+    subjectId?: string,
+  ): Promise<SessionSummaryRow[]> {
+    const params: unknown[] = [filters.from, filters.to, SessionStatus.Closed];
+    let sql = `
+      SELECT s.id AS session_id,
+             s.scheduled_start,
+             c.code AS class_code,
+             sub.code AS subject_code,
+             COUNT(ar.id)::int AS enrolled,
+             COALESCE(SUM(CASE WHEN ar.status = 'Present' THEN 1 ELSE 0 END), 0)::int AS present,
+             COALESCE(SUM(CASE WHEN ar.status = 'Absent' THEN 1 ELSE 0 END), 0)::int AS absent,
+             COALESCE(SUM(CASE WHEN ar.status = 'Excused' THEN 1 ELSE 0 END), 0)::int AS excused
+      FROM sessions s
+      INNER JOIN classes c ON c.id = s.class_id
+      INNER JOIN subjects sub ON sub.id = s.subject_id
+      LEFT JOIN attendance_records ar ON ar.session_id = s.id
+      WHERE s.status = $3
+        AND DATE(s.scheduled_start AT TIME ZONE 'UTC') >= $1::date
+        AND DATE(s.scheduled_start AT TIME ZONE 'UTC') <= $2::date`;
+
+    if (classId) {
+      params.push(classId);
+      sql += ` AND s.class_id = $${params.length}`;
+    }
+    if (subjectId) {
+      params.push(subjectId);
+      sql += ` AND s.subject_id = $${params.length}`;
+    }
+
+    sql += `
+      GROUP BY s.id, s.scheduled_start, c.code, sub.code
+      ORDER BY s.scheduled_start DESC`;
+
+    interface SummaryRow {
+      session_id: string;
+      scheduled_start: Date;
+      class_code: string;
+      subject_code: string;
+      enrolled: number;
+      present: number;
+      absent: number;
+      excused: number;
+    }
+
+    const result = await this.db.query<SummaryRow>(sql, params);
+    return result.rows.map((row) => ({
+      sessionId: row.session_id,
+      scheduledStart: row.scheduled_start.toISOString(),
+      classCode: row.class_code,
+      subjectCode: row.subject_code,
+      enrolled: row.enrolled,
+      present: row.present,
+      absent: row.absent,
+      excused: row.excused,
+    }));
+  }
+
+  async countExportRows(
+    filters: ReportFilter,
+    classId?: string,
+    subjectId?: string,
+  ): Promise<number> {
+    const params: unknown[] = [filters.from, filters.to, SessionStatus.Closed];
+    let sql = `
+      SELECT COUNT(*)::int AS count
+      FROM attendance_records ar
+      INNER JOIN sessions s ON s.id = ar.session_id
+      INNER JOIN classes c ON c.id = s.class_id
+      INNER JOIN subjects sub ON sub.id = s.subject_id
+      WHERE s.status = $3
+        AND DATE(s.scheduled_start AT TIME ZONE 'UTC') >= $1::date
+        AND DATE(s.scheduled_start AT TIME ZONE 'UTC') <= $2::date`;
+
+    if (classId) {
+      params.push(classId);
+      sql += ` AND s.class_id = $${params.length}`;
+    }
+    if (subjectId) {
+      params.push(subjectId);
+      sql += ` AND s.subject_id = $${params.length}`;
+    }
+
+    const result = await this.db.query<{ count: number }>(sql, params);
+    return result.rows[0]?.count ?? 0;
   }
 
   async listExportRows(
