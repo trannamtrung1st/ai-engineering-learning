@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-01",
   "version": 1,
-  "docFingerprint": "sha256:ad6d8932a7d965179de36908dc7ca72681057a8551a7f0f58eae388cc409ed40",
-  "generatedAt": "2026-06-28T17:50:57Z",
+  "docFingerprint": "sha256:46a74e7dd400d0bcac48b5d2f04254825be36fcb9409b80d705fa0172e545ac0",
+  "generatedAt": "2026-06-29T17:42:38Z",
   "cases": [
     {
       "id": "TC-FR-01-001",
@@ -103,7 +103,7 @@
         "Assert no session cookie is set",
         "Attempt POST /api/v1/check-in with any valid-looking payload without session"
       ],
-      "expected": "Login returns HTTP 403 with errorCode AccountDeactivated; no session issued; check-in not permitted for deactivated account",
+      "expected": "Login returns HTTP 403 with errorCode AccountDeactivated and Vietnamese message Tài khoản đã bị vô hiệu hóa; no session issued; check-in not permitted for deactivated account",
       "edgeCase": true
     },
     {
@@ -113,7 +113,7 @@
       "technique": "state-transition",
       "priority": "P0",
       "traceability": ["FR-01"],
-      "title": "Deactivating user transitions active true to false and revokes all AuthSession rows",
+      "title": "SessionRevokeOnDeactivate: deactivating user transitions active true to false and revokes all AuthSession rows",
       "preconditions": [
         "Active student user exists with at least one valid auth_sessions row",
         "TrainingOfficeAdmin context available for UserService.update"
@@ -223,7 +223,7 @@
         "Click login button",
         "Observe error banner or inline message on login form"
       ],
-      "expected": "Login page displays Vietnamese deactivated-account message; user remains on login page with no redirect to check-in or dashboard",
+      "expected": "Login page displays Vietnamese deactivated-account message Tài khoản đã bị vô hiệu hóa; user remains on login page with no redirect to check-in or dashboard",
       "edgeCase": true
     },
     {
@@ -363,6 +363,26 @@
         "Assert response status and error envelope"
       ],
       "expected": "HTTP 422 ValidationFailed with role field detail; no user row created",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-01-019",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["FR-01"],
+      "title": "POST /users with invalid institutionalId format returns 422 InvalidInstitutionalId",
+      "preconditions": [
+        "TrainingOfficeAdmin is authenticated"
+      ],
+      "steps": [
+        "POST /api/v1/users with institutionalId AB (below VAL-05 minimum length 3) and otherwise valid fields",
+        "Assert response status and error envelope",
+        "POST /api/v1/users with institutionalId containing invalid characters (e.g. spaces or underscores) and otherwise valid fields",
+        "Assert response status and error envelope for each invalid payload"
+      ],
+      "expected": "HTTP 422 ValidationFailed with errorCode InvalidInstitutionalId and field-level detail for institutionalId per VAL-05; no user row created",
       "edgeCase": true
     }
   ]

@@ -83,9 +83,9 @@
       "generatedAt": "2026-06-29T17:35:58Z"
     },
     "FR-01": {
-      "current": false,
+      "current": true,
       "docFingerprint": "sha256:46a74e7dd400d0bcac48b5d2f04254825be36fcb9409b80d705fa0172e545ac0",
-      "generatedAt": null
+      "generatedAt": "2026-06-29T17:43:03Z"
     },
     "FR-02": {
       "current": false,
