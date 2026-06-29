@@ -1,8 +1,8 @@
 {
   "productItemId": "BR-12",
   "version": 1,
-  "docFingerprint": "sha256:4deda16c175af0ca34aadf938abcd5f11203e186585e68a48a77093b8e87aac5",
-  "generatedAt": "2026-06-28T18:32:13Z",
+  "docFingerprint": "sha256:7fa6e5f0fa1fb178b99256355a681409f9ca3b3a224ea6b785c745d780059c2e",
+  "generatedAt": "2026-06-29T18:38:59Z",
   "cases": [
     {
       "id": "TC-BR-12-001",
@@ -184,7 +184,7 @@
         "POST /api/v1/check-in with tokenId only (no coordinates)",
         "Assert outcome GpsDisabled (not OutOfRadius)",
         "Query check_in_attempts and assert outcome GpsDisabled with distance_meters NULL",
-        "Verify pipeline order per rule interaction matrix: step 6 BR-12 before step 8 BR-02"
+        "Verify pipeline order per validation-rules §5.1 steps 11 (BR-12) before 13 (BR-02) and business rules §8 matrix order 6 before 8"
       ],
       "expected": "BR-12 evaluated before BR-02 radius check; missing GPS yields GpsDisabled not OutOfRadius even when hypothetical coords would fail radius",
       "edgeCase": true
@@ -268,11 +268,12 @@
       "preconditions": [
         "Authenticated Student on mobile viewport 375×812 (iOS Safari or Android Chrome)",
         "Active session check-in deep link /check-in?token=:tokenId&session=:sessionId",
+        "GET /api/v1/check-in/tokens/:tokenId/preflight returns 200 outcome Valid for enrolled student (BR-15 gate passed)",
         "Playwright geolocation permission set to denied",
         "Browser GPS disabled or location permission blocked"
       ],
       "steps": [
-        "Navigate to /check-in page on mobile viewport",
+        "Navigate to /check-in page on mobile viewport; wait for preflight 200 and GpsCaptureStep mount",
         "Wait up to 15 seconds for geolocation timeout per validation-rules §6 client-side wait",
         "Verify GpsDisabled outcome panel displays Vui lòng bật GPS và cấp quyền định vị để điểm danh",
         "Verify Hướng dẫn cấp quyền or PermissionGuideModal link to device settings per AC-08c",
@@ -293,11 +294,12 @@
       "preconditions": [
         "Authenticated Student on mobile viewport 375×812",
         "Active session check-in deep link with valid token",
+        "GET /api/v1/check-in/tokens/:tokenId/preflight returns 200 outcome Valid (BR-15 gate passed)",
         "Playwright geolocation mock configured to hang (no resolve within 15 s)",
         "Test harness controls client geolocation timeout constant"
       ],
       "steps": [
-        "Navigate to /check-in page and observe GpsCaptureStep loading state",
+        "Navigate to /check-in page; wait for preflight pass then observe GpsCaptureStep loading state",
         "Wait exactly 15 seconds without geolocation resolving",
         "Verify GpsDisabled panel appears with message Vui lòng bật GPS và cấp quyền định vị để điểm danh",
         "Verify permission help link visible per user-flows §WF-03 GpsDisabled row",
@@ -312,22 +314,24 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["BR-12", "FR-08", "AC-08"],
+      "traceability": ["BR-12", "FR-08", "AC-08", "BR-15"],
       "title": "Check-in form gates submit until GPS permission granted and coordinates captured",
       "preconditions": [
         "Authenticated Student on mobile viewport",
         "Active session check-in deep link with valid token",
+        "GET /api/v1/check-in/tokens/:tokenId/preflight returns 200 outcome Valid per BR-15",
         "Initial geolocation permission prompt state (not yet granted)"
       ],
       "steps": [
-        "Navigate to /check-in page",
+        "Navigate to /check-in page; wait for preflight 200 and GpsCaptureStep mount",
         "Verify GpsCaptureStep shows acquiring-location indicator",
         "Verify submit button disabled or shows GPS-required badge before coordinates acquired",
         "Grant geolocation permission with in-radius mock coordinates (10.762700, 106.660200)",
-        "Verify submit control becomes enabled after coordinates captured",
+        "Verify ready substate shows Vị trí đã sẵn sàng without spinner and aria-busy false per AC-08f",
+        "Verify submit control (Xác nhận điểm danh) becomes enabled after coordinates captured",
         "Tap submit and verify success panel after server validates BR-02 and other rules"
       ],
-      "expected": "BR-12 UI gating: check-in submit blocked until device geolocation available; happy path proceeds after permission grant",
+      "expected": "BR-12 UI gating after BR-15 preflight: submit blocked until geolocation available; AC-08f ready state then happy path proceeds after permission grant",
       "edgeCase": false
     },
     {
@@ -341,7 +345,8 @@
       "preconditions": [
         "Authenticated Student on mobile viewport with initial geolocation permission denied",
         "Active session check-in deep link with valid token",
-        "GpsDisabled panel already displayed from prior denied state"
+        "GET /api/v1/check-in/tokens/:tokenId/preflight returns 200 outcome Valid (BR-15 gate passed)",
+        "GpsDisabled panel already displayed from prior denied state on GpsCaptureStep"
       ],
       "steps": [
         "From GpsDisabled panel tap permission help link or retry control",
@@ -420,6 +425,30 @@
         "Retry Flow A step 4 with in-radius coordinates and assert HTTP 200 Success to complete happy path"
       ],
       "expected": "Flow A workshop check-in includes BR-12 GPS availability gate; GpsDisabled blocks lifecycle until coordinates supplied",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-12-019",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-12", "BR-15", "AC-07", "AC-08"],
+      "title": "BR-15 preflight failure prevents GpsCaptureStep mount — GpsDisabled UX not shown before preflight pass",
+      "preconditions": [
+        "Authenticated enrolled Student on mobile viewport 375×812",
+        "Expired QrToken or GET /api/v1/check-in/tokens/:tokenId/preflight returns ExpiredQr",
+        "Browser geolocation permission denied (would trigger BR-12 client path if GPS step mounted)"
+      ],
+      "steps": [
+        "Navigate to /check-in with expired token deep link or scan expired QR",
+        "Assert GET /api/v1/check-in/tokens/:tokenId/preflight returns ExpiredQr outcome",
+        "Verify data-testid gps-capture-step is absent — GpsCaptureStep not mounted per BR-15",
+        "Verify ExpiredQr outcome panel on scan step with message Mã QR đã hết hạn — not GpsDisabled panel",
+        "Assert no geolocation permission prompt and no 15 s BR-12 client timeout cycle",
+        "Contrast: repeat with valid token, preflight 200, and denied geolocation — GpsDisabled panel appears per TC-BR-12-012"
+      ],
+      "expected": "BR-15 gates GPS capture before BR-12: GpsDisabled UX applies only after preflight passes and GpsCaptureStep mounts; preflight failures remain on scan with ExpiredQr not GpsDisabled per user-flows §2 step 3b",
       "edgeCase": false
     }
   ]
