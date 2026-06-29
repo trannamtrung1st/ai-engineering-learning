@@ -58,3 +58,4 @@ Verification failures and remediation notes for harness agents.
 - [web-instructor-sessions] Browser test failed — see 20260629T092108Z-browser-test.json
 - [web-instructor-attendance-roster] Computational checks failed — see 20260629T113410Z-checks.json
 - **Component test fixture status:** When asserting `initialEditStatus` behavior (Pending → Present default), pass `AttendanceStatus.Pending` on the mock record — reusing an Absent fixture makes TC-AC-11-016 fail while the component is correct.
+- [web-admin-rosters] Browser test failed — see 20260629T131937Z-browser-test.json

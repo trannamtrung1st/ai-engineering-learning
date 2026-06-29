@@ -6,6 +6,8 @@ import { AdminReportsPage } from "@/app/admin/reports/page";
 import { AdminUsersPage } from "@/app/admin/users/page";
 import { CreateUserPage } from "@/app/admin/users/new/page";
 import { EditUserPage } from "@/app/admin/users/[userId]/page";
+import { AdminClassRosterPage } from "@/app/admin/rosters/[classCode]/page";
+import { AdminRostersPage } from "@/app/admin/rosters/page";
 import { RosterImportPage } from "@/app/admin/rosters/import/page";
 import { CheckInPage } from "@/app/check-in/page";
 import { ForbiddenRoutePage } from "@/app/forbidden/page";
@@ -125,8 +127,9 @@ const router = createBrowserRouter([
               { path: "users", element: <AdminUsersPage /> },
               { path: "users/new", element: <CreateUserPage /> },
               { path: "users/:userId", element: <EditUserPage /> },
-              { path: "rosters", element: <PlaceholderPage title="Danh sách lớp" /> },
+              { path: "rosters", element: <AdminRostersPage /> },
               { path: "rosters/import", element: <RosterImportPage /> },
+              { path: "rosters/:classCode", element: <AdminClassRosterPage /> },
               { path: "reports", element: <AdminReportsPage /> },
               { path: "export", element: <AdminExportPage /> },
               { path: "policy", element: <PlaceholderPage title="Chính sách" /> },
