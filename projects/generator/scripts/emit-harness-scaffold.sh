@@ -31,6 +31,15 @@ if [[ "$VERIFY_ONLY" == true ]]; then
       exit 1
     fi
   done
+  harness_console="${dest}/scripts/lib/console.sh"
+  if [[ ! -f "$harness_console" ]]; then
+    gen_err "missing harness console: $harness_console"
+    exit 1
+  fi
+  if ! grep -q '^aih_step()' "$harness_console" 2>/dev/null; then
+    gen_err "harness console must define aih_step() — found generator console (gen_*)?"
+    exit 1
+  fi
   gen_ok "harness-scaffold verified"
   exit 0
 fi
