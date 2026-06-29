@@ -215,6 +215,35 @@ describe("preview seed (NFR-17, NFR-06)", () => {
     );
   });
 
+  it("ensurePreviewCoreAuthFixtures restores admin after partial delete (TC-FR-02-021)", async () => {
+    await resetDb(() => runPreviewSeed(db));
+
+    await db.query("DELETE FROM users WHERE email = $1", [
+      PREVIEW_CREDENTIALS.admin.email,
+    ]);
+
+    await runPreviewSeed(db);
+
+    const admin = await db.query<{ role: string }>(
+      "SELECT role FROM users WHERE email = $1",
+      [PREVIEW_CREDENTIALS.admin.email],
+    );
+    assert.equal(admin.rows[0]?.role, "TrainingOfficeAdmin");
+
+    const { AuthService } = await import("../modules/identity-auth/auth-service.js");
+    const { UserRepository } = await import("../modules/identity-auth/user-repository.js");
+    const { SessionStore } = await import("../auth/session-store.js");
+    const auth = new AuthService(new UserRepository(db), new SessionStore(db));
+
+    const session = await auth.authenticate({
+      email: PREVIEW_CREDENTIALS.admin.email,
+      password: PREVIEW_CREDENTIALS.admin.password,
+    });
+    assert.equal(session.user.role, "TrainingOfficeAdmin");
+
+    await resetDb();
+  });
+
   it("ensurePreviewUserFixtures restores deactivated user after partial delete (TC-NFR-17-013)", async () => {
     await resetDb(() => runPreviewSeed(db));
 

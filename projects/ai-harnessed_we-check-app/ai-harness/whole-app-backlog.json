@@ -500,7 +500,7 @@
     },
     {
       "id": "web-auth-login",
-      "passes": false,
+      "passes": true,
       "priority": 21,
       "phase": 2,
       "agent": "frontend",

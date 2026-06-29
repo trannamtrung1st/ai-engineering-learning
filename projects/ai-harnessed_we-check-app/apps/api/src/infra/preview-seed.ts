@@ -76,6 +76,20 @@ async function isSeedApplied(db: DbPool): Promise<boolean> {
     return false;
   }
 
+  const admin = await db.query<{ id: string; role: string }>(
+    "SELECT id, role FROM users WHERE email = $1 AND active = true",
+    [PREVIEW_CREDENTIALS.admin.email],
+  );
+  if (admin.rows.length === 0 || admin.rows[0]?.role !== UserRole.TrainingOfficeAdmin) {
+    return false;
+  }
+
+  const instructor = await db.query<{ id: string }>(
+    "SELECT id FROM users WHERE email = $1 AND active = true",
+    [PREVIEW_CREDENTIALS.instructor.email],
+  );
+  if (instructor.rows.length === 0) return false;
+
   const student = await db.query<{ id: string }>(
     "SELECT id FROM users WHERE email = $1 AND active = true",
     [PREVIEW_CREDENTIALS.student.email],
@@ -447,6 +461,47 @@ export async function ensurePreviewInstructor2Fixtures(db: DbPool): Promise<void
   );
 }
 
+/** Restore primary login accounts after partial DB resets (FR-02, TC-FR-02-021). */
+export async function ensurePreviewCoreAuthFixtures(db: DbPool): Promise<void> {
+  await clearPreviewUserConflicts(db);
+
+  const adminHash = await hashPassword(PREVIEW_CREDENTIALS.admin.password);
+  const instructorHash = await hashPassword(PREVIEW_CREDENTIALS.instructor.password);
+  const studentHash = await hashPassword(PREVIEW_CREDENTIALS.student.password);
+
+  await db.query(
+    `INSERT INTO users (id, institutional_id, display_name, email, password_hash, role, active)
+     VALUES
+       ($1, 'ADMIN001', $4, $2, $3, $5, true),
+       ($6, 'GV2026001', $9, $7, $8, $10, true),
+       ($11, 'SV2026001', $14, $12, $13, $15, true)
+     ON CONFLICT (id) DO UPDATE SET
+       institutional_id = EXCLUDED.institutional_id,
+       display_name = EXCLUDED.display_name,
+       email = EXCLUDED.email,
+       password_hash = EXCLUDED.password_hash,
+       role = EXCLUDED.role,
+       active = EXCLUDED.active`,
+    [
+      PREVIEW_IDS.admin,
+      PREVIEW_CREDENTIALS.admin.email,
+      adminHash,
+      PREVIEW_DISPLAY_NAMES.admin,
+      UserRole.TrainingOfficeAdmin,
+      PREVIEW_IDS.instructor,
+      PREVIEW_CREDENTIALS.instructor.email,
+      instructorHash,
+      PREVIEW_DISPLAY_NAMES.instructor,
+      UserRole.Instructor,
+      PREVIEW_IDS.student,
+      PREVIEW_CREDENTIALS.student.email,
+      studentHash,
+      PREVIEW_DISPLAY_NAMES.student,
+      UserRole.Student,
+    ],
+  );
+}
+
 /** Restore only the deactivated browser-gate user without re-upserting all preview accounts. */
 export async function ensurePreviewDeactivatedUser(db: DbPool): Promise<void> {
   const existing = await db.query<{ active: boolean }>(
@@ -633,6 +688,7 @@ const PREVIEW_TOKEN_REFRESH_MS = 20_000;
 export function startPreviewTokenRefresh(db: DbPool): () => void {
   const handle = setInterval(() => {
     void runWhenPreviewDbIdle(db, async () => {
+      await ensurePreviewCoreAuthFixtures(db);
       await ensurePreviewDeactivatedUser(db);
       await ensurePreviewInstructor2Fixtures(db);
       await ensurePreviewDisplayNames(db);
@@ -651,6 +707,7 @@ export function startPreviewTokenRefresh(db: DbPool): () => void {
 export async function runPreviewSeed(db: DbPool): Promise<void> {
   if (await isSeedApplied(db)) {
     await runWhenPreviewDbIdle(db, async () => {
+      await ensurePreviewCoreAuthFixtures(db);
       await ensurePreviewDeactivatedUser(db);
       await ensurePreviewInstructor2Fixtures(db);
       await ensurePreviewDisplayNames(db);

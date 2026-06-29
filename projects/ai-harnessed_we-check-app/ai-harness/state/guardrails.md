@@ -181,3 +181,5 @@ Verification failures and remediation notes for harness agents.
 - [api-foundation] AI review failed — see 20260629T194550Z-review.json
 - [api-foundation] AI review failed — see 20260629T195352Z-review.json
 - [module-roster-enrollment] AI review failed — see 20260629T202058Z-review.json
+- [web-auth-login] Browser test failed — see 20260629T212002Z-browser-test.json
+- **Preview seed core auth:** Integration `truncateAuthTables` wipes admin/student/instructor while `isSeedApplied` early-return only refreshed deactivated/instructor2 — call `ensurePreviewCoreAuthFixtures` on preview refresh and include admin/instructor in `isSeedApplied` checks (TC-FR-02-021).
