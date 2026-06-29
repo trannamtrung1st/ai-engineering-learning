@@ -2,6 +2,7 @@ import { SessionStatus } from "@wecheck/domain";
 import { createBrowserRouter, RouterProvider, useRouteError } from "react-router-dom";
 import { RootLayout } from "@/app/layout";
 import { AdminExportPage } from "@/app/admin/export/page";
+import { AdminPolicyPage } from "@/app/admin/policy/page";
 import { AdminReportsPage } from "@/app/admin/reports/page";
 import { AdminUsersPage } from "@/app/admin/users/page";
 import { CreateUserPage } from "@/app/admin/users/new/page";
@@ -68,10 +69,6 @@ function RouteErrorPage() {
   );
 }
 
-function PlaceholderPage({ title }: { title: string }) {
-  return <PageHeader title={title} description="Màn hình nghiệp vụ sẽ được bổ sung ở các slice tiếp theo." />;
-}
-
 const router = createBrowserRouter([
   {
     element: <RootLayout />,
@@ -132,7 +129,7 @@ const router = createBrowserRouter([
               { path: "rosters/:classCode", element: <AdminClassRosterPage /> },
               { path: "reports", element: <AdminReportsPage /> },
               { path: "export", element: <AdminExportPage /> },
-              { path: "policy", element: <PlaceholderPage title="Chính sách" /> },
+              { path: "policy", element: <AdminPolicyPage /> },
             ],
           },
         ],

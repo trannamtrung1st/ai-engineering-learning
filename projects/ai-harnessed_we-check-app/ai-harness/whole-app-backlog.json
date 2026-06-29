@@ -893,7 +893,7 @@
     },
     {
       "id": "web-admin-policy",
-      "passes": false,
+      "passes": true,
       "priority": 32,
       "phase": 2,
       "agent": "frontend",

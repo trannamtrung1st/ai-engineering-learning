@@ -9,6 +9,8 @@ import type { AbsenceThresholdPayload } from "./types.js";
 import { encodeNotificationCursor } from "./validation.js";
 
 export const POLICY_KEY_ABSENCE_THRESHOLD = "absence_threshold_percent";
+export const POLICY_KEY_ABSENCE_AUTO_WARNING = "absence_auto_warning_enabled";
+const DEFAULT_ABSENCE_AUTO_WARNING_ENABLED = true;
 
 export class PolicyRepository {
   constructor(private readonly db: DbPool) {}
@@ -43,6 +45,39 @@ export class PolicyRepository {
       [POLICY_KEY_ABSENCE_THRESHOLD, String(thresholdPercent), adminId, now()],
     );
     return thresholdPercent;
+  }
+
+  async getAbsenceAutoWarningEnabled(): Promise<boolean> {
+    const result = await this.db.query<{ value: string }>(
+      "SELECT value FROM policy_settings WHERE key = $1",
+      [POLICY_KEY_ABSENCE_AUTO_WARNING],
+    );
+    const raw = result.rows[0]?.value;
+    if (!raw) {
+      return DEFAULT_ABSENCE_AUTO_WARNING_ENABLED;
+    }
+    return raw === "true" || raw === "1";
+  }
+
+  async setAbsenceAutoWarningEnabled(
+    enabled: boolean,
+    adminId: string,
+  ): Promise<boolean> {
+    await this.db.query(
+      `INSERT INTO policy_settings (key, value, updated_by_id, updated_at)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (key) DO UPDATE
+       SET value = EXCLUDED.value,
+           updated_by_id = EXCLUDED.updated_by_id,
+           updated_at = EXCLUDED.updated_at`,
+      [
+        POLICY_KEY_ABSENCE_AUTO_WARNING,
+        enabled ? "true" : "false",
+        adminId,
+        now(),
+      ],
+    );
+    return enabled;
   }
 }
 

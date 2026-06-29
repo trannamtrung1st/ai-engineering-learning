@@ -23,8 +23,31 @@ export class NotificationService {
     this.policy = new PolicyRepository(db);
   }
 
+  async getAbsencePolicy(): Promise<{
+    thresholdPercent: number;
+    autoWarningEnabled: boolean;
+  }> {
+    const [thresholdPercent, autoWarningEnabled] = await Promise.all([
+      this.policy.getAbsenceThresholdPercent(),
+      this.policy.getAbsenceAutoWarningEnabled(),
+    ]);
+    return { thresholdPercent, autoWarningEnabled };
+  }
+
   async getAbsenceThresholdPercent(): Promise<number> {
     return this.policy.getAbsenceThresholdPercent();
+  }
+
+  async setAbsencePolicy(
+    thresholdPercent: number,
+    autoWarningEnabled: boolean,
+    adminId: string,
+  ): Promise<{ thresholdPercent: number; autoWarningEnabled: boolean }> {
+    const [threshold, autoWarning] = await Promise.all([
+      this.policy.setAbsenceThresholdPercent(thresholdPercent, adminId),
+      this.policy.setAbsenceAutoWarningEnabled(autoWarningEnabled, adminId),
+    ]);
+    return { thresholdPercent: threshold, autoWarningEnabled: autoWarning };
   }
 
   async setAbsenceThresholdPercent(
@@ -83,6 +106,11 @@ export class NotificationService {
   async evaluateAbsenceThresholds(sessionId: string): Promise<void> {
     const session = await this.notifications.findSessionContext(sessionId);
     if (!session || session.status !== SessionStatus.Closed) {
+      return;
+    }
+
+    const autoWarningEnabled = await this.policy.getAbsenceAutoWarningEnabled();
+    if (!autoWarningEnabled) {
       return;
     }
 

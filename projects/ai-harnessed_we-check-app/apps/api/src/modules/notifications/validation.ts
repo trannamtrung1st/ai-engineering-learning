@@ -56,7 +56,7 @@ export function validateNotificationListQuery(
 
 export function validateAbsenceThresholdBody(
   body: unknown,
-): { ok: true; value: { thresholdPercent: number } } | { ok: false; details: ErrorDetail[] } {
+): { ok: true; value: { thresholdPercent: number; autoWarningEnabled: boolean } } | { ok: false; details: ErrorDetail[] } {
   if (body === null || typeof body !== "object") {
     return {
       ok: false,
@@ -104,7 +104,28 @@ export function validateAbsenceThresholdBody(
     };
   }
 
-  return { ok: true, value: { thresholdPercent: raw } };
+  const autoRaw = record.autoWarningEnabled;
+  if (autoRaw !== undefined && autoRaw !== null && typeof autoRaw !== "boolean") {
+    return {
+      ok: false,
+      details: [
+        fail(
+          "autoWarningEnabled",
+          ErrorCode.ValidationFailed,
+          "Giá trị phải là true hoặc false",
+        ),
+      ],
+    };
+  }
+
+  return {
+    ok: true,
+    value: {
+      thresholdPercent: raw,
+      autoWarningEnabled:
+        autoRaw === undefined || autoRaw === null ? true : autoRaw,
+    },
+  };
 }
 
 export function decodeNotificationCursor(

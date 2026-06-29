@@ -59,3 +59,5 @@ Verification failures and remediation notes for harness agents.
 - [web-instructor-attendance-roster] Computational checks failed — see 20260629T113410Z-checks.json
 - **Component test fixture status:** When asserting `initialEditStatus` behavior (Pending → Present default), pass `AttendanceStatus.Pending` on the mock record — reusing an Absent fixture makes TC-AC-11-016 fail while the component is correct.
 - [web-admin-rosters] Browser test failed — see 20260629T131937Z-browser-test.json
+- **Integration truncate + preview export:** `truncateAuthTables` must `TRUNCATE export_audit_logs` (and `notifications`) before `DELETE FROM users` — preview CSV export audit rows with `ON DELETE RESTRICT` block integration resets when preview stack runs during `aih:check`.
+- [web-admin-policy] Computational checks failed — see 20260629T142955Z-checks.json

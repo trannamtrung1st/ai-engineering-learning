@@ -176,6 +176,8 @@ export async function truncateAuthTables(db: DbPool): Promise<void> {
   await db.query(
     "UPDATE policy_settings SET updated_by_id = NULL WHERE updated_by_id IS NOT NULL",
   );
+  await db.query("TRUNCATE notifications RESTART IDENTITY CASCADE");
+  await db.query("TRUNCATE export_audit_logs RESTART IDENTITY CASCADE");
   await db.query("DELETE FROM class_assignments");
   await db.query("DELETE FROM users");
   await db.query("DELETE FROM policy_settings WHERE key = 'preview_seed_version'");

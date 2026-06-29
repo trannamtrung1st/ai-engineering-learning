@@ -65,11 +65,7 @@ export async function registerNotificationRoutes(
   app.get(
     "/policy/absence-threshold",
     { preHandler: [auth, requirePermission(Permission.PolicyWrite)] },
-    async () => {
-      const thresholdPercent =
-        await notificationService.getAbsenceThresholdPercent();
-      return { thresholdPercent };
-    },
+    async () => notificationService.getAbsencePolicy(),
   );
 
   app.put(
@@ -82,8 +78,9 @@ export async function registerNotificationRoutes(
       }
 
       const adminId = request.auth!.user.id;
-      return notificationService.setAbsenceThresholdPercent(
+      return notificationService.setAbsencePolicy(
         parsed.value.thresholdPercent,
+        parsed.value.autoWarningEnabled,
         adminId,
       );
     },
