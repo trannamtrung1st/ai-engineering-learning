@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-15",
   "version": 1,
-  "docFingerprint": "sha256:12b3b1aa21d64578ab37d3cb8f433407386737f89a7075419daeefd2d9c19925",
-  "generatedAt": "2026-06-29T15:00:00Z",
+  "docFingerprint": "sha256:554cd68fa4b094de2ef18b944150230ba9af83d371db2c45ca6b0517495be659",
+  "generatedAt": "2026-06-29T18:08:56Z",
   "cases": [
     {
       "id": "TC-FR-15-001",
@@ -11,7 +11,7 @@
       "technique": "scenario-matrix",
       "priority": "P0",
       "traceability": ["FR-15", "AC-15", "NFR-08"],
-      "title": "TS-35: Live Present vs enrolled counts update within 5 seconds after successful check-in",
+      "title": "TS-35: Live dashboard present count updates within 5 seconds after successful check-in",
       "preconditions": [
         "Active session with 10 enrolled students; 3 already Present, 7 Pending",
         "Authenticated Instructor assigned to session with attendance:read (session scope)",
@@ -27,7 +27,7 @@
         "Record elapsed time from check-in success to first poll response reflecting updated count",
         "Assert elapsed time ≤ 5 seconds per FR-15 and NFR-08"
       ],
-      "expected": "FR-15 satisfied: live count of Present vs total enrolled updates within 5 seconds of successful check-in without manual reload per testing-plan TS-35",
+      "expected": "FR-15 and testing-plan TS-35 satisfied: Present vs enrolled counts update within 5 seconds of successful check-in without manual reload",
       "edgeCase": false
     },
     {
@@ -40,7 +40,7 @@
       "title": "AttendanceService.getSessionRoster returns updated present and pending counts after check-in transaction",
       "preconditions": [
         "Real PostgreSQL test database with Active session and Pending attendance rows for all enrolled students",
-        "AttendanceService wired per attendance module §2.5 with session and enrollment read models",
+        "AttendanceService wired per attendance module with session and enrollment read models",
         "CheckInTransaction completes atomically per domain model §5.2",
         "Baseline summary: present=2, pending=8, absent=0 for 10 enrolled students"
       ],
@@ -121,7 +121,7 @@
         "Assert response contains no summary.present, summary.enrolled, or records roster data",
         "Verify assigned session creator Instructor A can GET same endpoint with HTTP 200"
       ],
-      "expected": "Cross-instructor live dashboard access denied per class-subject assignment scope; no live attendance data leaked",
+      "expected": "Cross-instructor session monitor access denied per class-subject assignment scope; no live attendance data leaked",
       "edgeCase": false
     },
     {
@@ -134,19 +134,19 @@
       "title": "Instructor Theo dõi tab StatCards refresh within 5 seconds after student check-in",
       "preconditions": [
         "Authenticated Instructor on desktop viewport at /sessions/:sessionId (Theo dõi tab)",
-        "Active session with SessionMonitorDashboard polling every 5 seconds per UI states §4.2",
-        "Should-capability FR-15 enabled; baseline StatCard Đã điểm danh shows 3 of 10 enrolled",
+        "Active session with SessionMonitorDashboard polling every 5 seconds per 12-ui-states §7.3",
+        "Should-capability FR-15 enabled; StatCard row shows Đã điểm danh 3, Chưa điểm danh 7, Vắng 0 of 10 enrolled",
         "Student A can complete check-in in parallel browser context or via API trigger"
       ],
       "steps": [
         "Navigate to /sessions/:sessionId and select Theo dõi tab",
-        "Verify StatCard row displays Đã điểm danh count 3 and Chưa điểm danh count 7 matching initial API poll",
+        "Verify StatCard row displays Đã điểm danh 3, Chưa điểm danh 7, and Vắng 0 matching initial API poll per 07-event-specific-components §3.9",
         "Trigger successful check-in for Student A (mobile context or API)",
         "Wait up to 5 seconds without manual page reload for StatCard Đã điểm danh to update to 4",
         "Verify roster grid row for Student A shows Present StatusBadge and check-in timestamp",
         "Assert poll status bar indicates last refresh within 5 seconds per NFR-08"
       ],
-      "expected": "FR-15 browser journey: instructor live dashboard StatCards refresh within 5 seconds without manual reload per user-flows §5.2 and page-list §4.3.2",
+      "expected": "FR-15 browser journey: instructor monitor dashboard StatCards refresh within 5 seconds without manual reload per user-flows §5.2 and page-list §4.3.2",
       "edgeCase": false
     },
     {
@@ -170,7 +170,7 @@
         "Trigger check-in changing one student from Pending to Present",
         "After next poll cycle, verify sort order still reflects updated statuses accurately per FR-15 sortable roster requirement"
       ],
-      "expected": "FR-15 sortable roster: sort order reflects current per-student attendance states accurately on monitor grid per AC-15b",
+      "expected": "FR-15 sortable roster satisfied: sort order reflects current attendance states accurately on monitor roster grid",
       "edgeCase": false
     },
     {
@@ -379,6 +379,29 @@
         "Assert no manual page reload required between updates"
       ],
       "expected": "NFR-08 sustained: multiple check-ins during Active session each propagate to live Present vs enrolled counts within 5 seconds without reload",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-15-017",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-15", "AC-15"],
+      "title": "GET /sessions/:sessionId/attendance?sort=status returns roster ordered by attendance status",
+      "preconditions": [
+        "Active session with at least one student in each status: Pending, Present, Absent, Excused",
+        "Authenticated assigned Instructor session with attendance:read for session scope"
+      ],
+      "steps": [
+        "GET /api/v1/sessions/:sessionId/attendance?sort=status using Instructor session",
+        "Assert HTTP 200 and records array ordered per server-side status sort (Pending before Absent before Present before Excused per listing-pages §5.3)",
+        "GET /api/v1/sessions/:sessionId/attendance?sort=displayName and assert alphabetical order by displayName",
+        "Change one student from Pending to Present via successful check-in",
+        "Re-fetch with sort=status and assert updated student appears in Present group",
+        "Verify sort order matches current attendance states per FR-15 sortable roster"
+      ],
+      "expected": "Server-side sort parameter on live monitor endpoint reflects accurate current attendance states; status sort order matches instructor priority per API design §7.1 and FR-15",
       "edgeCase": false
     }
   ]
