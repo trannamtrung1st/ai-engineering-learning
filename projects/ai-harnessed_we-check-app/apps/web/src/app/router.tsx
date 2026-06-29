@@ -3,6 +3,9 @@ import { createBrowserRouter, RouterProvider, useRouteError } from "react-router
 import { RootLayout } from "@/app/layout";
 import { AdminExportPage } from "@/app/admin/export/page";
 import { AdminReportsPage } from "@/app/admin/reports/page";
+import { AdminUsersPage } from "@/app/admin/users/page";
+import { CreateUserPage } from "@/app/admin/users/new/page";
+import { EditUserPage } from "@/app/admin/users/[userId]/page";
 import { RosterImportPage } from "@/app/admin/rosters/import/page";
 import { CheckInPage } from "@/app/check-in/page";
 import { ForbiddenRoutePage } from "@/app/forbidden/page";
@@ -119,7 +122,9 @@ const router = createBrowserRouter([
             path: "admin",
             element: <AdminLayout />,
             children: [
-              { path: "users", element: <PlaceholderPage title="Người dùng" /> },
+              { path: "users", element: <AdminUsersPage /> },
+              { path: "users/new", element: <CreateUserPage /> },
+              { path: "users/:userId", element: <EditUserPage /> },
               { path: "rosters", element: <PlaceholderPage title="Danh sách lớp" /> },
               { path: "rosters/import", element: <RosterImportPage /> },
               { path: "reports", element: <AdminReportsPage /> },

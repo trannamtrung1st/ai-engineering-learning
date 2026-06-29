@@ -792,7 +792,7 @@
     },
     {
       "id": "web-admin-users",
-      "passes": false,
+      "passes": true,
       "priority": 29,
       "phase": 2,
       "agent": "frontend",
