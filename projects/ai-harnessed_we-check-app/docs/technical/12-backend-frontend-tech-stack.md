@@ -154,9 +154,10 @@ Jobs run in-process for MVP; extract to worker when scaling beyond pilot.
 | Capability | Web API | Fallback |
 | --- | --- | --- |
 | QR scan | `BarcodeDetector` (Chrome) | `@zxing/browser` file/input stream |
-| GPS | `navigator.geolocation.getCurrentPosition` | 15 s timeout → `GpsDisabled` UX |
-| Camera permission | `getUserMedia` | Vietnamese instruction modal ([NFR-19](../brds/07-non-functional-risk.md)) |
-| Deep link | `/check-in?token=<id>&session=<id>` | Parse from QR payload `wecheck://check-in?...` |
+| GPS | `navigator.geolocation.getCurrentPosition` | 15 s timeout → `GpsDisabled` UX; **simulation** via `VITE_ENABLE_DEVICE_SIMULATION` + query params ([NFR-24](../brds/07-non-functional-risk.md)) |
+| Camera permission | `getUserMedia` | Vietnamese instruction modal ([NFR-19](../brds/07-non-functional-risk.md)); sim via `cameraSim` when flag on |
+| Preflight | `GET /check-in/tokens/:tokenId/preflight` | Client hook before GPS step ([BR-15](../brds/04-business-rules.md)) |
+| Deep link | `/check-in?token=<id>&session=<id>` | Preflight before auto-skip scan UI; parse from QR payload `wecheck://check-in?...` |
 
 No React Native or Capacitor in MVP ([00-system-overview.md](./00-system-overview.md) §2.7).
 

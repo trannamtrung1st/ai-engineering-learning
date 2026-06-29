@@ -89,7 +89,8 @@ Per [08-forms-validation-ux.md](./08-forms-validation-ux.md):
 | --- | --- |
 | Camera permission | `PermissionGuideModal` readable steps; numbered list in `ol` |
 | Scanner | `aria-label="Máy quét mã QR"` on viewfinder region; live region announces *Đã quét mã* |
-| GPS capture | `aria-busy="true"` while acquiring; `aria-live="polite"` for status text changes |
+| GPS capture | `aria-busy="true"` while `requesting` / `acquiring` / `submitting`; **`aria-busy="false"`** (or absent) when `ready` with *Vị trí đã sẵn sàng* — no spinner ([AC-08f](../brds/08-acceptance-mvp-future.md)) |
+| GPS ready | Check icon + `role="status"` for static ready copy; submit button enabled without loading chrome |
 | Outcome panel | `role="status"` on success; `role="alert"` on blocking errors |
 | Retry actions | Button labels describe action: **Quét lại**, not generic **OK** |
 

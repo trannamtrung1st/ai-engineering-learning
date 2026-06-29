@@ -33,7 +33,9 @@ flowchart TD
     D --> E[Return to check-in with token]
     B -->|Yes| E
     E --> F[QrScannerView — scan QR]
-    F --> G[GpsCaptureStep — acquire location]
+    F --> PF{Preflight OK?}
+    PF -->|No| F
+    PF -->|Yes| G[GpsCaptureStep — acquire location]
     G --> H[Submit check-in API]
     H --> I[CheckInOutcomePanel — Present]
 ```
@@ -42,9 +44,10 @@ flowchart TD
 | --- | --- | --- | --- |
 | 1 | Deep link or `/check-in` | Student opens app | If no session, redirect to login preserving `returnUrl` ([AC-02a](../brds/08-acceptance-mvp-future.md)) |
 | 2 | `/login` | Enter email and password | On success, redirect to check-in with token ([AC-02b](../brds/08-acceptance-mvp-future.md)) |
-| 3 | `/check-in/scan` | Point camera at projected QR | Decode token; advance to GPS step |
-| 4 | GPS step | Grant location permission if prompted | Acquire coordinates within **15 s** timeout |
-| 5 | GPS step | Auto-submit | API validates enrollment, token, radius, duplicate rules |
+| 3 | `/check-in/scan` | Point camera at projected QR | Decode token; call `GET /check-in/tokens/:tokenId/preflight` ([BR-15](../brds/04-business-rules.md)) |
+| 3b | Scan step (preflight fail) | — | Remain on scan or show outcome; **do not** mount GPS step ([AC-07d](../brds/08-acceptance-mvp-future.md)) |
+| 4 | GPS step | Grant location permission if prompted | Acquire coordinates within **15 s** timeout; `ready` state shows check icon **without** spinner ([AC-08f](../brds/08-acceptance-mvp-future.md)) |
+| 5 | GPS step | Tap **Xác nhận điểm danh** | Submit API; spinner only during `submitting` ([AC-08g](../brds/08-acceptance-mvp-future.md)) |
 | 6 | Outcome panel | View confirmation | Show *Điểm danh thành công* with session name and timestamp ([AC-07a](../brds/08-acceptance-mvp-future.md)) |
 
 **Exit:** Student returns to scanner via **Quét mã khác** or navigates to `/history` via bottom nav.
@@ -236,18 +239,58 @@ flowchart TD
 
 ---
 
-## 12. Cross-Flow Dependencies
+## 12. Flow — First Admin Bootstrap
+
+**Actors:** Unauthenticated visitor  
+**Entry:** Fresh deployment (`User.count = 0`)  
+**Traces:** [FR-17](../brds/03-functional-requirements.md) · [BR-13](../brds/04-business-rules.md) · [AC-17](../brds/08-acceptance-mvp-future.md)
+
+| Step | Screen | Action | System response |
+| --- | --- | --- | --- |
+| 1 | Any route | Visitor opens app | `GET /setup/status` → `needsSetup: true`; redirect to `/setup` |
+| 2 | `/setup` | Complete `SetupAdminForm` | `POST /setup/first-admin` creates admin + session |
+| 3 | `/admin` | Land on admin hub | Bootstrap complete; `/setup` no longer available |
+
+---
+
+## 13. Flow — Permission-Gated Navigation
+
+**Actors:** All authenticated roles  
+**Traces:** [FR-18](../brds/03-functional-requirements.md) · [BR-14](../brds/04-business-rules.md) · [AC-18](../brds/08-acceptance-mvp-future.md)
+
+| Step | Action | Expected |
+| --- | --- | --- |
+| 1 | Login as role | Redirect to role home (`/check-in`, `/sessions`, `/admin`) |
+| 2 | Inspect layout chrome | Only permitted nav items rendered; zero `/admin` links for non-admin |
+| 3 | Direct URL to forbidden route | `ForbiddenPage`; chrome never showed forbidden link |
+
+---
+
+## 14. Flow — Admin Manual Class and Subject Creation
+
+**Actors:** `TrainingOfficeAdmin`  
+**Traces:** [FR-03](../brds/03-functional-requirements.md) · [AC-03d](../brds/08-acceptance-mvp-future.md), [AC-03e](../brds/08-acceptance-mvp-future.md)
+
+| Step | Screen | Action |
+| --- | --- | --- |
+| 1 | `/admin` hub | Tap **Thêm lớp/môn** |
+| 2 | `/admin/classes/new` | Submit `ClassSubjectForm` with codes `HESD-03`, `SWE-102` |
+| 3 | Success | Records available in roster filters and CSV import validation |
+
+---
+
+## 15. Cross-Flow Dependencies
 
 | Dependency | Flows affected |
 | --- | --- |
-| Roster must exist before check-in | Admin import (§9) → Student check-in (§2) |
+| Roster must exist before check-in | Admin class create (§14) + import (§9) → Student check-in (§2) |
 | Session must be `Active` with valid GPS | Instructor lifecycle (§5) → QR display → Student scan |
 | Auth session **8 h** idle timeout | All authenticated flows ([AC-02c](../brds/08-acceptance-mvp-future.md)) |
 | Instructor assignment | Reports (§7), roster tab access ([AC-03c](../brds/08-acceptance-mvp-future.md)) |
 
 ---
 
-## 13. Future Consideration
+## 16. Future Consideration
 
 - Dedicated `/onboarding/permissions` first-run tutorial for camera/GPS ([08-acceptance-mvp-future.md](../brds/08-acceptance-mvp-future.md) §8).
 - PIN fallback check-in flow when device battery dead.

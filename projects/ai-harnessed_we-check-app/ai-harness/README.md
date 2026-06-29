@@ -25,6 +25,16 @@ agent mcp enable playwright
 
 Config lives in `.cursor/mcp.json` (headless by default). Implementer agents on `frontend` and `test` slices receive `--approve-mcps` for smoke verification; a dedicated **browser test agent** gate runs after computational checks. See [`docs/browser-mcp.md`](docs/browser-mcp.md).
 
+### Agent skills
+
+Harness-owned skills live under [`skills/`](skills/) (e.g. [`skills/frontend-design/SKILL.md`](skills/frontend-design/SKILL.md)). They are **not** auto-discovered by Cursor IDE — Ralph injects them via `config/context-map.json` → `build-prompt.sh` → agent prompts.
+
+| Skill | Agents | Purpose |
+|---|---|---|
+| `frontend-design` | `frontend` implementer, browser `tester` | Campus Pulse visual craft, signature moments, screenshot self-critique |
+
+Add new skills by creating `skills/<name>/SKILL.md` and listing the path in `context-map.json` under the relevant agent's `alwaysRead`. Interactive Cursor sessions may also load project skills from `.cursor/skills/` if present; the harness path above is authoritative for `npm run aih:loop`.
+
 ## Auth (no .env file)
 
 ```bash
@@ -245,7 +255,7 @@ On a docs-only repo (no `apps/`), `npm run aih:check` passes without code-qualit
 
 ## Key files
 
-- `ai-harness/whole-app-backlog.json` — slice queue
+- `ai-harness/whole-app-backlog.json` — slice queue (includes pending slices for bootstrap, class management, QR preflight, role nav, GPS ready UX — priorities 35–42)
 - `ai-harness/workflows/ralph-loop.json` — loop policy (`testCaseGate.mode`)
 - `ai-harness/workflows/testgen-loop.json` — TestGen loop policy
 - `ai-harness/config/testgen-docs-map.json` — doc resolution rules per requirement tag

@@ -103,32 +103,96 @@ Detailed page inventory: [09-page-list.md](./09-page-list.md) (downstream).
 
 ---
 
-## 5. Visual Direction
+## 5. Visual Direction — Campus Pulse (v2)
 
-### 5.1 Tone and brand
+Campus Pulse is We Check's distinctive visual identity: **institutional trust with warmth**, refined surfaces, and one memorable moment per critical flow. It replaces generic SaaS blue admin aesthetics while preserving MVP UX constraints (320 px student flows, 44 px touch targets, Vietnamese copy, QR projection contrast).
 
-- **Professional and calm** — reduces anxiety during timed check-in.
-- **Institutional trust** — aligns with training office operations; avoids playful gamification.
-- **High signal** — status colors reserved for attendance states and alerts, not decoration.
+**Harness skill:** implementers and browser testers apply craft process from [`ai-harness/skills/frontend-design/SKILL.md`](../../ai-harness/skills/frontend-design/SKILL.md). Token values live in [04-design-tokens.md](./04-design-tokens.md).
 
-### 5.2 Color semantics
+### 5.1 Thesis
 
-| Semantic | Usage |
+We Check UI should feel like a **present, assured campus tool** — not anxious bureaucracy or a templated dashboard. Students get calm urgency during timed check-in; instructors get data-forward clarity at projection distance; admins get dense tables with breathing room.
+
+### 5.2 Tone and brand
+
+| Attribute | Expression |
 | --- | --- |
-| Primary | Primary actions: “Điểm danh”, “Mở buổi học”, “Lưu” |
-| Success | `Present`, successful check-in |
-| Warning | `Pending`, approaching window close, absence threshold ([BR-05](../brds/04-business-rules.md)) |
-| Danger | `Absent`, `Rejected`, blocking errors |
-| Neutral | Tables, borders, secondary text |
+| Trust | Deep indigo brand (`--color-brand-700`) — academic, stable |
+| Warmth | Stone page surfaces (`--color-surface-default`) — not cold gray |
+| Urgency | Amber countdown pulse when QR ≤ 10 s — not decorative red |
+| Success | Rich emerald outcome moments — distinct from generic green alerts |
+| Restraint | One signature visual beat per flow; quiet chrome elsewhere |
 
-Token values: [04-design-tokens.md](./04-design-tokens.md).
+**Avoid:** generic Tailwind blue (`#2563eb`) dashboards, cream+terracotta AI defaults, near-black+acid-green themes, broadsheet newspaper layouts, decorative numbered markers without semantic meaning.
 
-### 5.3 Typography
+### 5.3 Color semantics
 
-- System UI stack for fast load on student devices.
-- Page titles: semibold, **20–24 px** on mobile, **24–28 px** on desktop.
-- Body: **16 px** minimum on student flows ([NFR-18](../brds/07-non-functional-risk.md)).
-- Monospace for session IDs and export timestamps only.
+| Semantic | Token role | Usage |
+| --- | --- | --- |
+| Brand indigo | `--color-brand-*` | Headers, nav stripe, auth brand panel |
+| Action blue | `--color-primary-*` | Primary CTAs: “Điểm danh”, “Mở buổi học”, “Lưu” |
+| Success | `--color-success-*` | `Present`, check-in success outcome wash |
+| Warning | `--color-warning-*` | `Pending`, countdown warning |
+| Danger | `--color-danger-*` | `Absent`, blocking errors |
+| Neutral | `--color-surface-*`, `--color-text-*`, `--color-border-*` | Tables, borders, secondary text |
+
+QR **presentation mode** remains max-contrast black/white — decorative tokens must not weaken [NFR-20](../brds/07-non-functional-risk.md).
+
+Full values: [04-design-tokens.md](./04-design-tokens.md).
+
+### 5.4 Typography
+
+| Role | Face | Use |
+| --- | --- | --- |
+| Display / headings | **Plus Jakarta Sans** (`var(--font-display)`) | Page titles, outcome headlines, stat numbers |
+| Body / UI | **Be Vietnam Pro** (`var(--font-sans)`) | Body copy, labels, tables — optimized for `vi-VN` |
+| Data | `var(--font-mono)` | Session IDs, export timestamps only |
+
+Load via Google Fonts or self-hosted subset with `font-display: swap`. System stack remains fallback for FOUT/offline.
+
+Scale: display 28 px, h1 24 px, h2 20 px, body 16 px minimum on student routes ([NFR-18](../brds/07-non-functional-risk.md)).
+
+### 5.5 Signature element — check-in outcome moment
+
+Every check-in outcome (`Success`, `ExpiredQr`, `OutOfRadius`, `DuplicateCheckIn`, etc.) renders as a **full-width outcome panel**:
+
+```
+┌─────────────────────────────────────┐
+│  [icon]  Headline (display font)    │
+│  Supporting detail (body)           │
+│  ─────────────────────────────────  │
+│  [ single primary recovery CTA ]    │
+└─────────────────────────────────────┘
+```
+
+- Semantic **color wash** background (`success-50`, `warning-50`, `danger-50`)
+- Distinct **Lucide icon** per outcome (not interchangeable `AlertCircle`)
+- One recovery action — “Quét lại”, “Xem lịch sử”, “Thử lại”
+
+Spec: [07-event-specific-components.md](./07-event-specific-components.md) §2.5 · [12-ui-states.md](./12-ui-states.md) §4.
+
+### 5.6 Role-specific chrome
+
+| Role | Chrome treatment |
+| --- | --- |
+| **Student** | Warm stone background; compact header; bottom nav with active pill indicator |
+| **Instructor** | Sidebar with **4 px brand indigo stripe**; elevated stat cards on monitor |
+| **Admin** | Same sidebar pattern; table cards with `--shadow-md` elevation |
+| **Auth** | **Split panel** (≥768 px): left brand panel (indigo gradient + product copy), right login card |
+| **QR projection** | Unchanged fullscreen inverse — no brand decoration on `--color-qr-bg` |
+
+Layout specs: [06-app-layout-components.md](./06-app-layout-components.md).
+
+### 5.7 Motion
+
+| Moment | Treatment |
+| --- | --- |
+| Check-in page enter | Fade + 8 px rise, `--duration-normal` |
+| Outcome panel reveal | Scale 0.98→1 + opacity, `--duration-slow` |
+| Card hover (desktop) | `--shadow-sm` → `--shadow-md`, translateY -1 px |
+| QR countdown ≤ 10 s | Subtle amber pulse on timer (presentation mode only) |
+
+Respect `prefers-reduced-motion: reduce` — disable pulse and translate; keep opacity instant.
 
 ---
 
@@ -139,6 +203,9 @@ Token values: [04-design-tokens.md](./04-design-tokens.md).
 | P0 | Student QR + GPS check-in | [FR-07](../brds/03-functional-requirements.md), [FR-08](../brds/03-functional-requirements.md), [AC-07](../brds/08-acceptance-mvp-future.md), [AC-08](../brds/08-acceptance-mvp-future.md) |
 | P0 | Instructor QR display | [FR-06](../brds/03-functional-requirements.md), [AC-06](../brds/08-acceptance-mvp-future.md) |
 | P0 | Login gate before check-in | [FR-02](../brds/03-functional-requirements.md), [AC-02](../brds/08-acceptance-mvp-future.md) |
+| P0 | First admin bootstrap (`/setup`) | [FR-17](../brds/03-functional-requirements.md), [AC-17](../brds/08-acceptance-mvp-future.md) |
+| P0 | Permission-gated nav and role home hubs | [FR-18](../brds/03-functional-requirements.md), [AC-18](../brds/08-acceptance-mvp-future.md) |
+| P0 | QR preflight before GPS step | [FR-07](../brds/03-functional-requirements.md), [BR-15](../brds/04-business-rules.md) |
 | P1 | Live attendance monitor | [FR-15](../brds/03-functional-requirements.md), [AC-15](../brds/08-acceptance-mvp-future.md) |
 | P1 | Manual attendance edit | [FR-11](../brds/03-functional-requirements.md), [AC-11](../brds/08-acceptance-mvp-future.md) |
 | P1 | Admin CSV export | [FR-13](../brds/03-functional-requirements.md), [AC-13](../brds/08-acceptance-mvp-future.md) |

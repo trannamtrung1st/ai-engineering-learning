@@ -24,10 +24,10 @@ REST API specification for **We Check** MVP. Defines HTTP resources, request and
 
 | Module | Route prefix | Primary FR references |
 | --- | --- | --- |
-| `identity-auth` | `/auth`, `/users` | FR-01, FR-02 |
+| `identity-auth` | `/auth`, `/users`, `/setup` | FR-01, FR-02, FR-17 |
 | `roster-enrollment` | `/classes`, `/subjects`, `/enrollments`, `/roster` | FR-03 |
 | `session-management` | `/sessions` | FR-04, FR-05 |
-| `checkin-qr` | `/sessions/:id/qr`, `/check-in` | FR-06–FR-10 |
+| `checkin-qr` | `/sessions/:id/qr`, `/check-in`, `/check-in/tokens/:tokenId/preflight` | FR-06–FR-10, BR-15 |
 | `attendance` | `/sessions/:id/attendance`, `/attendance` | FR-11, FR-14, FR-15 |
 | `reporting-export` | `/reports` | FR-12, FR-13 |
 | `notifications` | `/notifications`, `/policy` | FR-16 |
@@ -50,6 +50,45 @@ Every protected route runs through authentication and permission evaluation per 
 ---
 
 ## 2. Authentication and Session
+
+### 2.0 Setup (bootstrap)
+
+Public endpoints for first-deploy bootstrap ([FR-17](../brds/03-functional-requirements.md), [BR-13](../brds/04-business-rules.md)).
+
+#### `GET /setup/status`
+
+| Field | Specification |
+| --- | --- |
+| Permission | Public |
+| FR | FR-17 |
+
+**Response `200`:**
+
+```json
+{ "needsSetup": true }
+```
+
+When `User.count > 0`, returns `{ "needsSetup": false }`.
+
+#### `POST /setup/first-admin`
+
+| Field | Specification |
+| --- | --- |
+| Permission | Public only when `needsSetup: true` |
+| FR | FR-17 |
+
+**Request body:**
+
+```json
+{
+  "institutionalId": "ADMIN001",
+  "displayName": "Nguyễn Văn Admin",
+  "email": "admin@example.edu.vn",
+  "password": "string"
+}
+```
+
+**Response `201`:** Created user + session cookie (same as login). **Response `403`:** `SetupAlreadyComplete` when users already exist.
 
 ### 2.1 Session model
 
@@ -183,6 +222,29 @@ Update display name, email, role, or `active` flag. Permission: `user:write`. De
 ### 4.1 `GET /classes` and `GET /subjects`
 
 Reference data lists. Permission: `roster:read` (scoped). Instructor sees only classes tied to `ClassAssignment`; admin sees all.
+
+### 4.1a `POST /classes` and `POST /subjects`
+
+Create reference records. Permission: `roster:write`. FR-03, [AC-03d](../brds/08-acceptance-mvp-future.md).
+
+**Request body (`POST /classes`):**
+
+```json
+{ "code": "HESD-03", "name": "HESD Cohort 03" }
+```
+
+**Request body (`POST /subjects`):**
+
+```json
+{ "code": "SWE-102", "name": "Software Engineering 102" }
+```
+
+| Validation | Rule |
+| --- | --- |
+| `code` | Uppercase alphanumeric + hyphen; unique; max length per [08-validation-rules.md](./08-validation-rules.md) |
+| Duplicate | `400` with `DuplicateClassCode` or `DuplicateSubjectCode` |
+
+MVP: create-only — no delete endpoints.
 
 ### 4.2 `GET /enrollments`
 
@@ -345,7 +407,53 @@ Client polls every **5 seconds** or uses Server-Sent Events in future; MVP polli
 
 QR encodes deep link consumed by student mobile web check-in page ([FR-07](../brds/03-functional-requirements.md)).
 
-### 6.2 `POST /check-in`
+### 6.2 `GET /check-in/tokens/:tokenId/preflight`
+
+Read-only token validation **before** client advances from scan to GPS capture ([BR-15](../brds/04-business-rules.md), [FR-07](../brds/03-functional-requirements.md)). Permission: `checkin:submit` (authenticated Student).
+
+**Query parameters (optional):**
+
+| Param | Purpose |
+| --- | --- |
+| `sessionId` | Deep-link session id for `SessionMismatch` check when QR payload includes session |
+
+**Preflight chain (server-side, no writes):**
+
+1. Token exists and parses
+2. Token status `Valid` (not `Expired`, `Consumed`)
+3. Parent session `Active`
+4. Authenticated student has `Enrollment` for session's class-subject pair
+
+**Response `200 OK` (pass):**
+
+```json
+{
+  "outcome": "Valid",
+  "tokenId": "uuid",
+  "sessionId": "uuid",
+  "session": {
+    "classCode": "HESD-01",
+    "subjectCode": "SWE-101",
+    "roomName": "Phòng A201",
+    "status": "Active"
+  }
+}
+```
+
+**Response `403` / `404` (fail):**
+
+| errorCode | HTTP | User message (vi-VN) |
+| --- | --- | --- |
+| `TokenNotFound` | 404 | *Không nhận diện được mã QR* |
+| `ExpiredQr` | 403 | *Mã QR đã hết hạn, vui lòng quét mã mới* |
+| `SessionNotActive` | 403 | Existing session-not-active copy |
+| `NotEnrolled` | 403 | *Bạn không thuộc danh sách lớp của buổi học này* |
+| `TokenAlreadyUsed` | 403 | Token reuse copy ([BR-11](../brds/04-business-rules.md)) |
+| `SessionMismatch` | 403 | QR session id does not match token's bound session |
+
+Client must not mount `GpsCaptureStep` until preflight returns `200` with `outcome: "Valid"`.
+
+### 6.3 `POST /check-in`
 
 Student check-in submission. Permission: `checkin:submit` (Student role). FR-07–FR-10.
 
@@ -411,6 +519,7 @@ Canonical mapping from [State machine (BRD)](../brds/05-state-machine.md) §5:
 | `SpoofSuspected` | 400 | `SpoofSuspected` | FR-10 |
 | `NotEnrolled` | 403 | `NotEnrolled` | FR-03 |
 | `TokenNotFound` | 404 | `TokenNotFound` | — |
+| `SessionMismatch` | 400 | `SessionMismatch` | FR-07 preflight |
 
 Every attempt inserts a `CheckInAttempt` row regardless of outcome ([FR-09](../brds/03-functional-requirements.md)).
 

@@ -15,6 +15,7 @@ Testable acceptance criteria (`AC-xx`) for **We Check** MVP. Each criterion uses
 | AC-07 – AC-10 | Mobile check-in, GPS, anti-fraud | Must | FR-07 – FR-10 |
 | AC-11 – AC-14 | Manual edits, reporting, export, student history | Must | FR-11 – FR-14 |
 | AC-15 – AC-16 | Dashboard and absence warnings | Should | FR-15 – FR-16 |
+| AC-17 – AC-18 | Bootstrap, nav permissions, role hubs | Must | FR-17 – FR-18 |
 
 ---
 
@@ -49,6 +50,33 @@ Testable acceptance criteria (`AC-xx`) for **We Check** MVP. Each criterion uses
 | AC-03a | A CSV with required columns (student ID, full name, class code, subject code) and valid rows | `TrainingOfficeAdmin` imports the file | Enrollments are created; import summary shows accepted and rejected row counts |
 | AC-03b | A CSV containing a duplicate student ID within the same class | Admin imports the file | Duplicate rows are rejected with row-level errors; valid rows still import; no silent partial failure |
 | AC-03c | An `Instructor` assigned to class `HESD-01` | Instructor views roster for an unassigned class | Access is denied; no roster data returned |
+| AC-03d | Admin with `roster:write` | Admin creates class `HESD-03` and subject `SWE-102` via `/admin/classes/new` | Records persisted; appear in roster filters and import validation |
+| AC-03e | Class code `HESD-03` already exists | Admin attempts duplicate class code | Request rejected with localized validation error |
+
+---
+
+### AC-17 — Initial admin bootstrap
+
+**Traces:** [FR-17](./03-functional-requirements.md), [BR-13](./04-business-rules.md)
+
+| ID | Given | When | Then |
+| --- | --- | --- | --- |
+| AC-17a | Empty database (`User.count = 0`) | Visitor opens `/` | Redirected to `/setup`; login link hidden or disabled |
+| AC-17b | Valid setup form on `/setup` | Admin submits institutional ID, name, email, password | First `TrainingOfficeAdmin` created; session established; lands on `/admin` hub |
+| AC-17c | Setup already complete (`needsSetup: false`) | Visitor opens `/setup` or repeats `POST /setup/first-admin` | `/setup` returns 403 or redirects to login; repeat POST rejected with `SetupAlreadyComplete` |
+| AC-17d | Duplicate email or institutional ID on setup form | Admin submits | Field validation error; no user created |
+
+### AC-18 — Permission-gated navigation and role home hubs
+
+**Traces:** [FR-18](./03-functional-requirements.md), [BR-14](./04-business-rules.md), [NFR-11](./07-non-functional-risk.md)
+
+| ID | Given | When | Then |
+| --- | --- | --- | --- |
+| AC-18a | Logged-in `Instructor` | User views layout chrome | Sidebar shows only instructor items; zero admin nav entries anywhere in chrome |
+| AC-18b | Logged-in `Student` | Student navigates to `/admin/users` via URL | `ForbiddenPage` shown; student chrome never displayed admin links |
+| AC-18c | Logged-in `TrainingOfficeAdmin` | Admin lands on `/admin` hub | All permitted workflow cards visible with working deep links |
+| AC-18d | Logged-in `Instructor` with `report:read` | Instructor lands on `/sessions` | Hub section shows **Tạo buổi học mới** and **Báo cáo** links |
+| AC-18e | Authenticated user of any role | User visits `/` | Redirect to role home hub per role table in [FR-18](./03-functional-requirements.md) |
 
 ---
 
@@ -91,12 +119,16 @@ Testable acceptance criteria (`AC-xx`) for **We Check** MVP. Each criterion uses
 
 ### AC-07 — Mobile web QR scan check-in success
 
-**Traces:** [FR-07](./03-functional-requirements.md), [NFR-04](./07-non-functional-risk.md), [NFR-18](./07-non-functional-risk.md)
+**Traces:** [FR-07](./03-functional-requirements.md), [BR-15](./04-business-rules.md), [NFR-04](./07-non-functional-risk.md), [NFR-18](./07-non-functional-risk.md)
 
 | ID | Given | When | Then |
 | --- | --- | --- | --- |
-| AC-07a | An authenticated enrolled student, session `Active`, valid unexpired QR token, GPS within radius | Student scans QR and submits check-in from mobile browser (iOS Safari or Android Chrome) | Attendance becomes `Present`; confirmation shown within **2 seconds** under normal network; token becomes `Consumed` |
-| AC-07b | A student not enrolled in the session | Student submits check-in for that session | Check-in rejected; no `Present` record created |
+| AC-07a | An authenticated enrolled student, session `Active`, valid unexpired QR token, GPS within radius | Student scans QR, preflight passes, and submits check-in from mobile browser (iOS Safari or Android Chrome) | Attendance becomes `Present`; confirmation shown within **2 seconds** under normal network; token becomes `Consumed` |
+| AC-07b | A student not enrolled in the session | Student preflight or submit for that session | Check-in rejected; no `Present` record created; outcome *Bạn không thuộc danh sách lớp của buổi học này* |
+| AC-07c | Enrolled student, session `Active`, valid token | Student scans QR → preflight **200** | Flow advances to GPS step with session summary (class, subject, room) visible |
+| AC-07d | Expired or unknown token | Student scans → preflight rejects | User remains on scan step or `ExpiredQr` outcome; `GpsCaptureStep` never mounts |
+| AC-07e | `studentb` not enrolled in session class-subject | Student scans valid token for that session | Preflight returns `NotEnrolled`; outcome shown without GPS step |
+| AC-07f | QR payload `session` id mismatches token's bound session | Student scans → preflight | Rejected with `TokenNotFound` or `SessionMismatch`; GPS step never mounts |
 
 ### AC-08 — GPS location verification
 
@@ -108,6 +140,9 @@ Testable acceptance criteria (`AC-xx`) for **We Check** MVP. Each criterion uses
 | AC-08b | Device coordinates outside configured radius | Student submits check-in | Outcome `OutOfRadius`; attendance not set to `Present` |
 | AC-08c | GPS disabled or browser location permission denied (or client timeout after **15 seconds**) | Student initiates check-in | Outcome `GpsDisabled`; Vietnamese message: *Vui lòng bật GPS và cấp quyền định vị để điểm danh* with help link |
 | AC-08d | A successful check-in completing radius validation | Server persists attendance outcome | Raw latitude/longitude are **not** stored in long-term attendance tables |
+| AC-08e | Simulation disabled (`VITE_ENABLE_DEVICE_SIMULATION=false`) | Student check-in | Client uses browser `geolocation` API; URL sim params ignored. With simulation enabled, `gpsSim=delay` resolves without real GPS permission |
+| AC-08f | Device coordinates acquired in-radius (`gpsState === "ready"`) | GPS step renders | *Vị trí đã sẵn sàng* shown **without** spinner; `aria-busy` absent; **Xác nhận điểm danh** enabled immediately |
+| AC-08g | Student taps **Xác nhận điểm danh** | Submit in flight (`submitting`) | Spinner returns; submit disabled until API outcome |
 
 ### AC-09 — Anti-proxy and duplicate check-in prevention
 
@@ -206,6 +241,12 @@ The following capabilities are **in scope** for the We Check MVP pilot with HESD
 | User provisioning and deactivation | FR-01 | AC-01 |
 | Email/password authentication | FR-02 | AC-02 |
 | CSV roster import | FR-03 | AC-03 |
+| Manual class and subject creation | FR-03 | AC-03d, AC-03e |
+| First admin bootstrap (`/setup`) | FR-17 | AC-17 |
+| Permission-gated nav and role home hubs | FR-18 | AC-18 |
+| QR preflight gate before GPS | FR-07 | AC-07c–AC-07f |
+| GPS ready-state UX (no spinner when ready) | FR-08 | AC-08f, AC-08g |
+| Device API fidelity (sim flag) | FR-07, FR-08 | AC-08e, NFR-24 |
 | Session creation with room GPS (default **100 m** radius) | FR-04 | AC-04 |
 | Open/close session with **10-minute** attendance window | FR-05 | AC-05 |
 | Rotating QR (**30 s** token) | FR-06 | AC-06 |
@@ -283,11 +324,13 @@ The MVP pilot is considered successful when all of the following are true for at
 | AC-01 | FR-01 | — | — |
 | AC-02 | FR-02 | BR-06 | NFR-10, NFR-16 |
 | AC-03 | FR-03 | — | — |
+| AC-17 | FR-17 | BR-13 | NFR-16 |
+| AC-18 | FR-18 | BR-14 | NFR-11 |
 | AC-04 | FR-04 | BR-07 | — |
 | AC-05 | FR-05 | BR-01 | NFR-01 |
 | AC-06 | FR-06 | BR-03 | NFR-06 |
-| AC-07 | FR-07 | — | NFR-04, NFR-18 |
-| AC-08 | FR-08 | BR-02, BR-12 | NFR-12 |
+| AC-07 | FR-07 | BR-03, BR-15 | NFR-04, NFR-18, NFR-24 |
+| AC-08 | FR-08 | BR-02, BR-12 | NFR-12, NFR-24 |
 | AC-09 | FR-09 | BR-04, BR-11 | NFR-02 |
 | AC-10 | FR-10 | — | NFR-15 |
 | AC-11 | FR-11 | BR-10 | NFR-15 |

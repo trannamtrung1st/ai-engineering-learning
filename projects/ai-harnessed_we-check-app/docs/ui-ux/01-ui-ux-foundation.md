@@ -64,6 +64,8 @@ Full strings live in `@wecheck/domain` message catalog ([NFR-17](../brds/07-non-
 | [BR-09](../brds/04-business-rules.md) | CSV export control hidden or disabled for non-admin roles |
 | [BR-10](../brds/04-business-rules.md) | Manual edit shows **24-hour** window notice; requires reason |
 | [BR-12](../brds/04-business-rules.md) | GPS denial → modal with OS-specific enable steps |
+| [BR-14](../brds/04-business-rules.md) | Nav items for forbidden routes omitted from chrome — not disabled |
+| [BR-15](../brds/04-business-rules.md) | Preflight failure keeps user on scan step; no GPS mount |
 
 ---
 
@@ -75,7 +77,7 @@ Full strings live in `@wecheck/domain` message catalog ([NFR-17](../brds/07-non-
 | --- | --- | --- |
 | `Student` | `StudentLayout` — bottom nav or minimal header | `/check-in` or `/history` |
 | `Instructor` | `InstructorLayout` — sidebar + top bar | `/sessions` |
-| `TrainingOfficeAdmin` | `AdminLayout` — sidebar + top bar | `/admin/users` |
+| `TrainingOfficeAdmin` | `AdminLayout` — sidebar + top bar | `/admin` hub |
 
 Layout component specs: [06-app-layout-components.md](./06-app-layout-components.md).
 
@@ -124,11 +126,13 @@ Layout component specs: [06-app-layout-components.md](./06-app-layout-components
 
 Student check-in ([FR-07](../brds/03-functional-requirements.md), [FR-08](../brds/03-functional-requirements.md)) follows a linear step model:
 
-1. **Context** — session title, room, time window.
+1. **Context** — session title, room, time window (after preflight pass).
 2. **Permissions** — camera and GPS consent with privacy note (GPS not stored after validation per [NFR-12](../brds/07-non-functional-risk.md)).
 3. **Scan** — camera viewfinder with QR overlay.
-4. **Submit** — GPS fetch + API call with loading state.
-5. **Outcome** — result screen with icon, message, and next action.
+4. **Preflight** — `GET /check-in/tokens/:tokenId/preflight`; inline validating state on scan step; failures stay on scan ([BR-15](../brds/04-business-rules.md)).
+5. **GPS capture** — acquire coordinates; **ready** shows check icon without spinner ([AC-08f](../brds/08-acceptance-mvp-future.md)).
+6. **Submit** — explicit **Xác nhận điểm danh** tap; spinner only during `submitting`.
+7. **Outcome** — result screen with icon, message, and next action.
 
 No optimistic success. Network retry: up to **3** attempts within **30 s**.
 

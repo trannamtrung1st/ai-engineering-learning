@@ -167,7 +167,33 @@ flowchart TD
 | API gateway / middleware | Authenticate session; attach `userId` and `role` to request context |
 | Permission guard | Map route + method to required permission; evaluate role matrix |
 | Domain service | Enforce resource scope (enrollment, class assignment, session ownership) |
-| UI route guard | Mirror API permissions; hide unauthorized navigation entries |
+| UI route guard | Mirror API permissions; **omit** unauthorized navigation entries ([BR-14](../brds/04-business-rules.md)) |
+
+### 2.3a Navigation item → permission map
+
+Each layout nav item maps to a required permission. Items the user lacks are **omitted** from DOM (not disabled). Implemented via `usePermittedNav()` hook returning filtered nav descriptors.
+
+| Nav item (vi-VN) | Route | Required permission | Roles |
+| --- | --- | --- | --- |
+| Điểm danh | `/check-in` | `checkin:submit` | Student |
+| Lịch sử | `/history` | `attendance:read` (self) | Student |
+| Buổi học | `/sessions` | `session:read` | Instructor |
+| Báo cáo (instructor) | `/reports` | `report:read` | Instructor |
+| Trang chủ (admin) | `/admin` | `user:read` (all) or any admin permission | Admin |
+| Người dùng | `/admin/users` | `user:read` (all) | Admin |
+| Danh sách lớp | `/admin/rosters` | `roster:read` (all) | Admin |
+| Thêm lớp học | `/admin/classes/new` | `roster:write` | Admin |
+| Nhập danh sách | `/admin/rosters/import` | `roster:write` | Admin |
+| Báo cáo (admin) | `/admin/reports` | `report:read` (institution) | Admin |
+| Xuất CSV | `/admin/export` | `report:export` | Admin |
+| Chính sách | `/admin/policy` | `policy:write` | Admin |
+
+### 2.3b Public routes
+
+| Route | Permission | Notes |
+| --- | --- | --- |
+| `/login` | Public | Redirect when authenticated |
+| `/setup` | Public when `needsSetup: true` | Otherwise 403 or redirect to login ([FR-17](../brds/03-functional-requirements.md)) |
 
 Deny by default: if permission is not granted in §2.2, return `403` with Vietnamese user message and English `errorCode` for clients.
 

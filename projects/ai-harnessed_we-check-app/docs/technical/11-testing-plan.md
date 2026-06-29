@@ -68,7 +68,13 @@ flowchart TB
 | TS-18 | Scan at T + 31 s | `ExpiredQr` | AC-06b, BR-03 |
 | TS-19 | QR request when not Active | No valid token | AC-06c |
 | TS-20 | Successful mobile check-in | `Present` within 2 s p95 | AC-07a, NFR-04 |
-| TS-21 | Not enrolled student check-in | Rejected; no Present | AC-07b |
+| TS-21 | Not enrolled student check-in | Rejected; no Present; preflight `NotEnrolled` before GPS | AC-07b, AC-07e |
+| TS-21a | QR preflight — valid token enrolled | `200` → GPS step with session summary | AC-07c |
+| TS-21b | QR preflight — expired/unknown token | Stay on scan; no GPS mount | AC-07d |
+| TS-21c | QR preflight — session mismatch | `SessionMismatch`; no GPS mount | AC-07f |
+| TS-21d | Bootstrap first admin | `POST /setup/first-admin` when empty DB | AC-17 |
+| TS-21e | GPS ready UX | No spinner when *Vị trí đã sẵn sàng*; submit enabled | AC-08f |
+| TS-21f | Instructor nav audit | Zero `/admin` links in chrome | AC-18a |
 | TS-22 | GPS within radius | Radius pass; success if all rules pass | AC-08a, BR-02 |
 | TS-23 | GPS outside radius | `OutOfRadius` | AC-08b |
 | TS-24 | GPS disabled / permission denied | `GpsDisabled` | AC-08c, BR-12 |
@@ -203,7 +209,7 @@ Minimum pre-merge gates (enforced by `npm run aih:check` / harness `run-checks.s
 | OpenAPI contract | Contract tests vs `openapi.json` | [05-api-design.md](./05-api-design.md) §12 |
 | State enum drift | Lint script vs [07-state-machines.md](./07-state-machines.md) | — |
 
-**Browser gate (frontend slices):** Playwright smoke for login, session open, QR display. Mobile device matrix on ≥ **4** devices before pilot ([NFR-18](../brds/07-non-functional-risk.md)).
+**Browser gate (frontend slices):** Playwright smoke for login, session open, QR display. Playwright config sets `VITE_ENABLE_DEVICE_SIMULATION=true` for E2E ([NFR-24](../brds/07-non-functional-risk.md)). Mobile device matrix on ≥ **4** devices before pilot ([NFR-18](../brds/07-non-functional-risk.md)).
 
 **Should-capability gate:** FR-15 live dashboard and FR-16 notifications tested in separate track; failure does not block Must MVP release.
 

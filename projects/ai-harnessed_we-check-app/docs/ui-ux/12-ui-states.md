@@ -11,8 +11,8 @@ Catalog of UI states for **We Check** MVP pages and components. Every data-drive
 | State category | Purpose | Typical components |
 | --- | --- | --- |
 | **Loading** | Data fetch in progress | `Skeleton`, `Spinner`, `aria-busy` |
-| **Empty** | Valid response with zero records | `EmptyState` with CTA |
-| **Error** | Recoverable or fatal fetch/action failure | `Alert` danger, retry button |
+| **Empty** | Valid response with zero records | `EmptyState` with CTA — illustrated icon, warm copy, not bare gray box |
+| **Error** | Recoverable or fatal fetch/action failure | `Alert` danger with recovery action; outcome-style panel on check-in |
 | **Success** | Confirmed positive outcome | `Alert` success, outcome panels |
 | **Idle / Ready** | Default interactive state | Form defaults, enabled controls |
 | **Submitting** | Mutation in flight | Disabled inputs, button loading |
@@ -58,35 +58,47 @@ Catalog of UI states for **We Check** MVP pages and components. Every data-drive
 | State | Step | UI |
 | --- | --- | --- |
 | `consent` | Pre-scan | `LocationConsentBanner` visible first visit |
+| `validating_token` | After scan / deep link | Inline spinner on scan step; `GET .../preflight` in flight; GPS step not mounted |
 | `scanning` | 1 | `QrScannerView` active camera |
-| `gps_capture` | 2 | `GpsCaptureStep` spinner / permission modal |
-| `submitting` | 2→3 | Full-step overlay, `aria-busy="true"` |
+| `gps_capture` | 2 | `GpsCaptureStep` — spinner only during `requesting`/`acquiring`/`submitting` |
+| `submitting` | 2→3 | Submit row spinner; `aria-busy="true"` on submit region only |
 | `outcome` | 3 | `CheckInOutcomePanel` success or error variant |
 | `camera_denied` | 1 | `PermissionGuideModal` `type="camera"` |
 
 ### 4.2 GpsCaptureStep substates
 
-| Substate | Display | Timeout |
-| --- | --- | --- |
-| Requesting permission | *Đang yêu cầu quyền định vị…* | Browser prompt |
-| Acquiring fix | Spinner + accuracy meters | **15 s** client timeout ([AC-08c](../brds/08-acceptance-mvp-future.md)) |
-| Retry | *Thử lại ({n}/3)* | Up to **3** attempts |
-| Permission denied | GPS guide modal | User must fix settings |
-| Submitting | Disabled cancel | Until API responds |
+| Substate | Spinner | Display | `aria-busy` | Submit button |
+| --- | --- | --- | --- | --- |
+| `requesting` | Yes | *Đang yêu cầu quyền định vị…* | `true` | Disabled |
+| `acquiring` | Yes | *Đang xác minh vị trí…* + optional accuracy hint | `true` | Disabled |
+| **`ready`** | **No** | **Check icon** + *Vị trí đã sẵn sàng* (static) | **`false`** | **Enabled** |
+| `submitting` | Yes | *Đang gửi điểm danh…* | `true` | Disabled |
+| `denied` | No | Error copy + permission guide CTA | `false` | Disabled |
 
-### 4.3 CheckInOutcomePanel variants
+Session preflight (`sessionGate === "checking"`) may run in parallel with GPS capture but must not force GPS UI back to spinner once `ready`. **Cần bật GPS** badge on submit row clears when `gpsState === "ready"` and `capturedCoords` present.
 
-| Outcome | Variant | Icon | Primary CTA |
+| Substate (legacy reference) | Timeout |
+| --- | --- |
+| Retry | *Thử lại ({n}/3)* — up to **3** attempts |
+| Permission denied | GPS guide modal — user must fix settings |
+
+### 4.3 CheckInOutcomePanel variants (Campus Pulse)
+
+Each variant uses the **outcome moment** pattern: semantic wash, distinct Lucide icon (`--size-icon-lg`), `--font-display` headline, single primary CTA. See [04-design-tokens.md](./04-design-tokens.md) §13.
+
+| Outcome | Wash | Icon (Lucide) | Primary CTA |
 | --- | --- | --- | --- |
-| `Present` | success | check | **Xong** |
-| `ExpiredQr` | warning | clock | **Quét lại** |
-| `OutOfRadius` | warning | map-pin-off | **Thử lại** |
-| `GpsDisabled` | danger | location-off | **Hướng dẫn cấp quyền** |
-| `DuplicateCheckIn` | info | info | **Xem lịch sử** |
-| `SpoofSuspected` | danger | shield-alert | **Liên hệ giảng viên** |
-| `SessionNotActive` | warning | calendar-x | **Đóng** |
-| `NotEnrolled` | danger | user-x | **Đóng** |
-| Network error | danger | wifi-off | **Thử lại** |
+| `Present` | `--color-success-50` | `CheckCircle2` | **Xong** |
+| `ExpiredQr` | `--color-warning-50` | `Clock` | **Quét lại** |
+| `OutOfRadius` | `--color-warning-50` | `MapPinOff` | **Thử lại** |
+| `GpsDisabled` | `--color-danger-50` | `LocateOff` | **Hướng dẫn cấp quyền** |
+| `DuplicateCheckIn` | `--color-info-50` | `History` | **Xem lịch sử** |
+| `SpoofSuspected` | `--color-danger-50` | `ShieldAlert` | **Liên hệ giảng viên** |
+| `SessionNotActive` | `--color-warning-50` | `CalendarX` | **Đóng** |
+| `NotEnrolled` | `--color-danger-50` | `UserX` | **Đóng** |
+| Network error | `--color-danger-50` | `WifiOff` | **Thử lại** |
+
+Reveal animation: scale + opacity per [03-design-system-basics.md](./03-design-system-basics.md) §9.
 
 ---
 
@@ -97,7 +109,7 @@ Catalog of UI states for **We Check** MVP pages and components. Every data-drive
 | State | UI |
 | --- | --- |
 | Loading | **3** skeleton cards |
-| Empty | `EmptyState`: *Chưa có buổi học nào* — no CTA |
+| Empty | `EmptyState`: *Chưa có buổi học nào* — Lucide `CalendarDays` icon, `--color-text-secondary` copy, warm stone background; no CTA |
 | Populated | Card list with `StatusBadge` per row |
 | Loading more | Inline spinner on **Tải thêm** button |
 | End of list | Hide **Tải thêm**; show *Đã hiển thị tất cả* |

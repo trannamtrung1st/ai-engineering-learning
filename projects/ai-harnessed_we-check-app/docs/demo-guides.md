@@ -29,6 +29,8 @@ How to run the local preview stack, rehearse end-to-end demo scripts for stakeho
 - Docker running (PostgreSQL on port `5432`)
 - Root `.env` copied from `.env.example` with `SEED_ENABLED=true`
 
+**Fresh DB bootstrap path:** Set `SEED_ENABLED=false`, start stack, visit `/setup` to create first admin ([FR-17](../brds/03-functional-requirements.md)). Use seeded preview for routine demos.
+
 ### Quick start (recommended)
 
 ```bash
@@ -161,7 +163,7 @@ Curated narratives for presenting to others. Each script lists **who logs in whe
 
 | # | Action | What to highlight |
 | --- | --- | --- |
-| 1 | Log in `admin@example.edu.vn` / `AdminPass123` → `/admin/reports` | Summary cards + session table — *"Tổng quan toàn trường, không chỉ từng lớp"* |
+| 1 | Log in `admin@example.edu.vn` / `AdminPass123` → `/admin` hub → **Báo cáo** | Summary cards + session table — *"Tổng quan toàn trường, không chỉ từng lớp"* |
 | 2 | Show filter bar (class / subject / date range) | Drill-down capability (UI shell) |
 | 3 | Navigate to `/admin/export` → apply filters → **Xuất CSV** | Demo toast on success — *"Xuất dữ liệu cho hệ thống học vụ hiện có"* |
 | 4 | Log out → log in as instructor → visit `/admin/export` | Denied: *"Chỉ phòng đào tạo mới có quyền xuất dữ liệu"* — RBAC |
@@ -227,6 +229,8 @@ Curated narratives for presenting to others. Each script lists **who logs in whe
 | 3 | Phone: open `{ngrok-url}/login` → `student@example.edu.vn` / `StudentPass8` |
 | 4 | Scan the live QR with phone camera → deep link opens `/check-in?token=…` |
 | 5 | Grant camera + location permissions → submit → **Điểm danh thành công** |
+
+> **Note:** Script F uses **real** device APIs — do not rely on `gpsSim`/`cameraSim` unless `VITE_ENABLE_DEVICE_SIMULATION=true`. For desktop rehearsal, use Script A with sim params instead.
 | 6 | Instructor monitor updates within ~5 s |
 
 > If ngrok is unavailable, use `http://<your-lan-ip>:3007` on the same Wi-Fi.
@@ -250,6 +254,8 @@ Curated narratives for presenting to others. Each script lists **who logs in whe
 
 All passwords are deterministic preview fixtures — safe for local/dev only.
 
+**Seeded preview** (`SEED_ENABLED=true`): use table below. **Bootstrap-created admin** (`SEED_ENABLED=false` + `/setup`): credentials you choose during setup — not in this table.
+
 | Role | Display name | Email | Password | Institutional ID | Notes |
 | --- | --- | --- | --- | --- | --- |
 | **Training office admin** | Quản trị viên Phòng đào tạo | `admin@example.edu.vn` | `AdminPass123` | ADMIN001 | Full admin access |
@@ -265,13 +271,15 @@ All passwords are deterministic preview fixtures — safe for local/dev only.
 | --- | --- |
 | Student | `/check-in` |
 | Instructor | `/sessions` |
-| Admin | `/admin/users` |
+| Admin | `/admin` hub |
 
 ---
 
 ## 5. Seeded preview data
 
 ### Classes & subject
+
+Preview seed creates reference data automatically. For fresh-DB demos, create classes/subjects manually at `/admin/classes/new` before CSV import ([AC-03d](../brds/08-acceptance-mvp-future.md)).
 
 | Entity | Code | Name |
 | --- | --- | --- |
@@ -482,7 +490,27 @@ Login: `admin@example.edu.vn` / `AdminPass123`
 
 **Placeholder admin pages**
 
-- `/admin/users`, `/admin/rosters`, `/admin/policy` — shell placeholders for upcoming slices
+- `/setup` — first admin bootstrap when `SEED_ENABLED=false` and empty database
+- `/admin` — admin role hub with workflow cards
+- `/admin/classes/new` — manual class and subject creation before CSV import
+
+Implemented admin pages (`/admin/users`, `/admin/rosters`, `/admin/policy`, etc.) require matching harness slices to pass.
+
+---
+
+### 6.4 Student check-in — preflight gate
+
+1. **Stale token stays on scan:** `/check-in?token=stale-token-id&gpsSim=delay` — preflight rejects with `ExpiredQr`; *Vị trí đã sẵn sàng* / GPS step must **not** appear.
+2. **Not enrolled before GPS:** Log in `studentb@example.edu.vn` → `/check-in?token=valid-token-id&gpsSim=delay` — `NotEnrolled` outcome on scan step without GPS mount.
+3. **Happy path:** Enrolled student with valid token → preflight pass → GPS step → submit.
+
+---
+
+### 6.5 Admin bootstrap and class creation
+
+1. `SEED_ENABLED=false` + empty DB → visit `/` → redirected to `/setup`.
+2. Create first admin → lands on `/admin` hub.
+3. **Thêm lớp/môn** card → `/admin/classes/new` → create class `HESD-03` + subject `SWE-102` before roster CSV import.
 
 ---
 
@@ -502,6 +530,8 @@ The monitor polls every ~5 s and shows spoof badge + code-sharing warning when A
 ---
 
 ## 7. Preview simulation query params
+
+**Requires `VITE_ENABLE_DEVICE_SIMULATION=true`** in web environment ([NFR-24](../brds/07-non-functional-risk.md)). When the flag is off (production default), all params below are **ignored** — client uses real `getUserMedia` and `geolocation`. E2E and local preview set the flag on.
 
 Use these on desktop browsers when real GPS/camera is unavailable. Append to any `/check-in` URL.
 
@@ -593,10 +623,12 @@ npm run aih:preview
 ## 11. Quick smoke checklist
 
 - [ ] API health returns `ok` + `db: connected`
-- [ ] Admin login → `/admin/users`
-- [ ] Instructor login → `/sessions` → open `sess-1` monitor
-- [ ] Student login → `/check-in?token=valid-token-id&gpsSim=delay` → Present
-- [ ] `studentb` → NotEnrolled on valid token
+- [ ] Admin login → `/admin` hub (not only `/admin/users`)
+- [ ] Instructor login → `/sessions` → hub cards visible; zero `/admin` links in chrome
+- [ ] Instructor → `/sessions` → open `sess-1` monitor
+- [ ] Student login → `/check-in?token=valid-token-id&gpsSim=delay` → Present; GPS ready shows *Vị trí đã sẵn sàng* **without** spinner
+- [ ] `stale-token-id` deep link → stays on scan / expired outcome; GPS step never mounts
+- [ ] `studentb` → NotEnrolled on valid token (before GPS)
 - [ ] `deactivated@example.edu.vn` → login blocked
 - [ ] `/history` shows closed session for student A
 - [ ] Instructor denied on `/admin/export`

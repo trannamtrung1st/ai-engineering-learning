@@ -75,13 +75,14 @@ flowchart TB
 | Aspect | Detail |
 | --- | --- |
 | **Owns entities** | `User`, `AuthSession` |
-| **FR ownership** | FR-01, FR-02 |
-| **BR references** | BR-06 |
+| **FR ownership** | FR-01, FR-02, FR-17 |
+| **BR references** | BR-06, BR-13 |
 | **Permissions** | `user:read`, `user:write` ([01-roles-permissions.md](./01-roles-permissions.md)) |
 
 **Responsibilities:**
 
 - Create, update, deactivate user accounts with institutional ID, email, display name, role, active flag.
+- **Bootstrap:** `GET /setup/status`, `POST /setup/first-admin` when `User.count = 0` ([FR-17](../brds/03-functional-requirements.md)).
 - Authenticate email/password; issue and revoke `AuthSession` with 8-hour inactivity expiry.
 - Reject login and invalidate sessions for deactivated users.
 - Provide `/me` profile for authenticated callers.
@@ -108,7 +109,7 @@ flowchart TB
 
 **Responsibilities:**
 
-- Maintain class and subject reference data.
+- Maintain class and subject reference data; **`POST /classes`**, **`POST /subjects`** (create-only MVP).
 - Import enrollments via CSV with row-level validation (student ID, name, class code, subject code).
 - Link instructors to class-subject pairs via `ClassAssignment` for authorization scope.
 - Expose enrolled student list for a class-subject pair to session and check-in modules.
@@ -164,11 +165,12 @@ flowchart TB
 | --- | --- |
 | **Owns entities** | `QrToken`, `CheckInAttempt` |
 | **FR ownership** | FR-06, FR-07, FR-08, FR-09, FR-10 |
-| **BR references** | BR-02, BR-03, BR-04, BR-11, BR-12 |
+| **BR references** | BR-02, BR-03, BR-04, BR-11, BR-12, BR-15 |
 | **Permissions** | `qr:display`, `checkin:submit` |
 
 **Responsibilities:**
 
+- **`GET /check-in/tokens/:tokenId/preflight`:** Read-only validation before GPS step — token, session, enrollment ([BR-15](../brds/04-business-rules.md)).
 - Issue new `QrToken` every **30 seconds** while session is `Active`; mark expired tokens.
 - Render QR payload (token ID or signed deep link) for instructor display with countdown.
 - Accept check-in submission: authenticated student, token, client coordinates, spoof metadata.
@@ -321,6 +323,8 @@ Page-level mapping: [09-page-list.md](../ui-ux/09-page-list.md) (phase 3).
 | FR ID | Primary module | Supporting modules |
 | --- | --- | --- |
 | FR-01 | `identity-auth` | — |
+| FR-17 | `identity-auth` | — |
+| FR-18 | Web shell (layout) | `identity-auth` |
 | FR-02 | `identity-auth` | — |
 | FR-03 | `roster-enrollment` | `identity-auth` |
 | FR-04 | `session-management` | `roster-enrollment` |

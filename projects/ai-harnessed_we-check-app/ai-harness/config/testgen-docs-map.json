@@ -10,7 +10,13 @@
         "docs/brds/03-functional-requirements.md",
         "docs/brds/04-business-rules.md",
         "docs/technical/02-module-breakdown.md",
-        "docs/technical/05-api-design.md"
+        "docs/technical/05-api-design.md",
+        "docs/technical/08-validation-rules.md"
+      ],
+      "coverageHints": [
+        "integration: POST /classes and POST /subjects create reference records with uppercase code validation",
+        "integration: duplicate class code returns DuplicateClassCode with localized error",
+        "browser-journey: admin creates HESD-03 and SWE-102 via /admin/classes/new before roster import"
       ]
     },
     {
@@ -28,7 +34,36 @@
         "docs/technical/02-module-breakdown.md",
         "docs/technical/03-domain-model.md",
         "docs/technical/05-api-design.md",
-        "docs/technical/08-validation-rules.md"
+        "docs/technical/08-validation-rules.md",
+        "docs/technical/06-main-workflows.md",
+        "docs/ui-ux/07-event-specific-components.md",
+        "docs/ui-ux/12-ui-states.md"
+      ],
+      "coverageHints": [
+        "integration: GET /check-in/tokens/:tokenId/preflight returns 200 for valid enrolled token on Active session",
+        "integration: preflight rejects ExpiredQr, NotEnrolled, SessionMismatch, TokenNotFound before GPS step",
+        "browser-journey: scan step does not mount gps-capture-step until preflight passes",
+        "component: GpsCaptureStep ready state shows check icon without Spinner; aria-busy false; submit enabled",
+        "e2e: gpsSim params ignored when VITE_ENABLE_DEVICE_SIMULATION=false"
+      ]
+    },
+    {
+      "match": "^AC-1[78]$",
+      "docs": [
+        "docs/brds/03-functional-requirements.md",
+        "docs/brds/04-business-rules.md",
+        "docs/brds/08-acceptance-mvp-future.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/01-roles-permissions.md",
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/06-app-layout-components.md",
+        "docs/ui-ux/10-user-flows.md"
+      ],
+      "coverageHints": [
+        "integration: GET /setup/status returns needsSetup true when User count is zero",
+        "integration: POST /setup/first-admin rejected with 403 after bootstrap complete",
+        "browser-journey: instructor layout chrome contains zero href matching /admin",
+        "browser-journey: authenticated admin lands on /admin hub with permission-filtered cards"
       ]
     },
     {
@@ -91,6 +126,85 @@
       ]
     },
     {
+      "match": "^AC-17$",
+      "docs": [
+        "docs/brds/03-functional-requirements.md",
+        "docs/brds/08-acceptance-mvp-future.md",
+        "docs/technical/05-api-design.md",
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/08-forms-validation-ux.md"
+      ],
+      "coverageHints": [
+        "e2e: GET /setup/status needsSetup true on empty DB",
+        "e2e: POST /setup/first-admin creates admin; repeat returns SetupAlreadyComplete",
+        "browser-journey: / redirects to /setup when needsSetup; lands on /admin after form"
+      ]
+    },
+    {
+      "match": "^AC-18$",
+      "docs": [
+        "docs/brds/03-functional-requirements.md",
+        "docs/ui-ux/06-app-layout-components.md",
+        "docs/ui-ux/05-common-ui-components.md",
+        "docs/technical/01-roles-permissions.md"
+      ],
+      "coverageHints": [
+        "browser-journey: instructor zero /admin href in layout chrome",
+        "browser-journey: admin /admin hub cards deep-link to permitted routes",
+        "component: usePermittedNav omits unauthorized nav items"
+      ]
+    },
+    {
+      "match": "^BR-13$",
+      "docs": [
+        "docs/brds/04-business-rules.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/08-validation-rules.md"
+      ],
+      "coverageHints": [
+        "integration: bootstrap allowed only when User.count = 0",
+        "e2e: concurrent bootstrap requests produce single admin"
+      ]
+    },
+    {
+      "match": "^BR-14$",
+      "docs": [
+        "docs/brds/04-business-rules.md",
+        "docs/technical/01-roles-permissions.md",
+        "docs/ui-ux/06-app-layout-components.md"
+      ],
+      "coverageHints": [
+        "browser-journey: nav chrome derived from same permission matrix as API guards",
+        "component: forbidden nav items omitted not disabled"
+      ]
+    },
+    {
+      "match": "^BR-15$",
+      "docs": [
+        "docs/brds/04-business-rules.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/06-main-workflows.md",
+        "docs/ui-ux/07-event-specific-components.md"
+      ],
+      "coverageHints": [
+        "integration: preflight read-only chain before POST /check-in",
+        "browser-journey: gps-capture-step absent until preflight 200"
+      ]
+    },
+    {
+      "match": "^NFR-24$",
+      "docs": [
+        "docs/brds/07-non-functional-risk.md",
+        "docs/technical/10-local-development-setup.md",
+        "docs/demo-guides.md",
+        "docs/technical/11-testing-plan.md"
+      ],
+      "coverageHints": [
+        "unit: preview-sim helpers no-op when VITE_ENABLE_DEVICE_SIMULATION=false",
+        "e2e: Playwright config sets sim flag on; production build ignores gpsSim and cameraSim query params"
+      ]
+    },
+    {
       "match": "^NFR-0(1|2|4)$",
       "docs": [
         "docs/technical/13-docker-compose-local-runtime.md",
@@ -110,7 +224,12 @@
       "docs": [
         "docs/technical/01-roles-permissions.md",
         "docs/technical/05-api-design.md",
-        "docs/technical/09-error-handling.md"
+        "docs/technical/09-error-handling.md",
+        "docs/ui-ux/06-app-layout-components.md"
+      ],
+      "coverageHints": [
+        "browser-journey: per role assert zero layout nav links to forbidden route prefixes (/admin/* for non-admin)",
+        "component: SidebarNav and BottomNav omit items lacking required permission"
       ]
     },
     {
@@ -139,7 +258,13 @@
         "docs/brds/03-functional-requirements.md",
         "docs/technical/02-module-breakdown.md",
         "docs/technical/05-api-design.md",
-        "docs/technical/04-database-design.md"
+        "docs/technical/04-database-design.md",
+        "docs/technical/08-validation-rules.md"
+      ],
+      "coverageHints": [
+        "integration: POST /classes creates Class with unique uppercase code",
+        "integration: POST /subjects creates Subject with unique uppercase code",
+        "integration: duplicate class code returns 422 DuplicateClassCode"
       ]
     },
     {
@@ -158,7 +283,14 @@
         "docs/brds/04-business-rules.md",
         "docs/technical/02-module-breakdown.md",
         "docs/technical/05-api-design.md",
-        "docs/technical/08-validation-rules.md"
+        "docs/technical/08-validation-rules.md",
+        "docs/technical/06-main-workflows.md",
+        "docs/ui-ux/07-event-specific-components.md"
+      ],
+      "coverageHints": [
+        "integration: preflight endpoint read-only chain token → session Active → enrollment",
+        "browser-journey: client calls getUserMedia and geolocation when sim flag off",
+        "component: GpsCaptureStep ready substate hides spinner per ui-states §4.2"
       ]
     },
     {
@@ -168,6 +300,21 @@
         "docs/technical/02-module-breakdown.md",
         "docs/technical/05-api-design.md",
         "docs/technical/09-error-handling.md"
+      ]
+    },
+    {
+      "match": "^FR-1[78]$",
+      "docs": [
+        "docs/brds/03-functional-requirements.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/01-roles-permissions.md",
+        "docs/ui-ux/06-app-layout-components.md",
+        "docs/ui-ux/09-page-list.md"
+      ],
+      "coverageHints": [
+        "integration: setup status and first-admin API contracts",
+        "component: usePermittedNav filters nav items by permission matrix",
+        "browser-journey: role home hub cards deep-link to permitted routes only"
       ]
     },
     {
@@ -197,7 +344,9 @@
       "FR-13",
       "FR-14",
       "FR-15",
-      "FR-16"
+      "FR-16",
+      "FR-17",
+      "FR-18"
     ]
   },
   "prefixDefaults": {
@@ -210,6 +359,9 @@
       "docs/technical/08-validation-rules.md",
       "docs/technical/03-domain-model.md"
     ],
-    "NFR": ["docs/brds/07-non-functional-risk.md"]
+    "NFR": ["docs/brds/07-non-functional-risk.md"],
+    "AC": [
+      "docs/brds/08-acceptance-mvp-future.md"
+    ]
   }
 }

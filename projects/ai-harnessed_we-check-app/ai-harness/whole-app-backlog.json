@@ -3,7 +3,7 @@
   "slices": [
     {
       "id": "repo-monorepo-bootstrap",
-      "passes": true,
+      "passes": false,
       "priority": 0,
       "phase": 0,
       "agent": "infra",
@@ -36,7 +36,7 @@
     },
     {
       "id": "docker-compose-db",
-      "passes": true,
+      "passes": false,
       "priority": 1,
       "phase": 0,
       "agent": "infra",
@@ -65,7 +65,7 @@
     },
     {
       "id": "domain-package",
-      "passes": true,
+      "passes": false,
       "priority": 2,
       "phase": 0,
       "agent": "infra",
@@ -103,7 +103,7 @@
     },
     {
       "id": "api-foundation",
-      "passes": true,
+      "passes": false,
       "priority": 10,
       "phase": 1,
       "agent": "backend",
@@ -143,7 +143,7 @@
     },
     {
       "id": "module-identity-auth",
-      "passes": true,
+      "passes": false,
       "priority": 11,
       "phase": 1,
       "agent": "backend",
@@ -185,7 +185,7 @@
     },
     {
       "id": "module-roster-enrollment",
-      "passes": true,
+      "passes": false,
       "priority": 12,
       "phase": 1,
       "agent": "backend",
@@ -219,7 +219,7 @@
     },
     {
       "id": "module-session-management",
-      "passes": true,
+      "passes": false,
       "priority": 13,
       "phase": 1,
       "agent": "backend",
@@ -261,7 +261,7 @@
     },
     {
       "id": "module-attendance",
-      "passes": true,
+      "passes": false,
       "priority": 14,
       "phase": 1,
       "agent": "backend",
@@ -301,7 +301,7 @@
     },
     {
       "id": "module-checkin-qr",
-      "passes": true,
+      "passes": false,
       "priority": 15,
       "phase": 1,
       "agent": "backend",
@@ -368,7 +368,7 @@
     },
     {
       "id": "module-reporting-export",
-      "passes": true,
+      "passes": false,
       "priority": 16,
       "phase": 1,
       "agent": "backend",
@@ -414,7 +414,7 @@
     },
     {
       "id": "module-notifications",
-      "passes": true,
+      "passes": false,
       "priority": 17,
       "phase": 1,
       "agent": "backend",
@@ -447,11 +447,14 @@
     },
     {
       "id": "web-design-system-shell",
-      "passes": true,
-      "priority": 20,
+      "passes": false,
+      "priority": 41,
       "phase": 2,
       "agent": "frontend",
       "acceptance": [
+        "AC-18",
+        "FR-18",
+        "BR-14",
         "NFR-17",
         "NFR-06"
       ],
@@ -480,6 +483,9 @@
           "apps/web/src/app/admin/admin-reports.test.tsx"
         ],
         "acceptanceTags": [
+          "AC-18",
+          "BR-14",
+          "FR-18",
           "NFR-06",
           "NFR-17"
         ]
@@ -487,7 +493,7 @@
     },
     {
       "id": "web-auth-login",
-      "passes": true,
+      "passes": false,
       "priority": 21,
       "phase": 2,
       "agent": "frontend",
@@ -524,8 +530,8 @@
     },
     {
       "id": "web-student-checkin",
-      "passes": true,
-      "priority": 22,
+      "passes": false,
+      "priority": 42,
       "phase": 2,
       "agent": "frontend",
       "acceptance": [
@@ -543,10 +549,13 @@
         "BR-04",
         "BR-11",
         "BR-12",
+        "BR-15",
         "NFR-18",
-        "NFR-19"
+        "NFR-19",
+        "NFR-24"
       ],
       "docs": [
+        "docs/demo-guides.md",
         "docs/ui-ux/09-page-list.md",
         "docs/ui-ux/10-user-flows.md",
         "docs/ui-ux/07-event-specific-components.md",
@@ -566,7 +575,12 @@
         ],
         "component": [
           "apps/web/src/components/student/check-in-flow.test.tsx",
+          "apps/web/src/components/domain/check-in/gps-capture-step.test.tsx",
           "apps/web/src/components/shared/permission-guide-modal.test.tsx"
+        ],
+        "e2e": [
+          "tests/e2e/src/scenarios/check-in-preflight-gate.test.ts",
+          "tests/e2e/src/scenarios/gps-ready-state-ux.test.ts"
         ],
         "acceptanceTags": [
           "AC-02",
@@ -579,18 +593,20 @@
           "BR-04",
           "BR-11",
           "BR-12",
+          "BR-15",
           "FR-07",
           "FR-08",
           "FR-09",
           "FR-10",
           "NFR-18",
-          "NFR-19"
+          "NFR-19",
+          "NFR-24"
         ]
       }
     },
     {
       "id": "web-student-history",
-      "passes": true,
+      "passes": false,
       "priority": 23,
       "phase": 2,
       "agent": "frontend",
@@ -621,7 +637,7 @@
     },
     {
       "id": "web-instructor-sessions",
-      "passes": true,
+      "passes": false,
       "priority": 24,
       "phase": 2,
       "agent": "frontend",
@@ -657,7 +673,7 @@
     },
     {
       "id": "web-instructor-qr-display",
-      "passes": true,
+      "passes": false,
       "priority": 25,
       "phase": 2,
       "agent": "frontend",
@@ -691,7 +707,7 @@
     },
     {
       "id": "web-instructor-session-monitor",
-      "passes": true,
+      "passes": false,
       "priority": 26,
       "phase": 2,
       "agent": "frontend",
@@ -725,7 +741,7 @@
     },
     {
       "id": "web-instructor-attendance-roster",
-      "passes": true,
+      "passes": false,
       "priority": 27,
       "phase": 2,
       "agent": "frontend",
@@ -759,7 +775,7 @@
     },
     {
       "id": "web-instructor-reports",
-      "passes": true,
+      "passes": false,
       "priority": 28,
       "phase": 2,
       "agent": "frontend",
@@ -792,7 +808,7 @@
     },
     {
       "id": "web-admin-users",
-      "passes": true,
+      "passes": false,
       "priority": 29,
       "phase": 2,
       "agent": "frontend",
@@ -823,7 +839,7 @@
     },
     {
       "id": "web-admin-rosters",
-      "passes": true,
+      "passes": false,
       "priority": 30,
       "phase": 2,
       "agent": "frontend",
@@ -854,7 +870,7 @@
     },
     {
       "id": "web-admin-reports-export",
-      "passes": true,
+      "passes": false,
       "priority": 31,
       "phase": 2,
       "agent": "frontend",
@@ -893,7 +909,7 @@
     },
     {
       "id": "web-admin-policy",
-      "passes": true,
+      "passes": false,
       "priority": 32,
       "phase": 2,
       "agent": "frontend",
@@ -922,9 +938,252 @@
       }
     },
     {
-      "id": "e2e-acceptance-suite",
+      "id": "module-identity-bootstrap",
+      "passes": false,
+      "priority": 35,
+      "phase": 1,
+      "agent": "backend",
+      "acceptance": [
+        "AC-17",
+        "FR-17",
+        "BR-13"
+      ],
+      "docs": [
+        "docs/technical/05-api-design.md",
+        "docs/technical/08-validation-rules.md",
+        "docs/technical/02-module-breakdown.md"
+      ],
+      "completionArtifacts": [
+        "apps/api/src/modules/identity-auth/setup"
+      ],
+      "description": "Identity-auth bootstrap: GET /setup/status and POST /setup/first-admin for one-time TrainingOfficeAdmin creation when User count is zero.",
+      "testRequirements": {
+        "integration": [
+          "apps/api/src/modules/identity-auth/setup.integration.test.ts"
+        ],
+        "acceptanceTags": [
+          "AC-17",
+          "BR-13",
+          "FR-17"
+        ]
+      }
+    },
+    {
+      "id": "web-admin-bootstrap",
+      "passes": false,
+      "priority": 36,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": [
+        "AC-17",
+        "FR-17",
+        "NFR-16"
+      ],
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/10-user-flows.md",
+        "docs/ui-ux/08-forms-validation-ux.md"
+      ],
+      "completionArtifacts": [
+        "apps/web/src/app/setup",
+        "apps/web/src/components/auth/setup-admin-form.tsx"
+      ],
+      "description": "First-deploy /setup page and route guard: create first TrainingOfficeAdmin when needsSetup is true; redirect to /admin hub on success.",
+      "testRequirements": {
+        "component": [
+          "apps/web/src/components/auth/setup-admin-form.test.tsx"
+        ],
+        "e2e": [
+          "tests/e2e/src/scenarios/bootstrap-first-admin.test.ts"
+        ],
+        "acceptanceTags": [
+          "AC-17",
+          "FR-17",
+          "NFR-16"
+        ]
+      }
+    },
+    {
+      "id": "module-class-management",
+      "passes": false,
+      "priority": 37,
+      "phase": 1,
+      "agent": "backend",
+      "acceptance": [
+        "AC-03",
+        "FR-03"
+      ],
+      "docs": [
+        "docs/technical/05-api-design.md",
+        "docs/technical/08-validation-rules.md"
+      ],
+      "completionArtifacts": [
+        "apps/api/src/modules/roster-enrollment/class-subject-write"
+      ],
+      "description": "Roster-enrollment write APIs: POST /classes and POST /subjects for manual class and subject reference record creation before CSV import.",
+      "testRequirements": {
+        "integration": [
+          "apps/api/src/modules/roster-enrollment/class-management.integration.test.ts"
+        ],
+        "acceptanceTags": [
+          "AC-03",
+          "FR-03"
+        ]
+      }
+    },
+    {
+      "id": "module-checkin-qr-preflight",
+      "passes": false,
+      "priority": 38,
+      "phase": 1,
+      "agent": "backend",
+      "acceptance": [
+        "AC-07",
+        "FR-07",
+        "BR-03",
+        "BR-11",
+        "BR-15"
+      ],
+      "docs": [
+        "docs/technical/05-api-design.md",
+        "docs/technical/08-validation-rules.md",
+        "docs/technical/06-main-workflows.md"
+      ],
+      "completionArtifacts": [
+        "apps/api/src/modules/checkin-qr/preflight"
+      ],
+      "description": "Check-in token preflight API: GET /check-in/tokens/:tokenId/preflight validates token, session, and enrollment before client advances to GPS capture.",
+      "testRequirements": {
+        "integration": [
+          "apps/api/src/modules/checkin-qr/preflight.integration.test.ts"
+        ],
+        "acceptanceTags": [
+          "AC-07",
+          "BR-03",
+          "BR-11",
+          "BR-15",
+          "FR-07"
+        ]
+      }
+    },
+    {
+      "id": "web-admin-classes",
+      "passes": false,
+      "priority": 39,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": [
+        "AC-03",
+        "FR-03"
+      ],
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/10-user-flows.md"
+      ],
+      "completionArtifacts": [
+        "apps/web/src/app/admin/classes"
+      ],
+      "description": "Admin manual class and subject creation form at /admin/classes/new with code validation and duplicate rejection.",
+      "testRequirements": {
+        "component": [
+          "apps/web/src/components/admin/class-subject-form.test.tsx"
+        ],
+        "acceptanceTags": [
+          "AC-03",
+          "FR-03"
+        ]
+      }
+    },
+    {
+      "id": "web-visual-refresh-v2",
+      "passes": false,
+      "priority": 39.5,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": [
+        "NFR-17",
+        "NFR-18",
+        "AC-07"
+      ],
+      "docs": [
+        "docs/ui-ux/01-design-overview.md",
+        "docs/ui-ux/03-design-system-basics.md",
+        "docs/ui-ux/04-design-tokens.md",
+        "docs/ui-ux/05-common-ui-components.md",
+        "docs/ui-ux/06-app-layout-components.md"
+      ],
+      "completionArtifacts": [
+        "apps/web/src/styles/tokens.css",
+        "apps/web/src/styles/globals.css",
+        "apps/web/index.html",
+        "apps/web/src/components/ui/button.tsx",
+        "apps/web/src/components/ui/card.tsx",
+        "apps/web/src/components/layout/auth-layout.tsx",
+        "apps/web/src/components/layout/student-layout.tsx",
+        "apps/web/src/components/layout/instructor-layout.tsx",
+        "apps/web/src/components/layout/admin-layout.tsx",
+        "apps/web/src/components/domain/check-in/check-in-outcome-panel.tsx"
+      ],
+      "description": "Campus Pulse v2 visual refresh: design tokens, web fonts (Be Vietnam Pro + Plus Jakarta Sans), warm surfaces, auth split-panel, role shell chrome, check-in outcome signature panels.",
+      "testRequirements": {
+        "component": [
+          "apps/web/src/components/ui/badge.test.tsx",
+          "apps/web/src/components/domain/check-in/check-in-outcome-panel.test.tsx",
+          "apps/web/src/components/layout/app-shell.test.tsx"
+        ],
+        "acceptanceTags": [
+          "NFR-17",
+          "NFR-18",
+          "AC-07"
+        ]
+      }
+    },
+    {
+      "id": "web-role-navigation",
       "passes": false,
       "priority": 40,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": [
+        "AC-18",
+        "FR-18",
+        "BR-14",
+        "NFR-11"
+      ],
+      "docs": [
+        "docs/ui-ux/06-app-layout-components.md",
+        "docs/ui-ux/05-common-ui-components.md",
+        "docs/ui-ux/09-page-list.md",
+        "docs/technical/01-roles-permissions.md"
+      ],
+      "completionArtifacts": [
+        "apps/web/src/app/admin/page.tsx",
+        "apps/web/src/components/layout/sidebar-nav.tsx",
+        "apps/web/src/components/layout/bottom-nav.tsx",
+        "apps/web/src/components/layout/role-home-hub.tsx"
+      ],
+      "description": "Permission-gated navigation chrome and role home hubs: /admin dashboard, instructor hub on /sessions, filtered sidebar and bottom nav.",
+      "testRequirements": {
+        "component": [
+          "apps/web/src/components/layout/sidebar-nav.test.tsx",
+          "apps/web/src/components/layout/role-home-hub.test.tsx"
+        ],
+        "e2e": [
+          "tests/e2e/src/scenarios/nav-permission-gate.test.ts",
+          "tests/e2e/src/scenarios/admin-hub-deep-links.test.ts"
+        ],
+        "acceptanceTags": [
+          "AC-18",
+          "BR-14",
+          "FR-18",
+          "NFR-11"
+        ]
+      }
+    },
+    {
+      "id": "e2e-acceptance-suite",
+      "passes": false,
+      "priority": 43,
       "phase": 3,
       "agent": "test",
       "acceptance": [
@@ -943,7 +1202,10 @@
         "AC-13",
         "AC-14",
         "AC-15",
-        "AC-16"
+        "AC-16",
+        "AC-17",
+        "AC-18",
+        "NFR-24"
       ],
       "docs": [
         "docs/technical/11-testing-plan.md",
@@ -952,13 +1214,16 @@
       "completionArtifacts": [
         "tests/e2e"
       ],
-      "description": "End-to-end API and browser scenario tests covering flows A–D from testing plan and full AC-01–AC-16 matrix.",
+      "description": "End-to-end API and browser scenario tests covering flows A–D from testing plan and full AC-01–AC-18 matrix including bootstrap, preflight gate, nav permissions, and device API fidelity.",
       "testRequirements": {
         "e2e": [
           "tests/e2e/src/scenarios/flow-a-happy-path.test.ts",
           "tests/e2e/src/scenarios/flow-b-anti-fraud.test.ts",
           "tests/e2e/src/scenarios/flow-c-manual-fallback.test.ts",
-          "tests/e2e/src/scenarios/flow-d-reporting-auth.test.ts"
+          "tests/e2e/src/scenarios/flow-d-reporting-auth.test.ts",
+          "tests/e2e/src/scenarios/bootstrap-first-admin.test.ts",
+          "tests/e2e/src/scenarios/check-in-preflight-gate.test.ts",
+          "tests/e2e/src/scenarios/nav-permission-gate.test.ts"
         ],
         "acceptanceTags": [
           "AC-01",
@@ -976,7 +1241,10 @@
           "AC-13",
           "AC-14",
           "AC-15",
-          "AC-16"
+          "AC-16",
+          "AC-17",
+          "AC-18",
+          "NFR-24"
         ]
       }
     }

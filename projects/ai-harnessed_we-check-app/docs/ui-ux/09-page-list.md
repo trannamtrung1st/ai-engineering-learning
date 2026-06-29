@@ -23,11 +23,24 @@ Default landing after login:
 | --- | --- |
 | `Student` | `/check-in` |
 | `Instructor` | `/sessions` |
-| `TrainingOfficeAdmin` | `/admin/users` |
+| `TrainingOfficeAdmin` | `/admin` |
 
 ---
 
 ## 2. Public Pages
+
+### 2.0 Setup (first admin bootstrap)
+
+| Attribute | Value |
+| --- | --- |
+| Route | `/setup` |
+| Layout | `AuthLayout` (minimal — no login link) |
+| Role | Public when `needsSetup: true` |
+| Priority | Must |
+| Primary components | `SetupAdminForm` |
+| Description | One-time form to create the first `TrainingOfficeAdmin` when `User.count = 0`. All other routes redirect here until bootstrap completes. After success, redirects to `/admin` hub with session established. |
+
+**Traceability:** FR-17 · BR-13 · AC-17 · NFR-16
 
 ### 2.1 Login
 
@@ -86,8 +99,8 @@ Shell: `StudentLayout` · Mobile-first · Bottom nav on `/check-in` and `/histor
 **User flow steps:**
 
 1. Land on scanner or consent (first visit).
-2. Scan QR → acquire GPS → submit check-in.
-3. Display success or actionable rejection (expired QR, out of radius, duplicate, GPS disabled).
+2. Scan QR → **preflight** → acquire GPS → submit check-in.
+3. Display success or actionable rejection (expired QR, out of radius, duplicate, GPS disabled, not enrolled).
 
 **Traceability:** FR-02, FR-07, FR-08, FR-09, FR-10 · BR-02, BR-03, BR-04, BR-06, BR-11, BR-12 · AC-02, AC-07, AC-08, AC-09, AC-10 · NFR-17, NFR-18
 
@@ -211,7 +224,20 @@ Shell: `InstructorLayout` · Sidebar: Buổi học, Báo cáo.
 
 ## 5. Training Office Admin Pages
 
-Shell: `AdminLayout` · Sidebar: Người dùng, Danh sách lớp, Báo cáo, Xuất CSV, Chính sách.
+Shell: `AdminLayout` · Sidebar: **Trang chủ**, Người dùng, Danh sách lớp, Thêm lớp học, Nhập danh sách, Báo cáo, Xuất CSV, Chính sách. Nav items omitted when permission missing ([FR-18](../brds/03-functional-requirements.md), [BR-14](../brds/04-business-rules.md)).
+
+### 5.0 Admin Home (role hub)
+
+| Attribute | Value |
+| --- | --- |
+| Route | `/admin` |
+| Layout | `AdminLayout` |
+| Role | `TrainingOfficeAdmin` |
+| Priority | Must |
+| Primary components | `RoleHomeHub`, `NavCard`, `QuickActionGrid` |
+| Description | Post-login admin landing. Permission-filtered cards: **Quản lý người dùng**, **Danh sách lớp**, **Thêm lớp/môn**, **Nhập CSV**, **Báo cáo**, **Xuất CSV**, **Chính sách** — each hidden if permission missing. |
+
+**Traceability:** FR-18 · BR-14 · AC-18
 
 ### 5.1 User List
 
@@ -251,6 +277,19 @@ Shell: `AdminLayout` · Sidebar: Người dùng, Danh sách lớp, Báo cáo, Xu
 | Description | View enrollments per class. Link to import flow. |
 
 **Traceability:** FR-03 · AC-03
+
+### 5.3a Add Class and Subject
+
+| Attribute | Value |
+| --- | --- |
+| Route | `/admin/classes/new` |
+| Layout | `AdminLayout` |
+| Role | `TrainingOfficeAdmin` |
+| Priority | Must |
+| Primary components | `ClassSubjectForm`, `FormActions` |
+| Description | Manual creation of `Class` and `Subject` reference records before roster CSV import. Uppercase code validation; duplicate code shows localized error. |
+
+**Traceability:** FR-03 · AC-03d · AC-03e
 
 ### 5.4 Roster Import
 
@@ -310,25 +349,28 @@ Shell: `AdminLayout` · Sidebar: Người dùng, Danh sách lớp, Báo cáo, Xu
 
 | # | Page | Route | Role | Layout | Priority |
 | --- | --- | --- | --- | --- | --- |
-| 1 | Login | `/login` | Public | `AuthLayout` | Must |
-| 2 | Check-In | `/check-in` | Student | `StudentLayout` | Must |
-| 3 | Attendance History | `/history` | Student | `StudentLayout` | Must |
-| 4 | Session List | `/sessions` | Instructor | `InstructorLayout` | Must |
-| 5 | Create Session | `/sessions/new` | Instructor | `InstructorLayout` | Must |
-| 6 | Session Detail | `/sessions/:id` | Instructor | `InstructorLayout` | Must |
-| 7 | QR Fullscreen | `/sessions/:id/qr-present` | Instructor | `FullscreenLayout` | Must |
-| 8 | Instructor Reports | `/reports` | Instructor | `InstructorLayout` | Must |
-| 9 | User List | `/admin/users` | Admin | `AdminLayout` | Must |
-| 10 | Create/Edit User | `/admin/users/new`, `/admin/users/:id` | Admin | `AdminLayout` | Must |
-| 11 | Class Rosters | `/admin/rosters` | Admin | `AdminLayout` | Must |
-| 12 | Roster Import | `/admin/rosters/import` | Admin | `AdminLayout` | Must |
-| 13 | Admin Reports | `/admin/reports` | Admin | `AdminLayout` | Must |
-| 14 | CSV Export | `/admin/export` | Admin | `AdminLayout` | Must |
-| 15 | Attendance Policy | `/admin/policy` | Admin | `AdminLayout` | Should |
-| 16 | Forbidden | `/forbidden` | Any | `RootLayout` | Must |
-| 17 | Not Found | `*` | Any | `RootLayout` | Must |
+| 1 | Setup (bootstrap) | `/setup` | Public | `AuthLayout` | Must |
+| 2 | Login | `/login` | Public | `AuthLayout` | Must |
+| 3 | Check-In | `/check-in` | Student | `StudentLayout` | Must |
+| 4 | Attendance History | `/history` | Student | `StudentLayout` | Must |
+| 5 | Session List | `/sessions` | Instructor | `InstructorLayout` | Must |
+| 6 | Create Session | `/sessions/new` | Instructor | `InstructorLayout` | Must |
+| 7 | Session Detail | `/sessions/:id` | Instructor | `InstructorLayout` | Must |
+| 8 | QR Fullscreen | `/sessions/:id/qr-present` | Instructor | `FullscreenLayout` | Must |
+| 9 | Instructor Reports | `/reports` | Instructor | `InstructorLayout` | Must |
+| 10 | Admin Home | `/admin` | Admin | `AdminLayout` | Must |
+| 11 | User List | `/admin/users` | Admin | `AdminLayout` | Must |
+| 12 | Create/Edit User | `/admin/users/new`, `/admin/users/:id` | Admin | `AdminLayout` | Must |
+| 13 | Class Rosters | `/admin/rosters` | Admin | `AdminLayout` | Must |
+| 14 | Add Class/Subject | `/admin/classes/new` | Admin | `AdminLayout` | Must |
+| 15 | Roster Import | `/admin/rosters/import` | Admin | `AdminLayout` | Must |
+| 16 | Admin Reports | `/admin/reports` | Admin | `AdminLayout` | Must |
+| 17 | CSV Export | `/admin/export` | Admin | `AdminLayout` | Must |
+| 18 | Attendance Policy | `/admin/policy` | Admin | `AdminLayout` | Should |
+| 19 | Forbidden | `/forbidden` | Any | `RootLayout` | Must |
+| 20 | Not Found | `*` | Any | `RootLayout` | Must |
 
-**Total MVP pages:** 17 (15 Must, 2 utility, 1 Should policy page).
+**Total MVP pages:** 20 (17 Must, 2 utility, 1 Should policy page). With nested user edit routes counted separately: **21** routable screens.
 
 ---
 

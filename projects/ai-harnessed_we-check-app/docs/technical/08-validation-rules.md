@@ -69,6 +69,17 @@ Applies to all endpoints unless overridden in §3.
 
 Domain checks after schema: user exists and password verifies → else `InvalidCredentials`; `active = false` → `AccountDeactivated` ([AC-01c](../brds/08-acceptance-mvp-future.md)).
 
+### 3.1a Setup — `POST /setup/first-admin`
+
+| Field | Required | Validation | FR |
+| --- | --- | --- | --- |
+| `institutionalId` | Yes | VAL-05; unique | FR-17 |
+| `displayName` | Yes | VAL-04 | FR-17 |
+| `email` | Yes | VAL-02; unique | FR-17 |
+| `password` | Yes | VAL-03 | FR-17 |
+
+Domain checks: `User.count = 0` → else `SetupAlreadyComplete` ([BR-13](../brds/04-business-rules.md)).
+
 ### 3.2 Users — `POST /users`, `PATCH /users/:userId`
 
 | Field | Create | Update | Validation |
@@ -81,6 +92,15 @@ Domain checks after schema: user exists and password verifies → else `InvalidC
 | `active` | Default `true` | Optional | Boolean |
 
 Duplicate `email` or `institutionalId` → `422` with field details ([AC-01b](../brds/08-acceptance-mvp-future.md)).
+
+### 3.2a Class and subject — `POST /classes`, `POST /subjects`
+
+| Field | Required | Validation | FR |
+| --- | --- | --- | --- |
+| `code` | Yes | Uppercase alphanumeric + hyphen (`^[A-Z0-9\-]{2,16}$`); unique | FR-03 |
+| `name` | Yes | VAL-04 | FR-03 |
+
+Duplicate `code` → `DuplicateClassCode` or `DuplicateSubjectCode` ([AC-03e](../brds/08-acceptance-mvp-future.md)).
 
 ### 3.3 Roster import — `POST /roster/import`
 
@@ -127,6 +147,19 @@ Duplicate `email` or `institutionalId` → `422` with field details ([AC-01b](..
 | `spoofMetadata.platform` | No | `ios` \| `android` \| `other` |
 
 Coordinates are validated then **discarded** after radius check; not persisted on success ([FR-08](../brds/03-functional-requirements.md), [NFR-12](../brds/07-non-functional-risk.md)).
+
+### 3.6a Preflight — `GET /check-in/tokens/:tokenId/preflight`
+
+Read-only chain evaluated before GPS step ([BR-15](../brds/04-business-rules.md)):
+
+| Order | Check | Failure outcome |
+| --- | --- | --- |
+| 1 | Token exists | `TokenNotFound` |
+| 2 | Optional `session` query param matches token's bound session | `SessionMismatch` |
+| 3 | Token status `Valid` (not `Expired` / `Consumed`) | `ExpiredQr` or `TokenAlreadyUsed` |
+| 4 | Parent session `Active` and within attendance window | `SessionNotActive` |
+| 5 | Student enrolled in session class-subject | `NotEnrolled` |
+| 6 | — | `200` with session summary |
 
 ### 3.7 Attendance manual edit — `PATCH /attendance/:recordId`
 

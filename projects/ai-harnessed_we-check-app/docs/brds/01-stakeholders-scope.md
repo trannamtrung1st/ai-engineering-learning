@@ -65,7 +65,9 @@ MVP scope follows [prompt.md](./prompt.md). Capabilities marked **Must** are req
 | Instructor manual attendance edit | Instructor corrects attendance during session and up to **24 hours** after close; all changes audit-logged | `Instructor` |
 | Attendance reporting | Per-class and per-subject views for assigned instructor; training office admin sees institution-wide | `Instructor`, `TrainingOfficeAdmin` |
 | CSV export | Training office admin only; export attendance data for downstream academic systems | `TrainingOfficeAdmin` |
-| Roster management (baseline) | Import or maintain participant list per class via admin UI or CSV upload when academic API is unavailable | `TrainingOfficeAdmin`, `Instructor` |
+| Roster management (baseline) | Import or maintain participant list per class via admin UI or CSV upload when academic API is unavailable; manual class/subject creation before import | `TrainingOfficeAdmin`, `Instructor` |
+| First admin bootstrap | When zero users exist, `/setup` creates first `TrainingOfficeAdmin` before login is available | Unauthenticated visitor |
+| Permission-gated navigation | Sidebar, bottom nav, and hub cards show only permitted destinations; role home hubs after login | All authenticated roles |
 
 #### 2.1.2 Should — include if schedule allows
 

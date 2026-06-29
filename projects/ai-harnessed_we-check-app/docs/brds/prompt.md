@@ -40,6 +40,12 @@ Condensed product brief for generating Business Requirements Documents and UI/UX
 | Instructor manual attendance edit | Instructor may correct attendance during session and up to **24 hours** after close; changes audit-logged |
 | Attendance reporting | Per-class and per-subject views for assigned instructor; training office admin sees institution-wide |
 | CSV export | Training office admin only; export attendance data for downstream academic systems |
+| First admin bootstrap | When `User.count = 0`, `/setup` creates first `TrainingOfficeAdmin`; one-time per deployment |
+| Manual class and subject management | Admin creates class/subject reference records before CSV roster import |
+| QR preflight gate | Server validates token, session, enrollment before student enters GPS step |
+| Permission-gated navigation and role hubs | Nav chrome and hub cards filtered by permission; role-specific home after login |
+| Device API fidelity | Production uses real camera/GPS; simulation opt-in via `VITE_ENABLE_DEVICE_SIMULATION` |
+| GPS ready-state UX | No spinner when coordinates ready; check icon + enabled submit |
 
 ### 2.2 In scope (Should — include if schedule allows)
 

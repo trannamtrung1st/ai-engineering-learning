@@ -9,6 +9,7 @@ Concise index for the 12 harness components. Referenced by `docs/technical/13-do
 | Model | `config/models.json`, env `AIH_MODEL` |
 | Prompt | `agents/implementer.prompt.md`, `agents/tester.prompt.md`, `agents/reviewer.prompt.md`, `agents/testgen.prompt.md` |
 | Context | `config/context-map.json` — doc pointers per slice/agent |
+| Skills | `skills/*/SKILL.md` — agent craft guidance (e.g. `skills/frontend-design/SKILL.md`); wired via `context-map.json` `alwaysRead`, injected into prompts by `build-prompt.sh` |
 | Tools | Cursor CLI (`agent -p --force`) + Playwright MCP on frontend/test slices |
 | Workflow | `workflows/ralph-loop.json`, `workflows/testgen-loop.json` |
 | Memory/State | `state/progress.md`, `state/guardrails.md`, `whole-app-backlog.json` (in `ai-harness/`) |
@@ -66,6 +67,10 @@ Ralph and TestGen can run independently. Set `testCaseGate.mode` to `required` i
 ## Backlog
 
 `ai-harness/whole-app-backlog.json` — phased slices with `passes`, `priority`, `acceptance`, `completionArtifacts`. Set `passes: false` to re-queue a slice for another Ralph iteration.
+
+**Queue (priorities 35–43):** `module-identity-bootstrap`, `web-admin-bootstrap`, `module-class-management`, `module-checkin-qr-preflight`, `web-admin-classes`, `web-role-navigation`, then re-queued `web-design-system-shell` (41) and `web-student-checkin` (42) for nav + preflight + GPS ready UX, then `e2e-acceptance-suite` (43).
+
+**Queued slices (docs pass — priorities 35–42):** `module-identity-bootstrap`, `web-admin-bootstrap`, `module-class-management`, `module-checkin-qr-preflight`, `web-admin-classes`, `web-role-navigation`; re-queued `web-design-system-shell` and `web-student-checkin` for nav permissions, preflight gate, and GPS ready UX. See [docs/brds/prompt.md](../docs/brds/prompt.md) for capability summary.
 
 ## Persistence policy
 

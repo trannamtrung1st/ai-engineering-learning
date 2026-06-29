@@ -25,6 +25,14 @@ Components live under `apps/web/src/components/ui/` (primitives) and `apps/web/s
 | `loading` | boolean | Shows spinner; disables click |
 | `disabled` | boolean | `aria-disabled`; reduced opacity |
 
+**Visual (Campus Pulse):**
+
+- `primary`: `--color-primary-600` background, `--shadow-sm`, hover `--shadow-md` + `--color-primary-700`
+- `secondary`: `--color-surface-raised` with `--color-border-default` border
+- `outline`: transparent with `--color-primary-600` border and text
+- Active press: `scale(0.98)` for `--duration-fast` unless reduced motion
+- Focus: `--focus-ring-*` tokens
+
 **Usage:** Primary CTA “Điểm danh”, “Mở buổi học”; `danger` for “Hủy buổi học”.
 
 ### 2.2 IconButton
@@ -55,10 +63,12 @@ Radix `Label` associated with control `id`.
 
 | Part | Element |
 | --- | --- |
-| `Card` | Container with `--shadow-sm`, `--radius-md` |
-| `CardHeader` | Title + optional actions |
+| `Card` | Container with `--shadow-sm`, `--radius-md`, `--color-surface-raised` on `--color-surface-default` pages |
+| `CardHeader` | Title in `--font-display`; optional actions |
 | `CardContent` | Body padding `--space-4` |
 | `CardFooter` | Actions row |
+
+**Visual:** Desktop hover promotes to `--shadow-md` with `translateY(-1px)`. Data table cards use `--shadow-md` by default.
 
 ### 2.9 Badge
 
@@ -72,6 +82,8 @@ Maps `SessionStatus` and `AttendanceStatus` enums to token colors ([04-design-to
 | --- | --- |
 | `status` | `AttendanceStatus` \| `SessionStatus` |
 | `size` | `sm` \| `md` |
+
+**Visual:** Rounded pill (`--radius-full`), semantic wash background, semibold label in `--font-sans`. Session `Active` uses success tokens with subtle pulse on instructor monitor only.
 
 Always includes Vietnamese label text from [01-ui-ux-foundation.md](./01-ui-ux-foundation.md) §2.
 
@@ -127,6 +139,20 @@ Sonner or Radix Toast. Vietnamese message from API `errorCode` mapping. Duration
 ### 2.19 ErrorState
 
 Full-region error with message, retry button, and optional support hint. Used when query fails.
+
+### 2.20 Role home components (`components/layout/`)
+
+#### `RoleHomeHub`
+
+Permission-filtered quick-link grid on role home routes ([FR-18](../brds/03-functional-requirements.md)). Props: `role`, `permissions[]`, optional `activeSessionId` (instructor). Cards without permission are **omitted** ([BR-14](../brds/04-business-rules.md)).
+
+#### `NavCard`
+
+Single hub card: `title`, optional `description`, `href`, Lucide `icon`, `data-testid`. Min touch target **44×44 px**.
+
+#### `QuickActionGrid`
+
+Responsive grid wrapping `NavCard` children: 1 col mobile, 2 cols `md+`, 3 cols admin `lg+`.
 
 ---
 
@@ -203,9 +229,20 @@ Content blocks per [01-ui-ux-foundation.md](./01-ui-ux-foundation.md) §8.
 
 ### 5.3 CheckInOutcomePanel
 
-Displays check-in result icon, Vietnamese title, message, and actions (retry, history, contact instructor).
+**Signature element** — Campus Pulse check-in outcome moment ([01-design-overview.md](./01-design-overview.md) §5.5).
 
-Maps all `CheckInOutcome` values from [01-ui-ux-foundation.md](./01-ui-ux-foundation.md) §2.3.
+Displays check-in result with distinct visual treatment per outcome: hero icon, `--font-display` headline, body message, semantic color wash, and single recovery CTA.
+
+| Element | Specification |
+| --- | --- |
+| Container | Full-width within page content; `--radius-lg`; `--shadow-md`; padding `--space-6` |
+| Icon | `--size-icon-lg` (32 px) Lucide icon per [04-design-tokens.md](./04-design-tokens.md) §13 |
+| Headline | `--font-display`, `--text-h1-size`, semibold |
+| Wash | Background from outcome token mapping (`success-50`, `warning-50`, etc.) |
+| CTA | Single primary `Button`; min height `--size-touch-min` |
+| Motion | Reveal with scale 0.98→1 + opacity (`--duration-slow`, `--ease-spring`); disabled when reduced motion |
+
+Maps all `CheckInOutcome` values from [01-ui-ux-foundation.md](./01-ui-ux-foundation.md) §2.3. Token mapping: [04-design-tokens.md](./04-design-tokens.md) §13.
 
 ---
 
@@ -250,6 +287,7 @@ Dropdown: display name, role label, logout.
 | `ConfirmDialog` | FR-11, FR-13 | Instructor, Admin |
 | `Toast` | — | All |
 | `StatCard` | FR-15 | Instructor |
+| `RoleHomeHub`, `NavCard` | FR-18 | All authenticated |
 
 ---
 

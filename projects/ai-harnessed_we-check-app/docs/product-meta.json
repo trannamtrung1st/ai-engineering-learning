@@ -23,7 +23,14 @@
     "Mobile web QR scan with GPS location verification",
     "Anti-proxy and anti-GPS-spoofing controls",
     "Attendance reporting by class and subject",
-    "CSV export for training office"
+    "CSV export for training office",
+    "first-admin-bootstrap",
+    "manual-class-management",
+    "device-api-simulation-flag",
+    "permission-gated-navigation",
+    "role-home-hubs",
+    "qr-preflight-gate",
+    "gps-ready-state-ux"
   ],
   "outOfScopeMvp": [
     "Facial recognition",

@@ -10,12 +10,13 @@ Implementable functional requirements (`FR-xx`) for **We Check** MVP. Each requi
 
 | ID range | Capability area | MVP priority |
 | --- | --- | --- |
-| FR-01 – FR-03 | Identity, authentication, roster | Must |
+| FR-01 – FR-03 | Identity, authentication, roster (incl. manual class/subject) | Must |
 | FR-04 – FR-05 | Session creation and lifecycle | Must |
 | FR-06 – FR-09 | QR check-in, GPS, anti-fraud | Must |
 | FR-10 – FR-11 | Student history and manual corrections | Must |
 | FR-12 – FR-13 | Reporting and CSV export | Must |
 | FR-14 – FR-16 | Should-capability enhancements | Should |
+| FR-17 – FR-18 | Bootstrap, permission-gated nav and role hubs | Must |
 
 Business rules (`BR-xx`) refine enforcement; acceptance tests (`AC-xx`) are defined in [08-acceptance-mvp-future.md](./08-acceptance-mvp-future.md).
 
@@ -48,10 +49,10 @@ Business rules (`BR-xx`) refine enforcement; acceptance tests (`AC-xx`) are defi
 | Field | Specification |
 | --- | --- |
 | **Actor** | `TrainingOfficeAdmin`, `Instructor` (read-only roster view) |
-| **Behavior** | Admin imports class rosters via CSV when academic API is unavailable. Required columns: student ID, full name, class code, subject code. System validates format, rejects duplicate student IDs within a class, and surfaces row-level errors without partial silent failure. Instructor views enrolled students for assigned classes only. |
-| **Inputs** | CSV file; class and subject identifiers |
-| **Outputs** | Enrollment records linked to students; import summary (accepted, rejected rows) |
-| **Traceability** | [02-business-workflow.md](./02-business-workflow.md) §3.1; [01-stakeholders-scope.md](./01-stakeholders-scope.md) §2.1.1 |
+| **Behavior** | Admin imports class rosters via CSV when academic API is unavailable. Required columns: student ID, full name, class code, subject code. System validates format, rejects duplicate student IDs within a class, and surfaces row-level errors without partial silent failure. Instructor views enrolled students for assigned classes only. **Manual reference data:** Admin creates `Class` (code, display name) and `Subject` (code, display name) via admin UI before roster import. Codes are unique, uppercase alphanumeric plus hyphen, max lengths per [08-validation-rules.md](../technical/08-validation-rules.md). Duplicate code → validation error. MVP: create-only — no delete; cannot delete class with active enrollments. |
+| **Inputs** | CSV file; class and subject identifiers; manual class/subject form fields |
+| **Outputs** | Enrollment records linked to students; import summary (accepted, rejected rows); persisted `Class` and `Subject` reference records |
+| **Traceability** | [02-business-workflow.md](./02-business-workflow.md) §3.0–§3.1; [01-stakeholders-scope.md](./01-stakeholders-scope.md) §2.1.1 |
 
 ### FR-04 — Session creation with room GPS
 
@@ -88,20 +89,20 @@ Business rules (`BR-xx`) refine enforcement; acceptance tests (`AC-xx`) are defi
 | Field | Specification |
 | --- | --- |
 | **Actor** | `Student` |
-| **Behavior** | Student uses mobile browser camera to scan the displayed QR. No native app install required. Client extracts token from QR payload and submits check-in request with authenticated student identity. UI copy is Vietnamese (`vi-VN`). Successful check-in shows confirmation within 2 seconds under normal network conditions. |
+| **Behavior** | Student uses mobile browser camera to scan the displayed QR. No native app install required. **Default (simulation off):** client calls `navigator.mediaDevices.getUserMedia` for QR scan — no synthetic camera layer. After QR scan or deep-link token parse, client calls **`GET /api/v1/check-in/tokens/:tokenId/preflight`** (authenticated) **before** transitioning `scan` → `gps_capture`. Preflight checks (server-side, read-only): token exists; token status `Valid`; parent session `Active`; student has `Enrollment` for session's class-subject pair. **Pass:** advance to GPS step with session context (class code, subject, room) in GPS step header. **Fail:** remain on scan step or show outcome inline — do **not** start GPS capture ([BR-15](./04-business-rules.md)). Client extracts token from QR payload and submits check-in request with authenticated student identity. UI copy is Vietnamese (`vi-VN`). Successful check-in shows confirmation within 2 seconds under normal network conditions. |
 | **Inputs** | QR token; authenticated student session |
-| **Outputs** | Attendance status update to `Present` on success; structured error code on failure |
-| **Traceability** | [02-business-workflow.md](./02-business-workflow.md) §4.2; platform: iOS 15+ Safari, Android 10+ Chrome |
+| **Outputs** | Preflight pass → GPS step; attendance status update to `Present` on submit success; structured error code on failure |
+| **Traceability** | [02-business-workflow.md](./02-business-workflow.md) §4.2; [08-validation-rules.md](../technical/08-validation-rules.md) preflight chain; platform: iOS 15+ Safari, Android 10+ Chrome; [NFR-24](./07-non-functional-risk.md) |
 
 ### FR-08 — GPS location verification
 
 | Field | Specification |
 | --- | --- |
 | **Actor** | `Student` |
-| **Behavior** | On check-in submit, client requests device geolocation permission and sends coordinates with the token. Server computes distance from device point to session room point using configured radius. Check-in succeeds only if distance ≤ radius. GPS disabled or permission denied rejects with `GpsDisabled`. Raw coordinates are used for validation only and are **not persisted** after successful check-in. |
+| **Behavior** | On check-in submit, client requests device geolocation permission and sends coordinates with the token. **Default (simulation off):** client calls `navigator.geolocation.getCurrentPosition` — no synthetic coordinates. **Simulation enabled:** when `VITE_ENABLE_DEVICE_SIMULATION=true`, URL query params (`gpsSim`, `cameraSim`, `gpsLat`/`gpsLng`) may override device APIs per [10-local-development-setup.md](../technical/10-local-development-setup.md). Server computes distance from device point to session room point using configured radius. Check-in succeeds only if distance ≤ radius. GPS disabled or permission denied rejects with `GpsDisabled`. **Ready-state UX:** when coordinates acquired (`ready`), hide spinner; show check icon + *Vị trí đã sẵn sàng* (static); `aria-busy="false"`; submit button enabled. Spinner only during `requesting` / `acquiring` / `submitting`. Session preflight (`sessionGate === "checking"`) may run in parallel but must not force GPS UI back to spinner once `ready`. Raw coordinates are used for validation only and are **not persisted** after successful check-in. |
 | **Inputs** | Latitude, longitude, accuracy (if available); session room coordinates and radius |
 | **Outputs** | `Present` or `OutOfRadius` / `GpsDisabled` outcome; distance logged for audit without long-term coordinate storage |
-| **Traceability** | [BR-02](./04-business-rules.md), [BR-12](./04-business-rules.md); privacy baseline [SM-04](./00-project-overview.md) |
+| **Traceability** | [BR-02](./04-business-rules.md), [BR-12](./04-business-rules.md); [12-ui-states.md](../ui-ux/12-ui-states.md) §4.2; privacy baseline [SM-04](./00-project-overview.md); [NFR-24](./07-non-functional-risk.md) |
 
 ### FR-09 — Anti-proxy and duplicate check-in prevention
 
@@ -183,6 +184,26 @@ Business rules (`BR-xx`) refine enforcement; acceptance tests (`AC-xx`) are defi
 | **Outputs** | Notification records; optional email if configured |
 | **Traceability** | [BR-05](./04-business-rules.md); [01-stakeholders-scope.md](./01-stakeholders-scope.md) §2.1.2 |
 
+### FR-17 — Initial admin bootstrap
+
+| Field | Specification |
+| --- | --- |
+| **Actor** | Unauthenticated visitor (first deploy) |
+| **Behavior** | `GET /api/v1/setup/status` returns `{ needsSetup: true }` when zero users exist. App redirects all routes (except `/setup`) to `/setup`. One-time form creates first `TrainingOfficeAdmin`. After success, `needsSetup: false`; endpoint returns 403 on repeat attempts. |
+| **Inputs** | Institutional ID, display name, email, password (min strength per existing auth rules) |
+| **Outputs** | First admin user + authenticated session; redirect to `/admin` hub |
+| **Traceability** | [BR-13](./04-business-rules.md); [02-business-workflow.md](./02-business-workflow.md) §3.0; [AC-17](./08-acceptance-mvp-future.md) |
+
+### FR-18 — Permission-gated navigation and role home hubs
+
+| Field | Specification |
+| --- | --- |
+| **Actor** | All authenticated roles |
+| **Behavior** | **Nav visibility:** Each layout nav item (sidebar, bottom nav, quick-link card) maps to a required permission from [01-roles-permissions.md](../technical/01-roles-permissions.md) §2.1. Items the user lacks are **omitted** (not disabled, not shown). Cross-role routes never appear (e.g. instructor never sees admin sidebar items). **Role home:** After login (or visiting `/`), user lands on a role-specific hub page with navigation cards/buttons to permitted destinations and short workflow hints in Vietnamese. |
+| **Inputs** | Current `AuthSession` role + permission set |
+| **Outputs** | Filtered nav chrome; hub page with deep links to feature routes |
+| **Traceability** | [BR-14](./04-business-rules.md); [06-app-layout-components.md](../ui-ux/06-app-layout-components.md); [AC-18](./08-acceptance-mvp-future.md); [NFR-11](./07-non-functional-risk.md) |
+
 ---
 
 ## 3. Requirement Traceability Matrix
@@ -195,8 +216,10 @@ Business rules (`BR-xx`) refine enforcement; acceptance tests (`AC-xx`) are defi
 | FR-04 | §3.2 | BR-07 | Must |
 | FR-05 | §4.1 | BR-01 | Must |
 | FR-06 | §4.1, §4.2 | BR-03, BR-11 | Must |
-| FR-07 | §4.2 | BR-03 | Must |
+| FR-07 | §4.2 | BR-03, BR-15 | Must |
 | FR-08 | §4.2 | BR-02, BR-12 | Must |
+| FR-17 | §3.0 | BR-13 | Must |
+| FR-18 | §3.0 | BR-14 | Must |
 | FR-09 | §4.4 | BR-04, BR-11 | Must |
 | FR-10 | §4.4 | — | Must |
 | FR-11 | §5.1 | BR-10 | Must |

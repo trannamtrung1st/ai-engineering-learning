@@ -2,6 +2,8 @@
 
 Design and interaction specifications for **We Check**, the digital attendance and session check-in system for educational workshops and classes (HESD program). All documents target MVP delivery for cohorts of **100–150** participants per session, locale **vi-VN**.
 
+**Visual identity:** Campus Pulse v2 — see [Design overview §5](./01-design-overview.md) and [Design tokens](./04-design-tokens.md). Harness craft skill: [`ai-harness/skills/frontend-design/SKILL.md`](../../ai-harness/skills/frontend-design/SKILL.md).
+
 **Product context:** [Project overview](../brds/00-project-overview.md) · [Stakeholders and scope](../brds/01-stakeholders-scope.md) · [Initial idea](../initial-idea.md)
 
 **Technical companion:** [Frontend tech stack](../technical/12-backend-frontend-tech-stack.md) · [Roles and permissions](../technical/01-roles-permissions.md)

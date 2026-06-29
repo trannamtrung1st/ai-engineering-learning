@@ -72,22 +72,23 @@ Intermediate step after successful scan, before API submit ([FR-08](../brds/03-f
 
 **UI states:**
 
-| State | Display |
-| --- | --- |
-| Requesting permission | Spinner + *Đang xác minh vị trí…* |
-| Acquiring fix | Progress text with accuracy hint |
-| Submitting | Disabled retry; `aria-busy` |
-| Permission denied | `PermissionGuideModal` `type="gps"` |
-| Success / failure | Delegates to `CheckInOutcomePanel` |
+| State | Spinner | Display | `aria-busy` | Submit |
+| --- | --- | --- | --- | --- |
+| `requesting` | Yes | *Đang yêu cầu quyền định vị…* | `true` | Disabled |
+| `acquiring` | Yes | *Đang xác minh vị trí…* + accuracy hint | `true` | Disabled |
+| **`ready`** | **No** | **Check icon** + *Vị trí đã sẵn sàng* | **`false`** | **Enabled** |
+| `submitting` | Yes | *Đang gửi điểm danh…* | `true` | Disabled |
+| `denied` | No | Permission guide modal | `false` | Disabled |
 
 **Behavior:**
 
+- Mounts only after preflight passes ([BR-15](../brds/04-business-rules.md)).
 - Shows `LocationConsentBanner` on first check-in per browser ([NFR-17](../brds/07-non-functional-risk.md)).
 - Retries geolocation up to **3** times within **30 seconds** on transient failure.
 - Does not persist raw coordinates client-side after submit.
 - On `OutOfRadius`, shows distance hint: *Bạn cách phòng học khoảng {n} m (cho phép {radius} m)*.
 
-**Traceability:** FR-08, FR-10 · BR-02, BR-12 · AC-08, AC-09
+**Traceability:** FR-08, FR-10 · BR-02, BR-12 · AC-08f, AC-08g, AC-09
 
 ### 2.3 CheckInFlow
 
@@ -96,12 +97,23 @@ Orchestrator for `/check-in` route: scanner → GPS → outcome.
 | Step | Component |
 | --- | --- |
 | 1 — Scan | `QrScannerView` |
-| 2 — Verify location | `GpsCaptureStep` |
+| 1b — Preflight | Inline on scan step (`validating_token`); `GET /check-in/tokens/:tokenId/preflight` |
+| 2 — Verify location | `GpsCaptureStep` (only after preflight pass) |
 | 3 — Result | `CheckInOutcomePanel` (from shared) |
 
-Handles deep link `/check-in?token={token}` after login redirect ([BR-06](../brds/04-business-rules.md)). Skips scan step when token present in query.
+Handles deep link `/check-in?token={token}` after login redirect ([BR-06](../brds/04-business-rules.md)). Runs same preflight before advancing; **skips scan UI only** after preflight passes — not on token parse alone ([BR-15](../brds/04-business-rules.md)).
 
-**Traceability:** FR-02, FR-07, FR-08 · AC-02, AC-07
+**Traceability:** FR-02, FR-07, FR-08 · BR-15 · AC-02, AC-07c–AC-07f
+
+### 2.5 CheckInOutcomePanel (signature moment)
+
+Campus Pulse outcome panel — see [05-common-ui-components.md](./05-common-ui-components.md) §5.3 for full spec.
+
+Rendered at step 3 of `CheckInFlow` and on `/check-in?demo=outcomes` showcase route. Each outcome uses distinct icon, color wash, and recovery CTA per [04-design-tokens.md](./04-design-tokens.md) §13.
+
+Browser tester must verify visual distinction between outcomes in screenshots — identical styling is a craft FAIL.
+
+**Traceability:** FR-09 · BR-04, BR-11 · AC-09, AC-10
 
 ### 2.4 AttendanceHistoryList
 
@@ -230,7 +242,7 @@ Live attendance dashboard for **Theo dõi** tab ([FR-15](../brds/03-functional-r
 
 | Region | Content |
 | --- | --- |
-| Stat row | Three `StatCard`: *Đã điểm danh*, *Chưa điểm danh*, *Vắng* |
+| Stat row | Three elevated `StatCard` components: *Đã điểm danh*, *Chưa điểm danh*, *Vắng* — `--font-display` numbers, semantic color accent on leading edge, `--shadow-md` on `--color-surface-raised`; active count card may show subtle pulse while session `Active` |
 | Roster grid | Compact `DataTable`: student name, ID, `StatusBadge`, check-in time |
 | Alerts | `SpoofSuspected` flags as inline `Alert` rows |
 

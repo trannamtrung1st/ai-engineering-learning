@@ -33,9 +33,19 @@ MVP target: complete WF-03 for 100–150 students within **5 minutes** ([NFR-01]
 
 ## 2. WF-01 — System Setup and Roster Preparation
 
-**Actors:** `TrainingOfficeAdmin`, System  
-**FR:** FR-01, FR-03  
+**Actors:** `TrainingOfficeAdmin`, Unauthenticated visitor (bootstrap), System  
+**FR:** FR-01, FR-03, FR-17  
 **Modules:** `identity-auth`, `roster-enrollment`
+
+### 2.0 Fresh deployment bootstrap (optional)
+
+When `SEED_ENABLED=false` and `User.count = 0`:
+
+| Step | Action | API / service |
+| --- | --- | --- |
+| 0 | Visitor opens app | `GET /setup/status` → `needsSetup: true` |
+| 1 | Complete `/setup` form | `POST /setup/first-admin` |
+| 2 | Land on `/admin` hub | Session established |
 
 ### 2.1 Sequence
 
@@ -48,6 +58,8 @@ sequenceDiagram
 
     A->>API: POST /auth/login
     API-->>A: Session + user (TrainingOfficeAdmin)
+    A->>API: POST /classes, POST /subjects (reference data)
+    API->>DB: Insert class/subject records
     A->>API: POST /users (instructors, students)
     API->>DB: Insert users
     A->>API: POST /roster/import (CSV multipart)
@@ -66,13 +78,14 @@ sequenceDiagram
 
 | Step | Action | API / service | Validation |
 | --- | --- | --- | --- |
-| 1 | Admin authenticates | `POST /auth/login` | Valid credentials; `active = true` |
-| 2 | Provision instructor accounts | `POST /users` × N | Unique `institutionalId`, `email`; role `Instructor` |
-| 3 | Provision student accounts (or rely on CSV auto-create policy) | `POST /users` or roster import | MVP: roster import creates missing students if policy enabled |
-| 4 | Upload roster CSV | `POST /roster/import` | Columns: `institutional_id`, `display_name`, `class_code`, `subject_code` |
-| 5 | System validates rows | `RosterService.importCsv` | Reject duplicate enrollment triple; row-level errors in `errorDetails` |
-| 6 | Assign instructors to class-subject | `ClassAssignment` records | Required before instructor can create sessions ([BR-08](../brds/04-business-rules.md)) |
-| 7 | Verify roster | `GET /enrollments` | Headcount matches expected cohort size (100–150) |
+| 1 | Admin authenticates (or completes bootstrap) | `POST /auth/login` or `POST /setup/first-admin` | Valid credentials; `active = true` |
+| 2 | Create class and subject reference records | `POST /classes`, `POST /subjects` | Unique codes; required before CSV import ([AC-03d](../brds/08-acceptance-mvp-future.md)) |
+| 3 | Provision instructor accounts | `POST /users` × N | Unique `institutionalId`, `email`; role `Instructor` |
+| 4 | Provision student accounts (or rely on CSV auto-create policy) | `POST /users` or roster import | MVP: roster import creates missing students if policy enabled |
+| 5 | Upload roster CSV | `POST /roster/import` | Columns: `institutional_id`, `display_name`, `class_code`, `subject_code` |
+| 6 | System validates rows | `RosterService.importCsv` | Reject duplicate enrollment triple; row-level errors in `errorDetails` |
+| 7 | Assign instructors to class-subject | `ClassAssignment` records | Required before instructor can create sessions ([BR-08](../brds/04-business-rules.md)) |
+| 8 | Verify roster | `GET /enrollments` | Headcount matches expected cohort size (100–150) |
 
 ### 2.3 Completion criteria
 
@@ -190,6 +203,11 @@ sequenceDiagram
         B->>API: GET /check-in page
         API-->>B: Redirect /login?returnUrl=...
         S->>API: POST /auth/login
+    end
+    B->>API: GET /check-in/tokens/:tokenId/preflight
+    alt Preflight fails
+        API-->>B: 4xx outcome (ExpiredQr, NotEnrolled, etc.)
+        B->>B: Stay on scan step or show outcome — no GPS step
     end
     B->>B: Request geolocation permission
     B->>API: POST /check-in {tokenId, lat, lng, spoofMetadata}

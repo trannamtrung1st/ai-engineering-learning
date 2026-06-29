@@ -36,6 +36,7 @@ Also read when relevant:
 - `docs/brds/08-acceptance-mvp-future.md` — map each acceptance tag to expected behavior
 - `ai-harness/docs/browser-mcp.md` — standard participant/organizer flows
 - `docs/ui-ux/00-production-ui-quality-bar.md` — UI quality expectations for frontend slices
+- `ai-harness/skills/frontend-design/SKILL.md` — visual craft and Campus Pulse direction; functional PASS is insufficient when UI feels generic or undifferentiated
 
 ## Generated test cases (mandatory checklist)
 
@@ -80,7 +81,7 @@ The harness may run browser verification in one or two phases. Follow the **phas
 1. Confirm preview stack is up: `http://localhost:3007` (web), API at `http://localhost:3001/api/v1/health`
 2. Authenticate when routes require it (dev login or token flow)
 3. For each browser test case: follow `preconditions`, `steps`, verify `expected`
-4. **For each distinct page visited**, save a screenshot to the directory above when visual state matters (layout, badges, tables, forms, empty/error/loading states, mobile-relevant UI). Review against `docs/ui-ux/00-production-ui-quality-bar.md` — a case can FAIL on UI quality even when functional steps succeed
+4. **For each distinct page visited**, save a screenshot to the directory above when visual state matters (layout, badges, tables, forms, empty/error/loading states, mobile-relevant UI). Review against `docs/ui-ux/00-production-ui-quality-bar.md`, `docs/ui-ux/04-design-tokens.md`, and `ai-harness/skills/frontend-design/SKILL.md` — a case can FAIL on UI craft (generic/template-like layout, identical outcome states, missing Campus Pulse chrome, hard-coded colors) even when functional steps succeed
 5. Record PASS, FAIL, or SKIP per case id with brief evidence (page URL, visible text, control state, **screenshot path** when captured)
 
 ### Timeouts (required — do not hang)

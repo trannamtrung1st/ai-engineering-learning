@@ -19,6 +19,8 @@ Enforceable business rules (`BR-xx`) for **We Check** MVP. Each rule defines con
 | Session activation prerequisites | BR-07 | Session `Draft` → `Active` |
 | Authorization (reports and export) | BR-08, BR-09 | Report and export endpoints |
 | Manual corrections | BR-10 | Instructor and admin attendance edits |
+| Bootstrap and navigation | BR-13, BR-14 | First deploy setup; nav chrome |
+| Check-in preflight gate | BR-15 | Before GPS capture step |
 
 Rules marked **Must** block the operation when violated. **Should** rules (BR-05) run asynchronously after session close.
 
@@ -176,9 +178,50 @@ Rules marked **Must** block the operation when violated. **Should** rules (BR-05
 
 ---
 
-## 7. Rule Interaction Matrix
+## 7. Bootstrap and Navigation Rules
+
+### BR-13 — One-time admin bootstrap
+
+| Field | Specification |
+| --- | --- |
+| **Condition** | `User.count = 0` in the deployment database |
+| **Trigger** | Visitor loads any route; `GET /api/v1/setup/status` polled on app boot |
+| **Outcome** | While count is zero: `needsSetup: true`; all routes except `/setup` redirect to `/setup`; `POST /api/v1/setup/first-admin` creates exactly one `TrainingOfficeAdmin` and establishes session. After first admin exists: `needsSetup: false`; `/setup` returns 403 or redirects to login; repeat `POST` rejected with `SetupAlreadyComplete` |
+| **Scope** | Entire deployment — exactly one bootstrap transaction permitted |
+| **Exceptions** | None — bootstrap is not available when any user record exists |
+| **Traceability** | [FR-17](./03-functional-requirements.md); [AC-17](./08-acceptance-mvp-future.md) |
+
+### BR-14 — Permission-gated navigation chrome
+
+| Field | Specification |
+| --- | --- |
+| **Condition** | Authenticated user lacks permission required for a nav item's destination route |
+| **Trigger** | Layout renders sidebar, bottom nav, or hub quick-link cards |
+| **Outcome** | Nav item is **omitted** from DOM (not disabled, not shown). Cross-role route prefixes never appear (e.g. instructor chrome contains zero `href` values under `/admin/*`). Direct URL access to forbidden routes still returns `ForbiddenPage` |
+| **Scope** | All authenticated roles; all layout chrome |
+| **Exceptions** | None — showing a nav item the user cannot access is a spec violation |
+| **Traceability** | [FR-18](./03-functional-requirements.md); [NFR-11](./07-non-functional-risk.md); [AC-18](./08-acceptance-mvp-future.md) |
+
+### BR-15 — QR preflight gate before GPS capture
+
+| Field | Specification |
+| --- | --- |
+| **Condition** | Student has scanned QR or parsed deep-link token but preflight has not returned success |
+| **Trigger** | Client attempts transition from `scan` → `gps_capture` |
+| **Outcome** | Client calls `GET /api/v1/check-in/tokens/:tokenId/preflight` first. Check-in flow must **not** enter `gps_capture` until preflight succeeds for the authenticated student's enrollment scope. Failures keep user on scan step or show outcome inline per preflight outcome table in [FR-07](./03-functional-requirements.md) |
+| **Scope** | All student check-in flows including deep links |
+| **Exceptions** | None — GPS capture and submit never start on failed preflight |
+| **Traceability** | [FR-07](./03-functional-requirements.md); [AC-07c](./08-acceptance-mvp-future.md)–[AC-07f](./08-acceptance-mvp-future.md) |
+
+---
+
+## 8. Rule Interaction Matrix
 
 Check-in evaluation order when session is `Active` and within attendance window ([BR-01](./04-business-rules.md#br-01--attendance-window-and-auto-close)):
+
+**Client-side preflight (before GPS step):** [BR-15](./04-business-rules.md#br-15--qr-preflight-gate-before-gps-capture) — token exists, `Valid`, session `Active`, student enrolled. Failures do not mount `GpsCaptureStep`.
+
+**Server-side submit evaluation:**
 
 | Order | Rule | Failure outcome |
 | --- | --- | --- |
@@ -194,10 +237,13 @@ Check-in evaluation order when session is `Active` and within attendance window 
 
 ---
 
-## 8. Rule Traceability to Functional Requirements
+## 9. Rule Traceability to Functional Requirements
 
 | BR ID | FR IDs | Workflow section |
 | --- | --- | --- |
+| BR-13 | FR-17 | [02-business-workflow.md](./02-business-workflow.md) §3.0 |
+| BR-14 | FR-18 | §3.0 |
+| BR-15 | FR-07 | §4.2 |
 | BR-01 | FR-05 | [02-business-workflow.md](./02-business-workflow.md) §4.1 |
 | BR-02 | FR-08 | §4.2 |
 | BR-03 | FR-06, FR-07 | §4.1, §4.2 |
@@ -213,7 +259,7 @@ Check-in evaluation order when session is `Active` and within attendance window 
 
 ---
 
-## 9. Future Consideration
+## 10. Future Consideration
 
 | Enhancement | Affected rules |
 | --- | --- |

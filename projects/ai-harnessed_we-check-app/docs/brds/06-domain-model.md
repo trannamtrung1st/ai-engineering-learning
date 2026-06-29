@@ -17,6 +17,12 @@ We Check centers on **sessions** where **students** check in via **QR tokens** w
 | Live attendance | `Session`, `AttendanceRecord`, `QrToken`, `CheckInAttempt` | `Instructor`, `Student` |
 | Compliance and ops | `AttendanceAuditLog`, `ExportAuditLog`, `Notification` | `Instructor`, `TrainingOfficeAdmin` |
 
+### 1.1 Operational constraints (non-entity)
+
+| Constraint | Description | Requirement |
+| --- | --- | --- |
+| First admin bootstrap | Pre-`User` lifecycle event when `User.count = 0`; not a domain entity — one-time deployment gate | [FR-17](./03-functional-requirements.md), [BR-13](./04-business-rules.md) |
+
 ---
 
 ## 2. Entity Relationship Diagram

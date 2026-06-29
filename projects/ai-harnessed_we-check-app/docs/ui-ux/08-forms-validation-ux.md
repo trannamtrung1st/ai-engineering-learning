@@ -76,7 +76,33 @@ Toast complements form errors for background saves; primary feedback stays inlin
 
 ## 4. Form Catalog
 
-### 4.1 LoginForm
+### 4.1a SetupAdminForm
+
+Route: `/setup` · [FR-17](../brds/03-functional-requirements.md)
+
+| Field | Label | Validation |
+| --- | --- | --- |
+| `institutionalId` | Mã cán bộ | Required; `^[A-Za-z0-9\-]{3,32}$`; unique |
+| `displayName` | Họ và tên | Required; 1–200 chars |
+| `email` | Email | Required; valid email; unique |
+| `password` | Mật khẩu | Required; min 8 chars |
+
+**UX:** Login link hidden when `needsSetup: true`. On success, redirect to `/admin` hub. Duplicate fields show inline Vietnamese errors ([AC-17d](../brds/08-acceptance-mvp-future.md)).
+
+### 4.1b ClassSubjectForm
+
+Route: `/admin/classes/new` · [FR-03](../brds/03-functional-requirements.md)
+
+| Field | Label | Validation |
+| --- | --- | --- |
+| `classCode` | Mã lớp | Uppercase alphanumeric + hyphen; unique |
+| `className` | Tên lớp | Required |
+| `subjectCode` | Mã môn | Uppercase alphanumeric + hyphen; unique |
+| `subjectName` | Tên môn | Required |
+
+Duplicate class code → `DuplicateClassCode` field error ([AC-03e](../brds/08-acceptance-mvp-future.md)).
+
+### 4.2 LoginForm
 
 Route: `/login` · [FR-02](../brds/03-functional-requirements.md)
 
@@ -94,7 +120,7 @@ Route: `/login` · [FR-02](../brds/03-functional-requirements.md)
 
 **Traceability:** FR-02 · BR-06 · AC-02 · NFR-16
 
-### 4.2 SessionForm
+### 4.3 SessionForm
 
 Route: `/sessions/new`, `/sessions/:id/settings` · [FR-04](../brds/03-functional-requirements.md)
 
@@ -119,7 +145,7 @@ Route: `/sessions/new`, `/sessions/:id/settings` · [FR-04](../brds/03-functiona
 
 **Traceability:** FR-04, FR-05 · BR-07 · AC-04
 
-### 4.3 AttendanceEditForm
+### 4.4 AttendanceEditForm
 
 Dialog form · [FR-11](../brds/03-functional-requirements.md)
 
@@ -137,7 +163,7 @@ Dialog form · [FR-11](../brds/03-functional-requirements.md)
 
 **Traceability:** FR-11 · BR-10 · AC-11
 
-### 4.4 UserForm
+### 4.5 UserForm
 
 Route: `/admin/users/new`, `/admin/users/:id` · [FR-01](../brds/03-functional-requirements.md)
 
@@ -157,7 +183,7 @@ Route: `/admin/users/new`, `/admin/users/:id` · [FR-01](../brds/03-functional-r
 
 **Traceability:** FR-01 · AC-01 · NFR-11
 
-### 4.5 RosterImportForm
+### 4.6 RosterImportForm
 
 Route: `/admin/rosters/import` · [FR-03](../brds/03-functional-requirements.md)
 
@@ -176,7 +202,7 @@ Route: `/admin/rosters/import` · [FR-03](../brds/03-functional-requirements.md)
 
 **Traceability:** FR-03 · AC-03
 
-### 4.6 ReportFilterForm
+### 4.7 ReportFilterForm
 
 Routes: `/reports`, `/admin/reports` · [FR-12](../brds/03-functional-requirements.md)
 
@@ -195,7 +221,7 @@ Routes: `/reports`, `/admin/reports` · [FR-12](../brds/03-functional-requiremen
 
 **Traceability:** FR-12 · BR-08 · AC-12
 
-### 4.7 CsvExportConfirmForm
+### 4.8 CsvExportConfirmForm
 
 Route: `/admin/export` · [FR-13](../brds/03-functional-requirements.md)
 
@@ -212,7 +238,7 @@ Disabled when estimated rows = 0: *Không có dữ liệu phù hợp với bộ 
 
 **Traceability:** FR-13 · BR-09 · AC-13
 
-### 4.8 AttendancePolicyForm
+### 4.9 AttendancePolicyForm
 
 Route: `/admin/policy` · [FR-16](../brds/03-functional-requirements.md)
 
@@ -228,7 +254,7 @@ Route: `/admin/policy` · [FR-16](../brds/03-functional-requirements.md)
 
 **Traceability:** FR-16 · BR-05 · AC-16
 
-### 4.9 LocationConsentForm
+### 4.10 LocationConsentForm
 
 Embedded in first check-in · [FR-08](../brds/03-functional-requirements.md)
 

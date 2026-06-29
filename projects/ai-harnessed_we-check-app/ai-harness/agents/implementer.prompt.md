@@ -14,7 +14,7 @@ You are the {{PRODUCT_NAME}} implementer. Work **one backlog slice** per session
 - Stay inside MVP scope in `docs/brds/08-acceptance-mvp-future.md`.
 - Backend is authoritative for domain state; no business-rule bypass in UI.
 - Persistence: Postgres via Docker Compose only — no in-memory repos, SQLite, or page-level mock data.
-- Frontend: meet `docs/ui-ux/00-production-ui-quality-bar.md`.
+- Frontend: meet `docs/ui-ux/00-production-ui-quality-bar.md` and apply visual craft from `ai-harness/skills/frontend-design/SKILL.md` (Campus Pulse direction in `docs/ui-ux/01-design-overview.md` §5, tokens in `docs/ui-ux/04-design-tokens.md`).
 - Match canonical states and error codes in `docs/technical/08-validation-rules.md`.
 - Audit critical config/state changes (actor, reason, timestamp).
 - Do **not** set `passes: true` in `ai-harness/whole-app-backlog.json` — the harness owns that.
@@ -65,7 +65,7 @@ When the slice agent is `frontend` or `test`, Playwright MCP is available (`--ap
 
 1. Use **Playwright MCP** to navigate `http://localhost:3007`
 2. Exercise the slice user flow (browse, register, paginate, check-in, organizer tables)
-3. **For each page or route you created or modified**, open it in the browser and **capture a screenshot** into the directory above (Playwright MCP screenshot tool, or `cursor-ide-browser` `browser_take_screenshot` with explicit `filename`). Do this even when the flow passes — screenshots are how you inspect layout, spacing, typography, empty/loading/error states, and alignment with `docs/ui-ux/00-production-ui-quality-bar.md`. Use accessibility snapshots for interaction debugging; use **screenshots** for visual UI/UX review.
+3. **For each page or route you created or modified**, open it in the browser and **capture a screenshot** into the directory above (Playwright MCP screenshot tool, or `cursor-ide-browser` `browser_take_screenshot` with explicit `filename`). Do this even when the flow passes — screenshots are how you inspect layout, spacing, typography, empty/loading/error states, and alignment with `docs/ui-ux/00-production-ui-quality-bar.md` and `ai-harness/skills/frontend-design/SKILL.md`. **Self-critique each screenshot** before `SLICE_DONE`: fix generic/template-like UI, undifferentiated outcome states, or careless spacing; use accessibility snapshots for interaction debugging.
 4. **Apply browser timeouts** — abandon a navigation or action after **30s** without expected content; do not wait on infinite spinners or stuck camera/GPS prompts; kill hung browser automation and fix before `SLICE_DONE`
 5. If a page looks wrong, fix it before `SLICE_DONE`; on persistent failure, cite the screenshot path(s) under the required directory and capture an accessibility snapshot for debugging
 6. Append a one-line browser verification note to `ai-harness/state/progress.md` listing screenshot paths saved under the required directory

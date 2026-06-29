@@ -38,11 +38,31 @@ Cross-reference: stakeholder responsibilities in [01-stakeholders-scope.md](./01
 
 Training office and instructors prepare data before the first live check-in of a cohort.
 
+### 3.0 First-time deployment bootstrap
+
+```mermaid
+flowchart TD
+    visit[User visits app] --> status{needsSetup?}
+    status -->|yes| setup["/setup form"]
+    status -->|no| login["/login or role home"]
+    setup --> create[Create first admin]
+    create --> adminHome["/admin hub"]
+```
+
+| Step | Actor | Action | Business rule / requirement |
+| --- | --- | --- | --- |
+| 1 | Unauthenticated visitor | Opens app on fresh deployment | `GET /api/v1/setup/status` → `needsSetup: true` when `User.count = 0` ([FR-17](./03-functional-requirements.md)) |
+| 2 | Visitor | Completes `/setup` form (institutional ID, name, email, password) | Creates first `TrainingOfficeAdmin`; session established ([BR-13](./04-business-rules.md)) |
+| 3 | System | Redirects to `/admin` hub | Bootstrap complete; `/setup` no longer available ([AC-17](./08-acceptance-mvp-future.md)) |
+
+**Completion criteria:** At least one `TrainingOfficeAdmin` exists; admin can provision users and reference data.
+
 ### 3.1 User and roster provisioning
 
 ```mermaid
 flowchart TD
-    A[Training Office Admin logs in] --> B{Academic API available?}
+    A[Training Office Admin logs in] --> A0[Create class and subject reference records]
+    A0 --> B{Academic API available?}
     B -->|No — MVP default| C[Upload roster CSV per class]
     B -->|Future| D[Sync from academic system]
     C --> E[System validates student IDs and class enrollment]
@@ -53,6 +73,7 @@ flowchart TD
 
 | Step | Actor | Action | Business rule / requirement |
 | --- | --- | --- | --- |
+| 0 | `TrainingOfficeAdmin` | Creates `Class` and `Subject` reference records via `/admin/classes/new` | [FR-03](./03-functional-requirements.md); [AC-03d](./08-acceptance-mvp-future.md) |
 | 1 | `TrainingOfficeAdmin` | Creates or imports student and instructor accounts | [FR-01](./03-functional-requirements.md) |
 | 2 | `TrainingOfficeAdmin` | Uploads roster CSV (student ID, name, class, subject) when API unavailable | [FR-03](./03-functional-requirements.md) |
 | 3 | System | Validates duplicate IDs and enrollment mapping | [FR-03](./03-functional-requirements.md) |
