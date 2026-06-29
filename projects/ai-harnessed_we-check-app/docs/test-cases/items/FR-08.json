@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-08",
   "version": 1,
-  "docFingerprint": "sha256:26c62c98b20c67a8bcd34920efd8e38f5ae53682841c9bc3c07d32eba6d290e5",
-  "generatedAt": "2026-06-29T20:00:00.000Z",
+  "docFingerprint": "sha256:9341c504e60b47051391329406e99dc5fb1f319639e550abcfbf5323c69fe44d",
+  "generatedAt": "2026-06-29T22:30:00.000Z",
   "cases": [
     {
       "id": "TC-FR-08-001",
@@ -363,13 +363,13 @@
         "Browser geolocation granted with in-radius mock coordinates (10.762700, 106.660200)"
       ],
       "steps": [
-        "Navigate to check-in page on mobile viewport",
-        "Verify GpsCaptureStep shows coordinates acquired per ui-ux §07-event-specific-components",
+        "Navigate to check-in page on mobile viewport after preflight returns outcome Valid",
+        "Verify GpsCaptureStep reaches ready substate: Vị trí đã sẵn sàng without Spinner; aria-busy false per AC-08f",
         "Tap submit control (Xác nhận điểm danh)",
         "Verify success panel with Present status after server radius validation passes",
         "Verify no raw GPS coordinates displayed in UI beyond transient capture state"
       ],
-      "expected": "FR-08 mobile web path: client requests geolocation permission, sends coordinates, server validates radius, success confirmation shown",
+      "expected": "FR-08 mobile web path: client requests geolocation permission via navigator.geolocation.getCurrentPosition, sends coordinates, server validates radius, success confirmation shown",
       "edgeCase": false
     },
     {
@@ -440,6 +440,126 @@
         "Verify privacy baseline NFR-12: coordinates used only in request handler memory"
       ],
       "expected": "FR-08 and NFR-12 enforced at persistence layer: distance logged for audit without long-term coordinate storage",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-08-020",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-08", "AC-08", "NFR-24"],
+      "title": "Check-in flow invokes getUserMedia and geolocation APIs when device simulation flag off",
+      "preconditions": [
+        "Web build with VITE_ENABLE_DEVICE_SIMULATION=false (production default)",
+        "Authenticated enrolled Student on mobile viewport at /check-in/scan",
+        "Instrument page to record navigator.mediaDevices.getUserMedia and navigator.geolocation.getCurrentPosition calls",
+        "URL query params gpsSim and cameraSim present but must be ignored per NFR-24"
+      ],
+      "steps": [
+        "Open /check-in/scan and trigger QR scanner mount",
+        "Assert getUserMedia called with video constraints facingMode environment; synthetic camera layer not used",
+        "Complete scan and preflight pass to mount GpsCaptureStep",
+        "Assert navigator.geolocation.getCurrentPosition invoked (not URL gpsSim override)",
+        "Verify gpsSim query param did not bypass real geolocation API on GPS step"
+      ],
+      "expected": "FR-08 default path: real getUserMedia for QR scan and navigator.geolocation.getCurrentPosition for GPS when simulation flag off; URL sim params ignored per AC-08e and NFR-24",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-08-021",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-08", "AC-08"],
+      "title": "TS-21e: GpsCaptureStep ready substate hides spinner and enables submit per ui-states §4.2",
+      "preconditions": [
+        "Authenticated enrolled Student on mobile viewport",
+        "Valid token deep link; GET /check-in/tokens/:tokenId/preflight returns 200 outcome Valid",
+        "Geolocation resolves in-radius coordinates (gpsState transitions to ready)"
+      ],
+      "steps": [
+        "Navigate to /check-in?token=:tokenId&session=:sessionId and wait for preflight pass",
+        "Wait for GpsCaptureStep substate ready after coordinates acquired",
+        "Assert no spinner visible in GPS step region",
+        "Assert check icon and text Vị trí đã sẵn sàng displayed",
+        "Assert submit region aria-busy is false",
+        "Assert Xác nhận điểm danh button enabled immediately",
+        "Verify sessionGate checking in parallel does not restore spinner once ready per FR-08 behavior"
+      ],
+      "expected": "AC-08f satisfied: GPS ready-state UX per ui-states §4.2 and event-specific-components §2.2 — static check icon, no spinner, submit enabled when coordinates acquired",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-08-022",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-08", "AC-08"],
+      "title": "GpsCaptureStep submitting substate shows spinner and disables submit until API outcome",
+      "preconditions": [
+        "Authenticated enrolled Student on mobile viewport",
+        "Valid token deep link; preflight passed; GpsCaptureStep in ready state with in-radius coordinates",
+        "Mocked geolocation granted or VITE_ENABLE_DEVICE_SIMULATION=true with gpsSim=delay for harness"
+      ],
+      "steps": [
+        "Navigate to check-in page and wait for GpsCaptureStep ready state (Vị trí đã sẵn sàng)",
+        "Tap Xác nhận điểm danh submit control",
+        "Assert GpsCaptureStep enters submitting substate with spinner visible",
+        "Assert copy Đang gửi điểm danh… displayed",
+        "Assert submit region aria-busy is true and submit button disabled",
+        "Wait for POST /check-in response and assert transition to CheckInOutcomePanel with radius-validated outcome"
+      ],
+      "expected": "AC-08g satisfied: submit in flight shows spinner and disables submit until API returns outcome per ui-states §4.2 submitting row",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-08-023",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-08", "BR-15"],
+      "title": "PreflightService read-only chain validates token Valid, session Active, and enrollment before GPS step",
+      "preconditions": [
+        "Real PostgreSQL with Active session, Valid qr_tokens row, and enrolled studentId",
+        "PreflightService wired to QrTokenRepository, SessionRepository, and EnrollmentRepository per module-breakdown §checkin-qr",
+        "beforeState: qr_token status Valid, attendance status Pending, no check_in_attempts row for this preflight call"
+      ],
+      "steps": [
+        "Invoke PreflightService.validate(tokenId, studentId) against enrolled student",
+        "Assert result outcome Valid with session summary (classCode, subjectCode, roomName, status Active)",
+        "Query qr_tokens for tokenId and assert status remains Valid (not Consumed)",
+        "Query attendance_records and assert status remains Pending",
+        "Verify no INSERT or UPDATE executed during preflight (read-only per validation-rules §3.6a)"
+      ],
+      "expected": "FR-08 prerequisite gate: preflight read-only chain confirms token Valid, parent session Active, student enrolled; no side effects before GPS capture and radius verification",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-08-024",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-08", "AC-08", "NFR-24"],
+      "title": "gpsSim query params ignored when VITE_ENABLE_DEVICE_SIMULATION=false",
+      "preconditions": [
+        "Web build compiled with VITE_ENABLE_DEVICE_SIMULATION=false (production default)",
+        "Authenticated enrolled Student session",
+        "Active session with valid QrToken; GET /check-in/tokens/:tokenId/preflight returns 200",
+        "Check-in deep link includes gpsSim=delay and gpsLat/gpsLng in-room coordinates"
+      ],
+      "steps": [
+        "Load /check-in?token=:tokenId&session=:sessionId&gpsSim=delay&gpsLat=10.762700&gpsLng=106.660200 with simulation flag off",
+        "Verify client does not auto-resolve simulated coordinates from query params",
+        "Verify browser geolocation API is invoked (or permission prompt shown) instead of simulation layer",
+        "Without granting real GPS, assert check-in cannot proceed to success solely from gpsSim params",
+        "Grant mocked geolocation in harness and complete successful POST /check-in with in-radius coords"
+      ],
+      "expected": "AC-08e satisfied: production builds ignore gpsSim URL params; client uses real navigator.geolocation per NFR-24 and local-development-setup §simulation",
       "edgeCase": false
     }
   ]
