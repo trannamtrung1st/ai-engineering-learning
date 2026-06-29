@@ -1,8 +1,24 @@
 # We Check — Demo & Manual Testing Guide
 
-Overview of how to run the local preview stack and walk through the main application flows using seeded demo accounts.
+How to run the local preview stack, rehearse end-to-end demo scripts for stakeholders, and walk through individual flows using seeded demo accounts.
 
 **Related:** [Local development setup](./technical/10-local-development-setup.md) · [Preview seed source](../apps/api/src/infra/preview-seed.ts)
+
+---
+
+## Contents
+
+1. [Start the stack](#1-start-the-stack)
+2. [Pre-demo checklist](#2-pre-demo-checklist)
+3. [End-to-end demo scripts](#3-end-to-end-demo-scripts) ← **start here for live demos**
+4. [Demo user credentials](#4-demo-user-credentials)
+5. [Seeded preview data](#5-seeded-preview-data)
+6. [Flow reference (step-by-step)](#6-flow-reference-step-by-step)
+7. [Preview simulation query params](#7-preview-simulation-query-params)
+8. [Check-in outcome codes](#8-check-in-outcome-codes)
+9. [Mobile / remote testing](#9-mobile--remote-testing)
+10. [Troubleshooting](#10-troubleshooting)
+11. [Quick smoke checklist](#11-quick-smoke-checklist)
 
 ---
 
@@ -42,7 +58,195 @@ Preview seed data loads automatically when `SEED_ENABLED=true` on API startup.
 
 ---
 
-## 2. Demo user credentials
+## 2. Pre-demo checklist
+
+Run through this **5 minutes before** any live demo.
+
+| Step | Action | Pass? |
+| --- | --- | --- |
+| 1 | `npm run aih:preview:verify` or open `/api/v1/health` → `ok` + `db: connected` | ☐ |
+| 2 | Open `http://localhost:3007/login` — page loads | ☐ |
+| 3 | Log in as instructor — lands on `/sessions` with **SWE-101 — Buổi 5** (Active) | ☐ |
+| 4 | Open `/sessions/sess-1?tab=monitor` — spoof badge + code-sharing alert visible | ☐ |
+| 5 | In a **second browser profile** (incognito), log in as student and open the happy-path check-in URL (see [§3](#3-end-to-end-demo-scripts)) | ☐ |
+
+### Browser layout (desktop demo)
+
+Use **two isolated sessions** so roles do not share cookies:
+
+| Window | Profile | Role | Bookmark |
+| --- | --- | --- | --- |
+| **Left / projector** | Normal Chrome | Instructor | `/sessions/sess-1/qr-present` |
+| **Right / laptop** | Incognito | Student | `/check-in?token=valid-token-id&gpsSim=delay&cameraSim=grant` |
+
+> Tip: resize windows side-by-side. The instructor monitor tab polls every ~5 s — leave it open while the student checks in to show the live count update.
+
+### Demo bookmark URLs
+
+Save these in your browser for one-click access during demos:
+
+```
+http://localhost:3007/sessions/sess-1/qr-present
+http://localhost:3007/sessions/sess-1?tab=monitor
+http://localhost:3007/check-in?token=valid-token-id&gpsSim=delay&cameraSim=grant
+http://localhost:3007/check-in?token=stale-token-id&gpsSim=delay
+http://localhost:3007/check-in?token=consumed-token-id&gpsSim=delay
+http://localhost:3007/check-in?demo=outcomes
+http://localhost:3007/admin/reports
+```
+
+### Reset fixtures between rehearsals
+
+If a prior run consumed tokens or changed session state:
+
+```bash
+npm run aih:preview:down
+npm run aih:preview
+```
+
+---
+
+## 3. End-to-end demo scripts
+
+Curated narratives for presenting to others. Each script lists **who logs in where**, **what to say**, and **what the audience should see**.
+
+---
+
+### Script A — "A typical class session" (~8 min)
+
+**Audience:** Faculty, workshop organizers  
+**Goal:** Show the happy path — QR display → student check-in → live monitor → personal history  
+**Setup:** Two browser windows (instructor + student incognito)
+
+| # | Actor | Action | What to highlight |
+| --- | --- | --- | --- |
+| 1 | **You** | Open projector on `/sessions/sess-1/qr-present` | Fullscreen rotating QR with ~30 s countdown — *"Mã xoay liên tục, không thể chụp màn hình gửi cho bạn bè"* |
+| 2 | **You** | Press `Esc`, switch to **Theo dõi** tab on `/sessions/sess-1` | Present / pending / absent summary — *"Giảng viên thấy ai đã điểm danh theo thời gian thực"* |
+| 3 | **Student window** | Log in `student@example.edu.vn` / `StudentPass8` | Lands on `/check-in` |
+| 4 | **Student window** | Open `/check-in?token=valid-token-id&gpsSim=delay&cameraSim=grant` → submit | **Điểm danh thành công** — *"Sinh viên chỉ cần trình duyệt điện thoại, không cần cài app"* |
+| 5 | **Instructor window** | Wait ~5 s on monitor tab | Student A moves from **Chưa** → **Đã điểm danh** |
+| 6 | **Student window** | Navigate to **Lịch sử** (`/history`) | Past session **NET-301 — Buổi 1** with **Có mặt** badge — *"Sinh viên tự tra cứu lịch sử chuyên cần"* |
+
+**Closing line:** *"Toàn bộ buổi điểm danh hoàn tất trong dưới 5 phút thay vì 15–30 phút gọi tên thủ công."*
+
+---
+
+### Script B — "Anti-fraud & policy enforcement" (~10 min)
+
+**Audience:** Phòng đào tạo, security-minded stakeholders  
+**Goal:** Demonstrate layered fraud prevention (enrollment, GPS, one-time token, spoof detection)  
+**Setup:** Student incognito window; instructor monitor already open on `/sessions/sess-1?tab=monitor`
+
+| # | Actor | Action | What to highlight |
+| --- | --- | --- | --- |
+| 1 | **You** | Point at monitor — spoof badge on **Lê Văn C** + code-sharing alert | Pre-seeded **SpoofSuspected** + **TokenReuseAlert** — *"Hệ thống cảnh báo giảng viên ngay, không cần đối soát thủ công"* |
+| 2 | **Student window** | Log in `studentb@example.edu.vn` → `/check-in?token=valid-token-id&gpsSim=delay` | **Không trong danh sách** (`NotEnrolled`) — *"Chỉ sinh viên đăng ký môn mới điểm danh được"* |
+| 3 | **Student window** | Log out → log in `studentc@example.edu.vn` → same URL with `gpsLat=10.764122&gpsLng=106.660172` | **Ngoài phạm vi phòng học** (`OutOfRadius`) — *"GPS xác minh sinh viên thực sự ở trong lớp (~100 m)"* |
+| 4 | **Student window** | Open `/check-in?token=stale-token-id&gpsSim=delay` | **Mã QR đã hết hạn** — *"Mã chỉ có hiệu lực 30 giây"* |
+| 5 | **Student window** | Open `/check-in?token=consumed-token-id&gpsSim=delay` | **Mã QR đã được sử dụng** — *"Mỗi mã chỉ dùng một lần — chống chia sẻ QR"* |
+| 6 | **Student window** | Log in `student@example.edu.vn` → check in on `valid-token-id` again | **Đã điểm danh** (`DuplicateCheckIn`) — *"Một tài khoản, một lần/buổi"* |
+| 7 | **You** | Open `/login` → `deactivated@example.edu.vn` / `StudentPass8` | Login blocked — *"Tài khoản vô hiệu hóa không thể điểm danh"* |
+
+**Optional finale:** Open `/check-in?demo=outcomes` to flash all outcome screens in one page.
+
+**Closing line:** *"Ba lớp bảo vệ: xác thực danh tính + vị trí GPS + token QR một lần dùng."*
+
+---
+
+### Script C — "Training office overview" (~5 min)
+
+**Audience:** Phòng đào tạo admin  
+**Goal:** Institution-wide visibility, data export, roster onboarding  
+**Setup:** Single admin browser window
+
+| # | Action | What to highlight |
+| --- | --- | --- |
+| 1 | Log in `admin@example.edu.vn` / `AdminPass123` → `/admin/reports` | Summary cards + session table — *"Tổng quan toàn trường, không chỉ từng lớp"* |
+| 2 | Show filter bar (class / subject / date range) | Drill-down capability (UI shell) |
+| 3 | Navigate to `/admin/export` → apply filters → **Xuất CSV** | Demo toast on success — *"Xuất dữ liệu cho hệ thống học vụ hiện có"* |
+| 4 | Log out → log in as instructor → visit `/admin/export` | Denied: *"Chỉ phòng đào tạo mới có quyền xuất dữ liệu"* — RBAC |
+| 5 | Back as admin → `/admin/rosters/import` | Drag-and-drop CSV upload — *"Import danh sách lớp từ file CSV"* |
+| 6 | Show `?view=complete` on import page | Success summary state |
+
+**Closing line:** *"Phòng đào tạo kiểm soát dữ liệu tập trung; giảng viên chỉ xem báo cáo lớp mình."*
+
+---
+
+### Script D — "3-minute executive pitch"
+
+**Audience:** Leadership, sponsors — very short attention span  
+**Goal:** Hit the three value props fast  
+**Setup:** Pre-open tabs before the meeting
+
+| Tab | URL | Show for |
+| --- | --- | --- |
+| 1 | `/sessions/sess-1/qr-present` | 30 s — rotating QR on projector |
+| 2 | `/check-in?token=valid-token-id&gpsSim=delay&cameraSim=grant` (student incognito, pre-logged-in) | 30 s — tap submit → **Điểm danh thành công** |
+| 3 | `/sessions/sess-1?tab=monitor` | 30 s — live count updates |
+| 4 | `/check-in?demo=outcomes` | 30 s — scroll through fraud rejection screens |
+| 5 | `/admin/reports` | 30 s — institution dashboard |
+
+**Talking track (60 s each):**
+
+1. *"Sinh viên quét QR động — không app, không giấy tờ."*
+2. *"Giảng viên theo dõi realtime — biết ai vắng ngay trong buổi học."*
+3. *"Hệ thống tự chặn gian lận GPS, chia sẻ mã, điểm danh hộ."*
+
+---
+
+### Script E — "Full session lifecycle" (~12 min)
+
+**Audience:** Technical evaluators, QA, product reviewers  
+**Goal:** Walk through every session state and role transition  
+**Setup:** Instructor window + student incognito
+
+| # | Actor | Action | Expected state |
+| --- | --- | --- | --- |
+| 1 | Instructor | `/sessions` — note **Active**, **Draft**, **Closed** sections | Three lifecycle states visible |
+| 2 | Instructor | Open `/sessions/sess-2` (Draft) → **Cài đặt** → **Mở buổi học** | Session opens; QR + monitor tabs appear |
+| 3 | Instructor | Switch to **Mã QR** → **Trình chiếu QR** | Fullscreen presentation mode |
+| 4 | Student | Check in on active `sess-1` with `valid-token-id` | Present |
+| 5 | Instructor | `/sessions/sess-1/monitor` (dedicated route) | Same dashboard, projector-friendly URL |
+| 6 | Instructor | `/reports` — apply class/subject filters | Instructor-scoped reports |
+| 7 | Instructor | Open `/sessions/sess-3` (Closed) | Info alert: session ended, data frozen |
+| 8 | Student | `/history` | Closed session **NET-301** with timestamp |
+| 9 | You | While logged out, open `/check-in?token=valid-token-id` | Redirect to `/login?returnUrl=…` → login → returns to check-in |
+
+---
+
+### Script F — "Mobile / real-device demo" (~8 min)
+
+**Audience:** Anyone who needs to see real camera + GPS  
+**Goal:** Prove the mobile web path works outside desktop simulation  
+**Setup:** ngrok tunnel + instructor laptop + your phone
+
+| # | Action |
+| --- | --- |
+| 1 | `ngrok http 3007` — note the HTTPS URL |
+| 2 | Instructor laptop: `{ngrok-url}/sessions/sess-1/qr-present` on projector |
+| 3 | Phone: open `{ngrok-url}/login` → `student@example.edu.vn` / `StudentPass8` |
+| 4 | Scan the live QR with phone camera → deep link opens `/check-in?token=…` |
+| 5 | Grant camera + location permissions → submit → **Điểm danh thành công** |
+| 6 | Instructor monitor updates within ~5 s |
+
+> If ngrok is unavailable, use `http://<your-lan-ip>:3007` on the same Wi-Fi.
+
+---
+
+### Choosing a script
+
+| If your audience cares about… | Use |
+| --- | --- |
+| Day-to-day classroom workflow | **Script A** |
+| Fraud prevention & policy | **Script B** |
+| Admin / institutional reporting | **Script C** |
+| Quick sponsor pitch | **Script D** |
+| Complete product walkthrough | **Script E** |
+| Real phone camera + GPS | **Script F** |
+
+---
+
+## 4. Demo user credentials
 
 All passwords are deterministic preview fixtures — safe for local/dev only.
 
@@ -65,7 +269,7 @@ All passwords are deterministic preview fixtures — safe for local/dev only.
 
 ---
 
-## 3. Seeded preview data
+## 5. Seeded preview data
 
 ### Classes & subject
 
@@ -100,16 +304,20 @@ URL aliases (friendly IDs) resolve to real UUIDs in the database.
 
 Deep link format: `/check-in?token=<alias-or-uuid>`
 
+> Preview tokens auto-refresh every ~20 s while the stack runs. Use aliases (`valid-token-id`) rather than copying UUIDs from an old tab.
+
 ---
 
-## 4. Main flows
+## 6. Flow reference (step-by-step)
 
-### 4.1 Authentication
+Detailed steps for manual testing and ad-hoc exploration. For live demos, prefer the scripted flows in [§3](#3-end-to-end-demo-scripts).
+
+### 6.1 Authentication
 
 **Happy path — login per role**
 
 1. Open `http://localhost:3007/login`
-2. Sign in with any credential row from §2
+2. Sign in with any credential row from §4
 3. Confirm redirect to the role home (see table above)
 
 **Invalid credentials**
@@ -135,7 +343,7 @@ Deep link format: `/check-in?token=<alias-or-uuid>`
 
 ---
 
-### 4.2 Instructor — session management
+### 6.2 Instructor — session management
 
 Login: `instructor@example.edu.vn` / `InstructorPass8`
 
@@ -177,7 +385,7 @@ Login: `instructor@example.edu.vn` / `InstructorPass8`
 
 ---
 
-### 4.3 Student — QR check-in
+### 6.3 Student — QR check-in
 
 Login: `student@example.edu.vn` / `StudentPass8` (unless testing deep-link login redirect)
 
@@ -228,11 +436,11 @@ Login: `student@example.edu.vn` / `StudentPass8` (unless testing deep-link login
 **View all outcome screens (no API)**
 
 - `/check-in?demo=outcomes` — showcase of every check-in outcome panel
-- `/check-in?outcome=Present` — single outcome preview (replace `Present` with any code from §6)
+- `/check-in?outcome=Present` — single outcome preview (replace `Present` with any code from §8)
 
 ---
 
-### 4.4 Student — attendance history
+### 6.4 Student — attendance history
 
 Login: `student@example.edu.vn` / `StudentPass8`
 
@@ -247,7 +455,7 @@ Login: `student@example.edu.vn` / `StudentPass8`
 
 ---
 
-### 4.5 Admin — reports, export, roster import
+### 6.5 Admin — reports, export, roster import
 
 Login: `admin@example.edu.vn` / `AdminPass123`
 
@@ -278,7 +486,7 @@ Login: `admin@example.edu.vn` / `AdminPass123`
 
 ---
 
-### 4.6 Instructor live monitor — security alerts
+### 6.6 Instructor live monitor — security alerts
 
 Login as instructor, open active session monitor:
 
@@ -293,7 +501,7 @@ The monitor polls every ~5 s and shows spoof badge + code-sharing warning when A
 
 ---
 
-## 5. Preview simulation query params
+## 7. Preview simulation query params
 
 Use these on desktop browsers when real GPS/camera is unavailable. Append to any `/check-in` URL.
 
@@ -329,7 +537,7 @@ http://localhost:3007/check-in?token=valid-token-id&gpsSim=timeout&gpsTimeoutMs=
 
 ---
 
-## 6. Check-in outcome codes
+## 8. Check-in outcome codes
 
 For `?outcome=<code>` previews and API responses:
 
@@ -348,7 +556,7 @@ For `?outcome=<code>` previews and API responses:
 
 ---
 
-## 7. Mobile / remote testing
+## 9. Mobile / remote testing
 
 1. Start preview stack on your machine
 2. Tunnel web port: `ngrok http 3007`
@@ -357,9 +565,11 @@ For `?outcome=<code>` previews and API responses:
 
 For LAN testing without ngrok, use `http://<your-lan-ip>:3007` on the same Wi-Fi network.
 
+See [Script F](#script-f--mobile--real-device-demo-8-min) for a full mobile demo narrative.
+
 ---
 
-## 8. Troubleshooting
+## 10. Troubleshooting
 
 | Problem | Fix |
 | --- | --- |
@@ -368,6 +578,8 @@ For LAN testing without ngrok, use `http://<your-lan-ip>:3007` on the same Wi-Fi
 | CORS errors | Ensure `CORS_ORIGIN` in `.env` matches web URL (`http://localhost:3007`) |
 | Web on wrong port | Check `WEB_PORT` in `.env`; restart dev server |
 | Database connection failed | `npm run aih:dev:db:up` and verify `DATABASE_URL` |
+| Demo state "dirty" after rehearsal | `npm run aih:preview:down && npm run aih:preview` |
+| Monitor alerts missing | Open `/sessions/sess-1?tab=monitor` and wait one poll cycle (~5 s) |
 
 **Reset preview fixtures:**
 
@@ -378,7 +590,7 @@ npm run aih:preview
 
 ---
 
-## 9. Quick smoke checklist
+## 11. Quick smoke checklist
 
 - [ ] API health returns `ok` + `db: connected`
 - [ ] Admin login → `/admin/users`
