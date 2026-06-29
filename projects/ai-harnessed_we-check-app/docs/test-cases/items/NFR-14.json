@@ -1,0 +1,405 @@
+{
+  "productItemId": "NFR-14",
+  "version": 1,
+  "docFingerprint": "sha256:094662fb9298eea2ff9bd0525951550a0c69f428a26ed4f8bef2679526947d21",
+  "generatedAt": "2026-06-28T18:54:44.000Z",
+  "cases": [
+    {
+      "id": "TC-NFR-14-001",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-14", "FR-02", "FR-01"],
+      "title": "UserRepository.create persists bcrypt or argon2 hash in password_hash — no plaintext in Postgres",
+      "preconditions": [
+        "Real PostgreSQL test database running via Compose",
+        "identity-auth UserRepository wired to users table per database design §5.1",
+        "PasswordHasher service configured per tech stack §2 (bcrypt or argon2)"
+      ],
+      "steps": [
+        "Invoke UserRepository.create with plaintext password SecurePass123 and valid user fields",
+        "Query users.password_hash directly via SQL for the created row",
+        "Assert password_hash value does NOT equal plaintext SecurePass123",
+        "Assert password_hash matches bcrypt pattern (^\\$2[aby]\\$) OR argon2 pattern (^\\$argon2)",
+        "Assert password_hash length is within VARCHAR(255) and typical hash output size (≥ 50 chars)"
+      ],
+      "expected": "NFR-14 credential storage: password_hash column contains only bcrypt or argon2 digest; zero plaintext password persisted in users table",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-14-002",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-14", "FR-02"],
+      "title": "AuthService.verifyPassword validates login against stored hash via real DB round-trip",
+      "preconditions": [
+        "Real PostgreSQL with user row created via UserRepository using password Workshop2026!",
+        "AuthService uses same PasswordHasher as UserRepository",
+        "No AuthSession exists yet for the user"
+      ],
+      "steps": [
+        "Call AuthService.authenticate with correct email and password Workshop2026!",
+        "Assert authentication succeeds and returns userId without exposing passwordHash",
+        "Call AuthService.authenticate with correct email and wrong password WrongPass99",
+        "Assert authentication fails with InvalidCredentials domain error",
+        "Query users.password_hash and confirm value unchanged after failed attempt"
+      ],
+      "expected": "NFR-14 module boundary: password verification uses one-way hash compare; correct password authenticates; wrong password rejected; stored hash never mutated on failed login",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-14-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["NFR-14", "AC-01", "FR-01", "FR-02"],
+      "title": "TS-01: Admin creates student account — password hashed at rest and login succeeds",
+      "preconditions": [
+        "Real PostgreSQL with authenticated TrainingOfficeAdmin session",
+        "No existing user with institutionalId SV2026999",
+        "PasswordHasher and UserRepository integrated per identity-auth module"
+      ],
+      "steps": [
+        "POST /api/v1/users with password StudentPass8 and valid student fields via admin session",
+        "Assert HTTP 201 Created; response User DTO contains no password or passwordHash field",
+        "Query users table and assert password_hash is bcrypt/argon2 format not plaintext StudentPass8",
+        "POST /api/v1/auth/login with created email and password StudentPass8",
+        "Assert HTTP 200 with session cookie and user profile returned"
+      ],
+      "expected": "Testing-plan §3 TS-01 and NFR-14: account persisted with hashed credential; student can authenticate; no plaintext password in DB or API responses",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-14-004",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["NFR-14", "FR-02", "FR-01"],
+      "title": "Password change via PATCH /users/:userId replaces password_hash with new bcrypt/argon2 digest",
+      "preconditions": [
+        "Real PostgreSQL with existing user and known password_hash value H1",
+        "Authenticated TrainingOfficeAdmin session with user:write",
+        "TestClock or timestamp capture for updated_at comparison"
+      ],
+      "steps": [
+        "Record beforeState: users.password_hash = H1 for target userId",
+        "PATCH /api/v1/users/:userId with password NewSecure99 via admin session",
+        "Assert HTTP 200; response contains no password fields",
+        "Query users.password_hash and assert afterState value H2 ≠ H1 and matches bcrypt/argon2 pattern",
+        "POST /api/v1/auth/login with old password and assert HTTP 401 InvalidCredentials",
+        "POST /api/v1/auth/login with NewSecure99 and assert HTTP 200 session issued"
+      ],
+      "expected": "beforeState: old hash H1 valid for prior password; afterState: password_hash rotated to H2; old password rejected; new password authenticates per NFR-14",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-14-005",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-14", "FR-01", "AC-01"],
+      "title": "POST /users with 7-character password returns 422 PasswordTooShort per VAL-03",
+      "preconditions": [
+        "API server running with identity-auth routes",
+        "Authenticated TrainingOfficeAdmin session",
+        "Valid user create payload except password set to 7-char string short12"
+      ],
+      "steps": [
+        "POST /api/v1/users with password short12 and otherwise valid body",
+        "Assert HTTP status 422 Unprocessable Entity",
+        "Assert response JSON contains errorCode PasswordTooShort and message Mật khẩu phải có ít nhất 8 ký tự",
+        "Query users table and confirm no row created for the payload institutionalId or email"
+      ],
+      "expected": "HTTP 422 PasswordTooShort contract per validation rules VAL-03 and error-handling §3.1; NFR-14 minimum 8-character password enforced at API boundary",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-14-006",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-14", "FR-02"],
+      "title": "GET /auth/me response envelope excludes passwordHash per API design §2.4",
+      "preconditions": [
+        "Student account exists with bcrypt/argon2 password_hash in database",
+        "Authenticated student session via POST /auth/login"
+      ],
+      "steps": [
+        "GET /api/v1/auth/me with valid wecheck_session cookie",
+        "Assert HTTP status 200",
+        "Assert response JSON user object contains id, institutionalId, displayName, email, role",
+        "Assert response JSON does NOT contain password, passwordHash, password_hash, or hash fields at any nesting level"
+      ],
+      "expected": "HTTP 200 User DTO contract: credential hash never exposed via GET /auth/me per API design §2.4 and NFR-14 no-plaintext-exposure rule",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-14-007",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-14", "FR-01"],
+      "title": "GET /users list response excludes password_hash from all items",
+      "preconditions": [
+        "Multiple users seeded with password_hash values in database",
+        "Authenticated TrainingOfficeAdmin session with user:read (all)"
+      ],
+      "steps": [
+        "GET /api/v1/users with admin session cookie",
+        "Assert HTTP status 200 with items array",
+        "For each item in items assert no password, passwordHash, or password_hash property present",
+        "Assert no item value matches bcrypt (^\\$2) or argon2 (^\\$argon2) hash pattern in any string field"
+      ],
+      "expected": "HTTP 200 user list contract: password_hash column never serialized to API clients per NFR-14 credential storage privacy",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-14-008",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-14", "FR-02", "AC-02"],
+      "title": "POST /auth/login success response excludes password and hash fields",
+      "preconditions": [
+        "Student account with password CheckInPass8 exists in database",
+        "No active session for the student"
+      ],
+      "steps": [
+        "POST /api/v1/auth/login with valid email and password CheckInPass8",
+        "Assert HTTP status 200",
+        "Assert response contains user and session objects",
+        "Assert response JSON does NOT contain password, passwordHash, password_hash, or stored hash values",
+        "Assert Set-Cookie wecheck_session header present and value is session UUID not password"
+      ],
+      "expected": "HTTP 200 login contract: authentication succeeds without leaking stored credential material per NFR-14 and FR-02",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-14-009",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["NFR-14", "AC-02", "FR-02", "BR-06"],
+      "title": "TS-05: Login with valid credentials establishes session using hashed password verification",
+      "preconditions": [
+        "Student account provisioned with password ValidLogin8 via admin POST /users",
+        "Student unauthenticated; check-in returnUrl prepared"
+      ],
+      "steps": [
+        "POST /api/v1/auth/login with email, password ValidLogin8, and returnUrl /check-in?token=test-token",
+        "Assert HTTP 200 with redirectTo preserving returnUrl",
+        "Assert session cookie issued",
+        "GET /api/v1/auth/me with session and assert authenticated student profile",
+        "Direct SQL query confirms password_hash remains hashed not plaintext ValidLogin8"
+      ],
+      "expected": "Testing-plan §3 TS-05: valid credentials authenticate via hash verification; session established; NFR-14 hashing invariant preserved post-login",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-14-010",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["NFR-14", "FR-01", "AC-01"],
+      "title": "Student denied POST /users — cannot provision accounts or set passwords",
+      "preconditions": [
+        "Authenticated Student session",
+        "Valid user create payload with password AttemptPass8 prepared"
+      ],
+      "steps": [
+        "POST /api/v1/users with valid JSON body including password using Student session cookie",
+        "Assert HTTP status 403 Forbidden",
+        "Query users table and confirm no new row for attempted institutionalId or email",
+        "Assert no password_hash row created by unauthorized caller"
+      ],
+      "expected": "NFR-14 rbac-negative: credential provisioning restricted to TrainingOfficeAdmin user:write; Student cannot create accounts or influence password storage",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-14-011",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["NFR-14", "FR-01"],
+      "title": "Instructor denied POST /users — password hashing path unreachable for non-admin roles",
+      "preconditions": [
+        "Authenticated Instructor session",
+        "Valid user create payload with password InstructorTry8"
+      ],
+      "steps": [
+        "POST /api/v1/users with Instructor session and valid create body",
+        "Assert HTTP status 403 Forbidden",
+        "Query users table and confirm no new user row from Instructor attempt"
+      ],
+      "expected": "NFR-14: only admin role reaches UserRepository.create password hashing path; Instructor denied per roles-permissions §2.2 user:write empty cell",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-14-012",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["NFR-14", "FR-01"],
+      "title": "Password boundary: exactly 8 characters accepted; 7 characters rejected with PasswordTooShort",
+      "preconditions": [
+        "Authenticated TrainingOfficeAdmin session",
+        "Two create payloads differing only in password length"
+      ],
+      "steps": [
+        "POST /api/v1/users with password exactly1234567 (7 chars) and unique email test7@example.edu.vn",
+        "Assert HTTP 422 and errorCode PasswordTooShort",
+        "POST /api/v1/users with password exactly12345678 (8 chars) and unique email test8@example.edu.vn",
+        "Assert HTTP 201 Created",
+        "Query users.password_hash for test8 account and assert bcrypt/argon2 format not plaintext"
+      ],
+      "expected": "NFR-14 minimum length 8 enforced at boundary: 7 chars rejected; 8 chars accepted and stored as hash per VAL-03",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-14-013",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["NFR-14", "FR-01"],
+      "title": "Password max length 128 enforced — 129-character password rejected on create",
+      "preconditions": [
+        "Authenticated TrainingOfficeAdmin session",
+        "Password string of 129 ASCII characters prepared"
+      ],
+      "steps": [
+        "POST /api/v1/users with 129-char password and otherwise valid create body",
+        "Assert HTTP status 422 with validation error for password length",
+        "Query users table and confirm no row created",
+        "POST /api/v1/users with 128-char password and unique email and assert HTTP 201"
+      ],
+      "expected": "NFR-14 VAL-03 max 128 boundary: oversized password rejected; 128-char password accepted and hashed",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-14-014",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["NFR-14", "FR-02"],
+      "title": "Empty password on POST /auth/login rejected before hash comparison",
+      "preconditions": [
+        "Student account exists in database",
+        "API server running"
+      ],
+      "steps": [
+        "POST /api/v1/auth/login with valid email and empty string password",
+        "Assert HTTP 422 or 401 with validation or InvalidCredentials error",
+        "Assert AuthService.verifyPassword or equivalent not invoked with empty plaintext against stored hash",
+        "Assert no AuthSession row created for the attempt"
+      ],
+      "expected": "Empty password rejected at validation layer; no spurious hash comparison; NFR-14 credential handling does not persist or accept empty passwords on login",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-14-015",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-14", "FR-01", "AC-01"],
+      "title": "Admin create-user form gates submit when password shorter than 8 characters",
+      "preconditions": [
+        "TrainingOfficeAdmin authenticated in browser",
+        "Admin user creation form at /admin/users/new or equivalent route",
+        "Form includes password field per validation rules §6"
+      ],
+      "steps": [
+        "Fill required fields with valid institutionalId, displayName, email, and role Student",
+        "Enter password short12 (7 characters) in password field",
+        "Attempt form submit or blur password field to trigger client validation",
+        "Observe inline validation message Mật khẩu phải có ít nhất 8 ký tự and submit button disabled or blocked",
+        "Change password to ValidPass8 and verify validation clears allowing submit"
+      ],
+      "expected": "NFR-14 browser journey: UI enforces minimum 8-character password before account creation; localized VAL-03 message displayed; aligns with server PasswordTooShort contract",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-14-016",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-14", "FR-02", "AC-02"],
+      "title": "Login form submits password over HTTPS; success response and profile page expose no hash",
+      "preconditions": [
+        "Student account with known password BrowserTest8 exists",
+        "Browser navigates to /login",
+        "Network inspection available in Playwright test harness"
+      ],
+      "steps": [
+        "Fill email and password BrowserTest8 in login form",
+        "Submit login and wait for redirect to student home or returnUrl",
+        "Inspect network response for POST /auth/login and assert response body contains no passwordHash or hash fields",
+        "Navigate to profile or account settings if available",
+        "Assert DOM contains no password_hash, bcrypt digest, or argon2 digest strings; password input type remains password"
+      ],
+      "expected": "NFR-14 browser journey: login flow never displays stored hash; API response from login excludes credential material; password field masked in UI",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-14-017",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-14", "FR-01"],
+      "title": "Admin users list table renders no password or hash columns",
+      "preconditions": [
+        "TrainingOfficeAdmin authenticated in browser",
+        "At least one user exists with password_hash in database",
+        "Admin users list at /admin/users"
+      ],
+      "steps": [
+        "Navigate to /admin/users and wait for table to load",
+        "Inspect table column headers and assert no Password, Mật khẩu, password_hash, or Hash column",
+        "Inspect visible cell text in all rows and assert no value matches bcrypt or argon2 hash pattern",
+        "View page source or network GET /users response and confirm no hash serialized to client"
+      ],
+      "expected": "NFR-14 UI surface: admin user list never exposes password_hash; table columns limited to id, institutionalId, displayName, email, role, active per API User DTO",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-14-018",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P1",
+      "traceability": ["NFR-14", "FR-02", "AC-02", "FR-07"],
+      "title": "Flow A step 4: student login uses hashed credential verification before check-in",
+      "preconditions": [
+        "Admin seeded student roster with password FlowAPass8 per Flow A steps 1–3",
+        "Instructor opened Active session with valid QR token",
+        "Student unauthenticated"
+      ],
+      "steps": [
+        "Student POST /api/v1/auth/login with seeded credentials and returnUrl to check-in deep link",
+        "Assert HTTP 200 session established",
+        "Direct SQL assert users.password_hash is bcrypt/argon2 not plaintext FlowAPass8",
+        "Student POST /api/v1/check-in with authenticated session and valid coordinates",
+        "Assert check-in succeeds demonstrating hash-verified auth gate in Flow A workshop path"
+      ],
+      "expected": "NFR-14 enforced in Flow A: student authenticates via one-way hash verification; plaintext never stored; check-in proceeds only after valid session from credential check",
+      "edgeCase": false
+    }
+  ]
+}

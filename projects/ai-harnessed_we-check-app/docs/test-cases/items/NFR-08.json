@@ -1,0 +1,351 @@
+{
+  "productItemId": "NFR-08",
+  "version": 1,
+  "docFingerprint": "sha256:889c55844c8fb62f755b7bfe0012c8f4045a89dd93449f95fb5979804ca7fbd8",
+  "generatedAt": "2026-06-29T16:00:00Z",
+  "cases": [
+    {
+      "id": "TC-NFR-08-001",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["NFR-08", "AC-15", "FR-15"],
+      "title": "TS-35: Instructor dashboard Present count updates within 5 seconds after successful check-in without reload",
+      "preconditions": [
+        "Active session with 10 enrolled students; 3 already Present, 7 Pending",
+        "Authenticated Instructor assigned to session with attendance:read (session scope)",
+        "Should-capability FR-15 enabled in test environment",
+        "Student A enrolled with valid QR token and coordinates within session radius",
+        "Wall-clock or high-resolution timer available for elapsed-time measurement"
+      ],
+      "steps": [
+        "GET /api/v1/sessions/:sessionId/attendance using Instructor session and record summary.present baseline (3)",
+        "Record T0 at moment POST /api/v1/check-in returns HTTP 200 outcome Success for Student A",
+        "Poll GET /api/v1/sessions/:sessionId/attendance every 500 ms until summary.present === 4 or 5-second timeout elapses",
+        "Record T1 at first poll response where summary.present incremented to 4",
+        "Assert summary.pending decremented by 1",
+        "Assert T1 minus T0 ≤ 5000 ms per NFR-08 target",
+        "Assert no manual page reload or cache-bypass header required between T0 and T1"
+      ],
+      "expected": "Testing-plan §3 TS-35 satisfied: delay between successful check-in and updated Present count on instructor dashboard ≤ 5 seconds without manual reload per NFR-08 and AC-15a",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-08-002",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-08", "FR-15"],
+      "title": "AttendanceService.getSessionRoster reflects check-in immediately so poll source meets refresh SLA",
+      "preconditions": [
+        "Real PostgreSQL test database with Active session and Pending attendance rows",
+        "AttendanceService wired per attendance module with session and enrollment read models",
+        "CheckInTransaction completes atomically per domain model §5.2",
+        "Baseline summary: present=2, pending=8 for 10 enrolled students"
+      ],
+      "steps": [
+        "Invoke AttendanceService.getSessionRoster(sessionId, instructorId) and capture summary.present",
+        "Execute successful check-in transaction for one Pending student (Present outcome, token consumed)",
+        "Immediately invoke getSessionRoster(sessionId, instructorId) after commit (no artificial delay)",
+        "Assert summary.present increased by 1 and summary.pending decreased by 1",
+        "Assert records array includes updated student row with status Present and checkedInAt populated",
+        "Assert data-layer latency from commit to updated roster query is negligible (< 100 ms) so 5 s poll budget is achievable"
+      ],
+      "expected": "Module-integration boundary: poll source returns updated Present count immediately after check-in commit; server-side data ready within NFR-08 5-second UI refresh window per API design §7.1",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-08-003",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-08", "FR-15"],
+      "title": "GET /api/v1/sessions/:sessionId/attendance returns HTTP 200 with updated summary within 5 s poll cycle after check-in",
+      "preconditions": [
+        "Active session with mixed Present and Pending students",
+        "Authenticated assigned Instructor session with attendance:read",
+        "Student A with valid token ready to check in",
+        "API polling interval documented as 5 seconds per API design §11"
+      ],
+      "steps": [
+        "GET /api/v1/sessions/:sessionId/attendance and record summary.present baseline",
+        "POST /api/v1/check-in for Student A; assert HTTP 200 outcome Success",
+        "Within 5 seconds, send GET /api/v1/sessions/:sessionId/attendance with Instructor session cookie",
+        "Assert HTTP status 200 OK and Content-Type application/json",
+        "Assert response summary.present === baseline + 1",
+        "Assert response body contains sessionId, summary object with enrolled/present/pending fields, and records array per API design §7.1",
+        "Assert no errorCode in success envelope"
+      ],
+      "expected": "HTTP 200 contract for live monitor poll delivers updated Present count within NFR-08 5-second refresh budget per API design §7.1 and §11",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-08-004",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-08", "AC-15", "FR-15"],
+      "title": "Instructor Theo dõi tab StatCards refresh within 5 seconds after student check-in without page reload",
+      "preconditions": [
+        "Authenticated Instructor on desktop viewport at /sessions/:sessionId (Theo dõi tab)",
+        "Active session with SessionMonitorDashboard polling every 5 seconds per API design §11",
+        "Should-capability FR-15 enabled; baseline StatCard Đã điểm danh shows 3 of 10 enrolled",
+        "Student A can complete check-in in parallel browser context or via API trigger"
+      ],
+      "steps": [
+        "Navigate to /sessions/:sessionId and select Theo dõi tab",
+        "Verify StatCard Đã điểm danh displays count 3 matching initial API poll",
+        "Record T0 when Student A check-in succeeds (API 200 or mobile confirmation visible)",
+        "Wait up to 5 seconds without manual page reload, refresh button, or F5",
+        "Record T1 when StatCard Đã điểm danh updates to 4",
+        "Verify roster grid row for Student A shows Present StatusBadge",
+        "Assert T1 minus T0 ≤ 5000 ms per NFR-08"
+      ],
+      "expected": "NFR-08 browser verification: instructor dashboard Present vs enrolled StatCards update within 5 seconds without manual reload per AC-15a and 07-non-functional-risk §2.2",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-08-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["NFR-08", "FR-15", "NFR-11"],
+      "title": "Student denied GET /sessions/:sessionId/attendance with 403 — no live dashboard data exposed",
+      "preconditions": [
+        "Authenticated Student A session (no attendance:read session roster per roles-permissions §2.2)",
+        "Active session with attendance records including peer students",
+        "Known sessionId for that Active session"
+      ],
+      "steps": [
+        "GET /api/v1/sessions/:sessionId/attendance using Student A session cookie",
+        "Assert HTTP status 403 Forbidden",
+        "Assert response errorCode Forbidden",
+        "Assert response message Bạn không có quyền thực hiện thao tác này per roles-permissions §2.5",
+        "Assert response body contains no summary.present, summary.enrolled, or records roster data"
+      ],
+      "expected": "Live dashboard poll endpoint restricted to instructor scope; students cannot observe cohort refresh metrics per RBAC matrix",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-08-006",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["NFR-08", "FR-15"],
+      "title": "NFR-08 gate fails when dashboard count update delay exceeds 5000 ms boundary",
+      "preconditions": [
+        "Active session with Should-capability FR-15 enabled",
+        "Authenticated Instructor polling GET /sessions/:sessionId/attendance",
+        "Student A ready to check in with valid token",
+        "Test harness records elapsed time from check-in success to first updated summary.present"
+      ],
+      "steps": [
+        "Record T0 at POST /api/v1/check-in HTTP 200 Success for Student A",
+        "Poll GET /api/v1/sessions/:sessionId/attendance every 500 ms for up to 6 seconds",
+        "If summary.present does not increment within 5000 ms, mark test FAIL for NFR-08",
+        "If summary.present increments at T1 where T1 minus T0 ≤ 5000 ms, mark test PASS",
+        "Document measured delay in test report for pilot APM baseline comparison"
+      ],
+      "expected": "NFR-08 pass/fail boundary enforced at 5000 ms delay between check-in success and updated Present count on instructor dashboard per 07-non-functional-risk §2.2 verification method",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-08-007",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P1",
+      "traceability": ["NFR-08", "FR-15", "NFR-02"],
+      "title": "Five parallel check-ins from distinct students produce correct summary for next dashboard poll within SLA",
+      "preconditions": [
+        "Real PostgreSQL with Active session and 20 Pending students",
+        "5 distinct students with valid QR tokens and in-radius coordinates",
+        "AttendanceService.getSessionRoster callable after concurrent check-in submissions",
+        "Instructor poll simulates GET /sessions/:sessionId/attendance after all commits"
+      ],
+      "steps": [
+        "Record baseline summary.present and summary.pending via getSessionRoster",
+        "Record T0 before launching 5 parallel successful check-in transactions for distinct Pending students",
+        "Await all 5 check-ins to return Success outcome",
+        "Invoke getSessionRoster immediately after last commit completes",
+        "Assert summary.present === baseline.present + 5 and summary.pending === baseline.pending - 5",
+        "Assert elapsed time from T0 to updated roster query ≤ 5000 ms including transaction completion"
+      ],
+      "expected": "Concurrent check-ins during Active session propagate to live summary counts atomically; dashboard poll source reflects all increments within NFR-08 refresh window",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-08-008",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["NFR-08", "FR-15", "AC-15"],
+      "title": "Flow A step 5: instructor attendance poll reflects check-in within 5 seconds of student success",
+      "preconditions": [
+        "Flow A completed through step 4: roster seeded, session created with GPS, opened Active, valid QR token obtained",
+        "Student logged in with valid coordinates within radius",
+        "Authenticated Instructor session cookie; Should-capability FR-15 enabled"
+      ],
+      "steps": [
+        "GET /api/v1/sessions/:sessionId/attendance before check-in and record summary.present baseline",
+        "Record T0 at POST /api/v1/check-in HTTP 200 outcome Success",
+        "Poll GET /api/v1/sessions/:sessionId/attendance until summary.present === baseline + 1 or 5-second timeout",
+        "Assert records array contains student row with status Present and checkedInAt timestamp",
+        "Assert T1 minus T0 ≤ 5000 ms per NFR-08",
+        "Confirm Flow A step 5 per testing-plan §6 includes live monitor refresh timing"
+      ],
+      "expected": "Flow A lifecycle instructor live attendance poll reflects successful check-in within NFR-08 5-second near-real-time SLA per testing-plan §6 step 5",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-08-009",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-08", "FR-15"],
+      "title": "SessionMonitorDashboard auto-polls every 5 seconds without instructor manual refresh action",
+      "preconditions": [
+        "Authenticated Instructor on /sessions/:sessionId Theo dõi tab",
+        "Active session with SessionMonitorDashboard mounted",
+        "Network log or Playwright request interception for GET /sessions/:sessionId/attendance",
+        "Should-capability FR-15 enabled"
+      ],
+      "steps": [
+        "Navigate to Theo dõi tab and wait for initial attendance poll to complete",
+        "Record timestamps of consecutive GET /api/v1/sessions/:sessionId/attendance requests over 15 seconds",
+        "Assert poll interval is approximately 5 seconds (4–6 s tolerance) per API design §11",
+        "Verify no manual refresh button click or full page reload occurs between polls",
+        "Assert poll status indicator shows last refresh timestamp updating automatically"
+      ],
+      "expected": "UI polling cadence aligns with 5-second server poll interval so NFR-08 refresh target is achievable without manual reload per API design §11 and error-handling §7 instructor dashboard guidance",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-08-010",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["NFR-08", "FR-15"],
+      "title": "Pending to Present transition updates summary counts visible to next roster poll query",
+      "preconditions": [
+        "Real PostgreSQL with Active session; one student attendance_record in Pending state",
+        "AttendanceService.getSessionRoster and check-in pipeline share transactional consistency",
+        "Summary before transition: present=N, pending=M"
+      ],
+      "steps": [
+        "Query getSessionRoster and assert target student status Pending in records array",
+        "Execute check-in state transition Pending → Present for target student",
+        "Invoke getSessionRoster immediately after commit (simulating next instructor poll)",
+        "Assert summary.present === N + 1 and summary.pending === M - 1",
+        "Assert target record afterState Present with checkedInAt set",
+        "Assert enrolled total unchanged so dashboard ratio Present vs enrolled is accurate for NFR-08 measurement"
+      ],
+      "expected": "State transition from Pending to Present reflected in live summary counts on first poll after commit, enabling NFR-08 ≤ 5 s dashboard refresh",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-08-011",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P1",
+      "traceability": ["NFR-08", "AC-15", "FR-15"],
+      "title": "Three sequential check-ins each propagate to dashboard counts within 5 seconds under normal load",
+      "preconditions": [
+        "Active session with 20 Pending students",
+        "Authenticated Instructor polling GET /sessions/:sessionId/attendance",
+        "Should-capability FR-15 enabled",
+        "Three distinct students with valid tokens and in-radius coordinates"
+      ],
+      "steps": [
+        "Record initial summary.present baseline",
+        "For each of 3 students at ~2-second intervals: POST /check-in Success, then poll attendance until present count increments or 5-second timeout",
+        "Assert each individual check-in produces dashboard count update within 5000 ms",
+        "Assert final summary.present === baseline + 3 and summary.pending === initial pending - 3",
+        "Assert no manual page reload required between sequential updates"
+      ],
+      "expected": "NFR-08 sustained under staggered check-ins: each successful check-in propagates to live Present vs enrolled counts within 5 seconds without reload during normal pilot load",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-08-012",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["NFR-08", "FR-15", "BR-08", "NFR-11"],
+      "title": "Unassigned instructor denied live attendance poll with 403 Forbidden",
+      "preconditions": [
+        "Instructor B authenticated but not assigned to session class-subject and not session creator",
+        "Active session with live attendance data in unassigned scope",
+        "Instructor B lacks attendance:read for requested session per BR-08"
+      ],
+      "steps": [
+        "GET /api/v1/sessions/:sessionId/attendance using Instructor B session cookie",
+        "Assert HTTP status 403 Forbidden",
+        "Assert errorCode Forbidden or ReportAccessDenied",
+        "Assert response contains no summary.present or live roster data",
+        "Verify assigned Instructor A can poll same endpoint with HTTP 200 and receive refreshable summary"
+      ],
+      "expected": "Cross-instructor live dashboard poll denied; NFR-08 refresh SLA applies only to authorized instructor monitor per class-subject assignment scope",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-08-013",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["NFR-08", "FR-15", "AC-15"],
+      "title": "Dashboard preserves poll state and refreshes counts after transient API error without full reload",
+      "preconditions": [
+        "Authenticated Instructor on /sessions/:sessionId Theo dõi tab",
+        "Active session with baseline StatCard counts visible",
+        "Ability to simulate one failed attendance poll followed by recovery (mock 503 or network blip)",
+        "Student A ready to check in after poll recovery"
+      ],
+      "steps": [
+        "Navigate to Theo dõi tab and verify initial StatCard counts from successful poll",
+        "Simulate one GET /sessions/:sessionId/attendance failure; verify toast per error-handling §7 instructor dashboard guidance",
+        "Verify polling resumes automatically without instructor manual page reload",
+        "Trigger successful check-in for Student A",
+        "Assert StatCard Đã điểm danh updates within 5 seconds of check-in on next successful poll cycle",
+        "Assert URL unchanged and no full document navigation occurred"
+      ],
+      "expected": "NFR-08 refresh holds after transient poll failure: instructor dashboard recovers polling and updates counts within 5 seconds without manual reload per error-handling §7",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-08-014",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["NFR-08", "FR-15"],
+      "title": "GET /sessions/:sessionId/attendance for Closed session returns stale final counts — no live refresh expected",
+      "preconditions": [
+        "Session transitioned from Active to Closed with final attendance tallies",
+        "Authenticated assigned Instructor session",
+        "Student attempts check-in after close (SessionNotActive)"
+      ],
+      "steps": [
+        "GET /api/v1/sessions/:sessionId/attendance for Closed session and record summary.present",
+        "Attempt POST /api/v1/check-in for enrolled student; assert HTTP 403 SessionNotActive",
+        "Poll GET /api/v1/sessions/:sessionId/attendance for 10 seconds",
+        "Assert summary.present unchanged from pre-check-in baseline",
+        "Assert NFR-08 refresh SLA does not apply outside Active session window"
+      ],
+      "expected": "NFR-08 near-real-time refresh applies only during Active session; Closed session poll returns static final counts with no post-close increment boundary per BR-01",
+      "edgeCase": true
+    }
+  ]
+}

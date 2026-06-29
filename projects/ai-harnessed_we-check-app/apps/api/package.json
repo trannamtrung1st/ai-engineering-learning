@@ -1,0 +1,35 @@
+{
+  "name": "@wecheck/api",
+  "version": "0.1.0",
+  "private": true,
+  "description": "We Check API — Fastify REST service (@wecheck/api workspace)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "dev": "node --watch dist/index.js",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "build": "tsc",
+    "test:unit": "node --import tsx --test --test-reporter=spec --test-timeout=60000 --test-concurrency=1 $(find src -name '*.test.ts' ! -name '*.integration.test.ts' | tr '\\n' ' ')",
+    "test:integration": "NODE_ENV=test SEED_ENABLED=false node --import tsx --test --test-reporter=spec --test-timeout=120000 --test-concurrency=1 $(find src -name '*.integration.test.ts' | tr '\\n' ' ')",
+    "test": "npm run test:unit && npm run test:integration"
+  },
+  "dependencies": {
+    "@fastify/cookie": "^9.4.0",
+    "@fastify/multipart": "^8.3.1",
+    "@wecheck/domain": "*",
+    "bcrypt": "^6.0.0",
+    "fastify": "^4.29.0",
+    "pg": "^8.13.1"
+  },
+  "devDependencies": {
+    "@types/bcrypt": "^6.0.0",
+    "@types/node": "^22.10.2",
+    "@types/pg": "^8.11.10",
+    "@wecheck/config": "*",
+    "eslint": "^9.17.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

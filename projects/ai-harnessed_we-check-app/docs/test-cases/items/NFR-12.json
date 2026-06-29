@@ -1,0 +1,386 @@
+{
+  "productItemId": "NFR-12",
+  "version": 1,
+  "docFingerprint": "sha256:9e1460900a69a9b4493be4e286bcd7d1823652cd7aff6f47163d6846238a1c2c",
+  "generatedAt": "2026-06-29T22:15:00.000Z",
+  "cases": [
+    {
+      "id": "TC-NFR-12-001",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["NFR-12", "AC-08", "FR-08"],
+      "title": "TS-25: GpsNotPersisted — successful radius-validated check-in leaves no raw latitude/longitude in attendance tables",
+      "preconditions": [
+        "Real PostgreSQL test database running via Compose",
+        "GpsNotPersisted integration suite per testing-plan §5",
+        "Active session, enrolled student, Valid QrToken, Pending attendance",
+        "CheckInService.submit callable with in-radius coordinates (10.762700, 106.660200)"
+      ],
+      "steps": [
+        "Inspect attendance_records schema and confirm no client latitude/longitude columns per database design §4 and domain model §3.8",
+        "Invoke CheckInService.submit with valid tokenId and in-radius coordinates",
+        "Assert attendance transitions to Present with non-null checkedInAt",
+        "Query attendance_records for sessionId and studentId and assert no raw client coordinates stored",
+        "Query check_in_attempts for outcome Success and assert distance_meters populated but no raw lat/lng columns exist or are populated",
+        "Verify coordinates discarded after validation per NFR-12 target and AC-08d"
+      ],
+      "expected": "Testing-plan §3 TS-25 satisfied: raw latitude/longitude not stored in long-term attendance tables after successful radius check; only derived outcome and check-in timestamp retained",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-12-002",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-12", "FR-08", "BR-02"],
+      "title": "CheckInService GpsNotPersisted: PostgreSQL transaction marks Present without writing client coordinates",
+      "preconditions": [
+        "Real PostgreSQL with Active session, enrollment, Valid QrToken, Pending attendance",
+        "CheckInService orchestrates GeoVerificationService then serializable transaction per domain model §5.2",
+        "GeoVerificationService computes distanceMeters in memory from transient locationPayload"
+      ],
+      "steps": [
+        "Record beforeState: attendance Pending; verify no coordinate columns on attendance_records",
+        "Invoke CheckInService.submit with in-radius locationPayload (latitude 10.762700, longitude 106.660200)",
+        "Query attendance_records and assert afterState Present with checkedInAt set",
+        "Assert attendance_records and related long-term tables contain no latitude or longitude values for client device",
+        "Query check_in_attempts and assert distance_meters is numeric and within session gpsRadiusMeters",
+        "Verify CheckInRequest coordinates exist only in request handler memory per domain model §7.1 privacy note"
+      ],
+      "expected": "Module-integration GpsNotPersisted suite: coordinates used for Haversine validation only then discarded at DB boundary; NFR-12 privacy invariant enforced",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-12-003",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-12", "FR-08"],
+      "title": "Database schema review: attendance_records and check_in_attempts lack client coordinate columns",
+      "preconditions": [
+        "Real PostgreSQL with migrations applied per database design §4",
+        "information_schema or pg_catalog access in integration harness"
+      ],
+      "steps": [
+        "Query information_schema.columns for attendance_records and list all column names",
+        "Assert no columns named latitude, longitude, client_latitude, client_longitude, device_lat, or device_lng exist",
+        "Query information_schema.columns for check_in_attempts",
+        "Assert distance_meters column exists and no raw coordinate columns present",
+        "Confirm sessions.room_latitude and sessions.room_longitude exist (room GPS is instructor-configured, not client device)",
+        "Document schema conforms to database design §11 data retention: raw client GPS coordinates not stored"
+      ],
+      "expected": "NFR-12 verification method satisfied at schema level: no coordinate columns on long-term attendance or attempt tables; room GPS on sessions is distinct from client device coordinates",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-12-004",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-12", "FR-08", "BR-02"],
+      "title": "check_in_attempts stores distance_meters and spoof_flags but never raw client latitude/longitude",
+      "preconditions": [
+        "Real PostgreSQL; successful and failed check-in attempts creatable via CheckInService",
+        "check_in_attempts table schema per database design §checkin-qr"
+      ],
+      "steps": [
+        "Complete successful check-in with in-radius coordinates via integration harness",
+        "SELECT all columns from check_in_attempts for the Success attempt row",
+        "Assert distance_meters IS NOT NULL and within expected range for fixture coordinates",
+        "Assert no latitude or longitude column values present on the row",
+        "Repeat for OutOfRadius attempt with outside coordinates (10.764122, 106.660172)",
+        "Assert OutOfRadius attempt has distance_meters logged but still no raw lat/lng persisted per BR-02"
+      ],
+      "expected": "NFR-12 and BR-02: distance logged for audit without long-term coordinate storage on both success and failure paths",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-12-005",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["NFR-12", "FR-08", "AC-08"],
+      "title": "Successful check-in state transition retains Present, checkedInAt, and distance_meters only",
+      "preconditions": [
+        "Real PostgreSQL with attendance_records row beforeState Pending",
+        "Active session with room GPS and gpsRadiusMeters 100",
+        "Valid QrToken; CheckInService.submit callable with in-radius coordinates"
+      ],
+      "steps": [
+        "Record beforeState: attendance Pending, no checkedInAt, no distance_meters on related attempt",
+        "Invoke CheckInService.submit with in-radius locationPayload",
+        "Assert afterState: attendance Present with checkedInAt timestamp set",
+        "Assert check_in_attempts row has outcome Success and distance_meters populated",
+        "Assert afterState contains no client coordinate fields on attendance_records or check_in_attempts",
+        "Verify only derived outcome (Present), distance for audit, and check-in timestamp retained per NFR-12 target"
+      ],
+      "expected": "beforeState Pending without coordinates; afterState Present with checkedInAt and distance_meters audit field; raw device coordinates never enter persisted state",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-12-006",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["NFR-12", "FR-08", "BR-02"],
+      "title": "OutOfRadius rejection persists distance_meters audit value without raw client coordinates",
+      "preconditions": [
+        "Real PostgreSQL with Pending attendance for enrolled student and Active session",
+        "Valid QrToken; outside-radius coordinates (10.764122, 106.660172) ~167 m from room (10.762622, 106.660172)"
+      ],
+      "steps": [
+        "Invoke CheckInService.submit with outside-radius locationPayload",
+        "Assert CheckInAttempt outcome OutOfRadius inserted",
+        "Query check_in_attempts and assert distance_meters > session gpsRadiusMeters",
+        "Assert no latitude or longitude values stored on check_in_attempts or attendance_records",
+        "Query attendance_records and assert status remains Pending (not Present)",
+        "Verify BR-02 outcome: distance value logged for audit without persisting raw coordinates long-term"
+      ],
+      "expected": "NFR-12 applies to failure paths: OutOfRadius logs derived distance for fraud audit but never stores submitted latitude/longitude",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-12-007",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-12", "NFR-21"],
+      "title": "Structured application logs exclude raw latitude and longitude after check-in processing",
+      "preconditions": [
+        "API running with structured JSON logging enabled per NFR-21",
+        "Log capture fixture or test log sink wired to check-in request handler",
+        "Active session with enrolled student and Valid QrToken"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with in-radius coordinates (10.762700, 106.660200) using Student session",
+        "Collect structured log entries for the request correlation ID",
+        "Assert log fields contain endpoint, outcome, sessionId, and correlation ID",
+        "Assert no log field contains raw latitude 10.762700 or longitude 106.660200 values",
+        "Verify error-handling §5 never log rule: passwords, session secrets, raw latitude/longitude excluded",
+        "Repeat for OutOfRadius failure and assert submitted coordinates absent from error logs"
+      ],
+      "expected": "NFR-12 privacy baseline extends to observability: raw GPS never appears in application logs per error-handling §5 and NFR-21 structured logging target",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-12-008",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-12", "FR-08", "FR-07"],
+      "title": "POST /api/v1/check-in 200 Success response envelope excludes client latitude and longitude",
+      "preconditions": [
+        "Authenticated enrolled Student session cookie set",
+        "Active sessionId with Valid QrToken and in-radius coordinates available",
+        "API design §6.2 documents latitude/longitude discarded after validation"
+      ],
+      "steps": [
+        "Send POST /api/v1/check-in with body { tokenId, latitude: 10.762700, longitude: 106.660200, spoofMetadata: { mockLocationDetected: false } }",
+        "Assert HTTP status 200 and outcome Success with attendance.status Present",
+        "Parse response JSON and assert no latitude, longitude, clientLat, clientLng, or deviceCoordinates fields present",
+        "Assert response contains checkedInAt timestamp but not submitted GPS values",
+        "Verify API design §6.2 field table: latitude/longitude discarded after validation, not persisted or echoed"
+      ],
+      "expected": "HTTP 200 Success contract does not leak submitted device coordinates in response body; NFR-12 data minimization visible at API boundary",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-12-009",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-12", "FR-14", "AC-14"],
+      "title": "GET /api/v1/students/me/attendance history response excludes raw GPS coordinates from all records",
+      "preconditions": [
+        "Student with at least one successful Present check-in in PostgreSQL",
+        "check_in_attempts row exists with distance_meters for the session",
+        "Authenticated Student session for the record owner"
+      ],
+      "steps": [
+        "GET /api/v1/students/me/attendance with Student session cookie",
+        "Assert HTTP status 200 with paginated attendance list",
+        "For each record in data array assert fields include sessionDate, subject, status, checkInTime when Present",
+        "Assert no record contains latitude, longitude, distanceMeters, or raw coordinate fields in student-facing API",
+        "Verify student personal history exposes only derived attendance outcome per FR-14 and NFR-12"
+      ],
+      "expected": "Student attendance history API returns self-scoped records without device GPS coordinates; privacy minimization enforced on read path",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-12-010",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["NFR-12", "FR-13", "BR-09"],
+      "title": "TrainingOfficeAdmin CSV export columns exclude student device GPS coordinates",
+      "preconditions": [
+        "Closed session with multiple Present students who checked in with GPS validation",
+        "Authenticated TrainingOfficeAdmin session with report:export permission",
+        "Attendance data includes check_in_attempts with distance_meters"
+      ],
+      "steps": [
+        "POST /api/v1/reports/export with date filter covering the closed session using Admin session",
+        "Assert HTTP status 200 with CSV download",
+        "Parse CSV header row and assert columns: student ID, name, class, subject, session date, attendance status, check-in timestamp",
+        "Assert CSV contains no latitude, longitude, gps, or coordinate columns",
+        "Verify database design §11: raw client GPS coordinates not stored and therefore not exportable"
+      ],
+      "expected": "Admin CSV export per AC-13a cannot expose device GPS because NFR-12 prevents coordinate persistence; export contains only permitted derived fields",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-12-011",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["NFR-12", "FR-08", "AC-08"],
+      "title": "Flow A step 4: workshop check-in completes GPS validation without persisting client coordinates",
+      "preconditions": [
+        "Flow A steps 1–3 complete: roster seeded, session opened Active with room GPS, QR token polled",
+        "Authenticated enrolled Student session established",
+        "Student coordinates within session gpsRadiusMeters (10.762700, 106.660200)",
+        "tokenId extracted from qrPayload returned in step 3"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with tokenId from Flow A step 3 and in-radius latitude/longitude using Student session",
+        "Assert HTTP 200 outcome Success with attendance Present",
+        "Query check_in_attempts and assert distance_meters ≤ session gpsRadiusMeters",
+        "Query attendance_records and check_in_attempts and assert no raw lat/lng persisted",
+        "Verify Flow A happy path satisfies NFR-12 alongside functional check-in success"
+      ],
+      "expected": "Flow A lifecycle includes NFR-12 invariant: GPS used for radius validation during step 4 then discarded; only Present outcome and audit distance retained",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-12-012",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["NFR-12", "FR-14", "AC-14"],
+      "title": "Student denied access to peer check-in attempt details cannot retrieve GPS metadata via cross-user API",
+      "preconditions": [
+        "Student A with successful Present check-in and check_in_attempts row",
+        "Student B authenticated in different session",
+        "No raw coordinates stored in database per NFR-12 baseline"
+      ],
+      "steps": [
+        "Student B attempts GET /api/v1/students/:studentAId/attendance or equivalent cross-user history endpoint",
+        "Assert HTTP status 403 Forbidden or empty scoped result with no peer data",
+        "If any attempt detail endpoint exists, assert response contains no latitude, longitude, or distance_meters for Student A",
+        "Verify AC-14b self-scoping prevents any location metadata leakage between students"
+      ],
+      "expected": "NFR-12 defense in depth: even if coordinate storage were attempted, RBAC self-scoping denies cross-student access to check-in attempt details",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-12-013",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P0",
+      "traceability": ["NFR-12", "FR-08", "NFR-02"],
+      "title": "150 parallel successful check-ins each discard coordinates without any lat/lng row appearing in database",
+      "preconditions": [
+        "ConcurrentCheckIn integration fixture with 150 unique enrolled students",
+        "Active session with 150 Valid QrTokens",
+        "Each student submits distinct in-radius coordinates via parallel CheckInService.submit"
+      ],
+      "steps": [
+        "Launch 150 parallel check-in submissions with unique studentId and coordinates",
+        "Assert 150 Success outcomes and 150 Present rows",
+        "Run aggregate SQL: SELECT COUNT(*) FROM information_schema.columns WHERE table_name IN ('attendance_records','check_in_attempts') AND column_name ILIKE '%lat%'",
+        "Assert zero client coordinate columns exist across all 150 attempt rows",
+        "Sample 10 random check_in_attempts rows and assert distance_meters populated with no coordinate fields",
+        "Verify NFR-12 holds under pilot-scale concurrency per NFR-02 load scenario"
+      ],
+      "expected": "GPS data minimization invariant holds under 150 concurrent check-ins: no coordinate persistence race or batch insert leak",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-12-014",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-12", "FR-08", "AC-08", "NFR-18"],
+      "title": "Mobile check-in success journey does not display or persist raw GPS coordinates beyond transient capture",
+      "preconditions": [
+        "Authenticated Student on mobile viewport 375×812 (iOS Safari or Android Chrome)",
+        "Active session check-in deep link /check-in?token=:tokenId&session=:sessionId",
+        "Browser geolocation granted with in-radius mock coordinates (10.762700, 106.660200)",
+        "DevTools access to localStorage, sessionStorage, and network responses"
+      ],
+      "steps": [
+        "Navigate to check-in page on mobile viewport",
+        "Verify GPS capture step shows acquisition indicator without displaying exact latitude/longitude digits to user",
+        "Tap submit control (Xác nhận điểm danh) and wait for success panel with Present status",
+        "Inspect localStorage and sessionStorage and assert no latitude, longitude, or geolocation cache entries",
+        "Inspect POST /check-in response body and assert no coordinate fields echoed back",
+        "Navigate to /history and verify Present entry shows check-in time without GPS coordinates"
+      ],
+      "expected": "NFR-12 UI-facing verification: client uses GPS transiently for submission; success and history views expose no raw device coordinates per tech stack §GPS privacy",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-12-015",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-12", "FR-14", "AC-14"],
+      "title": "Student personal attendance history page lists sessions without GPS coordinate columns or detail fields",
+      "preconditions": [
+        "Authenticated Student with at least one Present check-in after GPS-validated session",
+        "Student logged in on desktop or mobile viewport",
+        "Attendance history route /history accessible"
+      ],
+      "steps": [
+        "Navigate to /history attendance list page",
+        "Verify table or card columns show session date, subject, status, and check-in time when Present",
+        "Assert no column header or field label for GPS, tọa độ, latitude, longitude, or vị trí thiết bị",
+        "Open any session detail drawer or row expansion if present",
+        "Assert detail view contains no coordinate values or distance_meters exposed to student",
+        "Verify FR-14 personal history respects NFR-12 data minimization on read UI"
+      ],
+      "expected": "Browser journey confirms student-facing UI never surfaces stored or cached device GPS data; only derived attendance outcome visible",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-12-016",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["NFR-12", "FR-08", "BR-02"],
+      "title": "OutOfRadius mobile outcome panel shows localized message without echoing submitted coordinates",
+      "preconditions": [
+        "Authenticated Student on mobile viewport with GPS permission granted",
+        "Active session check-in deep link with valid token",
+        "Browser geolocation mocked to outside-radius coordinates (10.764122, 106.660172)"
+      ],
+      "steps": [
+        "Navigate to /check-in page and wait for GPS capture with outside coordinates",
+        "Submit check-in and verify OutOfRadius outcome panel with message Bạn đang ngoài phạm vi phòng học",
+        "Assert UI does not display submitted latitude or longitude values",
+        "Verify move-closer guidance visible without exposing exact coordinate digits",
+        "Inspect network response and assert no coordinate fields in JSON body",
+        "Retry after mock moves to in-radius coords and verify success without prior coordinates cached in UI state"
+      ],
+      "expected": "NFR-12 client UX: failure path shows derived outcome message only; device coordinates never rendered in UI or retained in client state after attempt",
+      "edgeCase": true
+    }
+  ]
+}

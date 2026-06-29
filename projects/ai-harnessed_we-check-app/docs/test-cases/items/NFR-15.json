@@ -1,0 +1,391 @@
+{
+  "productItemId": "NFR-15",
+  "version": 1,
+  "docFingerprint": "sha256:e28b1e3bba6d51203530607cc8d0f33e0a2c6f8b946d630f5faf2597e4b2a423",
+  "generatedAt": "2026-06-29T20:30:00.000Z",
+  "cases": [
+    {
+      "id": "TC-NFR-15-001",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-15", "FR-11", "BR-10"],
+      "title": "AuditOnManualEdit: AttendanceService.manualEdit persists append-only AttendanceAuditLog with actor, before/after status, and timestamp",
+      "preconditions": [
+        "Real PostgreSQL test database with Closed session closedAt within 24 h of TestClock",
+        "attendance_records row with status Absent for known studentId and sessionId",
+        "AttendanceService wired with AttendanceRecordRepository and audit writer per attendance module",
+        "Editor context: assigned Instructor userId"
+      ],
+      "steps": [
+        "Record beforeState: attendance_records.status Absent",
+        "Invoke AttendanceService.manualEdit(recordId, Present, editorId, note) under Instructor context",
+        "Query attendance_audit_logs filtered by attendance_record_id and assert exactly one new row",
+        "Assert audit row fields: editor_id (actor), previous_status Absent, new_status Present, note, edited_at timestamp per error-handling §6.2 AttendanceManualEdit",
+        "Attempt UPDATE on the audit row via SQL and assert application policy or trigger rejects mutation",
+        "Assert no prior audit rows for same record were modified (append-only)"
+      ],
+      "expected": "NFR-15 target: 100% manual attendance edits produce append-only audit record with actor ID, timestamp, and before/after action detail per testing-plan §5 AuditOnManualEdit",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-15-002",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-15", "FR-13", "BR-09"],
+      "title": "ExportAuditLog: ExportService.exportCsv writes audit entry with actor, filter params, and row count in PostgreSQL",
+      "preconditions": [
+        "Real PostgreSQL with Closed sessions and attendance records for HESD-01 / SWE-101 date range",
+        "ExportService wired with reporting-export module and export_audit_logs table",
+        "TrainingOfficeAdmin userId available as actor context"
+      ],
+      "steps": [
+        "Invoke ExportService.exportCsv({ classCode: HESD-01, subjectCode: SWE-101, from, to }, adminId)",
+        "Assert CSV stream returned with expected row count N",
+        "Query export_audit_logs and assert exactly one new row for this export",
+        "Assert audit fields: actor_id adminId, filter_summary matching request params, row_count N, exported_at timestamp per error-handling §6.2 ExportAuditLog",
+        "Assert audit row is append-only (no UPDATE on prior export audit rows)"
+      ],
+      "expected": "NFR-15 target: successful CSV export creates ExportAuditLog with actor, filter params, and row count per testing-plan §5 ExportAuditLog and roles-permissions §2.6",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-15-003",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-15", "FR-09", "BR-11", "AC-09"],
+      "title": "TokenReuseAlert: consumed QR token second submission writes security audit with session, token, and student IDs",
+      "preconditions": [
+        "Real PostgreSQL with Active session and QrToken in Consumed state from Student A successful check-in",
+        "CheckInService wired with security audit writer per check-in module",
+        "Student B enrolled in same session with valid GPS coords"
+      ],
+      "steps": [
+        "Student B submits POST check-in with same consumed tokenId within 30-second validity window",
+        "Assert check-in rejected with domain outcome indicating token reuse",
+        "Query security_audit_logs (or equivalent) for event type TokenReuseAlert",
+        "Assert audit entry contains session_id, token_id, first_student_id (Student A), submitting_student_id (Student B), and timestamp",
+        "Assert no second Present record created for Student B"
+      ],
+      "expected": "NFR-15 target: token reuse alert produces append-only security audit with session, token, and student IDs per BR-11, AC-09b, and error-handling §6.2 TokenReuseAlert",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-15-004",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-15", "FR-10", "AC-10"],
+      "title": "SpoofFlagged: SpoofSuspected check-in outcome writes security audit with heuristic signals and no raw coordinates",
+      "preconditions": [
+        "Real PostgreSQL with Active session and valid QR token",
+        "CheckInService with spoof heuristics enabled per FR-10",
+        "Student enrolled with device mockLocation=true or abnormally perfect accuracy fixture"
+      ],
+      "steps": [
+        "Student submits check-in with spoof-triggering device signals",
+        "Assert check-in rejected with outcome SpoofSuspected and attendance remains Pending or Rejected per AC-10a",
+        "Query security_audit_logs for event type SpoofFlagged",
+        "Assert audit entry contains session_id, student_id, heuristic_signals summary, and timestamp",
+        "Assert audit payload does NOT contain raw latitude or longitude values per NFR-12 and error-handling §6.2"
+      ],
+      "expected": "NFR-15 target: SpoofSuspected outcome produces SpoofFlagged append-only audit with session, student, and heuristic signals — never raw coords per AC-10c",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-15-005",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["NFR-15", "FR-11", "BR-10", "AC-11"],
+      "title": "TS-30: Instructor manual edit within 24 h produces AttendanceAuditLog with actor, timestamp, and status transition",
+      "preconditions": [
+        "Real PostgreSQL with Closed session closedAt 2 hours before TestClock",
+        "Assigned Instructor authenticated with attendance:write",
+        "Student attendance record with status Absent"
+      ],
+      "steps": [
+        "PATCH /api/v1/attendance/:recordId { status: Present, note: \"Xác minh trực tiếp\" } using Instructor session",
+        "Assert HTTP 200 and attendance status Present",
+        "Query attendance_audit_logs and assert entry with editorId Instructor, previousStatus Absent, newStatus Present, editedAt timestamp",
+        "Verify 100% of successful manual edits in TS-30 sample produce audit rows"
+      ],
+      "expected": "Testing-plan §3 TS-30: status updated and audit log created with actor ID, timestamp, and action detail per NFR-15 and AC-11a",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-15-006",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["NFR-15", "FR-13", "BR-09", "AC-13"],
+      "title": "TS-33: TrainingOfficeAdmin CSV export creates ExportAuditLog with actor, filterSummary, and rowCount",
+      "preconditions": [
+        "Authenticated TrainingOfficeAdmin session with report:export",
+        "Closed sessions with attendance data for HESD-01 / SWE-101 in June 2026"
+      ],
+      "steps": [
+        "POST /api/v1/reports/export with filter body { classCode: HESD-01, subjectCode: SWE-101, from: 2026-06-01, to: 2026-06-30 }",
+        "Assert HTTP 200 with text/csv response and parse row count N",
+        "Query export_audit_logs and assert entry with actor adminId, filterSummary matching request, rowCount N, exportedAt timestamp",
+        "Assert no export succeeds without corresponding audit row"
+      ],
+      "expected": "Testing-plan §3 TS-33: admin CSV export 100% audit-logged with actor, filter params, and row count per NFR-15 and AC-13a",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-15-007",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["NFR-15", "FR-13", "BR-09", "AC-13"],
+      "title": "TS-32: Non-admin CSV export denial writes ExportDenied security audit with actor and reason",
+      "preconditions": [
+        "Authenticated Instructor session lacking report:export per roles-permissions §2.2",
+        "Attendance data exists for valid export filter scope"
+      ],
+      "steps": [
+        "POST /api/v1/reports/export with valid filter body using Instructor session",
+        "Assert HTTP 403 with errorCode ExportNotAllowed",
+        "Query security_audit_logs for event type ExportDenied",
+        "Assert audit entry contains actor_id instructorId, denial reason, and timestamp",
+        "Assert no ExportAuditLog success row and no CSV content returned"
+      ],
+      "expected": "Testing-plan §3 TS-32: denied export attempt 100% audit-logged per NFR-15, BR-09, AC-13b, and error-handling §6.2 ExportDenied",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-15-008",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "flow-c",
+      "priority": "P0",
+      "traceability": ["NFR-15", "FR-11", "BR-10", "AC-11"],
+      "title": "Flow C: manual fallback edit verifies audit log actor, timestamps, and admin override audit trail",
+      "preconditions": [
+        "Closed session with Pending students transitioned to Absent",
+        "TestClock within 24 h of closedAt for instructor edit; separate fixture at 25 h for denial",
+        "TrainingOfficeAdmin account available"
+      ],
+      "steps": [
+        "Instructor marks student Present with note within 24 h and verify AttendanceAuditLog actor and before/after status",
+        "Advance clock to 25 h; Instructor edit attempt returns 403 EditWindowExpired with no new audit row",
+        "TrainingOfficeAdmin PATCH same record to Present with note",
+        "Assert HTTP 200 and admin audit entry with editorId, previousStatus, newStatus, timestamp",
+        "Confirm Flow C steps 2–5 audit verification per testing-plan §6"
+      ],
+      "expected": "Flow C NFR-15 accountability: successful edits audit-logged; blocked instructor edit produces no false audit; admin override fully logged per testing-plan §6 Flow C",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-15-009",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P0",
+      "traceability": ["NFR-15", "FR-09", "BR-11", "AC-09", "AC-10"],
+      "title": "Flow B step 4: second student same consumed token rejected with TokenReuseAlert security audit",
+      "preconditions": [
+        "Active session with valid QR token",
+        "Student A checked in successfully consuming token",
+        "Student B enrolled with valid GPS inside radius"
+      ],
+      "steps": [
+        "Student A retries check-in and receives DuplicateCheckIn (no duplicate audit event type confusion)",
+        "Student B submits same consumed token within validity window",
+        "Assert check-in rejected for Student B",
+        "Query security audit and assert TokenReuseAlert with sessionId, tokenId, Student A and Student B IDs",
+        "Confirm Flow B step 4 security log per testing-plan §6 and AC-10c"
+      ],
+      "expected": "Flow B anti-fraud path: token reuse produces append-only TokenReuseAlert audit per NFR-15 and BR-11",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-15-010",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-15", "FR-11", "BR-10"],
+      "title": "PATCH /attendance/:recordId HTTP 200 success contract includes AttendanceAuditLog side effect",
+      "preconditions": [
+        "Authenticated assigned Instructor session",
+        "Closed session within 24 h edit window",
+        "Known attendance recordId with status Absent"
+      ],
+      "steps": [
+        "Send PATCH /api/v1/attendance/:recordId { status: Present, note: \"Ghi chú điểm danh\" }",
+        "Assert HTTP status 200 OK with updated AttendanceRecord envelope per API design §7.2",
+        "Query attendance_audit_logs for attendance_record_id and assert one new row linked to PATCH actor",
+        "Assert audit created_at within seconds of HTTP response timestamp"
+      ],
+      "expected": "HTTP 200 PATCH /attendance/:recordId always writes AttendanceManualEdit audit per API design §7.2 and NFR-15 100% coverage target",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-15-011",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-15", "FR-13", "BR-09", "AC-13"],
+      "title": "POST /reports/export HTTP 200 CSV response contract includes ExportAuditLog side effect",
+      "preconditions": [
+        "Authenticated TrainingOfficeAdmin session",
+        "Attendance records exist for export filter scope"
+      ],
+      "steps": [
+        "POST /api/v1/reports/export with valid filter body",
+        "Assert HTTP 200, Content-Type text/csv; charset=utf-8, and Content-Disposition attachment per API design §8.3",
+        "Query export_audit_logs and assert ExportAuditLog row for this actor and filter within same request window",
+        "Assert row_count in audit matches CSV data row count"
+      ],
+      "expected": "HTTP 200 POST /reports/export always writes ExportAuditLog per API design §8.3 and NFR-15 accountability measure",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-15-012",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["NFR-15", "FR-13", "BR-09", "NFR-11"],
+      "title": "Instructor POST /reports/export denied at permission guard with ExportDenied audit regardless of data scope",
+      "preconditions": [
+        "Authenticated Instructor session assigned to class with export-eligible attendance data",
+        "Instructor lacks report:export per roles-permissions permission matrix",
+        "Security audit writer enabled for denied export attempts"
+      ],
+      "steps": [
+        "POST /api/v1/reports/export with filter for instructor's own assigned class-subject",
+        "Assert HTTP 403 Forbidden with errorCode ExportNotAllowed before CSV generation",
+        "Query security_audit_logs for ExportDenied with actor instructorId and reason ExportNotAllowed",
+        "Assert Student role export attempt also produces ExportDenied audit when tested in matrix sample"
+      ],
+      "expected": "NFR-15: 100% denied export attempts produce security audit with actor and reason per BR-09 and roles-permissions §2.6 regardless of RBAC scope",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-15-013",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["NFR-15", "FR-11", "BR-10", "AC-11"],
+      "title": "EditWindowExpired instructor PATCH produces no AttendanceAuditLog; denied export still audits",
+      "preconditions": [
+        "Closed session with closedAt 25 hours before TestClock",
+        "Assigned Instructor with attendance:write",
+        "Separate Instructor session for export denial test"
+      ],
+      "steps": [
+        "Instructor PATCH /api/v1/attendance/:recordId { status: Present } and assert HTTP 403 EditWindowExpired",
+        "Query attendance_audit_logs and assert zero new rows for this failed attempt",
+        "Same Instructor POST /api/v1/reports/export and assert HTTP 403 ExportNotAllowed",
+        "Query security_audit_logs and assert ExportDenied row created for export denial",
+        "Contrast NFR-15 listed actions: failed manual edit not in audit scope; denied export always logged"
+      ],
+      "expected": "Boundary: EditWindowExpired blocks edit without audit pollution; ExportDenied still 100% logged per NFR-15 sensitive-action list and error-handling §6.2",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-15-014",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["NFR-15", "FR-11", "BR-10"],
+      "title": "AttendanceManualEdit audit captures beforeState and afterState for each permitted status transition",
+      "preconditions": [
+        "Real PostgreSQL with Closed session within instructor edit window",
+        "Attendance records with beforeState Absent, Rejected, and Excused on separate rows",
+        "AttendanceService.manualEdit callable with Instructor editorId"
+      ],
+      "steps": [
+        "Transition Absent → Present and assert audit previous_status Absent, new_status Present",
+        "Transition Rejected → Present (spoof override per BR-10) and assert audit captures Rejected → Present",
+        "Transition Present → Excused with note and assert audit beforeState Present, afterState Excused",
+        "Assert each transition creates distinct append-only audit row with editor_id and edited_at"
+      ],
+      "expected": "NFR-15 action detail: every successful manual edit audit records beforeState and afterState per error-handling §6.2 AttendanceManualEdit fields",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-15-015",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-15", "FR-11", "BR-10", "AC-11"],
+      "title": "AttendanceAuditTrail panel displays editor, timestamp, from→to status, and note after manual edit",
+      "preconditions": [
+        "Instructor logged in via Playwright; session roster page /sessions/:sessionId/roster loaded",
+        "Closed session within 24 h edit window with student row status Absent",
+        "AttendanceEditDialog and AttendanceAuditTrail components per ui-ux §4.2–4.3"
+      ],
+      "steps": [
+        "Open row action Chỉnh sửa and submit AttendanceEditDialog with status Present and note",
+        "Assert success toast and roster row updates to Present StatusBadge",
+        "Expand AttendanceAuditTrail on edited row",
+        "Assert panel shows editor display name, edited timestamp, from Absent → to Present, and submitted note in Vietnamese UI",
+        "Assert audit trail is read-only with no edit or delete controls"
+      ],
+      "expected": "Browser journey: instructor-visible audit trail reflects append-only AttendanceAuditLog per NFR-15, ui-ux AttendanceAuditTrail §4.3, and AC-11a accountability",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-15-016",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["NFR-15", "FR-13", "BR-09", "AC-13"],
+      "title": "Instructor export attempt shows 403 modal; admin export succeeds with audit notice",
+      "preconditions": [
+        "Instructor session on reports page with export button visible but disabled or gated per BR-09",
+        "TrainingOfficeAdmin session on admin reports page with Xuất CSV action",
+        "Export audit data seeded for admin filter scope"
+      ],
+      "steps": [
+        "As Instructor, trigger CSV export action and assert modal with message Chỉ phòng đào tạo mới có quyền xuất dữ liệu per error-handling §7",
+        "Verify no file download initiated for Instructor",
+        "As TrainingOfficeAdmin, apply report filters and click Xuất CSV",
+        "Assert browser file download starts with attendance-export filename",
+        "Optional: navigate to /admin/audit-log and confirm export event listed with actor and timestamp"
+      ],
+      "expected": "Browser journey: denied export surfaces UX without download; successful admin export completes with NFR-15 audit accountability per AC-13a and AC-13b",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-15-017",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["NFR-15", "AC-10"],
+      "title": "Append-only invariant: security audit rows for SpoofFlagged and TokenReuseAlert cannot be updated or deleted",
+      "preconditions": [
+        "Real PostgreSQL with existing SpoofFlagged and TokenReuseAlert audit rows from prior integration tests",
+        "Application or DB policy enforcing append-only on security_audit_logs and attendance_audit_logs"
+      ],
+      "steps": [
+        "Attempt UPDATE on SpoofFlagged audit row via repository or raw SQL",
+        "Assert operation rejected or has no effect on stored fields",
+        "Attempt DELETE on TokenReuseAlert audit row",
+        "Assert operation rejected or row count unchanged",
+        "Repeat for AttendanceAuditLog and ExportAuditLog tables"
+      ],
+      "expected": "NFR-15 append-only guarantee: all listed sensitive-action audit entities resist mutation after creation per 07-non-functional-risk §2.3 NFR-15 target",
+      "edgeCase": true
+    }
+  ]
+}

@@ -1,0 +1,452 @@
+{
+  "productItemId": "BR-01",
+  "version": 1,
+  "docFingerprint": "sha256:4deda16c175af0ca34aadf938abcd5f11203e186585e68a48a77093b8e87aac5",
+  "generatedAt": "2026-06-29T16:00:00Z",
+  "cases": [
+    {
+      "id": "TC-BR-01-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["BR-01", "FR-05", "AC-05"],
+      "title": "TS-14: Check-in allowed while session Active and now ≤ scheduledStart + 10 minutes",
+      "preconditions": [
+        "Active session with scheduledStart in the past and status Active",
+        "Test clock fixed so now is strictly before scheduledStart + 10 minutes",
+        "Authenticated enrolled Student with valid unexpired QR token",
+        "Student coordinates within session gpsRadiusMeters"
+      ],
+      "steps": [
+        "POST /check-in with tokenId and in-radius coordinates using Student session",
+        "Assert HTTP status 200 and outcome Success",
+        "GET /sessions/:sessionId/attendance for the student",
+        "Assert attendance status is Present with checkedInAt populated"
+      ],
+      "expected": "Check-in succeeds within attendance window per BR-01; session remains Active until window end or manual close",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-01-002",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["BR-01", "FR-05", "AC-05"],
+      "title": "TS-15: Auto-close at scheduledStart + 10 minutes transitions Closed and Pending to Absent",
+      "preconditions": [
+        "Active session with M students in Pending status",
+        "Instructor has not manually closed the session",
+        "Test clock injectable; advance to scheduledStart + 10 minutes + 1 second",
+        "AutoCloseScheduler job enabled in test environment"
+      ],
+      "steps": [
+        "Trigger AutoCloseScheduler tick at advanced clock time",
+        "GET /sessions/:sessionId and assert status Closed with closedAt set",
+        "GET /sessions/:sessionId/attendance and assert summary.pending is 0 and summary.absent equals M",
+        "Query attendance_records for sessionId and verify all previously Pending rows are Absent"
+      ],
+      "expected": "System scheduler auto-closes session per BR-01 trigger; all Pending attendance records become Absent",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-01-003",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["BR-01", "FR-05", "AC-05"],
+      "title": "TS-16: Late check-in after session Closed returns SessionNotActive and Absent unchanged",
+      "preconditions": [
+        "Closed session with student attendance status Absent (was Pending at close)",
+        "Authenticated enrolled Student session available",
+        "QR token for the closed session (valid or expired)"
+      ],
+      "steps": [
+        "POST /check-in with tokenId and valid coordinates using Student session",
+        "Assert HTTP status 403 and outcome SessionNotActive with errorCode SessionNotActive",
+        "Assert localized Vietnamese message indicates session is not active",
+        "GET /sessions/:sessionId/attendance for the student and assert status remains Absent"
+      ],
+      "expected": "Late check-in rejected per BR-01 outcome; Absent status unchanged unless instructor manually overrides per BR-10",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-01-004",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-01", "FR-05"],
+      "title": "SessionCloseFinalize bulk updates Pending to Absent in single Postgres transaction",
+      "preconditions": [
+        "Real PostgreSQL test database is running",
+        "Active session with K Pending and P Present attendance records",
+        "SessionService.close wired to AttendanceService.finalizeOnClose"
+      ],
+      "steps": [
+        "Invoke SessionService.close(sessionId) under owning Instructor context",
+        "Query sessions table and assert status Closed with closed_at set",
+        "Query attendance_records for sessionId where status was Pending before close",
+        "Assert all K previously Pending rows are now Absent",
+        "Assert all P Present rows remain Present unchanged"
+      ],
+      "expected": "Manual close trigger per BR-01: session transitions Closed; Pending→Absent bulk update; Present records preserved",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-01-005",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["BR-01", "FR-05"],
+      "title": "AutoCloseScheduler transitions Active to Closed at attendance window end",
+      "preconditions": [
+        "Active session row with scheduled_start in the past and status Active",
+        "TestClock fixed at scheduledStart + 10 minutes",
+        "AutoCloseScheduler queries Active sessions past window end"
+      ],
+      "steps": [
+        "Record beforeState Active from sessions table",
+        "Invoke AutoCloseScheduler.run() or equivalent tick",
+        "Query sessions table for sessionId and read status and closed_at",
+        "Query attendance_records and count Absent vs Pending for enrolled students"
+      ],
+      "expected": "beforeState Active, afterState Closed; closedAt set at window end; same finalize side effects as manual close per BR-01",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-01-006",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-01"],
+      "title": "CheckInService rejects check-in when now exceeds scheduledStart + 10 minutes before close",
+      "preconditions": [
+        "Active session row in PostgreSQL with scheduled_start known",
+        "TestClock fixed at scheduledStart + 10 minutes + 1 second",
+        "CheckInService attendance window guard reads scheduledStart + 10 min per validation-rules §5.1 step 6"
+      ],
+      "steps": [
+        "Invoke CheckInService.submitCheckIn with valid token, enrollment, and coordinates",
+        "Capture result outcome without committing Present status",
+        "Query attendance_records for studentId and sessionId",
+        "Assert outcome SessionNotActive and attendance status remains Pending"
+      ],
+      "expected": "Attendance window end enforced at Layer 4 before token expiry checks complete; no Present record created per BR-01",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-01-007",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-01"],
+      "title": "POST /check-in returns 403 SessionNotActive when session is Closed",
+      "preconditions": [
+        "Closed sessionId with enrolled Student authenticated",
+        "Student has Absent attendance record from session finalize"
+      ],
+      "steps": [
+        "POST /check-in with tokenId and valid coordinates using Student session",
+        "Assert HTTP status 403",
+        "Assert response body contains errorCode SessionNotActive and outcome SessionNotActive",
+        "Assert response envelope matches check-in failure contract per API design §6.3"
+      ],
+      "expected": "HTTP 403 with SessionNotActive errorCode per validation-rules §4 BR-01 mapping",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-01-008",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-01", "FR-05"],
+      "title": "POST /sessions/:sessionId/close returns 200 with Closed Session DTO and stops check-in",
+      "preconditions": [
+        "Instructor session cookie is set",
+        "Active sessionId owned by instructor with at least one Pending attendance record",
+        "Current time is before scheduledStart + 10 minutes (manual early close scenario)"
+      ],
+      "steps": [
+        "Send POST /sessions/:sessionId/close with Instructor session",
+        "Assert HTTP status 200",
+        "Assert response body contains status Closed and closedAt timestamp earlier than scheduledStart + 10 min",
+        "POST /check-in as enrolled Student and assert HTTP 403 SessionNotActive"
+      ],
+      "expected": "Manual instructor close per BR-01 trigger ends attendance window immediately; subsequent check-in rejected",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-01-009",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-01"],
+      "title": "Check-in at scheduledStart + 10 minutes exactly is allowed (inclusive window end)",
+      "preconditions": [
+        "Active session with scheduledStart in the past",
+        "Test clock fixed at exactly scheduledStart + 10 minutes",
+        "Authenticated enrolled Student with valid unexpired QR token and in-radius coordinates"
+      ],
+      "steps": [
+        "POST /check-in with tokenId and coordinates using Student session",
+        "Assert HTTP status 200 and outcome Success",
+        "GET /sessions/:sessionId/attendance for the student",
+        "Assert attendance status is Present"
+      ],
+      "expected": "Window end is inclusive (now ≤ scheduledStart + 10 min) per BR-01 condition; check-in allowed at exact boundary",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-01-010",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-01"],
+      "title": "Check-in one second after window end returns 403 SessionNotActive while session still Active",
+      "preconditions": [
+        "Active session with scheduledStart in the past",
+        "Test clock fixed at scheduledStart + 10 minutes + 1 second before auto-close scheduler runs",
+        "Authenticated enrolled Student with valid QR token"
+      ],
+      "steps": [
+        "POST /check-in with valid tokenId and in-radius coordinates using Student session",
+        "Assert HTTP status 403 and outcome SessionNotActive with errorCode SessionNotActive",
+        "GET /sessions/:sessionId and assert status is still Active until scheduler runs",
+        "GET /sessions/:sessionId/attendance for student and assert status remains Pending"
+      ],
+      "expected": "Check-in rejected when now > scheduledStart + 10 min per BR-01; SessionNotActive returned before auto-close finalize",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-01-011",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["BR-01", "FR-05"],
+      "title": "Manual close before scheduled window end sets closedAt as effective window end",
+      "preconditions": [
+        "Active session opened 2 minutes ago with scheduledStart in the past",
+        "Current time is scheduledStart + 5 minutes (before 10-minute window end)",
+        "SessionService.close available under Instructor context"
+      ],
+      "steps": [
+        "Record scheduledStart and compute nominal window end scheduledStart + 10 min",
+        "Invoke SessionService.close(sessionId)",
+        "Query sessions table and assert closed_at is before nominal window end",
+        "Attempt CheckInService.submitCheckIn and assert SessionNotActive outcome"
+      ],
+      "expected": "Instructor manual close ends attendance window early per BR-01 exception clause; closedAt replaces nominal window end",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-01-012",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-01", "FR-05"],
+      "title": "Student denied POST /sessions/:sessionId/close with 403 Forbidden",
+      "preconditions": [
+        "Authenticated Student session is available",
+        "Active sessionId within attendance window exists",
+        "Student role lacks session:write permission per roles-permissions §2.2"
+      ],
+      "steps": [
+        "POST /sessions/:sessionId/close using Student session cookie",
+        "Assert HTTP status 403 Forbidden and errorCode Forbidden",
+        "GET /sessions/:sessionId and assert status remains Active",
+        "Verify attendance window remains open for eligible check-ins"
+      ],
+      "expected": "Only instructor may manually close session per BR-01 trigger; Student cannot end attendance window via close endpoint",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-01-013",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-01"],
+      "title": "Student denied POST /sessions/:sessionId/open with 403 Forbidden",
+      "preconditions": [
+        "Authenticated Student session is available",
+        "Draft session with valid GPS exists",
+        "Student role lacks session:write permission"
+      ],
+      "steps": [
+        "POST /sessions/:sessionId/open using Student session cookie",
+        "Assert HTTP status 403 Forbidden and errorCode Forbidden",
+        "GET /sessions/:sessionId and assert status remains Draft"
+      ],
+      "expected": "Student cannot open sessions; attendance window cannot be started by Student role",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-01-014",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-01", "FR-05", "AC-05"],
+      "title": "Instructor manually closes Active session and monitor shows Pending finalized to Absent",
+      "preconditions": [
+        "Instructor is logged in to instructor SPA",
+        "Active session in progress with mix of Present and Pending students",
+        "Instructor navigates to session monitor or detail page"
+      ],
+      "steps": [
+        "Click Kết thúc buổi học (close session) action",
+        "Confirm close in dialog prompt",
+        "Wait for status badge update to Đã kết thúc (Closed)",
+        "Verify roster table shows remaining Pending students marked Vắng (Absent)",
+        "Verify QR display and check-in actions are unavailable"
+      ],
+      "expected": "Manual close via UI per BR-01 instructor trigger; attendance window closed; Pending students finalized to Absent",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-01-015",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-01", "AC-05"],
+      "title": "Student check-in page shows session-ended message after attendance window closes",
+      "preconditions": [
+        "Session is Closed (manual close or auto-close after scheduledStart + 10 min)",
+        "Authenticated Student navigates to check-in deep link with stale QR token",
+        "Student attendance status is Absent"
+      ],
+      "steps": [
+        "Student opens check-in page for closed session",
+        "Submit check-in or observe page state after load",
+        "Verify Vietnamese error message indicates session not active or has ended",
+        "Verify no success confirmation and attendance remains Absent"
+      ],
+      "expected": "UI surfaces SessionNotActive outcome per BR-01 after window end; late scans explain Absent state",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-01-016",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["BR-01", "FR-05"],
+      "title": "Instructor session detail shows Active status badge during open attendance window",
+      "preconditions": [
+        "Instructor is logged in with Active session in progress",
+        "Current time is within scheduledStart + 10 minute window",
+        "Instructor navigates to session detail page"
+      ],
+      "steps": [
+        "Verify session status badge shows Đang diễn ra (Active)",
+        "Verify openedAt timestamp is visible",
+        "Verify links to QR display and live monitor are enabled",
+        "Verify close-session action is available to instructor"
+      ],
+      "expected": "UI reflects Active session state during BR-01 attendance window; instructor can monitor and close session",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-01-017",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P1",
+      "traceability": ["BR-01"],
+      "title": "Parallel manual close and auto-close yield single Closed transition without duplicate finalize",
+      "preconditions": [
+        "Active session past scheduledStart + 10 minutes on TestClock",
+        "AutoCloseScheduler and SessionService.close both eligible to run",
+        "Optimistic lock on Session.version enabled"
+      ],
+      "steps": [
+        "Launch parallel SessionService.close(sessionId) and AutoCloseScheduler tick for same sessionId",
+        "Await both operations to settle",
+        "Query sessions table once and assert status Closed with single closed_at value",
+        "Count attendance_records with status Absent for previously Pending students",
+        "Assert no duplicate SessionClosed events or double Absent updates"
+      ],
+      "expected": "First close wins; exactly one Closed transition per BR-01; Pending→Absent applied once",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-01-018",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["BR-01", "FR-05", "AC-05"],
+      "title": "Flow A: open session, check-in within window, instructor closes before auto-close",
+      "preconditions": [
+        "Roster seeded for HESD-01 / SWE-101",
+        "Draft session with valid GPS created and opened to Active",
+        "Test clock within scheduledStart + 10 minute window",
+        "Authenticated enrolled Student and Instructor sessions available"
+      ],
+      "steps": [
+        "Student POST /check-in with valid token and coordinates; assert outcome Success",
+        "Instructor GET /sessions/:sessionId/attendance; assert Present count incremented",
+        "Instructor POST /sessions/:sessionId/close before window end",
+        "Assert session status Closed and remaining Pending rows become Absent",
+        "Student POST /check-in again and assert SessionNotActive"
+      ],
+      "expected": "End-to-end BR-01 lifecycle: window open allows check-in; manual close ends window and rejects late check-in",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-01-019",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": ["BR-01", "FR-05"],
+      "title": "Present and Excused records preserved when session closes at window end",
+      "preconditions": [
+        "Active session with P Present, E Excused, and K Pending attendance records in PostgreSQL",
+        "AutoCloseScheduler triggers close at scheduledStart + 10 minutes"
+      ],
+      "steps": [
+        "Record Present and Excused record IDs and statuses before close",
+        "Invoke AutoCloseScheduler.run() at window end",
+        "Query attendance_records for previously Present and Excused IDs",
+        "Assert all P Present rows remain Present with checkedInAt unchanged",
+        "Assert all E Excused rows remain Excused and K Pending rows are Absent"
+      ],
+      "expected": "BR-01 close outcome affects only Pending records; Present and Excused statuses preserved on finalize",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-01-020",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["BR-01"],
+      "title": "POST /sessions/:sessionId/close on non-Active session returns InvalidSessionState",
+      "preconditions": [
+        "Draft or Closed session exists",
+        "Authenticated Instructor session cookie is set"
+      ],
+      "steps": [
+        "POST /sessions/:sessionId/close for Draft session",
+        "Assert HTTP status 409 and errorCode InvalidSessionState",
+        "Repeat for Closed session and assert same rejection",
+        "Verify no attendance finalize side effects occurred"
+      ],
+      "expected": "Close trigger applies only to Active sessions per validation-rules §3.5; illegal transitions blocked",
+      "edgeCase": true
+    }
+  ]
+}

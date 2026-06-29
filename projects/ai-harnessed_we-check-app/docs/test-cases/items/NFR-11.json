@@ -1,0 +1,436 @@
+{
+  "productItemId": "NFR-11",
+  "version": 1,
+  "docFingerprint": "sha256:e28b1e3bba6d51203530607cc8d0f33e0a2c6f8b946d630f5faf2597e4b2a423",
+  "generatedAt": "2026-06-29T18:30:00.000Z",
+  "cases": [
+    {
+      "id": "TC-NFR-11-001",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-11", "FR-12", "BR-08"],
+      "title": "RbacNegativeMatrix: PermissionGuard denies out-of-scope report:read before ReportService executes against Postgres",
+      "preconditions": [
+        "Real PostgreSQL test database with ClassAssignment linking Instructor A to HESD-01 / SWE-101 only",
+        "Attendance and Closed session data exist for HESD-01/SWE-101 and HESD-02/SWE-102",
+        "PermissionGuard wired to roles-permissions matrix per testing-plan §5 RbacNegativeMatrix"
+      ],
+      "steps": [
+        "Authenticate as Instructor A and invoke GET /reports/summary for unassigned HESD-02 / SWE-102",
+        "Assert PermissionGuard returns 403 before ReportService query executes (spy or query counter)",
+        "Assert no student roster rows from HESD-02 appear in response body",
+        "Repeat for GET /reports/session/:sessionId where session belongs to unassigned class-subject",
+        "Assert 100% denial rate for out-of-scope report:read attempts in matrix sample"
+      ],
+      "expected": "NFR-11 module boundary: out-of-scope report access denied at permission guard with real DB; ReportService never returns cross-assignment data per BR-08",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-11-002",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-11", "FR-13", "BR-09", "NFR-15"],
+      "title": "Denied CSV export attempt by Instructor writes security audit record per BR-09",
+      "preconditions": [
+        "Real PostgreSQL with attendance data and authenticated Instructor session",
+        "Instructor role lacks report:export per roles-permissions §2.2",
+        "ExportAuditLog or security log table available for denied attempts"
+      ],
+      "steps": [
+        "POST /reports/export with valid filter body using Instructor session cookie",
+        "Assert HTTP status 403 and errorCode ExportNotAllowed",
+        "Query export_audit_logs or security log and assert denied attempt recorded with actor userId, timestamp, and action detail",
+        "Assert no CSV file content generated and no success export audit row created"
+      ],
+      "expected": "NFR-11 target: 100% out-of-scope export denied with audit log per BR-09; message Chỉ phòng đào tạo mới có quyền xuất dữ liệu",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-11-003",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["NFR-11", "FR-11", "BR-10"],
+      "title": "Instructor attendance:write blocked after 24-hour edit window with EditWindowExpired",
+      "preconditions": [
+        "Closed session with closedAt at T0 in Postgres",
+        "TestClock fixture controls current time",
+        "Instructor assigned to session with attendance:write during Active window"
+      ],
+      "steps": [
+        "At T0 + 23h invoke PATCH /attendance/:recordId with Instructor session and assert HTTP 200",
+        "Advance clock to T0 + 25h",
+        "Invoke PATCH /attendance/:recordId with same Instructor session and valid status change",
+        "Assert HTTP status 403 and errorCode EditWindowExpired",
+        "Query attendance_records and confirm status unchanged from last successful edit"
+      ],
+      "expected": "beforeState: instructor edit allowed within 24h; afterState: instructor attendance:write denied per NFR-11 manual edit authorization; HTTP 403 EditWindowExpired",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-11-004",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["NFR-11", "AC-12", "FR-12", "BR-08"],
+      "title": "TS-31: Assigned instructor report succeeds; unassigned instructor report denied per RBAC matrix",
+      "preconditions": [
+        "Instructor A assigned to HESD-01 / SWE-101; Instructor B not assigned",
+        "Closed sessions with attendance exist for HESD-01 / SWE-101",
+        "Both instructors authenticated with valid sessions"
+      ],
+      "steps": [
+        "Instructor A GET /api/v1/reports/summary?classCode=HESD-01&subjectCode=SWE-101&from=2026-06-01&to=2026-06-30 and assert HTTP 200 with roster data",
+        "Instructor B GET same URL and assert HTTP 403 ReportAccessDenied",
+        "Assert Instructor B response contains no student roster or summary counts",
+        "Verify denial message Bạn không có quyền xem báo cáo này per roles-permissions §2.5"
+      ],
+      "expected": "NFR-11 scenario-matrix TS-31: scoped report access enforced; assigned 200, unassigned 403 with zero data leakage per AC-12b and BR-08",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-11-005",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["NFR-11", "AC-13", "FR-13", "BR-09"],
+      "title": "TS-32: Non-admin CSV export rejected; TrainingOfficeAdmin export succeeds",
+      "preconditions": [
+        "Attendance data exists for export filter parameters",
+        "Authenticated Instructor and Student sessions",
+        "Authenticated TrainingOfficeAdmin session with report:export"
+      ],
+      "steps": [
+        "Instructor POST /api/v1/reports/export with valid filter body and assert HTTP 403 ExportNotAllowed",
+        "Student POST /api/v1/reports/export with same body and assert HTTP 403 ExportNotAllowed",
+        "TrainingOfficeAdmin POST /api/v1/reports/export with same body and assert HTTP 200 text/csv",
+        "Query export_audit_logs and confirm success audit for admin export and denied attempt log for instructor per BR-09"
+      ],
+      "expected": "NFR-11 scenario-matrix TS-32: 100% non-admin export denial; admin-only report:export per AC-13 and BR-09",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-11-006",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["NFR-11", "AC-03", "FR-03", "BR-08"],
+      "title": "TS-09: Instructor views unassigned class roster returns 403 Forbidden",
+      "preconditions": [
+        "Instructor assigned to HESD-01 only; enrollments exist for HESD-01 and HESD-02",
+        "Authenticated Instructor session without roster:read for HESD-02 class-subject"
+      ],
+      "steps": [
+        "GET /api/v1/enrollments?classId=<HESD-01-id>&subjectId=<SWE-101-id> with Instructor session and assert HTTP 200",
+        "GET /api/v1/enrollments?classId=<HESD-02-id>&subjectId=<SWE-102-id> with same session",
+        "Assert HTTP status 403 Forbidden and errorCode Forbidden",
+        "Assert response body contains no enrollment rows for unassigned class-subject"
+      ],
+      "expected": "NFR-11 cross-class data protection: instructor denied unassigned roster per TS-09; no peer class enrollment data exposed",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-11-007",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-11", "FR-12", "BR-08", "AC-12"],
+      "title": "GET /reports/summary by unassigned instructor returns 403 ReportAccessDenied error envelope",
+      "preconditions": [
+        "Authenticated Instructor B not assigned to requested class-subject",
+        "Attendance data exists for HESD-01 / SWE-101"
+      ],
+      "steps": [
+        "GET /api/v1/reports/summary?classCode=HESD-01&subjectCode=SWE-101&from=2026-06-01&to=2026-06-30 with Instructor B session",
+        "Assert HTTP status 403 Forbidden",
+        "Assert response JSON contains errorCode ReportAccessDenied, message Bạn không có quyền xem báo cáo này, and requestId",
+        "Assert response body contains no classCode aggregation or students array with data"
+      ],
+      "expected": "HTTP 403 standard error envelope per API design and roles-permissions §2.5; no report payload for out-of-scope instructor",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-11-008",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-11", "FR-13", "BR-09", "AC-13"],
+      "title": "POST /reports/export by Instructor returns 403 ExportNotAllowed error envelope",
+      "preconditions": [
+        "Authenticated Instructor session",
+        "Valid export filter body matching API design §8.3"
+      ],
+      "steps": [
+        "POST /api/v1/reports/export with JSON filter body using Instructor session cookie",
+        "Assert HTTP status 403 Forbidden",
+        "Assert response JSON contains errorCode ExportNotAllowed and message Chỉ phòng đào tạo mới có quyền xuất dữ liệu",
+        "Assert Content-Type is application/json not text/csv"
+      ],
+      "expected": "HTTP 403 ExportNotAllowed contract per roles-permissions §2.5; CSV export blocked for non-admin per BR-09",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-11-009",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-11", "FR-12", "FR-14"],
+      "title": "GET /reports/summary by Student returns 403 Forbidden — students never receive report:read",
+      "preconditions": [
+        "Authenticated Student session with enrollment history",
+        "Attendance report data exists for student's enrolled class-subject"
+      ],
+      "steps": [
+        "GET /api/v1/reports/summary?classCode=HESD-01&subjectCode=SWE-101&from=2026-06-01&to=2026-06-30 with Student session",
+        "Assert HTTP status 403 Forbidden and errorCode Forbidden",
+        "GET /api/v1/reports/session/:sessionId for enrolled session with Student session and assert HTTP 403",
+        "Assert no cohort aggregate or peer student data in either response body"
+      ],
+      "expected": "NFR-11: Student role denied report:read per roles-permissions §2.2; personal history uses GET /attendance/me/history only per FR-14",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-11-010",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["NFR-11", "FR-01"],
+      "title": "Student denied user:write on POST /users and GET /users list",
+      "preconditions": [
+        "Authenticated Student session",
+        "Valid user create payload prepared per API design"
+      ],
+      "steps": [
+        "POST /api/v1/users with valid JSON body using Student session and assert HTTP 403 Forbidden",
+        "GET /api/v1/users with Student session and assert HTTP 403 Forbidden",
+        "Query users table and confirm no new row from Student create attempt"
+      ],
+      "expected": "NFR-11 rbac-negative: Student lacks user:write and user:read (all); admin-only user admin per roles-permissions §2.3",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-11-011",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["NFR-11", "FR-03", "FR-13"],
+      "title": "Instructor denied roster:write and report:export admin-only endpoints",
+      "preconditions": [
+        "Authenticated Instructor session assigned to at least one class-subject",
+        "Valid CSV roster import and export filter payloads prepared"
+      ],
+      "steps": [
+        "POST /api/v1/roster/import with valid CSV multipart using Instructor session and assert HTTP 403 Forbidden",
+        "POST /api/v1/reports/export with valid filter using Instructor session and assert HTTP 403 ExportNotAllowed",
+        "GET /api/v1/audit/logs or audit:read endpoint with Instructor session and assert HTTP 403 Forbidden"
+      ],
+      "expected": "NFR-11 rbac-negative matrix: Instructor denied roster:write, report:export, and audit:read per roles-permissions §2.2 empty cells",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-11-012",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["NFR-11", "FR-04", "FR-06"],
+      "title": "Student denied session management and qr:display permissions",
+      "preconditions": [
+        "Authenticated Student session",
+        "Active session with valid QR token exists in database"
+      ],
+      "steps": [
+        "POST /api/v1/sessions with valid create body using Student session and assert HTTP 403 Forbidden",
+        "POST /api/v1/sessions/:sessionId/open using Student session and assert HTTP 403 Forbidden",
+        "GET /api/v1/sessions/:sessionId/qr/current using Student session and assert HTTP 403 Forbidden"
+      ],
+      "expected": "NFR-11: Student has no session:write, session:read (scoped), or qr:display; all session management denied per roles-permissions §2.2",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-11-013",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["NFR-11", "FR-14", "AC-14"],
+      "title": "Student denied access to another student's attendance record via scoped API",
+      "preconditions": [
+        "Student A and Student B enrolled in same class-subject with distinct attendance records",
+        "Authenticated Student A session"
+      ],
+      "steps": [
+        "Student A attempts GET /api/v1/attendance/:studentBRecordId or equivalent cross-user attendance endpoint",
+        "Assert HTTP status 403 Forbidden or empty self-scoped result with no peer data",
+        "Student A GET /api/v1/attendance/me/history and assert only own records returned",
+        "Assert no institutionalId or displayName from Student B appears in Student A response"
+      ],
+      "expected": "NFR-11 cross-class/peer data protection: Student attendance:read limited to self per AC-14b and roles-permissions §1.3 Self scope",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-11-014",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["NFR-11", "AC-12", "AC-13", "BR-08", "BR-09"],
+      "title": "Flow D reporting authorization: assigned 200, unassigned 403, non-admin export 403, admin export 200",
+      "preconditions": [
+        "Instructor A assigned to HESD-01 / SWE-101; Instructor B unassigned",
+        "TrainingOfficeAdmin account exists",
+        "Closed sessions with attendance for HESD-01 / SWE-101"
+      ],
+      "steps": [
+        "Instructor A GET /api/v1/reports/summary for assigned class-subject and assert HTTP 200 with data",
+        "Instructor A GET /api/v1/reports/summary for unassigned class and assert HTTP 403 ReportAccessDenied",
+        "Instructor A POST /api/v1/reports/export and assert HTTP 403 ExportNotAllowed",
+        "TrainingOfficeAdmin POST /api/v1/reports/export with same filters and assert HTTP 200 CSV with export audit log"
+      ],
+      "expected": "NFR-11 Flow D complete: report scope and export authorization enforced end-to-end per testing-plan §6 Flow D and AC-12/AC-13",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-11-015",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["NFR-11", "FR-11", "BR-10"],
+      "title": "Instructor manual edit at 25h post-close returns 403 EditWindowExpired; admin override succeeds",
+      "preconditions": [
+        "Closed session with closedAt at T0; attendance record in Absent status",
+        "Instructor assigned to session; TrainingOfficeAdmin account available",
+        "TestClock at T0 + 25h"
+      ],
+      "steps": [
+        "Instructor PATCH /api/v1/attendance/:recordId to Present and assert HTTP 403 EditWindowExpired",
+        "Assert message Đã quá thời hạn chỉnh sửa điểm danh (24 giờ) per error-handling §3.1",
+        "TrainingOfficeAdmin PATCH same record to Present and assert HTTP 200",
+        "Query AttendanceAuditLog and confirm admin edit recorded with actor and timestamps"
+      ],
+      "expected": "NFR-11 boundary: instructor attendance:write time window enforced; admin post-24h override allowed per BR-10 and roles-permissions §2.3",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-11-016",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["NFR-11", "FR-13", "BR-09", "NFR-15"],
+      "title": "Repeated denied export attempts by Student each return 403 and produce audit entries",
+      "preconditions": [
+        "Authenticated Student session",
+        "Attendance data exists for export filters"
+      ],
+      "steps": [
+        "Student POST /api/v1/reports/export attempt 1 and assert HTTP 403 ExportNotAllowed",
+        "Student POST /api/v1/reports/export attempt 2 with different filter and assert HTTP 403",
+        "Query security or export audit log and assert two denied attempt records with distinct timestamps and actor Student userId",
+        "Assert no CSV content returned on either attempt"
+      ],
+      "expected": "NFR-11 100% denial target: every out-of-scope export attempt rejected with audit log per BR-09 and NFR-11 verification criteria",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-11-017",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-11", "FR-12", "FR-13", "AC-12", "AC-13"],
+      "title": "Instructor UI hides export controls and shows ForbiddenPage on admin-only report routes",
+      "preconditions": [
+        "Authenticated Instructor session in browser",
+        "Instructor layout renders report navigation per UI page list",
+        "Admin export route /admin/export exists but is not in instructor nav"
+      ],
+      "steps": [
+        "Navigate to instructor-scoped report page for assigned class-subject and verify report table renders",
+        "Verify CSV export button or link is not visible in instructor report view",
+        "Navigate directly to /admin/export or /admin/reports/export URL as Instructor",
+        "Observe ForbiddenPage or redirect with message Bạn không có quyền thực hiện thao tác này; no export form rendered"
+      ],
+      "expected": "NFR-11 browser RBAC: UI route guard mirrors API report:export denial; instructor cannot access admin export surface per roles-permissions §2.4",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-11-018",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-11", "FR-01", "AC-01"],
+      "title": "Student UI hides admin navigation and blocks direct admin user list URL",
+      "preconditions": [
+        "Authenticated Student session in browser",
+        "Admin user management route /admin/users exists"
+      ],
+      "steps": [
+        "Open student home or check-in layout and verify admin Users or Reports nav entries are absent",
+        "Navigate directly to /admin/users URL as Student",
+        "Observe ForbiddenPage or login redirect with 403-equivalent UX; user list table not rendered",
+        "Verify no user roster data visible in DOM"
+      ],
+      "expected": "NFR-11 browser journey: Student denied user:read (all) and user:write; admin routes blocked by UI guard matching API RBAC",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-11-019",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-11", "FR-13", "BR-09", "AC-13"],
+      "title": "Admin CSV export confirm dialog succeeds; instructor export modal shows denial message on 403",
+      "preconditions": [
+        "TrainingOfficeAdmin authenticated with report data visible on admin reports page",
+        "Instructor authenticated on equivalent report view if accessible"
+      ],
+      "steps": [
+        "As TrainingOfficeAdmin open CSV export confirm dialog, submit export, and verify file download or success toast",
+        "Log out and authenticate as Instructor",
+        "If export action reachable via devtools or stale UI, trigger export and observe modal with message Chỉ phòng đào tạo mới có quyền xuất dữ liệu per error-handling §6 UI mapping",
+        "Verify no CSV download initiated for Instructor"
+      ],
+      "expected": "NFR-11 UI enforcement: admin export permitted; non-admin export blocked with localized BR-09 message per CsvExportConfirmForm traceability",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-11-020",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-11"],
+      "title": "RbacNegativeMatrix integration sweep: each role denied all empty-matrix permission endpoints",
+      "preconditions": [
+        "Real PostgreSQL with seeded fixtures for sessions, reports, and users",
+        "Test matrix enumerates denied (role, permission, route) tuples from roles-permissions §2.2",
+        "Authenticated sessions for Student, Instructor, and TrainingOfficeAdmin"
+      ],
+      "steps": [
+        "For Student role, call each endpoint requiring permissions denied in §2.2 (session:write, report:read, report:export, user:write, roster:write, policy:write, audit:read) and assert HTTP 403",
+        "For Instructor role, call denied endpoints (report:export, user:write, roster:write, policy:write, audit:read, checkin:submit) and assert HTTP 403",
+        "For TrainingOfficeAdmin, call denied endpoints (checkin:submit, qr:display) and assert HTTP 403",
+        "Compute denial rate across full matrix sample and assert equals 100%"
+      ],
+      "expected": "NFR-11 verification criterion met: RBAC negative test matrix per role denies 100% of out-of-scope access attempts per testing-plan §5 RbacNegativeMatrix",
+      "edgeCase": false
+    }
+  ]
+}

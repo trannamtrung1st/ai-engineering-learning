@@ -1,0 +1,486 @@
+{
+  "productItemId": "NFR-19",
+  "version": 1,
+  "docFingerprint": "sha256:ed424942563a5e9625e83c96c0c61499539e2f54ef867814277995eab1e690cb",
+  "generatedAt": "2026-06-29T21:30:00.000Z",
+  "cases": [
+    {
+      "id": "TC-NFR-19-001",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["NFR-19", "AC-08", "BR-12"],
+      "title": "TS-24: GPS disabled or permission denied on check-in submit returns GpsDisabled with Vietnamese recovery message",
+      "preconditions": [
+        "Active session with valid unexpired QrToken per testing-plan §3 TS-24",
+        "Authenticated enrolled Student session cookie",
+        "Request body omits latitude/longitude simulating client GPS unavailable after permission denial"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with tokenId only using Student session",
+        "Assert HTTP status 400 and outcome GpsDisabled",
+        "Assert message Vui lòng bật GPS và cấp quyền định vị để điểm danh per AC-08c and error-handling §4.4",
+        "Assert errorCode GpsDisabled preserved in English for client logic",
+        "Verify no Present attendance created; student may retry after enabling GPS per BR-12"
+      ],
+      "expected": "Testing-plan §3 TS-24 row covered: GPS disabled/permission denied surfaces GpsDisabled with Vietnamese recovery copy per NFR-19 and AC-08c",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-19-002",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-19", "BR-12", "FR-08"],
+      "title": "CheckInService.submit with missing coordinates returns GpsDisabled and leaves Pending attendance for recovery retry",
+      "preconditions": [
+        "Real PostgreSQL test database running via Compose",
+        "Active session with enrolled student Pending attendance and Valid qr_tokens row",
+        "CheckInService wired to AttendanceService and check_in_attempts repository",
+        "locationPayload omits latitude and longitude (GPS unavailable per BR-12)"
+      ],
+      "steps": [
+        "Record beforeState: attendance status Pending, qr_token status Valid",
+        "Invoke CheckInService.submit(tokenId, locationPayloadWithoutCoords, studentId)",
+        "Assert returned outcome GpsDisabled without unhandled exception",
+        "Query attendance_records and assert status remains Pending (afterState unchanged)",
+        "Query check_in_attempts and assert row inserted with outcome GpsDisabled",
+        "Query qr_tokens and assert token status remains Valid (not Consumed)"
+      ],
+      "expected": "NFR-19 module boundary: GpsDisabled rejection preserves retry path — Pending attendance and Valid token remain so student can recover after granting GPS per BR-12 and ui-states §4.2",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-19-003",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-19", "FR-07", "FR-08"],
+      "title": "Permission guide content catalog resolves platform-specific Vietnamese steps for camera and GPS types",
+      "preconditions": [
+        "Message catalog or PermissionGuideModal content module exported with locale vi-VN",
+        "Content keys defined for type camera|gps and platform ios|android per common-ui-components §5.2",
+        "Production quality bar §3 requires permission-denied modals with platform-specific Vietnamese instructions"
+      ],
+      "steps": [
+        "Resolve permission guide content for type camera and platform ios; assert non-empty Vietnamese numbered steps",
+        "Resolve permission guide content for type camera and platform android; assert steps differ from ios variant",
+        "Resolve permission guide content for type gps and platform ios; assert non-empty Vietnamese steps referencing location settings",
+        "Resolve permission guide content for type gps and platform android; assert steps differ from ios variant",
+        "Assert no content block is English-only or empty stub per NFR-17 localization bar"
+      ],
+      "expected": "NFR-19 content module: clear Vietnamese platform-specific instructions available for both camera and GPS denial flows per 07-non-functional-risk §2.4 NFR-19 target",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-19-004",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["NFR-19", "BR-12", "AC-08"],
+      "title": "GpsDisabled check-in attempt leaves Attendance Pending enabling post-permission retry",
+      "preconditions": [
+        "Pending attendance_records row in PostgreSQL for enrolled studentId and Active sessionId",
+        "Valid qr_tokens row with status Valid",
+        "Student previously denied GPS permission on client"
+      ],
+      "steps": [
+        "Record beforeState Attendance Pending from database",
+        "Submit check-in without coordinates via CheckInService or POST /check-in",
+        "Assert outcome GpsDisabled and CheckInAttempt logged",
+        "Query attendance_records and assert afterState remains Pending",
+        "Simulate client retry with valid in-radius coordinates after permission grant",
+        "Assert second submit succeeds with afterState Present when other rules pass"
+      ],
+      "expected": "beforeState Pending; afterState Pending on GpsDisabled; NFR-19 recovery path allows successful retry after student enables GPS per ui-states §4.2 and user-flows §3 GpsDisabled row",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-19-005",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-19", "AC-08", "BR-12"],
+      "title": "POST /api/v1/check-in without GPS coordinates returns 400 GpsDisabled envelope with actionable Vietnamese message",
+      "preconditions": [
+        "API running on port 3001 against Compose PostgreSQL",
+        "Authenticated enrolled Student session cookie",
+        "Active sessionId with Valid QrToken and student Pending attendance",
+        "Request body includes tokenId only; latitude and longitude omitted"
+      ],
+      "steps": [
+        "Send POST /api/v1/check-in with tokenId only using Student session cookie",
+        "Assert HTTP status 400 Bad Request and Content-Type application/json; charset=utf-8",
+        "Assert response body outcome GpsDisabled and errorCode GpsDisabled",
+        "Assert message Vui lòng bật GPS và cấp quyền định vị để điểm danh per error-handling §4.4",
+        "Assert message is Vietnamese user-facing text suitable for CheckInOutcomePanel display with recovery CTA"
+      ],
+      "expected": "HTTP 400 GpsDisabled contract per API design §6.3; server-side recovery message in Vietnamese per NFR-19 error clarity dimension and AC-08c",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-19-006",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-19", "BR-12"],
+      "title": "POST /api/v1/check-in with gpsAvailable false client flag returns 400 GpsDisabled before radius evaluation",
+      "preconditions": [
+        "Active session with valid unexpired QrToken",
+        "Authenticated enrolled Student session",
+        "Request body includes tokenId and gpsAvailable false signaling browser permission denial"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with tokenId and gpsAvailable false using Student session",
+        "Assert HTTP status 400 and outcome GpsDisabled",
+        "Assert localized Vietnamese message returned for mobile client recovery display",
+        "Verify no Present attendance created and token not Consumed"
+      ],
+      "expected": "NFR-19 server contract: explicit client GPS denial signal maps to GpsDisabled with Vietnamese recovery message per validation-rules §4 BR-12 mapping",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-19-007",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-19", "FR-07", "AC-07"],
+      "title": "iOS 15+ Safari: camera permission denied opens PermissionGuideModal with platform-specific Vietnamese steps",
+      "preconditions": [
+        "Playwright emulates iPhone 12+ iOS 15+ Safari viewport 375×812",
+        "Authenticated enrolled Student session on /check-in route",
+        "Browser camera permission denied or blocked via context permissions",
+        "QrScannerView mounted in scanning step per ui-states §4.1 camera_denied state"
+      ],
+      "steps": [
+        "Navigate to /check-in on iOS Safari emulation",
+        "Verify CheckInFlow enters camera_denied state when getUserMedia denied",
+        "Verify PermissionGuideModal opens with type camera and platform ios",
+        "Assert modal title and body copy entirely in Vietnamese (vi-VN)",
+        "Assert numbered list ol contains iOS-specific steps (Settings → Safari → Camera) per accessibility-basics §12",
+        "Verify Đóng button closes modal and focus returns to scanner per §10 focus trap rules"
+      ],
+      "expected": "NFR-19 iOS camera denial: clear Vietnamese platform-specific recovery instructions in PermissionGuideModal per 07-non-functional-risk §2.4 verification method",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-19-008",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-19", "FR-07", "NFR-18"],
+      "title": "Android 10+ Chrome: camera permission denied shows Android-specific PermissionGuideModal steps",
+      "preconditions": [
+        "Playwright emulates Android mid-range device Chrome Android 10+ viewport 360×640",
+        "Authenticated enrolled Student session on /check-in",
+        "Camera permission denied in browser context",
+        "QrScannerView active per event-specific-components §2.1"
+      ],
+      "steps": [
+        "Navigate to /check-in on Android Chrome emulation",
+        "Trigger camera permission denial on QrScannerView getUserMedia call",
+        "Verify PermissionGuideModal type camera platform android displayed",
+        "Assert Android-specific Vietnamese steps differ from iOS Safari content (e.g. Chrome site settings path)",
+        "Verify modal accessible via data-testid and keyboard focus trap per accessibility-basics §10",
+        "Verify flow does not advance to gps_capture until camera access restored or deep-link token entry used"
+      ],
+      "expected": "NFR-19 Android camera denial: platform-specific Vietnamese instructions per production-ui-quality-bar §3 permission-denied modals Safari vs Chrome",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-19-009",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-19", "FR-08", "AC-08", "BR-12"],
+      "title": "GPS permission denied on GpsCaptureStep shows GpsDisabled outcome with Hướng dẫn cấp quyền CTA",
+      "preconditions": [
+        "Authenticated Student on mobile viewport with valid token deep link /check-in?token=:tokenId&session=:sessionId",
+        "Active session configured; flow advanced past QR scan to gps_capture step",
+        "Browser geolocation permission denied in Playwright context"
+      ],
+      "steps": [
+        "Navigate to /check-in?token=:tokenId&session=:sessionId with geolocation permission denied",
+        "Verify GpsCaptureStep enters permission-denied substate per ui-states §4.2",
+        "Verify CheckInOutcomePanel GpsDisabled danger variant displays message Vui lòng bật GPS và cấp quyền định vị để điểm danh",
+        "Tap CTA Hướng dẫn cấp quyền and verify PermissionGuideModal type gps opens",
+        "Assert no POST /check-in API call occurred while permission denied per validation-rules §5.1 client guard",
+        "Verify role alert on blocking error per accessibility-basics §6"
+      ],
+      "expected": "NFR-19 GPS denial UX: GpsDisabled panel with actionable CTA opening platform-specific help modal; no premature API submit per AC-08c and user-flows §3",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-19-010",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-19", "FR-11", "BR-10"],
+      "title": "Permission-denied check-in error screens document instructor manual attendance fallback link",
+      "preconditions": [
+        "Authenticated Student on mobile viewport at /check-in",
+        "Active session with valid token; GPS or camera permission denied",
+        "GpsDisabled or camera_denied state displayed per ui-states §4",
+        "Production quality bar §3 requires manual attendance fallback link on student check-in error screens"
+      ],
+      "steps": [
+        "Navigate to check-in flow and trigger GpsDisabled or camera_denied state",
+        "Verify visible link or text block explaining manual fallback: contact instructor or see instructor for manual mark",
+        "Assert fallback copy in Vietnamese references instructor manual attendance per FR-11 and BR-10",
+        "Verify link does not navigate to instructor-only routes without role guard",
+        "Cross-check copy aligns with risk R-07 mitigation in 07-non-functional-risk §3"
+      ],
+      "expected": "NFR-19 target satisfied: instructor manual fallback documented in UI when camera or GPS unavailable per FR-11 fallback traceability and production-ui-quality-bar §3",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-19-011",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-19", "AC-08"],
+      "title": "PermissionGuideModal help link opens device-settings guidance distinct for Safari vs Chrome",
+      "preconditions": [
+        "Authenticated Student on /check-in with GpsDisabled or camera_denied state",
+        "PermissionGuideModal component mounted with detectable platform prop",
+        "Both iOS Safari and Android Chrome Playwright contexts available"
+      ],
+      "steps": [
+        "On iOS Safari emulation, open PermissionGuideModal via Hướng dẫn cấp quyền CTA",
+        "Capture iOS-specific step text content",
+        "On Android Chrome emulation, open PermissionGuideModal for same permission type",
+        "Capture Android-specific step text content",
+        "Assert iOS and Android step sequences are not identical (platform-specific per NFR-19 target)",
+        "Verify help content includes link or instructions to device/browser settings per AC-08c help link requirement"
+      ],
+      "expected": "NFR-19 platform-specific steps: Safari and Chrome permission recovery instructions differ appropriately in Vietnamese per common-ui-components §5.2 platform prop",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-19-012",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-19", "NFR-12", "FR-08"],
+      "title": "LocationConsentBanner displays GPS privacy copy before first location permission request",
+      "preconditions": [
+        "Authenticated Student on first visit to /check-in (no prior consent stored in localStorage)",
+        "Active session with valid token deep link",
+        "CheckInFlow consent step per ui-states §4.1"
+      ],
+      "steps": [
+        "Navigate to /check-in?token=:tokenId&session=:sessionId on mobile viewport",
+        "Verify LocationConsentBanner visible before geolocation API invoked",
+        "Assert banner copy in Vietnamese explains one-time location use and GPS not stored after success per ui-ux-foundation §8",
+        "Accept consent and verify flow advances to scanning or gps_capture",
+        "On return visit verify banner not shown again unless consent cleared"
+      ],
+      "expected": "NFR-19 permission onboarding: consent copy primes student before GPS prompt reducing denial rate per prompt.md §2.2 and ui-ux-foundation §6 step 2 Permissions",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-19-013",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "harnessSkip": "physical-device",
+      "traceability": ["NFR-19", "NFR-18"],
+      "title": "UX walkthrough: iOS physical device with camera and GPS denied completes recovery guidance review",
+      "preconditions": [
+        "iPhone 12+ iOS 15+ Safari on same LAN as staging API per testing-plan §9 device matrix",
+        "Enrolled student credentials; Active session with QR displayed",
+        "Device settings configured to deny camera and/or location for Safari",
+        "Pilot readiness checklist template for NFR-19 verification method"
+      ],
+      "steps": [
+        "Login as student on physical iOS Safari and navigate to check-in flow",
+        "Deny or pre-block camera permission; verify PermissionGuideModal type camera with iOS Vietnamese steps",
+        "Grant camera; deny GPS permission; verify GpsDisabled panel and PermissionGuideModal type gps",
+        "Verify manual attendance fallback link visible on error screen",
+        "Record pass/fail with device model, OS version, and screenshot references in checklist"
+      ],
+      "expected": "NFR-19 verification method: UX walkthrough on iOS with permissions denied confirms clear Vietnamese recovery guidance per 07-non-functional-risk §2.4",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-19-014",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "harnessSkip": "physical-device",
+      "traceability": ["NFR-19", "NFR-18"],
+      "title": "UX walkthrough: Android physical device with camera and GPS denied completes recovery guidance review",
+      "preconditions": [
+        "Android 10+ Chrome mid-range device on staging LAN per testing-plan §9",
+        "Enrolled student credentials; Active session with valid QR",
+        "Device app permissions set to deny Camera and Location for Chrome",
+        "Pilot readiness checklist for NFR-19 Android verification"
+      ],
+      "steps": [
+        "Login as student on physical Android Chrome and open check-in flow",
+        "Trigger camera permission denial; verify Android-specific PermissionGuideModal Vietnamese steps",
+        "Trigger GPS permission denial; verify GpsDisabled outcome and gps guide modal",
+        "Verify help link content references Chrome/Android settings path",
+        "Document device model, OS version, browser version, and pass/fail in pilot checklist"
+      ],
+      "expected": "NFR-19 verification method: UX walkthrough on Android with permissions denied confirms platform-specific Vietnamese recovery steps per testing-plan §9 NFR-19 column",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-19-015",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["NFR-19", "AC-08", "BR-12"],
+      "title": "GPS acquisition client timeout after 15 seconds shows GpsDisabled UX without API submit",
+      "preconditions": [
+        "Authenticated Student on /check-in?token=:tokenId&session=:sessionId mobile viewport",
+        "Geolocation permission granted but mock returns no fix within 15 s timeout per AC-08c",
+        "GpsCaptureStep acquiring-fix substate active per ui-states §4.2"
+      ],
+      "steps": [
+        "Navigate to gps_capture step with geolocation mock that never resolves within 15 s",
+        "Verify acquiring-fix spinner displays Đang yêu cầu quyền định vị… or equivalent status text",
+        "Wait 15 seconds and verify transition to GpsDisabled outcome or permission-denied substate",
+        "Assert no POST /check-in network request fired before timeout boundary",
+        "Verify GpsDisabled message and Hướng dẫn cấp quyền CTA displayed",
+        "Verify Thử lại retry control available up to 3 attempts per ui-states §4.2"
+      ],
+      "expected": "NFR-19 boundary: 15 s client GPS timeout triggers GpsDisabled recovery UX without server round-trip per AC-08c and validation-rules mobile check-in rule",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-19-016",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["NFR-19", "FR-07"],
+      "title": "Camera permanently denied blocks QR scan with recovery-only path and no silent failure",
+      "preconditions": [
+        "Authenticated Student on /check-in mobile viewport",
+        "Camera permission permanently denied (not promptable) in browser context",
+        "No alternative token deep link pre-filled"
+      ],
+      "steps": [
+        "Navigate to /check-in scanning step with camera permanently denied",
+        "Verify QrScannerView does not show blank viewfinder without explanation",
+        "Verify PermissionGuideModal type camera or inline Alert with Vietnamese recovery instructions",
+        "Verify no silent failure or English-only browser default error text per production-ui-quality-bar §4 Not acceptable",
+        "Verify student can dismiss modal and see manual fallback or deep-link token entry if supported"
+      ],
+      "expected": "NFR-19 camera denial boundary: permanent camera block surfaces clear Vietnamese recovery guidance; no raw API error or silent failure per ui-states §4.1 camera_denied",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-19-017",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["NFR-19"],
+      "title": "PermissionGuideModal meets accessibility bar: numbered steps, focus trap, and reachable Đóng control",
+      "preconditions": [
+        "PermissionGuideModal open on /check-in with type gps or camera",
+        "axe-core or manual accessibility audit harness available",
+        "accessibility-basics §10 and §12 requirements for permission help"
+      ],
+      "steps": [
+        "Open PermissionGuideModal via Hướng dẫn cấp quyền from GpsDisabled or camera_denied state",
+        "Verify recovery steps rendered as numbered ol list per accessibility-basics §6",
+        "Tab through modal and verify focus trapped inside until Đóng clicked",
+        "Verify aria-labelledby references modal title in Vietnamese",
+        "Press Escape or tap Đóng and verify focus returns to triggering CTA",
+        "Run axe-core on modal subtree and assert no critical violations on permission help dialog"
+      ],
+      "expected": "NFR-19 help content accessible: PermissionGuideModal readable steps with focus trap and dismiss control per accessibility-basics §10–§12 aligned with NFR-19 error clarity",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-19-018",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-19", "BR-12", "AC-08", "FR-08"],
+      "title": "Student recovers from GpsDisabled by granting permission and retrying check-in successfully",
+      "preconditions": [
+        "Authenticated Student on /check-in with valid token deep link",
+        "Initial geolocation permission denied producing GpsDisabled panel",
+        "Active session with in-radius coordinates available after permission grant",
+        "Attendance status Pending for student"
+      ],
+      "steps": [
+        "Navigate to check-in and trigger GpsDisabled via denied geolocation",
+        "Follow PermissionGuideModal instructions (simulated) and grant geolocation in browser context",
+        "Tap Thử lại or primary retry CTA on GpsDisabled panel",
+        "Verify GpsCaptureStep acquires coordinates and submits check-in",
+        "Verify CheckInOutcomePanel success variant Điểm danh thành công with CTA Xong",
+        "Verify no stale GpsDisabled message remains after successful recovery"
+      ],
+      "expected": "NFR-19 recovery path end-to-end: permission-denied guidance enables student to grant GPS and complete check-in per user-flows §3 GpsDisabled recovery action and BR-12 retry semantics",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-19-019",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-19", "NFR-17", "AC-08"],
+      "title": "ErrorMapper GpsDisabled maps to Vietnamese message with recovery action suitable for PermissionGuideModal link",
+      "preconditions": [
+        "ErrorMapper module integrated with @wecheck/domain vi-VN catalog",
+        "GpsDisabled domain outcome defined in error-handling §4.4",
+        "Frontend maps GpsDisabled outcome to CheckInOutcomePanel danger variant per ui-states §4.3"
+      ],
+      "steps": [
+        "Invoke ErrorMapper.map for outcome GpsDisabled",
+        "Assert message equals Vui lòng bật GPS và cấp quyền định vị để điểm danh",
+        "Assert message is actionable (implies enabling GPS) not generic failure text",
+        "Verify frontend outcome-to-CTA mapping assigns Hướng dẫn cấp quyền primary action for GpsDisabled",
+        "Verify errorCode remains English GpsDisabled separate from Vietnamese message per NFR-17 rule"
+      ],
+      "expected": "NFR-19 integration: server and client error mapping delivers Vietnamese GpsDisabled copy with implied recovery action linking to PermissionGuideModal per error-handling §7 frontend presentation",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-19-020",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["NFR-19", "FR-07"],
+      "title": "Camera consent block displays Vietnamese privacy copy before first getUserMedia request",
+      "preconditions": [
+        "Authenticated Student first visit to /check-in scanning step",
+        "No prior camera consent stored",
+        "ui-ux-foundation §8 camera consent block defined"
+      ],
+      "steps": [
+        "Navigate to /check-in scanning step on mobile viewport",
+        "Verify camera privacy notice displayed before getUserMedia invoked",
+        "Assert copy in Vietnamese explains camera used only for QR scan and images not uploaded per ui-ux-foundation §8",
+        "Proceed past consent and verify camera permission prompt appears",
+        "Verify denial path opens PermissionGuideModal per NFR-19 camera flow"
+      ],
+      "expected": "NFR-19 permission onboarding: camera consent priming reduces denial confusion with Vietnamese purpose-limited copy before browser prompt per production-ui-quality-bar §4 GPS/camera consent requirement",
+      "edgeCase": false
+    }
+  ]
+}

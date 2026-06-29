@@ -1,0 +1,34 @@
+{
+  "productName": "We Check",
+  "domain": "Digital attendance and session check-in for educational workshops and classes",
+  "slug": "we-check",
+  "branchPrefix": "aih/we-check-mvp",
+  "actors": [
+    "Student",
+    "Instructor",
+    "Training Office Admin",
+    "IT Operations"
+  ],
+  "description": "Web and mobile-web check-in system that replaces manual roll call with rotating QR codes, GPS verification, and attendance reporting for cohorts of 100–150 participants per session.",
+  "locale": "vi-VN",
+  "organizationContext": "Harness Engineering for Software Development (HESD) workshop program and institutional training office operations",
+  "mvpScale": {
+    "attendeesPerSession": "100–150",
+    "checkInTimeTargetMinutes": 5,
+    "reportExportTimeTargetMinutes": 10
+  },
+  "primaryCapabilities": [
+    "Session creation and management",
+    "Rotating dynamic QR check-in (30-second token)",
+    "Mobile web QR scan with GPS location verification",
+    "Anti-proxy and anti-GPS-spoofing controls",
+    "Attendance reporting by class and subject",
+    "CSV export for training office"
+  ],
+  "outOfScopeMvp": [
+    "Facial recognition",
+    "Tuition payment",
+    "Exam schedule management"
+  ],
+  "sourceDocument": "docs/initial-idea.md"
+}

@@ -1,0 +1,357 @@
+{
+  "productItemId": "NFR-16",
+  "version": 1,
+  "docFingerprint": "sha256:9e1460900a69a9b4493be4e286bcd7d1823652cd7aff6f47163d6846238a1c2c",
+  "generatedAt": "2026-06-29T14:30:00.000Z",
+  "cases": [
+    {
+      "id": "TC-NFR-16-001",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["NFR-16", "AC-02", "FR-02", "BR-06"],
+      "title": "TS-06: Session idle beyond 8 hours rejects check-in with SessionExpired per NFR-16 default target",
+      "preconditions": [
+        "Student AuthSession row exists with lastActivityAt more than 8 hours before fixed TestClock",
+        "TestClock is injected and set to current time",
+        "Active workshop session exists with valid QR token and enrolled student"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with expired session cookie and valid tokenId, latitude, and longitude",
+        "Assert HTTP status 401 and errorCode SessionExpired",
+        "Assert response message is Phiên đăng nhập đã hết hạn per error-handling §4",
+        "Query attendance_records and confirm no Present status created for the student"
+      ],
+      "expected": "NFR-16 default 8-hour inactivity target met: expired session rejected with HTTP 401 SessionExpired on check-in; user must re-authenticate per AC-02c and BR-06; no attendance mutation",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-16-002",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-16", "FR-02"],
+      "title": "AuthService enforces 8-hour sliding inactivity expiry against real Postgres auth_sessions",
+      "preconditions": [
+        "Real PostgreSQL test database is running",
+        "identity-auth AuthService wired to AuthSession repository per database design §5.1",
+        "Active student user exists with known credentials",
+        "TestClock fixture controls current time"
+      ],
+      "steps": [
+        "Invoke AuthService.authenticate with valid student credentials at T0",
+        "Query auth_sessions for new row with last_activity_at at T0 and expires_at reflecting 8-hour window",
+        "Advance TestClock to T0 + 8 hours and 1 minute without any authenticated activity",
+        "Invoke AuthService.requireUser(sessionId) with the session id"
+      ],
+      "expected": "NFR-16 module boundary: AuthSession committed with 8-hour inactivity window; requireUser fails with session-expired semantics after 8+ hours idle per API design §2.1 and tech stack §2",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-16-003",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-16", "FR-02", "BR-06"],
+      "title": "Auth middleware refreshes last_activity_at on each request extending sliding inactivity window",
+      "preconditions": [
+        "Valid AuthSession exists with last_activity_at at T0 in Postgres",
+        "Auth middleware integrated with identity-auth module and real DB",
+        "TestClock fixture controls current time"
+      ],
+      "steps": [
+        "Invoke auth middleware with valid session at T0 + 7 hours",
+        "Query auth_sessions and assert last_activity_at updated to T0 + 7h",
+        "Advance TestClock to T0 + 14 hours 30 minutes without further activity",
+        "Invoke auth middleware again and assert session still valid (8h from last refresh at T0 + 7h)",
+        "Advance TestClock to T0 + 15 hours 1 minute and invoke middleware; assert SessionExpired rejection"
+      ],
+      "expected": "NFR-16 sliding window: each authenticated request refreshes last_activity_at; session expires 8 hours after last activity, not initial login per FR-02 and roles-permissions §1.4",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-16-004",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["NFR-16", "FR-02", "BR-06"],
+      "title": "AuthSession transitions from valid to expired after inactivity threshold",
+      "preconditions": [
+        "Valid AuthSession exists with lastActivityAt at T0 in Postgres",
+        "TestClock fixture controls current time",
+        "Auth middleware wired through identity-auth module"
+      ],
+      "steps": [
+        "Verify GET /api/v1/auth/me succeeds at T0 + 7h 59m with valid session cookie",
+        "Advance clock to T0 + 8h 1m without updating lastActivityAt",
+        "Call GET /api/v1/auth/me with same session cookie",
+        "Call POST /api/v1/check-in with same expired session and valid payload"
+      ],
+      "expected": "beforeState: session valid for protected actions at T0 + 7h 59m; afterState: session expired at T0 + 8h 1m with HTTP 401 SessionExpired on all protected operations per NFR-16 and BR-06",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-16-005",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-16", "FR-02", "AC-02", "BR-06"],
+      "title": "POST /check-in with idle-expired session returns 401 SessionExpired error envelope",
+      "preconditions": [
+        "Student session established then aged beyond 8-hour inactivity via TestClock",
+        "Active session with valid QR token and in-radius coordinates prepared"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with expired wecheck_session cookie and valid check-in body per API design §6.2",
+        "Assert HTTP status 401",
+        "Assert response JSON contains errorCode SessionExpired, message Phiên đăng nhập đã hết hạn, and requestId"
+      ],
+      "expected": "HTTP 401 with standard error envelope per API design §10.2 and error-handling §4; SessionExpired blocks check-in until re-authentication",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-16-006",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-16", "FR-02"],
+      "title": "GET /auth/me with idle-expired session returns 401 SessionExpired",
+      "preconditions": [
+        "AuthSession row exists with lastActivityAt more than 8 hours before TestClock",
+        "Session cookie value captured from prior login"
+      ],
+      "steps": [
+        "GET /api/v1/auth/me with expired wecheck_session cookie",
+        "Assert HTTP status 401 and errorCode SessionExpired",
+        "Assert response body contains no user profile fields"
+      ],
+      "expected": "HTTP 401 SessionExpired on session introspection; expired session treated as invalid per roles-permissions §1.4 force re-login behavior",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-16-007",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-16", "FR-02"],
+      "title": "POST /auth/login session.expiresAt reflects default 8-hour inactivity window from login time",
+      "preconditions": [
+        "Active student account exists with valid credentials",
+        "System policy uses default 8-hour session inactivity per NFR-16",
+        "TestClock fixed at known T0"
+      ],
+      "steps": [
+        "POST /api/v1/auth/login with valid email and password at T0",
+        "Assert HTTP status 200",
+        "Assert response session.expiresAt equals T0 + 8 hours within acceptable clock skew (±1 minute)",
+        "Assert Set-Cookie wecheck_session issued with HttpOnly attribute"
+      ],
+      "expected": "Login success envelope includes session.expiresAt aligned to 8-hour default inactivity target per API design §2.2 and NFR-16 measure",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-16-008",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": ["NFR-16", "FR-02"],
+      "title": "Admin-configured 10-hour inactivity policy applied to newly issued AuthSession rows",
+      "preconditions": [
+        "Real PostgreSQL with system policy sessionInactivityHours set to 10 by TrainingOfficeAdmin",
+        "TestClock fixture at T0",
+        "Active student user exists"
+      ],
+      "steps": [
+        "PUT /api/v1/policy/session-inactivity with body { \"inactivityHours\": 10 } using Admin session",
+        "POST /api/v1/auth/login with valid student credentials at T0",
+        "Query auth_sessions for expires_at and assert T0 + 10 hours",
+        "Advance TestClock to T0 + 9h 59m and verify session still valid via GET /api/v1/auth/me",
+        "Advance TestClock to T0 + 10h 1m and verify GET /api/v1/auth/me returns 401 SessionExpired"
+      ],
+      "expected": "NFR-16 admin configurability within 4–12 hour range: 10-hour policy persisted and enforced on new sessions; expiry occurs after configured inactivity period",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-16-009",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["NFR-16", "FR-02"],
+      "title": "Instructor denied PUT /policy/session-inactivity — policy:write restricted to TrainingOfficeAdmin",
+      "preconditions": [
+        "Authenticated Instructor session established",
+        "Instructor lacks policy:write per roles-permissions §2.2",
+        "Default session inactivity policy is 8 hours"
+      ],
+      "steps": [
+        "PUT /api/v1/policy/session-inactivity with body { \"inactivityHours\": 6 } using Instructor session cookie",
+        "Assert HTTP status 403 Forbidden with localized permission-denied message",
+        "GET /api/v1/policy/session-inactivity using Instructor session and assert 403 or read denied",
+        "Verify system policy remains at default 8 hours"
+      ],
+      "expected": "NFR-16 admin-only configurability enforced: Instructor cannot change session inactivity timeout; HTTP 403; default 8-hour target unchanged",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-16-010",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["NFR-16", "FR-02"],
+      "title": "Session valid at 7h 59m idle and expired at 8h 1m idle — exact NFR-16 default boundary",
+      "preconditions": [
+        "AuthSession with lastActivityAt at T0 in Postgres",
+        "TestClock fixture controls current time",
+        "Active session with valid QR token for check-in payload"
+      ],
+      "steps": [
+        "At T0 + 7h 59m POST /api/v1/check-in with valid session and payload; assert not SessionExpired (may fail on other rules but not 401 SessionExpired)",
+        "At T0 + 7h 59m GET /api/v1/auth/me; assert HTTP 200",
+        "At T0 + 8h 1m GET /api/v1/auth/me; assert HTTP 401 SessionExpired",
+        "At T0 + 8h 1m POST /api/v1/check-in; assert HTTP 401 SessionExpired"
+      ],
+      "expected": "NFR-16 8-hour boundary: session remains usable just before threshold; SessionExpired enforced immediately after 8 hours of inactivity",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-16-011",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["NFR-16"],
+      "title": "Admin PUT /policy/session-inactivity rejects inactivityHours below 4 and above 12",
+      "preconditions": [
+        "Authenticated TrainingOfficeAdmin session with policy:write",
+        "Default policy is 8 hours"
+      ],
+      "steps": [
+        "PUT /api/v1/policy/session-inactivity with body { \"inactivityHours\": 3 } and assert HTTP 422 ValidationFailed",
+        "PUT /api/v1/policy/session-inactivity with body { \"inactivityHours\": 13 } and assert HTTP 422 ValidationFailed",
+        "Assert error details reference allowed range 4–12 hours per NFR-16 specification",
+        "GET /api/v1/policy/session-inactivity and confirm value remains 8"
+      ],
+      "expected": "NFR-16 configurable range enforced: values outside 4–12 hour bounds rejected with validation error; policy unchanged",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-16-012",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["NFR-16", "FR-02"],
+      "title": "Minimum 4-hour admin policy expires session after 4 hours inactivity",
+      "preconditions": [
+        "Real PostgreSQL with sessionInactivityHours policy set to 4 by Admin",
+        "Student AuthSession created at T0 after policy change",
+        "TestClock fixture controls current time"
+      ],
+      "steps": [
+        "Verify GET /api/v1/auth/me succeeds at T0 + 3h 59m",
+        "Advance TestClock to T0 + 4h 1m without activity",
+        "Invoke AuthService.requireUser(sessionId) and assert session-expired failure",
+        "POST /api/v1/check-in with expired session and assert HTTP 401 SessionExpired"
+      ],
+      "expected": "NFR-16 minimum configurable bound (4 hours) honored: session expires after 4 hours idle when policy set to minimum allowed value",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-16-013",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-16", "FR-02", "AC-02", "BR-06"],
+      "title": "Expired session on check-in page shows toast and redirects to login with returnUrl",
+      "preconditions": [
+        "Student wecheck_session cookie exists but server treats session as expired (lastActivityAt > 8h ago via TestClock)",
+        "Student navigates to /check-in?token=<token-id> from QR deep link",
+        "Mobile viewport (375px) per user flows §1"
+      ],
+      "steps": [
+        "Trigger check-in submit action or load protected check-in API call from browser",
+        "Observe toast or alert with message Phiên đăng nhập đã hết hạn",
+        "Verify browser redirects to /login with returnUrl encoding the check-in path",
+        "Confirm check-in success confirmation is not shown"
+      ],
+      "expected": "NFR-16 UI enforcement per AC-02c and ui-states §401 handling: session-expired toast displayed; redirect to login with returnUrl preserved; check-in blocked until re-authentication",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-16-014",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-16", "FR-02", "BR-06"],
+      "title": "Protected instructor route redirects expired session to login per force re-login policy",
+      "preconditions": [
+        "Instructor session cookie present but expired beyond 8-hour inactivity (TestClock)",
+        "Instructor sessions list route at /instructor/sessions or equivalent protected path"
+      ],
+      "steps": [
+        "Navigate directly to instructor sessions list URL with expired session cookie",
+        "Observe redirect to /login with returnUrl encoding the instructor path",
+        "Verify session management UI content is not rendered",
+        "Confirm no session list data visible without re-authentication"
+      ],
+      "expected": "NFR-16 applies to all protected SPA routes per roles-permissions §1.4: expired session forces re-login; instructor UI blocked until fresh authentication",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-16-015",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["NFR-16", "FR-02", "AC-02"],
+      "title": "Successful re-login after session expiry returns user to preserved check-in deep link",
+      "preconditions": [
+        "Student session expired while on check-in flow; redirected to login with returnUrl=/check-in?token=<token-id>",
+        "Student has valid active account credentials",
+        "QR token still valid within 30-second window or fresh token available"
+      ],
+      "steps": [
+        "Enter valid email and password on LoginForm after session-expired redirect",
+        "Submit login",
+        "Observe post-login navigation returns to /check-in?token=<token-id>",
+        "Verify new session cookie issued and check-in flow UI renders"
+      ],
+      "expected": "NFR-16 expiry recovery path: re-authentication establishes fresh session; returnUrl preserved per FR-02 and AC-02b; student can complete check-in after idle timeout",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-16-016",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["NFR-16", "FR-02", "AC-02", "BR-06"],
+      "title": "Flow A session timeout gate: stale student session blocked; re-login required before Present check-in",
+      "preconditions": [
+        "Flow A steps 1–3 complete: roster seeded, instructor opened Active session, QR token available",
+        "Student authenticated earlier but AuthSession idle beyond 8 hours (R-08 mitigation scenario)",
+        "TestClock controls inactivity elapsed time"
+      ],
+      "steps": [
+        "Student POST /api/v1/check-in with expired session and valid coordinates; assert HTTP 401 SessionExpired",
+        "Student POST /api/v1/auth/login with valid credentials and returnUrl to check-in deep link",
+        "Student POST /api/v1/check-in with fresh session and valid payload",
+        "Instructor GET /api/v1/sessions/:id/attendance and verify Present count incremented"
+      ],
+      "expected": "NFR-16 enforced in Flow A workshop path: expired idle session blocks check-in; re-authentication required; successful check-in only after fresh session — mitigates stolen credential remote proxy per risk R-08",
+      "edgeCase": false
+    }
+  ]
+}

@@ -1,0 +1,385 @@
+{
+  "productItemId": "FR-15",
+  "version": 1,
+  "docFingerprint": "sha256:12b3b1aa21d64578ab37d3cb8f433407386737f89a7075419daeefd2d9c19925",
+  "generatedAt": "2026-06-29T15:00:00Z",
+  "cases": [
+    {
+      "id": "TC-FR-15-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["FR-15", "AC-15", "NFR-08"],
+      "title": "TS-35: Live Present vs enrolled counts update within 5 seconds after successful check-in",
+      "preconditions": [
+        "Active session with 10 enrolled students; 3 already Present, 7 Pending",
+        "Authenticated Instructor assigned to session with attendance:read (session scope)",
+        "Should-capability FR-15 enabled in test environment",
+        "Student A enrolled with valid QR token and coordinates within session radius"
+      ],
+      "steps": [
+        "GET /api/v1/sessions/:sessionId/attendance using Instructor session and record summary.present baseline (3)",
+        "POST /api/v1/check-in with Student A session, valid tokenId, and in-radius coordinates",
+        "Assert check-in HTTP 200 with outcome Success and attendance status Present",
+        "Poll GET /api/v1/sessions/:sessionId/attendance every 1 second until summary.present increments to 4 or 5-second timeout elapses",
+        "Assert summary.present === 4 and summary.pending decremented by 1",
+        "Record elapsed time from check-in success to first poll response reflecting updated count",
+        "Assert elapsed time ≤ 5 seconds per FR-15 and NFR-08"
+      ],
+      "expected": "FR-15 satisfied: live count of Present vs total enrolled updates within 5 seconds of successful check-in without manual reload per testing-plan TS-35",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-15-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-15"],
+      "title": "AttendanceService.getSessionRoster returns updated present and pending counts after check-in transaction",
+      "preconditions": [
+        "Real PostgreSQL test database with Active session and Pending attendance rows for all enrolled students",
+        "AttendanceService wired per attendance module §2.5 with session and enrollment read models",
+        "CheckInTransaction completes atomically per domain model §5.2",
+        "Baseline summary: present=2, pending=8, absent=0 for 10 enrolled students"
+      ],
+      "steps": [
+        "Invoke AttendanceService.getSessionRoster(sessionId, instructorId) and capture summary.present and summary.pending",
+        "Execute successful check-in transaction for one Pending student (Present outcome, token consumed)",
+        "Invoke getSessionRoster(sessionId, instructorId) again after commit",
+        "Assert summary.present increased by 1 and summary.pending decreased by 1",
+        "Assert records array includes updated student row with status Present and checkedInAt populated",
+        "Query attendance_records directly and assert row status matches service summary counts"
+      ],
+      "expected": "Module-integration boundary: live monitor poll source returns updated Present vs enrolled metrics immediately after check-in per API design §7.1",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-15-003",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-15"],
+      "title": "GET /sessions/:sessionId/attendance returns 200 JSON envelope with summary and roster records",
+      "preconditions": [
+        "Active session with mixed attendance statuses (Present, Pending, Absent, Excused)",
+        "Authenticated assigned Instructor session with attendance:read for session scope"
+      ],
+      "steps": [
+        "Send GET /api/v1/sessions/:sessionId/attendance with Instructor session cookie",
+        "Assert HTTP status 200 OK",
+        "Assert Content-Type application/json; charset=utf-8",
+        "Assert response body contains sessionId, summary object with enrolled, present, pending, absent, excused, rejected fields, and records array per API design §7.1",
+        "Assert each record includes student.institutionalId, student.displayName, status, and checkedInAt when Present",
+        "Assert response body does not contain errorCode on success"
+      ],
+      "expected": "HTTP 200 success contract for GET /sessions/:sessionId/attendance per API design §7.1; live metrics and roster grid DTO returned for instructor monitor",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-15-004",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-15", "NFR-11"],
+      "title": "Student denied GET /sessions/:sessionId/attendance with 403 Forbidden",
+      "preconditions": [
+        "Authenticated Student A session (no attendance:read session roster per roles-permissions §2.2)",
+        "Active session with attendance records for Student A and peer students",
+        "Known sessionId for that Active session"
+      ],
+      "steps": [
+        "GET /api/v1/sessions/:sessionId/attendance using Student A session cookie",
+        "Assert HTTP status 403 Forbidden",
+        "Assert response errorCode Forbidden",
+        "Assert response message Bạn không có quyền thực hiện thao tác này per roles-permissions §2.5",
+        "Assert response body contains no summary counts, records array, or peer student data"
+      ],
+      "expected": "Students lack attendance:read (session roster); live dashboard endpoint denied with no peer data exposed per RBAC matrix",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-15-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-15", "BR-08", "NFR-11"],
+      "title": "Unassigned instructor denied GET /sessions/:sessionId/attendance with 403 Forbidden",
+      "preconditions": [
+        "Instructor B authenticated but not assigned to session class-subject and not session creator",
+        "Active session with attendance data exists in unassigned scope",
+        "Instructor B lacks attendance:read for requested session per BR-08"
+      ],
+      "steps": [
+        "GET /api/v1/sessions/:sessionId/attendance using Instructor B session cookie",
+        "Assert HTTP status 403 Forbidden",
+        "Assert errorCode Forbidden or ReportAccessDenied",
+        "Assert response contains no summary.present, summary.enrolled, or records roster data",
+        "Verify assigned session creator Instructor A can GET same endpoint with HTTP 200"
+      ],
+      "expected": "Cross-instructor live dashboard access denied per class-subject assignment scope; no live attendance data leaked",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-15-006",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-15", "AC-15", "NFR-08"],
+      "title": "Instructor Theo dõi tab StatCards refresh within 5 seconds after student check-in",
+      "preconditions": [
+        "Authenticated Instructor on desktop viewport at /sessions/:sessionId (Theo dõi tab)",
+        "Active session with SessionMonitorDashboard polling every 5 seconds per UI states §4.2",
+        "Should-capability FR-15 enabled; baseline StatCard Đã điểm danh shows 3 of 10 enrolled",
+        "Student A can complete check-in in parallel browser context or via API trigger"
+      ],
+      "steps": [
+        "Navigate to /sessions/:sessionId and select Theo dõi tab",
+        "Verify StatCard row displays Đã điểm danh count 3 and Chưa điểm danh count 7 matching initial API poll",
+        "Trigger successful check-in for Student A (mobile context or API)",
+        "Wait up to 5 seconds without manual page reload for StatCard Đã điểm danh to update to 4",
+        "Verify roster grid row for Student A shows Present StatusBadge and check-in timestamp",
+        "Assert poll status bar indicates last refresh within 5 seconds per NFR-08"
+      ],
+      "expected": "FR-15 browser journey: instructor live dashboard StatCards refresh within 5 seconds without manual reload per user-flows §5.2 and page-list §4.3.2",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-15-007",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-15", "AC-15"],
+      "title": "Instructor sorts monitor roster by Trạng thái with accurate status order",
+      "preconditions": [
+        "Authenticated Instructor on /sessions/:sessionId Theo dõi tab",
+        "Active session roster with mixed Present, Pending, Absent, and Excused students",
+        "SessionMonitorDashboard DataTable supports column sort per listing-pages §5.3"
+      ],
+      "steps": [
+        "Navigate to Theo dõi tab and wait for initial roster poll to complete",
+        "Click Trạng thái column header to sort by status ascending",
+        "Verify aria-sort=ascending on active column header per accessibility §7",
+        "Verify row order follows Chờ → Vắng → Có mặt → Có phép instructor priority per listing-pages §5.3",
+        "Trigger check-in changing one student from Pending to Present",
+        "After next poll cycle, verify sort order still reflects updated statuses accurately per FR-15 sortable roster requirement"
+      ],
+      "expected": "FR-15 sortable roster: sort order reflects current per-student attendance states accurately on monitor grid per AC-15b",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-15-008",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["FR-15"],
+      "title": "Flow A step 5: Instructor GET /sessions/:id/attendance shows Present count incremented after student check-in",
+      "preconditions": [
+        "Flow A completed through step 4: roster seeded, session created with GPS, opened Active, valid QR token obtained",
+        "Student logged in with valid coordinates within radius",
+        "Instructor authenticated with session cookie"
+      ],
+      "steps": [
+        "GET /api/v1/sessions/:sessionId/attendance before check-in and record summary.present baseline",
+        "POST /api/v1/check-in with Student session, tokenId, and valid coordinates",
+        "Assert check-in HTTP 200 outcome Success",
+        "GET /api/v1/sessions/:sessionId/attendance and assert summary.present === baseline + 1",
+        "Assert records array contains student row with status Present and checkedInAt timestamp",
+        "Confirm Flow A step 5 per testing-plan §6 tags FR-15 live monitor"
+      ],
+      "expected": "Flow A lifecycle includes instructor live attendance dashboard reflecting successful check-in per testing-plan §6 step 5",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-15-009",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["FR-15"],
+      "title": "Pending to Present check-in updates summary counts atomically in session roster query",
+      "preconditions": [
+        "Real PostgreSQL with Active session; one student attendance_record in Pending state",
+        "AttendanceService.getSessionRoster and check-in pipeline share transactional consistency",
+        "Summary before transition: present=N, pending=M"
+      ],
+      "steps": [
+        "Query getSessionRoster and assert target student status Pending in records array",
+        "Execute check-in state transition Pending → Present for target student",
+        "Invoke getSessionRoster immediately after commit",
+        "Assert summary.present === N + 1 and summary.pending === M - 1",
+        "Assert target record beforeState Pending and afterState Present with checkedInAt set",
+        "Verify enrolled total unchanged"
+      ],
+      "expected": "State transition from Pending to Present reflected in live summary counts per FR-15 live metrics requirement",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-15-010",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": ["FR-15"],
+      "title": "Session monitor summary enrolled count matches enrollment table for Active session",
+      "preconditions": [
+        "Real PostgreSQL with Active session and 142 enrolled students per pilot cohort size",
+        "Pending rows seeded for all enrollments on session open per FR-05",
+        "AttendanceService.getSessionRoster callable with instructorId"
+      ],
+      "steps": [
+        "Count enrollments for session classId + subjectId directly in database",
+        "Invoke getSessionRoster(sessionId, instructorId)",
+        "Assert summary.enrolled equals enrollment count",
+        "Assert summary.present + summary.pending + summary.absent + summary.excused + summary.rejected === summary.enrolled",
+        "Perform 5 successful check-ins and re-query; assert summary arithmetic invariant holds"
+      ],
+      "expected": "Live dashboard Present vs total enrolled counts remain consistent with enrollment and attendance_records aggregate per database design §8.1",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-15-011",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["FR-15"],
+      "title": "GET /sessions/:sessionId/attendance with invalid sort field returns 400 ValidationFailed",
+      "preconditions": [
+        "Authenticated assigned Instructor session",
+        "Active session with attendance data",
+        "API accepts sort values displayName, checkedInAt, status only per §7.1"
+      ],
+      "steps": [
+        "GET /api/v1/sessions/:sessionId/attendance?sort=invalidField using Instructor session",
+        "Assert HTTP status 400 Bad Request",
+        "Assert response errorCode ValidationFailed",
+        "Assert field-level detail references sort parameter",
+        "Assert response contains no summary or records data in error envelope"
+      ],
+      "expected": "Invalid sort boundary rejected with ValidationFailed; no attendance roster leaked on malformed query",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-15-012",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["FR-15"],
+      "title": "Monitor tab status filter shows only matching roster rows from polled data",
+      "preconditions": [
+        "Authenticated Instructor on /sessions/:sessionId Theo dõi tab",
+        "Active session with mixed Present, Pending, and Absent students",
+        "Client-side status filter per listing-pages §4.4"
+      ],
+      "steps": [
+        "Navigate to Theo dõi tab and wait for roster poll",
+        "Select Trạng thái filter Có mặt (Present) in status Select control",
+        "Verify roster grid shows only students with Present StatusBadge",
+        "Verify StatCard summary row still reflects full session counts (not filtered totals)",
+        "Reset filter to Tất cả and verify all enrolled students visible again"
+      ],
+      "expected": "Client-side status filter on monitor tab scopes visible roster rows without altering live summary StatCards per listing-pages §4.4",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-15-013",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-15"],
+      "title": "GET /sessions/:sessionId/attendance?status=Present filters roster to Present records only",
+      "preconditions": [
+        "Active session with at least 3 Present and 5 Pending students",
+        "Authenticated assigned Instructor session"
+      ],
+      "steps": [
+        "GET /api/v1/sessions/:sessionId/attendance?status=Present using Instructor session",
+        "Assert HTTP 200 OK",
+        "Assert every record in records array has status Present",
+        "Assert records.length === summary.present from unfiltered GET",
+        "Assert summary object still reflects full session totals (enrolled, pending, absent) per API design §7.1"
+      ],
+      "expected": "Status filter query parameter returns filtered roster subset while summary reflects full session counts for live monitor",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-15-014",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-15", "NFR-11"],
+      "title": "Unauthenticated GET /sessions/:sessionId/attendance returns 401 Unauthenticated",
+      "preconditions": [
+        "Active session with attendance data exists",
+        "No valid session cookie or bearer token"
+      ],
+      "steps": [
+        "GET /api/v1/sessions/:sessionId/attendance without authentication headers",
+        "Assert HTTP status 401 Unauthorized",
+        "Assert errorCode Unauthenticated",
+        "Assert message Vui lòng đăng nhập để tiếp tục per BR-06",
+        "Assert response contains no summary counts or student roster data"
+      ],
+      "expected": "Live dashboard endpoint requires authentication; unauthenticated callers denied with no data leak per BR-06",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-15-015",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P1",
+      "traceability": ["FR-15"],
+      "title": "Parallel check-ins from distinct students update live summary counts correctly",
+      "preconditions": [
+        "Real PostgreSQL with Active session and 20 Pending students",
+        "5 distinct students with valid QR tokens and in-radius coordinates",
+        "AttendanceService.getSessionRoster callable after concurrent check-in submissions"
+      ],
+      "steps": [
+        "Record baseline summary.present and summary.pending via getSessionRoster",
+        "Submit 5 parallel successful check-in transactions for distinct Pending students",
+        "Assert all 5 check-ins return HTTP 200 outcome Success",
+        "Invoke getSessionRoster after all commits complete",
+        "Assert summary.present === baseline.present + 5 and summary.pending === baseline.pending - 5",
+        "Assert enrolled total unchanged and no duplicate Present rows for same student"
+      ],
+      "expected": "Concurrent check-ins during Active session each increment live Present count atomically without lost updates per FR-15 real-time metrics",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-15-016",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P1",
+      "traceability": ["FR-15", "NFR-08"],
+      "title": "Sequential check-ins update dashboard counts within 5 seconds each under normal load",
+      "preconditions": [
+        "Active session with 20 Pending students",
+        "Authenticated Instructor polling GET /sessions/:sessionId/attendance",
+        "Should-capability FR-15 enabled; TestClock or wall-clock timing capture available"
+      ],
+      "steps": [
+        "Record T0 and perform 3 sequential successful check-ins for distinct students at ~2-second intervals",
+        "After each check-in, poll attendance endpoint until summary.present reflects increment or 5-second timeout",
+        "Assert each of 3 check-ins produces dashboard count update within 5 seconds per NFR-08",
+        "Assert final summary.present === initial + 3 and summary.pending === initial - 3",
+        "Assert no manual page reload required between updates"
+      ],
+      "expected": "NFR-08 sustained: multiple check-ins during Active session each propagate to live Present vs enrolled counts within 5 seconds without reload",
+      "edgeCase": false
+    }
+  ]
+}

@@ -1,0 +1,362 @@
+{
+  "productItemId": "NFR-10",
+  "version": 1,
+  "docFingerprint": "sha256:9e1460900a69a9b4493be4e286bcd7d1823652cd7aff6f47163d6846238a1c2c",
+  "generatedAt": "2026-06-28T18:48:30.000Z",
+  "cases": [
+    {
+      "id": "TC-NFR-10-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["NFR-10", "AC-02", "FR-02", "BR-06"],
+      "title": "TS-04: Unauthenticated POST /check-in returns 401 Unauthenticated per NFR-10 100% rejection target",
+      "preconditions": [
+        "No session cookie or Authorization header is present",
+        "Active session exists with valid QR token and enrolled student context for payload"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with valid tokenId, latitude, and longitude and no auth credentials",
+        "Assert HTTP status 401 and errorCode Unauthenticated",
+        "Assert response message is Vui lòng đăng nhập để tiếp tục per roles-permissions §2.5",
+        "Query attendance_records for the session and confirm no Present status created"
+      ],
+      "expected": "NFR-10 check-in category: unauthenticated request rejected with HTTP 401 Unauthenticated; no attendance mutation; BR-06 enforced before domain pipeline",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-10-002",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-10", "FR-02", "BR-06"],
+      "title": "Auth middleware rejects unauthenticated check-in before CheckInService executes against Postgres",
+      "preconditions": [
+        "Real PostgreSQL test database is running",
+        "Auth middleware wired to identity-auth AuthSession repository",
+        "Active session with valid QR token exists in database",
+        "CheckInService instrumented or spied to detect invocation"
+      ],
+      "steps": [
+        "Invoke POST /check-in route handler without session credentials",
+        "Assert middleware returns 401 Unauthenticated before CheckInService.validateAndSubmit is called",
+        "Query attendance_records for the session and confirm no status change",
+        "Query check_in_attempts and confirm no Success outcome logged for this request"
+      ],
+      "expected": "NFR-10 enforced at auth middleware layer with real DB; CheckInService and domain rules never execute for unauthenticated callers; zero side effects in attendance tables",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-10-003",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-10", "FR-02", "BR-06"],
+      "title": "Protected endpoint sweep: 100% of check-in, reporting, export, and admin routes reject missing AuthSession",
+      "preconditions": [
+        "API route registry or OpenAPI contract lists all protected endpoints per API design §1.1",
+        "Real PostgreSQL with seeded session, report, and user fixture data",
+        "No session cookie or Authorization header on test client"
+      ],
+      "steps": [
+        "For each protected route in check-in category (POST /check-in), call without auth and assert HTTP 401",
+        "For each protected route in reporting category (GET /reports/session/:id, GET /reports/summary), call without auth and assert HTTP 401",
+        "For export category (POST /reports/export), call without auth and assert HTTP 401",
+        "For admin category (GET /users, POST /users, PATCH /users/:id, POST /roster/import), call without auth and assert HTTP 401",
+        "Compute rejection rate and assert equals 100% across all sampled protected operations"
+      ],
+      "expected": "NFR-10 target met: every protected operation in check-in, reporting, export, and admin categories returns HTTP 401 Unauthenticated when AuthSession is absent",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-10-004",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-10", "FR-02", "BR-06", "AC-02"],
+      "title": "POST /check-in without credentials returns 401 Unauthenticated error envelope",
+      "preconditions": [
+        "API server is running",
+        "Valid check-in request body prepared per API design §6.2"
+      ],
+      "steps": [
+        "POST /api/v1/check-in without Cookie and without Authorization header",
+        "Assert HTTP status 401",
+        "Assert response JSON contains errorCode Unauthenticated, message Vui lòng đăng nhập để tiếp tục, and requestId"
+      ],
+      "expected": "HTTP 401 with standard error envelope per API design §10.2; outcome Unauthenticated when check-in response uses outcome field",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-10-005",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-10", "FR-12", "BR-06"],
+      "title": "GET /reports/summary without session returns 401 before report data access",
+      "preconditions": [
+        "No session cookie or Authorization header",
+        "Closed sessions with attendance data exist in database"
+      ],
+      "steps": [
+        "GET /api/v1/reports/summary?classCode=HESD-2026-A&subjectCode=HESD-W01&from=2026-06-01&to=2026-06-30 without auth",
+        "Assert HTTP status 401 and errorCode Unauthenticated",
+        "Assert response body contains no student or attendance aggregate data"
+      ],
+      "expected": "NFR-10 reporting category: HTTP 401 Unauthenticated; no report payload returned to unauthenticated caller",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-10-006",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-10", "FR-13", "BR-06", "BR-09"],
+      "title": "POST /reports/export without session returns 401 before CSV generation",
+      "preconditions": [
+        "No session cookie or Authorization header",
+        "Attendance data exists for export filter parameters"
+      ],
+      "steps": [
+        "POST /api/v1/reports/export with valid filter body and no auth credentials",
+        "Assert HTTP status 401 and errorCode Unauthenticated",
+        "Query export_audit_logs and confirm no new export audit row"
+      ],
+      "expected": "NFR-10 export category: HTTP 401 Unauthenticated; no CSV body or export audit log created",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-10-007",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-10", "FR-01", "BR-06"],
+      "title": "POST /users without session returns 401 before admin user creation",
+      "preconditions": [
+        "No session cookie or Authorization header",
+        "Valid user create payload with institutionalId, email, password, and role Student"
+      ],
+      "steps": [
+        "POST /api/v1/users with valid JSON body and no auth credentials",
+        "Assert HTTP status 401 and errorCode Unauthenticated",
+        "Query users table and confirm no new row created for the payload"
+      ],
+      "expected": "NFR-10 admin category: HTTP 401 Unauthenticated; no user record persisted by unauthenticated caller",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-10-008",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["NFR-10", "FR-05", "BR-06"],
+      "title": "Unauthenticated POST /sessions/:id/open returns 401 before session state transition",
+      "preconditions": [
+        "Draft session with valid room GPS exists in database",
+        "No session cookie or Authorization header is present"
+      ],
+      "steps": [
+        "POST /api/v1/sessions/:sessionId/open without auth credentials",
+        "Assert HTTP status 401 and errorCode Unauthenticated",
+        "Query sessions table and confirm status remains Draft"
+      ],
+      "expected": "Instructor protected session operation blocked at authentication layer per NFR-10; HTTP 401; no state transition to Active",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-10-009",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["NFR-10", "FR-03", "BR-06"],
+      "title": "Unauthenticated POST /roster/import returns 401 before enrollment mutation",
+      "preconditions": [
+        "No session cookie or Authorization header",
+        "Valid CSV roster import payload prepared"
+      ],
+      "steps": [
+        "POST /api/v1/roster/import with valid CSV multipart body and no auth credentials",
+        "Assert HTTP status 401 and errorCode Unauthenticated",
+        "Query enrollments table and confirm no new rows from import attempt"
+      ],
+      "expected": "NFR-10 admin category roster write: HTTP 401 Unauthenticated; no enrollment records created",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-10-010",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["NFR-10", "FR-02", "NFR-16"],
+      "title": "AuthSession transitions from valid to expired blocks all protected operations with 401",
+      "preconditions": [
+        "Valid AuthSession exists with lastActivityAt at T0 in Postgres",
+        "TestClock fixture controls current time",
+        "Protected route handler wired through auth middleware"
+      ],
+      "steps": [
+        "Verify protected GET /auth/me succeeds at T0 + 7h 59m with valid session",
+        "Advance clock to T0 + 8h 1m without updating lastActivityAt",
+        "Call POST /check-in with expired session and valid payload",
+        "Call GET /reports/summary with same expired session"
+      ],
+      "expected": "beforeState: session valid for protected actions; afterState: expired session rejected with HTTP 401 SessionExpired on all protected operations per NFR-10 and NFR-16",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-10-011",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["NFR-10", "FR-02", "BR-06"],
+      "title": "POST /auth/logout then reuse revoked session cookie returns 401 Unauthenticated",
+      "preconditions": [
+        "Authenticated student session established via POST /auth/login",
+        "Session cookie value captured before logout"
+      ],
+      "steps": [
+        "POST /api/v1/auth/logout with valid session cookie",
+        "Assert HTTP status 204 No Content",
+        "POST /api/v1/check-in with previously captured session cookie and valid payload",
+        "Assert HTTP status 401 and errorCode Unauthenticated"
+      ],
+      "expected": "Revoked session no longer satisfies NFR-10 valid authenticated session requirement; check-in blocked with HTTP 401 Unauthenticated",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-10-012",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["NFR-10", "FR-02", "BR-06"],
+      "title": "Malformed or unknown session identifier returns 401 on protected routes",
+      "preconditions": [
+        "No valid session exists for the test client",
+        "API server is running"
+      ],
+      "steps": [
+        "GET /api/v1/auth/me with Cookie wecheck_session=not-a-valid-uuid",
+        "Assert HTTP status 401 and errorCode Unauthenticated",
+        "GET /api/v1/reports/summary with Authorization Bearer invalid-token-value",
+        "Assert HTTP status 401 and errorCode Unauthenticated"
+      ],
+      "expected": "Invalid session identifiers fail NFR-10 authentication check on both cookie and bearer mechanisms; HTTP 401; no user or report data leaked",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-10-013",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["NFR-10", "FR-01", "BR-06", "AC-01"],
+      "title": "Deactivated user cannot authenticate and protected endpoints remain blocked",
+      "preconditions": [
+        "Student account exists with active=false and otherwise valid credentials",
+        "No valid AuthSession exists for the user"
+      ],
+      "steps": [
+        "POST /api/v1/auth/login with deactivated student email and correct password",
+        "Assert HTTP status 403 and errorCode AccountDeactivated",
+        "Verify no Set-Cookie wecheck_session header is returned",
+        "POST /api/v1/check-in without session and assert HTTP 401 Unauthenticated"
+      ],
+      "expected": "Deactivated user cannot obtain valid session per NFR-10; HTTP 403 AccountDeactivated on login; all protected operations remain blocked with 401",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-10-014",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-10", "FR-02", "AC-02", "BR-06"],
+      "title": "Unauthenticated check-in deep link redirects to login preserving returnUrl",
+      "preconditions": [
+        "User is not logged in (no wecheck_session cookie)",
+        "Mobile browser navigates to /check-in?token=<token-id> from scanned QR deep link"
+      ],
+      "steps": [
+        "Open /check-in?token=<token-id> in mobile viewport",
+        "Observe browser URL changes to /login with returnUrl query parameter encoding the check-in path",
+        "Verify check-in page content is not shown and no success confirmation appears"
+      ],
+      "expected": "Browser enforces NFR-10 auth gate: redirects to /login?returnUrl=%2Fcheck-in%3Ftoken%3D<token-id>; no attendance action occurs; login form displayed",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-10-015",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-10", "FR-02", "BR-06"],
+      "title": "Protected instructor session route redirects unauthenticated user to login",
+      "preconditions": [
+        "User is not logged in",
+        "Instructor session list route exists at /instructor/sessions or equivalent protected path"
+      ],
+      "steps": [
+        "Navigate directly to instructor sessions list URL without authentication",
+        "Observe redirect to /login with returnUrl encoding the instructor path",
+        "Verify session management UI content is not rendered"
+      ],
+      "expected": "NFR-10 applies to all protected instructor SPA routes; unauthenticated navigation blocked with login redirect and returnUrl preserved",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-10-016",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-10", "FR-01", "FR-13", "BR-06"],
+      "title": "Protected admin report and export routes redirect unauthenticated user to login",
+      "preconditions": [
+        "User is not logged in",
+        "Admin report or export route exists at /admin/reports or equivalent protected path"
+      ],
+      "steps": [
+        "Navigate directly to admin reports URL without authentication",
+        "Observe redirect to /login with returnUrl encoding the admin path",
+        "Attempt navigation to CSV export action URL if separate route exists",
+        "Verify report table and export controls are not rendered"
+      ],
+      "expected": "NFR-10 admin and export UI surfaces blocked for unauthenticated users; login redirect with returnUrl; no report or export data visible",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-10-017",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P1",
+      "traceability": ["NFR-10", "FR-02", "AC-02", "FR-07"],
+      "title": "Flow A authentication gate: check-in succeeds only after valid session established",
+      "preconditions": [
+        "Instructor has opened Active session with valid QR token per Flow A steps 1–3",
+        "Student is unauthenticated when opening check-in deep link from QR"
+      ],
+      "steps": [
+        "Student opens check-in deep link from QR payload and is redirected to login",
+        "Complete login with valid student credentials and returnUrl preserved",
+        "POST /api/v1/check-in with authenticated session and valid coordinates",
+        "Verify instructor GET /api/v1/sessions/:id/attendance shows Present count incremented"
+      ],
+      "expected": "NFR-10 enforced as first gate in Flow A workshop path; check-in succeeds only after valid authenticated session; 100% rejection before login, success after",
+      "edgeCase": false
+    }
+  ]
+}

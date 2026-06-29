@@ -1,0 +1,6 @@
+{
+  "default": "auto",
+  "reviewer": "auto",
+  "tester": "auto",
+  "testgen": "auto"
+}

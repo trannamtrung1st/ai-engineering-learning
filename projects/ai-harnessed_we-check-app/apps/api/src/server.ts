@@ -1,0 +1,113 @@
+import Fastify, { type FastifyServerOptions } from "fastify";
+import cookie from "@fastify/cookie";
+import type { DbPool } from "./infra/db.js";
+import { registerErrorHandler } from "./errors/error-handler.js";
+import { registerRequestLoggingHook } from "./infra/request-logging.js";
+import { registerHealthRoutes, registerRequestIdHook } from "./routes/health.js";
+import { registerFoundationRoutes } from "./routes/foundation.js";
+import { registerIdentityAuthRoutes } from "./modules/identity-auth/routes.js";
+import { registerRosterEnrollmentRoutes } from "./modules/roster-enrollment/routes.js";
+import { registerSessionManagementRoutes } from "./modules/session-management/routes.js";
+import { registerAttendanceRoutes } from "./modules/attendance/routes.js";
+import { registerCheckInQrRoutes } from "./modules/checkin-qr/routes.js";
+import { registerReportingExportRoutes } from "./modules/reporting-export/routes.js";
+import { registerNotificationRoutes } from "./modules/notifications/routes.js";
+import type { AutoCloseScheduler } from "./modules/session-management/auto-close-scheduler.js";
+import type { SessionService } from "./modules/session-management/session-service.js";
+import { SessionStore } from "./auth/session-store.js";
+import { loadEnv } from "./config/env.js";
+import { resumePreviewQrSchedulers } from "./infra/preview-seed.js";
+import { runWhenPreviewDbIdle } from "./infra/integration-test-lock.js";
+
+export const API_VERSION = "v1";
+export const API_BASE_PATH = "/api/v1";
+
+export type BuildAppLoggerOption = boolean | NonNullable<FastifyServerOptions["logger"]>;
+
+export interface BuildAppOptions {
+  db: DbPool;
+  logger?: BuildAppLoggerOption;
+}
+
+function resolveLogger(
+  options: BuildAppOptions,
+  nodeEnv: string,
+): BuildAppLoggerOption {
+  if (options.logger !== undefined) {
+    return options.logger;
+  }
+  return nodeEnv !== "test";
+}
+
+export async function buildApp(options: BuildAppOptions) {
+  const env = loadEnv();
+  const logger = resolveLogger(options, env.nodeEnv);
+  const app = Fastify({
+    logger,
+    disableRequestLogging: true,
+  });
+
+  registerRequestIdHook(app);
+  if (logger !== false) {
+    registerRequestLoggingHook(app);
+  }
+  registerErrorHandler(app);
+
+  await app.register(cookie);
+
+  const store = new SessionStore(options.db);
+  let autoCloseScheduler: AutoCloseScheduler | undefined;
+  let sessionService: SessionService | undefined;
+
+  await app.register(
+    async (api) => {
+      await registerHealthRoutes(api, options.db);
+      await registerIdentityAuthRoutes(api, options.db, store);
+      await registerRosterEnrollmentRoutes(api, options.db, store);
+      const notificationService = await registerNotificationRoutes(
+        api,
+        options.db,
+        store,
+      );
+      const sessionRegistration = await registerSessionManagementRoutes(
+        api,
+        options.db,
+        store,
+        notificationService,
+      );
+      autoCloseScheduler = sessionRegistration.autoCloseScheduler;
+      sessionService = sessionRegistration.sessionService;
+      await registerAttendanceRoutes(api, options.db, store);
+      await registerCheckInQrRoutes(api, options.db, store);
+      await registerReportingExportRoutes(api, options.db, store);
+      await registerFoundationRoutes(api, store);
+    },
+    { prefix: API_BASE_PATH },
+  );
+
+  if (autoCloseScheduler && env.nodeEnv !== "test") {
+    autoCloseScheduler.start();
+  }
+
+  if (sessionService && env.seedEnabled && env.nodeEnv !== "test") {
+    await runWhenPreviewDbIdle(options.db, () =>
+      resumePreviewQrSchedulers(options.db, sessionService!.qr),
+    );
+  }
+
+  app.addHook("onClose", async () => {
+    autoCloseScheduler?.stop();
+  });
+
+  return app;
+}
+
+import { PASSWORD_POLICY } from "@wecheck/domain";
+
+export function getApiMetadata() {
+  return {
+    version: API_VERSION,
+    basePath: API_BASE_PATH,
+    passwordMinLength: PASSWORD_POLICY.MIN_LENGTH,
+  };
+}

@@ -1,0 +1,473 @@
+{
+  "productItemId": "BR-07",
+  "version": 1,
+  "docFingerprint": "sha256:4deda16c175af0ca34aadf938abcd5f11203e186585e68a48a77093b8e87aac5",
+  "generatedAt": "2026-06-29T22:30:00Z",
+  "cases": [
+    {
+      "id": "TC-BR-07-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["BR-07", "FR-04", "AC-04"],
+      "title": "TS-11: Open Draft session without valid room GPS returns 422 RoomGpsRequired",
+      "preconditions": [
+        "Authenticated Instructor owns a Draft session with roomLatitude and roomLongitude null",
+        "Session class-subject is within instructor ClassAssignment scope",
+        "Instructor session cookie is set"
+      ],
+      "steps": [
+        "POST /api/v1/sessions/:sessionId/open with Instructor session cookie",
+        "Assert HTTP status 422",
+        "Assert response errorCode RoomGpsRequired with Vietnamese message requiring room GPS configuration",
+        "GET /api/v1/sessions/:sessionId and assert status remains Draft with openedAt null"
+      ],
+      "expected": "Draft to Active transition blocked per BR-07; session status unchanged; error surfaces RoomGpsRequired per AC-04b",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-07-002",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["BR-07", "FR-05", "AC-05"],
+      "title": "TS-13: Open Draft session with valid room GPS transitions to Active",
+      "preconditions": [
+        "Authenticated Instructor owns a Draft session with roomLatitude 10.762622 and roomLongitude 106.660172",
+        "Roster enrollments exist for session class-subject pair",
+        "Instructor session cookie is set"
+      ],
+      "steps": [
+        "POST /api/v1/sessions/:sessionId/open with Instructor session cookie",
+        "Assert HTTP status 200 and response status Active with openedAt populated",
+        "GET /api/v1/sessions/:sessionId/attendance and assert Pending rows seeded for enrolled students",
+        "GET /api/v1/sessions/:sessionId/qr/current and assert valid QrToken issued"
+      ],
+      "expected": "BR-07 satisfied: valid finite room GPS allows Draft to Active; attendance bootstrap and QR scheduler start per AC-05a",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-07-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-07", "FR-04"],
+      "title": "SessionService.open rejects Draft session with null GPS in Postgres transaction",
+      "preconditions": [
+        "Real PostgreSQL test database is running",
+        "Draft session row exists with room_latitude NULL and room_longitude NULL",
+        "SessionService.open wired to SessionRepository under owning Instructor context"
+      ],
+      "steps": [
+        "Invoke SessionService.open(sessionId) for session missing coordinates",
+        "Capture thrown domain exception with errorCode RoomGpsRequired",
+        "Query sessions table for sessionId and read status and opened_at columns",
+        "Query attendance_records for sessionId and assert zero rows exist"
+      ],
+      "expected": "BR-07 enforced at SessionService.open Layer 4; no Active transition; no attendance bootstrap or QR scheduler side effects",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-07-004",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-07", "FR-05"],
+      "title": "SessionService.open with valid GPS commits Active state and seeds Pending attendance",
+      "preconditions": [
+        "Real PostgreSQL test database is running",
+        "Draft session row with room_latitude 10.762622 and room_longitude 106.660172",
+        "N enrolled students exist for session class-subject pair",
+        "SessionService.open wired to AttendanceService.initializeForSession"
+      ],
+      "steps": [
+        "Invoke SessionService.open(sessionId) under owning Instructor context",
+        "Query sessions table and assert status Active with opened_at set",
+        "Query attendance_records for sessionId and count rows with status Pending",
+        "Assert Pending count equals N enrolled students"
+      ],
+      "expected": "BR-07 GPS prerequisite met; single transaction transitions Draft to Active and seeds Pending attendance per validation-rules §5.2 step 5",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-07-005",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["BR-07"],
+      "title": "SessionService.open preserves Draft state when room GPS is missing",
+      "preconditions": [
+        "Draft session row exists with room_latitude NULL and room_longitude NULL",
+        "SessionService.open invoked under owning Instructor context"
+      ],
+      "steps": [
+        "Record beforeState Draft from sessions table",
+        "Invoke SessionService.open(sessionId) and capture RoomGpsRequired failure",
+        "Query sessions table for sessionId and read status column"
+      ],
+      "expected": "beforeState Draft, afterState Draft; BR-07 blocks transition; openedAt remains null",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-07-006",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["BR-07", "FR-05"],
+      "title": "SessionService.open transitions Draft to Active when valid room GPS configured",
+      "preconditions": [
+        "Draft session row with valid room_latitude and room_longitude within Earth bounds",
+        "SessionService.open invoked under owning Instructor context"
+      ],
+      "steps": [
+        "Record beforeState Draft from sessions table",
+        "Invoke SessionService.open(sessionId)",
+        "Query sessions table for sessionId and read status and opened_at columns"
+      ],
+      "expected": "beforeState Draft, afterState Active; openedAt set; BR-07 activation prerequisite satisfied",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-07-007",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-07"],
+      "title": "POST /api/v1/sessions/:sessionId/open returns 422 RoomGpsRequired when GPS missing",
+      "preconditions": [
+        "Instructor session cookie is set",
+        "Draft sessionId with null roomLatitude and roomLongitude owned by instructor"
+      ],
+      "steps": [
+        "Send POST /api/v1/sessions/:sessionId/open with Instructor session",
+        "Assert HTTP status 422",
+        "Assert response body contains errorCode RoomGpsRequired",
+        "Assert response envelope matches validation error contract per API design §6.3"
+      ],
+      "expected": "HTTP 422 with RoomGpsRequired errorCode per validation-rules §4 BR-07 mapping",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-07-008",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-07", "FR-05"],
+      "title": "POST /api/v1/sessions/:sessionId/open returns 200 Active Session DTO when GPS valid",
+      "preconditions": [
+        "Instructor session cookie is set",
+        "Draft sessionId with roomLatitude 10.762622 and roomLongitude 106.660172 owned by instructor"
+      ],
+      "steps": [
+        "Send POST /api/v1/sessions/:sessionId/open with Instructor session",
+        "Assert HTTP status 200",
+        "Assert response body contains status Active, openedAt timestamp, and unchanged roomLatitude and roomLongitude",
+        "Assert response body does not contain errorCode RoomGpsRequired"
+      ],
+      "expected": "HTTP 200 with Active Session DTO per API design §5.4 when BR-07 GPS requirement is met",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-07-009",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-07"],
+      "title": "Student denied POST /api/v1/sessions/:sessionId/open with 403 Forbidden",
+      "preconditions": [
+        "Authenticated Student session is available",
+        "Draft session with valid GPS exists",
+        "Student role lacks session:write permission per roles-permissions §2.2"
+      ],
+      "steps": [
+        "POST /api/v1/sessions/:sessionId/open using Student session cookie",
+        "Assert HTTP status 403 Forbidden and errorCode Forbidden",
+        "GET /api/v1/sessions/:sessionId and assert status remains Draft"
+      ],
+      "expected": "Only instructor may trigger Draft to Active per BR-07 scope; Student cannot open sessions regardless of GPS state",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-07-010",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-07"],
+      "title": "TrainingOfficeAdmin denied POST /api/v1/sessions/:sessionId/open without session:write",
+      "preconditions": [
+        "Authenticated TrainingOfficeAdmin session is available",
+        "Draft session with valid GPS owned by another instructor exists",
+        "Admin has session:read institution-wide but no default session:write per MVP policy"
+      ],
+      "steps": [
+        "POST /api/v1/sessions/:sessionId/open using TrainingOfficeAdmin session cookie",
+        "Assert HTTP status 403 Forbidden and errorCode Forbidden",
+        "GET /api/v1/sessions/:sessionId and assert status remains Draft"
+      ],
+      "expected": "Admin cannot activate sessions in MVP default policy; BR-07 open trigger restricted to instructor session:write scope",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-07-011",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-07"],
+      "title": "SessionService.open rejects when only roomLatitude is set and roomLongitude is null",
+      "preconditions": [
+        "Draft session row with room_latitude 10.762622 and room_longitude NULL",
+        "SessionService.open invoked under owning Instructor context"
+      ],
+      "steps": [
+        "Invoke SessionService.open(sessionId)",
+        "Capture RoomGpsRequired domain exception",
+        "Query sessions table and assert status remains Draft"
+      ],
+      "expected": "BR-07 requires both valid latitude and longitude; partial GPS configuration blocks activation with no exceptions",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-07-012",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-07"],
+      "title": "SessionService.open rejects when only roomLongitude is set and roomLatitude is null",
+      "preconditions": [
+        "Draft session row with room_latitude NULL and room_longitude 106.660172",
+        "SessionService.open invoked under owning Instructor context"
+      ],
+      "steps": [
+        "Invoke SessionService.open(sessionId)",
+        "Capture RoomGpsRequired domain exception",
+        "Query sessions table and assert status remains Draft"
+      ],
+      "expected": "BR-07 requires both coordinates; longitude alone does not satisfy activation prerequisite",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-07-013",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-07", "FR-04"],
+      "title": "POST /api/v1/sessions/:sessionId/open on Draft with out-of-bounds latitude returns 422 RoomGpsRequired",
+      "preconditions": [
+        "Authenticated Instructor owns Draft session with roomLatitude 91 and roomLongitude 106.660172 persisted via PATCH",
+        "Instructor session cookie is set"
+      ],
+      "steps": [
+        "POST /api/v1/sessions/:sessionId/open with Instructor session cookie",
+        "Assert HTTP status 422 and errorCode RoomGpsRequired",
+        "GET /api/v1/sessions/:sessionId and assert status remains Draft"
+      ],
+      "expected": "Latitude outside −90..90 is not valid room GPS per BR-07; activation blocked with RoomGpsRequired",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-07-014",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["BR-07"],
+      "title": "POST /api/v1/sessions/:sessionId/open accepts boundary coordinates latitude −90 and longitude −180",
+      "preconditions": [
+        "Authenticated Instructor owns Draft session with roomLatitude −90 and roomLongitude −180",
+        "Roster enrollments exist for session class-subject pair"
+      ],
+      "steps": [
+        "POST /api/v1/sessions/:sessionId/open with Instructor session cookie",
+        "Assert HTTP status 200 and response status Active",
+        "GET /api/v1/sessions/:sessionId and verify roomLatitude −90 and roomLongitude −180 persisted"
+      ],
+      "expected": "Earth-boundary coordinates are valid finite GPS per BR-07; Draft to Active transition succeeds at inclusive limits",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-07-015",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-07", "FR-04", "AC-04"],
+      "title": "Mở buổi học button disabled with inline GPS required message when coordinates missing",
+      "preconditions": [
+        "Instructor is logged in to instructor SPA",
+        "Instructor navigates to Draft session detail settings tab (Cài đặt) without room GPS configured"
+      ],
+      "steps": [
+        "Observe Mở buổi học (open session) action button state",
+        "Verify button is disabled or blocked from submission",
+        "Verify inline error message requires room GPS configuration before opening check-in",
+        "Attempt to click open action and confirm session status badge remains Nháp (Draft)"
+      ],
+      "expected": "Open session UI blocked per BR-07; Vietnamese inline message prompts GPS configuration; session remains Draft with no check-in window",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-07-016",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-07", "FR-05", "AC-05"],
+      "title": "Instructor configures GPS via GpsMapPicker then opens session successfully",
+      "preconditions": [
+        "Instructor is logged in and viewing Draft session without GPS on settings tab",
+        "GpsMapPicker fixture coordinates available (10.762622, 106.660172)"
+      ],
+      "steps": [
+        "Select room location on GpsMapPicker map with valid coordinates",
+        "Save session settings and verify GPS coordinates displayed on detail page",
+        "Click Mở buổi học (open session) action",
+        "Confirm open in dialog prompt if shown",
+        "Verify session status badge updates to Đang diễn ra (Active) and QR display link is enabled"
+      ],
+      "expected": "BR-07 satisfied via UI: valid room GPS configured then activation succeeds; check-in window opens per AC-05a",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-07-017",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["BR-07", "AC-04"],
+      "title": "Session detail shows room GPS coordinates on map after Draft save with GpsMapPicker",
+      "preconditions": [
+        "Instructor is logged in on session creation page for assigned class HESD-01",
+        "Instructor fills SessionForm and selects coordinates on GpsMapPicker"
+      ],
+      "steps": [
+        "Click Lưu nháp (save draft) action",
+        "Navigate to session detail page",
+        "Verify status badge shows Nháp (Draft)",
+        "Verify room latitude and longitude displayed on embedded map or coordinate readout",
+        "Verify Mở buổi học action is enabled when both coordinates are valid"
+      ],
+      "expected": "UI reflects configured room GPS prerequisite for BR-07; instructor can proceed to open when coordinates valid",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-07-018",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["BR-07", "FR-04", "FR-05"],
+      "title": "Flow A step 3: Instructor opens Draft session after GPS configured in prior step",
+      "preconditions": [
+        "Roster seeded for HESD-01 / SWE-101 via prior CSV import (Flow A step 1)",
+        "Draft session created with roomLatitude 10.762622 and roomLongitude 106.660172 (Flow A step 2)",
+        "Authenticated Instructor session available"
+      ],
+      "steps": [
+        "POST /api/v1/sessions/:sessionId/open with Instructor session cookie",
+        "Assert HTTP status 200 and status Active",
+        "Poll GET /api/v1/sessions/:sessionId/qr/current until valid token received",
+        "Proceed to student check-in as Flow A step 4 continuation"
+      ],
+      "expected": "Flow A activation gate passes BR-07; session Active with QR issuance ready for workshop check-in",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-07-019",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["BR-07", "FR-04", "AC-04"],
+      "title": "WF-02: PATCH room GPS onto GPS-less Draft then open succeeds",
+      "preconditions": [
+        "Authenticated Instructor with ClassAssignment for HESD-01 / SWE-101",
+        "Draft session created without roomLatitude and roomLongitude"
+      ],
+      "steps": [
+        "POST /api/v1/sessions/:sessionId/open and assert HTTP 422 RoomGpsRequired",
+        "PATCH /api/v1/sessions/:sessionId with roomLatitude 10.762622 and roomLongitude 106.660172",
+        "Assert HTTP status 200 with updated coordinates",
+        "POST /api/v1/sessions/:sessionId/open and assert HTTP 200 status Active"
+      ],
+      "expected": "BR-07 blocks open until GPS configured; two-step WF-02 preparation completes activation after coordinates added",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-07-020",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P1",
+      "traceability": ["BR-07"],
+      "title": "Parallel SessionService.open attempts on GPS-less Draft all reject; session stays Draft",
+      "preconditions": [
+        "Draft session row exists with room_latitude NULL and room_longitude NULL",
+        "SessionService.open wired to real PostgreSQL with transaction isolation",
+        "Two concurrent callers use owning Instructor context for the same sessionId"
+      ],
+      "steps": [
+        "Launch two parallel SessionService.open(sessionId) invocations against the GPS-less Draft session",
+        "Await both calls to settle",
+        "Assert both reject with errorCode RoomGpsRequired",
+        "Query sessions table once and assert status Draft with opened_at NULL"
+      ],
+      "expected": "No partial Active transition under concurrent open; BR-07 enforced consistently; session remains Draft",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-07-021",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["BR-07"],
+      "title": "POST /api/v1/sessions/:sessionId/open on Draft with out-of-bounds longitude returns 422 RoomGpsRequired",
+      "preconditions": [
+        "Authenticated Instructor owns Draft session with roomLatitude 10.762622 and roomLongitude 181 persisted via PATCH",
+        "Instructor session cookie is set"
+      ],
+      "steps": [
+        "POST /api/v1/sessions/:sessionId/open with Instructor session cookie",
+        "Assert HTTP status 422 and errorCode RoomGpsRequired",
+        "GET /api/v1/sessions/:sessionId and assert status remains Draft"
+      ],
+      "expected": "Longitude outside −180..180 is not valid room GPS per BR-07; activation blocked with no exceptions",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-07-022",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": ["BR-07", "FR-05"],
+      "title": "SessionService.open does not start QR scheduler when RoomGpsRequired guard fails",
+      "preconditions": [
+        "Draft session row with null GPS in PostgreSQL",
+        "QrService scheduler hook observable in test environment",
+        "SessionService.open wired to session-management and checkin-qr modules"
+      ],
+      "steps": [
+        "Record QR scheduler state before open attempt",
+        "Invoke SessionService.open(sessionId) and capture RoomGpsRequired failure",
+        "Assert QR scheduler was not started for sessionId",
+        "Query qr_tokens table for sessionId and assert zero rows"
+      ],
+      "expected": "BR-07 failure prevents downstream QR issuance side effects; no tokens created while session remains Draft",
+      "edgeCase": false
+    }
+  ]
+}

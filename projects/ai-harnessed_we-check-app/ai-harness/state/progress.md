@@ -1,0 +1,159 @@
+# Harness progress
+
+Append-only log of harness slice completions.
+- 2026-06-28T17:17:11Z | AC-01 | testgen_passed
+- 2026-06-28T17:18:13Z | AC-02 | testgen_passed
+- 2026-06-28T17:20:19Z | AC-03 | testgen_passed
+- 2026-06-28T17:23:17Z | AC-04 | testgen_validation_failed
+- 2026-06-28T17:24:58Z | AC-04 | testgen_passed
+- 2026-06-28T17:27:31Z | AC-05 | testgen_passed
+- 2026-06-28T17:29:09Z | AC-06 | testgen_passed
+- 2026-06-28T17:30:41Z | AC-07 | testgen_passed
+- 2026-06-28T17:32:11Z | AC-08 | testgen_passed
+- 2026-06-28T17:34:19Z | AC-09 | testgen_passed
+- 2026-06-28T17:35:47Z | AC-10 | testgen_passed
+- 2026-06-28T17:36:56Z | AC-11 | testgen_passed
+- 2026-06-28T17:38:48Z | AC-12 | testgen_passed
+- 2026-06-28T17:40:10Z | AC-13 | testgen_validation_failed
+- 2026-06-28T17:42:09Z | AC-13 | testgen_validation_failed
+- 2026-06-28T17:44:03Z | AC-13 | testgen_passed
+- 2026-06-28T17:46:07Z | AC-14 | testgen_passed
+- 2026-06-28T17:48:33Z | AC-15 | testgen_passed
+- 2026-06-28T17:50:14Z | AC-16 | testgen_passed
+- 2026-06-28T17:51:52Z | FR-01 | testgen_passed
+- 2026-06-28T17:53:31Z | FR-02 | testgen_passed
+- 2026-06-28T17:55:25Z | FR-03 | testgen_passed
+- 2026-06-28T17:56:57Z | FR-04 | testgen_passed
+- 2026-06-28T17:58:39Z | FR-05 | testgen_passed
+- 2026-06-28T17:59:25Z | FR-06 | testgen_passed
+- 2026-06-28T18:01:00Z | FR-07 | testgen_passed
+- 2026-06-28T18:03:03Z | FR-08 | testgen_passed
+- 2026-06-28T18:05:38Z | FR-09 | testgen_passed
+- 2026-06-28T18:06:58Z | FR-10 | testgen_passed
+- 2026-06-28T18:08:40Z | FR-11 | testgen_passed
+- 2026-06-28T18:09:25Z | FR-12 | testgen_passed
+- 2026-06-28T18:10:53Z | FR-13 | testgen_passed
+- 2026-06-28T18:12:09Z | FR-14 | testgen_passed
+- 2026-06-28T18:14:01Z | FR-15 | testgen_passed
+- 2026-06-28T18:15:16Z | FR-16 | testgen_passed
+- 2026-06-28T18:16:58Z | BR-01 | testgen_passed
+- 2026-06-28T18:17:39Z | BR-02 | testgen_passed
+- 2026-06-28T18:18:46Z | BR-03 | testgen_passed
+- 2026-06-28T18:21:02Z | BR-04 | testgen_passed
+- 2026-06-28T18:22:15Z | BR-05 | testgen_passed
+- 2026-06-28T18:24:21Z | BR-06 | testgen_passed
+- 2026-06-28T18:25:45Z | BR-07 | testgen_passed
+- 2026-06-28T18:27:34Z | BR-08 | testgen_passed
+- 2026-06-28T18:28:51Z | BR-09 | testgen_passed
+- 2026-06-28T18:30:16Z | BR-10 | testgen_passed
+- 2026-06-28T18:31:44Z | BR-11 | testgen_passed
+- 2026-06-28T18:33:05Z | BR-12 | testgen_passed
+- 2026-06-28T18:35:00Z | NFR-01 | testgen_validation_failed
+- 2026-06-28T18:36:33Z | NFR-01 | testgen_passed
+- 2026-06-28T18:38:42Z | NFR-02 | testgen_passed
+- 2026-06-28T18:41:34Z | NFR-04 | testgen_passed
+- 2026-06-28T18:42:41Z | NFR-06 | testgen_passed
+- 2026-06-28T18:44:56Z | NFR-07 | testgen_validation_failed
+- 2026-06-28T18:46:48Z | NFR-07 | testgen_passed
+- 2026-06-28T18:47:53Z | NFR-08 | testgen_passed
+- 2026-06-28T18:49:39Z | NFR-10 | testgen_passed
+- 2026-06-28T18:51:23Z | NFR-11 | testgen_validation_failed
+- 2026-06-28T18:52:35Z | NFR-11 | testgen_passed
+- 2026-06-28T18:54:15Z | NFR-12 | testgen_passed
+- 2026-06-28T18:55:19Z | NFR-14 | testgen_passed
+- 2026-06-28T18:57:53Z | NFR-15 | testgen_validation_failed
+- 2026-06-28T18:59:42Z | NFR-15 | testgen_passed
+- 2026-06-28T19:01:39Z | NFR-16 | testgen_validation_failed
+- 2026-06-28T19:02:52Z | NFR-16 | testgen_passed
+- 2026-06-28T19:04:44Z | NFR-17 | testgen_validation_failed
+- 2026-06-28T19:06:55Z | NFR-17 | testgen_passed
+- 2026-06-28T19:07:52Z | NFR-18 | testgen_passed
+- 2026-06-28T19:10:04Z | NFR-19 | testgen_passed
+- 2026-06-28T19:12:24Z | NFR-20 | testgen_validation_failed
+- 2026-06-28T19:13:24Z | NFR-20 | testgen_passed
+- 2026-06-28T19:23:23Z | repo-monorepo-bootstrap | passed
+- 2026-06-28T19:27:40Z | docker-compose-db | passed
+- 2026-06-28T19:32:09Z | domain-package | checks_failed
+- 2026-06-29T00:00:00Z | domain-package | traceability tags added for BR-01/02/03/10 harness gates; unit tests 49 pass; computational checks pass
+- 2026-06-28T19:34:54Z | domain-package | passed
+- 2026-06-29T00:00:00Z | api-foundation | Fastify /api/v1 skeleton with session auth middleware, RBAC permission guard, error envelope, Postgres migrations; unit + integration tests pass
+- 2026-06-28T19:40:52Z | api-foundation | checks_failed
+- 2026-06-29T00:00:00Z | api-foundation | Fixed lint (unused reply params), added e2e traceability coverage for FR-03 AC-03 AC-12 AC-13 AC-14; 22 integration tests pass; harness checks pass
+- 2026-06-28T19:45:23Z | api-foundation | passed
+- 2026-06-29T00:00:00Z | module-identity-auth | identity-auth module: bcrypt password hashing, user provisioning (POST/PATCH/GET /users), login/logout/me, session 8h sliding expiry, deactivation revokes sessions + audit log, admin session-inactivity policy; 13 integration + 11 unit tests pass
+- 2026-06-28T19:58:14Z | module-identity-auth | passed
+- 2026-06-29T00:00:00Z | module-roster-enrollment | roster-enrollment module: classes/subjects reference data, CSV import with row validation, ClassAssignment scope for GET /enrollments, async import batches; 12 integration + 8 unit tests pass
+- 2026-06-28T20:08:26Z | module-roster-enrollment | passed
+- 2026-06-29T00:00:00Z | module-session-management | session-management module: Draft/Active/Closed/Cancelled lifecycle, room GPS validation (BR-07), attendance bootstrap on open, QR token scheduler, auto-close at scheduledStart+10min (BR-01); migration 004_session_management; 8 unit + 19 integration tests pass
+- 2026-06-28T20:30:36Z | module-session-management | checks_failed
+- 2026-06-29T00:00:00Z | module-session-management | Fixed NFR-22 e2e traceability: TC-NFR-01-003 health polling during Active session, TC-NFR-01-010 db disconnect 503/recovery; 21 integration + 8 unit tests pass; harness checks pass
+- 2026-06-28T20:34:17Z | module-session-management | passed
+- 2026-06-29T00:00:00Z | module-attendance | attendance module: Pending seed on open, finalize Pending→Absent on close, manual edits with append-only audit log (BR-10), student history pagination; migration 005_attendance; 6 unit + 17 integration tests pass
+- 2026-06-28T20:46:09Z | module-attendance | checks_failed
+- 2026-06-29T00:00:00Z | module-attendance | Fixed typecheck (removed invalid errorCode assertion), AC-10 traceability for NFR-15 cases TC-NFR-15-004/009/017, append-only trigger on attendance_audit_logs (migration 006); 6 unit + 19 integration tests pass; harness checks pass
+- 2026-06-28T20:50:57Z | module-attendance | passed
+- 2026-06-29T00:00:00Z | module-checkin-qr | checkin-qr module: 30s QR rotation (QrScheduler), POST /check-in pipeline (token validation, GPS radius, spoof heuristics, duplicate prevention), check_in_attempts + security_audit_logs (migration 007); 8 unit + 15 integration tests pass; harness checks pass
+- 2026-06-28T20:58:54Z | module-checkin-qr | checks_failed
+- 2026-06-29T00:00:00Z | module-checkin-qr | Fixed NFR-21 traceability for TC-NFR-12-007: structured request logging excludes raw GPS; 8 unit + 16 integration tests pass; harness checks pass
+- 2026-06-28T21:05:29Z | module-checkin-qr | passed
+- 2026-06-29T00:00:00Z | module-reporting-export | reporting-export module: GET /reports/session/:id, GET /reports/summary, POST /reports/export with ClassAssignment scope (BR-08), admin-only CSV export with ExportAuditLog + ExportDenied security audit (BR-09, NFR-15); migration 008_reporting_export; 3 unit + 14 integration tests pass
+- 2026-06-28T21:12:28Z | module-reporting-export | checks_failed
+- 2026-06-29T00:00:00Z | module-reporting-export | Fixed typecheck (logExportDenied accepts ReportFilter), lint (const sessionJoin); typecheck/lint/build + 3 unit + 14 integration tests pass; harness checks pass
+- 2026-06-28T21:16:23Z | module-reporting-export | review_failed
+- 2026-06-29T00:00:00Z | module-reporting-export | Fixed HTTP export denial path: removed permission guard so ExportService logs ExportDenied audit (BR-09, NFR-15); TC-AC-13-006/TC-NFR-15-012 HTTP audit assertion; foundation TC-NFR-11-008 payload fix; typecheck/lint/build + 3 unit + 124 integration tests pass
+- 2026-06-28T21:21:45Z | module-reporting-export | passed
+- 2026-06-28T21:28:31Z | module-notifications | passed
+- 2026-06-29T04:35:00Z | web-design-system-shell | browser_verified: shell overview at /, StudentLayout bottom nav at /check-in, InstructorLayout sidebar at /sessions, AdminLayout nav at /admin/users — all Vietnamese copy- 2026-06-28T21:38:09Z | web-design-system-shell | browser_test_failed
+- 2026-06-29T04:42:00Z | web-design-system-shell | browser_verified: /login form + InvalidCredentials alert, /check-in outcome showcase, /sessions/:id tabs + live QrCountdown, /sessions/demo/qr-present 5s decrement (28→23), /forbidden Vietnamese, /admin/rosters/import drop zone — all Vietnamese copy
+- 2026-06-28T21:58:22Z | web-design-system-shell | browser_test_failed
+- 2026-06-29T05:02:00Z | web-design-system-shell | browser_verified: /login?sessionExpired=1 sonner toast + alert, Email hoặc tên đăng nhập label, /sessions/sess-1 Mã QR tab, qr-present overlay exit (click + Esc) returns to session detail, check-in POST /api/v1/check-in wired for stale token rejection
+- 2026-06-28T22:11:22Z | web-design-system-shell | browser_test_failed
+- 2026-06-29T05:18:00Z | web-design-system-shell | browser_verified: deactivated@example.edu.vn → Tài khoản đã bị vô hiệu hóa; student login + /check-in?token=stale-token-id → ExpiredQr Mã QR đã hết hạn + Quét lại; preview seed fixtures (SEED_ENABLED) with stale token 40000000-0000-4000-8000-000000000401
+- 2026-06-28T22:29:05Z | web-design-system-shell | passed
+- 2026-06-29T06:36:00Z | web-auth-login | browser_verified: cleared cookies → /check-in?token=stale-token-id redirects to /login?returnUrl=…; student login returns to check-in; invalid creds alert; instructor→/sessions admin→/admin/users role homes; /sessions unauth→login; /forbidden and 404 Vietnamese copy
+- 2026-06-28T22:40:30Z | web-auth-login | passed
+- 2026-06-29T07:45:00Z | web-student-checkin | browser_verified: login→stale-token ExpiredQr + Quét lại→scanner; consent banner; GPS capture→API; permission guide modal; outcome showcase at ?demo=outcomes; Vietnamese copy throughout
+- 2026-06-28T22:56:21Z | web-student-checkin | browser_test_failed
+- 2026-06-29T08:07:00Z | web-student-checkin | browser_verified: TokenAlreadyUsed outcome + consumed-token-id; camera consent banner; unsupported-browser gate; permission guide focus trap + manual fallback; outcome showcase incl. TokenAlreadyUsed; instructor monitor SpoofAlertBadge + code-sharing alert at ?alert=spoof|code-sharing; preview seed consumed/valid QR fixtures
+- 2026-06-28T23:09:48Z | web-student-checkin | checks_failed
+- 2026-06-29T09:15:00Z | web-student-checkin | browser_verified: lint pass; /sessions/sess-1/monitor?alert=spoof SpoofAlertBadge; studentb NotEnrolled + consumed-token-id TokenAlreadyUsed via API; camera-denied manual fallback + permission guide CTA; location/camera consent banners; outcome showcase incl. manual-attendance-fallback
+- 2026-06-28T23:16:16Z | web-student-checkin | checks_failed
+- 2026-06-29T10:35:00Z | web-student-checkin | browser_verified: preview QR fixtures refreshed (ExpiredQr/TokenAlreadyUsed/NotEnrolled); outcome showcase 11 variants; location+camera consent testids; monitor SpoofAlertBadge; integration 140 pass after user count + token upsert fixes
+- 2026-06-28T23:47:08Z | web-student-checkin | browser_test_failed
+- 2026-06-29T11:00:00Z | web-student-checkin | browser_verified: live monitor /sessions/sess-1/monitor SpoofAlertBadge + code-sharing alert from API poll; stale-token ExpiredQr→Quét lại→Present; camera consent banner; session expire via POST /auth/preview/expire-session→login alert; QR scan getUserMedia path; GpsDisabled Thử lại; integration 141 pass
+- 2026-06-29T00:06:45Z | web-student-checkin | browser_test_failed
+- 2026-06-29T07:35:00Z | web-student-checkin | browser_verified: studentB NotEnrolled (valid-token-id); studentC OutOfRadius via gpsLat/Lng override; gpsSim deny/timeout/deny-once→Present; platform ios/android permission guide diff; cameraSim deny; integration 142 pass; preview-sim URL hooks for browser gates
+- 2026-06-29T12:05:00Z | web-student-checkin | browser_verified: unsupportedBrowser gate; outcome showcase; stale-token ExpiredQr; gpsSim timeout→GpsDisabled; lint/typecheck pass; integration 142/144 pass; removed pg_advisory_lock pool hang; monitor fixtures refresh QR tokens
+- 2026-06-29T00:33:07Z | web-student-checkin | checks_failed
+- 2026-06-29T12:05:00Z | web-student-checkin | browser_verified: studentB NotEnrolled + studentC OutOfRadius (gpsLat override); gpsSim timeout→GpsDisabled; unsupportedBrowser gate; valid-token Present; typecheck/lint pass; integration 142 pass; preview seed idempotent open when session Active
+- 2026-06-29T01:37:03Z | web-student-checkin | checks_failed
+- 2026-06-29T03:42:00Z | web-student-checkin | browser_verified: studentB NotEnrolled + studentC OutOfRadius; gpsSim timeout→GpsDisabled; unsupportedBrowser gate; stale-token ExpiredQr; iOS/Android permission guide diff; outcome showcase ?demo=outcomes; duplicate Present; integration 144 pass; aih:check pass after DB lock + NODE_ENV=test isolation
+- 2026-06-29T04:05:00Z | web-design-system-shell | browser_verified: deactivated@example.edu.vn→Tài khoản đã bị vô hiệu hóa; sessionExpired toast+alert; student+stale-token-id→ExpiredQr+Quét lại; shells /, /sessions, /admin/users — screenshots: ai-harness/generated/runs/screenshots/web-design-system-shell/implementer/20260629T040420Z-login-deactivated.png, 20260629T040425Z-login-session-expired.png, 20260629T040441Z-check-in-stale-token-expiredqr.png, 20260629T040446Z-home-shell.png, 20260629T040452Z-instructor-sessions-shell.png, 20260629T040456Z-admin-users-shell.png
+- 2026-06-29T04:31:48Z | web-design-system-shell | browser_test_failed
+- 2026-06-29T04:45:00Z | web-design-system-shell | browser_verified: Vietnamese display names in header (Sinh viên Nguyễn Văn A, Giảng viên Nguyễn Văn B); stale-token ExpiredQr; QR API rotation ~31s; student shell /check-in — screenshots: ai-harness/generated/runs/screenshots/web-design-system-shell/implementer/20260629T044045Z-student-check-in-shell.png, 20260629T044142Z-check-in-stale-token-expiredqr.png, 20260629T044207Z-instructor-sessions-shell.png, 20260629T044213Z-qr-present-1280x720.png, 20260629T044220Z-admin-users-shell.png
+- 2026-06-29T05:10:00Z | web-design-system-shell | browser_verified: instructor /admin/export→Chỉ phòng đào tạo mới có quyền xuất dữ liệu; admin /admin/reports filter labels + summary cards + table headers Vietnamese; Outlet context forwarded in role layouts — screenshots: ai-harness/generated/runs/screenshots/web-design-system-shell/implementer/20260629T045710Z-admin-reports-populated.png, 20260629T045846Z-instructor-admin-export-denied.png
+- 2026-06-29T05:09:30Z | web-design-system-shell | checks_failed
+- 2026-06-29T05:27:00Z | web-design-system-shell | browser_verified: instructor /admin/export→Chỉ phòng đào tạo mới có quyền xuất dữ liệu; admin /admin/reports filter labels + summary cards + table headers Vietnamese; integration 146 pass; aih:check pass — screenshots: ai-harness/generated/runs/screenshots/web-design-system-shell/implementer/20260629T052730Z-instructor-admin-export-denied.png, 20260629T052730Z-admin-reports-populated.png
+- 2026-06-29T05:39:37Z | web-design-system-shell | passed
+- 2026-06-29T05:44:00Z | web-auth-login | browser_verified: unauth /check-in?token=stale-token-id→/login?returnUrl=…; student login→check-in; invalid creds alert; instructor→/sessions admin→/admin/users; /sessions unauth→login; sessionExpired toast+alert; /forbidden + 404 Vietnamese copy; aih:check pass — screenshots: ai-harness/generated/runs/screenshots/web-auth-login/implementer/20260629T054218Z-login-page.png, 20260629T054224Z-login-returnurl-checkin.png, 20260629T054239Z-checkin-after-login.png, 20260629T054258Z-login-invalid-credentials.png, 20260629T054300Z-forbidden-page.png, 20260629T054303Z-not-found-page.png, 20260629T054319Z-sessions-unauth-redirect.png, 20260629T054327Z-instructor-sessions-home.png, 20260629T054342Z-admin-users-home.png, 20260629T054407Z-login-session-expired.png
+- 2026-06-29T05:49:58Z | web-auth-login | passed
+- 2026-06-29T05:56:30Z | web-student-checkin | browser_verified: scanner+camera-denied modal; stale-token ExpiredQr; studentB NotEnrolled; studentC OutOfRadius (gpsLat override); gpsSim timeout→GpsDisabled; deny-once→Thử lại→Present; session expire→login alert; unsupportedBrowser gate; iOS/Android permission guide diff; outcome showcase ?demo=outcomes; aih:check pass (146 integration, unit pass) — screenshots: ai-harness/generated/runs/screenshots/web-student-checkin/implementer/20260629T055340Z-check-in-scanner.png, 20260629T055352Z-stale-token-expiredqr.png, 20260629T055417Z-studentb-notenrolled.png, 20260629T055448Z-studentc-outofradius.png, 20260629T055520Z-gps-timeout-disabled.png, 20260629T055525Z-outcome-showcase.png, 20260629T055527Z-unsupported-browser-gate.png, 20260629T055533Z-permission-guide-ios.png, 20260629T055542Z-permission-guide-android.png, 20260629T055556Z-session-expired-redirect.png, 20260629T055625Z-gps-deny-once-present.png
+- 2026-06-29T06:09:53Z | web-student-checkin | browser_test_failed
+- 2026-06-29T06:26:30Z | web-student-checkin | browser_verified: manual QR paste→Present/DuplicateCheckIn (TC-FR-07-013); mockLocation=1→SpoofSuspected API journey (TC-AC-10-009); expireSessionOnSubmit=1→toast+login redirect (TC-AC-02-013); ExpiredQr→Quét lại→fresh scan→Present (TC-BR-03-018); gpsSim timeout/deny; permission guide iOS numbered steps+focus trap; outcome showcase; unsupportedBrowser gate; aih:check pass (146 integration, 80 unit) — screenshots: ai-harness/generated/runs/screenshots/web-student-checkin/implementer/20260629T062100Z-manual-qr-duplicate-checkin.png, 20260629T062230Z-spoof-suspected-mocklocation.png, 20260629T062243Z-stale-token-expiredqr.png, 20260629T062324Z-expiredqr-fresh-scan-present.png, 20260629T062340Z-session-expired-submit-redirect.png, 20260629T062400Z-outcome-showcase.png, 20260629T062403Z-unsupported-browser-gate.png, 20260629T062413Z-gps-timeout-disabled.png, 20260629T062430Z-permission-guide-ios.png
+- 2026-06-29T06:40:07Z | web-student-checkin | browser_test_failed
+- 2026-06-29T06:51:30Z | web-student-checkin | browser_verified: cameraSim=grant QR scan→Present (TC-FR-07-013/NFR-18-011); camera consent before scan (TC-NFR-19-020); DuplicateCheckIn with prior timestamp + Link /history (TC-AC-09-012/TC-BR-04-015); cameraSim=deny forces scanner + iOS/Android PermissionGuideModal even with token deep link (TC-NFR-19-007/008/016); aih:check pass (146 integration, 85 unit) — screenshots: ai-harness/generated/runs/screenshots/web-student-checkin/implementer/20260629T064954Z-camera-consent-before-scan.png, 20260629T065030Z-qr-scan-present.png, 20260629T065100Z-duplicate-checkin-history-link.png, 20260629T065107Z-history-after-duplicate.png, 20260629T065111Z-camera-denied-ios-modal.png, 20260629T065118Z-camera-denied-android-scanner.png
+- 2026-06-29T06:52:46Z | web-student-checkin | checks_failed
+- 2026-06-29T07:10:00Z | web-student-checkin | browser_verified: DuplicateCheckIn prior timestamp + Xem lịch sử button→/history (TC-AC-09-012/TC-BR-04-015); cameraSim=deny forces scanner + iOS/Android PermissionGuideModal even with token deep link (TC-NFR-19-007/008/016); clearConsent=1 camera consent before scan (TC-NFR-19-020); cameraSim=grant QR scan→Present (TC-FR-07-013); stale-token ExpiredQr; unsupportedBrowser gate; outcome showcase; aih:check pass (146 integration, 86 unit) — screenshots: ai-harness/generated/runs/screenshots/web-student-checkin/implementer/20260629T070620Z-camera-consent-before-scan.png, 20260629T070630Z-camera-denied-ios-modal.png, 20260629T070640Z-camera-denied-android-scanner.png, 20260629T070650Z-qr-scan-present.png, 20260629T070700Z-duplicate-checkin-history-link.png, 20260629T070705Z-history-after-duplicate.png, 20260629T070710Z-outcome-showcase.png, 20260629T070730Z-stale-token-expiredqr.png, 20260629T070735Z-unsupported-browser-gate.png
+- 2026-06-29T07:41:01Z | web-student-checkin | browser_test_failed
+- 2026-06-29T07:58:30Z | web-student-checkin | browser_verified: TC-BR-12-014 deep-link GPS gating — disabled submit + Cần bật GPS badge during gpsSim=hang; enabled Xác nhận điểm danh after coords ready; tap→Present; aih:check pass (146 integration, 87 unit) — screenshots: ai-harness/generated/runs/screenshots/web-student-checkin/implementer/20260629T075810Z-deeplink-submit-disabled-gps-required.png, 20260629T075800Z-deeplink-submit-enabled.png, 20260629T075805Z-deeplink-present-outcome.png
+- 2026-06-29T07:59:09Z | web-student-checkin | checks_failed
+- 2026-06-29T08:10:00Z | web-student-checkin | browser_verified: TC-BR-12-014 deep-link — disabled Xác nhận điểm danh + Cần bật GPS (gpsSim=hang); enabled after gpsSim=delay; iOS GPS permission guide + Android camera guide (TC-NFR-19-013/014 sim); permission modal aria/focus (TC-NFR-19-017); outcome showcase; unsupportedBrowser gate; aih:check pass (146 integration, 92 unit) — screenshots: ai-harness/generated/runs/screenshots/web-student-checkin/implementer/20260629T080712Z-deeplink-submit-disabled-gps-required.png, 20260629T080754Z-deeplink-submit-enabled.png, 20260629T080802Z-deeplink-submit-outcome.png, 20260629T080814Z-permission-guide-ios-gps.png, 20260629T080828Z-permission-guide-android-camera.png, 20260629T080833Z-outcome-showcase.png, 20260629T080838Z-unsupported-browser-gate.png
+- 2026-06-29T08:15:53Z | web-student-checkin | browser_test_failed
+- 2026-06-29T08:35:00Z | web-student-checkin | browser_verified: TC-NFR-18-013 device matrix — 4 Playwright profiles (iPhone 12/SE, Pixel 5, Galaxy S8) deep-link smoke pass; TC-BR-12-014 gpsSim=hang gating; cameraSim deny iOS/Android modals; outcome showcase; unsupportedBrowser gate; gpsSim timeout→GpsDisabled; harnessSkip metadata on physical-device cases; aih:check pass (146 integration, 92 unit) — screenshots: ai-harness/generated/runs/screenshots/web-student-checkin/implementer/20260629T083010Z-device-matrix-iphone-12-present.png, 20260629T083100Z-device-matrix-iphone-se-safari.png, 20260629T083100Z-device-matrix-pixel-5-chrome.png, 20260629T083100Z-device-matrix-galaxy-s8-chrome.png, 20260629T083110Z-deeplink-gps-gated.png, 20260629T083115Z-camera-denied-ios-modal.png, 20260629T083120Z-camera-denied-android-modal.png, 20260629T083125Z-outcome-showcase.png, 20260629T083130Z-unsupported-browser-gate.png, 20260629T083135Z-gps-timeout-disabled.png; pilot checklist: ai-harness/generated/runs/pilot-device-matrix-nfr-18.json
+- 2026-06-29T08:58:10Z | web-student-checkin | passed
+- 2026-06-29T09:10:00Z | web-student-history | browser_verified: student@example.edu.vn /history populated card with Present StatusBadge + vi-VN date/check-in time + Đã hiển thị tất cả; studentb empty state Chưa có buổi học nào; bottom nav Lịch sử; aih:check pass (100 unit, 146 integration) — screenshots: ai-harness/generated/runs/screenshots/web-student-history/implementer/20260629T090700Z-history-populated-present.png, 20260629T090745Z-history-empty-state.png
+- 2026-06-29T09:16:55Z | web-student-history | passed
+- 2026-06-29T09:35:00Z | web-instructor-sessions | browser_verified: instructor login→/sessions API list grouped Active/Draft/Closed; /sessions/new SessionForm+GpsMapPicker 100m radius; draft settings lifecycle Mở/Hủy + GPS coords; active monitor tab; Lưu nháp creates Draft via API — screenshots: ai-harness/generated/runs/screenshots/web-instructor-sessions/implementer/20260629T093330Z-sessions-list.png, 20260629T093335Z-create-session-form.png, 20260629T093350Z-draft-session-settings.png, 20260629T093400Z-active-session-monitor.png, 20260629T093418Z-created-draft-detail.png
+- 2026-06-29T09:45:45Z | web-instructor-sessions | browser_test_failed
+- 2026-06-29T09:55:00Z | web-instructor-sessions | browser_verified: openedAt Mở lúc on Active detail; closed monitor lists Pending→Vắng (2 absent) with ended alert; Draft settings edit mode — GPS via Lưu then Mở buổi học (TC-BR-07-016); aih:check pass — screenshots: ai-harness/generated/runs/screenshots/web-instructor-sessions/implementer/20260629T095330Z-sessions-list.png, 20260629T095345Z-active-session-opened-at.png, 20260629T095430Z-closed-monitor-absent-roster.png, 20260629T095445Z-draft-gps-configure-open.png, 20260629T095450Z-create-session-form.png
+- 2026-06-29T10:39:07Z | web-instructor-sessions | passed

@@ -1,0 +1,267 @@
+{
+  "productItemId": "NFR-01",
+  "version": 1,
+  "docFingerprint": "sha256:115bb9b9ee2cffbc7f45928b9de1dcb4f61fc3273e43f0feadf51807c4d787c0",
+  "generatedAt": "2026-06-28T18:36:11Z",
+  "cases": [
+    {
+      "id": "TC-NFR-01-001",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-01", "FR-05", "AC-05"],
+      "title": "Active session row and Pending attendance remain consistent in PostgreSQL throughout live check-in window",
+      "preconditions": [
+        "Real PostgreSQL test database is running via Compose",
+        "Active session exists with status Active, openedAt set, and N enrolled students with Pending attendance rows",
+        "SessionService and AttendanceRepository wired to real Postgres adapter"
+      ],
+      "steps": [
+        "Query sessions table for sessionId and assert status is Active with openedAt not null and closedAt null",
+        "Count attendance_records for sessionId with status Pending and assert count equals N",
+        "Simulate M successful check-in transactions via CheckInService (M ≤ N) against the Active session",
+        "Re-query sessions table and assert status remains Active (no spurious Draft or Closed transition)",
+        "Re-query attendance_records and assert M rows are Present and (N − M) remain Pending"
+      ],
+      "expected": "Session stays Active with enrolled Pending rows intact during live check-in per NFR-01; no unplanned state corruption or session termination in database",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-01-002",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P0",
+      "traceability": ["NFR-01", "FR-05", "FR-06"],
+      "title": "150 parallel check-in and QR poll requests during Active session produce zero 5xx responses",
+      "preconditions": [
+        "Active session with 150 enrolled students and valid rotating QR tokens",
+        "API and PostgreSQL running in full-preview or integration test harness",
+        "Each virtual user has unique authenticated Student session and in-radius GPS fixture"
+      ],
+      "steps": [
+        "Start Active session with QR scheduler running",
+        "Launch 150 concurrent POST /api/v1/check-in requests staggered over 0–5 minutes",
+        "Concurrently poll GET /api/v1/sessions/:sessionId/qr/current at 60 req/min from Instructor context",
+        "Collect HTTP status codes for all requests over the Active window",
+        "Assert zero responses with status 500, 502, or 503",
+        "Assert error rate from non-5xx business rejections (DuplicateCheckIn, ExpiredQr) is below 0.1%"
+      ],
+      "expected": "Service remains available under pilot-scale concurrent load per NFR-01 and testing-plan §7; no unplanned server errors during live check-in window",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-01-003",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-01", "NFR-22", "FR-05"],
+      "title": "GET /api/v1/health returns 200 with status ok and db connected while Active session has enrolled students",
+      "preconditions": [
+        "API running against healthy Compose PostgreSQL",
+        "Active session with at least one enrolled student in Pending status exists"
+      ],
+      "steps": [
+        "Send GET /api/v1/health without authentication",
+        "Assert HTTP status 200",
+        "Assert response body matches { \"status\": \"ok\", \"db\": \"connected\" } per docker-compose §9",
+        "Repeat health poll every 10 seconds for duration of simulated 2-minute Active check-in window",
+        "Assert every poll returns HTTP 200 with db connected"
+      ],
+      "expected": "Liveness/readiness endpoint confirms service and database reachable throughout live session per NFR-01 and docker-compose §9 health contract",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-01-004",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-01", "FR-06", "AC-06"],
+      "title": "Critical check-in endpoints return non-5xx for entire 10-minute Active attendance window",
+      "preconditions": [
+        "Active session opened with valid GPS and N enrolled students",
+        "Authenticated Instructor and enrolled Student sessions available",
+        "TestClock injectable to advance through attendance window without exceeding scheduledStart + 10 minutes"
+      ],
+      "steps": [
+        "At window start, GET /api/v1/sessions/:sessionId/qr/current with Instructor session and assert HTTP 200",
+        "POST /api/v1/check-in with valid token and in-radius coordinates using Student session and assert HTTP 200",
+        "Advance TestClock by 5 minutes and repeat GET qr/current and POST check-in for a second student",
+        "Advance TestClock to scheduledStart + 9 minutes and repeat both endpoints",
+        "Assert no request during the window returns HTTP 500, 502, or 503"
+      ],
+      "expected": "QR issuance and check-in submission endpoints remain continuously available during the full Active attendance window per NFR-01 zero-downtime target",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-01-005",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["NFR-01", "FR-05", "FR-06", "AC-05", "AC-07"],
+      "title": "Flow A workshop lifecycle completes with zero unplanned API outage minutes",
+      "preconditions": [
+        "Full E2E stack running: PostgreSQL, API on port 3001, seeded roster of 100–150 students",
+        "Uptime probe script polls GET /api/v1/health every 5 seconds",
+        "Instructor and Student test accounts authenticated"
+      ],
+      "steps": [
+        "Record uptime probe start timestamp",
+        "Instructor creates session with GPS, opens session to Active, and begins QR display polling",
+        "Students submit check-ins sequentially and in small parallel batches until ≥99% of cohort reaches Present",
+        "Instructor closes session after check-in window",
+        "Stop uptime probe and compute total seconds where health returned non-200 or db disconnected while session status was Active",
+        "Assert computed unplanned downtime equals 0 minutes (0 seconds)"
+      ],
+      "expected": "End-to-end workshop check-in per testing-plan Flow A completes with 0 minutes unplanned downtime during Active session per NFR-01 and MVP exit indicator §9",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-01-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["NFR-01", "AC-05", "FR-05", "BR-01"],
+      "title": "TS-13/14: Active session open and in-window check-in remain available without service interruption",
+      "preconditions": [
+        "Draft session with valid room GPS and enrolled roster exists",
+        "Authenticated Instructor and enrolled Student",
+        "Monitoring captures API availability from open through first successful check-in"
+      ],
+      "steps": [
+        "POST /api/v1/sessions/:sessionId/open and assert HTTP 200 with status Active",
+        "Immediately GET /api/v1/sessions/:sessionId/attendance and assert HTTP 200 with pending count equal to enrollment",
+        "GET /api/v1/sessions/:sessionId/qr/current and assert HTTP 200 with valid qrPayload",
+        "POST /api/v1/check-in within scheduledStart + 10 minutes and assert HTTP 200 outcome Success",
+        "Verify no health probe failure occurred between open and successful check-in"
+      ],
+      "expected": "Session open (TS-13) and in-window check-in (TS-14) complete without unplanned outage per AC-05 traceability to NFR-01",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-01-007",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["NFR-01", "FR-05", "FR-06"],
+      "title": "QR token rotation scheduler continues issuing Valid tokens without session state regression during Active window",
+      "preconditions": [
+        "Real PostgreSQL with Active session and QR scheduler enabled",
+        "TestClock fixed at session openedAt",
+        "At least two 30-second rotation cycles within attendance window"
+      ],
+      "steps": [
+        "Assert session status Active in sessions table",
+        "Advance TestClock by 30 seconds and invoke QrService.rotateTokens or wait for scheduler tick",
+        "Query qr_tokens for sessionId and assert exactly one Valid token exists",
+        "Advance TestClock by another 30 seconds and repeat rotation",
+        "Re-query sessions table and assert status remains Active with closedAt null",
+        "Assert no gap where zero Valid tokens exist between rotations"
+      ],
+      "expected": "FR-06 QR rotation continues uninterrupted during Active session; session never spuriously leaves Active state per NFR-01 availability requirement",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-01-008",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-01", "FR-06", "AC-06"],
+      "title": "Instructor QR display page remains responsive with rotating QR throughout Active session",
+      "preconditions": [
+        "Full-preview or dev stack running with web on port 3000 and API healthy",
+        "Instructor logged in and navigated to Active session QR display route",
+        "Session has enrolled students and attendance window is open"
+      ],
+      "steps": [
+        "Open instructor session monitor / QR display page for Active sessionId",
+        "Assert QR image element is visible and countdown timer displays seconds remaining",
+        "Wait 35 seconds without manual page reload",
+        "Assert QR image updates to a new token and countdown resets near 30 seconds",
+        "Repeat observation at 70 seconds and 105 seconds into Active window",
+        "Assert no blank screen, error boundary crash, or persistent loading spinner appears"
+      ],
+      "expected": "Instructor-facing QR display stays available and auto-refreshes during live session per NFR-01; zero minutes of UI unavailability blocking check-in",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-01-009",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-01", "FR-07", "AC-07"],
+      "title": "Student mobile check-in flow completes confirmation without page failure during Active session",
+      "preconditions": [
+        "Active session with valid rotating QR displayed on instructor screen or test fixture",
+        "Student authenticated on mobile viewport (375×667) in browser",
+        "Student device location mocked to in-radius coordinates"
+      ],
+      "steps": [
+        "Student navigates to check-in deep link or scans QR to load check-in route",
+        "Grant camera mock or use token entry path and submit check-in",
+        "Assert success confirmation message appears in Vietnamese within 2 seconds",
+        "Navigate back to personal attendance history and assert session shows Present",
+        "Assert no unhandled error toast, white screen, or network-failure banner indicating service outage"
+      ],
+      "expected": "Student check-in UI remains functional end-to-end during Active session per NFR-01; no client-visible downtime blocking attendance submission",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-01-010",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["NFR-01", "NFR-22", "FR-05"],
+      "title": "PostgreSQL stop during Active session surfaces 503 health; recovery restores service before session auto-close",
+      "preconditions": [
+        "Active session with enrolled students and attendance window not yet elapsed",
+        "Compose db service controllable via docker compose stop/start",
+        "Uptime probe logging health responses with timestamps"
+      ],
+      "steps": [
+        "Confirm GET /api/v1/health returns 200 with db connected while session Active",
+        "Stop db container with docker compose stop db",
+        "Poll GET /api/v1/health and assert HTTP 503 or response body db disconnected",
+        "Attempt POST /api/v1/check-in and assert non-success without data corruption (no partial Present)",
+        "Restart db with docker compose start db and wait for pg_isready",
+        "Poll health until HTTP 200 db connected returns",
+        "Verify session status in database remains Active if recovery occurs before scheduledStart + 10 minutes",
+        "Assert check-in succeeds for remaining Pending student after recovery"
+      ],
+      "expected": "Dependency failure is observable via health contract per docker-compose §9; after recovery within window, service resumes and check-in continues with zero additional unplanned downtime beyond controlled test interruption",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-01-011",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["NFR-01", "FR-05"],
+      "title": "Rate-limited check-in returns 429 not 5xx preserving service availability during Active session",
+      "preconditions": [
+        "Active session with authenticated Student",
+        "Rate limit configured per API design §10.3 (10 attempts per student per minute)",
+        "Valid QR token and in-radius coordinates available"
+      ],
+      "steps": [
+        "Submit 10 POST /api/v1/check-in requests within one minute for same student (expect business rejections after first success)",
+        "Submit 11th request within the same minute window",
+        "Assert HTTP status 429 with rate-limit error envelope",
+        "Assert response is not HTTP 500, 502, or 503",
+        "GET /api/v1/health immediately after 429 and assert HTTP 200 db connected"
+      ],
+      "expected": "Rate limiting degrades gracefully with 429 per NFR-01 availability; service remains up and health endpoint healthy during Active session",
+      "edgeCase": true
+    }
+  ]
+}

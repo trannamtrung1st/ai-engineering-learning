@@ -1,0 +1,330 @@
+{
+  "productItemId": "FR-14",
+  "version": 1,
+  "docFingerprint": "sha256:26487f1e8ffa08ffd0992c5ca94573515f2df13c0986f7c7d3fe587858764940",
+  "generatedAt": "2026-06-29T14:30:00Z",
+  "cases": [
+    {
+      "id": "TC-FR-14-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["FR-14", "AC-14"],
+      "title": "TS-34: Student receives paginated read-only personal attendance history with required fields",
+      "preconditions": [
+        "Authenticated Student A session with enrollment history across at least two Closed sessions",
+        "Student B has attendance records in the same class-subject sessions",
+        "Student A has mixed statuses (Present with checkedInAt, Absent, Excused) across Closed sessions",
+        "At least 25 history rows exist for Student A to exercise pagination"
+      ],
+      "steps": [
+        "GET /api/v1/attendance/me/history?limit=20 using Student A session cookie",
+        "Assert HTTP status 200 OK",
+        "Assert response items array length ≤ 20 and every item belongs to Student A (no Student B institutionalId or displayName)",
+        "Assert each item includes sessionDate, subject name or subjectId, status (Present, Absent, or Excused), and checkedInAt populated only when status is Present",
+        "Follow nextCursor with second GET /attendance/me/history?limit=20&cursor={nextCursor} and assert remaining own records returned without peer rows",
+        "Assert totalCount reflects Student A Closed-session attendance count only per FR-14 and AC-14a"
+      ],
+      "expected": "FR-14 satisfied: paginated read-only list shows only own records with session date, subject, status, and check-in time when applicable per testing-plan TS-34",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-14-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-14", "AC-14"],
+      "title": "AttendanceService.getStudentHistory returns only authenticated student records via real DB transaction",
+      "preconditions": [
+        "Real PostgreSQL test database with Closed sessions and attendance_records for Student A and Student B in shared enrollments",
+        "AttendanceService wired per attendance module §2.5 with roster and session read models",
+        "Student A has 30 Closed-session attendance rows; Student B has distinct rows in overlapping sessions"
+      ],
+      "steps": [
+        "Invoke AttendanceService.getStudentHistory(studentAId, { limit: 20 })",
+        "Assert returned page contains exactly 20 items and all rows have student_id matching studentAId at repository layer",
+        "Assert pagination envelope includes items, nextCursor (non-null when more rows exist), and totalCount equal to Student A row count",
+        "Invoke getStudentHistory(studentAId, { limit: 20, cursor: nextCursor }) and assert second page rows are disjoint from first page",
+        "Query attendance_records directly and assert no Student B session rows appear in either page",
+        "Verify SQL join filters ar.student_id = $authenticated_student_id and s.status = Closed per database design"
+      ],
+      "expected": "Module-integration boundary: AttendanceService.getStudentHistory returns self-scoped paginated history only per attendance module §2.5 and FR-14",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-14-003",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-14"],
+      "title": "GET /attendance/me/history returns 200 JSON list envelope with history item fields",
+      "preconditions": [
+        "Authenticated Student session with at least one Closed session attendance record",
+        "Known Present record includes checkedInAt timestamp"
+      ],
+      "steps": [
+        "Send GET /api/v1/attendance/me/history?limit=20 with Student session cookie",
+        "Assert HTTP status 200 OK",
+        "Assert Content-Type application/json; charset=utf-8",
+        "Assert response body contains items array, nextCursor, and totalCount per API design §10.1 success list envelope",
+        "Assert each item in items includes subject identifier or name, sessionDate (ISO 8601), status enum (Present, Absent, Excused), and checkedInAt when status is Present",
+        "Assert response body does not contain errorCode on success"
+      ],
+      "expected": "HTTP 200 success contract for GET /attendance/me/history per API design §7.3 and §10.1; history DTO fields match FR-14 outputs",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-14-004",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "pagination",
+      "priority": "P0",
+      "traceability": ["FR-14", "AC-14"],
+      "title": "Student history cursor pagination respects limit, totalCount, and page boundaries",
+      "preconditions": [
+        "Real PostgreSQL with 45 Closed-session attendance rows for Student A ordered by scheduled_start DESC",
+        "AttendanceService.getStudentHistory callable with cursor and limit parameters"
+      ],
+      "steps": [
+        "Invoke getStudentHistory(studentAId, { limit: 20 }) and capture items, nextCursor, totalCount",
+        "Assert items.length === 20, totalCount === 45, and nextCursor is non-null",
+        "Invoke getStudentHistory(studentAId, { limit: 20, cursor: nextCursor }) and assert items.length === 20",
+        "Invoke getStudentHistory(studentAId, { limit: 20, cursor: secondPageCursor }) and assert items.length === 5 (final page)",
+        "Assert nextCursor is null on final page and union of all pages equals 45 unique session attendance rows",
+        "Assert no duplicate items across pages and ordering remains session date descending"
+      ],
+      "expected": "Pagination invariant: page size, totalCount, cursor continuity, and final-page boundary behave correctly for student history per FR-14 paginated output requirement",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-14-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-14", "AC-14", "NFR-11"],
+      "title": "Student denied GET /sessions/:sessionId/attendance peer roster with 403 Forbidden",
+      "preconditions": [
+        "Authenticated Student A session (attendance:read self only; no session roster scope per roles-permissions §2.2)",
+        "Closed session with attendance records for Student A and multiple peer students",
+        "Known sessionId for that Closed session"
+      ],
+      "steps": [
+        "GET /api/v1/sessions/:sessionId/attendance using Student A session cookie",
+        "Assert HTTP status 403 Forbidden",
+        "Assert response errorCode Forbidden",
+        "Assert response message Bạn không có quyền thực hiện thao tác này per error-handling §2.3",
+        "Assert response body contains no records array, peer student names, institutionalIds, or attendance statuses",
+        "Verify Student A can still GET /attendance/me/history and receive only own rows"
+      ],
+      "expected": "FR-14 isolation: student cannot view other students' records via session roster API; no peer data exposed per AC-14b",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-14-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-14", "AC-14", "NFR-11"],
+      "title": "Student denied GET /reports/summary institution-wide aggregates with 403 Forbidden",
+      "preconditions": [
+        "Authenticated Student session with attendance history records",
+        "Student lacks report:read per roles-permissions §2.3 (students never receive report:read)",
+        "Institution-wide attendance data exists for multiple cohorts"
+      ],
+      "steps": [
+        "GET /api/v1/reports/summary?from=2026-06-01&to=2026-06-30 using Student session cookie",
+        "Assert HTTP status 403 Forbidden",
+        "Assert errorCode Forbidden or ReportAccessDenied",
+        "Assert localized Vietnamese permission message per error-handling §2.3",
+        "Assert response body contains no student roster, summary counts, or cross-cohort aggregate data",
+        "Verify Student can access only GET /attendance/me/history for self-scoped personal history"
+      ],
+      "expected": "FR-14 satisfied: student cannot view institution-wide aggregates; only self-scoped personal history via attendance:read (self)",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-14-007",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-14", "AC-14", "NFR-11"],
+      "title": "Unauthenticated GET /attendance/me/history returns 401 Unauthenticated",
+      "preconditions": [
+        "No valid session cookie or bearer token",
+        "Attendance history data exists in system"
+      ],
+      "steps": [
+        "GET /api/v1/attendance/me/history without authentication headers",
+        "Assert HTTP status 401 Unauthorized",
+        "Assert errorCode Unauthenticated",
+        "Assert message Vui lòng đăng nhập để tiếp tục per BR-06 and error-handling §4.1",
+        "Assert response contains no attendance items or peer data"
+      ],
+      "expected": "Personal history requires authenticated student session; unauthenticated callers denied with no data leak per FR-14 inputs",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-14-008",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-14", "AC-14"],
+      "title": "/history shows paginated card list with StatusBadge per attendance row",
+      "preconditions": [
+        "Authenticated Student on mobile viewport (StudentLayout)",
+        "At least 25 Closed-session attendance records with mixed Present, Absent, and Excused statuses",
+        "Student bottom nav includes Lịch sử link to /history per page-list §3.2"
+      ],
+      "steps": [
+        "Navigate to /history",
+        "Wait for AttendanceHistoryList to load and assert skeleton transitions to data rows",
+        "Verify each card row displays subject name, session date (vi-VN formatted), StatusBadge with correct variant for Present/Absent/Excused, and check-in time only on Present rows",
+        "Verify first page shows up to 20 rows per cursor/load-more page size",
+        "Click Tải thêm (load more) and verify additional rows append without duplicating first page",
+        "Verify rows sorted by session date descending and list is read-only (no edit controls)"
+      ],
+      "expected": "FR-14 browser journey: /history paginated read-only list with status badges showing session date, subject, status, and check-in time when applicable",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-14-009",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-14", "AC-14"],
+      "title": "Student /history empty state when no Closed sessions exist",
+      "preconditions": [
+        "Authenticated Student with enrollments but no Closed-session attendance records yet",
+        "Student has not completed any workshop session to Closed state"
+      ],
+      "steps": [
+        "Navigate to /history",
+        "Wait for API GET /attendance/me/history to complete",
+        "Verify EmptyState displays message Chưa có buổi học nào",
+        "Verify no StatusBadge or attendance cards rendered",
+        "Verify load-more control hidden or disabled when items array is empty"
+      ],
+      "expected": "Browser empty state for student with no history records; no erroneous peer or placeholder data shown",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-14-010",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["FR-14"],
+      "title": "GET /attendance/me/history with limit=201 returns 400 InvalidPagination",
+      "preconditions": [
+        "Authenticated Student session",
+        "API design §1 enforces limit default 50, max 200 per pagination rules"
+      ],
+      "steps": [
+        "GET /api/v1/attendance/me/history?limit=201 using Student session cookie",
+        "Assert HTTP status 400 Bad Request",
+        "Assert response errorCode InvalidPagination",
+        "Assert Vietnamese message Tham số phân trang không hợp lệ per error-handling §4.3",
+        "Assert response contains no items array or attendance data in error envelope"
+      ],
+      "expected": "Pagination boundary enforced: limit above max 200 rejected with InvalidPagination; no history data leaked on invalid request",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-14-011",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["FR-14"],
+      "title": "GET /attendance/me/history with malformed cursor returns 400 InvalidPagination",
+      "preconditions": [
+        "Authenticated Student session",
+        "Validation rejects malformed opaque cursor per error-handling §4.3"
+      ],
+      "steps": [
+        "GET /api/v1/attendance/me/history?cursor=not-a-valid-cursor using Student session",
+        "Assert HTTP status 400 Bad Request",
+        "Assert response errorCode InvalidPagination",
+        "Assert no partial attendance items returned in error body"
+      ],
+      "expected": "Malformed cursor boundary rejected with InvalidPagination; no partial history data exposed",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-14-012",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["FR-14", "AC-14"],
+      "title": "Flow A: Student views personal history after successful workshop check-in and session close",
+      "preconditions": [
+        "Flow A completed through step 6: roster seeded, session created with GPS, opened, Student A checked in Present, instructor closed session",
+        "Student A authenticated with session cookie"
+      ],
+      "steps": [
+        "GET /api/v1/attendance/me/history using Student A session after session Closed",
+        "Assert HTTP 200 and items include the workshop session row",
+        "Assert that row shows status Present, matching subject, sessionDate equal to scheduled_start, and checkedInAt populated",
+        "Navigate to /history in browser and verify same session appears with Present StatusBadge and check-in time",
+        "Confirm history reflects check-in outcome without exposing other students' records"
+      ],
+      "expected": "Flow A lifecycle includes student personal history visibility after check-in and close per FR-14 and testing-plan §6 Flow A",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-14-013",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["FR-14", "AC-14"],
+      "title": "GET /attendance/me/history supports subjectId and date range filters scoped to self",
+      "preconditions": [
+        "Authenticated Student A with Closed sessions in SWE-101 (June 2026) and SWE-102 (July 2026)",
+        "Mixed Present and Absent records in each subject"
+      ],
+      "steps": [
+        "GET /api/v1/attendance/me/history?subjectId={swe101Id}&from=2026-06-01&to=2026-06-30 using Student A session",
+        "Assert HTTP 200 and all items reference SWE-101 subject with sessionDate within from/to inclusive",
+        "Assert no SWE-102 session rows appear in filtered result",
+        "GET /attendance/me/history without filters and assert totalCount ≥ filtered totalCount",
+        "Assert all filtered items remain Student A records only per self-scope invariant"
+      ],
+      "expected": "History endpoint optional filters (subjectId, from, to) apply within self-scoped result set per API design §7.3 query parameters and FR-14 enrolled-subjects scope",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-14-014",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-14", "AC-14", "NFR-11"],
+      "title": "Student PATCH on peer attendance recordId returns 403 Forbidden",
+      "preconditions": [
+        "Authenticated Student A session",
+        "Known attendance recordId belonging to Student B in a Closed session",
+        "Student A lacks attendance:write per roles-permissions §2.2"
+      ],
+      "steps": [
+        "PATCH /api/v1/attendance/:peerRecordId with body { status: \"Present\", note: \"Unauthorized edit\" } using Student A session",
+        "Assert HTTP status 403 Forbidden",
+        "Assert errorCode Forbidden",
+        "Assert no attendance_records row updated for peerRecordId",
+        "Query attendance_records for peerRecordId and assert status unchanged",
+        "Assert response contains no peer student profile or roster data beyond denial envelope"
+      ],
+      "expected": "FR-14 read-only guarantee: student cannot mutate another student's attendance record; peer data not exposed per AC-14b",
+      "edgeCase": false
+    }
+  ]
+}

@@ -1,0 +1,215 @@
+{
+  "alwaysRead": [
+    "docs/brds/08-acceptance-mvp-future.md",
+    "docs/technical/11-testing-plan.md"
+  ],
+  "rules": [
+    {
+      "match": "^AC-0[1-3]$",
+      "docs": [
+        "docs/brds/03-functional-requirements.md",
+        "docs/brds/04-business-rules.md",
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/05-api-design.md"
+      ]
+    },
+    {
+      "match": "^AC-0[456]$",
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/06-main-workflows.md",
+        "docs/technical/07-state-machines.md",
+        "docs/technical/05-api-design.md"
+      ]
+    },
+    {
+      "match": "^AC-(07|08|09|10)$",
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/03-domain-model.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/08-validation-rules.md"
+      ]
+    },
+    {
+      "match": "^AC-1[1-4]$",
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/09-error-handling.md"
+      ]
+    },
+    {
+      "match": "^AC-12$",
+      "docs": [
+        "docs/technical/05-api-design.md",
+        "docs/technical/01-roles-permissions.md",
+        "docs/ui-ux/09-page-list.md"
+      ],
+      "coverageHints": [
+        "integration: instructor report scoped to assigned class-subject pairs only",
+        "rbac-negative: unassigned instructor receives 403 on report endpoint",
+        "e2e: admin institution-wide report returns all cohorts within date filter"
+      ]
+    },
+    {
+      "match": "^AC-13$",
+      "docs": [
+        "docs/technical/05-api-design.md",
+        "docs/brds/04-business-rules.md",
+        "docs/ui-ux/09-page-list.md"
+      ],
+      "coverageHints": [
+        "integration: CSV export columns match spec; export action audit-logged",
+        "rbac-negative: instructor and student export requests rejected with localized message",
+        "e2e: admin CSV download succeeds with filtered report scope"
+      ]
+    },
+    {
+      "match": "^AC-14$",
+      "docs": [
+        "docs/technical/05-api-design.md",
+        "docs/ui-ux/09-page-list.md"
+      ],
+      "coverageHints": [
+        "integration: student history returns only own records with pagination envelope",
+        "rbac-negative: student cannot access peer attendance via API",
+        "browser-journey: /history shows paginated list with status badges"
+      ]
+    },
+    {
+      "match": "^AC-1[56]$",
+      "docs": [
+        "docs/technical/05-api-design.md",
+        "docs/ui-ux/10-user-flows.md",
+        "docs/technical/01-roles-permissions.md"
+      ],
+      "coverageHints": [
+        "integration: session monitor poll returns updated present/absent counts",
+        "browser-journey: instructor monitor dashboard refreshes within 5 seconds",
+        "e2e: absence threshold notification fires when unexcused rate exceeds 20%"
+      ]
+    },
+    {
+      "match": "^NFR-0(1|2|4)$",
+      "docs": [
+        "docs/technical/13-docker-compose-local-runtime.md",
+        "docs/brds/07-non-functional-risk.md"
+      ]
+    },
+    {
+      "match": "^NFR-06$",
+      "docs": [
+        "docs/ui-ux/00-production-ui-quality-bar.md",
+        "docs/ui-ux/04-design-tokens.md",
+        "docs/technical/07-state-machines.md"
+      ]
+    },
+    {
+      "match": "^NFR-(07|08|11|15)$",
+      "docs": [
+        "docs/technical/01-roles-permissions.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/09-error-handling.md"
+      ]
+    },
+    {
+      "match": "^NFR-1[0-6]$",
+      "docs": [
+        "docs/technical/05-api-design.md",
+        "docs/technical/01-roles-permissions.md",
+        "docs/brds/04-business-rules.md"
+      ]
+    },
+    {
+      "match": "^NFR-1[789]$|^NFR-20$",
+      "docs": [
+        "docs/ui-ux/00-production-ui-quality-bar.md",
+        "docs/ui-ux/12-ui-states.md",
+        "docs/brds/07-non-functional-risk.md"
+      ]
+    },
+    {
+      "match": "^NFR-14$",
+      "docs": ["docs/technical/12-backend-frontend-tech-stack.md"]
+    },
+    {
+      "match": "^FR-0[1-3]$",
+      "docs": [
+        "docs/brds/03-functional-requirements.md",
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/04-database-design.md"
+      ]
+    },
+    {
+      "match": "^FR-0[45]$",
+      "docs": [
+        "docs/brds/03-functional-requirements.md",
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/06-main-workflows.md",
+        "docs/technical/07-state-machines.md"
+      ]
+    },
+    {
+      "match": "^FR-0[6-9]$|^FR-10$",
+      "docs": [
+        "docs/brds/03-functional-requirements.md",
+        "docs/brds/04-business-rules.md",
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/08-validation-rules.md"
+      ]
+    },
+    {
+      "match": "^FR-1[1-4]$",
+      "docs": [
+        "docs/brds/03-functional-requirements.md",
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/09-error-handling.md"
+      ]
+    },
+    {
+      "match": "^FR-1[56]$",
+      "docs": [
+        "docs/brds/03-functional-requirements.md",
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/05-api-design.md",
+        "docs/ui-ux/10-user-flows.md"
+      ]
+    }
+  ],
+  "catalog": {
+    "FR": [
+      "FR-01",
+      "FR-02",
+      "FR-03",
+      "FR-04",
+      "FR-05",
+      "FR-06",
+      "FR-07",
+      "FR-08",
+      "FR-09",
+      "FR-10",
+      "FR-11",
+      "FR-12",
+      "FR-13",
+      "FR-14",
+      "FR-15",
+      "FR-16"
+    ]
+  },
+  "prefixDefaults": {
+    "FR": [
+      "docs/brds/03-functional-requirements.md",
+      "docs/technical/05-api-design.md"
+    ],
+    "BR": [
+      "docs/brds/04-business-rules.md",
+      "docs/technical/08-validation-rules.md",
+      "docs/technical/03-domain-model.md"
+    ],
+    "NFR": ["docs/brds/07-non-functional-risk.md"]
+  }
+}

@@ -1,0 +1,454 @@
+{
+  "productItemId": "AC-04",
+  "version": 1,
+  "docFingerprint": "sha256:1ac4798df6d9455def54fdb258e16300f8a5e0c63b97d141244c054696ce7c48",
+  "generatedAt": "2026-06-28T17:24:00Z",
+  "cases": [
+    {
+      "id": "TC-AC-04-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["AC-04", "FR-04", "BR-07"],
+      "title": "TS-10: Instructor creates session with room GPS saved in Draft state",
+      "preconditions": [
+        "Authenticated Instructor with ClassAssignment for class HESD-01 and subject SWE-101",
+        "Reference class and subject IDs are known",
+        "Room coordinates fixture: latitude 10.762622, longitude 106.660172"
+      ],
+      "steps": [
+        "POST /sessions with classId, subjectId, title, roomName Phòng A201, roomLatitude 10.762622, roomLongitude 106.660172, gpsRadiusMeters 100, and future scheduledStart",
+        "Assert HTTP status 201 Created",
+        "Assert response body status is Draft and roomLatitude, roomLongitude, gpsRadiusMeters match request",
+        "GET /sessions/:sessionId with Instructor session and verify persisted GPS fields"
+      ],
+      "expected": "Session persisted in Draft state with configured room GPS and default 100 m radius per AC-04a and FR-04",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-04-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["AC-04", "FR-04"],
+      "title": "SessionService.create persists Draft session with GPS coordinates in Postgres transaction",
+      "preconditions": [
+        "Real PostgreSQL test database is running",
+        "session-management module SessionService is wired to SessionRepository",
+        "Instructor context with ClassAssignment for HESD-01 / SWE-101 exists"
+      ],
+      "steps": [
+        "Invoke SessionService.create with valid DTO including roomLatitude, roomLongitude, gpsRadiusMeters 100",
+        "Query sessions table by returned sessionId within transaction scope",
+        "Verify status column is Draft, room_latitude and room_longitude match input, gps_radius_meters is 100"
+      ],
+      "expected": "Exactly one session row committed with status Draft and GPS fields stored; no attendance or QR scheduler side effects on create",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-04-003",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["AC-04", "FR-04"],
+      "title": "POST /sessions returns 201 Created with Session DTO in Draft status",
+      "preconditions": [
+        "Instructor session cookie is set with assignment to target class-subject",
+        "Valid session creation payload per API design §5.2 is prepared"
+      ],
+      "steps": [
+        "Send POST /sessions with Content-Type application/json and full request body",
+        "Assert HTTP status 201 Created",
+        "Assert response body contains id, classId, subjectId, status Draft, roomName, roomLatitude, roomLongitude, gpsRadiusMeters, scheduledStart",
+        "Assert response body does not contain openedAt or closedAt timestamps"
+      ],
+      "expected": "HTTP 201 Created with Session DTO envelope per API design §5.2; status Draft confirms session not yet active",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-04-004",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["AC-04", "FR-04", "BR-07"],
+      "title": "TS-11: Open Draft session without valid room GPS returns 422 RoomGpsRequired",
+      "preconditions": [
+        "Authenticated Instructor owns a Draft session created without roomLatitude and roomLongitude (null coordinates)",
+        "Session class-subject is within instructor assignment scope"
+      ],
+      "steps": [
+        "POST /sessions/:sessionId/open with Instructor session cookie",
+        "Assert HTTP status 422",
+        "Assert response errorCode RoomGpsRequired with Vietnamese message requiring room GPS configuration",
+        "GET /sessions/:sessionId and assert status remains Draft"
+      ],
+      "expected": "Draft to Active transition blocked per AC-04b and BR-07; session status unchanged; error surfaces RoomGpsRequired",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-04-005",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["AC-04", "FR-04", "BR-07"],
+      "title": "SessionService.open rejects Draft session with missing GPS and preserves Draft state",
+      "preconditions": [
+        "Draft session row exists with room_latitude NULL and room_longitude NULL",
+        "SessionService.open invoked under owning Instructor context"
+      ],
+      "steps": [
+        "Invoke SessionService.open(sessionId) for session missing coordinates",
+        "Capture thrown domain exception with errorCode RoomGpsRequired",
+        "Query sessions table for sessionId and read status column"
+      ],
+      "expected": "beforeState Draft, afterState Draft; RoomGpsRequired thrown; no openedAt set and no attendance bootstrap triggered",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-04-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["AC-04", "FR-04"],
+      "title": "TS-12: Cancel Draft session transitions to terminal Cancelled status",
+      "preconditions": [
+        "Authenticated Instructor owns a Draft session with valid GPS configured",
+        "Session has not been opened"
+      ],
+      "steps": [
+        "POST /sessions/:sessionId/cancel with Instructor session cookie",
+        "Assert HTTP status 200",
+        "Assert response body status is Cancelled",
+        "GET /sessions/:sessionId and verify status Cancelled with no openedAt timestamp"
+      ],
+      "expected": "Session transitions from Draft to Cancelled terminal state per AC-04c; no attendance records finalized",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-04-007",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["AC-04", "FR-04"],
+      "title": "SessionService.cancel transitions Draft session to Cancelled in database",
+      "preconditions": [
+        "Draft session row exists in PostgreSQL test database",
+        "SessionService.cancel invoked under owning Instructor context"
+      ],
+      "steps": [
+        "Record beforeState as Draft from sessions table",
+        "Invoke SessionService.cancel(sessionId)",
+        "Query sessions table and read status column",
+        "Verify no attendance_records rows were created or updated for this session"
+      ],
+      "expected": "beforeState Draft, afterState Cancelled; terminal state persisted; no attendance finalize side effects",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-04-008",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["AC-04", "FR-04"],
+      "title": "POST /sessions/:sessionId/cancel returns 200 with status Cancelled",
+      "preconditions": [
+        "Instructor session cookie is set",
+        "Draft sessionId owned by instructor is known"
+      ],
+      "steps": [
+        "Send POST /sessions/:sessionId/cancel with Instructor session",
+        "Assert HTTP status 200",
+        "Assert response body contains sessionId and status Cancelled"
+      ],
+      "expected": "HTTP 200 with updated Session DTO per API design §5.6; status Cancelled confirms terminal cancellation",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-04-009",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["AC-04", "FR-04"],
+      "title": "Student denied POST /sessions with 403 Forbidden",
+      "preconditions": [
+        "Authenticated Student session is available",
+        "Valid session creation payload is prepared",
+        "Student role lacks session:write permission per roles matrix §2.2"
+      ],
+      "steps": [
+        "POST /sessions with valid creation body using Student session cookie",
+        "Assert HTTP status 403 Forbidden",
+        "Assert response errorCode Forbidden with localized permission-denied message",
+        "Verify no new session row created in database"
+      ],
+      "expected": "Student cannot create sessions per roles-permissions §2.3; HTTP 403 with no session persisted",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-04-010",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["AC-04", "FR-04", "BR-07"],
+      "title": "TrainingOfficeAdmin denied POST /sessions without session:write override",
+      "preconditions": [
+        "Authenticated TrainingOfficeAdmin session is available",
+        "Admin has session:read institution-wide but no default session:write per MVP policy",
+        "Valid session creation payload is prepared"
+      ],
+      "steps": [
+        "POST /sessions with valid body using TrainingOfficeAdmin session cookie",
+        "Assert HTTP status 403 Forbidden and errorCode Forbidden",
+        "Verify no session row created"
+      ],
+      "expected": "Admin cannot create sessions in MVP default policy; access denied with 403 Forbidden",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-04-011",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["AC-04", "FR-04"],
+      "title": "Instructor denied POST /sessions for unassigned class-subject with 403 Forbidden",
+      "preconditions": [
+        "Instructor is authenticated with ClassAssignment only for HESD-01 / SWE-101",
+        "Class HESD-02 and subject SWE-101 exist",
+        "Instructor lacks assignment to HESD-02"
+      ],
+      "steps": [
+        "POST /sessions with classId for HESD-02 and subjectId for SWE-101 using Instructor session",
+        "Assert HTTP status 403 Forbidden",
+        "Assert response errorCode Forbidden",
+        "Verify no session row created for HESD-02"
+      ],
+      "expected": "Session creation blocked for out-of-scope class assignment; HTTP 403 with zero session data persisted",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-04-012",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["AC-04", "FR-04", "BR-07"],
+      "title": "POST /sessions with roomLatitude out of range returns 422 OutOfRange",
+      "preconditions": [
+        "Authenticated Instructor with valid class-subject assignment",
+        "Session payload sets roomLatitude to 91 (exceeds −90..90 bounds)"
+      ],
+      "steps": [
+        "POST /sessions with roomLatitude 91 and otherwise valid fields",
+        "Assert HTTP status 422",
+        "Assert response errorCode ValidationFailed with field error code OutOfRange for roomLatitude",
+        "Verify no session row created"
+      ],
+      "expected": "Invalid coordinate rejected per API design §5.2 validation; HTTP 422 with OutOfRange field error; no Draft session persisted",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-04-013",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["AC-04", "FR-04"],
+      "title": "gpsRadiusMeters below minimum 20 rejected on session create",
+      "preconditions": [
+        "SessionService.create invoked under valid Instructor context",
+        "DTO sets gpsRadiusMeters to 10 (below 20–500 allowed range)"
+      ],
+      "steps": [
+        "Invoke SessionService.create with gpsRadiusMeters 10 and valid coordinates",
+        "Capture validation exception with OutOfRange error for gpsRadiusMeters",
+        "Query sessions table and confirm no row inserted"
+      ],
+      "expected": "Radius below 20 m rejected per API design §5.2; no session row committed",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-04-014",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P1",
+      "traceability": ["AC-04", "FR-04"],
+      "title": "PATCH /sessions/:sessionId updates Draft GPS fields and returns 200",
+      "preconditions": [
+        "Instructor owns a Draft session created without GPS coordinates",
+        "Instructor session cookie is set"
+      ],
+      "steps": [
+        "PATCH /sessions/:sessionId with roomLatitude 10.762622 and roomLongitude 106.660172",
+        "Assert HTTP status 200",
+        "Assert response body reflects updated coordinates",
+        "GET /sessions/:sessionId and verify GPS fields persisted"
+      ],
+      "expected": "HTTP 200 with updated Session DTO per API design §5.3; Draft session GPS fields updated for subsequent open",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-04-015",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["AC-04", "FR-04"],
+      "title": "Flow A step 2: Instructor creates session with GPS before opening check-in",
+      "preconditions": [
+        "Roster seeded for HESD-01 / SWE-101 via prior CSV import (Flow A step 1)",
+        "Authenticated Instructor with assignment to HESD-01 / SWE-101",
+        "Workshop scheduledStart aligned to pilot timetable"
+      ],
+      "steps": [
+        "POST /sessions with class, subject, schedule, room name, and GPS coordinates (10.762622, 106.660172)",
+        "Assert session status Draft with gpsRadiusMeters 100",
+        "PATCH /sessions/:id if needed to confirm GPS fields valid",
+        "Proceed to POST /sessions/:id/open as Flow A step 3 continuation"
+      ],
+      "expected": "Session created in Draft with valid GPS as Flow A prerequisite; ready for open transition and QR issuance in downstream steps",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-04-016",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["AC-04", "FR-04", "BR-07"],
+      "title": "Instructor creates session via SessionForm with GpsMapPicker and saves Draft",
+      "preconditions": [
+        "Instructor is logged in to instructor SPA",
+        "Instructor navigates to session creation page for assigned class HESD-01",
+        "GpsMapPicker fixture coordinates available"
+      ],
+      "steps": [
+        "Fill SessionForm with class, subject, title, room name, and scheduled start",
+        "Select room location on GpsMapPicker map (latitude 10.762622, longitude 106.660172)",
+        "Verify gpsRadiusMeters defaults to 100 m in form",
+        "Click Lưu nháp (save draft) action",
+        "Verify success toast and session detail shows status Nháp (Draft) with GPS coordinates displayed"
+      ],
+      "expected": "Session saved in Draft via UI per AC-04a; GPS coordinates visible on session detail; form reflects default 100 m radius",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-04-017",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["AC-04", "FR-04", "BR-07"],
+      "title": "Mở buổi học button disabled with inline GPS required message when coordinates missing",
+      "preconditions": [
+        "Instructor is logged in and viewing a Draft session without room GPS configured",
+        "Instructor navigates to session settings tab (Cài đặt)"
+      ],
+      "steps": [
+        "Observe Mở buổi học (open session) action button state",
+        "Verify button is disabled or blocked",
+        "Verify inline error message requires room GPS configuration before opening check-in",
+        "Attempt to click open action and confirm no state change to Active"
+      ],
+      "expected": "Open session UI blocked per AC-04b and BR-07; Vietnamese inline message prompts GPS configuration; session remains Draft",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-04-018",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["AC-04", "FR-04"],
+      "title": "Instructor cancels Draft session from session detail UI",
+      "preconditions": [
+        "Instructor is logged in and owns a Draft session no longer needed",
+        "Instructor navigates to session detail page for the Draft session"
+      ],
+      "steps": [
+        "Click cancel session action (Hủy buổi học) on Draft session detail",
+        "Confirm cancellation in dialog prompt",
+        "Wait for navigation or status badge update",
+        "Verify session status badge shows Đã hủy (Cancelled) and open/QR actions are unavailable"
+      ],
+      "expected": "Draft session cancelled via UI per AC-04c; terminal Cancelled status displayed; no further lifecycle actions available",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-04-019",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P1",
+      "traceability": ["AC-04", "FR-04", "BR-07"],
+      "title": "Parallel open attempts on Draft without GPS all reject; session remains Draft",
+      "preconditions": [
+        "Draft session row exists with room_latitude NULL and room_longitude NULL",
+        "SessionService.open wired to real PostgreSQL with transaction isolation",
+        "Two concurrent callers use owning Instructor context for the same sessionId"
+      ],
+      "steps": [
+        "Launch two parallel SessionService.open(sessionId) invocations against the GPS-less Draft session",
+        "Await both calls to settle",
+        "Assert both reject with errorCode RoomGpsRequired",
+        "Query sessions table once and read status, opened_at columns"
+      ],
+      "expected": "No partial Active transition under concurrent open; session status stays Draft with opened_at NULL; both failures surface RoomGpsRequired per AC-04b and BR-07",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-04-020",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["AC-04", "FR-04", "BR-07"],
+      "title": "WF-02: Create Draft session then PATCH room GPS before open",
+      "preconditions": [
+        "Authenticated Instructor with ClassAssignment for HESD-01 / SWE-101",
+        "Roster enrolled for class-subject pair per WF-02 step 2"
+      ],
+      "steps": [
+        "POST /sessions with classId, subjectId, title, roomName, and scheduledStart but omit roomLatitude and roomLongitude",
+        "Assert HTTP status 201 Created and response status Draft with null GPS fields",
+        "PATCH /sessions/:sessionId with roomLatitude 10.762622 and roomLongitude 106.660172",
+        "Assert HTTP status 200 with updated coordinates",
+        "GET /sessions/:sessionId and verify GPS fields persisted and status remains Draft"
+      ],
+      "expected": "Two-step session preparation per WF-02 §3.2 completes in Draft with valid GPS; instructor ready to open check-in per AC-04a",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-04-021",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["AC-04", "FR-04"],
+      "title": "POST /sessions with roomLongitude out of range returns 422 OutOfRange",
+      "preconditions": [
+        "Authenticated Instructor with valid class-subject assignment",
+        "Session payload sets roomLongitude to 181 (exceeds −180..180 bounds)"
+      ],
+      "steps": [
+        "POST /sessions with roomLongitude 181 and otherwise valid fields including roomLatitude 10.762622",
+        "Assert HTTP status 422",
+        "Assert response errorCode ValidationFailed with field error code OutOfRange for roomLongitude",
+        "Verify no session row created"
+      ],
+      "expected": "Invalid longitude rejected per API design §5.2 and validation rules §3.4; HTTP 422 with OutOfRange field error; no Draft session persisted",
+      "edgeCase": true
+    }
+  ]
+}

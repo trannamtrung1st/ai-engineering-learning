@@ -1,0 +1,236 @@
+{
+  "agents": {
+    "backend": {
+      "alwaysRead": [
+        "docs/technical/00-system-overview.md",
+        "docs/technical/08-validation-rules.md",
+        "docs/technical/12-backend-frontend-tech-stack.md"
+      ]
+    },
+    "frontend": {
+      "alwaysRead": [
+        "docs/ui-ux/00-production-ui-quality-bar.md",
+        "docs/ui-ux/01-ui-ux-foundation.md"
+      ]
+    },
+    "infra": {
+      "alwaysRead": [
+        "docs/technical/10-local-development-setup.md"
+      ]
+    },
+    "test": {
+      "alwaysRead": [
+        "docs/technical/11-testing-plan.md",
+        "docs/brds/08-acceptance-mvp-future.md"
+      ]
+    },
+    "tester": {
+      "alwaysRead": [
+        "docs/technical/11-testing-plan.md",
+        "docs/brds/08-acceptance-mvp-future.md",
+        "ai-harness/docs/browser-mcp.md",
+        "docs/ui-ux/00-production-ui-quality-bar.md"
+      ]
+    },
+    "testgen": {
+      "alwaysRead": [
+        "docs/technical/11-testing-plan.md",
+        "docs/brds/08-acceptance-mvp-future.md"
+      ]
+    }
+  },
+  "slices": {
+    "repo-monorepo-bootstrap": {
+      "agent": "infra",
+      "docs": [
+        "docs/technical/12-backend-frontend-tech-stack.md",
+        "docs/technical/10-local-development-setup.md"
+      ]
+    },
+    "docker-compose-db": {
+      "agent": "infra",
+      "docs": [
+        "docs/technical/13-docker-compose-local-runtime.md",
+        "docs/technical/04-database-design.md"
+      ]
+    },
+    "domain-package": {
+      "agent": "backend",
+      "docs": [
+        "docs/technical/03-domain-model.md",
+        "docs/technical/07-state-machines.md",
+        "docs/technical/08-validation-rules.md"
+      ]
+    },
+    "api-foundation": {
+      "agent": "backend",
+      "docs": [
+        "docs/technical/05-api-design.md",
+        "docs/technical/09-error-handling.md",
+        "docs/technical/01-roles-permissions.md"
+      ]
+    },
+    "module-event": {
+      "agent": "backend",
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/06-main-workflows.md",
+        "docs/technical/05-api-design.md"
+      ]
+    },
+    "module-registration": {
+      "agent": "backend",
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/08-validation-rules.md",
+        "docs/technical/05-api-design.md"
+      ]
+    },
+    "module-checkin": {
+      "agent": "backend",
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/07-state-machines.md",
+        "docs/technical/05-api-design.md"
+      ]
+    },
+    "module-feedback-eligibility": {
+      "agent": "backend",
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/03-domain-model.md",
+        "docs/technical/05-api-design.md"
+      ]
+    },
+    "module-audit": {
+      "agent": "backend",
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/09-error-handling.md",
+        "docs/technical/05-api-design.md"
+      ]
+    },
+    "module-user-accounts": {
+      "agent": "backend",
+      "docs": [
+        "docs/technical/05-api-design.md",
+        "docs/technical/04-database-design.md",
+        "docs/technical/01-roles-permissions.md",
+        "docs/technical/09-error-handling.md"
+      ]
+    },
+    "module-event-cover-image": {
+      "agent": "backend",
+      "docs": [
+        "docs/technical/05-api-design.md",
+        "docs/technical/04-database-design.md",
+        "docs/technical/02-module-breakdown.md"
+      ]
+    },
+    "web-design-system-shell": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/04-design-tokens.md",
+        "docs/ui-ux/05-common-ui-components.md",
+        "docs/ui-ux/06-app-layout-components.md"
+      ]
+    },
+    "web-participant-discovery": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/10-user-flows.md",
+        "docs/ui-ux/05-common-ui-components.md"
+      ]
+    },
+    "web-participant-registration": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/10-user-flows.md",
+        "docs/ui-ux/05-common-ui-components.md",
+        "docs/ui-ux/12-ui-states.md"
+      ]
+    },
+    "web-participant-checkin": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/10-user-flows.md",
+        "docs/ui-ux/12-ui-states.md",
+        "docs/ui-ux/05-common-ui-components.md"
+      ]
+    },
+    "web-participant-feedback-eligibility": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/10-user-flows.md",
+        "docs/ui-ux/12-ui-states.md",
+        "docs/ui-ux/07-event-specific-components.md"
+      ]
+    },
+    "web-organizer-events": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/07-event-specific-components.md",
+        "docs/ui-ux/08-forms-validation-ux.md"
+      ]
+    },
+    "web-organizer-operations-dashboard": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/07-event-specific-components.md",
+        "docs/ui-ux/06-app-layout-components.md",
+        "docs/ui-ux/12-ui-states.md"
+      ]
+    },
+    "web-organizer-registration-checkin": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/07-event-specific-components.md",
+        "docs/ui-ux/10-user-flows.md"
+      ]
+    },
+    "web-organizer-governance": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/07-event-specific-components.md",
+        "docs/ui-ux/10-user-flows.md"
+      ]
+    },
+    "web-auth-session-pages": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/10-user-flows.md",
+        "docs/ui-ux/06-app-layout-components.md",
+        "docs/ui-ux/02-ui-framework-tech-stack.md"
+      ]
+    },
+    "web-event-cover-image": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/07-event-specific-components.md",
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/05-common-ui-components.md"
+      ]
+    },
+    "web-domain-status-badge-colors": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/04-design-tokens.md",
+        "docs/ui-ux/07-event-specific-components.md",
+        "docs/ui-ux/12-ui-states.md"
+      ]
+    },
+    "e2e-acceptance-suite": {
+      "agent": "test",
+      "docs": [
+        "docs/technical/11-testing-plan.md",
+        "docs/brds/08-acceptance-mvp-future.md"
+      ]
+    }
+  }
+}

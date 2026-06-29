@@ -1,0 +1,466 @@
+{
+  "productItemId": "BR-03",
+  "version": 1,
+  "docFingerprint": "sha256:4deda16c175af0ca34aadf938abcd5f11203e186585e68a48a77093b8e87aac5",
+  "generatedAt": "2026-06-29T22:00:00Z",
+  "cases": [
+    {
+      "id": "TC-BR-03-001",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["BR-03", "FR-06", "FR-07", "AC-06"],
+      "title": "TS-18: Check-in with token scanned at T + 31 seconds returns ExpiredQr",
+      "preconditions": [
+        "Active session with enrolled Student authenticated",
+        "QrToken issued at time T with status Valid in database",
+        "TestClock fixed at T + 31 seconds",
+        "Student coordinates within session gpsRadiusMeters",
+        "Student attendance status Pending for session"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with tokenId from token issued at T, valid latitude/longitude using Student session",
+        "Assert HTTP status 400",
+        "Assert response outcome ExpiredQr and errorCode ExpiredQr",
+        "Assert response message is Mã QR đã hết hạn, vui lòng quét mã mới",
+        "GET /api/v1/sessions/:sessionId/attendance for student and assert status remains Pending"
+      ],
+      "expected": "Check-in rejected per BR-03 when currentTime > tokenIssuedAt + 30 s; ExpiredQr outcome with Vietnamese message; attendance unchanged",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-03-002",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["BR-03", "FR-06", "FR-07", "AC-06"],
+      "title": "TS-18 variant: Check-in within 30-second window succeeds before expiry",
+      "preconditions": [
+        "Active session with enrolled Student authenticated",
+        "QrToken issued at time T with status Valid",
+        "TestClock fixed at T + 15 seconds (mid-window)",
+        "Student coordinates within session gpsRadiusMeters"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with tokenId issued at T using Student session and in-radius coordinates",
+        "Assert HTTP status 200 and outcome Success",
+        "Query qr_tokens for tokenId and assert status Consumed",
+        "GET /api/v1/sessions/:sessionId/attendance for student and assert status Present"
+      ],
+      "expected": "Token within BR-03 30-second absolute window allows check-in to proceed; token consumed on success",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-03-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-03", "FR-06"],
+      "title": "CheckInService rejects expired token at Layer 4 before GPS and duplicate checks",
+      "preconditions": [
+        "Real PostgreSQL test database is running",
+        "Active session with enrolled Student and Pending attendance record",
+        "QrToken row with issued_at at T and expires_at at T + 30 s, status Valid",
+        "TestClock fixed at T + 31 seconds",
+        "CheckInService wired per validation-rules §5.1 step 7"
+      ],
+      "steps": [
+        "Invoke CheckInService.submitCheckIn with expired tokenId, valid coordinates, and enrolled Student context",
+        "Capture result outcome ExpiredQr without committing Present status",
+        "Query qr_tokens for tokenId and assert status is Expired (not Consumed)",
+        "Query attendance_records for studentId and sessionId and assert status remains Pending",
+        "Insert check_in_attempts row and assert outcome ExpiredQr logged"
+      ],
+      "expected": "BR-03 enforced at pipeline step 7; token marked Expired; no Present record; token not Consumed per BR-11 separation",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-03-004",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-03"],
+      "title": "QrTokenRepository persists expires_at as issued_at plus 30 seconds on issuance",
+      "preconditions": [
+        "Real PostgreSQL test database is running",
+        "Active session row exists with status Active",
+        "QrService.issueToken callable at fixed TestClock instant T"
+      ],
+      "steps": [
+        "Invoke QrService.issueToken(sessionId) at T",
+        "Query qr_tokens table for newest token row",
+        "Assert expires_at minus issued_at equals exactly 30 seconds",
+        "Assert status is Valid immediately after issuance",
+        "Assert expires_at field matches BR-03 absolute window definition"
+      ],
+      "expected": "Token TTL stored as issued_at + 30 s per domain model §4.9 and BR-03; database enforces hard expiry boundary",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-03-005",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["BR-03", "FR-06"],
+      "title": "QrToken transitions Valid to Expired when currentTime exceeds issuedAt + 30 seconds",
+      "preconditions": [
+        "Valid qr_tokens row in PostgreSQL with issued_at at T and expires_at at T + 30 s",
+        "CheckInService or QrService expiry handler uses TestClock at T + 31 s"
+      ],
+      "steps": [
+        "Record beforeState Valid from qr_tokens table for tokenId",
+        "Invoke CheckInService.submitCheckIn with tokenId at TestClock T + 31 s",
+        "Query qr_tokens row for tokenId after rejection",
+        "Assert afterState is Expired"
+      ],
+      "expected": "beforeState Valid, afterState Expired per BR-03 outcome; token state Expired on failed expiry check",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-03-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-03"],
+      "title": "POST /check-in with expired token returns 400 ExpiredQr envelope",
+      "preconditions": [
+        "Authenticated enrolled Student session available",
+        "Expired qr_tokens row for Active session (status Expired or TestClock past expires_at)",
+        "Student coordinates within session radius"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with expired tokenId, latitude 10.762700, longitude 106.660200 using Student session",
+        "Assert HTTP status 400",
+        "Assert response body outcome ExpiredQr and errorCode ExpiredQr",
+        "Assert response body message Mã QR đã hết hạn, vui lòng quét mã mới",
+        "Assert response envelope matches check-in failure contract per API design §6.3"
+      ],
+      "expected": "HTTP 400 ExpiredQr per validation-rules §4 BR-03 mapping and error-handling §2.1",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-03-007",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-03"],
+      "title": "Check-in at T + 29 seconds succeeds; at T + 31 seconds returns ExpiredQr",
+      "preconditions": [
+        "Active session with two enrolled Students (Student A and Student B) authenticated",
+        "QrToken issued at T for Student A check-in",
+        "Fresh QrToken issued at T2 for Student B check-in",
+        "Both students have in-radius coordinates and Pending attendance"
+      ],
+      "steps": [
+        "Set TestClock to T + 29 seconds and POST /api/v1/check-in with token from T using Student A session",
+        "Assert HTTP 200 with outcome Success (now ≤ issuedAt + 30 s per BR-03)",
+        "Set TestClock to T2 + 31 seconds and POST /api/v1/check-in with token from T2 using Student B session",
+        "Assert HTTP 400 with outcome ExpiredQr and Vietnamese expiry message"
+      ],
+      "expected": "BR-03 boundary enforced: token valid at 29 s inclusive window; rejected when currentTime > issuedAt + 30 s; no exceptions",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-03-008",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-03"],
+      "title": "Check-in at exactly issuedAt + 30 seconds still allowed (inclusive window end)",
+      "preconditions": [
+        "Active session with enrolled Student and Pending attendance",
+        "QrToken issued at T with expires_at T + 30 s",
+        "TestClock fixed at exactly T + 30 seconds (now ≤ issuedAt + 30 s)"
+      ],
+      "steps": [
+        "Invoke CheckInService.submitCheckIn at TestClock T + 30 s with tokenId and in-radius coordinates",
+        "Assert outcome Success when all other pipeline steps pass",
+        "Query qr_tokens and assert status Consumed",
+        "Query attendance_records and assert status Present"
+      ],
+      "expected": "BR-03 condition requires currentTime > issuedAt + 30 s; at exact boundary check-in still permitted per validation-rules §5.1 step 7",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-03-009",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-03"],
+      "title": "Check-in one millisecond after issuedAt + 30 seconds returns ExpiredQr",
+      "preconditions": [
+        "Active session with enrolled Student and Pending attendance",
+        "QrToken issued at T with expires_at T + 30 s",
+        "TestClock fixed at T + 30 seconds + 1 millisecond"
+      ],
+      "steps": [
+        "Invoke CheckInService.submitCheckIn with tokenId at advanced TestClock",
+        "Assert outcome ExpiredQr",
+        "Query qr_tokens and assert status Expired",
+        "Query attendance_records and assert status remains Pending"
+      ],
+      "expected": "Strict greater-than boundary per BR-03 condition; immediate rejection past 30-second absolute window",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-03-010",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P0",
+      "traceability": ["BR-03", "FR-06", "FR-09"],
+      "title": "Flow B step 6: Expired token submission returns ExpiredQr anti-screenshot rejection",
+      "preconditions": [
+        "Active session with valid QR from GET /api/v1/sessions/:id/qr/current (Flow B step 1)",
+        "Student A already checked in successfully (Flow B steps 2–3 complete)",
+        "TestClock advanced so original token from step 1 is past 30 s expiry (simulated screenshot share delay)"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with expired tokenId from Flow B step 1 using enrolled Student C session",
+        "Assert HTTP 400 with outcome ExpiredQr and errorCode ExpiredQr",
+        "Assert Vietnamese message Mã QR đã hết hạn, vui lòng quét mã mới",
+        "Verify Student C attendance remains Pending",
+        "Verify token status Expired in qr_tokens table"
+      ],
+      "expected": "Flow B anti-fraud path validates BR-03 expired QR rejection preventing screenshot sharing beyond 30 s window",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-03-011",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-03", "FR-07"],
+      "title": "Instructor denied POST /check-in with expired token — BR-03 not evaluated for non-Student",
+      "preconditions": [
+        "Authenticated Instructor session is available",
+        "Active sessionId with expired QrToken exists",
+        "Instructor role lacks checkin:submit permission per roles-permissions §2.3"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with expired tokenId and valid coordinates using Instructor session cookie",
+        "Assert HTTP status 403 Forbidden and errorCode Forbidden",
+        "Verify no check_in_attempts row with outcome ExpiredQr for instructor userId",
+        "Verify qr_tokens row status remains Expired without Consumed transition"
+      ],
+      "expected": "Only Student role triggers BR-03 check-in pipeline; Instructor cannot submit check-in regardless of token expiry state",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-03-012",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-03"],
+      "title": "ExpiredQr rejection does not consume token or create Present attendance",
+      "preconditions": [
+        "Real PostgreSQL test database is running",
+        "Active session with Valid QrToken past expires_at (status Valid, TestClock T + 31 s)",
+        "Enrolled Student with Pending attendance record"
+      ],
+      "steps": [
+        "Begin database transaction wrapper for test isolation",
+        "Invoke CheckInService.submitCheckIn with expired tokenId",
+        "Assert outcome ExpiredQr and transaction rolled back or no side effects committed",
+        "Query qr_tokens and assert status is Expired not Consumed",
+        "Query attendance_records and assert status remains Pending with checked_in_at null"
+      ],
+      "expected": "BR-03 failure is non-destructive; token not Consumed per BR-11; no duplicate Present risk on retry with fresh token",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-03-013",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P1",
+      "traceability": ["BR-03"],
+      "title": "Parallel check-in attempts as token crosses 30-second boundary yield at most one Success",
+      "preconditions": [
+        "Active session with enrolled Student and Valid QrToken issued at T",
+        "TestClock advances from T + 29 s to T + 31 s during parallel requests",
+        "Two parallel CheckInService.submitCheckIn calls with same tokenId"
+      ],
+      "steps": [
+        "Launch parallel check-in at TestClock T + 29 s and T + 31 s with same tokenId",
+        "Await both operations to settle",
+        "Count outcomes: at most one Success, remainder ExpiredQr or DuplicateCheckIn",
+        "Query qr_tokens and assert at most one Consumed transition",
+        "Query attendance_records and assert at most one Present for student"
+      ],
+      "expected": "BR-03 expiry enforced under race at window boundary; no double Present from expired-token retry",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-03-014",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P1",
+      "traceability": ["BR-03", "FR-06"],
+      "title": "QrService lazy expiry marks Valid token Expired when getCurrentToken called after window",
+      "preconditions": [
+        "Valid qr_tokens row with issued_at at T and expires_at at T + 30 s",
+        "QrService.getCurrentToken or rotateTokens uses TestClock at T + 31 s",
+        "Active session parent row exists"
+      ],
+      "steps": [
+        "Record beforeState Valid for tokenId",
+        "Invoke QrService.getCurrentToken(sessionId) or rotateTokens at T + 31 s",
+        "Query qr_tokens for expired tokenId",
+        "Assert afterState Expired",
+        "Assert getCurrentToken returns new Valid token with fresh 30 s window"
+      ],
+      "expected": "Lazy ttlElapsed handler transitions stale Valid → Expired per BR-03; rotation issues replacement token",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-03-015",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-03", "FR-06"],
+      "title": "Expired token check-in returns 400 before radius and duplicate pipeline steps execute",
+      "preconditions": [
+        "Authenticated enrolled Student with Pending attendance",
+        "Expired QrToken for Active session",
+        "Student coordinates deliberately outside session gpsRadiusMeters",
+        "Student already has no Present status (duplicate path not applicable)"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with expired tokenId and out-of-radius coordinates using Student session",
+        "Assert HTTP status 400 with outcome ExpiredQr (not OutOfRadius)",
+        "Assert errorCode ExpiredQr takes precedence per validation-rules §5.1 step 7 ordering",
+        "Verify check_in_attempts logged with outcome ExpiredQr not OutOfRadius"
+      ],
+      "expected": "BR-03 evaluated at step 7 before BR-02 radius (step 13); ExpiredQr short-circuits pipeline per rule interaction matrix order 3",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-03-016",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-03", "FR-07", "AC-06"],
+      "title": "Student check-in page shows ExpiredQr message after scanning stale QR screenshot",
+      "preconditions": [
+        "Authenticated Student on mobile viewport (375px width)",
+        "Active session with QR token older than 30 seconds (deep link with expired tokenId)",
+        "Student GPS permission granted and coordinates within radius"
+      ],
+      "steps": [
+        "Student opens check-in deep link wecheck://check-in?token=expired&session=:id",
+        "Student submits check-in after GPS capture completes",
+        "Verify error panel displays Mã QR đã hết hạn, vui lòng quét mã mới",
+        "Verify Quét lại action returns student to scanner view",
+        "Verify attendance status remains Pending in student history"
+      ],
+      "expected": "Student UI surfaces BR-03 ExpiredQr outcome with Vietnamese message; encourages fresh scan per anti-screenshot policy",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-03-017",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-03", "FR-06", "NFR-06"],
+      "title": "Instructor QR countdown reaches zero and refreshes before student can use stale code",
+      "preconditions": [
+        "Instructor is logged in to instructor SPA with Active session",
+        "Instructor navigates to session QR tab with visible countdown",
+        "Student device ready to scan (simulated deep link capture)"
+      ],
+      "steps": [
+        "Observe QrCountdown decrement from approximately 5 seconds to 0",
+        "Verify QR image or token payload changes when countdown reaches 0",
+        "Simulate student submitting check-in with previous tokenId via API or deep link",
+        "Verify student receives ExpiredQr error with Vietnamese message",
+        "Verify new QR scan with current token succeeds within fresh 30 s window"
+      ],
+      "expected": "UI rotation cycle aligns with BR-03 30 s absolute validity; stale projector/snapshot codes rejected after refresh",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-03-018",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["BR-03", "FR-07"],
+      "title": "Student retry flow after ExpiredQr guides user to scan fresh QR from instructor display",
+      "preconditions": [
+        "Authenticated Student on check-in page after ExpiredQr error",
+        "Instructor Active session displaying current valid QR",
+        "Student GPS permission granted"
+      ],
+      "steps": [
+        "Click Quét lại on ExpiredQr error panel",
+        "Verify camera/scanner view opens",
+        "Scan current valid QR from instructor display (or navigate fresh deep link)",
+        "Submit check-in with new tokenId within 30 s window",
+        "Verify success confirmation and Present status displayed"
+      ],
+      "expected": "BR-03 rejection is recoverable via fresh token scan; UX path from expired to success within new 30 s window",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-03-019",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["BR-03", "FR-06", "FR-07"],
+      "title": "Flow A: Student checks in with fresh token within 30 s of GET /qr/current poll",
+      "preconditions": [
+        "Instructor opened session to Active (Flow A steps 1–2)",
+        "GET /api/v1/sessions/:sessionId/qr/current returns token with secondsRemaining ≥ 20",
+        "Authenticated enrolled Student with in-radius coordinates"
+      ],
+      "steps": [
+        "Capture tokenId from instructor QR poll within 10 seconds of issuance",
+        "Student POST /api/v1/check-in immediately with captured tokenId",
+        "Assert HTTP 200 outcome Success",
+        "Assert token Consumed and attendance Present",
+        "Re-submit same tokenId after TestClock T + 31 s and assert ExpiredQr or TokenAlreadyUsed"
+      ],
+      "expected": "Flow A happy path respects BR-03 window for initial check-in; stale reuse blocked after expiry or consumption",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-03-020",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["BR-03"],
+      "title": "TokenNotFound and ExpiredQr are distinct outcomes for missing vs expired tokens",
+      "preconditions": [
+        "Active session with enrolled Student authenticated",
+        "Random UUID tokenId not present in qr_tokens table",
+        "Separate expired tokenId with status Expired in database"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with non-existent tokenId and assert HTTP 404 TokenNotFound",
+        "POST /api/v1/check-in with expired tokenId and assert HTTP 400 ExpiredQr",
+        "Assert errorCode values differ between responses",
+        "Assert Vietnamese ExpiredQr message only on expired token path"
+      ],
+      "expected": "BR-03 ExpiredQr applies only to known tokens past validity window; unknown tokens return TokenNotFound per domain model §3.5",
+      "edgeCase": true
+    }
+  ]
+}
