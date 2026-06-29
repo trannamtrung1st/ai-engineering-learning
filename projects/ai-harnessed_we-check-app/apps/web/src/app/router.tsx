@@ -10,6 +10,7 @@ import { HistoryPage } from "@/app/history/page";
 import { LoginPage } from "@/app/login/page";
 import { NotFoundRoutePage } from "@/app/not-found/page";
 import { ReportsPage } from "@/app/reports/page";
+import { CreateSessionPage } from "@/app/sessions/create-session-page";
 import { QrPresentPage } from "@/app/sessions/qr-present-page";
 import { SessionDetailPage } from "@/app/sessions/session-detail-page";
 import { SessionMonitorPage } from "@/app/sessions/session-monitor-page";
@@ -100,6 +101,7 @@ const router = createBrowserRouter([
             element: <InstructorLayout />,
             children: [
               { path: "sessions", element: <SessionsListPage /> },
+              { path: "sessions/new", element: <CreateSessionPage /> },
               { path: "sessions/:id/monitor", element: <SessionMonitorPage /> },
               { path: "sessions/:id", element: <SessionDetailPage /> },
               { path: "reports", element: <ReportsPage /> },

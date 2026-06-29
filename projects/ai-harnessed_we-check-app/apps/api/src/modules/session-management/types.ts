@@ -36,6 +36,27 @@ export interface SessionDto {
   enrollmentCount?: number;
 }
 
+export interface SessionListItemDto extends SessionDto {
+  classCode: string;
+  className: string;
+  subjectCode: string;
+  subjectName: string;
+  presentCount?: number;
+}
+
+export interface SessionDetailDto extends SessionDto {
+  classCode: string;
+  className: string;
+  subjectCode: string;
+  subjectName: string;
+  presentCount?: number;
+}
+
+export interface SessionListResponse {
+  items: SessionListItemDto[];
+  totalCount: number;
+}
+
 export interface CreateSessionInput {
   classId: string;
   subjectId: string;

@@ -45,6 +45,59 @@ function mapRow(row: SessionRow): SessionRecord {
 export class SessionRepository {
   constructor(private readonly db: DbPool) {}
 
+  async findDetailById(id: string): Promise<
+    | (SessionRecord & {
+        classCode: string;
+        className: string;
+        subjectCode: string;
+        subjectName: string;
+        presentCount: number;
+        enrollmentCount: number;
+      })
+    | null
+  > {
+    const result = await this.db.query<
+      SessionRow & {
+        class_code: string;
+        class_name: string;
+        subject_code: string;
+        subject_name: string;
+        present_count: string;
+        enrollment_count: string;
+      }
+    >(
+      `SELECT s.id, s.instructor_id, s.class_id, s.subject_id, s.title, s.room_name,
+              s.room_latitude, s.room_longitude, s.gps_radius_meters, s.scheduled_start,
+              s.status, s.opened_at, s.closed_at, s.version, s.created_at, s.updated_at,
+              c.code AS class_code, c.name AS class_name,
+              sub.code AS subject_code, sub.name AS subject_name,
+              COALESCE((
+                SELECT COUNT(*)::int FROM attendance_records ar
+                WHERE ar.session_id = s.id AND ar.status = 'Present'
+              ), 0) AS present_count,
+              COALESCE((
+                SELECT COUNT(*)::int FROM attendance_records ar
+                WHERE ar.session_id = s.id
+              ), 0) AS enrollment_count
+       FROM sessions s
+       INNER JOIN classes c ON c.id = s.class_id
+       INNER JOIN subjects sub ON sub.id = s.subject_id
+       WHERE s.id = $1`,
+      [id],
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    return {
+      ...mapRow(row),
+      classCode: row.class_code,
+      className: row.class_name,
+      subjectCode: row.subject_code,
+      subjectName: row.subject_name,
+      presentCount: Number(row.present_count),
+      enrollmentCount: Number(row.enrollment_count),
+    };
+  }
+
   async findById(id: string): Promise<SessionRecord | null> {
     const result = await this.db.query<SessionRow>(
       `SELECT id, instructor_id, class_id, subject_id, title, room_name,
@@ -160,6 +213,72 @@ export class SessionRepository {
     );
     const row = result.rows[0];
     return row ? mapRow(row) : null;
+  }
+
+  async listForInstructor(instructorId: string): Promise<
+    Array<
+      SessionRecord & {
+        classCode: string;
+        className: string;
+        subjectCode: string;
+        subjectName: string;
+        presentCount: number;
+        enrollmentCount: number;
+      }
+    >
+  > {
+    const result = await this.db.query<
+      SessionRow & {
+        class_code: string;
+        class_name: string;
+        subject_code: string;
+        subject_name: string;
+        present_count: string;
+        enrollment_count: string;
+      }
+    >(
+      `SELECT s.id, s.instructor_id, s.class_id, s.subject_id, s.title, s.room_name,
+              s.room_latitude, s.room_longitude, s.gps_radius_meters, s.scheduled_start,
+              s.status, s.opened_at, s.closed_at, s.version, s.created_at, s.updated_at,
+              c.code AS class_code, c.name AS class_name,
+              sub.code AS subject_code, sub.name AS subject_name,
+              COALESCE((
+                SELECT COUNT(*)::int FROM attendance_records ar
+                WHERE ar.session_id = s.id AND ar.status = 'Present'
+              ), 0) AS present_count,
+              COALESCE((
+                SELECT COUNT(*)::int FROM attendance_records ar
+                WHERE ar.session_id = s.id
+              ), 0) AS enrollment_count
+       FROM sessions s
+       INNER JOIN classes c ON c.id = s.class_id
+       INNER JOIN subjects sub ON sub.id = s.subject_id
+       WHERE s.instructor_id = $1
+          OR EXISTS (
+            SELECT 1 FROM class_assignments ca
+            WHERE ca.instructor_id = $1
+              AND ca.class_id = s.class_id
+              AND ca.subject_id = s.subject_id
+          )
+       ORDER BY
+         CASE s.status
+           WHEN 'Active' THEN 0
+           WHEN 'Draft' THEN 1
+           WHEN 'Closed' THEN 2
+           ELSE 3
+         END,
+         s.scheduled_start DESC`,
+      [instructorId],
+    );
+    return result.rows.map((row) => ({
+      ...mapRow(row),
+      classCode: row.class_code,
+      className: row.class_name,
+      subjectCode: row.subject_code,
+      subjectName: row.subject_name,
+      presentCount: Number(row.present_count),
+      enrollmentCount: Number(row.enrollment_count),
+    }));
   }
 
   async listActivePastWindow(now: Date): Promise<SessionRecord[]> {

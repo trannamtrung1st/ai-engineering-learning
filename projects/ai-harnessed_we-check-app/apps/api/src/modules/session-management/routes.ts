@@ -26,6 +26,15 @@ export async function registerSessionManagementRoutes(
   const auth = createAuthMiddleware(store);
 
   app.get(
+    "/sessions",
+    { preHandler: [auth, requirePermission(Permission.SessionRead)] },
+    async (request) => {
+      const { user } = request.auth!;
+      return sessionService.list(user.id, user.role);
+    },
+  );
+
+  app.get(
     "/sessions/:sessionId",
     { preHandler: [auth, requirePermission(Permission.SessionRead)] },
     async (request) => {

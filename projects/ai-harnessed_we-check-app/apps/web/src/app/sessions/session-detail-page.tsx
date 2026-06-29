@@ -1,17 +1,29 @@
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { SessionStatus } from "@wecheck/domain";
+import { useQueryClient } from "@tanstack/react-query";
 import { Alert } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
 import { QrCountdown } from "@/components/ui/qr-countdown";
+import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { useLiveCountdown } from "@/hooks/use-live-countdown";
 import { useQrTokenPoll } from "@/hooks/use-qr-token-poll";
+import { useSessionDetail } from "@/hooks/use-session-detail";
 import { PageHeader } from "@/components/layout/page-header";
 import { SessionMonitorDashboard } from "@/components/domain/session/session-monitor-dashboard";
-import { PREVIEW_SESSION_IDS, resolvePreviewId } from "@/lib/preview-fixtures";
+import { SessionForm } from "@/components/instructor/session-form";
+import { SessionLifecycleActions } from "@/components/instructor/session-lifecycle-actions";
+import { resolvePreviewId } from "@/lib/preview-fixtures";
+import type { SessionDetail } from "@/lib/sessions-api";
 
 type SessionTab = "qr" | "monitor" | "roster" | "settings";
+
+function formatSessionTimestamp(iso: string): string {
+  return new Intl.DateTimeFormat("vi-VN", {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(iso));
+}
 
 const tabLabels: Record<SessionTab, string> = {
   qr: "Mã QR",
@@ -19,6 +31,12 @@ const tabLabels: Record<SessionTab, string> = {
   roster: "Danh sách",
   settings: "Cài đặt",
 };
+
+function defaultTab(status: SessionStatus): SessionTab {
+  if (status === SessionStatus.Draft) return "settings";
+  if (status === SessionStatus.Active) return "monitor";
+  return "settings";
+}
 
 function QrTabContent({
   sessionId,
@@ -94,29 +112,90 @@ function QrTabContent({
   );
 }
 
-/** NFR-17 / FR-05 / NFR-06 — session detail with tabs and lifecycle actions */
+/** FR-05 / AC-05 — session detail hub with lifecycle actions */
 export function SessionDetailPage() {
   const { id: routeId } = useParams<{ id: string }>();
   const id = resolvePreviewId(routeId) ?? routeId;
-  const [searchParams] = useSearchParams();
-  const [tab, setTab] = useState<SessionTab>(
-    (searchParams.get("tab") as SessionTab) ?? "qr",
-  );
-  const [showOpenConfirm, setShowOpenConfirm] = useState(false);
-  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
-  const [sessionStatus, setSessionStatus] = useState<SessionStatus>(() => {
-    if (id === PREVIEW_SESSION_IDS.draft) return SessionStatus.Draft;
-    if (id === PREVIEW_SESSION_IDS.closed) return SessionStatus.Closed;
-    return SessionStatus.Active;
+  const [searchParams, setSearchParams] = useSearchParams();
+  const queryClient = useQueryClient();
+  const sessionQuery = useSessionDetail(id);
+  const session = sessionQuery.data;
+
+  const [tab, setTab] = useState<SessionTab>(() => {
+    const fromUrl = searchParams.get("tab") as SessionTab | null;
+    if (fromUrl && fromUrl in tabLabels) return fromUrl;
+    return "monitor";
   });
+
+  useEffect(() => {
+    if (!session) return;
+    const fromUrl = searchParams.get("tab") as SessionTab | null;
+    if (!fromUrl) {
+      setTab(defaultTab(session.status));
+    }
+  }, [session, searchParams]);
+
+  function handleTabChange(next: SessionTab) {
+    setTab(next);
+    setSearchParams({ tab: next }, { replace: true });
+  }
+
+  function handleSessionUpdated(updated: SessionDetail) {
+    queryClient.setQueryData(["session", id], updated);
+    void queryClient.invalidateQueries({ queryKey: ["sessions"] });
+    void queryClient.invalidateQueries({ queryKey: ["session-monitor", id] });
+    if (updated.status === SessionStatus.Active && tab === "settings") {
+      handleTabChange("monitor");
+    }
+  }
+
+  if (sessionQuery.isLoading) {
+    return (
+      <div data-testid="session-detail-page">
+        <Skeleton className="mb-4 h-10 w-2/3" />
+        <Skeleton className="h-64 w-full" />
+      </div>
+    );
+  }
+
+  if (sessionQuery.isError || !session) {
+    return (
+      <div data-testid="session-detail-page">
+        <Alert variant="danger" title="Không thể tải buổi học">
+          Buổi học không tồn tại hoặc bạn không có quyền truy cập.
+        </Alert>
+      </div>
+    );
+  }
+
+  const metaLine = `${session.classCode} · ${session.subjectCode}`;
 
   return (
     <div data-testid="session-detail-page">
       <PageHeader
-        title={`Buổi học ${id ?? ""}`}
-        description="HESD-01 · SWE-101"
-        actions={<StatusBadge status={sessionStatus} />}
+        title={session.title}
+        description={`${metaLine} · ${session.roomName}`}
+        actions={<StatusBadge status={session.status} />}
       />
+
+      {session.openedAt ? (
+        <p
+          className="mb-2 text-small text-text-secondary"
+          data-testid="session-opened-at"
+        >
+          Mở lúc: {formatSessionTimestamp(session.openedAt)}
+        </p>
+      ) : null}
+
+      {session.roomLatitude !== null && session.roomLongitude !== null ? (
+        <p
+          className="mb-4 text-small text-text-secondary"
+          data-testid="session-gps-coords"
+        >
+          GPS: {session.roomLatitude}, {session.roomLongitude} · Bán kính{" "}
+          {session.gpsRadiusMeters} m
+        </p>
+      ) : null}
 
       <div className="mb-6 flex gap-2 border-b border-border" role="tablist">
         {(Object.keys(tabLabels) as SessionTab[]).map((key) => (
@@ -130,7 +209,7 @@ export function SessionDetailPage() {
                 ? "border-b-2 border-primary-600 text-primary-700"
                 : "text-text-secondary"
             }`}
-            onClick={() => setTab(key)}
+            onClick={() => handleTabChange(key)}
           >
             {tabLabels[key]}
           </button>
@@ -138,24 +217,23 @@ export function SessionDetailPage() {
       </div>
 
       {tab === "qr" && id ? (
-        <QrTabContent sessionId={id} sessionStatus={sessionStatus} />
+        <QrTabContent sessionId={id} sessionStatus={session.status} />
       ) : null}
 
       {tab === "monitor" ? (
-        <div>
-          {sessionStatus === SessionStatus.Closed ? (
+        <div className="flex flex-col gap-4">
+          {session.status === SessionStatus.Closed ? (
             <Alert variant="info" title="Buổi học đã kết thúc">
               Buổi học đã kết thúc. Dữ liệu điểm danh không còn cập nhật.
             </Alert>
-          ) : (
-            <SessionMonitorDashboard sessionId={id ?? undefined} />
-          )}
+          ) : null}
+          <SessionMonitorDashboard sessionId={id ?? undefined} />
         </div>
       ) : null}
 
       {tab === "roster" ? (
         <div>
-          {sessionStatus === SessionStatus.Closed ? (
+          {session.status === SessionStatus.Closed ? (
             <p
               className="text-small text-text-secondary"
               title="Chỉ phòng đào tạo có thể chỉnh sửa sau 24 giờ"
@@ -169,84 +247,18 @@ export function SessionDetailPage() {
       ) : null}
 
       {tab === "settings" ? (
-        <div className="flex flex-col gap-3">
-          {sessionStatus === SessionStatus.Draft ? (
-            <>
-              <Button type="button" onClick={() => setShowOpenConfirm(true)}>
-                Mở buổi học
-              </Button>
-              <Button type="button" variant="danger">
-                Hủy buổi học
-              </Button>
-            </>
-          ) : sessionStatus === SessionStatus.Active ? (
-            <Button type="button" onClick={() => setShowCloseConfirm(true)}>
-              Đóng buổi học
-            </Button>
-          ) : null}
-        </div>
-      ) : null}
-
-      {showOpenConfirm ? (
-        <div
-          role="dialog"
-          aria-labelledby="open-confirm-title"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-        >
-          <div className="w-full max-w-md rounded-md bg-surface-raised p-6 shadow-lg">
-            <h2 id="open-confirm-title" className="text-h2 font-semibold">
-              Xác nhận mở buổi học?
-            </h2>
-            <p className="mt-2 text-body text-text-secondary">
-              Sau khi mở, sinh viên có thể bắt đầu điểm danh bằng mã QR.
-            </p>
-            <div className="mt-4 flex justify-end gap-2">
-              <Button type="button" variant="ghost" onClick={() => setShowOpenConfirm(false)}>
-                Hủy
-              </Button>
-              <Button
-                type="button"
-                onClick={() => {
-                  setSessionStatus(SessionStatus.Active);
-                  setShowOpenConfirm(false);
-                  setTab("monitor");
-                }}
-              >
-                Mở buổi học
-              </Button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {showCloseConfirm ? (
-        <div
-          role="dialog"
-          aria-labelledby="close-confirm-title"
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-        >
-          <div className="w-full max-w-md rounded-md bg-surface-raised p-6 shadow-lg">
-            <h2 id="close-confirm-title" className="text-h2 font-semibold">
-              Kết thúc điểm danh?
-            </h2>
-            <p className="mt-2 text-body text-text-secondary">
-              Sinh viên chưa điểm danh sẽ được ghi nhận vắng mặt.
-            </p>
-            <div className="mt-4 flex justify-end gap-2">
-              <Button type="button" variant="ghost" onClick={() => setShowCloseConfirm(false)}>
-                Hủy
-              </Button>
-              <Button
-                type="button"
-                onClick={() => {
-                  setSessionStatus(SessionStatus.Closed);
-                  setShowCloseConfirm(false);
-                }}
-              >
-                Đóng buổi học
-              </Button>
-            </div>
-          </div>
+        <div className="flex flex-col gap-8">
+          <SessionLifecycleActions
+            session={session}
+            onSessionUpdated={handleSessionUpdated}
+          />
+          <SessionForm
+            mode={session.status === SessionStatus.Draft ? "edit" : "view"}
+            session={session}
+            classCode={session.classCode}
+            subjectCode={session.subjectCode}
+            onSaved={(saved) => handleSessionUpdated({ ...session, ...saved })}
+          />
         </div>
       ) : null}
     </div>

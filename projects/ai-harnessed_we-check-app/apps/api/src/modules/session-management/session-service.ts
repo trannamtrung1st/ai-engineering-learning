@@ -29,6 +29,9 @@ import type {
   QrTokenDisplayDto,
   SessionAttendanceResponse,
   SessionDto,
+  SessionDetailDto,
+  SessionListItemDto,
+  SessionListResponse,
   SessionRecord,
 } from "./types.js";
 import {
@@ -232,14 +235,39 @@ export class SessionService {
     sessionId: string,
     userId: string,
     role: UserRoleType,
-  ): Promise<SessionDto> {
-    const session = await this.sessions.findById(sessionId);
+  ): Promise<SessionDetailDto> {
+    const session = await this.sessions.findDetailById(sessionId);
     if (!session) {
       throw notFound();
     }
     await this.assertReadAccess(userId, role, session);
-    const enrollmentCount = await this.attendance.countForSession(sessionId);
-    return toSessionDto(session, enrollmentCount);
+    return {
+      ...toSessionDto(session, session.enrollmentCount),
+      classCode: session.classCode,
+      className: session.className,
+      subjectCode: session.subjectCode,
+      subjectName: session.subjectName,
+      presentCount: session.presentCount,
+    };
+  }
+
+  async list(
+    userId: string,
+    role: UserRoleType,
+  ): Promise<SessionListResponse> {
+    if (role !== UserRole.Instructor) {
+      throw forbidden();
+    }
+    const rows = await this.sessions.listForInstructor(userId);
+    const items: SessionListItemDto[] = rows.map((row) => ({
+      ...toSessionDto(row, row.enrollmentCount),
+      classCode: row.classCode,
+      className: row.className,
+      subjectCode: row.subjectCode,
+      subjectName: row.subjectName,
+      presentCount: row.presentCount,
+    }));
+    return { items, totalCount: items.length };
   }
 
   async open(

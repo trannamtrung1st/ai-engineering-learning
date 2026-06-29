@@ -55,3 +55,4 @@ Verification failures and remediation notes for harness agents.
 - **Unit test deferred GPS mock:** When testing TC-BR-12-014 submit gating, create the deferred `Promise` before `renderFlow` and `await waitFor(() => expect(captureGeolocation).toHaveBeenCalled())` before resolving — assigning `resolveGeo` inside `mockImplementation` races React `useEffect`.
 - [web-student-checkin] Browser test failed — see 20260629T075909Z-browser-test.json
 - **TC-NFR-18-013 physical device matrix:** Cases with `harnessSkip: physical-device` in test artifacts (TC-NFR-18-013, TC-NFR-19-013/014) must be reported `SKIP — physical-device`, never `FAIL`, in Playwright MCP gates. Pre-pilot emulation evidence: `ai-harness/generated/runs/pilot-device-matrix-nfr-18.json`.
+- [web-instructor-sessions] Browser test failed — see 20260629T092108Z-browser-test.json
