@@ -19,12 +19,19 @@ cd "$REPO_ROOT"
 run_shell_check() {
   local label="$1"
   local timeout_ms="$2"
-  shift 2
+  local log_file="${3:-}"
+  shift 3
   local timeout_sec=$(( timeout_ms / 1000 ))
 
   aih_check_begin "${label} (timeout: ${timeout_sec}s)"
+  [[ -n "$log_file" ]] && aih_info "    log: ${log_file}"
+
+  local -a check_args=(run_check_with_timeout_ms "$timeout_ms")
+  [[ -n "$log_file" ]] && check_args+=(--log "$log_file")
+  check_args+=(--label "$label" "$@")
+
   set +e
-  run_check_with_timeout_ms "$timeout_ms" "$@"
+  "${check_args[@]}"
   local status=$?
   set -e
 
@@ -37,6 +44,9 @@ run_shell_check() {
     aih_check_ok "$label"
     return 0
   fi
+  if [[ -n "$log_file" ]]; then
+    emit_check_log_tail "$log_file" 30
+  fi
   aih_check_fail "${label} (exit ${status})"
   return 1
 }
@@ -45,9 +55,10 @@ record_npm_check_failure() {
   local script="$1"
   local status="$2"
   local timeout_ms="$3"
+  local log_file="${4:-}"
   local timed_out="false"
   [[ "$status" -eq "$AGENT_TIMEOUT_EXIT" ]] && timed_out="true"
-  FAILURES+=("{\"type\":\"npm_script\",\"script\":\"${script}\",\"timedOut\":${timed_out},\"timeoutMs\":${timeout_ms}}")
+  FAILURES+=("{\"type\":\"npm_script\",\"script\":\"${script}\",\"timedOut\":${timed_out},\"timeoutMs\":${timeout_ms},\"logFile\":\"${log_file}\"}")
   PASS=false
 }
 
@@ -230,13 +241,14 @@ check_npm_commands() {
     return 0
   fi
 
-  local script optional active_when label timeout_ms timeout_sec status
+  local script optional active_when label timeout_ms timeout_sec status log_file
   while IFS= read -r line; do
     script="$(echo "$line" | jq -r '.script')"
     optional="$(echo "$line" | jq -r '.optional // true')"
     active_when="$(echo "$line" | jq -r '.activeWhen // empty')"
     timeout_ms="$(get_check_command_timeout_ms "$script")"
     timeout_sec=$(( timeout_ms / 1000 ))
+    log_file="$(check_log_path_for_script "$script")"
     if [[ -n "$active_when" && ! -e "$REPO_ROOT/$active_when" ]]; then
       aih_check_skip "npm run ${script} (inactive — ${active_when} missing)"
       continue
@@ -245,28 +257,30 @@ check_npm_commands() {
       if [[ "$script" == "build" ]]; then
         label="npm run build (preview-aware workspace build)"
         aih_check_begin "${label} (timeout: ${timeout_sec}s)"
+        aih_info "    log: ${log_file}"
         set +e
-        run_check_with_timeout_ms "$timeout_ms" --fn run_build_for_checks
+        run_check_with_timeout_ms "$timeout_ms" --log "$log_file" --label "$label" --fn run_build_for_checks
         status=$?
         set -e
         if [[ "$status" -eq "$AGENT_TIMEOUT_EXIT" ]]; then
           check_timeout_message "$timeout_ms" "$label"
           aih_check_fail "${label} (timed out after ${timeout_sec}s)"
-          record_npm_check_failure "$script" "$status" "$timeout_ms"
+          record_npm_check_failure "$script" "$status" "$timeout_ms" "$log_file"
         elif [[ "$status" -ne 0 ]]; then
           aih_check_fail "${label} (exit ${status})"
-          record_npm_check_failure "$script" "$status" "$timeout_ms"
+          emit_check_log_tail "$log_file" 30
+          record_npm_check_failure "$script" "$status" "$timeout_ms" "$log_file"
         else
           aih_check_ok "$label"
         fi
       else
         label="npm run ${script}"
         set +e
-        run_shell_check "$label" "$timeout_ms" npm run "$script"
+        run_shell_check "$label" "$timeout_ms" "$log_file" npm run "$script"
         status=$?
         set -e
         if [[ "$status" -ne 0 ]]; then
-          record_npm_check_failure "$script" "$status" "$timeout_ms"
+          record_npm_check_failure "$script" "$status" "$timeout_ms" "$log_file"
         fi
       fi
     elif [[ "$optional" != "true" ]]; then

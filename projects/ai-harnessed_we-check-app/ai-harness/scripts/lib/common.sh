@@ -244,7 +244,28 @@ AGENT_SIGNAL_GRACE_DEFAULT_MS=15000
 AGENT_RESULT_GRACE_DEFAULT_MS=5000
 PREVIEW_VERIFY_GATE_DEFAULT_MS=10000
 CHECK_COMMAND_TIMEOUT_DEFAULT_MS=600000
-CHECK_COMMAND_TIMEOUT_POLL_MS=2000
+CHECK_COMMAND_TIMEOUT_POLL_MS=1000
+CHECK_HEARTBEAT_DEFAULT_MS=30000
+
+get_check_heartbeat_ms() {
+  echo "${AIH_CHECK_HEARTBEAT_MS:-$CHECK_HEARTBEAT_DEFAULT_MS}"
+}
+
+# Path for per-script computational check log (gitignored under generated/runs).
+check_log_path_for_script() {
+  local script="$1"
+  local rid="${RID:-$(run_id)}"
+  local safe="${script//[:]/-}"
+  echo "${RUNS_DIR}/${rid}-check-${safe}.log"
+}
+
+emit_check_log_tail() {
+  local log_file="$1"
+  local lines="${2:-50}"
+  [[ -f "$log_file" ]] || return 0
+  echo "==> Last ${lines} lines of ${log_file}:" >&2
+  tail -n "$lines" "$log_file" >&2 || true
+}
 
 get_check_command_timeout_ms() {
   local script="${1:-}"
@@ -319,15 +340,27 @@ kill_process_tree() {
 wait_cmd_with_timeout_ms() {
   local cmd_pid="$1"
   local timeout_ms="$2"
-  local deadline=$(( $(date +%s) * 1000 + timeout_ms ))
+  local label="${3:-command}"
+  local started_ms=$(( $(date +%s) * 1000 ))
+  local deadline=$(( started_ms + timeout_ms ))
+  local last_heartbeat_ms=$started_ms
+  local heartbeat_ms
+  heartbeat_ms="$(get_check_heartbeat_ms)"
 
   while kill -0 "$cmd_pid" 2>/dev/null; do
-    if (( $(date +%s) * 1000 >= deadline )); then
+    local now_ms=$(( $(date +%s) * 1000 ))
+    if (( now_ms >= deadline )); then
       kill_process_tree "$cmd_pid" TERM
       sleep 2
       kill_process_tree "$cmd_pid" KILL
       wait "$cmd_pid" 2>/dev/null || true
       return "$AGENT_TIMEOUT_EXIT"
+    fi
+    if (( now_ms - last_heartbeat_ms >= heartbeat_ms )); then
+      local elapsed_sec=$(( (now_ms - started_ms) / 1000 ))
+      local budget_sec=$(( timeout_ms / 1000 ))
+      echo "==> still running: ${label} (${elapsed_sec}s / ${budget_sec}s)" >&2
+      last_heartbeat_ms=$now_ms
     fi
     sleep $(( CHECK_COMMAND_TIMEOUT_POLL_MS / 1000 ))
   done
@@ -336,22 +369,46 @@ wait_cmd_with_timeout_ms() {
 }
 
 # Run a check command with wall-clock timeout; streams stdout/stderr live.
-# Usage: run_check_with_timeout_ms MS cmd [args...]
-#        run_check_with_timeout_ms MS --fn function_name [args...]
+# Usage: run_check_with_timeout_ms MS [--log FILE] [--label LABEL] [--fn] cmd [args...]
 run_check_with_timeout_ms() {
   local timeout_ms="$1"
   shift
-  local fifo tee_pid status cmd_pid use_fn=false
+  local log_file="" label="" use_fn=false
 
-  if [[ "${1:-}" == "--fn" ]]; then
-    use_fn=true
-    shift
-  fi
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --log)
+        log_file="$2"
+        shift 2
+        ;;
+      --label)
+        label="$2"
+        shift 2
+        ;;
+      --fn)
+        use_fn=true
+        shift
+        ;;
+      *)
+        break
+        ;;
+    esac
+  done
 
+  [[ -n "$label" ]] || label="${*:-command}"
+
+  local fifo tee_pid status cmd_pid
   fifo="$(mktemp -u "${TMPDIR:-/tmp}/aih-check.XXXXXX")"
   mkfifo "$fifo"
-  tee < "$fifo" &
-  tee_pid=$!
+
+  if [[ -n "$log_file" ]]; then
+    mkdir -p "$(dirname "$log_file")"
+    tee "$log_file" < "$fifo" &
+    tee_pid=$!
+  else
+    tee < "$fifo" &
+    tee_pid=$!
+  fi
 
   if [[ "$use_fn" == true ]]; then
     local fn="$1"
@@ -359,17 +416,23 @@ run_check_with_timeout_ms() {
     ( "$fn" "$@" ) > "$fifo" 2>&1 &
     cmd_pid=$!
   else
-    "$@" > "$fifo" 2>&1 &
+    # Line-buffered stdout helps integration tests stream per-spec output.
+    env PYTHONUNBUFFERED=1 "$@" > "$fifo" 2>&1 &
     cmd_pid=$!
   fi
 
   set +e
-  wait_cmd_with_timeout_ms "$cmd_pid" "$timeout_ms"
+  wait_cmd_with_timeout_ms "$cmd_pid" "$timeout_ms" "$label"
   status=$?
   set -e
 
   wait "$tee_pid" 2>/dev/null || true
   rm -f "$fifo"
+
+  if [[ "$status" -eq "$AGENT_TIMEOUT_EXIT" ]] && [[ -n "$log_file" ]]; then
+    emit_check_log_tail "$log_file" 50
+  fi
+
   return "$status"
 }
 

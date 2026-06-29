@@ -40,6 +40,7 @@ cat > "${REPO_ROOT}/package.json" <<EOF
     "aih:loop:bg": "./ai-harness/scripts/ralph-loop-daemon.sh",
     "aih:loop:stop": "./ai-harness/scripts/ralph-loop-stop.sh",
     "aih:check": "./ai-harness/scripts/run-checks.sh",
+    "aih:run-check": "./ai-harness/scripts/run-logged-check.sh",
     "aih:browser-test": "./ai-harness/scripts/run-browser-test.sh",
     "aih:review": "./ai-harness/scripts/run-ai-review.sh",
     "aih:dev:db:up": "docker compose up -d db",

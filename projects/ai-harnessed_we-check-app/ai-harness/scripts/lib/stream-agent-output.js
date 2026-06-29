@@ -280,7 +280,17 @@ function handleStreamEvent(event, state, options, outfileFd, hooks) {
     }
 
     case "tool_call":
-      if (event.subtype === "completed") {
+      if (event.subtype === "started") {
+        if (event.tool_call?.shellToolCall) {
+          state.shellToolInFlight = true;
+          state.shellToolStartedMs = Date.now();
+          state.lastShellHeartbeatMs = 0;
+        }
+        resetAssistantTurn(state);
+      } else if (event.subtype === "completed") {
+        if (event.tool_call?.shellToolCall) {
+          state.shellToolInFlight = false;
+        }
         resetAssistantTurn(state);
       }
       if (!options.verbose) break;
@@ -334,6 +344,9 @@ async function main() {
     startedMs: Date.now(),
     timedOut: false,
     timeoutReason: "",
+    shellToolInFlight: false,
+    shellToolStartedMs: 0,
+    lastShellHeartbeatMs: 0,
     earlyExit: false,
     completionPending: false,
     touchActivity() {
@@ -430,6 +443,23 @@ async function main() {
 
     idleTimer = setInterval(() => {
       if (state.completionPending) return;
+      if (state.shellToolInFlight) {
+        const elapsed = Date.now() - state.shellToolStartedMs;
+        if (
+          options.verbose &&
+          elapsed - state.lastShellHeartbeatMs >= 60_000
+        ) {
+          state.lastShellHeartbeatMs = elapsed;
+          writeStderr(
+            dim(
+              yellow(
+                `[tool] shell still running (${Math.round(elapsed / 1000)}s)`,
+              ),
+            ),
+          );
+        }
+        return;
+      }
       if (Date.now() - state.lastActivityMs >= options.idleTimeoutMs) {
         killForTimeout("idle");
       }

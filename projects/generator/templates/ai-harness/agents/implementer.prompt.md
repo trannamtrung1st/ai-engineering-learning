@@ -35,9 +35,9 @@ Before signaling `SLICE_DONE`, all applicable layers must pass locally:
 
 Computational gates enforce wall-clock timeouts. **Apply the same discipline when you run checks yourself** — unbounded `npm run test:*` / `typecheck` / `lint` / `build` can deadlock and waste the iteration.
 
-1. **Final verification (preferred):** `npm run aih:check -- {{SLICE_ID}}` — same script, slice scope, and timeouts as the harness gate
-2. **Ad-hoc single script:** use the matching budget below, e.g. `AIH_CHECK_TIMEOUT_test_integration_MS=900000 npm run test:integration`
-3. **If a command exceeds its budget:** stop the process tree (kill the terminal job and child test workers), treat as failure, fix the hang/deadlock before `SLICE_DONE`; use `SLICE_BLOCKED` if you cannot resolve
+1. **Final verification (preferred):** `npm run aih:check -- {{SLICE_ID}}` — same script, slice scope, timeouts, and per-script logs as the harness gate
+2. **Ad-hoc single script (especially `test:integration`):** `npm run aih:run-check -- test:integration` — live output, 30s heartbeats, log under `ai-harness/generated/runs/`; or prefix env var e.g. `AIH_CHECK_TIMEOUT_test_integration_MS=900000 npm run test:integration`
+3. **If a command exceeds its budget or hangs with no output:** stop the process tree, read the log file path printed by `aih:run-check` / `aih:check` (tail last lines), fix deadlock/hang before `SLICE_DONE`; use `SLICE_BLOCKED` if you cannot resolve
 4. Do **not** wait on hung tests hoping they finish — the gate will timeout and fail the slice anyway
 
 {{CHECK_TIMEOUT_BUDGETS}}

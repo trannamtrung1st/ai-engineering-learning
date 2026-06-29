@@ -53,6 +53,7 @@ npm run aih:loop -- 50                     # max 50 iterations
 | `AIH_VERIFY_CURL_MAX_TIME_SEC` | `5` | Per-request curl max time for stack probes |
 | `AIH_CHECK_TIMEOUT_MS` | `600000` | Default wall-clock timeout for each computational npm script (10 minutes); kills hung test/build processes |
 | `AIH_CHECK_TIMEOUT_<script>_MS` | — | Per-script override (`:` → `_`, e.g. `AIH_CHECK_TIMEOUT_test_integration_MS=1200000`) |
+| `AIH_CHECK_HEARTBEAT_MS` | `30000` | Progress line interval while a computational check runs (`still running: …`) |
 | `AIH_STREAM_AGENT` | `1` | Live stream all harness agent output via stream-json (`0` = legacy buffered text) |
 | `AIH_AGENT_VERBOSE` | `1` | Show `[tool]` start/done lines on stderr during streamed agent runs (`0` to disable) |
 | `AIH_NO_COLOR` | — | Disable ANSI styling in harness output (`1`) |
@@ -78,6 +79,7 @@ Defaults live in `ai-harness/config/models.json`.
 | `npm run aih:loop:bg` | Same as loop, but **background/unattended** (nohup + log file) |
 | `npm run aih:loop:stop` | Stop background loop |
 | `npm run aih:check` | Computational gates only (no agent) |
+| `npm run aih:run-check -- <script>` | One npm script with timeout, heartbeat, and log file (for agent ad-hoc runs) |
 | `npm run aih:browser-test` | Playwright MCP functional test for next/current slice |
 | `npm run aih:review` | AI review for next pending slice |
 | `npm run aih:preview` | **Dev preview** — DB in Docker, API + web as local dev processes |
@@ -230,7 +232,7 @@ Gates run after every implementer iteration and can be run standalone:
 | Slice completion artifacts | Ralph iteration with slice id | Yes |
 | `typecheck`, `lint`, `build` | `apps/` exists | Yes — root scripts must exist and pass; each has a wall-clock timeout (default 10m, integration/e2e 15m) |
 | `test:unit` | `apps/api` exists (and `apps/web` when it defines `test:unit`) | Yes |
-| `test:integration` | `apps/api` exists | Yes |
+| `test:integration` | `apps/api` exists | Yes — logs to `ai-harness/generated/runs/<run-id>-check-test-integration.log`; `--test-reporter=spec` per test file |
 | `test:e2e` | `tests/e2e` exists | Yes |
 | Slice `testRequirements` | Ralph iteration with slice id | Yes when field present |
 | Generated test case coverage | all slice `acceptance` product items current | Yes — integration/e2e case tags must appear in test files (unit is implementer-owned via `testRequirements`) |
