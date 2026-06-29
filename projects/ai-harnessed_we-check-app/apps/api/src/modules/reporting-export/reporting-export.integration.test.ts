@@ -24,6 +24,7 @@ import { resetClock } from "../../infra/clock.js";
 import { truncateRosterTables } from "../roster-enrollment/roster-service.js";
 import { truncateSessionTables } from "../session-management/session-service.js";
 import { ApiError } from "../../errors/api-error.js";
+import { withIntegrationTestDbReset } from "../../infra/integration-test-lock.js";
 import { CSV_HEADERS } from "./csv-formatter.js";
 import { ExportService } from "./export-service.js";
 import {
@@ -78,25 +79,30 @@ describe("reporting-export integration (AC-12, AC-13, FR-12, FR-13, BR-08, BR-09
     await closePool();
   });
 
-  async function resetDb(): Promise<void> {
-    await truncateSessionTables(db);
-    await truncateReportingTables(db);
-    await truncateRosterTables(db);
-    await truncateAuthTables(db);
-    resetClock();
+  async function resetDb(afterTruncate?: () => Promise<void>): Promise<void> {
+    await withIntegrationTestDbReset(db, async () => {
+      await truncateSessionTables(db);
+      await truncateReportingTables(db);
+      await truncateRosterTables(db);
+      await truncateAuthTables(db);
+      resetClock();
+      if (afterTruncate) await afterTruncate();
+    });
   }
 
   async function seedReferenceData(): Promise<void> {
     await db.query(
       `INSERT INTO classes (id, code, name) VALUES
        ($1, 'HESD-01', 'HESD Cohort A'),
-       ($2, 'HESD-02', 'HESD Cohort B')`,
+       ($2, 'HESD-02', 'HESD Cohort B')
+       ON CONFLICT (id) DO NOTHING`,
       [CLASS_HESD_01, CLASS_HESD_02],
     );
     await db.query(
       `INSERT INTO subjects (id, code, name) VALUES
        ($1, 'SWE-101', 'Software Engineering 101'),
-       ($2, 'SWE-102', 'Software Engineering 102')`,
+       ($2, 'SWE-102', 'Software Engineering 102')
+       ON CONFLICT (id) DO NOTHING`,
       [SUBJECT_SWE_101, SUBJECT_SWE_102],
     );
   }
@@ -200,8 +206,7 @@ describe("reporting-export integration (AC-12, AC-13, FR-12, FR-13, BR-08, BR-09
   }
 
   it("TC-AC-12-002: getClassSubjectSummary scoped to ClassAssignment (BR-08)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const student = await seedStudent("SV2026001", "s1@example.edu.vn", "Student One");
     await seedEnrollment(student.userId, CLASS_HESD_01, SUBJECT_SWE_101);
@@ -236,8 +241,7 @@ describe("reporting-export integration (AC-12, AC-13, FR-12, FR-13, BR-08, BR-09
   });
 
   it("TC-AC-12-009: getSessionRoster enforces assignment scope (BR-08)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const student = await seedStudent("SV2026002", "s2@example.edu.vn", "Student Two");
     await seedEnrollment(student.userId, CLASS_HESD_01, SUBJECT_SWE_101);
@@ -288,8 +292,7 @@ describe("reporting-export integration (AC-12, AC-13, FR-12, FR-13, BR-08, BR-09
   });
 
   it("TC-FR-12-002: summary aggregates present/absent/excused and attendanceRate", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const studentA = await seedStudent("SV2026010", "sa@example.edu.vn", "Student A");
     const studentB = await seedStudent("SV2026011", "sb@example.edu.vn", "Student B");
@@ -326,8 +329,7 @@ describe("reporting-export integration (AC-12, AC-13, FR-12, FR-13, BR-08, BR-09
   });
 
   it("TC-AC-13-003: exportCsv produces spec columns from PostgreSQL (FR-13)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const admin = await seedAdmin();
     const instructor = await seedInstructor();
     const student = await seedStudent("SV2026020", "s20@example.edu.vn", "Nguyễn Văn A");
@@ -361,8 +363,7 @@ describe("reporting-export integration (AC-12, AC-13, FR-12, FR-13, BR-08, BR-09
   });
 
   it("TC-AC-13-004: successful export writes ExportAuditLog (NFR-15)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const admin = await seedAdmin();
     const instructor = await seedInstructor();
     const student = await seedStudent("SV2026021", "s21@example.edu.vn", "Student Export");
@@ -395,8 +396,7 @@ describe("reporting-export integration (AC-12, AC-13, FR-12, FR-13, BR-08, BR-09
   });
 
   it("TC-BR-09-003: exportCsv rejects non-admin and permits admin (BR-09)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const admin = await seedAdmin();
 
@@ -423,8 +423,7 @@ describe("reporting-export integration (AC-12, AC-13, FR-12, FR-13, BR-08, BR-09
   });
 
   it("TC-BR-09-004: denied export writes ExportDenied security audit (NFR-11, NFR-15)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const beforeDenied = await securityAudit.countExportDenied(instructor.userId);
 
@@ -447,8 +446,7 @@ describe("reporting-export integration (AC-12, AC-13, FR-12, FR-13, BR-08, BR-09
   });
 
   it("TC-AC-12-003: GET /reports/summary HTTP 200 contract", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const response = await app.inject({
       method: "GET",
@@ -473,8 +471,7 @@ describe("reporting-export integration (AC-12, AC-13, FR-12, FR-13, BR-08, BR-09
   });
 
   it("TC-AC-12-004: unassigned instructor GET /reports/summary returns 403 ReportAccessDenied", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor("unassigned@example.edu.vn", true);
     const response = await app.inject({
       method: "GET",
@@ -489,8 +486,7 @@ describe("reporting-export integration (AC-12, AC-13, FR-12, FR-13, BR-08, BR-09
   });
 
   it("TC-AC-12-008: invalid date range returns 422 ValidationFailed", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const response = await app.inject({
       method: "GET",
@@ -505,8 +501,7 @@ describe("reporting-export integration (AC-12, AC-13, FR-12, FR-13, BR-08, BR-09
   });
 
   it("TC-AC-13-005: POST /reports/export returns CSV attachment", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const admin = await seedAdmin();
     const response = await app.inject({
       method: "POST",
@@ -529,8 +524,7 @@ describe("reporting-export integration (AC-12, AC-13, FR-12, FR-13, BR-08, BR-09
   });
 
   it("TC-AC-13-006 TC-NFR-15-012: Instructor POST /reports/export returns ExportNotAllowed with ExportDenied audit", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const beforeDenied = await securityAudit.countExportDenied(instructor.userId);
 
@@ -558,8 +552,7 @@ describe("reporting-export integration (AC-12, AC-13, FR-12, FR-13, BR-08, BR-09
   });
 
   it("TC-BR-08-006: admin institution-wide summary without class filter", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const admin = await seedAdmin();
     const instructor = await seedInstructor();
     const student = await seedStudent("SV2026030", "s30@example.edu.vn", "Cross Cohort");
@@ -593,8 +586,7 @@ describe("reporting-export integration (AC-12, AC-13, FR-12, FR-13, BR-08, BR-09
   });
 
   it("TC-NFR-07-002: report available immediately after session close", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const student = await seedStudent("SV2026040", "s40@example.edu.vn", "Latency Student");
     await seedEnrollment(student.userId, CLASS_HESD_01, SUBJECT_SWE_101);

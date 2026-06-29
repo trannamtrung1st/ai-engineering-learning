@@ -447,7 +447,7 @@
     },
     {
       "id": "web-design-system-shell",
-      "passes": true,
+      "passes": false,
       "priority": 20,
       "phase": 2,
       "agent": "frontend",
@@ -486,7 +486,7 @@
     },
     {
       "id": "web-auth-login",
-      "passes": true,
+      "passes": false,
       "priority": 21,
       "phase": 2,
       "agent": "frontend",
@@ -557,7 +557,10 @@
       "description": "Student mobile check-in flow: QR scan, GPS capture, outcome panel, permission guidance, token deep link.",
       "testRequirements": {
         "unit": [
-          "apps/web/src/lib/checkin-outcome.test.ts"
+          "apps/web/src/lib/checkin-outcome.test.ts",
+          "apps/web/src/lib/detect-browser-support.test.ts",
+          "apps/web/src/lib/geolocation.test.ts",
+          "apps/web/src/lib/preview-sim.test.ts"
         ],
         "component": [
           "apps/web/src/components/student/check-in-flow.test.tsx"

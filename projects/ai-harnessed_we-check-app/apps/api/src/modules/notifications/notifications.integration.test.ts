@@ -22,6 +22,7 @@ import {
   truncateAuthTables,
 } from "../../auth/session-store.js";
 import { resetClock } from "../../infra/clock.js";
+import { withIntegrationTestDbReset } from "../../infra/integration-test-lock.js";
 import { truncateRosterTables } from "../roster-enrollment/roster-service.js";
 import { truncateSessionTables } from "../session-management/session-service.js";
 import { NotificationService } from "./notification-service.js";
@@ -68,28 +69,33 @@ describe("notifications integration (AC-16, FR-16, BR-05)", () => {
     await closePool();
   });
 
-  async function resetDb(): Promise<void> {
-    await truncateNotificationTables(db);
-    await truncateSessionTables(db);
-    await truncateRosterTables(db);
-    await truncateAuthTables(db);
-    resetClock();
-    await db.query(
-      `INSERT INTO policy_settings (key, value) VALUES ($1, '20')
-       ON CONFLICT (key) DO UPDATE SET value = '20'`,
-      [POLICY_KEY_ABSENCE_THRESHOLD],
-    );
+  async function resetDb(afterTruncate?: () => Promise<void>): Promise<void> {
+    await withIntegrationTestDbReset(db, async () => {
+      await truncateNotificationTables(db);
+      await truncateSessionTables(db);
+      await truncateRosterTables(db);
+      await truncateAuthTables(db);
+      resetClock();
+      await db.query(
+        `INSERT INTO policy_settings (key, value) VALUES ($1, '20')
+         ON CONFLICT (key) DO UPDATE SET value = '20'`,
+        [POLICY_KEY_ABSENCE_THRESHOLD],
+      );
+      if (afterTruncate) await afterTruncate();
+    });
   }
 
   async function seedReferenceData(): Promise<void> {
     await db.query(
-      `INSERT INTO classes (id, code, name) VALUES ($1, 'HESD-2026-A', 'HESD Cohort A')`,
+      `INSERT INTO classes (id, code, name) VALUES ($1, 'HESD-2026-A', 'HESD Cohort A')
+       ON CONFLICT (id) DO NOTHING`,
       [CLASS_HESD_01],
     );
     await db.query(
       `INSERT INTO subjects (id, code, name) VALUES
        ($1, 'SWE-101', 'Software Engineering 101'),
-       ($2, 'TEST-101', 'Test Subject 101')`,
+       ($2, 'TEST-101', 'Test Subject 101')
+       ON CONFLICT (id) DO NOTHING`,
       [SUBJECT_SWE_101, SUBJECT_TEST_101],
     );
   }
@@ -215,8 +221,7 @@ describe("notifications integration (AC-16, FR-16, BR-05)", () => {
   }
 
   it("TC-AC-16-003: evaluateAbsenceThresholds creates student and instructor notifications", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const student = await seedStudent("SV2026001", "s1@example.edu.vn", "Student C");
     await enrollStudent(student.userId);
@@ -267,8 +272,7 @@ describe("notifications integration (AC-16, FR-16, BR-05)", () => {
   });
 
   it("TC-AC-16-004: excused absences excluded from numerator", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const student = await seedStudent("SV2026002", "s2@example.edu.vn", "Student D");
     await enrollStudent(student.userId, SUBJECT_TEST_101);
@@ -330,8 +334,7 @@ describe("notifications integration (AC-16, FR-16, BR-05)", () => {
   });
 
   it("TC-AC-16-005: session close triggers threshold evaluation via API", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const student = await seedStudent("SV2026003", "s3@example.edu.vn", "Student E");
     await enrollStudent(student.userId);
@@ -396,8 +399,7 @@ describe("notifications integration (AC-16, FR-16, BR-05)", () => {
   });
 
   it("TC-AC-16-007: GET /notifications and PATCH read HTTP contract", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const student = await seedStudent("SV2026004", "s4@example.edu.vn", "Student G");
     await enrollStudent(student.userId);
@@ -503,8 +505,7 @@ describe("notifications integration (AC-16, FR-16, BR-05)", () => {
   });
 
   it("TC-AC-16-009: instructor denied PUT /policy/absence-threshold", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
 
     const res = await app.inject({
@@ -525,8 +526,7 @@ describe("notifications integration (AC-16, FR-16, BR-05)", () => {
   });
 
   it("TC-AC-16-010: student notifications scoped to self only", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const studentH = await seedStudent("SV2026005", "h@example.edu.vn", "Student H");
     const studentI = await seedStudent("SV2026006", "i@example.edu.vn", "Student I");
@@ -574,8 +574,7 @@ describe("notifications integration (AC-16, FR-16, BR-05)", () => {
   });
 
   it("TC-AC-16-011: no notification when rate at or below threshold", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const student = await seedStudent("SV2026007", "k@example.edu.vn", "Student K");
     await enrollStudent(student.userId);
@@ -630,8 +629,7 @@ describe("notifications integration (AC-16, FR-16, BR-05)", () => {
   });
 
   it("TC-AC-16-018: draft and active sessions excluded from denominator", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const student = await seedStudent("SV2026008", "n@example.edu.vn", "Student N");
     await enrollStudent(student.userId);
@@ -678,8 +676,7 @@ describe("notifications integration (AC-16, FR-16, BR-05)", () => {
   });
 
   it("TC-FR-16-017: custom admin threshold applied during evaluation", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const admin = await seedAdmin();
     const student = await seedStudent("SV2026009", "o@example.edu.vn", "Student O");
@@ -734,8 +731,7 @@ describe("notifications integration (AC-16, FR-16, BR-05)", () => {
   });
 
   it("TC-FR-16-019: parallel evaluation does not duplicate notifications", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const student = await seedStudent("SV2026010", "q@example.edu.vn", "Student Q");
     await enrollStudent(student.userId);

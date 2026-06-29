@@ -27,6 +27,7 @@ import { truncateSessionTables } from "../session-management/session-service.js"
 import { AttendanceService } from "./attendance-service.js";
 import { AuditRepository } from "./audit-repository.js";
 import { ApiError } from "../../errors/api-error.js";
+import { withIntegrationTestDbReset } from "../../infra/integration-test-lock.js";
 
 const DEFAULT_DATABASE_URL =
   process.env.DATABASE_URL ??
@@ -70,22 +71,27 @@ describe("attendance integration (AC-10, AC-11, AC-14, FR-11, FR-14, BR-10, NFR-
     await closePool();
   });
 
-  async function resetDb(): Promise<void> {
-    await truncateSessionTables(db);
-    await truncateRosterTables(db);
-    await truncateAuthTables(db);
-    resetClock();
+  async function resetDb(afterTruncate?: () => Promise<void>): Promise<void> {
+    await withIntegrationTestDbReset(db, async () => {
+      await truncateSessionTables(db);
+      await truncateRosterTables(db);
+      await truncateAuthTables(db);
+      resetClock();
+      if (afterTruncate) await afterTruncate();
+    });
   }
 
   async function seedReferenceData(): Promise<void> {
     await db.query(
-      `INSERT INTO classes (id, code, name) VALUES ($1, 'HESD-01', 'HESD Cohort A')`,
+      `INSERT INTO classes (id, code, name) VALUES ($1, 'HESD-01', 'HESD Cohort A')
+       ON CONFLICT (id) DO NOTHING`,
       [CLASS_HESD_01],
     );
     await db.query(
       `INSERT INTO subjects (id, code, name) VALUES
        ($1, 'SWE-101', 'Software Engineering 101'),
-       ($2, 'SWE-102', 'Software Engineering 102')`,
+       ($2, 'SWE-102', 'Software Engineering 102')
+       ON CONFLICT (id) DO NOTHING`,
       [SUBJECT_SWE_101, SUBJECT_SWE_102],
     );
   }
@@ -188,8 +194,7 @@ describe("attendance integration (AC-10, AC-11, AC-14, FR-11, FR-14, BR-10, NFR-
   }
 
   it("TC-AC-11-003: manualEdit persists status change and audit log (NFR-15)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const student = await seedStudent("SV2026001", "s1@example.edu.vn", "Student One");
     await db.query(
@@ -229,8 +234,7 @@ describe("attendance integration (AC-10, AC-11, AC-14, FR-11, FR-14, BR-10, NFR-
   });
 
   it("TC-AC-11-004: manual edit transitions Absent to Present on Closed session", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const student = await seedStudent("SV2026002", "s2@example.edu.vn", "Student Two");
     const closedAt = new Date("2026-06-28T08:00:00.000Z");
@@ -258,8 +262,7 @@ describe("attendance integration (AC-10, AC-11, AC-14, FR-11, FR-14, BR-10, NFR-
   });
 
   it("TC-AC-11-014: EditWindowPolicy denies instructor after 24 h; admin succeeds", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const admin = await seedAdmin();
     const student = await seedStudent("SV2026003", "s3@example.edu.vn", "Student Three");
@@ -297,8 +300,7 @@ describe("attendance integration (AC-10, AC-11, AC-14, FR-11, FR-14, BR-10, NFR-
   });
 
   it("TC-AC-11-016: manual edit on Active session transitions Pending to Present", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const student = await seedStudent("SV2026004", "s4@example.edu.vn", "Student Four");
     const sessionId = crypto.randomUUID();
@@ -340,8 +342,7 @@ describe("attendance integration (AC-10, AC-11, AC-14, FR-11, FR-14, BR-10, NFR-
   });
 
   it("TC-FR-11-017: manual edit supports all allowed target statuses", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const student = await seedStudent("SV2026005", "s5@example.edu.vn", "Student Five");
     const closedAt = new Date("2026-06-28T09:00:00.000Z");
@@ -411,8 +412,7 @@ describe("attendance integration (AC-10, AC-11, AC-14, FR-11, FR-14, BR-10, NFR-
   });
 
   it("TC-AC-14-002: getStudentHistory returns only self-scoped records", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const studentA = await seedStudent("SV2026101", "a@example.edu.vn", "Student A");
     const studentB = await seedStudent("SV2026102", "b@example.edu.vn", "Student B");
@@ -437,8 +437,7 @@ describe("attendance integration (AC-10, AC-11, AC-14, FR-11, FR-14, BR-10, NFR-
   });
 
   it("TC-AC-14-004: student history cursor pagination", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const student = await seedStudent("SV2026200", "pag@example.edu.vn", "Pag Student");
 
@@ -471,8 +470,7 @@ describe("attendance integration (AC-10, AC-11, AC-14, FR-11, FR-14, BR-10, NFR-
   });
 
   it("TC-AC-11-005: PATCH /attendance/:recordId returns 200 with updated record", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const student = await seedStudent("SV2026301", "patch@example.edu.vn", "Patch Student");
     const closedAt = new Date("2026-06-28T12:00:00.000Z");
@@ -502,8 +500,7 @@ describe("attendance integration (AC-10, AC-11, AC-14, FR-11, FR-14, BR-10, NFR-
   });
 
   it("TC-AC-11-006: instructor edit at 25 h returns 403 EditWindowExpired", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const student = await seedStudent("SV2026302", "late@example.edu.vn", "Late Student");
     const closedAt = new Date("2026-06-27T08:00:00.000Z");
@@ -531,8 +528,7 @@ describe("attendance integration (AC-10, AC-11, AC-14, FR-11, FR-14, BR-10, NFR-
   });
 
   it("TC-AC-11-009: student denied PATCH /attendance", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const student = await seedStudent("SV2026303", "self@example.edu.vn", "Self Student");
     const closedAt = new Date("2026-06-28T14:00:00.000Z");
@@ -555,8 +551,7 @@ describe("attendance integration (AC-10, AC-11, AC-14, FR-11, FR-14, BR-10, NFR-
   });
 
   it("TC-AC-11-010: unassigned instructor denied manual edit", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const other = await seedUnassignedInstructor();
     const student = await seedStudent("SV2026304", "cross@example.edu.vn", "Cross Student");
@@ -580,8 +575,7 @@ describe("attendance integration (AC-10, AC-11, AC-14, FR-11, FR-14, BR-10, NFR-
   });
 
   it("TC-AC-14-003: GET /attendance/me/history returns paginated envelope", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const student = await seedStudent("SV2026401", "hist@example.edu.vn", "History Student");
     const closedAt = new Date("2026-06-20T08:00:00.000Z");
@@ -615,8 +609,7 @@ describe("attendance integration (AC-10, AC-11, AC-14, FR-11, FR-14, BR-10, NFR-
   });
 
   it("TC-AC-14-005: student denied GET /sessions/:id/attendance peer roster", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const student = await seedStudent("SV2026402", "peer@example.edu.vn", "Peer Student");
     const closedAt = new Date("2026-06-21T08:00:00.000Z");
@@ -636,8 +629,7 @@ describe("attendance integration (AC-10, AC-11, AC-14, FR-11, FR-14, BR-10, NFR-
   });
 
   it("TC-AC-14-010: limit=201 returns 400 InvalidPagination", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const student = await seedStudent("SV2026403", "lim@example.edu.vn", "Limit Student");
 
     const response = await app.inject({
@@ -651,8 +643,7 @@ describe("attendance integration (AC-10, AC-11, AC-14, FR-11, FR-14, BR-10, NFR-
   });
 
   it("TC-AC-14-011: malformed cursor returns 400 InvalidPagination", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const student = await seedStudent("SV2026404", "cur@example.edu.vn", "Cursor Student");
 
     const response = await app.inject({
@@ -666,8 +657,7 @@ describe("attendance integration (AC-10, AC-11, AC-14, FR-11, FR-14, BR-10, NFR-
   });
 
   it("TC-AC-11-002: Flow C close then manual edit within 24 h", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const student = await seedStudent("SV2026501", "flowc@example.edu.vn", "Flow C Student");
     await db.query(
@@ -742,8 +732,7 @@ describe("attendance integration (AC-10, AC-11, AC-14, FR-11, FR-14, BR-10, NFR-
   }
 
   it("TC-AC-10-003 AC-10b: instructor overrides Rejected to Present after spoof flag (NFR-15)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const student = await seedStudent("SV2026701", "spoof@example.edu.vn", "Spoof Student");
     const closedAt = new Date("2026-06-28T10:00:00.000Z");
@@ -772,8 +761,7 @@ describe("attendance integration (AC-10, AC-11, AC-14, FR-11, FR-14, BR-10, NFR-
   });
 
   it("TC-NFR-15-017 AC-10c: attendance audit logs reject UPDATE and DELETE (append-only)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const student = await seedStudent("SV2026702", "audit@example.edu.vn", "Audit Student");
     const closedAt = new Date("2026-06-28T11:00:00.000Z");
@@ -821,8 +809,7 @@ describe("attendance integration (AC-10, AC-11, AC-14, FR-11, FR-14, BR-10, NFR-
   });
 
   it("TC-AC-11-013: edit boundary at exactly 24 h", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const student1 = await seedStudent("SV2026601", "b1@example.edu.vn", "Boundary One");
     const student2 = await seedStudent("SV2026602", "b2@example.edu.vn", "Boundary Two");

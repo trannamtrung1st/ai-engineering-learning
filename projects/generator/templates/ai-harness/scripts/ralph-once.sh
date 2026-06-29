@@ -72,6 +72,7 @@ else
   agent_out="${RUNS_DIR}/${RID}-agent.txt"
   if slice_uses_browser_mcp "$SLICE_ID"; then
     cleanup_playwright_mcp_artifacts
+    ensure_screenshot_dir "$(screenshot_dir_for_slice "$SLICE_ID" implementer)"
   fi
   aih_step "Running implementer (${AGENT_BIN}, model=${model})"
   aih_agent_begin "implementer (${model})"

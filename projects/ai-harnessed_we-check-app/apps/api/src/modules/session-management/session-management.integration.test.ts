@@ -29,6 +29,7 @@ import {
   truncateSessionTables,
 } from "./session-service.js";
 import { ApiError } from "../../errors/api-error.js";
+import { withIntegrationTestDbReset } from "../../infra/integration-test-lock.js";
 
 const DEFAULT_DATABASE_URL =
   process.env.DATABASE_URL ??
@@ -74,23 +75,28 @@ describe("session-management integration (AC-04, AC-05, FR-04, FR-05, BR-01, BR-
     await closePool();
   });
 
-  async function resetDb(): Promise<void> {
-    sessionService.qr.stopAll();
-    await truncateSessionTables(db);
-    await truncateRosterTables(db);
-    await truncateAuthTables(db);
-    resetClock();
+  async function resetDb(afterTruncate?: () => Promise<void>): Promise<void> {
+    await withIntegrationTestDbReset(db, async () => {
+      sessionService.qr.stopAll();
+      await truncateSessionTables(db);
+      await truncateRosterTables(db);
+      await truncateAuthTables(db);
+      resetClock();
+      if (afterTruncate) await afterTruncate();
+    });
   }
 
   async function seedReferenceData(): Promise<void> {
     await db.query(
       `INSERT INTO classes (id, code, name) VALUES
        ($1, 'HESD-01', 'HESD Cohort A'),
-       ($2, 'HESD-02', 'HESD Cohort B')`,
+       ($2, 'HESD-02', 'HESD Cohort B')
+       ON CONFLICT (id) DO NOTHING`,
       [CLASS_HESD_01, CLASS_HESD_02],
     );
     await db.query(
-      `INSERT INTO subjects (id, code, name) VALUES ($1, 'SWE-101', 'Software Engineering 101')`,
+      `INSERT INTO subjects (id, code, name) VALUES ($1, 'SWE-101', 'Software Engineering 101')
+       ON CONFLICT (id) DO NOTHING`,
       [SUBJECT_SWE_101],
     );
   }
@@ -162,8 +168,7 @@ describe("session-management integration (AC-04, AC-05, FR-04, FR-05, BR-01, BR-
     instructor: { userId: string; cookie: string };
     student: { userId: string; cookie: string };
   }> {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const student = await seedStudent();
     await seedEnrollment(student.userId);
@@ -188,8 +193,7 @@ describe("session-management integration (AC-04, AC-05, FR-04, FR-05, BR-01, BR-
   }
 
   it("SessionService.create persists Draft session with GPS (TC-AC-04-002, TC-FR-04-002, FR-04)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
 
     const created = await sessionService.create(
@@ -230,8 +234,7 @@ describe("session-management integration (AC-04, AC-05, FR-04, FR-05, BR-01, BR-
   });
 
   it("default gpsRadiusMeters is 100 when omitted (TC-FR-04-028)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
 
     const created = await sessionService.create(
@@ -256,8 +259,7 @@ describe("session-management integration (AC-04, AC-05, FR-04, FR-05, BR-01, BR-
   });
 
   it("SessionService.open rejects missing GPS and preserves Draft (TC-AC-04-005, TC-BR-07-003, BR-07)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
 
     const created = await sessionService.create(
@@ -290,8 +292,7 @@ describe("session-management integration (AC-04, AC-05, FR-04, FR-05, BR-01, BR-
   });
 
   it("parallel open without GPS both reject (TC-AC-04-019, TC-BR-07-020)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
 
     const created = await sessionService.create(
@@ -323,8 +324,7 @@ describe("session-management integration (AC-04, AC-05, FR-04, FR-05, BR-01, BR-
   });
 
   it("SessionService.cancel transitions Draft to Cancelled (TC-AC-04-007, FR-04)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
 
     const created = await sessionService.create(
@@ -356,8 +356,7 @@ describe("session-management integration (AC-04, AC-05, FR-04, FR-05, BR-01, BR-
   });
 
   it("SessionService.cancel rejects Active session (TC-FR-04-026)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const student = await seedStudent();
     await seedEnrollment(student.userId);
@@ -389,8 +388,7 @@ describe("session-management integration (AC-04, AC-05, FR-04, FR-05, BR-01, BR-
   });
 
   it("open seeds Pending attendance equal to enrollment count (TC-AC-05-002, TC-FR-05-002, FR-05)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const student = await seedStudent();
     await seedEnrollment(student.userId);
@@ -433,8 +431,7 @@ describe("session-management integration (AC-04, AC-05, FR-04, FR-05, BR-01, BR-
   });
 
   it("close bulk updates Pending to Absent preserving Present (TC-AC-05-008, TC-FR-05-008, BR-01)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const student = await seedStudent();
     await seedEnrollment(student.userId);
@@ -483,8 +480,7 @@ describe("session-management integration (AC-04, AC-05, FR-04, FR-05, BR-01, BR-
   });
 
   it("AutoCloseScheduler closes session at scheduledStart + 10 min (TC-AC-05-009, TC-BR-01-005, BR-01)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const student = await seedStudent();
     await seedEnrollment(student.userId);
@@ -528,8 +524,7 @@ describe("session-management integration (AC-04, AC-05, FR-04, FR-05, BR-01, BR-
   });
 
   it("close rejects non-Active session (TC-AC-05-016, TC-FR-05-016)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
 
     const created = await sessionService.create(
@@ -557,8 +552,7 @@ describe("session-management integration (AC-04, AC-05, FR-04, FR-05, BR-01, BR-
   });
 
   it("POST /sessions returns 201 Draft with GPS (TC-AC-04-003, AC-04)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
 
     const response = await app.inject({
@@ -591,8 +585,7 @@ describe("session-management integration (AC-04, AC-05, FR-04, FR-05, BR-01, BR-
   });
 
   it("open without GPS returns 422 RoomGpsRequired (TC-AC-04-004, TC-BR-07-007)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
 
     const createResponse = await app.inject({
@@ -621,8 +614,7 @@ describe("session-management integration (AC-04, AC-05, FR-04, FR-05, BR-01, BR-
   });
 
   it("Student denied POST /sessions with 403 (TC-AC-04-009)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const student = await seedStudent();
 
     const response = await app.inject({
@@ -643,8 +635,7 @@ describe("session-management integration (AC-04, AC-05, FR-04, FR-05, BR-01, BR-
   });
 
   it("Admin denied POST /sessions with 403 (TC-AC-04-010)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const admin = await seedAdmin();
 
     const response = await app.inject({
@@ -664,8 +655,7 @@ describe("session-management integration (AC-04, AC-05, FR-04, FR-05, BR-01, BR-
   });
 
   it("instructor denied unassigned class with 403 (TC-AC-04-011)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor(true);
 
     const response = await app.inject({
@@ -685,8 +675,7 @@ describe("session-management integration (AC-04, AC-05, FR-04, FR-05, BR-01, BR-
   });
 
   it("PATCH Draft GPS then open succeeds (TC-AC-04-020, TC-BR-07-019, WF-02)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const student = await seedStudent();
     await seedEnrollment(student.userId);
@@ -730,8 +719,7 @@ describe("session-management integration (AC-04, AC-05, FR-04, FR-05, BR-01, BR-
   });
 
   it("open on Active session returns 409 InvalidSessionState (TC-AC-05-014)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
 
     const createResponse = await app.inject({
@@ -769,8 +757,7 @@ describe("session-management integration (AC-04, AC-05, FR-04, FR-05, BR-01, BR-
   });
 
   it("GET qr/current returns valid token while Active (TC-AC-05-001, FR-06)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
 
     const createResponse = await app.inject({
@@ -818,8 +805,7 @@ describe("session-management integration (AC-04, AC-05, FR-04, FR-05, BR-01, BR-
   });
 
   it("Active session stays consistent during check-in lifecycle (TC-NFR-01-001, NFR-01)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const student = await seedStudent();
     await seedEnrollment(student.userId);

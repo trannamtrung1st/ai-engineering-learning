@@ -72,6 +72,18 @@ export interface AttendanceRecordDto {
   displayName: string;
   status: string;
   checkedInAt: string | null;
+  /** Latest SpoofSuspected check-in attempt for monitor badge (AC-10, FR-10) */
+  spoofSuspected?: boolean;
+}
+
+export interface SessionMonitorAlerts {
+  codeSharing: boolean;
+}
+
+export interface SessionAttendanceResponse {
+  summary: AttendanceSummary;
+  records: AttendanceRecordDto[];
+  alerts: SessionMonitorAlerts;
 }
 
 export interface QrTokenDisplayDto {

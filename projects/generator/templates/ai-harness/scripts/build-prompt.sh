@@ -114,6 +114,11 @@ fi
 if [[ "$MODE" == "implementer" ]]; then
   check_timeout_budgets="$(format_check_timeout_budgets_block 2>/dev/null || true)"
   prompt="${prompt//\{\{CHECK_TIMEOUT_BUDGETS\}\}/$check_timeout_budgets}"
+  screenshot_block=""
+  if slice_uses_browser_mcp "$SLICE_ID"; then
+    screenshot_block="$(format_screenshot_dir_block "$SLICE_ID" implementer 2>/dev/null || true)"
+  fi
+  prompt="${prompt//\{\{SCREENSHOT_DIR_BLOCK\}\}/$screenshot_block}"
 
   prior_gate_feedback="$(build_implementer_prior_gate_feedback "$SLICE_ID" 2>/dev/null || true)"
   if [[ -n "$prior_gate_feedback" ]]; then
@@ -121,6 +126,11 @@ if [[ "$MODE" == "implementer" ]]; then
 
 ${prior_gate_feedback}"
   fi
+fi
+
+if [[ "$MODE" == "tester" ]]; then
+  screenshot_block="$(format_screenshot_dir_block "$SLICE_ID" browser-test 2>/dev/null || true)"
+  prompt="${prompt//\{\{SCREENSHOT_DIR_BLOCK\}\}/$screenshot_block}"
 fi
 
 printf '%s\n' "$prompt"

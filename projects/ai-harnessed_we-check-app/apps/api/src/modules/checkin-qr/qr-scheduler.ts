@@ -21,8 +21,14 @@ const ROTATION_INTERVAL_MS = QR_TOKEN_TTL_MS;
 
 export class QrScheduler {
   private readonly intervals = new Map<string, ReturnType<typeof setInterval>>();
+  private protectedTokenIds = new Set<string>();
 
   constructor(private readonly db: DbPool) {}
+
+  /** Browser-gate fixture tokens — excluded from rotation expiry (NFR-06). */
+  setProtectedTokenIds(tokenIds: readonly string[]): void {
+    this.protectedTokenIds = new Set(tokenIds);
+  }
 
   start(sessionId: string): void {
     if (this.intervals.has(sessionId)) {
@@ -53,11 +59,20 @@ export class QrScheduler {
 
   async rotate(sessionId: string): Promise<void> {
     const current = now();
-    await this.db.query(
-      `UPDATE qr_tokens SET status = $2
-       WHERE session_id = $1 AND status = $3`,
-      [sessionId, QrTokenStatus.Expired, QrTokenStatus.Valid],
-    );
+    const protectedIds = [...this.protectedTokenIds];
+    if (protectedIds.length > 0) {
+      await this.db.query(
+        `UPDATE qr_tokens SET status = $2
+         WHERE session_id = $1 AND status = $3 AND NOT (id = ANY($4::uuid[]))`,
+        [sessionId, QrTokenStatus.Expired, QrTokenStatus.Valid, protectedIds],
+      );
+    } else {
+      await this.db.query(
+        `UPDATE qr_tokens SET status = $2
+         WHERE session_id = $1 AND status = $3`,
+        [sessionId, QrTokenStatus.Expired, QrTokenStatus.Valid],
+      );
+    }
 
     const tokenId = randomUUID();
     const expiresAt = new Date(current.getTime() + QR_TOKEN_TTL_MS);

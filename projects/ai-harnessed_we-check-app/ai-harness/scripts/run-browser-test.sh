@@ -47,6 +47,7 @@ if [[ "$(browser_test_required)" != "true" ]]; then
 fi
 
 cleanup_playwright_mcp_artifacts
+ensure_screenshot_dir "$(screenshot_dir_for_slice "$SLICE_ID" browser-test)"
 
 require_preview="$(jq -r '.browserTest.requirePreviewStack // true' "$LOOP_CONFIG")"
 if [[ "$require_preview" == "true" ]]; then

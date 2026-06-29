@@ -40,12 +40,27 @@ Prefer Playwright MCP during harness implementer runs on frontend/test slices.
 
 Accessibility snapshots help with structure and interaction; **screenshots** are required for visual UI/UX review.
 
+### Canonical screenshot paths (required)
+
+All agent UI screenshots go under `ai-harness/generated/runs/screenshots/` (gitignored):
+
+| Agent | Directory |
+|---|---|
+| **Implementer** | `ai-harness/generated/runs/screenshots/<slice-id>/implementer/` |
+| **Browser test agent** | `ai-harness/generated/runs/screenshots/<slice-id>/browser-test/` |
+
+- Create the directory with `mkdir -p` before the first capture (the harness pre-creates it when the agent starts)
+- **cursor-ide-browser:** `browser_take_screenshot` → set `filename` to an absolute path in that directory
+- **Playwright MCP:** use the same directory when supported; otherwise move/copy files here after capture
+- **Do not** save to repo root, `/tmp`, `.playwright-mcp/`, or other random paths
+- Filename: `<UTC-timestamp>-<page-or-case-slug>.png` (e.g. `20250629T120000Z-check-in.png`)
+
 | Agent | When to screenshot |
 |---|---|
 | **Implementer** | Every page/route created or modified in the slice — before `SLICE_DONE`, even when flows pass |
 | **Browser test agent** | Each distinct page visited when verifying browser cases — especially layout, forms, tables, badges, and state variants |
 
-Use Playwright MCP's screenshot tool, or `cursor-ide-browser` `browser_take_screenshot` in IDE sessions. Compare against `docs/ui-ux/00-production-ui-quality-bar.md`. Fix obvious UI issues during implementation; report UI-quality FAILs during the browser test gate.
+Compare against `docs/ui-ux/00-production-ui-quality-bar.md`. Fix obvious UI issues during implementation; report UI-quality FAILs during the browser test gate.
 
 ## Agent timeout discipline
 

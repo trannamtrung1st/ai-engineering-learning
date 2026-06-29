@@ -8,7 +8,7 @@ import {
 } from "../../auth/middleware.js";
 import { Permission } from "../../auth/permissions.js";
 import type { SessionStore } from "../../auth/session-store.js";
-import { validationFailed, forbidden } from "../../errors/api-error.js";
+import { validationFailed, forbidden, notFound } from "../../errors/api-error.js";
 import { AuthService } from "./auth-service.js";
 import { PolicyService } from "./policy-service.js";
 import { UserRepository } from "./user-repository.js";
@@ -108,6 +108,31 @@ export async function registerIdentityAuthRoutes(
       };
     },
   );
+
+  const seedEnabled =
+    process.env.SEED_ENABLED === "true" || process.env.SEED_ENABLED === "1";
+
+  if (seedEnabled) {
+    /** Preview-only: backdate current session for AC-02c browser gate (TC-AC-02-013) */
+    app.post(
+      "/auth/preview/expire-session",
+      { preHandler: [auth] },
+      async (request) => {
+        const sessionId = extractSessionId(request);
+        if (!sessionId) {
+          throw notFound();
+        }
+        await db.query(
+          `UPDATE auth_sessions
+           SET last_activity_at = NOW() - INTERVAL '9 hours',
+               expires_at = NOW() - INTERVAL '1 hour'
+           WHERE id = $1 AND revoked_at IS NULL`,
+          [sessionId],
+        );
+        return { ok: true };
+      },
+    );
+  }
 
   app.get(
     "/users",

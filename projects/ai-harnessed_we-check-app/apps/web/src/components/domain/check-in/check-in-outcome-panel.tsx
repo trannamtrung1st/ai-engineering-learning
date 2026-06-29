@@ -8,6 +8,7 @@ import {
   ShieldAlert,
   WifiOff,
   UserX,
+  Ban,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,7 @@ import { cn } from "@/lib/cn";
 const outcomeIcons: Record<CheckInOutcomeCode, LucideIcon> = {
   Present: CheckCircle2,
   ExpiredQr: Clock,
+  TokenAlreadyUsed: Ban,
   OutOfRadius: MapPinOff,
   GpsDisabled: LocateOff,
   DuplicateCheckIn: Info,
@@ -32,18 +34,24 @@ const outcomeIcons: Record<CheckInOutcomeCode, LucideIcon> = {
 
 export interface CheckInOutcomePanelProps {
   outcome: CheckInOutcomeCode;
+  detailMessage?: string;
   onAction?: () => void;
+  onRetry?: () => void;
   className?: string;
 }
 
 /** NFR-17 — check-in outcome panel with Vietnamese messages per ui-states §4.3 */
 export function CheckInOutcomePanel({
   outcome,
+  detailMessage,
   onAction,
+  onRetry,
   className,
 }: CheckInOutcomePanelProps) {
   const copy = checkInOutcomeMessages[outcome];
   const Icon = outcomeIcons[outcome];
+  const showManualFallback = outcome !== "Present";
+  const showGpsRetry = outcome === "GpsDisabled" && onRetry;
 
   return (
     <div
@@ -51,11 +59,27 @@ export function CheckInOutcomePanel({
       className={cn("flex flex-col gap-4", className)}
     >
       <Alert variant={copy.variant} icon={Icon} title={copy.title}>
-        {copy.message}
+        {detailMessage ?? copy.message}
       </Alert>
-      <Button type="button" onClick={onAction} className="w-full">
+      <Button type="button" onClick={onAction} className="w-full min-h-touch">
         {copy.cta}
       </Button>
+      {showGpsRetry ? (
+        <Button
+          type="button"
+          variant="outline"
+          onClick={onRetry}
+          className="w-full min-h-touch"
+          data-testid="gps-retry-button"
+        >
+          Thử lại
+        </Button>
+      ) : null}
+      {showManualFallback ? (
+        <p className="text-small text-text-secondary" data-testid="manual-attendance-fallback">
+          Nếu vẫn không điểm danh được, vui lòng liên hệ giảng viên để được ghi nhận thủ công.
+        </p>
+      ) : null}
     </div>
   );
 }

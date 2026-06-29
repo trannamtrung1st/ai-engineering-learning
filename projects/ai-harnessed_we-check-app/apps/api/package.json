@@ -11,8 +11,8 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
     "build": "tsc",
-    "test:unit": "node --import tsx --test --test-concurrency=1 $(find src -name '*.test.ts' ! -name '*.integration.test.ts' | tr '\\n' ' ')",
-    "test:integration": "node --import tsx --test --test-concurrency=1 $(find src -name '*.integration.test.ts' | tr '\\n' ' ')",
+    "test:unit": "node --import tsx --test --test-reporter=spec --test-timeout=60000 --test-concurrency=1 $(find src -name '*.test.ts' ! -name '*.integration.test.ts' | tr '\\n' ' ')",
+    "test:integration": "NODE_ENV=test SEED_ENABLED=false node --import tsx --test --test-reporter=spec --test-timeout=120000 --test-concurrency=1 $(find src -name '*.integration.test.ts' | tr '\\n' ' ')",
     "test": "npm run test:unit && npm run test:integration"
   },
   "dependencies": {

@@ -2,6 +2,7 @@
 export type CheckInOutcomeCode =
   | "Present"
   | "ExpiredQr"
+  | "TokenAlreadyUsed"
   | "OutOfRadius"
   | "GpsDisabled"
   | "DuplicateCheckIn"
@@ -29,6 +30,12 @@ export const checkInOutcomeMessages: Record<CheckInOutcomeCode, CheckInOutcomeCo
     message: "Mã QR đã hết hạn, vui lòng quét mã mới",
     cta: "Quét lại",
     variant: "warning",
+  },
+  TokenAlreadyUsed: {
+    title: "Mã QR đã được sử dụng",
+    message: "Mã QR đã được sử dụng. Vui lòng quét mã mới trên màn hình giảng viên.",
+    cta: "Quét lại",
+    variant: "danger",
   },
   OutOfRadius: {
     title: "Ngoài phạm vi phòng học",

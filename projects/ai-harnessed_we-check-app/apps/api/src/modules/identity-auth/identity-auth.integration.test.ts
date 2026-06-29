@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { after, before, describe, it } from "node:test";
 import { ErrorCode, SESSION_COOKIE_NAME, UserRole } from "@wecheck/domain";
 import { createPool, setPool, closePool, type DbPool } from "../../infra/db.js";
 import { runMigrations } from "../../infra/migrate.js";
 import { buildApp } from "../../server.js";
 import { SessionStore, truncateAuthTables } from "../../auth/session-store.js";
+import { withIntegrationTestDbReset } from "../../infra/integration-test-lock.js";
 import { resetClock, setClock } from "../../infra/clock.js";
 import { hashPassword, isPasswordHash } from "./password-hasher.js";
 import { UserRepository } from "./user-repository.js";
@@ -43,26 +45,29 @@ describe("identity-auth integration (AC-01, AC-02, FR-01, FR-02, BR-06, NFR-14, 
   });
 
   async function resetDb(): Promise<void> {
-    await truncateAuthTables(db);
-    resetClock();
+    await withIntegrationTestDbReset(db, async () => {
+      await truncateAuthTables(db);
+      resetClock();
+    });
   }
 
   async function seedAdmin(): Promise<{ email: string; password: string }> {
     const password = "AdminPass123";
     const passwordHash = await hashPassword(password);
+    const userId = randomUUID();
     await db.query(
       `INSERT INTO users (id, institutional_id, display_name, email, password_hash, role, active)
        VALUES ($1, $2, $3, $4, $5, $6, true)`,
       [
-        "00000000-0000-4000-8000-000000000001",
+        userId,
         "ADMIN001",
         "Admin User",
-        "admin@example.edu.vn",
+        `admin-${userId.slice(0, 8)}@example.edu.vn`,
         passwordHash,
         UserRole.TrainingOfficeAdmin,
       ],
     );
-    return { email: "admin@example.edu.vn", password };
+    return { email: `admin-${userId.slice(0, 8)}@example.edu.vn`, password };
   }
 
   async function loginAs(

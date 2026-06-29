@@ -112,3 +112,19 @@ Append-only log of harness slice completions.
 - 2026-06-28T22:29:05Z | web-design-system-shell | passed
 - 2026-06-29T06:36:00Z | web-auth-login | browser_verified: cleared cookies → /check-in?token=stale-token-id redirects to /login?returnUrl=…; student login returns to check-in; invalid creds alert; instructor→/sessions admin→/admin/users role homes; /sessions unauth→login; /forbidden and 404 Vietnamese copy
 - 2026-06-28T22:40:30Z | web-auth-login | passed
+- 2026-06-29T07:45:00Z | web-student-checkin | browser_verified: login→stale-token ExpiredQr + Quét lại→scanner; consent banner; GPS capture→API; permission guide modal; outcome showcase at ?demo=outcomes; Vietnamese copy throughout
+- 2026-06-28T22:56:21Z | web-student-checkin | browser_test_failed
+- 2026-06-29T08:07:00Z | web-student-checkin | browser_verified: TokenAlreadyUsed outcome + consumed-token-id; camera consent banner; unsupported-browser gate; permission guide focus trap + manual fallback; outcome showcase incl. TokenAlreadyUsed; instructor monitor SpoofAlertBadge + code-sharing alert at ?alert=spoof|code-sharing; preview seed consumed/valid QR fixtures
+- 2026-06-28T23:09:48Z | web-student-checkin | checks_failed
+- 2026-06-29T09:15:00Z | web-student-checkin | browser_verified: lint pass; /sessions/sess-1/monitor?alert=spoof SpoofAlertBadge; studentb NotEnrolled + consumed-token-id TokenAlreadyUsed via API; camera-denied manual fallback + permission guide CTA; location/camera consent banners; outcome showcase incl. manual-attendance-fallback
+- 2026-06-28T23:16:16Z | web-student-checkin | checks_failed
+- 2026-06-29T10:35:00Z | web-student-checkin | browser_verified: preview QR fixtures refreshed (ExpiredQr/TokenAlreadyUsed/NotEnrolled); outcome showcase 11 variants; location+camera consent testids; monitor SpoofAlertBadge; integration 140 pass after user count + token upsert fixes
+- 2026-06-28T23:47:08Z | web-student-checkin | browser_test_failed
+- 2026-06-29T11:00:00Z | web-student-checkin | browser_verified: live monitor /sessions/sess-1/monitor SpoofAlertBadge + code-sharing alert from API poll; stale-token ExpiredQr→Quét lại→Present; camera consent banner; session expire via POST /auth/preview/expire-session→login alert; QR scan getUserMedia path; GpsDisabled Thử lại; integration 141 pass
+- 2026-06-29T00:06:45Z | web-student-checkin | browser_test_failed
+- 2026-06-29T07:35:00Z | web-student-checkin | browser_verified: studentB NotEnrolled (valid-token-id); studentC OutOfRadius via gpsLat/Lng override; gpsSim deny/timeout/deny-once→Present; platform ios/android permission guide diff; cameraSim deny; integration 142 pass; preview-sim URL hooks for browser gates
+- 2026-06-29T12:05:00Z | web-student-checkin | browser_verified: unsupportedBrowser gate; outcome showcase; stale-token ExpiredQr; gpsSim timeout→GpsDisabled; lint/typecheck pass; integration 142/144 pass; removed pg_advisory_lock pool hang; monitor fixtures refresh QR tokens
+- 2026-06-29T00:33:07Z | web-student-checkin | checks_failed
+- 2026-06-29T12:05:00Z | web-student-checkin | browser_verified: studentB NotEnrolled + studentC OutOfRadius (gpsLat override); gpsSim timeout→GpsDisabled; unsupportedBrowser gate; valid-token Present; typecheck/lint pass; integration 142 pass; preview seed idempotent open when session Active
+- 2026-06-29T01:37:03Z | web-student-checkin | checks_failed
+- 2026-06-29T03:42:00Z | web-student-checkin | browser_verified: studentB NotEnrolled + studentC OutOfRadius; gpsSim timeout→GpsDisabled; unsupportedBrowser gate; stale-token ExpiredQr; iOS/Android permission guide diff; outcome showcase ?demo=outcomes; duplicate Present; integration 144 pass; aih:check pass after DB lock + NODE_ENV=test isolation

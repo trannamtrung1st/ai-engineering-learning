@@ -7,9 +7,9 @@ describe("check-in-api (NFR-06)", () => {
     expect(mapCheckInOutcome("ExpiredQr", "ExpiredQr")).toBe("ExpiredQr");
   });
 
-  it("maps TokenNotFound and TokenAlreadyUsed to ExpiredQr", () => {
+  it("maps TokenNotFound to ExpiredQr and TokenAlreadyUsed distinctly (BR-11)", () => {
     expect(mapCheckInOutcome("TokenNotFound", "TokenNotFound")).toBe("ExpiredQr");
-    expect(mapCheckInOutcome("TokenAlreadyUsed", "TokenAlreadyUsed")).toBe("ExpiredQr");
+    expect(mapCheckInOutcome("TokenAlreadyUsed", "TokenAlreadyUsed")).toBe("TokenAlreadyUsed");
   });
 
   it("maps Unauthenticated to NetworkError for auth redirect handling", () => {

@@ -24,11 +24,10 @@ import { QrScheduler } from "../checkin-qr/qr-scheduler.js";
 import type { NotificationService } from "../notifications/notification-service.js";
 import { SessionRepository } from "./session-repository.js";
 import type {
-  AttendanceRecordDto,
-  AttendanceSummary,
   CreateSessionInput,
   PatchSessionInput,
   QrTokenDisplayDto,
+  SessionAttendanceResponse,
   SessionDto,
   SessionRecord,
 } from "./types.js";
@@ -444,19 +443,50 @@ export class SessionService {
     sessionId: string,
     userId: string,
     role: UserRoleType,
-  ): Promise<{ summary: AttendanceSummary; records: AttendanceRecordDto[] }> {
+  ): Promise<SessionAttendanceResponse> {
     const session = await this.sessions.findById(sessionId);
     if (!session) {
       throw notFound();
     }
     await this.assertReadAccess(userId, role, session);
 
-    const [summary, records] = await Promise.all([
+    const [summary, records, spoofStudentIds, codeSharing] = await Promise.all([
       this.attendance.getSummary(sessionId),
       this.attendance.listRecords(sessionId),
+      this.loadSpoofSuspectedStudentIds(sessionId),
+      this.hasRecentTokenReuseAlert(sessionId),
     ]);
 
-    return { summary, records };
+    return {
+      summary,
+      records: records.map((record) => ({
+        ...record,
+        spoofSuspected: spoofStudentIds.has(record.studentId),
+      })),
+      alerts: { codeSharing },
+    };
+  }
+
+  private async loadSpoofSuspectedStudentIds(sessionId: string): Promise<Set<string>> {
+    const result = await this.db.query<{ student_id: string }>(
+      `SELECT DISTINCT student_id
+       FROM check_in_attempts
+       WHERE session_id = $1 AND outcome = 'SpoofSuspected'`,
+      [sessionId],
+    );
+    return new Set(result.rows.map((row) => row.student_id));
+  }
+
+  private async hasRecentTokenReuseAlert(sessionId: string): Promise<boolean> {
+    const result = await this.db.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count
+       FROM security_audit_logs
+       WHERE session_id = $1
+         AND event_type = 'TokenReuseAlert'
+         AND created_at > NOW() - INTERVAL '24 hours'`,
+      [sessionId],
+    );
+    return Number.parseInt(result.rows[0]?.count ?? "0", 10) > 0;
   }
 
   async getCurrentQr(

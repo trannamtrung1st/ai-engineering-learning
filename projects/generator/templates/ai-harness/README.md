@@ -87,7 +87,7 @@ Defaults live in `ai-harness/config/models.json`.
 | `npm run aih:preview:verify` | Verify API health + web HTTP 200 (no start) |
 | `npm run aih:preview:logs` | View preview logs (combined, api, web, db, stack) |
 | `npm run aih:preview:down` | Stop preview stack |
-| `npm run aih:playwright-mcp:clean` | Remove Playwright MCP page snapshots and console logs |
+| `npm run aih:playwright-mcp:clean` | Remove Playwright MCP page snapshots and console logs (does not delete `screenshots/`) |
 | `npm run aih:testgen:once` | Generate test cases for one slice from docs |
 | `npm run aih:testgen:loop` | Autonomous TestGen loop until all slices have current test cases |
 | `npm run aih:testgen:enhance` | Ad-hoc improve test cases for one tag with free-text instructions |

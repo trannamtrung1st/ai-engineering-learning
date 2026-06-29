@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
 import { after, before, describe, it } from "node:test";
 import { ErrorCode, RosterImportStatus, SESSION_COOKIE_NAME, UserRole } from "@wecheck/domain";
 import { createPool, setPool, closePool, type DbPool } from "../../infra/db.js";
@@ -11,15 +12,17 @@ import {
 } from "../../auth/session-store.js";
 import { hashPassword } from "../identity-auth/password-hasher.js";
 import { RosterService, truncateRosterTables } from "./roster-service.js";
+import { truncateCheckInTables } from "../checkin-qr/check-in-service.js";
 import { RosterRowErrorCode } from "./csv-validator.js";
+import { withIntegrationTestDbReset } from "../../infra/integration-test-lock.js";
 
 const DEFAULT_DATABASE_URL =
   process.env.DATABASE_URL ??
   "postgresql://wecheck:wecheck@localhost:5432/wecheck";
 
-const CLASS_HESD_01 = "10000000-0000-4000-8000-000000000101";
-const CLASS_HESD_02 = "10000000-0000-4000-8000-000000000102";
-const SUBJECT_SWE_101 = "20000000-0000-4000-8000-000000000201";
+const CLASS_HESD_01 = "10000000-0000-4000-8000-000000000201";
+const CLASS_HESD_02 = "10000000-0000-4000-8000-000000000202";
+const SUBJECT_SWE_101 = "20000000-0000-4000-8000-000000000301";
 
 function buildCsv(rows: string[]): string {
   const header = "institutional_id,display_name,class_code,subject_code";
@@ -68,31 +71,39 @@ describe("roster-enrollment integration (AC-03, FR-03, BR-08)", () => {
     await closePool();
   });
 
-  async function resetDb(): Promise<void> {
-    await truncateRosterTables(db);
-    await truncateAuthTables(db);
+  async function resetDb(afterTruncate?: () => Promise<void>): Promise<void> {
+    await withIntegrationTestDbReset(db, async () => {
+      await truncateCheckInTables(db);
+      await truncateRosterTables(db);
+      await truncateAuthTables(db);
+      await db.query("DELETE FROM policy_settings WHERE key = 'preview_seed_version'");
+      if (afterTruncate) await afterTruncate();
+    });
   }
 
   async function seedReferenceData(): Promise<void> {
     await db.query(
       `INSERT INTO classes (id, code, name) VALUES
        ($1, 'HESD-01', 'HESD Cohort A'),
-       ($2, 'HESD-02', 'HESD Cohort B')`,
+       ($2, 'HESD-02', 'HESD Cohort B')
+       ON CONFLICT (id) DO NOTHING`,
       [CLASS_HESD_01, CLASS_HESD_02],
     );
     await db.query(
-      `INSERT INTO subjects (id, code, name) VALUES ($1, 'SWE-101', 'Software Engineering 101')`,
+      `INSERT INTO subjects (id, code, name) VALUES ($1, 'SWE-101', 'Software Engineering 101')
+       ON CONFLICT (id) DO NOTHING`,
       [SUBJECT_SWE_101],
     );
   }
 
   async function seedAdmin(): Promise<{ userId: string; cookie: string }> {
     const passwordHash = await hashPassword("AdminPass123");
-    const userId = "00000000-0000-4000-8000-000000000001";
+    const userId = randomUUID();
+    const institutionalId = `ADMIN-${userId.slice(0, 8)}`;
     await db.query(
       `INSERT INTO users (id, institutional_id, display_name, email, password_hash, role, active)
-       VALUES ($1, 'ADMIN001', 'Admin User', 'admin@example.edu.vn', $2, $3, true)`,
-      [userId, passwordHash, UserRole.TrainingOfficeAdmin],
+       VALUES ($1, $2, 'Admin User', $3, $4, $5, true)`,
+      [userId, institutionalId, `admin-${userId.slice(0, 8)}@example.edu.vn`, passwordHash, UserRole.TrainingOfficeAdmin],
     );
     const session = await store.createSession(userId);
     return { userId, cookie: `${SESSION_COOKIE_NAME}=${session.id}` };
@@ -148,8 +159,7 @@ describe("roster-enrollment integration (AC-03, FR-03, BR-08)", () => {
   }
 
   it("RosterService.importCsv persists enrollments in Postgres (TC-AC-03-002, TC-FR-03-002, FR-03)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const admin = await seedAdmin();
 
     const csv = Buffer.from(
@@ -179,8 +189,7 @@ describe("roster-enrollment integration (AC-03, FR-03, BR-08)", () => {
   });
 
   it("duplicate enrollment rejected with DuplicateEnrollment (TC-AC-03-005, TC-FR-03-005)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const admin = await seedAdmin();
 
     const passwordHash = await hashPassword("StudentPass8");
@@ -219,8 +228,7 @@ describe("roster-enrollment integration (AC-03, FR-03, BR-08)", () => {
   });
 
   it("unknown class_code rejected with UnknownClassCode (TC-AC-03-014, TC-FR-03-014)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const admin = await seedAdmin();
 
     const summary = await rosterService.importCsv(
@@ -240,8 +248,7 @@ describe("roster-enrollment integration (AC-03, FR-03, BR-08)", () => {
   });
 
   it("dryRun validates without persisting enrollments (TC-AC-03-015, TC-FR-03-015)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const admin = await seedAdmin();
 
     const csv = Buffer.from(
@@ -274,8 +281,7 @@ describe("roster-enrollment integration (AC-03, FR-03, BR-08)", () => {
   });
 
   it("POST /roster/import returns 202 Processing envelope (TC-AC-03-003, TC-FR-03-003)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const admin = await seedAdmin();
     const csv = buildCsv(["SV2026301,Student A,HESD-01,SWE-101"]);
     const { payload, contentType } = multipartPayload(csv);
@@ -293,11 +299,11 @@ describe("roster-enrollment integration (AC-03, FR-03, BR-08)", () => {
     assert.equal(body.status, RosterImportStatus.Processing);
     assert.match(body.message, /Đang xử lý/);
     assert.equal("enrollments" in body, false);
+    await pollBatch(body.batchId, admin.cookie);
   });
 
   it("mixed valid and duplicate CSV import via HTTP (TC-AC-03-004, TC-FR-03-004)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const admin = await seedAdmin();
     const csv = buildCsv([
       "SV2026401,First,HESD-01,SWE-101",
@@ -328,8 +334,7 @@ describe("roster-enrollment integration (AC-03, FR-03, BR-08)", () => {
   });
 
   it("instructor denied GET /enrollments for unassigned class (TC-AC-03-006, TC-AC-03-007, TC-FR-03-006, TC-FR-03-007, BR-08)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const admin = await seedAdmin();
     await rosterService.importCsv(
       Buffer.from(buildCsv(["SV2026501,Student,HESD-02,SWE-101"]), "utf8"),
@@ -349,8 +354,7 @@ describe("roster-enrollment integration (AC-03, FR-03, BR-08)", () => {
   });
 
   it("instructor and student denied POST /roster/import (TC-AC-03-008, TC-FR-03-008)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const csv = buildCsv(["SV2026601,Student,HESD-01,SWE-101"]);
     const { payload, contentType } = multipartPayload(csv);
 
@@ -386,8 +390,7 @@ describe("roster-enrollment integration (AC-03, FR-03, BR-08)", () => {
   });
 
   it("GET /roster/imports/:batchId returns summary with errorDetails (TC-AC-03-009, TC-FR-03-009)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const admin = await seedAdmin();
     const csv = buildCsv([
       "SV2026701,Valid,HESD-01,SWE-101",
@@ -412,8 +415,7 @@ describe("roster-enrollment integration (AC-03, FR-03, BR-08)", () => {
   });
 
   it("GET /enrollments returns roster for assigned instructor (TC-AC-03-010, TC-FR-03-010)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const admin = await seedAdmin();
     await rosterService.importCsv(
       Buffer.from(buildCsv(["SV2026801,Nguyen Van A,HESD-01,SWE-101"]), "utf8"),
@@ -464,8 +466,7 @@ describe("roster-enrollment integration (AC-03, FR-03, BR-08)", () => {
   });
 
   it("RosterImportBatch transitions Processing to Completed (TC-FR-03-016)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const admin = await seedAdmin();
     const csv = buildCsv([
       "SV2026901,One,HESD-01,SWE-101",

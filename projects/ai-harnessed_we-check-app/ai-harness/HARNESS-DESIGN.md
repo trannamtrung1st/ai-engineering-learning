@@ -26,6 +26,7 @@ Concise index for the 12 harness components. Referenced by `docs/technical/13-do
 | Agent timeout | `ralph-loop.json` / `testgen-loop.json` → `agent.idleTimeoutMs` (default 5m stream idle), `agent.timeoutMs` (default 1h max wall), `agent.signalGraceMs` / `agent.resultGraceMs` (early exit after completion signals / result event); override `AIH_AGENT_IDLE_TIMEOUT_MS` / `AIH_AGENT_TIMEOUT_MS` / `AIH_AGENT_SIGNAL_GRACE_MS` / `AIH_AGENT_RESULT_GRACE_MS` |
 | Computational check timeout | `ralph-loop.json` → `computationalChecks.commandTimeoutMs` (default 10m) and `commandTimeouts` per npm script; override `AIH_CHECK_TIMEOUT_MS` or `AIH_CHECK_TIMEOUT_<script>_MS`; on timeout the harness kills the process tree and records `timedOut: true` in the checks report |
 | Check logs + heartbeats | `run-checks.sh` / `run-logged-check.sh` write per-script logs to `ai-harness/generated/runs/<run-id>-check-<script>.log` and print `still running` every 30s; agent stream idle timeout is suspended while a shell tool runs |
+| UI screenshots | `ai-harness/generated/runs/screenshots/<slice-id>/implementer/` or `.../browser-test/` — agents must save all captures here (injected into prompts via `build-prompt.sh`) |
 
 ## Ralph loop
 

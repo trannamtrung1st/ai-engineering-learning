@@ -17,6 +17,7 @@ MODELS_CONFIG="${HARNESS_ROOT}/config/models.json"
 CONTEXT_MAP="${HARNESS_ROOT}/config/context-map.json"
 STATE_DIR="${HARNESS_ROOT}/state"
 RUNS_DIR="${HARNESS_ROOT}/generated/runs"
+SCREENSHOTS_ROOT="${RUNS_DIR}/screenshots"
 TEST_CASES_DIR="${REPO_ROOT}/docs/test-cases"
 PREVIEW_PID_FILE="${RUNS_DIR}/preview-stack.pids"
 PREVIEW_AUX_PID_FILE="${RUNS_DIR}/preview-aux.pids"
@@ -30,7 +31,7 @@ PREVIEW_WEB_REFRESH_FILE="${RUNS_DIR}/preview-web.refresh"
 PLAYWRIGHT_MCP_LEGACY_DIR="${REPO_ROOT}/.playwright-mcp"
 PLAYWRIGHT_MCP_OUTPUT_DIR="${RUNS_DIR}/playwright-mcp"
 
-export HARNESS_ROOT REPO_ROOT BACKLOG TEST_CASE_INDEX TESTGEN_DOCS_MAP LOOP_CONFIG TESTGEN_CONFIG MODELS_CONFIG CONTEXT_MAP STATE_DIR RUNS_DIR TEST_CASES_DIR
+export HARNESS_ROOT REPO_ROOT BACKLOG TEST_CASE_INDEX TESTGEN_DOCS_MAP LOOP_CONFIG TESTGEN_CONFIG MODELS_CONFIG CONTEXT_MAP STATE_DIR RUNS_DIR SCREENSHOTS_ROOT TEST_CASES_DIR
 export PREVIEW_PID_FILE PREVIEW_AUX_PID_FILE
 export PREVIEW_WEB_LOG PREVIEW_API_LOG PREVIEW_DB_LOG PREVIEW_STACK_LOG PREVIEW_COMBINED_LOG
 export PREVIEW_SUPERVISOR_STOP_FILE PREVIEW_WEB_REFRESH_FILE
@@ -600,6 +601,39 @@ run_id() {
 
 ensure_runs_dir() {
   mkdir -p "$RUNS_DIR"
+}
+
+# Canonical UI screenshot dir: ai-harness/generated/runs/screenshots/<slice>/<phase>/
+# phase: implementer | browser-test
+screenshot_dir_for_slice() {
+  local slice_id="$1"
+  local phase="${2:-implementer}"
+  echo "${SCREENSHOTS_ROOT}/${slice_id}/${phase}"
+}
+
+ensure_screenshot_dir() {
+  local dir="$1"
+  ensure_runs_dir
+  mkdir -p "$dir"
+}
+
+# Markdown block injected into implementer/tester prompts via build-prompt.sh
+format_screenshot_dir_block() {
+  local slice_id="$1"
+  local phase="${2:-implementer}"
+  local dir example_ts example_name
+  dir="$(screenshot_dir_for_slice "$slice_id" "$phase")"
+  example_ts="$(date -u +"%Y%m%dT%H%M%SZ")"
+  example_name="${example_ts}-page-slug.png"
+  cat <<EOF
+**Screenshot directory (required — do not save elsewhere):** \`${dir}\`
+
+- \`mkdir -p "${dir}"\` before the first capture (harness may pre-create this path)
+- **cursor-ide-browser** \`browser_take_screenshot\`: set \`filename\` to an **absolute path** under this directory, e.g. \`${dir}/${example_name}\`
+- **Playwright MCP**: pass the same directory when the tool accepts a path; otherwise **move/copy** captures here — never leave screenshots in \`.playwright-mcp/\`, repo root, or \`/tmp\`
+- Filename pattern: \`<UTC-timestamp>-<page-or-case-slug>.png\` (lowercase, hyphens; e.g. \`${example_name}\`)
+- List every saved path in your summary and in \`ai-harness/state/progress.md\`
+EOF
 }
 
 all_slices_pass() {

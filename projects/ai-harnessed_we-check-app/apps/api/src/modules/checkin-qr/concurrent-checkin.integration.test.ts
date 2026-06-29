@@ -25,6 +25,7 @@ import { now } from "../../infra/clock.js";
 import { truncateRosterTables } from "../roster-enrollment/roster-service.js";
 import { SessionService } from "../session-management/session-service.js";
 import { CheckInService, truncateCheckInTables } from "./check-in-service.js";
+import { withIntegrationTestDbReset } from "../../infra/integration-test-lock.js";
 
 const DEFAULT_DATABASE_URL =
   process.env.DATABASE_URL ??
@@ -69,20 +70,24 @@ describe("concurrent check-in (AC-09c, NFR-02)", () => {
     studentCookie: string;
     tokenIds: [string, string];
   }> {
-    sessionService.qr.stopAll();
-    await truncateCheckInTables(db);
-    await truncateRosterTables(db);
-    await truncateAuthTables(db);
-    resetClock();
+    await withIntegrationTestDbReset(db, async () => {
+      sessionService.qr.stopAll();
+      await truncateCheckInTables(db);
+      await truncateRosterTables(db);
+      await truncateAuthTables(db);
+      resetClock();
 
-    await db.query(
-      `INSERT INTO classes (id, code, name) VALUES ($1, 'HESD-01', 'HESD Cohort A')`,
-      [CLASS_HESD_01],
-    );
-    await db.query(
-      `INSERT INTO subjects (id, code, name) VALUES ($1, 'SWE-101', 'SWE-101')`,
-      [SUBJECT_SWE_101],
-    );
+      await db.query(
+        `INSERT INTO classes (id, code, name) VALUES ($1, 'HESD-01', 'HESD Cohort A')
+         ON CONFLICT (id) DO NOTHING`,
+        [CLASS_HESD_01],
+      );
+      await db.query(
+        `INSERT INTO subjects (id, code, name) VALUES ($1, 'SWE-101', 'SWE-101')
+         ON CONFLICT (id) DO NOTHING`,
+        [SUBJECT_SWE_101],
+      );
+    });
 
     const instructorId = await createTestUser(db, {
       institutionalId: "GV2026100",

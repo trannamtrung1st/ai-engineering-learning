@@ -8,6 +8,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { useLiveCountdown } from "@/hooks/use-live-countdown";
 import { useQrTokenPoll } from "@/hooks/use-qr-token-poll";
 import { PageHeader } from "@/components/layout/page-header";
+import { SessionMonitorDashboard } from "@/components/domain/session/session-monitor-dashboard";
 import { PREVIEW_SESSION_IDS, resolvePreviewId } from "@/lib/preview-fixtures";
 
 type SessionTab = "qr" | "monitor" | "roster" | "settings";
@@ -36,6 +37,7 @@ function QrTabContent({
 
   const handleCycleComplete = () => {
     setFading(true);
+    void qrQuery.refetch();
     window.setTimeout(() => {
       setTokenKey((k) => k + 1);
       setFading(false);
@@ -146,7 +148,7 @@ export function SessionDetailPage() {
               Buổi học đã kết thúc. Dữ liệu điểm danh không còn cập nhật.
             </Alert>
           ) : (
-            <p className="text-body">Theo dõi điểm danh trực tiếp</p>
+            <SessionMonitorDashboard sessionId={id ?? undefined} />
           )}
         </div>
       ) : null}

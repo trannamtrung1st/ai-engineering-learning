@@ -1,5 +1,6 @@
 import { shouldAutoCloseSession } from "@wecheck/domain";
 import type { DbPool } from "../../infra/db.js";
+import { runWhenPreviewDbIdle } from "../../infra/integration-test-lock.js";
 import { now } from "../../infra/clock.js";
 import type { SessionService } from "./session-service.js";
 
@@ -30,25 +31,27 @@ export class AutoCloseScheduler {
   }
 
   async run(): Promise<number> {
-    const current = now();
-    const result = await this.db.query<{
-      id: string;
-      scheduled_start: Date;
-    }>(
-      `SELECT id, scheduled_start
-       FROM sessions
-       WHERE status = 'Active'`,
-    );
-
     let closed = 0;
-    for (const row of result.rows) {
-      if (shouldAutoCloseSession(row.scheduled_start, current)) {
-        const didClose = await this.sessions.autoClose(row.id);
-        if (didClose) {
-          closed += 1;
+    await runWhenPreviewDbIdle(this.db, async () => {
+      const current = now();
+      const result = await this.db.query<{
+        id: string;
+        scheduled_start: Date;
+      }>(
+        `SELECT id, scheduled_start
+         FROM sessions
+         WHERE status = 'Active'`,
+      );
+
+      for (const row of result.rows) {
+        if (shouldAutoCloseSession(row.scheduled_start, current)) {
+          const didClose = await this.sessions.autoClose(row.id);
+          if (didClose) {
+            closed += 1;
+          }
         }
       }
-    }
+    });
     return closed;
   }
 }

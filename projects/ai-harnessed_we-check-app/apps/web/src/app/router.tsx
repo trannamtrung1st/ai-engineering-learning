@@ -11,6 +11,7 @@ import { NotFoundRoutePage } from "@/app/not-found/page";
 import { ReportsPage } from "@/app/reports/page";
 import { QrPresentPage } from "@/app/sessions/qr-present-page";
 import { SessionDetailPage } from "@/app/sessions/session-detail-page";
+import { SessionMonitorPage } from "@/app/sessions/session-monitor-page";
 import { SessionsListPage } from "@/app/sessions/page";
 import { RequireAuth } from "@/components/auth/require-auth";
 import { AdminLayout } from "@/components/layout/admin-layout";
@@ -98,6 +99,7 @@ const router = createBrowserRouter([
             element: <InstructorLayout />,
             children: [
               { path: "sessions", element: <SessionsListPage /> },
+              { path: "sessions/:id/monitor", element: <SessionMonitorPage /> },
               { path: "sessions/:id", element: <SessionDetailPage /> },
               { path: "reports", element: <ReportsPage /> },
             ],

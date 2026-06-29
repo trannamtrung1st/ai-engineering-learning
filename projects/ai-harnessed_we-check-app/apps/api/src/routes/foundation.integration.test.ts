@@ -13,6 +13,7 @@ import { resetClock, setClock } from "../infra/clock.js";
 import { truncateRosterTables } from "../modules/roster-enrollment/roster-service.js";
 import { truncateReportingTables } from "../modules/reporting-export/repositories.js";
 import { truncateSessionTables } from "../modules/session-management/session-service.js";
+import { withIntegrationTestDbReset } from "../infra/integration-test-lock.js";
 
 const CLASS_HESD_01 = "10000000-0000-4000-8000-000000000101";
 const CLASS_HESD_02 = "10000000-0000-4000-8000-000000000102";
@@ -51,9 +52,11 @@ describe("api foundation integration (FR-02, FR-03, NFR-10, NFR-11, NFR-16)", ()
   async function seedReportReferenceData(
     instructorUserId?: string,
   ): Promise<void> {
-    await truncateSessionTables(db);
-    await truncateReportingTables(db);
-    await truncateRosterTables(db);
+    await withIntegrationTestDbReset(db, async () => {
+      await truncateSessionTables(db);
+      await truncateReportingTables(db);
+      await truncateRosterTables(db);
+    });
     await db.query(
       `INSERT INTO classes (id, code, name) VALUES
        ($1, 'HESD-01', 'HESD Cohort A'),
@@ -76,9 +79,11 @@ describe("api foundation integration (FR-02, FR-03, NFR-10, NFR-11, NFR-16)", ()
   }
 
   async function seedSession(role: UserRole): Promise<{ sessionId: string; userId: string }> {
-    await truncateReportingTables(db);
-    await truncateAuthTables(db);
-    resetClock();
+    await withIntegrationTestDbReset(db, async () => {
+      await truncateReportingTables(db);
+      await truncateAuthTables(db);
+      resetClock();
+    });
     const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const userId = await createTestUser(db, {
       institutionalId: `SV-${suffix}`,

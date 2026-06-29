@@ -10,12 +10,13 @@ export interface LocationConsentBannerProps {
 /** NFR-17 / NFR-12 — GPS consent copy before first check-in */
 export function LocationConsentBanner({ onAccept, onDismiss }: LocationConsentBannerProps) {
   return (
-    <Alert
-      variant="info"
-      icon={MapPin}
-      title="Quyền truy cập vị trí"
-      className="mb-4"
-    >
+    <div data-testid="location-consent-banner">
+      <Alert
+        variant="info"
+        icon={MapPin}
+        title="Quyền truy cập vị trí"
+        className="mb-4"
+      >
       <p className="mb-3">
         We Check cần quyền định vị để xác minh bạn đang ở trong phòng học. Dữ liệu
         vị trí chỉ dùng cho điểm danh và không được lưu trữ lâu dài.
@@ -31,5 +32,6 @@ export function LocationConsentBanner({ onAccept, onDismiss }: LocationConsentBa
         ) : null}
       </div>
     </Alert>
+    </div>
   );
 }

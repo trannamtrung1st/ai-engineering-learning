@@ -25,6 +25,7 @@ import { resetClock, setClock, now } from "../../infra/clock.js";
 import { truncateRosterTables } from "../roster-enrollment/roster-service.js";
 import { SessionService } from "../session-management/session-service.js";
 import { CheckInService, truncateCheckInTables } from "./check-in-service.js";
+import { withIntegrationTestDbReset } from "../../infra/integration-test-lock.js";
 
 const DEFAULT_DATABASE_URL =
   process.env.DATABASE_URL ??
@@ -68,21 +69,26 @@ describe("checkin-qr integration (AC-06–AC-10, FR-06–FR-10, BR-02–BR-04, B
     await closePool();
   });
 
-  async function resetDb(): Promise<void> {
-    sessionService.qr.stopAll();
-    await truncateCheckInTables(db);
-    await truncateRosterTables(db);
-    await truncateAuthTables(db);
-    resetClock();
+  async function resetDb(afterTruncate?: () => Promise<void>): Promise<void> {
+    await withIntegrationTestDbReset(db, async () => {
+      sessionService.qr.stopAll();
+      await truncateCheckInTables(db);
+      await truncateRosterTables(db);
+      await truncateAuthTables(db);
+      resetClock();
+      if (afterTruncate) await afterTruncate();
+    });
   }
 
   async function seedReferenceData(): Promise<void> {
     await db.query(
-      `INSERT INTO classes (id, code, name) VALUES ($1, 'HESD-01', 'HESD Cohort A')`,
+      `INSERT INTO classes (id, code, name) VALUES ($1, 'HESD-01', 'HESD Cohort A')
+       ON CONFLICT (id) DO NOTHING`,
       [CLASS_HESD_01],
     );
     await db.query(
-      `INSERT INTO subjects (id, code, name) VALUES ($1, 'SWE-101', 'Software Engineering 101')`,
+      `INSERT INTO subjects (id, code, name) VALUES ($1, 'SWE-101', 'Software Engineering 101')
+       ON CONFLICT (id) DO NOTHING`,
       [SUBJECT_SWE_101],
     );
   }
@@ -134,8 +140,7 @@ describe("checkin-qr integration (AC-06–AC-10, FR-06–FR-10, BR-02–BR-04, B
     student: { userId: string; cookie: string };
     tokenId: string;
   }> {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
     const student = await seedStudent();
     await seedEnrollment(student.userId);
@@ -549,8 +554,7 @@ describe("checkin-qr integration (AC-06–AC-10, FR-06–FR-10, BR-02–BR-04, B
   });
 
   it("GET /sessions/:id/qr/current rejected when session not Active (TC-AC-06-003)", async () => {
-    await resetDb();
-    await seedReferenceData();
+    await resetDb(seedReferenceData);
     const instructor = await seedInstructor();
 
     const created = await sessionService.create(
@@ -616,8 +620,7 @@ describe("checkin-qr integration (AC-06–AC-10, FR-06–FR-10, BR-02–BR-04, B
       assert.ok(!/latitude/i.test(successBlob));
       assert.ok(!/longitude/i.test(successBlob));
 
-      await resetDb();
-      await seedReferenceData();
+      await resetDb(seedReferenceData);
       const instructor = await seedInstructor();
       const outStudent = await seedStudent("out");
       await seedEnrollment(outStudent.userId);

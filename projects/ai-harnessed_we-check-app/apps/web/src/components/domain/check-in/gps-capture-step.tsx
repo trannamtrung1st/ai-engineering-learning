@@ -8,6 +8,7 @@ export type GpsCaptureState =
 
 export interface GpsCaptureStepProps {
   state?: GpsCaptureState;
+  attempt?: number;
 }
 
 const stateMessages: Record<GpsCaptureState, string> = {
@@ -17,8 +18,13 @@ const stateMessages: Record<GpsCaptureState, string> = {
   denied: "Không thể truy cập vị trí",
 };
 
-/** GPS capture step per ui-states §4.2 */
-export function GpsCaptureStep({ state = "requesting" }: GpsCaptureStepProps) {
+/** GPS capture step per ui-states §4.2 (FR-08, AC-08) */
+export function GpsCaptureStep({ state = "requesting", attempt = 0 }: GpsCaptureStepProps) {
+  const retryLabel =
+    attempt > 0 && attempt < 3 && state === "requesting"
+      ? `Thử lại (${attempt}/3)`
+      : null;
+
   return (
     <div
       data-testid="gps-capture-step"
@@ -27,6 +33,11 @@ export function GpsCaptureStep({ state = "requesting" }: GpsCaptureStepProps) {
     >
       <Spinner className="h-10 w-10" />
       <p className="text-body text-text-primary">{stateMessages[state]}</p>
+      {retryLabel ? (
+        <p className="text-small text-text-secondary" data-testid="gps-retry-label">
+          {retryLabel}
+        </p>
+      ) : null}
     </div>
   );
 }

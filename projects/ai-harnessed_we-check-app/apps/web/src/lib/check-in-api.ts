@@ -1,4 +1,5 @@
 import { apiFetch } from "@/lib/api-client";
+import { detectMobilePlatform } from "@/lib/detect-platform";
 import type { CheckInOutcomeCode } from "@/lib/copy/checkin-messages";
 
 export interface QrTokenDisplay {
@@ -10,11 +11,18 @@ export interface QrTokenDisplay {
   secondsRemaining: number;
 }
 
+export interface SpoofMetadataInput {
+  mockLocationDetected?: boolean;
+  accuracyMeters?: number;
+  platform?: "ios" | "android" | "other";
+}
+
 export interface CheckInSubmitInput {
   tokenId: string;
   latitude: number;
   longitude: number;
   gpsAvailable?: boolean;
+  spoofMetadata?: SpoofMetadataInput;
 }
 
 export interface CheckInSubmitResult {
@@ -34,7 +42,7 @@ const OUTCOME_MAP: Record<string, CheckInOutcomeCode> = {
   SessionNotActive: "SessionNotActive",
   NotEnrolled: "NotEnrolled",
   TokenNotFound: "ExpiredQr",
-  TokenAlreadyUsed: "ExpiredQr",
+  TokenAlreadyUsed: "TokenAlreadyUsed",
   Unauthenticated: "NetworkError",
   SessionExpired: "NetworkError",
 };
@@ -54,22 +62,45 @@ export async function fetchQrCurrent(sessionId: string): Promise<QrTokenDisplay>
   return res.data;
 }
 
+function buildSpoofMetadata(input: CheckInSubmitInput): SpoofMetadataInput {
+  const platform = detectMobilePlatform();
+  const resolvedPlatform =
+    input.spoofMetadata?.platform ??
+    (platform === "ios" ? "ios" : platform === "android" ? "android" : "other");
+
+  return {
+    mockLocationDetected: input.spoofMetadata?.mockLocationDetected ?? false,
+    platform: resolvedPlatform,
+    accuracyMeters: input.spoofMetadata?.accuracyMeters,
+  };
+}
+
 /** NFR-06 — submit check-in via authoritative API (BR-03 stale token rejection) */
 export async function submitCheckIn(
   input: CheckInSubmitInput,
 ): Promise<CheckInSubmitResult> {
+  const spoofMetadata = buildSpoofMetadata(input);
+  const body: Record<string, unknown> = {
+    tokenId: input.tokenId,
+    gpsAvailable: input.gpsAvailable ?? true,
+  };
+
+  if (input.gpsAvailable !== false) {
+    body.latitude = input.latitude;
+    body.longitude = input.longitude;
+  }
+
+  if (spoofMetadata) {
+    body.spoofMetadata = spoofMetadata;
+  }
+
   const res = await apiFetch<{
     outcome: string;
     message?: string;
     errorCode?: string;
   }>("/check-in", {
     method: "POST",
-    body: JSON.stringify({
-      tokenId: input.tokenId,
-      latitude: input.latitude,
-      longitude: input.longitude,
-      gpsAvailable: input.gpsAvailable ?? true,
-    }),
+    body: JSON.stringify(body),
   });
 
   if (res.ok) {
@@ -89,4 +120,32 @@ export async function submitCheckIn(
     outcome: mapCheckInOutcome(res.data.outcome ?? "", errorCode),
     message: res.data.message,
   };
+}
+
+const NETWORK_RETRY_DELAYS_MS = [0, 1000, 3000];
+
+/** Network retry up to 3 attempts within ~30 s (production-ui-quality-bar §5.1) */
+export async function submitCheckInWithRetry(
+  input: CheckInSubmitInput,
+): Promise<CheckInSubmitResult> {
+  let lastResult: CheckInSubmitResult = { outcome: "NetworkError" };
+
+  for (let attempt = 0; attempt < NETWORK_RETRY_DELAYS_MS.length; attempt += 1) {
+    if (attempt > 0) {
+      await new Promise((resolve) => {
+        setTimeout(resolve, NETWORK_RETRY_DELAYS_MS[attempt]);
+      });
+    }
+
+    try {
+      const result = await submitCheckIn(input);
+      if (result.requiresAuth) return result;
+      if (result.outcome !== "NetworkError") return result;
+      lastResult = result;
+    } catch {
+      lastResult = { outcome: "NetworkError" };
+    }
+  }
+
+  return lastResult;
 }
