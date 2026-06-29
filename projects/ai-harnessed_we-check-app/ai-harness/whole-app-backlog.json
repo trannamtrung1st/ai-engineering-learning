@@ -759,7 +759,7 @@
     },
     {
       "id": "web-instructor-reports",
-      "passes": false,
+      "passes": true,
       "priority": 28,
       "phase": 2,
       "agent": "frontend",
@@ -777,6 +777,9 @@
       ],
       "description": "Instructor attendance reports scoped to assigned class-subject pairs with filters and summary cards.",
       "testRequirements": {
+        "unit": [
+          "apps/web/src/lib/report-date-defaults.test.ts"
+        ],
         "component": [
           "apps/web/src/components/instructor/report-filter-bar.test.tsx"
         ],
