@@ -1,8 +1,8 @@
 {
   "productItemId": "BR-09",
   "version": 1,
-  "docFingerprint": "sha256:4deda16c175af0ca34aadf938abcd5f11203e186585e68a48a77093b8e87aac5",
-  "generatedAt": "2026-06-29T12:00:00Z",
+  "docFingerprint": "sha256:7fa6e5f0fa1fb178b99256355a681409f9ca3b3a224ea6b785c745d780059c2e",
+  "generatedAt": "2026-06-29T18:33:12Z",
   "cases": [
     {
       "id": "TC-BR-09-001",
@@ -11,7 +11,7 @@
       "technique": "scenario-matrix",
       "priority": "P0",
       "traceability": ["BR-09", "FR-13", "AC-13"],
-      "title": "TS-32: Non-admin POST /reports/export returns 403 Forbidden with ExportNotAllowed",
+      "title": "TS-32: Non-admin POST /reports/export returns 403 Forbidden",
       "preconditions": [
         "Authenticated Instructor session (role is not TrainingOfficeAdmin per BR-09 condition)",
         "Attendance data exists for export-eligible class-subject filters HESD-01 / SWE-101"
@@ -19,10 +19,10 @@
       "steps": [
         "POST /api/v1/reports/export with body { classCode: HESD-01, subjectCode: SWE-101, from: 2026-06-01, to: 2026-06-30 } using Instructor session",
         "Assert HTTP status 403 Forbidden",
-        "Assert response errorCode ExportNotAllowed per validation-rules §4 BR-09 and roles-permissions §2.5",
+        "Assert response errorCode Forbidden or ExportNotAllowed per validation-rules §4 BR-09 and roles-permissions §2.5",
         "Assert Vietnamese message Chỉ phòng đào tạo mới có quyền xuất dữ liệu",
         "Assert response body is not text/csv and contains no attendance data",
-        "Verify ExportDenied security audit entry created with actor instructorId per BR-09 outcome"
+        "Verify ExportDenied security audit entry created with actor instructorId per BR-09 outcome and error-handling §6.2"
       ],
       "expected": "Testing-plan TS-32 satisfied: BR-09 blocks non-admin CSV export with localized permission error and denied attempt logged",
       "edgeCase": false
@@ -112,11 +112,11 @@
         "Send POST /api/v1/reports/export with JSON filter body and Instructor session cookie",
         "Assert HTTP status 403 Forbidden",
         "Assert Content-Type application/json (not text/csv)",
-        "Assert response body contains errorCode ExportNotAllowed",
+        "Assert response body contains errorCode Forbidden or ExportNotAllowed",
         "Assert response body contains message Chỉ phòng đào tạo mới có quyền xuất dữ liệu",
         "Assert response body does not contain CSV header row or attendance rows"
       ],
-      "expected": "HTTP 403 contract for POST /reports/export when BR-09 role check fails; JSON error envelope with ExportNotAllowed",
+      "expected": "HTTP 403 contract for POST /reports/export when BR-09 role check fails; JSON error envelope with Forbidden or ExportNotAllowed",
       "edgeCase": false
     },
     {
@@ -158,7 +158,7 @@
       "steps": [
         "GET /api/v1/reports/summary for HESD-01 / SWE-101 using Instructor A session and assert HTTP 200 (report:read allowed)",
         "POST /api/v1/reports/export with same filters using Instructor A session",
-        "Assert HTTP status 403 Forbidden with errorCode ExportNotAllowed",
+        "Assert HTTP status 403 Forbidden with errorCode Forbidden or ExportNotAllowed",
         "Assert message Chỉ phòng đào tạo mới có quyền xuất dữ liệu",
         "Assert no CSV attachment in response",
         "Verify ExportDenied audit log entry with actor instructorAId per BR-09"
@@ -181,7 +181,7 @@
       "steps": [
         "POST /api/v1/reports/export with valid filter body using Student session",
         "Assert HTTP status 403 Forbidden",
-        "Assert errorCode ExportNotAllowed",
+        "Assert errorCode Forbidden or ExportNotAllowed",
         "Assert message Chỉ phòng đào tạo mới có quyền xuất dữ liệu",
         "Assert response contains no peer attendance or roster data",
         "Verify ExportDenied security audit entry created per BR-09 and error-handling §6.2"
@@ -203,7 +203,7 @@
         "Closed session with attendance in HESD-01 / SWE-101"
       ],
       "steps": [
-        "Instructor A POST /api/v1/reports/export for HESD-01 / SWE-101 filters and assert HTTP 403 ExportNotAllowed",
+        "Instructor A POST /api/v1/reports/export for HESD-01 / SWE-101 filters and assert HTTP 403 Forbidden or ExportNotAllowed",
         "TrainingOfficeAdmin POST /api/v1/reports/export for same filters and assert HTTP 200 with valid CSV",
         "Assert admin export CSV contains attendance rows for session scope",
         "Assert ExportAuditLog written for admin success and ExportDenied for instructor attempt",
@@ -228,7 +228,7 @@
       "steps": [
         "POST /api/v1/reports/export directly via HTTP client (no browser, no admin UI) using Instructor credentials",
         "Assert HTTP status 403 Forbidden before any CSV stream begins",
-        "Assert errorCode ExportNotAllowed per validation-rules §4 BR-09",
+        "Assert errorCode Forbidden or ExportNotAllowed per validation-rules §4 BR-09",
         "Assert response body length consistent with JSON error envelope only (no multi-kilobyte CSV leak)",
         "Verify ExportDenied audit entry created proving server-side BR-09 enforcement independent of UI guard"
       ],
@@ -266,20 +266,20 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["BR-09", "FR-13", "AC-13", "NFR-11"],
+      "traceability": ["BR-09", "FR-13", "AC-13", "BR-14", "NFR-11"],
       "title": "Instructor sees export denial with Vietnamese message; no CSV download",
       "preconditions": [
         "Authenticated Instructor on desktop viewport assigned to HESD-01 / SWE-101",
         "Instructor may access /reports but lacks report:export",
-        "Export UI entry hidden or guarded per listing-pages §10 and ui-ux foundation BR-09"
+        "Export UI entry omitted from instructor chrome per BR-14 and listing-pages §10"
       ],
       "steps": [
-        "Verify Xuất CSV navigation entry is hidden or disabled in instructor sidebar per page-list §10",
+        "Verify Xuất CSV navigation entry is omitted from instructor sidebar DOM per BR-14 (not disabled, not shown)",
         "Attempt to navigate to /admin/export or trigger export action if exposed",
-        "Verify UI shows ForbiddenPage, route guard redirect, or denial modal per page-list §2.2 and ui-states §12 Denied state",
-        "If export API invoked from UI, verify modal displays Chỉ phòng đào tạo mới có quyền xuất dữ liệu with admin contact hint per error-handling §7",
+        "Verify UI shows ForbiddenPage, route guard redirect, or Denied state per ui-states §12 and page-list §2.2",
+        "If export API invoked from UI, verify modal on 403 Forbidden displays Chỉ phòng đào tạo mới có quyền xuất dữ liệu with admin contact hint per error-handling §7",
         "Verify no CSV file download initiated",
-        "Verify network tab shows API 403 ExportNotAllowed matching BR-09 rbac-negative behavior"
+        "Verify network tab shows API 403 Forbidden or ExportNotAllowed matching BR-09 rbac-negative behavior"
       ],
       "expected": "BR-09 UI journey: instructor export denied with localized Vietnamese message; no CSV download; mirrors API denial",
       "edgeCase": false
@@ -299,7 +299,7 @@
       ],
       "steps": [
         "Dispatch POST /reports/export request context with Instructor role through permission guard middleware",
-        "Assert guard returns 403 ExportNotAllowed without invoking ExportService CSV generation",
+        "Assert guard returns 403 Forbidden or ExportNotAllowed without invoking ExportService CSV generation",
         "Dispatch same request with TrainingOfficeAdmin role",
         "Assert guard passes to ExportService handler",
         "Assert only TrainingOfficeAdmin requests reach export_audit_logs insert path"
