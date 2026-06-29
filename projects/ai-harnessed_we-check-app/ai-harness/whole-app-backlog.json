@@ -644,7 +644,7 @@
     },
     {
       "id": "web-instructor-sessions",
-      "passes": false,
+      "passes": true,
       "priority": 24,
       "phase": 2,
       "agent": "frontend",
@@ -667,7 +667,9 @@
       "testRequirements": {
         "component": [
           "apps/web/src/components/instructor/session-form.test.tsx",
-          "apps/web/src/components/instructor/session-lifecycle-actions.test.tsx"
+          "apps/web/src/components/instructor/session-lifecycle-actions.test.tsx",
+          "apps/web/src/app/sessions/session-detail-page.test.tsx",
+          "apps/web/src/hooks/use-session-monitor-poll.test.tsx"
         ],
         "acceptanceTags": [
           "AC-04",

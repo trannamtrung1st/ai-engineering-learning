@@ -27,6 +27,7 @@ export const PREVIEW_IDS = {
   sessionActive: "30000000-0000-4000-8000-000000000301",
   sessionDraft: "30000000-0000-4000-8000-000000000302",
   sessionClosed: "30000000-0000-4000-8000-000000000303",
+  sessionDraftNoGps: "30000000-0000-4000-8000-000000000304",
   staleQrToken: "40000000-0000-4000-8000-000000000401",
   consumedQrToken: "40000000-0000-4000-8000-000000000402",
   validQrToken: "40000000-0000-4000-8000-000000000403",
@@ -268,6 +269,28 @@ export async function ensurePreviewReferenceData(db: DbPool): Promise<void> {
       SessionStatus.Closed,
       openedAt,
       closedAt,
+    ],
+  );
+
+  await db.query(
+    `INSERT INTO sessions (
+       id, instructor_id, class_id, subject_id, title, room_name,
+       room_latitude, room_longitude, gps_radius_meters, scheduled_start,
+       status, version
+     ) VALUES ($1, $2, $3, $4, $5, $6, NULL, NULL, 100, $7, $8, 1)
+     ON CONFLICT (id) DO UPDATE SET
+       room_latitude = NULL,
+       room_longitude = NULL,
+       status = EXCLUDED.status`,
+    [
+      PREVIEW_IDS.sessionDraftNoGps,
+      PREVIEW_IDS.instructor,
+      PREVIEW_IDS.classHesd01,
+      PREVIEW_IDS.subjectSwe101,
+      "SWE-101 — Buổi GPS",
+      "Phòng D401",
+      scheduledStart,
+      SessionStatus.Draft,
     ],
   );
 }
@@ -920,6 +943,28 @@ export async function runPreviewSeed(db: DbPool): Promise<void> {
       SessionStatus.Closed,
       openedAt,
       closedAt,
+    ],
+  );
+
+  await db.query(
+    `INSERT INTO sessions (
+       id, instructor_id, class_id, subject_id, title, room_name,
+       room_latitude, room_longitude, gps_radius_meters, scheduled_start,
+       status, version
+     ) VALUES ($1, $2, $3, $4, $5, $6, NULL, NULL, 100, $7, $8, 1)
+     ON CONFLICT (id) DO UPDATE SET
+       room_latitude = NULL,
+       room_longitude = NULL,
+       status = EXCLUDED.status`,
+    [
+      PREVIEW_IDS.sessionDraftNoGps,
+      PREVIEW_IDS.instructor,
+      PREVIEW_IDS.classHesd01,
+      PREVIEW_IDS.subjectSwe101,
+      "SWE-101 — Buổi GPS",
+      "Phòng D401",
+      scheduledStart,
+      SessionStatus.Draft,
     ],
   );
 

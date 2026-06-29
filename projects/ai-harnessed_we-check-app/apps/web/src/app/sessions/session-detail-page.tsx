@@ -68,7 +68,7 @@ export function SessionDetailPage() {
   function handleSessionUpdated(updated: SessionDetail) {
     queryClient.setQueryData(["session", id], updated);
     void queryClient.invalidateQueries({ queryKey: ["sessions"] });
-    void queryClient.invalidateQueries({ queryKey: ["session-monitor", id] });
+    void queryClient.refetchQueries({ queryKey: ["session-monitor", id] });
     if (updated.status === SessionStatus.Active && tab === "settings") {
       handleTabChange("monitor");
     }

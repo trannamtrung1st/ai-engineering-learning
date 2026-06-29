@@ -3,6 +3,7 @@ export const PREVIEW_SESSION_IDS = {
   active: "30000000-0000-4000-8000-000000000301",
   draft: "30000000-0000-4000-8000-000000000302",
   closed: "30000000-0000-4000-8000-000000000303",
+  draftNoGps: "30000000-0000-4000-8000-000000000304",
 } as const;
 
 export const PREVIEW_TOKEN_IDS = {
@@ -30,6 +31,7 @@ export const PREVIEW_ALIASES: Record<string, string> = {
   "sess-1": PREVIEW_SESSION_IDS.active,
   "sess-2": PREVIEW_SESSION_IDS.draft,
   "sess-3": PREVIEW_SESSION_IDS.closed,
+  "sess-4": PREVIEW_SESSION_IDS.draftNoGps,
   "stale-token-id": PREVIEW_TOKEN_IDS.stale,
   "consumed-token-id": PREVIEW_TOKEN_IDS.consumed,
   "valid-token-id": PREVIEW_TOKEN_IDS.valid,
