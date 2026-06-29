@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-06",
   "version": 1,
-  "docFingerprint": "sha256:26c62c98b20c67a8bcd34920efd8e38f5ae53682841c9bc3c07d32eba6d290e5",
-  "generatedAt": "2026-06-29T16:00:00Z",
+  "docFingerprint": "sha256:9341c504e60b47051391329406e99dc5fb1f319639e550abcfbf5323c69fe44d",
+  "generatedAt": "2026-06-29T17:52:07Z",
   "cases": [
     {
       "id": "TC-FR-06-001",
@@ -13,7 +13,7 @@
       "traceability": ["FR-06", "AC-06", "BR-03", "NFR-06"],
       "title": "TS-17: Active session QR token rotates every 30 seconds with accurate countdown",
       "preconditions": [
-        "Active session with QR scheduler running after POST /sessions/:sessionId/open",
+        "Active session with QR scheduler running after POST /api/v1/sessions/:sessionId/open",
         "Authenticated Instructor with qr:display permission for the session",
         "TestClock injectable and fixed at token issuance time T"
       ],
@@ -67,12 +67,12 @@
       ],
       "steps": [
         "GET /api/v1/sessions/:draftSessionId/qr/current with Instructor session",
-        "Assert HTTP 403 or 422 with errorCode SessionNotActive or no qrPayload in response body",
+        "Assert HTTP 403 with errorCode SessionNotActive or no qrPayload in response body",
         "GET /api/v1/sessions/:closedSessionId/qr/current with Instructor session",
         "Assert same session-not-active rejection with no valid tokenId or qrPayload",
         "Query qr_tokens table for both sessionIds and assert no Valid token rows exist"
       ],
-      "expected": "No valid QR token issued when session is not Active per FR-06 and AC-06c; API rejects or returns empty invalid payload",
+      "expected": "No valid QR token issued when session is not Active per FR-06 and AC-06c; API rejects with SessionNotActive or returns empty invalid payload",
       "edgeCase": false
     },
     {
@@ -96,7 +96,7 @@
         "Assert newest row has status Valid with expires_at = issued_at + 30 seconds",
         "Assert previous token row status is Expired"
       ],
-      "expected": "Token rotation persists atomically per checkin-qr module; one Valid token at a time; previous Valid → Expired per FR-06 30-second cycle",
+      "expected": "Token rotation persists atomically per checkin-qr module §2.4; one Valid token at a time; previous Valid → Expired per SM-03",
       "edgeCase": false
     },
     {
@@ -117,7 +117,7 @@
         "Query qr_tokens row for tokenId",
         "Attempt CheckInService.submit with expired tokenId under enrolled Student context"
       ],
-      "expected": "beforeState Valid, afterState Expired; check-in submission returns ExpiredQr domain outcome per FR-06 expiry rule",
+      "expected": "beforeState Valid, afterState Expired per SM-03 §4.3; check-in submission returns ExpiredQr domain outcome per FR-06 expiry rule",
       "edgeCase": false
     },
     {
@@ -139,7 +139,7 @@
         "Invoke QrService.rotateTokens(closedSessionId)",
         "Query qr_tokens for closedSessionId and assert zero new Valid rows after close"
       ],
-      "expected": "QR issuance only while session Active per FR-06; rotateTokens no-ops for Draft and Closed sessions",
+      "expected": "QR issuance only while session Active per FR-06 and SM-03 §4.5; rotateTokens no-ops for Draft and Closed sessions",
       "edgeCase": false
     },
     {
@@ -183,7 +183,7 @@
         "Assert response body outcome ExpiredQr and errorCode ExpiredQr",
         "Assert response body message Mã QR đã hết hạn, vui lòng quét mã mới"
       ],
-      "expected": "HTTP 400 ExpiredQr per API design §6.3; expired tokens rejected per FR-06",
+      "expected": "HTTP 400 ExpiredQr per API design §6.3 and error-handling §4.4; expired tokens rejected per FR-06",
       "edgeCase": true
     },
     {
@@ -270,7 +270,7 @@
         "Assert expires_at minus issued_at equals 30 seconds",
         "Assert status is Valid immediately after issuance"
       ],
-      "expected": "Token TTL stored as issued_at + 30 seconds per FR-06 and BR-03; enforces hard expiry boundary",
+      "expected": "Token TTL stored as issued_at + 30 seconds per SM-03 §4.5 and BR-03; enforces hard expiry boundary per FR-06",
       "edgeCase": true
     },
     {
@@ -284,7 +284,7 @@
       "preconditions": [
         "Instructor opened Draft session to Active (Flow A steps 1–2 complete)",
         "Authenticated Instructor session available",
-        "QR scheduler started on session open per FR-05 side effect"
+        "QR scheduler started on session open per AC-05a side effect"
       ],
       "steps": [
         "Poll GET /api/v1/sessions/:sessionId/qr/current every 5 seconds with Instructor session until HTTP 200",
@@ -292,7 +292,7 @@
         "Assert secondsRemaining ≤ 30 and qrPayload encodes session and one-time-use token deep link",
         "Pass tokenId to subsequent student POST /api/v1/check-in in Flow A step 4"
       ],
-      "expected": "Flow A QR polling step succeeds per testing-plan §6 Flow A; instructor display token ready for student scan per FR-06",
+      "expected": "Flow A QR polling step succeeds per testing-plan §6 Flow A and main-workflows §4.2; instructor display token ready for student scan per FR-06",
       "edgeCase": false
     },
     {
@@ -399,13 +399,14 @@
         "Instructor navigates to session detail QR tab (/sessions/:id with QR panel visible)"
       ],
       "steps": [
+        "Verify QrDisplayPanel polls GET /api/v1/sessions/:sessionId/qr/current every 5 seconds per main-workflows §4.2",
         "Verify QrCodeImage component renders scannable QR code",
         "Verify QrCountdown shows seconds remaining (e.g. Mã mới sau X giây) between 1 and 30",
         "Wait 30 seconds and observe QR image src or token payload change",
         "Verify countdown resets to approximately 30 seconds after refresh",
         "Verify countdown decrements visibly each second without full page reload"
       ],
-      "expected": "Instructor-facing display refreshes automatically each 30 s cycle with visible remaining seconds per FR-06",
+      "expected": "Instructor-facing display refreshes automatically each 30 s cycle with visible remaining seconds per FR-06, AC-06a, and ui-states §7.2",
       "edgeCase": false
     },
     {
@@ -422,10 +423,11 @@
         "Instructor clicks Trình chiếu QR or navigates to /sessions/:id/qr-present"
       ],
       "steps": [
-        "Verify FullscreenLayout renders large QR code readable at 5 m simulated scale",
+        "Verify QrFullscreenPresentation renders large QR code readable at 5 m simulated scale per event-specific-components §3.8",
         "Verify countdown timer visible and updating",
-        "Wait one 30-second rotation cycle and verify QR image updates",
-        "Verify no instructor navigation chrome obscures QR (fullscreen mode)"
+        "Wait one 30-second rotation cycle and verify QR image cross-fades with countdown reset per ui-states §13",
+        "Verify no instructor navigation chrome obscures QR (fullscreen mode)",
+        "Verify Thoát toàn màn hình ghost button returns to session detail QR tab"
       ],
       "expected": "Fullscreen QR presentation rotates every 30 s per FR-06; suitable for classroom projector per NFR-20",
       "edgeCase": false
@@ -446,10 +448,10 @@
       "steps": [
         "Navigate to QR tab on Draft session detail page",
         "Verify illustration and message Buổi học chưa mở displayed",
-        "Verify no QR image rendered and no polling requests to /qr/current succeed with 200",
-        "Navigate to Closed session QR tab and verify same session-not-active state with ended-session messaging"
+        "Verify no QR image rendered and no polling requests to /api/v1/sessions/:id/qr/current succeed with 200",
+        "Navigate to Closed session QR tab and verify session-not-active illustration with Buổi học chưa mở per ui-states §7.2"
       ],
-      "expected": "UI shows session-not-active state per FR-06; no valid QR token displayed when session not Active",
+      "expected": "UI shows session-not-active state per FR-06 and AC-06c; no valid QR token displayed when session not Active",
       "edgeCase": false
     },
     {
@@ -467,11 +469,12 @@
       ],
       "steps": [
         "Student opens check-in deep link wecheck://check-in?token=expired&session=:id",
-        "Student submits check-in after GPS capture",
+        "Verify GET /api/v1/check-in/tokens/:expiredTokenId/preflight returns 403 with errorCode ExpiredQr and Vietnamese message",
+        "Verify student remains on scan step; GpsCaptureStep does not mount",
         "Verify error panel displays Mã QR đã hết hạn, vui lòng quét mã mới",
-        "Verify Quét lại action returns student to scanner view"
+        "Verify Quét lại action returns student to scanner view per user-flows §3"
       ],
-      "expected": "Student UI surfaces FR-06 expired token rejection with Vietnamese message and retry path",
+      "expected": "Student UI surfaces FR-06 expired token rejection with Vietnamese message and retry path; preflight blocks GPS step per validation-rules §3.6a",
       "edgeCase": true
     },
     {
