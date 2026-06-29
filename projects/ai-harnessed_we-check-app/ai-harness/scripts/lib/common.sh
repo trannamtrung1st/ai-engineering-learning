@@ -1343,7 +1343,9 @@ filter_browser_cases_prompt_block() {
     .cases[]?
     | select(.layer == "browser")
     | select(.id as $id | $ids | index($id))
-    | "- **\(.id)** [\(.category)/\(.priority)]: \(.title)\n  Product: \(.traceability | join(", "))\n  Preconditions: \(.preconditions | join("; "))\n  Steps: \(.steps | join(" → "))\n  Expected: \(.expected)"
+    | "- **\(.id)** [\(.category)/\(.priority)]: \(.title)"
+      + (if .harnessSkip then "\n  **Harness scope: SKIP \(.harnessSkip)** — do not mark FAIL; report SKIP with this reason tag" else "" end)
+      + "\n  Product: \(.traceability | join(", "))\n  Preconditions: \(.preconditions | join("; "))\n  Steps: \(.steps | join(" → "))\n  Expected: \(.expected)"
   ' 2>/dev/null
 }
 

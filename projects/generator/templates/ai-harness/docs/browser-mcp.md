@@ -121,6 +121,8 @@ Cases that require physical devices or are not applicable in Playwright MCP must
 
 Skipped cases are excluded from pass/fail — only `FAIL` lines block the gate.
 
+Test case artifacts may declare `harnessSkip` on `layer: browser` cases (`physical-device` or `not-applicable`). The harness injects a **Harness scope: SKIP** line in the tester checklist for those cases.
+
 API-level e2e remains the automated acceptance gate. Playwright MCP supplements with real rendered UI verification; the browser test agent gate enforces it before code review.
 
 ## On completion

@@ -113,6 +113,15 @@ Write valid JSON matching `ai-harness/schemas/test-cases.schema.json`:
 | `e2e` | Full API scenario flows |
 | `browser` | UI flows requiring Playwright MCP |
 
+### Harness skip (`harnessSkip`, browser layer only)
+
+When a browser case cannot be verified in the Playwright MCP harness (physical device matrix, Lighthouse audit, etc.), set optional `harnessSkip` instead of expecting a FAIL:
+
+| Value | When |
+|-------|------|
+| `physical-device` | Requires real hardware / pilot device checklist |
+| `not-applicable` | Tooling or environment not available in harness (e.g. Lighthouse, axe-core) |
+
 ### ID convention
 
 `TC-<product-item-id>-<NNN>` — e.g. `TC-AC-01-001` (use sanitized id in case ids).

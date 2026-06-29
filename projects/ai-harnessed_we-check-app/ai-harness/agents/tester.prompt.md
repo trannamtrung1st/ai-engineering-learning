@@ -54,6 +54,8 @@ Before attempting a case, decide whether Playwright MCP against the local previe
 
 Skipped cases are **ignored** in the final result — they do not block `BROWSER_TEST_PASS` and do not trigger retry fail-fast. Only mark `SKIP` when the limitation is environmental/tooling, not a product defect.
 
+When a case in the checklist shows **Harness scope: SKIP …**, follow that tag — report `SKIP` with the matching reason and do not attempt the flow in Playwright MCP.
+
 ## Phased verification (when harness injects a phase block)
 
 The harness may run browser verification in one or two phases. Follow the **phase instruction block** appended by the harness (retry or full). When no phase block is present, run all mandatory cases in a single pass.

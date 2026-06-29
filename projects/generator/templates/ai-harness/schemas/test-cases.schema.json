@@ -78,7 +78,12 @@
           "items": { "type": "string" }
         },
         "expected": { "type": "string", "minLength": 1 },
-        "edgeCase": { "type": "boolean" }
+        "edgeCase": { "type": "boolean" },
+        "harnessSkip": {
+          "type": "string",
+          "enum": ["physical-device", "not-applicable"],
+          "description": "When set on browser-layer cases, the harness tester must report SKIP with this tag instead of FAIL"
+        }
       }
     }
   }

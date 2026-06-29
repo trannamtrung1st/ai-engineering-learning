@@ -127,7 +127,9 @@ if slice_test_cases_current "$SLICE_ID"; then
   test_cases_json="$(load_test_cases_json_for_slice "$SLICE_ID" | jq -c '.')"
   generated_browser_cases="$(load_test_cases_json_for_slice "$SLICE_ID" | jq -r '
     .cases[]? | select(.layer == "browser")
-    | "- **\(.id)** [\(.category)/\(.priority)]: \(.title)\n  Product: \(.traceability | join(", "))\n  Preconditions: \(.preconditions | join("; "))\n  Steps: \(.steps | join(" → "))\n  Expected: \(.expected)"
+    | "- **\(.id)** [\(.category)/\(.priority)]: \(.title)"
+      + (if .harnessSkip then "\n  **Harness scope: SKIP \(.harnessSkip)** — do not mark FAIL; report SKIP with this reason tag" else "" end)
+      + "\n  Product: \(.traceability | join(", "))\n  Preconditions: \(.preconditions | join("; "))\n  Steps: \(.steps | join(" → "))\n  Expected: \(.expected)"
   ' 2>/dev/null || true)"
 fi
 
