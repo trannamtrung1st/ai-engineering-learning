@@ -78,9 +78,9 @@
       "generatedAt": "2026-06-29T17:34:17Z"
     },
     "AC-16": {
-      "current": false,
+      "current": true,
       "docFingerprint": "sha256:570e2b7cf71ee69f846fdb406de6f277c232d53e0884fc69a5623d1f12d0f82a",
-      "generatedAt": null
+      "generatedAt": "2026-06-29T17:35:58Z"
     },
     "FR-01": {
       "current": false,

@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-16",
   "version": 1,
-  "docFingerprint": "sha256:740b628592fe5edbcf822518ecefb1b0e961ebeb3e1c3caca300cea6c3db17ce",
-  "generatedAt": "2026-06-29T15:30:00Z",
+  "docFingerprint": "sha256:570e2b7cf71ee69f846fdb406de6f277c232d53e0884fc69a5623d1f12d0f82a",
+  "generatedAt": "2026-06-29T17:35:29Z",
   "cases": [
     {
       "id": "TC-AC-16-001",
@@ -220,7 +220,7 @@
         "Assert HTTP status 403 Forbidden",
         "Assert response errorCode Forbidden",
         "Assert message Bạn không có quyền thực hiện thao tác này per roles-permissions §2.5",
-        "GET /api/v1/policy/absence-threshold using Instructor session and assert 403 or read denied per product policy",
+        "GET /api/v1/policy/absence-threshold using Instructor session and assert HTTP 403 Forbidden with errorCode Forbidden per roles-permissions §2.2",
         "Verify policy value unchanged in database (still 20)"
       ],
       "expected": "Only TrainingOfficeAdmin holds policy:write; instructor threshold configuration denied per RBAC matrix",
@@ -442,6 +442,30 @@
       ],
       "expected": "BR-05 scope: only Closed sessions count as completed; Draft and Active excluded from threshold denominator",
       "edgeCase": true
+    },
+    {
+      "id": "TC-AC-16-019",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": ["AC-16", "FR-16", "BR-05"],
+      "title": "Custom admin policy threshold applied during absence rate evaluation after session close",
+      "preconditions": [
+        "Real PostgreSQL with Student O: 2 Absent of 9 completed Closed sessions (22.2% rate before tenth close)",
+        "PolicySetting absence_threshold_percent = 25 seeded via PUT /api/v1/policy/absence-threshold",
+        "Tenth session just closed with Student O Present (10 completed sessions, 2 Absent = 20% rate)"
+      ],
+      "steps": [
+        "Assert policy_settings row absence_threshold_percent = 25",
+        "Invoke NotificationService.evaluateAbsenceThresholds for closed session",
+        "Query notifications for Student O and assert no AbsenceThresholdWarning (20% not greater than 25% threshold)",
+        "PUT policy thresholdPercent to 15 via PolicyService or API",
+        "Re-invoke evaluateAbsenceThresholds for same session context",
+        "Assert AbsenceThresholdWarning notification created because 20% > 15% per FR-16 admin-configured threshold"
+      ],
+      "expected": "FR-16 evaluation uses admin-configured policy threshold from PolicySetting, not hardcoded 20%; notification fires only when rate exceeds configured threshold",
+      "edgeCase": false
     }
   ]
 }
