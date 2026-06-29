@@ -77,7 +77,7 @@ The harness may run browser verification in one or two phases. Follow the **phas
 
 {{SCREENSHOT_DIR_BLOCK}}
 
-1. Confirm preview stack is up: `http://localhost:3000` (web), API at `http://localhost:3001/api/v1/health`
+1. Confirm preview stack is up: `http://localhost:3007` (web), API at `http://localhost:3001/api/v1/health`
 2. Authenticate when routes require it (dev login or token flow)
 3. For each browser test case: follow `preconditions`, `steps`, verify `expected`
 4. **For each distinct page visited**, save a screenshot to the directory above when visual state matters (layout, badges, tables, forms, empty/error/loading states, mobile-relevant UI). Review against `docs/ui-ux/00-production-ui-quality-bar.md` — a case can FAIL on UI quality even when functional steps succeed

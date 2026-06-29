@@ -133,7 +133,7 @@ if slice_test_cases_current "$SLICE_ID"; then
   ' 2>/dev/null || true)"
 fi
 
-WEB_PORT="${AIH_PREVIEW_WEB_PORT:-3000}"
+WEB_PORT="$(aih_web_port)"
 API_PORT="${AIH_PREVIEW_API_PORT:-3001}"
 MODEL="$(get_model tester)"
 

@@ -85,7 +85,7 @@
       },
       "web": {
         "activeWhen": "apps/web",
-        "url": "http://localhost:3000",
+        "url": "http://localhost:3007",
         "expectStatus": 200,
         "timeoutMs": 120000
       }

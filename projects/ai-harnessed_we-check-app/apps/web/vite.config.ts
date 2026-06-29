@@ -3,6 +3,7 @@ import react from "@vitejs/plugin-react";
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  envDir: path.resolve(__dirname, "../.."),
   plugins: [react()],
   resolve: {
     alias: {
@@ -11,7 +12,7 @@ export default defineConfig({
   },
   server: {
     allowedHosts: true,
-    port: Number(process.env.PORT ?? process.env.WEB_PORT) || 3000,
+    port: Number(process.env.PORT ?? process.env.WEB_PORT) || 3007,
     proxy: {
       "/api/v1": {
         target: process.env.VITE_API_PROXY ?? "http://localhost:3001",

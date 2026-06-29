@@ -19,7 +19,7 @@ export function loadEnv(): ApiEnv {
     nodeEnv: process.env.NODE_ENV ?? "development",
     port: Number(process.env.PORT ?? process.env.API_PORT ?? 3001),
     databaseUrl: process.env.DATABASE_URL ?? DEFAULT_DATABASE_URL,
-    corsOrigin: process.env.CORS_ORIGIN ?? "http://localhost:3000",
+    corsOrigin: process.env.CORS_ORIGIN ?? "http://localhost:3007",
     logLevel: process.env.LOG_LEVEL ?? "info",
     seedEnabled,
   };

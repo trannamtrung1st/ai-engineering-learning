@@ -8,6 +8,21 @@ source "$(dirname "${BASH_SOURCE[0]}")/console.sh"
 HARNESS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 REPO_ROOT="$(cd "${HARNESS_ROOT}/.." && pwd)"
 
+if [[ -f "$REPO_ROOT/.env" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "$REPO_ROOT/.env"
+  set +a
+fi
+
+aih_web_port() {
+  echo "${AIH_PREVIEW_WEB_PORT:-${WEB_PORT:-3007}}"
+}
+
+aih_api_port() {
+  echo "${AIH_PREVIEW_API_PORT:-${API_PORT:-3001}}"
+}
+
 BACKLOG="${HARNESS_ROOT}/whole-app-backlog.json"
 TEST_CASE_INDEX="${HARNESS_ROOT}/test-case-index.json"
 TESTGEN_DOCS_MAP="${HARNESS_ROOT}/config/testgen-docs-map.json"
@@ -1495,8 +1510,8 @@ preview_stack_is_running() {
 }
 
 preview_stack_reachable() {
-  local api_port="${AIH_PREVIEW_API_PORT:-3001}"
-  local web_port="${AIH_PREVIEW_WEB_PORT:-3000}"
+  local api_port="$(aih_api_port)"
+  local web_port="$(aih_web_port)"
   local body status db code
 
   body="$(curl --connect-timeout 1 --max-time 2 -sf "http://localhost:${api_port}/api/v1/health" 2>/dev/null || true)"
@@ -1636,8 +1651,8 @@ stop_stray_preview_supervisors() {
 
 # Kill any process listening on preview API/web ports (orphan next dev after ^C).
 stop_preview_port_listeners() {
-  local api_port="${AIH_PREVIEW_API_PORT:-3001}"
-  local web_port="${AIH_PREVIEW_WEB_PORT:-3000}"
+  local api_port="$(aih_api_port)"
+  local web_port="$(aih_web_port)"
 
   if ! command -v lsof >/dev/null 2>&1; then
     preview_log_stack "WARN: lsof unavailable — cannot verify preview ports are free"
@@ -1655,8 +1670,8 @@ stop_preview_port_listeners() {
 }
 
 wait_for_preview_ports_free() {
-  local api_port="${AIH_PREVIEW_API_PORT:-3001}"
-  local web_port="${AIH_PREVIEW_WEB_PORT:-3000}"
+  local api_port="$(aih_api_port)"
+  local web_port="$(aih_web_port)"
 
   if ! command -v lsof >/dev/null 2>&1; then
     return 0
@@ -1728,13 +1743,13 @@ nudge_preview_service_restart() {
 
 nudge_preview_api_restart() {
   read_preview_supervisor_pids || return 0
-  nudge_preview_service_restart "${AIH_PREVIEW_API_PORT:-3001}"
+  nudge_preview_service_restart "$(aih_api_port)"
 }
 
 nudge_preview_web_restart() {
   read_preview_supervisor_pids || return 0
   touch "$PREVIEW_WEB_REFRESH_FILE"
-  nudge_preview_service_restart "${AIH_PREVIEW_WEB_PORT:-3000}"
+  nudge_preview_service_restart "$(aih_web_port)"
 }
 
 remove_path_safely() {

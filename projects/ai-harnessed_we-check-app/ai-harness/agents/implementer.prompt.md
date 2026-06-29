@@ -63,7 +63,7 @@ When the slice agent is `frontend` or `test`, Playwright MCP is available (`--ap
 
 {{SCREENSHOT_DIR_BLOCK}}
 
-1. Use **Playwright MCP** to navigate `http://localhost:3000`
+1. Use **Playwright MCP** to navigate `http://localhost:3007`
 2. Exercise the slice user flow (browse, register, paginate, check-in, organizer tables)
 3. **For each page or route you created or modified**, open it in the browser and **capture a screenshot** into the directory above (Playwright MCP screenshot tool, or `cursor-ide-browser` `browser_take_screenshot` with explicit `filename`). Do this even when the flow passes — screenshots are how you inspect layout, spacing, typography, empty/loading/error states, and alignment with `docs/ui-ux/00-production-ui-quality-bar.md`. Use accessibility snapshots for interaction debugging; use **screenshots** for visual UI/UX review.
 4. **Apply browser timeouts** — abandon a navigation or action after **30s** without expected content; do not wait on infinite spinners or stuck camera/GPS prompts; kill hung browser automation and fix before `SLICE_DONE`

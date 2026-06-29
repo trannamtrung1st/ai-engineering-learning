@@ -143,8 +143,8 @@ if [[ "$verify_status" -ne 0 ]]; then
 fi
 preview_log_stack "startup verification passed"
 
-API_PORT="${AIH_PREVIEW_API_PORT:-3001}"
-WEB_PORT="${AIH_PREVIEW_WEB_PORT:-3000}"
+API_PORT="$(aih_api_port)"
+WEB_PORT="$(aih_web_port)"
 aih_blank
 aih_section "Preview stack ready (mode=${MODE})" loop
 aih_kv "API" "http://localhost:${API_PORT}/api/v1/health"
