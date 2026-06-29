@@ -10,6 +10,7 @@ export default defineConfig({
     },
   },
   server: {
+    allowedHosts: true,
     port: Number(process.env.PORT ?? process.env.WEB_PORT) || 3000,
     proxy: {
       "/api/v1": {
