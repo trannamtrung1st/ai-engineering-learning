@@ -9,6 +9,7 @@ export const PREVIEW_TOKEN_IDS = {
   stale: "40000000-0000-4000-8000-000000000401",
   consumed: "40000000-0000-4000-8000-000000000402",
   valid: "40000000-0000-4000-8000-000000000403",
+  closedStale: "40000000-0000-4000-8000-000000000404",
 } as const;
 
 /** Room GPS for preview session — must match apps/api/src/infra/preview-seed.ts */
@@ -32,6 +33,7 @@ export const PREVIEW_ALIASES: Record<string, string> = {
   "stale-token-id": PREVIEW_TOKEN_IDS.stale,
   "consumed-token-id": PREVIEW_TOKEN_IDS.consumed,
   "valid-token-id": PREVIEW_TOKEN_IDS.valid,
+  "closed-stale-token-id": PREVIEW_TOKEN_IDS.closedStale,
 };
 
 export const PREVIEW_CREDENTIALS = {
@@ -41,6 +43,7 @@ export const PREVIEW_CREDENTIALS = {
   deactivated: { email: "deactivated@example.edu.vn", password: "StudentPass8" },
   studentB: { email: "studentb@example.edu.vn", password: "StudentPass8" },
   studentC: { email: "studentc@example.edu.vn", password: "StudentPass8" },
+  instructor2: { email: "instructor2@example.edu.vn", password: "InstructorPass8" },
 } as const;
 
 export function resolvePreviewId(aliasOrId: string | null | undefined): string | null {

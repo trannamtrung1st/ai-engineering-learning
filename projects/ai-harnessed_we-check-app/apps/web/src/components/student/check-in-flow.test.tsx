@@ -37,11 +37,34 @@ vi.mock("@/lib/session-monitor-api", () => ({
   previewExpireSession: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock("@/lib/sessions-api", () => ({
+  fetchSession: vi.fn().mockResolvedValue({
+    id: "sess-1",
+    instructorId: "inst-1",
+    classId: "class-1",
+    subjectId: "subject-1",
+    status: "Active",
+    classCode: "HESD-01",
+    className: "HESD Cohort A",
+    subjectCode: "SWE-101",
+    subjectName: "Software Engineering 101",
+    title: "Test",
+    roomName: "A101",
+    roomLatitude: 10.762622,
+    roomLongitude: 106.660172,
+    gpsRadiusMeters: 100,
+    scheduledStart: "2026-06-15T08:00:00.000Z",
+    openedAt: "2026-06-15T08:00:00.000Z",
+    closedAt: null,
+  }),
+}));
+
 import { fetchAuthUser } from "@/lib/auth-session";
 import { captureGeolocation } from "@/lib/geolocation";
 import { submitCheckInWithRetry } from "@/lib/check-in-api";
 import { readExpireSessionOnSubmit, readMockLocationDetected } from "@/lib/preview-sim";
 import { previewExpireSession } from "@/lib/session-monitor-api";
+import { fetchSession } from "@/lib/sessions-api";
 
 /** AC-02, AC-07, AC-08, AC-09, AC-10, FR-07, FR-08, NFR-18, NFR-19 */
 describe("CheckInFlow (AC-07, AC-08, FR-07, FR-08, NFR-18, NFR-19)", () => {
@@ -142,6 +165,34 @@ describe("CheckInFlow (AC-07, AC-08, FR-07, FR-08, NFR-18, NFR-19)", () => {
       expect(screen.getByTestId("check-in-outcome-ExpiredQr")).toBeInTheDocument();
     });
     expect(screen.getByRole("button", { name: "Quét lại" })).toBeInTheDocument();
+  });
+
+  it("shows SessionNotActive for closed session deep link (TC-AC-05-023, AC-05)", async () => {
+    vi.mocked(fetchSession).mockResolvedValue({
+      id: "30000000-0000-4000-8000-000000000303",
+      instructorId: "00000000-0000-4000-8000-000000000002",
+      classId: "10000000-0000-4000-8000-000000000101",
+      subjectId: "20000000-0000-4000-8000-000000000201",
+      status: "Closed",
+      classCode: "HESD-01",
+      className: "HESD Cohort A",
+      subjectCode: "SWE-101",
+      subjectName: "Software Engineering 101",
+      title: "NET-301",
+      roomName: "C301",
+      roomLatitude: 10.762622,
+      roomLongitude: 106.660172,
+      gpsRadiusMeters: 100,
+      scheduledStart: "2026-06-15T08:00:00.000Z",
+      openedAt: "2026-06-15T06:00:00.000Z",
+      closedAt: "2026-06-15T08:00:00.000Z",
+    });
+    renderFlow(`/check-in?token=stale-token-id&session=sess-3`);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("check-in-outcome-SessionNotActive")).toBeInTheDocument();
+    });
+    expect(submitCheckInWithRetry).not.toHaveBeenCalled();
   });
 
   it("shows TokenAlreadyUsed for consumed token from API (BR-11, AC-09)", async () => {

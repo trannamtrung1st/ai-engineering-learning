@@ -6,14 +6,15 @@ import { cn } from "@/lib/cn";
 
 export interface ForbiddenPageProps {
   homeTo?: string;
+  description?: string;
 }
 
-export function ForbiddenPage({ homeTo = "/" }: ForbiddenPageProps) {
+export function ForbiddenPage({ homeTo = "/", description }: ForbiddenPageProps) {
   return (
     <EmptyState
       icon={ShieldAlert}
       title={appCopy.forbiddenTitle}
-      description={appCopy.forbiddenMessage}
+      description={description ?? appCopy.forbiddenMessage}
       action={
         <Link
           to={homeTo}

@@ -70,7 +70,7 @@ describe("preview seed (NFR-17, NFR-06)", () => {
     const userCount = await db.query<{ count: string }>(
       "SELECT COUNT(*)::text AS count FROM users",
     );
-    assert.equal(userCount.rows[0]?.count, "6");
+    assert.equal(userCount.rows[0]?.count, "7");
   });
 
   it("student B is not enrolled; student C stays Pending for OutOfRadius gates (AC-07, AC-08)", async () => {

@@ -1,6 +1,6 @@
 import { SessionStatus } from "@wecheck/domain";
-import { useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Navigate, useSearchParams } from "react-router-dom";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -21,6 +21,7 @@ import {
   formatReportDateVi,
   sessionDateInRange,
 } from "@/lib/report-date-defaults";
+import { parseReportFiltersFromSearchParams } from "@/lib/report-filter-url";
 import type { ReportFilterParams } from "@/lib/reports-api";
 
 function SummarySkeleton() {
@@ -59,10 +60,22 @@ function computeSummaryCardMetrics(
 export function ReportsPage() {
   const [searchParams] = useSearchParams();
   const view = searchParams.get("view");
+  const urlFilters = useMemo(
+    () => parseReportFiltersFromSearchParams(searchParams),
+    [searchParams],
+  );
 
-  const [appliedFilters, setAppliedFilters] = useState<ReportFilterParams | null>(null);
+  const [appliedFilters, setAppliedFilters] = useState<ReportFilterParams | null>(
+    () => urlFilters,
+  );
   const summaryQuery = useReportSummary(appliedFilters);
   const sessionsQuery = useSessionsList();
+
+  useEffect(() => {
+    if (urlFilters) {
+      setAppliedFilters(urlFilters);
+    }
+  }, [urlFilters]);
 
   const sessionRows = useMemo((): SessionReportRow[] => {
     if (!appliedFilters || !summaryQuery.data) return [];
@@ -110,14 +123,7 @@ export function ReportsPage() {
       ?.errorBody?.errorCode === "ReportAccessDenied";
 
   if (accessDenied) {
-    return (
-      <div data-testid="reports-page">
-        <PageHeader title={reportCopy.pageTitle} description={reportCopy.pageDescription} />
-        <Alert variant="danger" title={reportCopy.reportAccessDenied}>
-          <p>{reportCopy.reportAccessDenied}</p>
-        </Alert>
-      </div>
-    );
+    return <Navigate to="/forbidden?reason=report" replace />;
   }
 
   const showInitial = appliedFilters === null && view !== "empty" && view !== "error";
@@ -133,6 +139,7 @@ export function ReportsPage() {
     <div data-testid="reports-page">
       <PageHeader title={reportCopy.pageTitle} description={reportCopy.pageDescription} />
       <InstructorReportFilterBar
+        initialFilters={urlFilters ?? undefined}
         onApply={setAppliedFilters}
         disabled={summaryQuery.isFetching}
       />

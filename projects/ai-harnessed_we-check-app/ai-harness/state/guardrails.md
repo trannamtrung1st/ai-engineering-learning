@@ -61,3 +61,8 @@ Verification failures and remediation notes for harness agents.
 - [web-admin-rosters] Browser test failed — see 20260629T131937Z-browser-test.json
 - **Integration truncate + preview export:** `truncateAuthTables` must `TRUNCATE export_audit_logs` (and `notifications`) before `DELETE FROM users` — preview CSV export audit rows with `ON DELETE RESTRICT` block integration resets when preview stack runs during `aih:check`.
 - [web-admin-policy] Computational checks failed — see 20260629T142955Z-checks.json
+- [e2e-acceptance-suite] Browser test failed — see 20260629T151915Z-browser-test.json
+- **Closed-session check-in deep link:** When `?session=sess-3` (preview closed fixture), block with `SessionNotActive` before GPS/submit — stale-token-id is tied to Active session and would surface `ExpiredQr` via API alone.
+- **Reports deep-link RBAC:** `/reports?classCode=&subjectCode=` must auto-apply filters and redirect to `/forbidden?reason=report` on `ReportAccessDenied`; seed `instructor2@example.edu.vn` assigned only to HESD-02/SWE-102 via `ensurePreviewInstructor2Fixtures`.
+- **Check-in submit latency (NFR-04):** Cache `fetchAuthUser` in a ref after first success and prefetch on mount — duplicate auth round-trip on submit exceeded 2 s gate budget.
+- [e2e-acceptance-suite] Browser test failed — see 20260629T155137Z-browser-test.json

@@ -14,6 +14,7 @@ import { SessionService } from "../modules/session-management/session-service.js
 export const PREVIEW_IDS = {
   admin: "00000000-0000-4000-8000-000000000001",
   instructor: "00000000-0000-4000-8000-000000000002",
+  instructor2: "00000000-0000-4000-8000-000000000007",
   student: "00000000-0000-4000-8000-000000000003",
   deactivatedStudent: "00000000-0000-4000-8000-000000000004",
   studentB: "00000000-0000-4000-8000-000000000005",
@@ -21,12 +22,14 @@ export const PREVIEW_IDS = {
   classHesd01: "10000000-0000-4000-8000-000000000101",
   classHesd02: "10000000-0000-4000-8000-000000000102",
   subjectSwe101: "20000000-0000-4000-8000-000000000201",
+  subjectSwe102: "20000000-0000-4000-8000-000000000202",
   sessionActive: "30000000-0000-4000-8000-000000000301",
   sessionDraft: "30000000-0000-4000-8000-000000000302",
   sessionClosed: "30000000-0000-4000-8000-000000000303",
   staleQrToken: "40000000-0000-4000-8000-000000000401",
   consumedQrToken: "40000000-0000-4000-8000-000000000402",
   validQrToken: "40000000-0000-4000-8000-000000000403",
+  closedStaleQrToken: "40000000-0000-4000-8000-000000000404",
   spoofCheckInAttempt: "50000000-0000-4000-8000-000000000501",
   tokenReuseAlert: "50000000-0000-4000-8000-000000000502",
 } as const;
@@ -36,12 +39,14 @@ export const PREVIEW_QR_TOKEN_FIXTURE_IDS = [
   PREVIEW_IDS.staleQrToken,
   PREVIEW_IDS.consumedQrToken,
   PREVIEW_IDS.validQrToken,
+  PREVIEW_IDS.closedStaleQrToken,
 ] as const;
 
 /** Vietnamese display names for browser NFR-17 gates — no English user-facing copy in headers. */
 export const PREVIEW_DISPLAY_NAMES = {
   admin: "Quản trị viên Phòng đào tạo",
   instructor: "Giảng viên Nguyễn Văn B",
+  instructor2: "Giảng viên Trần Thị C",
   student: "Sinh viên Nguyễn Văn A",
   deactivated: "Sinh viên Võ Văn D",
   studentB: "Sinh viên Trần Thị B",
@@ -51,6 +56,7 @@ export const PREVIEW_DISPLAY_NAMES = {
 export const PREVIEW_CREDENTIALS = {
   admin: { email: "admin@example.edu.vn", password: "AdminPass123" },
   instructor: { email: "instructor@example.edu.vn", password: "InstructorPass8" },
+  instructor2: { email: "instructor2@example.edu.vn", password: "InstructorPass8" },
   student: { email: "student@example.edu.vn", password: "StudentPass8" },
   deactivated: { email: "deactivated@example.edu.vn", password: "StudentPass8" },
   studentB: { email: "studentb@example.edu.vn", password: "StudentPass8" },
@@ -98,6 +104,7 @@ async function isSeedApplied(db: DbPool): Promise<boolean> {
 const PREVIEW_USER_IDS = [
   PREVIEW_IDS.admin,
   PREVIEW_IDS.instructor,
+  PREVIEW_IDS.instructor2,
   PREVIEW_IDS.student,
   PREVIEW_IDS.deactivatedStudent,
   PREVIEW_IDS.studentB,
@@ -107,6 +114,7 @@ const PREVIEW_USER_IDS = [
 const PREVIEW_INSTITUTIONAL_IDS = [
   "ADMIN001",
   "GV2026001",
+  "GV2026002",
   "SV2026001",
   "SV2026099",
   "SV2026002",
@@ -140,9 +148,11 @@ export async function ensurePreviewReferenceData(db: DbPool): Promise<void> {
   );
 
   await db.query(
-    `INSERT INTO subjects (id, code, name) VALUES ($1, 'SWE-101', 'Software Engineering 101')
+    `INSERT INTO subjects (id, code, name) VALUES
+       ($1, 'SWE-101', 'Software Engineering 101'),
+       ($2, 'SWE-102', 'Software Engineering 102')
      ON CONFLICT (id) DO NOTHING`,
-    [PREVIEW_IDS.subjectSwe101],
+    [PREVIEW_IDS.subjectSwe101, PREVIEW_IDS.subjectSwe102],
   );
 
   await db.query(
@@ -150,6 +160,13 @@ export async function ensurePreviewReferenceData(db: DbPool): Promise<void> {
      VALUES ($1, $2, $3)
      ON CONFLICT (instructor_id, class_id, subject_id) DO NOTHING`,
     [PREVIEW_IDS.instructor, PREVIEW_IDS.classHesd01, PREVIEW_IDS.subjectSwe101],
+  );
+
+  await db.query(
+    `INSERT INTO class_assignments (instructor_id, class_id, subject_id)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (instructor_id, class_id, subject_id) DO NOTHING`,
+    [PREVIEW_IDS.instructor2, PREVIEW_IDS.classHesd02, PREVIEW_IDS.subjectSwe102],
   );
 
   await db.query(
@@ -205,6 +222,31 @@ export async function ensurePreviewReferenceData(db: DbPool): Promise<void> {
     );
     sessionService.qr.stopAll();
   }
+
+  const closedAt = now();
+  const openedAt = new Date(closedAt.getTime() - 2 * 60 * 60 * 1000);
+  await db.query(
+    `INSERT INTO sessions (
+       id, instructor_id, class_id, subject_id, title, room_name,
+       room_latitude, room_longitude, gps_radius_meters, scheduled_start,
+       status, opened_at, closed_at, version
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 100, $9, $10, $11, $12, 1)
+     ON CONFLICT (id) DO NOTHING`,
+    [
+      PREVIEW_IDS.sessionClosed,
+      PREVIEW_IDS.instructor,
+      PREVIEW_IDS.classHesd01,
+      PREVIEW_IDS.subjectSwe101,
+      "NET-301 — Buổi 1",
+      "Phòng C301",
+      ROOM_LAT,
+      ROOM_LNG,
+      scheduledStart,
+      SessionStatus.Closed,
+      openedAt,
+      closedAt,
+    ],
+  );
 }
 
 /** Upsert monitor dashboard fixtures: spoof row + token-reuse alert (AC-10, FR-09, BR-11). */
@@ -347,6 +389,62 @@ export async function ensurePreviewTokenFixtures(db: DbPool): Promise<void> {
       validExpires,
     ],
   );
+
+  const closedStaleIssued = new Date(current.getTime() - 60 * 60 * 1000);
+  const closedStaleExpires = computeTokenExpiresAt(closedStaleIssued);
+  await db.query(
+    `INSERT INTO qr_tokens (id, session_id, status, issued_at, expires_at)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (id) DO UPDATE SET
+       status = EXCLUDED.status,
+       issued_at = EXCLUDED.issued_at,
+       expires_at = EXCLUDED.expires_at,
+       consumed_at = NULL,
+       consumed_by_student_id = NULL`,
+    [
+      PREVIEW_IDS.closedStaleQrToken,
+      PREVIEW_IDS.sessionClosed,
+      QrTokenStatus.Expired,
+      closedStaleIssued,
+      closedStaleExpires,
+    ],
+  );
+}
+
+/** Restore unassigned instructor B for report RBAC browser gates (AC-12, BR-08). */
+export async function ensurePreviewInstructor2Fixtures(db: DbPool): Promise<void> {
+  const instructor2Hash = await hashPassword(PREVIEW_CREDENTIALS.instructor2.password);
+  await db.query(
+    `INSERT INTO users (id, institutional_id, display_name, email, password_hash, role, active)
+     VALUES ($1, 'GV2026002', $2, $3, $4, $5, true)
+     ON CONFLICT (id) DO UPDATE SET
+       institutional_id = EXCLUDED.institutional_id,
+       display_name = EXCLUDED.display_name,
+       email = EXCLUDED.email,
+       password_hash = EXCLUDED.password_hash,
+       role = EXCLUDED.role,
+       active = EXCLUDED.active`,
+    [
+      PREVIEW_IDS.instructor2,
+      PREVIEW_DISPLAY_NAMES.instructor2,
+      PREVIEW_CREDENTIALS.instructor2.email,
+      instructor2Hash,
+      UserRole.Instructor,
+    ],
+  );
+
+  await db.query(
+    `DELETE FROM class_assignments
+     WHERE instructor_id = $1 AND (class_id <> $2 OR subject_id <> $3)`,
+    [PREVIEW_IDS.instructor2, PREVIEW_IDS.classHesd02, PREVIEW_IDS.subjectSwe102],
+  );
+
+  await db.query(
+    `INSERT INTO class_assignments (instructor_id, class_id, subject_id)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (instructor_id, class_id, subject_id) DO NOTHING`,
+    [PREVIEW_IDS.instructor2, PREVIEW_IDS.classHesd02, PREVIEW_IDS.subjectSwe102],
+  );
 }
 
 /** Restore only the deactivated browser-gate user without re-upserting all preview accounts. */
@@ -383,6 +481,7 @@ export async function ensurePreviewUserFixtures(db: DbPool): Promise<void> {
 
   const adminHash = await hashPassword(PREVIEW_CREDENTIALS.admin.password);
   const instructorHash = await hashPassword(PREVIEW_CREDENTIALS.instructor.password);
+  const instructor2Hash = await hashPassword(PREVIEW_CREDENTIALS.instructor2.password);
   const studentHash = await hashPassword(PREVIEW_CREDENTIALS.student.password);
   const deactivatedHash = await hashPassword(PREVIEW_CREDENTIALS.deactivated.password);
   const studentBHash = await hashPassword(PREVIEW_CREDENTIALS.studentB.password);
@@ -393,6 +492,7 @@ export async function ensurePreviewUserFixtures(db: DbPool): Promise<void> {
      VALUES
        ($1, 'ADMIN001', $25, $2, $3, $4, true),
        ($5, 'GV2026001', $26, $6, $7, $8, true),
+       ($31, 'GV2026002', $32, $33, $34, $8, true),
        ($9, 'SV2026001', $27, $10, $11, $12, true),
        ($13, 'SV2026099', $28, $14, $15, $16, false),
        ($17, 'SV2026002', $29, $18, $19, $20, true),
@@ -435,6 +535,10 @@ export async function ensurePreviewUserFixtures(db: DbPool): Promise<void> {
       PREVIEW_DISPLAY_NAMES.deactivated,
       PREVIEW_DISPLAY_NAMES.studentB,
       PREVIEW_DISPLAY_NAMES.studentC,
+      PREVIEW_IDS.instructor2,
+      PREVIEW_DISPLAY_NAMES.instructor2,
+      PREVIEW_CREDENTIALS.instructor2.email,
+      instructor2Hash,
     ],
   );
 }
@@ -482,6 +586,7 @@ async function ensurePreviewDisplayNames(db: DbPool): Promise<void> {
   const rows: Array<[string, string]> = [
     [PREVIEW_IDS.admin, PREVIEW_DISPLAY_NAMES.admin],
     [PREVIEW_IDS.instructor, PREVIEW_DISPLAY_NAMES.instructor],
+    [PREVIEW_IDS.instructor2, PREVIEW_DISPLAY_NAMES.instructor2],
     [PREVIEW_IDS.student, PREVIEW_DISPLAY_NAMES.student],
     [PREVIEW_IDS.deactivatedStudent, PREVIEW_DISPLAY_NAMES.deactivated],
     [PREVIEW_IDS.studentB, PREVIEW_DISPLAY_NAMES.studentB],
@@ -529,6 +634,7 @@ export function startPreviewTokenRefresh(db: DbPool): () => void {
   const handle = setInterval(() => {
     void runWhenPreviewDbIdle(db, async () => {
       await ensurePreviewDeactivatedUser(db);
+      await ensurePreviewInstructor2Fixtures(db);
       await ensurePreviewDisplayNames(db);
       await ensurePreviewTokenFixtures(db);
     }).catch(
@@ -546,6 +652,7 @@ export async function runPreviewSeed(db: DbPool): Promise<void> {
   if (await isSeedApplied(db)) {
     await runWhenPreviewDbIdle(db, async () => {
       await ensurePreviewDeactivatedUser(db);
+      await ensurePreviewInstructor2Fixtures(db);
       await ensurePreviewDisplayNames(db);
       await ensurePreviewTokenFixtures(db);
       await ensurePreviewHistoryFixtures(db);
@@ -564,9 +671,11 @@ export async function runPreviewSeed(db: DbPool): Promise<void> {
   );
 
   await db.query(
-    `INSERT INTO subjects (id, code, name) VALUES ($1, 'SWE-101', 'Software Engineering 101')
+    `INSERT INTO subjects (id, code, name) VALUES
+       ($1, 'SWE-101', 'Software Engineering 101'),
+       ($2, 'SWE-102', 'Software Engineering 102')
      ON CONFLICT (id) DO NOTHING`,
-    [PREVIEW_IDS.subjectSwe101],
+    [PREVIEW_IDS.subjectSwe101, PREVIEW_IDS.subjectSwe102],
   );
 
   await db.query(
@@ -574,6 +683,13 @@ export async function runPreviewSeed(db: DbPool): Promise<void> {
      VALUES ($1, $2, $3)
      ON CONFLICT (instructor_id, class_id, subject_id) DO NOTHING`,
     [PREVIEW_IDS.instructor, PREVIEW_IDS.classHesd01, PREVIEW_IDS.subjectSwe101],
+  );
+
+  await db.query(
+    `INSERT INTO class_assignments (instructor_id, class_id, subject_id)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (instructor_id, class_id, subject_id) DO NOTHING`,
+    [PREVIEW_IDS.instructor2, PREVIEW_IDS.classHesd02, PREVIEW_IDS.subjectSwe102],
   );
 
   await db.query(
@@ -665,6 +781,7 @@ export async function runPreviewSeed(db: DbPool): Promise<void> {
 
   await ensurePreviewTokenFixtures(db);
   await ensurePreviewStudentFixtures(db);
+  await ensurePreviewInstructor2Fixtures(db);
   await ensurePreviewMonitorFixtures(db);
   await ensurePreviewHistoryFixtures(db);
 
