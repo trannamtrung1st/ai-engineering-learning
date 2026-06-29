@@ -3,7 +3,16 @@
 Interactive UI verification for frontend and test slices. The harness uses Playwright MCP in two places:
 
 1. **Implementer smoke test** — `frontend`/`test` slices get `--approve-mcps` during implementation
-2. **Browser test agent gate** — `run-browser-test.sh` runs after computational checks and before AI code review (hard gate for `frontend`/`test` slices)
+2. **Browser test agent gate** — `run-browser-test.sh` runs after computational checks and before AI code review (hard gate for `frontend`/`test` slices). When a prior browser test failed for the slice and `browserTest.retryFailedCasesFirst` is true (default), the harness runs a **retry phase** (failed case IDs only, fail-fast) then a **full phase** (all `layer: browser` cases) before accepting `BROWSER_TEST_PASS`.
+
+## Phased browser test gate
+
+When the latest failed `*-browser-test.txt` for the slice contains parseable `TC-*: FAIL` lines:
+
+1. **Retry phase** — tester agent runs only those case IDs; exits on first failure without running the full suite
+2. **Full phase** — tester agent runs every mandatory browser case to confirm no regressions
+
+Artifacts: `*-browser-test-retry.txt`, `*-browser-test-full.txt`, combined `*-browser-test.txt`, and `*-browser-test.json` with a `phases` array. Set `browserTest.retryFailedCasesFirst` to `false` in `ralph-loop.json` to disable and always run full phase only.
 
 ## Prerequisites
 

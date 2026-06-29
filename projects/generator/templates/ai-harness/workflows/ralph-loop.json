@@ -94,6 +94,7 @@
   "browserTest": {
     "required": true,
     "modelKey": "tester",
+    "retryFailedCasesFirst": true,
     "activeWhenAgent": ["frontend", "test"],
     "requirePreviewStack": true,
     "previewVerifyGateTimeoutMs": 10000,

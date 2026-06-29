@@ -1320,6 +1320,46 @@ summarize_browser_test_failures() {
   printf '%s' "$block" | head -c "$max_chars"
 }
 
+browser_test_retry_failed_cases_first() {
+  jq -r '.browserTest.retryFailedCasesFirst // true' "$LOOP_CONFIG"
+}
+
+extract_failed_browser_case_ids() {
+  local run_id="$1"
+  local text_file="${RUNS_DIR}/${run_id}-browser-test.txt"
+  [[ -f "$text_file" ]] || return 1
+  grep -oE 'TC-[A-Z0-9][A-Z0-9-]*:[[:space:]]*FAIL' "$text_file" 2>/dev/null \
+    | sed -E 's/:[[:space:]]*FAIL$//' \
+    | sort -u
+}
+
+filter_browser_cases_prompt_block() {
+  local slice_id="$1"
+  shift
+  local ids_json
+  [[ $# -gt 0 ]] || return 1
+  ids_json="$(printf '%s\n' "$@" | jq -R . | jq -s .)"
+  load_test_cases_json_for_slice "$slice_id" | jq -r --argjson ids "$ids_json" '
+    .cases[]?
+    | select(.layer == "browser")
+    | select(.id as $id | $ids | index($id))
+    | "- **\(.id)** [\(.category)/\(.priority)]: \(.title)\n  Product: \(.traceability | join(", "))\n  Preconditions: \(.preconditions | join("; "))\n  Steps: \(.steps | join(" → "))\n  Expected: \(.expected)"
+  ' 2>/dev/null
+}
+
+browser_case_ids_still_failing_in_output() {
+  local text_file="$1"
+  shift
+  local case_id
+  [[ -f "$text_file" ]] || return 1
+  for case_id in "$@"; do
+    if grep -qE "${case_id}:[[:space:]]*FAIL" "$text_file" 2>/dev/null; then
+      return 1
+    fi
+  done
+  return 0
+}
+
 summarize_review_failures() {
   local run_id="$1"
   local max_chars="${2:-12000}"
