@@ -93,7 +93,7 @@
   --size-icon-sm: 20px;
   --size-icon-md: 24px;
   --size-qr-min: min(80vw, 400px);
-  --size-qr-projector: min(60vh, 60vw);
+  --size-qr-projector: min(40vw, 80vh);
 
   /* Motion */
   --duration-fast: 100ms;

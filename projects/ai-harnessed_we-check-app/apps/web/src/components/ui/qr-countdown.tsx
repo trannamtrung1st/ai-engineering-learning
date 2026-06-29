@@ -22,11 +22,9 @@ export function QrCountdown({
       data-seconds-remaining={clamped}
       className={cn(
         presentation
-          ? "text-[2rem] font-bold leading-10"
+          ? "text-5xl font-bold leading-none"
           : "text-h2 font-semibold",
-        presentation && (isWarning ? "text-qr-warning" : "text-qr-countdown"),
-        !presentation && isWarning && "text-qr-warning",
-        !presentation && !isWarning && "text-qr-accent",
+        isWarning ? "text-qr-warning" : "text-qr-accent",
         className,
       )}
       aria-live="polite"

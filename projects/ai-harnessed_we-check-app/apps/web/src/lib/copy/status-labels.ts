@@ -36,6 +36,9 @@ export const appCopy = {
   qrCountdownPrefix: "Mã mới sau",
   qrCountdownSuffix: "giây",
   exitFullscreen: "Thoát toàn màn hình",
+  projectionResolutionWarning:
+    "Độ phân giải màn hình dưới 1280×720 — hãy đặt máy chiếu ở 1280×720 để mã QR rõ nhất.",
+  validatingQrToken: "Đang xác thực mã QR…",
   forbiddenTitle: "Không có quyền truy cập",
   forbiddenMessage:
     "Bạn không có quyền xem nội dung này. Liên hệ phòng đào tạo nếu cần hỗ trợ.",

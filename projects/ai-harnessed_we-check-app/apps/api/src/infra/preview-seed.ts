@@ -237,7 +237,19 @@ export async function ensurePreviewReferenceData(db: DbPool): Promise<void> {
     "SELECT status FROM sessions WHERE id = $1",
     [PREVIEW_IDS.sessionActive],
   );
-  if (activeSession.rows[0]?.status === SessionStatus.Draft) {
+  const activeStatus = activeSession.rows[0]?.status;
+  if (
+    activeStatus === SessionStatus.Draft ||
+    activeStatus === SessionStatus.Closed
+  ) {
+    if (activeStatus === SessionStatus.Closed) {
+      await db.query(
+        `UPDATE sessions
+         SET status = $2, opened_at = NULL, closed_at = NULL, version = version + 1
+         WHERE id = $1`,
+        [PREVIEW_IDS.sessionActive, SessionStatus.Draft],
+      );
+    }
     const sessionService = new SessionService(db);
     await sessionService.open(
       PREVIEW_IDS.sessionActive,
@@ -913,7 +925,19 @@ export async function runPreviewSeed(db: DbPool): Promise<void> {
     "SELECT status FROM sessions WHERE id = $1",
     [PREVIEW_IDS.sessionActive],
   );
-  if (activeSession.rows[0]?.status === SessionStatus.Draft) {
+  const seedActiveStatus = activeSession.rows[0]?.status;
+  if (
+    seedActiveStatus === SessionStatus.Draft ||
+    seedActiveStatus === SessionStatus.Closed
+  ) {
+    if (seedActiveStatus === SessionStatus.Closed) {
+      await db.query(
+        `UPDATE sessions
+         SET status = $2, opened_at = NULL, closed_at = NULL, version = version + 1
+         WHERE id = $1`,
+        [PREVIEW_IDS.sessionActive, SessionStatus.Draft],
+      );
+    }
     await sessionService.open(
       PREVIEW_IDS.sessionActive,
       PREVIEW_IDS.instructor,

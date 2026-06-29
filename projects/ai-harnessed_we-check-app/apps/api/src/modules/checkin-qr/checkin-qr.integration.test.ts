@@ -345,6 +345,66 @@ describe("checkin-qr integration (AC-06–AC-10, FR-06–FR-10, BR-02–BR-04, B
     assert.equal(body.message, "Mã QR đã hết hạn, vui lòng quét mã mới");
   });
 
+  it("GET /check-in/tokens/:tokenId/preflight returns Valid for enrolled student (TC-AC-07-001, BR-15)", async () => {
+    const { sessionId, student, tokenId } = await seedActiveSession();
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/v1/check-in/tokens/${tokenId}/preflight?sessionId=${sessionId}`,
+      headers: { cookie: student.cookie },
+    });
+
+    assert.equal(response.statusCode, 200);
+    const body = response.json<{
+      outcome: string;
+      tokenId: string;
+      sessionId: string;
+      session: { classCode: string; subjectCode: string; roomName: string; status: string };
+    }>();
+    assert.equal(body.outcome, "Valid");
+    assert.equal(body.tokenId, tokenId);
+    assert.equal(body.sessionId, sessionId);
+    assert.equal(body.session.classCode, "HESD-01");
+    assert.equal(body.session.subjectCode, "SWE-101");
+    assert.equal(body.session.status, "Active");
+
+    const attempts = await db.query(
+      `SELECT COUNT(*)::int AS count FROM check_in_attempts WHERE qr_token_id = $1`,
+      [tokenId],
+    );
+    assert.equal(attempts.rows[0]?.count, 0);
+  });
+
+  it("GET /check-in/tokens/:tokenId/preflight returns ExpiredQr without writes (TC-AC-06-020, BR-15)", async () => {
+    const { sessionId, student, tokenId, instructor } = await seedActiveSession();
+
+    const qr = await app.inject({
+      method: "GET",
+      url: `/api/v1/sessions/${sessionId}/qr/current`,
+      headers: { cookie: instructor.cookie },
+    });
+    const issuedAt = new Date(qr.json<{ issuedAt: string }>().issuedAt);
+    setClock(new Date(issuedAt.getTime() + QR_TOKEN_TTL_MS + 1000));
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/v1/check-in/tokens/${tokenId}/preflight`,
+      headers: { cookie: student.cookie },
+    });
+
+    assert.equal(response.statusCode, 403);
+    const body = response.json<{ outcome: string; errorCode: string; message: string }>();
+    assert.equal(body.outcome, ErrorCode.ExpiredQr);
+    assert.equal(body.errorCode, ErrorCode.ExpiredQr);
+    assert.equal(body.message, "Mã QR đã hết hạn, vui lòng quét mã mới");
+
+    const attempts = await db.query(
+      `SELECT COUNT(*)::int AS count FROM check_in_attempts WHERE qr_token_id = $1`,
+      [tokenId],
+    );
+    assert.equal(attempts.rows[0]?.count, 0);
+  });
+
   it("POST /check-in DuplicateCheckIn when already Present (TC-AC-09-001, BR-04, FR-09)", async () => {
     const { sessionId, student, tokenId, instructor } = await seedActiveSession();
 

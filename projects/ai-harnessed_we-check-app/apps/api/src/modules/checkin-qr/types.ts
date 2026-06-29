@@ -1,4 +1,6 @@
 import type { ErrorCode } from "@wecheck/domain";
+
+export type PreflightErrorCode = ErrorCode | "SessionMismatch";
 import type { SpoofMetadataInput } from "./spoof-heuristics.js";
 
 export interface CheckInRequestBody {
@@ -28,6 +30,28 @@ export interface CheckInFailureResponse {
 
 export type CheckInResponse = CheckInSuccessResponse | CheckInFailureResponse;
 
+export interface PreflightSessionSummary {
+  classCode: string;
+  subjectCode: string;
+  roomName: string;
+  status: string;
+}
+
+export interface PreflightSuccessResponse {
+  outcome: "Valid";
+  tokenId: string;
+  sessionId: string;
+  session: PreflightSessionSummary;
+}
+
+export interface PreflightFailureResponse {
+  outcome: string;
+  message: string;
+  errorCode: PreflightErrorCode;
+}
+
+export type PreflightResponse = PreflightSuccessResponse | PreflightFailureResponse;
+
 export interface QrTokenRow {
   id: string;
   sessionId: string;
@@ -48,6 +72,12 @@ export interface SessionCheckInContext {
   roomLatitude: number;
   roomLongitude: number;
   gpsRadiusMeters: number;
+}
+
+export interface SessionDisplayContext extends SessionCheckInContext {
+  classCode: string;
+  subjectCode: string;
+  roomName: string;
 }
 
 export interface AttendanceCheckInRow {

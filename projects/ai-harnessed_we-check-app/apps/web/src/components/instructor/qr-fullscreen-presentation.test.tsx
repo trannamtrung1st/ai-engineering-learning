@@ -15,7 +15,7 @@ vi.mock("@/hooks/use-session-detail", () => ({
 vi.mock("@/lib/qr-encode", () => ({
   encodeQrDataUrl: vi.fn().mockResolvedValue("data:image/png;base64,qr"),
   QR_PREVIEW_SIZE: 280,
-  QR_FULLSCREEN_SIZE: 480,
+  QR_FULLSCREEN_SIZE: 512,
 }));
 
 import { useQrDisplayCycle } from "@/hooks/use-qr-display-cycle";
@@ -66,7 +66,7 @@ describe("QrFullscreenPresentation (AC-06, FR-06, NFR-06, NFR-20)", () => {
     expect(screen.getByText("Quét mã để điểm danh")).toBeInTheDocument();
     expect(screen.getByTestId("qr-countdown")).toHaveTextContent("Mã mới sau 25 giây");
     expect(screen.getByTestId("qr-countdown")).toHaveClass("font-bold");
-    expect(screen.getByTestId("qr-countdown")).toHaveClass("text-qr-countdown");
+    expect(screen.getByTestId("qr-countdown")).toHaveClass("text-qr-accent");
 
     await waitFor(() => {
       expect(screen.getByTestId("qr-code-image")).toBeInTheDocument();

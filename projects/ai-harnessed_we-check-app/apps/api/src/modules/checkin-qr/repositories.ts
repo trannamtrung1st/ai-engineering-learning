@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import type { DbPool } from "../../infra/db.js";
-import type { QrTokenRow, SessionCheckInContext } from "./types.js";
+import type { QrTokenRow, SessionCheckInContext, SessionDisplayContext } from "./types.js";
 
 type DbQueryable = DbPool | PoolClient;
 
@@ -25,6 +25,12 @@ interface SessionDbRow {
   room_latitude: number;
   room_longitude: number;
   gps_radius_meters: number;
+}
+
+interface SessionDisplayDbRow extends SessionDbRow {
+  class_code: string;
+  subject_code: string;
+  room_name: string;
 }
 
 export class QrTokenRepository {
@@ -75,6 +81,40 @@ export class QrTokenRepository {
       roomLatitude: row.room_latitude,
       roomLongitude: row.room_longitude,
       gpsRadiusMeters: row.gps_radius_meters,
+    };
+  }
+
+  async findSessionDisplayContext(
+    sessionId: string,
+  ): Promise<SessionDisplayContext | null> {
+    const result = await this.db.query<SessionDisplayDbRow>(
+      `SELECT s.id, s.class_id, s.subject_id, s.status, s.opened_at, s.closed_at,
+              s.scheduled_start, s.room_latitude, s.room_longitude, s.gps_radius_meters,
+              s.room_name, c.code AS class_code, sub.code AS subject_code
+       FROM sessions s
+       JOIN classes c ON c.id = s.class_id
+       JOIN subjects sub ON sub.id = s.subject_id
+       WHERE s.id = $1`,
+      [sessionId],
+    );
+    const row = result.rows[0];
+    if (!row || row.room_latitude === null || row.room_longitude === null) {
+      return null;
+    }
+    return {
+      id: row.id,
+      classId: row.class_id,
+      subjectId: row.subject_id,
+      status: row.status,
+      openedAt: row.opened_at,
+      closedAt: row.closed_at,
+      scheduledStart: row.scheduled_start,
+      roomLatitude: row.room_latitude,
+      roomLongitude: row.room_longitude,
+      gpsRadiusMeters: row.gps_radius_meters,
+      classCode: row.class_code,
+      subjectCode: row.subject_code,
+      roomName: row.room_name,
     };
   }
 

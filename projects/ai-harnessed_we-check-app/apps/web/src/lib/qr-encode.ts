@@ -3,8 +3,8 @@ import QRCode from "qrcode";
 /** NFR-20 — preview minimum per event-specific-components §3.6 */
 export const QR_PREVIEW_SIZE = 280;
 
-/** NFR-20 — fullscreen presenter per event-specific-components §3.6 */
-export const QR_FULLSCREEN_SIZE = 480;
+/** NFR-20 — fullscreen presenter ≥40% of 1280 px projector width */
+export const QR_FULLSCREEN_SIZE = 512;
 
 export const QR_ENCODE_OPTIONS = {
   errorCorrectionLevel: "H" as const,

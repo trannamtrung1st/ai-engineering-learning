@@ -63,6 +63,44 @@ export async function fetchQrCurrent(sessionId: string): Promise<QrTokenDisplay>
   return res.data;
 }
 
+export interface PreflightResult {
+  ok: boolean;
+  outcome: CheckInOutcomeCode;
+  message?: string;
+}
+
+/** BR-15 — read-only token validation before GPS capture */
+export async function fetchCheckInPreflight(
+  tokenId: string,
+  sessionId?: string | null,
+): Promise<PreflightResult> {
+  const params = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : "";
+  const res = await apiFetch<{
+    outcome: string;
+    message?: string;
+    errorCode?: string;
+  }>(`/check-in/tokens/${tokenId}/preflight${params}`);
+
+  if (res.ok && res.data.outcome === "Valid") {
+    return { ok: true, outcome: "Present" };
+  }
+
+  if (res.status === 401) {
+    return {
+      ok: false,
+      outcome: "NetworkError",
+      message: res.data.message,
+    };
+  }
+
+  const errorCode = res.data.errorCode ?? res.data.outcome;
+  return {
+    ok: false,
+    outcome: mapCheckInOutcome(res.data.outcome ?? "", errorCode),
+    message: res.data.message,
+  };
+}
+
 function buildSpoofMetadata(input: CheckInSubmitInput): SpoofMetadataInput {
   const platform = detectMobilePlatform();
   const resolvedPlatform =

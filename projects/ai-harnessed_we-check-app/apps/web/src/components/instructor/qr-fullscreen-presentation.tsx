@@ -1,9 +1,11 @@
 import { useCallback, useEffect } from "react";
 import { SessionStatus } from "@wecheck/domain";
+import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { QrCodeImage } from "@/components/ui/qr-code-image";
 import { QrCountdown } from "@/components/ui/qr-countdown";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { useBelowProjectionSpec } from "@/hooks/use-below-projection-spec";
 import { useQrDisplayCycle } from "@/hooks/use-qr-display-cycle";
 import { useSessionDetail } from "@/hooks/use-session-detail";
 import { appCopy } from "@/lib/copy/status-labels";
@@ -18,7 +20,8 @@ export function QrFullscreenPresentation({
   sessionId,
   onExit,
 }: QrFullscreenPresentationProps) {
-  const sessionQuery = useSessionDetail(sessionId);
+  const belowProjectionSpec = useBelowProjectionSpec();
+  const sessionQuery = useSessionDetail(sessionId, { refetchIntervalMs: 3_000 });
   const session = sessionQuery.data;
   const sessionStatus = session?.status ?? SessionStatus.Active;
   const isActive = sessionStatus === SessionStatus.Active;
@@ -82,6 +85,14 @@ export function QrFullscreenPresentation({
           status={sessionEnded ? SessionStatus.Closed : SessionStatus.Active}
         />
       </header>
+
+      {belowProjectionSpec ? (
+        <div className="px-6 pt-4" data-testid="projection-resolution-warning">
+          <Alert variant="warning" title="Độ phân giải thấp">
+            {appCopy.projectionResolutionWarning}
+          </Alert>
+        </div>
+      ) : null}
 
       <main className="relative flex flex-1 flex-col items-center justify-center gap-8 px-6">
         {isActive ? (

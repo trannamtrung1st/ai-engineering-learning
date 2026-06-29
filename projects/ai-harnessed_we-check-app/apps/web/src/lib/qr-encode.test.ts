@@ -20,6 +20,6 @@ describe("qr-encode (NFR-20)", () => {
 
   it("defines preview and fullscreen pixel sizes per ui-ux §3.6", () => {
     expect(QR_PREVIEW_SIZE).toBeGreaterThanOrEqual(280);
-    expect(QR_FULLSCREEN_SIZE).toBeGreaterThanOrEqual(480);
+    expect(QR_FULLSCREEN_SIZE).toBeGreaterThanOrEqual(512);
   });
 });

@@ -80,9 +80,9 @@ describe("App shell layouts (NFR-17, NFR-06)", () => {
     expect(screen.getByTestId("qr-countdown")).toHaveClass("text-qr-warning");
   });
 
-  it("QrCountdown presentation mode uses warning color at 10 seconds or below (NFR-06)", () => {
+  it("QrCountdown presentation mode uses accent and warning color tokens (NFR-20)", () => {
     const { rerender } = render(<QrCountdown secondsRemaining={15} presentation />);
-    expect(screen.getByTestId("qr-countdown")).toHaveClass("text-qr-countdown");
+    expect(screen.getByTestId("qr-countdown")).toHaveClass("text-qr-accent");
 
     rerender(<QrCountdown secondsRemaining={10} presentation />);
     expect(screen.getByTestId("qr-countdown")).toHaveClass("text-qr-warning");

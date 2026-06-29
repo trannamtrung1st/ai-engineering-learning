@@ -11,7 +11,7 @@ vi.mock("@/hooks/use-qr-display-cycle", () => ({
 vi.mock("@/lib/qr-encode", () => ({
   encodeQrDataUrl: vi.fn().mockResolvedValue("data:image/png;base64,qr"),
   QR_PREVIEW_SIZE: 280,
-  QR_FULLSCREEN_SIZE: 480,
+  QR_FULLSCREEN_SIZE: 512,
 }));
 
 import { useQrDisplayCycle } from "@/hooks/use-qr-display-cycle";
