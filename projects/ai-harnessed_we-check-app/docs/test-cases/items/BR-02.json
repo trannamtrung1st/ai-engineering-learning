@@ -1,8 +1,8 @@
 {
   "productItemId": "BR-02",
   "version": 1,
-  "docFingerprint": "sha256:4deda16c175af0ca34aadf938abcd5f11203e186585e68a48a77093b8e87aac5",
-  "generatedAt": "2026-06-29T21:00:00Z",
+  "docFingerprint": "sha256:7fa6e5f0fa1fb178b99256355a681409f9ca3b3a224ea6b785c745d780059c2e",
+  "generatedAt": "2026-06-29T18:18:15Z",
   "cases": [
     {
       "id": "TC-BR-02-001",
@@ -47,6 +47,7 @@
         "POST /api/v1/check-in with tokenId, latitude 10.764122, longitude 106.660172 using Student session",
         "Assert HTTP status 400",
         "Assert response outcome OutOfRadius and errorCode OutOfRadius",
+        "Assert localized message contains Bạn đang ngoài phạm vi phòng học per error-handling §6.2",
         "Query attendance_records for studentId and sessionId and assert status remains Pending (not Present)",
         "Query check_in_attempts and assert outcome OutOfRadius with distance_meters logged and no raw lat/lng persisted"
       ],
@@ -161,7 +162,7 @@
         "POST /api/v1/check-in with tokenId and outside-radius latitude/longitude",
         "Assert HTTP status 400",
         "Assert response body outcome OutOfRadius and errorCode OutOfRadius",
-        "Assert message field contains Vietnamese out-of-radius guidance per validation-rules §4 BR-02 mapping",
+        "Assert message field contains Bạn đang ngoài phạm vi phòng học per error-handling §6.2 and validation-rules §4 BR-02 mapping",
         "Assert no attendance Present in response body"
       ],
       "expected": "HTTP 400 OutOfRadius per validation-rules §4 and API design §6.3; canonical BR-02 failure envelope",
@@ -306,21 +307,23 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["BR-02", "FR-08", "AC-08", "NFR-18"],
+      "traceability": ["BR-02", "FR-08", "AC-08", "BR-15", "NFR-18"],
       "title": "Mobile check-in journey: in-radius GPS coordinates enable successful submit after server validation",
       "preconditions": [
         "Authenticated Student on mobile viewport 375×812 (iOS Safari or Android Chrome)",
         "Active session check-in deep link /check-in?token=:tokenId&session=:sessionId",
+        "GET /api/v1/check-in/tokens/:tokenId/preflight returns 200 outcome Valid for enrolled student per BR-15",
         "Browser geolocation granted with in-radius mock coordinates (10.762700, 106.660200)"
       ],
       "steps": [
         "Navigate to check-in page on mobile viewport",
+        "Verify validating_token inline spinner during preflight; GpsCaptureStep mounts only after preflight 200 per BR-15",
         "Verify GPS capture indicator shows coordinates acquired",
         "Tap submit control (Xác nhận điểm danh)",
         "Verify success panel with Present status after BR-02 radius validation passes on server",
         "Verify no raw GPS coordinates displayed in UI beyond transient capture state"
       ],
-      "expected": "Mobile web path: client captures GPS, server enforces BR-02 Haversine check, success confirmation shown",
+      "expected": "Mobile web path: BR-15 preflight gates GPS step; client captures GPS; server enforces BR-02 Haversine check; success confirmation shown",
       "edgeCase": false
     },
     {
@@ -329,21 +332,22 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["BR-02", "AC-08"],
+      "traceability": ["BR-02", "AC-08", "BR-15"],
       "title": "Mobile check-in OutOfRadius outcome panel shows Vietnamese message and retry guidance",
       "preconditions": [
         "Authenticated Student on mobile viewport with GPS permission granted",
         "Active session check-in deep link with valid token",
+        "GET /api/v1/check-in/tokens/:tokenId/preflight returns 200 outcome Valid; GpsCaptureStep mounted per BR-15",
         "Browser geolocation mocked to outside-radius coordinates (10.764122, 106.660172)"
       ],
       "steps": [
-        "Navigate to /check-in page and wait for GPS capture with outside coordinates",
+        "Navigate to /check-in page; wait for preflight pass then GPS capture with outside coordinates",
         "Submit check-in",
         "Verify outcome panel displays OutOfRadius state with message Bạn đang ngoài phạm vi phòng học",
-        "Verify distance hint or move-closer guidance visible per user-flows §3",
+        "Verify distance hint (e.g. Bạn cách phòng học khoảng {n} m) or move-closer guidance visible per user-flows §3 and ui-ux §07 GpsCaptureStep",
         "Verify no Present success badge; student can retry after moving closer within radius"
       ],
-      "expected": "BR-02 OutOfRadius outcome surfaced in mobile UI with localized message and recovery action",
+      "expected": "BR-02 OutOfRadius outcome surfaced in mobile UI after BR-15 preflight and GPS capture; localized message and recovery action shown",
       "edgeCase": true
     },
     {
@@ -410,6 +414,29 @@
         "Verify BR-02 radius evaluation not reached because session state guard fails first per pipeline step 5"
       ],
       "expected": "BR-02 scope is all check-in attempts while session Active; Closed session rejects before radius check with SessionNotActive",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-02-019",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["BR-02", "FR-04"],
+      "title": "Maximum session gpsRadiusMeters 500 m accepts student at ~450 m from room point",
+      "preconditions": [
+        "Active session with room (10.762622, 106.660172) and gpsRadiusMeters 500 (maximum allowed per validation-rules §3.4)",
+        "Authenticated enrolled Student with coordinates ~450 m from room (10.766667, 106.660172)",
+        "Valid unexpired QrToken; all non-GPS pipeline checks pass"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with tokenId and coordinates ~450 m from room",
+        "Assert HTTP status 200 outcome Success (would fail with default 100 m radius)",
+        "Assert attendance Present",
+        "Repeat with coordinates ~520 m from room and assert HTTP 400 OutOfRadius",
+        "Assert distance_meters on failed attempt > 500"
+      ],
+      "expected": "BR-02 honors maximum instructor-adjustable gpsRadiusMeters 500 m; distance ≤ configured radius passes; just outside maximum fails",
       "edgeCase": true
     }
   ]
