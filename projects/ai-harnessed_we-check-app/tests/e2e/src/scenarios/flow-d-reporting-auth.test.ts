@@ -8,9 +8,11 @@ import { buildCsv, multipartPayload } from "../support/multipart.js";
 /**
  * Flow D — Reporting authorization (testing-plan §6)
  * Traceability: AC-01 AC-02 AC-03 AC-12 AC-13 AC-14
- * FR-01 FR-02 FR-03 FR-12 FR-13 FR-14 BR-06 BR-08 BR-09 NFR-11 NFR-15
- * Cases: TC-AC-01-004 TC-AC-01-005 TC-AC-03-006 TC-AC-12-003 TC-AC-13-002
- * TC-AC-14-003 TC-AC-14-005
+ * FR-01 FR-02 FR-03 FR-04 FR-06 FR-12 FR-13 FR-14 BR-06 BR-08 BR-09 NFR-10 NFR-11 NFR-15
+ * Cases: TC-AC-01-004 TC-AC-01-005 TC-AC-03-004 TC-AC-03-006 TC-AC-12-003
+ * TC-AC-13-002 TC-AC-14-003 TC-AC-14-005 TC-NFR-10-009 TC-NFR-11-004
+ * TC-NFR-11-005 TC-NFR-11-006 TC-NFR-11-007 TC-NFR-11-008 TC-NFR-11-012
+ * TC-NFR-11-013 TC-NFR-11-014
  */
 describe("Flow D — reporting authorization (AC-01, AC-02, AC-03, AC-12–AC-14)", () => {
   before(async () => {
@@ -96,7 +98,21 @@ describe("Flow D — reporting authorization (AC-01, AC-02, AC-03, AC-12–AC-14
     assert.equal(login.json<{ errorCode: string }>().errorCode, ErrorCode.AccountDeactivated);
   });
 
-  it("instructor denied unassigned roster with 403 (TC-AC-03-006, BR-08, FR-03)", async () => {
+  it("unauthenticated POST /roster/import returns 401 (TC-NFR-10-009, FR-03)", async () => {
+    await ctx.resetDb(ctx.seedReferenceData.bind(ctx));
+
+    const response = await ctx.app.inject({
+      method: "POST",
+      url: "/api/v1/roster/import",
+    });
+    assert.equal(response.statusCode, 401);
+    assert.equal(
+      response.json<{ errorCode: string }>().errorCode,
+      ErrorCode.Unauthenticated,
+    );
+  });
+
+  it("instructor denied unassigned roster with 403 (TC-AC-03-006, TC-NFR-11-006, BR-08, FR-03, AC-03)", async () => {
     await ctx.resetDb(ctx.seedReferenceData.bind(ctx));
     const admin = await ctx.seedAdmin();
     const instructor = await ctx.seedInstructor(true);
@@ -121,7 +137,7 @@ describe("Flow D — reporting authorization (AC-01, AC-02, AC-03, AC-12–AC-14
     assert.equal(allowed.statusCode, 200);
   });
 
-  it("instructor denied CSV export; admin export audit-logged (TC-AC-13-002, BR-09, FR-13)", async () => {
+  it("instructor denied CSV export; admin export audit-logged (TC-AC-13-002, TC-NFR-11-005, TC-NFR-11-008, TC-NFR-11-011, AC-13, BR-09, FR-13)", async () => {
     await ctx.resetDb(ctx.seedReferenceData.bind(ctx));
     const admin = await ctx.seedAdmin();
     const instructor = await ctx.seedInstructor();
@@ -138,7 +154,8 @@ describe("Flow D — reporting authorization (AC-01, AC-02, AC-03, AC-12–AC-14
       },
     });
     assert.equal(denied.statusCode, 403);
-    const deniedBody = denied.json<{ message: string }>();
+    const deniedBody = denied.json<{ errorCode: string; message: string }>();
+    assert.equal(deniedBody.errorCode, ErrorCode.ExportNotAllowed);
     assert.match(deniedBody.message, /phòng đào tạo/i);
 
     const securityBefore = await ctx.db.query(
@@ -184,7 +201,7 @@ describe("Flow D — reporting authorization (AC-01, AC-02, AC-03, AC-12–AC-14
     assert.ok((exportAudit.rowCount ?? 0) >= 1);
   });
 
-  it("student denied session roster and peer PATCH (TC-AC-14-003, TC-AC-14-005, NFR-11)", async () => {
+  it("student denied session roster and peer PATCH (TC-AC-14-003, TC-AC-14-005, TC-NFR-11-013, AC-14, FR-14)", async () => {
     await ctx.resetDb(ctx.seedReferenceData.bind(ctx));
     const instructor = await ctx.seedInstructor();
     const studentA = await ctx.seedStudent("SV-PEER-A", "peer-a@example.edu.vn");
@@ -264,7 +281,7 @@ describe("Flow D — reporting authorization (AC-01, AC-02, AC-03, AC-12–AC-14
     assert.equal(errorRows, 1);
   });
 
-  it("instructor report denied for unassigned class (TC-AC-12-003, BR-08)", async () => {
+  it("instructor report denied for unassigned class (TC-AC-12-003, TC-NFR-11-004, TC-NFR-11-007, TC-NFR-11-014, AC-12, BR-08, FR-12)", async () => {
     await ctx.resetDb(ctx.seedReferenceData.bind(ctx));
     const instructor = await ctx.seedInstructor(true);
 
@@ -274,5 +291,44 @@ describe("Flow D — reporting authorization (AC-01, AC-02, AC-03, AC-12–AC-14
       headers: { cookie: instructor.cookie },
     });
     assert.equal(denied.statusCode, 403);
+  });
+
+  it("student denied session management and qr:display (TC-NFR-11-012, FR-04, FR-06)", async () => {
+    await ctx.resetDb(ctx.seedReferenceData.bind(ctx));
+    const instructor = await ctx.seedInstructor();
+    const student = await ctx.seedStudent("SV-SESS-RBAC", "sess-rbac@example.edu.vn");
+    const sessionId = await ctx.createDraftSession(instructor);
+    await ctx.openSession(sessionId, instructor);
+
+    const createDenied = await ctx.app.inject({
+      method: "POST",
+      url: "/api/v1/sessions",
+      headers: { cookie: student.cookie },
+      payload: {
+        classId: CLASS_HESD_01,
+        subjectId: SUBJECT_SWE_101,
+        title: "Student Session",
+        roomName: "Phòng A201",
+        scheduledStart: ctx.futureStart(),
+      },
+    });
+    assert.equal(createDenied.statusCode, 403);
+    assert.equal(createDenied.json<{ errorCode: string }>().errorCode, ErrorCode.Forbidden);
+
+    const openDenied = await ctx.app.inject({
+      method: "POST",
+      url: `/api/v1/sessions/${sessionId}/open`,
+      headers: { cookie: student.cookie },
+    });
+    assert.equal(openDenied.statusCode, 403);
+    assert.equal(openDenied.json<{ errorCode: string }>().errorCode, ErrorCode.Forbidden);
+
+    const qrDenied = await ctx.app.inject({
+      method: "GET",
+      url: `/api/v1/sessions/${sessionId}/qr/current`,
+      headers: { cookie: student.cookie },
+    });
+    assert.equal(qrDenied.statusCode, 403);
+    assert.equal(qrDenied.json<{ errorCode: string }>().errorCode, ErrorCode.Forbidden);
   });
 });

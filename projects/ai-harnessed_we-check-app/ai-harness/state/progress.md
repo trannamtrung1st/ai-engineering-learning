@@ -256,3 +256,9 @@ Append-only log of harness slice completions.
 - 2026-06-29T19:39:28Z | docker-compose-db | passed
 - 2026-06-29T19:41:46Z | domain-package | aih:check pass — shared domain enums/state machines/Haversine/validation IDs; BR-01/02/03/04/10 traceability in packages/domain unit tests + apps/api/domain-traceability.test.ts; 147 integration + 25 e2e pass
 - 2026-06-29T19:45:49Z | domain-package | passed
+- 2026-06-29T19:48:27Z | api-foundation | aih:check pass — NFR-10/NFR-11 e2e-layer traceability (TC-NFR-10-009, TC-NFR-11-004–014) covered in foundation.integration.test.ts + flow-d-reporting-auth.test.ts; lint/typecheck/build + 147 integration + 25 e2e + unit pass
+- 2026-06-29T19:53:52Z | api-foundation | review_failed
+- 2026-06-29T19:59:40Z | api-foundation | aih:check pass — prior gate failures resolved: e2e TC-NFR-10-009/TC-NFR-11-004–014 traceability in flow-d-reporting-auth.test.ts + foundation.integration.test.ts; ExportNotAllowed envelope on instructor export; 147 integration + 26 e2e + unit pass
+- 2026-06-29T20:03:28Z | api-foundation | review_failed
+- 2026-06-29T20:10:00Z | api-foundation | aih:check pass — TC-NFR-11-012 student session-management RBAC denial (POST /sessions, /open, /qr/current) in foundation.integration.test.ts + flow-d-reporting-auth.test.ts; 148 integration + 27 e2e + unit pass
+- 2026-06-29T20:14:05Z | api-foundation | passed

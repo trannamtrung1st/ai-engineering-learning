@@ -178,3 +178,5 @@ Verification failures and remediation notes for harness agents.
 - [NFR-18] Docs changed — test cases need review (index current=false; fingerprint=sha256:20263a0511e70f72e04b576ee98a37e2b2abfe28c0133ecefa43a1d87166aaa4)
 - [NFR-19] Docs changed — test cases need review (index current=false; fingerprint=sha256:20263a0511e70f72e04b576ee98a37e2b2abfe28c0133ecefa43a1d87166aaa4)
 - [NFR-20] Docs changed — test cases need review (index current=false; fingerprint=sha256:20263a0511e70f72e04b576ee98a37e2b2abfe28c0133ecefa43a1d87166aaa4)
+- [api-foundation] AI review failed — see 20260629T194550Z-review.json
+- [api-foundation] AI review failed — see 20260629T195352Z-review.json
