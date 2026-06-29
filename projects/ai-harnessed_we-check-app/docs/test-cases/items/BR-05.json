@@ -1,8 +1,8 @@
 {
   "productItemId": "BR-05",
   "version": 1,
-  "docFingerprint": "sha256:4deda16c175af0ca34aadf938abcd5f11203e186585e68a48a77093b8e87aac5",
-  "generatedAt": "2026-06-29T12:00:00Z",
+  "docFingerprint": "sha256:7fa6e5f0fa1fb178b99256355a681409f9ca3b3a224ea6b785c745d780059c2e",
+  "generatedAt": "2026-06-29T18:24:20Z",
   "cases": [
     {
       "id": "TC-BR-05-001",
@@ -172,7 +172,7 @@
         "Assert HTTP status 403 Forbidden",
         "Assert response errorCode Forbidden",
         "Assert message Bạn không có quyền thực hiện thao tác này per roles-permissions §2.5",
-        "GET /api/v1/policy/absence-threshold using Instructor session and assert 403 or read denied per product policy",
+        "GET /api/v1/policy/absence-threshold using Instructor session and assert HTTP 403 Forbidden per API design §9.3 (policy:write required for GET and PUT)",
         "Verify policy value unchanged in database (still 20)"
       ],
       "expected": "Only TrainingOfficeAdmin holds policy:write; instructor threshold configuration denied per RBAC matrix for BR-05 policy inputs",
@@ -333,18 +333,19 @@
       "title": "Admin configures absence threshold via AttendancePolicyForm at /admin/policy",
       "preconditions": [
         "Authenticated TrainingOfficeAdmin on desktop viewport",
-        "Should-capability UI enabled; AttendancePolicyForm interactive per page-list §4.8",
-        "Default threshold 20% displayed per BR-05"
+        "Should-capability UI enabled; AttendancePolicyForm interactive per page-list §5.7",
+        "Default Ngưỡng vắng (%) 20 and Gửi cảnh báo tự động toggle off displayed per forms §4.9 and component doc §7.3"
       ],
       "steps": [
         "Navigate to /admin/policy",
-        "Verify form displays current absence threshold default 20% and auto-warning toggle",
-        "Change threshold input to 25 and click Lưu",
+        "Verify Ngưỡng vắng (%) field displays default 20 and Gửi cảnh báo tự động toggle visible",
+        "Verify helper text *Sinh viên vượt ngưỡng sẽ nhận cảnh báo cùng giảng viên phụ trách* per forms §4.9",
+        "Change threshold input to 25 and click Lưu chính sách",
         "Assert success toast confirms policy saved",
         "Reload page and verify threshold displays 25%",
         "Restore threshold to 20% for test isolation"
       ],
-      "expected": "BR-05 policy threshold configurable by admin via UI; persisted value drives absence warning evaluation",
+      "expected": "BR-05 policy threshold configurable by admin via AttendancePolicyForm; persisted value drives absence warning evaluation per WF-06 §7.2 step 3",
       "edgeCase": false
     },
     {
@@ -402,21 +403,21 @@
       "technique": "module-integration",
       "priority": "P1",
       "traceability": ["BR-05", "FR-16"],
-      "title": "Custom admin threshold from PolicySetting applied during absence rate evaluation",
+      "title": "Custom admin threshold from PolicySetting applied during absence rate evaluation after session close",
       "preconditions": [
-        "Real PostgreSQL with Student O: 2 Absent of 9 completed Closed sessions (22.2% rate)",
-        "PolicySetting absence_threshold_percent updated to 25 via PolicyService.setAbsenceThreshold",
-        "Tenth session just closed with Student O Present (10 total completed, 2 Absent = 20%)"
+        "Real PostgreSQL with Student O: 2 Absent of 9 completed Closed sessions (22.2% rate before tenth close)",
+        "PolicySetting absence_threshold_percent = 25 seeded via PUT /api/v1/policy/absence-threshold",
+        "Tenth session just closed with Student O Present (10 completed sessions, 2 Absent = 20% rate)"
       ],
       "steps": [
         "Assert policy_settings row absence_threshold_percent = 25",
         "Invoke NotificationService.evaluateAbsenceThresholds for closed session",
-        "Query notifications for Student O and assert no AbsenceThresholdWarning (20% < 25% threshold)",
-        "Update policy to thresholdPercent 15 via PolicyService",
+        "Query notifications for Student O and assert no AbsenceThresholdWarning (20% not greater than 25% threshold)",
+        "PUT policy thresholdPercent to 15 via PolicyService or API",
         "Re-invoke evaluateAbsenceThresholds for same session context",
         "Assert AbsenceThresholdWarning notification created because 20% > 15%"
       ],
-      "expected": "BR-05 evaluation uses admin-configured policy threshold from PolicySetting, not hardcoded 20%",
+      "expected": "BR-05 evaluation uses admin-configured policy threshold from PolicySetting, not hardcoded 20%; notification fires only when rate exceeds configured threshold",
       "edgeCase": false
     },
     {
@@ -487,6 +488,30 @@
         "Assert response contains no items array or notification payload data"
       ],
       "expected": "Notification inbox requires authentication; unauthenticated callers denied with no absence warning data leaked",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-05-021",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "pagination",
+      "priority": "P1",
+      "traceability": ["BR-05", "FR-16"],
+      "title": "GET /notifications cursor pagination returns bounded pages of AbsenceThresholdWarning items",
+      "preconditions": [
+        "Student P with 55 AbsenceThresholdWarning notifications seeded after repeated threshold breaches in subject",
+        "Authenticated Student P session with notification:read",
+        "API default limit=50, max limit=200 per API design §1"
+      ],
+      "steps": [
+        "GET /api/v1/notifications?limit=20 using Student P session",
+        "Assert HTTP 200; items.length === 20; nextCursor is non-null",
+        "GET /api/v1/notifications?limit=20&cursor={nextCursor} and assert second page returns remaining items",
+        "Assert no duplicate notification ids across pages",
+        "Assert total items across pages equals 55",
+        "Assert each item on first page has type AbsenceThresholdWarning with payload fields subjectCode, absenceRate, threshold, sessionCount, unexcusedAbsenceCount per domain model §4.13"
+      ],
+      "expected": "BR-05 in-app warnings paginate correctly via cursor-based GET /notifications per API design §1 and §9.1",
       "edgeCase": false
     }
   ]
