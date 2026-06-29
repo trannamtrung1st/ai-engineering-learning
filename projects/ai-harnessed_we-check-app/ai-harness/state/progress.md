@@ -262,3 +262,5 @@ Append-only log of harness slice completions.
 - 2026-06-29T20:03:28Z | api-foundation | review_failed
 - 2026-06-29T20:10:00Z | api-foundation | aih:check pass — TC-NFR-11-012 student session-management RBAC denial (POST /sessions, /open, /qr/current) in foundation.integration.test.ts + flow-d-reporting-auth.test.ts; 148 integration + 27 e2e + unit pass
 - 2026-06-29T20:14:05Z | api-foundation | passed
+- 2026-06-29T20:16:00Z | module-identity-auth | aih:check pass — bcrypt provisioning, login/logout/me, 8h sliding session expiry, deactivation revokes sessions + audit, admin session-inactivity policy; 13 integration + 11 unit tests; traceability for AC-01 AC-02 FR-01 FR-02 BR-06 NFR-14 NFR-16
+- 2026-06-29T20:20:58Z | module-identity-auth | passed
