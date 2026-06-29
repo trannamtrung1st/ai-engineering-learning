@@ -1,8 +1,8 @@
 {
   "productItemId": "NFR-19",
   "version": 1,
-  "docFingerprint": "sha256:ed424942563a5e9625e83c96c0c61499539e2f54ef867814277995eab1e690cb",
-  "generatedAt": "2026-06-29T21:30:00.000Z",
+  "docFingerprint": "sha256:20263a0511e70f72e04b576ee98a37e2b2abfe28c0133ecefa43a1d87166aaa4",
+  "generatedAt": "2026-06-29T19:15:36.000Z",
   "cases": [
     {
       "id": "TC-NFR-19-001",
@@ -164,7 +164,7 @@
         "Verify CheckInFlow enters camera_denied state when getUserMedia denied",
         "Verify PermissionGuideModal opens with type camera and platform ios",
         "Assert modal title and body copy entirely in Vietnamese (vi-VN)",
-        "Assert numbered list ol contains iOS-specific steps (Settings → Safari → Camera) per accessibility-basics §12",
+        "Assert numbered list ol contains iOS-specific steps (Settings → Safari → Camera) with platform screenshots per accessibility-basics §12",
         "Verify Đóng button closes modal and focus returns to scanner per §10 focus trap rules"
       ],
       "expected": "NFR-19 iOS camera denial: clear Vietnamese platform-specific recovery instructions in PermissionGuideModal per 07-non-functional-risk §2.4 verification method",
@@ -211,12 +211,12 @@
       "steps": [
         "Navigate to /check-in?token=:tokenId&session=:sessionId with geolocation permission denied",
         "Verify GpsCaptureStep enters permission-denied substate per ui-states §4.2",
-        "Verify CheckInOutcomePanel GpsDisabled danger variant displays message Vui lòng bật GPS và cấp quyền định vị để điểm danh",
-        "Tap CTA Hướng dẫn cấp quyền and verify PermissionGuideModal type gps opens",
+        "Verify CheckInOutcomePanel GpsDisabled outcome moment per ui-states §4.3: LocateOff icon, --color-danger-50 wash, headline, message Vui lòng bật GPS và cấp quyền định vị để điểm danh",
+        "Tap primary CTA Hướng dẫn cấp quyền and verify PermissionGuideModal type gps opens",
         "Assert no POST /check-in API call occurred while permission denied per validation-rules §5.1 client guard",
         "Verify role alert on blocking error per accessibility-basics §6"
       ],
-      "expected": "NFR-19 GPS denial UX: GpsDisabled panel with actionable CTA opening platform-specific help modal; no premature API submit per AC-08c and user-flows §3",
+      "expected": "NFR-19 GPS denial UX: distinct GpsDisabled outcome moment (not generic alert) with actionable CTA opening platform-specific help modal; no premature API submit per AC-08c, ui-states §4.3, and user-flows §3",
       "edgeCase": false
     },
     {
@@ -283,7 +283,7 @@
       "steps": [
         "Navigate to /check-in?token=:tokenId&session=:sessionId on mobile viewport",
         "Verify LocationConsentBanner visible before geolocation API invoked",
-        "Assert banner copy in Vietnamese explains one-time location use and GPS not stored after success per ui-ux-foundation §8",
+        "Assert banner copy matches ui-ux-foundation §8 GPS consent block: We Check sử dụng vị trí thiết bị một lần… Tọa độ GPS không được lưu sau khi điểm danh thành công",
         "Accept consent and verify flow advances to scanning or gps_capture",
         "On return visit verify banner not shown again unless consent cleared"
       ],
@@ -351,11 +351,11 @@
       "preconditions": [
         "Authenticated Student on /check-in?token=:tokenId&session=:sessionId mobile viewport",
         "Geolocation permission granted but mock returns no fix within 15 s timeout per AC-08c",
-        "GpsCaptureStep acquiring-fix substate active per ui-states §4.2"
+        "GpsCaptureStep acquiring substate active per ui-states §4.2 (permission granted, fix pending)"
       ],
       "steps": [
-        "Navigate to gps_capture step with geolocation mock that never resolves within 15 s",
-        "Verify acquiring-fix spinner displays Đang yêu cầu quyền định vị… or equivalent status text",
+        "Navigate to gps_capture step with geolocation permission granted but mock that never resolves within 15 s",
+        "Verify acquiring substate spinner displays Đang xác minh vị trí… per ui-states §4.2",
         "Wait 15 seconds and verify transition to GpsDisabled outcome or permission-denied substate",
         "Assert no POST /check-in network request fired before timeout boundary",
         "Verify GpsDisabled message and Hướng dẫn cấp quyền CTA displayed",
@@ -475,7 +475,7 @@
       "steps": [
         "Navigate to /check-in scanning step on mobile viewport",
         "Verify camera privacy notice displayed before getUserMedia invoked",
-        "Assert copy in Vietnamese explains camera used only for QR scan and images not uploaded per ui-ux-foundation §8",
+        "Assert copy matches ui-ux-foundation §8 camera consent block: Camera chỉ dùng để quét mã QR điểm danh. Hình ảnh không được ghi lại hoặc tải lên máy chủ",
         "Proceed past consent and verify camera permission prompt appears",
         "Verify denial path opens PermissionGuideModal per NFR-19 camera flow"
       ],
