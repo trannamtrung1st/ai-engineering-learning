@@ -1,8 +1,8 @@
 {
   "productItemId": "BR-07",
   "version": 1,
-  "docFingerprint": "sha256:4deda16c175af0ca34aadf938abcd5f11203e186585e68a48a77093b8e87aac5",
-  "generatedAt": "2026-06-29T22:30:00Z",
+  "docFingerprint": "sha256:7fa6e5f0fa1fb178b99256355a681409f9ca3b3a224ea6b785c745d780059c2e",
+  "generatedAt": "2026-06-29T18:27:25Z",
   "cases": [
     {
       "id": "TC-BR-07-001",
@@ -468,6 +468,26 @@
       ],
       "expected": "BR-07 failure prevents downstream QR issuance side effects; no tokens created while session remains Draft",
       "edgeCase": false
+    },
+    {
+      "id": "TC-BR-07-023",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["BR-07"],
+      "title": "SessionService.open rejects Draft session with non-finite room GPS coordinates",
+      "preconditions": [
+        "Draft session row exists with room_latitude NaN and room_longitude 106.660172 (or latitude finite and longitude Infinity)",
+        "SessionService.open invoked under owning Instructor context with hasValidRoomGps guard active"
+      ],
+      "steps": [
+        "Invoke SessionService.open(sessionId) for session with non-finite coordinate values",
+        "Capture RoomGpsRequired domain exception",
+        "Query sessions table and assert status remains Draft with opened_at null"
+      ],
+      "expected": "BR-07 requires finite values within Earth bounds per validation-rules §5.2 step 4; non-finite coordinates fail hasValidRoomGps and block Draft to Active transition",
+      "edgeCase": true
     }
   ]
 }
