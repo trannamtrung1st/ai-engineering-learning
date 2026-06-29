@@ -691,7 +691,7 @@
     },
     {
       "id": "web-instructor-session-monitor",
-      "passes": false,
+      "passes": true,
       "priority": 26,
       "phase": 2,
       "agent": "frontend",
@@ -710,6 +710,9 @@
       ],
       "description": "Live session monitor dashboard with 5-second poll, present/absent counts, roster sort (Should capability).",
       "testRequirements": {
+        "unit": [
+          "apps/web/src/lib/session-monitor-roster.test.ts"
+        ],
         "component": [
           "apps/web/src/components/instructor/session-monitor-dashboard.test.tsx"
         ],

@@ -13,7 +13,7 @@ import { ReportsPage } from "@/app/reports/page";
 import { CreateSessionPage } from "@/app/sessions/create-session-page";
 import { QrPresentPage } from "@/app/sessions/[sessionId]/qr-present/page";
 import { SessionDetailPage } from "@/app/sessions/session-detail-page";
-import { SessionMonitorPage } from "@/app/sessions/session-monitor-page";
+import { SessionMonitorPage } from "@/app/sessions/[sessionId]/monitor/page";
 import { SessionsListPage } from "@/app/sessions/page";
 import { RequireAuth } from "@/components/auth/require-auth";
 import { AdminLayout } from "@/components/layout/admin-layout";
@@ -102,7 +102,7 @@ const router = createBrowserRouter([
             children: [
               { path: "sessions", element: <SessionsListPage /> },
               { path: "sessions/new", element: <CreateSessionPage /> },
-              { path: "sessions/:id/monitor", element: <SessionMonitorPage /> },
+              { path: "sessions/:sessionId/monitor", element: <SessionMonitorPage /> },
               { path: "sessions/:id", element: <SessionDetailPage /> },
               { path: "reports", element: <ReportsPage /> },
             ],

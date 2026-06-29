@@ -157,7 +157,10 @@ export function SessionDetailPage() {
               Buổi học đã kết thúc. Dữ liệu điểm danh không còn cập nhật.
             </Alert>
           ) : null}
-          <SessionMonitorDashboard sessionId={id ?? undefined} />
+          <SessionMonitorDashboard
+            sessionId={id ?? undefined}
+            pollingEnabled={session.status === SessionStatus.Active}
+          />
         </div>
       ) : null}
 
