@@ -1733,27 +1733,32 @@ refresh_preview_web_after_build() {
   clean_web_next_cache
 }
 
-# Build all workspaces except web while preview dev is serving (avoids .next corruption).
+# Build library packages while preview dev serves api/web (avoids .next and dist churn).
 run_build_for_checks() {
-  local ws
-  local pkg
-  local -a workspaces=(
-    "@we-event/api:apps/api"
-    "@we-event/domain:packages/domain"
-    "@we-event/config:packages/config"
-    "@we-event/web:apps/web"
-  )
+  local rel pkg pkg_json
+  local -a rel_paths=(packages/domain packages/config apps/api apps/web)
 
   if preview_stack_is_running; then
-    echo "Preview stack running — skipping @we-event/web build to preserve dev .next cache"
-    for ws in "${workspaces[@]}"; do
-      [[ "${ws##*:}" == "apps/web" ]] && continue
-      pkg="${ws%%:*}"
-      if [[ -f "$REPO_ROOT/${ws##*:}/package.json" ]] && jq -e --arg s "build" '.scripts[$s] // empty' "$REPO_ROOT/${ws##*:}/package.json" >/dev/null 2>&1; then
+    echo "Preview stack running — skipping apps/web and apps/api build to preserve dev runtime"
+    for rel in "${rel_paths[@]}"; do
+      [[ "$rel" == apps/web || "$rel" == apps/api ]] && continue
+      pkg_json="$REPO_ROOT/$rel/package.json"
+      [[ -f "$pkg_json" ]] || continue
+      pkg="$(jq -r '.name // empty' "$pkg_json")"
+      [[ -n "$pkg" ]] || continue
+      if jq -e --arg s "build" '.scripts[$s]' "$pkg_json" >/dev/null 2>&1; then
         npm run build --workspace "$pkg" || return 1
-        if [[ "$pkg" == "@we-event/api" ]]; then
-          nudge_preview_api_restart
-        fi
+      fi
+    done
+    for pkg_json in "$REPO_ROOT"/packages/*/package.json; do
+      [[ -f "$pkg_json" ]] || continue
+      rel="${pkg_json#$REPO_ROOT/}"
+      rel="${rel%/package.json}"
+      [[ "$rel" == packages/domain || "$rel" == packages/config ]] && continue
+      pkg="$(jq -r '.name // empty' "$pkg_json")"
+      [[ -n "$pkg" ]] || continue
+      if jq -e --arg s "build" '.scripts[$s]' "$pkg_json" >/dev/null 2>&1; then
+        npm run build --workspace "$pkg" || return 1
       fi
     done
     return 0

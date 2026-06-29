@@ -281,7 +281,8 @@ echo "  Stop: npm run aih:preview:down"
 - **Full poll:** set `AIH_VERIFY_STACK=1` before `aih:check` (expects preview stack running).
 - **Slice-scoped web probe:** backend/infra slices use `verify-stack.sh --api-only` (API health only). Frontend and test slices also require web `GET /` HTTP 200.
 - **Scenario probe:** `verify-scenarios.sh` runs independently of web health (API-only participant registration flow).
-- **After build:** when preview is **not** running, full workspace build includes web. When preview **is** running, `run-checks.sh` skips `@we-event/web` build to avoid corrupting dev `.next` (typecheck still covers web).
+- **After build:** when preview is **not** running, full workspace build includes web and api. When preview **is** running, `run-checks.sh` skips `apps/web` and `apps/api` build to preserve dev `.next` and API `dist/` runtime (typecheck still covers both).
+- **Preview seed (optional):** set `AIH_PREVIEW_SEED_ENABLED=1` to export `SEED_ENABLED=true` when the API supervisor starts (product-specific; We Check uses this for preview fixtures).
 
 ### Dev-mode supervisors (auto-restart)
 

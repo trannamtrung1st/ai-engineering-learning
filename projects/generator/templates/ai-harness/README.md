@@ -54,6 +54,7 @@ npm run aih:loop -- 50                     # max 50 iterations
 | `AIH_CHECK_TIMEOUT_MS` | `600000` | Default wall-clock timeout for each computational npm script (10 minutes); kills hung test/build processes |
 | `AIH_CHECK_TIMEOUT_<script>_MS` | — | Per-script override (`:` → `_`, e.g. `AIH_CHECK_TIMEOUT_test_integration_MS=1200000`) |
 | `AIH_CHECK_HEARTBEAT_MS` | `30000` | Progress line interval while a computational check runs (`still running: …`) |
+| `AIH_PREVIEW_SEED_ENABLED` | — | When `1` or `true`, preview API supervisor exports `SEED_ENABLED=true` on start |
 | `AIH_STREAM_AGENT` | `1` | Live stream all harness agent output via stream-json (`0` = legacy buffered text) |
 | `AIH_AGENT_VERBOSE` | `1` | Show `[tool]` start/done lines on stderr during streamed agent runs (`0` to disable) |
 | `AIH_NO_COLOR` | — | Disable ANSI styling in harness output (`1`) |

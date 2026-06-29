@@ -109,4 +109,6 @@ Harness hard-fails: in-memory repos, SQLite, mock page data, lorem ipsum. See `r
 
 `run-checks.sh` enforces `db` and quick stack probes. Full stack poll via `AIH_VERIFY_STACK=1` or `npm run aih:preview:verify`.
 
+**Product customization:** replace `verify-scenarios.sh` with an app-specific live-stack probe when the default participant-registration flow does not apply (We Check uses an auth/login envelope probe).
+
 Dev mode: DB in Docker; API/web as local Node processes per `docs/technical/13-docker-compose-local-runtime.md`. Full preview: all services via Compose `full-preview` profile.

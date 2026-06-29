@@ -25,7 +25,9 @@ log_supervisor() {
 }
 
 run_api() {
-  export SEED_ENABLED=true
+  if [[ "${AIH_PREVIEW_SEED_ENABLED:-}" == "1" || "${AIH_PREVIEW_SEED_ENABLED:-}" == "true" ]]; then
+    export SEED_ENABLED=true
+  fi
   PORT="${AIH_PREVIEW_API_PORT:-3001}" node "$REPO_ROOT/apps/api/dist/index.js"
 }
 
