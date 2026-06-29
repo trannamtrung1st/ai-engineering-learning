@@ -1,8 +1,8 @@
 {
   "productItemId": "NFR-17",
   "version": 1,
-  "docFingerprint": "sha256:ed424942563a5e9625e83c96c0c61499539e2f54ef867814277995eab1e690cb",
-  "generatedAt": "2026-06-29T12:00:00.000Z",
+  "docFingerprint": "sha256:20263a0511e70f72e04b576ee98a37e2b2abfe28c0133ecefa43a1d87166aaa4",
+  "generatedAt": "2026-06-29T20:15:00.000Z",
   "cases": [
     {
       "id": "TC-NFR-17-001",
@@ -22,6 +22,7 @@
         "For each errorCode in authorization catalog (Forbidden, NotEnrolled, SessionNotActive, EditWindowExpired), assert Vietnamese message returned",
         "For each check-in outcome (ExpiredQr, OutOfRadius, DuplicateCheckIn, GpsDisabled, SpoofSuspected, TokenNotFound, TokenAlreadyUsed), assert Vietnamese message per §4.4",
         "For operational codes (RateLimitExceeded, InternalError, ServiceUnavailable), assert Vietnamese message per §4.6",
+        "For bootstrap and preflight codes (SetupAlreadyComplete, SessionMismatch, TokenNotFound), assert Vietnamese message per §2.4 and §4.4",
         "Assert no mapped message equals its English errorCode string or contains only ASCII technical identifiers"
       ],
       "expected": "NFR-17 module boundary: ErrorMapper resolves 100% of catalog errorCodes to Vietnamese user-facing messages; stable English errorCode preserved separately per validation-rules localization rule",
@@ -37,7 +38,7 @@
       "title": "@wecheck/domain message catalog vi-VN keys complete with no missing or English-only entries",
       "preconditions": [
         "Message catalog package @wecheck/domain exported with default locale vi-VN per ui-ux-foundation §3",
-        "Catalog key inventory includes auth, check-in outcomes, session lifecycle, reports, admin, and validation namespaces",
+        "Catalog key inventory includes auth, bootstrap/setup, check-in outcomes, session lifecycle, reports, admin, and validation namespaces",
         "Production quality bar §2 localization dimension requires copy audit against message keys"
       ],
       "steps": [
@@ -292,20 +293,22 @@
       "technique": "browser-journey",
       "priority": "P0",
       "traceability": ["NFR-17", "FR-07", "AC-07"],
-      "title": "Student check-in flow consent, GPS, and success states display Vietnamese copy only",
+      "title": "Student check-in flow preflight, GPS ready state, and success display Vietnamese copy only",
       "preconditions": [
         "Authenticated Student on mobile viewport 375px",
         "Active session with valid token deep link to /check-in",
-        "GPS permission grantable in test browser"
+        "GPS permission grantable in test browser; device simulation enabled in harness per NFR-24"
       ],
       "steps": [
         "Navigate to /check-in?token=:tokenId&session=:sessionId",
-        "Verify LocationConsentBanner and GPS step text use Vietnamese (e.g. Đang yêu cầu quyền định vị per ui-states §4.2)",
+        "Verify validating_token preflight spinner text is Vietnamese and GpsCaptureStep does not mount until preflight 200 per AC-07c and ui-states §4.1",
+        "Verify LocationConsentBanner and GPS substates use Vietnamese (e.g. Đang yêu cầu quyền định vị per ui-states §4.2)",
+        "When gpsState is ready, verify Vị trí đã sẵn sàng with check icon, no Spinner, aria-busy false, and enabled Xác nhận điểm danh submit per AC-08f",
         "Complete successful check-in and verify outcome panel shows Điểm danh thành công with primary CTA Xong",
-        "Verify no English-only labels on scan button, GPS spinner, or success confirmation",
+        "Verify no English-only labels on scan button, GPS states, submit control, or success confirmation",
         "Assert data-testid attributes may use English errorCode values but visible text remains Vietnamese"
       ],
-      "expected": "NFR-17 student check-in UI: primary flow labels, notifications, and success outcome in Vietnamese per FR-07 and ui-states §4",
+      "expected": "NFR-17 student check-in UI: preflight gate, GPS ready/success path labels, and outcome in Vietnamese per FR-07, AC-08f, and ui-states §4",
       "edgeCase": false
     },
     {
@@ -330,7 +333,7 @@
         "Trigger SpoofSuspected and verify danger copy with CTA Liên hệ giảng viên per error-handling §4.4",
         "Trigger SessionNotActive and verify warning copy with CTA Đóng",
         "Trigger NotEnrolled and verify danger copy with CTA Đóng per error-handling §4.2",
-        "Simulate network error and verify danger copy with CTA Thử lại per ui-states §4.3",
+        "Simulate network error and verify danger copy Không có kết nối mạng with CTA Thử lại per ui-states §4.3 and error-handling §7",
         "Confirm each variant icon and heading text is Vietnamese; no raw API errorCode shown to user"
       ],
       "expected": "NFR-17 outcome coverage: all CheckInOutcomePanel variants including Present, NotEnrolled, and network error display Vietnamese messages and CTAs per ui-states §4.3 catalog; distinct UI treatment per outcome",
@@ -356,6 +359,7 @@
         "Click Mở buổi học and verify confirm dialog Xác nhận mở buổi học?",
         "On QR tab with Active session, verify countdown label and fullscreen CTA in Vietnamese",
         "Click Đóng buổi học and verify confirm dialog Kết thúc điểm danh? per ui-states §7.5",
+        "On Draft session, click Hủy buổi học and verify confirm dialog Hủy buổi học này? in Vietnamese per ui-states §7.5",
         "On monitor tab after close, verify banner Buổi học đã kết thúc in Vietnamese",
         "On closed session roster tab, verify edit-locked tooltip Chỉ phòng đào tạo có thể chỉnh sửa sau 24 giờ per ui-states §7.4"
       ],
@@ -436,7 +440,7 @@
       "traceability": ["NFR-17"],
       "title": "Production routes contain no English user-facing strings; technical IDs and data-testid exempt",
       "preconditions": [
-        "Crawl list of all shipped MVP routes per ui-states §14: /login, /check-in, /history, /sessions, /sessions/:id, /sessions/:id/qr-present, /reports, /admin/users, /admin/rosters, /admin/rosters/import, /admin/reports, /admin/export, /forbidden",
+        "Crawl list of all shipped MVP routes per ui-states §14 and page-list §9: /setup, /login, /check-in, /history, /sessions, /sessions/new, /sessions/:id, /sessions/:id/qr-present, /reports, /admin, /admin/users, /admin/users/new, /admin/rosters, /admin/rosters/import, /admin/classes/new, /admin/reports, /admin/export, /forbidden",
         "Authenticated fixtures for Student, Instructor, and TrainingOfficeAdmin roles",
         "English-detection heuristic excluding UUIDs, errorCode data-testid values, and institutional IDs"
       ],
@@ -539,6 +543,73 @@
         "Assert message contains Vietnamese guidance per error-handling §4.4 OutOfRadius row and AC-08b"
       ],
       "expected": "NFR-17 radius rejection path: OutOfRadius API response surfaces Vietnamese user message with stable English errorCode per BR-02 spot-check",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-17-025",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-17", "AC-07", "FR-07"],
+      "title": "GET check-in preflight for not-enrolled student returns 403 NotEnrolled and Vietnamese message",
+      "preconditions": [
+        "Active session with valid unexpired QR token",
+        "Authenticated Student not enrolled in session class-subject",
+        "API server running with vi-VN default locale"
+      ],
+      "steps": [
+        "GET /api/v1/check-in/tokens/:tokenId/preflight using non-enrolled Student session",
+        "Assert HTTP status 403 and errorCode NotEnrolled",
+        "Assert message equals Bạn không thuộc danh sách lớp của buổi học này per AC-07b, AC-07e, and error-handling §4.2",
+        "Assert errorCode field is English NotEnrolled while message is Vietnamese"
+      ],
+      "expected": "NFR-17 preflight enrollment denial: NotEnrolled response surfaces documented Vietnamese message before GPS step per AC-07e and BR acceptance-matrix spot-check",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-17-026",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-17", "AC-17", "FR-17"],
+      "title": "Bootstrap /setup form labels, validation errors, and success redirect use Vietnamese copy",
+      "preconditions": [
+        "Fresh deployment with User.count = 0 and needsSetup true",
+        "Desktop viewport 1024px",
+        "Valid and invalid bootstrap form fixtures prepared"
+      ],
+      "steps": [
+        "Navigate to /setup and verify page heading, field labels (institutional ID, name, email, password), and submit button use Vietnamese copy",
+        "Submit with password shorter than 8 characters and verify field error Mật khẩu phải có ít nhất 8 ký tự per error-handling §4.3",
+        "Submit valid bootstrap form and verify success navigation to /admin hub with Vietnamese hub card labels",
+        "Scan visible text on /setup for English-only user-facing strings (Login, Submit, Setup, Error)",
+        "Assert institutional ID and email input placeholders or hints remain Vietnamese per production-ui-quality-bar §4"
+      ],
+      "expected": "NFR-17 bootstrap UI: /setup first-admin form and validation errors fully localized in Vietnamese per AC-17 and ui-states bootstrap route in page-list §2.0",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-17-027",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["NFR-17", "AC-18", "FR-18"],
+      "title": "Role home hubs display Vietnamese workflow card labels and nav chrome copy",
+      "preconditions": [
+        "Bootstrap complete with TrainingOfficeAdmin, Instructor (report:read), and Student accounts",
+        "Desktop viewport 1280px for admin/instructor; mobile 375px for student hub if applicable"
+      ],
+      "steps": [
+        "Log in as TrainingOfficeAdmin and navigate to /admin; verify RoleHomeHub card titles and descriptions are Vietnamese per AC-18c",
+        "Log in as Instructor and navigate to /sessions; verify hub section shows Tạo buổi học mới and Báo cáo links in Vietnamese per AC-18d",
+        "Log in as Student and verify role home hub workflow cards use Vietnamese labels with no English-only nav text",
+        "Inspect sidebar and bottom nav labels for each role and assert zero English-only user-facing chrome strings",
+        "Assert technical route segments and data-testid values may remain English while visible labels are Vietnamese"
+      ],
+      "expected": "NFR-17 role hub localization: admin, instructor, and student home hubs expose Vietnamese workflow guidance per AC-18, FR-18, and production-ui-quality-bar §3 role home next actions",
       "edgeCase": false
     }
   ]
