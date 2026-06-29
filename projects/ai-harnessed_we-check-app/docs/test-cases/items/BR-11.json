@@ -1,8 +1,8 @@
 {
   "productItemId": "BR-11",
   "version": 1,
-  "docFingerprint": "sha256:4deda16c175af0ca34aadf938abcd5f11203e186585e68a48a77093b8e87aac5",
-  "generatedAt": "2026-06-29T23:45:00Z",
+  "docFingerprint": "sha256:7fa6e5f0fa1fb178b99256355a681409f9ca3b3a224ea6b785c745d780059c2e",
+  "generatedAt": "2026-06-29T12:30:00Z",
   "cases": [
     {
       "id": "TC-BR-11-001",
@@ -118,13 +118,13 @@
         "TestClock within 30-second token validity window"
       ],
       "steps": [
-        "Student B POST /api/v1/check-in with same tokenId consumed in step 2",
-        "Assert HTTP 400 with outcome TokenAlreadyUsed and errorCode TokenAlreadyUsed",
+        "Student B GET /api/v1/check-in/tokens/:tokenId/preflight with same tokenId consumed in step 2",
+        "Assert HTTP 403 with errorCode TokenAlreadyUsed per API design §6.2 preflight table",
         "Verify security log entry for Student B attempt with sessionId, tokenId, studentId",
-        "Assert Student B attendance remains Pending",
+        "Assert Student B attendance remains Pending; GpsCaptureStep never reached per BR-15",
         "Confirm Flow B anti-fraud rejection path per testing-plan §6 Flow B step 4 tags BR-11"
       ],
-      "expected": "Flow B validates BR-11 token-sharing rejection after first successful consumption in anti-fraud e2e flow",
+      "expected": "Flow B validates BR-11 token-sharing rejection at preflight after first successful consumption in anti-fraud e2e flow",
       "edgeCase": false
     },
     {
@@ -279,23 +279,23 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["BR-11", "FR-09", "AC-09"],
-      "title": "Mobile check-in shows token reuse rejection when scanning shared Consumed QR",
+      "traceability": ["BR-11", "BR-15", "FR-09", "AC-09"],
+      "title": "Mobile check-in shows token reuse rejection at preflight when scanning shared Consumed QR",
       "preconditions": [
         "Student B authenticated on mobile viewport 375×812",
         "QrToken already Consumed by Student A within current 30-second window",
-        "Deep link or scanned QR contains consumed tokenId for Active session",
-        "GPS permission granted with in-radius coordinates"
+        "Deep link or scanned QR contains consumed tokenId for Active session"
       ],
       "steps": [
         "Student B opens /check-in?token=:consumedTokenId&session=:sessionId",
-        "Complete GPS capture and submit check-in",
-        "Verify CheckInOutcomePanel displays error-level TokenAlreadyUsed state",
-        "Verify message Mã QR đã được sử dụng per error-handling §4",
+        "Assert validating_token inline spinner during GET /api/v1/check-in/tokens/:consumedTokenId/preflight",
+        "Verify preflight returns 403 with errorCode TokenAlreadyUsed and message Mã QR đã được sử dụng per API design §6.2",
+        "Assert data-testid gps-capture-step is absent; GpsCaptureStep never mounts per BR-15",
+        "Verify error outcome displayed on scan step with TokenAlreadyUsed state",
         "Verify no success confirmation or Present badge shown",
-        "Verify submit control remains disabled or offers guidance to scan fresh QR from projector"
+        "Verify recovery guidance to scan fresh QR from projector"
       ],
-      "expected": "BR-11 anti-proxy token sharing rejection visible in mobile web UI; student directed to obtain new rotating QR",
+      "expected": "BR-11 anti-proxy token sharing rejection visible at preflight on mobile web UI; GPS step unreachable per BR-15; student directed to obtain new rotating QR",
       "edgeCase": true
     },
     {
@@ -390,6 +390,30 @@
         "Assert no Present records created for Student B or Student C"
       ],
       "expected": "BR-11 has no exceptions: each token supports at most one successful consumption; every reuse attempt rejected and logged",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-11-017",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-11", "BR-15"],
+      "title": "GET preflight rejects Consumed token with 403 TokenAlreadyUsed and security log before GPS step",
+      "preconditions": [
+        "Active session with qr_tokens row status Consumed by Student A",
+        "Token still within 30-second validity window (TestClock fixed before expires_at)",
+        "Authenticated enrolled Student B with Pending attendance"
+      ],
+      "steps": [
+        "GET /api/v1/check-in/tokens/:consumedTokenId/preflight as Student B",
+        "Assert HTTP status 403 Forbidden",
+        "Assert Content-Type application/json; charset=utf-8",
+        "Assert response errorCode TokenAlreadyUsed and message Mã QR đã được sử dụng per API design §6.2",
+        "Verify security log entry contains sessionId, tokenId, and submitting Student B id per BR-11 outcome",
+        "Query attendance_records and qr_tokens and assert no writes occurred (read-only preflight per validation-rules §3.6a)"
+      ],
+      "expected": "BR-11 enforced at preflight layer: 403 TokenAlreadyUsed and security log; client must not enter GPS capture per BR-15",
       "edgeCase": true
     }
   ]
