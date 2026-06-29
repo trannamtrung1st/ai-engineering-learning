@@ -590,7 +590,7 @@
     },
     {
       "id": "web-student-history",
-      "passes": false,
+      "passes": true,
       "priority": 23,
       "phase": 2,
       "agent": "frontend",
@@ -607,6 +607,9 @@
       ],
       "description": "Student personal attendance history: paginated list with status badges and empty state.",
       "testRequirements": {
+        "unit": [
+          "apps/web/src/lib/history-format.test.ts"
+        ],
         "component": [
           "apps/web/src/components/student/attendance-history-list.test.tsx"
         ],

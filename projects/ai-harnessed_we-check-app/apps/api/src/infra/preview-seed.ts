@@ -439,6 +439,21 @@ export async function ensurePreviewUserFixtures(db: DbPool): Promise<void> {
   );
 }
 
+/** Upsert closed-session attendance for student history browser gates (AC-14, FR-14). */
+export async function ensurePreviewHistoryFixtures(db: DbPool): Promise<void> {
+  const checkedInAt = new Date(now().getTime() - 2 * 60 * 60 * 1000);
+
+  await db.query(
+    `INSERT INTO attendance_records (id, session_id, student_id, status, checked_in_at)
+     VALUES (gen_random_uuid(), $1, $2, 'Present', $3)
+     ON CONFLICT (session_id, student_id) DO UPDATE SET
+       status = EXCLUDED.status,
+       checked_in_at = EXCLUDED.checked_in_at,
+       updated_at = NOW()`,
+    [PREVIEW_IDS.sessionClosed, PREVIEW_IDS.student, checkedInAt],
+  );
+}
+
 /** Upsert non-enrolled student B for NotEnrolled / TokenAlreadyUsed browser gates. */
 async function ensurePreviewStudentFixtures(db: DbPool): Promise<void> {
   const studentBHash = await hashPassword(PREVIEW_CREDENTIALS.studentB.password);
@@ -533,6 +548,7 @@ export async function runPreviewSeed(db: DbPool): Promise<void> {
       await ensurePreviewDeactivatedUser(db);
       await ensurePreviewDisplayNames(db);
       await ensurePreviewTokenFixtures(db);
+      await ensurePreviewHistoryFixtures(db);
     });
     return;
   }
@@ -650,6 +666,7 @@ export async function runPreviewSeed(db: DbPool): Promise<void> {
   await ensurePreviewTokenFixtures(db);
   await ensurePreviewStudentFixtures(db);
   await ensurePreviewMonitorFixtures(db);
+  await ensurePreviewHistoryFixtures(db);
 
   sessionService.qr.stopAll();
   await markSeedApplied(db);
