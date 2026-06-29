@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-10",
   "version": 1,
-  "docFingerprint": "sha256:0d73282a1cdb989d80f39ac5119b0cf25b1a8cdaecf5bf1c99651680f31cc6b9",
-  "generatedAt": "2026-06-29T18:45:00Z",
+  "docFingerprint": "sha256:f2be054127cda5ab7ddfda342c8e7b3e55526aeddccbbae25889d8502f5dbe96",
+  "generatedAt": "2026-06-29T17:23:26Z",
   "cases": [
     {
       "id": "TC-AC-10-001",
@@ -20,14 +20,15 @@
         "TestClock within attendance window"
       ],
       "steps": [
+        "GET /api/v1/check-in/tokens/:tokenId/preflight using Student session and assert HTTP 200 with outcome Valid and session summary per BR-15",
         "POST /check-in with tokenId, in-radius latitude 10.762700, longitude 106.660200, spoofMetadata { mockLocationDetected: true, platform: \"android\" } using Student session",
         "Assert HTTP status 400",
         "Assert response outcome SpoofSuspected and errorCode SpoofSuspected",
-        "Assert message Không thể xác minh vị trí. Liên hệ giảng viên. per AC-10a and error-handling §4",
+        "Assert message Không thể xác minh vị trí. Liên hệ giảng viên. per AC-10a and error-handling §4.4",
         "Query attendance_records for studentId and sessionId and assert status remains Pending (not Present)",
         "Query check_in_attempts and assert latest attempt outcome SpoofSuspected with spoof_flags containing mockLocationDetected true"
       ],
-      "expected": "AC-10a satisfied: mock-location signal triggers SpoofSuspected; check-in rejected pending instructor review per testing-plan TS-29",
+      "expected": "AC-10a satisfied: preflight passes; mock-location signal triggers SpoofSuspected at POST; check-in rejected pending instructor review per testing-plan TS-29",
       "edgeCase": false
     },
     {
@@ -45,6 +46,7 @@
         "spoofMetadata { mockLocationDetected: false, accuracyMeters: 1.0, platform: \"android\" } representing baseline perfect-accuracy heuristic per FR-10"
       ],
       "steps": [
+        "GET /api/v1/check-in/tokens/:tokenId/preflight using Student session and assert HTTP 200 outcome Valid",
         "POST /check-in with tokenId, in-radius coordinates, and spoofMetadata accuracyMeters below baseline threshold using Student session",
         "Assert HTTP status 400 and outcome SpoofSuspected",
         "Assert attendance status remains Pending",
@@ -135,6 +137,7 @@
       "preconditions": [
         "Authenticated enrolled Student session",
         "Active session with Valid unexpired QrToken",
+        "GET /api/v1/check-in/tokens/:tokenId/preflight returns HTTP 200 outcome Valid",
         "In-radius coordinates with spoofMetadata mockLocationDetected true"
       ],
       "steps": [
@@ -143,7 +146,7 @@
         "Assert Content-Type application/json; charset=utf-8",
         "Assert response body outcome SpoofSuspected and errorCode SpoofSuspected",
         "Assert response body message Không thể xác minh vị trí. Liên hệ giảng viên.",
-        "Assert no attendance field with Present on failure envelope per API design §6.2"
+        "Assert no attendance field with Present on failure envelope per API design §6.3"
       ],
       "expected": "HTTP 400 SpoofSuspected contract per API design §6.3; canonical failure envelope for GPS spoof baseline per FR-10",
       "edgeCase": false
@@ -200,22 +203,25 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["AC-10", "FR-10"],
-      "title": "Mobile check-in displays SpoofSuspected outcome with instructor contact guidance",
+      "traceability": ["AC-10", "FR-10", "BR-15"],
+      "title": "Mobile check-in preflight pass, GPS ready, then SpoofSuspected outcome with instructor contact guidance",
       "preconditions": [
         "Authenticated Student on mobile viewport 375×812",
         "Active session with valid check-in deep link /check-in?token=:tokenId&session=:sessionId",
-        "GPS permission granted; client will report mockLocationDetected true (Android test fixture or stubbed geolocation metadata)"
+        "VITE_ENABLE_DEVICE_SIMULATION=true with gpsSim=delay and mockLocation=1 query params for harness per demo-guides §7"
       ],
       "steps": [
-        "Navigate to /check-in deep link for Active session",
-        "Complete GPS capture step with mock-location signal and tap submit control",
-        "Verify CheckInOutcomePanel displays danger-level SpoofSuspected state per ui-states §3",
+        "Navigate to /check-in?token=:tokenId&session=:sessionId&gpsSim=delay&mockLocation=1",
+        "Assert validating_token inline spinner during GET /api/v1/check-in/tokens/:tokenId/preflight",
+        "Assert data-testid gps-capture-step is absent until preflight returns HTTP 200 outcome Valid",
+        "Wait for GpsCaptureStep ready substate: Vị trí đã sẵn sàng visible without Spinner; aria-busy false; Xác nhận điểm danh enabled per AC-08f",
+        "Tap Xác nhận điểm danh submit control",
+        "Verify CheckInOutcomePanel displays danger-level SpoofSuspected state per ui-states §4.3",
         "Verify message Không thể xác minh vị trí. Vui lòng liên hệ giảng viên. per user-flows §WF-03",
         "Verify primary action Liên hệ giảng viên instructs student to see instructor for manual mark",
         "Verify no success confirmation or Present badge shown"
       ],
-      "expected": "AC-10a surfaced in mobile web UI; student directed to instructor for physical verification per CheckInOutcomePanel traceability",
+      "expected": "AC-10a surfaced in mobile web UI after BR-15 preflight gate and GPS ready state; mock-location spoof flag triggers SpoofSuspected; student directed to instructor for physical verification",
       "edgeCase": false
     },
     {
@@ -256,6 +262,7 @@
         "spoofMetadata mockLocationDetected true (would pass BR-02 if evaluated first)"
       ],
       "steps": [
+        "GET /api/v1/check-in/tokens/:tokenId/preflight using Student session and assert HTTP 200 outcome Valid",
         "POST /check-in with in-radius coordinates and mockLocationDetected true",
         "Assert HTTP 400 outcome SpoofSuspected (not 200 Success)",
         "Verify check-in pipeline short-circuits at step 12 spoof heuristics before step 13 radius per validation-rules §5.1",
@@ -279,8 +286,10 @@
         "Student can submit two sequential attempts within attendance window"
       ],
       "steps": [
+        "GET /api/v1/check-in/tokens/:tokenId/preflight for token T1 and assert HTTP 200 outcome Valid",
         "Student POST /check-in with tokenId T1, in-radius coords, mockLocationDetected true and assert HTTP 400 SpoofSuspected",
         "Query qr_tokens for T1 and assert status remains Valid (not Consumed)",
+        "GET /api/v1/check-in/tokens/:tokenId/preflight for T1 again and assert HTTP 200 outcome Valid",
         "Student POST /check-in with same tokenId T1, same coords, mockLocationDetected false",
         "Assert HTTP 200 outcome Success and attendance Present",
         "Query qr_tokens for T1 and assert status Consumed after successful retry"
@@ -347,6 +356,7 @@
         "Session may remain Active or be Closed within 24 h for edit window"
       ],
       "steps": [
+        "Student GET /api/v1/check-in/tokens/:tokenId/preflight and assert HTTP 200 outcome Valid",
         "Student POST /check-in with spoof metadata and assert SpoofSuspected; attendance Pending",
         "Instructor A GET /sessions/:sessionId/attendance and verify student shows Pending with spoof alert context",
         "Instructor A PATCH /attendance/:recordId { status: Present, note: \"Xác minh trực tiếp tại lớp\" }",
@@ -355,6 +365,77 @@
         "Confirm Flow C manual fallback tags AC-10b and NFR-15 per testing-plan §6"
       ],
       "expected": "End-to-end spoof detection → instructor physical verification override → audit trail satisfies AC-10a through AC-10b in manual fallback flow",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-10-016",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["AC-10", "FR-10", "FR-07", "BR-15"],
+      "title": "Preflight returns 200 for valid enrolled token; spoof heuristics evaluated only at POST not preflight",
+      "preconditions": [
+        "Real PostgreSQL with Active session, enrollment, Valid qr_tokens row",
+        "Authenticated enrolled Student session",
+        "Student will later submit with mockLocationDetected true at POST layer"
+      ],
+      "steps": [
+        "Invoke GET /api/v1/check-in/tokens/:tokenId/preflight with enrolled Student session",
+        "Assert HTTP status 200 with outcome Valid and session summary (classCode, subjectCode, roomName)",
+        "Query attendance_records and qr_tokens and assert no writes occurred (read-only preflight per validation-rules §3.6a)",
+        "Invoke POST /check-in with same tokenId, in-radius coordinates, spoofMetadata mockLocationDetected true",
+        "Assert POST returns HTTP 400 outcome SpoofSuspected while preflight had returned Valid"
+      ],
+      "expected": "BR-15 preflight chain does not evaluate FR-10 spoof signals; SpoofSuspected rejection occurs only at POST pipeline step 12 per validation-rules §5.1",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-10-017",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["AC-10", "FR-10", "FR-07", "BR-15"],
+      "title": "Preflight rejects ExpiredQr, NotEnrolled, SessionMismatch, TokenNotFound before spoof POST path",
+      "preconditions": [
+        "Real PostgreSQL with Active session fixtures",
+        "Expired QrToken, valid token for wrong session query, unknown token UUID, and non-enrolled student session",
+        "Spoof metadata would trigger SpoofSuspected if POST were reachable"
+      ],
+      "steps": [
+        "GET /api/v1/check-in/tokens/:expiredTokenId/preflight as enrolled Student; assert HTTP 403 errorCode ExpiredQr",
+        "GET /api/v1/check-in/tokens/:validTokenId/preflight as non-enrolled Student; assert HTTP 403 errorCode NotEnrolled",
+        "GET /api/v1/check-in/tokens/:validTokenId/preflight?sessionId=:wrongSessionId as enrolled Student; assert HTTP 403 errorCode SessionMismatch",
+        "GET /api/v1/check-in/tokens/:unknownUuid/preflight as enrolled Student; assert HTTP 404 errorCode TokenNotFound",
+        "Verify no check_in_attempts rows with outcome SpoofSuspected created from preflight calls alone",
+        "Query attendance_records and qr_tokens and assert no writes from any preflight call"
+      ],
+      "expected": "Preflight failure outcomes block GPS and spoof submit paths; FR-10 spoof evaluation unreachable when preflight read-only chain fails per validation-rules §3.6a",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-10-018",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["AC-10", "FR-10", "NFR-24"],
+      "title": "gpsSim and mockLocation query params ignored when VITE_ENABLE_DEVICE_SIMULATION=false",
+      "preconditions": [
+        "Web build compiled with VITE_ENABLE_DEVICE_SIMULATION=false (production default)",
+        "Authenticated enrolled Student session",
+        "Active session with valid QrToken; GET /check-in/tokens/:tokenId/preflight returns 200",
+        "Check-in deep link includes gpsSim=delay, gpsLat/gpsLng in-room coordinates, and mockLocation=1"
+      ],
+      "steps": [
+        "Load /check-in?token=:tokenId&session=:sessionId&gpsSim=delay&gpsLat=10.762700&gpsLng=106.660200&mockLocation=1 with simulation flag off",
+        "Verify client does not auto-resolve simulated coordinates or mock-location flag from query params",
+        "Verify browser geolocation API is invoked (or permission prompt shown) instead of simulation layer",
+        "Without granting real GPS, assert check-in cannot proceed to SpoofSuspected outcome solely from mockLocation=1 param",
+        "Grant real geolocation with platform mock-location indicator in device test matrix or POST spoofMetadata directly via API to verify FR-10 server path"
+      ],
+      "expected": "NFR-24 satisfied: production builds ignore gpsSim/mockLocation URL params; spoof detection relies on real device signals or direct API spoofMetadata per demo-guides §7",
       "edgeCase": false
     }
   ]
