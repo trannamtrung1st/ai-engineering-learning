@@ -220,7 +220,7 @@
     },
     {
       "id": "module-session-management",
-      "passes": false,
+      "passes": true,
       "priority": 13,
       "phase": 1,
       "agent": "backend",
@@ -248,6 +248,9 @@
         ],
         "integration": [
           "apps/api/src/modules/session-management/session-management.integration.test.ts"
+        ],
+        "e2e": [
+          "tests/e2e/src/scenarios/session-health.test.ts"
         ],
         "acceptanceTags": [
           "AC-04",
