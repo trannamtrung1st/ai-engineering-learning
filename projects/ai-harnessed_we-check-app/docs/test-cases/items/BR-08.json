@@ -1,8 +1,8 @@
 {
   "productItemId": "BR-08",
   "version": 1,
-  "docFingerprint": "sha256:4deda16c175af0ca34aadf938abcd5f11203e186585e68a48a77093b8e87aac5",
-  "generatedAt": "2026-06-28T18:26:34Z",
+  "docFingerprint": "sha256:7fa6e5f0fa1fb178b99256355a681409f9ca3b3a224ea6b785c745d780059c2e",
+  "generatedAt": "2026-06-29T18:29:45Z",
   "cases": [
     {
       "id": "TC-BR-08-001",
@@ -10,7 +10,11 @@
       "layer": "e2e",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["BR-08", "FR-12", "AC-12"],
+      "traceability": [
+        "BR-08",
+        "FR-12",
+        "AC-12"
+      ],
       "title": "TS-31: Assigned instructor opens class-subject attendance report with roster and summary counts",
       "preconditions": [
         "Instructor A has ClassAssignment for class HESD-01 and subject SWE-101",
@@ -20,7 +24,9 @@
       "steps": [
         "GET /api/v1/reports/summary?classCode=HESD-01&subjectCode=SWE-101&from=2026-06-01&to=2026-06-30 using Instructor A session",
         "Assert HTTP status 200 OK",
-        "Assert response students array contains tabular rows with presentCount, absentCount, and excusedCount",
+        "Assert response classCode HESD-01 and subjectCode SWE-101 match filters",
+        "Assert students array contains tabular rows with institutionalId, displayName, presentCount, absentCount, excusedCount, and attendanceRate per API design §8.2",
+        "Assert sessionsHeld reflects closed sessions in date range",
         "GET /api/v1/reports/session/:sessionId for a Closed session in HESD-01 / SWE-101 and assert per-student status roster returned"
       ],
       "expected": "BR-08 allows report access when instructor is assigned to requested class-subject pair; tabular roster with summary counts returned per testing-plan TS-31 and AC-12a",
@@ -32,18 +38,21 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["BR-08", "FR-12"],
+      "traceability": [
+        "BR-08",
+        "FR-12"
+      ],
       "title": "ReportService enforces ClassAssignment scope at repository boundary with real PostgreSQL",
       "preconditions": [
         "Real PostgreSQL test database with ClassAssignment linking Instructor A to HESD-01 / SWE-101 only",
         "Closed sessions and attendance records exist for HESD-01/SWE-101 and for HESD-02/SWE-102 (unassigned to Instructor A)",
-        "ReportService wired with roster-enrollment ClassAssignment repository per domain model §4.6"
+        "ReportService wired with attendance and roster read models per reporting-export module §2.6"
       ],
       "steps": [
         "Invoke ReportService.getClassSubjectSummary({ classCode: HESD-01, subjectCode: SWE-101, from, to }, instructorAId)",
         "Assert SummaryDto contains students and counts only from assigned class-subject sessions",
         "Invoke ReportService.getClassSubjectSummary({ classCode: HESD-02, subjectCode: SWE-102, from, to }, instructorAId)",
-        "Assert BR-08 scope rejection with no cross-assignment rows in result",
+        "Assert BR-08 scope rejection with 403 ReportAccessDenied or Forbidden and no cross-assignment rows in result",
         "Verify SQL query joins class_assignments on instructorId, classId, and subjectId"
       ],
       "expected": "Module-integration boundary: ReportService returns data only when ClassAssignment matches requested class-subject; unassigned pairs rejected at service/repository layer per BR-08",
@@ -55,7 +64,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["BR-08", "FR-12"],
+      "traceability": [
+        "BR-08",
+        "FR-12"
+      ],
       "title": "GET /reports/summary returns 200 JSON envelope for assigned instructor scope",
       "preconditions": [
         "Authenticated Instructor A assigned to HESD-01 / SWE-101",
@@ -66,6 +78,7 @@
         "Assert HTTP status 200 OK",
         "Assert Content-Type application/json; charset=utf-8",
         "Assert response body contains classCode, subjectCode, dateFrom, dateTo, sessionsHeld, and students array per API design §8.2",
+        "Assert each student object includes presentCount, absentCount, excusedCount, and attendanceRate",
         "Assert response body does not contain errorCode on success"
       ],
       "expected": "HTTP 200 success contract for GET /reports/summary when BR-08 assignment scope passes; summary aggregation DTO returned",
@@ -77,19 +90,25 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["BR-08", "FR-12", "AC-12", "NFR-11"],
+      "traceability": [
+        "BR-08",
+        "FR-12",
+        "AC-12",
+        "NFR-11"
+      ],
       "title": "Unassigned instructor receives 403 ReportAccessDenied on GET /reports/summary with no data",
       "preconditions": [
         "Instructor B authenticated but has no ClassAssignment for class HESD-01 / subject SWE-101",
         "Attendance data exists for HESD-01 / SWE-101",
-        "Instructor B lacks report:read for requested class-subject per roles-permissions §2.3"
+        "Instructor B lacks assignment scope for requested class-subject per BR-08 and roles-permissions §2.3"
       ],
       "steps": [
         "GET /api/v1/reports/summary?classCode=HESD-01&subjectCode=SWE-101&from=2026-06-01&to=2026-06-30 using Instructor B session",
         "Assert HTTP status 403 Forbidden",
         "Assert response errorCode ReportAccessDenied",
         "Assert message Bạn không có quyền xem báo cáo này per roles-permissions §2.5",
-        "Assert response body contains no student roster or summary data"
+        "Assert response body contains no student roster or summary data",
+        "Repeat with GET /api/v1/reports/session/:sessionId for session in unassigned class and assert same 403 ReportAccessDenied denial"
       ],
       "expected": "BR-08 blocks unassigned instructor: access denied with localized permission error; no report data returned per AC-12b",
       "edgeCase": false
@@ -100,7 +119,11 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["BR-08", "FR-12", "NFR-11"],
+      "traceability": [
+        "BR-08",
+        "FR-12",
+        "NFR-11"
+      ],
       "title": "Student denied GET /reports/summary and /reports/session/:sessionId with 403 Forbidden",
       "preconditions": [
         "Authenticated Student session (no report:read per roles-permissions §2.2)",
@@ -111,7 +134,8 @@
         "Assert HTTP status 403 Forbidden and errorCode Forbidden",
         "Assert response contains no attendance roster or peer student data",
         "GET /api/v1/reports/session/:sessionId using Student session cookie",
-        "Assert HTTP status 403 Forbidden with no roster payload"
+        "Assert HTTP status 403 Forbidden with no roster payload",
+        "Verify student retains access only to GET /attendance/me/history per FR-14"
       ],
       "expected": "Students lack report:read; BR-08 scope check combined with role matrix denies all class-subject report endpoints with no data leak",
       "edgeCase": false
@@ -122,18 +146,25 @@
       "layer": "e2e",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["BR-08", "FR-12", "AC-12"],
+      "traceability": [
+        "BR-08",
+        "FR-12",
+        "AC-12",
+        "NFR-07"
+      ],
       "title": "TrainingOfficeAdmin institution-wide report bypasses ClassAssignment scope per BR-08 exception",
       "preconditions": [
         "Authenticated TrainingOfficeAdmin session with report:read institution-wide",
         "Multiple cohorts (HESD-01, HESD-02) with Closed sessions in June 2026",
+        "Sessions outside date filter exist before 2026-06-01 or after 2026-06-30 for boundary contrast",
         "No ClassAssignment rows required for admin user"
       ],
       "steps": [
-        "GET /api/v1/reports/summary?from=2026-06-01&to=2026-06-30 using TrainingOfficeAdmin session without classCode filter",
+        "GET /api/v1/reports/summary?from=2026-06-01&to=2026-06-30 using TrainingOfficeAdmin session without classCode filter (institution-wide scope; classCode optional per validation-rules §3.8)",
         "Assert HTTP status 200 and response includes sessionsHeld and students from multiple cohorts within filter",
+        "Assert sessions with dates outside from/to range are excluded from aggregation counts",
         "GET /api/v1/reports/summary?classCode=HESD-01&subjectCode=SWE-101&from=2026-06-01&to=2026-06-30 and assert cohort drill-down succeeds",
-        "Verify admin is not restricted by ClassAssignment per BR-08 exception clause"
+        "Verify admin is not restricted by ClassAssignment per BR-08 exception clause and AC-12c"
       ],
       "expected": "BR-08 exception: TrainingOfficeAdmin has institution-wide read access without assignment check; AC-12c satisfied",
       "edgeCase": false
@@ -144,19 +175,23 @@
       "layer": "e2e",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["BR-08", "FR-12", "AC-12"],
-      "title": "Flow D: Assigned instructor report 200 versus unassigned instructor 403",
+      "traceability": [
+        "BR-08",
+        "FR-12",
+        "AC-12"
+      ],
+      "title": "Flow D: Assigned instructor report 200 versus unassigned class-subject 403",
       "preconditions": [
-        "Instructor A assigned to HESD-01 / SWE-101; Instructor B unassigned to same pair",
-        "Closed session with attendance in HESD-01 / SWE-101"
+        "Instructor A assigned to HESD-01 / SWE-101 only; HESD-02 / SWE-102 exists but unassigned to Instructor A",
+        "Closed sessions with attendance in both class-subject pairs"
       ],
       "steps": [
         "Instructor A GET /api/v1/reports/summary?classCode=HESD-01&subjectCode=SWE-101&from=2026-06-01&to=2026-06-30 and assert HTTP 200 with roster data",
-        "Instructor B GET /api/v1/reports/summary for same class-subject filters and assert HTTP 403 ReportAccessDenied",
-        "Confirm Instructor B response contains no student rows or summary counts",
+        "Instructor A GET /api/v1/reports/summary?classCode=HESD-02&subjectCode=SWE-102&from=2026-06-01&to=2026-06-30 and assert HTTP 403 ReportAccessDenied per testing-plan §6 Flow D step 2",
+        "Confirm Instructor A unassigned response contains no student rows or summary counts",
         "Verify Flow D steps 1–2 per testing-plan §6 tags BR-08"
       ],
-      "expected": "Flow D reporting authorization: assignment scope gates report access; assigned succeeds, unassigned denied per BR-08",
+      "expected": "Flow D reporting authorization: assignment scope gates report access; assigned class-subject succeeds, unassigned denied per BR-08",
       "edgeCase": false
     },
     {
@@ -165,7 +200,10 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["BR-08", "FR-12"],
+      "traceability": [
+        "BR-08",
+        "FR-12"
+      ],
       "title": "GET /reports/session/:sessionId returns 403 ReportAccessDenied for unassigned instructor",
       "preconditions": [
         "Closed session in HESD-01 / SWE-101 with mixed attendance statuses",
@@ -187,7 +225,10 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["BR-08", "FR-12"],
+      "traceability": [
+        "BR-08",
+        "FR-12"
+      ],
       "title": "ReportService.getSessionRoster rejects unassigned instructor against PostgreSQL session row",
       "preconditions": [
         "Real PostgreSQL with Closed session in class-subject assigned to Instructor A",
@@ -196,8 +237,9 @@
       ],
       "steps": [
         "Invoke ReportService.getSessionRoster(assignedSessionId, instructorAId) and assert ReportDto with student status rows returned",
+        "Assert aggregation counts (present, absent, excused) computed from attendance_records join enrollments",
         "Invoke ReportService.getSessionRoster(unassignedSessionId, instructorAId)",
-        "Assert BR-08 scope rejection exception or empty denial without cross-assignment data",
+        "Assert BR-08 scope rejection with ReportAccessDenied or Forbidden and no cross-assignment data",
         "Verify session classId and subjectId resolved and matched against class_assignments for requesterId"
       ],
       "expected": "Per-session report module boundary enforces ClassAssignment scope at service layer with real DB per domain model invariant matrix",
@@ -209,7 +251,10 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["BR-08", "FR-12"],
+      "traceability": [
+        "BR-08",
+        "FR-12"
+      ],
       "title": "Instructor assigned to class-subject A denied report for same class with unassigned subject",
       "preconditions": [
         "Instructor A assigned only to HESD-01 / SWE-101",
@@ -231,7 +276,11 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["BR-08", "FR-12", "AC-12"],
+      "traceability": [
+        "BR-08",
+        "FR-12",
+        "AC-12"
+      ],
       "title": "Assigned instructor filters /reports and views summary cards with attendance roster table",
       "preconditions": [
         "Authenticated Instructor A on desktop viewport assigned to HESD-01 / SWE-101",
@@ -243,8 +292,8 @@
         "Select class HESD-01 and subject SWE-101 in ReportFilterBar and set date range",
         "Submit filter and wait for report load",
         "Verify ReportSummaryCards display present, absent, and excused counts matching API data",
-        "Verify SessionReportTable shows student rows with status badges (Present, Absent, Excused)",
-        "Click session drill-down to /reports/sessions and verify per-session roster renders"
+        "Verify AttendanceRosterTable or SessionReportTable shows student rows with status badges (Present, Absent, Excused)",
+        "Click session drill-down link to /reports/sessions and verify per-session roster renders"
       ],
       "expected": "BR-08 allows UI report journey for assigned instructor: filter bar, summary metrics, and tabular roster with status columns visible",
       "edgeCase": false
@@ -255,7 +304,11 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["BR-08", "FR-12", "AC-12"],
+      "traceability": [
+        "BR-08",
+        "FR-12",
+        "AC-12"
+      ],
       "title": "Unassigned instructor sees ForbiddenPage when accessing unassigned class-subject report",
       "preconditions": [
         "Authenticated Instructor B not assigned to HESD-01 / SWE-101",
@@ -277,7 +330,11 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["BR-08", "FR-12", "AC-12"],
+      "traceability": [
+        "BR-08",
+        "FR-12",
+        "AC-12"
+      ],
       "title": "TrainingOfficeAdmin views /admin/reports with institution-wide cohorts and date filter",
       "preconditions": [
         "Authenticated TrainingOfficeAdmin on desktop viewport",
@@ -290,9 +347,36 @@
         "Apply filter without restricting to single class (institution-wide view)",
         "Verify SessionReportTable lists sessions from multiple cohorts within date range",
         "Verify ReportSummaryCards reflect cross-cohort aggregate counts",
-        "Narrow filter to one classCode and verify table scopes to selected cohort"
+        "Optionally narrow filter to one classCode and verify table scopes to selected cohort"
       ],
       "expected": "BR-08 admin exception browser journey: institution-wide report UI shows all cohorts within date filter without assignment restriction",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-08-014",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": [
+        "BR-08",
+        "FR-12",
+        "AC-12"
+      ],
+      "title": "GET /reports/session/:sessionId returns 200 per-session roster report envelope for assigned instructor",
+      "preconditions": [
+        "Authenticated Instructor A assigned to Closed session in HESD-01 / SWE-101",
+        "Session has enrolled students with mixed Present, Absent, Excused statuses"
+      ],
+      "steps": [
+        "Send GET /api/v1/reports/session/:sessionId with Instructor A session cookie",
+        "Assert HTTP status 200 OK",
+        "Assert Content-Type application/json; charset=utf-8",
+        "Assert response contains session identifier and per-student rows with institutionalId, displayName, attendance status, and checkedInAt when Present",
+        "Assert summary counts for present, absent, and excused align with row data per API design §8.1",
+        "Assert response body does not contain errorCode on success"
+      ],
+      "expected": "HTTP 200 contract for per-session roster report when BR-08 assignment scope passes; tabular roster returned per API design §8.1",
       "edgeCase": false
     }
   ]
