@@ -96,18 +96,22 @@ export class QrScheduler {
     scheduledStart: Date,
   ): Promise<QrTokenDisplayDto | null> {
     const current = now();
+    const protectedIds = [...this.protectedTokenIds];
+    const params: unknown[] = [sessionId, QrTokenStatus.Valid];
+    let sql = `SELECT id, issued_at, expires_at
+       FROM qr_tokens
+       WHERE session_id = $1 AND status = $2`;
+    if (protectedIds.length > 0) {
+      sql += ` AND NOT (id = ANY($3::uuid[]))`;
+      params.push(protectedIds);
+    }
+    sql += ` ORDER BY issued_at DESC LIMIT 1`;
+
     const result = await this.db.query<{
       id: string;
       issued_at: Date;
       expires_at: Date;
-    }>(
-      `SELECT id, issued_at, expires_at
-       FROM qr_tokens
-       WHERE session_id = $1 AND status = $2
-       ORDER BY issued_at DESC
-       LIMIT 1`,
-      [sessionId, QrTokenStatus.Valid],
-    );
+    }>(sql, params);
 
     const row = result.rows[0];
     if (!row) {

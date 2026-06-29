@@ -33,6 +33,15 @@ import type { PermissionGuideType } from "@/lib/copy/permission-guide";
 
 type CheckInStep = "consent" | "camera_consent" | "scan" | "gps" | "outcome";
 
+/** Minimum time to show GPS requesting copy before preview auto-capture (NFR-17). */
+const GPS_REQUESTING_MIN_DISPLAY_MS = 400;
+
+function waitForGpsRequestingUi(): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, GPS_REQUESTING_MIN_DISPLAY_MS);
+  });
+}
+
 export interface CheckInFlowProps {
   /** Override for tests — skip URL parsing */
   initialTokenId?: string | null;
@@ -184,6 +193,8 @@ export function CheckInFlow({ initialTokenId, previewOutcome }: CheckInFlowProps
 
     setGpsState("requesting");
     setGpsAttempt((attempt) => attempt + 1);
+
+    await waitForGpsRequestingUi();
 
     const geo = await captureGeolocation();
     if (!geo.ok) {

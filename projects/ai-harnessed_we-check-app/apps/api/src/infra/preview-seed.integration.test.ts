@@ -11,10 +11,9 @@ import {
   ensurePreviewTokenFixtures,
   runPreviewSeed,
 } from "./preview-seed.js";
+import { truncateAuthTables } from "../auth/session-store.js";
 import { truncateRosterTables } from "../modules/roster-enrollment/roster-service.js";
 import { truncateCheckInTables } from "../modules/checkin-qr/check-in-service.js";
-import { truncateSessionTables } from "../modules/session-management/session-service.js";
-import { truncateReportingTables } from "../modules/reporting-export/repositories.js";
 import { truncateNotificationTables } from "../modules/notifications/repositories.js";
 import { ApiError } from "../errors/api-error.js";
 import { withIntegrationTestDbReset } from "../infra/integration-test-lock.js";
@@ -39,18 +38,8 @@ describe("preview seed (NFR-17, NFR-06)", () => {
 
   async function resetDb(afterTruncate?: () => Promise<void>): Promise<void> {
     await withIntegrationTestDbReset(db, async () => {
-      await truncateCheckInTables(db);
-      await truncateSessionTables(db);
-      await truncateReportingTables(db);
       await truncateNotificationTables(db);
-      await truncateRosterTables(db);
-      await db.query("DELETE FROM auth_sessions");
-      await db.query("DELETE FROM user_audit_logs");
-      await db.query(
-        "UPDATE policy_settings SET updated_by_id = NULL WHERE updated_by_id IS NOT NULL",
-      );
-      await db.query("DELETE FROM users");
-      await db.query("DELETE FROM policy_settings WHERE key = 'preview_seed_version'");
+      await truncateAuthTables(db);
       if (afterTruncate) await afterTruncate();
     });
   }
@@ -146,12 +135,12 @@ describe("preview seed (NFR-17, NFR-06)", () => {
     assert.equal(reuseAlert.rows[0]?.event_type, "TokenReuseAlert");
 
     await ensurePreviewMonitorFixtures(db);
-    const studentPresent = await db.query<{ status: string }>(
+    const studentAttendance = await db.query<{ status: string }>(
       `SELECT status FROM attendance_records
        WHERE session_id = $1 AND student_id = $2`,
       [PREVIEW_IDS.sessionActive, PREVIEW_IDS.student],
     );
-    assert.equal(studentPresent.rows[0]?.status, "Present");
+    assert.equal(studentAttendance.rows[0]?.status, "Pending");
   });
 
   it("idempotent re-seed restores reference data after roster truncate (AC-07, AC-08)", async () => {
@@ -190,6 +179,20 @@ describe("preview seed (NFR-17, NFR-06)", () => {
     assert.equal(activeSession.rows[0]?.status, SessionStatus.Active);
   });
 
+  it("seeds Vietnamese display names for browser NFR-17 gates (TC-NFR-17-020)", async () => {
+    await resetDb(() => runPreviewSeed(db));
+
+    const names = await db.query<{ email: string; display_name: string }>(
+      `SELECT email, display_name FROM users
+       WHERE email = ANY($1::text[])
+       ORDER BY email`,
+      [Object.values(PREVIEW_CREDENTIALS).map((c) => c.email)],
+    );
+    for (const row of names.rows) {
+      assert.match(row.display_name, /[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ]/i);
+    }
+  });
+
   it("deactivated login returns AccountDeactivated (TC-NFR-17-013)", async () => {
     await resetDb(() => runPreviewSeed(db));
 
@@ -210,5 +213,23 @@ describe("preview seed (NFR-17, NFR-06)", () => {
         return true;
       },
     );
+  });
+
+  it("ensurePreviewUserFixtures restores deactivated user after partial delete (TC-NFR-17-013)", async () => {
+    await resetDb(() => runPreviewSeed(db));
+
+    await db.query("DELETE FROM users WHERE email = $1", [
+      PREVIEW_CREDENTIALS.deactivated.email,
+    ]);
+
+    await runPreviewSeed(db);
+
+    const deactivated = await db.query<{ active: boolean }>(
+      "SELECT active FROM users WHERE email = $1",
+      [PREVIEW_CREDENTIALS.deactivated.email],
+    );
+    assert.equal(deactivated.rows[0]?.active, false);
+
+    await resetDb();
   });
 });

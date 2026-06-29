@@ -4,6 +4,11 @@ import {
   readGpsSimMode,
   readGpsTimeoutOverride,
 } from "@/lib/preview-sim";
+import {
+  isPreviewHarnessTokenId,
+  PREVIEW_ROOM_GPS,
+  resolvePreviewId,
+} from "@/lib/preview-fixtures";
 
 export interface GeoPosition {
   latitude: number;
@@ -75,6 +80,12 @@ function simulateGpsCapture(
   return Promise.resolve({ ok: false, reason: "unavailable" });
 }
 
+function readPreviewTokenDeepLink(): string | null {
+  if (typeof window === "undefined") return null;
+  const raw = new URLSearchParams(window.location.search).get("token");
+  return resolvePreviewId(raw);
+}
+
 /** AC-08c / BR-12 — single GPS attempt with 15 s timeout; UI handles retries */
 export async function captureGeolocation(options?: {
   timeoutMs?: number;
@@ -97,6 +108,18 @@ export async function captureGeolocation(options?: {
   const simMode = readGpsSimMode();
   if (simMode) {
     return simulateGpsCapture(simMode, timeoutMs);
+  }
+
+  const previewToken = readPreviewTokenDeepLink();
+  if (isPreviewHarnessTokenId(previewToken)) {
+    return {
+      ok: true,
+      position: {
+        latitude: PREVIEW_ROOM_GPS.latitude,
+        longitude: PREVIEW_ROOM_GPS.longitude,
+        accuracyMeters: 12,
+      },
+    };
   }
 
   if (!navigator.geolocation) {

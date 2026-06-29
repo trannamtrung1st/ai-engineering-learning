@@ -60,7 +60,7 @@ describe("identity-auth integration (AC-01, AC-02, FR-01, FR-02, BR-06, NFR-14, 
        VALUES ($1, $2, $3, $4, $5, $6, true)`,
       [
         userId,
-        "ADMIN001",
+        "ADMIN999",
         "Admin User",
         `admin-${userId.slice(0, 8)}@example.edu.vn`,
         passwordHash,
@@ -314,7 +314,7 @@ describe("identity-auth integration (AC-01, AC-02, FR-01, FR-02, BR-06, NFR-14, 
       `INSERT INTO users (institutional_id, display_name, email, password_hash, role, active)
        VALUES ($1, $2, $3, $4, $5, true)`,
       [
-        "SV2026001",
+        "SV2026998",
         "Existing",
         "existing@example.edu.vn",
         await hashPassword("Existing8!"),
@@ -327,7 +327,7 @@ describe("identity-auth integration (AC-01, AC-02, FR-01, FR-02, BR-06, NFR-14, 
       url: "/api/v1/users",
       headers: { cookie: adminSession.cookie },
       payload: {
-        institutionalId: "SV2026001",
+        institutionalId: "SV2026998",
         displayName: "Duplicate",
         email: "dup@example.edu.vn",
         password: "DupPass123",
@@ -342,7 +342,7 @@ describe("identity-auth integration (AC-01, AC-02, FR-01, FR-02, BR-06, NFR-14, 
 
     const count = await db.query<{ count: string }>(
       "SELECT COUNT(*)::text AS count FROM users WHERE institutional_id = $1",
-      ["SV2026001"],
+      ["SV2026998"],
     );
     assert.equal(count.rows[0]?.count, "1");
   });

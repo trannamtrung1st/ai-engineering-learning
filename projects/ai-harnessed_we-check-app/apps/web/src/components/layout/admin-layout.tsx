@@ -7,14 +7,14 @@ import {
   Users,
 } from "lucide-react";
 import { useState } from "react";
-import { Outlet } from "react-router-dom";
+import { Outlet, useOutletContext } from "react-router-dom";
 import { UserRole } from "@wecheck/domain";
 import { PageContent } from "@/components/layout/page-content";
 import { Breadcrumb } from "@/components/shared/navigation/breadcrumb";
 import { NavLink } from "@/components/shared/navigation/nav-link";
 import { UserMenu } from "@/components/shared/navigation/user-menu";
 import { IconButton } from "@/components/ui/icon-button";
-import { useAuthUser } from "@/components/auth/require-auth";
+import { type AuthOutletContext } from "@/components/auth/require-auth";
 import { adminNavItems, appCopy } from "@/lib/copy/status-labels";
 import { cn } from "@/lib/cn";
 
@@ -31,7 +31,8 @@ export interface AdminLayoutProps {
 }
 
 export function AdminLayout() {
-  const user = useAuthUser();
+  const authContext = useOutletContext<AuthOutletContext>();
+  const user = authContext.user;
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   return (
@@ -81,7 +82,7 @@ export function AdminLayout() {
         </header>
         <main id="main-content" className="flex-1">
           <PageContent variant="wide">
-            <Outlet />
+            <Outlet context={authContext} />
           </PageContent>
         </main>
       </div>

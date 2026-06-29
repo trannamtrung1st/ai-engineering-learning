@@ -447,7 +447,7 @@
     },
     {
       "id": "web-design-system-shell",
-      "passes": false,
+      "passes": true,
       "priority": 20,
       "phase": 2,
       "agent": "frontend",
@@ -476,7 +476,8 @@
         "component": [
           "apps/web/src/components/layout/app-shell.test.tsx",
           "apps/web/src/components/ui/badge.test.tsx",
-          "apps/web/src/components/domain/check-in/check-in-outcome-panel.test.tsx"
+          "apps/web/src/components/domain/check-in/check-in-outcome-panel.test.tsx",
+          "apps/web/src/app/admin/admin-reports.test.tsx"
         ],
         "acceptanceTags": [
           "NFR-06",

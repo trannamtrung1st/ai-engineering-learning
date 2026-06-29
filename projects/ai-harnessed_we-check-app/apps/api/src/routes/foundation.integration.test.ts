@@ -56,26 +56,29 @@ describe("api foundation integration (FR-02, FR-03, NFR-10, NFR-11, NFR-16)", ()
       await truncateSessionTables(db);
       await truncateReportingTables(db);
       await truncateRosterTables(db);
-    });
-    await db.query(
-      `INSERT INTO classes (id, code, name) VALUES
-       ($1, 'HESD-01', 'HESD Cohort A'),
-       ($2, 'HESD-02', 'HESD Cohort B')`,
-      [CLASS_HESD_01, CLASS_HESD_02],
-    );
-    await db.query(
-      `INSERT INTO subjects (id, code, name) VALUES
-       ($1, 'SWE-101', 'Software Engineering 101'),
-       ($2, 'SWE-102', 'Software Engineering 102')`,
-      [SUBJECT_SWE_101, SUBJECT_SWE_102],
-    );
-    if (instructorUserId) {
       await db.query(
-        `INSERT INTO class_assignments (instructor_id, class_id, subject_id)
-         VALUES ($1, $2, $3)`,
-        [instructorUserId, CLASS_HESD_01, SUBJECT_SWE_101],
+        `INSERT INTO classes (id, code, name) VALUES
+         ($1, 'HESD-01', 'HESD Cohort A'),
+         ($2, 'HESD-02', 'HESD Cohort B')
+         ON CONFLICT (id) DO NOTHING`,
+        [CLASS_HESD_01, CLASS_HESD_02],
       );
-    }
+      await db.query(
+        `INSERT INTO subjects (id, code, name) VALUES
+         ($1, 'SWE-101', 'Software Engineering 101'),
+         ($2, 'SWE-102', 'Software Engineering 102')
+         ON CONFLICT (id) DO NOTHING`,
+        [SUBJECT_SWE_101, SUBJECT_SWE_102],
+      );
+      if (instructorUserId) {
+        await db.query(
+          `INSERT INTO class_assignments (instructor_id, class_id, subject_id)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (instructor_id, class_id, subject_id) DO NOTHING`,
+          [instructorUserId, CLASS_HESD_01, SUBJECT_SWE_101],
+        );
+      }
+    });
   }
 
   async function seedSession(role: UserRole): Promise<{ sessionId: string; userId: string }> {

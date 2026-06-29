@@ -11,6 +11,19 @@ export const PREVIEW_TOKEN_IDS = {
   valid: "40000000-0000-4000-8000-000000000403",
 } as const;
 
+/** Room GPS for preview session — must match apps/api/src/infra/preview-seed.ts */
+export const PREVIEW_ROOM_GPS = {
+  latitude: 10.762622,
+  longitude: 106.660172,
+} as const;
+
+const PREVIEW_HARNESS_TOKEN_IDS = new Set<string>(Object.values(PREVIEW_TOKEN_IDS));
+
+export function isPreviewHarnessTokenId(tokenId: string | null | undefined): boolean {
+  if (!tokenId) return false;
+  return PREVIEW_HARNESS_TOKEN_IDS.has(tokenId);
+}
+
 /** Shell route aliases mapped to seeded Postgres IDs (browser gate fixtures). */
 export const PREVIEW_ALIASES: Record<string, string> = {
   "sess-1": PREVIEW_SESSION_IDS.active,

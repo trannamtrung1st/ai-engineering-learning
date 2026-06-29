@@ -1,10 +1,10 @@
 import { History, QrCode } from "lucide-react";
-import { Outlet, useLocation } from "react-router-dom";
+import { Outlet, useLocation, useOutletContext } from "react-router-dom";
 import { UserRole } from "@wecheck/domain";
 import { AppHeader } from "@/components/layout/app-header";
 import { PageContent } from "@/components/layout/page-content";
 import { NavLink } from "@/components/shared/navigation/nav-link";
-import { useAuthUser } from "@/components/auth/require-auth";
+import { type AuthOutletContext } from "@/components/auth/require-auth";
 import { studentNavItems } from "@/lib/copy/status-labels";
 
 const navIcons = {
@@ -20,7 +20,8 @@ export interface StudentLayoutProps {
 export function StudentLayout({
   hideBottomNav = false,
 }: Omit<StudentLayoutProps, "displayName">) {
-  const user = useAuthUser();
+  const authContext = useOutletContext<AuthOutletContext>();
+  const user = authContext.user;
   const location = useLocation();
   const suppressNav =
     hideBottomNav || location.pathname.startsWith("/check-in/scan");
@@ -37,7 +38,7 @@ export function StudentLayout({
       />
       <main id="main-content" className="flex-1">
         <PageContent variant="narrow">
-          <Outlet />
+          <Outlet context={authContext} />
         </PageContent>
       </main>
       {!suppressNav ? (

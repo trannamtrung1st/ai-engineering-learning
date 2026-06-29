@@ -38,6 +38,16 @@ export const PREVIEW_QR_TOKEN_FIXTURE_IDS = [
   PREVIEW_IDS.validQrToken,
 ] as const;
 
+/** Vietnamese display names for browser NFR-17 gates — no English user-facing copy in headers. */
+export const PREVIEW_DISPLAY_NAMES = {
+  admin: "Quản trị viên Phòng đào tạo",
+  instructor: "Giảng viên Nguyễn Văn B",
+  student: "Sinh viên Nguyễn Văn A",
+  deactivated: "Sinh viên Võ Văn D",
+  studentB: "Sinh viên Trần Thị B",
+  studentC: "Sinh viên Lê Văn C",
+} as const;
+
 export const PREVIEW_CREDENTIALS = {
   admin: { email: "admin@example.edu.vn", password: "AdminPass123" },
   instructor: { email: "instructor@example.edu.vn", password: "InstructorPass8" },
@@ -50,24 +60,21 @@ export const PREVIEW_CREDENTIALS = {
 const SEED_MARKER_KEY = "preview_seed_version";
 const SEED_MARKER_VALUE = "1";
 
+/** Verify browser-gate fixture rows — never trust policy_settings marker alone. */
 async function isSeedApplied(db: DbPool): Promise<boolean> {
-  const marker = await db.query<{ value: string }>(
-    "SELECT value FROM policy_settings WHERE key = $1",
-    [SEED_MARKER_KEY],
+  const deactivated = await db.query<{ active: boolean }>(
+    "SELECT active FROM users WHERE email = $1 AND id = $2",
+    [PREVIEW_CREDENTIALS.deactivated.email, PREVIEW_IDS.deactivatedStudent],
   );
-  if (marker.rows[0]?.value === SEED_MARKER_VALUE) {
-    return true;
+  if (deactivated.rows.length === 0 || deactivated.rows[0]?.active !== false) {
+    return false;
   }
 
-  const result = await db.query<{ session_status: string | null }>(
-    `SELECT s.status AS session_status
-     FROM users u
-     LEFT JOIN sessions s ON s.id = $2
-     WHERE u.email = $1
-     LIMIT 1`,
-    [PREVIEW_CREDENTIALS.deactivated.email, PREVIEW_IDS.sessionActive],
+  const student = await db.query<{ id: string }>(
+    "SELECT id FROM users WHERE email = $1 AND active = true",
+    [PREVIEW_CREDENTIALS.student.email],
   );
-  if (result.rows.length === 0) return false;
+  if (student.rows.length === 0) return false;
 
   const studentB = await db.query<{ id: string }>(
     "SELECT id FROM users WHERE email = $1 LIMIT 1",
@@ -75,7 +82,17 @@ async function isSeedApplied(db: DbPool): Promise<boolean> {
   );
   if (studentB.rows.length === 0) return false;
 
-  return result.rows[0]?.session_status === SessionStatus.Active;
+  const staleToken = await db.query<{ status: string }>(
+    "SELECT status FROM qr_tokens WHERE id = $1",
+    [PREVIEW_IDS.staleQrToken],
+  );
+  if (staleToken.rows[0]?.status !== QrTokenStatus.Expired) return false;
+
+  const activeSession = await db.query<{ status: string }>(
+    "SELECT status FROM sessions WHERE id = $1",
+    [PREVIEW_IDS.sessionActive],
+  );
+  return activeSession.rows[0]?.status === SessionStatus.Active;
 }
 
 const PREVIEW_USER_IDS = [
@@ -197,13 +214,14 @@ export async function ensurePreviewMonitorFixtures(db: DbPool): Promise<void> {
   const studentCHash = await hashPassword(PREVIEW_CREDENTIALS.studentC.password);
   await db.query(
     `INSERT INTO users (id, institutional_id, display_name, email, password_hash, role, active)
-     VALUES ($1, 'SV2026003', 'Student Three', $2, $3, $4, true)
-     ON CONFLICT (id) DO NOTHING`,
+     VALUES ($1, 'SV2026003', $5, $2, $3, $4, true)
+     ON CONFLICT (id) DO UPDATE SET display_name = EXCLUDED.display_name`,
     [
       PREVIEW_IDS.studentC,
       PREVIEW_CREDENTIALS.studentC.email,
       studentCHash,
       UserRole.Student,
+      PREVIEW_DISPLAY_NAMES.studentC,
     ],
   );
 
@@ -226,15 +244,8 @@ export async function ensurePreviewMonitorFixtures(db: DbPool): Promise<void> {
   await db.query(
     `UPDATE attendance_records
      SET status = 'Pending', checked_in_at = NULL, updated_at = NOW()
-     WHERE session_id = $1 AND student_id = $2`,
-    [PREVIEW_IDS.sessionActive, PREVIEW_IDS.studentC],
-  );
-
-  await db.query(
-    `UPDATE attendance_records
-     SET status = 'Present', checked_in_at = NOW(), updated_at = NOW()
-     WHERE session_id = $1 AND student_id = $2`,
-    [PREVIEW_IDS.sessionActive, PREVIEW_IDS.student],
+     WHERE session_id = $1 AND student_id IN ($2, $3)`,
+    [PREVIEW_IDS.sessionActive, PREVIEW_IDS.studentC, PREVIEW_IDS.student],
   );
 
   await ensurePreviewTokenFixtures(db);
@@ -338,18 +349,109 @@ export async function ensurePreviewTokenFixtures(db: DbPool): Promise<void> {
   );
 }
 
+/** Restore only the deactivated browser-gate user without re-upserting all preview accounts. */
+export async function ensurePreviewDeactivatedUser(db: DbPool): Promise<void> {
+  const existing = await db.query<{ active: boolean }>(
+    "SELECT active FROM users WHERE id = $1",
+    [PREVIEW_IDS.deactivatedStudent],
+  );
+  if (existing.rows[0]?.active === false) return;
+
+  const deactivatedHash = await hashPassword(PREVIEW_CREDENTIALS.deactivated.password);
+  await db.query(
+    `INSERT INTO users (id, institutional_id, display_name, email, password_hash, role, active)
+     VALUES ($1, 'SV2026099', $5, $2, $3, $4, false)
+     ON CONFLICT (id) DO UPDATE SET
+       institutional_id = EXCLUDED.institutional_id,
+       display_name = EXCLUDED.display_name,
+       email = EXCLUDED.email,
+       password_hash = EXCLUDED.password_hash,
+       role = EXCLUDED.role,
+       active = EXCLUDED.active`,
+    [
+      PREVIEW_IDS.deactivatedStudent,
+      PREVIEW_CREDENTIALS.deactivated.email,
+      deactivatedHash,
+      UserRole.Student,
+      PREVIEW_DISPLAY_NAMES.deactivated,
+    ],
+  );
+}
+/** Upsert all preview users — used on initial seed only (avoids integration-test races). */
+export async function ensurePreviewUserFixtures(db: DbPool): Promise<void> {
+  await clearPreviewUserConflicts(db);
+
+  const adminHash = await hashPassword(PREVIEW_CREDENTIALS.admin.password);
+  const instructorHash = await hashPassword(PREVIEW_CREDENTIALS.instructor.password);
+  const studentHash = await hashPassword(PREVIEW_CREDENTIALS.student.password);
+  const deactivatedHash = await hashPassword(PREVIEW_CREDENTIALS.deactivated.password);
+  const studentBHash = await hashPassword(PREVIEW_CREDENTIALS.studentB.password);
+  const studentCHash = await hashPassword(PREVIEW_CREDENTIALS.studentC.password);
+
+  await db.query(
+    `INSERT INTO users (id, institutional_id, display_name, email, password_hash, role, active)
+     VALUES
+       ($1, 'ADMIN001', $25, $2, $3, $4, true),
+       ($5, 'GV2026001', $26, $6, $7, $8, true),
+       ($9, 'SV2026001', $27, $10, $11, $12, true),
+       ($13, 'SV2026099', $28, $14, $15, $16, false),
+       ($17, 'SV2026002', $29, $18, $19, $20, true),
+       ($21, 'SV2026003', $30, $22, $23, $24, true)
+     ON CONFLICT (id) DO UPDATE SET
+       institutional_id = EXCLUDED.institutional_id,
+       display_name = EXCLUDED.display_name,
+       email = EXCLUDED.email,
+       password_hash = EXCLUDED.password_hash,
+       role = EXCLUDED.role,
+       active = EXCLUDED.active`,
+    [
+      PREVIEW_IDS.admin,
+      PREVIEW_CREDENTIALS.admin.email,
+      adminHash,
+      UserRole.TrainingOfficeAdmin,
+      PREVIEW_IDS.instructor,
+      PREVIEW_CREDENTIALS.instructor.email,
+      instructorHash,
+      UserRole.Instructor,
+      PREVIEW_IDS.student,
+      PREVIEW_CREDENTIALS.student.email,
+      studentHash,
+      UserRole.Student,
+      PREVIEW_IDS.deactivatedStudent,
+      PREVIEW_CREDENTIALS.deactivated.email,
+      deactivatedHash,
+      UserRole.Student,
+      PREVIEW_IDS.studentB,
+      PREVIEW_CREDENTIALS.studentB.email,
+      studentBHash,
+      UserRole.Student,
+      PREVIEW_IDS.studentC,
+      PREVIEW_CREDENTIALS.studentC.email,
+      studentCHash,
+      UserRole.Student,
+      PREVIEW_DISPLAY_NAMES.admin,
+      PREVIEW_DISPLAY_NAMES.instructor,
+      PREVIEW_DISPLAY_NAMES.student,
+      PREVIEW_DISPLAY_NAMES.deactivated,
+      PREVIEW_DISPLAY_NAMES.studentB,
+      PREVIEW_DISPLAY_NAMES.studentC,
+    ],
+  );
+}
+
 /** Upsert non-enrolled student B for NotEnrolled / TokenAlreadyUsed browser gates. */
 async function ensurePreviewStudentFixtures(db: DbPool): Promise<void> {
   const studentBHash = await hashPassword(PREVIEW_CREDENTIALS.studentB.password);
   await db.query(
     `INSERT INTO users (id, institutional_id, display_name, email, password_hash, role, active)
-     VALUES ($1, 'SV2026002', 'Student Two', $2, $3, $4, true)
-     ON CONFLICT (id) DO NOTHING`,
+     VALUES ($1, 'SV2026002', $5, $2, $3, $4, true)
+     ON CONFLICT (id) DO UPDATE SET display_name = EXCLUDED.display_name`,
     [
       PREVIEW_IDS.studentB,
       PREVIEW_CREDENTIALS.studentB.email,
       studentBHash,
       UserRole.Student,
+      PREVIEW_DISPLAY_NAMES.studentB,
     ],
   );
 
@@ -358,6 +460,24 @@ async function ensurePreviewStudentFixtures(db: DbPool): Promise<void> {
      WHERE student_id = $1 AND class_id = $2 AND subject_id = $3`,
     [PREVIEW_IDS.studentB, PREVIEW_IDS.classHesd01, PREVIEW_IDS.subjectSwe101],
   );
+}
+
+/** Restore Vietnamese display names after partial DB resets (NFR-17). */
+async function ensurePreviewDisplayNames(db: DbPool): Promise<void> {
+  const rows: Array<[string, string]> = [
+    [PREVIEW_IDS.admin, PREVIEW_DISPLAY_NAMES.admin],
+    [PREVIEW_IDS.instructor, PREVIEW_DISPLAY_NAMES.instructor],
+    [PREVIEW_IDS.student, PREVIEW_DISPLAY_NAMES.student],
+    [PREVIEW_IDS.deactivatedStudent, PREVIEW_DISPLAY_NAMES.deactivated],
+    [PREVIEW_IDS.studentB, PREVIEW_DISPLAY_NAMES.studentB],
+    [PREVIEW_IDS.studentC, PREVIEW_DISPLAY_NAMES.studentC],
+  ];
+  for (const [id, displayName] of rows) {
+    await db.query("UPDATE users SET display_name = $2, updated_at = NOW() WHERE id = $1", [
+      id,
+      displayName,
+    ]);
+  }
 }
 
 async function markSeedApplied(db: DbPool): Promise<void> {
@@ -392,7 +512,11 @@ const PREVIEW_TOKEN_REFRESH_MS = 20_000;
 /** Keep browser-gate QR fixtures within 30 s TTL while preview stack runs. */
 export function startPreviewTokenRefresh(db: DbPool): () => void {
   const handle = setInterval(() => {
-    void runWhenPreviewDbIdle(db, () => ensurePreviewTokenFixtures(db)).catch(
+    void runWhenPreviewDbIdle(db, async () => {
+      await ensurePreviewDeactivatedUser(db);
+      await ensurePreviewDisplayNames(db);
+      await ensurePreviewTokenFixtures(db);
+    }).catch(
       (error: unknown) => {
         console.error("Preview token fixture refresh failed:", error);
       },
@@ -406,66 +530,14 @@ export function startPreviewTokenRefresh(db: DbPool): () => void {
 export async function runPreviewSeed(db: DbPool): Promise<void> {
   if (await isSeedApplied(db)) {
     await runWhenPreviewDbIdle(db, async () => {
-      await ensurePreviewReferenceData(db);
+      await ensurePreviewDeactivatedUser(db);
+      await ensurePreviewDisplayNames(db);
       await ensurePreviewTokenFixtures(db);
-      await ensurePreviewStudentFixtures(db);
-      await ensurePreviewMonitorFixtures(db);
     });
     return;
   }
 
-  await clearPreviewUserConflicts(db);
-
-  const adminHash = await hashPassword(PREVIEW_CREDENTIALS.admin.password);
-  const instructorHash = await hashPassword(PREVIEW_CREDENTIALS.instructor.password);
-  const studentHash = await hashPassword(PREVIEW_CREDENTIALS.student.password);
-  const deactivatedHash = await hashPassword(PREVIEW_CREDENTIALS.deactivated.password);
-  const studentBHash = await hashPassword(PREVIEW_CREDENTIALS.studentB.password);
-  const studentCHash = await hashPassword(PREVIEW_CREDENTIALS.studentC.password);
-
-  await db.query(
-    `INSERT INTO users (id, institutional_id, display_name, email, password_hash, role, active)
-     VALUES
-       ($1, 'ADMIN001', 'Admin User', $2, $3, $4, true),
-       ($5, 'GV2026001', 'Instructor One', $6, $7, $8, true),
-       ($9, 'SV2026001', 'Student One', $10, $11, $12, true),
-       ($13, 'SV2026099', 'Deactivated Student', $14, $15, $16, false),
-       ($17, 'SV2026002', 'Student Two', $18, $19, $20, true),
-       ($21, 'SV2026003', 'Student Three', $22, $23, $24, true)
-     ON CONFLICT (id) DO UPDATE SET
-       institutional_id = EXCLUDED.institutional_id,
-       display_name = EXCLUDED.display_name,
-       email = EXCLUDED.email,
-       password_hash = EXCLUDED.password_hash,
-       role = EXCLUDED.role,
-       active = EXCLUDED.active`,
-    [
-      PREVIEW_IDS.admin,
-      PREVIEW_CREDENTIALS.admin.email,
-      adminHash,
-      UserRole.TrainingOfficeAdmin,
-      PREVIEW_IDS.instructor,
-      PREVIEW_CREDENTIALS.instructor.email,
-      instructorHash,
-      UserRole.Instructor,
-      PREVIEW_IDS.student,
-      PREVIEW_CREDENTIALS.student.email,
-      studentHash,
-      UserRole.Student,
-      PREVIEW_IDS.deactivatedStudent,
-      PREVIEW_CREDENTIALS.deactivated.email,
-      deactivatedHash,
-      UserRole.Student,
-      PREVIEW_IDS.studentB,
-      PREVIEW_CREDENTIALS.studentB.email,
-      studentBHash,
-      UserRole.Student,
-      PREVIEW_IDS.studentC,
-      PREVIEW_CREDENTIALS.studentC.email,
-      studentCHash,
-      UserRole.Student,
-    ],
-  );
+  await ensurePreviewUserFixtures(db);
 
   await db.query(
     `INSERT INTO classes (id, code, name) VALUES
@@ -576,6 +648,7 @@ export async function runPreviewSeed(db: DbPool): Promise<void> {
   );
 
   await ensurePreviewTokenFixtures(db);
+  await ensurePreviewStudentFixtures(db);
   await ensurePreviewMonitorFixtures(db);
 
   sessionService.qr.stopAll();

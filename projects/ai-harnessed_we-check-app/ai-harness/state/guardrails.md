@@ -28,13 +28,19 @@ Verification failures and remediation notes for harness agents.
 - [web-design-system-shell] Browser test failed — see 20260628T215822Z-browser-test.json
 - [web-student-checkin] Browser test failed — see 20260628T224030Z-browser-test.json
 - **Preview seed token fixtures:** Do not tie `isSeedApplied` to QR token rows — re-running full seed calls `sessionService.open` on already-Active sessions and crashes API in a restart loop. Upsert browser-gate tokens via `ensurePreviewTokenFixtures()` on every startup instead.
-- **QR scheduler vs preview fixtures:** `QrScheduler.rotate` mass-expires all Valid tokens for a session — protect fixed browser-gate token IDs via `setProtectedTokenIds` and refresh `issued_at` every ~20s in preview mode so `isQrTokenExpired` stays false for consumed/valid fixtures.
+- **QR scheduler vs preview fixtures:** `QrScheduler.rotate` mass-expires all Valid tokens for a session — protect fixed browser-gate token IDs via `setProtectedTokenIds` and refresh fixture `issued_at` on preview refresh so deep-link tokens stay valid. **`getCurrentToken` must exclude protected fixture IDs** so instructor QR display rotates on the 30 s scheduler cadence (NFR-06); never let fixture refresh become the displayed token.
 - [web-student-checkin] Computational checks failed — see 20260628T225621Z-checks.json
 - [web-student-checkin] Computational checks failed — see 20260628T230948Z-checks.json
 - [web-student-checkin] Browser test failed — see 20260628T231616Z-browser-test.json
 - **Preview seed monitor vs NotEnrolled:** Keep `studentB` unenrolled for NotEnrolled browser gates; use `studentC` (enrolled Pending, attendance reset on fixture refresh) for OutOfRadius/spoof monitor fixtures — never enroll studentB in `ensurePreviewMonitorFixtures`.
 - **pg_advisory_lock + pg Pool:** Never `pg_advisory_lock` across pooled `db.query()` calls — lock/unlock may run on different connections and hang integration tests until DB restart.
-- **Preview vs integration tests:** Integration `resetDb` must hold `pg_advisory_lock` on one dedicated pool connection (`withIntegrationTestDbReset`); preview token refresh uses `pg_try_advisory_lock` and skips while tests truncate — same shared DB as preview stack otherwise races FK errors.
+- **Preview seed vs integration tests:** When preview stack runs during `aih:check`, skip `@wecheck/api` build (like web) so `node --watch` does not restart API and re-run full `runPreviewSeed` mid-suite; use `ensurePreviewDeactivatedUser` on refresh instead of `ensurePreviewUserFixtures` in the early-return path.
 - [web-student-checkin] Browser test failed — see 20260628T234708Z-browser-test.json
 - [web-student-checkin] Computational checks failed — see 20260629T000645Z-checks.json
 - [web-student-checkin] Computational checks failed — see 20260629T013605Z-checks.json
+- [web-design-system-shell] Browser test failed — see 20260629T035100Z-browser-test.json
+- [web-design-system-shell] Browser test failed — see 20260629T043148Z-browser-test.json
+- **Role layout Outlet context:** Nested `StudentLayout` / `InstructorLayout` / `AdminLayout` must pass `<Outlet context={authContext} />` — page components using `useAuthUser()` (e.g. `/admin/export` RBAC) crash without forwarded `RequireAuth` context.
+- **Preview seed vs integration truncate:** `truncateAuthTables` must truncate sessions/QR/attendance before `DELETE FROM users` when preview stack runs — preview fixture `class_assignments` and `sessions` rows otherwise race integration resets.
+- **Integration test fixture IDs:** Never use preview `PREVIEW_INSTITUTIONAL_IDS` values (`ADMIN001`, `SV2026001`, etc.) in integration tests — `clearPreviewUserConflicts` during concurrent preview re-seed deletes them and breaks duplicate/RBAC assertions.
+- [web-design-system-shell] Computational checks failed — see 20260629T045336Z-checks.json

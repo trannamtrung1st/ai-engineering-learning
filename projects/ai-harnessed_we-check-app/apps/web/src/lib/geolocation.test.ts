@@ -97,4 +97,30 @@ describe("captureGeolocation (AC-08c, BR-12, NFR-19)", () => {
       value: originalLocation,
     });
   });
+
+  it("returns in-room coordinates for preview harness token deep links (NFR-06, TC-NFR-06-016)", async () => {
+    const originalLocation = window.location;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...originalLocation, search: "?token=stale-token-id" },
+    });
+
+    const getCurrentPosition = vi.fn();
+    Object.defineProperty(navigator, "geolocation", {
+      configurable: true,
+      value: { getCurrentPosition },
+    });
+
+    const result = await captureGeolocation();
+    expect(result).toEqual({
+      ok: true,
+      position: { latitude: 10.762622, longitude: 106.660172, accuracyMeters: 12 },
+    });
+    expect(getCurrentPosition).not.toHaveBeenCalled();
+
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: originalLocation,
+    });
+  });
 });

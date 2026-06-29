@@ -17,6 +17,7 @@ import type { SessionService } from "./modules/session-management/session-servic
 import { SessionStore } from "./auth/session-store.js";
 import { loadEnv } from "./config/env.js";
 import { resumePreviewQrSchedulers } from "./infra/preview-seed.js";
+import { runWhenPreviewDbIdle } from "./infra/integration-test-lock.js";
 
 export const API_VERSION = "v1";
 export const API_BASE_PATH = "/api/v1";
@@ -89,7 +90,9 @@ export async function buildApp(options: BuildAppOptions) {
   }
 
   if (sessionService && env.seedEnabled && env.nodeEnv !== "test") {
-    await resumePreviewQrSchedulers(options.db, sessionService.qr);
+    await runWhenPreviewDbIdle(options.db, () =>
+      resumePreviewQrSchedulers(options.db, sessionService!.qr),
+    );
   }
 
   app.addHook("onClose", async () => {

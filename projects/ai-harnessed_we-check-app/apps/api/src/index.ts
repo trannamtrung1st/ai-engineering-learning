@@ -7,6 +7,7 @@ import {
   runPreviewSeed,
   startPreviewTokenRefresh,
 } from "./infra/preview-seed.js";
+import { runWhenPreviewDbIdle } from "./infra/integration-test-lock.js";
 import { buildApp, getApiMetadata, API_BASE_PATH, API_VERSION } from "./server.js";
 
 export { getApiMetadata, API_BASE_PATH, API_VERSION };
@@ -20,12 +21,14 @@ export async function startServer(): Promise<void> {
   try {
     await runMigrations(pool);
     if (env.seedEnabled) {
-      await runPreviewSeed(pool);
+      await runWhenPreviewDbIdle(pool, () => runPreviewSeed(pool));
       stopPreviewTokenRefresh = startPreviewTokenRefresh(pool);
     }
     const app = await buildApp({ db: pool, logger: env.logLevel !== "silent" });
     if (env.seedEnabled) {
-      await ensurePreviewTokenFixtures(pool);
+      await runWhenPreviewDbIdle(pool, async () => {
+        await ensurePreviewTokenFixtures(pool);
+      });
     }
     await app.listen({ port: env.port, host: "0.0.0.0" });
     app.log.info(

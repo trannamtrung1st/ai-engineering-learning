@@ -2,6 +2,7 @@ import { SessionStatus } from "@wecheck/domain";
 import { createBrowserRouter, RouterProvider, useRouteError } from "react-router-dom";
 import { RootLayout } from "@/app/layout";
 import { AdminExportPage } from "@/app/admin/export/page";
+import { AdminReportsPage } from "@/app/admin/reports/page";
 import { RosterImportPage } from "@/app/admin/rosters/import/page";
 import { CheckInPage } from "@/app/check-in/page";
 import { ForbiddenRoutePage } from "@/app/forbidden/page";
@@ -115,7 +116,7 @@ const router = createBrowserRouter([
               { path: "users", element: <PlaceholderPage title="Người dùng" /> },
               { path: "rosters", element: <PlaceholderPage title="Danh sách lớp" /> },
               { path: "rosters/import", element: <RosterImportPage /> },
-              { path: "reports", element: <PlaceholderPage title="Báo cáo quản trị" /> },
+              { path: "reports", element: <AdminReportsPage /> },
               { path: "export", element: <AdminExportPage /> },
               { path: "policy", element: <PlaceholderPage title="Chính sách" /> },
             ],
