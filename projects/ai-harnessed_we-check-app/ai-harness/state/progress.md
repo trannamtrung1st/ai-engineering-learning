@@ -269,3 +269,5 @@ Append-only log of harness slice completions.
 - 2026-06-29T21:00:00Z | module-roster-enrollment | aih:check pass — POST /classes and POST /subjects with uppercase code validation, DuplicateClassCode/DuplicateSubjectCode (422), CSV import + async batches, GET /enrollments ClassAssignment scope (BR-08); 12 unit + 19 integration tests; traceability AC-03 FR-03 BR-08
 - 2026-06-29T20:42:28Z | module-session-management | aih:check pass — NFR-22 e2e traceability TC-NFR-01-003/010 in tests/e2e/src/scenarios/session-health.test.ts; 155 integration + 29 e2e + unit pass
 - 2026-06-29T20:46:42Z | module-session-management | passed
+- 2026-06-29T20:48:58Z | module-attendance | aih:check pass — prior gate failures resolved: AC-10 traceability for NFR-15 TC-NFR-15-004/009/017, typecheck/build; Pending seed on open, finalize Pending→Absent on close, manual edits with append-only audit (migration 006 trigger), student history pagination; 6 unit + 19 integration + 29 e2e pass
+- 2026-06-29T20:53:35Z | module-attendance | passed

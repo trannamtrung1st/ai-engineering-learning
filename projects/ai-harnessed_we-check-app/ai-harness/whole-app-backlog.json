@@ -265,7 +265,7 @@
     },
     {
       "id": "module-attendance",
-      "passes": false,
+      "passes": true,
       "priority": 14,
       "phase": 1,
       "agent": "backend",
