@@ -278,9 +278,9 @@
       "generatedAt": "2026-06-29T19:06:12Z"
     },
     "NFR-16": {
-      "current": false,
+      "current": true,
       "docFingerprint": "sha256:42bc503b34306c743742631b6ce966c3b677f61a78ea9c5d1d4baaa2dbc79d93",
-      "generatedAt": null
+      "generatedAt": "2026-06-29T19:09:20Z"
     },
     "NFR-17": {
       "current": false,

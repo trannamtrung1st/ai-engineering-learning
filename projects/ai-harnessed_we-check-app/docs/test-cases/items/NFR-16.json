@@ -1,8 +1,8 @@
 {
   "productItemId": "NFR-16",
   "version": 1,
-  "docFingerprint": "sha256:9e1460900a69a9b4493be4e286bcd7d1823652cd7aff6f47163d6846238a1c2c",
-  "generatedAt": "2026-06-29T14:30:00.000Z",
+  "docFingerprint": "sha256:42bc503b34306c743742631b6ce966c3b677f61a78ea9c5d1d4baaa2dbc79d93",
+  "generatedAt": "2026-06-29T19:08:19.000Z",
   "cases": [
     {
       "id": "TC-NFR-16-001",
@@ -78,7 +78,7 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["NFR-16", "FR-02", "BR-06"],
+      "traceability": ["NFR-16", "FR-02", "BR-06", "BR-15"],
       "title": "AuthSession transitions from valid to expired after inactivity threshold",
       "preconditions": [
         "Valid AuthSession exists with lastActivityAt at T0 in Postgres",
@@ -89,9 +89,10 @@
         "Verify GET /api/v1/auth/me succeeds at T0 + 7h 59m with valid session cookie",
         "Advance clock to T0 + 8h 1m without updating lastActivityAt",
         "Call GET /api/v1/auth/me with same session cookie",
+        "Call GET /api/v1/check-in/tokens/:tokenId/preflight with same expired session and assert HTTP 401 SessionExpired",
         "Call POST /api/v1/check-in with same expired session and valid payload"
       ],
-      "expected": "beforeState: session valid for protected actions at T0 + 7h 59m; afterState: session expired at T0 + 8h 1m with HTTP 401 SessionExpired on all protected operations per NFR-16 and BR-06",
+      "expected": "beforeState: session valid for protected actions at T0 + 7h 59m; afterState: session expired at T0 + 8h 1m with HTTP 401 SessionExpired on auth introspection, BR-15 preflight, and check-in submit per NFR-16 and BR-06",
       "edgeCase": false
     },
     {
@@ -272,20 +273,21 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["NFR-16", "FR-02", "AC-02", "BR-06"],
-      "title": "Expired session on check-in page shows toast and redirects to login with returnUrl",
+      "traceability": ["NFR-16", "FR-02", "AC-02", "BR-06", "BR-15"],
+      "title": "Expired session on check-in deep link blocks preflight and redirects to login with returnUrl",
       "preconditions": [
         "Student wecheck_session cookie exists but server treats session as expired (lastActivityAt > 8h ago via TestClock)",
         "Student navigates to /check-in?token=<token-id> from QR deep link",
         "Mobile viewport (375px) per user flows §1"
       ],
       "steps": [
-        "Trigger check-in submit action or load protected check-in API call from browser",
+        "Observe client preflight call to GET /api/v1/check-in/tokens/:tokenId/preflight returns 401 SessionExpired",
+        "Verify GpsCaptureStep does not mount per BR-15 preflight gate",
         "Observe toast or alert with message Phiên đăng nhập đã hết hạn",
         "Verify browser redirects to /login with returnUrl encoding the check-in path",
         "Confirm check-in success confirmation is not shown"
       ],
-      "expected": "NFR-16 UI enforcement per AC-02c and ui-states §401 handling: session-expired toast displayed; redirect to login with returnUrl preserved; check-in blocked until re-authentication",
+      "expected": "NFR-16 UI enforcement per AC-02c, BR-15, and ui-states §401 handling: expired session blocks preflight before GPS step; session-expired toast displayed; redirect to login with returnUrl preserved; check-in blocked until re-authentication",
       "edgeCase": true
     },
     {
@@ -337,7 +339,7 @@
       "layer": "e2e",
       "technique": "flow-a",
       "priority": "P0",
-      "traceability": ["NFR-16", "FR-02", "AC-02", "BR-06"],
+      "traceability": ["NFR-16", "FR-02", "AC-02", "BR-06", "BR-15"],
       "title": "Flow A session timeout gate: stale student session blocked; re-login required before Present check-in",
       "preconditions": [
         "Flow A steps 1–3 complete: roster seeded, instructor opened Active session, QR token available",
@@ -345,12 +347,58 @@
         "TestClock controls inactivity elapsed time"
       ],
       "steps": [
+        "Student GET /api/v1/check-in/tokens/:tokenId/preflight with expired session; assert HTTP 401 SessionExpired",
         "Student POST /api/v1/check-in with expired session and valid coordinates; assert HTTP 401 SessionExpired",
         "Student POST /api/v1/auth/login with valid credentials and returnUrl to check-in deep link",
+        "Student GET /api/v1/check-in/tokens/:tokenId/preflight with fresh session; assert HTTP 200 outcome Valid",
         "Student POST /api/v1/check-in with fresh session and valid payload",
         "Instructor GET /api/v1/sessions/:id/attendance and verify Present count incremented"
       ],
-      "expected": "NFR-16 enforced in Flow A workshop path: expired idle session blocks check-in; re-authentication required; successful check-in only after fresh session — mitigates stolen credential remote proxy per risk R-08",
+      "expected": "NFR-16 enforced in Flow A workshop path: expired idle session blocks BR-15 preflight and check-in submit; re-authentication required; successful preflight and check-in only after fresh session — mitigates stolen credential remote proxy per risk R-08",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-16-017",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-16", "FR-02", "AC-02", "BR-06", "BR-15"],
+      "title": "GET /check-in/tokens/:tokenId/preflight with idle-expired session returns 401 SessionExpired",
+      "preconditions": [
+        "Student AuthSession row exists with lastActivityAt more than 8 hours before TestClock",
+        "Active session with valid unexpired QR token exists",
+        "Enrolled student context matches token session"
+      ],
+      "steps": [
+        "GET /api/v1/check-in/tokens/:tokenId/preflight with expired wecheck_session cookie",
+        "Assert HTTP status 401 and errorCode SessionExpired",
+        "Assert response message is Phiên đăng nhập đã hết hạn per error-handling §2.2",
+        "Assert no preflight success envelope with outcome Valid is returned"
+      ],
+      "expected": "NFR-16 and BR-15: idle-expired session rejected at preflight gate with HTTP 401 SessionExpired before enrollment or GPS validation chain executes; client must not advance to gps_capture step",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-16-018",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P1",
+      "traceability": ["NFR-16", "FR-17", "AC-17"],
+      "title": "POST /setup/first-admin session.expiresAt reflects default 8-hour inactivity window",
+      "preconditions": [
+        "Empty database (User.count = 0) with needsSetup true",
+        "TestClock fixed at known T0",
+        "System policy uses default 8-hour session inactivity per NFR-16"
+      ],
+      "steps": [
+        "POST /api/v1/setup/first-admin with valid institutionalId, displayName, email, and password at T0",
+        "Assert HTTP status 201",
+        "Assert response session.expiresAt equals T0 + 8 hours within acceptable clock skew (±1 minute)",
+        "Assert Set-Cookie wecheck_session issued with HttpOnly attribute"
+      ],
+      "expected": "AC-17 bootstrap path per acceptance matrix NFR-16 trace: first-admin session obeys same 8-hour default inactivity target as POST /auth/login per API design §2.0 and §2.2",
       "edgeCase": false
     }
   ]
