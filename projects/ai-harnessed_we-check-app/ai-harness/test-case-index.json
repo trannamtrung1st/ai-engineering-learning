@@ -8,9 +8,9 @@
       "generatedAt": "2026-06-29T17:08:10Z"
     },
     "AC-02": {
-      "current": false,
+      "current": true,
       "docFingerprint": "sha256:c7d3f05bcd7f282254c6df7321da31c143e51b3076c4c3bcf928d7b2b5244926",
-      "generatedAt": null
+      "generatedAt": "2026-06-29T17:09:20Z"
     },
     "AC-03": {
       "current": false,
