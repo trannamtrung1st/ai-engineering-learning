@@ -333,9 +333,9 @@
       "generatedAt": "2026-06-29T18:43:45Z"
     },
     "BR-15": {
-      "current": false,
+      "current": true,
       "docFingerprint": "sha256:a03e7f92b46aae5eb29521b17ddc1031ceed6ab22798d1e2ff36baed1f08e9ca",
-      "generatedAt": null
+      "generatedAt": "2026-06-29T18:45:26Z"
     },
     "NFR-24": {
       "current": false,
