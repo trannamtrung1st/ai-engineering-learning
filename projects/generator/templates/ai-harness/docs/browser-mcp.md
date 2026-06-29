@@ -110,7 +110,16 @@ Use dev auth tokens or the app's dev login flow as documented in `docs/technical
 | API scenario tests | `npm run test:e2e` — in-process Fastify flows |
 | HTTP stack probe | `verify-stack.sh` — health + web HTTP 200 |
 | **Browser UI (implementer)** | Playwright MCP smoke test during implementation |
-| **Browser UI (gate)** | `run-browser-test.sh` — dedicated test agent; must emit `BROWSER_TEST_PASS` |
+| **Browser UI (gate)** | `run-browser-test.sh` — dedicated test agent; must emit `BROWSER_TEST_PASS` when all runnable cases pass |
+
+### Out-of-scope case results
+
+Cases that require physical devices or are not applicable in Playwright MCP must be reported as `SKIP`, not `FAIL`:
+
+- `TC-…: SKIP — physical-device — <reason>`
+- `TC-…: SKIP — not-applicable — <reason>`
+
+Skipped cases are excluded from pass/fail — only `FAIL` lines block the gate.
 
 API-level e2e remains the automated acceptance gate. Playwright MCP supplements with real rendered UI verification; the browser test agent gate enforces it before code review.
 

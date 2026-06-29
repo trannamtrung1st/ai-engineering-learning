@@ -196,15 +196,15 @@ Prior failed run: \`${prior_run_id}\`
 
 **Retry-only pass.** Execute **only** the browser cases listed below (failed in the prior run). Ignore all other cases in the artifact for this invocation.
 
-- On the **first** \`FAIL\` among these cases: report it, emit \`BROWSER_TEST_FAIL\`, and **stop** — do not run remaining retry cases
-- When **all** listed cases PASS: emit \`BROWSER_TEST_PASS\` (the harness will run a separate full verification phase next)
+- On the **first** \`FAIL\` among these cases: report it, emit \`BROWSER_TEST_FAIL\`, and **stop** — do not run remaining retry cases (\`SKIP\` cases do not count as failures; continue past them)
+- When **all** listed runnable cases PASS (or SKIP): emit \`BROWSER_TEST_PASS\` (the harness will run a separate full verification phase next)
 
 Per-action 30s timeouts still apply; fail-fast means stop the **case list**, not abandon a stuck step before its timeout."
   else
     cases_block="$generated_browser_cases"
     phase_instruction="## Full verification phase
 
-Execute **every** \`layer: browser\` case from the generated test case artifact (or derive from acceptance tags when none are listed). Report PASS/FAIL per case \`id\`. Emit \`BROWSER_TEST_PASS\` only when all mandatory cases pass."
+Execute **every** \`layer: browser\` case from the generated test case artifact (or derive from acceptance tags when none are listed). Report PASS, FAIL, or SKIP per case \`id\`. Mark physical-device or not-applicable cases as \`SKIP\` (see prompt). Emit \`BROWSER_TEST_PASS\` only when all runnable cases pass."
   fi
 
   local full_prompt
@@ -226,8 +226,13 @@ Execute **every** \`layer: browser\` case from the generated test case artifact 
   fi
 
   PHASE_PASS=false
-  if echo "$test_text" | grep -q 'BROWSER_TEST_PASS'; then
-    PHASE_PASS=true
+  if ! browser_output_has_actionable_failures "$outfile"; then
+    if grep -qE 'TC-[A-Z0-9][A-Z0-9-]*:[[:space:]]*(PASS|SKIP|FAIL)' "$outfile" 2>/dev/null \
+        || echo "$test_text" | grep -q 'BROWSER_TEST_PASS'; then
+      PHASE_PASS=true
+    fi
+  else
+    echo "==> Phase validation failed: output contains FAIL lines" >&2
   fi
 
   if [[ "$phase" == "retry" && ${#case_ids[@]} -gt 0 ]]; then
@@ -235,10 +240,6 @@ Execute **every** \`layer: browser\` case from the generated test case artifact 
       PHASE_PASS=false
       echo "==> Retry phase validation failed: case output still contains FAIL lines" >&2
     fi
-  fi
-
-  if [[ "$fail_fast" == "true" ]] && echo "$test_text" | grep -q 'BROWSER_TEST_FAIL'; then
-    PHASE_PASS=false
   fi
 
   PHASE_TIMED_OUT=false

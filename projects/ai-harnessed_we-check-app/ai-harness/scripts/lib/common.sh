@@ -1360,6 +1360,20 @@ browser_case_ids_still_failing_in_output() {
   return 0
 }
 
+browser_output_has_actionable_failures() {
+  local text_file="$1"
+  [[ -f "$text_file" ]] || return 1
+  grep -qE 'TC-[A-Z0-9][A-Z0-9-]*:[[:space:]]*FAIL' "$text_file" 2>/dev/null
+}
+
+extract_skipped_browser_case_ids() {
+  local text_file="$1"
+  [[ -f "$text_file" ]] || return 1
+  grep -oE 'TC-[A-Z0-9][A-Z0-9-]*:[[:space:]]*SKIP' "$text_file" 2>/dev/null \
+    | sed -E 's/:[[:space:]]*SKIP$//' \
+    | sort -u
+}
+
 summarize_review_failures() {
   local run_id="$1"
   local max_chars="${2:-12000}"

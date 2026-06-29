@@ -39,9 +39,20 @@ Also read when relevant:
 
 ## Generated test cases (mandatory checklist)
 
-When bundled below, execute **every** `layer: browser` case from the generated test case artifact. Report PASS/FAIL per case `id`.
+When bundled below, execute **every** `layer: browser` case from the generated test case artifact. Report PASS, FAIL, or SKIP per case `id`.
 
 If no generated cases are bundled, derive scenarios from acceptance tags and slice docs.
+
+### Out-of-scope cases (mark SKIP — excluded from pass/fail)
+
+Before attempting a case, decide whether Playwright MCP against the local preview stack can meaningfully verify it. If not, **do not** mark it `FAIL` — mark it `SKIP` with a reason tag:
+
+| Situation | Report format |
+|-----------|---------------|
+| Requires real physical devices (pilot device matrix, native camera/GPS on hardware, physical iOS/Android walkthrough) | `TC-…: SKIP — physical-device — <brief reason>` |
+| Not applicable in this harness pass (Lighthouse/4G audit, axe-core tooling not available, instructor-only slice scope, case preconditions impossible in preview) | `TC-…: SKIP — not-applicable — <brief reason>` |
+
+Skipped cases are **ignored** in the final result — they do not block `BROWSER_TEST_PASS` and do not trigger retry fail-fast. Only mark `SKIP` when the limitation is environmental/tooling, not a product defect.
 
 ## Phased verification (when harness injects a phase block)
 
@@ -50,13 +61,13 @@ The harness may run browser verification in one or two phases. Follow the **phas
 ### Retry phase (`## Retry phase — failed cases from prior run`)
 
 - Execute **only** the case IDs listed in that phase’s mandatory checklist — ignore all other cases in the artifact
-- On the **first** `FAIL` among those cases: report it, emit `BROWSER_TEST_FAIL`, and **stop** — do not run remaining retry cases
-- When **all** listed cases PASS: emit `BROWSER_TEST_PASS` (the harness runs a separate full verification phase next)
+- On the **first** `FAIL` among those cases: report it, emit `BROWSER_TEST_FAIL`, and **stop** — do not run remaining retry cases (`SKIP` cases do not count as failures; continue past them)
+- When **all** listed runnable cases PASS (or SKIP): emit `BROWSER_TEST_PASS` (the harness runs a separate full verification phase next)
 
 ### Full phase (`## Full verification phase`)
 
 - Execute **every** `layer: browser` case (normal mandatory checklist behavior)
-- Emit `BROWSER_TEST_PASS` only when all mandatory cases pass
+- Emit `BROWSER_TEST_PASS` only when all runnable cases pass (skipped out-of-scope cases excluded)
 
 **Fail-fast vs step timeout:** per-action 30s timeouts still apply (do not abandon a stuck step before its timeout). Fail-fast means stop the **case list** after the first failing case in a retry phase — not skip waiting for expected UI within a case.
 
@@ -68,7 +79,7 @@ The harness may run browser verification in one or two phases. Follow the **phas
 2. Authenticate when routes require it (dev login or token flow)
 3. For each browser test case: follow `preconditions`, `steps`, verify `expected`
 4. **For each distinct page visited**, save a screenshot to the directory above when visual state matters (layout, badges, tables, forms, empty/error/loading states, mobile-relevant UI). Review against `docs/ui-ux/00-production-ui-quality-bar.md` — a case can FAIL on UI quality even when functional steps succeed
-5. Record PASS/FAIL per case id with brief evidence (page URL, visible text, control state, **screenshot path** when captured)
+5. Record PASS, FAIL, or SKIP per case id with brief evidence (page URL, visible text, control state, **screenshot path** when captured)
 
 ### Timeouts (required — do not hang)
 
@@ -89,15 +100,19 @@ Browser verification must finish in **one bounded pass**:
 
 Brief markdown findings (bullets).
 
-**Per generated browser case:** `TC-<slice>-NNN: PASS` or `TC-<slice>-NNN: FAIL — reason`
+**Per generated browser case:**
 
-**Per acceptance tag (when no case id):** `AC-XX: PASS` or `AC-XX: FAIL — reason`
+- `TC-<slice>-NNN: PASS`
+- `TC-<slice>-NNN: FAIL — reason`
+- `TC-<slice>-NNN: SKIP — physical-device — reason` or `TC-<slice>-NNN: SKIP — not-applicable — reason`
 
-Summary line: `cases: N/M passed`
+**Per acceptance tag (when no case id):** `AC-XX: PASS`, `AC-XX: FAIL — reason`, or `AC-XX: SKIP — <tag> — reason`
+
+Summary line: `cases: N/M passed (K skipped)` — count only PASS toward M; skipped cases listed separately
 
 End with **exactly one** signal line:
 
-- `BROWSER_TEST_PASS` — all mandatory browser test cases verified
+- `BROWSER_TEST_PASS` — all runnable browser test cases verified (skipped out-of-scope cases excluded)
 - `BROWSER_TEST_FAIL` — list blockers above; harness will retry
 
 Finish in **one pass**. Test only — no fixes.
