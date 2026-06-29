@@ -22,9 +22,10 @@ import {
  * Flow A — Happy path workshop check-in (testing-plan §6)
  * Traceability: AC-01 AC-03 AC-04 AC-05 AC-06 AC-07 AC-13 AC-14 AC-15 AC-16
  * FR-01 FR-03 FR-04 FR-05 FR-06 FR-07 FR-12 FR-13 FR-14 FR-15 FR-16
- * BR-01 BR-05 BR-07 BR-08 BR-09 NFR-04 NFR-06 NFR-07 NFR-08
+ * BR-01 BR-05 BR-07 BR-08 BR-09 BR-15 NFR-04 NFR-06 NFR-07 NFR-08
  * Cases: TC-AC-01-001 TC-AC-03-001 TC-AC-04-001 TC-AC-05-001 TC-AC-06-001
  * TC-AC-07-001 TC-AC-13-001 TC-AC-14-001 TC-AC-15-001 TC-AC-16-001
+ * TC-NFR-04-005
  */
 describe("Flow A — happy path workshop check-in (AC-01, AC-03–AC-07, AC-13–AC-16)", () => {
   before(async () => {
@@ -35,7 +36,7 @@ describe("Flow A — happy path workshop check-in (AC-01, AC-03–AC-07, AC-13�
     await ctx.teardown();
   });
 
-  it("runs full workshop lifecycle: provision → roster → session → check-in → close → export (TC-AC-01-001, TC-AC-03-001, TC-AC-04-001, TC-AC-05-001, TC-AC-06-001, TC-AC-07-001, TC-AC-13-001, TC-AC-14-001, TC-AC-15-001)", async () => {
+  it("runs full workshop lifecycle: provision → roster → session → check-in → close → export (TC-AC-01-001, TC-AC-03-001, TC-AC-04-001, TC-AC-05-001, TC-AC-06-001, TC-AC-07-001, TC-AC-13-001, TC-AC-14-001, TC-AC-15-001, TC-NFR-04-005, BR-15, NFR-04)", async () => {
     await ctx.resetDb(ctx.seedReferenceData.bind(ctx));
     const admin = await ctx.seedAdmin();
     const instructor = await ctx.seedInstructor();
@@ -108,12 +109,15 @@ describe("Flow A — happy path workshop check-in (AC-01, AC-03–AC-07, AC-13�
     assert.ok(qr.tokenId);
     assert.ok(qr.secondsRemaining > 0 && qr.secondsRemaining <= 30);
 
-    // AC-07: Student check-in within 2s
-    const start = Date.now();
+    // AC-07 / TC-NFR-04-005 / BR-15: Student check-in within NFR-04 2000 ms budget
+    const start = performance.now();
     const checkInRes = await ctx.checkIn(studentLogin, qr.tokenId);
-    const elapsed = Date.now() - start;
+    const elapsed = performance.now() - start;
     assert.equal(checkInRes.statusCode, 200);
-    assert.ok(elapsed < 5000, `check-in took ${elapsed}ms (NFR-04 p95 target 2s under normal network)`);
+    assert.ok(
+      elapsed <= 2000,
+      `check-in took ${elapsed.toFixed(1)}ms (NFR-04 / TC-NFR-04-005 budget 2000ms)`,
+    );
     const checkInBody = checkInRes.json<{
       outcome: string;
       attendance: { status: string; checkedInAt: string | null };

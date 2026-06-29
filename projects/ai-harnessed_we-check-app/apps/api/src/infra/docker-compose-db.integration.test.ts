@@ -6,8 +6,8 @@ import { describe, it } from "node:test";
 import pg from "pg";
 
 /**
- * Traceability: NFR-02 NFR-04 FR-09 FR-07 BR-04 BR-11 AC-09 AC-07 NFR-05 NFR-23
- * Cases: TC-NFR-02-005 TC-NFR-04-006 TC-NFR-04-003 TC-NFR-04-012
+ * Traceability: NFR-02 NFR-04 FR-09 FR-07 BR-04 BR-11 BR-15 AC-09 AC-07 NFR-05 NFR-23
+ * Cases: TC-NFR-02-005 TC-NFR-04-006 TC-NFR-04-003 TC-NFR-04-012 TC-NFR-04-005
  */
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), "../../../..");
 const COMPOSE_PATH = join(REPO_ROOT, "docker-compose.yml");

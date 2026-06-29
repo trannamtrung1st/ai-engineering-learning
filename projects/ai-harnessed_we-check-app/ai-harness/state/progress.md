@@ -252,3 +252,5 @@ Append-only log of harness slice completions.
 - 2026-06-29T19:19:15Z | NFR-24 | testgen_passed
 - 2026-06-29T19:24:23Z | repo-monorepo-bootstrap | aih:check pass after AC-17/FR-17 NFR-14 traceability in domain + monorepo integration tests (TestGen TC-NFR-14-019/020)
 - 2026-06-29T19:28:25Z | repo-monorepo-bootstrap | passed
+- 2026-06-29T19:35:00Z | docker-compose-db | Fixed TC-NFR-04-005 BR-15 e2e traceability in flow-a + docker-compose-db integration tests; NFR-04 2000ms latency assertion; aih:check pass (147 integration, 25 e2e)
+- 2026-06-29T19:39:28Z | docker-compose-db | passed
