@@ -1,0 +1,293 @@
+{
+  "productItemId": "NFR-24",
+  "version": 1,
+  "docFingerprint": "sha256:ad4189c79db8b445211334a15218855f24677616842cf5c9113f747eb486ac77",
+  "generatedAt": "2026-06-29T20:15:00.000Z",
+  "cases": [
+    {
+      "id": "TC-NFR-24-001",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["NFR-24", "AC-08", "FR-07", "FR-08"],
+      "title": "AC-08e: simulation disabled uses real geolocation; simulation enabled honors gpsSim=delay without real GPS permission",
+      "preconditions": [
+        "Active session sess-1 with valid QrToken and enrolled student Pending attendance",
+        "Authenticated Student session cookie",
+        "Two web build profiles available: production (VITE_ENABLE_DEVICE_SIMULATION=false) and harness/preview (flag true)",
+        "Room GPS at 10.762622, 106.660172 with 100 m radius per testing-plan §11 geo fixtures"
+      ],
+      "steps": [
+        "Production profile: load /check-in?token=valid-token-id&gpsSim=delay&gpsLat=10.762700&gpsLng=106.660200 with simulation flag off",
+        "Assert client does not auto-resolve coordinates from gpsSim or gpsLat/gpsLng query params",
+        "Assert navigator.geolocation.getCurrentPosition is invoked instead of simulation layer",
+        "Harness profile: load same URL with VITE_ENABLE_DEVICE_SIMULATION=true",
+        "Assert gpsSim=delay resolves in-room coordinates without real GPS permission prompt",
+        "POST /api/v1/check-in with harness-resolved coordinates and assert HTTP 200 outcome Success"
+      ],
+      "expected": "AC-08e and NFR-24 device API fidelity: production builds ignore URL sim params and use browser geolocation; test/demo builds with flag on honor demo-guides §7 simulation params per 08-acceptance-mvp-future §AC-08e",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-24-002",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-24", "FR-07", "FR-08"],
+      "title": "preview-sim module no-ops when VITE_ENABLE_DEVICE_SIMULATION=false",
+      "preconditions": [
+        "Device simulation module (preview-sim) imported with VITE_ENABLE_DEVICE_SIMULATION=false at build time",
+        "parseGpsSimParams and parseCameraSimParams helpers wired to check-in GPS and camera acquisition paths",
+        "URL search params include gpsSim=delay, cameraSim=grant, gpsLat=10.762700, gpsLng=106.660200"
+      ],
+      "steps": [
+        "Invoke parseGpsSimParams with gpsSim=delay and coordinate overrides",
+        "Assert return value indicates simulation disabled (null or passthrough to real geolocation)",
+        "Invoke parseCameraSimParams with cameraSim=grant",
+        "Assert return value indicates simulation disabled (null or passthrough to getUserMedia)",
+        "Invoke resolveSimulatedGeolocation with gpsSim=delay when flag is false",
+        "Assert helper does not resolve synthetic coordinates and delegates to navigator.geolocation contract"
+      ],
+      "expected": "NFR-24 integration contract: preview-sim helpers no-op when VITE_ENABLE_DEVICE_SIMULATION=false per local-development-setup §4 and testgen coverage hint; real device APIs remain sole acquisition path",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-24-003",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-24", "FR-08"],
+      "title": "preview-sim resolves gpsSim modes when VITE_ENABLE_DEVICE_SIMULATION=true",
+      "preconditions": [
+        "Device simulation module built with VITE_ENABLE_DEVICE_SIMULATION=true",
+        "Session room coordinates 10.762622, 106.660172 configured as in-room default",
+        "Test harness controls fake timers for gpsDelayMs and gpsTimeoutMs params"
+      ],
+      "steps": [
+        "Invoke resolveSimulatedGeolocation with gpsSim=delay and default delay; assert in-room coordinates returned after delay",
+        "Invoke with gpsSim=timeout and gpsTimeoutMs=500; assert GpsDisabled outcome semantics without calling navigator.geolocation",
+        "Invoke with gpsLat=10.764122 and gpsLng=106.660172 overrides; assert override coordinates returned for out-of-radius scenarios",
+        "Invoke with gpsSim=deny; assert permission-denied simulation path triggers permission guide flow hook",
+        "Verify navigator.geolocation.getCurrentPosition is not called when simulation layer handles the request"
+      ],
+      "expected": "NFR-24 test/demo build contract: query-param simulation layer active when flag on; all demo-guides §7 gpsSim modes resolve deterministically without real GPS hardware",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-24-004",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["NFR-24", "FR-08"],
+      "title": "GPS acquisition path transitions from sim-disabled to real-API when simulation flag is off",
+      "preconditions": [
+        "Check-in GPS acquisition orchestrator wired to preview-sim module and geolocation wrapper",
+        "VITE_ENABLE_DEVICE_SIMULATION=false at module load",
+        "URL contains gpsSim=delay attempting to force simulated ready state"
+      ],
+      "steps": [
+        "Record beforeState: gpsState idle, simulation layer inactive",
+        "Initiate GPS capture on GpsCaptureStep mount with gpsSim=delay in URL",
+        "Assert simulation layer skipped; navigator.geolocation.getCurrentPosition invoked",
+        "Supply mocked in-radius position via test harness geolocation mock",
+        "Record afterState: gpsState ready with coordinates from geolocation mock, not URL params"
+      ],
+      "expected": "beforeState idle with sim params present but ignored; afterState ready via real geolocation API per NFR-24 production semantics and AC-08e",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-24-005",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-24", "FR-07", "FR-08", "AC-07"],
+      "title": "POST /api/v1/check-in succeeds in E2E harness with VITE_ENABLE_DEVICE_SIMULATION=true and gpsSim=delay",
+      "preconditions": [
+        "Playwright E2E config sets VITE_ENABLE_DEVICE_SIMULATION=true per testing-plan §8",
+        "API running against Compose PostgreSQL with preview seed active session",
+        "Authenticated enrolled Student session; valid-token-id alias resolves to Valid QrToken",
+        "Student navigated via /check-in?token=valid-token-id&gpsSim=delay&cameraSim=grant with sim flag on"
+      ],
+      "steps": [
+        "Complete browser check-in flow using simulation params without granting real GPS or camera",
+        "Capture POST /api/v1/check-in request body latitude and longitude from network log",
+        "Assert HTTP status 200 OK with outcome Success and attendance.status Present",
+        "Assert submitted coordinates are in-room values from gpsSim=delay default, not arbitrary overrides",
+        "Query qr_tokens and assert token status Consumed"
+      ],
+      "expected": "HTTP 200 check-in contract satisfied in E2E harness with device simulation enabled; NFR-24 test build path validates FR-07 and FR-08 without physical device per testing-plan §8 browser gate",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-24-006",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["NFR-24", "AC-08", "FR-08"],
+      "title": "Production build ignores gpsSim, cameraSim, gpsLat, and gpsLng query params",
+      "preconditions": [
+        "Web build compiled with VITE_ENABLE_DEVICE_SIMULATION=false (production default per 10-local-development-setup §4)",
+        "Authenticated enrolled Student session",
+        "Active session with valid QrToken; GET /api/v1/check-in/tokens/:tokenId/preflight returns 200 outcome Valid",
+        "Deep link includes gpsSim=delay, cameraSim=grant, gpsLat=10.762700, gpsLng=106.660200"
+      ],
+      "steps": [
+        "Load /check-in?token=:tokenId&gpsSim=delay&cameraSim=grant&gpsLat=10.762700&gpsLng=106.660200 with simulation flag off",
+        "Assert GpsCaptureStep does not auto-reach ready state solely from URL params without geolocation grant",
+        "Assert cameraSim=grant does not bypass getUserMedia when scanner step mounts with scannerOnly=1",
+        "Without granting real geolocation, assert POST /check-in cannot succeed using only URL coordinate overrides",
+        "Optionally assert dev-console warning logged that simulation params are ignored when flag is off"
+      ],
+      "expected": "NFR-24 production target: all demo-guides §7 query params ineffective when VITE_ENABLE_DEVICE_SIMULATION=false; client uses real getUserMedia and geolocation per 07-non-functional-risk §NFR-24",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-24-007",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-24", "FR-07", "AC-07"],
+      "title": "Harness happy path: gpsSim=delay and cameraSim=grant complete check-in without real device permissions",
+      "preconditions": [
+        "Playwright harness web server started with VITE_ENABLE_DEVICE_SIMULATION=true",
+        "Student student@example.edu.vn logged in on mobile viewport",
+        "Active session sess-1 with valid-token-id alias",
+        "Preview stack seeded per demo-guides §5"
+      ],
+      "steps": [
+        "Navigate to /check-in?token=valid-token-id&gpsSim=delay&cameraSim=grant",
+        "Wait for preflight pass and GpsCaptureStep to reach ready substate",
+        "Assert Vị trí đã sẵn sàng visible without real GPS permission dialog",
+        "Tap Xác nhận điểm danh and wait for outcome panel",
+        "Assert Điểm danh thành công (Present) displayed per demo-guides Script A step 4"
+      ],
+      "expected": "NFR-24 test/demo build: simulation layer enables desktop E2E and demo rehearsal without physical GPS or camera per demo-guides §7 and testing-plan §8",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-24-008",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-24", "FR-08", "AC-08"],
+      "title": "Harness gpsSim=timeout resolves to GpsDisabled outcome when simulation flag on",
+      "preconditions": [
+        "VITE_ENABLE_DEVICE_SIMULATION=true in harness web build",
+        "Authenticated enrolled Student session",
+        "Valid token deep link with gpsSim=timeout and gpsTimeoutMs=500 per demo-guides §7"
+      ],
+      "steps": [
+        "Navigate to /check-in?token=valid-token-id&gpsSim=timeout&gpsTimeoutMs=500",
+        "Wait for GPS capture step to process simulated timeout",
+        "Assert outcome panel shows GPS chưa bật (GpsDisabled) Vietnamese message",
+        "Assert help link or permission guide affordance visible per AC-08c",
+        "Assert Xác nhận điểm danh remains disabled or submit blocked"
+      ],
+      "expected": "Simulation flag on: gpsSim=timeout deterministically triggers GpsDisabled UX without real 15 s geolocation wait; NFR-24 enables fast harness iteration per demo-guides §7",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-24-009",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-24", "FR-08", "AC-08"],
+      "title": "Harness gpsLat/gpsLng override produces OutOfRadius only when simulation flag on",
+      "preconditions": [
+        "VITE_ENABLE_DEVICE_SIMULATION=true in harness",
+        "Student studentc@example.edu.vn logged in (enrolled, out-of-radius test persona)",
+        "Valid token for active session; room center 10.762622, 106.660172"
+      ],
+      "steps": [
+        "Navigate to /check-in?token=valid-token-id&gpsLat=10.764122&gpsLng=106.660172 per demo-guides Script B step 3",
+        "Complete preflight and submit check-in with simulated out-of-radius coordinates",
+        "Assert outcome Ngoài phạm vi phòng học (OutOfRadius) displayed",
+        "Repeat same URL on production build (sim flag off) without granting real GPS",
+        "Assert coordinates from URL override are ignored; check-in cannot reach OutOfRadius outcome without real geolocation"
+      ],
+      "expected": "gpsLat/gpsLng override effective only when VITE_ENABLE_DEVICE_SIMULATION=true; production build ignores overrides per NFR-24 and demo-guides §7",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-24-010",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["NFR-24", "FR-07"],
+      "title": "Production build browser journey invokes real getUserMedia and geolocation despite sim query params",
+      "preconditions": [
+        "Web build with VITE_ENABLE_DEVICE_SIMULATION=false served on test port",
+        "Authenticated enrolled Student on mobile viewport",
+        "Page instrumented to record getUserMedia and getCurrentPosition calls",
+        "URL includes gpsSim=delay and cameraSim=grant query params"
+      ],
+      "steps": [
+        "Navigate to /check-in?token=:tokenId&gpsSim=delay&cameraSim=grant with simulation flag off",
+        "Trigger QR scanner mount with scannerOnly=1 if needed",
+        "Assert navigator.mediaDevices.getUserMedia called; synthetic cameraSim layer not used",
+        "Advance to GpsCaptureStep after preflight pass",
+        "Assert navigator.geolocation.getCurrentPosition invoked; gpsSim=delay did not bypass real API"
+      ],
+      "expected": "NFR-24 production fidelity: real device APIs used exclusively when simulation flag off regardless of URL params per AC-08e and 07-non-functional-risk §NFR-24",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-24-011",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-24", "FR-10", "AC-10"],
+      "title": "mockLocation=1 simulation param triggers SpoofSuspected only when VITE_ENABLE_DEVICE_SIMULATION=true",
+      "preconditions": [
+        "Harness build with VITE_ENABLE_DEVICE_SIMULATION=true",
+        "Authenticated enrolled Student with valid QrToken",
+        "In-room coordinates available via gpsSim=delay"
+      ],
+      "steps": [
+        "Navigate to /check-in?token=valid-token-id&gpsSim=delay&mockLocation=1 with sim flag on",
+        "Submit check-in and capture POST /api/v1/check-in response",
+        "Assert HTTP 400 or 422 with outcome SpoofSuspected per AC-10a",
+        "Repeat on production build with mockLocation=1 in URL and real geolocation mocked in harness",
+        "Assert mockLocation URL param ignored; spoof detection relies on real device signals or API spoofMetadata only"
+      ],
+      "expected": "mockLocation query param is part of demo-guides §7 simulation layer and ineffective when flag off; NFR-24 separates test harness spoof scenarios from production device signals",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-24-012",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["NFR-24", "FR-07", "FR-08", "NFR-18"],
+      "title": "Real device check-in on mobile Safari/Chrome without simulation params",
+      "preconditions": [
+        "Production or staging build with VITE_ENABLE_DEVICE_SIMULATION=false",
+        "Physical iOS 15+ Safari or Android 10+ Chrome on same LAN or ngrok tunnel per demo-guides Script F",
+        "Instructor displays live QR at /sessions/sess-1/qr-present",
+        "Student account student@example.edu.vn with camera and GPS permissions grantable"
+      ],
+      "steps": [
+        "Student scans live QR from instructor display; deep link opens /check-in?token=… without gpsSim or cameraSim params",
+        "Grant camera permission when QR scanner requests getUserMedia",
+        "Grant location permission when GPS step requests geolocation",
+        "Submit check-in and assert Điểm danh thành công outcome",
+        "Verify no simulation query params were required for successful Present"
+      ],
+      "expected": "NFR-24 production path validated on physical device matrix: real camera and GPS APIs per NFR-18 without simulation layer per demo-guides Script F note",
+      "edgeCase": false,
+      "harnessSkip": "physical-device"
+    }
+  ]
+}
