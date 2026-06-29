@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-13",
   "version": 1,
-  "docFingerprint": "sha256:3fa2046089493c308025f4a4d5334944f8eb54fc5cb4dabcbe3fee07b649a95d",
-  "generatedAt": "2026-06-29T00:00:00Z",
+  "docFingerprint": "sha256:b49a514e92130ec40ca7f430294baf1bd37add95a07bdf023a535e953621083e",
+  "generatedAt": "2026-06-29T17:28:56Z",
   "cases": [
     {
       "id": "TC-AC-13-001",
@@ -45,12 +45,12 @@
       "steps": [
         "POST /api/v1/reports/export with valid filter body using Instructor session",
         "Assert HTTP status 403 Forbidden",
-        "Assert response errorCode ExportNotAllowed",
-        "Assert message Chỉ phòng đào tạo mới có quyền xuất dữ liệu per roles-permissions §2.5",
+        "Assert response errorCode Forbidden or ExportNotAllowed",
+        "Assert message Chỉ phòng đào tạo mới có quyền xuất dữ liệu per AC-13b and roles-permissions §2.5",
         "Assert response body is not text/csv and contains no attendance data",
         "Verify ExportDenied security audit entry created with actor instructorId and denial reason per error-handling §6.2"
       ],
-      "expected": "Testing-plan TS-32 satisfied: non-admin CSV export rejected with 403 Forbidden and denied attempt logged per BR-09",
+      "expected": "Testing-plan TS-32 satisfied: non-admin CSV export rejected with 403 Forbidden, localized permission message, and denied attempt logged per AC-13b and BR-09",
       "edgeCase": false
     },
     {
@@ -131,7 +131,7 @@
       "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["AC-13", "FR-13", "BR-09", "NFR-11"],
-      "title": "Instructor POST /reports/export rejected with localized ExportNotAllowed message",
+      "title": "Instructor POST /reports/export rejected with localized permission message",
       "preconditions": [
         "Authenticated Instructor assigned to HESD-01 / SWE-101 with report:read but without report:export",
         "Attendance data exists for export filters"
@@ -139,12 +139,12 @@
       "steps": [
         "POST /api/v1/reports/export with valid filter body using Instructor session",
         "Assert HTTP status 403 Forbidden",
-        "Assert errorCode ExportNotAllowed",
+        "Assert errorCode Forbidden or ExportNotAllowed",
         "Assert Vietnamese message Chỉ phòng đào tạo mới có quyền xuất dữ liệu per AC-13b and roles-permissions §2.5",
         "Assert no CSV attachment in response",
         "Verify ExportDenied audit log entry with actor instructorId per BR-09"
       ],
-      "expected": "AC-13b satisfied for Instructor: export rejected with localized message and denied attempt logged per tag-specific rbac-negative hint",
+      "expected": "AC-13b satisfied for Instructor: export rejected with localized permission message and denied attempt logged per tag-specific rbac-negative hint",
       "edgeCase": false
     },
     {
@@ -162,8 +162,8 @@
       "steps": [
         "POST /api/v1/reports/export with valid filter body using Student session",
         "Assert HTTP status 403 Forbidden",
-        "Assert errorCode ExportNotAllowed",
-        "Assert message Chỉ phòng đào tạo mới có quyền xuất dữ liệu",
+        "Assert errorCode Forbidden or ExportNotAllowed",
+        "Assert message Chỉ phòng đào tạo mới có quyền xuất dữ liệu per AC-13b",
         "Assert response contains no peer attendance or roster data",
         "Verify ExportDenied security audit entry created per error-handling §6.2"
       ],
@@ -279,7 +279,7 @@
         "Set class HESD-01, subject SWE-101, and date range 2026-06-01 to 2026-06-30 in ReportFilterBar (same filter model as /admin/reports per listing-pages §10)",
         "Verify CsvExportPanel transitions through Estimating then Ready states with estimated row count from dry-run HEAD request per ui-states §12",
         "Verify Xuất CSV button enabled when estimated rows > 0",
-        "Click Xuất CSV to open ConfirmDialog showing scope summary and compliance note: Dữ liệu xuất chỉ dùng cho mục đích học vụ. Mọi lần xuất được ghi nhật ký. per forms-validation §4.7",
+        "Click Xuất CSV to open ConfirmDialog showing scope summary and compliance note: Dữ liệu xuất chỉ dùng cho mục đích học vụ. Mọi lần xuất được ghi nhật ký. per forms-validation §4.8",
         "Confirm export in dialog and verify Exporting state (button loading; prevent navigation)",
         "Wait for browser download and verify success toast Đã tải xuống per ui-states §12",
         "Open downloaded attendance-export CSV and verify header columns institutional_id, display_name, class_code, subject_code, session_date, attendance_status, checked_in_at"
