@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { appCopy } from "@/lib/copy/status-labels";
 import { UserMenu, type UserMenuProps } from "@/components/shared/navigation/user-menu";
@@ -7,6 +8,7 @@ export interface AppHeaderProps {
   homeTo?: string;
   compact?: boolean;
   user?: Pick<UserMenuProps, "displayName" | "role" | "onLogout">;
+  headerActions?: ReactNode;
   className?: string;
 }
 
@@ -14,6 +16,7 @@ export function AppHeader({
   homeTo = "/check-in",
   compact = false,
   user,
+  headerActions,
   className,
 }: AppHeaderProps) {
   return (
@@ -32,11 +35,14 @@ export function AppHeader({
         {appCopy.productName}
       </Link>
       {user ? (
-        <UserMenu
-          displayName={user.displayName}
-          role={user.role}
-          onLogout={user.onLogout}
-        />
+        <div className="flex items-center gap-2">
+          {headerActions}
+          <UserMenu
+            displayName={user.displayName}
+            role={user.role}
+            onLogout={user.onLogout}
+          />
+        </div>
       ) : null}
     </header>
   );

@@ -196,3 +196,6 @@ Verification failures and remediation notes for harness agents.
 - **Admin route guard:** `AdminLayout` must render `ForbiddenPage` (no admin sidebar/chrome) for non-`TrainingOfficeAdmin` roles before `<Outlet>` — page-level inline denial inside admin chrome fails TC-NFR-11-017.
 - **Reports RBAC:** `/reports` must block `Student` at page entry with `ForbiddenPage` before report shell mounts — fails TC-NFR-07-016 when only API denial is used.
 - [web-admin-reports-export] Computational checks failed — see 20260630T015000Z-checks.json
+- [web-admin-policy] Browser test failed — see 20260630T021753Z-browser-test.json
+- [web-admin-policy] Computational checks failed — see 20260630T023020Z-checks.json
+- **NotificationBell in role layouts:** `StudentLayout` / `InstructorLayout` mount `NotificationBell` which requires `QueryClientProvider` — wrap `app-shell.test.tsx` renders (or mock the hook) or `test:unit` fails with "No QueryClient set".

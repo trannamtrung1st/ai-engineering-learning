@@ -2,6 +2,7 @@ import { SessionStatus, hasValidRoomGps } from "@wecheck/domain";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
+import { SESSION_CLOSED_NOTIFICATION_EVENT } from "@/hooks/use-notifications";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -55,6 +56,10 @@ export function SessionLifecycleActions({
     }
     toast.success("Đã đóng buổi học");
     onSessionUpdated({ ...session, ...result.data });
+    window.dispatchEvent(new Event(SESSION_CLOSED_NOTIFICATION_EVENT));
+    window.setTimeout(() => {
+      window.dispatchEvent(new Event(SESSION_CLOSED_NOTIFICATION_EVENT));
+    }, 1500);
   }
 
   async function handleCancel() {

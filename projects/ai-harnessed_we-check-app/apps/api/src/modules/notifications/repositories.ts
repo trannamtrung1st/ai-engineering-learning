@@ -10,7 +10,7 @@ import { encodeNotificationCursor } from "./validation.js";
 
 export const POLICY_KEY_ABSENCE_THRESHOLD = "absence_threshold_percent";
 export const POLICY_KEY_ABSENCE_AUTO_WARNING = "absence_auto_warning_enabled";
-const DEFAULT_ABSENCE_AUTO_WARNING_ENABLED = true;
+const DEFAULT_ABSENCE_AUTO_WARNING_ENABLED = false;
 
 export class PolicyRepository {
   constructor(private readonly db: DbPool) {}

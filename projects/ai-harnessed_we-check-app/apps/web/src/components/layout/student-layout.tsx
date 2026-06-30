@@ -5,6 +5,7 @@ import { AppHeader } from "@/components/layout/app-header";
 import { PageContent } from "@/components/layout/page-content";
 import { NavLink } from "@/components/shared/navigation/nav-link";
 import { type AuthOutletContext } from "@/components/auth/require-auth";
+import { NotificationBell } from "@/components/notifications/notification-bell";
 import { studentNavItems } from "@/lib/copy/status-labels";
 
 const navIcons = {
@@ -35,6 +36,7 @@ export function StudentLayout({
           displayName: user.displayName,
           role: UserRole.Student,
         }}
+        headerActions={<NotificationBell />}
       />
       <main id="main-content" className="flex-1">
         <PageContent variant="narrow">

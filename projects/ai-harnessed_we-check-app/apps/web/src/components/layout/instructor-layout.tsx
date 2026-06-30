@@ -11,6 +11,7 @@ import { NavLink } from "@/components/shared/navigation/nav-link";
 import { UserMenu } from "@/components/shared/navigation/user-menu";
 import { IconButton } from "@/components/ui/icon-button";
 import { type AuthOutletContext } from "@/components/auth/require-auth";
+import { NotificationBell } from "@/components/notifications/notification-bell";
 import { instructorNavItems } from "@/lib/copy/status-labels";
 import { cn } from "@/lib/cn";
 
@@ -69,7 +70,10 @@ export function InstructorLayout({
             </IconButton>
             <Breadcrumb items={breadcrumbs} />
           </div>
-          <UserMenu displayName={user.displayName} role={UserRole.Instructor} />
+          <div className="flex items-center gap-2">
+            <NotificationBell />
+            <UserMenu displayName={user.displayName} role={UserRole.Instructor} />
+          </div>
         </header>
         <main id="main-content" className="flex-1">
           <PageContent variant="wide">

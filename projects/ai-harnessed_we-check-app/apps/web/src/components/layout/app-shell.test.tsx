@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Outlet, Route, Routes } from "react-router-dom";
@@ -40,16 +41,22 @@ function renderWithOutlet(
   path = "/",
   authUser: AuthOutletContext = studentAuthUser,
 ) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+
   return render(
-    <MemoryRouter initialEntries={[path]}>
-      <Routes>
-        <Route path="*" element={<Outlet context={authUser} />}>
-          <Route path="*" element={ui}>
-            <Route index element={<p>Nội dung trang</p>} />
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[path]}>
+        <Routes>
+          <Route path="*" element={<Outlet context={authUser} />}>
+            <Route path="*" element={ui}>
+              <Route index element={<p>Nội dung trang</p>} />
+            </Route>
           </Route>
-        </Route>
-      </Routes>
-    </MemoryRouter>,
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 

@@ -1,5 +1,6 @@
 import {
   AttendanceStatus,
+  NotificationType,
   QrTokenStatus,
   SessionStatus,
   UserRole,
@@ -9,6 +10,10 @@ import type { DbPool } from "./db.js";
 import { now } from "./clock.js";
 import { runWhenPreviewDbIdle } from "./integration-test-lock.js";
 import { hashPassword } from "../modules/identity-auth/password-hasher.js";
+import {
+  POLICY_KEY_ABSENCE_AUTO_WARNING,
+  POLICY_KEY_ABSENCE_THRESHOLD,
+} from "../modules/notifications/repositories.js";
 import { SessionService } from "../modules/session-management/session-service.js";
 
 /** Deterministic preview fixture IDs — mirrored in apps/web preview-fixtures.ts */
@@ -305,6 +310,8 @@ export async function ensurePreviewReferenceData(db: DbPool): Promise<void> {
       SessionStatus.Draft,
     ],
   );
+
+  await ensurePreviewAbsenceWarningEnabled(db);
 }
 
 /** Upsert monitor dashboard fixtures: spoof row + token-reuse alert (AC-10, FR-09, BR-11). */
@@ -798,6 +805,68 @@ export async function resumePreviewQrSchedulers(
 
 const PREVIEW_TOKEN_REFRESH_MS = 20_000;
 
+/** FR-16 / AC-16 — default absence policy for admin /admin/policy browser gates */
+async function ensurePreviewAbsencePolicyFixtures(db: DbPool): Promise<void> {
+  await db.query(
+    `INSERT INTO policy_settings (key, value) VALUES ($1, '20'), ($2, 'false')
+     ON CONFLICT (key) DO NOTHING`,
+    [POLICY_KEY_ABSENCE_THRESHOLD, POLICY_KEY_ABSENCE_AUTO_WARNING],
+  );
+}
+
+/** FR-16 — enable threshold evaluation when preview sessions close */
+async function ensurePreviewAbsenceWarningEnabled(db: DbPool): Promise<void> {
+  await db.query(
+    `INSERT INTO policy_settings (key, value) VALUES ($1, 'true')
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+    [POLICY_KEY_ABSENCE_AUTO_WARNING],
+  );
+}
+
+/** FR-16 / AC-16 — seed in-app absence warnings for student/instructor notification UI */
+async function ensurePreviewAbsenceNotificationFixtures(db: DbPool): Promise<void> {
+  const existing = await db.query<{ count: string }>(
+    `SELECT COUNT(*)::text AS count FROM notifications
+     WHERE user_id = $1 AND type = $2`,
+    [PREVIEW_IDS.student, NotificationType.AbsenceThresholdWarning],
+  );
+  if (Number(existing.rows[0]?.count ?? "0") > 0) {
+    return;
+  }
+
+  const basePayload = {
+    subjectCode: "SWE-101",
+    subjectName: "Software Engineering 101",
+    absenceRate: 0.375,
+    threshold: 0.2,
+    sessionCount: 8,
+    unexcusedAbsenceCount: 3,
+    sourceSessionId: PREVIEW_IDS.sessionClosed,
+  };
+
+  await db.query(
+    `INSERT INTO notifications (user_id, type, payload) VALUES ($1, $2, $3::jsonb)`,
+    [
+      PREVIEW_IDS.student,
+      NotificationType.AbsenceThresholdWarning,
+      JSON.stringify(basePayload),
+    ],
+  );
+
+  await db.query(
+    `INSERT INTO notifications (user_id, type, payload) VALUES ($1, $2, $3::jsonb)`,
+    [
+      PREVIEW_IDS.instructor,
+      NotificationType.AbsenceThresholdWarning,
+      JSON.stringify({
+        ...basePayload,
+        studentId: PREVIEW_IDS.student,
+        studentDisplayName: "Nguyễn Văn A",
+      }),
+    ],
+  );
+}
+
 /** Lightweight refresh after integration truncates sessions — history before QR tokens (FK order). */
 export async function refreshPreviewBrowserFixtures(db: DbPool): Promise<void> {
   await ensurePreviewCoreAuthFixtures(db);
@@ -817,6 +886,8 @@ export async function refreshPreviewBrowserFixtures(db: DbPool): Promise<void> {
   }
 
   await ensurePreviewTokenFixtures(db);
+  await ensurePreviewAbsenceNotificationFixtures(db);
+  await ensurePreviewAbsencePolicyFixtures(db);
 }
 
 /** Keep browser-gate QR fixtures within 30 s TTL while preview stack runs. */
@@ -997,6 +1068,9 @@ export async function runPreviewSeed(db: DbPool): Promise<void> {
   await ensurePreviewInstructor2Fixtures(db);
   await ensurePreviewMonitorFixtures(db);
   await ensurePreviewHistoryFixtures(db);
+
+  await ensurePreviewAbsencePolicyFixtures(db);
+  await ensurePreviewAbsenceNotificationFixtures(db);
 
   sessionService.qr.stopAll();
   await markSeedApplied(db);

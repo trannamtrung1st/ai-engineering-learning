@@ -28,7 +28,7 @@ export function AttendancePolicyForm({ onSaved }: AttendancePolicyFormProps) {
   const [submitting, setSubmitting] = useState(false);
   const [values, setValues] = useState<PolicyFormValues>({
     absenceThresholdPercent: "20",
-    autoWarningEnabled: true,
+    autoWarningEnabled: false,
   });
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [formError, setFormError] = useState<string | null>(null);

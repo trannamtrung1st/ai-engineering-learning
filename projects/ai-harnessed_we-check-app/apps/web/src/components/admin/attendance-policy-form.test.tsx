@@ -25,7 +25,7 @@ describe("AttendancePolicyForm (FR-16, AC-16, BR-05)", () => {
     vi.clearAllMocks();
     vi.mocked(getAbsencePolicy).mockResolvedValue({
       ok: true,
-      data: { thresholdPercent: 20, autoWarningEnabled: true },
+      data: { thresholdPercent: 20, autoWarningEnabled: false },
     });
   });
 
@@ -37,14 +37,14 @@ describe("AttendancePolicyForm (FR-16, AC-16, BR-05)", () => {
     });
 
     expect(screen.getByTestId("absence-threshold-input")).toHaveValue(20);
-    expect(screen.getByTestId("auto-warning-toggle")).toBeChecked();
+    expect(screen.getByTestId("auto-warning-toggle")).not.toBeChecked();
     expect(screen.getByText(policyCopy.fieldThresholdHint)).toBeInTheDocument();
   });
 
   it("TC-FR-16-014: saves updated threshold with success toast", async () => {
     vi.mocked(updateAbsencePolicy).mockResolvedValue({
       ok: true,
-      data: { thresholdPercent: 25, autoWarningEnabled: true },
+      data: { thresholdPercent: 25, autoWarningEnabled: false },
     });
 
     render(<AttendancePolicyForm />);
@@ -61,7 +61,7 @@ describe("AttendancePolicyForm (FR-16, AC-16, BR-05)", () => {
     await waitFor(() => {
       expect(updateAbsencePolicy).toHaveBeenCalledWith({
         thresholdPercent: 25,
-        autoWarningEnabled: true,
+        autoWarningEnabled: false,
       });
     });
 
@@ -90,13 +90,13 @@ describe("AttendancePolicyForm (FR-16, AC-16, BR-05)", () => {
   it("TC-FR-16-014: persists auto-warning toggle when saving", async () => {
     vi.mocked(updateAbsencePolicy).mockResolvedValue({
       ok: true,
-      data: { thresholdPercent: 20, autoWarningEnabled: false },
+      data: { thresholdPercent: 20, autoWarningEnabled: true },
     });
 
     render(<AttendancePolicyForm />);
 
     await waitFor(() => {
-      expect(screen.getByTestId("auto-warning-toggle")).toBeChecked();
+      expect(screen.getByTestId("auto-warning-toggle")).not.toBeChecked();
     });
 
     fireEvent.click(screen.getByTestId("auto-warning-toggle"));
@@ -105,11 +105,11 @@ describe("AttendancePolicyForm (FR-16, AC-16, BR-05)", () => {
     await waitFor(() => {
       expect(updateAbsencePolicy).toHaveBeenCalledWith({
         thresholdPercent: 20,
-        autoWarningEnabled: false,
+        autoWarningEnabled: true,
       });
     });
 
-    expect(screen.getByTestId("auto-warning-toggle")).not.toBeChecked();
+    expect(screen.getByTestId("auto-warning-toggle")).toBeChecked();
   });
 
   it("maps API validation errors to threshold field", async () => {

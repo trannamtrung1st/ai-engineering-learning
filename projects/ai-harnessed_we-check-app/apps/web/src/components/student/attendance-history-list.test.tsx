@@ -21,6 +21,15 @@ vi.mock("@/lib/attendance-history-api", () => ({
   fetchAttendanceHistory: vi.fn(),
 }));
 
+vi.mock("@/hooks/use-notifications", () => ({
+  useNotifications: () => ({
+    data: { items: [], nextCursor: null, totalCount: 0 },
+    isLoading: false,
+    isError: false,
+  }),
+  selectAbsenceWarningsBySubject: () => [],
+}));
+
 import { fetchAttendanceHistory } from "@/lib/attendance-history-api";
 
 function renderList() {
