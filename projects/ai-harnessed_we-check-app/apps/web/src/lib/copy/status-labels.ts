@@ -64,6 +64,7 @@ export const instructorNavItems = [
 ] as const;
 
 export const adminNavItems = [
+  { to: "/admin", label: "Trang chủ" },
   { to: "/admin/users", label: "Người dùng" },
   { to: "/admin/rosters", label: "Danh sách lớp" },
   { to: "/admin/reports", label: "Báo cáo" },

@@ -25,6 +25,9 @@ import { SessionMonitorPage } from "@/app/sessions/[sessionId]/monitor/page";
 import { SessionRosterPage } from "@/app/sessions/[sessionId]/roster/page";
 import { SessionsListPage } from "@/app/sessions/page";
 import { RequireAuth } from "@/components/auth/require-auth";
+import { SetupGuard } from "@/components/auth/setup-guard";
+import { AdminHomePage } from "@/app/admin/page";
+import { SetupPage } from "@/app/setup/page";
 import { AdminLayout } from "@/components/layout/admin-layout";
 import { AuthLayout } from "@/components/layout/auth-layout";
 import { InstructorLayout } from "@/components/layout/instructor-layout";
@@ -80,65 +83,76 @@ const router = createBrowserRouter([
     ),
     children: [
       {
-        index: true,
-        element: <ShellOverviewPage />,
-      },
-      {
-        path: "login",
-        element: <AuthLayout />,
-        children: [{ index: true, element: <LoginPage /> }],
-      },
-      {
-        path: "forbidden",
-        element: <ForbiddenRoutePage />,
-      },
-      {
-        element: <RequireAuth />,
+        element: <SetupGuard />,
         children: [
           {
-            element: <StudentLayout />,
+            index: true,
+            element: <ShellOverviewPage />,
+          },
+          {
+            path: "setup",
+            element: <AuthLayout />,
+            children: [{ index: true, element: <SetupPage /> }],
+          },
+          {
+            path: "login",
+            element: <AuthLayout />,
+            children: [{ index: true, element: <LoginPage /> }],
+          },
+          {
+            path: "forbidden",
+            element: <ForbiddenRoutePage />,
+          },
+          {
+            element: <RequireAuth />,
             children: [
-              { path: "check-in", element: <CheckInPage /> },
-              { path: "history", element: <HistoryPage /> },
+              {
+                element: <StudentLayout />,
+                children: [
+                  { path: "check-in", element: <CheckInPage /> },
+                  { path: "history", element: <HistoryPage /> },
+                ],
+              },
+              {
+                element: <InstructorLayout />,
+                children: [
+                  { path: "sessions", element: <SessionsListPage /> },
+                  { path: "sessions/new", element: <CreateSessionPage /> },
+                  { path: "sessions/:sessionId/monitor", element: <SessionMonitorPage /> },
+                  { path: "sessions/:sessionId/roster", element: <SessionRosterPage /> },
+                  { path: "sessions/:id", element: <SessionDetailPage /> },
+                  { path: "reports", element: <ReportsPage /> },
+                  { path: "reports/sessions/:sessionId", element: <SessionReportPage /> },
+                ],
+              },
+              {
+                path: "sessions/:sessionId/qr-present",
+                element: <QrPresentPage />,
+              },
+              {
+                path: "admin",
+                element: <AdminLayout />,
+                children: [
+                  { index: true, element: <AdminHomePage /> },
+                  { path: "users", element: <AdminUsersPage /> },
+                  { path: "users/new", element: <CreateUserPage /> },
+                  { path: "users/:userId", element: <EditUserPage /> },
+                  { path: "rosters", element: <AdminRostersPage /> },
+                  { path: "rosters/import", element: <RosterImportPage /> },
+                  { path: "rosters/:classCode", element: <AdminClassRosterPage /> },
+                  { path: "classes/new", element: <CreateClassSubjectPage /> },
+                  { path: "reports", element: <AdminReportsPage /> },
+                  { path: "export", element: <AdminExportPage /> },
+                  { path: "policy", element: <AdminPolicyPage /> },
+                ],
+              },
             ],
           },
           {
-            element: <InstructorLayout />,
-            children: [
-              { path: "sessions", element: <SessionsListPage /> },
-              { path: "sessions/new", element: <CreateSessionPage /> },
-              { path: "sessions/:sessionId/monitor", element: <SessionMonitorPage /> },
-              { path: "sessions/:sessionId/roster", element: <SessionRosterPage /> },
-              { path: "sessions/:id", element: <SessionDetailPage /> },
-              { path: "reports", element: <ReportsPage /> },
-              { path: "reports/sessions/:sessionId", element: <SessionReportPage /> },
-            ],
-          },
-          {
-            path: "sessions/:sessionId/qr-present",
-            element: <QrPresentPage />,
-          },
-          {
-            path: "admin",
-            element: <AdminLayout />,
-            children: [
-              { path: "users", element: <AdminUsersPage /> },
-              { path: "users/new", element: <CreateUserPage /> },
-              { path: "users/:userId", element: <EditUserPage /> },
-              { path: "rosters", element: <AdminRostersPage /> },
-              { path: "rosters/import", element: <RosterImportPage /> },
-              { path: "rosters/:classCode", element: <AdminClassRosterPage /> },
-              { path: "classes/new", element: <CreateClassSubjectPage /> },
-              { path: "reports", element: <AdminReportsPage /> },
-              { path: "export", element: <AdminExportPage /> },
-              { path: "policy", element: <AdminPolicyPage /> },
-            ],
+            path: "*",
+            element: <NotFoundRoutePage />,
           },
         ],
-      },
-      {
-        path: "*",
-        element: <NotFoundRoutePage />,
       },
     ],
   },

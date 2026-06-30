@@ -980,7 +980,7 @@
     },
     {
       "id": "web-admin-bootstrap",
-      "passes": false,
+      "passes": true,
       "priority": 36,
       "phase": 2,
       "agent": "frontend",

@@ -1,6 +1,7 @@
 import {
   BarChart3,
   Download,
+  Home,
   Menu,
   Settings,
   Upload,
@@ -21,6 +22,7 @@ import { adminNavItems, appCopy } from "@/lib/copy/status-labels";
 import { cn } from "@/lib/cn";
 
 const navIcons = {
+  "/admin": Home,
   "/admin/users": Users,
   "/admin/rosters": Upload,
   "/admin/reports": BarChart3,
@@ -79,7 +81,7 @@ export function AdminLayout() {
             </IconButton>
             <Breadcrumb
               items={[
-                { label: appCopy.adminSection, to: "/admin/users" },
+                { label: appCopy.adminSection, to: "/admin" },
                 { label: "Bảng điều khiển" },
               ]}
             />

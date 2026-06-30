@@ -319,3 +319,5 @@ Append-only log of harness slice completions.
 - 2026-06-30T02:58:02Z | web-admin-policy | passed
 - 2026-06-30T03:04:26Z | module-identity-bootstrap | aih:check pass — GET /setup/status needsSetup flag; POST /setup/first-admin creates TrainingOfficeAdmin + session cookie; SetupAlreadyComplete 403 when User.count > 0; pg_advisory_xact_lock concurrency; bcrypt + audit log; 12 integration tests; traceability AC-17 FR-17 BR-13
 - 2026-06-30T03:08:37Z | module-identity-bootstrap | passed
+- 2026-06-30T03:25:00Z | web-admin-bootstrap | browser_verified: seeded preview /setup→/login redirect (needsSetup false); / root stays on shell overview; admin /admin hub with Trang chủ sidebar + Quản lý người dùng cards; SetupAdminForm Vietnamese fields + redirect /admin covered in component tests; aih:check pass (172 integration, 36 e2e, 184 unit) — screenshots: ai-harness/generated/runs/screenshots/web-admin-bootstrap/implementer/20260630T031750Z-setup-redirect-login.png, 20260630T031758Z-root-no-setup-redirect.png, 20260630T031825Z-admin-hub.png
+- 2026-06-30T03:28:15Z | web-admin-bootstrap | passed
