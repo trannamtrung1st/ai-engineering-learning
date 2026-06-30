@@ -949,7 +949,7 @@
     },
     {
       "id": "module-identity-bootstrap",
-      "passes": false,
+      "passes": true,
       "priority": 35,
       "phase": 1,
       "agent": "backend",

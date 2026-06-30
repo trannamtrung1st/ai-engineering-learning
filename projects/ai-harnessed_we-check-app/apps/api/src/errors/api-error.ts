@@ -216,6 +216,8 @@ export const ERROR_MESSAGES: Readonly<Record<ErrorCodeType, string>> = {
   [ErrorCode.MalformedJson]: "Định dạng yêu cầu không hợp lệ",
   [ErrorCode.DuplicateClassCode]: "Mã lớp đã tồn tại",
   [ErrorCode.DuplicateSubjectCode]: "Mã môn học đã tồn tại",
+  [ErrorCode.SetupAlreadyComplete]:
+    "Hệ thống đã hoàn tất thiết lập ban đầu. Vui lòng đăng nhập.",
 };
 
 export function duplicateClassCode(): ApiError {
@@ -231,5 +233,13 @@ export function duplicateSubjectCode(): ApiError {
     422,
     ErrorCode.DuplicateSubjectCode,
     ERROR_MESSAGES[ErrorCode.DuplicateSubjectCode],
+  );
+}
+
+export function setupAlreadyComplete(): ApiError {
+  return new ApiError(
+    403,
+    ErrorCode.SetupAlreadyComplete,
+    ERROR_MESSAGES[ErrorCode.SetupAlreadyComplete],
   );
 }

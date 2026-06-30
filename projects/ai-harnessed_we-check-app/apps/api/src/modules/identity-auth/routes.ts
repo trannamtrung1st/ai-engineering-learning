@@ -20,6 +20,7 @@ import {
   validateSessionInactivityHours,
   validateUpdateUserBody,
 } from "./validation.js";
+import { registerSetupRoutes } from "./setup/index.js";
 
 function requireAdmin(request: FastifyRequest): void {
   if (request.auth?.user.role !== UserRole.TrainingOfficeAdmin) {
@@ -55,6 +56,8 @@ export async function registerIdentityAuthRoutes(
   const policyService = new PolicyService(db);
   const auth = createAuthMiddleware(store);
   const secureCookies = process.env.NODE_ENV === "production";
+
+  await registerSetupRoutes(app, db, store);
 
   app.post("/auth/login", async (request, reply) => {
     const parsed = validateLoginBody(request.body);

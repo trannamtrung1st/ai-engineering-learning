@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { PoolClient } from "pg";
 import type { UserRole } from "@wecheck/domain";
 import type { DbPool } from "../infra/db.js";
 import { now } from "../infra/clock.js";
@@ -104,6 +105,22 @@ export class SessionStore {
     const expiresAt = computeExpiresAt(at, inactivityHours);
     const id = randomUUID();
     await this.db.query(
+      `INSERT INTO auth_sessions (id, user_id, expires_at, last_activity_at)
+       VALUES ($1, $2, $3, $4)`,
+      [id, userId, expiresAt, at],
+    );
+    return { id, userId, expiresAt, lastActivityAt: at };
+  }
+
+  async createSessionOnClient(
+    client: PoolClient,
+    userId: string,
+    inactivityHours: number,
+  ): Promise<AuthSession> {
+    const at = now();
+    const expiresAt = computeExpiresAt(at, inactivityHours);
+    const id = randomUUID();
+    await client.query(
       `INSERT INTO auth_sessions (id, user_id, expires_at, last_activity_at)
        VALUES ($1, $2, $3, $4)`,
       [id, userId, expiresAt, at],
