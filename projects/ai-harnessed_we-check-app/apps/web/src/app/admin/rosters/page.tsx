@@ -1,4 +1,4 @@
-import { Upload, Users } from "lucide-react";
+import { Plus, Upload, Users } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { ClassRosterTable } from "@/components/admin/class-roster-table";
@@ -60,14 +60,24 @@ export function AdminRostersPage() {
         description={rosterCopy.pageDescription}
         actions={
           showImport ? (
-            <Link
-              to="/admin/rosters/import"
-              className="inline-flex min-h-touch items-center justify-center gap-2 rounded-md bg-primary-600 px-4 font-medium text-primary-foreground hover:bg-primary-700"
-              data-testid="roster-import-link"
-            >
-              <Upload className="h-4 w-4" aria-hidden="true" />
-              {rosterCopy.importButton}
-            </Link>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                to="/admin/classes/new"
+                className="inline-flex min-h-touch items-center justify-center gap-2 rounded-md border border-border bg-surface-raised px-4 font-medium text-text-primary hover:bg-surface"
+                data-testid="class-subject-create-link"
+              >
+                <Plus className="h-4 w-4" aria-hidden="true" />
+                Thêm lớp/môn
+              </Link>
+              <Link
+                to="/admin/rosters/import"
+                className="inline-flex min-h-touch items-center justify-center gap-2 rounded-md bg-primary-600 px-4 font-medium text-primary-foreground hover:bg-primary-700"
+                data-testid="roster-import-link"
+              >
+                <Upload className="h-4 w-4" aria-hidden="true" />
+                {rosterCopy.importButton}
+              </Link>
+            </div>
           ) : undefined
         }
       />

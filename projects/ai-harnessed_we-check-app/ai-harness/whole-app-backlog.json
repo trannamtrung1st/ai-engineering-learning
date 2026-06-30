@@ -848,7 +848,7 @@
     },
     {
       "id": "web-admin-rosters",
-      "passes": false,
+      "passes": true,
       "priority": 30,
       "phase": 2,
       "agent": "frontend",
@@ -869,7 +869,8 @@
           "apps/web/src/lib/roster-access.test.ts"
         ],
         "component": [
-          "apps/web/src/components/admin/roster-import-panel.test.tsx"
+          "apps/web/src/components/admin/roster-import-panel.test.tsx",
+          "apps/web/src/components/admin/class-subject-form.test.tsx"
         ],
         "acceptanceTags": [
           "AC-03",

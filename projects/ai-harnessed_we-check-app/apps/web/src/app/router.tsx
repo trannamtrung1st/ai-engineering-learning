@@ -1,6 +1,7 @@
 import { SessionStatus } from "@wecheck/domain";
 import { createBrowserRouter, RouterProvider, useRouteError } from "react-router-dom";
 import { RootLayout } from "@/app/layout";
+import { CreateClassSubjectPage } from "@/app/admin/classes/new/page";
 import { AdminExportPage } from "@/app/admin/export/page";
 import { AdminPolicyPage } from "@/app/admin/policy/page";
 import { AdminReportsPage } from "@/app/admin/reports/page";
@@ -127,6 +128,7 @@ const router = createBrowserRouter([
               { path: "rosters", element: <AdminRostersPage /> },
               { path: "rosters/import", element: <RosterImportPage /> },
               { path: "rosters/:classCode", element: <AdminClassRosterPage /> },
+              { path: "classes/new", element: <CreateClassSubjectPage /> },
               { path: "reports", element: <AdminReportsPage /> },
               { path: "export", element: <AdminExportPage /> },
               { path: "policy", element: <AdminPolicyPage /> },

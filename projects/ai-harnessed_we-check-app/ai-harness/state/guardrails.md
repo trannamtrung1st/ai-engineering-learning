@@ -191,3 +191,4 @@ Verification failures and remediation notes for harness agents.
 - [web-instructor-qr-display] Browser test failed — see 20260629T225102Z-browser-test.json
 - [web-instructor-qr-display] Computational checks failed — see 20260629T230419Z-checks.json
 - **Preview active session after qr-present close:** TC-NFR-20-014 closes `sess-1` during browser gates — `ensurePreviewReferenceData` must reset `sessionActive` from Closed→Draft→open on `refreshPreviewBrowserFixtures` so later QR rotation cases (TC-NFR-06-016) stay runnable.
+- [web-admin-rosters] Browser test failed — see 20260630T004535Z-browser-test.json
