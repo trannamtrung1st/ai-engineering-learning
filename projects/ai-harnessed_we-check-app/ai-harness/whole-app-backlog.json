@@ -784,7 +784,7 @@
     },
     {
       "id": "web-instructor-reports",
-      "passes": false,
+      "passes": true,
       "priority": 28,
       "phase": 2,
       "agent": "frontend",
