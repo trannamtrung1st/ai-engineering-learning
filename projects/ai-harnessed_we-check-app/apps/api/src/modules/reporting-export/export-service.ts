@@ -63,4 +63,27 @@ export class ExportService {
 
     return { csv, rowCount: rows.length };
   }
+
+  async estimateRowCount(
+    filters: ReportFilter,
+    actorId: string,
+    role: UserRoleType,
+  ): Promise<number> {
+    if (role !== UserRole.TrainingOfficeAdmin) {
+      await this.securityAudit.logExportDenied(actorId, filters);
+      throw exportNotAllowed();
+    }
+
+    if (!filters.classCode || !filters.subjectCode) {
+      throw forbidden();
+    }
+
+    const classRecord = await this.references.findClassByCode(filters.classCode);
+    const subjectRecord = await this.references.findSubjectByCode(filters.subjectCode);
+    if (!classRecord || !subjectRecord) {
+      throw notFound();
+    }
+
+    return this.reports.countExportRows(filters, classRecord.id, subjectRecord.id);
+  }
 }

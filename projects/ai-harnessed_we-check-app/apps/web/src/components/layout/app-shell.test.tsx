@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Outlet, Route, Routes } from "react-router-dom";
@@ -14,8 +15,9 @@ import {
   instructorNavItems,
   studentNavItems,
 } from "@/lib/copy/status-labels";
+import { reportCopy } from "@/lib/copy/report-labels";
 
-const mockAuthUser: AuthOutletContext = {
+const studentAuthUser: AuthOutletContext = {
   user: {
     id: "test-user",
     institutionalId: "SV001",
@@ -25,17 +27,47 @@ const mockAuthUser: AuthOutletContext = {
   },
 };
 
-function renderWithOutlet(ui: React.ReactElement, path = "/") {
+const adminAuthUser: AuthOutletContext = {
+  user: {
+    id: "admin-user",
+    institutionalId: "ADMIN001",
+    displayName: "Quản trị thử",
+    email: "admin@example.edu.vn",
+    role: UserRole.TrainingOfficeAdmin,
+  },
+};
+
+const instructorAuthUser: AuthOutletContext = {
+  user: {
+    id: "instructor-user",
+    institutionalId: "GV001",
+    displayName: "Giảng viên thử",
+    email: "instructor@example.edu.vn",
+    role: UserRole.Instructor,
+  },
+};
+
+function renderWithOutlet(
+  ui: React.ReactElement,
+  path = "/",
+  authUser: AuthOutletContext = studentAuthUser,
+) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+
   return render(
-    <MemoryRouter initialEntries={[path]}>
-      <Routes>
-        <Route path="*" element={<Outlet context={mockAuthUser} />}>
-          <Route path="*" element={ui}>
-            <Route index element={<p>Nội dung trang</p>} />
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={[path]}>
+        <Routes>
+          <Route path="*" element={<Outlet context={authUser} />}>
+            <Route path="*" element={ui}>
+              <Route index element={<p>Nội dung trang</p>} />
+            </Route>
           </Route>
-        </Route>
-      </Routes>
-    </MemoryRouter>,
+        </Routes>
+      </MemoryRouter>
+    </QueryClientProvider>,
   );
 }
 
@@ -50,7 +82,7 @@ describe("App shell layouts (NFR-17, NFR-06)", () => {
   });
 
   it("InstructorLayout renders Vietnamese sidebar navigation", () => {
-    renderWithOutlet(<InstructorLayout />, "/sessions");
+    renderWithOutlet(<InstructorLayout />, "/sessions", instructorAuthUser);
     expect(screen.getByTestId("instructor-layout")).toBeInTheDocument();
     for (const item of instructorNavItems) {
       expect(screen.getAllByRole("link", { name: item.label }).length).toBeGreaterThan(0);
@@ -58,12 +90,35 @@ describe("App shell layouts (NFR-17, NFR-06)", () => {
   });
 
   it("AdminLayout renders Quản trị header and Vietnamese admin nav", () => {
-    renderWithOutlet(<AdminLayout />, "/admin/users");
+    renderWithOutlet(<AdminLayout />, "/admin/users", adminAuthUser);
     expect(screen.getByTestId("admin-layout")).toBeInTheDocument();
     expect(screen.getAllByText(appCopy.adminSection).length).toBeGreaterThan(0);
     for (const item of adminNavItems) {
       expect(screen.getAllByRole("link", { name: item.label }).length).toBeGreaterThan(0);
     }
+  });
+
+  it("TC-AC-18-011 / TC-NFR-11-017: AdminLayout wraps student forbidden page in StudentLayout", () => {
+    renderWithOutlet(<AdminLayout />, "/admin/users", studentAuthUser);
+    expect(screen.getByTestId("student-layout")).toBeInTheDocument();
+    expect(screen.getByTestId("student-bottom-nav")).toBeInTheDocument();
+    expect(screen.queryByTestId("admin-layout")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("admin-sidebar")).not.toBeInTheDocument();
+    expect(screen.getByText(appCopy.forbiddenTitle)).toBeInTheDocument();
+  });
+
+  it("TC-NFR-17-019 / AC-13b: AdminLayout shows export-denied copy for instructor", () => {
+    renderWithOutlet(<AdminLayout />, "/admin/export", instructorAuthUser);
+    expect(screen.queryByTestId("admin-layout")).not.toBeInTheDocument();
+    expect(screen.getByText(reportCopy.exportDenied)).toBeInTheDocument();
+  });
+
+  it("TC-AC-03-018: AdminLayout allows instructor roster shell without admin sidebar", () => {
+    renderWithOutlet(<AdminLayout />, "/admin/rosters", instructorAuthUser);
+    expect(screen.getByTestId("admin-roster-shell")).toBeInTheDocument();
+    expect(screen.queryByTestId("admin-layout")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("admin-sidebar")).not.toBeInTheDocument();
+    expect(screen.queryByText(appCopy.forbiddenTitle)).not.toBeInTheDocument();
   });
 
   it("FullscreenLayout shows Vietnamese exit control and QR countdown", () => {
@@ -80,9 +135,9 @@ describe("App shell layouts (NFR-17, NFR-06)", () => {
     expect(screen.getByTestId("qr-countdown")).toHaveClass("text-qr-warning");
   });
 
-  it("QrCountdown presentation mode uses warning color at 10 seconds or below (NFR-06)", () => {
+  it("QrCountdown presentation mode uses accent and warning color tokens (NFR-20)", () => {
     const { rerender } = render(<QrCountdown secondsRemaining={15} presentation />);
-    expect(screen.getByTestId("qr-countdown")).toHaveClass("text-qr-countdown");
+    expect(screen.getByTestId("qr-countdown")).toHaveClass("text-qr-accent");
 
     rerender(<QrCountdown secondsRemaining={10} presentation />);
     expect(screen.getByTestId("qr-countdown")).toHaveClass("text-qr-warning");

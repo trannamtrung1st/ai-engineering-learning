@@ -19,6 +19,13 @@ describe("CheckInOutcomePanel (NFR-17)", () => {
     expect(screen.getByText("Mã QR đã hết hạn, vui lòng quét mã mới")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Quét lại" })).toBeInTheDocument();
   });
+
+  it("uses Campus Pulse signature panel styling (NFR-17)", () => {
+    render(<CheckInOutcomePanel outcome="Present" />);
+    const panel = screen.getByTestId("check-in-outcome-Present");
+    expect(panel).toHaveClass("rounded-lg", "shadow-md", "bg-success-50");
+    expect(panel.querySelector("h2")).toHaveClass("font-display");
+  });
 });
 
 /** NFR-06 — live countdown hook */

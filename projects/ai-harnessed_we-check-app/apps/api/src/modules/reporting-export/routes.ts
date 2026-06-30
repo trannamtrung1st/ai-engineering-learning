@@ -60,6 +60,49 @@ export async function registerReportingExportRoutes(
     },
   );
 
+  app.get(
+    "/reports/sessions",
+    { preHandler: [auth, requirePermission(Permission.ReportRead, { reportAccess: true })] },
+    async (request) => {
+      const parsed = validateReportFilter(request.query as Record<string, unknown>);
+      if (!parsed.ok) {
+        throw validationFailed(parsed.details);
+      }
+
+      const { user } = request.auth!;
+      return reportService.listSessionSummaries(
+        parsed.value,
+        user.id,
+        user.role,
+      );
+    },
+  );
+
+  app.head(
+    "/reports/export",
+    { preHandler: [auth] },
+    async (request, reply) => {
+      const parsed = validateReportFilter(request.query as Record<string, unknown>, {
+        requireClassSubject: true,
+      });
+      if (!parsed.ok) {
+        throw validationFailed(parsed.details);
+      }
+
+      const { user } = request.auth!;
+      const rowCount = await exportService.estimateRowCount(
+        parsed.value,
+        user.id,
+        user.role,
+      );
+
+      return reply
+        .header("X-Export-Row-Count", String(rowCount))
+        .status(200)
+        .send();
+    },
+  );
+
   app.post(
     "/reports/export",
     // BR-09 / NFR-15: export RBAC + ExportDenied audit live in ExportService so denials

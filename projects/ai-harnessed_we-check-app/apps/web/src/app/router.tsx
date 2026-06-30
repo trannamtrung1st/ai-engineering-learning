@@ -1,8 +1,15 @@
 import { SessionStatus } from "@wecheck/domain";
 import { createBrowserRouter, RouterProvider, useRouteError } from "react-router-dom";
 import { RootLayout } from "@/app/layout";
+import { CreateClassSubjectPage } from "@/app/admin/classes/new/page";
 import { AdminExportPage } from "@/app/admin/export/page";
+import { AdminPolicyPage } from "@/app/admin/policy/page";
 import { AdminReportsPage } from "@/app/admin/reports/page";
+import { AdminUsersPage } from "@/app/admin/users/page";
+import { CreateUserPage } from "@/app/admin/users/new/page";
+import { EditUserPage } from "@/app/admin/users/[userId]/page";
+import { AdminClassRosterPage } from "@/app/admin/rosters/[classCode]/page";
+import { AdminRostersPage } from "@/app/admin/rosters/page";
 import { RosterImportPage } from "@/app/admin/rosters/import/page";
 import { CheckInPage } from "@/app/check-in/page";
 import { ForbiddenRoutePage } from "@/app/forbidden/page";
@@ -10,12 +17,18 @@ import { HistoryPage } from "@/app/history/page";
 import { LoginPage } from "@/app/login/page";
 import { NotFoundRoutePage } from "@/app/not-found/page";
 import { ReportsPage } from "@/app/reports/page";
+import { SessionReportPage } from "@/app/reports/session-report-page";
 import { CreateSessionPage } from "@/app/sessions/create-session-page";
-import { QrPresentPage } from "@/app/sessions/qr-present-page";
+import { QrPresentPage } from "@/app/sessions/[sessionId]/qr-present/page";
 import { SessionDetailPage } from "@/app/sessions/session-detail-page";
-import { SessionMonitorPage } from "@/app/sessions/session-monitor-page";
+import { SessionMonitorPage } from "@/app/sessions/[sessionId]/monitor/page";
+import { SessionRosterPage } from "@/app/sessions/[sessionId]/roster/page";
 import { SessionsListPage } from "@/app/sessions/page";
 import { RequireAuth } from "@/components/auth/require-auth";
+import { RoleHomeRedirect } from "@/components/auth/role-home-redirect";
+import { SetupGuard } from "@/components/auth/setup-guard";
+import { AdminHomePage } from "@/app/admin/page";
+import { SetupPage } from "@/app/setup/page";
 import { AdminLayout } from "@/components/layout/admin-layout";
 import { AuthLayout } from "@/components/layout/auth-layout";
 import { InstructorLayout } from "@/components/layout/instructor-layout";
@@ -61,10 +74,6 @@ function RouteErrorPage() {
   );
 }
 
-function PlaceholderPage({ title }: { title: string }) {
-  return <PageHeader title={title} description="Màn hình nghiệp vụ sẽ được bổ sung ở các slice tiếp theo." />;
-}
-
 const router = createBrowserRouter([
   {
     element: <RootLayout />,
@@ -75,59 +84,80 @@ const router = createBrowserRouter([
     ),
     children: [
       {
-        index: true,
-        element: <ShellOverviewPage />,
-      },
-      {
-        path: "login",
-        element: <AuthLayout />,
-        children: [{ index: true, element: <LoginPage /> }],
-      },
-      {
-        path: "forbidden",
-        element: <ForbiddenRoutePage />,
-      },
-      {
-        element: <RequireAuth />,
+        element: <SetupGuard />,
         children: [
           {
-            element: <StudentLayout />,
+            index: true,
+            element: (
+              <RoleHomeRedirect>
+                <ShellOverviewPage />
+              </RoleHomeRedirect>
+            ),
+          },
+          {
+            path: "setup",
+            element: <AuthLayout />,
+            children: [{ index: true, element: <SetupPage /> }],
+          },
+          {
+            path: "login",
+            element: <AuthLayout />,
+            children: [{ index: true, element: <LoginPage /> }],
+          },
+          {
+            path: "forbidden",
+            element: <ForbiddenRoutePage />,
+          },
+          {
+            element: <RequireAuth />,
             children: [
-              { path: "check-in", element: <CheckInPage /> },
-              { path: "history", element: <HistoryPage /> },
+              {
+                element: <StudentLayout />,
+                children: [
+                  { path: "check-in", element: <CheckInPage /> },
+                  { path: "history", element: <HistoryPage /> },
+                ],
+              },
+              {
+                element: <InstructorLayout />,
+                children: [
+                  { path: "sessions", element: <SessionsListPage /> },
+                  { path: "sessions/new", element: <CreateSessionPage /> },
+                  { path: "sessions/:sessionId/monitor", element: <SessionMonitorPage /> },
+                  { path: "sessions/:sessionId/roster", element: <SessionRosterPage /> },
+                  { path: "sessions/:id", element: <SessionDetailPage /> },
+                  { path: "reports", element: <ReportsPage /> },
+                  { path: "reports/sessions/:sessionId", element: <SessionReportPage /> },
+                ],
+              },
+              {
+                path: "sessions/:sessionId/qr-present",
+                element: <QrPresentPage />,
+              },
+              {
+                path: "admin",
+                element: <AdminLayout />,
+                children: [
+                  { index: true, element: <AdminHomePage /> },
+                  { path: "users", element: <AdminUsersPage /> },
+                  { path: "users/new", element: <CreateUserPage /> },
+                  { path: "users/:userId", element: <EditUserPage /> },
+                  { path: "rosters", element: <AdminRostersPage /> },
+                  { path: "rosters/import", element: <RosterImportPage /> },
+                  { path: "rosters/:classCode", element: <AdminClassRosterPage /> },
+                  { path: "classes/new", element: <CreateClassSubjectPage /> },
+                  { path: "reports", element: <AdminReportsPage /> },
+                  { path: "export", element: <AdminExportPage /> },
+                  { path: "policy", element: <AdminPolicyPage /> },
+                ],
+              },
             ],
           },
           {
-            element: <InstructorLayout />,
-            children: [
-              { path: "sessions", element: <SessionsListPage /> },
-              { path: "sessions/new", element: <CreateSessionPage /> },
-              { path: "sessions/:id/monitor", element: <SessionMonitorPage /> },
-              { path: "sessions/:id", element: <SessionDetailPage /> },
-              { path: "reports", element: <ReportsPage /> },
-            ],
-          },
-          {
-            path: "sessions/:id/qr-present",
-            element: <QrPresentPage />,
-          },
-          {
-            path: "admin",
-            element: <AdminLayout />,
-            children: [
-              { path: "users", element: <PlaceholderPage title="Người dùng" /> },
-              { path: "rosters", element: <PlaceholderPage title="Danh sách lớp" /> },
-              { path: "rosters/import", element: <RosterImportPage /> },
-              { path: "reports", element: <AdminReportsPage /> },
-              { path: "export", element: <AdminExportPage /> },
-              { path: "policy", element: <PlaceholderPage title="Chính sách" /> },
-            ],
+            path: "*",
+            element: <NotFoundRoutePage />,
           },
         ],
-      },
-      {
-        path: "*",
-        element: <NotFoundRoutePage />,
       },
     ],
   },

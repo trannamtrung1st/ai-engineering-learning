@@ -154,15 +154,16 @@ Jobs run in-process for MVP; extract to worker when scaling beyond pilot.
 | Capability | Web API | Fallback |
 | --- | --- | --- |
 | QR scan | `BarcodeDetector` (Chrome) | `@zxing/browser` file/input stream |
-| GPS | `navigator.geolocation.getCurrentPosition` | 15 s timeout → `GpsDisabled` UX |
-| Camera permission | `getUserMedia` | Vietnamese instruction modal ([NFR-19](../brds/07-non-functional-risk.md)) |
-| Deep link | `/check-in?token=<id>&session=<id>` | Parse from QR payload `wecheck://check-in?...` |
+| GPS | `navigator.geolocation.getCurrentPosition` | 15 s timeout → `GpsDisabled` UX; **simulation** via `VITE_ENABLE_DEVICE_SIMULATION` + query params ([NFR-24](../brds/07-non-functional-risk.md)) |
+| Camera permission | `getUserMedia` | Vietnamese instruction modal ([NFR-19](../brds/07-non-functional-risk.md)); sim via `cameraSim` when flag on |
+| Preflight | `GET /check-in/tokens/:tokenId/preflight` | Client hook before GPS step ([BR-15](../brds/04-business-rules.md)) |
+| Deep link | `/check-in?token=<id>&session=<id>` | Preflight before auto-skip scan UI; parse from QR payload `wecheck://check-in?...` |
 
 No React Native or Capacitor in MVP ([00-system-overview.md](./00-system-overview.md) §2.7).
 
 ### 4.5 Frontend state and API access
 
-- **Auth context:** session user, role, logout; cookie credentials on all fetch calls.
+- **Auth context:** `user` — `{ id, displayName, email, institutionalId, role }` from `GET /auth/me`; `logout(): Promise<void>` — `POST /auth/logout` with `credentials: 'include'`; on success `window.location.assign('/login')`. Layouts pass `onLogout` from context into `UserMenu` / `AppHeader` (required wiring, not optional no-op). Cookie credentials on all fetch calls.
 - **API client:** typed wrapper generated from OpenAPI or hand-maintained per resource.
 - **Polling:** QR display 5 s interval; attendance monitor 5 s while Active ([FR-15](../brds/03-functional-requirements.md)).
 - **Optimistic UI:** Not used for check-in (server outcome authoritative).

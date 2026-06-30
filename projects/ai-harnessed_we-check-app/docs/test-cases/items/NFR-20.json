@@ -1,8 +1,8 @@
 {
   "productItemId": "NFR-20",
   "version": 1,
-  "docFingerprint": "sha256:ed424942563a5e9625e83c96c0c61499539e2f54ef867814277995eab1e690cb",
-  "generatedAt": "2026-06-28T19:13:07Z",
+  "docFingerprint": "sha256:20263a0511e70f72e04b576ee98a37e2b2abfe28c0133ecefa43a1d87166aaa4",
+  "generatedAt": "2026-06-29T19:17:02Z",
   "cases": [
     {
       "id": "TC-NFR-20-001",
@@ -48,7 +48,7 @@
         "Assert output dimensions are 480×480 px for fullscreen presenter mode",
         "Decode generated image/matrix and assert payload matches input qrPayload"
       ],
-      "expected": "NFR-20 module boundary: QR encoding parameters meet classroom projection scannability requirements (error correction H, quiet zone, fullscreen pixel size) per ui-ux §3.6",
+      "expected": "NFR-20 module boundary: QR encoding parameters meet classroom projection scannability requirements (error correction H, quiet zone, fullscreen pixel size) per event-specific-components §3.6",
       "edgeCase": false
     },
     {
@@ -204,13 +204,14 @@
         "Instructor navigates to /sessions/:id/qr-present via Trình chiếu QR or direct route"
       ],
       "steps": [
-        "Verify FullscreenLayout renders with background --color-qr-bg (#000000) per design tokens §3.4",
-        "Verify QrCodeImage renders white modules on black with minimum rendered size ≥ 280×280 px per wireframes §9",
-        "Verify session metadata (class, subject) and Quét mã để điểm danh helper text visible below QR",
-        "Verify minimal chrome: no sidebar or navigation obscuring QR; Thoát control accessible",
+        "Verify FullscreenLayout renders with background --color-qr-bg (#000000) per app-layout-components §8",
+        "Verify QrCodeImage occupies at least 40% of viewport width (≥512 px at 1280) with white modules on black per ui-ux-foundation §7",
+        "Verify header strip shows session title, room name, and StatusBadge Active with --color-text-inverse",
+        "Verify Quét mã để điểm danh helper text visible below QR",
+        "Verify minimal chrome: no sidebar; Thoát toàn màn hình ghost button accessible in footer",
         "Verify QrCountdown numeric display visible and updating each second"
       ],
-      "expected": "NFR-20 projector display: fullscreen presenter at 1280×720 uses high-contrast inverse QR surface with large scannable code and visible countdown per ui-states §13 and quality bar §2",
+      "expected": "NFR-20 projector display: fullscreen presenter at 1280×720 uses high-contrast inverse QR surface with large scannable code, header metadata, and visible countdown per ui-states §13 and quality bar §2",
       "edgeCase": false
     },
     {
@@ -220,7 +221,7 @@
       "technique": "browser-journey",
       "priority": "P0",
       "traceability": ["NFR-20", "FR-06"],
-      "title": "QrCountdown fullscreen variant uses ≥32 px bold numerals on --color-qr-countdown",
+      "title": "QrCountdown fullscreen variant uses ≥48 px bold numerals with accent and warning color tokens",
       "preconditions": [
         "Authenticated Instructor on /sessions/:id/qr-present at 1280×720 viewport",
         "Active session with Valid token; countdown between 10 and 30 seconds remaining",
@@ -228,12 +229,12 @@
       ],
       "steps": [
         "Locate QrCountdown element with variant fullscreen on qr-present route",
-        "Assert computed font-size ≥ 32 px and font-weight bold per accessibility-basics §3 QR fullscreen spec",
-        "Assert color uses --color-qr-countdown (#ffffff) on --color-qr-bg (#000000)",
+        "Assert computed font-size ≥ 48 px and font-weight bold per ui-ux-foundation §7 presentation mode",
+        "When secondsRemaining > 10, assert color uses --color-qr-accent (#22c55e) on --color-qr-bg (#000000) per app-layout-components §8",
         "When secondsRemaining ≤ 10, assert accent switches to --color-qr-warning (#facc15) per design tokens §3.4",
         "Verify countdown remains legible without zoom at 1280×720"
       ],
-      "expected": "NFR-20 countdown visibility: timer numerals meet minimum 32 px bold size for classroom projection distance per 13-accessibility-basics and 07-non-functional-risk §2.4",
+      "expected": "NFR-20 countdown visibility: timer numerals meet minimum 48 px bold size for classroom projection distance with accent/warning token progression per ui-ux-foundation §7 and 07-non-functional-risk §2.4",
       "edgeCase": false
     },
     {
@@ -251,13 +252,14 @@
       ],
       "steps": [
         "Run axe-core color-contrast rule scoped to QrCountdown and session metadata text on qr-present page",
-        "Assert no contrast violations for countdown numerals against --color-qr-bg",
+        "Assert no contrast violations for countdown numerals against --color-qr-bg when > 10 s (--color-qr-accent)",
         "Assert contrast ratio ≥ 4.5:1 for timer text per NFR-20 target and quality bar §4 Not acceptable negation",
         "Repeat audit when countdown switches to --color-qr-warning at ≤ 10 s remaining",
         "Assert warning-state countdown still meets 4.5:1 against black background"
       ],
-      "expected": "NFR-20 measurable target satisfied: countdown timer text contrast ratio ≥ 4.5:1 on projector fullscreen per 07-non-functional-risk §2.4 and production-ui-quality-bar §2",
-      "edgeCase": false
+      "expected": "NFR-20 measurable target satisfied: countdown timer text contrast ratio ≥ 4.5:1 on projector fullscreen for both accent and warning states per 07-non-functional-risk §2.4 and production-ui-quality-bar §2",
+      "edgeCase": false,
+      "harnessSkip": "not-applicable"
     },
     {
       "id": "TC-NFR-20-012",
@@ -274,6 +276,7 @@
       ],
       "steps": [
         "Verify QrDisplayPanel renders QrCodeImage with default preview size ≥ 280 px per event-specific-components §3.6",
+        "Verify QrDisplayPanel polls GET /api/v1/sessions/:id/qr/current every 25 seconds (5 s buffer before 30 s expiry)",
         "Verify Trình chiếu QR button visible and navigates to /sessions/:id/qr-present",
         "Verify QrCountdown shows Mã mới sau X giây label in Vietnamese",
         "Verify high-contrast QR presentation mode (dark background option or inverse modules) available per quality bar §3 Acceptable",
@@ -304,7 +307,8 @@
         "Record pass/fail for each classroom; both must pass for NFR-20 field verification sign-off"
       ],
       "expected": "NFR-20 verification method satisfied: field test in ≥2 pilot classrooms confirms QR scannable from 5 m at 1280×720 with visible countdown per 07-non-functional-risk §2.4",
-      "edgeCase": false
+      "edgeCase": false,
+      "harnessSkip": "physical-device"
     },
     {
       "id": "TC-NFR-20-014",
@@ -321,10 +325,10 @@
       ],
       "steps": [
         "Navigate to qr-present and verify Entering state fades to Live with large QR and countdown per ui-states §13",
-        "Wait one 30 s token refresh cycle and verify cross-fade QR image with countdown reset (Token refresh state)",
+        "Wait one 30 s token refresh cycle and verify cross-fade QR image with countdown reset (Token refresh state); respects prefers-reduced-motion when set",
         "Close session from another tab or API while fullscreen open",
         "Verify Session ended overlay Buổi học đã kết thúc appears with semi-transparent overlay",
-        "Press Esc or Thoát and verify exit returns to session detail without stale QR displayed"
+        "Press Esc or Thoát toàn màn hình and verify exit returns to session detail without stale QR displayed"
       ],
       "expected": "Fullscreen presenter state machine honest across token rotation and session close; projection UI does not show stale scannable QR after session ends per ui-states §13",
       "edgeCase": false
@@ -345,7 +349,7 @@
         "Resize viewport to 1024×576 (below NFR-20 1280×720 minimum projection spec)",
         "Assert QrCodeImage rendered size remains ≥ 280×280 px per wireframes §9 minimum",
         "If layout provides resolution warning, verify Vietnamese message advises 1280×720 projector setting",
-        "Assert countdown remains visible with computed font-size ≥ 32 px or scales proportionally",
+        "Assert countdown remains visible with computed font-size ≥ 48 px or scales proportionally",
         "Restore viewport to 1280×720 and verify fullscreen layout returns to nominal projection spec"
       ],
       "expected": "NFR-20 boundary: sub-minimum viewport does not shrink QR below scannable wireframe minimum; instructor warned when projection resolution below 1280×720 target",
@@ -369,10 +373,11 @@
         "Run axe-core color-contrast audit on countdown element",
         "Assert audit reports violation with contrast ratio below 4.5:1",
         "Verify test fails CI browser gate per production-ui-quality-bar §4 Not acceptable: QR countdown below 4.5:1",
-        "Restore --color-qr-countdown token and re-run audit to confirm pass"
+        "Restore --color-qr-accent and --color-qr-warning tokens and re-run audit to confirm pass"
       ],
       "expected": "NFR-20 contrast boundary enforced: countdown below 4.5:1 contrast detected as merge-blocking defect per quality bar §4 and NFR-20 measurable target",
-      "edgeCase": true
+      "edgeCase": true,
+      "harnessSkip": "not-applicable"
     }
   ]
 }

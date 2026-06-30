@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-02",
   "version": 1,
-  "docFingerprint": "sha256:2668a9e5528c7792c1487646faad8fb595d13fa43185d7cf976e318818385f70",
-  "generatedAt": "2026-06-29T00:00:00Z",
+  "docFingerprint": "sha256:c7d3f05bcd7f282254c6df7321da31c143e51b3076c4c3bcf928d7b2b5244926",
+  "generatedAt": "2026-06-29T17:08:42Z",
   "cases": [
     {
       "id": "TC-AC-02-001",
@@ -11,13 +11,13 @@
       "technique": "scenario-matrix",
       "priority": "P0",
       "traceability": ["AC-02", "FR-02", "BR-06"],
-      "title": "TS-04: Unauthenticated POST /check-in returns 401 Unauthenticated",
+      "title": "TS-04: Unauthenticated POST /api/v1/check-in returns 401 Unauthenticated",
       "preconditions": [
         "No session cookie or Authorization header is present",
         "Active session exists with valid QR token for check-in payload"
       ],
       "steps": [
-        "POST /check-in with valid tokenId, latitude, and longitude and no auth credentials",
+        "POST /api/v1/check-in with valid tokenId, latitude, and longitude and no auth credentials",
         "Assert HTTP status 401",
         "Assert response body contains outcome Unauthenticated and errorCode Unauthenticated",
         "Query attendance records for the session and submitting student context"
@@ -38,12 +38,12 @@
         "Check-in deep link path is /check-in?token=<valid-token-id>"
       ],
       "steps": [
-        "POST /auth/login with student email, password, and returnUrl /check-in?token=<valid-token-id>",
+        "POST /api/v1/auth/login with student email, password, and returnUrl /check-in?token=<valid-token-id>",
         "Assert HTTP status 200 and response includes redirectTo matching returnUrl",
         "Assert Set-Cookie header sets wecheck_session HttpOnly cookie",
-        "GET /auth/me using the issued session cookie"
+        "GET /api/v1/auth/me using the issued session cookie"
       ],
-      "expected": "Login returns 200 with user profile, session object (id, expiresAt), and redirectTo /check-in?token=<valid-token-id>; session cookie issued; /auth/me returns authenticated student identity",
+      "expected": "Login returns 200 with user profile, session object (id, expiresAt), and redirectTo /check-in?token=<valid-token-id>; session cookie issued; /api/v1/auth/me returns authenticated student identity",
       "edgeCase": false
     },
     {
@@ -60,12 +60,12 @@
         "Active session with valid QR token exists"
       ],
       "steps": [
-        "POST /check-in with expired session cookie or bearer token and valid check-in payload",
+        "POST /api/v1/check-in with expired session cookie or bearer token and valid check-in payload",
         "Assert HTTP status 401",
         "Assert response errorCode SessionExpired",
-        "Attempt GET /auth/me with the same expired session"
+        "Attempt GET /api/v1/auth/me with the same expired session"
       ],
-      "expected": "Check-in returns HTTP 401 with errorCode SessionExpired and Vietnamese message Phiên đăng nhập đã hết hạn; check-in does not succeed; /auth/me also returns 401",
+      "expected": "Check-in returns HTTP 401 with errorCode SessionExpired and Vietnamese message Phiên đăng nhập đã hết hạn; check-in does not succeed; /api/v1/auth/me also returns 401",
       "edgeCase": false
     },
     {
@@ -96,7 +96,7 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["AC-02", "FR-02"],
+      "traceability": ["AC-02", "FR-02", "BR-06"],
       "title": "AuthSession transitions from valid to expired after inactivity threshold",
       "preconditions": [
         "Valid AuthSession exists with lastActivityAt at T0",
@@ -118,13 +118,13 @@
       "technique": "http-contract",
       "priority": "P0",
       "traceability": ["AC-02", "FR-02"],
-      "title": "POST /auth/login returns 200 with user, session, and optional redirectTo envelope",
+      "title": "POST /api/v1/auth/login returns 200 with user, session, and optional redirectTo envelope",
       "preconditions": [
         "Active student account exists",
         "Request body includes email, password, and returnUrl per API design §2.2"
       ],
       "steps": [
-        "Send POST /auth/login with Content-Type application/json and valid credentials plus returnUrl",
+        "Send POST /api/v1/auth/login with Content-Type application/json and valid credentials plus returnUrl",
         "Assert HTTP status 200",
         "Assert response body contains user (id, institutionalId, displayName, email, role), session (id, expiresAt), and redirectTo",
         "Assert Set-Cookie wecheck_session is present with HttpOnly attribute"
@@ -139,13 +139,13 @@
       "technique": "http-contract",
       "priority": "P0",
       "traceability": ["AC-02", "FR-02", "BR-06"],
-      "title": "POST /check-in without credentials returns 401 with Unauthenticated error envelope",
+      "title": "POST /api/v1/check-in without credentials returns 401 with Unauthenticated error envelope",
       "preconditions": [
         "API server is running",
         "Valid check-in request body prepared per API design §6.2"
       ],
       "steps": [
-        "POST /check-in without Cookie and without Authorization header",
+        "POST /api/v1/check-in without Cookie and without Authorization header",
         "Assert HTTP status 401",
         "Assert response JSON contains errorCode Unauthenticated and Vietnamese message field"
       ],
@@ -159,14 +159,14 @@
       "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["AC-02", "FR-02", "BR-06"],
-      "title": "Instructor denied POST /check-in without checkin:submit permission",
+      "title": "Instructor denied POST /api/v1/check-in without checkin:submit permission",
       "preconditions": [
         "Authenticated Instructor session is established",
         "Instructor lacks checkin:submit permission per roles matrix §2.1",
         "Active session with valid QR token exists"
       ],
       "steps": [
-        "POST /check-in with valid tokenId and coordinates using Instructor session cookie",
+        "POST /api/v1/check-in with valid tokenId and coordinates using Instructor session cookie",
         "Assert response status and error envelope"
       ],
       "expected": "HTTP 403 Forbidden with localized permission-denied message; no attendance status updated to Present for instructor identity",
@@ -179,16 +179,16 @@
       "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["AC-02", "FR-02", "BR-06"],
-      "title": "Invalid credentials on POST /auth/login returns 401 InvalidCredentials",
+      "title": "Invalid credentials on POST /api/v1/auth/login returns 401 InvalidCredentials",
       "preconditions": [
         "Student account exists with known email",
         "No valid session is established"
       ],
       "steps": [
-        "POST /auth/login with correct email and wrong password",
+        "POST /api/v1/auth/login with correct email and wrong password",
         "Assert HTTP status 401 and errorCode InvalidCredentials",
         "Verify no Set-Cookie wecheck_session header is returned",
-        "POST /check-in without session to confirm still Unauthenticated"
+        "POST /api/v1/check-in without session to confirm still Unauthenticated"
       ],
       "expected": "Login returns HTTP 401 InvalidCredentials with localized error; no session cookie issued; subsequent check-in remains blocked with 401 Unauthenticated",
       "edgeCase": true
@@ -200,12 +200,12 @@
       "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["AC-02", "FR-02", "BR-06"],
-      "title": "GET /auth/me without session returns 401 Unauthenticated",
+      "title": "GET /api/v1/auth/me without session returns 401 Unauthenticated",
       "preconditions": [
         "No session cookie or bearer token present"
       ],
       "steps": [
-        "GET /auth/me without authentication headers",
+        "GET /api/v1/auth/me without authentication headers",
         "Assert HTTP status 401 and errorCode Unauthenticated"
       ],
       "expected": "HTTP 401 with errorCode Unauthenticated; no user profile returned",

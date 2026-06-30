@@ -58,6 +58,9 @@ Login failures return `401` for invalid credentials and `403` for deactivated ac
 | --- | --- | --- |
 | Unknown resource ID | `NotFound` | Generic message; no existence leak across scopes |
 | Unknown QR token | `TokenNotFound` | Check-in specific |
+| QR session param mismatch | `SessionMismatch` | Preflight / deep link |
+| Setup when users exist | `SetupAlreadyComplete` | Bootstrap |
+| Duplicate class/subject code | `DuplicateClassCode`, `DuplicateSubjectCode` | Roster reference data |
 
 Out-of-scope resources return `403` or empty list per authorization policy — not `404` — when revealing existence would leak data ([BR-08](../brds/04-business-rules.md)).
 

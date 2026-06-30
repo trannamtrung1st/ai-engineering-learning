@@ -7,13 +7,11 @@ import {
   isQrTokenExpired,
   isWithinAttendanceWindow,
 } from "@wecheck/domain";
+import { PreflightService } from "./preflight/preflight-service.js";
 import type { DbPool } from "../../infra/db.js";
 import { now } from "../../infra/clock.js";
 import { EnrollmentRepository } from "../roster-enrollment/enrollment-repository.js";
-import {
-  checkInFailureMessage,
-  checkInSuccessMessage,
-} from "./check-in-response.js";
+import { checkInFailureMessage, checkInSuccessMessage } from "./check-in-response.js";
 import { verifyLocation } from "./geo-verification.js";
 import {
   CheckInAttemptRepository,
@@ -25,6 +23,7 @@ import type {
   CheckInFailureResponse,
   CheckInRequestBody,
   CheckInSuccessResponse,
+  PreflightResponse,
 } from "./types.js";
 import { hasGpsCoordinates } from "./validation.js";
 
@@ -43,17 +42,28 @@ export class CheckInService {
   private readonly attempts: CheckInAttemptRepository;
   private readonly securityAudit: SecurityAuditRepository;
   private readonly enrollments: EnrollmentRepository;
+  private readonly preflightService: PreflightService;
 
   constructor(private readonly db: DbPool) {
     this.tokens = new QrTokenRepository(db);
     this.attempts = new CheckInAttemptRepository();
     this.securityAudit = new SecurityAuditRepository();
     this.enrollments = new EnrollmentRepository(db);
+    this.preflightService = new PreflightService(db);
   }
 
   async sessionIdForToken(tokenId: string): Promise<string | null> {
     const token = await this.tokens.findById(tokenId);
     return token?.sessionId ?? null;
+  }
+
+  /** BR-15 — delegates to PreflightService (read-only token validation before GPS capture). */
+  async preflight(
+    tokenId: string,
+    studentId: string,
+    expectedSessionId?: string | null,
+  ): Promise<PreflightResponse> {
+    return this.preflightService.validate(tokenId, studentId, expectedSessionId);
   }
 
   async submit(

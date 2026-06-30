@@ -6,7 +6,12 @@ import {
   type UserRole as UserRoleType,
 } from "@wecheck/domain";
 import type { ErrorDetail } from "../../errors/api-error.js";
-import type { CreateUserInput, LoginInput, UpdateUserInput } from "./types.js";
+import type {
+  CreateUserInput,
+  FirstAdminInput,
+  LoginInput,
+  UpdateUserInput,
+} from "./types.js";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const INSTITUTIONAL_ID_RE = /^[A-Za-z0-9-]{3,32}$/;
@@ -151,6 +156,46 @@ export function validateLoginBody(body: unknown): ParseResult<LoginInput> {
       email: email.value,
       password: raw.password,
       returnUrl: returnUrl.value,
+    },
+  };
+}
+
+export function validateFirstAdminBody(body: unknown): ParseResult<FirstAdminInput> {
+  if (!body || typeof body !== "object") {
+    return fail("institutionalId", ErrorCode.ValidationFailed, "Dữ liệu không hợp lệ");
+  }
+  const raw = body as Record<string, unknown>;
+  const institutionalId = validateInstitutionalId(raw.institutionalId);
+  const displayName = validateDisplayName(raw.displayName);
+  const email = validateEmail(raw.email);
+  const password = validatePassword(raw.password, "password", true);
+
+  const failures: ValidationFailure[] = [];
+  if (!institutionalId.ok) failures.push(institutionalId);
+  if (!displayName.ok) failures.push(displayName);
+  if (!email.ok) failures.push(email);
+  if (!password.ok) failures.push(password);
+  if (failures.length > 0) {
+    return mergeFailures(...failures);
+  }
+
+  if (
+    !institutionalId.ok ||
+    !displayName.ok ||
+    !email.ok ||
+    !password.ok ||
+    password.value === undefined
+  ) {
+    return fail("institutionalId", ErrorCode.ValidationFailed, "Dữ liệu không hợp lệ");
+  }
+
+  return {
+    ok: true,
+    value: {
+      institutionalId: institutionalId.value,
+      displayName: displayName.value,
+      email: email.value,
+      password: password.value,
     },
   };
 }

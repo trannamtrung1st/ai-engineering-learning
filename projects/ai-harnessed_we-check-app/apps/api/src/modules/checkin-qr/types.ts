@@ -1,6 +1,14 @@
 import type { ErrorCode } from "@wecheck/domain";
 import type { SpoofMetadataInput } from "./spoof-heuristics.js";
 
+export type {
+  PreflightErrorCode,
+  PreflightFailureResponse,
+  PreflightResponse,
+  PreflightSessionSummary,
+  PreflightSuccessResponse,
+} from "./preflight/types.js";
+
 export interface CheckInRequestBody {
   tokenId: string;
   latitude?: number;
@@ -48,6 +56,12 @@ export interface SessionCheckInContext {
   roomLatitude: number;
   roomLongitude: number;
   gpsRadiusMeters: number;
+}
+
+export interface SessionDisplayContext extends SessionCheckInContext {
+  classCode: string;
+  subjectCode: string;
+  roomName: string;
 }
 
 export interface AttendanceCheckInRow {

@@ -1,8 +1,8 @@
 {
   "productItemId": "NFR-15",
   "version": 1,
-  "docFingerprint": "sha256:e28b1e3bba6d51203530607cc8d0f33e0a2c6f8b946d630f5faf2597e4b2a423",
-  "generatedAt": "2026-06-29T20:30:00.000Z",
+  "docFingerprint": "sha256:7c3a06eac41d3ebaa216e1eb9eeeb0ecc9411edcf1cbcb0a135ac6fd55757a5f",
+  "generatedAt": "2026-06-29T19:05:45.000Z",
   "cases": [
     {
       "id": "TC-NFR-15-001",
@@ -330,7 +330,7 @@
       "preconditions": [
         "Instructor logged in via Playwright; session roster page /sessions/:sessionId/roster loaded",
         "Closed session within 24 h edit window with student row status Absent",
-        "AttendanceEditDialog and AttendanceAuditTrail components per ui-ux §4.2–4.3"
+        "AttendanceEditDialog and AttendanceAuditTrail components per ui-ux/07-event-specific-components.md §4.2–4.3"
       ],
       "steps": [
         "Open row action Chỉnh sửa and submit AttendanceEditDialog with status Present and note",
@@ -339,7 +339,7 @@
         "Assert panel shows editor display name, edited timestamp, from Absent → to Present, and submitted note in Vietnamese UI",
         "Assert audit trail is read-only with no edit or delete controls"
       ],
-      "expected": "Browser journey: instructor-visible audit trail reflects append-only AttendanceAuditLog per NFR-15, ui-ux AttendanceAuditTrail §4.3, and AC-11a accountability",
+      "expected": "Browser journey: instructor-visible audit trail reflects append-only AttendanceAuditLog per NFR-15, ui-ux/07-event-specific-components.md AttendanceAuditTrail §4.3, and AC-11a accountability",
       "edgeCase": false
     },
     {
@@ -349,20 +349,21 @@
       "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["NFR-15", "FR-13", "BR-09", "AC-13"],
-      "title": "Instructor export attempt shows 403 modal; admin export succeeds with audit notice",
+      "title": "Instructor /admin/export denial shows 403 UX; admin /admin/export download succeeds with audit side effect",
       "preconditions": [
-        "Instructor session on reports page with export button visible but disabled or gated per BR-09",
-        "TrainingOfficeAdmin session on admin reports page with Xuất CSV action",
+        "Instructor authenticated session; instructor chrome omits Xuất CSV nav per roles-permissions §2.3a and ui-ux/06-app-layout-components.md §5.3",
+        "TrainingOfficeAdmin session on /admin/export with ReportFilterBar and Xuất CSV action per ui-states §12",
         "Export audit data seeded for admin filter scope"
       ],
       "steps": [
-        "As Instructor, trigger CSV export action and assert modal with message Chỉ phòng đào tạo mới có quyền xuất dữ liệu per error-handling §7",
+        "As Instructor, navigate directly to /admin/export and assert ForbiddenPage or modal with message Chỉ phòng đào tạo mới có quyền xuất dữ liệu per error-handling §7 and BR-09",
+        "Verify network tab shows POST /api/v1/reports/export returns 403 ExportNotAllowed with ExportDenied security audit",
         "Verify no file download initiated for Instructor",
-        "As TrainingOfficeAdmin, apply report filters and click Xuất CSV",
-        "Assert browser file download starts with attendance-export filename",
-        "Optional: navigate to /admin/audit-log and confirm export event listed with actor and timestamp"
+        "As TrainingOfficeAdmin on /admin/export, apply report filters and click Xuất CSV",
+        "Assert browser file download starts with attendance-export filename per API design §8.3",
+        "Query export_audit_logs and assert ExportAuditLog row for admin actor and filter params"
       ],
-      "expected": "Browser journey: denied export surfaces UX without download; successful admin export completes with NFR-15 audit accountability per AC-13a and AC-13b",
+      "expected": "Browser journey: instructor direct /admin/export denied without download and ExportDenied audit logged; admin /admin/export completes with NFR-15 ExportAuditLog per AC-13a and AC-13b",
       "edgeCase": false
     },
     {

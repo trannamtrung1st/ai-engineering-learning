@@ -1,74 +1,62 @@
 import { UserRole } from "@wecheck/domain";
-import { useState } from "react";
-import { useSearchParams } from "react-router-dom";
-import { toast } from "sonner";
+import { useMemo, useState } from "react";
 import { Alert } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
-import { Spinner } from "@/components/ui/spinner";
-import { ReportFilterBar } from "@/components/domain/reports/report-filter-bar";
+import { AdminReportFilterBar } from "@/components/admin/admin-report-filter-bar";
+import { CsvExportPanel } from "@/components/admin/csv-export-panel";
 import { useAuthUser } from "@/components/auth/require-auth";
 import { ForbiddenPage } from "@/components/layout/forbidden-page";
 import { PageHeader } from "@/components/layout/page-header";
+import { getRoleHome } from "@/lib/auth-redirect";
 import { reportCopy } from "@/lib/copy/report-labels";
+import type { ExportFilterParams, ReportFilterParams } from "@/lib/reports-api";
 
-/** NFR-17 / FR-13 / AC-13 / BR-09 — admin CSV export shell with RBAC gate */
+function toExportFilters(filters: ReportFilterParams): ExportFilterParams | null {
+  if (!filters.classCode || !filters.subjectCode) {
+    return null;
+  }
+  return {
+    classCode: filters.classCode,
+    subjectCode: filters.subjectCode,
+    from: filters.from,
+    to: filters.to,
+  };
+}
+
+/** NFR-17 / FR-13 / AC-13 / BR-09 — admin CSV export with RBAC gate */
 export function AdminExportPage() {
   const user = useAuthUser();
-  const [searchParams] = useSearchParams();
-  const view = searchParams.get("view") ?? "ready";
-  const [exporting, setExporting] = useState(false);
+  const [appliedFilters, setAppliedFilters] = useState<ReportFilterParams | null>(null);
 
   const isAdmin = user.role === UserRole.TrainingOfficeAdmin;
+  const exportFilters = useMemo(
+    () => (appliedFilters ? toExportFilters(appliedFilters) : null),
+    [appliedFilters],
+  );
 
-  if (view === "denied") {
-    return <ForbiddenPage />;
-  }
-
-  if (!isAdmin || view === "forbidden") {
+  if (!isAdmin) {
     return (
-      <div data-testid="admin-export-page">
-        <Alert variant="danger">{reportCopy.exportDenied}</Alert>
-      </div>
+      <ForbiddenPage
+        homeTo={getRoleHome(user.role)}
+        description={reportCopy.exportDenied}
+      />
     );
-  }
-
-  if (view === "error") {
-    return (
-      <div data-testid="admin-export-page">
-        <PageHeader title={reportCopy.exportTitle} description={reportCopy.exportDescription} />
-        <Alert variant="danger" title={reportCopy.exportFailed}>
-          <p className="mb-3">{reportCopy.exportFailedDetail}</p>
-          <Button type="button" size="sm" variant="outline">
-            {reportCopy.retry}
-          </Button>
-        </Alert>
-      </div>
-    );
-  }
-
-  function handleExport() {
-    setExporting(true);
-    setTimeout(() => {
-      setExporting(false);
-      toast.success(reportCopy.exportSuccess);
-    }, 1000);
   }
 
   return (
     <div data-testid="admin-export-page">
       <PageHeader title={reportCopy.exportTitle} description={reportCopy.exportDescription} />
-      <div className="rounded-md border border-border bg-surface-raised p-6">
-        <ReportFilterBar showAllClasses idPrefix="export" />
-        <Button type="button" loading={exporting} onClick={handleExport}>
-          {reportCopy.exportButton}
-        </Button>
-        {exporting ? (
-          <div className="mt-4 flex items-center gap-2">
-            <Spinner className="h-5 w-5" />
-            <span className="text-body text-text-secondary">{reportCopy.exportProgress}</span>
-          </div>
-        ) : null}
-      </div>
+      <AdminReportFilterBar
+        idPrefix="export"
+        requireClassSubject
+        onApply={setAppliedFilters}
+      />
+      {appliedFilters === null ? (
+        <p className="text-body text-text-secondary">{reportCopy.filterPrompt}</p>
+      ) : exportFilters ? (
+        <CsvExportPanel filters={exportFilters} />
+      ) : (
+        <Alert variant="info">{reportCopy.exportNoRows}</Alert>
+      )}
     </div>
   );
 }

@@ -24,10 +24,10 @@ REST API specification for **We Check** MVP. Defines HTTP resources, request and
 
 | Module | Route prefix | Primary FR references |
 | --- | --- | --- |
-| `identity-auth` | `/auth`, `/users` | FR-01, FR-02 |
+| `identity-auth` | `/auth`, `/users`, `/setup` | FR-01, FR-02, FR-17 |
 | `roster-enrollment` | `/classes`, `/subjects`, `/enrollments`, `/roster` | FR-03 |
 | `session-management` | `/sessions` | FR-04, FR-05 |
-| `checkin-qr` | `/sessions/:id/qr`, `/check-in` | FR-06–FR-10 |
+| `checkin-qr` | `/sessions/:id/qr`, `/check-in`, `/check-in/tokens/:tokenId/preflight` | FR-06–FR-10, BR-15 |
 | `attendance` | `/sessions/:id/attendance`, `/attendance` | FR-11, FR-14, FR-15 |
 | `reporting-export` | `/reports` | FR-12, FR-13 |
 | `notifications` | `/notifications`, `/policy` | FR-16 |
@@ -50,6 +50,45 @@ Every protected route runs through authentication and permission evaluation per 
 ---
 
 ## 2. Authentication and Session
+
+### 2.0 Setup (bootstrap)
+
+Public endpoints for first-deploy bootstrap ([FR-17](../brds/03-functional-requirements.md), [BR-13](../brds/04-business-rules.md)).
+
+#### `GET /setup/status`
+
+| Field | Specification |
+| --- | --- |
+| Permission | Public |
+| FR | FR-17 |
+
+**Response `200`:**
+
+```json
+{ "needsSetup": true }
+```
+
+When `User.count > 0`, returns `{ "needsSetup": false }`.
+
+#### `POST /setup/first-admin`
+
+| Field | Specification |
+| --- | --- |
+| Permission | Public only when `needsSetup: true` |
+| FR | FR-17 |
+
+**Request body:**
+
+```json
+{
+  "institutionalId": "ADMIN001",
+  "displayName": "Nguyễn Văn Admin",
+  "email": "admin@example.edu.vn",
+  "password": "string"
+}
+```
+
+**Response `201`:** Created user + session cookie (same as login). **Response `403`:** `SetupAlreadyComplete` when users already exist.
 
 ### 2.1 Session model
 
@@ -119,6 +158,12 @@ Sets `Set-Cookie: wecheck_session=<id>; HttpOnly; Secure; SameSite=Lax`.
 
 Revokes current session. Permission: authenticated. Response `204 No Content`.
 
+**Client expectations:**
+
+- Response clears the `SESSION_COOKIE_NAME` HTTP-only session cookie via `Set-Cookie`.
+- Subsequent `GET /auth/me` or any protected route returns **401** `Unauthenticated` with the revoked cookie.
+- Web client calls with `credentials: 'include'`; on success redirects to `/login` (no `returnUrl`). See [12-backend-frontend-tech-stack.md](./12-backend-frontend-tech-stack.md) §4.5 and [10-user-flows.md](../ui-ux/10-user-flows.md) §14.
+
 ### 2.4 `GET /auth/me`
 
 Returns authenticated user profile. Permission: `user:read` (self). Response `200` with `User` DTO (no `passwordHash`).
@@ -172,6 +217,55 @@ Create user account. Permission: `user:write`. FR-01.
 
 **Validation errors `422`:** duplicate `email` or `institutionalId`, invalid `role` enum.
 
+### 3.2a `POST /users/import`
+
+Bulk user CSV import with upsert by `institutional_id`. Permission: `user:write`. FR-01, [AC-01d](../brds/08-acceptance-mvp-future.md).
+
+Multipart form upload: `file` (CSV), optional `dryRun` (boolean).
+
+**CSV required columns:** `institutional_id`, `display_name`, `email`, `role`, `active`
+
+| Column | Validation |
+| --- | --- |
+| `institutional_id` | VAL-05; upsert match key |
+| `display_name` | VAL-04 |
+| `email` | VAL-02; unique except when updating same `institutional_id` |
+| `role` | One of: `Student`, `Instructor`, `TrainingOfficeAdmin` |
+| `active` | Boolean (`true`/`false` or `1`/`0`); defaults `true` if omitted |
+
+**Upsert semantics:** Create when `institutional_id` not found (random initial password generated, not returned). Update `display_name`, `email`, `role`, `active` when ID exists; password and sessions unchanged.
+
+**Response `202 Accepted`:**
+
+```json
+{
+  "batchId": "uuid",
+  "status": "Processing",
+  "message": "Đang xử lý file người dùng..."
+}
+```
+
+### 3.2b `GET /users/imports/:batchId`
+
+Poll user import status. Returns `UserImportBatch` with `totalRows`, `successRows`, `errorRows`, `createdCount`, `updatedCount`, `errorDetails`.
+
+**Example completed summary:**
+
+```json
+{
+  "id": "uuid",
+  "status": "Completed",
+  "totalRows": 1200,
+  "successRows": 1198,
+  "errorRows": 2,
+  "createdCount": 1150,
+  "updatedCount": 48,
+  "errorDetails": [
+    { "rowNumber": 42, "field": "email", "message": "DuplicateEmail" }
+  ]
+}
+```
+
 ### 3.3 `PATCH /users/:userId`
 
 Update display name, email, role, or `active` flag. Permission: `user:write`. Deactivating a user revokes all `AuthSession` rows for that user.
@@ -182,7 +276,47 @@ Update display name, email, role, or `active` flag. Permission: `user:write`. De
 
 ### 4.1 `GET /classes` and `GET /subjects`
 
-Reference data lists. Permission: `roster:read` (scoped). Instructor sees only classes tied to `ClassAssignment`; admin sees all.
+Reference data catalog lists. Permission: `roster:read` (scoped). Instructor sees only classes/subjects tied to `ClassAssignment`; admin sees all.
+
+**Query parameters:** `q` (search code/name), `sort` (default `code` asc), `offset`, `limit` (default **25**).
+
+**Response `200`:**
+
+```json
+{
+  "items": [
+    { "id": "uuid", "code": "HESD-03", "name": "HESD Cohort 03" }
+  ],
+  "total": 42,
+  "offset": 0,
+  "limit": 25
+}
+```
+
+Used by admin catalog pages `/admin/classes` and `/admin/subjects` ([AC-03i](../brds/08-acceptance-mvp-future.md)).
+
+### 4.1a `POST /classes` and `POST /subjects`
+
+Create reference records. Permission: `roster:write`. FR-03, [AC-03d](../brds/08-acceptance-mvp-future.md).
+
+**Request body (`POST /classes`):**
+
+```json
+{ "code": "HESD-03", "name": "HESD Cohort 03" }
+```
+
+**Request body (`POST /subjects`):**
+
+```json
+{ "code": "SWE-102", "name": "Software Engineering 102" }
+```
+
+| Validation | Rule |
+| --- | --- |
+| `code` | Uppercase alphanumeric + hyphen; unique; max length per [08-validation-rules.md](./08-validation-rules.md) |
+| Duplicate | `400` with `DuplicateClassCode` or `DuplicateSubjectCode` |
+
+MVP: create-only — no delete endpoints.
 
 ### 4.2 `GET /enrollments`
 
@@ -345,7 +479,53 @@ Client polls every **5 seconds** or uses Server-Sent Events in future; MVP polli
 
 QR encodes deep link consumed by student mobile web check-in page ([FR-07](../brds/03-functional-requirements.md)).
 
-### 6.2 `POST /check-in`
+### 6.2 `GET /check-in/tokens/:tokenId/preflight`
+
+Read-only token validation **before** client advances from scan to GPS capture ([BR-15](../brds/04-business-rules.md), [FR-07](../brds/03-functional-requirements.md)). Permission: `checkin:submit` (authenticated Student).
+
+**Query parameters (optional):**
+
+| Param | Purpose |
+| --- | --- |
+| `sessionId` | Deep-link session id for `SessionMismatch` check when QR payload includes session |
+
+**Preflight chain (server-side, no writes):**
+
+1. Token exists and parses
+2. Token status `Valid` (not `Expired`, `Consumed`)
+3. Parent session `Active`
+4. Authenticated student has `Enrollment` for session's class-subject pair
+
+**Response `200 OK` (pass):**
+
+```json
+{
+  "outcome": "Valid",
+  "tokenId": "uuid",
+  "sessionId": "uuid",
+  "session": {
+    "classCode": "HESD-01",
+    "subjectCode": "SWE-101",
+    "roomName": "Phòng A201",
+    "status": "Active"
+  }
+}
+```
+
+**Response `403` / `404` (fail):**
+
+| errorCode | HTTP | User message (vi-VN) |
+| --- | --- | --- |
+| `TokenNotFound` | 404 | *Không nhận diện được mã QR* |
+| `ExpiredQr` | 403 | *Mã QR đã hết hạn, vui lòng quét mã mới* |
+| `SessionNotActive` | 403 | Existing session-not-active copy |
+| `NotEnrolled` | 403 | *Bạn không thuộc danh sách lớp của buổi học này* |
+| `TokenAlreadyUsed` | 403 | Token reuse copy ([BR-11](../brds/04-business-rules.md)) |
+| `SessionMismatch` | 403 | QR session id does not match token's bound session |
+
+Client must not mount `GpsCaptureStep` until preflight returns `200` with `outcome: "Valid"`.
+
+### 6.3 `POST /check-in`
 
 Student check-in submission. Permission: `checkin:submit` (Student role). FR-07–FR-10.
 
@@ -411,6 +591,7 @@ Canonical mapping from [State machine (BRD)](../brds/05-state-machine.md) §5:
 | `SpoofSuspected` | 400 | `SpoofSuspected` | FR-10 |
 | `NotEnrolled` | 403 | `NotEnrolled` | FR-03 |
 | `TokenNotFound` | 404 | `TokenNotFound` | — |
+| `SessionMismatch` | 400 | `SessionMismatch` | FR-07 preflight |
 
 Every attempt inserts a `CheckInAttempt` row regardless of outcome ([FR-09](../brds/03-functional-requirements.md)).
 
@@ -518,15 +699,23 @@ Class-subject aggregation over date range. Query: `classCode`, `subjectCode`, `f
 
 ### 8.3 `POST /reports/export`
 
-CSV export. Permission: `report:export` (`TrainingOfficeAdmin` only). FR-13, [BR-09](../brds/04-business-rules.md).
+CSV export from report pages or dedicated export UI. FR-13, [BR-09](../brds/04-business-rules.md).
 
-**Request body:** same filter fields as summary report.
+**Permissions:**
+
+| Role | Permission | Scope enforcement |
+| --- | --- | --- |
+| `TrainingOfficeAdmin` | `report:export` | Institution-wide within request filters |
+| `Instructor` | `report:read` + assignment check | Same class-subject scope as `GET /reports/summary` ([BR-08](../brds/04-business-rules.md)) |
+| `Student` | — | **403** `ExportNotAllowed` |
+
+**Request body:** same filter fields as summary report (mirrors active `ReportFilterBar` / inline **Xuất CSV** state per [14-listing-pages-search-filter-sort.md](../ui-ux/14-listing-pages-search-filter-sort.md) §10).
 
 **Response `200`:** `Content-Type: text/csv; charset=utf-8` with `Content-Disposition: attachment; filename="attendance-export-2026-06-28.csv"`.
 
 **CSV columns:** `institutional_id`, `display_name`, `class_code`, `subject_code`, `session_date`, `attendance_status`, `checked_in_at`
 
-Writes `ExportAuditLog` on success.
+Writes `ExportAuditLog` on success. Denied attempts (student, out-of-scope instructor) write security audit per [NFR-15](../brds/07-non-functional-risk.md).
 
 ---
 

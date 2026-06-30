@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-03",
   "version": 1,
-  "docFingerprint": "sha256:2668a9e5528c7792c1487646faad8fb595d13fa43185d7cf976e318818385f70",
-  "generatedAt": "2026-06-28T17:19:07Z",
+  "docFingerprint": "sha256:c7d3f05bcd7f282254c6df7321da31c143e51b3076c4c3bcf928d7b2b5244926",
+  "generatedAt": "2026-06-29T17:09:54Z",
   "cases": [
     {
       "id": "TC-AC-03-001",
@@ -229,7 +229,7 @@
       "title": "Flow A step 1: Admin seeds cohort roster via CSV import before session creation",
       "preconditions": [
         "TrainingOfficeAdmin is authenticated",
-        "Empty class HESD-01 / SWE-101 reference data exists",
+        "Admin has created class HESD-01 and subject SWE-101 reference records via admin UI or POST /classes and POST /subjects",
         "CSV contains enrollments for all pilot cohort students (≥10 rows)"
       ],
       "steps": [
@@ -387,6 +387,114 @@
       ],
       "expected": "Assigned class roster displays enrolled students in table; unassigned class access blocked in UI consistent with AC-03c",
       "edgeCase": false
+    },
+    {
+      "id": "TC-AC-03-019",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["AC-03", "FR-03"],
+      "title": "Admin creates class HESD-03 and subject SWE-102 via /admin/classes/new before roster import",
+      "preconditions": [
+        "TrainingOfficeAdmin is logged in to admin SPA",
+        "Class HESD-03 and subject SWE-102 do not yet exist in reference data"
+      ],
+      "steps": [
+        "Navigate to /admin/classes/new",
+        "Submit class form with code HESD-03 and display name for cohort 03",
+        "Submit subject form with code SWE-102 and display name for Software Engineering 102",
+        "Verify success confirmation and new records appear in class/subject roster filter dropdowns",
+        "Proceed to roster import page and confirm HESD-03 and SWE-102 are selectable for CSV validation"
+      ],
+      "expected": "Class and subject reference records persisted per AC-03d; codes shown uppercase in UI; records available for subsequent roster CSV import without UnknownClassCode errors",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-03-020",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["AC-03", "FR-03"],
+      "title": "POST /classes and POST /subjects persist reference records with uppercase code validation",
+      "preconditions": [
+        "Real PostgreSQL test database is running",
+        "roster-enrollment module ClassRepository and SubjectRepository are wired",
+        "TrainingOfficeAdmin context with roster:write permission"
+      ],
+      "steps": [
+        "Invoke roster service to create class with code HESD-03 and name via POST /classes equivalent",
+        "Invoke roster service to create subject with code SWE-102 and name via POST /subjects equivalent",
+        "Query classes and subjects tables and assert codes stored as uppercase HESD-03 and SWE-102",
+        "Attempt create with lowercase code hesd-99 and assert validation rejects with schema error before persist"
+      ],
+      "expected": "Valid uppercase codes committed with unique constraints; lowercase or invalid pattern codes rejected per validation rules §3.2a; no delete endpoints invoked (MVP create-only)",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-03-021",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["AC-03", "FR-03"],
+      "title": "POST /classes and POST /subjects return 201 Created with reference DTOs",
+      "preconditions": [
+        "TrainingOfficeAdmin session cookie is set with roster:write permission",
+        "Codes HESD-03 and SWE-102 are not yet in reference data"
+      ],
+      "steps": [
+        "POST /classes with body { code: HESD-03, name: HESD Cohort 03 }",
+        "Assert HTTP status 201 and response includes id, code HESD-03, and name",
+        "POST /subjects with body { code: SWE-102, name: Software Engineering 102 }",
+        "Assert HTTP status 201 and response includes id, code SWE-102, and name",
+        "GET /classes and GET /subjects with admin session and verify new records listed"
+      ],
+      "expected": "HTTP 201 Created for both endpoints per API design §4.1a; persisted reference data available for roster import and enrollment queries",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-03-022",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["AC-03", "FR-03"],
+      "title": "Duplicate class code HESD-03 rejected with DuplicateClassCode and localized error",
+      "preconditions": [
+        "Class HESD-03 already exists in reference data",
+        "TrainingOfficeAdmin context with roster:write permission",
+        "Real PostgreSQL test database is running"
+      ],
+      "steps": [
+        "POST /classes with code HESD-03 and a different display name",
+        "Assert HTTP status 400 and errorCode DuplicateClassCode",
+        "Assert response message is Vietnamese localized validation error",
+        "Query classes table and confirm exactly one HESD-03 row remains"
+      ],
+      "expected": "Duplicate class code rejected per AC-03e and validation rules §3.2a; no second class row created; errorCode DuplicateClassCode for client handling",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-03-023",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["AC-03", "FR-03"],
+      "title": "POST /subjects with duplicate SWE-102 code returns DuplicateSubjectCode",
+      "preconditions": [
+        "Subject SWE-102 already exists in reference data",
+        "TrainingOfficeAdmin session cookie is set"
+      ],
+      "steps": [
+        "POST /subjects with code SWE-102 and a different name",
+        "Assert HTTP status 400 and errorCode DuplicateSubjectCode",
+        "Assert Vietnamese localized error message in response body"
+      ],
+      "expected": "Duplicate subject code rejected symmetrically to class duplicate rule; no second subject row persisted",
+      "edgeCase": true
     }
   ]
 }

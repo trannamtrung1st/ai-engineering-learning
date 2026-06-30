@@ -51,6 +51,42 @@ Low-fidelity wireframe specifications for **We Check** MVP screens. Layouts refe
 
 ---
 
+## 2a. Wireframe — Setup (`/setup`)
+
+**Layout:** `AuthLayout` (no login link) · **Traces:** [FR-17](../brds/03-functional-requirements.md) · [AC-17](../brds/08-acceptance-mvp-future.md)
+
+```
+┌─────────────────────────────────────┐
+│   Thiết lập We Check lần đầu        │
+│                                     │
+│   [SetupAdminForm fields]           │
+│   Mã cán bộ / Họ tên / Email / MK   │
+│                                     │
+│   [Button primary] Tạo tài khoản    │
+└─────────────────────────────────────┘
+```
+
+---
+
+## 2b. Wireframe — Admin Home (`/admin`)
+
+**Layout:** `AdminLayout` · **Traces:** [FR-18](../brds/03-functional-requirements.md) · [AC-18c](../brds/08-acceptance-mvp-future.md)
+
+```
+┌──────────┬──────────────────────────────────────────┐
+│ Sidebar  │  Trang chủ quản trị                      │
+│ Trang chủ│  ┌────────┐ ┌────────┐ ┌────────┐        │
+│ Người    │  │ Người  │ │ Danh   │ │ Thêm   │        │
+│ dùng …   │  │ dùng   │ │ sách   │ │ lớp    │        │
+│          │  └────────┘ └────────┘ └────────┘        │
+│          │  [RoleHomeHub / QuickActionGrid]         │
+└──────────┴──────────────────────────────────────────┘
+```
+
+Cards omitted when permission missing.
+
+---
+
 ## 3. Wireframe — Student Check-In Scanner (`/check-in/scan`)
 
 **Layout:** `StudentLayout` (bottom nav hidden) · **Traces:** [FR-07](../brds/03-functional-requirements.md) · [AC-07](../brds/08-acceptance-mvp-future.md)
@@ -104,6 +140,26 @@ Low-fidelity wireframe specifications for **We Check** MVP screens. Layouts refe
 └─────────────────────────────────────┘
 ```
 
+### 4.1b GPS ready (no spinner)
+
+```
+┌─────────────────────────────────────┐
+│  SWE-101 · HESD-01 · Phòng A101     │
+│         Xác minh vị trí             │
+├─────────────────────────────────────┤
+│                                     │
+│         [Icon — check]              │
+│                                     │
+│      Vị trí đã sẵn sàng             │
+│   (static — no Spinner)             │
+│                                     │
+│   [Button primary] Xác nhận điểm    │
+│                    danh             │
+└─────────────────────────────────────┘
+```
+
+`aria-busy="false"`; submit enabled immediately ([AC-08f](../brds/08-acceptance-mvp-future.md)).
+
 ### 4.2 Success outcome
 
 ```
@@ -138,7 +194,7 @@ Low-fidelity wireframe specifications for **We Check** MVP screens. Layouts refe
 └─────────────────────────────────────┘
 ```
 
-Component: `CheckInOutcomePanel` — variant driven by `CheckInOutcome` enum.
+Component: `CheckInOutcomePanel` — Notion pastel outcome moment; variant driven by `CheckInOutcome` enum with distinct icon, card-tint wash, and semibold headline per [04-design-tokens.md](./04-design-tokens.md) §13.
 
 ---
 
@@ -390,6 +446,29 @@ Black background (`#000`); QR minimum **280 × 280** px on projector; countdown 
 │         404                         │
 │   Không tìm thấy trang              │
 │   [Button] Về trang chủ             │
+└─────────────────────────────────────┘
+```
+
+### 14.3 Shell overview (`/`) — route discovery
+
+Unauthenticated only ([AC-18f](../brds/08-acceptance-mvp-future.md), [AC-18g](../brds/08-acceptance-mvp-future.md)).
+
+```
+┌─────────────────────────────────────┐
+│ Hệ thống giao diện We Check         │
+│ {component showcase — badges, QR}   │
+│ Các trạng thái điểm danh            │
+│ {outcome panels}                    │
+├─────────────────────────────────────┤
+│ Đi tới trang                        │
+│ ┌─────────────┐ ┌─────────────┐     │
+│ │ Đăng nhập   │ │ Điểm danh   │     │
+│ │ /login      │ │ /check-in   │     │
+│ └─────────────┘ └─────────────┘     │
+│ ┌─────────────┐ ┌─────────────┐     │
+│ │ Buổi học    │ │ Quản trị    │     │
+│ │ /sessions   │ │ /admin      │     │
+│ └─────────────┘ └─────────────┘     │
 └─────────────────────────────────────┘
 ```
 

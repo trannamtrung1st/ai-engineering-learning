@@ -1,24 +1,32 @@
 import {
   BarChart3,
   Download,
+  Home,
   Menu,
   Settings,
   Upload,
   Users,
 } from "lucide-react";
 import { useState } from "react";
-import { Outlet, useOutletContext } from "react-router-dom";
+import { Outlet, useLocation, useOutletContext } from "react-router-dom";
 import { UserRole } from "@wecheck/domain";
 import { PageContent } from "@/components/layout/page-content";
+import { SidebarNav } from "@/components/layout/sidebar-nav";
 import { Breadcrumb } from "@/components/shared/navigation/breadcrumb";
-import { NavLink } from "@/components/shared/navigation/nav-link";
 import { UserMenu } from "@/components/shared/navigation/user-menu";
 import { IconButton } from "@/components/ui/icon-button";
 import { type AuthOutletContext } from "@/components/auth/require-auth";
-import { adminNavItems, appCopy } from "@/lib/copy/status-labels";
-import { cn } from "@/lib/cn";
+import { ForbiddenPage } from "@/components/layout/forbidden-page";
+import { StudentShell } from "@/components/layout/student-layout";
+import { getRoleHome } from "@/lib/auth-redirect";
+import {
+  canAccessAdminShell,
+  getAdminForbiddenDescription,
+} from "@/lib/admin-route-access";
+import { appCopy } from "@/lib/copy/status-labels";
 
-const navIcons = {
+const adminNavIcons = {
+  "/admin": Home,
   "/admin/users": Users,
   "/admin/rosters": Upload,
   "/admin/reports": BarChart3,
@@ -33,7 +41,63 @@ export interface AdminLayoutProps {
 export function AdminLayout() {
   const authContext = useOutletContext<AuthOutletContext>();
   const user = authContext.user;
+  const { pathname } = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  if (!canAccessAdminShell(user.role, pathname)) {
+    if (user.role === UserRole.Student) {
+      return (
+        <StudentShell displayName={user.displayName} pathname={pathname}>
+          <ForbiddenPage homeTo={getRoleHome(user.role)} />
+        </StudentShell>
+      );
+    }
+
+    return (
+      <ForbiddenPage
+        homeTo={getRoleHome(user.role)}
+        description={getAdminForbiddenDescription(pathname)}
+      />
+    );
+  }
+
+  const isInstructorRosterShell =
+    user.role === UserRole.Instructor && canAccessAdminShell(user.role, pathname);
+
+  if (isInstructorRosterShell) {
+    return (
+      <div
+        className="min-h-screen bg-surface"
+        data-testid="admin-roster-shell"
+      >
+        <header className="sticky top-0 z-sticky flex h-16 items-center justify-between gap-4 border-b border-border bg-surface-raised px-4 shadow-sm lg:px-6">
+          <Breadcrumb
+            items={[
+              { label: "Buổi học", to: "/sessions" },
+              { label: "Danh sách lớp" },
+            ]}
+          />
+          <UserMenu displayName={user.displayName} role={UserRole.Instructor} />
+        </header>
+        <main id="main-content" className="flex-1">
+          <PageContent variant="wide">
+            <Outlet context={authContext} />
+          </PageContent>
+        </main>
+      </div>
+    );
+  }
+
+  const sidebarHeader = (
+    <div className="border-b border-border p-4 pl-5">
+      <p className="text-small font-semibold uppercase tracking-wide text-text-secondary">
+        {appCopy.adminSection}
+      </p>
+      <p className="font-display text-h2 font-semibold text-brand-700">
+        {appCopy.productName}
+      </p>
+    </div>
+  );
 
   return (
     <div
@@ -41,10 +105,14 @@ export function AdminLayout() {
       data-testid="admin-layout"
     >
       <aside
-        className="hidden border-r border-border bg-surface-raised lg:block"
+        className="relative hidden border-r border-border bg-surface-raised lg:block"
         aria-label="Điều hướng quản trị"
       >
-        <AdminSidebar />
+        <div
+          className="absolute inset-y-0 left-0 w-1 bg-brand-700"
+          aria-hidden="true"
+        />
+        <SidebarNav layout="admin" icons={adminNavIcons} header={sidebarHeader} />
       </aside>
 
       {drawerOpen ? (
@@ -56,13 +124,22 @@ export function AdminLayout() {
             onClick={() => setDrawerOpen(false)}
           />
           <aside className="relative h-full w-64 bg-surface-raised p-4 shadow-lg">
-            <AdminSidebar onNavigate={() => setDrawerOpen(false)} />
+            <div
+              className="absolute inset-y-0 left-0 w-1 bg-brand-700"
+              aria-hidden="true"
+            />
+            <SidebarNav
+              layout="admin"
+              icons={adminNavIcons}
+              header={sidebarHeader}
+              onNavigate={() => setDrawerOpen(false)}
+            />
           </aside>
         </div>
       ) : null}
 
       <div className="flex min-h-screen flex-col">
-        <header className="sticky top-0 z-sticky flex h-16 items-center justify-between gap-4 border-b border-border bg-surface-raised px-4 lg:px-6">
+        <header className="sticky top-0 z-sticky flex h-16 items-center justify-between gap-4 border-b border-border bg-surface-raised px-4 shadow-sm lg:px-6">
           <div className="flex items-center gap-3">
             <IconButton
               className="lg:hidden"
@@ -73,7 +150,7 @@ export function AdminLayout() {
             </IconButton>
             <Breadcrumb
               items={[
-                { label: appCopy.adminSection, to: "/admin/users" },
+                { label: appCopy.adminSection, to: "/admin" },
                 { label: "Bảng điều khiển" },
               ]}
             />
@@ -86,35 +163,6 @@ export function AdminLayout() {
           </PageContent>
         </main>
       </div>
-    </div>
-  );
-}
-
-function AdminSidebar({ onNavigate }: { onNavigate?: () => void }) {
-  return (
-    <div className="flex h-full flex-col">
-      <div className="border-b border-border p-4">
-        <p className="text-small font-semibold uppercase tracking-wide text-text-secondary">
-          {appCopy.adminSection}
-        </p>
-        <p className="text-h2 font-semibold text-primary-700">{appCopy.productName}</p>
-      </div>
-      <nav className="flex flex-col gap-1 p-4" data-testid="admin-sidebar">
-        {adminNavItems.map((item) => {
-          const Icon = navIcons[item.to as keyof typeof navIcons];
-          return (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={cn("w-full")}
-              {...(onNavigate ? { onClick: onNavigate } : {})}
-            >
-              <Icon className="h-5 w-5" aria-hidden="true" />
-              {item.label}
-            </NavLink>
-          );
-        })}
-      </nav>
     </div>
   );
 }

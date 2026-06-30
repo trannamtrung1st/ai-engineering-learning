@@ -14,7 +14,7 @@ Stakeholder register, decision authority, and MVP scope boundaries for **We Chec
 | --- | --- | --- | --- | --- | --- |
 | Student | `Student` | Scan rotating QR via mobile browser; grant camera and GPS permissions; view personal attendance history | None — consumes check-in flow only | Fast check-in (< 30 s per person); clear error messages when QR expires or GPS denied; privacy of location data | End user — every live session |
 | Instructor / Facilitator | `Instructor` | Create and open sessions; configure room GPS and optional radius; display QR for cohort; monitor live attendance; manually correct exceptions; view class/subject reports | Operational — per-session attendance window, manual overrides within 24 hours post-close | Simple session setup; projection-friendly QR display; real-time roster view; audit trail on manual edits | Primary operator — every live session |
-| Training Office Admin | `TrainingOfficeAdmin` | System-wide policy (absence thresholds); user provisioning for instructors and students; institution-wide reports; CSV export for academic systems | Policy and data export — defines absence rules; sole CSV export authority | Accurate aggregate data; export within 10 minutes; RBAC enforcement; compliance with NĐ 13/2023 | Administrator — setup, periodic review, export |
+| Training Office Admin | `TrainingOfficeAdmin` | System-wide policy (absence thresholds); user provisioning for instructors and students; institution-wide reports; institution-wide CSV export | Policy and data export — defines absence rules; institution-wide export authority ([BR-09](./04-business-rules.md)) | Accurate aggregate data; export within 10 minutes; RBAC enforcement; compliance with NĐ 13/2023 | Administrator — setup, periodic review, export |
 | IT Operations | `ITOperations` | Host infrastructure; ensure uptime; incident response; security patching | Infrastructure — hosting, monitoring, backup | Zero downtime during live workshops; hosting within Vietnam; TLS and encryption standards | Background — no in-app business UI in MVP |
 
 ### 1.2 Stakeholder needs summary
@@ -23,7 +23,7 @@ Stakeholder register, decision authority, and MVP scope boundaries for **We Chec
 
 **Instructors** need to start a session in under two minutes, see who has checked in during the attendance window, and resolve edge cases (no smartphone, GPS failure, late arrival) through manual status edits that are audit-logged.
 
-**Training Office Admin** needs centralized control over user accounts, attendance policy configuration, cross-cohort visibility, and CSV export restricted to their role. They require confidence that GPS coordinates are used only for verification and not stored long-term.
+**Training Office Admin** needs centralized control over user accounts, attendance policy configuration, cross-cohort visibility, and institution-wide CSV export per [BR-09](./04-business-rules.md). Instructors export within assigned class-subject scope; students are denied. They require confidence that GPS coordinates are used only for verification and not stored long-term.
 
 **IT Operations** needs deployable web stack, health monitoring, and runbooks. MVP does not require in-application IT dashboards; operational concerns are captured in [07-non-functional-risk.md](./07-non-functional-risk.md).
 
@@ -34,7 +34,7 @@ Stakeholder register, decision authority, and MVP scope boundaries for **We Chec
 | Attendance policy (absence threshold, excused absence rules) | Training Office Admin | Instructors | Students |
 | Per-session GPS radius and room coordinates | Instructor | Training Office Admin | IT Operations |
 | Session open/close and manual attendance corrections | Instructor | — | Training Office Admin |
-| CSV export and bulk data access | Training Office Admin | IT Operations | Instructors |
+| CSV export and bulk data access | Training Office Admin (institution-wide); Instructor (assigned scope per [BR-09](./04-business-rules.md)) | IT Operations | Students |
 | Infrastructure and security controls | IT Operations | Training Office Admin | Instructors |
 
 ### 1.4 Communication and escalation
@@ -64,8 +64,10 @@ MVP scope follows [prompt.md](./prompt.md). Capabilities marked **Must** are req
 | Authentication | Valid login required before check-in; unauthenticated users redirected to login | All authenticated roles |
 | Instructor manual attendance edit | Instructor corrects attendance during session and up to **24 hours** after close; all changes audit-logged | `Instructor` |
 | Attendance reporting | Per-class and per-subject views for assigned instructor; training office admin sees institution-wide | `Instructor`, `TrainingOfficeAdmin` |
-| CSV export | Training office admin only; export attendance data for downstream academic systems | `TrainingOfficeAdmin` |
-| Roster management (baseline) | Import or maintain participant list per class via admin UI or CSV upload when academic API is unavailable | `TrainingOfficeAdmin`, `Instructor` |
+| CSV export | Instructor scoped to assigned class-subject; admin institution-wide; student denied ([BR-09](./04-business-rules.md)) | `Instructor`, `TrainingOfficeAdmin` |
+| Roster management (baseline) | Import or maintain participant list per class via admin UI or CSV upload when academic API is unavailable; manual class/subject creation before import | `TrainingOfficeAdmin`, `Instructor` |
+| First admin bootstrap | When zero users exist, `/setup` creates first `TrainingOfficeAdmin` before login is available | Unauthenticated visitor |
+| Permission-gated navigation | Sidebar, bottom nav, and hub cards show only permitted destinations; role home hubs after login | All authenticated roles |
 
 #### 2.1.2 Should — include if schedule allows
 

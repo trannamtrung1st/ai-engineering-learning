@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-14",
   "version": 1,
-  "docFingerprint": "sha256:ace46043f916f05c240bb72460eaf73685661e012256a3e008f80a3f3452ad62",
-  "generatedAt": "2026-06-29T12:00:00Z",
+  "docFingerprint": "sha256:363c69f73b395802fb214a6a2e8ffa5a64f0c956b4df5177e241c9a855981829",
+  "generatedAt": "2026-06-29T17:30:31Z",
   "cases": [
     {
       "id": "TC-AC-14-001",
@@ -70,7 +70,7 @@
         "Assert HTTP status 200 OK",
         "Assert Content-Type application/json; charset=utf-8",
         "Assert response body contains items array, nextCursor, and totalCount per API design §10.1 success list envelope",
-        "Assert each item in items includes subject identifier or name, sessionDate (ISO 8601), status enum, and checkedInAt when status is Present",
+        "Assert each item in items includes subject identifier or name, sessionDate (ISO 8601), status enum (Present, Absent, or Excused), and checkedInAt when status is Present",
         "Assert response body does not contain errorCode on success"
       ],
       "expected": "HTTP 200 success contract for GET /attendance/me/history per API design §7.3 and §10.1; history DTO fields match FR-14 outputs",
@@ -94,9 +94,9 @@
         "Invoke getStudentHistory(studentAId, { limit: 20, cursor: nextCursor }) and assert items.length === 20",
         "Invoke getStudentHistory(studentAId, { limit: 20, cursor: secondPageCursor }) and assert items.length === 5 (final page)",
         "Assert nextCursor is null on final page and union of all pages equals 45 unique session attendance rows",
-        "Assert no duplicate items across pages and ordering remains session date descending per listing-pages §5.2"
+        "Assert no duplicate items across pages and ordering remains session date descending per 14-listing-pages-search-filter-sort.md §5.2"
       ],
-      "expected": "Pagination invariant: page size, totalCount, cursor continuity, and final-page boundary behave correctly for student history per AC-14a and listing-pages §6 (20 per fetch)",
+      "expected": "Pagination invariant: page size, totalCount, cursor continuity, and final-page boundary behave correctly for student history per AC-14a and 14-listing-pages-search-filter-sort.md §6 (20 per fetch)",
       "edgeCase": false
     },
     {
@@ -186,11 +186,13 @@
         "Navigate to /history",
         "Wait for AttendanceHistoryList to load and assert skeleton transitions to data rows",
         "Verify each card row displays subject name, session date (vi-VN formatted), StatusBadge with correct variant for Present/Absent/Excused, and check-in time only on Present rows",
-        "Verify first page shows up to 20 rows per listing-pages §6 cursor/load-more page size",
-        "Click Tải thêm (load more) and verify additional rows append without duplicating first page",
-        "Verify rows sorted by session date descending per listing-pages §5.2"
+        "Verify first page shows up to 20 rows per 14-listing-pages-search-filter-sort.md §6 cursor/load-more page size",
+        "Click Tải thêm (load more) and verify inline spinner on button during fetch per ui-states §5",
+        "Verify additional rows append without duplicating first page",
+        "When all records loaded verify Tải thêm is hidden and Đã hiển thị tất cả is shown per ui-states §5",
+        "Verify rows sorted by session date descending and list is read-only (no edit controls) per FR-14"
       ],
-      "expected": "AC-14a browser journey: /history paginated list with status badges per tag-specific browser-journey hint and page-list §3.2",
+      "expected": "AC-14a browser journey: /history paginated list with status badges per tag-specific browser-journey hint, page-list §3.2, and ui-states §5",
       "edgeCase": false
     },
     {
@@ -208,7 +210,7 @@
       "steps": [
         "Navigate to /history",
         "Wait for API GET /attendance/me/history to complete",
-        "Verify EmptyState displays message Chưa có buổi học nào per listing-pages §7 and AttendanceHistoryList §2.4",
+        "Verify EmptyState displays message Chưa có buổi học nào per ui-states §5 and event-specific-components §2.4",
         "Verify no StatusBadge or attendance cards rendered",
         "Verify load-more control hidden or disabled when items array is empty"
       ],
@@ -225,7 +227,7 @@
       "title": "GET /attendance/me/history with limit=201 returns 400 InvalidPagination",
       "preconditions": [
         "Authenticated Student session",
-        "Validation rule VAL-07 enforces limit 1–200 per validation-rules §3"
+        "API design §1 and validation-rules VAL-07 enforce limit 1–200 (default 50)"
       ],
       "steps": [
         "GET /api/v1/attendance/me/history?limit=201 using Student session cookie",
@@ -247,7 +249,7 @@
       "title": "GET /attendance/me/history with malformed cursor returns 400 InvalidPagination",
       "preconditions": [
         "Authenticated Student session",
-        "Validation rule VAL-08 rejects malformed opaque cursor per validation-rules §3"
+        "Validation-rules VAL-08 rejects malformed opaque cursor per error-handling §4.3"
       ],
       "steps": [
         "GET /api/v1/attendance/me/history?cursor=not-a-valid-cursor using Student session",

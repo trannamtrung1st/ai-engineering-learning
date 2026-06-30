@@ -1,0 +1,281 @@
+{
+  "productItemId": "BR-14",
+  "version": 1,
+  "docFingerprint": "sha256:b51b06151a55724f091e1a2a17e028f2001b19301895dfd37dd3b0fba234a6d4",
+  "generatedAt": "2026-06-29T22:15:00.000Z",
+  "cases": [
+    {
+      "id": "TC-BR-14-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["BR-14", "AC-18", "FR-18", "NFR-11"],
+      "title": "TS-21f: Instructor permitted nav set excludes all /admin/* routes",
+      "preconditions": [
+        "Bootstrap complete; seeded Instructor with session:read and report:read per roles-permissions §2.2",
+        "API running; Instructor authenticated via session cookie"
+      ],
+      "steps": [
+        "GET /api/v1/auth/me with Instructor session and capture permissions array",
+        "Resolve permitted nav descriptors for InstructorLayout via filterPermittedNav or equivalent module",
+        "Assert every returned route matches /sessions, /reports, or instructor sub-routes only",
+        "Assert zero descriptors with route prefix /admin",
+        "GET /api/v1/users with Instructor session",
+        "Assert HTTP 403 Forbidden with errorCode Forbidden per roles-permissions §2.5"
+      ],
+      "expected": "Testing-plan §3 TS-21f and BR-14 satisfied: instructor chrome never includes cross-role admin destinations; API guard denies admin surfaces backing omitted nav items",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-14-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-14", "FR-18"],
+      "title": "usePermittedNav omits nav descriptors when required permission absent from user set",
+      "preconditions": [
+        "Nav descriptor catalog loaded from roles-permissions §2.3a (StudentLayout, InstructorLayout, AdminLayout)",
+        "filterPermittedNav module boundary available for integration test without browser"
+      ],
+      "steps": [
+        "Invoke filterPermittedNav with Student permissions [checkin:submit, attendance:read (self)]",
+        "Assert returned items include Điểm danh → /check-in and Lịch sử → /history",
+        "Assert zero items with route prefix /admin, /sessions, or /reports",
+        "Invoke filterPermittedNav with Instructor permissions [session:read] only (report:read absent)",
+        "Assert Buổi học → /sessions present; Báo cáo → /reports absent from result array",
+        "Invoke filterPermittedNav with full TrainingOfficeAdmin permission set",
+        "Assert all admin sidebar items from §2.3a present including Trang chủ, Người dùng, Xuất CSV"
+      ],
+      "expected": "BR-14 module boundary: usePermittedNav omits nav items user lacks; cross-role prefixes never co-mingle in filtered descriptor set",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-14-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-14", "FR-18"],
+      "title": "Nav item → permission map §2.3a drives omission for sidebar, bottom nav, and hub cards",
+      "preconditions": [
+        "Nav descriptor table from roles-permissions §2.3a and app-layout-components §5.3, §6.2, §7.2 loaded",
+        "filterPermittedNav and filterHubCards integration APIs available"
+      ],
+      "steps": [
+        "For each StudentLayout bottom-nav item, assert required permission from §2.3a is evaluated before inclusion",
+        "For each InstructorLayout sidebar item, assert session:read or report:read gate applied",
+        "For each AdminLayout sidebar item, assert matching permission (user:read, roster:read, report:export, policy:write) required",
+        "Invoke filterHubCards with admin permissions excluding policy:write",
+        "Assert Chính sách card absent from hub descriptor result (not present with disabled flag)",
+        "Invoke filterHubCards for Student and assert only check-in and history cards returned"
+      ],
+      "expected": "BR-14 scope all layout chrome: sidebar, bottom nav, and hub quick-link cards all omit unauthorized destinations per shared permission map",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-14-004",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-14", "FR-18", "AC-18"],
+      "title": "GET /auth/me returns role and permissions consumed by nav chrome filtering",
+      "preconditions": [
+        "Seeded Student, Instructor, and TrainingOfficeAdmin with standard role permission sets",
+        "Valid session cookies for each role; API at /api/v1"
+      ],
+      "steps": [
+        "GET /api/v1/auth/me with Student session cookie",
+        "Assert HTTP 200; body role Student; permissions include checkin:submit and attendance:read",
+        "GET /api/v1/auth/me with Instructor session",
+        "Assert HTTP 200; role Instructor; permissions include session:read",
+        "GET /api/v1/auth/me with TrainingOfficeAdmin session",
+        "Assert HTTP 200; role TrainingOfficeAdmin; permissions include user:read (all) and report:export",
+        "For each role, resolve filterPermittedNav output and assert every visible nav item's required permission is present in auth/me permissions"
+      ],
+      "expected": "HTTP contract for GET /auth/me: permission set mirrors API guards and is the sole input to BR-14 nav omission logic per roles-permissions §2.4 UI route guard",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-14-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-14", "AC-18", "FR-18", "NFR-11"],
+      "title": "RBAC negative: Student and Instructor denied admin routes backing omitted nav items",
+      "preconditions": [
+        "RbacNegativeMatrix fixture per testing-plan §5 with Student and Instructor sessions",
+        "Representative admin endpoints matching AdminLayout nav: GET /users, GET /admin/reports, POST /admin/export"
+      ],
+      "steps": [
+        "For each admin endpoint in matrix, invoke with Student session",
+        "Assert HTTP 403 for every request; no institution-wide data in response body",
+        "Repeat matrix with Instructor session for /admin/users, /admin/rosters, /admin/reports, /admin/export",
+        "Assert HTTP 403 Forbidden or ExportNotAllowed per roles-permissions §2.5",
+        "Assert Instructor retains HTTP 200 on scoped routes GET /sessions and GET /reports when assigned"
+      ],
+      "expected": "NFR-11 rbac-negative coverage for BR-14: non-admin roles cannot access admin API surfaces; nav chrome omission aligns with API denial matrix",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-14-006",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["BR-14", "AC-18", "FR-18"],
+      "title": "Boundary: Instructor without report:read omits Báo cáo from sidebar and hub — not disabled",
+      "preconditions": [
+        "Instructor test user provisioned with session:read only (report:read explicitly absent)",
+        "filterPermittedNav and filterHubCards integration APIs available"
+      ],
+      "steps": [
+        "Load Instructor permission set and assert report:read not granted",
+        "Invoke filterPermittedNav for InstructorLayout",
+        "Assert sidebar contains Buổi học only; Báo cáo item absent from array (no disabled placeholder entry)",
+        "Invoke filterHubCards for /sessions instructor hub",
+        "Assert Tạo buổi học mới present but Báo cáo / Báo cáo điểm danh card absent",
+        "Direct GET /reports with Instructor session returns HTTP 403 ReportAccessDenied or Forbidden"
+      ],
+      "expected": "BR-14 boundary inverse: partial permission set omits report nav and hub destinations entirely; direct URL still denied — showing disabled link would violate BR-14",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-14-007",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-14", "AC-18", "FR-18", "NFR-11"],
+      "title": "Browser-journey: instructor layout chrome contains zero href matching /admin",
+      "preconditions": [
+        "Instructor user authenticated in browser",
+        "Instructor on /sessions instructor role home"
+      ],
+      "steps": [
+        "Navigate authenticated Instructor to /sessions",
+        "Query all anchor elements within InstructorLayout chrome (sidebar, TopBar, RoleHomeHub)",
+        "Assert zero href attributes match /admin or /admin/* regex",
+        "Resize viewport below md and open hamburger drawer sidebar; re-scan anchors",
+        "Direct navigate browser to /admin/users",
+        "Assert ForbiddenPage rendered inside RootLayout without AdminLayout sidebar or admin nav links"
+      ],
+      "expected": "Tag-specific browser-journey hint satisfied: AC-18a and TS-21f — instructor chrome contains zero /admin links; forbidden direct URL shows 403 page without nav leak per BR-14",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-14-008",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-14", "FR-18"],
+      "title": "Tag-specific component: forbidden AdminLayout sidebar items omitted from DOM not disabled",
+      "preconditions": [
+        "Bootstrap complete; TrainingOfficeAdmin authenticated in browser",
+        "Test admin user missing policy:write permission (or equivalent scoped fixture)"
+      ],
+      "steps": [
+        "Navigate browser to /admin with permission-reduced admin session",
+        "Inspect AdminLayout SidebarNav DOM via accessibility snapshot",
+        "Assert Chính sách (/admin/policy) nav item is absent from DOM (not present with aria-disabled or disabled attribute)",
+        "Assert permitted items such as Trang chủ and Người dùng remain visible and clickable",
+        "Assert RoleHomeHub omits Chính sách NavCard when policy:write missing",
+        "Direct-navigate to /admin/policy and assert ForbiddenPage without policy nav leaked in chrome"
+      ],
+      "expected": "Tag-specific component hint satisfied: BR-14 requires unauthorized nav items omitted from DOM — not disabled, not shown — for sidebar and hub cards",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-14-009",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-14", "AC-18", "FR-18"],
+      "title": "Student chrome never renders admin links; direct /admin/users shows ForbiddenPage",
+      "preconditions": [
+        "Student authenticated in browser on /check-in"
+      ],
+      "steps": [
+        "While logged in as Student, inspect StudentLayout chrome (AppHeader, BottomNav) for any /admin href",
+        "Assert zero /admin links in bottom nav and page chrome per AC-18b",
+        "Navigate browser directly to /admin/users",
+        "Assert ForbiddenPage with Vietnamese permission message visible",
+        "Assert StudentLayout (not AdminLayout) wraps the forbidden page",
+        "Assert no admin sidebar items rendered anywhere in DOM"
+      ],
+      "expected": "AC-18b browser outcome: BR-14 cross-role rule — student chrome never displays admin navigation; direct forbidden URL returns ForbiddenPage",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-14-010",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-14", "FR-18", "AC-18"],
+      "title": "Browser-journey: visible nav chrome matches GET /auth/me permission matrix per role",
+      "preconditions": [
+        "Seeded Instructor with session:read and report:read; web app and API running",
+        "Instructor authenticated in browser"
+      ],
+      "steps": [
+        "Fetch GET /api/v1/auth/me permissions for authenticated Instructor session",
+        "Navigate browser to /sessions and collect visible SidebarNav link labels and hrefs",
+        "For each visible nav item, assert required permission from roles-permissions §2.3a is present in auth/me permissions",
+        "Remove report:read from fixture (or use scoped test user) and reload /sessions",
+        "Assert Báo cáo nav item disappears from DOM entirely",
+        "Assert Buổi học remains visible because session:read still granted"
+      ],
+      "expected": "Tag-specific browser-journey hint satisfied: nav chrome derived from same permission matrix as API guards — visible items exactly match granted permissions per BR-14",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-14-011",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-14", "FR-18"],
+      "title": "Student BottomNav renders only permission-gated items — no instructor or admin routes",
+      "preconditions": [
+        "Student authenticated in browser with checkin:submit and attendance:read (self)"
+      ],
+      "steps": [
+        "Navigate browser to /check-in",
+        "Inspect BottomNav pill navigation DOM",
+        "Assert Điểm danh link to /check-in present",
+        "Assert Lịch sử link to /history present",
+        "Assert zero links to /sessions, /reports, or any /admin/* route",
+        "Assert no nav items rendered with disabled or aria-disabled state for forbidden routes"
+      ],
+      "expected": "BR-14 StudentLayout scope: bottom nav shows only permitted student routes; cross-role destinations omitted not disabled per app-layout-components §5.3",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-14-012",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-14", "BR-09", "AC-13", "FR-13"],
+      "title": "Instructor chrome omits Xuất CSV nav; export API returns 403 ExportNotAllowed",
+      "preconditions": [
+        "Instructor authenticated via session cookie",
+        "Admin export nav item requires report:export per §2.3a"
+      ],
+      "steps": [
+        "Resolve filterPermittedNav for InstructorLayout and assert zero items with route /admin/export",
+        "POST /api/v1/admin/export or equivalent CSV export endpoint with Instructor session",
+        "Assert HTTP 403 with errorCode ExportNotAllowed and Vietnamese message per roles-permissions §2.5",
+        "GET /api/v1/auth/me with Instructor session and assert report:export not in permissions"
+      ],
+      "expected": "BR-14 and BR-09 alignment: export nav item omitted for non-admin; API export denial matches omitted chrome per NFR-11 nav negative matrix",
+      "edgeCase": false
+    }
+  ]
+}

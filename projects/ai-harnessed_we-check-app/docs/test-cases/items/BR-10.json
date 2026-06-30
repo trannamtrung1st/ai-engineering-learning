@@ -1,8 +1,8 @@
 {
   "productItemId": "BR-10",
   "version": 1,
-  "docFingerprint": "sha256:4deda16c175af0ca34aadf938abcd5f11203e186585e68a48a77093b8e87aac5",
-  "generatedAt": "2026-06-29T12:00:00.000Z",
+  "docFingerprint": "sha256:7fa6e5f0fa1fb178b99256355a681409f9ca3b3a224ea6b785c745d780059c2e",
+  "generatedAt": "2026-06-29T18:35:19.000Z",
   "cases": [
     {
       "id": "TC-BR-10-001",
@@ -143,6 +143,7 @@
         "PATCH /api/v1/attendance/:recordId with body { status: \"Present\", note: \"Late override attempt\" } using Instructor A session",
         "Assert HTTP status 403 Forbidden",
         "Assert response errorCode EditWindowExpired",
+        "Assert message Đã quá thời hạn chỉnh sửa điểm danh (24 giờ) per error-handling §4.2",
         "Query attendance_records and assert status remains Absent unchanged",
         "Assert no AttendanceAuditLog entry created for this edit attempt"
       ],
@@ -248,18 +249,19 @@
       "title": "Instructor opens AttendanceEditDialog and submits Absent to Present with note within edit window",
       "preconditions": [
         "Authenticated Instructor on desktop viewport assigned to Closed session within 24 h of closedAt",
-        "Session attendance roster page /sessions/:sessionId/attendance loaded",
+        "Session detail page /sessions/:sessionId on Danh sách tab with AttendanceRosterTable loaded",
         "At least one student row with status Absent and Chỉnh sửa action enabled per BR-10"
       ],
       "steps": [
-        "Navigate to session attendance roster for Closed session within edit window",
+        "Navigate to /sessions/:sessionId and open Danh sách tab for Closed session within edit window",
+        "Verify countdown banner Còn {hours} giờ để chỉnh sửa visible per AttendanceEditForm UX",
         "Click Chỉnh sửa on Absent student row to open AttendanceEditDialog",
-        "Verify dialog displays student name, current status Absent, status selector with Present/Absent/Excused/Rejected, and note field per AttendanceEditForm spec",
-        "Select status Present, enter note Xác minh trực tiếp tại lớp, and submit",
-        "Verify success toast and roster row updates to Present badge",
-        "Verify AttendanceAuditTrail or audit notice visible per BR-10 audit-sensitive action UX"
+        "Verify dialog displays student name, read-only current status Absent, status selector, and note field per AttendanceEditForm §4.4",
+        "Select status Present, enter note Xác minh trực tiếp tại lớp, and click Cập nhật điểm danh",
+        "Verify success toast Đã cập nhật and roster row updates to Present badge",
+        "Verify AttendanceAuditTrail expandable panel shows editor, timestamp, and Absent → Present per ui-states §7.4"
       ],
-      "expected": "BR-10 UI journey: manual edit via AttendanceEditDialog within 24 h window; roster refreshes with Present status after successful submit",
+      "expected": "BR-10 UI journey: manual edit via AttendanceEditDialog within 24 h window; roster refreshes with Present status after successful submit per WF-04 §5.1",
       "edgeCase": false
     },
     {
@@ -272,17 +274,17 @@
       "title": "AttendanceEditDialog disabled with 24-hour window notice when instructor edit window expired",
       "preconditions": [
         "Authenticated Instructor assigned to session Closed more than 24 h ago",
-        "Session attendance roster page loaded",
+        "Session detail page /sessions/:sessionId on Danh sách tab loaded",
         "Student row with status Absent; edit window expired for Instructor role per BR-10"
       ],
       "steps": [
-        "Navigate to session attendance roster for session closed 25+ hours ago",
-        "Verify Chỉnh sửa action is disabled or hidden on roster rows per ui-states Editable state",
-        "If dialog trigger attempted, verify AttendanceEditDialog shows 24-hour window expired notice",
-        "Verify inline message Đã hết thời hạn chỉnh sửa điểm danh per forms-validation-ux §4.3",
+        "Navigate to /sessions/:sessionId Danh sách tab for session closed 25+ hours ago",
+        "Verify Chỉnh sửa action disabled with tooltip Chỉ phòng đào tạo có thể chỉnh sửa sau 24 giờ per ui-states §7.4 Edit locked",
+        "If dialog opened, verify AttendanceEditForm disabled with message Liên hệ phòng đào tạo để chỉnh sửa per forms-validation-ux §4.4",
+        "Verify user-flows §6 instructor post-24h message Chỉ phòng đào tạo có thể chỉnh sửa sau 24 giờ is shown",
         "Contrast: TrainingOfficeAdmin on same page sees Chỉnh sửa enabled for same row"
       ],
-      "expected": "BR-10 UI gating: instructor sees disabled edit and window notice after 24 h; admin retains edit capability per business rules exception",
+      "expected": "BR-10 UI gating: instructor sees disabled edit with documented messages after 24 h; admin retains edit capability per AC-11c exception",
       "edgeCase": false
     },
     {
@@ -350,9 +352,10 @@
         "Assert HTTP status 403 Forbidden",
         "Assert Content-Type application/json; charset=utf-8",
         "Assert response body errorCode EditWindowExpired",
+        "Assert response body message Đã quá thời hạn chỉnh sửa điểm danh (24 giờ) per error-handling §4.2",
         "Assert response body contains requestId UUID"
       ],
-      "expected": "HTTP 403 EditWindowExpired contract per API design §7.2 and validation rules §4 for instructor past BR-10 window",
+      "expected": "HTTP 403 EditWindowExpired contract per API design §7.2 and error-handling §4.2 for instructor past BR-10 window",
       "edgeCase": false
     },
     {
@@ -388,7 +391,7 @@
       "title": "Manual edit on Active session transitions Pending to Present before close",
       "preconditions": [
         "Active session with attendance_records row status Pending",
-        "Assigned Instructor within BR-10 edit policy (Active session editable per roles-permissions §2.3)",
+        "Assigned Instructor within BR-10 edit policy (during Active or within 24 h of closedAt per roles-permissions §2.3)",
         "AttendanceService.manualEdit callable"
       ],
       "steps": [
@@ -422,6 +425,53 @@
         "Assert no AttendanceAuditLog entry created"
       ],
       "expected": "BR-10 manual edit note bounded by VAL-10; invalid input rejected without state change or audit",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-10-019",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P1",
+      "traceability": ["BR-10", "FR-11"],
+      "title": "Manual edit supports all allowed target statuses Present, Absent, Excused, Rejected",
+      "preconditions": [
+        "Closed session within 24 h edit window",
+        "Four attendance records for same session with distinct starting statuses",
+        "Assigned Instructor with attendance:write per roles-permissions §2.3"
+      ],
+      "steps": [
+        "Invoke manualEdit on record1 changing Present to Excused with note",
+        "Invoke manualEdit on record2 changing Absent to Rejected with note",
+        "Invoke manualEdit on record3 changing Excused to Present with note",
+        "Invoke manualEdit on record4 changing Rejected to Absent with note",
+        "Assert each afterState matches target status in attendance_records",
+        "Assert four distinct AttendanceAuditLog entries with correct previousStatus and newStatus pairs"
+      ],
+      "expected": "BR-10 trigger satisfied: instructor may change status among Present, Absent, Excused, and Rejected within edit window; each edit produces append-only audit record",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-10-020",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["BR-10", "FR-11"],
+      "title": "PATCH /attendance/:recordId rejects invalid status enum with 422 ValidationFailed",
+      "preconditions": [
+        "Authenticated assigned Instructor session",
+        "Closed session within 24 h with known attendance recordId",
+        "API validation per 08-validation-rules.md §3.7 and VAL-11 InvalidEnum"
+      ],
+      "steps": [
+        "Send PATCH /api/v1/attendance/:recordId with body { status: \"Pending\", note: \"Invalid transition\" }",
+        "Assert HTTP status 422 Unprocessable Entity",
+        "Assert response errorCode ValidationFailed",
+        "Query attendance_records and assert status unchanged",
+        "Assert no AttendanceAuditLog entry created"
+      ],
+      "expected": "BR-10 manual edit accepts only Present, Absent, Excused, Rejected per validation rules §3.7; invalid status rejected without state change or audit",
       "edgeCase": true
     }
   ]

@@ -75,26 +75,3 @@ substitute_product_placeholders() {
     "$f" > "$tmp"
   mv "$tmp" "$f"
 }
-
-customize_harness_agent_file() {
-  local f="$1"
-  local product_name="$2"
-  local slug="$3"
-  local branch="$4"
-  [[ -f "$f" ]] || return 0
-  local tmp pn ps br
-  tmp="$(mktemp)"
-  pn="$(sed_escape_replacement "$product_name")"
-  ps="$(sed_escape_replacement "$slug")"
-  br="$(sed_escape_replacement "$branch")"
-  sed \
-    -e "s|We Event|${pn}|g" \
-    -e "s|we-event|${ps}|g" \
-    -e "s|aih/we-event-mvp|${br}|g" \
-    -e "s|@we-event/|@${ps}/|g" \
-    -e "s|{{PRODUCT_NAME}}|${pn}|g" \
-    -e "s|{{BRANCH_PREFIX}}|${br}|g" \
-    -e "s|{{PRODUCT_SLUG}}|${ps}|g" \
-    "$f" > "$tmp"
-  mv "$tmp" "$f"
-}

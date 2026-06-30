@@ -1,8 +1,8 @@
 {
   "productItemId": "BR-06",
   "version": 1,
-  "docFingerprint": "sha256:4deda16c175af0ca34aadf938abcd5f11203e186585e68a48a77093b8e87aac5",
-  "generatedAt": "2026-06-28T18:23:05.000Z",
+  "docFingerprint": "sha256:7fa6e5f0fa1fb178b99256355a681409f9ca3b3a224ea6b785c745d780059c2e",
+  "generatedAt": "2026-06-29T18:26:02.000Z",
   "cases": [
     {
       "id": "TC-BR-06-001",
@@ -126,11 +126,12 @@
       ],
       "steps": [
         "Invoke AuthService.requireUser(sessionId) with stale session id for deactivated user",
-        "Assert requireUser fails with unauthenticated or session-invalid semantics",
-        "Invoke auth middleware with session cookie for the stale session against protected route",
+        "Assert requireUser fails with session-invalid semantics",
+        "Invoke auth middleware with session cookie for the stale session against protected route (e.g. GET /api/v1/auth/me)",
+        "Assert HTTP status 401 and errorCode AccountDeactivated per error-handling §2.2",
         "Query attendance_records to confirm no Present record created"
       ],
-      "expected": "Deactivated user cannot hold valid authenticated session per BR-06 and domain model §4.1; middleware returns 401 before protected handler; no attendance mutations",
+      "expected": "Deactivated user cannot hold valid authenticated session per BR-06 and domain model §4.1; middleware returns 401 AccountDeactivated before protected handler; no attendance mutations",
       "edgeCase": false
     },
     {
@@ -352,9 +353,10 @@
         "Enter valid email and password on LoginForm",
         "Submit login",
         "Observe post-login navigation URL and page content",
-        "Verify authenticated shell or check-in UI loads with token context preserved"
+        "Verify authenticated shell or check-in UI loads with token context preserved",
+        "Verify client may invoke GET /api/v1/check-in/tokens/:tokenId/preflight with session cookie (BR-15 runs only after BR-06 auth gate satisfied)"
       ],
-      "expected": "After BR-06 login redirect, browser navigates to /check-in?token=<token-id>; session established; check-in flow UI renders per user flows §1",
+      "expected": "After BR-06 login redirect, browser navigates to /check-in?token=<token-id>; session established; check-in flow UI renders and authenticated preflight may proceed per user flows §1 and BR-15",
       "edgeCase": false
     },
     {
@@ -412,10 +414,33 @@
       "steps": [
         "Student opens check-in deep link from QR payload and is redirected to login",
         "Complete login with valid student credentials and returnUrl preserved",
+        "GET /api/v1/check-in/tokens/:tokenId/preflight with authenticated student session and assert HTTP 200",
         "POST /api/v1/check-in with authenticated session and valid coordinates",
         "Verify instructor GET /api/v1/sessions/:id/attendance shows Present count incremented"
       ],
-      "expected": "BR-06 enforced as first gate in Flow A workshop path; check-in succeeds only after valid authenticated session established; identity binding prerequisite for anti-proxy controls",
+      "expected": "BR-06 enforced as first gate in Flow A workshop path (validation-rules §5.1 step 2 before BR-15 preflight and submit); check-in succeeds only after valid authenticated session established; identity binding prerequisite for anti-proxy controls",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-06-021",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-06", "BR-15", "FR-07", "AC-02"],
+      "title": "Unauthenticated GET check-in preflight returns 401 before BR-15 enrollment evaluation",
+      "preconditions": [
+        "No session cookie or Authorization header is present",
+        "Active session with Valid qr_tokens row exists",
+        "tokenId known from valid QR payload"
+      ],
+      "steps": [
+        "GET /api/v1/check-in/tokens/:tokenId/preflight without Cookie and without Authorization header",
+        "Assert HTTP status 401 and errorCode Unauthenticated",
+        "Assert response message is Vui lòng đăng nhập để tiếp tục per error-handling §2.2",
+        "Verify response body contains no session summary fields (class, subject, room) indicating BR-15 domain chain did not run"
+      ],
+      "expected": "BR-06 blocks preflight at Layer 2 authentication per BR-15 scope; HTTP 401 Unauthenticated; enrollment and token validity checks never execute for unauthenticated callers",
       "edgeCase": false
     }
   ]

@@ -76,7 +76,48 @@ Toast complements form errors for background saves; primary feedback stays inlin
 
 ## 4. Form Catalog
 
-### 4.1 LoginForm
+### 4.1a SetupAdminForm
+
+Route: `/setup` · [FR-17](../brds/03-functional-requirements.md)
+
+| Field | Label | Validation |
+| --- | --- | --- |
+| `institutionalId` | Mã cán bộ | Required; `^[A-Za-z0-9\-_.]{3,32}$`; unique |
+| `displayName` | Họ và tên | Required; 1–200 chars |
+| `email` | Email | Required; valid email; unique |
+| `password` | Mật khẩu | Required; min 8 chars |
+
+**UX:** Login link hidden when `needsSetup: true`. On success, redirect to `/admin` hub. Duplicate fields show inline Vietnamese errors ([AC-17d](../brds/08-acceptance-mvp-future.md)).
+
+### 4.1b ClassForm
+
+Route: `/admin/classes/new` · [FR-03](../brds/03-functional-requirements.md)
+
+| Field | Label | Validation |
+| --- | --- | --- |
+| `classCode` | Mã lớp | Uppercase alphanumeric + hyphen; unique |
+| `className` | Tên lớp | Required |
+
+Duplicate class code → `DuplicateClassCode` field error ([AC-03e](../brds/08-acceptance-mvp-future.md)).
+
+**UX:** On success, toast *Đã lưu thành công* + redirect to `/admin/classes`.
+
+### 4.1c SubjectForm
+
+Route: `/admin/subjects/new` · [FR-03](../brds/03-functional-requirements.md)
+
+| Field | Label | Validation |
+| --- | --- | --- |
+| `subjectCode` | Mã môn | Uppercase alphanumeric + hyphen; unique |
+| `subjectName` | Tên môn | Required |
+
+Duplicate subject code → `DuplicateSubjectCode` field error ([AC-03g](../brds/08-acceptance-mvp-future.md)).
+
+**UX:** On success, toast *Đã lưu thành công* + redirect to `/admin/subjects`.
+
+> **Note:** Supersedes the prior combined four-field `ClassSubjectForm` workflow. Class and subject are independent catalogs — create each separately before roster CSV import.
+
+### 4.2 LoginForm
 
 Route: `/login` · [FR-02](../brds/03-functional-requirements.md)
 
@@ -94,7 +135,7 @@ Route: `/login` · [FR-02](../brds/03-functional-requirements.md)
 
 **Traceability:** FR-02 · BR-06 · AC-02 · NFR-16
 
-### 4.2 SessionForm
+### 4.3 SessionForm
 
 Route: `/sessions/new`, `/sessions/:id/settings` · [FR-04](../brds/03-functional-requirements.md)
 
@@ -119,7 +160,7 @@ Route: `/sessions/new`, `/sessions/:id/settings` · [FR-04](../brds/03-functiona
 
 **Traceability:** FR-04, FR-05 · BR-07 · AC-04
 
-### 4.3 AttendanceEditForm
+### 4.4 AttendanceEditForm
 
 Dialog form · [FR-11](../brds/03-functional-requirements.md)
 
@@ -137,13 +178,13 @@ Dialog form · [FR-11](../brds/03-functional-requirements.md)
 
 **Traceability:** FR-11 · BR-10 · AC-11
 
-### 4.4 UserForm
+### 4.5 UserForm
 
 Route: `/admin/users/new`, `/admin/users/:id` · [FR-01](../brds/03-functional-requirements.md)
 
 | Field | Label | Validation |
 | --- | --- | --- |
-| `institutionalId` | Mã SV / Mã cán bộ | Required; unique; alphanumeric |
+| `institutionalId` | Mã SV / Mã cán bộ | Required; unique; VAL-05 (`^[A-Za-z0-9\-_.]{3,32}$`) |
 | `displayName` | Họ và tên | Required; 2–100 characters |
 | `email` | Email | Required; valid email; unique async |
 | `role` | Vai trò | Required; Student, Instructor, TrainingOfficeAdmin |
@@ -157,7 +198,27 @@ Route: `/admin/users/new`, `/admin/users/:id` · [FR-01](../brds/03-functional-r
 
 **Traceability:** FR-01 · AC-01 · NFR-11
 
-### 4.5 RosterImportForm
+### 4.5a UserImportForm
+
+Route: `/admin/users/import` · [FR-01](../brds/03-functional-requirements.md)
+
+| Step | Validation |
+| --- | --- |
+| File select | Required; `.csv` only; max 5 MB (VAL-12) |
+| Preview | Column headers must match template: `institutional_id`, `display_name`, `email`, `role`, `active` |
+| Row validation | Per-row VAL-05, email, role enum, boolean `active`; errors shown in preview table |
+
+**UX:**
+
+- **Tải mẫu CSV** link downloads template with required headers.
+- Preview shows row status: create, update, or error (e.g. `DuplicateEmail`).
+- Cannot proceed to import if any row errors unless user fixes file.
+- Partial import never silent: summary lists `createdCount`, `updatedCount`, and rejected counts ([AC-01d](../brds/08-acceptance-mvp-future.md)).
+- Sticky **Nhập danh sách** button disabled until validation passes.
+
+**Traceability:** FR-01 · AC-01d, AC-01e, AC-01f, AC-01g · NFR-17
+
+### 4.6 RosterImportForm
 
 Route: `/admin/rosters/import` · [FR-03](../brds/03-functional-requirements.md)
 
@@ -176,7 +237,7 @@ Route: `/admin/rosters/import` · [FR-03](../brds/03-functional-requirements.md)
 
 **Traceability:** FR-03 · AC-03
 
-### 4.6 ReportFilterForm
+### 4.7 ReportFilterForm
 
 Routes: `/reports`, `/admin/reports` · [FR-12](../brds/03-functional-requirements.md)
 
@@ -195,7 +256,7 @@ Routes: `/reports`, `/admin/reports` · [FR-12](../brds/03-functional-requiremen
 
 **Traceability:** FR-12 · BR-08 · AC-12
 
-### 4.7 CsvExportConfirmForm
+### 4.8 CsvExportConfirmForm
 
 Route: `/admin/export` · [FR-13](../brds/03-functional-requirements.md)
 
@@ -212,7 +273,7 @@ Disabled when estimated rows = 0: *Không có dữ liệu phù hợp với bộ 
 
 **Traceability:** FR-13 · BR-09 · AC-13
 
-### 4.8 AttendancePolicyForm
+### 4.9 AttendancePolicyForm
 
 Route: `/admin/policy` · [FR-16](../brds/03-functional-requirements.md)
 
@@ -228,7 +289,7 @@ Route: `/admin/policy` · [FR-16](../brds/03-functional-requirements.md)
 
 **Traceability:** FR-16 · BR-05 · AC-16
 
-### 4.9 LocationConsentForm
+### 4.10 LocationConsentForm
 
 Embedded in first check-in · [FR-08](../brds/03-functional-requirements.md)
 
@@ -317,6 +378,7 @@ Engineers must not hardcode validation strings in components.
 | `SessionForm` | FR-04, FR-05 | BR-07 | AC-04, AC-05 | — |
 | `AttendanceEditForm` | FR-11 | BR-10 | AC-11 | — |
 | `UserForm` | FR-01 | — | AC-01 | NFR-11 |
+| `UserImportForm` | FR-01 | — | AC-01 | NFR-17 |
 | `RosterImportForm` | FR-03 | — | AC-03 | — |
 | `ReportFilterForm` | FR-12 | BR-08 | AC-12 | — |
 | `CsvExportConfirmForm` | FR-13 | BR-09 | AC-13 | NFR-11 |

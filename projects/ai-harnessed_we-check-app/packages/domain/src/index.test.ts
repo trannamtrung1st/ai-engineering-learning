@@ -27,15 +27,18 @@ import {
 
 /**
  * Traceability for NFR-14 generated integration/e2e cases:
- * AC-01 AC-02 BR-06 FR-01 FR-02 FR-07 NFR-14
+ * AC-01 AC-02 AC-17 BR-06 FR-01 FR-02 FR-07 FR-17 NFR-14
+ * TC-NFR-14-019 TC-NFR-14-020 — bootstrap path shares VAL-03 password policy
  */
 const NFR_14_TRACEABILITY_TAGS = [
   "AC-01",
   "AC-02",
+  "AC-17",
   "BR-06",
   "FR-01",
   "FR-02",
   "FR-07",
+  "FR-17",
   "NFR-14",
 ] as const;
 
@@ -79,7 +82,9 @@ describe("@wecheck/domain monorepo bootstrap", () => {
 
   it("documents NFR-14 traceability tags for harness coverage", () => {
     assert.ok(NFR_14_TRACEABILITY_TAGS.includes("NFR-14"));
-    assert.equal(NFR_14_TRACEABILITY_TAGS.length, 7);
+    assert.ok(NFR_14_TRACEABILITY_TAGS.includes("AC-17"));
+    assert.ok(NFR_14_TRACEABILITY_TAGS.includes("FR-17"));
+    assert.equal(NFR_14_TRACEABILITY_TAGS.length, 9);
   });
 });
 
@@ -95,6 +100,11 @@ describe("NFR-14 credential policy identifiers", () => {
     assert.equal(PASSWORD_POLICY.MAX_LENGTH, 128);
     assert.equal(isPasswordLengthValid(128), true);
     assert.equal(isPasswordLengthValid(129), false);
+  });
+
+  it("applies VAL-03 §3.1a to bootstrap first-admin passwords (AC-17, FR-17, TC-NFR-14-019, TC-NFR-14-020)", () => {
+    assert.equal(isPasswordLengthValid("short12".length), false);
+    assert.equal(isPasswordLengthValid("SetupPass8".length), true);
   });
 });
 

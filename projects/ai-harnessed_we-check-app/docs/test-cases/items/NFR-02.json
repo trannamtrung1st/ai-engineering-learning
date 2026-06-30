@@ -1,8 +1,8 @@
 {
   "productItemId": "NFR-02",
   "version": 1,
-  "docFingerprint": "sha256:115bb9b9ee2cffbc7f45928b9de1dcb4f61fc3273e43f0feadf51807c4d787c0",
-  "generatedAt": "2026-06-28T18:37:30Z",
+  "docFingerprint": "sha256:ed2f2a01af64f91a7bd1aa1df43796784981c952d0a4a18ac9807f4aa24ca5e5",
+  "generatedAt": "2026-06-29T18:48:46Z",
   "cases": [
     {
       "id": "TC-NFR-02-001",
@@ -329,13 +329,14 @@
         "Load generator or parallel test harness with staggered 0–5 minute window"
       ],
       "steps": [
-        "Launch 150 concurrent POST /api/v1/check-in requests (one per unique student)",
+        "Launch 150 concurrent POST /api/v1/check-in requests staggered over 0–5 minutes (one per unique student) per testing-plan §7 Peak concurrent check-in",
         "Collect all HTTP status codes and response outcomes",
         "Assert 150 responses with HTTP 200 outcome Success",
         "Assert zero HTTP 500, 502, or 503 responses indicating transaction corruption",
+        "Assert overall error rate < 0.1% per testing-plan §7 pass criteria",
         "Final DB query: exactly 150 Present rows, 150 Consumed tokens, zero duplicates"
       ],
-      "expected": "NFR-02 under pilot-scale load: 100% of valid concurrent check-ins produce correct committed final state with no lost successes per 07-non-functional-risk §2.1 verification",
+      "expected": "NFR-02 under pilot-scale load: 100% of valid concurrent check-ins produce correct committed final state with no lost successes and error rate < 0.1% per 07-non-functional-risk §2.1 and testing-plan §7",
       "edgeCase": false
     },
     {
@@ -354,13 +355,14 @@
       ],
       "steps": [
         "Navigate to /check-in deep link with valid tokenId and sessionId",
+        "Assert GET /api/v1/check-in/tokens/:tokenId/preflight returns HTTP 200 and GPS capture step mounts with session summary per AC-07c",
         "Complete GPS capture and tap submit control",
         "Wait for server response (no optimistic success before network completes)",
         "Assert Vietnamese success confirmation appears with Present status",
         "Navigate to /history and assert session shows Present with check-in timestamp",
         "Refresh page and verify Present status persists (committed to DB, not client cache only)"
       ],
-      "expected": "UI reflects NFR-02 server-authoritative state: success confirmation and history badge appear only after atomic transaction commit; refresh confirms durable Present record",
+      "expected": "UI reflects NFR-02 server-authoritative state: success confirmation and history badge appear only after atomic transaction commit; refresh confirms durable Present record per AC-07a",
       "edgeCase": false
     },
     {
@@ -378,7 +380,8 @@
       ],
       "steps": [
         "Navigate to /check-in deep link for session where student is already Present",
-        "Complete GPS capture and tap submit control",
+        "Complete preflight and GPS capture steps with in-radius coordinates",
+        "Tap submit control and await server response",
         "Verify CheckInOutcomePanel displays DuplicateCheckIn with message Bạn đã điểm danh buổi học này rồi",
         "Navigate to /history and assert exactly one Present entry for the session (no duplicate rows)",
         "Verify prior check-in timestamp unchanged from first successful submission"

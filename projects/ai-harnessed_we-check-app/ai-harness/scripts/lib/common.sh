@@ -45,6 +45,9 @@ PREVIEW_SUPERVISOR_STOP_FILE="${RUNS_DIR}/preview-supervisor.stop"
 PREVIEW_WEB_REFRESH_FILE="${RUNS_DIR}/preview-web.refresh"
 PLAYWRIGHT_MCP_LEGACY_DIR="${REPO_ROOT}/.playwright-mcp"
 PLAYWRIGHT_MCP_OUTPUT_DIR="${RUNS_DIR}/playwright-mcp"
+PLAYWRIGHT_REGRESSION_INDEX="${HARNESS_ROOT}/playwright-regression-index.json"
+UX_BUGS_ROOT="${RUNS_DIR}/ux-bugs"
+PLAYWRIGHT_UI_SCENARIOS_DIR="${REPO_ROOT}/tests/playwright-ui/scenarios"
 
 export HARNESS_ROOT REPO_ROOT BACKLOG TEST_CASE_INDEX TESTGEN_DOCS_MAP LOOP_CONFIG TESTGEN_CONFIG MODELS_CONFIG CONTEXT_MAP STATE_DIR RUNS_DIR SCREENSHOTS_ROOT TEST_CASES_DIR
 export PREVIEW_PID_FILE PREVIEW_AUX_PID_FILE
@@ -649,6 +652,144 @@ format_screenshot_dir_block() {
 - Filename pattern: \`<UTC-timestamp>-<page-or-case-slug>.png\` (lowercase, hyphens; e.g. \`${example_name}\`)
 - List every saved path in your summary and in \`ai-harness/state/progress.md\`
 EOF
+}
+
+playwright_output_path_for_slice() {
+  local slice_id="$1"
+  echo "${PLAYWRIGHT_UI_SCENARIOS_DIR}/${slice_id}.spec.ts"
+}
+
+ux_bugs_path_for_slice_run() {
+  local slice_id="$1"
+  local run_id="$2"
+  echo "${UX_BUGS_ROOT}/${slice_id}/${run_id}.json"
+}
+
+ensure_playwright_regression_dirs() {
+  local slice_id="$1"
+  local run_id="$2"
+  ensure_runs_dir
+  mkdir -p "${PLAYWRIGHT_UI_SCENARIOS_DIR}"
+  mkdir -p "${UX_BUGS_ROOT}/${slice_id}"
+  if [[ ! -f "$PLAYWRIGHT_REGRESSION_INDEX" ]]; then
+    echo '{"slices":{}}' >"$PLAYWRIGHT_REGRESSION_INDEX"
+  fi
+}
+
+format_playwright_codegen_block() {
+  local slice_id="$1"
+  local run_id="$2"
+  local spec_path ux_path
+  spec_path="$(playwright_output_path_for_slice "$slice_id")"
+  ux_path="$(ux_bugs_path_for_slice_run "$slice_id" "$run_id")"
+  cat <<EOF
+## Post-verification — UX audit and Playwright regression (full phase only)
+
+After all \`TC-*\` cases complete:
+
+1. **UX audit** — review each screenshot per \`ai-harness/skills/ui-ux-testing/SKILL.md\`; log \`UX-${slice_id}-NNN\` bugs not already \`TC-*: FAIL\`
+2. **Write UX bugs JSON:** \`${ux_path}\` (schema: \`ai-harness/schemas/ux-bugs.schema.json\`)
+3. **Playwright codegen** — create or update \`${spec_path}\` per \`ai-harness/docs/playwright-regression.md\`
+4. Emit \`playwright-regression: ${spec_path} (N tests)\` before the signal line
+5. P0/P1 UX bugs block \`BROWSER_TEST_PASS\` even when all \`TC-*\` cases pass
+EOF
+}
+
+browser_output_has_ux_blockers() {
+  local text_file="$1"
+  [[ -f "$text_file" ]] || return 1
+  grep -qE 'UX-[a-z0-9-]+-[0-9]{3}:[[:space:]]*P[01]' "$text_file" 2>/dev/null
+}
+
+browser_output_has_actionable_failures() {
+  local text_file="$1"
+  [[ -f "$text_file" ]] || return 1
+  if grep -qE 'TC-[A-Z0-9][A-Z0-9-]*:[[:space:]]*FAIL' "$text_file" 2>/dev/null; then
+    return 0
+  fi
+  browser_output_has_ux_blockers "$text_file"
+}
+
+parse_playwright_regression_from_output() {
+  local text_file="$1"
+  local line spec count
+  [[ -f "$text_file" ]] || return 1
+  line="$(grep -E '^playwright-regression:' "$text_file" 2>/dev/null | tail -1 || true)"
+  [[ -n "$line" ]] || return 1
+  spec="$(echo "$line" | sed -E 's/^playwright-regression:[[:space:]]*([^ (]+).*/\1/')"
+  count="$(echo "$line" | sed -nE 's/.*\(([0-9]+) tests\).*/\1/p')"
+  [[ -z "$count" ]] && count="0"
+  printf '%s\t%s\n' "$spec" "$count"
+}
+
+extract_source_tc_ids_from_output() {
+  local text_file="$1"
+  [[ -f "$text_file" ]] || return 1
+  grep -oE 'TC-[A-Z0-9][A-Z0-9-]*:[[:space:]]*PASS' "$text_file" 2>/dev/null \
+    | sed -E 's/:[[:space:]]*PASS$//' \
+    | sort -u
+}
+
+parse_ux_bugs_summary_from_output() {
+  local text_file="$1"
+  local max_chars="${2:-8000}"
+  [[ -f "$text_file" ]] || return 1
+  grep -E '^UX-[a-z0-9-]+-[0-9]{3}:' "$text_file" 2>/dev/null | head -c "$max_chars" || true
+}
+
+update_playwright_regression_index() {
+  local slice_id="$1"
+  local spec_path="$2"
+  local run_id="$3"
+  local test_count="${4:-0}"
+  local tc_ids_json="$5"
+  local ts
+  ts="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+  [[ -f "$PLAYWRIGHT_REGRESSION_INDEX" ]] || echo '{"slices":{}}' >"$PLAYWRIGHT_REGRESSION_INDEX"
+  local tmp
+  tmp="$(mktemp)"
+  jq \
+    --arg id "$slice_id" \
+    --arg spec "$spec_path" \
+    --arg run "$run_id" \
+    --argjson count "$test_count" \
+    --argjson tcIds "$tc_ids_json" \
+    --arg ts "$ts" \
+    '.slices[$id] = {
+      specPath: $spec,
+      lastRunId: $run,
+      testCount: $count,
+      sourceTcIds: $tcIds,
+      updatedAt: $ts
+    }' "$PLAYWRIGHT_REGRESSION_INDEX" >"$tmp"
+  mv "$tmp" "$PLAYWRIGHT_REGRESSION_INDEX"
+}
+
+enrich_browser_test_report_json() {
+  local base_json="$1"
+  local text_file="$2"
+  local slice_id="$3"
+  local run_id="$4"
+  local ux_json_file
+  ux_json_file="$(ux_bugs_path_for_slice_run "$slice_id" "$run_id")"
+  local ux_bugs_json='[]'
+  if [[ -f "$ux_json_file" ]]; then
+    ux_bugs_json="$(jq -c '.bugs // []' "$ux_json_file" 2>/dev/null || echo '[]')"
+  fi
+  local playwright_spec="" playwright_count=0
+  if parse_line="$(parse_playwright_regression_from_output "$text_file" 2>/dev/null || true)"; then
+    playwright_spec="$(echo "$parse_line" | cut -f1)"
+    playwright_count="$(echo "$parse_line" | cut -f2)"
+  fi
+  jq \
+    --argjson uxBugs "$ux_bugs_json" \
+    --arg playwrightSpec "$playwright_spec" \
+    --argjson playwrightTestCount "$playwright_count" \
+    '. + {
+      uxBugs: $uxBugs,
+      playwrightSpec: (if $playwrightSpec == "" then null else $playwrightSpec end),
+      playwrightTestCount: $playwrightTestCount
+    }' <<<"$base_json"
 }
 
 all_slices_pass() {
@@ -1327,7 +1468,7 @@ summarize_browser_test_failures() {
   local line block=""
   [[ -f "$text_file" ]] || return 1
   while IFS= read -r line; do
-    if echo "$line" | grep -qE ': FAIL|BROWSER_TEST_FAIL|^\*\*cases:'; then
+    if echo "$line" | grep -qE ': FAIL|BROWSER_TEST_FAIL|^\*\*cases:|^UX-[a-z0-9-]+-[0-9]{3}:[[:space:]]*P[01]'; then
       block+="${line}"$'\n'
     fi
   done < "$text_file"
@@ -1375,12 +1516,6 @@ browser_case_ids_still_failing_in_output() {
     fi
   done
   return 0
-}
-
-browser_output_has_actionable_failures() {
-  local text_file="$1"
-  [[ -f "$text_file" ]] || return 1
-  grep -qE 'TC-[A-Z0-9][A-Z0-9-]*:[[:space:]]*FAIL' "$text_file" 2>/dev/null
 }
 
 extract_skipped_browser_case_ids() {

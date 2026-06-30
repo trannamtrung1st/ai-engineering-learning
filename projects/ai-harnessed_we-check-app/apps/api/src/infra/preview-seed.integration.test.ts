@@ -9,6 +9,7 @@ import {
   ensurePreviewMonitorFixtures,
   ensurePreviewReferenceData,
   ensurePreviewTokenFixtures,
+  refreshPreviewBrowserFixtures,
   runPreviewSeed,
 } from "./preview-seed.js";
 import { truncateAuthTables } from "../auth/session-store.js";
@@ -70,7 +71,7 @@ describe("preview seed (NFR-17, NFR-06)", () => {
     const userCount = await db.query<{ count: string }>(
       "SELECT COUNT(*)::text AS count FROM users",
     );
-    assert.equal(userCount.rows[0]?.count, "6");
+    assert.equal(userCount.rows[0]?.count, "7");
   });
 
   it("student B is not enrolled; student C stays Pending for OutOfRadius gates (AC-07, AC-08)", async () => {
@@ -213,6 +214,91 @@ describe("preview seed (NFR-17, NFR-06)", () => {
         return true;
       },
     );
+  });
+
+  it("seeds 30 closed-session history rows for student browser gates (AC-14, FR-14)", async () => {
+    await resetDb(() => runPreviewSeed(db));
+
+    const count = await db.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count FROM attendance_records ar
+       INNER JOIN sessions s ON s.id = ar.session_id
+       WHERE ar.student_id = $1 AND s.status = $2`,
+      [PREVIEW_IDS.student, SessionStatus.Closed],
+    );
+    assert.ok(Number(count.rows[0]?.count) >= 25);
+
+    const statuses = await db.query<{ status: string }>(
+      `SELECT DISTINCT ar.status FROM attendance_records ar
+       INNER JOIN sessions s ON s.id = ar.session_id
+       WHERE ar.student_id = $1 AND s.status = $2`,
+      [PREVIEW_IDS.student, SessionStatus.Closed],
+    );
+    const statusSet = new Set(statuses.rows.map((row) => row.status));
+    assert.ok(statusSet.has("Present"));
+    assert.ok(statusSet.has("Absent"));
+    assert.ok(statusSet.has("Excused"));
+
+    await runPreviewSeed(db);
+    const afterReseed = await db.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count FROM attendance_records ar
+       INNER JOIN sessions s ON s.id = ar.session_id
+       WHERE ar.student_id = $1 AND s.status = $2`,
+      [PREVIEW_IDS.student, SessionStatus.Closed],
+    );
+    assert.ok(Number(afterReseed.rows[0]?.count) >= 25);
+  });
+
+  it("refresh restores history when sessions truncated before token fixtures (AC-14, FR-14)", async () => {
+    await resetDb(() => runPreviewSeed(db));
+
+    await db.query(
+      "TRUNCATE attendance_audit_logs, qr_tokens, attendance_records, sessions RESTART IDENTITY CASCADE",
+    );
+
+    await refreshPreviewBrowserFixtures(db);
+
+    const count = await db.query<{ count: string }>(
+      `SELECT COUNT(*)::text AS count FROM attendance_records ar
+       INNER JOIN sessions s ON s.id = ar.session_id
+       WHERE ar.student_id = $1 AND s.status = $2`,
+      [PREVIEW_IDS.student, SessionStatus.Closed],
+    );
+    assert.ok(Number(count.rows[0]?.count) >= 25);
+
+    const staleToken = await db.query<{ status: string }>(
+      "SELECT status FROM qr_tokens WHERE id = $1",
+      [PREVIEW_IDS.staleQrToken],
+    );
+    assert.equal(staleToken.rows[0]?.status, QrTokenStatus.Expired);
+  });
+
+  it("ensurePreviewCoreAuthFixtures restores admin after partial delete (TC-FR-02-021)", async () => {
+    await resetDb(() => runPreviewSeed(db));
+
+    await db.query("DELETE FROM users WHERE email = $1", [
+      PREVIEW_CREDENTIALS.admin.email,
+    ]);
+
+    await runPreviewSeed(db);
+
+    const admin = await db.query<{ role: string }>(
+      "SELECT role FROM users WHERE email = $1",
+      [PREVIEW_CREDENTIALS.admin.email],
+    );
+    assert.equal(admin.rows[0]?.role, "TrainingOfficeAdmin");
+
+    const { AuthService } = await import("../modules/identity-auth/auth-service.js");
+    const { UserRepository } = await import("../modules/identity-auth/user-repository.js");
+    const { SessionStore } = await import("../auth/session-store.js");
+    const auth = new AuthService(new UserRepository(db), new SessionStore(db));
+
+    const session = await auth.authenticate({
+      email: PREVIEW_CREDENTIALS.admin.email,
+      password: PREVIEW_CREDENTIALS.admin.password,
+    });
+    assert.equal(session.user.role, "TrainingOfficeAdmin");
+
+    await resetDb();
   });
 
   it("ensurePreviewUserFixtures restores deactivated user after partial delete (TC-NFR-17-013)", async () => {

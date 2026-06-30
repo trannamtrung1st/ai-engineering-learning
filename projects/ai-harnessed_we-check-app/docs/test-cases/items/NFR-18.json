@@ -1,8 +1,8 @@
 {
   "productItemId": "NFR-18",
   "version": 1,
-  "docFingerprint": "sha256:ed424942563a5e9625e83c96c0c61499539e2f54ef867814277995eab1e690cb",
-  "generatedAt": "2026-06-29T20:00:00.000Z",
+  "docFingerprint": "sha256:20263a0511e70f72e04b576ee98a37e2b2abfe28c0133ecefa43a1d87166aaa4",
+  "generatedAt": "2026-06-29T19:12:23.000Z",
   "cases": [
     {
       "id": "TC-NFR-18-001",
@@ -10,17 +10,19 @@
       "layer": "e2e",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["NFR-18", "AC-07", "FR-07", "NFR-04"],
+      "traceability": ["NFR-18", "AC-07", "FR-07", "NFR-04", "BR-15"],
       "title": "TS-20: Mobile web check-in from iOS Safari or Android Chrome client marks Present without native app",
       "preconditions": [
         "Active session with valid room GPS (10.762622, 106.660172) and gpsRadiusMeters 100",
         "Enrolled Student authenticated with valid session cookie simulating mobile web client",
         "Valid unexpired QrToken from GET /api/v1/sessions/:sessionId/qr/current qrPayload wecheck://check-in?token=uuid&session=uuid",
+        "GET /api/v1/check-in/tokens/:tokenId/preflight returns 200 outcome Valid for enrolled student",
         "Student coordinates within radius (10.762700, 106.660200)",
         "Request includes spoofMetadata.platform ios or android per mobile client",
         "TestClock within attendance window (scheduledStart + 10 min)"
       ],
       "steps": [
+        "GET /api/v1/check-in/tokens/:tokenId/preflight with Student session and assert HTTP 200 outcome Valid with session summary",
         "POST /api/v1/check-in with tokenId from QR payload, in-radius coordinates, and spoofMetadata.platform ios using Student session",
         "Assert HTTP status 200, outcome Success, and attendance.status Present",
         "Issue fresh Valid token for Android client assertion",
@@ -28,7 +30,7 @@
         "Verify no native-app-only headers or install tokens required in request or response",
         "Query qr_tokens and assert each tokenId status Consumed"
       ],
-      "expected": "Testing-plan §3 TS-20 satisfied on mobile web clients: functional check-in via QR token and GPS without native app install per NFR-18 target and AC-07a",
+      "expected": "Testing-plan §3 TS-20 satisfied on mobile web clients: preflight pass then functional check-in via QR token and GPS without native app install per NFR-18 target and AC-07a",
       "edgeCase": false
     },
     {
@@ -86,22 +88,24 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["NFR-18", "FR-07", "AC-07"],
+      "traceability": ["NFR-18", "FR-07", "AC-07", "BR-15"],
       "title": "POST /api/v1/check-in from mobile web client returns HTTP 200 Success with Present attendance DTO",
       "preconditions": [
         "API running on port 3001 against Compose PostgreSQL",
         "Authenticated enrolled Student session cookie with mobile User-Agent (iPhone Safari or Android Chrome)",
         "Active sessionId with Valid QrToken and student Pending attendance",
+        "GET /api/v1/check-in/tokens/:tokenId/preflight returns 200 outcome Valid",
         "Request body includes tokenId, latitude 10.762700, longitude 106.660200, spoofMetadata.platform ios"
       ],
       "steps": [
+        "GET /api/v1/check-in/tokens/:tokenId/preflight with mobile User-Agent and Student session; assert HTTP 200 outcome Valid",
         "Send POST /api/v1/check-in with mobile client payload and Student session cookie",
         "Assert HTTP status 200 OK and Content-Type application/json; charset=utf-8",
         "Assert response body outcome Success and message Điểm danh thành công",
         "Assert response body attendance object contains status Present and checkedInAt ISO 8601 UTC string",
         "Assert no errorCode field on success envelope and no native-app redirect URL in response"
       ],
-      "expected": "HTTP 200 mobile web check-in contract per API design §6.2; structured success response consumable by iOS Safari and Android Chrome clients per NFR-18",
+      "expected": "HTTP 200 mobile web check-in contract per API design §6.2; preflight then submit path consumable by iOS Safari and Android Chrome clients per NFR-18 and BR-15",
       "edgeCase": false
     },
     {
@@ -132,7 +136,7 @@
       "layer": "e2e",
       "technique": "flow-a",
       "priority": "P0",
-      "traceability": ["NFR-18", "FR-07", "AC-07"],
+      "traceability": ["NFR-18", "FR-07", "AC-07", "BR-15"],
       "title": "Flow A step 4: mobile web student completes check-in after QR poll in workshop lifecycle",
       "preconditions": [
         "Flow A steps 1–3 complete: roster seeded, session opened Active, QR token polled via GET /sessions/:id/qr/current",
@@ -141,13 +145,14 @@
         "tokenId extracted from qrPayload wecheck://check-in?token=:tokenId&session=:sessionId"
       ],
       "steps": [
+        "GET /api/v1/check-in/tokens/:tokenId/preflight with Student session and assert HTTP 200 outcome Valid with session summary",
         "POST /api/v1/check-in with tokenId from Flow A step 3, in-radius coordinates, and spoofMetadata.platform android using Student session",
         "Assert HTTP 200 outcome Success with attendance Present",
         "Instructor GET /api/v1/sessions/:sessionId/attendance and assert present count incremented by 1",
         "Verify tokenId status Consumed in database",
         "Confirm entire Flow A check-in step executable without native app middleware"
       ],
-      "expected": "NFR-18 end-to-end: Flow A happy-path mobile web check-in succeeds in workshop lifecycle per testing-plan §6 Flow A and MVP scope §7.3 mobile web only",
+      "expected": "NFR-18 end-to-end: Flow A happy-path mobile web preflight then check-in succeeds in workshop lifecycle per testing-plan §6 Flow A and MVP scope §7.3 mobile web only",
       "edgeCase": false
     },
     {
@@ -200,7 +205,7 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["NFR-18", "FR-07", "AC-07"],
+      "traceability": ["NFR-18", "FR-07", "AC-07", "BR-15", "NFR-24"],
       "title": "iOS 15+ Safari: full mobile check-in journey via QR deep link and GPS without native app",
       "preconditions": [
         "Playwright emulates iPhone 12+ with iOS 15+ Safari user-agent and viewport 375×812",
@@ -210,14 +215,15 @@
       ],
       "steps": [
         "Navigate to /check-in?token=:tokenId&session=:sessionId on iOS Safari emulation",
-        "Verify CheckInFlow orchestrator loads consent → scanning/gps_capture → submitting → outcome states per ui-states §4.1",
-        "Grant geolocation via browser context and complete GPS capture step",
-        "Tap Xác nhận điểm danh submit control",
+        "Verify validating_token inline spinner on scan step while GET /api/v1/check-in/tokens/:tokenId/preflight is in flight per ui-states §4.1",
+        "After preflight 200 outcome Valid, verify GpsCaptureStep mounts with session summary (class, subject, room) per AC-07c",
+        "Grant geolocation via browser context and verify ready substate: check icon + Vị trí đã sẵn sàng with no spinner and submit enabled per AC-08f",
+        "Tap Xác nhận điểm danh submit control; verify submitting substate with aria-busy until API responds per AC-08g",
         "Verify CheckInOutcomePanel success variant displays Điểm danh thành công with CTA Xong",
         "Verify no App Store link, native app install banner, or unsupported-browser gate appears",
         "Verify page renders without horizontal scroll at 375px width"
       ],
-      "expected": "NFR-18 iOS 15+ Safari target satisfied: functional QR token check-in and GPS on mobile web without native app install per 07-non-functional-risk §2.4",
+      "expected": "NFR-18 iOS 15+ Safari target satisfied: preflight gate then functional QR token check-in and GPS on mobile web without native app install per 07-non-functional-risk §2.4",
       "edgeCase": false
     },
     {
@@ -226,7 +232,7 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["NFR-18", "FR-07", "FR-08", "AC-07"],
+      "traceability": ["NFR-18", "FR-07", "FR-08", "AC-07", "BR-15"],
       "title": "Android 10+ Chrome: QR deep link check-in with GPS capture succeeds without native app",
       "preconditions": [
         "Playwright emulates Android mid-range device with Chrome user-agent (Android 10+) and viewport 360×640",
@@ -236,13 +242,14 @@
       ],
       "steps": [
         "Navigate to /check-in?token=:tokenId&session=:sessionId on Android Chrome emulation",
+        "Verify validating_token inline spinner during preflight; GpsCaptureStep mounts only after preflight 200 per BR-15",
         "Verify LocationConsentBanner visible on first visit per ui-states §4.1 consent step",
-        "Complete GpsCaptureStep: permission request → acquiring fix → submit per ui-states §4.2",
+        "Complete GpsCaptureStep: permission request → acquiring fix → ready substate with Vị trí đã sẵn sàng and no spinner per AC-08f",
         "Submit check-in and verify success panel Điểm danh thành công with Present status",
         "Verify all primary UI labels in Vietnamese (vi-VN) per NFR-17",
         "Verify no Google Play install prompt or native Android app requirement"
       ],
-      "expected": "NFR-18 Android 10+ Chrome target satisfied: functional QR and GPS check-in on mobile web per testing-plan §9 device matrix",
+      "expected": "NFR-18 Android 10+ Chrome target satisfied: preflight gate then functional QR and GPS check-in on mobile web per testing-plan §9 device matrix",
       "edgeCase": false
     },
     {
@@ -251,7 +258,7 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["NFR-18", "FR-07", "AC-07"],
+      "traceability": ["NFR-18", "FR-07", "AC-07", "BR-15"],
       "title": "Mobile QR scanner: camera permission granted enables token extraction from scanned QR payload",
       "preconditions": [
         "Authenticated Student on mobile viewport 375×812 (iOS Safari or Android Chrome emulation)",
@@ -264,10 +271,11 @@
         "Verify QrScannerView active in scanning step per ui-states §4.1",
         "Grant camera permission and scan QR code or inject valid qrPayload",
         "Verify client extracts tokenId and sessionId from wecheck://check-in deep link",
-        "Verify flow advances to gps_capture step with session context displayed",
-        "Complete GPS and submit; verify success outcome Present"
+        "Verify validating_token spinner during GET /api/v1/check-in/tokens/:tokenId/preflight; GpsCaptureStep mounts only after 200 outcome Valid",
+        "Verify flow advances to gps_capture step with session context displayed per AC-07c",
+        "Complete GPS ready substate and submit; verify success outcome Present"
       ],
-      "expected": "NFR-18 QR scan functional on mobile web: browser camera API reads rotating QR token without native scanner SDK per FR-07 and ui-states §4",
+      "expected": "NFR-18 QR scan functional on mobile web: browser camera API reads rotating QR token; preflight gate before GPS per FR-07, BR-15, and ui-states §4",
       "edgeCase": false
     },
     {
@@ -281,18 +289,19 @@
       "preconditions": [
         "Authenticated Student on mobile viewport with valid token deep link to /check-in",
         "Active session with room GPS and 100 m radius configured",
+        "Preflight passed; GpsCaptureStep mounted per BR-15",
         "Browser geolocation API returns in-radius coordinates within timeout budget",
         "GpsCaptureStep substates per ui-states §4.2"
       ],
       "steps": [
-        "Navigate to /check-in?token=:tokenId&session=:sessionId and advance to gps_capture step",
+        "Navigate to /check-in?token=:tokenId&session=:sessionId and wait for preflight pass and gps_capture step",
         "Verify requesting-permission substate displays Đang yêu cầu quyền định vị…",
         "Grant location permission and verify acquiring-fix spinner with accuracy indicator",
-        "Verify coordinates captured and submit button enabled before 15 s timeout per AC-08c",
-        "Submit check-in and verify success outcome or documented rejection (OutOfRadius) with Vietnamese message",
-        "Verify submitting substate shows aria-busy overlay until API responds"
+        "Verify ready substate: check icon + Vị trí đã sẵn sàng with aria-busy false and submit enabled before 15 s timeout per AC-08f",
+        "Submit check-in; verify submitting substate shows spinner and disabled submit until API responds per AC-08g",
+        "Verify success outcome or documented rejection (OutOfRadius) with Vietnamese message"
       ],
-      "expected": "NFR-18 GPS functional on mobile web: browser Geolocation API integration completes within documented 15 s timeout per FR-08 and ui-states §4.2",
+      "expected": "NFR-18 GPS functional on mobile web: browser Geolocation API integration with ready-state UX and 15 s timeout per FR-08, AC-08c, and ui-states §4.2",
       "edgeCase": false
     },
     {
@@ -308,14 +317,14 @@
         "Device matrix per testing-plan §9: iPhone 12+ iOS 15+ Safari, second iOS device, Android mid-range Android 10+ Chrome, second Android device",
         "Each device on same LAN as staging API per 10-local-development-setup.md",
         "Active session with valid QR displayed; enrolled student credentials per device",
-        "Check-in smoke script: login → deep link or scan → GPS grant → submit → verify Present"
+        "Check-in smoke script: login → deep link or scan → preflight pass → GPS grant → submit → verify Present"
       ],
       "steps": [
         "Execute mobile check-in smoke on Device 1 (iPhone 12+ Safari) and record pass/fail with timestamp",
         "Execute smoke on Device 2 (second iOS 15+ Safari device) and record pass/fail",
         "Execute smoke on Device 3 (Android 10+ Chrome mid-range) and record pass/fail",
         "Execute smoke on Device 4 (second Android 10+ Chrome device) and record pass/fail",
-        "Assert all 4 devices complete QR scan or deep link and GPS check-in with Present outcome",
+        "Assert all 4 devices complete QR scan or deep link, preflight pass, and GPS check-in with Present outcome",
         "Document device model, OS version, browser version, and result in pilot readiness checklist"
       ],
       "expected": "NFR-18 verification method satisfied: device matrix test on ≥ 4 physical devices before pilot per 07-non-functional-risk §2.4 and testing-plan §8 browser gate",
@@ -350,7 +359,7 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["NFR-18", "FR-02", "AC-02", "FR-07"],
+      "traceability": ["NFR-18", "FR-02", "AC-02", "FR-07", "BR-15"],
       "title": "Mobile QR deep link redirects unauthenticated student to login then returns to check-in flow",
       "preconditions": [
         "Unauthenticated student opens scanned QR deep link on iOS Safari or Android Chrome mobile viewport",
@@ -362,10 +371,11 @@
         "Verify redirect to /login with returnUrl preserving check-in query params",
         "Complete login with valid student credentials on mobile form (touch-friendly controls)",
         "Verify redirect back to /check-in?token=:tokenId&session=:sessionId with session established",
-        "Complete GPS capture and submit; verify Điểm danh thành công success confirmation",
+        "Verify validating_token spinner then preflight 200; GpsCaptureStep mounts with session summary per BR-15",
+        "Complete GPS capture ready substate and submit; verify Điểm danh thành công success confirmation",
         "Verify entire auth-gated mobile journey completes without native app"
       ],
-      "expected": "NFR-18 mobile auth integration: QR scan deep link preserves context through mobile web login redirect per AC-02b and FR-07",
+      "expected": "NFR-18 mobile auth integration: QR scan deep link preserves context through mobile web login redirect; preflight gate enforced per AC-02b, FR-07, and BR-15",
       "edgeCase": false
     },
     {
@@ -379,6 +389,7 @@
       "preconditions": [
         "Authenticated Student on iOS Safari or Android Chrome mobile viewport",
         "Active session with valid token deep link to /check-in",
+        "Preflight passed; GpsCaptureStep mounted",
         "Browser geolocation permission denied or blocked in device settings"
       ],
       "steps": [
@@ -451,10 +462,11 @@
         "Playwright emulates Android 10+ Chrome with mobile viewport",
         "Authenticated enrolled Student with valid token deep link",
         "Check-in request includes spoofMetadata.mockLocationDetected true simulating fake-location app",
-        "Active session with valid QR token"
+        "Active session with valid QR token; preflight passed"
       ],
       "steps": [
         "Navigate to /check-in?token=:tokenId&session=:sessionId on Android Chrome emulation",
+        "Complete preflight and GPS ready substate",
         "Submit check-in with mockLocationDetected true in client payload",
         "Verify CheckInOutcomePanel SpoofSuspected danger variant with CTA Liên hệ giảng viên per ui-states §4.3",
         "Verify no Present success confirmation displayed",
@@ -486,6 +498,103 @@
         "Complete successful check-in and verify confirmation within NFR-04 2 s SLA after submit"
       ],
       "expected": "NFR-18 mobile performance perception: check-in screen interactive within 2 s on 4G per production-ui-quality-bar §2 tied to AC-07a confirmation SLA",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-18-021",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-18", "AC-07", "FR-07", "BR-15"],
+      "title": "Mobile browser expired QR preflight shows ExpiredQr without mounting GPS step",
+      "preconditions": [
+        "Authenticated enrolled Student on iOS Safari or Android Chrome mobile viewport 375×812",
+        "Active session with QrToken expired per TestClock at T + 31 s",
+        "Deep link /check-in?token=:expiredTokenId&session=:sessionId"
+      ],
+      "steps": [
+        "Navigate to /check-in?token=:expiredTokenId&session=:sessionId on mobile viewport",
+        "Verify validating_token spinner during GET /api/v1/check-in/tokens/:expiredTokenId/preflight",
+        "Assert preflight returns HTTP 403 errorCode ExpiredQr with message Mã QR đã hết hạn, vui lòng quét mã mới per AC-06b",
+        "Verify GpsCaptureStep does not mount (no data-testid gps-capture-step or GPS permission prompt) per AC-07d and BR-15",
+        "Verify CheckInOutcomePanel ExpiredQr variant with CTA Quét lại per ui-states §4.3",
+        "Assert no Present attendance created server-side"
+      ],
+      "expected": "NFR-18 mobile web: expired token rejected at preflight; GPS capture unreachable before valid token per AC-07d, BR-15, and production-ui-quality-bar §4",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-18-022",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-18", "AC-07", "FR-07", "BR-15"],
+      "title": "Mobile browser NotEnrolled preflight blocks GPS step for non-roster student",
+      "preconditions": [
+        "Authenticated Student B (studentb) not enrolled in target session on mobile viewport 375px width",
+        "Valid check-in deep link with tokenId and sessionId for Active session"
+      ],
+      "steps": [
+        "Student B opens /check-in?token=:tokenId&session=:sessionId on iOS Safari or Android Chrome emulation",
+        "Verify GET /api/v1/check-in/tokens/:tokenId/preflight returns 403 errorCode NotEnrolled",
+        "Verify GpsCaptureStep does not mount per AC-07e and BR-15",
+        "Verify error panel displays Bạn không thuộc danh sách lớp của buổi học này (NotEnrolled outcome)",
+        "Verify no success confirmation or Present badge shown",
+        "Assert no Present attendance created server-side"
+      ],
+      "expected": "NFR-18 mobile web: non-enrolled student rejected at preflight without GPS capture per AC-07b, AC-07e, and BR-15",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-18-023",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-18", "AC-08", "FR-08"],
+      "title": "Mobile GPS ready substate shows Vị trí đã sẵn sàng without spinner and enables submit immediately",
+      "preconditions": [
+        "Authenticated Student on iOS Safari or Android Chrome mobile viewport",
+        "Valid token deep link; preflight returns 200 outcome Valid",
+        "Browser geolocation returns in-radius coordinates (gpsState ready)",
+        "GpsCaptureStep mounted per ui-states §4.2"
+      ],
+      "steps": [
+        "Navigate to /check-in?token=:tokenId&session=:sessionId and wait for preflight pass",
+        "Grant geolocation permission with in-radius coordinates",
+        "Verify ready substate: check icon + Vị trí đã sẵn sàng displayed statically",
+        "Assert no Spinner element visible in GpsCaptureStep when copy is Vị trí đã sẵn sàng per AC-08f",
+        "Assert aria-busy false on submit region and Xác nhận điểm danh button enabled immediately",
+        "Tap submit; verify submitting substate shows spinner and disabled submit until API outcome per AC-08g"
+      ],
+      "expected": "NFR-18 mobile GPS ready-state UX per AC-08f and production-ui-quality-bar §3: no spinner when coordinates acquired; submit enabled on iOS Safari and Android Chrome",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-18-024",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-18", "NFR-24", "AC-08", "FR-08"],
+      "title": "Production build mobile check-in ignores gpsSim URL params and uses real geolocation API",
+      "preconditions": [
+        "VITE_ENABLE_DEVICE_SIMULATION=false (production-default build)",
+        "Authenticated Student on Android 10+ Chrome mobile viewport",
+        "Active session with valid token deep link to /check-in",
+        "URL includes gpsSim=grant and gpsLat/gpsLng query params that must be ignored per NFR-24"
+      ],
+      "steps": [
+        "Navigate to /check-in?token=:tokenId&session=:sessionId&gpsSim=grant&gpsLat=10.762700&gpsLng=106.660200 on mobile Chrome emulation",
+        "Wait for preflight pass and GpsCaptureStep mount",
+        "Assert client invokes navigator.geolocation.getCurrentPosition (not URL simulation layer)",
+        "Grant real geolocation via browser context with in-radius coordinates",
+        "Complete check-in submit and verify Present success outcome",
+        "Assert gpsSim query params had no effect on GPS acquisition path per AC-08e"
+      ],
+      "expected": "NFR-24 device API fidelity on mobile web: production builds ignore gpsSim URL params; real browser Geolocation API used per AC-08e and testing-plan §8",
       "edgeCase": false
     }
   ]

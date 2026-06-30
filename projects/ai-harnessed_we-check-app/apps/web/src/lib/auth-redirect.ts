@@ -4,7 +4,7 @@ import { UserRole, type UserRole as UserRoleType } from "@wecheck/domain";
 export const ROLE_HOME: Record<UserRoleType, string> = {
   [UserRole.Student]: "/check-in",
   [UserRole.Instructor]: "/sessions",
-  [UserRole.TrainingOfficeAdmin]: "/admin/users",
+  [UserRole.TrainingOfficeAdmin]: "/admin",
 };
 
 /** VAL-09 — relative returnUrl only; blocks open redirects and login loops */

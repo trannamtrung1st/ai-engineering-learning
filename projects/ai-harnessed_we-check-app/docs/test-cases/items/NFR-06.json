@@ -1,8 +1,8 @@
 {
   "productItemId": "NFR-06",
   "version": 1,
-  "docFingerprint": "sha256:6fec45f47962eb75b4b29aad748c75aadb4fa23c919c08d698a6a466804c4f4c",
-  "generatedAt": "2026-06-28T18:41:55Z",
+  "docFingerprint": "sha256:f93b811fb4583167a37d209b328ff95c1e18db43a08f585c3e0dca0eddfa3099",
+  "generatedAt": "2026-06-29T18:52:22Z",
   "cases": [
     {
       "id": "TC-NFR-06-001",
@@ -327,14 +327,14 @@
         "Instructor navigates to /sessions/:id/qr-present fullscreen mode"
       ],
       "steps": [
-        "Verify large QR code renders on --color-qr-bg inverse surface per design tokens §3.4",
+        "Verify large QR code renders on --color-qr-bg with --color-qr-fg modules per design tokens §3.5",
         "Verify countdown timer (--color-qr-countdown) visible and updating each second",
         "Record timestamp T_start when countdown shows 30",
         "Wait one full rotation cycle until QR image updates",
         "Assert elapsed time T_rotate minus T_start is between 29 and 31 seconds",
         "Verify countdown resets to approximately 30 after rotation without full page reload"
       ],
-      "expected": "Projector display check per NFR-06 verification: 30 s ± 1 s rotation with visible countdown at 1280×720 per NFR-20 and ui-ux quality bar §2",
+      "expected": "Projector display check per NFR-06 verification: 30 s ± 1 s rotation with visible countdown at 1280×720 per NFR-20 and production UI quality bar §2",
       "edgeCase": false
     },
     {
@@ -348,7 +348,7 @@
       "preconditions": [
         "Instructor is logged in with Active session QR tab open",
         "QrCountdown component visible with countdown above 10 seconds",
-        "Design tokens §3.4 define --color-qr-accent for > 10 s and --color-qr-warning for ≤ 10 s"
+        "Design tokens §3.5 define --color-qr-accent for > 10 s and --color-qr-warning for ≤ 10 s"
       ],
       "steps": [
         "Observe QrCountdown text color uses --color-qr-accent (green) when secondsRemaining > 10",

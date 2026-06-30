@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-06",
   "version": 1,
-  "docFingerprint": "sha256:1ac4798df6d9455def54fdb258e16300f8a5e0c63b97d141244c054696ce7c48",
-  "generatedAt": "2026-06-29T10:30:00Z",
+  "docFingerprint": "sha256:ce4c73a90cbe521ea8ad065e22af5a6cf305ae62ba9191af08f27cbf588c8319",
+  "generatedAt": "2026-06-29T17:14:33Z",
   "cases": [
     {
       "id": "TC-AC-06-001",
@@ -13,14 +13,14 @@
       "traceability": ["AC-06", "FR-06", "BR-03", "NFR-06"],
       "title": "TS-17: Active session QR token rotates every 30 seconds with accurate countdown",
       "preconditions": [
-        "Active session with QR scheduler running",
+        "Active session with QR scheduler running after POST /api/v1/sessions/:sessionId/open",
         "Authenticated Instructor with qr:display permission for the session",
         "TestClock injectable and fixed at token issuance time T"
       ],
       "steps": [
-        "GET /sessions/:sessionId/qr/current with Instructor session and capture tokenId, issuedAt, expiresAt, secondsRemaining at time T",
+        "GET /api/v1/sessions/:sessionId/qr/current with Instructor session and capture tokenId, issuedAt, expiresAt, secondsRemaining at time T",
         "Advance TestClock to T + 30 seconds and trigger QrService.rotateTokens or wait for scheduler tick",
-        "GET /sessions/:sessionId/qr/current again and capture new tokenId",
+        "GET /api/v1/sessions/:sessionId/qr/current again and capture new tokenId",
         "Assert new tokenId differs from first tokenId",
         "Assert secondsRemaining is between 29 and 30 inclusive (±1 s per NFR-06)",
         "Assert expiresAt equals issuedAt + 30 seconds"
@@ -43,11 +43,11 @@
         "Student coordinates within session gpsRadiusMeters"
       ],
       "steps": [
-        "POST /check-in with tokenId from token issued at T, valid latitude/longitude using Student session",
+        "POST /api/v1/check-in with tokenId from token issued at T, valid latitude/longitude using Student session",
         "Assert HTTP status 400",
         "Assert response outcome ExpiredQr and errorCode ExpiredQr",
         "Assert response message is Mã QR đã hết hạn, vui lòng quét mã mới",
-        "GET /sessions/:sessionId/attendance for student and assert status remains Pending"
+        "GET /api/v1/sessions/:sessionId/attendance for student and assert status remains Pending"
       ],
       "expected": "Check-in rejected per AC-06b and BR-03; ExpiredQr outcome with Vietnamese message; attendance unchanged",
       "edgeCase": true
@@ -66,13 +66,13 @@
         "Authenticated Instructor with assignment to both sessions"
       ],
       "steps": [
-        "GET /sessions/:draftSessionId/qr/current with Instructor session",
-        "Assert HTTP 403 or 422 with errorCode SessionNotActive or no qrPayload in response body",
-        "GET /sessions/:closedSessionId/qr/current with Instructor session",
+        "GET /api/v1/sessions/:draftSessionId/qr/current with Instructor session",
+        "Assert HTTP 403 with errorCode SessionNotActive or no qrPayload in response body",
+        "GET /api/v1/sessions/:closedSessionId/qr/current with Instructor session",
         "Assert same session-not-active rejection with no valid tokenId or qrPayload",
         "Query qr_tokens table for both sessionIds and assert no Valid token rows exist"
       ],
-      "expected": "No valid QR token issued when session is not Active per AC-06c; API rejects or returns empty invalid payload",
+      "expected": "No valid QR token issued when session is not Active per AC-06c; API rejects with SessionNotActive or returns empty invalid payload",
       "edgeCase": false
     },
     {
@@ -155,10 +155,10 @@
         "Active sessionId with QR scheduler running and at least one Valid token"
       ],
       "steps": [
-        "Send GET /sessions/:sessionId/qr/current with Instructor session",
+        "Send GET /api/v1/sessions/:sessionId/qr/current with Instructor session",
         "Assert HTTP status 200",
         "Assert response body contains sessionId, tokenId, qrPayload, issuedAt, expiresAt, secondsRemaining, attendanceWindowClosesAt",
-        "Assert qrPayload matches wecheck://check-in?token=uuid&session=uuid deep link format",
+        "Assert qrPayload matches wecheck://check-in?token=uuid&session=uuid deep link format encoding one-time-use token bound to session",
         "Assert secondsRemaining is between 1 and 30 inclusive"
       ],
       "expected": "HTTP 200 with full QrTokenDisplay contract per API design §6.1; valid payload for instructor display",
@@ -178,7 +178,7 @@
         "Student coordinates within session radius"
       ],
       "steps": [
-        "POST /check-in with expired tokenId, latitude 10.762700, longitude 106.660200 using Student session",
+        "POST /api/v1/check-in with expired tokenId, latitude 10.762700, longitude 106.660200 using Student session",
         "Assert HTTP status 400",
         "Assert response body outcome ExpiredQr and errorCode ExpiredQr",
         "Assert response body message Mã QR đã hết hạn, vui lòng quét mã mới"
@@ -200,12 +200,12 @@
         "Student role lacks qr:display permission per roles-permissions §2.3"
       ],
       "steps": [
-        "GET /sessions/:sessionId/qr/current using Student session cookie",
+        "GET /api/v1/sessions/:sessionId/qr/current using Student session cookie",
         "Assert HTTP status 403 Forbidden",
         "Assert response errorCode Forbidden with localized permission-denied message",
         "Verify no qrPayload or tokenId returned in response body"
       ],
-      "expected": "Student cannot access instructor QR display endpoint; HTTP 403 per FR-06 qr:display enforcement",
+      "expected": "Student cannot access instructor QR display endpoint; HTTP 403 per AC-06c no valid token for student role",
       "edgeCase": false
     },
     {
@@ -219,10 +219,10 @@
       "preconditions": [
         "Authenticated Instructor A session is available",
         "Active session owned by Instructor B for class HESD-02 (Instructor A not assigned)",
-        "Instructor A lacks qr:display scope for Instructor B session per BR-08 assignment rules"
+        "Instructor A lacks qr:display scope for Instructor B session per assignment rules"
       ],
       "steps": [
-        "GET /sessions/:sessionId/qr/current using Instructor A session cookie",
+        "GET /api/v1/sessions/:sessionId/qr/current using Instructor A session cookie",
         "Assert HTTP status 403 Forbidden and errorCode Forbidden",
         "Assert no qrPayload returned"
       ],
@@ -243,10 +243,10 @@
         "Student coordinates within radius; no prior Present for session"
       ],
       "steps": [
-        "Set TestClock to T + 29 seconds and POST /check-in with tokenId using Student session",
+        "Set TestClock to T + 29 seconds and POST /api/v1/check-in with tokenId using Student session",
         "Assert HTTP 200 with outcome Success (token still within 30 s window)",
         "Issue fresh token at T2 for second student or reset fixture",
-        "Set TestClock to T2 + 31 seconds and POST /check-in with that tokenId",
+        "Set TestClock to T2 + 31 seconds and POST /api/v1/check-in with that tokenId",
         "Assert HTTP 400 with outcome ExpiredQr and Vietnamese expiry message"
       ],
       "expected": "BR-03 boundary enforced: token valid at 29 s, rejected at 31 s; no exceptions to 30-second absolute window",
@@ -284,15 +284,15 @@
       "preconditions": [
         "Instructor opened Draft session to Active (Flow A steps 1–2 complete)",
         "Authenticated Instructor session available",
-        "QR scheduler started on session open"
+        "QR scheduler started on session open per AC-05a side effect"
       ],
       "steps": [
-        "Poll GET /sessions/:sessionId/qr/current every 5 seconds with Instructor session until HTTP 200",
+        "Poll GET /api/v1/sessions/:sessionId/qr/current every 5 seconds with Instructor session until HTTP 200",
         "Capture tokenId and qrPayload from first successful response",
-        "Assert secondsRemaining ≤ 30 and qrPayload encodes session and token deep link",
-        "Pass tokenId to subsequent student POST /check-in in Flow A step 4"
+        "Assert secondsRemaining ≤ 30 and qrPayload encodes session and one-time-use token deep link",
+        "Pass tokenId to subsequent student POST /api/v1/check-in in Flow A step 4"
       ],
-      "expected": "Flow A QR polling step succeeds per testing-plan §6 Flow A; instructor display token ready for student scan",
+      "expected": "Flow A QR polling step succeeds per testing-plan §6 Flow A and main-workflows §4.2; instructor display token ready for student scan",
       "edgeCase": false
     },
     {
@@ -309,7 +309,7 @@
         "TestClock advanced so original token from step 1 is past 30 s expiry"
       ],
       "steps": [
-        "POST /check-in with expired tokenId from Flow B step 1 using enrolled Student C session",
+        "POST /api/v1/check-in with expired tokenId from Flow B step 1 using enrolled Student C session",
         "Assert HTTP 400 with outcome ExpiredQr and errorCode ExpiredQr",
         "Assert Vietnamese message Mã QR đã hết hạn, vui lòng quét mã mới",
         "Verify Student C attendance remains Pending"
@@ -383,7 +383,7 @@
         "Verify countdown resets to approximately 30 seconds after refresh",
         "Verify countdown decrements visibly each second without full page reload"
       ],
-      "expected": "QR display auto-refreshes every 30 s with visible countdown per AC-06a and ui-states §QrDisplayPanel",
+      "expected": "QR display auto-refreshes every 30 s with visible countdown per AC-06a and ui-states §7.2",
       "edgeCase": false
     },
     {
@@ -424,10 +424,10 @@
       "steps": [
         "Navigate to QR tab on Draft session detail page",
         "Verify illustration and message Buổi học chưa mở displayed",
-        "Verify no QR image rendered and no polling requests to /qr/current succeed with 200",
-        "Navigate to Closed session QR tab and verify same session-not-active state with ended-session messaging"
+        "Verify no QR image rendered and no polling requests to /api/v1/sessions/:id/qr/current succeed with 200",
+        "Navigate to Closed session QR tab and verify session-not-active illustration with Buổi học chưa mở per ui-states §7.2"
       ],
-      "expected": "UI shows session-not-active state per AC-06c and ui-states §12; no valid QR token displayed when session not Active",
+      "expected": "UI shows session-not-active state per AC-06c and ui-states §7.2; no valid QR token displayed when session not Active",
       "edgeCase": false
     },
     {
@@ -445,9 +445,10 @@
       ],
       "steps": [
         "Student opens check-in deep link wecheck://check-in?token=expired&session=:id",
-        "Student submits check-in after GPS capture",
+        "Verify GET /api/v1/check-in/tokens/:expiredTokenId/preflight returns 403 with errorCode ExpiredQr and Vietnamese message",
+        "Verify student remains on scan step; GpsCaptureStep does not mount",
         "Verify error panel displays Mã QR đã hết hạn, vui lòng quét mã mới",
-        "Verify Quét lại action returns student to scanner view per user-flows §WF-02"
+        "Verify Quét lại action returns student to scanner view per user-flows §3"
       ],
       "expected": "Student UI surfaces AC-06b ExpiredQr outcome with Vietnamese message and retry path",
       "edgeCase": true

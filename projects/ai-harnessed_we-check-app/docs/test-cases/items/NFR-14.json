@@ -1,8 +1,8 @@
 {
   "productItemId": "NFR-14",
   "version": 1,
-  "docFingerprint": "sha256:094662fb9298eea2ff9bd0525951550a0c69f428a26ed4f8bef2679526947d21",
-  "generatedAt": "2026-06-28T18:54:44.000Z",
+  "docFingerprint": "sha256:14f24faa2e4617efd1a5dd11c8715409687e5114d45c2e642d4ea173adcd0b51",
+  "generatedAt": "2026-06-29T19:03:59.000Z",
   "cases": [
     {
       "id": "TC-NFR-14-001",
@@ -15,7 +15,7 @@
       "preconditions": [
         "Real PostgreSQL test database running via Compose",
         "identity-auth UserRepository wired to users table per database design §5.1",
-        "PasswordHasher service configured per tech stack §2 (bcrypt or argon2)"
+        "PasswordHasher service configured per tech stack §2 and §8 mandatory guardrails (bcrypt or argon2)"
       ],
       "steps": [
         "Invoke UserRepository.create with plaintext password SecurePass123 and valid user fields",
@@ -154,7 +154,7 @@
       ],
       "steps": [
         "GET /api/v1/users with admin session cookie",
-        "Assert HTTP status 200 with items array",
+        "Assert HTTP status 200 with items array and nextCursor field per API design §3.1 cursor pagination",
         "For each item in items assert no password, passwordHash, or password_hash property present",
         "Assert no item value matches bcrypt (^\\$2) or argon2 (^\\$argon2) hash pattern in any string field"
       ],
@@ -375,7 +375,7 @@
         "Inspect visible cell text in all rows and assert no value matches bcrypt or argon2 hash pattern",
         "View page source or network GET /users response and confirm no hash serialized to client"
       ],
-      "expected": "NFR-14 UI surface: admin user list never exposes password_hash; table columns limited to id, institutionalId, displayName, email, role, active per API User DTO",
+      "expected": "NFR-14 UI surface: admin user list never exposes password_hash; table columns limited to id, institutionalId, displayName, email, role, active, createdAt per API User DTO",
       "edgeCase": false
     },
     {
@@ -399,6 +399,75 @@
         "Assert check-in succeeds demonstrating hash-verified auth gate in Flow A workshop path"
       ],
       "expected": "NFR-14 enforced in Flow A: student authenticates via one-way hash verification; plaintext never stored; check-in proceeds only after valid session from credential check",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-14-019",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-14", "FR-17", "AC-17"],
+      "title": "POST /setup/first-admin persists bcrypt or argon2 hash — bootstrap password never stored plaintext",
+      "preconditions": [
+        "Real PostgreSQL with User.count = 0 (needsSetup true)",
+        "SetupService.createFirstAdmin wired with PasswordHasher per tech stack §3.4 and §8",
+        "PasswordHasher configured for bcrypt or argon2"
+      ],
+      "steps": [
+        "POST /api/v1/setup/first-admin with password BootstrapPass8 and valid institutionalId, displayName, email on empty DB",
+        "Assert HTTP 201 Created; response user DTO contains no password or passwordHash fields",
+        "Query users.password_hash directly via SQL for the created TrainingOfficeAdmin row",
+        "Assert password_hash value does NOT equal plaintext BootstrapPass8",
+        "Assert password_hash matches bcrypt pattern (^\\$2[aby]\\$) OR argon2 pattern (^\\$argon2)",
+        "POST /api/v1/auth/login with created email and BootstrapPass8 and assert HTTP 200 session issued"
+      ],
+      "expected": "NFR-14 bootstrap path per validation rules §3.1a: first-admin credential stored as one-way hash; plaintext never in users table; admin authenticates successfully",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-14-020",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["NFR-14", "FR-17", "AC-17"],
+      "title": "POST /setup/first-admin with 7-character password returns 422 PasswordTooShort per VAL-03 §3.1a",
+      "preconditions": [
+        "Empty database with User.count = 0; needsSetup true",
+        "Valid setup payload except password set to 7-char string short12"
+      ],
+      "steps": [
+        "POST /api/v1/setup/first-admin with password short12 and otherwise valid bootstrap body",
+        "Assert HTTP status 422 Unprocessable Entity",
+        "Assert response JSON contains errorCode PasswordTooShort and message Mật khẩu phải có ít nhất 8 ký tự",
+        "Query users table and confirm User.count remains 0",
+        "GET /api/v1/setup/status and assert needsSetup true"
+      ],
+      "expected": "NFR-14 VAL-03 enforced on bootstrap path: 7-char password rejected; deployment remains needsSetup true; no plaintext credential persisted",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-14-021",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-14", "FR-17", "AC-17"],
+      "title": "Setup form at /setup gates submit when password shorter than 8 characters",
+      "preconditions": [
+        "Fresh deployment with User.count = 0; browser navigates to /setup",
+        "Setup form includes password field per validation rules §3.1a and AC-17b"
+      ],
+      "steps": [
+        "Fill institutionalId, displayName, and email with valid values",
+        "Enter password short12 (7 characters) in password field",
+        "Attempt form submit or blur password field to trigger client validation",
+        "Observe inline validation message Mật khẩu phải có ít nhất 8 ký tự and submit button disabled or blocked",
+        "Change password to SetupPass8 and verify validation clears allowing submit",
+        "Submit form and assert POST /api/v1/setup/first-admin succeeds with hashed credential persisted"
+      ],
+      "expected": "NFR-14 browser journey on bootstrap path: /setup UI enforces minimum 8-character password before first-admin creation; aligns with server PasswordTooShort contract per VAL-03",
       "edgeCase": false
     }
   ]

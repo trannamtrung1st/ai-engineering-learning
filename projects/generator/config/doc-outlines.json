@@ -107,8 +107,12 @@
   },
   "docs/ui-ux/00-production-ui-quality-bar.md": {
     "requiredHeadings": ["Quality"],
-    "requiredSubstrings": ["Acceptable", "Not acceptable"],
+    "requiredSubstrings": ["Acceptable", "Not acceptable", "contrast"],
     "minLines": 25
+  },
+  "docs/ui-ux/DESIGN.md": {
+    "requiredHeadings": ["Scope"],
+    "minLines": 30
   },
   "docs/ui-ux/01-design-overview.md": {
     "requiredHeadings": ["Design Overview"],
@@ -128,10 +132,12 @@
   },
   "docs/ui-ux/04-design-tokens.md": {
     "requiredHeadings": ["Token"],
+    "requiredSubstrings": ["DESIGN", "Mapping"],
     "minLines": 20
   },
   "docs/ui-ux/05-common-ui-components.md": {
     "requiredHeadings": ["Component"],
+    "requiredSubstrings": ["TableToolbar"],
     "minLines": 20
   },
   "docs/ui-ux/06-app-layout-components.md": {
@@ -168,6 +174,7 @@
   },
   "docs/ui-ux/14-listing-pages-search-filter-sort.md": {
     "requiredHeadings": ["Listing"],
+    "requiredSubstrings": ["Mandatory", "Search"],
     "minLines": 20
   },
   "docs/ui-ux/README.md": {

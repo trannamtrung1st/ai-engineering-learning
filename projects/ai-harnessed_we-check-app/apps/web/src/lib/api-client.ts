@@ -1,9 +1,16 @@
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
 
+export interface ApiErrorDetail {
+  field: string;
+  code: string;
+  message: string;
+}
+
 export interface ApiErrorBody {
   errorCode?: string;
   message?: string;
   outcome?: string;
+  details?: ApiErrorDetail[];
 }
 
 export async function apiFetch<T>(

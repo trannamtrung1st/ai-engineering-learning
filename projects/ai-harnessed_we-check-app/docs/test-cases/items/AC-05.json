@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-05",
   "version": 1,
-  "docFingerprint": "sha256:1ac4798df6d9455def54fdb258e16300f8a5e0c63b97d141244c054696ce7c48",
-  "generatedAt": "2026-06-29T08:00:00Z",
+  "docFingerprint": "sha256:ce4c73a90cbe521ea8ad065e22af5a6cf305ae62ba9191af08f27cbf588c8319",
+  "generatedAt": "2026-06-29T17:12:45Z",
   "cases": [
     {
       "id": "TC-AC-05-001",
@@ -18,10 +18,10 @@
         "Roster has N enrolled students for the class-subject pair"
       ],
       "steps": [
-        "POST /sessions/:sessionId/open with Instructor session cookie",
+        "POST /api/v1/sessions/:sessionId/open with Instructor session cookie",
         "Assert HTTP status 200 and response body status is Active with openedAt set",
-        "GET /sessions/:sessionId/attendance and assert summary.enrolled equals N and summary.pending equals N",
-        "GET /sessions/:sessionId/qr/current and assert HTTP 200 with valid qrPayload and secondsRemaining ≤ 30"
+        "GET /api/v1/sessions/:sessionId/attendance and assert summary.enrolled equals N and summary.pending equals N",
+        "GET /api/v1/sessions/:sessionId/qr/current and assert HTTP 200 with valid qrPayload and secondsRemaining ≤ 30"
       ],
       "expected": "Session becomes Active per AC-05a; attendance window starts; QR issuance begins; one Pending record per enrolled student",
       "edgeCase": false
@@ -56,13 +56,13 @@
       "technique": "http-contract",
       "priority": "P0",
       "traceability": ["AC-05", "FR-05"],
-      "title": "POST /sessions/:sessionId/open returns 200 with Active Session DTO",
+      "title": "POST /api/v1/sessions/:sessionId/open returns 200 with Active Session DTO",
       "preconditions": [
         "Instructor session cookie is set",
         "Draft sessionId with valid GPS owned by instructor is known"
       ],
       "steps": [
-        "Send POST /sessions/:sessionId/open with Instructor session",
+        "Send POST /api/v1/sessions/:sessionId/open with Instructor session",
         "Assert HTTP status 200",
         "Assert response body contains id, status Active, openedAt timestamp, and scheduledStart",
         "Assert response body status is not Draft or Closed"
@@ -81,13 +81,13 @@
       "preconditions": [
         "Active session with openedAt set and scheduledStart in the past",
         "Test clock fixed so now ≤ scheduledStart + 10 minutes",
-        "Authenticated enrolled Student with valid unexpired QR token from GET /sessions/:id/qr/current",
+        "Authenticated enrolled Student with valid unexpired QR token from GET /api/v1/sessions/:id/qr/current",
         "Student coordinates within session gpsRadiusMeters"
       ],
       "steps": [
-        "POST /check-in with tokenId, latitude 10.762700, longitude 106.660200 using Student session",
+        "POST /api/v1/check-in with tokenId, latitude 10.762700, longitude 106.660200 using Student session",
         "Assert HTTP status 200 and outcome Success",
-        "GET /sessions/:sessionId/attendance and locate student record",
+        "GET /api/v1/sessions/:sessionId/attendance and locate student record",
         "Assert attendance status is Present with checkedInAt populated"
       ],
       "expected": "Check-in evaluated per BR interaction matrix within attendance window per AC-05b and BR-01",
@@ -109,8 +109,8 @@
       ],
       "steps": [
         "Trigger AutoCloseScheduler tick or wait for scheduler run at advanced clock time",
-        "GET /sessions/:sessionId and assert status Closed with closedAt set",
-        "GET /sessions/:sessionId/attendance and assert summary.pending is 0 and summary.absent equals M",
+        "GET /api/v1/sessions/:sessionId and assert status Closed with closedAt set",
+        "GET /api/v1/sessions/:sessionId/attendance and assert summary.pending is 0 and summary.absent equals M",
         "Query attendance_records for sessionId and verify all previously Pending rows are Absent"
       ],
       "expected": "Session auto-transitions to Closed per AC-05c and BR-01; all Pending records become Absent without instructor action",
@@ -130,10 +130,10 @@
         "Valid or expired QR token for the closed session"
       ],
       "steps": [
-        "POST /check-in with tokenId and valid coordinates using Student session",
+        "POST /api/v1/check-in with tokenId and valid coordinates using Student session",
         "Assert HTTP status 403",
         "Assert response outcome SessionNotActive with errorCode SessionNotActive",
-        "GET /sessions/:sessionId/attendance for the student and assert status remains Absent"
+        "GET /api/v1/sessions/:sessionId/attendance for the student and assert status remains Absent"
       ],
       "expected": "Late check-in rejected per AC-05d; outcome SessionNotActive; Absent status unchanged unless instructor manually overrides per BR-10",
       "edgeCase": false
@@ -211,16 +211,16 @@
       "technique": "http-contract",
       "priority": "P0",
       "traceability": ["AC-05", "FR-05", "BR-01"],
-      "title": "POST /sessions/:sessionId/close returns 200 with Closed Session DTO",
+      "title": "POST /api/v1/sessions/:sessionId/close returns 200 with Closed Session DTO",
       "preconditions": [
         "Instructor session cookie is set",
         "Active sessionId owned by instructor with at least one Pending attendance record"
       ],
       "steps": [
-        "Send POST /sessions/:sessionId/close with Instructor session",
+        "Send POST /api/v1/sessions/:sessionId/close with Instructor session",
         "Assert HTTP status 200",
         "Assert response body contains status Closed and closedAt timestamp",
-        "GET /sessions/:sessionId/qr/current and assert no valid token (session not Active)"
+        "GET /api/v1/sessions/:sessionId/qr/current and assert no valid token (session not Active)"
       ],
       "expected": "HTTP 200 with updated Session DTO per API design §5.5; status Closed; QR scheduler stopped",
       "edgeCase": false
@@ -232,17 +232,17 @@
       "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["AC-05", "FR-05"],
-      "title": "Student denied POST /sessions/:sessionId/open with 403 Forbidden",
+      "title": "Student denied POST /api/v1/sessions/:sessionId/open with 403 Forbidden",
       "preconditions": [
         "Authenticated Student session is available",
         "Draft session with valid GPS exists",
         "Student role lacks session:write permission per roles matrix §2.2"
       ],
       "steps": [
-        "POST /sessions/:sessionId/open using Student session cookie",
+        "POST /api/v1/sessions/:sessionId/open using Student session cookie",
         "Assert HTTP status 403 Forbidden",
         "Assert response errorCode Forbidden with localized permission-denied message",
-        "GET /sessions/:sessionId and assert status remains Draft"
+        "GET /api/v1/sessions/:sessionId and assert status remains Draft"
       ],
       "expected": "Student cannot open sessions per roles-permissions §2.3; HTTP 403; session lifecycle unchanged",
       "edgeCase": false
@@ -254,16 +254,16 @@
       "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["AC-05", "FR-05"],
-      "title": "Student denied POST /sessions/:sessionId/close with 403 Forbidden",
+      "title": "Student denied POST /api/v1/sessions/:sessionId/close with 403 Forbidden",
       "preconditions": [
         "Authenticated Student session is available",
         "Active sessionId exists",
         "Student role lacks session:write permission"
       ],
       "steps": [
-        "POST /sessions/:sessionId/close using Student session cookie",
+        "POST /api/v1/sessions/:sessionId/close using Student session cookie",
         "Assert HTTP status 403 Forbidden and errorCode Forbidden",
-        "GET /sessions/:sessionId and assert status remains Active"
+        "GET /api/v1/sessions/:sessionId and assert status remains Active"
       ],
       "expected": "Student cannot close sessions; HTTP 403; session remains Active with attendance window open",
       "edgeCase": false
@@ -275,16 +275,16 @@
       "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["AC-05", "FR-05"],
-      "title": "TrainingOfficeAdmin denied POST /sessions/:sessionId/open without session:write",
+      "title": "TrainingOfficeAdmin denied POST /api/v1/sessions/:sessionId/open without session:write",
       "preconditions": [
         "Authenticated TrainingOfficeAdmin session is available",
         "Draft session with valid GPS exists",
         "Admin has session:read institution-wide but no default session:write per MVP policy"
       ],
       "steps": [
-        "POST /sessions/:sessionId/open using TrainingOfficeAdmin session cookie",
+        "POST /api/v1/sessions/:sessionId/open using TrainingOfficeAdmin session cookie",
         "Assert HTTP status 403 Forbidden and errorCode Forbidden",
-        "GET /sessions/:sessionId and assert status remains Draft"
+        "GET /api/v1/sessions/:sessionId and assert status remains Draft"
       ],
       "expected": "Admin cannot open instructor sessions in MVP default policy; access denied with 403 Forbidden",
       "edgeCase": false
@@ -296,16 +296,16 @@
       "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["AC-05", "FR-05"],
-      "title": "POST /sessions/:sessionId/open on Active session returns 409 InvalidSessionState",
+      "title": "POST /api/v1/sessions/:sessionId/open on Active session returns 409 InvalidSessionState",
       "preconditions": [
         "Authenticated Instructor owns an Active session",
         "Instructor session cookie is set"
       ],
       "steps": [
-        "POST /sessions/:sessionId/open with Instructor session",
+        "POST /api/v1/sessions/:sessionId/open with Instructor session",
         "Assert HTTP status 409",
         "Assert response errorCode InvalidSessionState",
-        "GET /sessions/:sessionId and assert status remains Active"
+        "GET /api/v1/sessions/:sessionId and assert status remains Active"
       ],
       "expected": "Illegal Draft→Active transition blocked when already Active per API design §5.4; no duplicate open side effects",
       "edgeCase": true
@@ -324,10 +324,10 @@
         "Authenticated enrolled Student with valid QR token"
       ],
       "steps": [
-        "POST /check-in with valid tokenId and in-radius coordinates using Student session",
+        "POST /api/v1/check-in with valid tokenId and in-radius coordinates using Student session",
         "Assert HTTP status 403",
         "Assert response outcome SessionNotActive with errorCode SessionNotActive and Vietnamese message",
-        "GET /sessions/:sessionId/attendance for student and assert status remains Pending or becomes Absent after subsequent close"
+        "GET /api/v1/sessions/:sessionId/attendance for student and assert status remains Pending or becomes Absent after subsequent close"
       ],
       "expected": "Check-in rejected when now > scheduledStart + 10 min per BR-01 window end; outcome SessionNotActive before or after close finalize",
       "edgeCase": true
@@ -367,10 +367,10 @@
         "Authenticated Instructor with assignment to HESD-01 / SWE-101"
       ],
       "steps": [
-        "POST /sessions/:sessionId/open with Instructor session",
+        "POST /api/v1/sessions/:sessionId/open with Instructor session",
         "Assert session status Active and openedAt set",
-        "GET /sessions/:sessionId/qr/current and capture token for student check-in (Flow A step 4)",
-        "GET /sessions/:sessionId/attendance and verify Pending count matches enrolled roster"
+        "GET /api/v1/sessions/:sessionId/qr/current and capture token for student check-in (Flow A step 4)",
+        "GET /api/v1/sessions/:sessionId/attendance and verify Pending count matches enrolled roster"
       ],
       "expected": "Session opened as Flow A prerequisite; QR and attendance bootstrap ready for student check-in and eventual close per AC-05a",
       "edgeCase": false
@@ -390,7 +390,7 @@
       ],
       "steps": [
         "Verify Mở buổi học (open session) action is enabled when GPS is configured",
-        "Click Mở buổi học and confirm dialog if shown",
+        "Click Mở buổi học and confirm dialog (*Xác nhận mở buổi học?*) if shown",
         "Wait for status badge update",
         "Verify session status badge shows Đang diễn ra (Active) and openedAt timestamp is visible",
         "Verify navigation links to QR display and live monitor are available"
@@ -433,8 +433,8 @@
         "Session has Pending students not yet checked in"
       ],
       "steps": [
-        "Click Kết thúc buổi học (close session) action",
-        "Confirm close in dialog prompt",
+        "Click Đóng buổi học (close session) action",
+        "Confirm close in dialog prompt (*Kết thúc điểm danh?*)",
         "Wait for status badge update",
         "Verify session status badge shows Đã kết thúc (Closed)",
         "Verify QR display and open-session actions are unavailable",
@@ -454,7 +454,7 @@
       "preconditions": [
         "Active session past scheduledStart + 10 minutes on TestClock",
         "AutoCloseScheduler and SessionService.close both eligible to run",
-        "Optimistic lock on Session.version enabled per WF-03 §8"
+        "Optimistic lock on Session.version enabled per WF-03 §9"
       ],
       "steps": [
         "Launch parallel SessionService.close(sessionId) and AutoCloseScheduler tick for same sessionId",
@@ -473,16 +473,16 @@
       "technique": "http-contract",
       "priority": "P1",
       "traceability": ["AC-05", "FR-05", "BR-01"],
-      "title": "GET /sessions/:sessionId/qr/current returns 200 only while session Active",
+      "title": "GET /api/v1/sessions/:sessionId/qr/current returns 200 only while session Active",
       "preconditions": [
         "Instructor session cookie is set",
         "Active sessionId with QR scheduler running"
       ],
       "steps": [
-        "GET /sessions/:sessionId/qr/current with Instructor session",
+        "GET /api/v1/sessions/:sessionId/qr/current with Instructor session",
         "Assert HTTP status 200 with qrPayload, tokenId, issuedAt, expiresAt, secondsRemaining, attendanceWindowClosesAt",
-        "POST /sessions/:sessionId/close",
-        "GET /sessions/:sessionId/qr/current and assert no valid token or 403/422 session-not-active response"
+        "POST /api/v1/sessions/:sessionId/close",
+        "GET /api/v1/sessions/:sessionId/qr/current and assert no valid token or 403/422 session-not-active response"
       ],
       "expected": "QR current endpoint contract per API design §6.1; valid payload only during Active state confirming QR issuance tied to open session",
       "edgeCase": false

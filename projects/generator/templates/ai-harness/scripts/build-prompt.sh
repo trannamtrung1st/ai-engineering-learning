@@ -131,6 +131,10 @@ fi
 if [[ "$MODE" == "tester" ]]; then
   screenshot_block="$(format_screenshot_dir_block "$SLICE_ID" browser-test 2>/dev/null || true)"
   prompt="${prompt//\{\{SCREENSHOT_DIR_BLOCK\}\}/$screenshot_block}"
+  playwright_path="$(playwright_output_path_for_slice "$SLICE_ID")"
+  ux_bugs_path="$(ux_bugs_path_for_slice_run "$SLICE_ID" "${AIH_RUN_ID:-$(run_id)}")"
+  prompt="${prompt//\{\{PLAYWRIGHT_OUTPUT_PATH\}\}/$playwright_path}"
+  prompt="${prompt//\{\{UX_BUGS_PATH\}\}/$ux_bugs_path}"
 fi
 
 printf '%s\n' "$prompt"

@@ -167,7 +167,36 @@ flowchart TD
 | API gateway / middleware | Authenticate session; attach `userId` and `role` to request context |
 | Permission guard | Map route + method to required permission; evaluate role matrix |
 | Domain service | Enforce resource scope (enrollment, class assignment, session ownership) |
-| UI route guard | Mirror API permissions; hide unauthorized navigation entries |
+| UI route guard | Mirror API permissions; **omit** unauthorized navigation entries ([BR-14](../brds/04-business-rules.md)) |
+
+### 2.3a Navigation item → permission map
+
+Each layout nav item maps to a required permission. Items the user lacks are **omitted** from DOM (not disabled). Implemented via `usePermittedNav()` hook returning filtered nav descriptors. Active-state `match` mode per [06-app-layout-components.md](../ui-ux/06-app-layout-components.md) §6.2a ([BR-14a](../brds/04-business-rules.md)).
+
+| Nav item (vi-VN) | Route | Required permission | Match | Roles |
+| --- | --- | --- | --- | --- |
+| Điểm danh | `/check-in` | `checkin:submit` | prefix | Student |
+| Lịch sử | `/history` | `attendance:read` (self) | exact | Student |
+| Buổi học | `/sessions` | `session:read` | prefix | Instructor |
+| Báo cáo (instructor) | `/reports` | `report:read` | prefix | Instructor |
+| Trang chủ (admin) | `/admin` | `user:read` (all) or any admin permission | exact | Admin |
+| Người dùng | `/admin/users` | `user:read` (all) | prefix | Admin |
+| Lớp học | `/admin/classes` | `roster:read` (all) | prefix | Admin |
+| Môn học | `/admin/subjects` | `roster:read` (all) | prefix | Admin |
+| Danh sách ghi danh | `/admin/rosters` | `roster:read` (all) | prefix† | Admin |
+| Nhập danh sách | `/admin/rosters/import` | `roster:write` | exact | Admin |
+| Báo cáo (admin) | `/admin/reports` | `report:read` (institution) | prefix | Admin |
+| Xuất CSV | `/admin/export` | `report:export` | prefix | Admin |
+| Chính sách | `/admin/policy` | `policy:write` | prefix | Admin |
+
+† `/admin/rosters` nav descriptor uses `end={true}` (exact match on list root) so `/admin/rosters/import` activates **Nhập danh sách** only.
+
+### 2.3b Public routes
+
+| Route | Permission | Notes |
+| --- | --- | --- |
+| `/login` | Public | Redirect when authenticated |
+| `/setup` | Public when `needsSetup: true` | Otherwise 403 or redirect to login ([FR-17](../brds/03-functional-requirements.md)) |
 
 Deny by default: if permission is not granted in §2.2, return `403` with Vietnamese user message and English `errorCode` for clients.
 

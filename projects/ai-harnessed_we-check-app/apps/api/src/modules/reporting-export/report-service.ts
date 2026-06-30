@@ -4,7 +4,7 @@ import { notFound, reportAccessDenied } from "../../errors/api-error.js";
 import { AssignmentRepository } from "../roster-enrollment/assignment-repository.js";
 import { ReferenceRepository } from "../roster-enrollment/reference-repository.js";
 import { ReportRepository } from "./repositories.js";
-import type { ClassSubjectSummaryDto, ReportFilter, SessionReportDto } from "./types.js";
+import type { ClassSubjectSummaryDto, ReportFilter, SessionReportDto, SessionSummaryListDto } from "./types.js";
 
 export class ReportService {
   private readonly reports: ReportRepository;
@@ -107,5 +107,50 @@ export class ReportService {
     }
 
     return this.reports.getClassSubjectSummary(filters);
+  }
+
+  async listSessionSummaries(
+    filters: ReportFilter,
+    requesterId: string,
+    role: UserRoleType,
+  ): Promise<SessionSummaryListDto> {
+    if (role === UserRole.Student) {
+      throw reportAccessDenied();
+    }
+
+    const hasClassSubject = Boolean(filters.classCode && filters.subjectCode);
+
+    if (role === UserRole.Instructor && !hasClassSubject) {
+      throw reportAccessDenied();
+    }
+
+    if (hasClassSubject) {
+      const classRecord = await this.references.findClassByCode(filters.classCode!);
+      const subjectRecord = await this.references.findSubjectByCode(filters.subjectCode!);
+      if (!classRecord || !subjectRecord) {
+        throw notFound();
+      }
+
+      await this.assertReportScope(
+        requesterId,
+        role,
+        classRecord.id,
+        subjectRecord.id,
+      );
+
+      const items = await this.reports.listClosedSessionSummaries(
+        filters,
+        classRecord.id,
+        subjectRecord.id,
+      );
+      return { items };
+    }
+
+    if (role !== UserRole.TrainingOfficeAdmin) {
+      throw reportAccessDenied();
+    }
+
+    const items = await this.reports.listClosedSessionSummaries(filters);
+    return { items };
   }
 }

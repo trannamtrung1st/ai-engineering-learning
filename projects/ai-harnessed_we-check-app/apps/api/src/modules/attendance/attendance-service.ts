@@ -188,6 +188,48 @@ export class AttendanceService {
     }
   }
 
+  async getAuditLogs(
+    recordId: string,
+    userId: string,
+    role: UserRoleType,
+  ): Promise<{
+    items: Array<{
+      id: string;
+      editorId: string;
+      editorDisplayName: string;
+      previousStatus: AttendanceStatus;
+      newStatus: AttendanceStatus;
+      note: string | null;
+      editedAt: string;
+    }>;
+  }> {
+    const existing = await this.records.findRecordById(recordId);
+    if (!existing) {
+      throw notFound();
+    }
+
+    const session = await this.records.findSessionContext(existing.sessionId);
+    if (!session) {
+      throw notFound();
+    }
+
+    if (role === UserRole.Student) {
+      throw forbidden();
+    }
+
+    if (role === UserRole.Instructor) {
+      await this.assertWriteAccess(userId, role, session);
+    }
+
+    const items = await this.audit.listForRecord(recordId);
+    return {
+      items: items.map((entry) => ({
+        ...entry,
+        editedAt: entry.editedAt.toISOString(),
+      })),
+    };
+  }
+
   async getStudentHistory(
     studentId: string,
     query: StudentHistoryQuery,

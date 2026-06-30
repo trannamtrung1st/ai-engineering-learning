@@ -1,8 +1,8 @@
 {
   "productItemId": "BR-03",
   "version": 1,
-  "docFingerprint": "sha256:4deda16c175af0ca34aadf938abcd5f11203e186585e68a48a77093b8e87aac5",
-  "generatedAt": "2026-06-29T22:00:00Z",
+  "docFingerprint": "sha256:7fa6e5f0fa1fb178b99256355a681409f9ca3b3a224ea6b785c745d780059c2e",
+  "generatedAt": "2026-06-29T18:20:03Z",
   "cases": [
     {
       "id": "TC-BR-03-001",
@@ -354,21 +354,22 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["BR-03", "FR-07", "AC-06"],
-      "title": "Student check-in page shows ExpiredQr message after scanning stale QR screenshot",
+      "traceability": ["BR-03", "BR-15", "FR-07", "AC-06", "AC-07"],
+      "title": "Student scan of expired QR shows ExpiredQr on preflight; GPS step never mounts (AC-07d)",
       "preconditions": [
-        "Authenticated Student on mobile viewport (375px width)",
-        "Active session with QR token older than 30 seconds (deep link with expired tokenId)",
-        "Student GPS permission granted and coordinates within radius"
+        "Authenticated enrolled Student on mobile viewport (375px width)",
+        "Active session with QR token issued more than 30 seconds ago (TestClock or stale tokenId)",
+        "Student navigates to check-in flow via scan or deep link"
       ],
       "steps": [
-        "Student opens check-in deep link wecheck://check-in?token=expired&session=:id",
-        "Student submits check-in after GPS capture completes",
+        "Student scans QR or opens check-in deep link with expired tokenId",
+        "Verify client invokes GET /api/v1/check-in/tokens/:tokenId/preflight",
         "Verify error panel displays Mã QR đã hết hạn, vui lòng quét mã mới",
+        "Verify GpsCaptureStep component is not mounted in DOM",
         "Verify Quét lại action returns student to scanner view",
         "Verify attendance status remains Pending in student history"
       ],
-      "expected": "Student UI surfaces BR-03 ExpiredQr outcome with Vietnamese message; encourages fresh scan per anti-screenshot policy",
+      "expected": "BR-15 preflight gate blocks GPS capture when BR-03 expiry fails; student remains on scan step per AC-07d",
       "edgeCase": true
     },
     {
@@ -461,6 +462,31 @@
       ],
       "expected": "BR-03 ExpiredQr applies only to known tokens past validity window; unknown tokens return TokenNotFound per domain model §3.5",
       "edgeCase": true
+    },
+    {
+      "id": "TC-BR-03-021",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["BR-03", "BR-15", "FR-07", "AC-07"],
+      "title": "TS-21b: Preflight rejects expired token before GPS step (AC-07d)",
+      "preconditions": [
+        "Authenticated enrolled Student session available",
+        "QrToken issued at time T with status Valid in database",
+        "TestClock fixed at T + 31 seconds",
+        "Active session within attendance window"
+      ],
+      "steps": [
+        "GET /api/v1/check-in/tokens/:tokenId/preflight using Student session at T + 31 s",
+        "Assert HTTP status 400",
+        "Assert response outcome ExpiredQr and errorCode ExpiredQr",
+        "Assert response message is Mã QR đã hết hạn, vui lòng quét mã mới",
+        "Assert no check_in_attempts row created (preflight is read-only per validation-rules §3.6a)",
+        "Verify client would not mount GpsCaptureStep per BR-15 gate"
+      ],
+      "expected": "BR-03 expiry enforced at preflight per validation-rules §3.6a step 3; expired token blocked before GPS capture per BR-15 and AC-07d",
+      "edgeCase": false
     }
   ]
 }

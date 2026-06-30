@@ -1,8 +1,8 @@
 {
   "productItemId": "NFR-04",
   "version": 1,
-  "docFingerprint": "sha256:115bb9b9ee2cffbc7f45928b9de1dcb4f61fc3273e43f0feadf51807c4d787c0",
-  "generatedAt": "2026-06-29T14:30:00Z",
+  "docFingerprint": "sha256:ed2f2a01af64f91a7bd1aa1df43796784981c952d0a4a18ac9807f4aa24ca5e5",
+  "generatedAt": "2026-06-29T18:50:44Z",
   "cases": [
     {
       "id": "TC-NFR-04-001",
@@ -14,7 +14,7 @@
       "title": "TS-20: Successful POST /check-in response latency meets p95 ≤ 2000 ms under normal network",
       "preconditions": [
         "API and Compose PostgreSQL running per 13-docker-compose-local-runtime.md",
-        "Active session with valid room GPS and enrolled Student with Pending attendance",
+        "Active session with room GPS (10.762622, 106.660172) and enrolled Student with Pending attendance",
         "Valid unexpired QrToken from GET /api/v1/sessions/:sessionId/qr/current",
         "Student authenticated with in-radius coordinates (10.762700, 106.660200)",
         "Normal network profile (no artificial throttling)"
@@ -107,11 +107,12 @@
       "layer": "e2e",
       "technique": "flow-a",
       "priority": "P0",
-      "traceability": ["NFR-04", "FR-07", "AC-07"],
+      "traceability": ["NFR-04", "FR-07", "AC-07", "BR-15"],
       "title": "Flow A step 4: enrolled student check-in completes within 2000 ms in workshop lifecycle",
       "preconditions": [
         "Flow A steps 1–3 complete: roster seeded, session opened Active, QR token polled via GET /sessions/:id/qr/current",
-        "Authenticated enrolled Student session with in-radius GPS fixture",
+        "GET /api/v1/check-in/tokens/:tokenId/preflight returns 200 outcome Valid (preflight passes per AC-07a)",
+        "Authenticated enrolled Student session with in-radius GPS fixture (10.762700, 106.660200) for room (10.762622, 106.660172)",
         "Normal network; full E2E stack on ports 3000/3001 with Compose db healthy"
       ],
       "steps": [
@@ -154,23 +155,25 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["NFR-04", "AC-07", "FR-07"],
+      "traceability": ["NFR-04", "AC-07", "FR-07", "BR-15"],
       "title": "Mobile check-in success confirmation UI visible within 2000 ms of submit tap",
       "preconditions": [
         "Authenticated Student on mobile viewport 375×812 with GPS permission granted",
         "Active session with valid check-in deep link /check-in?token=:tokenId&session=:sessionId",
+        "Preflight already passed and GpsCaptureStep in ready state (Vị trí đã sẵn sàng per AC-08f)",
+        "Auth user prefetched on mount so submit timing excludes duplicate auth round-trip",
         "Normal network profile (no throttling); web on port 3000, API healthy",
-        "In-radius geolocation mocked or granted (10.762700, 106.660200)"
+        "In-radius geolocation mocked or granted (10.762700, 106.660200) for room (10.762622, 106.660172)"
       ],
       "steps": [
         "Navigate to /check-in deep link on mobile viewport",
-        "Wait for GPS coordinates captured and submit control enabled",
+        "Wait for preflight pass and GPS ready state with no Spinner and submit enabled (AC-08f)",
         "Record timestamp T0 immediately before clicking Xác nhận điểm danh submit control",
         "Click submit and wait for success confirmation element (Điểm danh thành công or Present badge)",
         "Record timestamp T1 when success UI is visible",
         "Assert T1 minus T0 ≤ 2000 ms"
       ],
-      "expected": "Student confirmation UI within 2 seconds under normal conditions per NFR-04 target and AC-07a; server-authoritative outcome reflected in UI",
+      "expected": "Student confirmation UI within 2 seconds of submit tap under normal conditions per NFR-04 target and AC-07a; server-authoritative outcome reflected in UI",
       "edgeCase": false
     },
     {
@@ -179,21 +182,22 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["NFR-04", "FR-07", "NFR-18"],
+      "traceability": ["NFR-04", "FR-07", "AC-08", "NFR-18"],
       "title": "Mobile check-in page shows loading state during submit without premature success before API completes",
       "preconditions": [
         "Authenticated Student on mobile viewport with valid check-in deep link",
-        "GPS permission granted with in-radius coordinates",
+        "Preflight passed; GPS step in ready state (Vị trí đã sẵn sàng) per AC-08f",
+        "GPS permission granted with in-radius coordinates (10.762700, 106.660200)",
         "Network request to POST /api/v1/check-in observable in browser devtools or Playwright network log"
       ],
       "steps": [
-        "Navigate to /check-in page and complete GPS capture step",
-        "Click submit control",
-        "Assert loading or pending indicator visible while POST /check-in request is in-flight",
+        "Navigate to /check-in page and wait for preflight pass and GPS ready state",
+        "Click Xác nhận điểm danh submit control",
+        "Assert Spinner visible and submit disabled while POST /api/v1/check-in is in-flight (AC-08g submitting state)",
         "Assert success confirmation (Điểm danh thành công) appears only after network response completes",
         "Measure elapsed time from submit click to success UI and assert ≤ 2000 ms under normal network"
       ],
-      "expected": "UI respects server authority and NFR-04 timing: confirmation appears after successful API response within 2 s budget per ui-states slow-network guidance",
+      "expected": "UI respects server authority and NFR-04 timing: AC-08g submitting spinner during API call; confirmation appears after successful response within 2 s budget per ui-states §4 slow-network guidance",
       "edgeCase": false
     },
     {

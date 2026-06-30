@@ -69,7 +69,13 @@ All agent UI screenshots go under `ai-harness/generated/runs/screenshots/` (giti
 | **Implementer** | Every page/route created or modified in the slice — before `SLICE_DONE`, even when flows pass |
 | **Browser test agent** | Each distinct page visited when verifying browser cases — especially layout, forms, tables, badges, and state variants |
 
-Compare against `docs/ui-ux/00-production-ui-quality-bar.md`. Fix obvious UI issues during implementation; report UI-quality FAILs during the browser test gate.
+Compare against `docs/ui-ux/00-production-ui-quality-bar.md` and [ui-visual-verification.md](./ui-visual-verification.md). Fix obvious UI issues during implementation; report UI-quality FAILs during the browser test gate.
+
+### Visual contrast review (screenshots over snapshots)
+
+**Screenshots** are required for contrast, padding, and layout craft. **Accessibility snapshots** help structure and interaction only — do not rely on them to judge button label readability or padding.
+
+Per modified route, implementer captures **320×568** and **1280×720** screenshots and runs the checklist in [ui-visual-verification.md](./ui-visual-verification.md) before `SLICE_DONE`. Browser tester applies the same checklist when reviewing craft FAILs.
 
 ## Agent timeout discipline
 
@@ -87,7 +93,7 @@ See implementer/tester prompts for full rules. Computational timeouts are enforc
 
 ### Participant
 
-1. Open `http://localhost:3000`
+1. Open `http://localhost:3007`
 2. Browse paginated events — confirm prev/next controls and page changes
 3. Open event detail → register → confirm status badge
 4. My registrations — confirm paginated list loads without N+1 errors
@@ -110,7 +116,18 @@ Use dev auth tokens or the app's dev login flow as documented in `docs/technical
 | API scenario tests | `npm run test:e2e` — in-process Fastify flows |
 | HTTP stack probe | `verify-stack.sh` — health + web HTTP 200 |
 | **Browser UI (implementer)** | Playwright MCP smoke test during implementation |
-| **Browser UI (gate)** | `run-browser-test.sh` — dedicated test agent; must emit `BROWSER_TEST_PASS` when all runnable cases pass |
+| **Browser UI (gate)** | `run-browser-test.sh` — dedicated test agent; `TC-*` checklist + UX audit + Playwright regression codegen |
+| **Playwright UI regression** | `tests/playwright-ui/scenarios/` — committed specs; `npm run test:playwright-ui` (optional gate) |
+
+### Post-verification (full phase)
+
+After the `TC-*` checklist, the browser test agent:
+
+1. **UX audit** — screenshot review per `skills/ui-ux-testing/SKILL.md`; logs `UX-<slice>-NNN` bugs (P0/P1 block pass)
+2. **UX bugs JSON** — `ai-harness/generated/runs/ux-bugs/<slice-id>/<run-id>.json`
+3. **Playwright codegen** — updates `tests/playwright-ui/scenarios/<slice-id>.spec.ts` per [`playwright-regression.md`](playwright-regression.md)
+
+See [`ux-bug-logging.md`](ux-bug-logging.md) for bug schema and severity rules.
 
 ### Out-of-scope case results
 
@@ -119,7 +136,7 @@ Cases that require physical devices or are not applicable in Playwright MCP must
 - `TC-…: SKIP — physical-device — <reason>`
 - `TC-…: SKIP — not-applicable — <reason>`
 
-Skipped cases are excluded from pass/fail — only `FAIL` lines block the gate.
+Skipped cases are excluded from pass/fail — `TC-*: FAIL` and `UX-*` P0/P1 lines block the gate.
 
 Test case artifacts may declare `harnessSkip` on `layer: browser` cases (`physical-device` or `not-applicable`). The harness injects a **Harness scope: SKIP** line in the tester checklist for those cases.
 

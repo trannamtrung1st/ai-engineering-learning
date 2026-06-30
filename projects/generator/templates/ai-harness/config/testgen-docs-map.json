@@ -3,6 +3,9 @@
     "docs/brds/08-acceptance-mvp-future.md",
     "docs/technical/11-testing-plan.md"
   ],
+  "generationNotes": [
+    "TestGen emits integration, e2e (API), and browser (MCP checklist) layers only. Executable Playwright UI specs in tests/playwright-ui/scenarios/ are owned by the browser test agent codegen step — do not duplicate Playwright UI automation as layer:e2e cases in TestGen artifacts."
+  ],
   "rules": [
     {
       "match": "^AC-0[1-4]$",

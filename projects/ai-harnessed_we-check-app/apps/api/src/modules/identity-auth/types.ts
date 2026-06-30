@@ -46,6 +46,13 @@ export interface LoginInput {
   returnUrl?: string;
 }
 
+export interface FirstAdminInput {
+  institutionalId: string;
+  displayName: string;
+  email: string;
+  password: string;
+}
+
 export function toUserDto(user: UserRecord): UserDto {
   return {
     id: user.id,

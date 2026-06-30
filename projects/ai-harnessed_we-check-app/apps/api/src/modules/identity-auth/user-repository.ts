@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { PoolClient } from "pg";
 import type { UserRole } from "@wecheck/domain";
 import type { DbPool } from "../../infra/db.js";
 import type { CreateUserInput, UserRecord } from "./types.js";
@@ -31,6 +32,20 @@ function mapRow(row: UserRow): UserRecord {
 
 export class UserRepository {
   constructor(private readonly db: DbPool) {}
+
+  async count(): Promise<number> {
+    const result = await this.db.query<{ count: string }>(
+      "SELECT COUNT(*)::text AS count FROM users",
+    );
+    return Number.parseInt(result.rows[0]?.count ?? "0", 10);
+  }
+
+  async countOnClient(client: PoolClient): Promise<number> {
+    const result = await client.query<{ count: string }>(
+      "SELECT COUNT(*)::text AS count FROM users",
+    );
+    return Number.parseInt(result.rows[0]?.count ?? "0", 10);
+  }
 
   async findByEmail(email: string): Promise<UserRecord | null> {
     const result = await this.db.query<UserRow>(
@@ -81,6 +96,51 @@ export class UserRepository {
       ],
     );
     return mapRow(result.rows[0]!);
+  }
+
+  async createOnClient(
+    client: PoolClient,
+    input: {
+      institutionalId: string;
+      displayName: string;
+      email: string;
+      passwordHash: string;
+      role: UserRole;
+      active?: boolean;
+    },
+  ): Promise<UserRecord> {
+    const id = randomUUID();
+    const result = await client.query<UserRow>(
+      `INSERT INTO users (id, institutional_id, display_name, email, password_hash, role, active)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id, institutional_id, display_name, email, password_hash, role, active, created_at, updated_at`,
+      [
+        id,
+        input.institutionalId,
+        input.displayName,
+        input.email,
+        input.passwordHash,
+        input.role,
+        input.active ?? true,
+      ],
+    );
+    return mapRow(result.rows[0]!);
+  }
+
+  async writeAuditLogOnClient(
+    client: PoolClient,
+    input: {
+      userId: string;
+      actorId: string;
+      action: string;
+      reason?: string;
+    },
+  ): Promise<void> {
+    await client.query(
+      `INSERT INTO user_audit_logs (user_id, actor_id, action, reason)
+       VALUES ($1, $2, $3, $4)`,
+      [input.userId, input.actorId, input.action, input.reason ?? null],
+    );
   }
 
   async update(

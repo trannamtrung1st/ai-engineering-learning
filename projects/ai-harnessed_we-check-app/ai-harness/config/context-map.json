@@ -9,8 +9,14 @@
     },
     "frontend": {
       "alwaysRead": [
+        "docs/ui-ux/DESIGN.md",
+        "docs/ui-ux/04-design-tokens.md",
         "docs/ui-ux/00-production-ui-quality-bar.md",
-        "docs/ui-ux/01-ui-ux-foundation.md"
+        "docs/ui-ux/01-ui-ux-foundation.md",
+        "docs/ui-ux/13-accessibility-basics.md",
+        "ai-harness/skills/frontend-design/SKILL.md",
+        "ai-harness/skills/design-craft-notion/SKILL.md",
+        "ai-harness/docs/ui-visual-verification.md"
       ]
     },
     "infra": {
@@ -26,10 +32,19 @@
     },
     "tester": {
       "alwaysRead": [
+        "docs/ui-ux/DESIGN.md",
+        "docs/ui-ux/04-design-tokens.md",
         "docs/technical/11-testing-plan.md",
         "docs/brds/08-acceptance-mvp-future.md",
         "ai-harness/docs/browser-mcp.md",
-        "docs/ui-ux/00-production-ui-quality-bar.md"
+        "ai-harness/docs/playwright-regression.md",
+        "ai-harness/docs/ux-bug-logging.md",
+        "ai-harness/docs/ui-visual-verification.md",
+        "docs/ui-ux/00-production-ui-quality-bar.md",
+        "docs/ui-ux/13-accessibility-basics.md",
+        "ai-harness/skills/frontend-design/SKILL.md",
+        "ai-harness/skills/design-craft-notion/SKILL.md",
+        "ai-harness/skills/ui-ux-testing/SKILL.md"
       ]
     },
     "testgen": {
@@ -40,6 +55,13 @@
     }
   },
   "slices": {
+    "playwright-ui-workspace": {
+      "agent": "infra",
+      "docs": [
+        "ai-harness/docs/playwright-regression.md",
+        "docs/technical/11-testing-plan.md"
+      ]
+    },
     "repo-monorepo-bootstrap": {
       "agent": "infra",
       "docs": [
@@ -84,6 +106,14 @@
         "docs/technical/02-module-breakdown.md",
         "docs/technical/05-api-design.md",
         "docs/technical/08-validation-rules.md"
+      ]
+    },
+    "module-user-csv-import": {
+      "agent": "backend",
+      "docs": [
+        "docs/technical/05-api-design.md",
+        "docs/technical/08-validation-rules.md",
+        "docs/technical/03-domain-model.md"
       ]
     },
     "module-session-management": {
@@ -132,7 +162,11 @@
         "docs/ui-ux/00-production-ui-quality-bar.md",
         "docs/ui-ux/04-design-tokens.md",
         "docs/ui-ux/06-app-layout-components.md",
-        "docs/ui-ux/05-common-ui-components.md"
+        "docs/ui-ux/05-common-ui-components.md",
+        "docs/ui-ux/13-accessibility-basics.md",
+        "ai-harness/docs/ui-visual-verification.md",
+        "ai-harness/skills/design-craft-notion/SKILL.md",
+        "docs/technical/01-roles-permissions.md"
       ]
     },
     "web-auth-login": {
@@ -140,23 +174,38 @@
       "docs": [
         "docs/ui-ux/09-page-list.md",
         "docs/ui-ux/10-user-flows.md",
-        "docs/ui-ux/08-forms-validation-ux.md"
+        "docs/ui-ux/08-forms-validation-ux.md",
+        "ai-harness/docs/ui-visual-verification.md"
+      ]
+    },
+    "web-auth-logout": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/05-common-ui-components.md",
+        "docs/ui-ux/06-app-layout-components.md",
+        "docs/ui-ux/10-user-flows.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/12-backend-frontend-tech-stack.md"
       ]
     },
     "web-student-checkin": {
       "agent": "frontend",
       "docs": [
+        "docs/demo-guides.md",
         "docs/ui-ux/09-page-list.md",
         "docs/ui-ux/10-user-flows.md",
         "docs/ui-ux/07-event-specific-components.md",
-        "docs/ui-ux/12-ui-states.md"
+        "docs/ui-ux/12-ui-states.md",
+        "docs/technical/10-local-development-setup.md"
       ]
     },
     "web-student-history": {
       "agent": "frontend",
       "docs": [
         "docs/ui-ux/09-page-list.md",
-        "docs/ui-ux/12-ui-states.md"
+        "docs/ui-ux/12-ui-states.md",
+        "docs/ui-ux/14-listing-pages-search-filter-sort.md",
+        "ai-harness/skills/design-craft-notion/SKILL.md"
       ]
     },
     "web-instructor-sessions": {
@@ -164,7 +213,9 @@
       "docs": [
         "docs/ui-ux/09-page-list.md",
         "docs/ui-ux/08-forms-validation-ux.md",
-        "docs/ui-ux/07-event-specific-components.md"
+        "docs/ui-ux/07-event-specific-components.md",
+        "docs/ui-ux/14-listing-pages-search-filter-sort.md",
+        "ai-harness/skills/design-craft-notion/SKILL.md"
       ]
     },
     "web-instructor-qr-display": {
@@ -180,7 +231,9 @@
       "docs": [
         "docs/ui-ux/09-page-list.md",
         "docs/ui-ux/07-event-specific-components.md",
-        "docs/ui-ux/12-ui-states.md"
+        "docs/ui-ux/12-ui-states.md",
+        "docs/ui-ux/14-listing-pages-search-filter-sort.md",
+        "ai-harness/skills/design-craft-notion/SKILL.md"
       ]
     },
     "web-instructor-attendance-roster": {
@@ -188,35 +241,51 @@
       "docs": [
         "docs/ui-ux/09-page-list.md",
         "docs/ui-ux/07-event-specific-components.md",
-        "docs/ui-ux/08-forms-validation-ux.md"
+        "docs/ui-ux/08-forms-validation-ux.md",
+        "docs/ui-ux/14-listing-pages-search-filter-sort.md",
+        "ai-harness/skills/design-craft-notion/SKILL.md"
       ]
     },
     "web-instructor-reports": {
       "agent": "frontend",
       "docs": [
         "docs/ui-ux/09-page-list.md",
-        "docs/ui-ux/14-listing-pages-search-filter-sort.md"
+        "docs/ui-ux/14-listing-pages-search-filter-sort.md",
+        "ai-harness/skills/design-craft-notion/SKILL.md"
       ]
     },
     "web-admin-users": {
       "agent": "frontend",
       "docs": [
         "docs/ui-ux/09-page-list.md",
-        "docs/ui-ux/08-forms-validation-ux.md"
+        "docs/ui-ux/08-forms-validation-ux.md",
+        "docs/ui-ux/14-listing-pages-search-filter-sort.md",
+        "ai-harness/skills/design-craft-notion/SKILL.md"
+      ]
+    },
+    "web-admin-users-import": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/08-forms-validation-ux.md",
+        "docs/ui-ux/10-user-flows.md"
       ]
     },
     "web-admin-rosters": {
       "agent": "frontend",
       "docs": [
         "docs/ui-ux/09-page-list.md",
-        "docs/ui-ux/08-forms-validation-ux.md"
+        "docs/ui-ux/08-forms-validation-ux.md",
+        "docs/ui-ux/14-listing-pages-search-filter-sort.md",
+        "ai-harness/skills/design-craft-notion/SKILL.md"
       ]
     },
     "web-admin-reports-export": {
       "agent": "frontend",
       "docs": [
         "docs/ui-ux/09-page-list.md",
-        "docs/ui-ux/14-listing-pages-search-filter-sort.md"
+        "docs/ui-ux/14-listing-pages-search-filter-sort.md",
+        "ai-harness/skills/design-craft-notion/SKILL.md"
       ]
     },
     "web-admin-policy": {
@@ -224,6 +293,85 @@
       "docs": [
         "docs/ui-ux/09-page-list.md",
         "docs/ui-ux/08-forms-validation-ux.md"
+      ]
+    },
+    "module-identity-bootstrap": {
+      "agent": "backend",
+      "docs": [
+        "docs/technical/05-api-design.md",
+        "docs/technical/08-validation-rules.md",
+        "docs/technical/02-module-breakdown.md"
+      ]
+    },
+    "web-admin-bootstrap": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/10-user-flows.md",
+        "docs/ui-ux/08-forms-validation-ux.md"
+      ]
+    },
+    "module-class-management": {
+      "agent": "backend",
+      "docs": [
+        "docs/technical/05-api-design.md",
+        "docs/technical/08-validation-rules.md",
+        "docs/technical/03-domain-model.md"
+      ]
+    },
+    "module-checkin-qr-preflight": {
+      "agent": "backend",
+      "docs": [
+        "docs/technical/05-api-design.md",
+        "docs/technical/08-validation-rules.md",
+        "docs/technical/06-main-workflows.md"
+      ]
+    },
+    "web-admin-classes": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/10-user-flows.md",
+        "docs/ui-ux/08-forms-validation-ux.md",
+        "docs/ui-ux/14-listing-pages-search-filter-sort.md",
+        "ai-harness/skills/design-craft-notion/SKILL.md"
+      ]
+    },
+    "web-admin-subjects": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/10-user-flows.md",
+        "docs/ui-ux/08-forms-validation-ux.md",
+        "docs/ui-ux/14-listing-pages-search-filter-sort.md",
+        "ai-harness/skills/design-craft-notion/SKILL.md"
+      ]
+    },
+    "web-visual-refresh-v2": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/DESIGN.md",
+        "docs/ui-ux/01-design-overview.md",
+        "docs/ui-ux/03-design-system-basics.md",
+        "docs/ui-ux/04-design-tokens.md",
+        "docs/ui-ux/05-common-ui-components.md",
+        "docs/ui-ux/06-app-layout-components.md",
+        "docs/ui-ux/13-accessibility-basics.md",
+        "ai-harness/docs/ui-visual-verification.md",
+        "ai-harness/skills/frontend-design/SKILL.md",
+        "ai-harness/skills/design-craft-notion/SKILL.md"
+      ]
+    },
+    "web-role-navigation": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/06-app-layout-components.md",
+        "docs/ui-ux/05-common-ui-components.md",
+        "docs/ui-ux/01-ui-ux-foundation.md",
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/11-wireframes.md",
+        "docs/technical/01-roles-permissions.md",
+        "ai-harness/skills/design-craft-notion/SKILL.md"
       ]
     },
     "e2e-acceptance-suite": {

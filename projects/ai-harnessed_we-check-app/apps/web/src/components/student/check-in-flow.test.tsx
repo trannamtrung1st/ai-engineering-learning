@@ -22,6 +22,7 @@ vi.mock("@/lib/geolocation", async (importOriginal) => {
 
 vi.mock("@/lib/check-in-api", () => ({
   submitCheckInWithRetry: vi.fn(),
+  fetchCheckInPreflight: vi.fn(),
 }));
 
 vi.mock("@/lib/preview-sim", async (importOriginal) => {
@@ -37,11 +38,34 @@ vi.mock("@/lib/session-monitor-api", () => ({
   previewExpireSession: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock("@/lib/sessions-api", () => ({
+  fetchSession: vi.fn().mockResolvedValue({
+    id: "sess-1",
+    instructorId: "inst-1",
+    classId: "class-1",
+    subjectId: "subject-1",
+    status: "Active",
+    classCode: "HESD-01",
+    className: "HESD Cohort A",
+    subjectCode: "SWE-101",
+    subjectName: "Software Engineering 101",
+    title: "Test",
+    roomName: "A101",
+    roomLatitude: 10.762622,
+    roomLongitude: 106.660172,
+    gpsRadiusMeters: 100,
+    scheduledStart: "2026-06-15T08:00:00.000Z",
+    openedAt: "2026-06-15T08:00:00.000Z",
+    closedAt: null,
+  }),
+}));
+
 import { fetchAuthUser } from "@/lib/auth-session";
 import { captureGeolocation } from "@/lib/geolocation";
-import { submitCheckInWithRetry } from "@/lib/check-in-api";
+import { submitCheckInWithRetry, fetchCheckInPreflight } from "@/lib/check-in-api";
 import { readExpireSessionOnSubmit, readMockLocationDetected } from "@/lib/preview-sim";
 import { previewExpireSession } from "@/lib/session-monitor-api";
+import { fetchSession } from "@/lib/sessions-api";
 
 /** AC-02, AC-07, AC-08, AC-09, AC-10, FR-07, FR-08, NFR-18, NFR-19 */
 describe("CheckInFlow (AC-07, AC-08, FR-07, FR-08, NFR-18, NFR-19)", () => {
@@ -69,6 +93,7 @@ describe("CheckInFlow (AC-07, AC-08, FR-07, FR-08, NFR-18, NFR-19)", () => {
       position: { latitude: 10.7627, longitude: 106.6602, accuracyMeters: 12 },
     });
     vi.mocked(submitCheckInWithRetry).mockResolvedValue({ outcome: "Present" });
+    vi.mocked(fetchCheckInPreflight).mockResolvedValue({ ok: true, outcome: "Present" });
   });
 
   afterEach(() => {
@@ -128,35 +153,63 @@ describe("CheckInFlow (AC-07, AC-08, FR-07, FR-08, NFR-18, NFR-19)", () => {
     });
   });
 
-  it("shows ExpiredQr outcome for stale token from API (BR-03, AC-09)", async () => {
-    vi.mocked(submitCheckInWithRetry).mockResolvedValue({ outcome: "ExpiredQr" });
-    renderFlow(`/check-in?token=stale-token-id`);
-
-    const submit = await screen.findByTestId("check-in-submit");
-    await waitFor(() => {
-      expect(submit).not.toBeDisabled();
+  it("shows ExpiredQr outcome for stale token from preflight (BR-03, AC-06, AC-09)", async () => {
+    vi.mocked(fetchCheckInPreflight).mockResolvedValue({
+      ok: false,
+      outcome: "ExpiredQr",
+      message: "Mã QR đã hết hạn, vui lòng quét mã mới",
     });
-    fireEvent.click(submit);
+    renderFlow(`/check-in?token=stale-token-id`);
 
     await waitFor(() => {
       expect(screen.getByTestId("check-in-outcome-ExpiredQr")).toBeInTheDocument();
     });
+    expect(screen.queryByTestId("gps-capture-step")).not.toBeInTheDocument();
+    expect(submitCheckInWithRetry).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Quét lại" })).toBeInTheDocument();
   });
 
-  it("shows TokenAlreadyUsed for consumed token from API (BR-11, AC-09)", async () => {
-    vi.mocked(submitCheckInWithRetry).mockResolvedValue({ outcome: "TokenAlreadyUsed" });
-    renderFlow(`/check-in?token=consumed-token-id`);
-
-    const submit = await screen.findByTestId("check-in-submit");
-    await waitFor(() => {
-      expect(submit).not.toBeDisabled();
+  it("shows SessionNotActive for closed session deep link (TC-AC-05-023, AC-05)", async () => {
+    vi.mocked(fetchSession).mockResolvedValue({
+      id: "30000000-0000-4000-8000-000000000303",
+      instructorId: "00000000-0000-4000-8000-000000000002",
+      classId: "10000000-0000-4000-8000-000000000101",
+      subjectId: "20000000-0000-4000-8000-000000000201",
+      status: "Closed",
+      classCode: "HESD-01",
+      className: "HESD Cohort A",
+      subjectCode: "SWE-101",
+      subjectName: "Software Engineering 101",
+      title: "NET-301",
+      roomName: "C301",
+      roomLatitude: 10.762622,
+      roomLongitude: 106.660172,
+      gpsRadiusMeters: 100,
+      scheduledStart: "2026-06-15T08:00:00.000Z",
+      openedAt: "2026-06-15T06:00:00.000Z",
+      closedAt: "2026-06-15T08:00:00.000Z",
     });
-    fireEvent.click(submit);
+    renderFlow(`/check-in?token=stale-token-id&session=sess-3`);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("check-in-outcome-SessionNotActive")).toBeInTheDocument();
+    });
+    expect(submitCheckInWithRetry).not.toHaveBeenCalled();
+  });
+
+  it("shows TokenAlreadyUsed for consumed token from preflight (BR-11, AC-09)", async () => {
+    vi.mocked(fetchCheckInPreflight).mockResolvedValue({
+      ok: false,
+      outcome: "TokenAlreadyUsed",
+      message: "Mã QR đã được sử dụng",
+    });
+    renderFlow(`/check-in?token=consumed-token-id`);
 
     await waitFor(() => {
       expect(screen.getByTestId("check-in-outcome-TokenAlreadyUsed")).toBeInTheDocument();
     });
+    expect(screen.queryByTestId("gps-capture-step")).not.toBeInTheDocument();
+    expect(submitCheckInWithRetry).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Quét lại" })).toBeInTheDocument();
   });
 
@@ -324,19 +377,19 @@ describe("CheckInFlow (AC-07, AC-08, FR-07, FR-08, NFR-18, NFR-19)", () => {
     });
   });
 
-  it("shows NotEnrolled outcome from API (AC-07, FR-07)", async () => {
-    vi.mocked(submitCheckInWithRetry).mockResolvedValue({ outcome: "NotEnrolled" });
-    renderFlow(`/check-in?token=${PREVIEW_TOKEN_IDS.valid}`);
-
-    const submit = await screen.findByTestId("check-in-submit");
-    await waitFor(() => {
-      expect(submit).not.toBeDisabled();
+  it("shows NotEnrolled outcome from preflight (AC-07, FR-07)", async () => {
+    vi.mocked(fetchCheckInPreflight).mockResolvedValue({
+      ok: false,
+      outcome: "NotEnrolled",
+      message: "Bạn không thuộc danh sách lớp của buổi học này",
     });
-    fireEvent.click(submit);
+    renderFlow(`/check-in?token=${PREVIEW_TOKEN_IDS.valid}`);
 
     await waitFor(() => {
       expect(screen.getByTestId("check-in-outcome-NotEnrolled")).toBeInTheDocument();
     });
+    expect(screen.queryByTestId("gps-capture-step")).not.toBeInTheDocument();
+    expect(submitCheckInWithRetry).not.toHaveBeenCalled();
   });
 
   it("shows OutOfRadius outcome from API (AC-08, BR-02)", async () => {
@@ -467,17 +520,16 @@ describe("CheckInFlow (AC-07, AC-08, FR-07, FR-08, NFR-18, NFR-19)", () => {
   });
 
   it("recovers from ExpiredQr via Quét lại and fresh scan (TC-BR-03-018)", async () => {
-    vi.mocked(submitCheckInWithRetry)
-      .mockResolvedValueOnce({ outcome: "ExpiredQr" })
-      .mockResolvedValueOnce({ outcome: "Present" });
+    vi.mocked(fetchCheckInPreflight)
+      .mockResolvedValueOnce({
+        ok: false,
+        outcome: "ExpiredQr",
+        message: "Mã QR đã hết hạn, vui lòng quét mã mới",
+      })
+      .mockResolvedValue({ ok: true, outcome: "Present" });
+    vi.mocked(submitCheckInWithRetry).mockResolvedValue({ outcome: "Present" });
 
     renderFlow(`/check-in?token=stale-token-id`);
-
-    const submit = await screen.findByTestId("check-in-submit");
-    await waitFor(() => {
-      expect(submit).not.toBeDisabled();
-    });
-    fireEvent.click(submit);
 
     await waitFor(() => {
       expect(screen.getByTestId("check-in-outcome-ExpiredQr")).toBeInTheDocument();

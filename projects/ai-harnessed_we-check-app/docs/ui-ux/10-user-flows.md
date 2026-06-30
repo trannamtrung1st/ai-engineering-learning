@@ -33,7 +33,9 @@ flowchart TD
     D --> E[Return to check-in with token]
     B -->|Yes| E
     E --> F[QrScannerView — scan QR]
-    F --> G[GpsCaptureStep — acquire location]
+    F --> PF{Preflight OK?}
+    PF -->|No| F
+    PF -->|Yes| G[GpsCaptureStep — acquire location]
     G --> H[Submit check-in API]
     H --> I[CheckInOutcomePanel — Present]
 ```
@@ -42,9 +44,10 @@ flowchart TD
 | --- | --- | --- | --- |
 | 1 | Deep link or `/check-in` | Student opens app | If no session, redirect to login preserving `returnUrl` ([AC-02a](../brds/08-acceptance-mvp-future.md)) |
 | 2 | `/login` | Enter email and password | On success, redirect to check-in with token ([AC-02b](../brds/08-acceptance-mvp-future.md)) |
-| 3 | `/check-in/scan` | Point camera at projected QR | Decode token; advance to GPS step |
-| 4 | GPS step | Grant location permission if prompted | Acquire coordinates within **15 s** timeout |
-| 5 | GPS step | Auto-submit | API validates enrollment, token, radius, duplicate rules |
+| 3 | `/check-in/scan` | Point camera at projected QR | Decode token; call `GET /check-in/tokens/:tokenId/preflight` ([BR-15](../brds/04-business-rules.md)) |
+| 3b | Scan step (preflight fail) | — | Remain on scan or show outcome; **do not** mount GPS step ([AC-07d](../brds/08-acceptance-mvp-future.md)) |
+| 4 | GPS step | Grant location permission if prompted | Acquire coordinates within **15 s** timeout; `ready` state shows check icon **without** spinner ([AC-08f](../brds/08-acceptance-mvp-future.md)) |
+| 5 | GPS step | Tap **Xác nhận điểm danh** | Submit API; spinner only during `submitting` ([AC-08g](../brds/08-acceptance-mvp-future.md)) |
 | 6 | Outcome panel | View confirmation | Show *Điểm danh thành công* with session name and timestamp ([AC-07a](../brds/08-acceptance-mvp-future.md)) |
 
 **Exit:** Student returns to scanner via **Quét mã khác** or navigates to `/history` via bottom nav.
@@ -180,6 +183,31 @@ From `Draft` session: **Hủy buổi học** → confirm → `Cancelled` termina
 | — | Duplicate student ID | Field error; no duplicate record ([AC-01b](../brds/08-acceptance-mvp-future.md)) |
 | 4 | Edit user → toggle **Ngừng hoạt động** | `active=false`; login blocked ([AC-01c](../brds/08-acceptance-mvp-future.md)) |
 
+### 8a. Flow — Admin User CSV Import
+
+**Actors:** `TrainingOfficeAdmin`  
+**Routes:** `/admin/users`, `/admin/users/import`  
+**Traces:** [FR-01](../brds/03-functional-requirements.md) · [AC-01d](../brds/08-acceptance-mvp-future.md), [AC-01e](../brds/08-acceptance-mvp-future.md)
+
+```mermaid
+flowchart TD
+    A[Select CSV file] --> B[Client validate columns]
+    B --> C[Preview table with create/update/error status]
+    C --> D{User confirms import?}
+    D -->|Yes| E[POST /users/import API]
+    E --> F[Import summary: created / updated / rejected counts]
+    D -->|No| A
+```
+
+| Step | Action | Result |
+| --- | --- | --- |
+| 1 | **Nhập CSV** from user list page | Upload panel |
+| 2 | Select file | Preview valid/invalid rows; existing IDs marked for update |
+| 3 | **Xác nhận nhập** | Upsert by `institutional_id`; partial success allowed ([AC-01g](../brds/08-acceptance-mvp-future.md)) |
+| 4 | Summary screen | Show `createdCount`, `updatedCount`, rejected counts ([AC-01d](../brds/08-acceptance-mvp-future.md)) |
+
+**Note:** Provision users via this flow before roster CSV import when cohort exceeds manual form capacity.
+
 ---
 
 ## 9. Flow — Admin Roster Import
@@ -236,18 +264,88 @@ flowchart TD
 
 ---
 
-## 12. Cross-Flow Dependencies
+## 12. Flow — First Admin Bootstrap
+
+**Actors:** Unauthenticated visitor  
+**Entry:** Fresh deployment (`User.count = 0`)  
+**Traces:** [FR-17](../brds/03-functional-requirements.md) · [BR-13](../brds/04-business-rules.md) · [AC-17](../brds/08-acceptance-mvp-future.md)
+
+| Step | Screen | Action | System response |
+| --- | --- | --- | --- |
+| 1 | Any route | Visitor opens app | `GET /setup/status` → `needsSetup: true`; redirect to `/setup` |
+| 2 | `/setup` | Complete `SetupAdminForm` | `POST /setup/first-admin` creates admin + session |
+| 3 | `/admin` | Land on admin hub | Bootstrap complete; `/setup` no longer available |
+
+---
+
+## 13. Flow — Permission-Gated Navigation
+
+**Actors:** All authenticated roles  
+**Traces:** [FR-18](../brds/03-functional-requirements.md) · [BR-14](../brds/04-business-rules.md) · [AC-18](../brds/08-acceptance-mvp-future.md)
+
+| Step | Action | Expected |
+| --- | --- | --- |
+| 1 | Login as role | Redirect to role home (`/check-in`, `/sessions`, `/admin`) |
+| 2 | Inspect layout chrome | Only permitted nav items rendered; zero `/admin` links for non-admin |
+| 3 | Direct URL to forbidden route | `ForbiddenPage`; chrome never showed forbidden link |
+
+### 13.1 Unauthenticated route discovery
+
+**Actors:** Unauthenticated visitor  
+**Traces:** [FR-18](../brds/03-functional-requirements.md) · [AC-18f](../brds/08-acceptance-mvp-future.md) · [AC-18g](../brds/08-acceptance-mvp-future.md)
+
+| Step | Action | Expected |
+| --- | --- | --- |
+| 1 | Visitor opens `/` | `ShellOverviewPage` showcase + `RouteDiscoveryPanel` with four entry links |
+| 2 | Tap **Điểm danh**, **Buổi học**, or **Quản trị** without session | Redirect to `/login?returnUrl=…` per [BR-06](../brds/04-business-rules.md) |
+| 3 | Tap **Đăng nhập** | Navigate to `/login` |
+| 4 | Authenticated user opens `/` | Redirect to role home per AC-18e; discovery panel not shown |
+
+---
+
+## 14. Flow — Logout
+
+**Actors:** All authenticated roles  
+**Traces:** [FR-02](../brds/03-functional-requirements.md) · [BR-06](../brds/04-business-rules.md) · [AC-02d](../brds/08-acceptance-mvp-future.md), [AC-02e](../brds/08-acceptance-mvp-future.md)
+
+| Step | Action | System response |
+| --- | --- | --- |
+| 1 | User on any authenticated shell | `UserMenu` visible in header |
+| 2 | Open UserMenu | Identity panel shows `displayName`, `email`, `institutionalId`, and localized role from `/auth/me` |
+| 3 | Tap **Đăng xuất** | `POST /auth/logout` → 204; session cookie cleared |
+| 4 | — | Redirect to `/login` (no `returnUrl`); protected routes redirect to login ([BR-06](../brds/04-business-rules.md)) |
+
+---
+
+## 15. Flow — Admin Class and Subject Catalog Bootstrap
+
+**Actors:** `TrainingOfficeAdmin`  
+**Traces:** [FR-03](../brds/03-functional-requirements.md) · [AC-03d](../brds/08-acceptance-mvp-future.md)–[AC-03f](../brds/08-acceptance-mvp-future.md)
+
+| Step | Screen | Action |
+| --- | --- | --- |
+| 1 | `/admin` hub | Tap **Lớp học** or **Môn học** |
+| 2a | `/admin/classes` → `/admin/classes/new` | Submit `ClassForm` with code `HESD-03` |
+| 2b | `/admin/subjects` → `/admin/subjects/new` | Submit `SubjectForm` with code `SWE-102` |
+| 3 | Catalog lists | New records visible on `/admin/classes` and `/admin/subjects` |
+| 4 | Roster import (§9) | CSV rows reference existing class and subject codes |
+
+Class and subject are **independent** — create each separately; many classes may share one subject code in import rows ([AC-03h](../brds/08-acceptance-mvp-future.md)).
+
+---
+
+## 16. Cross-Flow Dependencies
 
 | Dependency | Flows affected |
 | --- | --- |
-| Roster must exist before check-in | Admin import (§9) → Student check-in (§2) |
+| Roster must exist before check-in | Admin class create (§15) + import (§9) → Student check-in (§2) |
 | Session must be `Active` with valid GPS | Instructor lifecycle (§5) → QR display → Student scan |
 | Auth session **8 h** idle timeout | All authenticated flows ([AC-02c](../brds/08-acceptance-mvp-future.md)) |
 | Instructor assignment | Reports (§7), roster tab access ([AC-03c](../brds/08-acceptance-mvp-future.md)) |
 
 ---
 
-## 13. Future Consideration
+## 17. Future Consideration
 
 - Dedicated `/onboarding/permissions` first-run tutorial for camera/GPS ([08-acceptance-mvp-future.md](../brds/08-acceptance-mvp-future.md) §8).
 - PIN fallback check-in flow when device battery dead.

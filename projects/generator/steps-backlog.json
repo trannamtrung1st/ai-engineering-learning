@@ -2,7 +2,7 @@
   "steps": [
     {
       "id": "input-validate",
-      "passes": true,
+      "passes": false,
       "priority": 0,
       "phase": 0,
       "kind": "agent",
@@ -22,7 +22,7 @@
     },
     {
       "id": "brd-mvp-prompt",
-      "passes": true,
+      "passes": false,
       "priority": 10,
       "phase": 1,
       "kind": "agent",
@@ -44,7 +44,7 @@
     },
     {
       "id": "brd-foundation",
-      "passes": true,
+      "passes": false,
       "priority": 11,
       "phase": 1,
       "kind": "agent",
@@ -68,7 +68,7 @@
     },
     {
       "id": "brd-workflows-fr",
-      "passes": true,
+      "passes": false,
       "priority": 12,
       "phase": 1,
       "kind": "agent",
@@ -93,7 +93,7 @@
     },
     {
       "id": "brd-rules-states-domain",
-      "passes": true,
+      "passes": false,
       "priority": 13,
       "phase": 1,
       "kind": "agent",
@@ -118,7 +118,7 @@
     },
     {
       "id": "brd-nfr-acceptance",
-      "passes": true,
+      "passes": false,
       "priority": 14,
       "phase": 1,
       "kind": "agent",
@@ -143,7 +143,7 @@
     },
     {
       "id": "brd-consistency-gate",
-      "passes": true,
+      "passes": false,
       "priority": 15,
       "phase": 1,
       "kind": "gate",
@@ -161,7 +161,7 @@
     },
     {
       "id": "tech-overview-modules",
-      "passes": true,
+      "passes": false,
       "priority": 20,
       "phase": 2,
       "kind": "agent",
@@ -186,7 +186,7 @@
     },
     {
       "id": "tech-domain-db",
-      "passes": true,
+      "passes": false,
       "priority": 21,
       "phase": 2,
       "kind": "agent",
@@ -209,7 +209,7 @@
     },
     {
       "id": "tech-api-workflows",
-      "passes": true,
+      "passes": false,
       "priority": 22,
       "phase": 2,
       "kind": "agent",
@@ -234,7 +234,7 @@
     },
     {
       "id": "tech-quality-runtime",
-      "passes": true,
+      "passes": false,
       "priority": 23,
       "phase": 2,
       "kind": "agent",
@@ -261,7 +261,7 @@
     },
     {
       "id": "tech-consistency-gate",
-      "passes": true,
+      "passes": false,
       "priority": 24,
       "phase": 2,
       "kind": "gate",
@@ -278,8 +278,31 @@
       ]
     },
     {
+      "id": "uiux-design-md",
+      "passes": false,
+      "priority": 29,
+      "phase": 3,
+      "kind": "agent",
+      "agent": "doc-writer",
+      "description": "Design spec (DESIGN.md) — customize preamble and map product surfaces to design tokens",
+      "outputs": [
+        "docs/ui-ux/DESIGN.md"
+      ],
+      "contextDocs": [
+        "docs/product-meta.json",
+        "docs/brds/prompt.md",
+        "docs/brds/01-stakeholders-scope.md"
+      ],
+      "validators": [
+        "outputs-exist",
+        "doc-structure",
+        "placeholder-scan",
+        "no-generator-refs"
+      ]
+    },
+    {
       "id": "uiux-foundation-system",
-      "passes": true,
+      "passes": false,
       "priority": 30,
       "phase": 3,
       "kind": "agent",
@@ -296,6 +319,7 @@
         "docs/ui-ux/06-app-layout-components.md"
       ],
       "contextDocs": [
+        "docs/ui-ux/DESIGN.md",
         "docs/brds/prompt.md",
         "docs/technical/12-backend-frontend-tech-stack.md"
       ],
@@ -308,7 +332,7 @@
     },
     {
       "id": "uiux-components-pages",
-      "passes": true,
+      "passes": false,
       "priority": 31,
       "phase": 3,
       "kind": "agent",
@@ -333,7 +357,7 @@
     },
     {
       "id": "uiux-flows-wireframes-states",
-      "passes": true,
+      "passes": false,
       "priority": 32,
       "phase": 3,
       "kind": "agent",
@@ -347,6 +371,7 @@
         "docs/ui-ux/14-listing-pages-search-filter-sort.md"
       ],
       "contextDocs": [
+        "docs/ui-ux/DESIGN.md",
         "docs/brds/08-acceptance-mvp-future.md",
         "docs/ui-ux/09-page-list.md"
       ],
@@ -359,7 +384,7 @@
     },
     {
       "id": "uiux-consistency-gate",
-      "passes": true,
+      "passes": false,
       "priority": 33,
       "phase": 3,
       "kind": "gate",
@@ -377,7 +402,7 @@
     },
     {
       "id": "harness-scaffold",
-      "passes": true,
+      "passes": false,
       "priority": 40,
       "phase": 4,
       "kind": "scaffold",
@@ -394,7 +419,7 @@
     },
     {
       "id": "harness-backlog",
-      "passes": true,
+      "passes": false,
       "priority": 41,
       "phase": 4,
       "kind": "agent",
@@ -418,7 +443,7 @@
     },
     {
       "id": "harness-context-maps",
-      "passes": true,
+      "passes": false,
       "priority": 42,
       "phase": 4,
       "kind": "agent",
@@ -443,7 +468,7 @@
     },
     {
       "id": "harness-customize-agents",
-      "passes": true,
+      "passes": false,
       "priority": 43,
       "phase": 4,
       "kind": "scaffold",
@@ -465,7 +490,7 @@
     },
     {
       "id": "repo-bootstrap",
-      "passes": true,
+      "passes": false,
       "priority": 50,
       "phase": 5,
       "kind": "scaffold",

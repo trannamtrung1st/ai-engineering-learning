@@ -69,6 +69,7 @@ Copy `.env.example` to `.env` at repository root. **Never commit `.env`.**
 | `NODE_ENV` | No | `development` | API / build |
 | `CORS_ORIGIN` | No | `http://localhost:3000` | API CORS |
 | `SEED_ENABLED` | No | `true` | Run seed on API startup |
+| `VITE_ENABLE_DEVICE_SIMULATION` | No | `true` in dev/E2E; `false` in production | Opt-in camera/GPS query-param simulation ([NFR-24](../brds/07-non-functional-risk.md)) |
 | `DEV_AUTH_BYPASS` | No | `false` | Must remain `false` for check-in path testing |
 | `LOG_LEVEL` | No | `debug` | Structured logging |
 | `TZ` | No | `UTC` | Deterministic time in tests |
@@ -111,6 +112,10 @@ npm run db:seed --workspace @wecheck/api
 ```
 
 When `SEED_ENABLED=true`, seed runs automatically on `npm run dev`.
+
+**Fresh DB bootstrap path:** Set `SEED_ENABLED=false`, start API with empty database, visit `/setup` to create first admin ([FR-17](../brds/03-functional-requirements.md)). Preview demos use seeded data; bootstrap path is for greenfield deploy rehearsal.
+
+**Device simulation:** Set `VITE_ENABLE_DEVICE_SIMULATION=true` in web `.env` for local check-in testing with query params documented in [demo-guides.md](../demo-guides.md) §7. Production builds must set this to `false` ([NFR-24](../brds/07-non-functional-risk.md)).
 
 ### 5.4 Start application services
 

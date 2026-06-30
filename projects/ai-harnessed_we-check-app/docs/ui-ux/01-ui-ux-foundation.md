@@ -64,6 +64,8 @@ Full strings live in `@wecheck/domain` message catalog ([NFR-17](../brds/07-non-
 | [BR-09](../brds/04-business-rules.md) | CSV export control hidden or disabled for non-admin roles |
 | [BR-10](../brds/04-business-rules.md) | Manual edit shows **24-hour** window notice; requires reason |
 | [BR-12](../brds/04-business-rules.md) | GPS denial → modal with OS-specific enable steps |
+| [BR-14](../brds/04-business-rules.md) | Nav items for forbidden routes omitted from chrome — not disabled |
+| [BR-15](../brds/04-business-rules.md) | Preflight failure keeps user on scan step; no GPS mount |
 
 ---
 
@@ -75,7 +77,7 @@ Full strings live in `@wecheck/domain` message catalog ([NFR-17](../brds/07-non-
 | --- | --- | --- |
 | `Student` | `StudentLayout` — bottom nav or minimal header | `/check-in` or `/history` |
 | `Instructor` | `InstructorLayout` — sidebar + top bar | `/sessions` |
-| `TrainingOfficeAdmin` | `AdminLayout` — sidebar + top bar | `/admin/users` |
+| `TrainingOfficeAdmin` | `AdminLayout` — sidebar + top bar | `/admin` hub |
 
 Layout component specs: [06-app-layout-components.md](./06-app-layout-components.md).
 
@@ -83,7 +85,8 @@ Layout component specs: [06-app-layout-components.md](./06-app-layout-components
 
 - Maximum **2 levels** of hierarchy in primary nav for MVP.
 - Current location always visible (breadcrumb or active nav item).
-- Logout and user display name in header on all authenticated shells.
+- **Singleton active indicator:** At most **one** primary nav item (sidebar or bottom nav) shows active styling per layout shell. The active item must reflect the **most specific** matching route — sibling prefix routes must not both appear active ([BR-14a](../brds/04-business-rules.md), [AC-18h](../brds/08-acceptance-mvp-future.md)).
+- Logout and user display name in header on all authenticated shells. Display name appears on the UserMenu trigger; full identity (name, email, institutional ID, role) appears inside the dropdown panel ([05-common-ui-components.md](./05-common-ui-components.md) §6.3).
 - Student check-in route suppresses distracting nav during active scan.
 
 ---
@@ -124,11 +127,13 @@ Layout component specs: [06-app-layout-components.md](./06-app-layout-components
 
 Student check-in ([FR-07](../brds/03-functional-requirements.md), [FR-08](../brds/03-functional-requirements.md)) follows a linear step model:
 
-1. **Context** — session title, room, time window.
+1. **Context** — session title, room, time window (after preflight pass).
 2. **Permissions** — camera and GPS consent with privacy note (GPS not stored after validation per [NFR-12](../brds/07-non-functional-risk.md)).
 3. **Scan** — camera viewfinder with QR overlay.
-4. **Submit** — GPS fetch + API call with loading state.
-5. **Outcome** — result screen with icon, message, and next action.
+4. **Preflight** — `GET /check-in/tokens/:tokenId/preflight`; inline validating state on scan step; failures stay on scan ([BR-15](../brds/04-business-rules.md)).
+5. **GPS capture** — acquire coordinates; **ready** shows check icon without spinner ([AC-08f](../brds/08-acceptance-mvp-future.md)).
+6. **Submit** — explicit **Xác nhận điểm danh** tap; spinner only during `submitting`.
+7. **Outcome** — result screen with icon, message, and next action.
 
 No optimistic success. Network retry: up to **3** attempts within **30 s**.
 

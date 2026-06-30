@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-08",
   "version": 1,
-  "docFingerprint": "sha256:0d73282a1cdb989d80f39ac5119b0cf25b1a8cdaecf5bf1c99651680f31cc6b9",
-  "generatedAt": "2026-06-29T14:30:00Z",
+  "docFingerprint": "sha256:f2be054127cda5ab7ddfda342c8e7b3e55526aeddccbbae25889d8502f5dbe96",
+  "generatedAt": "2026-06-29T17:18:08Z",
   "cases": [
     {
       "id": "TC-AC-08-001",
@@ -337,10 +337,12 @@
       "preconditions": [
         "Authenticated Student on mobile viewport 375×812 (iOS Safari or Android Chrome)",
         "Active session check-in deep link /check-in?token=:tokenId&session=:sessionId",
+        "GET /api/v1/check-in/tokens/:tokenId/preflight returns 200 outcome Valid for enrolled student",
         "Browser geolocation granted with in-radius mock coordinates (10.762700, 106.660200)"
       ],
       "steps": [
         "Navigate to check-in page on mobile viewport",
+        "Verify validating_token inline spinner during preflight; GpsCaptureStep mounts only after preflight 200",
         "Verify GPS capture indicator shows coordinates acquired",
         "Tap submit control (Xác nhận điểm danh)",
         "Verify success panel with Present status after radius validation passes",
@@ -360,10 +362,11 @@
       "preconditions": [
         "Authenticated Student on mobile viewport with GPS permission granted",
         "Active session check-in deep link with valid token",
+        "Preflight returns 200 outcome Valid; GpsCaptureStep mounted",
         "Browser geolocation mocked to outside-radius coordinates (10.764122, 106.660172)"
       ],
       "steps": [
-        "Navigate to /check-in page and wait for GPS capture with outside coordinates",
+        "Navigate to /check-in page; wait for preflight pass then GPS capture with outside coordinates",
         "Submit check-in",
         "Verify outcome panel displays OutOfRadius state with message Bạn đang ngoài phạm vi phòng học",
         "Verify distance hint or move-closer guidance visible per user-flows §3",
@@ -418,6 +421,147 @@
       ],
       "expected": "AC-08d and NFR-12 enforced at persistence layer: distance logged for audit without long-term coordinate storage",
       "edgeCase": false
+    },
+    {
+      "id": "TC-AC-08-019",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["AC-08", "FR-08", "NFR-24"],
+      "title": "gpsSim query params ignored when VITE_ENABLE_DEVICE_SIMULATION=false",
+      "preconditions": [
+        "Web build compiled with VITE_ENABLE_DEVICE_SIMULATION=false (production default)",
+        "Authenticated enrolled Student session",
+        "Active session with valid QrToken; GET /check-in/tokens/:tokenId/preflight returns 200",
+        "Check-in deep link includes gpsSim=delay and gpsLat/gpsLng in-room coordinates"
+      ],
+      "steps": [
+        "Load /check-in?token=:tokenId&session=:sessionId&gpsSim=delay&gpsLat=10.762700&gpsLng=106.660200 with simulation flag off",
+        "Verify client does not auto-resolve simulated coordinates from query params",
+        "Verify browser geolocation API is invoked (or permission prompt shown) instead of simulation layer",
+        "Without granting real GPS, assert check-in cannot proceed to success solely from gpsSim params",
+        "Grant mocked geolocation in harness and complete successful POST /check-in with in-radius coords"
+      ],
+      "expected": "AC-08e satisfied: production builds ignore gpsSim URL params; client uses real navigator.geolocation per NFR-24 and demo-guides §7",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-08-020",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["AC-08", "FR-08"],
+      "title": "TS-21e: GpsCaptureStep ready state shows check icon without Spinner; aria-busy false; submit enabled",
+      "preconditions": [
+        "Authenticated enrolled Student on mobile viewport",
+        "Valid token deep link; preflight returns 200 outcome Valid",
+        "VITE_ENABLE_DEVICE_SIMULATION=true with gpsSim=delay query param for harness",
+        "GpsCaptureStep reaches gpsState ready with captured coordinates"
+      ],
+      "steps": [
+        "Navigate to /check-in?token=:tokenId&session=:sessionId&gpsSim=delay",
+        "Wait for preflight pass and GpsCaptureStep to reach ready substate",
+        "Assert copy Vị trí đã sẵn sàng is visible",
+        "Assert no Spinner element in GPS step region",
+        "Assert submit region aria-busy is false",
+        "Assert Xác nhận điểm danh button is enabled and clickable"
+      ],
+      "expected": "AC-08f satisfied: GPS ready-state UX per ui-states §4.2 and ui-ux §2.2 — static check icon, no spinner, submit enabled immediately when coordinates acquired",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-08-021",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["AC-08", "FR-08"],
+      "title": "GpsCaptureStep submitting substate shows spinner and disables submit until API outcome",
+      "preconditions": [
+        "Authenticated enrolled Student on mobile viewport",
+        "Valid token deep link; preflight passed; GpsCaptureStep in ready state with in-radius coordinates",
+        "VITE_ENABLE_DEVICE_SIMULATION=true or mocked geolocation granted"
+      ],
+      "steps": [
+        "Navigate to check-in page and wait for GpsCaptureStep ready state (Vị trí đã sẵn sàng)",
+        "Tap Xác nhận điểm danh submit control",
+        "Assert GpsCaptureStep enters submitting substate with spinner visible",
+        "Assert copy Đang gửi điểm danh… displayed",
+        "Assert submit region aria-busy is true and submit button disabled",
+        "Wait for POST /check-in response and assert transition to CheckInOutcomePanel"
+      ],
+      "expected": "AC-08g satisfied: submit in flight shows spinner and disables submit until API returns outcome per ui-states §4.2 submitting row",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-08-022",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["AC-08", "FR-08", "BR-15"],
+      "title": "CheckInFlow does not mount GpsCaptureStep until preflight returns outcome Valid",
+      "preconditions": [
+        "Authenticated enrolled Student on mobile viewport",
+        "Active session with valid unexpired QrToken for deep link /check-in?token=:tokenId&session=:sessionId",
+        "Network traceable to observe preflight request ordering"
+      ],
+      "steps": [
+        "Navigate to check-in deep link with valid token",
+        "Assert validating_token inline spinner on scan step while GET /api/v1/check-in/tokens/:tokenId/preflight is in flight",
+        "Assert data-testid gps-capture-step is absent until preflight returns HTTP 200 outcome Valid",
+        "After preflight 200, assert GpsCaptureStep mounts with session summary (class, subject, room)",
+        "Repeat with expired token: assert preflight fails with ExpiredQr and gps-capture-step never mounts"
+      ],
+      "expected": "BR-15 enforced in UI: GpsCaptureStep mounts only after preflight pass; GPS verification step unreachable on preflight failure per AC-07d cross-cut and AC-08 scope",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-08-023",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["AC-08", "FR-08", "BR-15"],
+      "title": "GET /check-in/tokens/:tokenId/preflight returns 200 for valid enrolled token on Active session",
+      "preconditions": [
+        "Real PostgreSQL with Active session, enrolled student, Valid unexpired QrToken",
+        "Authenticated Student session with checkin:submit permission",
+        "Preflight endpoint wired in checkin-qr module per module-breakdown §checkin-qr"
+      ],
+      "steps": [
+        "Invoke GET /api/v1/check-in/tokens/:tokenId/preflight with authenticated enrolled Student session",
+        "Assert HTTP status 200 and Content-Type application/json",
+        "Assert response outcome Valid with tokenId, sessionId, and session summary (classCode, subjectCode, roomName, status Active)",
+        "Query attendance_records and qr_tokens and assert no writes occurred (read-only preflight)"
+      ],
+      "expected": "Preflight 200 contract satisfied: enrolled student on Active session receives session context enabling GPS step; no DB mutations per API design §6.2 and BR-15",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-08-024",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["AC-08", "FR-08", "BR-15"],
+      "title": "Preflight rejects ExpiredQr, NotEnrolled, SessionMismatch, TokenNotFound before GPS step",
+      "preconditions": [
+        "Real PostgreSQL with Active session fixtures",
+        "Expired QrToken, valid token for wrong session, valid token for non-enrolled student, and unknown token UUID prepared",
+        "Authenticated Student sessions for enrolled and non-enrolled students"
+      ],
+      "steps": [
+        "GET /api/v1/check-in/tokens/:expiredTokenId/preflight as enrolled Student; assert HTTP 403 errorCode ExpiredQr",
+        "GET /api/v1/check-in/tokens/:validTokenId/preflight as non-enrolled Student; assert HTTP 403 errorCode NotEnrolled",
+        "GET /api/v1/check-in/tokens/:validTokenId/preflight?sessionId=:wrongSessionId as enrolled Student; assert HTTP 403 errorCode SessionMismatch",
+        "GET /api/v1/check-in/tokens/:unknownUuid/preflight as enrolled Student; assert HTTP 404 errorCode TokenNotFound",
+        "Verify no attendance_records or qr_tokens rows modified by any preflight call"
+      ],
+      "expected": "Preflight failure outcomes reject before GPS capture step; read-only chain per validation-rules §3.6a — radius verification unreachable when preflight fails",
+      "edgeCase": true
     }
   ]
 }

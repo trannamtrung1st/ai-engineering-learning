@@ -1,8 +1,8 @@
 {
   "productItemId": "NFR-01",
   "version": 1,
-  "docFingerprint": "sha256:115bb9b9ee2cffbc7f45928b9de1dcb4f61fc3273e43f0feadf51807c4d787c0",
-  "generatedAt": "2026-06-28T18:36:11Z",
+  "docFingerprint": "sha256:ed2f2a01af64f91a7bd1aa1df43796784981c952d0a4a18ac9807f4aa24ca5e5",
+  "generatedAt": "2026-06-29T18:45:58Z",
   "cases": [
     {
       "id": "TC-NFR-01-001",
@@ -206,7 +206,8 @@
       ],
       "steps": [
         "Student navigates to check-in deep link or scans QR to load check-in route",
-        "Grant camera mock or use token entry path and submit check-in",
+        "Assert GET /api/v1/check-in/tokens/:tokenId/preflight returns HTTP 200 and GPS capture step mounts with session summary per AC-07c",
+        "Grant camera mock or use token entry path with in-radius gpsSim fixture and submit check-in",
         "Assert success confirmation message appears in Vietnamese within 2 seconds",
         "Navigate back to personal attendance history and assert session shows Present",
         "Assert no unhandled error toast, white screen, or network-failure banner indicating service outage"
@@ -247,20 +248,20 @@
       "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["NFR-01", "FR-05"],
-      "title": "Rate-limited check-in returns 429 not 5xx preserving service availability during Active session",
+      "title": "Rate-limited check-in returns 429 with Retry-After not 5xx preserving service availability during Active session",
       "preconditions": [
         "Active session with authenticated Student",
-        "Rate limit configured per API design §10.3 (10 attempts per student per minute)",
+        "Rate limit configured per API design §10.3 (10 requests per student per session within 10 minutes)",
         "Valid QR token and in-radius coordinates available"
       ],
       "steps": [
-        "Submit 10 POST /api/v1/check-in requests within one minute for same student (expect business rejections after first success)",
-        "Submit 11th request within the same minute window",
-        "Assert HTTP status 429 with rate-limit error envelope",
+        "Submit 10 POST /api/v1/check-in requests within the 10-minute attendance window for same student (expect business rejections after first success)",
+        "Submit 11th request within the same 10-minute session window",
+        "Assert HTTP status 429 with RateLimitExceeded error envelope and Retry-After header per 09-error-handling §2.6",
         "Assert response is not HTTP 500, 502, or 503",
         "GET /api/v1/health immediately after 429 and assert HTTP 200 db connected"
       ],
-      "expected": "Rate limiting degrades gracefully with 429 per NFR-01 availability; service remains up and health endpoint healthy during Active session",
+      "expected": "Rate limiting degrades gracefully with 429 and Retry-After per NFR-01 and testing-plan §5 RateLimitCheckIn; service remains up and health endpoint healthy during Active session",
       "edgeCase": true
     }
   ]

@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-04",
   "version": 1,
-  "docFingerprint": "sha256:2fd3efb1374d66d435e640474762f36550c2b03e0c427840c997b2bd56f36bcf",
-  "generatedAt": "2026-06-29T12:00:00Z",
+  "docFingerprint": "sha256:308b096116bdccfb2f529c7c25ea74eab6b3f506c3728246a7177d7d892415fc",
+  "generatedAt": "2026-06-29T17:47:55Z",
   "cases": [
     {
       "id": "TC-FR-04-001",
@@ -54,7 +54,7 @@
       "technique": "http-contract",
       "priority": "P0",
       "traceability": ["FR-04"],
-      "title": "POST /sessions returns 201 Created with Session DTO in Draft status",
+      "title": "POST /api/v1/sessions returns 201 Created with Session DTO in Draft status",
       "preconditions": [
         "Instructor session cookie is set with assignment to target class-subject",
         "Valid session creation payload per API design §5.2 is prepared"
@@ -86,7 +86,7 @@
         "Assert response errorCode RoomGpsRequired with Vietnamese message requiring room GPS configuration",
         "GET /api/v1/sessions/:sessionId and assert status remains Draft"
       ],
-      "expected": "Activation blocked without valid coordinates per FR-04; session status unchanged; error surfaces RoomGpsRequired per AC-04b and BR-07",
+      "expected": "Draft to Active transition blocked per FR-04 and BR-07; session status unchanged; error surfaces RoomGpsRequired",
       "edgeCase": false
     },
     {
@@ -158,7 +158,7 @@
       "technique": "http-contract",
       "priority": "P0",
       "traceability": ["FR-04"],
-      "title": "POST /sessions/:sessionId/cancel returns 200 with status Cancelled",
+      "title": "POST /api/v1/sessions/:sessionId/cancel returns 200 with status Cancelled",
       "preconditions": [
         "Instructor session cookie is set",
         "Draft sessionId owned by instructor is known"
@@ -178,7 +178,7 @@
       "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["FR-04"],
-      "title": "Student denied POST /sessions with 403 Forbidden",
+      "title": "Student denied POST /api/v1/sessions with 403 Forbidden",
       "preconditions": [
         "Authenticated Student session is available",
         "Valid session creation payload is prepared",
@@ -200,7 +200,7 @@
       "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["FR-04"],
-      "title": "TrainingOfficeAdmin denied POST /sessions without session:write override",
+      "title": "TrainingOfficeAdmin denied POST /api/v1/sessions without session:write override",
       "preconditions": [
         "Authenticated TrainingOfficeAdmin session is available",
         "Admin has session:read institution-wide but no default session:write per MVP policy",
@@ -220,8 +220,8 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["FR-04", "BR-08"],
-      "title": "Instructor denied POST /sessions for unassigned class-subject with 403 Forbidden",
+      "traceability": ["FR-04"],
+      "title": "Instructor denied POST /api/v1/sessions for unassigned class-subject with 403 Forbidden",
       "preconditions": [
         "Instructor is authenticated with ClassAssignment only for HESD-01 / SWE-101",
         "Class HESD-02 and subject SWE-101 exist",
@@ -243,7 +243,7 @@
       "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["FR-04", "BR-07"],
-      "title": "POST /sessions with roomLatitude out of range returns 422 OutOfRange",
+      "title": "POST /api/v1/sessions with roomLatitude out of range returns 422 OutOfRange",
       "preconditions": [
         "Authenticated Instructor with valid class-subject assignment",
         "Session payload sets roomLatitude to 91 (exceeds −90..90 bounds)"
@@ -254,7 +254,7 @@
         "Assert response errorCode ValidationFailed with field error code OutOfRange for roomLatitude",
         "Verify no session row created"
       ],
-      "expected": "Invalid coordinate rejected per FR-04 validation; HTTP 422 with OutOfRange field error; no Draft session persisted",
+      "expected": "Invalid coordinate rejected per API design §5.2 validation; HTTP 422 with OutOfRange field error; no Draft session persisted",
       "edgeCase": true
     },
     {
@@ -284,7 +284,7 @@
       "technique": "http-contract",
       "priority": "P1",
       "traceability": ["FR-04"],
-      "title": "PATCH /sessions/:sessionId updates Draft GPS fields and returns 200",
+      "title": "PATCH /api/v1/sessions/:sessionId updates Draft GPS fields and returns 200",
       "preconditions": [
         "Instructor owns a Draft session created without GPS coordinates",
         "Instructor session cookie is set"
@@ -404,7 +404,7 @@
         "Assert both reject with errorCode RoomGpsRequired",
         "Query sessions table once and read status, opened_at columns"
       ],
-      "expected": "No partial Active transition under concurrent open; session status stays Draft with opened_at NULL; both failures surface RoomGpsRequired",
+      "expected": "No partial Active transition under concurrent open; session status stays Draft with opened_at NULL; both failures surface RoomGpsRequired per FR-04 and BR-07",
       "edgeCase": true
     },
     {
@@ -436,7 +436,7 @@
       "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["FR-04"],
-      "title": "POST /sessions with roomLongitude out of range returns 422 OutOfRange",
+      "title": "POST /api/v1/sessions with roomLongitude out of range returns 422 OutOfRange",
       "preconditions": [
         "Authenticated Instructor with valid class-subject assignment",
         "Session payload sets roomLongitude to 181 (exceeds −180..180 bounds)"
@@ -447,7 +447,7 @@
         "Assert response errorCode ValidationFailed with field error code OutOfRange for roomLongitude",
         "Verify no session row created"
       ],
-      "expected": "Invalid longitude rejected per FR-04 coordinate validation; HTTP 422 with OutOfRange field error; no Draft session persisted",
+      "expected": "Invalid longitude rejected per API design §5.2 and validation rules §3.4; HTTP 422 with OutOfRange field error; no Draft session persisted",
       "edgeCase": true
     },
     {
@@ -457,7 +457,7 @@
       "technique": "http-contract",
       "priority": "P1",
       "traceability": ["FR-04"],
-      "title": "POST /sessions with custom gpsRadiusMeters override persists non-default radius",
+      "title": "POST /api/v1/sessions with custom gpsRadiusMeters override persists non-default radius",
       "preconditions": [
         "Instructor session cookie is set with assignment to target class-subject",
         "Session payload includes gpsRadiusMeters 200 within 20–500 allowed range"
@@ -478,7 +478,7 @@
       "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["FR-04"],
-      "title": "POST /sessions with gpsRadiusMeters above 500 returns 422 OutOfRange",
+      "title": "POST /api/v1/sessions with gpsRadiusMeters above 500 returns 422 OutOfRange",
       "preconditions": [
         "Authenticated Instructor with valid class-subject assignment",
         "Session payload sets gpsRadiusMeters to 501 (exceeds 20–500 bounds)"
@@ -499,7 +499,7 @@
       "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["FR-04"],
-      "title": "PATCH /sessions/:sessionId blocked when session is Active with 409 InvalidSessionState",
+      "title": "PATCH /api/v1/sessions/:sessionId blocked when session is Active with 409 InvalidSessionState",
       "preconditions": [
         "Instructor owns an Active session with valid GPS",
         "Instructor session cookie is set"
@@ -509,7 +509,7 @@
         "Assert HTTP status 409 or 422 with errorCode InvalidSessionState",
         "GET /api/v1/sessions/:sessionId and verify original GPS coordinates unchanged"
       ],
-      "expected": "Draft-only edit guard per API design §5.3 enforced; Active session GPS fields not mutated after open",
+      "expected": "Draft-only edit guard per API design §5.3 and validation rules §3.4 enforced; Active session GPS fields not mutated after open",
       "edgeCase": true
     },
     {
@@ -519,10 +519,11 @@
       "technique": "rbac-negative",
       "priority": "P1",
       "traceability": ["FR-04"],
-      "title": "Student denied POST /sessions/:sessionId/cancel with 403 Forbidden",
+      "title": "Student denied POST /api/v1/sessions/:sessionId/cancel with 403 Forbidden",
       "preconditions": [
         "Authenticated Student session is available",
-        "Known Draft sessionId exists in system"
+        "Known Draft sessionId exists in system",
+        "Student role lacks session:write permission per roles-permissions §2.2"
       ],
       "steps": [
         "POST /api/v1/sessions/:sessionId/cancel using Student session cookie",
@@ -568,10 +569,10 @@
       "steps": [
         "Fill required session fields and set GPS via GpsMapPicker",
         "Change gpsRadiusMeters input to 150",
-        "Submit save draft action",
-        "Navigate to session detail and verify radius displays 150 m"
+        "Click Lưu nháp (save draft) action",
+        "Navigate to session detail and verify radius displays 150 m and status Nháp (Draft)"
       ],
-      "expected": "Custom radius override saved and displayed per FR-04 optional radius field; default overridden when instructor adjusts for room size",
+      "expected": "Custom radius override saved and displayed per FR-04; default 100 m overridden when instructor adjusts for room size",
       "edgeCase": false
     },
     {
@@ -579,20 +580,20 @@
       "category": "functional",
       "layer": "integration",
       "technique": "module-integration",
-      "priority": "P1",
+      "priority": "P0",
       "traceability": ["FR-04"],
       "title": "SessionService.create without gpsRadiusMeters applies default 100 m radius",
       "preconditions": [
         "Real PostgreSQL test database is running",
         "SessionService.create DTO omits gpsRadiusMeters field",
-        "Valid roomLatitude and roomLongitude provided"
+        "Valid roomLatitude and roomLongitude provided under Instructor context with ClassAssignment"
       ],
       "steps": [
         "Invoke SessionService.create with DTO missing gpsRadiusMeters",
         "Query sessions table for returned sessionId",
         "Read gps_radius_meters column value"
       ],
-      "expected": "Default gps_radius_meters of 100 persisted per FR-04 and module breakdown §2.3",
+      "expected": "Default gps_radius_meters of 100 persisted per FR-04 and validation rules §3.4",
       "edgeCase": false
     }
   ]

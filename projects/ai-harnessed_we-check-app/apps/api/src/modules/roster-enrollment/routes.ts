@@ -14,6 +14,7 @@ import {
   notFound,
   validationFailed,
 } from "../../errors/api-error.js";
+import { registerClassSubjectWriteRoutes } from "./class-subject-write/index.js";
 import { validateCsvFile } from "./csv-validator.js";
 import { RosterService } from "./roster-service.js";
 
@@ -38,6 +39,8 @@ export async function registerRosterEnrollmentRoutes(
 
   const rosterService = new RosterService(db);
   const auth = createAuthMiddleware(store);
+
+  await registerClassSubjectWriteRoutes(app, db, store);
 
   app.get(
     "/classes",

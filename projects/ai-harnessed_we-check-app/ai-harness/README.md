@@ -25,6 +25,20 @@ agent mcp enable playwright
 
 Config lives in `.cursor/mcp.json` (headless by default). Implementer agents on `frontend` and `test` slices receive `--approve-mcps` for smoke verification; a dedicated **browser test agent** gate runs after computational checks. See [`docs/browser-mcp.md`](docs/browser-mcp.md).
 
+### Agent skills
+
+Harness-owned skills live under [`skills/`](skills/) (e.g. [`skills/frontend-design/SKILL.md`](skills/frontend-design/SKILL.md)). They are **not** auto-discovered by Cursor IDE — Ralph injects them via `config/context-map.json` → `build-prompt.sh` → agent prompts.
+
+| Skill | Agents | Purpose |
+|---|---|---|
+| `frontend-design` | `frontend` implementer, browser `tester` | Notion visual craft, signature moments, screenshot self-critique |
+| `design-craft-notion` | `frontend` implementer, browser `tester` | Notion workspace density — sidebar, database toolbars, listing §0 rhythm |
+| `ui-ux-testing` | browser `tester` | UX defect taxonomy, `UX-*` bug logging, screenshot audit beyond `TC-*` checklist |
+
+Harness doc index: [`docs/requirements-index.md`](docs/requirements-index.md).
+
+Add new skills by creating `skills/<name>/SKILL.md` and listing the path in `context-map.json` under the relevant agent's `alwaysRead`. Interactive Cursor sessions may also load project skills from `.cursor/skills/` if present; the harness path above is authoritative for `npm run aih:loop`.
+
 ## Auth (no .env file)
 
 ```bash
@@ -54,6 +68,7 @@ npm run aih:loop -- 50                     # max 50 iterations
 | `AIH_CHECK_TIMEOUT_MS` | `600000` | Default wall-clock timeout for each computational npm script (10 minutes); kills hung test/build processes |
 | `AIH_CHECK_TIMEOUT_<script>_MS` | — | Per-script override (`:` → `_`, e.g. `AIH_CHECK_TIMEOUT_test_integration_MS=1200000`) |
 | `AIH_CHECK_HEARTBEAT_MS` | `30000` | Progress line interval while a computational check runs (`still running: …`) |
+| `AIH_PREVIEW_SEED_ENABLED` | — | When `1` or `true`, preview API supervisor exports `SEED_ENABLED=true` on start |
 | `AIH_STREAM_AGENT` | `1` | Live stream all harness agent output via stream-json (`0` = legacy buffered text) |
 | `AIH_AGENT_VERBOSE` | `1` | Show `[tool]` start/done lines on stderr during streamed agent runs (`0` to disable) |
 | `AIH_NO_COLOR` | — | Disable ANSI styling in harness output (`1`) |
@@ -80,7 +95,7 @@ Defaults live in `ai-harness/config/models.json`.
 | `npm run aih:loop:stop` | Stop background loop |
 | `npm run aih:check` | Computational gates only (no agent) |
 | `npm run aih:run-check -- <script>` | One npm script with timeout, heartbeat, and log file (for agent ad-hoc runs) |
-| `npm run aih:browser-test` | Playwright MCP functional test for next/current slice |
+| `npm run aih:browser-test` | Playwright MCP functional + UX test for next/current slice; emits Playwright regression spec |
 | `npm run aih:review` | AI review for next pending slice |
 | `npm run aih:preview` | **Dev preview** — DB in Docker, API + web as local dev processes |
 | `npm run aih:preview:full` | **Full preview** — DB + API + web as built Compose images |
@@ -88,6 +103,7 @@ Defaults live in `ai-harness/config/models.json`.
 | `npm run aih:preview:logs` | View preview logs (combined, api, web, db, stack) |
 | `npm run aih:preview:down` | Stop preview stack |
 | `npm run aih:playwright-mcp:clean` | Remove Playwright MCP page snapshots and console logs (does not delete `screenshots/`) |
+| `npm run test:playwright-ui` | Run committed Playwright UI regression specs (`tests/playwright-ui`) |
 | `npm run aih:testgen:once` | Generate test cases for one slice from docs |
 | `npm run aih:testgen:loop` | Autonomous TestGen loop until all slices have current test cases |
 | `npm run aih:testgen:enhance` | Ad-hoc improve test cases for one tag with free-text instructions |
@@ -218,7 +234,7 @@ The script reuses the TestGen agent and validation pipeline; it attaches docs, r
 4. `build-prompt.sh` injects slice into `implementer.prompt.md` (plus prior checks / browser-test / AI-review failures when the slice failed those gates last time)
 5. `agent -p --force` implements one slice
 6. `run-checks.sh` — computational gates (see below)
-7. `run-browser-test.sh` — Playwright MCP gate using generated browser cases; must end with `BROWSER_TEST_PASS`
+7. `run-browser-test.sh` — Playwright MCP gate: `TC-*` checklist, UX audit, Playwright regression codegen; must end with `BROWSER_TEST_PASS`
 8. `run-ai-review.sh` — static code review; must end with `REVIEW_PASS`
 9. Backlog updated (`passes: true`), progress logged, optional git commit
 
@@ -234,6 +250,7 @@ Gates run after every implementer iteration and can be run standalone:
 | `test:unit` | `apps/api` exists (and `apps/web` when it defines `test:unit`) | Yes |
 | `test:integration` | `apps/api` exists | Yes — logs to `ai-harness/generated/runs/<run-id>-check-test-integration.log`; `--test-reporter=spec` per test file |
 | `test:e2e` | `tests/e2e` exists | Yes |
+| `test:playwright-ui` | `tests/playwright-ui` exists | Optional until `playwright-ui-workspace` slice passes |
 | Slice `testRequirements` | Ralph iteration with slice id | Yes when field present |
 | Generated test case coverage | all slice `acceptance` product items current | Yes — integration/e2e case tags must appear in test files (unit is implementer-owned via `testRequirements`) |
 | DB health (Docker Compose) | `docker-compose.yml` exists | Yes when `apps/api` exists |
@@ -245,11 +262,12 @@ On a docs-only repo (no `apps/`), `npm run aih:check` passes without code-qualit
 
 ## Key files
 
-- `ai-harness/whole-app-backlog.json` — slice queue
+- `ai-harness/whole-app-backlog.json` — slice queue (includes pending slices for bootstrap, class management, QR preflight, role nav, GPS ready UX — priorities 35–42)
 - `ai-harness/workflows/ralph-loop.json` — loop policy (`testCaseGate.mode`)
 - `ai-harness/workflows/testgen-loop.json` — TestGen loop policy
 - `ai-harness/config/testgen-docs-map.json` — doc resolution rules per requirement tag
-- `ai-harness/test-case-index.json` — slim generation state (current, fingerprint)
+- `ai-harness/test-case-index.json` — slim TestGen generation state (current, fingerprint)
+- `ai-harness/playwright-regression-index.json` — browser-tester Playwright spec tracking per slice
 - `docs/test-cases/items/` — generated test case artifacts per tag
 - `ai-harness/config/context-map.json` — which docs to read per slice
 - `ai-harness/state/guardrails.md` — lessons (Ralph Signs)

@@ -46,7 +46,7 @@ Applies to all endpoints unless overridden in §3.
 | VAL-02 | Email | RFC 5322 simplified; max 254 chars; lowercase normalized on persist | `InvalidEmail` | [FR-01](../brds/03-functional-requirements.md) |
 | VAL-03 | Password (create/change) | Min length **8**; max 128; non-empty | `PasswordTooShort` | [NFR-14](../brds/07-non-functional-risk.md) |
 | VAL-04 | Display name | Trimmed; length 1–200 UTF-8 | `InvalidLength` | Vietnamese diacritics allowed |
-| VAL-05 | Institutional ID | Trimmed; pattern `^[A-Za-z0-9\-]{3,32}$` | `InvalidInstitutionalId` | Unique per institution |
+| VAL-05 | Institutional ID | Trimmed; pattern `^[A-Za-z0-9\-_.]{3,32}$` | `InvalidInstitutionalId` | Unique per institution; allows letters, digits, hyphen, underscore, period |
 | VAL-06 | ISO 8601 timestamps | UTC `timestamptz`; parseable; finite | `InvalidTimestamp` | API JSON uses `...Z` suffix |
 | VAL-07 | Cursor pagination `limit` | Integer 1–200; default 50 | `InvalidPagination` | [05-api-design.md](./05-api-design.md) §1 |
 | VAL-08 | Cursor pagination `cursor` | Opaque base64 or null | `InvalidPagination` | Server rejects malformed cursor |
@@ -69,6 +69,17 @@ Applies to all endpoints unless overridden in §3.
 
 Domain checks after schema: user exists and password verifies → else `InvalidCredentials`; `active = false` → `AccountDeactivated` ([AC-01c](../brds/08-acceptance-mvp-future.md)).
 
+### 3.1a Setup — `POST /setup/first-admin`
+
+| Field | Required | Validation | FR |
+| --- | --- | --- | --- |
+| `institutionalId` | Yes | VAL-05; unique | FR-17 |
+| `displayName` | Yes | VAL-04 | FR-17 |
+| `email` | Yes | VAL-02; unique | FR-17 |
+| `password` | Yes | VAL-03 | FR-17 |
+
+Domain checks: `User.count = 0` → else `SetupAlreadyComplete` ([BR-13](../brds/04-business-rules.md)).
+
 ### 3.2 Users — `POST /users`, `PATCH /users/:userId`
 
 | Field | Create | Update | Validation |
@@ -81,6 +92,27 @@ Domain checks after schema: user exists and password verifies → else `InvalidC
 | `active` | Default `true` | Optional | Boolean |
 
 Duplicate `email` or `institutionalId` → `422` with field details ([AC-01b](../brds/08-acceptance-mvp-future.md)).
+
+### 3.2a Class and subject — `POST /classes`, `POST /subjects`
+
+| Field | Required | Validation | FR |
+| --- | --- | --- | --- |
+| `code` | Yes | Uppercase alphanumeric + hyphen (`^[A-Z0-9\-]{2,16}$`); unique | FR-03 |
+| `name` | Yes | VAL-04 | FR-03 |
+
+Duplicate `code` → `DuplicateClassCode` or `DuplicateSubjectCode` ([AC-03e](../brds/08-acceptance-mvp-future.md)).
+
+### 3.2b User import — `POST /users/import`
+
+| Check | Rule | Outcome |
+| --- | --- | --- |
+| File present | Multipart field `file` required | `InvalidFile` |
+| Required CSV columns | `institutional_id`, `display_name`, `email`, `role`, `active` | Row rejected in batch summary |
+| Row-level ID | VAL-05 per row | Row error `InvalidInstitutionalId` |
+| Row-level email | VAL-02; unique unless same `institutional_id` on update | Row error `DuplicateEmail` ([AC-01g](../brds/08-acceptance-mvp-future.md)) |
+| Row-level role | Valid enum | Row error `InvalidEnum` |
+| Upsert by ID | Match on `institutional_id` | Create or update user; password unchanged on update |
+| `dryRun=true` | Validate only; no persist | Summary counts only |
 
 ### 3.3 Roster import — `POST /roster/import`
 
@@ -127,6 +159,19 @@ Duplicate `email` or `institutionalId` → `422` with field details ([AC-01b](..
 | `spoofMetadata.platform` | No | `ios` \| `android` \| `other` |
 
 Coordinates are validated then **discarded** after radius check; not persisted on success ([FR-08](../brds/03-functional-requirements.md), [NFR-12](../brds/07-non-functional-risk.md)).
+
+### 3.6a Preflight — `GET /check-in/tokens/:tokenId/preflight`
+
+Read-only chain evaluated before GPS step ([BR-15](../brds/04-business-rules.md)):
+
+| Order | Check | Failure outcome |
+| --- | --- | --- |
+| 1 | Token exists | `TokenNotFound` |
+| 2 | Optional `session` query param matches token's bound session | `SessionMismatch` |
+| 3 | Token status `Valid` (not `Expired` / `Consumed`) | `ExpiredQr` or `TokenAlreadyUsed` |
+| 4 | Parent session `Active` and within attendance window | `SessionNotActive` |
+| 5 | Student enrolled in session class-subject | `NotEnrolled` |
+| 6 | — | `200` with session summary |
 
 ### 3.7 Attendance manual edit — `PATCH /attendance/:recordId`
 

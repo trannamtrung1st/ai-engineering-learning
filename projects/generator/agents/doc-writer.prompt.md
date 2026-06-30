@@ -18,6 +18,16 @@ You are the **spec doc writer**. Produce documentation for **one step** per sess
 - No placeholder text: no `TODO`, `TBD`, `lorem ipsum`, or `{{` tokens.
 - Be detailed enough for engineers and designers to implement without guessing.
 
+## UI/UX design spec conventions
+
+When writing UI/UX outputs:
+
+- **[DESIGN.md](../../docs/ui-ux/DESIGN.md)** is the authoritative visual spec; **[04-design-tokens.md](../../docs/ui-ux/04-design-tokens.md)** maps DESIGN.md tokens to CSS variables in a **§0 mapping table**
+- **Precedence:** DESIGN.md > 04-design-tokens > 01-design-overview > harness craft skills
+- **[14-listing-pages-search-filter-sort.md](../../docs/ui-ux/14-listing-pages-search-filter-sort.md)** §0: per-route matrix for search, filter, sort, and pagination derived from [09-page-list.md](../../docs/ui-ux/09-page-list.md)
+- **[05-common-ui-components.md](../../docs/ui-ux/05-common-ui-components.md):** document `TableToolbar` for admin and listing routes
+- **[03-design-system-basics.md](../../docs/ui-ux/03-design-system-basics.md):** include the precedence chain and link to DESIGN.md when present
+
 ## Step
 
 - **ID:** {{STEP_ID}}

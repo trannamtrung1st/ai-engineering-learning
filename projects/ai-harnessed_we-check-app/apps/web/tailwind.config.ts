@@ -5,6 +5,13 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        brand: {
+          50: "var(--color-brand-50)",
+          100: "var(--color-brand-100)",
+          500: "var(--color-brand-500)",
+          700: "var(--color-brand-700)",
+          900: "var(--color-brand-900)",
+        },
         primary: {
           50: "var(--color-primary-50)",
           100: "var(--color-primary-100)",
@@ -16,6 +23,7 @@ const config: Config = {
         surface: {
           DEFAULT: "var(--color-surface-default)",
           raised: "var(--color-surface-raised)",
+          muted: "var(--color-surface-muted)",
           inverse: "var(--color-surface-inverse)",
         },
         text: {
@@ -74,10 +82,15 @@ const config: Config = {
         sm: "var(--shadow-sm)",
         md: "var(--shadow-md)",
         lg: "var(--shadow-lg)",
+        brand: "var(--shadow-brand)",
       },
       fontFamily: {
         sans: ["var(--font-sans)"],
+        display: ["var(--font-display)"],
         mono: ["var(--font-mono)"],
+      },
+      fontWeight: {
+        bold: "var(--font-weight-bold)",
       },
       fontSize: {
         display: [
@@ -112,6 +125,8 @@ const config: Config = {
       },
       transitionTimingFunction: {
         DEFAULT: "var(--ease-default)",
+        out: "var(--ease-out)",
+        spring: "var(--ease-spring)",
       },
     },
   },

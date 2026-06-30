@@ -1,4 +1,6 @@
 import {
+  AttendanceStatus,
+  NotificationType,
   QrTokenStatus,
   SessionStatus,
   UserRole,
@@ -8,12 +10,17 @@ import type { DbPool } from "./db.js";
 import { now } from "./clock.js";
 import { runWhenPreviewDbIdle } from "./integration-test-lock.js";
 import { hashPassword } from "../modules/identity-auth/password-hasher.js";
+import {
+  POLICY_KEY_ABSENCE_AUTO_WARNING,
+  POLICY_KEY_ABSENCE_THRESHOLD,
+} from "../modules/notifications/repositories.js";
 import { SessionService } from "../modules/session-management/session-service.js";
 
 /** Deterministic preview fixture IDs — mirrored in apps/web preview-fixtures.ts */
 export const PREVIEW_IDS = {
   admin: "00000000-0000-4000-8000-000000000001",
   instructor: "00000000-0000-4000-8000-000000000002",
+  instructor2: "00000000-0000-4000-8000-000000000007",
   student: "00000000-0000-4000-8000-000000000003",
   deactivatedStudent: "00000000-0000-4000-8000-000000000004",
   studentB: "00000000-0000-4000-8000-000000000005",
@@ -21,12 +28,15 @@ export const PREVIEW_IDS = {
   classHesd01: "10000000-0000-4000-8000-000000000101",
   classHesd02: "10000000-0000-4000-8000-000000000102",
   subjectSwe101: "20000000-0000-4000-8000-000000000201",
+  subjectSwe102: "20000000-0000-4000-8000-000000000202",
   sessionActive: "30000000-0000-4000-8000-000000000301",
   sessionDraft: "30000000-0000-4000-8000-000000000302",
   sessionClosed: "30000000-0000-4000-8000-000000000303",
+  sessionDraftNoGps: "30000000-0000-4000-8000-000000000304",
   staleQrToken: "40000000-0000-4000-8000-000000000401",
   consumedQrToken: "40000000-0000-4000-8000-000000000402",
   validQrToken: "40000000-0000-4000-8000-000000000403",
+  closedStaleQrToken: "40000000-0000-4000-8000-000000000404",
   spoofCheckInAttempt: "50000000-0000-4000-8000-000000000501",
   tokenReuseAlert: "50000000-0000-4000-8000-000000000502",
 } as const;
@@ -36,12 +46,14 @@ export const PREVIEW_QR_TOKEN_FIXTURE_IDS = [
   PREVIEW_IDS.staleQrToken,
   PREVIEW_IDS.consumedQrToken,
   PREVIEW_IDS.validQrToken,
+  PREVIEW_IDS.closedStaleQrToken,
 ] as const;
 
 /** Vietnamese display names for browser NFR-17 gates — no English user-facing copy in headers. */
 export const PREVIEW_DISPLAY_NAMES = {
   admin: "Quản trị viên Phòng đào tạo",
   instructor: "Giảng viên Nguyễn Văn B",
+  instructor2: "Giảng viên Trần Thị C",
   student: "Sinh viên Nguyễn Văn A",
   deactivated: "Sinh viên Võ Văn D",
   studentB: "Sinh viên Trần Thị B",
@@ -51,6 +63,7 @@ export const PREVIEW_DISPLAY_NAMES = {
 export const PREVIEW_CREDENTIALS = {
   admin: { email: "admin@example.edu.vn", password: "AdminPass123" },
   instructor: { email: "instructor@example.edu.vn", password: "InstructorPass8" },
+  instructor2: { email: "instructor2@example.edu.vn", password: "InstructorPass8" },
   student: { email: "student@example.edu.vn", password: "StudentPass8" },
   deactivated: { email: "deactivated@example.edu.vn", password: "StudentPass8" },
   studentB: { email: "studentb@example.edu.vn", password: "StudentPass8" },
@@ -69,6 +82,20 @@ async function isSeedApplied(db: DbPool): Promise<boolean> {
   if (deactivated.rows.length === 0 || deactivated.rows[0]?.active !== false) {
     return false;
   }
+
+  const admin = await db.query<{ id: string; role: string }>(
+    "SELECT id, role FROM users WHERE email = $1 AND active = true",
+    [PREVIEW_CREDENTIALS.admin.email],
+  );
+  if (admin.rows.length === 0 || admin.rows[0]?.role !== UserRole.TrainingOfficeAdmin) {
+    return false;
+  }
+
+  const instructor = await db.query<{ id: string }>(
+    "SELECT id FROM users WHERE email = $1 AND active = true",
+    [PREVIEW_CREDENTIALS.instructor.email],
+  );
+  if (instructor.rows.length === 0) return false;
 
   const student = await db.query<{ id: string }>(
     "SELECT id FROM users WHERE email = $1 AND active = true",
@@ -92,12 +119,21 @@ async function isSeedApplied(db: DbPool): Promise<boolean> {
     "SELECT status FROM sessions WHERE id = $1",
     [PREVIEW_IDS.sessionActive],
   );
-  return activeSession.rows[0]?.status === SessionStatus.Active;
+  if (activeSession.rows[0]?.status !== SessionStatus.Active) return false;
+
+  const historyCount = await db.query<{ count: string }>(
+    `SELECT COUNT(*)::text AS count FROM attendance_records ar
+     INNER JOIN sessions s ON s.id = ar.session_id
+     WHERE ar.student_id = $1 AND s.status = $2`,
+    [PREVIEW_IDS.student, SessionStatus.Closed],
+  );
+  return Number(historyCount.rows[0]?.count ?? "0") >= PREVIEW_HISTORY_MIN_COUNT;
 }
 
 const PREVIEW_USER_IDS = [
   PREVIEW_IDS.admin,
   PREVIEW_IDS.instructor,
+  PREVIEW_IDS.instructor2,
   PREVIEW_IDS.student,
   PREVIEW_IDS.deactivatedStudent,
   PREVIEW_IDS.studentB,
@@ -107,6 +143,7 @@ const PREVIEW_USER_IDS = [
 const PREVIEW_INSTITUTIONAL_IDS = [
   "ADMIN001",
   "GV2026001",
+  "GV2026002",
   "SV2026001",
   "SV2026099",
   "SV2026002",
@@ -140,9 +177,11 @@ export async function ensurePreviewReferenceData(db: DbPool): Promise<void> {
   );
 
   await db.query(
-    `INSERT INTO subjects (id, code, name) VALUES ($1, 'SWE-101', 'Software Engineering 101')
+    `INSERT INTO subjects (id, code, name) VALUES
+       ($1, 'SWE-101', 'Software Engineering 101'),
+       ($2, 'SWE-102', 'Software Engineering 102')
      ON CONFLICT (id) DO NOTHING`,
-    [PREVIEW_IDS.subjectSwe101],
+    [PREVIEW_IDS.subjectSwe101, PREVIEW_IDS.subjectSwe102],
   );
 
   await db.query(
@@ -150,6 +189,13 @@ export async function ensurePreviewReferenceData(db: DbPool): Promise<void> {
      VALUES ($1, $2, $3)
      ON CONFLICT (instructor_id, class_id, subject_id) DO NOTHING`,
     [PREVIEW_IDS.instructor, PREVIEW_IDS.classHesd01, PREVIEW_IDS.subjectSwe101],
+  );
+
+  await db.query(
+    `INSERT INTO class_assignments (instructor_id, class_id, subject_id)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (instructor_id, class_id, subject_id) DO NOTHING`,
+    [PREVIEW_IDS.instructor2, PREVIEW_IDS.classHesd02, PREVIEW_IDS.subjectSwe102],
   );
 
   await db.query(
@@ -196,7 +242,19 @@ export async function ensurePreviewReferenceData(db: DbPool): Promise<void> {
     "SELECT status FROM sessions WHERE id = $1",
     [PREVIEW_IDS.sessionActive],
   );
-  if (activeSession.rows[0]?.status === SessionStatus.Draft) {
+  const activeStatus = activeSession.rows[0]?.status;
+  if (
+    activeStatus === SessionStatus.Draft ||
+    activeStatus === SessionStatus.Closed
+  ) {
+    if (activeStatus === SessionStatus.Closed) {
+      await db.query(
+        `UPDATE sessions
+         SET status = $2, opened_at = NULL, closed_at = NULL, version = version + 1
+         WHERE id = $1`,
+        [PREVIEW_IDS.sessionActive, SessionStatus.Draft],
+      );
+    }
     const sessionService = new SessionService(db);
     await sessionService.open(
       PREVIEW_IDS.sessionActive,
@@ -205,6 +263,55 @@ export async function ensurePreviewReferenceData(db: DbPool): Promise<void> {
     );
     sessionService.qr.stopAll();
   }
+
+  const closedAt = now();
+  const openedAt = new Date(closedAt.getTime() - 2 * 60 * 60 * 1000);
+  await db.query(
+    `INSERT INTO sessions (
+       id, instructor_id, class_id, subject_id, title, room_name,
+       room_latitude, room_longitude, gps_radius_meters, scheduled_start,
+       status, opened_at, closed_at, version
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 100, $9, $10, $11, $12, 1)
+     ON CONFLICT (id) DO NOTHING`,
+    [
+      PREVIEW_IDS.sessionClosed,
+      PREVIEW_IDS.instructor,
+      PREVIEW_IDS.classHesd01,
+      PREVIEW_IDS.subjectSwe101,
+      "NET-301 — Buổi 1",
+      "Phòng C301",
+      ROOM_LAT,
+      ROOM_LNG,
+      scheduledStart,
+      SessionStatus.Closed,
+      openedAt,
+      closedAt,
+    ],
+  );
+
+  await db.query(
+    `INSERT INTO sessions (
+       id, instructor_id, class_id, subject_id, title, room_name,
+       room_latitude, room_longitude, gps_radius_meters, scheduled_start,
+       status, version
+     ) VALUES ($1, $2, $3, $4, $5, $6, NULL, NULL, 100, $7, $8, 1)
+     ON CONFLICT (id) DO UPDATE SET
+       room_latitude = NULL,
+       room_longitude = NULL,
+       status = EXCLUDED.status`,
+    [
+      PREVIEW_IDS.sessionDraftNoGps,
+      PREVIEW_IDS.instructor,
+      PREVIEW_IDS.classHesd01,
+      PREVIEW_IDS.subjectSwe101,
+      "SWE-101 — Buổi GPS",
+      "Phòng D401",
+      scheduledStart,
+      SessionStatus.Draft,
+    ],
+  );
+
+  await ensurePreviewAbsenceWarningEnabled(db);
 }
 
 /** Upsert monitor dashboard fixtures: spoof row + token-reuse alert (AC-10, FR-09, BR-11). */
@@ -347,6 +454,103 @@ export async function ensurePreviewTokenFixtures(db: DbPool): Promise<void> {
       validExpires,
     ],
   );
+
+  const closedStaleIssued = new Date(current.getTime() - 60 * 60 * 1000);
+  const closedStaleExpires = computeTokenExpiresAt(closedStaleIssued);
+  await db.query(
+    `INSERT INTO qr_tokens (id, session_id, status, issued_at, expires_at)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (id) DO UPDATE SET
+       status = EXCLUDED.status,
+       issued_at = EXCLUDED.issued_at,
+       expires_at = EXCLUDED.expires_at,
+       consumed_at = NULL,
+       consumed_by_student_id = NULL`,
+    [
+      PREVIEW_IDS.closedStaleQrToken,
+      PREVIEW_IDS.sessionClosed,
+      QrTokenStatus.Expired,
+      closedStaleIssued,
+      closedStaleExpires,
+    ],
+  );
+}
+
+/** Restore unassigned instructor B for report RBAC browser gates (AC-12, BR-08). */
+export async function ensurePreviewInstructor2Fixtures(db: DbPool): Promise<void> {
+  const instructor2Hash = await hashPassword(PREVIEW_CREDENTIALS.instructor2.password);
+  await db.query(
+    `INSERT INTO users (id, institutional_id, display_name, email, password_hash, role, active)
+     VALUES ($1, 'GV2026002', $2, $3, $4, $5, true)
+     ON CONFLICT (id) DO UPDATE SET
+       institutional_id = EXCLUDED.institutional_id,
+       display_name = EXCLUDED.display_name,
+       email = EXCLUDED.email,
+       password_hash = EXCLUDED.password_hash,
+       role = EXCLUDED.role,
+       active = EXCLUDED.active`,
+    [
+      PREVIEW_IDS.instructor2,
+      PREVIEW_DISPLAY_NAMES.instructor2,
+      PREVIEW_CREDENTIALS.instructor2.email,
+      instructor2Hash,
+      UserRole.Instructor,
+    ],
+  );
+
+  await db.query(
+    `DELETE FROM class_assignments
+     WHERE instructor_id = $1 AND (class_id <> $2 OR subject_id <> $3)`,
+    [PREVIEW_IDS.instructor2, PREVIEW_IDS.classHesd02, PREVIEW_IDS.subjectSwe102],
+  );
+
+  await db.query(
+    `INSERT INTO class_assignments (instructor_id, class_id, subject_id)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (instructor_id, class_id, subject_id) DO NOTHING`,
+    [PREVIEW_IDS.instructor2, PREVIEW_IDS.classHesd02, PREVIEW_IDS.subjectSwe102],
+  );
+}
+
+/** Restore primary login accounts after partial DB resets (FR-02, TC-FR-02-021). */
+export async function ensurePreviewCoreAuthFixtures(db: DbPool): Promise<void> {
+  await clearPreviewUserConflicts(db);
+
+  const adminHash = await hashPassword(PREVIEW_CREDENTIALS.admin.password);
+  const instructorHash = await hashPassword(PREVIEW_CREDENTIALS.instructor.password);
+  const studentHash = await hashPassword(PREVIEW_CREDENTIALS.student.password);
+
+  await db.query(
+    `INSERT INTO users (id, institutional_id, display_name, email, password_hash, role, active)
+     VALUES
+       ($1, 'ADMIN001', $4, $2, $3, $5, true),
+       ($6, 'GV2026001', $9, $7, $8, $10, true),
+       ($11, 'SV2026001', $14, $12, $13, $15, true)
+     ON CONFLICT (id) DO UPDATE SET
+       institutional_id = EXCLUDED.institutional_id,
+       display_name = EXCLUDED.display_name,
+       email = EXCLUDED.email,
+       password_hash = EXCLUDED.password_hash,
+       role = EXCLUDED.role,
+       active = EXCLUDED.active`,
+    [
+      PREVIEW_IDS.admin,
+      PREVIEW_CREDENTIALS.admin.email,
+      adminHash,
+      PREVIEW_DISPLAY_NAMES.admin,
+      UserRole.TrainingOfficeAdmin,
+      PREVIEW_IDS.instructor,
+      PREVIEW_CREDENTIALS.instructor.email,
+      instructorHash,
+      PREVIEW_DISPLAY_NAMES.instructor,
+      UserRole.Instructor,
+      PREVIEW_IDS.student,
+      PREVIEW_CREDENTIALS.student.email,
+      studentHash,
+      PREVIEW_DISPLAY_NAMES.student,
+      UserRole.Student,
+    ],
+  );
 }
 
 /** Restore only the deactivated browser-gate user without re-upserting all preview accounts. */
@@ -383,6 +587,7 @@ export async function ensurePreviewUserFixtures(db: DbPool): Promise<void> {
 
   const adminHash = await hashPassword(PREVIEW_CREDENTIALS.admin.password);
   const instructorHash = await hashPassword(PREVIEW_CREDENTIALS.instructor.password);
+  const instructor2Hash = await hashPassword(PREVIEW_CREDENTIALS.instructor2.password);
   const studentHash = await hashPassword(PREVIEW_CREDENTIALS.student.password);
   const deactivatedHash = await hashPassword(PREVIEW_CREDENTIALS.deactivated.password);
   const studentBHash = await hashPassword(PREVIEW_CREDENTIALS.studentB.password);
@@ -393,6 +598,7 @@ export async function ensurePreviewUserFixtures(db: DbPool): Promise<void> {
      VALUES
        ($1, 'ADMIN001', $25, $2, $3, $4, true),
        ($5, 'GV2026001', $26, $6, $7, $8, true),
+       ($31, 'GV2026002', $32, $33, $34, $8, true),
        ($9, 'SV2026001', $27, $10, $11, $12, true),
        ($13, 'SV2026099', $28, $14, $15, $16, false),
        ($17, 'SV2026002', $29, $18, $19, $20, true),
@@ -435,23 +641,97 @@ export async function ensurePreviewUserFixtures(db: DbPool): Promise<void> {
       PREVIEW_DISPLAY_NAMES.deactivated,
       PREVIEW_DISPLAY_NAMES.studentB,
       PREVIEW_DISPLAY_NAMES.studentC,
+      PREVIEW_IDS.instructor2,
+      PREVIEW_DISPLAY_NAMES.instructor2,
+      PREVIEW_CREDENTIALS.instructor2.email,
+      instructor2Hash,
     ],
   );
 }
 
+/** Closed-session count for /history pagination browser gates (TC-AC-14-008). */
+const PREVIEW_HISTORY_SESSION_COUNT = 30;
+
+/** Minimum closed history rows before preview refresh skips history upsert. */
+const PREVIEW_HISTORY_MIN_COUNT = 25;
+
+const PREVIEW_HISTORY_STATUSES = [
+  AttendanceStatus.Present,
+  AttendanceStatus.Absent,
+  AttendanceStatus.Excused,
+] as const;
+
+function previewHistorySessionId(index: number): string {
+  return `31000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
+}
+
 /** Upsert closed-session attendance for student history browser gates (AC-14, FR-14). */
 export async function ensurePreviewHistoryFixtures(db: DbPool): Promise<void> {
-  const checkedInAt = new Date(now().getTime() - 2 * 60 * 60 * 1000);
+  await ensurePreviewReferenceData(db);
 
   await db.query(
-    `INSERT INTO attendance_records (id, session_id, student_id, status, checked_in_at)
-     VALUES (gen_random_uuid(), $1, $2, 'Present', $3)
-     ON CONFLICT (session_id, student_id) DO UPDATE SET
-       status = EXCLUDED.status,
-       checked_in_at = EXCLUDED.checked_in_at,
-       updated_at = NOW()`,
-    [PREVIEW_IDS.sessionClosed, PREVIEW_IDS.student, checkedInAt],
+    `INSERT INTO enrollments (student_id, class_id, subject_id)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (student_id, class_id, subject_id) DO NOTHING`,
+    [PREVIEW_IDS.student, PREVIEW_IDS.classHesd01, PREVIEW_IDS.subjectSwe102],
   );
+
+  const baseMs = now().getTime();
+
+  for (let i = 0; i < PREVIEW_HISTORY_SESSION_COUNT; i++) {
+    const sessionId =
+      i === 0 ? PREVIEW_IDS.sessionClosed : previewHistorySessionId(i);
+    const daysAgo = i + 1;
+    const scheduledStart = new Date(baseMs - daysAgo * 24 * 60 * 60 * 1000);
+    const openedAt = scheduledStart;
+    const closedAt = new Date(scheduledStart.getTime() + 2 * 60 * 60 * 1000);
+    const subjectId =
+      i % 2 === 0 ? PREVIEW_IDS.subjectSwe101 : PREVIEW_IDS.subjectSwe102;
+    const status = PREVIEW_HISTORY_STATUSES[i % PREVIEW_HISTORY_STATUSES.length]!;
+    const checkedInAt =
+      status === AttendanceStatus.Present
+        ? new Date(scheduledStart.getTime() + 15 * 60 * 1000)
+        : null;
+
+    await db.query(
+      `INSERT INTO sessions (
+         id, instructor_id, class_id, subject_id, title, room_name,
+         room_latitude, room_longitude, gps_radius_meters, scheduled_start,
+         status, opened_at, closed_at, version
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 100, $9, $10, $11, $12, 1)
+       ON CONFLICT (id) DO UPDATE SET
+         status = EXCLUDED.status,
+         subject_id = EXCLUDED.subject_id,
+         scheduled_start = EXCLUDED.scheduled_start,
+         opened_at = EXCLUDED.opened_at,
+         closed_at = EXCLUDED.closed_at,
+         updated_at = NOW()`,
+      [
+        sessionId,
+        PREVIEW_IDS.instructor,
+        PREVIEW_IDS.classHesd01,
+        subjectId,
+        `SWE — Buổi lịch sử ${i + 1}`,
+        `Phòng H${String(i + 1).padStart(3, "0")}`,
+        ROOM_LAT,
+        ROOM_LNG,
+        scheduledStart,
+        SessionStatus.Closed,
+        openedAt,
+        closedAt,
+      ],
+    );
+
+    await db.query(
+      `INSERT INTO attendance_records (id, session_id, student_id, status, checked_in_at)
+       VALUES (gen_random_uuid(), $1, $2, $3, $4)
+       ON CONFLICT (session_id, student_id) DO UPDATE SET
+         status = EXCLUDED.status,
+         checked_in_at = EXCLUDED.checked_in_at,
+         updated_at = NOW()`,
+      [sessionId, PREVIEW_IDS.student, status, checkedInAt],
+    );
+  }
 }
 
 /** Upsert non-enrolled student B for NotEnrolled / TokenAlreadyUsed browser gates. */
@@ -482,6 +762,7 @@ async function ensurePreviewDisplayNames(db: DbPool): Promise<void> {
   const rows: Array<[string, string]> = [
     [PREVIEW_IDS.admin, PREVIEW_DISPLAY_NAMES.admin],
     [PREVIEW_IDS.instructor, PREVIEW_DISPLAY_NAMES.instructor],
+    [PREVIEW_IDS.instructor2, PREVIEW_DISPLAY_NAMES.instructor2],
     [PREVIEW_IDS.student, PREVIEW_DISPLAY_NAMES.student],
     [PREVIEW_IDS.deactivatedStudent, PREVIEW_DISPLAY_NAMES.deactivated],
     [PREVIEW_IDS.studentB, PREVIEW_DISPLAY_NAMES.studentB],
@@ -524,14 +805,95 @@ export async function resumePreviewQrSchedulers(
 
 const PREVIEW_TOKEN_REFRESH_MS = 20_000;
 
+/** FR-16 / AC-16 — default absence policy for admin /admin/policy browser gates */
+async function ensurePreviewAbsencePolicyFixtures(db: DbPool): Promise<void> {
+  await db.query(
+    `INSERT INTO policy_settings (key, value) VALUES ($1, '20'), ($2, 'false')
+     ON CONFLICT (key) DO NOTHING`,
+    [POLICY_KEY_ABSENCE_THRESHOLD, POLICY_KEY_ABSENCE_AUTO_WARNING],
+  );
+}
+
+/** FR-16 — enable threshold evaluation when preview sessions close */
+async function ensurePreviewAbsenceWarningEnabled(db: DbPool): Promise<void> {
+  await db.query(
+    `INSERT INTO policy_settings (key, value) VALUES ($1, 'true')
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+    [POLICY_KEY_ABSENCE_AUTO_WARNING],
+  );
+}
+
+/** FR-16 / AC-16 — seed in-app absence warnings for student/instructor notification UI */
+async function ensurePreviewAbsenceNotificationFixtures(db: DbPool): Promise<void> {
+  const existing = await db.query<{ count: string }>(
+    `SELECT COUNT(*)::text AS count FROM notifications
+     WHERE user_id = $1 AND type = $2`,
+    [PREVIEW_IDS.student, NotificationType.AbsenceThresholdWarning],
+  );
+  if (Number(existing.rows[0]?.count ?? "0") > 0) {
+    return;
+  }
+
+  const basePayload = {
+    subjectCode: "SWE-101",
+    subjectName: "Software Engineering 101",
+    absenceRate: 0.375,
+    threshold: 0.2,
+    sessionCount: 8,
+    unexcusedAbsenceCount: 3,
+    sourceSessionId: PREVIEW_IDS.sessionClosed,
+  };
+
+  await db.query(
+    `INSERT INTO notifications (user_id, type, payload) VALUES ($1, $2, $3::jsonb)`,
+    [
+      PREVIEW_IDS.student,
+      NotificationType.AbsenceThresholdWarning,
+      JSON.stringify(basePayload),
+    ],
+  );
+
+  await db.query(
+    `INSERT INTO notifications (user_id, type, payload) VALUES ($1, $2, $3::jsonb)`,
+    [
+      PREVIEW_IDS.instructor,
+      NotificationType.AbsenceThresholdWarning,
+      JSON.stringify({
+        ...basePayload,
+        studentId: PREVIEW_IDS.student,
+        studentDisplayName: "Nguyễn Văn A",
+      }),
+    ],
+  );
+}
+
+/** Lightweight refresh after integration truncates sessions — history before QR tokens (FK order). */
+export async function refreshPreviewBrowserFixtures(db: DbPool): Promise<void> {
+  await ensurePreviewCoreAuthFixtures(db);
+  await ensurePreviewDeactivatedUser(db);
+  await ensurePreviewInstructor2Fixtures(db);
+  await ensurePreviewDisplayNames(db);
+  await ensurePreviewReferenceData(db);
+
+  const historyCount = await db.query<{ count: string }>(
+    `SELECT COUNT(*)::text AS count FROM attendance_records ar
+     INNER JOIN sessions s ON s.id = ar.session_id
+     WHERE ar.student_id = $1 AND s.status = $2`,
+    [PREVIEW_IDS.student, SessionStatus.Closed],
+  );
+  if (Number(historyCount.rows[0]?.count ?? "0") < PREVIEW_HISTORY_MIN_COUNT) {
+    await ensurePreviewHistoryFixtures(db);
+  }
+
+  await ensurePreviewTokenFixtures(db);
+  await ensurePreviewAbsenceNotificationFixtures(db);
+  await ensurePreviewAbsencePolicyFixtures(db);
+}
+
 /** Keep browser-gate QR fixtures within 30 s TTL while preview stack runs. */
 export function startPreviewTokenRefresh(db: DbPool): () => void {
   const handle = setInterval(() => {
-    void runWhenPreviewDbIdle(db, async () => {
-      await ensurePreviewDeactivatedUser(db);
-      await ensurePreviewDisplayNames(db);
-      await ensurePreviewTokenFixtures(db);
-    }).catch(
+    void runWhenPreviewDbIdle(db, () => refreshPreviewBrowserFixtures(db)).catch(
       (error: unknown) => {
         console.error("Preview token fixture refresh failed:", error);
       },
@@ -544,12 +906,7 @@ export function startPreviewTokenRefresh(db: DbPool): () => void {
 /** Idempotent preview fixtures for browser gates (NFR-17, NFR-06). */
 export async function runPreviewSeed(db: DbPool): Promise<void> {
   if (await isSeedApplied(db)) {
-    await runWhenPreviewDbIdle(db, async () => {
-      await ensurePreviewDeactivatedUser(db);
-      await ensurePreviewDisplayNames(db);
-      await ensurePreviewTokenFixtures(db);
-      await ensurePreviewHistoryFixtures(db);
-    });
+    await runWhenPreviewDbIdle(db, () => refreshPreviewBrowserFixtures(db));
     return;
   }
 
@@ -564,9 +921,11 @@ export async function runPreviewSeed(db: DbPool): Promise<void> {
   );
 
   await db.query(
-    `INSERT INTO subjects (id, code, name) VALUES ($1, 'SWE-101', 'Software Engineering 101')
+    `INSERT INTO subjects (id, code, name) VALUES
+       ($1, 'SWE-101', 'Software Engineering 101'),
+       ($2, 'SWE-102', 'Software Engineering 102')
      ON CONFLICT (id) DO NOTHING`,
-    [PREVIEW_IDS.subjectSwe101],
+    [PREVIEW_IDS.subjectSwe101, PREVIEW_IDS.subjectSwe102],
   );
 
   await db.query(
@@ -574,6 +933,13 @@ export async function runPreviewSeed(db: DbPool): Promise<void> {
      VALUES ($1, $2, $3)
      ON CONFLICT (instructor_id, class_id, subject_id) DO NOTHING`,
     [PREVIEW_IDS.instructor, PREVIEW_IDS.classHesd01, PREVIEW_IDS.subjectSwe101],
+  );
+
+  await db.query(
+    `INSERT INTO class_assignments (instructor_id, class_id, subject_id)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (instructor_id, class_id, subject_id) DO NOTHING`,
+    [PREVIEW_IDS.instructor2, PREVIEW_IDS.classHesd02, PREVIEW_IDS.subjectSwe102],
   );
 
   await db.query(
@@ -630,7 +996,19 @@ export async function runPreviewSeed(db: DbPool): Promise<void> {
     "SELECT status FROM sessions WHERE id = $1",
     [PREVIEW_IDS.sessionActive],
   );
-  if (activeSession.rows[0]?.status === SessionStatus.Draft) {
+  const seedActiveStatus = activeSession.rows[0]?.status;
+  if (
+    seedActiveStatus === SessionStatus.Draft ||
+    seedActiveStatus === SessionStatus.Closed
+  ) {
+    if (seedActiveStatus === SessionStatus.Closed) {
+      await db.query(
+        `UPDATE sessions
+         SET status = $2, opened_at = NULL, closed_at = NULL, version = version + 1
+         WHERE id = $1`,
+        [PREVIEW_IDS.sessionActive, SessionStatus.Draft],
+      );
+    }
     await sessionService.open(
       PREVIEW_IDS.sessionActive,
       PREVIEW_IDS.instructor,
@@ -663,10 +1041,36 @@ export async function runPreviewSeed(db: DbPool): Promise<void> {
     ],
   );
 
+  await db.query(
+    `INSERT INTO sessions (
+       id, instructor_id, class_id, subject_id, title, room_name,
+       room_latitude, room_longitude, gps_radius_meters, scheduled_start,
+       status, version
+     ) VALUES ($1, $2, $3, $4, $5, $6, NULL, NULL, 100, $7, $8, 1)
+     ON CONFLICT (id) DO UPDATE SET
+       room_latitude = NULL,
+       room_longitude = NULL,
+       status = EXCLUDED.status`,
+    [
+      PREVIEW_IDS.sessionDraftNoGps,
+      PREVIEW_IDS.instructor,
+      PREVIEW_IDS.classHesd01,
+      PREVIEW_IDS.subjectSwe101,
+      "SWE-101 — Buổi GPS",
+      "Phòng D401",
+      scheduledStart,
+      SessionStatus.Draft,
+    ],
+  );
+
   await ensurePreviewTokenFixtures(db);
   await ensurePreviewStudentFixtures(db);
+  await ensurePreviewInstructor2Fixtures(db);
   await ensurePreviewMonitorFixtures(db);
   await ensurePreviewHistoryFixtures(db);
+
+  await ensurePreviewAbsencePolicyFixtures(db);
+  await ensurePreviewAbsenceNotificationFixtures(db);
 
   sessionService.qr.stopAll();
   await markSeedApplied(db);

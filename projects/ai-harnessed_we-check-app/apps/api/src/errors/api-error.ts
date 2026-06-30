@@ -214,4 +214,32 @@ export const ERROR_MESSAGES: Readonly<Record<ErrorCodeType, string>> = {
   [ErrorCode.ExportNotAllowed]:
     "Chỉ phòng đào tạo mới có quyền xuất dữ liệu",
   [ErrorCode.MalformedJson]: "Định dạng yêu cầu không hợp lệ",
+  [ErrorCode.DuplicateClassCode]: "Mã lớp đã tồn tại",
+  [ErrorCode.DuplicateSubjectCode]: "Mã môn học đã tồn tại",
+  [ErrorCode.SetupAlreadyComplete]:
+    "Hệ thống đã hoàn tất thiết lập ban đầu. Vui lòng đăng nhập.",
 };
+
+export function duplicateClassCode(): ApiError {
+  return new ApiError(
+    422,
+    ErrorCode.DuplicateClassCode,
+    ERROR_MESSAGES[ErrorCode.DuplicateClassCode],
+  );
+}
+
+export function duplicateSubjectCode(): ApiError {
+  return new ApiError(
+    422,
+    ErrorCode.DuplicateSubjectCode,
+    ERROR_MESSAGES[ErrorCode.DuplicateSubjectCode],
+  );
+}
+
+export function setupAlreadyComplete(): ApiError {
+  return new ApiError(
+    403,
+    ErrorCode.SetupAlreadyComplete,
+    ERROR_MESSAGES[ErrorCode.SetupAlreadyComplete],
+  );
+}

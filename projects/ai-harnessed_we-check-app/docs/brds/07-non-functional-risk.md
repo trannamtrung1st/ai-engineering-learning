@@ -14,6 +14,7 @@ Measurable quality attributes (`NFR-xx`) and operational risks for **We Check** 
 | Performance and scalability | NFR-04 – NFR-08 | OBJ-01, OBJ-03, [FR-06](./03-functional-requirements.md) |
 | Security and privacy | NFR-09 – NFR-16 | SM-03, SM-04, [BR-06](./04-business-rules.md) |
 | Usability and accessibility | NFR-17 – NFR-20 | [FR-07](./03-functional-requirements.md), locale `vi-VN` |
+| Device API fidelity | NFR-24 | [FR-07](./03-functional-requirements.md), [FR-08](./03-functional-requirements.md) |
 | Maintainability and operability | NFR-21 – NFR-23 | `ITOperations` stakeholder |
 
 Functional behavior is specified in `FR-xx`; testable acceptance scenarios are in `AC-xx` in [08-acceptance-mvp-future.md](./08-acceptance-mvp-future.md).
@@ -106,7 +107,7 @@ Functional behavior is specified in `FR-xx`; testable acceptance scenarios are i
 | **Measure** | Delay between successful student check-in and updated count on instructor dashboard |
 | **Target** | ≤ **5 seconds** without manual page reload ([FR-15](./03-functional-requirements.md)) |
 | **Verification** | E2E timing during active session with Should-capability enabled |
-| **Traceability** | [FR-15](./03-functional-requirements.md), [AC-17](./08-acceptance-mvp-future.md) |
+| **Traceability** | [FR-15](./03-functional-requirements.md), [AC-15](./08-acceptance-mvp-future.md) |
 
 ---
 
@@ -137,10 +138,10 @@ Functional behavior is specified in `FR-xx`; testable acceptance scenarios are i
 | Field | Specification |
 | --- | --- |
 | **Attribute** | Authorization |
-| **Measure** | Access to reports, CSV export, manual edits, and cross-class data |
-| **Target** | **100%** of out-of-scope access attempts denied with audit log ([BR-08](./04-business-rules.md), [BR-09](./04-business-rules.md)) |
-| **Verification** | RBAC negative test matrix per role; [AC-12](./08-acceptance-mvp-future.md), [AC-13](./08-acceptance-mvp-future.md) |
-| **Traceability** | [FR-12](./03-functional-requirements.md), [FR-13](./03-functional-requirements.md) |
+| **Measure** | Access to reports, CSV export (including instructor assignment boundary), manual edits, and cross-class data |
+| **Target** | **100%** of out-of-scope access attempts denied with audit log ([BR-08](./04-business-rules.md), [BR-09](./04-business-rules.md)). Instructor CSV export limited to assigned class-subject pairs; student export always denied. **UI nav negative matrix:** per role, DOM contains zero links to forbidden route prefixes (`/admin/*` for non-admin, etc.) per [BR-14](./04-business-rules.md) |
+| **Verification** | RBAC negative test matrix per role; UI nav audit per [AC-18](./08-acceptance-mvp-future.md); [AC-12](./08-acceptance-mvp-future.md), [AC-13](./08-acceptance-mvp-future.md) |
+| **Traceability** | [FR-12](./03-functional-requirements.md), [FR-13](./03-functional-requirements.md), [FR-18](./03-functional-requirements.md) |
 
 #### NFR-12 — GPS data minimization
 
@@ -236,6 +237,16 @@ Functional behavior is specified in `FR-xx`; testable acceptance scenarios are i
 | **Verification** | Field test in ≥ **2** pilot classrooms |
 | **Traceability** | [FR-06](./03-functional-requirements.md); UI/UX specs under `docs/ui-ux/` |
 
+#### NFR-24 — Device API fidelity
+
+| Field | Specification |
+| --- | --- |
+| **Attribute** | Client device API behavior |
+| **Measure** | Camera and GPS acquisition paths in production vs test/demo builds |
+| **Target** | **Production builds:** `VITE_ENABLE_DEVICE_SIMULATION` **off**; URL params (`gpsSim`, `cameraSim`, `gpsLat`/`gpsLng`) **ignored** with optional dev-console warning. **Test/demo builds:** flag **on** → query-param simulation layer in [demo-guides.md](../demo-guides.md) §7 remains valid. E2E harness sets flag on in Playwright config ([11-testing-plan.md](../technical/11-testing-plan.md)) |
+| **Verification** | Integration contract with sim off; E2E with sim on; [AC-08e](./08-acceptance-mvp-future.md) |
+| **Traceability** | [FR-07](./03-functional-requirements.md), [FR-08](./03-functional-requirements.md) |
+
 ---
 
 ### 2.5 Maintainability and operability
@@ -324,7 +335,8 @@ Post-pilot retrospective: review R-01–R-10 occurrence, adjust GPS defaults, an
 | NFR-06 | FR-06 | BR-03 | — |
 | NFR-07 | FR-12 | — | OBJ-03 |
 | NFR-10 | FR-02 | BR-06 | — |
-| NFR-11 | FR-12, FR-13 | BR-08, BR-09 | — |
+| NFR-11 | FR-12, FR-13, FR-18 | BR-08, BR-09, BR-14 | — |
+| NFR-24 | FR-07, FR-08 | — | — |
 | NFR-12 | FR-08 | BR-02, BR-12 | SM-04 |
 | NFR-13 | — | — | SM-04 |
 

@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-09",
   "version": 1,
-  "docFingerprint": "sha256:0d73282a1cdb989d80f39ac5119b0cf25b1a8cdaecf5bf1c99651680f31cc6b9",
-  "generatedAt": "2026-06-28T17:33:14Z",
+  "docFingerprint": "sha256:f2be054127cda5ab7ddfda342c8e7b3e55526aeddccbbae25889d8502f5dbe96",
+  "generatedAt": "2026-06-29T17:20:33Z",
   "cases": [
     {
       "id": "TC-AC-09-001",
@@ -19,6 +19,7 @@
         "Student A coordinates within session gpsRadiusMeters"
       ],
       "steps": [
+        "GET /api/v1/check-in/tokens/:tokenId/preflight using Student A session and assert HTTP 200 outcome Valid (BR-04 not evaluated at preflight)",
         "POST /check-in with tokenId, in-radius coordinates, and spoofMetadata using Student A session",
         "Assert HTTP status 409",
         "Assert response outcome DuplicateCheckIn and errorCode DuplicateCheckIn",
@@ -44,15 +45,13 @@
         "Student B authenticated with in-radius coordinates"
       ],
       "steps": [
-        "POST /check-in as Student B using same tokenId consumed by Student A",
-        "Assert HTTP status 400",
-        "Assert response outcome TokenAlreadyUsed and errorCode TokenAlreadyUsed",
+        "GET /api/v1/check-in/tokens/:consumedTokenId/preflight as Student B and assert HTTP 403 errorCode TokenAlreadyUsed per API design §6.2",
         "Assert message Mã QR đã được sử dụng per error-handling §4",
         "Assert Student B attendance remains Pending (not Present)",
         "Verify security log entry contains sessionId, tokenId, and submitting Student B id per AC-09b and BR-11",
-        "Query check_in_attempts for Student B and assert outcome TokenAlreadyUsed"
+        "Optionally POST /check-in as Student B with same tokenId and assert HTTP 400 TokenAlreadyUsed as defense-in-depth per validation-rules §4 BR-11"
       ],
-      "expected": "AC-09b satisfied: consumed token reuse rejected; append-only security log with session ID, token ID, and submitting student ID",
+      "expected": "AC-09b satisfied: consumed token reuse rejected at preflight (403) or submit (400); append-only security log with session ID, token ID, and submitting student ID",
       "edgeCase": true
     },
     {
@@ -170,7 +169,7 @@
         "Assert response body message Mã QR đã được sử dụng per validation-rules §4 BR-11 mapping",
         "Verify CheckInAttempt row inserted with outcome TokenAlreadyUsed per FR-09"
       ],
-      "expected": "HTTP 400 TokenAlreadyUsed contract for one-time-use token violation; distinct from 409 DuplicateCheckIn per BR-11",
+      "expected": "HTTP 400 TokenAlreadyUsed contract for one-time-use token violation at submit layer; distinct from 409 DuplicateCheckIn per BR-11",
       "edgeCase": true
     },
     {
@@ -187,8 +186,9 @@
         "Student B enrolled and authenticated with in-radius coordinates"
       ],
       "steps": [
+        "Student A GET preflight with fresh Valid tokenId and assert HTTP 200 outcome Valid",
         "Student A POST /check-in again with fresh Valid tokenId and assert HTTP 409 DuplicateCheckIn",
-        "Student B POST /check-in with same tokenId consumed in step 2 and assert HTTP 400 TokenAlreadyUsed",
+        "Student B GET preflight with same tokenId consumed in step 2 and assert HTTP 403 TokenAlreadyUsed",
         "Verify security log entry for Student B attempt with sessionId, tokenId, studentId",
         "Assert Student B attendance remains Pending",
         "Confirm Flow B anti-fraud rejection path per testing-plan §6 Flow B tags AC-09, BR-04, BR-11"
@@ -258,6 +258,7 @@
       "steps": [
         "Student A POST /check-in with tokenId T1 and assert HTTP 409 DuplicateCheckIn",
         "Query qr_tokens for T1 and assert status remains Valid (not Consumed)",
+        "Student B GET preflight with tokenId T1 and assert HTTP 200 outcome Valid",
         "Student B POST /check-in with same tokenId T1 and in-radius coordinates",
         "Assert Student B HTTP 200 outcome Success and attendance Present",
         "Query qr_tokens for T1 and assert status Consumed after Student B success"
@@ -280,13 +281,16 @@
       ],
       "steps": [
         "Navigate to /check-in deep link for session where student is already Present",
-        "Complete GPS capture and tap submit control",
+        "Assert validating_token inline spinner during GET /api/v1/check-in/tokens/:tokenId/preflight",
+        "Assert GpsCaptureStep mounts after preflight returns HTTP 200 outcome Valid per BR-15",
+        "Wait for GpsCaptureStep ready substate (Vị trí đã sẵn sàng; no spinner; aria-busy false; submit enabled)",
+        "Tap Xác nhận điểm danh submit control",
         "Verify CheckInOutcomePanel displays info-level DuplicateCheckIn state",
         "Verify message Bạn đã điểm danh buổi học này rồi per user-flows §WF-03",
         "Verify prior check-in timestamp displayed",
         "Verify Xem lịch sử link navigates to /history per ui-states DuplicateCheckIn action"
       ],
-      "expected": "AC-09a surfaced in mobile web UI; student informed of prior check-in with history navigation per CheckInOutcomePanel traceability",
+      "expected": "AC-09a surfaced in mobile web UI after preflight pass and GPS ready; student informed of prior check-in with history navigation per CheckInOutcomePanel traceability",
       "edgeCase": false
     },
     {
@@ -300,17 +304,18 @@
       "preconditions": [
         "Student B authenticated on mobile viewport",
         "QrToken already Consumed by Student A within current 30-second window",
-        "Deep link or scanned QR contains consumed tokenId for Active session",
-        "GPS permission granted with in-radius coordinates"
+        "Deep link or scanned QR contains consumed tokenId for Active session"
       ],
       "steps": [
         "Student B opens /check-in?token=:consumedTokenId&session=:sessionId",
-        "Complete GPS capture and submit check-in",
-        "Verify error panel displays TokenAlreadyUsed outcome with message Mã QR đã được sử dụng",
+        "Assert validating_token inline spinner during GET /api/v1/check-in/tokens/:consumedTokenId/preflight",
+        "Verify preflight returns 403 with errorCode TokenAlreadyUsed and message Mã QR đã được sử dụng",
+        "Assert data-testid gps-capture-step is absent; GpsCaptureStep never mounts per BR-15",
+        "Verify error outcome displayed on scan step with TokenAlreadyUsed state",
         "Verify no success confirmation or Present badge shown",
-        "Verify submit control remains disabled or offers guidance to scan fresh QR from projector"
+        "Verify recovery guidance to scan fresh QR from projector"
       ],
-      "expected": "AC-09b anti-proxy token sharing rejection visible in mobile web UI; student directed to obtain new rotating QR per BR-11",
+      "expected": "AC-09b anti-proxy token sharing rejection visible at preflight on mobile web UI; GPS step unreachable; student directed to obtain new rotating QR per BR-11",
       "edgeCase": true
     },
     {
@@ -357,6 +362,52 @@
       ],
       "expected": "Sequential boundary: first submission wins Present; immediate retry returns 409 DuplicateCheckIn per local development failure drill",
       "edgeCase": true
+    },
+    {
+      "id": "TC-AC-09-016",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["AC-09", "FR-09", "BR-11"],
+      "title": "Preflight rejects consumed token with TokenAlreadyUsed and security log before GPS step",
+      "preconditions": [
+        "Real PostgreSQL with Active session and qr_tokens row status Consumed by Student A",
+        "Token still within 30-second validity window",
+        "Authenticated enrolled Student B session with Pending attendance"
+      ],
+      "steps": [
+        "Invoke GET /api/v1/check-in/tokens/:consumedTokenId/preflight with Student B session",
+        "Assert HTTP status 403 Forbidden and errorCode TokenAlreadyUsed",
+        "Assert message Mã QR đã được sử dụng per API design §6.2",
+        "Verify security log TokenReuseAlert entry contains sessionId, tokenId, and Student B id",
+        "Query attendance_records and qr_tokens and assert no writes occurred (read-only preflight per validation-rules §3.6a)"
+      ],
+      "expected": "AC-09b satisfied at preflight layer: consumed token reuse rejected with 403 TokenAlreadyUsed and security log; GPS capture unreachable per BR-15",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-09-017",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["AC-09", "FR-09", "BR-04", "BR-15"],
+      "title": "Preflight returns 200 for already-Present student; DuplicateCheckIn rejected only at POST",
+      "preconditions": [
+        "Real PostgreSQL with Active session, enrolled Student A with attendance status Present",
+        "Fresh Valid unexpired QrToken not yet consumed",
+        "Authenticated Student A session with checkin:submit permission"
+      ],
+      "steps": [
+        "Invoke GET /api/v1/check-in/tokens/:tokenId/preflight with Student A session",
+        "Assert HTTP status 200 and outcome Valid with session summary (classCode, subjectCode, roomName)",
+        "Query attendance_records and qr_tokens and assert no writes from preflight alone",
+        "Invoke POST /api/v1/check-in with same tokenId and in-radius coordinates",
+        "Assert HTTP status 409 outcome DuplicateCheckIn per BR-04 evaluated at submit layer only"
+      ],
+      "expected": "BR-04 duplicate guard runs at POST not preflight; already-Present student passes preflight enabling GPS step but receives DuplicateCheckIn on submit per validation-rules §3.6a vs §4 BR-04",
+      "edgeCase": false
     }
   ]
 }

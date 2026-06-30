@@ -2,6 +2,7 @@ import { AttendanceStatus } from "@wecheck/domain";
 import { History } from "lucide-react";
 import { useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { AbsenceThresholdBadge } from "@/components/notifications/absence-threshold-badge";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -11,6 +12,10 @@ import {
   AttendanceHistoryError,
   useAttendanceHistory,
 } from "@/hooks/use-attendance-history";
+import {
+  selectAbsenceWarningsBySubject,
+  useNotifications,
+} from "@/hooks/use-notifications";
 import type { AttendanceHistoryItem } from "@/lib/attendance-history-api";
 import { currentPathWithSearch, loginReturnUrl } from "@/lib/auth-redirect";
 import {
@@ -28,7 +33,13 @@ function HistorySkeleton() {
   );
 }
 
-function HistoryCard({ record }: { record: AttendanceHistoryItem }) {
+function HistoryCard({
+  record,
+  showAbsenceWarning,
+}: {
+  record: AttendanceHistoryItem;
+  showAbsenceWarning: boolean;
+}) {
   const subjectLabel = record.subject.name || record.subject.code;
 
   return (
@@ -37,7 +48,10 @@ function HistoryCard({ record }: { record: AttendanceHistoryItem }) {
       data-testid={`history-row-${record.sessionId}`}
     >
       <div className="min-w-0 flex-1 pr-3">
-        <p className="truncate font-medium text-text-primary">{subjectLabel}</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="truncate font-medium text-text-primary">{subjectLabel}</p>
+          {showAbsenceWarning ? <AbsenceThresholdBadge /> : null}
+        </div>
         <p className="text-small text-text-secondary">
           {formatHistorySessionDate(record.sessionDate)}
         </p>
@@ -57,6 +71,7 @@ export function AttendanceHistoryList() {
   const navigate = useNavigate();
   const location = useLocation();
   const query = useAttendanceHistory();
+  const notificationsQuery = useNotifications();
 
   useEffect(() => {
     if (!query.error || !(query.error instanceof AttendanceHistoryError)) return;
@@ -118,7 +133,14 @@ export function AttendanceHistoryList() {
       aria-busy={query.isFetchingNextPage}
     >
       {records.map((record) => (
-        <HistoryCard key={record.sessionId} record={record} />
+        <HistoryCard
+          key={record.sessionId}
+          record={record}
+          showAbsenceWarning={selectAbsenceWarningsBySubject(
+            notificationsQuery.data?.items ?? [],
+            record.subject.code,
+          ).length > 0}
+        />
       ))}
 
       {hasMore ? (

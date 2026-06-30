@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-14",
   "version": 1,
-  "docFingerprint": "sha256:26487f1e8ffa08ffd0992c5ca94573515f2df13c0986f7c7d3fe587858764940",
-  "generatedAt": "2026-06-29T14:30:00Z",
+  "docFingerprint": "sha256:7e5d37d85efa6556576a48d4938dea47ad6d388f6d3a3dcbae936d4cccaebe76",
+  "generatedAt": "2026-06-29T18:06:59Z",
   "cases": [
     {
       "id": "TC-FR-14-001",
@@ -22,7 +22,7 @@
         "GET /api/v1/attendance/me/history?limit=20 using Student A session cookie",
         "Assert HTTP status 200 OK",
         "Assert response items array length ≤ 20 and every item belongs to Student A (no Student B institutionalId or displayName)",
-        "Assert each item includes sessionDate, subject name or subjectId, status (Present, Absent, or Excused), and checkedInAt populated only when status is Present",
+        "Assert each item includes sessionDate (scheduled_start), subject name or subjectId, status (Present, Absent, or Excused), and checkedInAt populated only when status is Present",
         "Follow nextCursor with second GET /attendance/me/history?limit=20&cursor={nextCursor} and assert remaining own records returned without peer rows",
         "Assert totalCount reflects Student A Closed-session attendance count only per FR-14 and AC-14a"
       ],
@@ -48,9 +48,9 @@
         "Assert pagination envelope includes items, nextCursor (non-null when more rows exist), and totalCount equal to Student A row count",
         "Invoke getStudentHistory(studentAId, { limit: 20, cursor: nextCursor }) and assert second page rows are disjoint from first page",
         "Query attendance_records directly and assert no Student B session rows appear in either page",
-        "Verify SQL join filters ar.student_id = $authenticated_student_id and s.status = Closed per database design"
+        "Verify SQL join filters ar.student_id = $authenticated_student_id and s.status = Closed per database design §8.4"
       ],
-      "expected": "Module-integration boundary: AttendanceService.getStudentHistory returns self-scoped paginated history only per attendance module §2.5 and FR-14",
+      "expected": "Module-integration boundary: AttendanceService.getStudentHistory returns self-scoped paginated history only per attendance module §2.5 and database design §8.4",
       "edgeCase": false
     },
     {
@@ -94,9 +94,9 @@
         "Invoke getStudentHistory(studentAId, { limit: 20, cursor: nextCursor }) and assert items.length === 20",
         "Invoke getStudentHistory(studentAId, { limit: 20, cursor: secondPageCursor }) and assert items.length === 5 (final page)",
         "Assert nextCursor is null on final page and union of all pages equals 45 unique session attendance rows",
-        "Assert no duplicate items across pages and ordering remains session date descending"
+        "Assert no duplicate items across pages and ordering remains session date descending per 14-listing-pages-search-filter-sort.md §5.2"
       ],
-      "expected": "Pagination invariant: page size, totalCount, cursor continuity, and final-page boundary behave correctly for student history per FR-14 paginated output requirement",
+      "expected": "Pagination invariant: page size, totalCount, cursor continuity, and final-page boundary behave correctly for student history per FR-14 and 14-listing-pages-search-filter-sort.md §6 (20 per fetch)",
       "edgeCase": false
     },
     {
@@ -186,11 +186,13 @@
         "Navigate to /history",
         "Wait for AttendanceHistoryList to load and assert skeleton transitions to data rows",
         "Verify each card row displays subject name, session date (vi-VN formatted), StatusBadge with correct variant for Present/Absent/Excused, and check-in time only on Present rows",
-        "Verify first page shows up to 20 rows per cursor/load-more page size",
-        "Click Tải thêm (load more) and verify additional rows append without duplicating first page",
-        "Verify rows sorted by session date descending and list is read-only (no edit controls)"
+        "Verify first page shows up to 20 rows per 14-listing-pages-search-filter-sort.md §6 cursor/load-more page size",
+        "Click Tải thêm (load more) and verify inline spinner on button during fetch per ui-states §5",
+        "Verify additional rows append without duplicating first page",
+        "When all records loaded verify Tải thêm is hidden and Đã hiển thị tất cả is shown per ui-states §5",
+        "Verify rows sorted by session date descending and list is read-only (no edit controls) per FR-14"
       ],
-      "expected": "FR-14 browser journey: /history paginated read-only list with status badges showing session date, subject, status, and check-in time when applicable",
+      "expected": "FR-14 browser journey: /history paginated read-only list with status badges per page-list §3.2, ui-states §5, and event-specific-components §2.4",
       "edgeCase": false
     },
     {
@@ -208,7 +210,7 @@
       "steps": [
         "Navigate to /history",
         "Wait for API GET /attendance/me/history to complete",
-        "Verify EmptyState displays message Chưa có buổi học nào",
+        "Verify EmptyState displays message Chưa có buổi học nào per ui-states §5 and event-specific-components §2.4",
         "Verify no StatusBadge or attendance cards rendered",
         "Verify load-more control hidden or disabled when items array is empty"
       ],
@@ -225,7 +227,7 @@
       "title": "GET /attendance/me/history with limit=201 returns 400 InvalidPagination",
       "preconditions": [
         "Authenticated Student session",
-        "API design §1 enforces limit default 50, max 200 per pagination rules"
+        "Validation-rules VAL-07 enforces limit 1–200 (default 50) per API design §1"
       ],
       "steps": [
         "GET /api/v1/attendance/me/history?limit=201 using Student session cookie",
@@ -247,7 +249,7 @@
       "title": "GET /attendance/me/history with malformed cursor returns 400 InvalidPagination",
       "preconditions": [
         "Authenticated Student session",
-        "Validation rejects malformed opaque cursor per error-handling §4.3"
+        "Validation-rules VAL-08 rejects malformed opaque cursor per error-handling §4.3"
       ],
       "steps": [
         "GET /api/v1/attendance/me/history?cursor=not-a-valid-cursor using Student session",
@@ -255,7 +257,7 @@
         "Assert response errorCode InvalidPagination",
         "Assert no partial attendance items returned in error body"
       ],
-      "expected": "Malformed cursor boundary rejected with InvalidPagination; no partial history data exposed",
+      "expected": "Malformed cursor boundary rejected with InvalidPagination per validation-rules VAL-08; no partial history data exposed",
       "edgeCase": true
     },
     {
@@ -277,7 +279,7 @@
         "Navigate to /history in browser and verify same session appears with Present StatusBadge and check-in time",
         "Confirm history reflects check-in outcome without exposing other students' records"
       ],
-      "expected": "Flow A lifecycle includes student personal history visibility after check-in and close per FR-14 and testing-plan §6 Flow A",
+      "expected": "Flow A lifecycle includes student personal history visibility after check-in and close per WF-05 sub-flow and testing-plan §6",
       "edgeCase": false
     },
     {

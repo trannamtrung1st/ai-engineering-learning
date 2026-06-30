@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-03",
   "version": 1,
-  "docFingerprint": "sha256:ad6d8932a7d965179de36908dc7ca72681057a8551a7f0f58eae388cc409ed40",
-  "generatedAt": "2026-06-29T00:00:00Z",
+  "docFingerprint": "sha256:46a74e7dd400d0bcac48b5d2f04254825be36fcb9409b80d705fa0172e545ac0",
+  "generatedAt": "2026-06-29T17:45:54Z",
   "cases": [
     {
       "id": "TC-FR-03-001",
@@ -229,10 +229,12 @@
       "title": "Flow A step 1: Admin seeds cohort roster via CSV import before session creation",
       "preconditions": [
         "TrainingOfficeAdmin is authenticated",
-        "Empty class HESD-01 / SWE-101 reference data exists",
+        "No enrollments exist yet for target class-subject pair",
         "CSV contains enrollments for all pilot cohort students (≥10 rows)"
       ],
       "steps": [
+        "POST /api/v1/classes with code HESD-01 and display name for pilot cohort",
+        "POST /api/v1/subjects with code SWE-101 and display name",
         "POST /api/v1/roster/import with cohort CSV file",
         "Poll GET /api/v1/roster/imports/:batchId until Completed with successRows matching CSV row count",
         "GET /api/v1/enrollments for HESD-01 / SWE-101 and verify totalCount matches imported count",
@@ -427,6 +429,174 @@
         "Observe permission-denied state or empty/disabled class option"
       ],
       "expected": "Assigned class roster displays enrolled students in read-only table; unassigned class access blocked in UI consistent with FR-03 instructor scope",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-03-021",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-03"],
+      "title": "POST /classes persists Class with unique uppercase code in Postgres",
+      "preconditions": [
+        "Real PostgreSQL test database is running",
+        "roster-enrollment module ClassRepository is wired",
+        "No existing class row with code HESD-03"
+      ],
+      "steps": [
+        "Invoke ClassService.create with admin context and body { code: \"HESD-03\", name: \"HESD Cohort 03\" }",
+        "Query classes table for code HESD-03 within the same transaction scope",
+        "Assert persisted code matches uppercase HESD-03 and name is stored"
+      ],
+      "expected": "Exactly one class row committed with unique uppercase code and display name per FR-03 manual reference data rules",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-03-022",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-03"],
+      "title": "POST /subjects persists Subject with unique uppercase code in Postgres",
+      "preconditions": [
+        "Real PostgreSQL test database is running",
+        "roster-enrollment module SubjectRepository is wired",
+        "No existing subject row with code SWE-102"
+      ],
+      "steps": [
+        "Invoke SubjectService.create with admin context and body { code: \"SWE-102\", name: \"Software Engineering 102\" }",
+        "Query subjects table for code SWE-102",
+        "Assert persisted code matches uppercase SWE-102 and name is stored"
+      ],
+      "expected": "Exactly one subject row committed with unique uppercase code and display name per FR-03 manual reference data rules",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-03-023",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-03", "AC-03"],
+      "title": "Duplicate class code rejected with 422 DuplicateClassCode",
+      "preconditions": [
+        "Real PostgreSQL test database is running",
+        "Class with code HESD-03 already exists",
+        "ClassService.create invoked under admin context"
+      ],
+      "steps": [
+        "Attempt create with duplicate code HESD-03 and a different display name",
+        "Capture domain/HTTP error mapping",
+        "Query classes table count for code HESD-03"
+      ],
+      "expected": "Request rejected with HTTP 422 and errorCode DuplicateClassCode; exactly one class row remains for HESD-03 per AC-03e",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-03-024",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["FR-03", "AC-03"],
+      "title": "AC-03d: Admin creates class HESD-03 and subject SWE-102 for roster import",
+      "preconditions": [
+        "TrainingOfficeAdmin is authenticated with roster:write permission",
+        "Codes HESD-03 and SWE-102 do not yet exist in reference data"
+      ],
+      "steps": [
+        "POST /api/v1/classes with { code: \"HESD-03\", name: \"HESD Cohort 03\" }",
+        "POST /api/v1/subjects with { code: \"SWE-102\", name: \"Software Engineering 102\" }",
+        "GET /api/v1/classes and GET /api/v1/subjects and assert new records appear",
+        "POST /api/v1/roster/import with CSV rows referencing class_code HESD-03 and subject_code SWE-102",
+        "Poll GET /api/v1/roster/imports/:batchId until Completed with successRows matching CSV"
+      ],
+      "expected": "Class and subject persisted; visible in reference lists and accepted by roster import validation per AC-03d",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-03-025",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-03"],
+      "title": "POST /classes returns 201 Created with class DTO envelope",
+      "preconditions": [
+        "TrainingOfficeAdmin session cookie is set",
+        "Code HESD-03 is not yet registered"
+      ],
+      "steps": [
+        "Send POST /api/v1/classes with JSON body { code: \"HESD-03\", name: \"HESD Cohort 03\" }",
+        "Assert HTTP status 201 Created",
+        "Assert response body contains id (uuid), code HESD-03, and name fields",
+        "GET /api/v1/classes and verify the created class is listed"
+      ],
+      "expected": "HTTP 201 Created with class DTO per API design §4.1a; reference record available for downstream roster import",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-03-026",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["FR-03"],
+      "title": "Duplicate subject code returns 422 DuplicateSubjectCode",
+      "preconditions": [
+        "TrainingOfficeAdmin is authenticated",
+        "Subject with code SWE-102 already exists"
+      ],
+      "steps": [
+        "POST /api/v1/subjects with { code: \"SWE-102\", name: \"Duplicate attempt\" }",
+        "Assert HTTP status 422 and errorCode DuplicateSubjectCode",
+        "GET /api/v1/subjects and verify only one SWE-102 record exists"
+      ],
+      "expected": "Duplicate subject code rejected with localized validation error; no second subject row created",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-03-027",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P1",
+      "traceability": ["FR-03"],
+      "title": "Instructor and Student denied POST /classes and POST /subjects with 403 Forbidden",
+      "preconditions": [
+        "Authenticated Instructor session and separate Student session are available",
+        "Neither role has roster:write permission per roles matrix §2.2"
+      ],
+      "steps": [
+        "POST /api/v1/classes with valid body using Instructor session cookie",
+        "Assert HTTP 403 Forbidden and no class row created",
+        "POST /api/v1/subjects with valid body using Student session cookie",
+        "Assert HTTP 403 Forbidden and no subject row created"
+      ],
+      "expected": "Non-admin roles receive HTTP 403 with errorCode Forbidden; reference data endpoints remain admin-only per FR-03",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-03-028",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-03", "AC-03"],
+      "title": "Admin creates class via /admin/classes/new form before roster import",
+      "preconditions": [
+        "TrainingOfficeAdmin is logged in to admin SPA",
+        "Class code HESD-03 does not yet exist"
+      ],
+      "steps": [
+        "Navigate to /admin/classes/new",
+        "Fill code HESD-03 and display name fields and submit the form",
+        "Verify success confirmation and redirect or list update showing HESD-03",
+        "Navigate to roster import page and confirm HESD-03 appears in class filter or validation context"
+      ],
+      "expected": "Manual class creation via admin UI persists reference data and makes class available for roster workflows per AC-03d",
       "edgeCase": false
     }
   ]

@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-01",
   "version": 1,
-  "docFingerprint": "sha256:2668a9e5528c7792c1487646faad8fb595d13fa43185d7cf976e318818385f70",
-  "generatedAt": "2026-06-28T17:16:12Z",
+  "docFingerprint": "sha256:c7d3f05bcd7f282254c6df7321da31c143e51b3076c4c3bcf928d7b2b5244926",
+  "generatedAt": "2026-06-29T08:00:00Z",
   "cases": [
     {
       "id": "TC-AC-01-001",
@@ -11,18 +11,18 @@
       "technique": "scenario-matrix",
       "priority": "P0",
       "traceability": ["AC-01", "FR-01"],
-      "title": "TS-01: Admin provisions student account and student authenticates",
+      "title": "TS-01: TrainingOfficeAdmin provisions student account and student authenticates",
       "preconditions": [
         "TrainingOfficeAdmin is authenticated with valid session",
         "No user exists with institutionalId SV2026999"
       ],
       "steps": [
-        "POST /users with institutionalId SV2026999, displayName, email, password (≥8 chars), role Student",
+        "POST /api/v1/users with institutionalId SV2026999, displayName, email, password (≥8 chars), role Student",
         "Verify response status 201 and body includes active=true",
-        "POST /auth/login with the new student's email and password",
-        "GET /auth/me with the issued session cookie"
+        "POST /api/v1/auth/login with the new student's email and password",
+        "GET /api/v1/auth/me with the issued session cookie"
       ],
-      "expected": "User row persisted with active=true; login returns 200 with user profile and session; /auth/me returns the same student identity",
+      "expected": "User row persisted with active=true and role Student; login returns 200 with user profile and session; /auth/me returns the same student identity",
       "edgeCase": false
     },
     {
@@ -32,7 +32,7 @@
       "technique": "module-integration",
       "priority": "P0",
       "traceability": ["AC-01", "FR-01"],
-      "title": "UserService.provision persists student with active=true in Postgres transaction",
+      "title": "UserService.provision persists user with hashed password and active=true in Postgres",
       "preconditions": [
         "Real PostgreSQL test database is running",
         "identity-auth module UserService is wired to UserRepository"
@@ -40,9 +40,9 @@
       "steps": [
         "Invoke UserService.provision with valid student DTO (unique institutionalId, email, displayName, role Student)",
         "Query users table by institutionalId within the same transaction",
-        "Verify passwordHash is stored (not plaintext) and active column is true"
+        "Verify password_hash is stored (bcrypt/argon2, not plaintext) and active column is true"
       ],
-      "expected": "Exactly one user row committed with active=true, correct role enum, and hashed password; no orphan rows on rollback",
+      "expected": "Exactly one user row committed with active=true, correct user_role enum, and hashed password; transaction rolls back cleanly on validation failure",
       "edgeCase": false
     },
     {
@@ -58,12 +58,12 @@
         "Request body contains all required fields per API design §3.2"
       ],
       "steps": [
-        "Send POST /users with Content-Type application/json and valid student payload",
+        "Send POST /api/v1/users with Content-Type application/json and valid student payload",
         "Assert HTTP status 201",
         "Assert response body contains id, institutionalId, displayName, email, role, active, createdAt",
         "Assert response body does not contain password or passwordHash"
       ],
-      "expected": "HTTP 201 Created with standard success envelope containing User DTO; password fields absent from response",
+      "expected": "HTTP 201 Created with User DTO; password fields absent from response",
       "edgeCase": false
     },
     {
@@ -79,7 +79,7 @@
         "User with institutionalId SV2026001 already exists in database"
       ],
       "steps": [
-        "POST /users with institutionalId SV2026001 and a different email",
+        "POST /api/v1/users with institutionalId SV2026001 and a different email",
         "Capture response status and error envelope",
         "Query users table count for institutionalId SV2026001"
       ],
@@ -99,9 +99,9 @@
         "Credentials are otherwise valid"
       ],
       "steps": [
-        "POST /auth/login with deactivated student's email and correct password",
+        "POST /api/v1/auth/login with deactivated student's email and correct password",
         "Assert no session cookie is set",
-        "Attempt POST /check-in with any valid-looking payload without session"
+        "Attempt POST /api/v1/check-in with any valid-looking payload without session"
       ],
       "expected": "Login returns HTTP 403 with errorCode AccountDeactivated and Vietnamese message Tài khoản đã bị vô hiệu hóa; no session issued; check-in not permitted",
       "edgeCase": true
@@ -111,19 +111,19 @@
       "category": "functional",
       "layer": "integration",
       "technique": "state-transition",
-      "priority": "P1",
+      "priority": "P0",
       "traceability": ["AC-01", "FR-01"],
-      "title": "Deactivating user transitions active true to false and revokes sessions",
+      "title": "Deactivating user transitions active true to false and revokes all AuthSession rows",
       "preconditions": [
-        "Active student user exists with at least one valid AuthSession row",
+        "Active student user exists with at least one valid auth_sessions row",
         "TrainingOfficeAdmin context available for UserService.update"
       ],
       "steps": [
-        "PATCH /users/:userId with active=false via UserService.update",
-        "Query user row for active flag",
-        "Query auth_sessions table for userId and verify all rows revoked or deleted"
+        "PATCH /api/v1/users/:userId with active=false via UserService.update",
+        "Query users row for active flag",
+        "Query auth_sessions table for user_id and verify all rows have revoked_at set or are deleted"
       ],
-      "expected": "User active transitions from true to false; all AuthSession rows for that user are invalidated per API design §3.3",
+      "expected": "User active transitions from true to false; all AuthSession rows for that user are invalidated per API design §3.3; deactivated user cannot obtain new session",
       "edgeCase": false
     },
     {
@@ -136,10 +136,10 @@
       "title": "Student denied POST /users with 403 Forbidden",
       "preconditions": [
         "Authenticated Student session is established",
-        "Student lacks user:write permission per roles matrix"
+        "Student lacks user:write permission per roles matrix §2.2"
       ],
       "steps": [
-        "POST /users with valid student payload using Student session cookie",
+        "POST /api/v1/users with valid student payload using Student session cookie",
         "Assert response status and error envelope"
       ],
       "expected": "HTTP 403 with errorCode Forbidden and Vietnamese permission-denied message; no user row created",
@@ -155,10 +155,10 @@
       "title": "Instructor denied POST /users with 403 Forbidden",
       "preconditions": [
         "Authenticated Instructor session is established",
-        "Instructor lacks user:write permission per roles matrix"
+        "Instructor lacks user:write permission per roles matrix §2.2"
       ],
       "steps": [
-        "POST /users with valid student payload using Instructor session cookie",
+        "POST /api/v1/users with valid student payload using Instructor session cookie",
         "Assert response status and error envelope"
       ],
       "expected": "HTTP 403 with errorCode Forbidden; no user row created",
@@ -171,7 +171,7 @@
       "technique": "browser-journey",
       "priority": "P0",
       "traceability": ["AC-01", "FR-01"],
-      "title": "Admin creates student via UserForm and sees success confirmation",
+      "title": "Admin creates student via UserForm and sees active badge in UserListTable",
       "preconditions": [
         "TrainingOfficeAdmin is logged in to admin SPA",
         "Admin navigates to user management page"
@@ -182,7 +182,7 @@
         "Submit the form",
         "Verify success toast or redirect and new row appears in UserListTable with active badge"
       ],
-      "expected": "UserForm submits successfully; table shows new student with active status; no validation errors displayed",
+      "expected": "UserForm submits successfully; table shows new student with active status badge; institutionalId and email columns match submitted values",
       "edgeCase": false
     },
     {
@@ -222,7 +222,7 @@
         "Click login button",
         "Observe error banner or inline message on login form"
       ],
-      "expected": "Login page displays Vietnamese deactivated-account message Tài khoản đã bị vô hiệu hóa; user remains on login page with no redirect to check-in",
+      "expected": "Login page displays Vietnamese deactivated-account message Tài khoản đã bị vô hiệu hóa; user remains on login page with no redirect to check-in or dashboard",
       "edgeCase": true
     },
     {
@@ -238,7 +238,7 @@
         "User with email existing@example.edu.vn already exists"
       ],
       "steps": [
-        "POST /users with unique institutionalId but email existing@example.edu.vn",
+        "POST /api/v1/users with unique institutionalId but email existing@example.edu.vn",
         "Assert response status and error envelope",
         "Verify no second user row with that email"
       ],

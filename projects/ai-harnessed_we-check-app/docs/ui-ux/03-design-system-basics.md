@@ -8,7 +8,16 @@ Core design system structure for **We Check** MVP: principles, semantic naming, 
 
 ## 1. Design System
 
-We Check uses a **lightweight in-repo design system** — not a published package. Tokens live in CSS variables; components live in `apps/web/src/components/`. The system optimizes for fast pilot delivery, accessibility via Radix primitives, and Vietnamese-language clarity.
+We Check uses a **lightweight in-repo design system** — not a published package. Tokens live in CSS variables; components live in `apps/web/src/components/`. The system optimizes for fast pilot delivery, accessibility via Radix primitives, Vietnamese-language clarity, and the **Notion workspace system** ([DESIGN.md](./DESIGN.md), [01-design-overview.md](./01-design-overview.md) §5).
+
+**Authoritative spec:** [DESIGN.md](./DESIGN.md) · **CSS mapping:** [04-design-tokens.md](./04-design-tokens.md). Craft skills (harness-injected):
+
+| Skill | Role |
+| --- | --- |
+| [`frontend-design`](../../ai-harness/skills/frontend-design/SKILL.md) | Notion identity, signature moments, typography, screenshot self-critique |
+| [`design-craft-notion`](../../ai-harness/skills/design-craft-notion/SKILL.md) | Workspace density — sidebar, table toolbars, listing rhythm per [DESIGN.md](./DESIGN.md) |
+
+**Precedence:** [DESIGN.md](./DESIGN.md) > [04-design-tokens.md](./04-design-tokens.md) > [01-design-overview.md](./01-design-overview.md) §5 > harness craft skills.
 
 ---
 
@@ -17,11 +26,13 @@ We Check uses a **lightweight in-repo design system** — not a published packag
 | Principle | Description |
 | --- | --- |
 | Clarity over decoration | Every visual element supports scan, check-in, or audit tasks |
+| Deliberate aesthetic | Distinctive Notion workspace identity — not generic SaaS template UI |
 | Consistent semantics | Same color means same meaning everywhere (success = `Present`) |
 | Accessible by default | Radix primitives + focus tokens; no custom widgets without spec |
 | Mobile-first student | Student flows designed at 320 px; instructor/admin scale up |
 | Projection legibility | Instructor QR mode uses maximum contrast preset |
-| Honest loading | Always show loading, empty, and error states |
+| Honest loading | Always show loading, empty, and error states as design moments |
+| Signature discipline | One memorable visual beat per critical flow; quiet chrome elsewhere |
 
 ---
 
@@ -52,7 +63,8 @@ flowchart BT
 
 | Role | Token prefix | Example use |
 | --- | --- | --- |
-| Brand primary | `--color-primary-*` | Primary buttons, active nav |
+| Brand navy | `--color-brand-*` | Auth hero band, dark chrome accents |
+| Action primary | `--color-primary-*` | Primary buttons, links, focus ring |
 | Surface | `--color-surface-*` | Page background, cards |
 | Text | `--color-text-*` | Body, muted, inverse |
 | Border | `--color-border-*` | Dividers, input outlines |
@@ -67,20 +79,25 @@ Concrete values: [04-design-tokens.md](./04-design-tokens.md).
 
 ## 5. Typography Scale
 
-| Token | Size | Line height | Weight | Use |
-| --- | --- | --- | --- | --- |
-| `text-display` | 28 px | 36 px | 600 | QR countdown (presentation) |
-| `text-h1` | 24 px | 32 px | 600 | Page titles |
-| `text-h2` | 20 px | 28 px | 600 | Section headers |
-| `text-body` | 16 px | 24 px | 400 | Default body |
-| `text-small` | 14 px | 20 px | 400 | Captions, table meta |
-| `text-label` | 14 px | 20 px | 500 | Form labels |
+| Token | Size | Line height | Weight | Font | Use |
+| --- | --- | --- | --- | --- | --- |
+| `text-display` | 28 px | 36 px | 600 | `--font-display` | QR countdown, outcome headlines |
+| `text-h1` | 24 px | 32 px | 600 | `--font-display` | Page titles |
+| `text-h2` | 20 px | 28 px | 600 | `--font-display` | Section headers |
+| `text-body` | 16 px | 24 px | 400 | `--font-sans` | Default body |
+| `text-small` | 14 px | 20 px | 400 | `--font-sans` | Captions, table meta |
+| `text-label` | 14 px | 20 px | 500 | `--font-sans` | Form labels |
 
-Font family: `var(--font-sans)` — system UI stack.
+**Font loading policy:**
+
+- **Inter** — all UI (`--font-sans`, `--font-display`); Google Fonts with `vietnamese` subset; `font-display: swap`
+- Fallback: system UI stack when web fonts unavailable
+- Load fonts in `apps/web/index.html` or `@font-face` in `globals.css`; avoid blocking student check-in path
+- Be Vietnam Pro optional fallback only if browser QA shows diacritic rendering issues
 
 ---
 
-## 6. Spacing and Layout Grid
+## 6. Spacing and Layout Rhythm
 
 | Token | Value | Use |
 | --- | --- | --- |
@@ -101,16 +118,20 @@ Font family: `var(--font-sans)` — system UI stack.
 
 ---
 
-## 7. Elevation and Borders
+## 7. Elevation and Surfaces
 
-| Level | Shadow token | Use |
-| --- | --- | --- |
-| 0 | none | Flat lists |
-| 1 | `--shadow-sm` | Cards |
-| 2 | `--shadow-md` | Dropdowns, popovers |
-| 3 | `--shadow-lg` | Modals |
+Notion workspace uses **layered calm** — warm gray page base (`colors.surface`), white elevated cards (`colors.canvas`), hairline borders and subtle shadows on interaction.
 
-Border radius: `--radius-sm` 4 px (inputs), `--radius-md` 8 px (cards), `--radius-lg` 12 px (modals).
+| Level | Shadow token | Surface | Use |
+| --- | --- | --- | --- |
+| 0 | none + hairline border | `--color-surface-default` | Page background (warm gray) |
+| 1 | `--shadow-sm` | `--color-surface-raised` | Default cards, list items |
+| 2 | `--shadow-md` | `--color-surface-raised` | Hovered cards, dropdowns, data tables |
+| 3 | `--shadow-lg` | `--color-surface-raised` | Modals, outcome panels |
+
+Border radius: `--radius-xs` 4 px (chips), `--radius-sm` 6 px (badge tags), `--radius-md` 8 px (inputs, buttons), `--radius-lg` 12 px (cards, modals).
+
+**Hover (desktop only):** cards at level 1 promote to level 2 on `:hover` with `translateY(-1px)` unless `prefers-reduced-motion`.
 
 ---
 
@@ -137,14 +158,17 @@ Common icons:
 
 ## 9. Motion
 
-| Pattern | Duration | Easing |
-| --- | --- | --- |
-| Button press | 100 ms | ease-out |
-| Modal open | 200 ms | ease-out |
-| Toast enter | 250 ms | ease |
-| QR refresh pulse | 400 ms | ease-in-out |
+| Pattern | Duration | Easing | Notes |
+| --- | --- | --- | --- |
+| Button press | `--duration-fast` | ease-out | Scale 0.98 on active |
+| Modal open | `--duration-normal` | `--ease-default` | Fade + scale |
+| Page enter (student) | `--duration-normal` | `--ease-out` | Fade + 8 px rise |
+| Outcome reveal | `--duration-slow` | `--ease-spring` | Scale 0.98→1 |
+| Toast enter | 250 ms | ease | Slide from bottom |
+| QR countdown pulse | `--duration-slow` | ease-in-out | Only ≤ 10 s, presentation mode |
+| Card hover lift | `--duration-fast` | `--ease-default` | Shadow + translateY |
 
-Respect `prefers-reduced-motion: reduce` — disable pulse and shorten transitions to 0 ms.
+Respect `prefers-reduced-motion: reduce` — disable pulse, translate, and scale; keep opacity transitions instant or 0 ms.
 
 ---
 
@@ -204,8 +228,11 @@ Attendance-specific: QR display, scanner, status badges, roster row. Listed in [
 | --- | --- |
 | Use `StatusBadge` for attendance states | Invent new colors per screen |
 | Use token spacing scale | Arbitrary `margin: 13px` |
+| Apply Notion tokens from [04-design-tokens.md](./04-design-tokens.md) per [DESIGN.md](./DESIGN.md) | Generic Tailwind blue admin look |
+| Use Inter for all UI text | Mix arbitrary font families |
 | Wrap Radix once in `components/ui` | Import `@radix-ui/react-dialog` in features |
 | Show session state in header during live ops | Hide `Active`/`Closed` state |
+| Self-critique screenshots per frontend-design skill | Ship template-like undifferentiated UI |
 
 ---
 

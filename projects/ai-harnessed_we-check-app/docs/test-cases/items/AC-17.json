@@ -1,0 +1,368 @@
+{
+  "productItemId": "AC-17",
+  "version": 1,
+  "docFingerprint": "sha256:5635926769e586240ee89e384bc4287ca605296a8741a7581bffe5cd4ae311fe",
+  "generatedAt": "2026-06-29T18:00:00Z",
+  "cases": [
+    {
+      "id": "TC-AC-17-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["AC-17", "FR-17", "BR-13"],
+      "title": "TS-21d: Bootstrap first admin — POST /setup/first-admin on empty DB creates TrainingOfficeAdmin and session",
+      "preconditions": [
+        "PostgreSQL database with zero rows in users table (User.count = 0)",
+        "SEED_ENABLED=false or equivalent so no seed users exist",
+        "API running at /api/v1"
+      ],
+      "steps": [
+        "GET /api/v1/setup/status without session cookie",
+        "Assert HTTP 200 and body { needsSetup: true }",
+        "POST /api/v1/setup/first-admin with valid institutionalId ADMIN001, displayName, email admin@example.edu.vn, password (≥8 chars)",
+        "Assert HTTP 201 Created and Set-Cookie wecheck_session present",
+        "GET /api/v1/auth/me using session cookie",
+        "Assert role TrainingOfficeAdmin and email matches submitted value",
+        "GET /api/v1/setup/status and assert needsSetup false"
+      ],
+      "expected": "Testing-plan TS-21d and AC-17b satisfied: first admin bootstrap on empty DB creates TrainingOfficeAdmin, establishes session, and flips needsSetup to false",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-17-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["AC-17", "FR-17", "BR-13"],
+      "title": "SetupService.getStatus returns needsSetup true when UserRepository count is zero",
+      "preconditions": [
+        "Real PostgreSQL test database with users table truncated or empty",
+        "identity-auth SetupService wired to UserRepository per module breakdown §2.1"
+      ],
+      "steps": [
+        "Query users table and assert row count === 0",
+        "Invoke SetupService.getStatus() or equivalent module API",
+        "Assert returned needsSetup === true",
+        "Seed one TrainingOfficeAdmin via repository insert in separate transaction",
+        "Invoke SetupService.getStatus() again",
+        "Assert returned needsSetup === false"
+      ],
+      "expected": "Tag-specific integration hint satisfied: module boundary reflects User.count = 0 as needsSetup true per FR-17 and BR-13",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-17-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["AC-17", "FR-17", "BR-13"],
+      "title": "SetupService.createFirstAdmin persists TrainingOfficeAdmin, auth session, and rejects repeat when count > 0",
+      "preconditions": [
+        "Real PostgreSQL with User.count = 0",
+        "SetupService.createFirstAdmin available with password hashing per UserService"
+      ],
+      "steps": [
+        "Invoke createFirstAdmin with valid DTO (institutionalId, displayName, email, password)",
+        "Query users table and assert exactly one row with role TrainingOfficeAdmin and hashed password",
+        "Query auth_sessions table and assert session row linked to new userId",
+        "Invoke createFirstAdmin again with different valid DTO",
+        "Assert domain error SetupAlreadyComplete thrown and users table count remains 1"
+      ],
+      "expected": "Module-integration: bootstrap creates exactly one admin user and session; second attempt rejected at service layer per BR-13 one-time rule",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-17-004",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["AC-17", "FR-17", "BR-13"],
+      "title": "Tag-specific integration: POST /setup/first-admin handler returns 403 SetupAlreadyComplete after bootstrap complete",
+      "preconditions": [
+        "Real PostgreSQL with one existing TrainingOfficeAdmin user (bootstrap already complete)",
+        "SetupController or HTTP adapter mounted for integration test"
+      ],
+      "steps": [
+        "Assert User.count > 0 and SetupService.getStatus returns needsSetup false",
+        "POST /api/v1/setup/first-admin with valid new-admin payload (no session cookie)",
+        "Assert HTTP 403 Forbidden",
+        "Assert response errorCode SetupAlreadyComplete per API design §2.0",
+        "Query users table and assert no additional user row created"
+      ],
+      "expected": "Tag-specific integration hint satisfied: repeat bootstrap POST rejected with 403 after first admin exists",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-17-005",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["AC-17", "FR-17", "BR-13"],
+      "title": "Deployment bootstrap state transitions needsSetup true to false after first admin commit",
+      "preconditions": [
+        "Real PostgreSQL with beforeState: User.count = 0 and needsSetup true",
+        "SetupService.createFirstAdmin transactional path available"
+      ],
+      "steps": [
+        "Record beforeState: GET setup status → needsSetup true; users count 0",
+        "Execute createFirstAdmin transaction to completion",
+        "Record afterState: users count 1; role TrainingOfficeAdmin",
+        "Assert needsSetup false on subsequent status check",
+        "Attempt createFirstAdmin and assert SetupAlreadyComplete without state rollback"
+      ],
+      "expected": "State transition: deployment gate moves from bootstrap-required (needsSetup true) to login-available (needsSetup false) after exactly one admin user committed",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-17-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["AC-17", "FR-17", "BR-13"],
+      "title": "GET /setup/status returns 200 JSON envelope with needsSetup boolean",
+      "preconditions": [
+        "Empty database (needsSetup true scenario) and post-bootstrap database (needsSetup false scenario) available as separate test fixtures"
+      ],
+      "steps": [
+        "Send GET /api/v1/setup/status without authentication on empty DB fixture",
+        "Assert HTTP 200 OK and Content-Type application/json",
+        "Assert response body exactly { needsSetup: true } per API design §2.0",
+        "Switch to post-bootstrap fixture with one admin user",
+        "Send GET /api/v1/setup/status",
+        "Assert HTTP 200 and body { needsSetup: false }"
+      ],
+      "expected": "HTTP contract for GET /setup/status: 200 success with needsSetup flag reflecting User.count per API design §2.0",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-17-007",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["AC-17", "FR-17", "BR-13"],
+      "title": "POST /setup/first-admin returns 201 with session cookie on empty DB",
+      "preconditions": [
+        "Empty database; no session cookie present",
+        "Valid setup payload per validation rules §3.1a"
+      ],
+      "steps": [
+        "Send POST /api/v1/setup/first-admin with Content-Type application/json and body { institutionalId, displayName, email, password }",
+        "Assert HTTP 201 Created",
+        "Assert Set-Cookie header contains wecheck_session HTTP-only cookie (same as login per API design §2.0)",
+        "Assert response body includes created user DTO with role TrainingOfficeAdmin and no password fields",
+        "GET /api/v1/auth/me with session cookie and assert authenticated admin identity"
+      ],
+      "expected": "HTTP 201 contract for successful bootstrap; session cookie issued identically to POST /auth/login success path",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-17-008",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["AC-17", "FR-17", "BR-13"],
+      "title": "Tag-specific e2e: GET /setup/status needsSetup true on empty DB; repeat POST returns SetupAlreadyComplete",
+      "preconditions": [
+        "Fresh empty database with User.count = 0",
+        "Valid first-admin credentials prepared"
+      ],
+      "steps": [
+        "GET /api/v1/setup/status and assert needsSetup true (tag-specific e2e hint)",
+        "POST /api/v1/setup/first-admin with valid payload and capture session cookie",
+        "Assert HTTP 201 and user role TrainingOfficeAdmin",
+        "POST /api/v1/setup/first-admin again with different valid payload (no or stale cookie)",
+        "Assert HTTP 403 with errorCode SetupAlreadyComplete (tag-specific e2e hint)",
+        "GET /api/v1/setup/status and assert needsSetup false"
+      ],
+      "expected": "Tag-specific e2e hints satisfied: empty DB reports needsSetup true; successful bootstrap; repeat POST rejected SetupAlreadyComplete",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-17-009",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["AC-17", "FR-17", "BR-13"],
+      "title": "Unauthenticated visitor denied /setup route access when needsSetup false (403 or redirect to login)",
+      "preconditions": [
+        "Bootstrap complete: at least one user exists; needsSetup false",
+        "No session cookie; unauthenticated visitor context"
+      ],
+      "steps": [
+        "GET /api/v1/setup/status and assert needsSetup false",
+        "Navigate or request GET /setup page route without session",
+        "Assert HTTP 403 Forbidden or redirect to /login per roles-permissions §2.3b and AC-17c",
+        "If JSON API route guard exists, assert errorCode Forbidden or equivalent bootstrap-closed response",
+        "Verify SetupAdminForm is not rendered and no bootstrap fields exposed"
+      ],
+      "expected": "/setup is public only when needsSetup true; after bootstrap unauthenticated access denied per FR-17 route permission table",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-17-010",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["AC-17", "FR-17", "BR-13"],
+      "title": "AC-17d: Concurrent setup POST with identical email yields single admin and validation or bootstrap-closed error",
+      "preconditions": [
+        "Empty database (User.count = 0); needsSetup true",
+        "Two payloads sharing email dup@example.edu.vn but different institutionalId values (ADMIN001, ADMIN002)"
+      ],
+      "steps": [
+        "Fire two parallel POST /api/v1/setup/first-admin requests with identical email and distinct institutionalIds on empty DB",
+        "Assert exactly one HTTP 201 Created response with wecheck_session cookie",
+        "Assert the other response is HTTP 422 ValidationFailed with duplicate email field detail OR HTTP 403 SetupAlreadyComplete if first transaction committed",
+        "Query users table and assert User.count === 1",
+        "GET /api/v1/setup/status and assert needsSetup false"
+      ],
+      "expected": "AC-17d edge: duplicate email on bootstrap rejected; at most one TrainingOfficeAdmin persisted",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-17-011",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["AC-17", "FR-17", "BR-13"],
+      "title": "POST /setup/first-admin when users exist returns 403 SetupAlreadyComplete (not 404 or 422)",
+      "preconditions": [
+        "Database with User.count >= 1 from prior bootstrap or seed",
+        "needsSetup false"
+      ],
+      "steps": [
+        "POST /api/v1/setup/first-admin with valid institutionalId, displayName, email, password",
+        "Assert HTTP 403 Forbidden (not 201, not 422)",
+        "Assert response errorCode SetupAlreadyComplete per API design §2.0 and error-handling §2.4",
+        "Assert Vietnamese user-facing message present and no stack trace",
+        "Verify User.count unchanged after rejected request"
+      ],
+      "expected": "Bootstrap repeat boundary: SetupAlreadyComplete at HTTP 403 when deployment already has users per AC-17c and BR-13",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-17-012",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P1",
+      "traceability": ["AC-17", "FR-17", "BR-13"],
+      "title": "Parallel POST /setup/first-admin requests create at most one admin user",
+      "preconditions": [
+        "Empty PostgreSQL database",
+        "Two or more concurrent valid setup payloads with unique emails and institutionalIds"
+      ],
+      "steps": [
+        "Fire parallel POST /api/v1/setup/first-admin requests (Promise.all or load tool) against empty DB",
+        "Collect HTTP status codes from all responses",
+        "Assert exactly one response is 201 Created with session cookie",
+        "Assert all other responses are 403 SetupAlreadyComplete or equivalent conflict rejection",
+        "Query users table and assert User.count === 1 with role TrainingOfficeAdmin"
+      ],
+      "expected": "BR-13 exactly-one bootstrap invariant holds under concurrent requests; no duplicate admin rows",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-17-013",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["AC-17", "FR-17", "BR-13"],
+      "title": "Tag-specific browser-journey: / redirects to /setup when needsSetup; successful form lands on /admin hub",
+      "preconditions": [
+        "Web app running with empty database (needsSetup true)",
+        "No session cookie in browser"
+      ],
+      "steps": [
+        "Navigate browser to / (root route)",
+        "Assert URL redirects to /setup per AC-17a and user flows §12 step 1",
+        "Assert SetupAdminForm visible with fields Mã cán bộ, Họ và tên, Email, Mật khẩu",
+        "Assert login link to /login is hidden or disabled per forms-validation-ux §4.1a",
+        "Fill valid setup fields and submit form",
+        "Assert POST /api/v1/setup/first-admin succeeds and browser navigates to /admin hub",
+        "Assert admin session active (e.g. admin layout chrome or Trang chủ visible)"
+      ],
+      "expected": "Tag-specific browser-journey hint satisfied: root redirect to /setup when needsSetup; post-submit lands on /admin with session established per AC-17b",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-17-014",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["AC-17", "FR-17", "FR-18", "BR-13", "BR-14"],
+      "title": "Tag-specific browser-journey: authenticated admin lands on /admin hub with permission-filtered NavCards",
+      "preconditions": [
+        "Bootstrap complete; TrainingOfficeAdmin session cookie set in browser",
+        "Admin user holds full admin permission set per roles-permissions §2.2"
+      ],
+      "steps": [
+        "Navigate browser to /admin (or follow post-bootstrap redirect)",
+        "Assert RoleHomeHub renders with Vietnamese heading and quick-link cards",
+        "Assert cards for Quản lý người dùng, Danh sách lớp, and other permitted destinations visible per page-list §5.0",
+        "Inspect DOM for NavCard href values and assert each points to permitted /admin/* route",
+        "Remove one permission from test admin (e.g. policy:write) and reload /admin",
+        "Assert Chính sách card omitted from DOM (not merely disabled) per BR-14"
+      ],
+      "expected": "Tag-specific browser-journey hint satisfied: post-bootstrap admin lands on /admin hub; cards filtered by permission per FR-18 and page-list §5.0",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-17-015",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["AC-17", "FR-17", "FR-18", "BR-14"],
+      "title": "Tag-specific browser-journey: instructor layout chrome contains zero href matching /admin",
+      "preconditions": [
+        "Instructor user exists and is authenticated in browser",
+        "Instructor session on /sessions or role home route"
+      ],
+      "steps": [
+        "Navigate authenticated Instructor to /sessions (instructor role home)",
+        "Query all anchor elements in InstructorLayout chrome (sidebar, header, bottom nav if present)",
+        "Assert zero href attributes match /admin or /admin/* pattern",
+        "Inspect RoleHomeHub or quick links on instructor home if present; assert no admin destinations",
+        "Optional: direct navigate to /admin/users and assert ForbiddenPage without admin nav leaked in chrome"
+      ],
+      "expected": "Tag-specific browser-journey hint satisfied: instructor chrome contains zero /admin links per BR-14 and testing-plan TS-21f pattern",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-17-016",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["AC-17", "FR-17", "BR-13"],
+      "title": "AC-17c browser: /setup unavailable after bootstrap — redirects to login or shows forbidden",
+      "preconditions": [
+        "Bootstrap already complete (needsSetup false)",
+        "Browser has no active session or expired session"
+      ],
+      "steps": [
+        "Navigate browser directly to /setup",
+        "Assert user is redirected to /login OR sees forbidden/unavailable state (not SetupAdminForm)",
+        "Assert no institutional ID / password setup fields rendered",
+        "Attempt navigation to / from unauthenticated state",
+        "Assert redirect to /login (not /setup) when needsSetup false"
+      ],
+      "expected": "AC-17c UI outcome: /setup not available after bootstrap; visitor directed to login flow instead of setup form",
+      "edgeCase": false
+    }
+  ]
+}

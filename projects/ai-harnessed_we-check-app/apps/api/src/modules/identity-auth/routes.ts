@@ -6,7 +6,7 @@ import {
   extractSessionId,
   requirePermission,
 } from "../../auth/middleware.js";
-import { Permission } from "../../auth/permissions.js";
+import { getPermissionsForRole, Permission } from "../../auth/permissions.js";
 import type { SessionStore } from "../../auth/session-store.js";
 import { validationFailed, forbidden, notFound } from "../../errors/api-error.js";
 import { AuthService } from "./auth-service.js";
@@ -20,6 +20,7 @@ import {
   validateSessionInactivityHours,
   validateUpdateUserBody,
 } from "./validation.js";
+import { registerSetupRoutes } from "./setup/index.js";
 
 function requireAdmin(request: FastifyRequest): void {
   if (request.auth?.user.role !== UserRole.TrainingOfficeAdmin) {
@@ -55,6 +56,8 @@ export async function registerIdentityAuthRoutes(
   const policyService = new PolicyService(db);
   const auth = createAuthMiddleware(store);
   const secureCookies = process.env.NODE_ENV === "production";
+
+  await registerSetupRoutes(app, db, store);
 
   app.post("/auth/login", async (request, reply) => {
     const parsed = validateLoginBody(request.body);
@@ -105,6 +108,7 @@ export async function registerIdentityAuthRoutes(
         displayName: user.displayName,
         email: user.email,
         role: user.role,
+        permissions: getPermissionsForRole(user.role),
       };
     },
   );

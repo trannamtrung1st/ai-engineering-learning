@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { PoolClient } from "pg";
 import type { UserRole } from "@wecheck/domain";
 import type { DbPool } from "../infra/db.js";
 import { now } from "../infra/clock.js";
@@ -111,6 +112,22 @@ export class SessionStore {
     return { id, userId, expiresAt, lastActivityAt: at };
   }
 
+  async createSessionOnClient(
+    client: PoolClient,
+    userId: string,
+    inactivityHours: number,
+  ): Promise<AuthSession> {
+    const at = now();
+    const expiresAt = computeExpiresAt(at, inactivityHours);
+    const id = randomUUID();
+    await client.query(
+      `INSERT INTO auth_sessions (id, user_id, expires_at, last_activity_at)
+       VALUES ($1, $2, $3, $4)`,
+      [id, userId, expiresAt, at],
+    );
+    return { id, userId, expiresAt, lastActivityAt: at };
+  }
+
   async revokeSession(sessionId: string): Promise<void> {
     await this.db.query(
       "UPDATE auth_sessions SET revoked_at = $2 WHERE id = $1",
@@ -176,6 +193,8 @@ export async function truncateAuthTables(db: DbPool): Promise<void> {
   await db.query(
     "UPDATE policy_settings SET updated_by_id = NULL WHERE updated_by_id IS NOT NULL",
   );
+  await db.query("TRUNCATE notifications RESTART IDENTITY CASCADE");
+  await db.query("TRUNCATE export_audit_logs RESTART IDENTITY CASCADE");
   await db.query("DELETE FROM class_assignments");
   await db.query("DELETE FROM users");
   await db.query("DELETE FROM policy_settings WHERE key = 'preview_seed_version'");

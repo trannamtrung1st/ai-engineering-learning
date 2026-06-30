@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-12",
   "version": 1,
-  "docFingerprint": "sha256:26487f1e8ffa08ffd0992c5ca94573515f2df13c0986f7c7d3fe587858764940",
-  "generatedAt": "2026-06-28T18:09:05Z",
+  "docFingerprint": "sha256:7e5d37d85efa6556576a48d4938dea47ad6d388f6d3a3dcbae936d4cccaebe76",
+  "generatedAt": "2026-06-29T18:30:00Z",
   "cases": [
     {
       "id": "TC-FR-12-001",
@@ -81,7 +81,7 @@
       "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["FR-12", "AC-12", "BR-08", "NFR-11"],
-      "title": "Unassigned instructor receives 403 Forbidden on GET /reports/summary for another instructor class",
+      "title": "Unassigned instructor receives 403 ReportAccessDenied on GET /reports/summary for another instructor class",
       "preconditions": [
         "Instructor B authenticated but not assigned to class HESD-01 / subject SWE-101",
         "Attendance data exists for HESD-01 / SWE-101",
@@ -90,10 +90,10 @@
       "steps": [
         "GET /api/v1/reports/summary?classCode=HESD-01&subjectCode=SWE-101&from=2026-06-01&to=2026-06-30 using Instructor B session",
         "Assert HTTP status 403 Forbidden",
-        "Assert response errorCode Forbidden or ReportAccessDenied",
-        "Assert localized Vietnamese permission message per error-handling §2.3",
+        "Assert response errorCode ReportAccessDenied",
+        "Assert message Bạn không có quyền xem báo cáo này per roles-permissions §2.5",
         "Assert response body contains no student roster or summary data",
-        "Repeat with GET /api/v1/reports/session/:sessionId for session in unassigned class and assert same 403 denial"
+        "Repeat with GET /api/v1/reports/session/:sessionId for session in unassigned class and assert same 403 ReportAccessDenied denial"
       ],
       "expected": "FR-12 authorization: unauthorized access to another instructor class denied with localized permission error; no report data returned per BR-08 and AC-12b",
       "edgeCase": false
@@ -112,7 +112,7 @@
         "Sessions outside date filter exist before 2026-06-01 or after 2026-06-30 for boundary contrast"
       ],
       "steps": [
-        "GET /api/v1/reports/summary?from=2026-06-01&to=2026-06-30 using TrainingOfficeAdmin session (institution-wide scope)",
+        "GET /api/v1/reports/summary?from=2026-06-01&to=2026-06-30 using TrainingOfficeAdmin session (institution-wide scope; classCode optional per forms-validation §4.7)",
         "Assert HTTP status 200 and response includes sessionsHeld and students from HESD-01 and HESD-02 cohorts within filter",
         "Assert sessions with dates outside from/to range are excluded from aggregation counts",
         "GET /api/v1/reports/summary?classCode=HESD-01&subjectCode=SWE-101&from=2026-06-01&to=2026-06-30 and assert cohort-specific drill-down also succeeds",
@@ -183,10 +183,10 @@
         "GET /api/v1/reports/summary?classCode=HESD-01&subjectCode=SWE-101&from=2026-06-30&to=2026-06-01 using authenticated session",
         "Assert HTTP status 422 Unprocessable Entity",
         "Assert response errorCode ValidationFailed",
-        "Assert response contains field-level detail for from/to date range per error-handling §2.1",
+        "Assert response contains field-level detail for from/to date range per validation-rules §3.8 and error-handling §3.1",
         "Assert no partial report data returned in error envelope"
       ],
-      "expected": "Invalid date range boundary rejected with ValidationFailed; no report payload leaked on malformed filter per boundary-error technique",
+      "expected": "Invalid date range boundary rejected with ValidationFailed; no report payload leaked on malformed filter per validation-rules §3.8",
       "edgeCase": true
     },
     {
@@ -205,7 +205,7 @@
       "steps": [
         "Invoke ReportService.getSessionRoster(assignedSessionId, instructorAId) and assert ReportDto with student status rows returned",
         "Assert aggregation counts (present, absent, excused) computed from attendance_records join enrollments",
-        "Invoke ReportService.getSessionRoster(unassignedSessionId, instructorAId) and assert BR-08 scope rejection",
+        "Invoke ReportService.getSessionRoster(unassignedSessionId, instructorAId) and assert BR-08 scope rejection (ReportAccessDenied or Forbidden)",
         "Verify no cross-assignment rows returned when querying with wrong requesterId"
       ],
       "expected": "Per-session report module boundary enforces ClassAssignment scope at service/repository layer with real DB transaction per reporting-export §2.6",
@@ -297,9 +297,9 @@
       "steps": [
         "Navigate to /reports and attempt to select or deep-link unassigned class HESD-01 / SWE-101",
         "Verify UI shows permission denied state or redirects to /forbidden per page-list §2.2",
-        "Verify localized permission message displayed",
+        "Verify localized message Bạn không có quyền xem báo cáo này displayed",
         "Verify no roster table rows or summary cards with peer cohort data rendered",
-        "Confirm API layer returns 403 Forbidden matching UI guard per BR-08"
+        "Confirm API layer returns 403 ReportAccessDenied matching UI guard per BR-08"
       ],
       "expected": "FR-12 UI authorization: unassigned instructor sees permission denied without leaking report data; mirrors rbac-negative API behavior",
       "edgeCase": false
@@ -334,20 +334,42 @@
       "technique": "scenario-matrix",
       "priority": "P0",
       "traceability": ["FR-12", "AC-12", "BR-08", "BR-09"],
-      "title": "Flow D: Instructor assigned report 200, unassigned 403; student denied report access",
+      "title": "Flow D: Instructor assigned report 200, unassigned 403 ReportAccessDenied; student denied report access",
       "preconditions": [
-        "Instructor A assigned to HESD-01 / SWE-101; Instructor B unassigned",
+        "Instructor A assigned to HESD-01 / SWE-101 only; HESD-02 / SWE-102 exists but unassigned to Instructor A",
         "Authenticated Student session",
         "Closed session with attendance in HESD-01 / SWE-101"
       ],
       "steps": [
         "Instructor A GET /reports/summary for assigned HESD-01 / SWE-101 and assert HTTP 200 with roster data",
-        "Instructor B GET /reports/summary for same class-subject and assert HTTP 403 Forbidden",
-        "Student GET /reports/summary for any class-subject and assert HTTP 403 Forbidden (lacks report:read)",
+        "Instructor A GET /reports/summary for unassigned HESD-02 / SWE-102 and assert HTTP 403 ReportAccessDenied per testing-plan §6 Flow D step 2",
+        "Student GET /reports/summary for any class-subject and assert HTTP 403 Forbidden (lacks report:read per §2.2)",
         "Confirm Flow D steps 1–2 satisfied per testing-plan §6; student denial extends RBAC matrix for FR-12"
       ],
-      "expected": "Flow D reporting authorization: assigned instructor succeeds, unassigned instructor denied, student has no report:read per testing-plan §6 tags FR-12, BR-08",
+      "expected": "Flow D reporting authorization: assigned instructor succeeds, unassigned instructor denied with ReportAccessDenied, student has no report:read per testing-plan §6 tags FR-12, BR-08",
       "edgeCase": false
+    },
+    {
+      "id": "TC-FR-12-016",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["FR-12"],
+      "title": "GET /reports/summary with date range exceeding 366 days returns 422 ValidationFailed",
+      "preconditions": [
+        "Authenticated assigned Instructor or TrainingOfficeAdmin session",
+        "Valid classCode and subjectCode for requester scope"
+      ],
+      "steps": [
+        "GET /api/v1/reports/summary?classCode=HESD-01&subjectCode=SWE-101&from=2025-01-01&to=2026-06-29 (range 545 days, exceeds max 366 per validation-rules §3.8)",
+        "Assert HTTP status 422 Unprocessable Entity",
+        "Assert response errorCode ValidationFailed",
+        "Assert field-level detail references from/to date range span",
+        "Assert no partial report data returned in error envelope"
+      ],
+      "expected": "Report summary date range boundary enforced at 366 days; malformed span rejected with ValidationFailed per validation-rules §3.8",
+      "edgeCase": true
     }
   ]
 }

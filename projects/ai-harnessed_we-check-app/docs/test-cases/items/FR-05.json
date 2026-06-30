@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-05",
   "version": 1,
-  "docFingerprint": "sha256:2fd3efb1374d66d435e640474762f36550c2b03e0c427840c997b2bd56f36bcf",
-  "generatedAt": "2026-06-29T14:00:00Z",
+  "docFingerprint": "sha256:308b096116bdccfb2f529c7c25ea74eab6b3f506c3728246a7177d7d892415fc",
+  "generatedAt": "2026-06-29T17:50:24Z",
   "cases": [
     {
       "id": "TC-FR-05-001",
@@ -21,9 +21,9 @@
         "POST /api/v1/sessions/:sessionId/open with Instructor session cookie",
         "Assert HTTP status 200 and response body status is Active with openedAt set",
         "GET /api/v1/sessions/:sessionId/attendance and assert summary.enrolled equals N and summary.pending equals N",
-        "GET /api/v1/sessions/:sessionId/qr/current and assert HTTP 200 with valid qrPayload and secondsRemaining ≤ 30"
+        "GET /api/v1/sessions/:sessionId/qr/current and assert HTTP 200 with valid qrPayload, secondsRemaining ≤ 30, and attendanceWindowClosesAt equals scheduledStart + 10 minutes"
       ],
-      "expected": "Session becomes Active per FR-05 and AC-05a; attendance window starts; QR issuance begins; one Pending record per enrolled student",
+      "expected": "Session becomes Active per FR-05 and AC-05a; attendance window starts; QR issuance begins with window close timestamp; one Pending record per enrolled student",
       "edgeCase": false
     },
     {
@@ -372,7 +372,7 @@
         "GET /api/v1/sessions/:sessionId/qr/current and capture token for student check-in (Flow A step 4)",
         "GET /api/v1/sessions/:sessionId/attendance and verify Pending count matches enrolled roster"
       ],
-      "expected": "Session opened as Flow A prerequisite per WF-03; QR and attendance bootstrap ready for student check-in and eventual close",
+      "expected": "Session opened as Flow A prerequisite per testing-plan §6 Flow A step 2; QR and attendance bootstrap ready for student check-in and eventual close",
       "edgeCase": false
     },
     {
@@ -389,13 +389,14 @@
         "Instructor navigates to session detail page for the Draft session"
       ],
       "steps": [
-        "Verify Mở buổi học (open session) action is enabled when GPS is configured",
-        "Click Mở buổi học and confirm dialog if shown",
-        "Wait for status badge update",
+        "Verify Mở buổi học action is enabled when GPS is configured",
+        "Click Mở buổi học and confirm dialog *Xác nhận mở buổi học?*",
+        "Wait for status badge update and button loading to complete",
         "Verify session status badge shows Đang diễn ra (Active) and openedAt timestamp is visible",
+        "Verify tab switches to Theo dõi (monitor) per ui-states §7.5",
         "Verify navigation links to QR display and live monitor are available"
       ],
-      "expected": "Session opened via UI per FR-05; Active status displayed; instructor can proceed to QR projection and monitoring",
+      "expected": "Session opened via UI per FR-05; Active status displayed; monitor tab active; instructor can proceed to QR projection",
       "edgeCase": false
     },
     {
@@ -408,16 +409,18 @@
       "title": "Instructor live monitor shows enrolled count and Present vs Pending progress during Active session",
       "preconditions": [
         "Instructor is logged in with Active session in progress",
-        "At least one student has checked in Present; others remain Pending",
-        "Instructor navigates to /sessions/:id/monitor"
+        "At least one student has checked in Present; others remain Pending; optional Rejected record exists",
+        "Instructor navigates to /sessions/:id Theo dõi (monitor) tab"
       ],
       "steps": [
-        "Verify summary panel shows enrolled count and present count matching API",
+        "Verify summary panel shows summary.present and summary.enrolled matching GET /api/v1/sessions/:sessionId/attendance",
         "Verify roster table lists students with status badges Present and Chờ (Pending)",
-        "Wait up to 5 seconds for poll refresh after a new check-in",
+        "Verify Rejected rows are visually highlighted when present per WF-03 §4.5",
+        "Verify recent check-ins sorted by checkedInAt descending",
+        "Wait up to 5 seconds for poll refresh after a new check-in per ui-states §7.3",
         "Verify present count increments without manual page reload"
       ],
-      "expected": "Live monitor reflects FR-05 monitoring requirement per WF-03 §4.5; attendance counts update during Active window",
+      "expected": "Live monitor reflects FR-05 monitoring requirement per WF-03 §4.5; attendance counts update every 5 s during Active window",
       "edgeCase": false
     },
     {
@@ -433,11 +436,12 @@
         "Session has Pending students not yet checked in"
       ],
       "steps": [
-        "Click Kết thúc buổi học (close session) action",
-        "Confirm close in dialog prompt",
-        "Wait for status badge update",
+        "Click Đóng buổi học action",
+        "Confirm close in dialog *Kết thúc điểm danh?*",
+        "Wait for status badge update and button loading to complete",
         "Verify session status badge shows Đã kết thúc (Closed)",
         "Verify QR display and open-session actions are unavailable",
+        "Verify monitor tab shows banner *Buổi học đã kết thúc* and polling stops per ui-states §7.3",
         "Verify monitor shows remaining Pending students marked Vắng (Absent)"
       ],
       "expected": "Manual close via UI per FR-05; session Closed; Pending finalized to Absent; check-in window closed and roster frozen",
@@ -454,7 +458,7 @@
       "preconditions": [
         "Active session past scheduledStart + 10 minutes on TestClock",
         "AutoCloseScheduler and SessionService.close both eligible to run",
-        "Optimistic lock on Session.version enabled per WF-03 §9"
+        "Optimistic lock on Session.version enabled per 06-main-workflows.md §9"
       ],
       "steps": [
         "Launch parallel SessionService.close(sessionId) and AutoCloseScheduler tick for same sessionId",
@@ -550,7 +554,29 @@
         "GET /api/v1/sessions/:sessionId/attendance and assert summary.pending is 0",
         "Verify all previously Pending records are Absent and Present records unchanged"
       ],
-      "expected": "Session closed as Flow A step 6 per WF-03; roster finalized; prerequisite for admin CSV export in Flow A step 7",
+      "expected": "Session closed as Flow A step 6 per testing-plan §6 Flow A; roster finalized; prerequisite for admin CSV export in Flow A step 7",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-05-026",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P1",
+      "traceability": ["FR-05", "BR-01"],
+      "title": "GET /sessions/:sessionId/qr/current returns attendanceWindowClosesAt during Active session",
+      "preconditions": [
+        "Instructor session cookie is set",
+        "Active sessionId with scheduledStart known and QR scheduler running"
+      ],
+      "steps": [
+        "GET /api/v1/sessions/:sessionId/qr/current with Instructor session",
+        "Assert HTTP status 200 with qrPayload, tokenId, issuedAt, expiresAt, secondsRemaining, and attendanceWindowClosesAt",
+        "Assert attendanceWindowClosesAt equals scheduledStart + 10 minutes per BR-01 window end",
+        "POST /api/v1/sessions/:sessionId/close",
+        "GET /api/v1/sessions/:sessionId/qr/current and assert no valid token or session-not-active error response"
+      ],
+      "expected": "QR current endpoint contract per API design §6.1 exposes attendance window close time during Active; token unavailable after close",
       "edgeCase": false
     }
   ]

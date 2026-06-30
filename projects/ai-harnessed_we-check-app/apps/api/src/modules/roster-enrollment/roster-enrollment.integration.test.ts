@@ -49,7 +49,8 @@ function multipartPayload(csv: string, boundary = "----wecheck"): {
  * Traceability: AC-03 FR-03 BR-08
  * Cases: TC-AC-03-002 TC-AC-03-003 TC-AC-03-004 TC-AC-03-005 TC-AC-03-006
  * TC-AC-03-007 TC-AC-03-008 TC-AC-03-009 TC-AC-03-010 TC-AC-03-012 TC-AC-03-013
- * TC-AC-03-014 TC-AC-03-015 TC-FR-03-002 TC-FR-03-016
+ * TC-AC-03-014 TC-AC-03-015
+ * TC-FR-03-002 TC-FR-03-016 TC-FR-03-017
  */
 describe("roster-enrollment integration (AC-03, FR-03, BR-08)", () => {
   let db: DbPool;
@@ -498,5 +499,29 @@ describe("roster-enrollment integration (AC-03, FR-03, BR-08)", () => {
       [batchId],
     );
     assert.ok(completed.rows[0]?.completed_at);
+  });
+
+  it("student denied GET /enrollments with 403 (TC-FR-03-017)", async () => {
+    await resetDb(seedReferenceData);
+    const admin = await seedAdmin();
+    await rosterService.importCsv(
+      Buffer.from(buildCsv(["SV2027001,Student,HESD-01,SWE-101"]), "utf8"),
+      { uploadedById: admin.userId, fileName: "one.csv" },
+    );
+
+    const imported = await db.query<{ id: string }>(
+      "SELECT id FROM users WHERE institutional_id = 'SV2027001'",
+    );
+    const studentSession = await store.createSession(imported.rows[0]!.id);
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/v1/enrollments?classId=${CLASS_HESD_01}&subjectId=${SUBJECT_SWE_101}`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${studentSession.id}` },
+    });
+
+    assert.equal(response.statusCode, 403);
+    assert.equal(response.json<{ errorCode: string }>().errorCode, ErrorCode.Forbidden);
+    assert.equal("enrollments" in response.json(), false);
   });
 });

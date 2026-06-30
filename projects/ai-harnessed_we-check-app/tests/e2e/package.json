@@ -1,0 +1,20 @@
+{
+  "name": "@wecheck/e2e",
+  "version": "0.1.0",
+  "private": true,
+  "description": "We Check API end-to-end acceptance scenarios (flows A–D, AC-01–AC-16)",
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "NODE_ENV=test SEED_ENABLED=false node --import tsx --test --test-reporter=spec --test-timeout=180000 --test-concurrency=1 src/scenarios/*.test.ts"
+  },
+  "dependencies": {
+    "@wecheck/domain": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@wecheck/config": "*",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}

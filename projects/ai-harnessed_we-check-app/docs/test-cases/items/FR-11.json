@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-11",
   "version": 1,
-  "docFingerprint": "sha256:26487f1e8ffa08ffd0992c5ca94573515f2df13c0986f7c7d3fe587858764940",
-  "generatedAt": "2026-06-29T00:00:00.000Z",
+  "docFingerprint": "sha256:7e5d37d85efa6556576a48d4938dea47ad6d388f6d3a3dcbae936d4cccaebe76",
+  "generatedAt": "2026-06-29T18:02:05Z",
   "cases": [
     {
       "id": "TC-FR-11-001",
@@ -249,18 +249,19 @@
       "title": "Instructor opens AttendanceEditDialog and submits Absent to Present with note",
       "preconditions": [
         "Authenticated Instructor on desktop viewport assigned to Closed session within 24 h of closedAt",
-        "Session attendance roster page /sessions/:sessionId/attendance loaded",
+        "Session detail page /sessions/:sessionId on Danh sách tab with AttendanceRosterTable loaded",
         "At least one student row with status Absent and Chỉnh sửa action enabled per BR-10"
       ],
       "steps": [
-        "Navigate to session attendance roster for Closed session within edit window",
+        "Navigate to /sessions/:sessionId and open Danh sách tab for Closed session within edit window",
+        "Verify countdown banner Còn {hours} giờ để chỉnh sửa visible per AttendanceEditForm UX",
         "Click Chỉnh sửa on Absent student row to open AttendanceEditDialog",
-        "Verify dialog displays student name, current status Absent, status selector with Present/Absent/Excused/Rejected, and note field per AttendanceEditForm spec",
-        "Select status Present, enter note Xác minh trực tiếp tại lớp, and submit",
-        "Verify success toast and roster row updates to Present badge",
-        "Verify AttendanceAuditTrail or audit notice visible per BR-10 audit-sensitive action UX"
+        "Verify dialog displays student name, read-only current status Absent, status selector, and note field per AttendanceEditForm §4.4",
+        "Select status Present, enter note Xác minh trực tiếp tại lớp, and click Cập nhật điểm danh",
+        "Verify success toast Đã cập nhật and roster row updates to Present badge",
+        "Verify AttendanceAuditTrail expandable panel shows editor, timestamp, and Absent → Present per ui-states §7.4"
       ],
-      "expected": "FR-11 manual edit journey via AttendanceEditDialog; roster refreshes with Present status after successful submit",
+      "expected": "FR-11 manual edit journey via AttendanceEditDialog; roster refreshes with Present status after successful submit per WF-04 §5.1",
       "edgeCase": false
     },
     {
@@ -273,17 +274,17 @@
       "title": "AttendanceEditDialog disabled with 24-hour window notice when instructor edit window expired",
       "preconditions": [
         "Authenticated Instructor assigned to session Closed more than 24 h ago",
-        "Session attendance roster page loaded",
+        "Session detail page /sessions/:sessionId on Danh sách tab loaded",
         "Student row with status Absent; edit window expired for Instructor role per BR-10"
       ],
       "steps": [
-        "Navigate to session attendance roster for session closed 25+ hours ago",
-        "Verify Chỉnh sửa action is disabled or hidden on roster rows per ui-states Editable state",
-        "If dialog trigger attempted, verify AttendanceEditDialog shows 24-hour window expired notice",
-        "Verify inline message Đã hết thời hạn chỉnh sửa điểm danh per forms-validation-ux §4.3",
+        "Navigate to /sessions/:sessionId Danh sách tab for session closed 25+ hours ago",
+        "Verify Chỉnh sửa action disabled with tooltip Chỉ phòng đào tạo có thể chỉnh sửa sau 24 giờ per ui-states §7.4 Edit locked",
+        "If dialog opened, verify AttendanceEditForm disabled with message Liên hệ phòng đào tạo để chỉnh sửa per forms-validation-ux §4.4",
+        "Verify user-flows §6 instructor post-24h message Chỉ phòng đào tạo có thể chỉnh sửa sau 24 giờ is shown",
         "Contrast: TrainingOfficeAdmin on same page sees Chỉnh sửa enabled for same row"
       ],
-      "expected": "UI gates manual edit per BR-10: instructor sees disabled edit and window notice after 24 h; admin retains edit capability per FR-11",
+      "expected": "UI gates manual edit per BR-10 and FR-11: instructor sees disabled edit with documented messages after 24 h; admin retains edit capability",
       "edgeCase": false
     },
     {
@@ -414,7 +415,7 @@
       "preconditions": [
         "Authenticated assigned Instructor session",
         "Closed session within 24 h with known attendance recordId",
-        "API validation per 08-validation-rules.md VAL-09"
+        "API validation per 08-validation-rules.md §3.7 and VAL-11 InvalidEnum"
       ],
       "steps": [
         "Send PATCH /api/v1/attendance/:recordId with body { status: \"Pending\", note: \"Invalid transition\" }",
@@ -424,6 +425,52 @@
         "Assert no audit log entry created"
       ],
       "expected": "Manual edit accepts only Present, Absent, Excused, Rejected; invalid status rejected without state change or audit",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-11-019",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["FR-11", "BR-10", "FR-10"],
+      "title": "Instructor changes Rejected to Present with note as spoof override within 24 h",
+      "preconditions": [
+        "Closed session within 24 h of closedAt with assigned Instructor A",
+        "Student attendance record with status Rejected after SpoofSuspected check-in per FR-10",
+        "TestClock within instructor edit window per BR-10"
+      ],
+      "steps": [
+        "Record beforeState: attendance_records.status Rejected for target student",
+        "PATCH /api/v1/attendance/:recordId with body { status: \"Present\", note: \"Xác minh trực tiếp tại lớp — GPS nghi ngờ giả mạo\" } using Instructor A session",
+        "Assert HTTP status 200 with updated record status Present",
+        "Query attendance_audit_logs and assert AttendanceManualEdit entry with previousStatus Rejected, afterStatus Present, editorId Instructor A per error-handling §6.2",
+        "Verify BR-10 exception: Rejected → Present allowed as spoof override within instructor window per WF-04 §5.3"
+      ],
+      "expected": "FR-11 spoof override path: instructor within 24 h changes Rejected to Present with audit per BR-10 exception and WF-04 common correction scenario",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-11-020",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["FR-11", "BR-10"],
+      "title": "PATCH /attendance/:recordId rejects note exceeding 500 chars with 422 ValidationFailed",
+      "preconditions": [
+        "Authenticated assigned Instructor session",
+        "Closed session within 24 h with known attendance recordId",
+        "VAL-10 note max 500 chars per 08-validation-rules.md §3.7"
+      ],
+      "steps": [
+        "Send PATCH /api/v1/attendance/:recordId with body { status: \"Present\", note: \"<501-char string>\" }",
+        "Assert HTTP status 422 Unprocessable Entity",
+        "Assert response errorCode ValidationFailed",
+        "Query attendance_records and assert status unchanged",
+        "Assert no AttendanceAuditLog entry created"
+      ],
+      "expected": "FR-11 manual edit note bounded by VAL-10; invalid input rejected without state change or audit",
       "edgeCase": true
     }
   ]

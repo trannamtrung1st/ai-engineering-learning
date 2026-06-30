@@ -1,8 +1,8 @@
 {
   "productItemId": "NFR-07",
   "version": 1,
-  "docFingerprint": "sha256:889c55844c8fb62f755b7bfe0012c8f4045a89dd93449f95fb5979804ca7fbd8",
-  "generatedAt": "2026-06-29T18:46:10Z",
+  "docFingerprint": "sha256:0d26880a4e8810f84506707bdccda5daa34c51f30d098691abe2c1b678fecb37",
+  "generatedAt": "2026-06-29T18:54:50Z",
   "cases": [
     {
       "id": "TC-NFR-07-001",
@@ -185,14 +185,15 @@
       "traceability": ["NFR-07", "FR-12", "AC-12"],
       "title": "Instructor /reports/sessions/:sessionId UI shows complete roster within 10 minutes of session close",
       "preconditions": [
-        "Authenticated Instructor on desktop viewport assigned to session class-subject",
+        "Authenticated Instructor on desktop viewport assigned to session class-subject with report:read",
         "Active session with enrolled students and at least one Present check-in",
         "Web on port 3000, API + PostgreSQL healthy",
-        "Session close performed via instructor UI or API with closedAt recorded"
+        "Session close performed via instructor UI or API with closedAt recorded",
+        "InstructorLayout SidebarNav shows Báo cáo at /reports per 06-app-layout-components §6.2 and AC-18d"
       ],
       "steps": [
         "Record T0 when instructor closes session (POST close or UI Đóng buổi học action completes)",
-        "Navigate to /reports/sessions/:sessionId (or drill-down from /reports filter)",
+        "Navigate to /reports/sessions/:sessionId via SidebarNav Báo cáo or RoleHomeHub Báo cáo điểm danh card per AC-18d",
         "Poll page reload or wait for ReportSummaryCards and AttendanceRosterTable to render complete data every 30 s",
         "Assert ReportSummaryCards show present, absent, excused counts matching finalized attendance",
         "Assert AttendanceRosterTable lists all enrolled students with status badges (no Pending rows)",
@@ -213,7 +214,7 @@
         "Authenticated TrainingOfficeAdmin on desktop viewport",
         "Closed session with attendance data for HESD-01 / SWE-101",
         "closedAt timestamp recorded at session close",
-        "Admin sidebar Báo cáo navigation available per page-list §5.5"
+        "Admin sidebar Báo cáo and Xuất CSV navigation available per 06-app-layout-components §7.2 and roles-permissions §2.3a"
       ],
       "steps": [
         "Record T0 at session close completion",
@@ -305,7 +306,7 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P1",
-      "traceability": ["NFR-07", "FR-12", "NFR-11"],
+      "traceability": ["NFR-07", "FR-12", "NFR-11", "BR-14"],
       "title": "Student receives immediate 403 on report endpoints; NFR-07 latency applies only to authorized instructor report access",
       "preconditions": [
         "Session Closed with complete attendance data available to instructor",
@@ -344,6 +345,54 @@
         "Assert T1 minus T0 ≤ 600 seconds"
       ],
       "expected": "Integration scenario: class-subject summary aggregation materializes within NFR-07 window after session close per FR-12 reporting requirement",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-07-015",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["NFR-07", "FR-12", "FR-18", "BR-14", "AC-18"],
+      "title": "Instructor SidebarNav shows Báo cáo at /reports; zero /admin/* links in layout chrome",
+      "preconditions": [
+        "Authenticated Instructor on desktop viewport with report:read for assigned class-subject",
+        "Web on port 3000 healthy; InstructorLayout rendered",
+        "SidebarNav filtered via usePermittedNav per 06-app-layout-components §6.2 and roles-permissions §2.3a"
+      ],
+      "steps": [
+        "Navigate to /sessions and assert InstructorLayout SidebarNav visible",
+        "Assert SidebarNav contains Báo cáo link with href /reports (report:read permitted)",
+        "Assert RoleHomeHub shows Tạo buổi học mới and Báo cáo điểm danh cards per AC-18d",
+        "Query all anchor href attributes in layout chrome (sidebar, top bar, hub cards)",
+        "Assert zero href values match /admin or /admin/* prefix per AC-18a and BR-14",
+        "On viewport < md, open hamburger drawer and re-assert zero /admin/* links"
+      ],
+      "expected": "Report nav exposed only on permitted instructor routes; NFR-07 latency verification applies to authorized Báo cáo entry points without admin nav leakage per 06-app-layout-components §6.2",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-07-016",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["NFR-07", "FR-12", "FR-18", "BR-14", "AC-18"],
+      "title": "Student BottomNav omits Báo cáo and all /admin/* routes lacking report:read",
+      "preconditions": [
+        "Authenticated Student on mobile viewport with checkin:submit and attendance:read (self)",
+        "StudentLayout BottomNav filtered via usePermittedNav per 06-app-layout-components §5.3",
+        "Student has no report:read per roles-permissions §2.2"
+      ],
+      "steps": [
+        "Navigate to /check-in and inspect StudentLayout chrome",
+        "Assert BottomNav contains only Điểm danh (/check-in) and Lịch sử (/history) per roles-permissions §2.3a",
+        "Assert no nav item or hub card href matches /reports, /admin, or /admin/*",
+        "Assert Báo cáo label absent from DOM (omitted not disabled) per BR-14",
+        "Direct navigate to /reports and assert ForbiddenPage without report roster data",
+        "Assert denial is immediate (NFR-07 10-minute SLA applies only to authorized viewers)"
+      ],
+      "expected": "Student chrome omits report and admin navigation items; unauthorized report access denied immediately so NFR-07 latency scope is instructor and admin viewers only",
       "edgeCase": false
     }
   ]

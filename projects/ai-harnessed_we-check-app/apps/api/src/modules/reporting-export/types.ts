@@ -65,3 +65,18 @@ export interface ExportResult {
   csv: string;
   rowCount: number;
 }
+
+export interface SessionSummaryRow {
+  sessionId: string;
+  scheduledStart: string;
+  classCode: string;
+  subjectCode: string;
+  enrolled: number;
+  present: number;
+  absent: number;
+  excused: number;
+}
+
+export interface SessionSummaryListDto {
+  items: SessionSummaryRow[];
+}

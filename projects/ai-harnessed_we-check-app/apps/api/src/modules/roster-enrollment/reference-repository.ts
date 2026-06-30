@@ -100,4 +100,26 @@ export class ReferenceRepository {
     );
     return result.rows.map((row) => ({ id: row.id, code: row.code, name: row.name }));
   }
+
+  async createClass(code: string, name: string): Promise<ClassRecord> {
+    const result = await this.db.query<ClassRow>(
+      `INSERT INTO classes (code, name)
+       VALUES ($1, $2)
+       RETURNING id, code, name, term`,
+      [code, name],
+    );
+    const row = result.rows[0]!;
+    return { id: row.id, code: row.code, name: row.name, term: row.term };
+  }
+
+  async createSubject(code: string, name: string): Promise<SubjectRecord> {
+    const result = await this.db.query<SubjectRow>(
+      `INSERT INTO subjects (code, name)
+       VALUES ($1, $2)
+       RETURNING id, code, name`,
+      [code, name],
+    );
+    const row = result.rows[0]!;
+    return { id: row.id, code: row.code, name: row.name };
+  }
 }

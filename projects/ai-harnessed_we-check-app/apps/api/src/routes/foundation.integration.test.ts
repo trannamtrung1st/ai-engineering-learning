@@ -25,10 +25,10 @@ const DEFAULT_DATABASE_URL =
   "postgresql://wecheck:wecheck@localhost:5432/wecheck";
 
 /**
- * Traceability: FR-02 FR-03 NFR-10 NFR-11 NFR-16 AC-03 AC-12 AC-13 AC-14
+ * Traceability: FR-02 FR-03 FR-04 FR-06 NFR-10 NFR-11 NFR-16 AC-03 AC-12 AC-13 AC-14
  * Cases: TC-NFR-10-003 TC-NFR-10-009 TC-NFR-10-010 TC-NFR-11-004 TC-NFR-11-005
- * TC-NFR-11-006 TC-NFR-11-007 TC-NFR-11-008 TC-NFR-11-011 TC-NFR-11-013 TC-NFR-11-014
- * TC-NFR-11-020 TC-NFR-16-003 TC-NFR-16-004 TC-FR-02-006
+ * TC-NFR-11-006 TC-NFR-11-007 TC-NFR-11-008 TC-NFR-11-011 TC-NFR-11-012 TC-NFR-11-013
+ * TC-NFR-11-014 TC-NFR-11-020 TC-NFR-16-003 TC-NFR-16-004 TC-FR-02-006
  */
 describe("api foundation integration (FR-02, FR-03, NFR-10, NFR-11, NFR-16)", () => {
   let db: DbPool;
@@ -532,5 +532,91 @@ describe("api foundation integration (FR-02, FR-03, NFR-10, NFR-11, NFR-16)", ()
       headers: { cookie: `${SESSION_COOKIE_NAME}=${instructor.sessionId}` },
     });
     assert.equal(response.statusCode, 403);
+  });
+
+  it("Student denied session management and qr:display (TC-NFR-11-012, FR-04, FR-06)", async () => {
+    const instructor = await seedSession(UserRole.Instructor);
+    await db.query(
+      `INSERT INTO classes (id, code, name) VALUES ($1, 'HESD-01', 'HESD Cohort A')`,
+      [CLASS_HESD_01],
+    );
+    await db.query(
+      `INSERT INTO subjects (id, code, name) VALUES ($1, 'SWE-101', 'Software Engineering 101')`,
+      [SUBJECT_SWE_101],
+    );
+    await db.query(
+      `INSERT INTO class_assignments (instructor_id, class_id, subject_id)
+       VALUES ($1, $2, $3)`,
+      [instructor.userId, CLASS_HESD_01, SUBJECT_SWE_101],
+    );
+
+    const scheduledStart = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/api/v1/sessions",
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${instructor.sessionId}` },
+      payload: {
+        classId: CLASS_HESD_01,
+        subjectId: SUBJECT_SWE_101,
+        title: "RBAC Session",
+        roomName: "Phòng A201",
+        roomLatitude: 10.762622,
+        roomLongitude: 106.660172,
+        gpsRadiusMeters: 100,
+        scheduledStart,
+      },
+    });
+    assert.equal(createRes.statusCode, 201);
+    const sessionId = createRes.json<{ id: string }>().id;
+
+    const openRes = await app.inject({
+      method: "POST",
+      url: `/api/v1/sessions/${sessionId}/open`,
+      headers: { cookie: `${SESSION_COOKIE_NAME}=${instructor.sessionId}` },
+    });
+    assert.equal(openRes.statusCode, 200);
+
+    const student = await seedSession(UserRole.Student);
+    const studentHeaders = { cookie: `${SESSION_COOKIE_NAME}=${student.sessionId}` };
+
+    const createDenied = await app.inject({
+      method: "POST",
+      url: "/api/v1/sessions",
+      headers: studentHeaders,
+      payload: {
+        classId: CLASS_HESD_01,
+        subjectId: SUBJECT_SWE_101,
+        title: "Student Session",
+        roomName: "Phòng A201",
+        scheduledStart,
+      },
+    });
+    assert.equal(createDenied.statusCode, 403);
+    assert.equal(
+      createDenied.json<{ errorCode: string }>().errorCode,
+      ErrorCode.Forbidden,
+    );
+
+    const openDenied = await app.inject({
+      method: "POST",
+      url: `/api/v1/sessions/${sessionId}/open`,
+      headers: studentHeaders,
+    });
+    assert.equal(openDenied.statusCode, 403);
+    assert.equal(
+      openDenied.json<{ errorCode: string }>().errorCode,
+      ErrorCode.Forbidden,
+    );
+
+    const qrDenied = await app.inject({
+      method: "GET",
+      url: `/api/v1/sessions/${sessionId}/qr/current`,
+      headers: studentHeaders,
+    });
+    assert.equal(qrDenied.statusCode, 403);
+    assert.equal(
+      qrDenied.json<{ errorCode: string }>().errorCode,
+      ErrorCode.Forbidden,
+    );
   });
 });

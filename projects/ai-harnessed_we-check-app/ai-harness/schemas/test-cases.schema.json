@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://we-event.local/ai-harness/schemas/test-cases.schema.json",
+  "$id": "https://wecheck.local/ai-harness/schemas/test-cases.schema.json",
   "title": "HarnessTestCases",
   "type": "object",
   "required": ["productItemId", "version", "docFingerprint", "generatedAt", "cases"],

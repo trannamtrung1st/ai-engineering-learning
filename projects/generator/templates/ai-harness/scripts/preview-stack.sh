@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start We Event stack (dev or full preview) and verify API + web startup.
+# Start {{PRODUCT_NAME}} stack (dev or full preview) and verify API + web startup.
 # Usage: preview-stack.sh [--mode dev|full] [--verify-only] [--down]
 set -euo pipefail
 source "$(dirname "$0")/lib/common.sh"
@@ -120,7 +120,7 @@ else
   wait_db_healthy
   preview_log_stack "building API workspace"
   set +e
-  npm run build --workspace @we-event/api 2>&1 | preview_tee_process_log "stack" "$PREVIEW_STACK_LOG"
+  npm run build --workspace {{WORKSPACE_NAME}}api 2>&1 | preview_tee_process_log "stack" "$PREVIEW_STACK_LOG"
   build_status=${PIPESTATUS[0]}
   set -e
   if [[ "$build_status" -ne 0 ]]; then
@@ -143,8 +143,8 @@ if [[ "$verify_status" -ne 0 ]]; then
 fi
 preview_log_stack "startup verification passed"
 
-API_PORT="${AIH_PREVIEW_API_PORT:-3001}"
-WEB_PORT="${AIH_PREVIEW_WEB_PORT:-3000}"
+API_PORT="$(aih_api_port)"
+WEB_PORT="$(aih_web_port)"
 aih_blank
 aih_section "Preview stack ready (mode=${MODE})" loop
 aih_kv "API" "http://localhost:${API_PORT}/api/v1/health"

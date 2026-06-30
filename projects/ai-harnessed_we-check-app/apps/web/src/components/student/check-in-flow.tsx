@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { SessionStatus } from "@wecheck/domain";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { toast } from "sonner";
 import { CameraConsentBanner } from "@/components/domain/check-in/camera-consent-banner";
@@ -8,7 +9,7 @@ import { GpsCaptureStep, type GpsCaptureState } from "@/components/domain/check-
 import { CheckInOutcomePanel } from "@/components/domain/check-in/check-in-outcome-panel";
 import { QrScannerView } from "@/components/domain/check-in/qr-scanner-view";
 import { PermissionGuideModal } from "@/components/shared/permission-guide-modal";
-import { submitCheckInWithRetry } from "@/lib/check-in-api";
+import { submitCheckInWithRetry, fetchCheckInPreflight } from "@/lib/check-in-api";
 import { fetchAuthUser } from "@/lib/auth-session";
 import {
   CAMERA_CONSENT_KEY,
@@ -30,7 +31,7 @@ import {
   GPS_MAX_ATTEMPTS,
   type GeoPosition,
 } from "@/lib/geolocation";
-import { loginReturnUrl, resolvePreviewId } from "@/lib/preview-fixtures";
+import { loginReturnUrl, resolvePreviewId, PREVIEW_SESSION_IDS } from "@/lib/preview-fixtures";
 import {
   readClearAllConsentOnEntry,
   readClearConsentOnEntry,
@@ -42,10 +43,14 @@ import {
   readUnsupportedBrowserOverride,
 } from "@/lib/preview-sim";
 import { previewExpireSession } from "@/lib/session-monitor-api";
+import { fetchSession } from "@/lib/sessions-api";
 import { parseCheckInQrPayload } from "@/lib/qr-deeplink";
 import type { PermissionGuideType } from "@/lib/copy/permission-guide";
+import { appCopy } from "@/lib/copy/status-labels";
 
-type CheckInStep = "consent" | "camera_consent" | "scan" | "gps" | "outcome";
+type CheckInStep = "consent" | "camera_consent" | "scan" | "preflight" | "gps" | "outcome";
+
+type SessionGate = "idle" | "checking" | "open" | "closed";
 
 /** Minimum time to show GPS requesting copy before preview auto-capture (NFR-17). */
 const GPS_REQUESTING_MIN_DISPLAY_MS = 400;
@@ -113,7 +118,7 @@ export function CheckInFlow({ initialTokenId, previewOutcome }: CheckInFlowProps
       if (readClearConsentOnEntry() && !hasCameraConsent()) return "camera_consent";
       return "scan";
     }
-    if (deepLinkTokenId) return hasLocationConsent() ? "gps" : "consent";
+    if (deepLinkTokenId) return hasLocationConsent() ? "preflight" : "consent";
     if (hasLocationConsent()) return hasCameraConsent() ? "scan" : "camera_consent";
     return "consent";
   };
@@ -152,7 +157,14 @@ export function CheckInFlow({ initialTokenId, previewOutcome }: CheckInFlowProps
   const [outcomeDetail, setOutcomeDetail] = useState<string | undefined>();
   const [permissionGuide, setPermissionGuide] = useState<PermissionGuideType | null>(null);
   const [scannedTokenId, setScannedTokenId] = useState<string | null>(deepLinkTokenId);
+  const [preflightPassed, setPreflightPassed] = useState(false);
+  const preflightStarted = useRef(false);
   const autoGpsStarted = useRef(false);
+  const authVerified = useRef(false);
+  const sessionBlocked = useRef(false);
+  const [sessionGate, setSessionGate] = useState<SessionGate>(() =>
+    sessionId && !previewOutcome ? "checking" : "idle",
+  );
 
   const activeTokenId = scannedTokenId ?? deepLinkTokenId;
 
@@ -172,8 +184,13 @@ export function CheckInFlow({ initialTokenId, previewOutcome }: CheckInFlowProps
   );
 
   const ensureAuthenticated = useCallback(async (): Promise<boolean> => {
+    if (authVerified.current) return true;
+
     const result = await fetchAuthUser();
-    if (result.ok) return true;
+    if (result.ok) {
+      authVerified.current = true;
+      return true;
+    }
 
     if (result.errorCode === "NetworkError") {
       setOutcome("NetworkError");
@@ -185,11 +202,107 @@ export function CheckInFlow({ initialTokenId, previewOutcome }: CheckInFlowProps
     return false;
   }, [redirectToLogin]);
 
+  useEffect(() => {
+    if (previewOutcome || !sessionId) {
+      setSessionGate("idle");
+      return;
+    }
+
+    if (sessionId === PREVIEW_SESSION_IDS.closed) {
+      sessionBlocked.current = true;
+      setSessionGate("closed");
+      setOutcome("SessionNotActive");
+      setStep("outcome");
+      return;
+    }
+
+    let cancelled = false;
+    setSessionGate("checking");
+    void fetchSession(sessionId)
+      .then((session) => {
+        if (cancelled) return;
+        if (session.status !== SessionStatus.Active) {
+          sessionBlocked.current = true;
+          setSessionGate("closed");
+          setOutcome("SessionNotActive");
+          setStep("outcome");
+          return;
+        }
+        setSessionGate("open");
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSessionGate("open");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [previewOutcome, sessionId]);
+
+  useEffect(() => {
+    if (previewOutcome) return;
+    void ensureAuthenticated();
+  }, [ensureAuthenticated, previewOutcome]);
+
+  const runPreflight = useCallback(
+    async (tokenId: string) => {
+      if (previewOutcome || sessionBlocked.current) return false;
+      if (!(await ensureAuthenticated())) return false;
+
+      const result = await fetchCheckInPreflight(tokenId, sessionId);
+      if (result.ok) {
+        setPreflightPassed(true);
+        return true;
+      }
+
+      setOutcome(result.outcome);
+      setOutcomeDetail(result.message);
+      setStep("outcome");
+      return false;
+    },
+    [ensureAuthenticated, previewOutcome, sessionId],
+  );
+
+  useEffect(() => {
+    if (
+      step !== "preflight" ||
+      !activeTokenId ||
+      preflightPassed ||
+      preflightStarted.current ||
+      previewOutcome ||
+      sessionBlocked.current ||
+      sessionGate === "checking" ||
+      sessionGate === "closed"
+    ) {
+      return;
+    }
+
+    preflightStarted.current = true;
+    void runPreflight(activeTokenId).then((passed) => {
+      if (passed) {
+        setStep("gps");
+        setGpsAttempt(0);
+        autoGpsStarted.current = false;
+      }
+    });
+  }, [
+    activeTokenId,
+    preflightPassed,
+    previewOutcome,
+    runPreflight,
+    sessionGate,
+    step,
+  ]);
+
   const submitToApi = useCallback(
     async (
       coords: { latitude: number; longitude: number; accuracyMeters?: number },
       tokenOverride?: string | null,
     ) => {
+      if (sessionBlocked.current) return;
+
       const submitTokenId = tokenOverride ?? activeTokenId;
       if (!submitTokenId) {
         setOutcome("Present");
@@ -226,11 +339,12 @@ export function CheckInFlow({ initialTokenId, previewOutcome }: CheckInFlowProps
             ? formatDuplicateCheckInDetail(result.priorCheckedInAt)
             : result.message,
         );
+        setStep("outcome");
       } catch {
         setOutcome("NetworkError");
         setOutcomeDetail(undefined);
-      } finally {
         setStep("outcome");
+      } finally {
         setGpsState("requesting");
       }
     },
@@ -240,9 +354,11 @@ export function CheckInFlow({ initialTokenId, previewOutcome }: CheckInFlowProps
   const runGpsCapture = useCallback(async (tokenOverride?: string | null) => {
     const captureTokenId = tokenOverride ?? activeTokenId;
 
-    if (previewOutcome) {
-      setOutcome(previewOutcome);
-      setStep("outcome");
+    if (previewOutcome || sessionBlocked.current) {
+      if (previewOutcome) {
+        setOutcome(previewOutcome);
+        setStep("outcome");
+      }
       return;
     }
 
@@ -284,8 +400,9 @@ export function CheckInFlow({ initialTokenId, previewOutcome }: CheckInFlowProps
 
   useEffect(() => {
     if (
-      deepLinkTokenId &&
       step === "gps" &&
+      preflightPassed &&
+      (sessionGate === "open" || sessionGate === "idle") &&
       !previewOutcome &&
       !autoGpsStarted.current &&
       gpsAttempt === 0
@@ -293,7 +410,14 @@ export function CheckInFlow({ initialTokenId, previewOutcome }: CheckInFlowProps
       autoGpsStarted.current = true;
       void runGpsCapture();
     }
-  }, [deepLinkTokenId, step, previewOutcome, gpsAttempt, runGpsCapture]);
+  }, [
+    step,
+    preflightPassed,
+    previewOutcome,
+    gpsAttempt,
+    runGpsCapture,
+    sessionGate,
+  ]);
 
   const handleScan = useCallback(
     (payload: string) => {
@@ -302,17 +426,21 @@ export function CheckInFlow({ initialTokenId, previewOutcome }: CheckInFlowProps
       if (!nextToken) return;
 
       setScannedTokenId(nextToken);
-      setStep("gps");
+      setPreflightPassed(false);
+      preflightStarted.current = false;
+      autoGpsStarted.current = false;
+      setStep("preflight");
       setGpsState("requesting");
       setGpsAttempt(0);
-      void runGpsCapture(nextToken);
     },
-    [runGpsCapture],
+    [],
   );
 
   const resetToScan = useCallback(() => {
     setScannedTokenId(null);
     autoGpsStarted.current = false;
+    preflightStarted.current = false;
+    setPreflightPassed(false);
     setOutcomeDetail(undefined);
     setCapturedCoords(null);
     setStep(hasCameraConsent() ? "scan" : "camera_consent");
@@ -361,9 +489,10 @@ export function CheckInFlow({ initialTokenId, previewOutcome }: CheckInFlowProps
     markLocationConsent();
     setShowConsent(false);
     if ((deepLinkTokenId || scannedTokenId) && !readForceScannerEntry()) {
-      setStep("gps");
+      setPreflightPassed(false);
+      preflightStarted.current = false;
+      setStep("preflight");
       setGpsAttempt(0);
-      void runGpsCapture();
       return;
     }
     if (hasCameraConsent()) {
@@ -372,7 +501,7 @@ export function CheckInFlow({ initialTokenId, previewOutcome }: CheckInFlowProps
       setStep("camera_consent");
       setShowCameraConsent(true);
     }
-  }, [deepLinkTokenId, runGpsCapture, scannedTokenId]);
+  }, [deepLinkTokenId, scannedTokenId]);
 
   const acceptCameraConsent = useCallback(() => {
     markCameraConsent();
@@ -414,13 +543,38 @@ export function CheckInFlow({ initialTokenId, previewOutcome }: CheckInFlowProps
         />
       ) : null}
 
+      {step === "preflight" ? (
+        <p
+          className="py-8 text-center text-body text-text-secondary"
+          data-testid="validating-token"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          {appCopy.validatingQrToken}
+        </p>
+      ) : null}
+
       {step === "gps" ? (
         <>
-          <GpsCaptureStep state={gpsState} attempt={gpsAttempt} />
+          <GpsCaptureStep
+            state={
+              gpsState === "ready" || gpsState === "denied" || gpsState === "submitting"
+                ? gpsState
+                : sessionGate === "checking"
+                  ? "requesting"
+                  : gpsState
+            }
+            attempt={gpsAttempt}
+          />
           <ButtonRow
             label="Xác nhận điểm danh"
-            disabled={gpsState !== "ready" || !capturedCoords}
-            gpsRequired={gpsState !== "ready"}
+            disabled={
+              sessionGate === "checking" ||
+              sessionGate === "closed" ||
+              gpsState !== "ready" ||
+              !capturedCoords
+            }
+            gpsRequired={sessionGate === "checking" || gpsState !== "ready"}
             onClick={() => handleGpsSubmit()}
           />
         </>

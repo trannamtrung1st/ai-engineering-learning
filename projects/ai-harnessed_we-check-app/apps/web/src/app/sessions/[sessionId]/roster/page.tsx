@@ -1,0 +1,58 @@
+import { SessionStatus } from "@wecheck/domain";
+import { useParams } from "react-router-dom";
+import { Alert } from "@/components/ui/alert";
+import { Skeleton } from "@/components/ui/skeleton";
+import { PageHeader } from "@/components/layout/page-header";
+import { AttendanceRosterTable } from "@/components/instructor/attendance-roster-table";
+import { useSessionDetail } from "@/hooks/use-session-detail";
+import { resolvePreviewId } from "@/lib/preview-fixtures";
+
+/** FR-11 / AC-11 / BR-10 — dedicated roster route at /sessions/:sessionId/roster */
+export function SessionRosterPage() {
+  const { sessionId: routeId } = useParams<{ sessionId: string }>();
+  const sessionId = resolvePreviewId(routeId) ?? routeId;
+  const sessionQuery = useSessionDetail(sessionId);
+  const session = sessionQuery.data;
+
+  if (sessionQuery.isLoading) {
+    return (
+      <div data-testid="session-roster-page">
+        <Skeleton className="mb-4 h-10 w-2/3" />
+        <Skeleton className="h-64 w-full" />
+      </div>
+    );
+  }
+
+  if (sessionQuery.isError || !session || !sessionId) {
+    return (
+      <div data-testid="session-roster-page">
+        <Alert variant="danger" title="Không thể tải buổi học">
+          Buổi học không tồn tại hoặc bạn không có quyền truy cập.
+        </Alert>
+      </div>
+    );
+  }
+
+  const metaLine = `${session.classCode} · ${session.subjectCode}`;
+
+  return (
+    <div data-testid="session-roster-page">
+      <PageHeader
+        title={`Danh sách — ${session.title}`}
+        description={`${metaLine} · ${session.roomName}`}
+      />
+
+      {session.status === SessionStatus.Closed ? (
+        <Alert variant="info" title="Buổi học đã kết thúc" className="mb-4">
+          Buổi học đã kết thúc. Bạn có thể chỉnh sửa điểm danh trong vòng 24 giờ sau khi đóng.
+        </Alert>
+      ) : null}
+
+      <AttendanceRosterTable
+        sessionId={sessionId}
+        sessionStatus={session.status}
+        closedAt={session.closedAt}
+      />
+    </div>
+  );
+}
