@@ -18,7 +18,10 @@ import { IconButton } from "@/components/ui/icon-button";
 import { type AuthOutletContext } from "@/components/auth/require-auth";
 import { ForbiddenPage } from "@/components/layout/forbidden-page";
 import { getRoleHome } from "@/lib/auth-redirect";
-import { canAccessAdminShell } from "@/lib/admin-route-access";
+import {
+  canAccessAdminShell,
+  getAdminForbiddenDescription,
+} from "@/lib/admin-route-access";
 import { adminNavItems, appCopy } from "@/lib/copy/status-labels";
 import { cn } from "@/lib/cn";
 
@@ -42,7 +45,12 @@ export function AdminLayout() {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   if (!canAccessAdminShell(user.role, pathname)) {
-    return <ForbiddenPage homeTo={getRoleHome(user.role)} />;
+    return (
+      <ForbiddenPage
+        homeTo={getRoleHome(user.role)}
+        description={getAdminForbiddenDescription(pathname)}
+      />
+    );
   }
 
   const isInstructorRosterShell =
@@ -54,7 +62,7 @@ export function AdminLayout() {
         className="min-h-screen bg-surface"
         data-testid="admin-roster-shell"
       >
-        <header className="sticky top-0 z-sticky flex h-16 items-center justify-between gap-4 border-b border-border bg-surface-raised px-4 lg:px-6">
+        <header className="sticky top-0 z-sticky flex h-16 items-center justify-between gap-4 border-b border-border bg-surface-raised px-4 shadow-sm lg:px-6">
           <Breadcrumb
             items={[
               { label: "Buổi học", to: "/sessions" },
@@ -78,9 +86,13 @@ export function AdminLayout() {
       data-testid="admin-layout"
     >
       <aside
-        className="hidden border-r border-border bg-surface-raised lg:block"
+        className="relative hidden border-r border-border bg-surface-raised lg:block"
         aria-label="Điều hướng quản trị"
       >
+        <div
+          className="absolute inset-y-0 left-0 w-1 bg-brand-700"
+          aria-hidden="true"
+        />
         <AdminSidebar />
       </aside>
 
@@ -93,13 +105,17 @@ export function AdminLayout() {
             onClick={() => setDrawerOpen(false)}
           />
           <aside className="relative h-full w-64 bg-surface-raised p-4 shadow-lg">
+            <div
+              className="absolute inset-y-0 left-0 w-1 bg-brand-700"
+              aria-hidden="true"
+            />
             <AdminSidebar onNavigate={() => setDrawerOpen(false)} />
           </aside>
         </div>
       ) : null}
 
       <div className="flex min-h-screen flex-col">
-        <header className="sticky top-0 z-sticky flex h-16 items-center justify-between gap-4 border-b border-border bg-surface-raised px-4 lg:px-6">
+        <header className="sticky top-0 z-sticky flex h-16 items-center justify-between gap-4 border-b border-border bg-surface-raised px-4 shadow-sm lg:px-6">
           <div className="flex items-center gap-3">
             <IconButton
               className="lg:hidden"
@@ -129,21 +145,23 @@ export function AdminLayout() {
 
 function AdminSidebar({ onNavigate }: { onNavigate?: () => void }) {
   return (
-    <div className="flex h-full flex-col">
-      <div className="border-b border-border p-4">
+    <div className="flex h-full flex-col pl-1">
+      <div className="border-b border-border p-4 pl-5">
         <p className="text-small font-semibold uppercase tracking-wide text-text-secondary">
           {appCopy.adminSection}
         </p>
-        <p className="text-h2 font-semibold text-primary-700">{appCopy.productName}</p>
+        <p className="font-display text-h2 font-semibold text-brand-700">
+          {appCopy.productName}
+        </p>
       </div>
-      <nav className="flex flex-col gap-1 p-4" data-testid="admin-sidebar">
+      <nav className="flex flex-col gap-1 p-4 pl-5" data-testid="admin-sidebar">
         {adminNavItems.map((item) => {
           const Icon = navIcons[item.to as keyof typeof navIcons];
           return (
             <NavLink
               key={item.to}
               to={item.to}
-              className={cn("w-full")}
+              className={cn("w-full rounded-md")}
               {...(onNavigate ? { onClick: onNavigate } : {})}
             >
               <Icon className="h-5 w-5" aria-hidden="true" />

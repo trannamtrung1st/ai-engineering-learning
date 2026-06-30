@@ -34,7 +34,12 @@ export function AdminExportPage() {
   );
 
   if (!isAdmin) {
-    return <ForbiddenPage homeTo={getRoleHome(user.role)} />;
+    return (
+      <ForbiddenPage
+        homeTo={getRoleHome(user.role)}
+        description={reportCopy.exportDenied}
+      />
+    );
   }
 
   return (

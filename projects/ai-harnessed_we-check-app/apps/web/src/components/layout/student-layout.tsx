@@ -46,17 +46,17 @@ export function StudentLayout({
       {!suppressNav ? (
         <nav
           aria-label="Điều hướng sinh viên"
-          className="sticky bottom-0 border-t border-border bg-surface-raised pb-[env(safe-area-inset-bottom)]"
+          className="sticky bottom-0 border-t border-border bg-surface-raised/95 pb-[env(safe-area-inset-bottom)] shadow-sm backdrop-blur-sm"
           data-testid="student-bottom-nav"
         >
-          <div className="mx-auto flex max-w-[480px] justify-around">
+          <div className="mx-auto flex max-w-[480px] justify-around px-2 py-1">
             {studentNavItems.map((item) => {
               const Icon = navIcons[item.to as keyof typeof navIcons];
               return (
                 <NavLink
                   key={item.to}
                   to={item.to}
-                  className="flex-1 flex-col gap-1 py-2 text-small"
+                  className="flex-1 flex-col gap-1 rounded-full py-2 text-small"
                 >
                   <Icon className="h-5 w-5" aria-hidden="true" />
                   {item.label}

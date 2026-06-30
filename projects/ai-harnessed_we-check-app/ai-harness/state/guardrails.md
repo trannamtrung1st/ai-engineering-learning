@@ -202,3 +202,6 @@ Verification failures and remediation notes for harness agents.
 - [web-admin-classes] Browser test failed — see 20260630T035506Z-browser-test.json
 - **ClassSubjectForm partial commit:** When class POST succeeds but subject returns DuplicateSubjectCode (e.g. SWE-102 pre-seeded), treat as success — toast + redirect to `/admin/rosters`; do not leave form with inline subject error (TC-AC-03-019, TC-FR-03-028).
 - **AdminLayout instructor rosters:** Allow Instructor on `/admin/rosters` and `/admin/rosters/:classCode` via `canAccessAdminShell` + minimal `admin-roster-shell` (no admin sidebar); other `/admin/*` routes still ForbiddenPage without admin chrome (TC-AC-03-018, TC-NFR-11-017).
+- [web-visual-refresh-v2] Computational checks failed — see 20260630T043434Z-checks.json
+- [web-visual-refresh-v2] Browser test failed — see 20260630T044433Z-browser-test.json
+- [web-visual-refresh-v2] Browser test failed — see 20260630T050035Z-browser-test.json

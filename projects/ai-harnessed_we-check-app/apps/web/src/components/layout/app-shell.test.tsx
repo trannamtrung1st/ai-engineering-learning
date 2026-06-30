@@ -15,6 +15,7 @@ import {
   instructorNavItems,
   studentNavItems,
 } from "@/lib/copy/status-labels";
+import { reportCopy } from "@/lib/copy/report-labels";
 
 const studentAuthUser: AuthOutletContext = {
   user: {
@@ -102,6 +103,12 @@ describe("App shell layouts (NFR-17, NFR-06)", () => {
     expect(screen.queryByTestId("admin-layout")).not.toBeInTheDocument();
     expect(screen.queryByTestId("admin-sidebar")).not.toBeInTheDocument();
     expect(screen.getByText(appCopy.forbiddenTitle)).toBeInTheDocument();
+  });
+
+  it("TC-NFR-17-019 / AC-13b: AdminLayout shows export-denied copy for instructor", () => {
+    renderWithOutlet(<AdminLayout />, "/admin/export", instructorAuthUser);
+    expect(screen.queryByTestId("admin-layout")).not.toBeInTheDocument();
+    expect(screen.getByText(reportCopy.exportDenied)).toBeInTheDocument();
   });
 
   it("TC-AC-03-018: AdminLayout allows instructor roster shell without admin sidebar", () => {

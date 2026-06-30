@@ -2,8 +2,10 @@ import { UserRole } from "@wecheck/domain";
 import { describe, expect, it } from "vitest";
 import {
   canAccessAdminShell,
+  getAdminForbiddenDescription,
   isInstructorRosterPath,
 } from "@/lib/admin-route-access";
+import { reportCopy } from "@/lib/copy/report-labels";
 
 /** FR-03 / AC-03c — admin shell route guards */
 describe("admin-route-access (AC-03, FR-03)", () => {
@@ -23,5 +25,12 @@ describe("admin-route-access (AC-03, FR-03)", () => {
   it("TC-NFR-11-017: student denied all admin shell routes", () => {
     expect(canAccessAdminShell(UserRole.Student, "/admin/rosters")).toBe(false);
     expect(canAccessAdminShell(UserRole.Student, "/admin/export")).toBe(false);
+  });
+
+  it("TC-NFR-17-019 / AC-13b: export path returns Vietnamese export-denied copy", () => {
+    expect(getAdminForbiddenDescription("/admin/export")).toBe(
+      reportCopy.exportDenied,
+    );
+    expect(getAdminForbiddenDescription("/admin/users")).toBeUndefined();
   });
 });

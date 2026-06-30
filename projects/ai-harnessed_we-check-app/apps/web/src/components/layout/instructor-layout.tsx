@@ -38,9 +38,13 @@ export function InstructorLayout({
       data-testid="instructor-layout"
     >
       <aside
-        className="hidden border-r border-border bg-surface-raised lg:block"
+        className="relative hidden border-r border-border bg-surface-raised lg:block"
         aria-label="Điều hướng giảng viên"
       >
+        <div
+          className="absolute inset-y-0 left-0 w-1 bg-brand-700"
+          aria-hidden="true"
+        />
         <SidebarNav />
       </aside>
 
@@ -53,13 +57,17 @@ export function InstructorLayout({
             onClick={() => setDrawerOpen(false)}
           />
           <aside className="relative h-full w-64 bg-surface-raised p-4 shadow-lg">
+            <div
+              className="absolute inset-y-0 left-0 w-1 bg-brand-700"
+              aria-hidden="true"
+            />
             <SidebarNav onNavigate={() => setDrawerOpen(false)} />
           </aside>
         </div>
       ) : null}
 
       <div className="flex min-h-screen flex-col">
-        <header className="sticky top-0 z-sticky flex h-16 items-center justify-between gap-4 border-b border-border bg-surface-raised px-4 lg:px-6">
+        <header className="sticky top-0 z-sticky flex h-16 items-center justify-between gap-4 border-b border-border bg-surface-raised px-4 shadow-sm lg:px-6">
           <div className="flex items-center gap-3">
             <IconButton
               className="lg:hidden"
@@ -87,14 +95,18 @@ export function InstructorLayout({
 
 function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
   return (
-    <nav className="flex flex-col gap-1 p-4" data-testid="instructor-sidebar">
+    <nav className="flex flex-col gap-1 p-4 pl-5" data-testid="instructor-sidebar">
+      <div className="mb-4 border-b border-border pb-4">
+        <p className="font-display text-h2 font-semibold text-brand-700">We Check</p>
+        <p className="text-small text-text-secondary">Giảng viên</p>
+      </div>
       {instructorNavItems.map((item) => {
         const Icon = navIcons[item.to as keyof typeof navIcons];
         return (
           <NavLink
             key={item.to}
             to={item.to}
-            className={cn("w-full")}
+            className={cn("w-full rounded-md")}
             {...(onNavigate
               ? { onClick: onNavigate }
               : {})}

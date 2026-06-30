@@ -1112,7 +1112,7 @@
     },
     {
       "id": "web-visual-refresh-v2",
-      "passes": false,
+      "passes": true,
       "priority": 39.5,
       "phase": 2,
       "agent": "frontend",

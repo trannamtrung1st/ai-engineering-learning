@@ -2,7 +2,7 @@ import {
   CalendarX,
   CheckCircle2,
   Clock,
-  Info,
+  History,
   MapPinOff,
   LocateOff,
   ShieldAlert,
@@ -13,7 +13,6 @@ import {
 import type { LucideIcon } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
-import { Alert } from "@/components/ui/alert";
 import {
   type CheckInOutcomeCode,
   checkInOutcomeMessages,
@@ -27,15 +26,29 @@ const outcomeIcons: Record<CheckInOutcomeCode, LucideIcon> = {
   TokenAlreadyUsed: Ban,
   OutOfRadius: MapPinOff,
   GpsDisabled: LocateOff,
-  DuplicateCheckIn: Info,
+  DuplicateCheckIn: History,
   SpoofSuspected: ShieldAlert,
   SessionNotActive: CalendarX,
   NotEnrolled: UserX,
   NetworkError: WifiOff,
 };
 
+const washClasses = {
+  success: "bg-success-50 border-success-500/20 text-text-primary",
+  warning: "bg-warning-50 border-warning-500/20 text-text-primary",
+  danger: "bg-danger-50 border-danger-500/20 text-text-primary",
+  info: "bg-info-50 border-info-500/20 text-text-primary",
+} as const;
+
+const iconColorClasses = {
+  success: "text-success-500",
+  warning: "text-warning-500",
+  danger: "text-danger-500",
+  info: "text-info-500",
+} as const;
+
 const buttonLinkClassName =
-  "inline-flex w-full min-h-touch items-center justify-center gap-2 rounded-md bg-primary-600 px-4 py-3 text-body font-medium text-primary-foreground transition-colors hover:bg-primary-700 focus-visible:outline-none";
+  "inline-flex w-full min-h-touch items-center justify-center gap-2 rounded-md bg-primary-600 px-4 py-3 text-body font-medium text-primary-foreground shadow-sm transition-all duration-normal hover:bg-primary-700 hover:shadow-md focus-visible:outline-none motion-safe:active:scale-[0.98]";
 
 export interface CheckInOutcomePanelProps {
   outcome: CheckInOutcomeCode;
@@ -45,7 +58,7 @@ export interface CheckInOutcomePanelProps {
   className?: string;
 }
 
-/** NFR-17 — check-in outcome panel with Vietnamese messages per ui-states §4.3 */
+/** NFR-17 — Campus Pulse signature check-in outcome moment */
 export function CheckInOutcomePanel({
   outcome,
   detailMessage,
@@ -63,51 +76,74 @@ export function CheckInOutcomePanel({
 
   return (
     <div
+      role="alert"
       data-testid={`check-in-outcome-${outcome}`}
       data-block-resubmit={outcome === "DuplicateCheckIn" ? "true" : undefined}
-      className={cn("flex flex-col gap-4", className)}
-    >
-      <Alert variant={copy.variant} icon={Icon} title={copy.title}>
-        {detailMessage ?? copy.message}
-      </Alert>
-      {useHistoryButton ? (
-        <Button
-          type="button"
-          onClick={onAction}
-          className="w-full min-h-touch"
-          data-testid="duplicate-history-link"
-        >
-          {copy.cta}
-        </Button>
-      ) : historyHref ? (
-        <Link
-          to={historyHref}
-          className={buttonLinkClassName}
-          data-testid="duplicate-history-link"
-        >
-          {copy.cta}
-        </Link>
-      ) : (
-        <Button type="button" onClick={onAction} className="w-full min-h-touch">
-          {copy.cta}
-        </Button>
+      className={cn(
+        "outcome-panel-enter flex w-full flex-col gap-6 rounded-lg border p-6 shadow-md",
+        washClasses[copy.variant],
+        className,
       )}
-      {showGpsRetry ? (
-        <Button
-          type="button"
-          variant="outline"
-          onClick={onRetry}
-          className="w-full min-h-touch"
-          data-testid="gps-retry-button"
+    >
+      <div className="flex flex-col items-center gap-4 text-center sm:flex-row sm:items-start sm:text-left">
+        <div
+          className={cn(
+            "flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-surface-raised shadow-sm",
+            iconColorClasses[copy.variant],
+          )}
         >
-          Thử lại
-        </Button>
-      ) : null}
-      {showManualFallback ? (
-        <p className="text-small text-text-secondary" data-testid="manual-attendance-fallback">
-          Nếu vẫn không điểm danh được, vui lòng liên hệ giảng viên để được ghi nhận thủ công.
-        </p>
-      ) : null}
+          <Icon className="h-8 w-8" aria-hidden="true" />
+        </div>
+        <div className="flex-1 space-y-2">
+          <h2 className="font-display text-h1 font-semibold text-text-primary">
+            {copy.title}
+          </h2>
+          <p className="text-body text-text-secondary">
+            {detailMessage ?? copy.message}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-3 border-t border-border/60 pt-4">
+        {useHistoryButton ? (
+          <Button
+            type="button"
+            onClick={onAction}
+            className="w-full min-h-touch"
+            data-testid="duplicate-history-link"
+          >
+            {copy.cta}
+          </Button>
+        ) : historyHref ? (
+          <Link
+            to={historyHref}
+            className={buttonLinkClassName}
+            data-testid="duplicate-history-link"
+          >
+            {copy.cta}
+          </Link>
+        ) : (
+          <Button type="button" onClick={onAction} className="w-full min-h-touch">
+            {copy.cta}
+          </Button>
+        )}
+        {showGpsRetry ? (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={onRetry}
+            className="w-full min-h-touch"
+            data-testid="gps-retry-button"
+          >
+            Thử lại
+          </Button>
+        ) : null}
+        {showManualFallback ? (
+          <p className="text-small text-text-secondary" data-testid="manual-attendance-fallback">
+            Nếu vẫn không điểm danh được, vui lòng liên hệ giảng viên để được ghi nhận thủ công.
+          </p>
+        ) : null}
+      </div>
     </div>
   );
 }

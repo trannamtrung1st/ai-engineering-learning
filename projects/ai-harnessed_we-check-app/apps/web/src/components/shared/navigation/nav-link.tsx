@@ -17,8 +17,8 @@ export function NavLink({ to, children, end, className, onClick }: NavLinkProps)
       onClick={onClick}
       className={({ isActive }) =>
         cn(
-          "flex min-h-touch items-center gap-2 rounded-md px-3 py-2 text-body font-medium text-text-primary transition-colors",
-          isActive && "bg-primary-50 text-primary-700",
+          "flex min-h-touch items-center gap-2 rounded-md px-3 py-2 text-body font-medium text-text-primary transition-colors duration-normal",
+          isActive && "bg-primary-50 font-semibold text-primary-700",
           className,
         )
       }

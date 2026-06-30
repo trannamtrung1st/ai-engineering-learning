@@ -157,6 +157,7 @@ describe("Admin report pages (NFR-17)", () => {
     renderWithRole(<AdminExportPage />, UserRole.Instructor);
 
     expect(screen.getByText(appCopy.forbiddenTitle)).toBeInTheDocument();
+    expect(screen.getByText(reportCopy.exportDenied)).toBeInTheDocument();
     expect(screen.queryByText(reportCopy.exportButton)).not.toBeInTheDocument();
   });
 

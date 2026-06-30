@@ -557,7 +557,13 @@ export function CheckInFlow({ initialTokenId, previewOutcome }: CheckInFlowProps
       {step === "gps" ? (
         <>
           <GpsCaptureStep
-            state={sessionGate === "checking" ? "requesting" : gpsState}
+            state={
+              gpsState === "ready" || gpsState === "denied" || gpsState === "submitting"
+                ? gpsState
+                : sessionGate === "checking"
+                  ? "requesting"
+                  : gpsState
+            }
             attempt={gpsAttempt}
           />
           <ButtonRow
