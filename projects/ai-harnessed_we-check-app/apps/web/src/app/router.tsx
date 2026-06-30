@@ -25,6 +25,7 @@ import { SessionMonitorPage } from "@/app/sessions/[sessionId]/monitor/page";
 import { SessionRosterPage } from "@/app/sessions/[sessionId]/roster/page";
 import { SessionsListPage } from "@/app/sessions/page";
 import { RequireAuth } from "@/components/auth/require-auth";
+import { RoleHomeRedirect } from "@/components/auth/role-home-redirect";
 import { SetupGuard } from "@/components/auth/setup-guard";
 import { AdminHomePage } from "@/app/admin/page";
 import { SetupPage } from "@/app/setup/page";
@@ -87,7 +88,11 @@ const router = createBrowserRouter([
         children: [
           {
             index: true,
-            element: <ShellOverviewPage />,
+            element: (
+              <RoleHomeRedirect>
+                <ShellOverviewPage />
+              </RoleHomeRedirect>
+            ),
           },
           {
             path: "setup",

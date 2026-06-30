@@ -65,6 +65,21 @@ export function roleHasPermission(
   return ROLE_PERMISSIONS[role]?.has(permission) ?? false;
 }
 
+export function getPermissionsForRole(role: UserRoleType): Permission[] {
+  return [...(ROLE_PERMISSIONS[role] ?? [])];
+}
+
+/** Default SPA landing routes per docs/ui-ux/09-page-list.md §1 */
+export const ROLE_HOME_PATHS: Readonly<Record<UserRoleType, string>> = {
+  [UserRole.Student]: "/check-in",
+  [UserRole.Instructor]: "/sessions",
+  [UserRole.TrainingOfficeAdmin]: "/admin",
+};
+
+export function getRoleHomePath(role: UserRoleType): string {
+  return ROLE_HOME_PATHS[role] ?? "/";
+}
+
 export function assertPermission(
   role: UserRoleType,
   permission: Permission,

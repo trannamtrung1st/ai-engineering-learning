@@ -3,19 +3,17 @@ import { useState } from "react";
 import { Outlet, useOutletContext } from "react-router-dom";
 import { UserRole } from "@wecheck/domain";
 import { PageContent } from "@/components/layout/page-content";
+import { SidebarNav } from "@/components/layout/sidebar-nav";
 import {
   Breadcrumb,
   type BreadcrumbItem,
 } from "@/components/shared/navigation/breadcrumb";
-import { NavLink } from "@/components/shared/navigation/nav-link";
 import { UserMenu } from "@/components/shared/navigation/user-menu";
 import { IconButton } from "@/components/ui/icon-button";
 import { type AuthOutletContext } from "@/components/auth/require-auth";
 import { NotificationBell } from "@/components/notifications/notification-bell";
-import { instructorNavItems } from "@/lib/copy/status-labels";
-import { cn } from "@/lib/cn";
 
-const navIcons = {
+const instructorNavIcons = {
   "/sessions": Calendar,
   "/reports": BarChart3,
 } as const;
@@ -32,6 +30,13 @@ export function InstructorLayout({
   const user = authContext.user;
   const [drawerOpen, setDrawerOpen] = useState(false);
 
+  const sidebarHeader = (
+    <div className="mb-4 border-b border-border pb-4">
+      <p className="font-display text-h2 font-semibold text-brand-700">We Check</p>
+      <p className="text-small text-text-secondary">Giảng viên</p>
+    </div>
+  );
+
   return (
     <div
       className="min-h-screen bg-surface lg:grid lg:grid-cols-[240px_1fr]"
@@ -45,7 +50,7 @@ export function InstructorLayout({
           className="absolute inset-y-0 left-0 w-1 bg-brand-700"
           aria-hidden="true"
         />
-        <SidebarNav />
+        <SidebarNav layout="instructor" icons={instructorNavIcons} header={sidebarHeader} />
       </aside>
 
       {drawerOpen ? (
@@ -61,7 +66,12 @@ export function InstructorLayout({
               className="absolute inset-y-0 left-0 w-1 bg-brand-700"
               aria-hidden="true"
             />
-            <SidebarNav onNavigate={() => setDrawerOpen(false)} />
+            <SidebarNav
+              layout="instructor"
+              icons={instructorNavIcons}
+              header={sidebarHeader}
+              onNavigate={() => setDrawerOpen(false)}
+            />
           </aside>
         </div>
       ) : null}
@@ -90,32 +100,5 @@ export function InstructorLayout({
         </main>
       </div>
     </div>
-  );
-}
-
-function SidebarNav({ onNavigate }: { onNavigate?: () => void }) {
-  return (
-    <nav className="flex flex-col gap-1 p-4 pl-5" data-testid="instructor-sidebar">
-      <div className="mb-4 border-b border-border pb-4">
-        <p className="font-display text-h2 font-semibold text-brand-700">We Check</p>
-        <p className="text-small text-text-secondary">Giảng viên</p>
-      </div>
-      {instructorNavItems.map((item) => {
-        const Icon = navIcons[item.to as keyof typeof navIcons];
-        return (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            className={cn("w-full rounded-md")}
-            {...(onNavigate
-              ? { onClick: onNavigate }
-              : {})}
-          >
-            <Icon className="h-5 w-5" aria-hidden="true" />
-            {item.label}
-          </NavLink>
-        );
-      })}
-    </nav>
   );
 }

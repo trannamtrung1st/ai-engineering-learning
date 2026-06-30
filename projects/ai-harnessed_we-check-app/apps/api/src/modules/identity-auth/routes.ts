@@ -6,7 +6,7 @@ import {
   extractSessionId,
   requirePermission,
 } from "../../auth/middleware.js";
-import { Permission } from "../../auth/permissions.js";
+import { getPermissionsForRole, Permission } from "../../auth/permissions.js";
 import type { SessionStore } from "../../auth/session-store.js";
 import { validationFailed, forbidden, notFound } from "../../errors/api-error.js";
 import { AuthService } from "./auth-service.js";
@@ -108,6 +108,7 @@ export async function registerIdentityAuthRoutes(
         displayName: user.displayName,
         email: user.email,
         role: user.role,
+        permissions: getPermissionsForRole(user.role),
       };
     },
   );

@@ -13,7 +13,7 @@ describe("auth-redirect (AC-02, FR-02, BR-06, NFR-16)", () => {
   it("maps each role to its default home route", () => {
     expect(getRoleHome(UserRole.Student)).toBe("/check-in");
     expect(getRoleHome(UserRole.Instructor)).toBe("/sessions");
-    expect(getRoleHome(UserRole.TrainingOfficeAdmin)).toBe("/admin/users");
+    expect(getRoleHome(UserRole.TrainingOfficeAdmin)).toBe("/admin");
   });
 
   it("accepts safe relative returnUrl paths (BR-06)", () => {

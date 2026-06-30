@@ -205,3 +205,4 @@ Verification failures and remediation notes for harness agents.
 - [web-visual-refresh-v2] Computational checks failed — see 20260630T043434Z-checks.json
 - [web-visual-refresh-v2] Browser test failed — see 20260630T044433Z-browser-test.json
 - [web-visual-refresh-v2] Browser test failed — see 20260630T050035Z-browser-test.json
+- [web-role-navigation] Browser test failed — see 20260630T055125Z-browser-test.json

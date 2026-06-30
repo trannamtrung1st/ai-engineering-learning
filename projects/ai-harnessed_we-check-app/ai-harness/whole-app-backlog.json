@@ -1156,7 +1156,7 @@
     },
     {
       "id": "web-role-navigation",
-      "passes": false,
+      "passes": true,
       "priority": 40,
       "phase": 2,
       "agent": "frontend",

@@ -11,21 +11,21 @@ import { useState } from "react";
 import { Outlet, useLocation, useOutletContext } from "react-router-dom";
 import { UserRole } from "@wecheck/domain";
 import { PageContent } from "@/components/layout/page-content";
+import { SidebarNav } from "@/components/layout/sidebar-nav";
 import { Breadcrumb } from "@/components/shared/navigation/breadcrumb";
-import { NavLink } from "@/components/shared/navigation/nav-link";
 import { UserMenu } from "@/components/shared/navigation/user-menu";
 import { IconButton } from "@/components/ui/icon-button";
 import { type AuthOutletContext } from "@/components/auth/require-auth";
 import { ForbiddenPage } from "@/components/layout/forbidden-page";
+import { StudentShell } from "@/components/layout/student-layout";
 import { getRoleHome } from "@/lib/auth-redirect";
 import {
   canAccessAdminShell,
   getAdminForbiddenDescription,
 } from "@/lib/admin-route-access";
-import { adminNavItems, appCopy } from "@/lib/copy/status-labels";
-import { cn } from "@/lib/cn";
+import { appCopy } from "@/lib/copy/status-labels";
 
-const navIcons = {
+const adminNavIcons = {
   "/admin": Home,
   "/admin/users": Users,
   "/admin/rosters": Upload,
@@ -45,6 +45,14 @@ export function AdminLayout() {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   if (!canAccessAdminShell(user.role, pathname)) {
+    if (user.role === UserRole.Student) {
+      return (
+        <StudentShell displayName={user.displayName} pathname={pathname}>
+          <ForbiddenPage homeTo={getRoleHome(user.role)} />
+        </StudentShell>
+      );
+    }
+
     return (
       <ForbiddenPage
         homeTo={getRoleHome(user.role)}
@@ -80,6 +88,17 @@ export function AdminLayout() {
     );
   }
 
+  const sidebarHeader = (
+    <div className="border-b border-border p-4 pl-5">
+      <p className="text-small font-semibold uppercase tracking-wide text-text-secondary">
+        {appCopy.adminSection}
+      </p>
+      <p className="font-display text-h2 font-semibold text-brand-700">
+        {appCopy.productName}
+      </p>
+    </div>
+  );
+
   return (
     <div
       className="min-h-screen bg-surface lg:grid lg:grid-cols-[240px_1fr]"
@@ -93,7 +112,7 @@ export function AdminLayout() {
           className="absolute inset-y-0 left-0 w-1 bg-brand-700"
           aria-hidden="true"
         />
-        <AdminSidebar />
+        <SidebarNav layout="admin" icons={adminNavIcons} header={sidebarHeader} />
       </aside>
 
       {drawerOpen ? (
@@ -109,7 +128,12 @@ export function AdminLayout() {
               className="absolute inset-y-0 left-0 w-1 bg-brand-700"
               aria-hidden="true"
             />
-            <AdminSidebar onNavigate={() => setDrawerOpen(false)} />
+            <SidebarNav
+              layout="admin"
+              icons={adminNavIcons}
+              header={sidebarHeader}
+              onNavigate={() => setDrawerOpen(false)}
+            />
           </aside>
         </div>
       ) : null}
@@ -139,37 +163,6 @@ export function AdminLayout() {
           </PageContent>
         </main>
       </div>
-    </div>
-  );
-}
-
-function AdminSidebar({ onNavigate }: { onNavigate?: () => void }) {
-  return (
-    <div className="flex h-full flex-col pl-1">
-      <div className="border-b border-border p-4 pl-5">
-        <p className="text-small font-semibold uppercase tracking-wide text-text-secondary">
-          {appCopy.adminSection}
-        </p>
-        <p className="font-display text-h2 font-semibold text-brand-700">
-          {appCopy.productName}
-        </p>
-      </div>
-      <nav className="flex flex-col gap-1 p-4 pl-5" data-testid="admin-sidebar">
-        {adminNavItems.map((item) => {
-          const Icon = navIcons[item.to as keyof typeof navIcons];
-          return (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={cn("w-full rounded-md")}
-              {...(onNavigate ? { onClick: onNavigate } : {})}
-            >
-              <Icon className="h-5 w-5" aria-hidden="true" />
-              {item.label}
-            </NavLink>
-          );
-        })}
-      </nav>
     </div>
   );
 }

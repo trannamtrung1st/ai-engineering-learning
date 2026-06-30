@@ -1,6 +1,7 @@
 import { SessionStatus } from "@wecheck/domain";
-import { Plus } from "lucide-react";
+import { BarChart3, Plus } from "lucide-react";
 import { Link } from "react-router-dom";
+import { RoleHomeHub } from "@/components/layout/role-home-hub";
 import { PageHeader } from "@/components/layout/page-header";
 import { SessionCard } from "@/components/domain/session/session-card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -9,6 +10,11 @@ import { Alert } from "@/components/ui/alert";
 import { useSessionsList } from "@/hooks/use-sessions-list";
 import { sessionStatusLabels } from "@/lib/copy/status-labels";
 import type { SessionListItem } from "@/lib/sessions-api";
+
+const instructorHubIcons = {
+  "/sessions/new": Plus,
+  "/reports": BarChart3,
+} as const;
 
 function SessionSection({
   label,
@@ -50,6 +56,7 @@ export function SessionsListPage() {
   if (query.isLoading) {
     return (
       <div data-testid="sessions-list-page">
+        <RoleHomeHub variant="instructor" icons={instructorHubIcons} />
         <PageHeader
           title="Buổi học"
           description="Quản lý buổi học và điểm danh"
@@ -70,6 +77,7 @@ export function SessionsListPage() {
   if (query.isError) {
     return (
       <div data-testid="sessions-list-page">
+        <RoleHomeHub variant="instructor" icons={instructorHubIcons} />
         <PageHeader title="Buổi học" description="Quản lý buổi học và điểm danh" />
         <Alert variant="danger" title="Không thể tải danh sách">
           Vui lòng thử lại sau.
@@ -83,6 +91,7 @@ export function SessionsListPage() {
   if (items.length === 0) {
     return (
       <div data-testid="sessions-list-page">
+        <RoleHomeHub variant="instructor" icons={instructorHubIcons} />
         <PageHeader title="Buổi học" description="Quản lý buổi học và điểm danh" />
         <EmptyState
           icon={Plus}
@@ -109,6 +118,7 @@ export function SessionsListPage() {
 
   return (
     <div data-testid="sessions-list-page">
+      <RoleHomeHub variant="instructor" icons={instructorHubIcons} />
       <PageHeader
         title="Buổi học"
         description="Quản lý buổi học và điểm danh"

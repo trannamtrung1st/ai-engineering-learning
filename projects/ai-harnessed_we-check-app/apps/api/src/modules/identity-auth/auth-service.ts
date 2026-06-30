@@ -5,6 +5,7 @@ import {
   unauthenticated,
 } from "../../errors/api-error.js";
 import type { SessionStore } from "../../auth/session-store.js";
+import { getRoleHomePath } from "../../auth/permissions.js";
 import type { AuthSession, AuthUser } from "../../auth/types.js";
 import { verifyPassword } from "./password-hasher.js";
 import { UserRepository } from "./user-repository.js";
@@ -46,7 +47,7 @@ export class AuthService {
         active: user.active,
       },
       session,
-      redirectTo: input.returnUrl,
+      redirectTo: input.returnUrl ?? getRoleHomePath(user.role),
     };
   }
 

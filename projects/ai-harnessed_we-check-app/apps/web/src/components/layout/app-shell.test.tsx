@@ -82,7 +82,7 @@ describe("App shell layouts (NFR-17, NFR-06)", () => {
   });
 
   it("InstructorLayout renders Vietnamese sidebar navigation", () => {
-    renderWithOutlet(<InstructorLayout />, "/sessions");
+    renderWithOutlet(<InstructorLayout />, "/sessions", instructorAuthUser);
     expect(screen.getByTestId("instructor-layout")).toBeInTheDocument();
     for (const item of instructorNavItems) {
       expect(screen.getAllByRole("link", { name: item.label }).length).toBeGreaterThan(0);
@@ -98,8 +98,10 @@ describe("App shell layouts (NFR-17, NFR-06)", () => {
     }
   });
 
-  it("TC-NFR-11-017: AdminLayout denies non-admin roles without admin chrome", () => {
-    renderWithOutlet(<AdminLayout />, "/admin/export", studentAuthUser);
+  it("TC-AC-18-011 / TC-NFR-11-017: AdminLayout wraps student forbidden page in StudentLayout", () => {
+    renderWithOutlet(<AdminLayout />, "/admin/users", studentAuthUser);
+    expect(screen.getByTestId("student-layout")).toBeInTheDocument();
+    expect(screen.getByTestId("student-bottom-nav")).toBeInTheDocument();
     expect(screen.queryByTestId("admin-layout")).not.toBeInTheDocument();
     expect(screen.queryByTestId("admin-sidebar")).not.toBeInTheDocument();
     expect(screen.getByText(appCopy.forbiddenTitle)).toBeInTheDocument();
