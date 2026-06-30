@@ -6,6 +6,26 @@ Unified listing UX patterns for **We Check** tables and card lists: search, filt
 
 ---
 
+## 0. Mandatory Capabilities
+
+Every listing page in §1 must implement **search**, **filter**, **sort**, and **pagination**. Card-based layouts may use documented UX variants (load-more counts as pagination; status grouping counts as filter; `ReportFilterBar` counts as filter on report pages).
+
+| Page | Search (variant) | Filter (variant) | Sort (variant) | Pagination (variant) |
+| --- | --- | --- | --- | --- |
+| `/sessions` | Text: class/subject name | Status chips: Active / Draft / Closed | `scheduledStartTime` desc within group | Offset **20** or load-more |
+| `/history` | Text: subject name | Status `Select` | Session date desc | Cursor load-more **20** ([AC-14a](../brds/08-acceptance-mvp-future.md)) |
+| `/sessions/:id` roster | Text: student name/MSSV | Status `Select` (§4.4) | Column headers (§5.2) | Single fetch ≤150 (cohort scale — no paging UI) |
+| `/admin/users` | `?q=` debounced (§3.2) | Role + active (§4.1) | Column headers | Offset **25** |
+| `/admin/classes` | Code/name search | — | `code` asc | Offset **25** |
+| `/admin/subjects` | Code/name search | — | `code` asc | Offset **25** |
+| `/admin/rosters` (+ detail) | Class code/name search | Cohort `Select` | `classCode` asc | Offset **50** on detail |
+| Report tables (`/reports`, `/admin/reports`) | Optional table search on student name; `ReportFilterBar` satisfies filter | `ReportFilterBar` (§4.2) | Column headers | Offset **50** |
+| Monitor roster tab | Text: student name | Status `Select` (§4.4) | Status priority sort (§5.3, [AC-15b](../brds/08-acceptance-mvp-future.md)) | Client-side full roster ≤150 |
+
+**Traces:** [FR-12](../brds/03-functional-requirements.md), [FR-14](../brds/03-functional-requirements.md) · [AC-12](../brds/08-acceptance-mvp-future.md), [AC-14](../brds/08-acceptance-mvp-future.md), [AC-15](../brds/08-acceptance-mvp-future.md) · [00-production-ui-quality-bar.md](./00-production-ui-quality-bar.md)
+
+---
+
 ## 1. Listing Scope
 
 | Page | Route | Layout pattern | Primary component |
@@ -16,6 +36,8 @@ Unified listing UX patterns for **We Check** tables and card lists: search, filt
 | Instructor reports | `/reports` | Filter bar + table | `SessionReportTable` |
 | Admin users | `/admin/users` | Toolbar + table | `UserListTable` |
 | Class rosters | `/admin/rosters` | Toolbar + table | `ClassRosterTable` |
+| Class catalog | `/admin/classes` | Toolbar + table | `ClassCatalogTable` |
+| Subject catalog | `/admin/subjects` | Toolbar + table | `SubjectCatalogTable` |
 | Admin reports | `/admin/reports` | Filter bar + table | `SessionReportTable` |
 
 **Traces:** [FR-12](../brds/03-functional-requirements.md), [FR-14](../brds/03-functional-requirements.md) · [AC-12](../brds/08-acceptance-mvp-future.md), [AC-14](../brds/08-acceptance-mvp-future.md), [AC-15](../brds/08-acceptance-mvp-future.md)
@@ -65,12 +87,16 @@ Unified listing UX patterns for **We Check** tables and card lists: search, filt
 
 | Page | Placeholder (vi-VN) | Searches |
 | --- | --- | --- |
+| `/sessions` | *Tìm theo lớp, môn…* | `classCode`, `className`, `subjectCode`, `subjectName` |
+| `/history` | *Tìm theo môn học…* | `subjectName`, `subjectCode` |
 | `/admin/users` | *Tìm theo tên, MSSV, email* | `displayName`, `studentId`, `email` |
 | `/sessions/:id` roster | *Tìm sinh viên…* | `displayName`, `studentId` |
+| `/sessions/:id` monitor | *Tìm sinh viên…* | `displayName`, `studentId` (client-side) |
 | `/admin/rosters` | *Tìm theo mã lớp* | `classCode`, `className` |
 | `/admin/rosters/:classCode` | *Tìm trong lớp…* | Enrolled student name, ID |
+| Report tables | *Tìm sinh viên…* (optional) | `displayName`, `studentId` on student summary table |
 
-Reports use structured filters only — no free-text search in MVP.
+Report pages use `ReportFilterBar` for primary scope; optional table search filters visible rows client-side or via API `q` when row count exceeds page size.
 
 ---
 
@@ -100,15 +126,30 @@ Shared by `/reports`, `/reports/sessions`, `/admin/reports`, `/admin/export`.
 **Instructor scope:** Unassigned class not in dropdown ([AC-12b](../brds/08-acceptance-mvp-future.md)).  
 **Admin scope:** All classes; report within **10 minutes** of session close ([AC-12c](../brds/08-acceptance-mvp-future.md)).
 
-### 4.3 Session list grouping (implicit filter)
+### 4.3 Session list status filter
 
-`/sessions` does not expose a filter bar. Sessions are **grouped** by status:
+`/sessions` exposes status filter chips above grouped cards (counts as filter per §0):
+
+| Chip label | `SessionStatus` values | Default |
+| --- | --- | --- |
+| Tất cả | All statuses | Selected |
+| Đang diễn ra | `Active` | — |
+| Nháp | `Draft` | — |
+| Đã kết thúc | `Closed`, `Cancelled` | — |
+
+Within the active filter, sessions remain **grouped** when *Tất cả* is selected:
 
 | Group label | `SessionStatus` values | Order |
 | --- | --- | --- |
 | Đang diễn ra | `Active` | 1 (top) |
 | Nháp | `Draft` | 2 |
 | Đã kết thúc | `Closed`, `Cancelled` | 3 (most recent first within group) |
+
+### 4.3.1 Student history status filter
+
+| Control | Options | Default |
+| --- | --- | --- |
+| `Select` Trạng thái | Tất cả / Có mặt / Vắng / Có phép | Tất cả |
 
 ### 4.4 Roster status filter (monitor tab)
 
@@ -136,8 +177,8 @@ Visual: sort icon (↑↓) on active column; neutral icon on sortable inactive c
 
 | Listing | Default sort | Sortable columns |
 | --- | --- | --- |
-| `/sessions` | `Active` first, then `scheduledStartTime` desc | — (fixed group order) |
-| `/history` | Session date desc | Date only |
+| `/sessions` | `Active` first, then `scheduledStartTime` desc | Ngày, Lớp, Môn (within active status filter) |
+| `/history` | Session date desc | Date, Môn, Trạng thái |
 | Roster table | `displayName` asc (alphabetical) | Họ tên, MSSV, Trạng thái, Thời gian điểm danh |
 | `/admin/users` | `displayName` asc | Họ tên, MSSV, Email, Vai trò |
 | Session report table | Session date desc | Ngày, Lớp, Môn, Tỷ lệ có mặt |
@@ -160,8 +201,10 @@ Sort preference stored in session `sessionStorage` per `sessionId` for duration 
 
 | Listing | Strategy | Page size |
 | --- | --- | --- |
+| `/sessions` | Offset pagination or load-more | **20** per page |
 | `/admin/users` | Offset pagination | **25** rows |
 | `/history` | Cursor / load more | **20** per fetch ([AC-14a](../brds/08-acceptance-mvp-future.md)) |
+| `/admin/rosters` | Offset pagination | **50** rows |
 | Report tables | Offset pagination | **50** rows |
 | Roster (session) | Load all enrolled (**≤ 150**) | Single fetch per [mvpScale](../product-meta.json) |
 | `/admin/rosters/:classCode` | Offset pagination | **50** rows |
@@ -217,7 +260,28 @@ Row actions use `IconButton` with `aria-label` or text button on mobile.
 
 ## 10. Listing — Export Integration
 
-`/admin/export` reuses `ReportFilterBar` filter state model ([FR-13](../brds/03-functional-requirements.md) · [AC-13](../brds/08-acceptance-mvp-future.md)):
+Every report route (`/reports`, `/reports/sessions`, `/reports/students`, `/admin/reports`) exposes a primary **Xuất CSV** action in the page header or toolbar ([FR-13](../brds/03-functional-requirements.md) · [AC-12d](../brds/08-acceptance-mvp-future.md) · [AC-13](../brds/08-acceptance-mvp-future.md)).
+
+| Role | Export scope | UI placement |
+| --- | --- | --- |
+| `Instructor` | Assigned class-subject pairs only ([BR-08](../brds/04-business-rules.md), [AC-13c](../brds/08-acceptance-mvp-future.md)) | **Xuất CSV** on instructor report pages |
+| `TrainingOfficeAdmin` | Institution-wide within active filters ([AC-13d](../brds/08-acceptance-mvp-future.md)) | **Xuất CSV** on `/admin/reports` and sub-routes |
+| `Student` | Denied — action hidden; API returns permission error if attempted ([AC-13b](../brds/08-acceptance-mvp-future.md)) | No export control |
+
+### 10.1 Report-page CSV actions
+
+| Step | Behavior |
+| --- | --- |
+| 1 | User applies `ReportFilterBar` filters on the report page |
+| 2 | **Xuất CSV** uses current filter query params (same as on-screen report) |
+| 3 | Optional confirm dialog with compliance note for audit-sensitive export ([NFR-15](../brds/07-non-functional-risk.md)) |
+| 4 | CSV downloads; export action audit-logged |
+
+Inline export shares the `POST /reports/export` contract in [05-api-design.md](../technical/05-api-design.md) §8.3.
+
+### 10.2 Dedicated export page (`/admin/export`)
+
+`/admin/export` reuses `ReportFilterBar` filter state model as the **confirm/audit** variant for training office admins who prefer a dedicated export workflow:
 
 | Step | Behavior |
 | --- | --- |
@@ -225,7 +289,7 @@ Row actions use `IconButton` with `aria-label` or text button on mobile.
 | 2 | `CsvExportPanel` shows estimated row count from dry-run HEAD request |
 | 3 | Export uses same filter query params as report API |
 
-Instructor report listing has **no** export action ([BR-09](../brds/04-business-rules.md)).
+Instructors use inline **Xuất CSV** on report pages; `/admin/export` is admin-only in nav ([BR-09](../brds/04-business-rules.md)).
 
 ---
 
@@ -248,9 +312,10 @@ Frontend encodes listing state in query parameters for reproducibility:
 
 | Param | Example | Used on |
 | --- | --- | --- |
-| `q` | `nguyen` | User search |
+| `q` | `nguyen` | User search, sessions, history, roster, report table |
 | `role` | `Student` | User filter |
 | `active` | `true` | User filter |
+| `sessionStatus` | `Active` | Session list filter chips |
 | `classCode` | `HESD-01` | Reports, rosters |
 | `subjectCode` | `SWE-101` | Reports |
 | `from` / `to` | ISO date | Reports |
@@ -281,4 +346,3 @@ Invalid param combinations return **400** with form-level error on report pages.
 - Bulk actions on roster rows (multi-select checkboxes).
 - Full-text search across report notes.
 - Virtualized scrolling for rosters beyond **150** students.
-- Export listing directly from `/admin/reports` without navigating to `/admin/export`.

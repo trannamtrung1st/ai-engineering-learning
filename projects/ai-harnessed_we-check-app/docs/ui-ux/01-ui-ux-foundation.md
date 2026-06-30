@@ -85,7 +85,8 @@ Layout component specs: [06-app-layout-components.md](./06-app-layout-components
 
 - Maximum **2 levels** of hierarchy in primary nav for MVP.
 - Current location always visible (breadcrumb or active nav item).
-- Logout and user display name in header on all authenticated shells.
+- **Singleton active indicator:** At most **one** primary nav item (sidebar or bottom nav) shows active styling per layout shell. The active item must reflect the **most specific** matching route — sibling prefix routes must not both appear active ([BR-14a](../brds/04-business-rules.md), [AC-18h](../brds/08-acceptance-mvp-future.md)).
+- Logout and user display name in header on all authenticated shells. Display name appears on the UserMenu trigger; full identity (name, email, institutional ID, role) appears inside the dropdown panel ([05-common-ui-components.md](./05-common-ui-components.md) §6.3).
 - Student check-in route suppresses distracting nav during active scan.
 
 ---

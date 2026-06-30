@@ -64,7 +64,20 @@ rsync -a \
 
 mkdir -p "$dest/generated/runs" "$dest/state"
 echo "# Harness progress" > "${dest}/state/progress.md"
-echo "# Harness guardrails" > "${dest}/state/guardrails.md"
+cat > "${dest}/state/guardrails.md" <<'EOF'
+# Harness guardrails
+
+Verification failures and remediation notes for harness agents.
+
+## Doc requirements
+
+- **Listing pages:** Collection views must implement search, filter, sort, and pagination per [14-listing-pages-search-filter-sort.md](../docs/ui-ux/14-listing-pages-search-filter-sort.md) §0 (documented UX variants allowed). Apply toolbar density from [`design-craft-notion` skill](../skills/design-craft-notion/SKILL.md).
+- **Design craft:** Visual identity via [`frontend-design`](../skills/frontend-design/SKILL.md); workspace/table density via [`design-craft-notion`](../skills/design-craft-notion/SKILL.md). Authoritative spec [DESIGN.md](../../docs/ui-ux/DESIGN.md); product tokens in [04-design-tokens.md](../../docs/ui-ux/04-design-tokens.md) always win for CSS values.
+- **Table toolbar:** Listing routes use `TableToolbar` per [05-common-ui-components.md](../../docs/ui-ux/05-common-ui-components.md).
+
+## Signs
+
+EOF
 
 cat > "${dest}/test-case-index.json" <<EOF
 {
@@ -79,8 +92,18 @@ substitute_file() {
 
 while IFS= read -r f; do
   substitute_file "$f"
-done < <(find "$dest" -type f \( -name '*.md' -o -name '*.json' -o -name '*.prompt.md' \) 2>/dev/null)
+done < <(find "$dest" -type f \( -name '*.md' -o -name '*.json' -o -name '*.prompt.md' -o -name '*.sh' \) 2>/dev/null)
 
 find "$dest/scripts" -name '*.sh' -exec chmod +x {} \;
+
+pw_src="${TEMPLATES_DIR}/tests/playwright-ui"
+pw_dest="${REPO_ROOT}/tests/playwright-ui"
+if [[ -d "$pw_src" ]]; then
+  mkdir -p "$pw_dest"
+  rsync -a "$pw_src/" "$pw_dest/"
+  while IFS= read -r f; do
+    substitute_file "$f"
+  done < <(find "$pw_dest" -type f \( -name '*.json' -o -name '*.ts' \) 2>/dev/null)
+fi
 
 gen_ok "harness scaffold emitted to ai-harness/"

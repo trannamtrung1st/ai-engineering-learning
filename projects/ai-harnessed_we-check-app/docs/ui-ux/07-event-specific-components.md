@@ -107,7 +107,7 @@ Handles deep link `/check-in?token={token}` after login redirect ([BR-06](../brd
 
 ### 2.5 CheckInOutcomePanel (signature moment)
 
-Campus Pulse outcome panel — see [05-common-ui-components.md](./05-common-ui-components.md) §5.3 for full spec.
+Notion pastel outcome panel — see [05-common-ui-components.md](./05-common-ui-components.md) §5.3 for full spec.
 
 Rendered at step 3 of `CheckInFlow` and on `/check-in?demo=outcomes` showcase route. Each outcome uses distinct icon, color wash, and recovery CTA per [04-design-tokens.md](./04-design-tokens.md) §13.
 

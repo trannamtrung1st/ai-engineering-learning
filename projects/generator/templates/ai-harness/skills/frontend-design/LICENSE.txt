@@ -1,0 +1,10 @@
+Frontend Design Skill — upstream attribution
+
+This harness skill is adapted from the Anthropic frontend-design skill:
+https://github.com/anthropics/skills/tree/main/skills/frontend-design
+
+Refer to the anthropics/skills repository for complete license terms applicable
+to the original skill content.
+
+Product-specific adaptations (precedence rules, harness checklists) are
+owned documentation in each generated repository.

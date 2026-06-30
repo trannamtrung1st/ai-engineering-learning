@@ -39,6 +39,7 @@ We Check implements a **modular monolith** domain layer: seven application modul
 | `Notification` | `Notification` | `notifications` | `notifications` |
 | — | `PolicySetting` | `policy_settings` | `notifications` |
 | — | `RosterImportBatch` | `roster_import_batches` | `roster-enrollment` |
+| — | `UserImportBatch` | `user_import_batches` | `identity-auth` |
 
 Reporting views from [06-domain-model.md](../brds/06-domain-model.md) §7 are **SQL queries**, not persisted entities.
 
@@ -173,6 +174,8 @@ interface Class {
   updatedAt: Date;
 }
 ```
+
+**Relationship:** `Class` and `Subject` are **independent catalogs** — no direct foreign key between them. They relate many-to-many through `Enrollment` (§4.5): each enrollment row binds one student to one class-subject pair. Example: classes `HESD-01` and `HESD-02` may both reference subject `SWE-101`; class `HESD-01` may have enrollments in both `SWE-101` and `SWE-102`.
 
 ### 4.4 `Subject`
 
@@ -437,6 +440,34 @@ interface ImportError {
 ```
 
 Supports idempotent roster import audit ([FR-03](../brds/03-functional-requirements.md)).
+
+### 4.16 `UserImportBatch`
+
+**Module:** `identity-auth` · **Table:** `user_import_batches`
+
+```typescript
+interface UserImportBatch {
+  id: string;
+  uploadedById: string;
+  fileName: string;
+  status: UserImportStatus;       // Processing | Completed | Failed
+  totalRows: number;
+  successRows: number;
+  errorRows: number;
+  createdCount: number;
+  updatedCount: number;
+  errorDetails: ImportError[] | null; // JSONB array
+  startedAt: Date;
+  completedAt: Date | null;
+}
+```
+
+**Upsert invariants ([FR-01](../brds/03-functional-requirements.md)):**
+
+- Match key: `institutional_id` (VAL-05).
+- **Create:** persist profile fields; generate random initial password (not exposed in batch response).
+- **Update:** update `display_name`, `email`, `role`, `active` only; password and active sessions unchanged.
+- Row-level failures recorded in `errorDetails`; valid rows commit within batch transaction per file chunk.
 
 ---
 

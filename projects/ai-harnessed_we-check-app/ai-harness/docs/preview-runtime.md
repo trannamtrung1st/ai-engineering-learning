@@ -1,6 +1,6 @@
 # Preview Runtime — API + Web
 
-Canonical harness spec for starting and verifying the We Event stack (database, API, web). Referenced by `ai-harness/README.md`, `ai-harness/HARNESS-DESIGN.md`, and `docs/technical/13-docker-compose-local-runtime.md`.
+Canonical harness spec for starting and verifying the stack (database, API, web). Referenced by `ai-harness/README.md`, `ai-harness/HARNESS-DESIGN.md`, and `docs/technical/13-docker-compose-local-runtime.md`.
 
 **Status:** Implemented. Scripts live in `ai-harness/scripts/`; root `package.json` npm scripts wired.
 
@@ -61,7 +61,7 @@ State file (dev mode PIDs): `ai-harness/generated/runs/preview-stack.pids`
 1. Copy `.env.example` to `.env` (or export vars) — `DATABASE_URL` must target Compose Postgres (`localhost:5432`).
 2. `npm run aih:dev:db:up` — database healthy before API start.
 3. Run migrations against Postgres before API start.
-4. `npm run build --workspace @we-event/api` — API `dev` script runs `node --watch dist/index.js`.
+4. `npm run build --workspace @wecheck/api` — API `dev` script runs `node --watch dist/index.js`.
 5. `preview-stack.sh` sets `PORT` per service when starting dev processes (`.env` defines `PORT=3001` for API; web must use `3000`).
 
 ### Full-mode prerequisites
@@ -172,7 +172,7 @@ Implemented at `ai-harness/scripts/preview-stack.sh`. Persists mode in `preview-
 
 ```bash
 #!/usr/bin/env bash
-# Start We Event stack (dev or full preview) and verify API + web startup.
+# Start stack (dev or full preview) and verify API + web startup.
 # Usage: preview-stack.sh [--mode dev|full] [--verify-only] [--down]
 set -euo pipefail
 source "$(dirname "$0")/lib/common.sh"
@@ -249,12 +249,12 @@ else
     [[ "$status" == "healthy" || "$status" == "running" ]] && break
     sleep 2
   done
-  npm run build --workspace @we-event/api
+  npm run build --workspace @wecheck/api
   stop_dev_processes
   : > "$PID_FILE"
-  PORT="${AIH_PREVIEW_API_PORT:-3001}" npm run dev --workspace @we-event/api >>"${RUNS_DIR}/preview-api.log" 2>&1 &
+  PORT="${AIH_PREVIEW_API_PORT:-3001}" npm run dev --workspace @wecheck/api >>"${RUNS_DIR}/preview-api.log" 2>&1 &
   echo $! >> "$PID_FILE"
-  PORT="${AIH_PREVIEW_WEB_PORT:-3000}" npm run dev --workspace @we-event/web >>"${RUNS_DIR}/preview-web.log" 2>&1 &
+  PORT="${AIH_PREVIEW_WEB_PORT:-3000}" npm run dev --workspace @wecheck/web >>"${RUNS_DIR}/preview-web.log" 2>&1 &
   echo $! >> "$PID_FILE"
 fi
 
@@ -281,7 +281,7 @@ echo "  Stop: npm run aih:preview:down"
 - **Full poll:** set `AIH_VERIFY_STACK=1` before `aih:check` (expects preview stack running).
 - **Slice-scoped web probe:** backend/infra slices use `verify-stack.sh --api-only` (API health only). Frontend and test slices also require web `GET /` HTTP 200.
 - **Scenario probe:** `verify-scenarios.sh` runs independently of web health (API-only participant registration flow).
-- **After build:** when preview is **not** running, full workspace build includes web. When preview **is** running, `run-checks.sh` skips `@we-event/web` build to avoid corrupting dev `.next` (typecheck still covers web).
+- **After build:** when preview is **not** running, full workspace build includes web. When preview **is** running, `run-checks.sh` skips `@wecheck/web` build to avoid corrupting dev `.next` (typecheck still covers web).
 
 ### Dev-mode supervisors (auto-restart)
 

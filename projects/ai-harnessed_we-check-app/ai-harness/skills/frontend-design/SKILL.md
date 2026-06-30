@@ -1,13 +1,20 @@
 ---
 name: frontend-design
-description: Distinctive, intentional visual design for We Check UI. Process and craft guidance for implementer and browser tester agents — aesthetic direction, typography, signature moments, and copy that avoid templated defaults.
+description: Distinctive, intentional visual design for We Check UI. Process and craft guidance for implementer and browser tester agents — Notion workspace identity, signature moments, and copy that avoid templated defaults.
 source: https://github.com/anthropics/skills/tree/main/skills/frontend-design
 license: See LICENSE.txt
 ---
 
 # Frontend Design (We Check Harness)
 
-Adapted from the [Anthropic frontend-design skill](https://raw.githubusercontent.com/anthropics/skills/refs/heads/main/skills/frontend-design/SKILL.md). This skill governs **how** to design; We Check product docs govern **what** values to use.
+Adapted from the [Anthropic frontend-design skill](https://raw.githubusercontent.com/anthropics/skills/refs/heads/main/skills/frontend-design/SKILL.md). This skill governs **identity and signature craft**; workspace density patterns live in [`design-craft-notion`](../design-craft-notion/SKILL.md).
+
+**Division of labor:**
+
+| Skill | Owns |
+| --- | --- |
+| `frontend-design` (this file) | Notion workspace identity, typography, signature moments, copy tone, anti-template aesthetics |
+| `design-craft-notion` | Sidebar density, database toolbars, table rhythm, listing §0 layout |
 
 ## Precedence (non-negotiable)
 
@@ -15,8 +22,9 @@ When this skill conflicts with product specs, **product docs win**:
 
 | Topic | Authoritative doc |
 | --- | --- |
+| Design spec | [docs/ui-ux/DESIGN.md](../../../docs/ui-ux/DESIGN.md) |
 | Token values, colors, fonts | [docs/ui-ux/04-design-tokens.md](../../../docs/ui-ux/04-design-tokens.md) |
-| Visual direction (Campus Pulse) | [docs/ui-ux/01-design-overview.md](../../../docs/ui-ux/01-design-overview.md) §5 |
+| Visual direction | [docs/ui-ux/01-design-overview.md](../../../docs/ui-ux/01-design-overview.md) §5 |
 | Quality gate, touch targets, QR contrast | [docs/ui-ux/00-production-ui-quality-bar.md](../../../docs/ui-ux/00-production-ui-quality-bar.md) |
 | Vietnamese copy, state labels | [docs/ui-ux/01-ui-ux-foundation.md](../../../docs/ui-ux/01-ui-ux-foundation.md) |
 | Component contracts | [docs/ui-ux/05-common-ui-components.md](../../../docs/ui-ux/05-common-ui-components.md), [06-app-layout-components.md](../../../docs/ui-ux/06-app-layout-components.md) |
@@ -34,7 +42,7 @@ Never bypass tokens, accessibility, or business rules for aesthetics.
 
 **Page job:** Each screen has one primary job — scan, monitor, export, recover from error. Decoration must serve that job.
 
-Draw distinctive choices from this world: session countdown urgency, attendance outcomes as emotional moments, institutional trust without bureaucratic coldness, Vietnamese clarity over clever English.
+Draw distinctive choices from this world: session countdown urgency, attendance outcomes as emotional moments, calm workspace trust, Vietnamese clarity over clever English.
 
 ---
 
@@ -46,7 +54,7 @@ Open each major flow with its most characteristic element: check-in scanner view
 
 ### Typography carries personality
 
-Use the token-defined pair: **Be Vietnam Pro** (body, vi-VN) + **Plus Jakarta Sans** (display/headings). Set a clear type scale with intentional weight and spacing. Headlines should feel deliberate, not default.
+Use **Inter** (Notion Sans equivalent) with Vietnamese subset for all UI. Set a clear type scale with intentional weight and spacing. Headlines should feel deliberate, not default.
 
 ### Structure encodes information
 
@@ -58,7 +66,7 @@ Orchestrate one moment per flow: check-in page enter, outcome panel reveal, card
 
 ### Match complexity to the vision
 
-Campus Pulse is refined, not maximalist: layered surfaces, soft elevation, one signature moment per critical flow. Precision in spacing and type beats decorative clutter.
+Notion workspace is refined, not maximalist: warm gray surfaces, hairline borders, one signature moment per critical flow. Precision in spacing and type beats decorative clutter.
 
 ---
 
@@ -77,18 +85,19 @@ These appear regardless of subject — do not default to them:
 - Near-black background + single acid-green or vermilion accent
 - Broadsheet layout with hairline rules, zero radius, dense newspaper columns
 - Generic Tailwind blue admin dashboard (`#2563eb` primary, flat gray surfaces)
+- Old Campus Pulse indigo brand (`#1b2a4a`) and blue CTAs — superseded by Notion purple
 
-Campus Pulse direction: deep indigo trust, warm stone surfaces, emerald success, amber urgency — see [01-design-overview.md](../../../docs/ui-ux/01-design-overview.md) §5.
+Notion direction: navy auth band, purple primary CTA, charcoal text, warm gray surfaces, pastel card-tint outcomes — see [01-design-overview.md](../../../docs/ui-ux/01-design-overview.md) §5.
 
 ---
 
 ## Signature element
 
-**Check-in outcome moment** — full-width status panel with icon, semantic color wash, Vietnamese headline, and single recovery CTA. Every check-in outcome (`Success`, `ExpiredQr`, `OutOfRadius`, etc.) must be visually distinct, not interchangeable alert boxes.
+**Check-in outcome moment** — full-width status panel with icon, card-tint pastel wash, Vietnamese headline, and single purple recovery CTA. Every check-in outcome (`Success`, `ExpiredQr`, `OutOfRadius`, etc.) must be visually distinct, not interchangeable alert boxes.
 
 Other signature candidates by slice:
 
-- Auth: split-panel with brand stripe
+- Auth: split-panel with navy `hero-band-dark` left panel
 - Instructor monitor: stat cards with live pulse on active count
 - QR tab (non-projection): elevated card with countdown emphasis
 
@@ -121,14 +130,30 @@ Before `SLICE_DONE`, remove one decorative element if the screen feels busy (Cha
 
 ---
 
+## Contrast and control chrome
+
+Buttons, links, and form actions are the highest-risk contrast surfaces. Use token pairs from [04-design-tokens.md](../../../docs/ui-ux/04-design-tokens.md) §3.2.1 — never improvise lighter purples or opacity hacks.
+
+| Surface | Rule |
+| --- | --- |
+| Primary button | `--color-primary-foreground` on `--color-primary-600`; hover `--color-primary-700` |
+| Secondary / outline / ghost | Label must read clearly on warm gray `--color-surface-default` |
+| Disabled | Muted but legible — ≥ **3:1**; do not fade to illegibility |
+| Padding | `md` buttons: `--space-4` horizontal, min `--size-touch-min` height; stacked actions gap `--space-3` |
+| Cards / panels | Internal padding ≥ `--space-4`; outcome panels `--space-6` |
+
+Verify in **browser screenshots** at 320px and desktop — not by reading CSS alone. Follow [ui-visual-verification.md](../../docs/ui-visual-verification.md).
+
+---
+
 ## Implementer checklist
 
-1. Read Campus Pulse direction and [04-design-tokens.md](../../../docs/ui-ux/04-design-tokens.md) before coding
+1. Read [DESIGN.md](../../../docs/ui-ux/DESIGN.md), [01-design-overview.md](../../../docs/ui-ux/01-design-overview.md) §5, and [04-design-tokens.md](../../../docs/ui-ux/04-design-tokens.md) §3.2.1 and §5.1 before coding
 2. Use tokens only — no ad-hoc hex in components
 3. Include at least one signature moment when the slice touches check-in, auth, or primary role shell
-4. Capture screenshots of every created/modified route
-5. **Self-critique each screenshot** against this skill + quality bar — fix generic spacing, undifferentiated states, template-like cards before signaling done
-6. Append screenshot paths to `ai-harness/state/progress.md`
+4. Capture **dual-viewport** screenshots (320×568 + 1280×720) of every created/modified route
+5. **Self-critique each screenshot** using [ui-visual-verification.md](../../docs/ui-visual-verification.md) — fix low-contrast buttons, cramped padding, illegible disabled states before signaling done
+6. Append screenshot paths and viewports to `ai-harness/state/progress.md`
 
 ---
 
@@ -136,14 +161,16 @@ Before `SLICE_DONE`, remove one decorative element if the screen feels busy (Cha
 
 Functional PASS is insufficient when UI craft fails:
 
-1. Review screenshots against [00-production-ui-quality-bar.md](../../../docs/ui-ux/00-production-ui-quality-bar.md) **and** this skill
-2. **FAIL** when: layout feels generic/template-like; spacing is careless; outcome states look identical; auth/shell lacks Campus Pulse treatment; hard-coded colors visible; English strings on user paths
-3. **PASS** when: tokens applied consistently; Vietnamese copy correct; signature moments distinct; role-appropriate chrome present
+1. Review screenshots against [00-production-ui-quality-bar.md](../../../docs/ui-ux/00-production-ui-quality-bar.md), [ui-visual-verification.md](../../docs/ui-visual-verification.md), **and** this skill
+2. **FAIL** when: layout feels generic/template-like; spacing is careless; outcome states look identical; auth/shell lacks Notion treatment; hard-coded colors visible; English strings on user paths; **low-contrast buttons** (label unreadable on background); **cramped button padding**; **illegible disabled** controls
+3. **PASS** when: Notion tokens applied consistently; Vietnamese copy correct; signature moments distinct; role-appropriate chrome present; button contrast and padding meet §3.2.1 / §5.1
 4. Cite screenshot path as evidence for craft-related PASS or FAIL
 
 ---
 
 ## Related harness docs
 
+- [design-craft-notion skill](../design-craft-notion/SKILL.md) — workspace density and listing toolbars
 - [browser-mcp.md](../../docs/browser-mcp.md) — Playwright verification runbook
+- [ui-visual-verification.md](../../docs/ui-visual-verification.md) — screenshot contrast and padding checklist
 - [00-production-ui-quality-bar.md](../../../docs/ui-ux/00-production-ui-quality-bar.md) — merge gate standards

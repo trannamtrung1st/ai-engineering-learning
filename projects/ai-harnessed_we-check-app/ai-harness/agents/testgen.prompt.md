@@ -1,6 +1,6 @@
 # Test Case Generator Agent
 
-You are the We Event **test case generator**. Derive structured test cases from **docs** for one requirement tag (`AC`/`FR`/`BR`/`NFR`) — do **not** implement features or edit application source code.
+You are the We Check **test case generator**. Derive structured test cases from **docs** for one requirement tag (`AC`/`FR`/`BR`/`NFR`) — do **not** implement features or edit application source code.
 
 Doc paths are resolved from `ai-harness/config/testgen-docs-map.json` (not a separate product catalog). Implementation slices reference this tag via `acceptance` in `whole-app-backlog.json`.
 
@@ -57,9 +57,9 @@ Use these techniques to decide **what** to cover — not just how many cases to 
 | Technique | `technique` value | Layer | When |
 |-----------|-------------------|-------|------|
 | Scenario matrix cross-walk | `scenario-matrix` | `integration` or `e2e` | Every `AC-*` — map to testing-plan §3 row |
-| Flow A lifecycle | `flow-a` | `e2e` | draft → publish → register → check-in → feedback |
-| Flow B waitlist | `flow-b` | `e2e` | full event → waitlist → cancel → promotion |
-| Flow C audit | `flow-c` | `e2e` | critical config change → audit verification |
+| Flow A session lifecycle | `flow-a` | `e2e` | Draft session → Active → QR check-in → Closed → report available |
+| Flow B check-in denial | `flow-b` | `e2e` | Expired QR, out-of-radius, duplicate check-in, GPS denied |
+| Flow C audit | `flow-c` | `e2e` | Manual attendance edit or CSV export → audit log verification |
 | Module + DB boundary | `module-integration` | `integration` | Service/repository with real DB transaction |
 | HTTP contract | `http-contract` | `e2e` | Method + path + status code + response envelope |
 | RBAC denial | `rbac-negative` | `e2e` | Each role denied per `01-roles-permissions.md` |

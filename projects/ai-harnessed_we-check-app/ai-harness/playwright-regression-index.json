@@ -1,0 +1,124 @@
+{
+  "slices": {
+    "web-design-system-shell": {
+      "specPath": "tests/playwright-ui/scenarios/web-design-system-shell.spec.ts",
+      "lastRunId": null,
+      "testCount": 0,
+      "sourceTcIds": []
+    },
+    "web-auth-login": {
+      "specPath": "tests/playwright-ui/scenarios/web-auth-login.spec.ts",
+      "lastRunId": null,
+      "testCount": 0,
+      "sourceTcIds": []
+    },
+    "web-auth-logout": {
+      "specPath": "tests/playwright-ui/scenarios/web-auth-logout.spec.ts",
+      "lastRunId": null,
+      "testCount": 0,
+      "sourceTcIds": []
+    },
+    "web-student-checkin": {
+      "specPath": "tests/playwright-ui/scenarios/web-student-checkin.spec.ts",
+      "lastRunId": null,
+      "testCount": 0,
+      "sourceTcIds": []
+    },
+    "web-student-history": {
+      "specPath": "tests/playwright-ui/scenarios/web-student-history.spec.ts",
+      "lastRunId": null,
+      "testCount": 0,
+      "sourceTcIds": []
+    },
+    "web-instructor-sessions": {
+      "specPath": "tests/playwright-ui/scenarios/web-instructor-sessions.spec.ts",
+      "lastRunId": null,
+      "testCount": 0,
+      "sourceTcIds": []
+    },
+    "web-instructor-qr-display": {
+      "specPath": "tests/playwright-ui/scenarios/web-instructor-qr-display.spec.ts",
+      "lastRunId": null,
+      "testCount": 0,
+      "sourceTcIds": []
+    },
+    "web-instructor-session-monitor": {
+      "specPath": "tests/playwright-ui/scenarios/web-instructor-session-monitor.spec.ts",
+      "lastRunId": null,
+      "testCount": 0,
+      "sourceTcIds": []
+    },
+    "web-instructor-attendance-roster": {
+      "specPath": "tests/playwright-ui/scenarios/web-instructor-attendance-roster.spec.ts",
+      "lastRunId": null,
+      "testCount": 0,
+      "sourceTcIds": []
+    },
+    "web-instructor-reports": {
+      "specPath": "tests/playwright-ui/scenarios/web-instructor-reports.spec.ts",
+      "lastRunId": null,
+      "testCount": 0,
+      "sourceTcIds": []
+    },
+    "web-admin-users": {
+      "specPath": "tests/playwright-ui/scenarios/web-admin-users.spec.ts",
+      "lastRunId": null,
+      "testCount": 0,
+      "sourceTcIds": []
+    },
+    "web-admin-users-import": {
+      "specPath": "tests/playwright-ui/scenarios/web-admin-users-import.spec.ts",
+      "lastRunId": null,
+      "testCount": 0,
+      "sourceTcIds": []
+    },
+    "web-admin-rosters": {
+      "specPath": "tests/playwright-ui/scenarios/web-admin-rosters.spec.ts",
+      "lastRunId": null,
+      "testCount": 0,
+      "sourceTcIds": []
+    },
+    "web-admin-reports-export": {
+      "specPath": "tests/playwright-ui/scenarios/web-admin-reports-export.spec.ts",
+      "lastRunId": null,
+      "testCount": 0,
+      "sourceTcIds": []
+    },
+    "web-admin-policy": {
+      "specPath": "tests/playwright-ui/scenarios/web-admin-policy.spec.ts",
+      "lastRunId": null,
+      "testCount": 0,
+      "sourceTcIds": []
+    },
+    "web-admin-bootstrap": {
+      "specPath": "tests/playwright-ui/scenarios/web-admin-bootstrap.spec.ts",
+      "lastRunId": null,
+      "testCount": 0,
+      "sourceTcIds": []
+    },
+    "web-admin-classes": {
+      "specPath": "tests/playwright-ui/scenarios/web-admin-classes.spec.ts",
+      "lastRunId": null,
+      "testCount": 0,
+      "sourceTcIds": []
+    },
+    "web-admin-subjects": {
+      "specPath": "tests/playwright-ui/scenarios/web-admin-subjects.spec.ts",
+      "lastRunId": null,
+      "testCount": 0,
+      "sourceTcIds": []
+    },
+    "web-visual-refresh-v2": {
+      "specPath": "tests/playwright-ui/scenarios/web-visual-refresh-v2.spec.ts",
+      "lastRunId": null,
+      "testCount": 0,
+      "sourceTcIds": []
+    },
+    "web-role-navigation": {
+      "specPath": "tests/playwright-ui/scenarios/web-role-navigation.spec.ts",
+      "lastRunId": null,
+      "testCount": 0,
+      "sourceTcIds": []
+    }
+  }
+}

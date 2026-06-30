@@ -194,7 +194,7 @@ Cards omitted when permission missing.
 └─────────────────────────────────────┘
 ```
 
-Component: `CheckInOutcomePanel` — Campus Pulse outcome moment; variant driven by `CheckInOutcome` enum with distinct icon, color wash, and `--font-display` headline per [04-design-tokens.md](./04-design-tokens.md) §13.
+Component: `CheckInOutcomePanel` — Notion pastel outcome moment; variant driven by `CheckInOutcome` enum with distinct icon, card-tint wash, and semibold headline per [04-design-tokens.md](./04-design-tokens.md) §13.
 
 ---
 
@@ -446,6 +446,29 @@ Black background (`#000`); QR minimum **280 × 280** px on projector; countdown 
 │         404                         │
 │   Không tìm thấy trang              │
 │   [Button] Về trang chủ             │
+└─────────────────────────────────────┘
+```
+
+### 14.3 Shell overview (`/`) — route discovery
+
+Unauthenticated only ([AC-18f](../brds/08-acceptance-mvp-future.md), [AC-18g](../brds/08-acceptance-mvp-future.md)).
+
+```
+┌─────────────────────────────────────┐
+│ Hệ thống giao diện We Check         │
+│ {component showcase — badges, QR}   │
+│ Các trạng thái điểm danh            │
+│ {outcome panels}                    │
+├─────────────────────────────────────┤
+│ Đi tới trang                        │
+│ ┌─────────────┐ ┌─────────────┐     │
+│ │ Đăng nhập   │ │ Điểm danh   │     │
+│ │ /login      │ │ /check-in   │     │
+│ └─────────────┘ └─────────────┘     │
+│ ┌─────────────┐ ┌─────────────┐     │
+│ │ Buổi học    │ │ Quản trị    │     │
+│ │ /sessions   │ │ /admin      │     │
+│ └─────────────┘ └─────────────┘     │
 └─────────────────────────────────────┘
 ```
 

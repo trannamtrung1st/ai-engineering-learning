@@ -43,6 +43,22 @@ flowchart TB
 
 No navigation chrome at root level.
 
+### 3.1 ShellOverview and route discovery
+
+Unauthenticated visitors at `/` see `ShellOverviewPage` — a component showcase plus a **route discovery** section. Authenticated users never see this page; `RoleHomeRedirect` sends them to role home per [AC-18e](../brds/08-acceptance-mvp-future.md) ([FR-18](../brds/03-functional-requirements.md)).
+
+| Element | Specification |
+| --- | --- |
+| Placement | Below showcase content (badges, QR countdown, outcome panels) |
+| Section heading | *Đi tới trang* (`--font-display`, `--text-h2`) |
+| Component | `RouteDiscoveryPanel` — grouped quick links reusing `NavCard` / `QuickActionGrid` styling from `RoleHomeHub` |
+| Links (unauthenticated only) | **Đăng nhập** → `/login`; **Điểm danh** → `/check-in`; **Buổi học** → `/sessions`; **Quản trị** → `/admin` |
+| Protected targets | Auth guard redirects to `/login?returnUrl=…` per [BR-06](../brds/04-business-rules.md); discovery links are entry points, not permission-gated chrome |
+| Visibility | Hidden when session exists ([AC-18g](../brds/08-acceptance-mvp-future.md)) |
+| Test IDs | `data-testid="route-discovery-panel"` on container; `data-testid="route-discovery-{slug}"` per link (`login`, `check-in`, `sessions`, `admin`) |
+
+**Wireframe:** [11-wireframes.md](./11-wireframes.md) §14.3.
+
 ---
 
 ## 4. AuthLayout
@@ -53,19 +69,19 @@ Used for `/login` and password recovery (if added).
 
 ```
 ┌──────────────────┬──────────────────┐
-│ Brand panel      │ Login card       │
-│ (--color-brand-  │ (--shadow-lg,    │
-│  700 gradient)   │  max 400 px)     │
-│ Product name +   │ Form (Outlet)    │
-│ subtitle         │                  │
+│ Navy brand panel │ Login card       │
+│ (hero-band-dark) │ (--shadow-lg,    │
+│ Product name +   │  max 400 px)     │
+│ subtitle         │ Form (Outlet)    │
 └──────────────────┴──────────────────┘
 ```
 
 | Region | Specification |
 | --- | --- |
-| Brand panel | `--color-brand-700` to `--color-brand-900` gradient; `--font-display` product name; `--color-text-inverse` copy |
+| Brand panel | Solid `--color-brand-700` (`colors.brand-navy`); Inter semibold product name; `--color-text-inverse` copy — DESIGN.md `hero-band-dark` |
 | Login card | Centered, max-width **400 px**, `--shadow-lg`, `--radius-lg` |
-| Background | `--color-surface-default` (warm stone) |
+| Primary submit | `button-primary` — `--color-primary-600` purple CTA |
+| Background | `--color-surface-default` (warm gray) |
 
 ### 4.2 Mobile (<768 px)
 
@@ -75,7 +91,7 @@ Single centered card (same as prior spec): max-width **400 px**, `--space-4` pad
 | --- | --- |
 | Header | We Check product name (`--font-display`) + subtitle “Điểm danh số cho buổi học” |
 | Background | `--color-surface-default` |
-| Footer | Institutional support line (optional text link) |
+| Footer | Institutional support line (optional text link); optional *Quay về trang chủ* → `/` on `/login` ([FR-18](../brds/03-functional-requirements.md)) |
 
 **Behavior:** Redirect authenticated users to role home ([FR-02](../brds/03-functional-requirements.md)). Preserve `returnUrl` query for post-login check-in deep link ([BR-06](../brds/04-business-rules.md)).
 
@@ -91,7 +107,7 @@ Mobile-first shell for `Student` role routes: `/check-in`, `/history`.
 ┌─────────────────────────────┐
 │ AppHeader (compact, white)  │
 ├─────────────────────────────┤
-│  warm stone background      │
+│  warm gray background       │
 │   PageContent (Outlet)      │
 │                             │
 ├─────────────────────────────┤
@@ -106,7 +122,7 @@ Page content area uses `--color-surface-default`; cards inside use `--color-surf
 | Element | Content |
 | --- | --- |
 | Left | We Check logo text (links to `/check-in`) |
-| Right | `UserMenu` — name + logout |
+| Right | `UserMenu` — identity panel + logout (data from `/auth/me`) |
 
 Height: **56 px**. Sticky top.
 
@@ -166,15 +182,47 @@ On `/sessions`, render instructor `RoleHomeHub` above the session list: cards **
 
 Width: **240 px** on `lg+`; collapses to icon rail on `md`; drawer overlay on `< md`.
 
-**Brand stripe:** 4 px vertical bar on sidebar leading edge in `--color-brand-700`.
+Active item: `--color-primary-50` background, `--color-primary-600` text, `--radius-md` pill shape. Hairline `--color-border-default` between nav groups. Density follows Notion sidebar rhythm (compact 36–40 px row height, `--space-3` horizontal inset) per [`design-craft-notion` skill](../../ai-harness/skills/design-craft-notion/SKILL.md) — **exactly one** active item per layout ([BR-14a](../brds/04-business-rules.md)).
 
-Active item: `--color-primary-50` background, `--color-primary-700` text, `--radius-md` pill shape.
+#### 6.2a Active nav route matching
+
+Enforces singleton active indicator ([BR-14a](../brds/04-business-rules.md), [AC-18h](../brds/08-acceptance-mvp-future.md), [AC-18i](../brds/08-acceptance-mvp-future.md)). Each nav descriptor carries `match: "exact" | "prefix"` (default `prefix`). Map to React Router `NavLink` `end` prop: `exact` → `end={true}`; `prefix` → `end={false}` unless a more specific sibling item matches.
+
+**Student bottom nav**
+
+| Current path | Active item | Match |
+| --- | --- | --- |
+| `/check-in`, `/check-in/*` | Điểm danh | prefix |
+| `/history` | Lịch sử | exact |
+
+**Instructor sidebar**
+
+| Current path | Active item | Match |
+| --- | --- | --- |
+| `/sessions`, `/sessions/new`, `/sessions/:id`, `/sessions/:id/*` | Buổi học | prefix |
+| `/reports`, `/reports/*` | Báo cáo | prefix |
+
+**Admin sidebar** — see §7.2 for item list; matching table:
+
+| Current path | Active item | Match |
+| --- | --- | --- |
+| `/admin` | Trang chủ | exact |
+| `/admin/users`, `/admin/users/*` | Người dùng | prefix |
+| `/admin/classes`, `/admin/classes/new` | Lớp học | prefix |
+| `/admin/subjects`, `/admin/subjects/new` | Môn học | prefix |
+| `/admin/rosters`, `/admin/rosters/:classCode` | Danh sách ghi danh | prefix with `end` on `/admin/rosters` only — **exclude** `/admin/rosters/import` |
+| `/admin/rosters/import` | Nhập danh sách | exact |
+| `/admin/reports`, `/admin/reports/*` | Báo cáo | prefix |
+| `/admin/export`, `/admin/export/*` | Xuất CSV | prefix |
+| `/admin/policy`, `/admin/policy/*` | Chính sách | prefix |
+
+When two items could match by prefix, the **longest matching route** wins; parent prefix items must not remain active.
 
 ### 6.3 TopBar
 
 - Breadcrumb from route handle
 - Session `StatusBadge` when inside active session route
-- `UserMenu` right-aligned
+- `UserMenu` right-aligned — identity panel + logout (data from auth context / `/auth/me`)
 
 Height: **64 px**. Sticky.
 
@@ -203,18 +251,23 @@ Same grid as `InstructorLayout` with expanded navigation.
 
 ### 7.2 Sidebar
 
-`SidebarNav` uses `usePermittedNav()` — items without required permission are omitted ([BR-14](../brds/04-business-rules.md)).
+`SidebarNav` uses `usePermittedNav()` — items without required permission are omitted ([BR-14](../brds/04-business-rules.md)). Active-state matching per §6.2a ([BR-14a](../brds/04-business-rules.md)).
 
-| Item | Route | Required permission | Icon |
-| --- | --- | --- | --- |
-| Trang chủ | `/admin` | any admin read permission | `Home` |
-| Người dùng | `/admin/users` | `user:read` (all) | `Users` |
-| Danh sách lớp | `/admin/rosters` | `roster:read` (all) | `List` |
-| Thêm lớp học | `/admin/classes/new` | `roster:write` | `Plus` |
-| Nhập danh sách | `/admin/rosters/import` | `roster:write` | `Upload` |
-| Báo cáo | `/admin/reports` | `report:read` (institution) | `BarChart3` |
-| Xuất CSV | `/admin/export` | `report:export` | `Download` |
-| Chính sách | `/admin/policy` | `policy:write` | `Settings` |
+| Item | Route | Required permission | Match | Icon |
+| --- | --- | --- | --- | --- |
+| Trang chủ | `/admin` | any admin read permission | exact | `Home` |
+| Người dùng | `/admin/users` | `user:read` (all) | prefix | `Users` |
+| Lớp học | `/admin/classes` | `roster:read` (all) | prefix | `GraduationCap` |
+| Môn học | `/admin/subjects` | `roster:read` (all) | prefix | `BookOpen` |
+| Danh sách ghi danh | `/admin/rosters` | `roster:read` (all) | prefix† | `List` |
+| Nhập danh sách | `/admin/rosters/import` | `roster:write` | exact | `Upload` |
+| Báo cáo | `/admin/reports` | `report:read` (institution) | prefix | `BarChart3` |
+| Xuất CSV | `/admin/export` | `report:export` | prefix | `Download` |
+| Chính sách | `/admin/policy` | `policy:write` | prefix | `Settings` |
+
+† `/admin/rosters` uses `end={true}` so `/admin/rosters/import` does not co-highlight this item.
+
+Create actions for class and subject catalogs live on list-page CTAs (**Thêm lớp**, **Thêm môn**) — not as separate sidebar entries.
 
 Default post-login landing: `/admin` hub (`RoleHomeHub`), not `/admin/users` unless deep-linked.
 

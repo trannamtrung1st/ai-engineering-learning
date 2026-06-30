@@ -82,7 +82,7 @@ Session preflight (`sessionGate === "checking"`) may run in parallel with GPS ca
 | Retry | *Thử lại ({n}/3)* — up to **3** attempts |
 | Permission denied | GPS guide modal — user must fix settings |
 
-### 4.3 CheckInOutcomePanel variants (Campus Pulse)
+### 4.3 CheckInOutcomePanel variants (Notion pastel tints)
 
 Each variant uses the **outcome moment** pattern: semantic wash, distinct Lucide icon (`--size-icon-lg`), `--font-display` headline, single primary CTA. See [04-design-tokens.md](./04-design-tokens.md) §13.
 

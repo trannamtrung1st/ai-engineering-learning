@@ -46,7 +46,7 @@ Applies to all endpoints unless overridden in §3.
 | VAL-02 | Email | RFC 5322 simplified; max 254 chars; lowercase normalized on persist | `InvalidEmail` | [FR-01](../brds/03-functional-requirements.md) |
 | VAL-03 | Password (create/change) | Min length **8**; max 128; non-empty | `PasswordTooShort` | [NFR-14](../brds/07-non-functional-risk.md) |
 | VAL-04 | Display name | Trimmed; length 1–200 UTF-8 | `InvalidLength` | Vietnamese diacritics allowed |
-| VAL-05 | Institutional ID | Trimmed; pattern `^[A-Za-z0-9\-]{3,32}$` | `InvalidInstitutionalId` | Unique per institution |
+| VAL-05 | Institutional ID | Trimmed; pattern `^[A-Za-z0-9\-_.]{3,32}$` | `InvalidInstitutionalId` | Unique per institution; allows letters, digits, hyphen, underscore, period |
 | VAL-06 | ISO 8601 timestamps | UTC `timestamptz`; parseable; finite | `InvalidTimestamp` | API JSON uses `...Z` suffix |
 | VAL-07 | Cursor pagination `limit` | Integer 1–200; default 50 | `InvalidPagination` | [05-api-design.md](./05-api-design.md) §1 |
 | VAL-08 | Cursor pagination `cursor` | Opaque base64 or null | `InvalidPagination` | Server rejects malformed cursor |
@@ -101,6 +101,18 @@ Duplicate `email` or `institutionalId` → `422` with field details ([AC-01b](..
 | `name` | Yes | VAL-04 | FR-03 |
 
 Duplicate `code` → `DuplicateClassCode` or `DuplicateSubjectCode` ([AC-03e](../brds/08-acceptance-mvp-future.md)).
+
+### 3.2b User import — `POST /users/import`
+
+| Check | Rule | Outcome |
+| --- | --- | --- |
+| File present | Multipart field `file` required | `InvalidFile` |
+| Required CSV columns | `institutional_id`, `display_name`, `email`, `role`, `active` | Row rejected in batch summary |
+| Row-level ID | VAL-05 per row | Row error `InvalidInstitutionalId` |
+| Row-level email | VAL-02; unique unless same `institutional_id` on update | Row error `DuplicateEmail` ([AC-01g](../brds/08-acceptance-mvp-future.md)) |
+| Row-level role | Valid enum | Row error `InvalidEnum` |
+| Upsert by ID | Match on `institutional_id` | Create or update user; password unchanged on update |
+| `dryRun=true` | Validate only; no persist | Summary counts only |
 
 ### 3.3 Roster import — `POST /roster/import`
 

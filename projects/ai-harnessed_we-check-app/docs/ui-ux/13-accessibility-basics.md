@@ -42,7 +42,10 @@ Use design tokens from [04-design-tokens.md](./04-design-tokens.md).
 | Body text on background | **4.5:1** | `--color-text-primary` on `--color-bg-base` |
 | Large text (≥ **18 pt** bold or **24 pt**) | **3:1** | QR countdown on fullscreen |
 | UI components and focus rings | **3:1** | Buttons, inputs, badges |
+| `Button` variants | **4.5:1** label (≥ **3:1** disabled) | Token pairs in [04-design-tokens.md](./04-design-tokens.md) §3.2.1 — `primary`, `secondary`, `outline`, `ghost`, `danger` |
 | `StatusBadge` | Text + icon or pattern | Never color-only ([AC-07](../brds/08-acceptance-mvp-future.md) success must show text *Có mặt*) |
+
+**Harness verification:** The Ralph loop does not run axe-core. Implementer and browser tester agents verify button contrast and padding via **browser screenshots** against [ui-visual-verification.md](../../ai-harness/docs/ui-visual-verification.md) and this section.
 
 **QR fullscreen:** White QR on `#000` background; countdown numerals **≥ 32 px** bold ([NFR-20](../brds/07-non-functional-risk.md)).
 

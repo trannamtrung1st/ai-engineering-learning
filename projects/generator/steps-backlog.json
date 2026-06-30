@@ -278,6 +278,29 @@
       ]
     },
     {
+      "id": "uiux-design-md",
+      "passes": false,
+      "priority": 29,
+      "phase": 3,
+      "kind": "agent",
+      "agent": "doc-writer",
+      "description": "Design spec (DESIGN.md) — customize preamble and map product surfaces to design tokens",
+      "outputs": [
+        "docs/ui-ux/DESIGN.md"
+      ],
+      "contextDocs": [
+        "docs/product-meta.json",
+        "docs/brds/prompt.md",
+        "docs/brds/01-stakeholders-scope.md"
+      ],
+      "validators": [
+        "outputs-exist",
+        "doc-structure",
+        "placeholder-scan",
+        "no-generator-refs"
+      ]
+    },
+    {
       "id": "uiux-foundation-system",
       "passes": false,
       "priority": 30,
@@ -296,6 +319,7 @@
         "docs/ui-ux/06-app-layout-components.md"
       ],
       "contextDocs": [
+        "docs/ui-ux/DESIGN.md",
         "docs/brds/prompt.md",
         "docs/technical/12-backend-frontend-tech-stack.md"
       ],
@@ -347,6 +371,7 @@
         "docs/ui-ux/14-listing-pages-search-filter-sort.md"
       ],
       "contextDocs": [
+        "docs/ui-ux/DESIGN.md",
         "docs/brds/08-acceptance-mvp-future.md",
         "docs/ui-ux/09-page-list.md"
       ],

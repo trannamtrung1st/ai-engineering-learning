@@ -163,7 +163,7 @@ No React Native or Capacitor in MVP ([00-system-overview.md](./00-system-overvie
 
 ### 4.5 Frontend state and API access
 
-- **Auth context:** session user, role, logout; cookie credentials on all fetch calls.
+- **Auth context:** `user` — `{ id, displayName, email, institutionalId, role }` from `GET /auth/me`; `logout(): Promise<void>` — `POST /auth/logout` with `credentials: 'include'`; on success `window.location.assign('/login')`. Layouts pass `onLogout` from context into `UserMenu` / `AppHeader` (required wiring, not optional no-op). Cookie credentials on all fetch calls.
 - **API client:** typed wrapper generated from OpenAPI or hand-maintained per resource.
 - **Polling:** QR display 5 s interval; attendance monitor 5 s while Active ([FR-15](../brds/03-functional-requirements.md)).
 - **Optimistic UI:** Not used for check-in (server outcome authoritative).

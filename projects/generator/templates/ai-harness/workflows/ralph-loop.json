@@ -27,7 +27,8 @@
       "build": 600000,
       "test:unit": 600000,
       "test:integration": 900000,
-      "test:e2e": 900000
+      "test:e2e": 900000,
+      "test:playwright-ui": 900000
     },
     "forbiddenPatterns": [
       {
@@ -67,7 +68,8 @@
       { "script": "build", "activeWhen": "apps", "optional": false },
       { "script": "test:unit", "activeWhen": "apps/api", "optional": false },
       { "script": "test:integration", "activeWhen": "apps/api", "optional": false },
-      { "script": "test:e2e", "activeWhen": "tests/e2e", "optional": false }
+      { "script": "test:e2e", "activeWhen": "tests/e2e", "optional": false },
+      { "script": "test:playwright-ui", "activeWhen": "tests/playwright-ui", "optional": true }
     ],
     "runtimeValidation": {
       "db": {
@@ -85,7 +87,7 @@
       },
       "web": {
         "activeWhen": "apps/web",
-        "url": "http://localhost:3000",
+        "url": "http://localhost:3007",
         "expectStatus": 200,
         "timeoutMs": 120000
       }
@@ -98,6 +100,10 @@
     "activeWhenAgent": ["frontend", "test"],
     "requirePreviewStack": true,
     "previewVerifyGateTimeoutMs": 10000,
+    "generatePlaywrightRegression": true,
+    "uxBugLogging": true,
+    "playwrightOutputDir": "tests/playwright-ui/scenarios",
+    "uxBugsDir": "ai-harness/generated/runs/ux-bugs",
     "inputs": [
       "slice-docs",
       "acceptance-tags",

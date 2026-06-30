@@ -158,6 +158,12 @@ Sets `Set-Cookie: wecheck_session=<id>; HttpOnly; Secure; SameSite=Lax`.
 
 Revokes current session. Permission: authenticated. Response `204 No Content`.
 
+**Client expectations:**
+
+- Response clears the `SESSION_COOKIE_NAME` HTTP-only session cookie via `Set-Cookie`.
+- Subsequent `GET /auth/me` or any protected route returns **401** `Unauthenticated` with the revoked cookie.
+- Web client calls with `credentials: 'include'`; on success redirects to `/login` (no `returnUrl`). See [12-backend-frontend-tech-stack.md](./12-backend-frontend-tech-stack.md) §4.5 and [10-user-flows.md](../ui-ux/10-user-flows.md) §14.
+
 ### 2.4 `GET /auth/me`
 
 Returns authenticated user profile. Permission: `user:read` (self). Response `200` with `User` DTO (no `passwordHash`).
@@ -211,6 +217,55 @@ Create user account. Permission: `user:write`. FR-01.
 
 **Validation errors `422`:** duplicate `email` or `institutionalId`, invalid `role` enum.
 
+### 3.2a `POST /users/import`
+
+Bulk user CSV import with upsert by `institutional_id`. Permission: `user:write`. FR-01, [AC-01d](../brds/08-acceptance-mvp-future.md).
+
+Multipart form upload: `file` (CSV), optional `dryRun` (boolean).
+
+**CSV required columns:** `institutional_id`, `display_name`, `email`, `role`, `active`
+
+| Column | Validation |
+| --- | --- |
+| `institutional_id` | VAL-05; upsert match key |
+| `display_name` | VAL-04 |
+| `email` | VAL-02; unique except when updating same `institutional_id` |
+| `role` | One of: `Student`, `Instructor`, `TrainingOfficeAdmin` |
+| `active` | Boolean (`true`/`false` or `1`/`0`); defaults `true` if omitted |
+
+**Upsert semantics:** Create when `institutional_id` not found (random initial password generated, not returned). Update `display_name`, `email`, `role`, `active` when ID exists; password and sessions unchanged.
+
+**Response `202 Accepted`:**
+
+```json
+{
+  "batchId": "uuid",
+  "status": "Processing",
+  "message": "Đang xử lý file người dùng..."
+}
+```
+
+### 3.2b `GET /users/imports/:batchId`
+
+Poll user import status. Returns `UserImportBatch` with `totalRows`, `successRows`, `errorRows`, `createdCount`, `updatedCount`, `errorDetails`.
+
+**Example completed summary:**
+
+```json
+{
+  "id": "uuid",
+  "status": "Completed",
+  "totalRows": 1200,
+  "successRows": 1198,
+  "errorRows": 2,
+  "createdCount": 1150,
+  "updatedCount": 48,
+  "errorDetails": [
+    { "rowNumber": 42, "field": "email", "message": "DuplicateEmail" }
+  ]
+}
+```
+
 ### 3.3 `PATCH /users/:userId`
 
 Update display name, email, role, or `active` flag. Permission: `user:write`. Deactivating a user revokes all `AuthSession` rows for that user.
@@ -221,7 +276,24 @@ Update display name, email, role, or `active` flag. Permission: `user:write`. De
 
 ### 4.1 `GET /classes` and `GET /subjects`
 
-Reference data lists. Permission: `roster:read` (scoped). Instructor sees only classes tied to `ClassAssignment`; admin sees all.
+Reference data catalog lists. Permission: `roster:read` (scoped). Instructor sees only classes/subjects tied to `ClassAssignment`; admin sees all.
+
+**Query parameters:** `q` (search code/name), `sort` (default `code` asc), `offset`, `limit` (default **25**).
+
+**Response `200`:**
+
+```json
+{
+  "items": [
+    { "id": "uuid", "code": "HESD-03", "name": "HESD Cohort 03" }
+  ],
+  "total": 42,
+  "offset": 0,
+  "limit": 25
+}
+```
+
+Used by admin catalog pages `/admin/classes` and `/admin/subjects` ([AC-03i](../brds/08-acceptance-mvp-future.md)).
 
 ### 4.1a `POST /classes` and `POST /subjects`
 
@@ -627,15 +699,23 @@ Class-subject aggregation over date range. Query: `classCode`, `subjectCode`, `f
 
 ### 8.3 `POST /reports/export`
 
-CSV export. Permission: `report:export` (`TrainingOfficeAdmin` only). FR-13, [BR-09](../brds/04-business-rules.md).
+CSV export from report pages or dedicated export UI. FR-13, [BR-09](../brds/04-business-rules.md).
 
-**Request body:** same filter fields as summary report.
+**Permissions:**
+
+| Role | Permission | Scope enforcement |
+| --- | --- | --- |
+| `TrainingOfficeAdmin` | `report:export` | Institution-wide within request filters |
+| `Instructor` | `report:read` + assignment check | Same class-subject scope as `GET /reports/summary` ([BR-08](../brds/04-business-rules.md)) |
+| `Student` | — | **403** `ExportNotAllowed` |
+
+**Request body:** same filter fields as summary report (mirrors active `ReportFilterBar` / inline **Xuất CSV** state per [14-listing-pages-search-filter-sort.md](../ui-ux/14-listing-pages-search-filter-sort.md) §10).
 
 **Response `200`:** `Content-Type: text/csv; charset=utf-8` with `Content-Disposition: attachment; filename="attendance-export-2026-06-28.csv"`.
 
 **CSV columns:** `institutional_id`, `display_name`, `class_code`, `subject_code`, `session_date`, `attendance_status`, `checked_in_at`
 
-Writes `ExportAuditLog` on success.
+Writes `ExportAuditLog` on success. Denied attempts (student, out-of-scope instructor) write security audit per [NFR-15](../brds/07-non-functional-risk.md).
 
 ---
 

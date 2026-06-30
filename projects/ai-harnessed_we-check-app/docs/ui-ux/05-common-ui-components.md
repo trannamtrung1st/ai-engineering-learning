@@ -25,13 +25,32 @@ Components live under `apps/web/src/components/ui/` (primitives) and `apps/web/s
 | `loading` | boolean | Shows spinner; disables click |
 | `disabled` | boolean | `aria-disabled`; reduced opacity |
 
-**Visual (Campus Pulse):**
+**Visual (Notion — `button-primary`, `button-secondary`, `button-ghost`):**
 
-- `primary`: `--color-primary-600` background, `--shadow-sm`, hover `--shadow-md` + `--color-primary-700`
-- `secondary`: `--color-surface-raised` with `--color-border-default` border
-- `outline`: transparent with `--color-primary-600` border and text
+Foreground/background pairs must match [04-design-tokens.md](./04-design-tokens.md) §3.2.1:
+
+| `variant` | Background | Label / foreground |
+| --- | --- | --- |
+| `primary` | `--color-primary-600` (hover `--color-primary-700`) | `--color-primary-foreground` |
+| `secondary` | `--color-surface-raised` + `--color-border-default` border | `--color-text-primary` |
+| `outline` | transparent | `--color-primary-600` text and border |
+| `ghost` | transparent | `--color-text-primary` |
+| `danger` | `--color-danger-500` | `--color-text-inverse` |
+| `disabled` | `--color-surface-muted` | `--color-text-disabled` (≥ 3:1) |
+
+- `primary`: `--radius-md` (8 px), `--shadow-sm`, hover `--shadow-md` — DESIGN.md rectangular buttons, not pills
 - Active press: `scale(0.98)` for `--duration-fast` unless reduced motion
 - Focus: `--focus-ring-*` tokens
+
+**Size padding** (per [04-design-tokens.md](./04-design-tokens.md) §5.1):
+
+| `size` | Horizontal | Vertical inset |
+| --- | --- | --- |
+| `sm` | `--space-3` | `--space-2` |
+| `md` | `--space-4` | min-height `--size-touch-min` |
+| `lg` | `--space-5` | `--space-4` |
+
+**Not acceptable:** light text on `--color-primary-500` without verified contrast; disabled opacity so low label drops below **3:1**; icon-only buttons smaller than **44×44 px** on student routes.
 
 **Usage:** Primary CTA “Điểm danh”, “Mở buổi học”; `danger` for “Hủy buổi học”.
 
@@ -154,6 +173,21 @@ Single hub card: `title`, optional `description`, `href`, Lucide `icon`, `data-t
 
 Responsive grid wrapping `NavCard` children: 1 col mobile, 2 cols `md+`, 3 cols admin `lg+`.
 
+#### `RouteDiscoveryPanel`
+
+Chrome-less route discovery for unauthenticated `/` ([FR-18](../brds/03-functional-requirements.md), [AC-18f](../brds/08-acceptance-mvp-future.md)). Renders below `ShellOverviewPage` showcase content.
+
+| Prop | Type | Description |
+| --- | --- | --- |
+| `links` | `RouteDiscoveryLink[]` | Ordered list of entry-point links |
+| `links[].to` | `string` | React Router path (e.g. `/login`, `/check-in`) |
+| `links[].label` | `string` | Vietnamese link title (e.g. **Đăng nhập**) |
+| `links[].description` | `string?` | Optional one-line hint under title |
+| `links[].roleHint` | `string?` | Optional role label (e.g. *Sinh viên*, *Giảng viên*) |
+| `links[].testId` | `string` | `data-testid` slug for e2e |
+
+Reuses `NavCard` visual treatment from `RoleHomeHub`. Not permission-filtered — auth guard handles protected routes. Hidden when user is authenticated ([AC-18g](../brds/08-acceptance-mvp-future.md)).
+
 ---
 
 ## 3. Form Components (`components/shared/form/`)
@@ -194,7 +228,18 @@ TanStack Table wrapper.
 
 ### 4.2 TableToolbar
 
-Search input, filter `Select`s, primary action button slot.
+Database-style filter row for listing pages ([14-listing-pages-search-filter-sort.md](./14-listing-pages-search-filter-sort.md) §0). Implements DESIGN.md `search-pill` + filter chips per [`design-craft-notion` skill](../../ai-harness/skills/design-craft-notion/SKILL.md).
+
+| Slot | Spec |
+| --- | --- |
+| Search | Left-aligned; min width 200 px desktop; full width mobile stack |
+| Filters | `Select` chips or dropdowns; gap `--space-2` |
+| Sort | Column header sort or toolbar `Select` when card layout |
+| Primary action | Right-aligned CTA (e.g. **Thêm lớp**, **Xuất CSV**) |
+| Padding | Toolbar inset `--space-4`; gap between controls `--space-3` |
+| Surface | `--color-surface-elevated` card above table; hairline `--color-border-subtle` below toolbar |
+
+Every listing in [14-listing-pages](./14-listing-pages-search-filter-sort.md) §0 must expose search, filter, sort, and pagination (or documented variant).
 
 ### 4.3 TablePagination
 
@@ -229,15 +274,15 @@ Content blocks per [01-ui-ux-foundation.md](./01-ui-ux-foundation.md) §8.
 
 ### 5.3 CheckInOutcomePanel
 
-**Signature element** — Campus Pulse check-in outcome moment ([01-design-overview.md](./01-design-overview.md) §5.5).
+**Signature element** — Notion pastel check-in outcome moment ([01-design-overview.md](./01-design-overview.md) §5.5).
 
-Displays check-in result with distinct visual treatment per outcome: hero icon, `--font-display` headline, body message, semantic color wash, and single recovery CTA.
+Displays check-in result with distinct visual treatment per outcome: hero icon, semibold headline, body message, card-tint pastel wash, and single purple recovery CTA.
 
 | Element | Specification |
 | --- | --- |
 | Container | Full-width within page content; `--radius-lg`; `--shadow-md`; padding `--space-6` |
 | Icon | `--size-icon-lg` (32 px) Lucide icon per [04-design-tokens.md](./04-design-tokens.md) §13 |
-| Headline | `--font-display`, `--text-h1-size`, semibold |
+| Headline | Inter semibold, `--text-h1-size` |
 | Wash | Background from outcome token mapping (`success-50`, `warning-50`, etc.) |
 | CTA | Single primary `Button`; min height `--size-touch-min` |
 | Motion | Reveal with scale 0.98→1 + opacity (`--duration-slow`, `--ease-spring`); disabled when reduced motion |
@@ -250,7 +295,9 @@ Maps all `CheckInOutcome` values from [01-ui-ux-foundation.md](./01-ui-ux-founda
 
 ### 6.1 NavLink
 
-Router-aware link with active styles (`--color-primary-50` background).
+Router-aware link with active styles (`--color-primary-50` background, `--color-primary-600` text, `font-medium`) — DESIGN.md `pill-tab-active` equivalent for nav.
+
+When active, set `aria-current="page"`. Nav descriptors may carry optional `match: "exact" | "prefix"` (default `prefix`); map to React Router `end` prop — `exact` → `end={true}`, `prefix` → `end={false}`. Singleton active state per layout is enforced by route matrix in [06-app-layout-components.md](./06-app-layout-components.md) §6.2a ([BR-14a](../brds/04-business-rules.md)).
 
 ### 6.2 Breadcrumb
 
@@ -258,7 +305,39 @@ Optional on admin deep pages. Items: home → section → current.
 
 ### 6.3 UserMenu
 
-Dropdown: display name, role label, logout.
+Header dropdown on all authenticated shells. Data sourced from auth context (`GET /auth/me`). Full spec: [10-user-flows.md](./10-user-flows.md) §14.
+
+**Trigger**
+
+- User icon + truncated `displayName` + chevron
+- `data-testid="user-menu-trigger"`
+- `aria-label`: `Tài khoản {displayName}`
+
+**Dropdown panel (read-only identity header)**
+
+- Primary: `displayName` (semibold)
+- Secondary: `email` (truncate with `title` attribute for full value)
+- Secondary: `institutionalId` prefixed with `Mã:`
+- Role: localized `roleLabels[role]`
+- Separator
+- Logout item: `LogOut` icon + `appCopy.logout` ("Đăng xuất")
+- `data-testid="user-menu-logout"`
+- Disabled with `aria-busy` while logout in flight
+
+**Props contract**
+
+```ts
+interface UserMenuProps {
+  displayName: string;
+  email: string;
+  institutionalId: string;
+  role: UserRole;
+  onLogout: () => void | Promise<void>;
+  isLoggingOut?: boolean;
+}
+```
+
+`onLogout` is required at call sites — layouts must wire it from auth context; an unwired menu item is not acceptable for MVP.
 
 ---
 
@@ -288,6 +367,8 @@ Dropdown: display name, role label, logout.
 | `Toast` | — | All |
 | `StatCard` | FR-15 | Instructor |
 | `RoleHomeHub`, `NavCard` | FR-18 | All authenticated |
+| `RouteDiscoveryPanel` | FR-18 | Unauthenticated `/` |
+| `UserMenu` | FR-02 | All authenticated |
 
 ---
 

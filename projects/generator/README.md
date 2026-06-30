@@ -65,10 +65,10 @@ The target repo's root `package.json` does **not** include generator scripts —
 After `GEN_COMPLETE`:
 
 ```
-docs/product-meta.json  # Extracted product metadata
+docs/product-meta.json  # Extracted product metadata (optional designSystem)
 docs/brds/              # 10 BRD files
 docs/technical/         # 14 technical specs
-docs/ui-ux/             # 15 UI/UX specs
+docs/ui-ux/             # 16 UI/UX specs (includes DESIGN.md)
 ai-harness/             # Full Ralph harness (scripts + generated backlog)
 package.json            # Root workspace with aih:* scripts only
 ```
@@ -85,5 +85,17 @@ npm run aih:loop
 The generator **does not write** unless `GEN_APPLY=1`. It refuses to overwrite an existing `ai-harness/whole-app-backlog.json` unless `GEN_FORCE=1`.
 
 Generated artifacts must not reference `generator/` — validators enforce this.
+
+### `product-meta.json` — optional `designSystem`
+
+```json
+"designSystem": {
+  "framework": "default",
+  "sourceUrl": null
+}
+```
+
+- **`default`** — bundled neutral `DESIGN.md` template (step `uiux-design-md`)
+- **Custom framework** — set `sourceUrl` to a raw design-md URL (e.g. Notion from [awesome-design-md](https://github.com/VoltAgent/awesome-design-md)); doc-writer customizes the preamble in the same step
 
 See [GENERATOR-DESIGN.md](./GENERATOR-DESIGN.md) for step index and architecture.

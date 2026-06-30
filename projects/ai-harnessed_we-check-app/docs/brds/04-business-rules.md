@@ -19,7 +19,7 @@ Enforceable business rules (`BR-xx`) for **We Check** MVP. Each rule defines con
 | Session activation prerequisites | BR-07 | Session `Draft` → `Active` |
 | Authorization (reports and export) | BR-08, BR-09 | Report and export endpoints |
 | Manual corrections | BR-10 | Instructor and admin attendance edits |
-| Bootstrap and navigation | BR-13, BR-14 | First deploy setup; nav chrome |
+| Bootstrap and navigation | BR-13, BR-14, BR-14a | First deploy setup; nav chrome; singleton active indicator |
 | Check-in preflight gate | BR-15 | Before GPS capture step |
 
 Rules marked **Must** block the operation when violated. **Should** rules (BR-05) run asynchronously after session close.
@@ -139,16 +139,16 @@ Rules marked **Must** block the operation when violated. **Should** rules (BR-05
 | **Exceptions** | `TrainingOfficeAdmin` has institution-wide read access |
 | **Traceability** | [FR-12](./03-functional-requirements.md); [06-domain-model.md](./06-domain-model.md) §3.2 `ClassAssignment` |
 
-### BR-09 — CSV export restricted to training office admin
+### BR-09 — CSV export scoped by role
 
 | Field | Specification |
 | --- | --- |
-| **Condition** | Authenticated user role is not `TrainingOfficeAdmin` |
-| **Trigger** | User requests CSV export of attendance data |
-| **Outcome** | Export rejected; UI message (Vietnamese): *Chỉ phòng đào tạo mới có quyền xuất dữ liệu*; audit log records denied attempt |
-| **Scope** | All export endpoints |
-| **Exceptions** | None — centralized data control for academic downstream systems |
-| **Traceability** | [FR-13](./03-functional-requirements.md); [02-business-workflow.md](./02-business-workflow.md) §6.2 |
+| **Condition** | User requests CSV export outside permitted scope |
+| **Trigger** | `POST /reports/export` or inline **Xuất CSV** on a report page |
+| **Outcome** | **Instructor:** export allowed only for assigned class-subject pairs ([BR-08](./04-business-rules.md)); out-of-scope request denied with localized permission error; audit log records denied attempt. **TrainingOfficeAdmin:** export allowed for any class/subject within active filters. **Student:** export always denied; UI hides export control; API message (Vietnamese): *Chỉ phòng đào tạo mới có quyền xuất dữ liệu*; denied attempt logged |
+| **Scope** | All export endpoints and report-page export actions |
+| **Exceptions** | Instructor scoped export per assignment; admin institution-wide export |
+| **Traceability** | [FR-13](./03-functional-requirements.md); [02-business-workflow.md](./02-business-workflow.md) §6.1–6.2; [14-listing-pages-search-filter-sort.md](../ui-ux/14-listing-pages-search-filter-sort.md) §10 |
 
 ---
 
@@ -202,6 +202,17 @@ Rules marked **Must** block the operation when violated. **Should** rules (BR-05
 | **Exceptions** | None — showing a nav item the user cannot access is a spec violation |
 | **Traceability** | [FR-18](./03-functional-requirements.md); [NFR-11](./07-non-functional-risk.md); [AC-18](./08-acceptance-mvp-future.md) |
 
+### BR-14a — Singleton active nav indicator
+
+| Field | Specification |
+| --- | --- |
+| **Condition** | Layout chrome renders sidebar or bottom nav with multiple items whose routes share a URL prefix (e.g. `/admin/rosters` and `/admin/rosters/import`) |
+| **Trigger** | User navigates to any protected route within a role shell |
+| **Outcome** | Exactly **zero or one** nav link displays active styling (`--color-primary-50` background, `--color-primary-700` text) and `aria-current="page"`. When a more specific nav item matches the current path, its parent prefix item must **not** also appear active. Route-to-item matching rules are defined in [06-app-layout-components.md](../ui-ux/06-app-layout-components.md) §6.2a |
+| **Scope** | All authenticated role shells — `StudentLayout`, `InstructorLayout`, `AdminLayout` |
+| **Exceptions** | Hub quick-link cards on role home pages are not primary nav items and do not participate in singleton active state |
+| **Traceability** | [FR-18](./03-functional-requirements.md); [AC-18h](./08-acceptance-mvp-future.md) |
+
 ### BR-15 — QR preflight gate before GPS capture
 
 | Field | Specification |
@@ -243,6 +254,7 @@ Check-in evaluation order when session is `Active` and within attendance window 
 | --- | --- | --- |
 | BR-13 | FR-17 | [02-business-workflow.md](./02-business-workflow.md) §3.0 |
 | BR-14 | FR-18 | §3.0 |
+| BR-14a | FR-18 | §3.0 |
 | BR-15 | FR-07 | §4.2 |
 | BR-01 | FR-05 | [02-business-workflow.md](./02-business-workflow.md) §4.1 |
 | BR-02 | FR-08 | §4.2 |

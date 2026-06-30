@@ -138,8 +138,8 @@ Functional behavior is specified in `FR-xx`; testable acceptance scenarios are i
 | Field | Specification |
 | --- | --- |
 | **Attribute** | Authorization |
-| **Measure** | Access to reports, CSV export, manual edits, and cross-class data |
-| **Target** | **100%** of out-of-scope access attempts denied with audit log ([BR-08](./04-business-rules.md), [BR-09](./04-business-rules.md)). **UI nav negative matrix:** per role, DOM contains zero links to forbidden route prefixes (`/admin/*` for non-admin, etc.) per [BR-14](./04-business-rules.md) |
+| **Measure** | Access to reports, CSV export (including instructor assignment boundary), manual edits, and cross-class data |
+| **Target** | **100%** of out-of-scope access attempts denied with audit log ([BR-08](./04-business-rules.md), [BR-09](./04-business-rules.md)). Instructor CSV export limited to assigned class-subject pairs; student export always denied. **UI nav negative matrix:** per role, DOM contains zero links to forbidden route prefixes (`/admin/*` for non-admin, etc.) per [BR-14](./04-business-rules.md) |
 | **Verification** | RBAC negative test matrix per role; UI nav audit per [AC-18](./08-acceptance-mvp-future.md); [AC-12](./08-acceptance-mvp-future.md), [AC-13](./08-acceptance-mvp-future.md) |
 | **Traceability** | [FR-12](./03-functional-requirements.md), [FR-13](./03-functional-requirements.md), [FR-18](./03-functional-requirements.md) |
 

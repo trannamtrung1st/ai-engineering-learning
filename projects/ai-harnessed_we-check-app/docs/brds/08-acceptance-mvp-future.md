@@ -15,7 +15,7 @@ Testable acceptance criteria (`AC-xx`) for **We Check** MVP. Each criterion uses
 | AC-07 – AC-10 | Mobile check-in, GPS, anti-fraud | Must | FR-07 – FR-10 |
 | AC-11 – AC-14 | Manual edits, reporting, export, student history | Must | FR-11 – FR-14 |
 | AC-15 – AC-16 | Dashboard and absence warnings | Should | FR-15 – FR-16 |
-| AC-17 – AC-18 | Bootstrap, nav permissions, role hubs | Must | FR-17 – FR-18 |
+| AC-17 – AC-18 | Bootstrap, nav permissions, role hubs, chrome-less route discovery | Must | FR-17 – FR-18 |
 
 ---
 
@@ -30,6 +30,10 @@ Testable acceptance criteria (`AC-xx`) for **We Check** MVP. Each criterion uses
 | AC-01a | A `TrainingOfficeAdmin` with valid admin session | Admin creates a student account with unique student ID, display name, email, and role `Student` | Account is persisted with `active=true`; student can authenticate |
 | AC-01b | A student ID already exists in the system | Admin attempts to create another account with the same student ID | Request is rejected with a validation error; no duplicate record created |
 | AC-01c | A user account with `active=false` | Deactivated user attempts login | Login fails with localized error; check-in is not permitted |
+| AC-01f | Institutional ID containing `_` or `.` within VAL-05 length (e.g. `SV_2026.001`) | Admin creates user or CSV row is validated | ID accepted; persisted as trimmed value |
+| AC-01d | CSV with required columns and valid rows including existing and new `institutional_id` values | Admin imports file via `POST /users/import` | New users created; existing users updated on `display_name`, `email`, `role`, `active`; summary shows created, updated, and rejected counts |
+| AC-01e | CSV row with `institutional_id` already present and unchanged profile fields vs DB | Admin imports file | Row counted as success (idempotent no-op); no duplicate user row |
+| AC-01g | CSV row with valid ID but `email` already used by another user | Admin imports file | Row rejected with `DuplicateEmail`; other valid rows still process |
 
 ### AC-02 — Authentication before check-in
 
@@ -40,6 +44,8 @@ Testable acceptance criteria (`AC-xx`) for **We Check** MVP. Each criterion uses
 | AC-02a | An unauthenticated student opens a check-in deep link from a scanned QR | Browser loads the check-in route | User is redirected to login; no attendance record is created; outcome `Unauthenticated` if API invoked directly |
 | AC-02b | A student completes login after redirect from check-in URL | Credentials are valid | User returns to the check-in flow with session established |
 | AC-02c | An authenticated session idle for more than **8 hours** | Student submits check-in | Session is expired; user must re-authenticate before check-in succeeds |
+| AC-02d | Authenticated user on any role shell | User opens UserMenu and selects **Đăng xuất** | `POST /auth/logout` returns 204; session cookie cleared; user lands on `/login`; direct access to protected route redirects to login |
+| AC-02e | Authenticated user | User opens UserMenu | Panel shows `displayName`, `email`, `institutionalId`, and localized role label sourced from `/auth/me` |
 
 ### AC-03 — Roster import and maintenance
 
@@ -50,8 +56,12 @@ Testable acceptance criteria (`AC-xx`) for **We Check** MVP. Each criterion uses
 | AC-03a | A CSV with required columns (student ID, full name, class code, subject code) and valid rows | `TrainingOfficeAdmin` imports the file | Enrollments are created; import summary shows accepted and rejected row counts |
 | AC-03b | A CSV containing a duplicate student ID within the same class | Admin imports the file | Duplicate rows are rejected with row-level errors; valid rows still import; no silent partial failure |
 | AC-03c | An `Instructor` assigned to class `HESD-01` | Instructor views roster for an unassigned class | Access is denied; no roster data returned |
-| AC-03d | Admin with `roster:write` | Admin creates class `HESD-03` and subject `SWE-102` via `/admin/classes/new` | Records persisted; appear in roster filters and import validation |
+| AC-03d | Admin with `roster:write` | Admin creates class `HESD-03` via `/admin/classes/new` | Class persisted; appears on `/admin/classes` list and in roster/import filters |
 | AC-03e | Class code `HESD-03` already exists | Admin attempts duplicate class code | Request rejected with localized validation error |
+| AC-03f | Admin with `roster:write` | Admin creates subject `SWE-102` via `/admin/subjects/new` | Subject persisted; appears on `/admin/subjects` list and in import validation |
+| AC-03g | Subject code `SWE-102` already exists | Admin attempts duplicate subject code | Request rejected with localized `DuplicateSubjectCode` validation error |
+| AC-03h | Class `HESD-01` and `HESD-02` exist; subject `SWE-101` exists | Admin imports CSV rows for both classes with `SWE-101` | Enrollments created for both class-subject pairs — proves independent catalogs |
+| AC-03i | Admin with `roster:read` | Admin opens `/admin/classes` or `/admin/subjects` | `GET /classes` and `GET /subjects` return paginated catalog; instructor sees only classes/subjects tied to `ClassAssignment` |
 
 ---
 
@@ -68,7 +78,7 @@ Testable acceptance criteria (`AC-xx`) for **We Check** MVP. Each criterion uses
 
 ### AC-18 — Permission-gated navigation and role home hubs
 
-**Traces:** [FR-18](./03-functional-requirements.md), [BR-14](./04-business-rules.md), [NFR-11](./07-non-functional-risk.md)
+**Traces:** [FR-18](./03-functional-requirements.md), [BR-14](./04-business-rules.md), [BR-14a](./04-business-rules.md), [NFR-11](./07-non-functional-risk.md)
 
 | ID | Given | When | Then |
 | --- | --- | --- | --- |
@@ -77,6 +87,10 @@ Testable acceptance criteria (`AC-xx`) for **We Check** MVP. Each criterion uses
 | AC-18c | Logged-in `TrainingOfficeAdmin` | Admin lands on `/admin` hub | All permitted workflow cards visible with working deep links |
 | AC-18d | Logged-in `Instructor` with `report:read` | Instructor lands on `/sessions` | Hub section shows **Tạo buổi học mới** and **Báo cáo** links |
 | AC-18e | Authenticated user of any role | User visits `/` | Redirect to role home hub per role table in [FR-18](./03-functional-requirements.md) |
+| AC-18f | Unauthenticated visitor | Opens `/` | Route discovery section visible with links labeled **Đăng nhập**, **Điểm danh** (`/check-in`), **Buổi học** (`/sessions`), **Quản trị** (`/admin`); each link navigates (protected routes redirect to login with `returnUrl`) |
+| AC-18g | Authenticated user of any role | Opens `/` | Redirect to role home per AC-18e; route discovery section **not** shown |
+| AC-18h | Logged-in `TrainingOfficeAdmin` on `/admin/rosters/import` | User views admin sidebar | Exactly one nav item shows active styling; **Nhập danh sách** is active; **Danh sách ghi danh** is not active ([BR-14a](./04-business-rules.md)) |
+| AC-18i | Logged-in `Instructor` on `/sessions/new` | User views instructor sidebar | Exactly one nav item shows active styling; **Buổi học** is active |
 
 ---
 
@@ -187,15 +201,18 @@ Testable acceptance criteria (`AC-xx`) for **We Check** MVP. Each criterion uses
 | AC-12a | Instructor assigned to class `HESD-01` / subject `SWE-101` | Instructor opens attendance report for that class and subject | Tabular roster with statuses and summary counts (present, absent, excused) is returned |
 | AC-12b | Instructor **not** assigned to requested class | Instructor opens report | Access denied with localized permission error |
 | AC-12c | `TrainingOfficeAdmin` | Admin opens institution-wide report with date filter | All cohorts visible within filter; report available within **10 minutes** of session close |
+| AC-12d | `Instructor` or `TrainingOfficeAdmin` on a report page | User views populated report with filters applied | Page header or toolbar shows **Xuất CSV** using current filter state |
 
-### AC-13 — CSV export for training office
+### AC-13 — CSV export from report pages
 
 **Traces:** [FR-13](./03-functional-requirements.md), [BR-09](./04-business-rules.md)
 
 | ID | Given | When | Then |
 | --- | --- | --- | --- |
-| AC-13a | `TrainingOfficeAdmin` viewing a filtered report | Admin requests CSV export | CSV downloads with columns: student ID, name, class, subject, session date, attendance status, check-in timestamp (when present); export action audit-logged |
-| AC-13b | `Instructor` or `Student` | User requests CSV export | Export rejected; message: *Chỉ phòng đào tạo mới có quyền xuất dữ liệu*; denied attempt logged |
+| AC-13a | `TrainingOfficeAdmin` viewing a filtered report | Admin requests CSV export (inline or `/admin/export`) | CSV downloads with columns: student ID, name, class, subject, session date, attendance status, check-in timestamp (when present); export action audit-logged |
+| AC-13b | `Student` | User requests CSV export | Export rejected; message: *Chỉ phòng đào tạo mới có quyền xuất dữ liệu*; denied attempt logged; no export control visible on report pages |
+| AC-13c | `Instructor` assigned to class `HESD-01` / subject `SWE-101` | Instructor requests CSV export from `/reports` with matching filters | Scoped CSV downloads; export action audit-logged |
+| AC-13d | `TrainingOfficeAdmin` on `/admin/reports` | Admin clicks inline **Xuất CSV** | CSV downloads without navigating to `/admin/export`; filters match on-screen report |
 
 ### AC-14 — Student personal attendance history
 
@@ -239,7 +256,8 @@ The following capabilities are **in scope** for the We Check MVP pilot with HESD
 | Capability | FR | Validated by |
 | --- | --- | --- |
 | User provisioning and deactivation | FR-01 | AC-01 |
-| Email/password authentication | FR-02 | AC-02 |
+| Bulk user CSV import (upsert by institutional ID) | FR-01 | AC-01d, AC-01e |
+| Email/password authentication and logout | FR-02 | AC-02, AC-02d |
 | CSV roster import | FR-03 | AC-03 |
 | Manual class and subject creation | FR-03 | AC-03d, AC-03e |
 | First admin bootstrap (`/setup`) | FR-17 | AC-17 |
@@ -256,7 +274,7 @@ The following capabilities are **in scope** for the We Check MVP pilot with HESD
 | GPS spoofing baseline detection | FR-10 | AC-10 |
 | Manual attendance edit with **24 h** instructor window | FR-11 | AC-11 |
 | Class/subject reports by assignment | FR-12 | AC-12 |
-| CSV export (training office admin only) | FR-13 | AC-13 |
+| CSV export (role-scoped: instructor assigned scope, admin institution-wide) | FR-13 | AC-13 |
 | Student personal attendance history | FR-14 | AC-14 |
 
 ### 7.2 Should (include if schedule allows)
@@ -325,7 +343,7 @@ The MVP pilot is considered successful when all of the following are true for at
 | AC-02 | FR-02 | BR-06 | NFR-10, NFR-16 |
 | AC-03 | FR-03 | — | — |
 | AC-17 | FR-17 | BR-13 | NFR-16 |
-| AC-18 | FR-18 | BR-14 | NFR-11 |
+| AC-18 | FR-18 | BR-14, BR-14a | NFR-11 |
 | AC-04 | FR-04 | BR-07 | — |
 | AC-05 | FR-05 | BR-01 | NFR-01 |
 | AC-06 | FR-06 | BR-03 | NFR-06 |

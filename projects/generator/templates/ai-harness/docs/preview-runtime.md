@@ -1,6 +1,6 @@
 # Preview Runtime — API + Web
 
-Canonical harness spec for starting and verifying the We Event stack (database, API, web). Referenced by `ai-harness/README.md`, `ai-harness/HARNESS-DESIGN.md`, and `docs/technical/13-docker-compose-local-runtime.md`.
+Canonical harness spec for starting and verifying the {{PRODUCT_NAME}} stack (database, API, web). Referenced by `ai-harness/README.md`, `ai-harness/HARNESS-DESIGN.md`, and `docs/technical/13-docker-compose-local-runtime.md`.
 
 **Status:** Implemented. Scripts live in `ai-harness/scripts/`; root `package.json` npm scripts wired.
 
@@ -18,7 +18,7 @@ Both modes must pass the same verification probes before reporting success:
 | Service | Probe | Success |
 |---|---|---|
 | API | `GET http://localhost:${AIH_PREVIEW_API_PORT:-3001}/api/v1/health` | JSON `status` is `ok` and `db` is `connected` |
-| Web | `GET http://localhost:${AIH_PREVIEW_WEB_PORT:-3000}/` | HTTP status `200` |
+| Web | `GET http://localhost:${AIH_PREVIEW_WEB_PORT:-3007}/` | HTTP status `200` |
 
 Timeouts (defaults):
 
@@ -51,7 +51,7 @@ Location: `ai-harness/scripts/preview-stack.sh`
 | `--verify-only` | Skip start; delegate to `verify-stack.sh` |
 | `--down` | Dev: kill tracked PIDs + `npm run aih:dev:db:down`. Full: `docker compose --profile full-preview down` |
 | `AIH_PREVIEW_API_PORT` | Default `3001` |
-| `AIH_PREVIEW_WEB_PORT` | Default `3000` |
+| `AIH_PREVIEW_WEB_PORT` | Default `3007` (preview stack; avoids conflict with `npm run dev` on `3000`) |
 | `AIH_PREVIEW_MODE` | Optional override for `--mode` (`dev` \| `full`) |
 
 State file (dev mode PIDs): `ai-harness/generated/runs/preview-stack.pids`
@@ -61,8 +61,8 @@ State file (dev mode PIDs): `ai-harness/generated/runs/preview-stack.pids`
 1. Copy `.env.example` to `.env` (or export vars) — `DATABASE_URL` must target Compose Postgres (`localhost:5432`).
 2. `npm run aih:dev:db:up` — database healthy before API start.
 3. Run migrations against Postgres before API start.
-4. `npm run build --workspace @we-event/api` — API `dev` script runs `node --watch dist/index.js`.
-5. `preview-stack.sh` sets `PORT` per service when starting dev processes (`.env` defines `PORT=3001` for API; web must use `3000`).
+4. `npm run build --workspace {{WORKSPACE_NAME}}api` — API `dev` script runs `node --watch dist/index.js`.
+5. `preview-stack.sh` sets `PORT` per service via `aih_api_port()` / `aih_web_port()` when starting dev processes (defaults: API `3001`, preview web `3007`).
 
 ### Full-mode prerequisites
 
@@ -85,7 +85,7 @@ Environment overrides:
 | Variable | Default | Purpose |
 |---|---|---|
 | `AIH_PREVIEW_API_PORT` | `3001` | API host port |
-| `AIH_PREVIEW_WEB_PORT` | `3000` | Web host port |
+| `AIH_PREVIEW_WEB_PORT` | `3007` | Preview web host port (`aih_web_port()` in scripts) |
 | `AIH_VERIFY_API_TIMEOUT_MS` | `60000` (dev) / `180000` (full) | API poll budget |
 | `AIH_VERIFY_WEB_TIMEOUT_MS` | `120000` (dev) / `180000` (full) | Web poll budget |
 | `AIH_PREVIEW_MODE` | `dev` | Selects default timeouts when explicit `*_TIMEOUT_MS` unset |
@@ -103,8 +103,8 @@ source "$(dirname "$0")/lib/common.sh"
 require_harness_deps
 require_cmd curl
 
-API_PORT="${AIH_PREVIEW_API_PORT:-3001}"
-WEB_PORT="${AIH_PREVIEW_WEB_PORT:-3000}"
+API_PORT="$(aih_api_port)"
+WEB_PORT="$(aih_web_port)"
 MODE="${AIH_PREVIEW_MODE:-dev}"
 
 if [[ -z "${AIH_VERIFY_API_TIMEOUT_MS:-}" ]]; then
@@ -172,7 +172,7 @@ Implemented at `ai-harness/scripts/preview-stack.sh`. Persists mode in `preview-
 
 ```bash
 #!/usr/bin/env bash
-# Start We Event stack (dev or full preview) and verify API + web startup.
+# Start {{PRODUCT_NAME}} stack (dev or full preview) and verify API + web startup.
 # Usage: preview-stack.sh [--mode dev|full] [--verify-only] [--down]
 set -euo pipefail
 source "$(dirname "$0")/lib/common.sh"
@@ -249,19 +249,19 @@ else
     [[ "$status" == "healthy" || "$status" == "running" ]] && break
     sleep 2
   done
-  npm run build --workspace @we-event/api
+  npm run build --workspace {{WORKSPACE_NAME}}api
   stop_dev_processes
   : > "$PID_FILE"
-  PORT="${AIH_PREVIEW_API_PORT:-3001}" npm run dev --workspace @we-event/api >>"${RUNS_DIR}/preview-api.log" 2>&1 &
+  PORT="${AIH_PREVIEW_API_PORT:-3001}" npm run dev --workspace {{WORKSPACE_NAME}}api >>"${RUNS_DIR}/preview-api.log" 2>&1 &
   echo $! >> "$PID_FILE"
-  PORT="${AIH_PREVIEW_WEB_PORT:-3000}" npm run dev --workspace @we-event/web >>"${RUNS_DIR}/preview-web.log" 2>&1 &
+  PORT="$(aih_web_port)" npm run dev --workspace {{WORKSPACE_NAME}}web >>"${RUNS_DIR}/preview-web.log" 2>&1 &
   echo $! >> "$PID_FILE"
 fi
 
 "$VERIFY_SCRIPT"
 
-API_PORT="${AIH_PREVIEW_API_PORT:-3001}"
-WEB_PORT="${AIH_PREVIEW_WEB_PORT:-3000}"
+API_PORT="$(aih_api_port)"
+WEB_PORT="$(aih_web_port)"
 echo ""
 echo "Preview stack ready (mode=$MODE)"
 echo "  API: http://localhost:${API_PORT}/api/v1/health"
@@ -282,7 +282,7 @@ echo "  Stop: npm run aih:preview:down"
 - **Slice-scoped web probe:** backend/infra slices use `verify-stack.sh --api-only` (API health only). Frontend and test slices also require web `GET /` HTTP 200.
 - **Scenario probe:** `verify-scenarios.sh` runs independently of web health (API-only participant registration flow).
 - **After build:** when preview is **not** running, full workspace build includes web and api. When preview **is** running, `run-checks.sh` skips `apps/web` and `apps/api` build to preserve dev `.next` and API `dist/` runtime (typecheck still covers both).
-- **Preview seed (optional):** set `AIH_PREVIEW_SEED_ENABLED=1` to export `SEED_ENABLED=true` when the API supervisor starts (product-specific; We Check uses this for preview fixtures).
+- **Preview seed (optional):** set `AIH_PREVIEW_SEED_ENABLED=1` to export `SEED_ENABLED=true` when the API supervisor starts (enable when your API supports preview fixtures).
 
 ### Dev-mode supervisors (auto-restart)
 
@@ -347,7 +347,7 @@ npm run aih:preview
 npm run aih:preview:verify
 ```
 
-`aih:preview` resets dev preview before start: stops tracked supervisors, kills stray `preview-supervisor.sh` and port listeners on `3000`/`3001` (orphans after `^C`), clears `apps/web/.next`, then starts fresh supervisors.
+`aih:preview` resets dev preview before start: stops tracked supervisors, kills stray `preview-supervisor.sh` and port listeners on preview web/API ports (defaults `3007`/`3001`; orphans after `^C`), clears `apps/web/.next`, then starts fresh supervisors.
 
 ## Quick reference
 
@@ -376,7 +376,7 @@ Manual probes:
 
 ```bash
 curl -sf http://localhost:3001/api/v1/health | jq .
-curl -sf -o /dev/null -w '%{http_code}\n' http://localhost:3000/
+curl -sf -o /dev/null -w '%{http_code}\n' http://localhost:3007/
 ```
 
 ## Related docs

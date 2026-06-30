@@ -87,6 +87,7 @@ fi
 
 cleanup_playwright_mcp_artifacts
 ensure_screenshot_dir "$(screenshot_dir_for_slice "$SLICE_ID" browser-test)"
+ensure_playwright_regression_dirs "$SLICE_ID" "$RID"
 
 require_preview="$(jq -r '.browserTest.requirePreviewStack // true' "$LOOP_CONFIG")"
 if [[ "$require_preview" == "true" ]]; then
@@ -204,9 +205,15 @@ Prior failed run: \`${prior_run_id}\`
 Per-action 30s timeouts still apply; fail-fast means stop the **case list**, not abandon a stuck step before its timeout."
   else
     cases_block="$generated_browser_cases"
+    local codegen_block
+    codegen_block="$(format_playwright_codegen_block "$SLICE_ID" "$RID")"
     phase_instruction="## Full verification phase
 
-Execute **every** \`layer: browser\` case from the generated test case artifact (or derive from acceptance tags when none are listed). Report PASS, FAIL, or SKIP per case \`id\`. Mark physical-device or not-applicable cases as \`SKIP\` (see prompt). Emit \`BROWSER_TEST_PASS\` only when all runnable cases pass."
+Execute **every** \`layer: browser\` case from the generated test case artifact (or derive from acceptance tags when none are listed). Report PASS, FAIL, or SKIP per case \`id\`. Mark physical-device or not-applicable cases as \`SKIP\` (see prompt).
+
+${codegen_block}
+
+Emit \`BROWSER_TEST_PASS\` only when all runnable cases pass **and** no P0/P1 UX bugs remain."
   fi
 
   local full_prompt
@@ -231,10 +238,15 @@ Execute **every** \`layer: browser\` case from the generated test case artifact 
   if ! browser_output_has_actionable_failures "$outfile"; then
     if grep -qE 'TC-[A-Z0-9][A-Z0-9-]*:[[:space:]]*(PASS|SKIP|FAIL)' "$outfile" 2>/dev/null \
         || echo "$test_text" | grep -q 'BROWSER_TEST_PASS'; then
-      PHASE_PASS=true
+      if [[ "$phase" == "full" ]] && browser_output_has_ux_blockers "$outfile"; then
+        PHASE_PASS=false
+        echo "==> Phase validation failed: P0/P1 UX bugs block pass" >&2
+      else
+        PHASE_PASS=true
+      fi
     fi
   else
-    echo "==> Phase validation failed: output contains FAIL lines" >&2
+    echo "==> Phase validation failed: output contains FAIL or UX P0/P1 lines" >&2
   fi
 
   if [[ "$phase" == "retry" && ${#case_ids[@]} -gt 0 ]]; then
@@ -296,6 +308,7 @@ if ((${#retry_ids[@]} > 0)); then
     } >"$combined_outfile"
 
     report="$(write_browser_test_report false "$FINAL_TIMED_OUT" "$FINAL_TIMEOUT_REASON" "$FINAL_AGENT_STATUS" "$PHASES_JSON")"
+    report="$(enrich_browser_test_report_json "$report" "$combined_outfile" "$SLICE_ID" "$RID")"
     write_run_report "${RID}-browser-test.json" "$report"
     exit 1
   fi
@@ -331,9 +344,16 @@ if [[ "$PHASE_PASS" != true ]]; then
 fi
 
 report="$(write_browser_test_report "$FINAL_PASS" "$FINAL_TIMED_OUT" "$FINAL_TIMEOUT_REASON" "$FINAL_AGENT_STATUS" "$PHASES_JSON")"
+report="$(enrich_browser_test_report_json "$report" "$combined_outfile" "$SLICE_ID" "$RID")"
 write_run_report "${RID}-browser-test.json" "$report"
 
 if [[ "$FINAL_PASS" == true ]]; then
+  if parse_line="$(parse_playwright_regression_from_output "$combined_outfile" 2>/dev/null || true)"; then
+    spec_path="$(echo "$parse_line" | cut -f1)"
+    test_count="$(echo "$parse_line" | cut -f2)"
+    tc_ids_json="$(extract_source_tc_ids_from_output "$combined_outfile" | jq -R . | jq -s . 2>/dev/null || echo '[]')"
+    update_playwright_regression_index "$SLICE_ID" "$spec_path" "$RID" "$test_count" "$tc_ids_json"
+  fi
   exit 0
 fi
 exit 1

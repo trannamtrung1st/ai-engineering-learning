@@ -1,25 +1,12 @@
 # Harness guardrails
 
 Verification failures and remediation notes for harness agents.
-- [AC-04] Test case validation failed — see 20260628T172128Z-testgen.txt
-- [AC-13] Test case validation failed — see 20260628T173849Z-testgen.txt
-- [AC-13] Test case validation failed — see 20260628T174010Z-testgen.txt
-- [NFR-01] Test case validation failed — see 20260628T183306Z-testgen.txt
-- [NFR-07] Test case validation failed — see 20260628T184242Z-testgen.txt
-- [NFR-11] Test case validation failed — see 20260628T184941Z-testgen.txt
-- [NFR-15] Test case validation failed — see 20260628T185520Z-testgen.txt
-- [NFR-16] Test case validation failed — see 20260628T185943Z-testgen.txt
-- [NFR-17] Test case validation failed — see 20260628T190253Z-testgen.txt
-- [NFR-20] Test case validation failed — see 20260628T191006Z-testgen.txt
-- [domain-package] Computational checks failed — see 20260628T192740Z-checks.json
-- [api-foundation] Computational checks failed — see 20260628T193455Z-checks.json
-- [module-session-management] Computational checks failed — see 20260628T200826Z-checks.json
-- [module-attendance] Computational checks failed — see 20260628T203417Z-checks.json
-- [module-checkin-qr] Computational checks failed — see 20260628T205057Z-checks.json
-- [module-reporting-export] Computational checks failed — see 20260628T210529Z-checks.json
-- [module-reporting-export] AI review failed — see 20260628T211228Z-review.json
-- [web-design-system-shell] Browser test failed — see 20260628T212831Z-browser-test.json
-- [web-design-system-shell] Browser test failed — see 20260628T213809Z-browser-test.json
+
+## Doc requirements (2026-06-30)
+
+- **Listing pages:** All collection views must implement search, filter, sort, and pagination per [14-listing-pages-search-filter-sort.md](../docs/ui-ux/14-listing-pages-search-filter-sort.md) §0 (documented UX variants allowed). Apply toolbar density from [`design-craft-notion` skill](../skills/design-craft-notion/SKILL.md).
+- **Report CSV export:** [BR-09](../docs/brds/04-business-rules.md) is role-scoped — instructor exports within assigned class-subject; admin institution-wide; student denied. Every report page exposes inline **Xuất CSV** for permitted roles ([AC-12d](../docs/brds/08-acceptance-mvp-future.md), [AC-13c](../docs/brds/08-acceptance-mvp-future.md), [AC-13d](../docs/brds/08-acceptance-mvp-future.md)).
+- **Design craft:** Notion workspace identity via [`frontend-design`](../skills/frontend-design/SKILL.md); workspace/table density via [`design-craft-notion`](../skills/design-craft-notion/SKILL.md). Authoritative spec [DESIGN.md](../../docs/ui-ux/DESIGN.md); product tokens in [04-design-tokens.md](../../docs/ui-ux/04-design-tokens.md) always win.
 
 ## Signs
 
@@ -72,8 +59,12 @@ Verification failures and remediation notes for harness agents.
 
 - **Bootstrap only when zero users:** `POST /setup/first-admin` allowed only when `User.count = 0`; never exercise bootstrap on seeded preview without `SEED_ENABLED=false`.
 - **Sim params require flag:** `gpsSim`/`cameraSim`/`gpsLat`/`gpsLng` are ineffective when `VITE_ENABLE_DEVICE_SIMULATION=false` ([NFR-24](../brds/07-non-functional-risk.md)).
-- **Roster import prerequisites:** CSV import requires class/subject reference rows — create manually at `/admin/classes/new` or use seed.
+- **Roster import prerequisites:** CSV import requires class and subject reference rows in independent catalogs — create via `/admin/classes/new` and `/admin/subjects/new` (or seed) before import.
+- **Bulk user provisioning:** Import users at `/admin/users/import` before roster CSV when provisioning 1000+ students; upsert key = `institutional_id`.
+- **User vs roster CSV:** User CSV (FR-01) provisions identity records; roster CSV (FR-03) links enrollments to existing users by same ID.
+- **VAL-05 institutional ID:** Pattern `^[A-Za-z0-9\-_.]{3,32}$` — underscore and period allowed; update hardcoded test IDs when implementing.
 - **Nav audit:** Instructor browser session must have zero `href` containing `/admin` in layout chrome ([AC-18a](../brds/08-acceptance-mvp-future.md), [BR-14](../brds/04-business-rules.md)).
+- **Singleton active nav:** Admin sidebar on `/admin/rosters/import` must highlight only **Nhập danh sách** — not **Danh sách ghi danh** ([BR-14a](../brds/04-business-rules.md), [AC-18h](../brds/08-acceptance-mvp-future.md)). Use per-item `match`/`end` per [06-app-layout-components.md](../docs/ui-ux/06-app-layout-components.md) §6.2a.
 - **Admin post-login hub:** TrainingOfficeAdmin lands on `/admin` hub, not `/admin/users` directly (unless deep-linked).
 - **QR gate:** `gps-capture-step` must not mount until preflight passes; `stale-token-id` deep link must not show *Vị trí đã sẵn sàng* ([BR-15](../brds/04-business-rules.md)).
 - **GPS ready UX:** When `data-testid="gps-capture-step"` text is *Vị trí đã sẵn sàng*, assert no `Spinner` in DOM and submit button enabled ([AC-08f](../brds/08-acceptance-mvp-future.md)).
@@ -82,7 +73,10 @@ Verification failures and remediation notes for harness agents.
 
 - **Bootstrap only when zero users:** `POST /setup/first-admin` allowed only when `User.count = 0`; never exercise bootstrap in seeded preview without `SEED_ENABLED=false`.
 - **Device sim flag:** `gpsSim` / `cameraSim` / `gpsLat` / `gpsLng` query params are ineffective when `VITE_ENABLE_DEVICE_SIMULATION` is off ([NFR-24](../brds/07-non-functional-risk.md)).
-- **Roster import prerequisites:** Class and subject reference records must exist before CSV import — create via `/admin/classes/new` or seed.
+- **Roster import prerequisites:** Class and subject reference records must exist in separate catalogs before CSV import — create via `/admin/classes/new` and `/admin/subjects/new` or use seed.
+- **Bulk user provisioning:** Import users at `/admin/users/import` before roster CSV when provisioning 1000+ students; upsert key = `institutional_id`.
+- **User vs roster CSV:** User CSV (FR-01) provisions identity records; roster CSV (FR-03) links enrollments to existing users by same ID.
+- **VAL-05 institutional ID:** Pattern `^[A-Za-z0-9\-_.]{3,32}$` — underscore and period allowed; update hardcoded test IDs when implementing.
 - **Nav audit:** Instructor browser session must have zero `href` values containing `/admin` in layout chrome ([AC-18a](../brds/08-acceptance-mvp-future.md)).
 - **Admin post-login landing:** Admin lands on `/admin` hub, not `/admin/users` directly (unless deep-linked).
 - **QR preflight gate:** `gps-capture-step` (`data-testid="gps-capture-step"`) must not mount until `GET /check-in/tokens/:tokenId/preflight` passes; `stale-token-id` deep link must not show *Vị trí đã sẵn sàng*.
@@ -200,10 +194,266 @@ Verification failures and remediation notes for harness agents.
 - [web-admin-policy] Computational checks failed — see 20260630T023020Z-checks.json
 - **NotificationBell in role layouts:** `StudentLayout` / `InstructorLayout` mount `NotificationBell` which requires `QueryClientProvider` — wrap `app-shell.test.tsx` renders (or mock the hook) or `test:unit` fails with "No QueryClient set".
 - [web-admin-classes] Browser test failed — see 20260630T035506Z-browser-test.json
-- **ClassSubjectForm partial commit:** When class POST succeeds but subject returns DuplicateSubjectCode (e.g. SWE-102 pre-seeded), treat as success — toast + redirect to `/admin/rosters`; do not leave form with inline subject error (TC-AC-03-019, TC-FR-03-028).
+- **Class/subject catalogs:** Independent create flows — `ClassForm` at `/admin/classes/new`, `SubjectForm` at `/admin/subjects/new`; list pages at `/admin/classes` and `/admin/subjects`. Combined `ClassSubjectForm` workflow is obsolete.
 - **AdminLayout instructor rosters:** Allow Instructor on `/admin/rosters` and `/admin/rosters/:classCode` via `canAccessAdminShell` + minimal `admin-roster-shell` (no admin sidebar); other `/admin/*` routes still ForbiddenPage without admin chrome (TC-AC-03-018, TC-NFR-11-017).
 - [web-visual-refresh-v2] Computational checks failed — see 20260630T043434Z-checks.json
 - [web-visual-refresh-v2] Browser test failed — see 20260630T044433Z-browser-test.json
 - [web-visual-refresh-v2] Browser test failed — see 20260630T050035Z-browser-test.json
 - [web-role-navigation] Browser test failed — see 20260630T055125Z-browser-test.json
 - [web-design-system-shell] Browser test failed — see 20260630T063917Z-browser-test.json
+- **UserMenu logout wiring:** `UserMenu.onLogout` is required at all layout call sites — optional prop with no handler leaves a dead **Đăng xuất** item; `web-auth-logout` slice fails until `logoutAuth()` + auth-context wiring is complete.
+- [AC-01] Docs changed — test cases need review (index current=false; fingerprint=sha256:7b0fc3e3e2e397a940cb778db628a099c62d5f0f127e8f290fec2705f1265a6f)
+- [AC-02] Docs changed — test cases need review (index current=false; fingerprint=sha256:e50cbc06e7906e84829838480e40610873a46f8f940b14451ede5ede59820928)
+- [AC-03] Docs changed — test cases need review (index current=false; fingerprint=sha256:7b0fc3e3e2e397a940cb778db628a099c62d5f0f127e8f290fec2705f1265a6f)
+- [AC-04] Docs changed — test cases need review (index current=false; fingerprint=sha256:aa452864b0ed7b41aeb77b196ce905b9cce2341b7ef46d95455830965fa0972a)
+- [AC-05] Docs changed — test cases need review (index current=false; fingerprint=sha256:aa452864b0ed7b41aeb77b196ce905b9cce2341b7ef46d95455830965fa0972a)
+- [AC-06] Docs changed — test cases need review (index current=false; fingerprint=sha256:aa452864b0ed7b41aeb77b196ce905b9cce2341b7ef46d95455830965fa0972a)
+- [AC-07] Docs changed — test cases need review (index current=false; fingerprint=sha256:f444937c5006f6de01b253a67c56efd3d5642fd0a9b480f21db81d50a46f02c7)
+- [AC-08] Docs changed — test cases need review (index current=false; fingerprint=sha256:f444937c5006f6de01b253a67c56efd3d5642fd0a9b480f21db81d50a46f02c7)
+- [AC-09] Docs changed — test cases need review (index current=false; fingerprint=sha256:f444937c5006f6de01b253a67c56efd3d5642fd0a9b480f21db81d50a46f02c7)
+- [AC-10] Docs changed — test cases need review (index current=false; fingerprint=sha256:f444937c5006f6de01b253a67c56efd3d5642fd0a9b480f21db81d50a46f02c7)
+- [AC-11] Docs changed — test cases need review (index current=false; fingerprint=sha256:271d8bd415ae78a90a619c458e8d8958c9f57d8df980facf6dd889ccd3345122)
+- [AC-12] Docs changed — test cases need review (index current=false; fingerprint=sha256:261d5040407623a6fb3242777eaa942e172a12598311290a279ec07a372e84fd)
+- [AC-13] Docs changed — test cases need review (index current=false; fingerprint=sha256:4f42397f6d7ac4dd3dbf47bed688cea2fa9a4df792a08470d30f1d42b331620c)
+- [AC-14] Docs changed — test cases need review (index current=false; fingerprint=sha256:96d154e05a99fa17ef7199601a5e987cdd5a7a7845f0a9ad2152bc445bc88e30)
+- [AC-15] Docs changed — test cases need review (index current=false; fingerprint=sha256:283d0e29408e95c35b603203586d4221bd877efdd06765842cfcabf71d890a91)
+- [AC-16] Docs changed — test cases need review (index current=false; fingerprint=sha256:283d0e29408e95c35b603203586d4221bd877efdd06765842cfcabf71d890a91)
+- [AC-17] Docs changed — test cases need review (index current=false; fingerprint=sha256:e9cff5400b291e5fc6249ac0fea58539636369b93cade69ef24a46a9bd5b2666)
+- [AC-18] Docs changed — test cases need review (index current=false; fingerprint=sha256:7c98bb3f37b44dced2ae8edab018a0815f6be9911f5b79f68295422640b62b68)
+- [FR-01] Docs changed — test cases need review (index current=false; fingerprint=sha256:e075e896ae9e455b8859c65443d00a28e9d10fb6e4e8f9d35fdfe6ff41027878)
+- [FR-02] Docs changed — test cases need review (index current=false; fingerprint=sha256:966577ebaa410786076cf37618807f6a74bbed8c3b302794b53e07edebed7bb7)
+- [FR-03] Docs changed — test cases need review (index current=false; fingerprint=sha256:e075e896ae9e455b8859c65443d00a28e9d10fb6e4e8f9d35fdfe6ff41027878)
+- [FR-04] Docs changed — test cases need review (index current=false; fingerprint=sha256:270d1b6a93f412f5987014d46a1b72e32dedec5f6b066ec00822fa5ed00bb860)
+- [FR-05] Docs changed — test cases need review (index current=false; fingerprint=sha256:270d1b6a93f412f5987014d46a1b72e32dedec5f6b066ec00822fa5ed00bb860)
+- [FR-06] Docs changed — test cases need review (index current=false; fingerprint=sha256:bcfad8ed0d3ff2b0a9c499271a17b005c0397064ebcf2e34eb133dbafbb4b289)
+- [FR-07] Docs changed — test cases need review (index current=false; fingerprint=sha256:bcfad8ed0d3ff2b0a9c499271a17b005c0397064ebcf2e34eb133dbafbb4b289)
+- [FR-08] Docs changed — test cases need review (index current=false; fingerprint=sha256:bcfad8ed0d3ff2b0a9c499271a17b005c0397064ebcf2e34eb133dbafbb4b289)
+- [FR-09] Docs changed — test cases need review (index current=false; fingerprint=sha256:bcfad8ed0d3ff2b0a9c499271a17b005c0397064ebcf2e34eb133dbafbb4b289)
+- [FR-10] Docs changed — test cases need review (index current=false; fingerprint=sha256:bcfad8ed0d3ff2b0a9c499271a17b005c0397064ebcf2e34eb133dbafbb4b289)
+- [FR-11] Docs changed — test cases need review (index current=false; fingerprint=sha256:8008829cc9f452f435807a3c4c45811d734bc3e405788b62bade967854171d83)
+- [FR-12] Docs changed — test cases need review (index current=false; fingerprint=sha256:8008829cc9f452f435807a3c4c45811d734bc3e405788b62bade967854171d83)
+- [FR-13] Docs changed — test cases need review (index current=false; fingerprint=sha256:8008829cc9f452f435807a3c4c45811d734bc3e405788b62bade967854171d83)
+- [FR-14] Docs changed — test cases need review (index current=false; fingerprint=sha256:8008829cc9f452f435807a3c4c45811d734bc3e405788b62bade967854171d83)
+- [FR-15] Docs changed — test cases need review (index current=false; fingerprint=sha256:2a4628a536acbd7b7f3ebfefb9c8ee02cc21e8e3e52a226c9e3fcac82242bf09)
+- [FR-16] Docs changed — test cases need review (index current=false; fingerprint=sha256:2a4628a536acbd7b7f3ebfefb9c8ee02cc21e8e3e52a226c9e3fcac82242bf09)
+- [FR-17] Docs changed — test cases need review (index current=false; fingerprint=sha256:1445dcb0ebfeb4bbd99a0b2afb952fb7ff88b9140e362652c534024a192e9bba)
+- [FR-18] Docs changed — test cases need review (index current=false; fingerprint=sha256:1445dcb0ebfeb4bbd99a0b2afb952fb7ff88b9140e362652c534024a192e9bba)
+- [BR-01] Docs changed — test cases need review (index current=false; fingerprint=sha256:7329dfdf090af688a1511cb618d1920b9845ea1645abb71cdfde7c39dabbb19c)
+- [BR-02] Docs changed — test cases need review (index current=false; fingerprint=sha256:7329dfdf090af688a1511cb618d1920b9845ea1645abb71cdfde7c39dabbb19c)
+- [BR-03] Docs changed — test cases need review (index current=false; fingerprint=sha256:7329dfdf090af688a1511cb618d1920b9845ea1645abb71cdfde7c39dabbb19c)
+- [BR-04] Docs changed — test cases need review (index current=false; fingerprint=sha256:7329dfdf090af688a1511cb618d1920b9845ea1645abb71cdfde7c39dabbb19c)
+- [BR-05] Docs changed — test cases need review (index current=false; fingerprint=sha256:7329dfdf090af688a1511cb618d1920b9845ea1645abb71cdfde7c39dabbb19c)
+- [BR-06] Docs changed — test cases need review (index current=false; fingerprint=sha256:7329dfdf090af688a1511cb618d1920b9845ea1645abb71cdfde7c39dabbb19c)
+- [BR-07] Docs changed — test cases need review (index current=false; fingerprint=sha256:7329dfdf090af688a1511cb618d1920b9845ea1645abb71cdfde7c39dabbb19c)
+- [BR-08] Docs changed — test cases need review (index current=false; fingerprint=sha256:7329dfdf090af688a1511cb618d1920b9845ea1645abb71cdfde7c39dabbb19c)
+- [BR-09] Docs changed — test cases need review (index current=false; fingerprint=sha256:1debf14e32833a26545396e568faeeb249c942bdd79587edee19359e7e404263)
+- [BR-10] Docs changed — test cases need review (index current=false; fingerprint=sha256:7329dfdf090af688a1511cb618d1920b9845ea1645abb71cdfde7c39dabbb19c)
+- [BR-11] Docs changed — test cases need review (index current=false; fingerprint=sha256:7329dfdf090af688a1511cb618d1920b9845ea1645abb71cdfde7c39dabbb19c)
+- [BR-12] Docs changed — test cases need review (index current=false; fingerprint=sha256:7329dfdf090af688a1511cb618d1920b9845ea1645abb71cdfde7c39dabbb19c)
+- [BR-13] Docs changed — test cases need review (index current=false; fingerprint=sha256:554f65a289f14fa3fbbde2d0d5f82d417da8c0bceb531e0b3258493d93c02ead)
+- [BR-14] Docs changed — test cases need review (index current=false; fingerprint=sha256:e140d32ef08a6a6cc143bfe6a2e326851cd6054fe146af87fbbe865b2c42182e)
+- [BR-15] Docs changed — test cases need review (index current=false; fingerprint=sha256:ce59aacb2c0d6a8902962ef023e33800079b31a57d0806116a3767e055c27fe5)
+- [NFR-01] Docs changed — test cases need review (index current=false; fingerprint=sha256:699578a9c7f1b2650a8d24704a40877a57673967a07b98e78f9bf00432d99cc8)
+- [NFR-02] Docs changed — test cases need review (index current=false; fingerprint=sha256:699578a9c7f1b2650a8d24704a40877a57673967a07b98e78f9bf00432d99cc8)
+- [NFR-04] Docs changed — test cases need review (index current=false; fingerprint=sha256:699578a9c7f1b2650a8d24704a40877a57673967a07b98e78f9bf00432d99cc8)
+- [NFR-06] Docs changed — test cases need review (index current=false; fingerprint=sha256:230f5abb4f9db3d3b6810df396010bf9b479f09c962ebe68f374b6f45da0e9ca)
+- [NFR-07] Docs changed — test cases need review (index current=false; fingerprint=sha256:1df0ed7a811b8285b8b85b9c7c5c39795ebf85954d57c3673f4c47e93f40c94a)
+- [NFR-08] Docs changed — test cases need review (index current=false; fingerprint=sha256:1df0ed7a811b8285b8b85b9c7c5c39795ebf85954d57c3673f4c47e93f40c94a)
+- [NFR-10] Docs changed — test cases need review (index current=false; fingerprint=sha256:1527fc98c1c9c5c21355b212cfada99f96971ab5c8c4c16d2551352dd4d307fe)
+- [NFR-11] Docs changed — test cases need review (index current=false; fingerprint=sha256:30ffc819eb4c1d5648d2f04c18d1f7757bd5740f9826b0052db86cacd71da4f6)
+- [NFR-12] Docs changed — test cases need review (index current=false; fingerprint=sha256:1527fc98c1c9c5c21355b212cfada99f96971ab5c8c4c16d2551352dd4d307fe)
+- [NFR-14] Docs changed — test cases need review (index current=false; fingerprint=sha256:8935817857152f784132435b012e697d37b090720a2f507bf46c548b5d3e581c)
+- [NFR-15] Docs changed — test cases need review (index current=false; fingerprint=sha256:30ffc819eb4c1d5648d2f04c18d1f7757bd5740f9826b0052db86cacd71da4f6)
+- [NFR-16] Docs changed — test cases need review (index current=false; fingerprint=sha256:1527fc98c1c9c5c21355b212cfada99f96971ab5c8c4c16d2551352dd4d307fe)
+- [NFR-17] Docs changed — test cases need review (index current=false; fingerprint=sha256:385684e95ede8f1f4218eee6931299b1068ccf059f82ead579fdab4da2050768)
+- [NFR-18] Docs changed — test cases need review (index current=false; fingerprint=sha256:385684e95ede8f1f4218eee6931299b1068ccf059f82ead579fdab4da2050768)
+- [NFR-19] Docs changed — test cases need review (index current=false; fingerprint=sha256:385684e95ede8f1f4218eee6931299b1068ccf059f82ead579fdab4da2050768)
+- [NFR-20] Docs changed — test cases need review (index current=false; fingerprint=sha256:385684e95ede8f1f4218eee6931299b1068ccf059f82ead579fdab4da2050768)
+- [NFR-24] Docs changed — test cases need review (index current=false; fingerprint=sha256:a01fb207acb4dbc2182c99173807f6177b9e107c9b349b4e993a377e42679bb0)
+- [AC-01] Docs changed — test cases need review (index current=false; fingerprint=sha256:1d77d09d8fcb0a7ac611e42d84bc322d7361c4bda52e8cfd4d573ee057a11014)
+- [AC-02] Docs changed — test cases need review (index current=false; fingerprint=sha256:99788c163d49c4d230aaa538f510f9ab4a89e355de455b62636c0ace38a73fdb)
+- [AC-03] Docs changed — test cases need review (index current=false; fingerprint=sha256:1d77d09d8fcb0a7ac611e42d84bc322d7361c4bda52e8cfd4d573ee057a11014)
+- [AC-04] Docs changed — test cases need review (index current=false; fingerprint=sha256:a1ebcba223e1d1fee0632a9aca61b2b3c633e794137b7d0a2170f01c275c1f63)
+- [AC-05] Docs changed — test cases need review (index current=false; fingerprint=sha256:a1ebcba223e1d1fee0632a9aca61b2b3c633e794137b7d0a2170f01c275c1f63)
+- [AC-06] Docs changed — test cases need review (index current=false; fingerprint=sha256:a1ebcba223e1d1fee0632a9aca61b2b3c633e794137b7d0a2170f01c275c1f63)
+- [AC-07] Docs changed — test cases need review (index current=false; fingerprint=sha256:5bd75cf9428326c7b5122ddfdc1030d1077936bce10bd1be1eb29cde4749d7ff)
+- [AC-08] Docs changed — test cases need review (index current=false; fingerprint=sha256:5bd75cf9428326c7b5122ddfdc1030d1077936bce10bd1be1eb29cde4749d7ff)
+- [AC-09] Docs changed — test cases need review (index current=false; fingerprint=sha256:5bd75cf9428326c7b5122ddfdc1030d1077936bce10bd1be1eb29cde4749d7ff)
+- [AC-10] Docs changed — test cases need review (index current=false; fingerprint=sha256:5bd75cf9428326c7b5122ddfdc1030d1077936bce10bd1be1eb29cde4749d7ff)
+- [AC-11] Docs changed — test cases need review (index current=false; fingerprint=sha256:f187fb34200b3ac4a491996267948485c6900504be4653d851d61f82746458f7)
+- [AC-12] Docs changed — test cases need review (index current=false; fingerprint=sha256:321b249bb7e62dbfdbd3565ae4b0844add12bb5cf8e3c172339429a148470cc3)
+- [AC-13] Docs changed — test cases need review (index current=false; fingerprint=sha256:266ef5e009e715dc46e59d93d5fd9ce1d85cbb2306124fb3c6d3099573cc840d)
+- [AC-14] Docs changed — test cases need review (index current=false; fingerprint=sha256:477820834cdef696d5b7d91881e8eb4f0a334ec7d16d5a7c0106e2e54c5b7091)
+- **Route discovery on `/`:** Unauthenticated visitors must see `RouteDiscoveryPanel` with entry links to `/login`, `/check-in`, `/sessions`, `/admin` — no URL memorization for MVP entry routes ([AC-18f](../docs/brds/08-acceptance-mvp-future.md)).
+- **Discovery vs permission chrome:** Route discovery links are public entry points; auth guard handles protected routes. Do not permission-filter discovery panel like sidebar nav ([BR-14](../docs/brds/04-business-rules.md)).
+- **Authenticated `/`:** `RoleHomeRedirect` must run before discovery panel renders; authenticated users never see `RouteDiscoveryPanel` ([AC-18g](../docs/brds/08-acceptance-mvp-future.md)).
+- [NFR-17] Docs changed — test cases need review (index current=false; fingerprint=sha256:926f04dd1b9adf963fc90d175a7cb7ec0d3422e82e8a374201222ef5eab50d1b)
+- [AC-18] Docs changed — test cases need review (index current=false; fingerprint=sha256:63799a89767157028f8d478486cd070d208195eb9165ac6b07fd99aee984de56)
+- [FR-18] Docs changed — test cases need review (index current=false; fingerprint=sha256:9c49e5b8014de10f5d31d94b147bcfa6e600e6e473b57af685abce0ef92ca031)
+- [AC-01] Docs changed — test cases need review (index current=false; fingerprint=sha256:8645cddb92be740ec0ebb2665704537a482af78572129766686b77234a7ff3ff)
+- [AC-02] Docs changed — test cases need review (index current=false; fingerprint=sha256:bc6182b541644f5cda997128d5185344bb5cb590a4f1c9c60e2bb9e7e6282267)
+- [AC-03] Docs changed — test cases need review (index current=false; fingerprint=sha256:8645cddb92be740ec0ebb2665704537a482af78572129766686b77234a7ff3ff)
+- [AC-04] Docs changed — test cases need review (index current=false; fingerprint=sha256:2d537d187d64b2a408cae266ba8e32d85790b6f33d9af6887b266e1c9453682c)
+- [AC-05] Docs changed — test cases need review (index current=false; fingerprint=sha256:2d537d187d64b2a408cae266ba8e32d85790b6f33d9af6887b266e1c9453682c)
+- [AC-06] Docs changed — test cases need review (index current=false; fingerprint=sha256:2d537d187d64b2a408cae266ba8e32d85790b6f33d9af6887b266e1c9453682c)
+- [AC-07] Docs changed — test cases need review (index current=false; fingerprint=sha256:503a2d5db2c42b8ba3e7a7c5fe120f72db90fc9c42b4169ef32a1a94682bf7f6)
+- [AC-08] Docs changed — test cases need review (index current=false; fingerprint=sha256:503a2d5db2c42b8ba3e7a7c5fe120f72db90fc9c42b4169ef32a1a94682bf7f6)
+- [AC-09] Docs changed — test cases need review (index current=false; fingerprint=sha256:503a2d5db2c42b8ba3e7a7c5fe120f72db90fc9c42b4169ef32a1a94682bf7f6)
+- [AC-10] Docs changed — test cases need review (index current=false; fingerprint=sha256:503a2d5db2c42b8ba3e7a7c5fe120f72db90fc9c42b4169ef32a1a94682bf7f6)
+- [AC-11] Docs changed — test cases need review (index current=false; fingerprint=sha256:46b4ece6a8261727728f63900da5fc194fdd31735faa6d5877dfbb87644aa25d)
+- [AC-12] Docs changed — test cases need review (index current=false; fingerprint=sha256:b58d91e7d11449f5a5aa5ffb481c6c51dfe1686c3834c01f1e5ba0f82a75eb1f)
+- [AC-13] Docs changed — test cases need review (index current=false; fingerprint=sha256:05718aa94cf4fea8fd46b3caa462db3c99df35ef4bb1824147c717922ce4faa4)
+- [AC-14] Docs changed — test cases need review (index current=false; fingerprint=sha256:b4ce903893f1ba51202269e026bfb99b50a90fcd5cf6cd1afa4e1f0cfb58c083)
+- [AC-15] Docs changed — test cases need review (index current=false; fingerprint=sha256:8947082449ef57ce9679f5dd4df3ea3ebfd9474a62fafcd2a6e4f9f194cf317b)
+- [AC-16] Docs changed — test cases need review (index current=false; fingerprint=sha256:8947082449ef57ce9679f5dd4df3ea3ebfd9474a62fafcd2a6e4f9f194cf317b)
+- [AC-17] Docs changed — test cases need review (index current=false; fingerprint=sha256:211ce47d5b107068c9214704cadd93f4f971a1571959075cdd6cb1ba2cace219)
+- [AC-18] Docs changed — test cases need review (index current=false; fingerprint=sha256:5007cc0c0b4dcec88f96bcdc6c7bfcda5721371a54ad5f2c7a9f2f138471167d)
+- [FR-01] Docs changed — test cases need review (index current=false; fingerprint=sha256:c700fe9a0fb4d8065b93e433b6cb7b3fc4d92c83b98f6e838b0e1c4139ccdff2)
+- [FR-02] Docs changed — test cases need review (index current=false; fingerprint=sha256:9d5369606bf640733c677488ef209f5e4937d585252094a9aef85c479c294dde)
+- [FR-03] Docs changed — test cases need review (index current=false; fingerprint=sha256:a5460f97f985bcb55345f4a89d65b38f35b5eed90cd21e96e0fc22e657efdc74)
+- [FR-04] Docs changed — test cases need review (index current=false; fingerprint=sha256:7e43fbc075b0ed7c04770beee33b005c59fedd3b69ddccd2da394fef8cf46658)
+- [FR-05] Docs changed — test cases need review (index current=false; fingerprint=sha256:7e43fbc075b0ed7c04770beee33b005c59fedd3b69ddccd2da394fef8cf46658)
+- [FR-06] Docs changed — test cases need review (index current=false; fingerprint=sha256:69cedfdb48569c3e974133c6a06dccdeb8fae4765076d943f9243c64bfe24272)
+- [FR-07] Docs changed — test cases need review (index current=false; fingerprint=sha256:69cedfdb48569c3e974133c6a06dccdeb8fae4765076d943f9243c64bfe24272)
+- [FR-08] Docs changed — test cases need review (index current=false; fingerprint=sha256:69cedfdb48569c3e974133c6a06dccdeb8fae4765076d943f9243c64bfe24272)
+- [FR-09] Docs changed — test cases need review (index current=false; fingerprint=sha256:69cedfdb48569c3e974133c6a06dccdeb8fae4765076d943f9243c64bfe24272)
+- [FR-10] Docs changed — test cases need review (index current=false; fingerprint=sha256:69cedfdb48569c3e974133c6a06dccdeb8fae4765076d943f9243c64bfe24272)
+- [FR-11] Docs changed — test cases need review (index current=false; fingerprint=sha256:c9bfa5af5c2575664af045339dc9650aa2e79bf2b95a661979235b706d025660)
+- [FR-12] Docs changed — test cases need review (index current=false; fingerprint=sha256:c9bfa5af5c2575664af045339dc9650aa2e79bf2b95a661979235b706d025660)
+- [FR-13] Docs changed — test cases need review (index current=false; fingerprint=sha256:c9bfa5af5c2575664af045339dc9650aa2e79bf2b95a661979235b706d025660)
+- [FR-14] Docs changed — test cases need review (index current=false; fingerprint=sha256:c9bfa5af5c2575664af045339dc9650aa2e79bf2b95a661979235b706d025660)
+- [FR-15] Docs changed — test cases need review (index current=false; fingerprint=sha256:1c36364ff943101db5db6fca8737c7027f07c77cece34458162b4ce391ef2b81)
+- [FR-16] Docs changed — test cases need review (index current=false; fingerprint=sha256:1c36364ff943101db5db6fca8737c7027f07c77cece34458162b4ce391ef2b81)
+- [FR-17] Docs changed — test cases need review (index current=false; fingerprint=sha256:51a221f28941f5d25e3e224cf09660826cd6dc563ae9dc845b036248bb604af3)
+- [FR-18] Docs changed — test cases need review (index current=false; fingerprint=sha256:51a221f28941f5d25e3e224cf09660826cd6dc563ae9dc845b036248bb604af3)
+- [BR-01] Docs changed — test cases need review (index current=false; fingerprint=sha256:81b8cf7a657e57726225f1dfea1b68da13fb797f9f6a10e61b24052163f55eda)
+- [BR-02] Docs changed — test cases need review (index current=false; fingerprint=sha256:81b8cf7a657e57726225f1dfea1b68da13fb797f9f6a10e61b24052163f55eda)
+- [BR-03] Docs changed — test cases need review (index current=false; fingerprint=sha256:81b8cf7a657e57726225f1dfea1b68da13fb797f9f6a10e61b24052163f55eda)
+- [BR-04] Docs changed — test cases need review (index current=false; fingerprint=sha256:81b8cf7a657e57726225f1dfea1b68da13fb797f9f6a10e61b24052163f55eda)
+- [BR-05] Docs changed — test cases need review (index current=false; fingerprint=sha256:81b8cf7a657e57726225f1dfea1b68da13fb797f9f6a10e61b24052163f55eda)
+- [BR-06] Docs changed — test cases need review (index current=false; fingerprint=sha256:81b8cf7a657e57726225f1dfea1b68da13fb797f9f6a10e61b24052163f55eda)
+- [BR-07] Docs changed — test cases need review (index current=false; fingerprint=sha256:81b8cf7a657e57726225f1dfea1b68da13fb797f9f6a10e61b24052163f55eda)
+- [BR-08] Docs changed — test cases need review (index current=false; fingerprint=sha256:81b8cf7a657e57726225f1dfea1b68da13fb797f9f6a10e61b24052163f55eda)
+- [BR-09] Docs changed — test cases need review (index current=false; fingerprint=sha256:2f1a842f4626ff6613c3bc917dcd5bccafe6881c4ecd011234cc915ceb49fc76)
+- [BR-10] Docs changed — test cases need review (index current=false; fingerprint=sha256:81b8cf7a657e57726225f1dfea1b68da13fb797f9f6a10e61b24052163f55eda)
+- [BR-11] Docs changed — test cases need review (index current=false; fingerprint=sha256:81b8cf7a657e57726225f1dfea1b68da13fb797f9f6a10e61b24052163f55eda)
+- [BR-12] Docs changed — test cases need review (index current=false; fingerprint=sha256:81b8cf7a657e57726225f1dfea1b68da13fb797f9f6a10e61b24052163f55eda)
+- [BR-13] Docs changed — test cases need review (index current=false; fingerprint=sha256:488a70b3eb3101c76ee3c7e32b2762aad84348cf1ac2d32fe411aa2d9fdaf486)
+- [BR-14] Docs changed — test cases need review (index current=false; fingerprint=sha256:ce8e8272f56fcb563a52cd4af4b844320d425264637350f0a2e917c68d4d12bb)
+- [BR-15] Docs changed — test cases need review (index current=false; fingerprint=sha256:1a7ff7ccd3e9a8c1c3375eaf2d1cd9f05f63c282a1b98a29058ca26113511d66)
+- [NFR-01] Docs changed — test cases need review (index current=false; fingerprint=sha256:e631413918a1dc10fd6442a9b2093751459a029ed029ac09bb5e8e3dbe2265ae)
+- [NFR-02] Docs changed — test cases need review (index current=false; fingerprint=sha256:e631413918a1dc10fd6442a9b2093751459a029ed029ac09bb5e8e3dbe2265ae)
+- [NFR-04] Docs changed — test cases need review (index current=false; fingerprint=sha256:e631413918a1dc10fd6442a9b2093751459a029ed029ac09bb5e8e3dbe2265ae)
+- [NFR-06] Docs changed — test cases need review (index current=false; fingerprint=sha256:177b193c239cd05044cc18f93bf45b1603089d11103a6327f22a5aa88a14df49)
+- [NFR-07] Docs changed — test cases need review (index current=false; fingerprint=sha256:b322bbb26d7565ad761f2ebb39d0b8a620802312e05a28d52a49fd140662c087)
+- [NFR-08] Docs changed — test cases need review (index current=false; fingerprint=sha256:b322bbb26d7565ad761f2ebb39d0b8a620802312e05a28d52a49fd140662c087)
+- [NFR-10] Docs changed — test cases need review (index current=false; fingerprint=sha256:b90c665807744d37458c2b9fd5227d33febbbf8d45b7229786fad4e7e22fc50d)
+- [NFR-11] Docs changed — test cases need review (index current=false; fingerprint=sha256:a8fc833926f95dc884b95c005bdd389be90e694a693f78d401a9fa1943807442)
+- [NFR-12] Docs changed — test cases need review (index current=false; fingerprint=sha256:b90c665807744d37458c2b9fd5227d33febbbf8d45b7229786fad4e7e22fc50d)
+- [NFR-14] Docs changed — test cases need review (index current=false; fingerprint=sha256:5f4bcc6624f3ae1d825445c1136be9def2929557037a062eda8ec6f0cc3b194a)
+- [NFR-15] Docs changed — test cases need review (index current=false; fingerprint=sha256:a8fc833926f95dc884b95c005bdd389be90e694a693f78d401a9fa1943807442)
+- [NFR-16] Docs changed — test cases need review (index current=false; fingerprint=sha256:b90c665807744d37458c2b9fd5227d33febbbf8d45b7229786fad4e7e22fc50d)
+- [NFR-17] Docs changed — test cases need review (index current=false; fingerprint=sha256:5f38a3bc15d4d75c2d02015e698f15fb084ab000b1184bd9c5c9debe40fa8daa)
+- [NFR-18] Docs changed — test cases need review (index current=false; fingerprint=sha256:5f38a3bc15d4d75c2d02015e698f15fb084ab000b1184bd9c5c9debe40fa8daa)
+- [NFR-19] Docs changed — test cases need review (index current=false; fingerprint=sha256:5f38a3bc15d4d75c2d02015e698f15fb084ab000b1184bd9c5c9debe40fa8daa)
+- [NFR-20] Docs changed — test cases need review (index current=false; fingerprint=sha256:5f38a3bc15d4d75c2d02015e698f15fb084ab000b1184bd9c5c9debe40fa8daa)
+- [NFR-24] Docs changed — test cases need review (index current=false; fingerprint=sha256:8caa04a69ebb9891a9d0d241a8bac95a00a5568f7f51087dd8eda8977811399d)
+- [NFR-20] Docs changed — test cases need review (index current=false; fingerprint=sha256:9f278a8bb640a070953fe4febb2c34ddf62c773b249364bd8004fd776d31bce5)
+- [NFR-06] Docs changed — test cases need review (index current=false; fingerprint=sha256:1f8ac15ecb53c5f1e09fbf9a056ed49a076105640901b495f7f56d86e78c1f6c)
+- [NFR-17] Docs changed — test cases need review (index current=false; fingerprint=sha256:9f278a8bb640a070953fe4febb2c34ddf62c773b249364bd8004fd776d31bce5)
+- [NFR-18] Docs changed — test cases need review (index current=false; fingerprint=sha256:9f278a8bb640a070953fe4febb2c34ddf62c773b249364bd8004fd776d31bce5)
+- [NFR-19] Docs changed — test cases need review (index current=false; fingerprint=sha256:9f278a8bb640a070953fe4febb2c34ddf62c773b249364bd8004fd776d31bce5)
+- [AC-01] Docs changed — test cases need review (index current=false; fingerprint=sha256:1fc6e26b9689a98a0a2cdd2175ff7cba6895e6f9f78bf3d5b9ee450b16d808f2)
+- [AC-02] Docs changed — test cases need review (index current=false; fingerprint=sha256:b1705c72d770bde3a1067f065518635057cd58b37c25689d86aaa6aea675d3e5)
+- [AC-03] Docs changed — test cases need review (index current=false; fingerprint=sha256:1fc6e26b9689a98a0a2cdd2175ff7cba6895e6f9f78bf3d5b9ee450b16d808f2)
+- [AC-04] Docs changed — test cases need review (index current=false; fingerprint=sha256:a60277d724f406792f9e5800a3972275c5a00b8dfa27b8ad61669f8874bb8f8f)
+- [AC-05] Docs changed — test cases need review (index current=false; fingerprint=sha256:a60277d724f406792f9e5800a3972275c5a00b8dfa27b8ad61669f8874bb8f8f)
+- [AC-06] Docs changed — test cases need review (index current=false; fingerprint=sha256:a60277d724f406792f9e5800a3972275c5a00b8dfa27b8ad61669f8874bb8f8f)
+- [AC-07] Docs changed — test cases need review (index current=false; fingerprint=sha256:8fac27fa80ba1204ede2ea92a5d3f55bc3fe550e713f10a3431668d71f807f8b)
+- [AC-08] Docs changed — test cases need review (index current=false; fingerprint=sha256:8fac27fa80ba1204ede2ea92a5d3f55bc3fe550e713f10a3431668d71f807f8b)
+- [AC-09] Docs changed — test cases need review (index current=false; fingerprint=sha256:8fac27fa80ba1204ede2ea92a5d3f55bc3fe550e713f10a3431668d71f807f8b)
+- [AC-10] Docs changed — test cases need review (index current=false; fingerprint=sha256:8fac27fa80ba1204ede2ea92a5d3f55bc3fe550e713f10a3431668d71f807f8b)
+- [AC-11] Docs changed — test cases need review (index current=false; fingerprint=sha256:805ac1ddee505b3ab130e4e7ac335d0c6b50f90bd34dbe4c080b375bcf06977e)
+- [AC-12] Docs changed — test cases need review (index current=false; fingerprint=sha256:c7853d9d8fa089514ed7a081d3782141a43afeaed85f842de6e57f219c42ed29)
+- [AC-13] Docs changed — test cases need review (index current=false; fingerprint=sha256:6f03f2eb8717c6642261139383c91733dcf53ec13c5f29d5e705b33523eb8e8a)
+- [AC-14] Docs changed — test cases need review (index current=false; fingerprint=sha256:ac1dd5e1e92061ac67539c4db801ea43ff09405c85868377111d3f103372571e)
+- [AC-15] Docs changed — test cases need review (index current=false; fingerprint=sha256:67b923ac42bf818058f778f75b98835f2fc35e2ada5740f100c441007177310f)
+- [AC-16] Docs changed — test cases need review (index current=false; fingerprint=sha256:67b923ac42bf818058f778f75b98835f2fc35e2ada5740f100c441007177310f)
+- [AC-17] Docs changed — test cases need review (index current=false; fingerprint=sha256:7f5688155d92150e969e5b3095039100c9a152d95bad87af4ad6a567689d33c8)
+- [AC-18] Docs changed — test cases need review (index current=false; fingerprint=sha256:01f22e29e1e43f264fd4bee26cfdb3dce799a959a9fc322799b81f0b12b52647)
+- [FR-01] Docs changed — test cases need review (index current=false; fingerprint=sha256:70e1052a42463e17685f28a1bb3e8050dfecf1b75bef5b57badfe1c6d65b1d4a)
+- [FR-02] Docs changed — test cases need review (index current=false; fingerprint=sha256:b034362ac55913b574ae565e804cd25827cc319f11fc564d2f61568a477d7b90)
+- [FR-03] Docs changed — test cases need review (index current=false; fingerprint=sha256:a2719f188b03fbb740299b8957ff516e48dd7247a89fe18257bb8d72a2a81a12)
+- [FR-04] Docs changed — test cases need review (index current=false; fingerprint=sha256:d8ada7d67e543e50a795b977a221607965805c4d1a5dda755b64abf9e036d95f)
+- [FR-05] Docs changed — test cases need review (index current=false; fingerprint=sha256:d8ada7d67e543e50a795b977a221607965805c4d1a5dda755b64abf9e036d95f)
+- [FR-06] Docs changed — test cases need review (index current=false; fingerprint=sha256:a1003b592f70b3c1dfa6f6317be426ece4539056945ef8a2600e2061db0b728a)
+- [FR-07] Docs changed — test cases need review (index current=false; fingerprint=sha256:a1003b592f70b3c1dfa6f6317be426ece4539056945ef8a2600e2061db0b728a)
+- [FR-08] Docs changed — test cases need review (index current=false; fingerprint=sha256:a1003b592f70b3c1dfa6f6317be426ece4539056945ef8a2600e2061db0b728a)
+- [FR-09] Docs changed — test cases need review (index current=false; fingerprint=sha256:a1003b592f70b3c1dfa6f6317be426ece4539056945ef8a2600e2061db0b728a)
+- [FR-10] Docs changed — test cases need review (index current=false; fingerprint=sha256:a1003b592f70b3c1dfa6f6317be426ece4539056945ef8a2600e2061db0b728a)
+- [FR-11] Docs changed — test cases need review (index current=false; fingerprint=sha256:606c0d7169cd2320794612118ff84100bda3c3338d8b3c5850872511303082e3)
+- [FR-12] Docs changed — test cases need review (index current=false; fingerprint=sha256:606c0d7169cd2320794612118ff84100bda3c3338d8b3c5850872511303082e3)
+- [FR-13] Docs changed — test cases need review (index current=false; fingerprint=sha256:606c0d7169cd2320794612118ff84100bda3c3338d8b3c5850872511303082e3)
+- [FR-14] Docs changed — test cases need review (index current=false; fingerprint=sha256:606c0d7169cd2320794612118ff84100bda3c3338d8b3c5850872511303082e3)
+- [FR-15] Docs changed — test cases need review (index current=false; fingerprint=sha256:d78b7667a49cd3b44aa7945b3c75b22778523d1c4a32316d9c306249d0229fbb)
+- [FR-16] Docs changed — test cases need review (index current=false; fingerprint=sha256:d78b7667a49cd3b44aa7945b3c75b22778523d1c4a32316d9c306249d0229fbb)
+- [FR-17] Docs changed — test cases need review (index current=false; fingerprint=sha256:cdb506e8b8c5f41bcc8ed9165685a14f5ff19c2ef2669e803937331262e005b2)
+- [FR-18] Docs changed — test cases need review (index current=false; fingerprint=sha256:cdb506e8b8c5f41bcc8ed9165685a14f5ff19c2ef2669e803937331262e005b2)
+- [BR-01] Docs changed — test cases need review (index current=false; fingerprint=sha256:2f4339d78ef523c323a8974779165acbd0a71755d9c7e3df622be9ab3506c35c)
+- [BR-02] Docs changed — test cases need review (index current=false; fingerprint=sha256:2f4339d78ef523c323a8974779165acbd0a71755d9c7e3df622be9ab3506c35c)
+- [BR-03] Docs changed — test cases need review (index current=false; fingerprint=sha256:2f4339d78ef523c323a8974779165acbd0a71755d9c7e3df622be9ab3506c35c)
+- [BR-04] Docs changed — test cases need review (index current=false; fingerprint=sha256:2f4339d78ef523c323a8974779165acbd0a71755d9c7e3df622be9ab3506c35c)
+- [BR-05] Docs changed — test cases need review (index current=false; fingerprint=sha256:2f4339d78ef523c323a8974779165acbd0a71755d9c7e3df622be9ab3506c35c)
+- [BR-06] Docs changed — test cases need review (index current=false; fingerprint=sha256:2f4339d78ef523c323a8974779165acbd0a71755d9c7e3df622be9ab3506c35c)
+- [BR-07] Docs changed — test cases need review (index current=false; fingerprint=sha256:2f4339d78ef523c323a8974779165acbd0a71755d9c7e3df622be9ab3506c35c)
+- [BR-08] Docs changed — test cases need review (index current=false; fingerprint=sha256:2f4339d78ef523c323a8974779165acbd0a71755d9c7e3df622be9ab3506c35c)
+- [BR-09] Docs changed — test cases need review (index current=false; fingerprint=sha256:b5a7fff6f71c18a7b09260f273ad58d69084c07c63464cc76a397bb58c5a6273)
+- [BR-10] Docs changed — test cases need review (index current=false; fingerprint=sha256:2f4339d78ef523c323a8974779165acbd0a71755d9c7e3df622be9ab3506c35c)
+- [BR-11] Docs changed — test cases need review (index current=false; fingerprint=sha256:2f4339d78ef523c323a8974779165acbd0a71755d9c7e3df622be9ab3506c35c)
+- [BR-12] Docs changed — test cases need review (index current=false; fingerprint=sha256:2f4339d78ef523c323a8974779165acbd0a71755d9c7e3df622be9ab3506c35c)
+- [BR-13] Docs changed — test cases need review (index current=false; fingerprint=sha256:d4dc6431b4d57a0cfef0b91054e1b9bbd346b3e8bbc16a36597a496b6c44e335)
+- [BR-14] Docs changed — test cases need review (index current=false; fingerprint=sha256:36281fb03f4d4d6a8d0eba3e644a81413bb459c4db446e3fe3943f8a663e694e)
+- [BR-15] Docs changed — test cases need review (index current=false; fingerprint=sha256:1f58da93412620b3f0f7302a9714c9e40725b8752cc3784e5851d38f988c8929)
+- [NFR-01] Docs changed — test cases need review (index current=false; fingerprint=sha256:5b3f17bf9e4022ec4b61eaa6dd31b209338f3eb3f7625a2df1fa4375c7f77934)
+- [NFR-02] Docs changed — test cases need review (index current=false; fingerprint=sha256:5b3f17bf9e4022ec4b61eaa6dd31b209338f3eb3f7625a2df1fa4375c7f77934)
+- [NFR-04] Docs changed — test cases need review (index current=false; fingerprint=sha256:5b3f17bf9e4022ec4b61eaa6dd31b209338f3eb3f7625a2df1fa4375c7f77934)
+- [NFR-06] Docs changed — test cases need review (index current=false; fingerprint=sha256:afcb505a934df45f963febffd59943cc469e92a542e3eb0ad0d5a0b98aa7e38c)
+- [NFR-07] Docs changed — test cases need review (index current=false; fingerprint=sha256:1d2a031369337df1e72e212ccdea7c32fa3b276df641745f19a36910b97660a0)
+- [NFR-08] Docs changed — test cases need review (index current=false; fingerprint=sha256:1d2a031369337df1e72e212ccdea7c32fa3b276df641745f19a36910b97660a0)
+- [NFR-10] Docs changed — test cases need review (index current=false; fingerprint=sha256:1d3e973be03b41ecca07c3b376ad9f8a464dd608e3122a6f753c8e513df075c3)
+- [NFR-11] Docs changed — test cases need review (index current=false; fingerprint=sha256:20a5dac32470de86cfad5f403f2627a8c28c3e7f86875afabab02c105c0bdfb0)
+- [NFR-12] Docs changed — test cases need review (index current=false; fingerprint=sha256:1d3e973be03b41ecca07c3b376ad9f8a464dd608e3122a6f753c8e513df075c3)
+- [NFR-14] Docs changed — test cases need review (index current=false; fingerprint=sha256:406e5392244fe2c4e86c4ba1287fb07c93bef2e207da3dd2b1b97788de17d0fd)
+- [NFR-15] Docs changed — test cases need review (index current=false; fingerprint=sha256:20a5dac32470de86cfad5f403f2627a8c28c3e7f86875afabab02c105c0bdfb0)
+- [NFR-16] Docs changed — test cases need review (index current=false; fingerprint=sha256:1d3e973be03b41ecca07c3b376ad9f8a464dd608e3122a6f753c8e513df075c3)
+- [NFR-17] Docs changed — test cases need review (index current=false; fingerprint=sha256:4dade8e648a4b5531a923d40ddefb93ae5ce86d4c00b34e7a3be4de8f41ea5d5)
+- [NFR-18] Docs changed — test cases need review (index current=false; fingerprint=sha256:4dade8e648a4b5531a923d40ddefb93ae5ce86d4c00b34e7a3be4de8f41ea5d5)
+- [NFR-19] Docs changed — test cases need review (index current=false; fingerprint=sha256:4dade8e648a4b5531a923d40ddefb93ae5ce86d4c00b34e7a3be4de8f41ea5d5)
+- [NFR-20] Docs changed — test cases need review (index current=false; fingerprint=sha256:4dade8e648a4b5531a923d40ddefb93ae5ce86d4c00b34e7a3be4de8f41ea5d5)
+- [NFR-24] Docs changed — test cases need review (index current=false; fingerprint=sha256:a7701142ee345bdb34ff8269e5dbe8035f7c78a89df01c93d28e5cf42c789261)
+- [AC-02] Docs changed — test cases need review (index current=false; fingerprint=sha256:659dc122e6cb459fe69849248303754194d0c21f906abefe053eb647073f1782)
+- [AC-07] Docs changed — test cases need review (index current=false; fingerprint=sha256:74a8af74b97d7dec9aeccc2a4f7d4853d15bd6cd3de456f4867a3fe08576404a)
+- [AC-08] Docs changed — test cases need review (index current=false; fingerprint=sha256:74a8af74b97d7dec9aeccc2a4f7d4853d15bd6cd3de456f4867a3fe08576404a)
+- [AC-09] Docs changed — test cases need review (index current=false; fingerprint=sha256:74a8af74b97d7dec9aeccc2a4f7d4853d15bd6cd3de456f4867a3fe08576404a)
+- [AC-10] Docs changed — test cases need review (index current=false; fingerprint=sha256:74a8af74b97d7dec9aeccc2a4f7d4853d15bd6cd3de456f4867a3fe08576404a)
+- [AC-17] Docs changed — test cases need review (index current=false; fingerprint=sha256:bd1e80d88659d50a6367ea45289f678df3499e27d0b00b62739a5d5a73e76c3e)
+- [AC-18] Docs changed — test cases need review (index current=false; fingerprint=sha256:4a9425c07d3551b124f032c9b51b2f0a9637aa3732bad45d39f23f1d9ec6215c)
+- [FR-02] Docs changed — test cases need review (index current=false; fingerprint=sha256:3196407c20fa54be08d1b31667c0807a397bd84a05df7fff6b5d5719878b2250)
+- [FR-06] Docs changed — test cases need review (index current=false; fingerprint=sha256:45e3d580daea316f0d415e85087f36c3de6a528b243a95a0512a358854678981)
+- [FR-07] Docs changed — test cases need review (index current=false; fingerprint=sha256:45e3d580daea316f0d415e85087f36c3de6a528b243a95a0512a358854678981)
+- [FR-08] Docs changed — test cases need review (index current=false; fingerprint=sha256:45e3d580daea316f0d415e85087f36c3de6a528b243a95a0512a358854678981)
+- [FR-09] Docs changed — test cases need review (index current=false; fingerprint=sha256:45e3d580daea316f0d415e85087f36c3de6a528b243a95a0512a358854678981)
+- [FR-10] Docs changed — test cases need review (index current=false; fingerprint=sha256:45e3d580daea316f0d415e85087f36c3de6a528b243a95a0512a358854678981)
+- [FR-17] Docs changed — test cases need review (index current=false; fingerprint=sha256:42bda590f405c826e920012f571e33a4d5de4c7ad5ec084e8cb878791ddab3ca)
+- [FR-18] Docs changed — test cases need review (index current=false; fingerprint=sha256:42bda590f405c826e920012f571e33a4d5de4c7ad5ec084e8cb878791ddab3ca)
+- [BR-14] Docs changed — test cases need review (index current=false; fingerprint=sha256:beadf80ed317c4b38bc0605714e25f2e8253ec8dca8f59b1e0ff58ede4f77866)
+- [BR-15] Docs changed — test cases need review (index current=false; fingerprint=sha256:f83eee4ade2c9ce129d263a72efb5bdc9c9d2a5428a89b81ec983d732dbf0214)
+- [NFR-06] Docs changed — test cases need review (index current=false; fingerprint=sha256:41a3822f4e7bfa7a1ff966795729a1b0bfa01a4dc9400eac2ac34632ed5737fd)
+- [NFR-07] Docs changed — test cases need review (index current=false; fingerprint=sha256:93eeea87a28a01be6b5b3a467cc70cbc6a0f67ddcc9f285f08ad1036e67f0686)
+- [NFR-08] Docs changed — test cases need review (index current=false; fingerprint=sha256:93eeea87a28a01be6b5b3a467cc70cbc6a0f67ddcc9f285f08ad1036e67f0686)
+- [NFR-11] Docs changed — test cases need review (index current=false; fingerprint=sha256:2f330adf9134fd2d5697dca33e68cb777ae09dd23e8b391464f94eef2d627730)
+- [NFR-15] Docs changed — test cases need review (index current=false; fingerprint=sha256:2f330adf9134fd2d5697dca33e68cb777ae09dd23e8b391464f94eef2d627730)
+- [NFR-17] Docs changed — test cases need review (index current=false; fingerprint=sha256:0f69f47cceb0aabe2f681a2da79af5a731ce67d621d128928b18ea279dcd87c5)
+- [NFR-18] Docs changed — test cases need review (index current=false; fingerprint=sha256:0f69f47cceb0aabe2f681a2da79af5a731ce67d621d128928b18ea279dcd87c5)
+- [NFR-19] Docs changed — test cases need review (index current=false; fingerprint=sha256:0f69f47cceb0aabe2f681a2da79af5a731ce67d621d128928b18ea279dcd87c5)
+- [NFR-20] Docs changed — test cases need review (index current=false; fingerprint=sha256:0f69f47cceb0aabe2f681a2da79af5a731ce67d621d128928b18ea279dcd87c5)

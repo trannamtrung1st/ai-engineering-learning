@@ -2,7 +2,7 @@
 
 Design and interaction specifications for **We Check**, the digital attendance and session check-in system for educational workshops and classes (HESD program). All documents target MVP delivery for cohorts of **100–150** participants per session, locale **vi-VN**.
 
-**Visual identity:** Campus Pulse v2 — see [Design overview §5](./01-design-overview.md) and [Design tokens](./04-design-tokens.md). Harness craft skill: [`ai-harness/skills/frontend-design/SKILL.md`](../../ai-harness/skills/frontend-design/SKILL.md).
+**Visual identity:** Notion workspace system — authoritative spec: [DESIGN.md](./DESIGN.md) (vendored from [VoltAgent awesome-design-md](https://github.com/VoltAgent/awesome-design-md/blob/main/design-md/notion/DESIGN.md)). Implementation mapping: [Design tokens](./04-design-tokens.md) · [Design overview §5](./01-design-overview.md). Harness craft skill: [`ai-harness/skills/frontend-design/SKILL.md`](../../ai-harness/skills/frontend-design/SKILL.md).
 
 **Product context:** [Project overview](../brds/00-project-overview.md) · [Stakeholders and scope](../brds/01-stakeholders-scope.md) · [Initial idea](../initial-idea.md)
 
@@ -21,7 +21,8 @@ Read in numbered order for first-time onboarding. Cross-link freely after founda
 | 01 | [UI/UX foundation](./01-ui-ux-foundation.md) | Terminology, state labels, permission flows, localization |
 | 02 | [UI framework and tech stack](./02-ui-framework-tech-stack.md) | React, Tailwind, Radix, routing, and tooling |
 | 03 | [Design system basics](./03-design-system-basics.md) | Typography, spacing, elevation, iconography |
-| 04 | [Design tokens](./04-design-tokens.md) | CSS variables, color roles, semantic tokens |
+| — | [DESIGN.md](./DESIGN.md) | **Authoritative** Notion design spec (colors, typography, components) |
+| 04 | [Design tokens](./04-design-tokens.md) | CSS variables mapping DESIGN.md → implementation |
 | 05 | [Common UI components](./05-common-ui-components.md) | Shared primitives and compositions |
 | 06 | [App layout components](./06-app-layout-components.md) | Role shells, navigation, page scaffolding |
 | 07 | [Event-specific components](./07-event-specific-components.md) | Domain widgets: QR, sessions, attendance, reports |

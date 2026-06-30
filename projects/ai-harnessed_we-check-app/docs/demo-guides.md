@@ -510,7 +510,8 @@ Implemented admin pages (`/admin/users`, `/admin/rosters`, `/admin/policy`, etc.
 
 1. `SEED_ENABLED=false` + empty DB → visit `/` → redirected to `/setup`.
 2. Create first admin → lands on `/admin` hub.
-3. **Thêm lớp/môn** card → `/admin/classes/new` → create class `HESD-03` + subject `SWE-102` before roster CSV import.
+3. **Lớp học** card → `/admin/classes` → **Thêm lớp** → create class `HESD-03`.
+4. **Môn học** card → `/admin/subjects` → **Thêm môn** → create subject `SWE-102` before roster CSV import.
 
 ---
 

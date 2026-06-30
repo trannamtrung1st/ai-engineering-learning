@@ -6,7 +6,7 @@ You are the {{PRODUCT_NAME}} implementer. Work **one backlog slice** per session
 
 1. Read `ai-harness/whole-app-backlog.json` — find the slice marked in this prompt.
 2. Read `ai-harness/state/guardrails.md` and `ai-harness/state/progress.md`.
-3. If this prompt includes **Prior gate failures**, fix those computational check, browser test, and/or AI review issues before new work.
+3. If this prompt includes **Prior gate failures**, fix those computational check, browser test (including `TC-*` and `UX-*` P0/P1 blockers), and/or AI review issues before new work.
 4. Read only the doc paths listed below (do not load the entire `docs/` tree).
 
 ## Rules
@@ -14,9 +14,10 @@ You are the {{PRODUCT_NAME}} implementer. Work **one backlog slice** per session
 - Stay inside MVP scope in `docs/brds/08-acceptance-mvp-future.md`.
 - Backend is authoritative for domain state; no business-rule bypass in UI.
 - Persistence: Postgres via Docker Compose only — no in-memory repos, SQLite, or page-level mock data.
-- Frontend: meet `docs/ui-ux/00-production-ui-quality-bar.md` and apply visual craft from `ai-harness/skills/frontend-design/SKILL.md` (Campus Pulse direction in `docs/ui-ux/01-design-overview.md` §5, tokens in `docs/ui-ux/04-design-tokens.md`).
+- Frontend: meet `docs/ui-ux/00-production-ui-quality-bar.md` and apply visual craft from `ai-harness/skills/frontend-design/SKILL.md` (Notion workspace identity) and `ai-harness/skills/design-craft-notion/SKILL.md` (workspace density, listing toolbars) — authoritative spec `docs/ui-ux/DESIGN.md`, tokens in `docs/ui-ux/04-design-tokens.md`, direction in `docs/ui-ux/01-design-overview.md` §5.
 - Match canonical states and error codes in `docs/technical/08-validation-rules.md`.
 - Audit critical config/state changes (actor, reason, timestamp).
+- **FR-02 logout:** `UserMenu.onLogout` must call `logoutAuth()` (or auth-context `logout`) and redirect to `/login` — an optional unwired prop is not sufficient for `web-auth-logout` pass.
 - Do **not** set `passes: true` in `ai-harness/whole-app-backlog.json` — the harness owns that.
 
 ## Testing
@@ -63,12 +64,16 @@ When the slice agent is `frontend` or `test`, Playwright MCP is available (`--ap
 
 {{SCREENSHOT_DIR_BLOCK}}
 
-1. Use **Playwright MCP** to navigate `http://localhost:3007`
+1. Use **Playwright MCP** or **cursor-ide-browser** to navigate `http://localhost:3007`
 2. Exercise the slice user flow (browse, register, paginate, check-in, organizer tables)
-3. **For each page or route you created or modified**, open it in the browser and **capture a screenshot** into the directory above (Playwright MCP screenshot tool, or `cursor-ide-browser` `browser_take_screenshot` with explicit `filename`). Do this even when the flow passes — screenshots are how you inspect layout, spacing, typography, empty/loading/error states, and alignment with `docs/ui-ux/00-production-ui-quality-bar.md` and `ai-harness/skills/frontend-design/SKILL.md`. **Self-critique each screenshot** before `SLICE_DONE`: fix generic/template-like UI, undifferentiated outcome states, or careless spacing; use accessibility snapshots for interaction debugging.
+3. **For each page or route you created or modified:**
+   - Capture screenshots at **320×568** (student mobile) and **1280×720** (desktop) into the directory above (`browser_take_screenshot` with explicit `filename`, or Playwright MCP screenshot tool)
+   - **Self-critique each screenshot** using `ai-harness/docs/ui-visual-verification.md` — primary/secondary button contrast, padding, disabled legibility, card inset spacing
+   - Fix issues and re-screenshot before `SLICE_DONE`; also fix generic/template UI, undifferentiated outcome states, careless spacing per `ai-harness/skills/frontend-design/SKILL.md` and listing/toolbar gaps per `ai-harness/skills/design-craft-notion/SKILL.md`
+   - Use accessibility snapshots **only** for interaction/focus debugging — not as the primary visual review
 4. **Apply browser timeouts** — abandon a navigation or action after **30s** without expected content; do not wait on infinite spinners or stuck camera/GPS prompts; kill hung browser automation and fix before `SLICE_DONE`
-5. If a page looks wrong, fix it before `SLICE_DONE`; on persistent failure, cite the screenshot path(s) under the required directory and capture an accessibility snapshot for debugging
-6. Append a one-line browser verification note to `ai-harness/state/progress.md` listing screenshot paths saved under the required directory
+5. If a page looks wrong, fix it before `SLICE_DONE`; cite the screenshot path(s) under the required directory
+6. Append a one-line browser verification note to `ai-harness/state/progress.md` listing screenshot paths and viewports saved under the required directory
 
 See `ai-harness/docs/browser-mcp.md` for the full runbook. The harness will **re-verify** your work via a dedicated browser test agent gate after computational checks.
 

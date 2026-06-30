@@ -171,22 +171,25 @@ flowchart TD
 
 ### 2.3a Navigation item → permission map
 
-Each layout nav item maps to a required permission. Items the user lacks are **omitted** from DOM (not disabled). Implemented via `usePermittedNav()` hook returning filtered nav descriptors.
+Each layout nav item maps to a required permission. Items the user lacks are **omitted** from DOM (not disabled). Implemented via `usePermittedNav()` hook returning filtered nav descriptors. Active-state `match` mode per [06-app-layout-components.md](../ui-ux/06-app-layout-components.md) §6.2a ([BR-14a](../brds/04-business-rules.md)).
 
-| Nav item (vi-VN) | Route | Required permission | Roles |
-| --- | --- | --- | --- |
-| Điểm danh | `/check-in` | `checkin:submit` | Student |
-| Lịch sử | `/history` | `attendance:read` (self) | Student |
-| Buổi học | `/sessions` | `session:read` | Instructor |
-| Báo cáo (instructor) | `/reports` | `report:read` | Instructor |
-| Trang chủ (admin) | `/admin` | `user:read` (all) or any admin permission | Admin |
-| Người dùng | `/admin/users` | `user:read` (all) | Admin |
-| Danh sách lớp | `/admin/rosters` | `roster:read` (all) | Admin |
-| Thêm lớp học | `/admin/classes/new` | `roster:write` | Admin |
-| Nhập danh sách | `/admin/rosters/import` | `roster:write` | Admin |
-| Báo cáo (admin) | `/admin/reports` | `report:read` (institution) | Admin |
-| Xuất CSV | `/admin/export` | `report:export` | Admin |
-| Chính sách | `/admin/policy` | `policy:write` | Admin |
+| Nav item (vi-VN) | Route | Required permission | Match | Roles |
+| --- | --- | --- | --- | --- |
+| Điểm danh | `/check-in` | `checkin:submit` | prefix | Student |
+| Lịch sử | `/history` | `attendance:read` (self) | exact | Student |
+| Buổi học | `/sessions` | `session:read` | prefix | Instructor |
+| Báo cáo (instructor) | `/reports` | `report:read` | prefix | Instructor |
+| Trang chủ (admin) | `/admin` | `user:read` (all) or any admin permission | exact | Admin |
+| Người dùng | `/admin/users` | `user:read` (all) | prefix | Admin |
+| Lớp học | `/admin/classes` | `roster:read` (all) | prefix | Admin |
+| Môn học | `/admin/subjects` | `roster:read` (all) | prefix | Admin |
+| Danh sách ghi danh | `/admin/rosters` | `roster:read` (all) | prefix† | Admin |
+| Nhập danh sách | `/admin/rosters/import` | `roster:write` | exact | Admin |
+| Báo cáo (admin) | `/admin/reports` | `report:read` (institution) | prefix | Admin |
+| Xuất CSV | `/admin/export` | `report:export` | prefix | Admin |
+| Chính sách | `/admin/policy` | `policy:write` | prefix | Admin |
+
+† `/admin/rosters` nav descriptor uses `end={true}` (exact match on list root) so `/admin/rosters/import` activates **Nhập danh sách** only.
 
 ### 2.3b Public routes
 

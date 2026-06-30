@@ -55,6 +55,10 @@ if [[ "$kind" == "agent" ]]; then
     assert_can_write_outputs
   fi
 
+  if [[ "$STEP_ID" == "uiux-design-md" ]]; then
+    "${GEN_SCRIPTS_DIR}/emit-design-md.sh"
+  fi
+
   if [[ ! -f "$INITIAL_IDEA" ]]; then
     gen_err "Missing docs/initial-idea.md — create it before running generator"
     exit 1

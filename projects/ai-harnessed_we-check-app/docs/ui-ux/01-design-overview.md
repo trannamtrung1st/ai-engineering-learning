@@ -103,34 +103,35 @@ Detailed page inventory: [09-page-list.md](./09-page-list.md) (downstream).
 
 ---
 
-## 5. Visual Direction — Campus Pulse (v2)
+## 5. Visual Direction — Notion Workspace System
 
-Campus Pulse is We Check's distinctive visual identity: **institutional trust with warmth**, refined surfaces, and one memorable moment per critical flow. It replaces generic SaaS blue admin aesthetics while preserving MVP UX constraints (320 px student flows, 44 px touch targets, Vietnamese copy, QR projection contrast).
+We Check adopts the **Notion workspace design system** ([DESIGN.md](./DESIGN.md)): calm workspace density, purple primary CTAs, warm gray surfaces, and navy auth chrome. This supersedes Campus Pulse v2. MVP UX constraints remain: 320 px student flows, 44 px touch targets, Vietnamese copy, QR projection contrast.
 
-**Harness skill:** implementers and browser testers apply craft process from [`ai-harness/skills/frontend-design/SKILL.md`](../../ai-harness/skills/frontend-design/SKILL.md). Token values live in [04-design-tokens.md](./04-design-tokens.md).
+**Harness skills:** implementers and browser testers apply craft from [`frontend-design`](../../ai-harness/skills/frontend-design/SKILL.md) and [`design-craft-notion`](../../ai-harness/skills/design-craft-notion/SKILL.md). Token values live in [04-design-tokens.md](./04-design-tokens.md).
 
 ### 5.1 Thesis
 
-We Check UI should feel like a **present, assured campus tool** — not anxious bureaucracy or a templated dashboard. Students get calm urgency during timed check-in; instructors get data-forward clarity at projection distance; admins get dense tables with breathing room.
+We Check UI should feel like a **focused workspace tool** — not anxious bureaucracy or a templated dashboard. Students get calm urgency during timed check-in; instructors get data-forward clarity at projection distance; admins get dense tables with Notion-style breathing room.
 
 ### 5.2 Tone and brand
 
 | Attribute | Expression |
 | --- | --- |
-| Trust | Deep indigo brand (`--color-brand-700`) — academic, stable |
-| Warmth | Stone page surfaces (`--color-surface-default`) — not cold gray |
-| Urgency | Amber countdown pulse when QR ≤ 10 s — not decorative red |
-| Success | Rich emerald outcome moments — distinct from generic green alerts |
+| Trust | Navy brand band (`--color-brand-700`) — stable, institutional |
+| Clarity | Charcoal text on warm gray surfaces — readable, calm |
+| Action | Notion purple (`--color-primary-600`) — signature CTA color |
+| Urgency | Orange countdown pulse when QR ≤ 10 s — not decorative red |
+| Success | Mint pastel outcome moments — distinct from generic alerts |
 | Restraint | One signature visual beat per flow; quiet chrome elsewhere |
 
-**Avoid:** generic Tailwind blue (`#2563eb`) dashboards, cream+terracotta AI defaults, near-black+acid-green themes, broadsheet newspaper layouts, decorative numbered markers without semantic meaning.
+**Avoid:** generic Tailwind blue dashboards, marketing hero clutter on app routes, sticky-note decorations, pricing-tier layouts, decorative numbered markers without semantic meaning.
 
 ### 5.3 Color semantics
 
 | Semantic | Token role | Usage |
 | --- | --- | --- |
-| Brand indigo | `--color-brand-*` | Headers, nav stripe, auth brand panel |
-| Action blue | `--color-primary-*` | Primary CTAs: “Điểm danh”, “Mở buổi học”, “Lưu” |
+| Brand navy | `--color-brand-*` | Auth hero band, dark chrome accents |
+| Action primary | `--color-primary-*` | Primary CTAs: “Điểm danh”, “Mở buổi học”, “Lưu” |
 | Success | `--color-success-*` | `Present`, check-in success outcome wash |
 | Warning | `--color-warning-*` | `Pending`, countdown warning |
 | Danger | `--color-danger-*` | `Absent`, blocking errors |
@@ -138,19 +139,18 @@ We Check UI should feel like a **present, assured campus tool** — not anxious 
 
 QR **presentation mode** remains max-contrast black/white — decorative tokens must not weaken [NFR-20](../brds/07-non-functional-risk.md).
 
-Full values: [04-design-tokens.md](./04-design-tokens.md).
+Full values: [04-design-tokens.md](./04-design-tokens.md) · authoritative spec: [DESIGN.md](./DESIGN.md).
 
 ### 5.4 Typography
 
 | Role | Face | Use |
 | --- | --- | --- |
-| Display / headings | **Plus Jakarta Sans** (`var(--font-display)`) | Page titles, outcome headlines, stat numbers |
-| Body / UI | **Be Vietnam Pro** (`var(--font-sans)`) | Body copy, labels, tables — optimized for `vi-VN` |
+| All UI | **Inter** (`var(--font-sans)`, `var(--font-display)`) | Body, headings, tables — Vietnamese subset via Google Fonts |
 | Data | `var(--font-mono)` | Session IDs, export timestamps only |
 
-Load via Google Fonts or self-hosted subset with `font-display: swap`. System stack remains fallback for FOUT/offline.
+Load via Google Fonts with `vietnamese` subset and `font-display: swap`. System stack remains fallback for FOUT/offline.
 
-Scale: display 28 px, h1 24 px, h2 20 px, body 16 px minimum on student routes ([NFR-18](../brds/07-non-functional-risk.md)).
+Scale: display 28 px, h1 24 px, h2 20 px, body 16 px (`body-md`), table meta 14 px (`body-sm`) — minimum 16 px on student routes ([NFR-18](../brds/07-non-functional-risk.md)).
 
 ### 5.5 Signature element — check-in outcome moment
 
@@ -158,16 +158,17 @@ Every check-in outcome (`Success`, `ExpiredQr`, `OutOfRadius`, `DuplicateCheckIn
 
 ```
 ┌─────────────────────────────────────┐
-│  [icon]  Headline (display font)    │
+│  [icon]  Headline (semibold)        │
 │  Supporting detail (body)           │
 │  ─────────────────────────────────  │
 │  [ single primary recovery CTA ]    │
 └─────────────────────────────────────┘
 ```
 
-- Semantic **color wash** background (`success-50`, `warning-50`, `danger-50`)
+- Notion **card-tint** pastel wash (`success-50`, `warning-50`, `danger-50`, `info-50`)
 - Distinct **Lucide icon** per outcome (not interchangeable `AlertCircle`)
 - One recovery action — “Quét lại”, “Xem lịch sử”, “Thử lại”
+- Primary CTA uses `button-primary` purple styling
 
 Spec: [07-event-specific-components.md](./07-event-specific-components.md) §2.5 · [12-ui-states.md](./12-ui-states.md) §4.
 
@@ -175,13 +176,15 @@ Spec: [07-event-specific-components.md](./07-event-specific-components.md) §2.5
 
 | Role | Chrome treatment |
 | --- | --- |
-| **Student** | Warm stone background; compact header; bottom nav with active pill indicator |
-| **Instructor** | Sidebar with **4 px brand indigo stripe**; elevated stat cards on monitor |
+| **Student** | Warm gray background (`--color-surface-default`); compact header; bottom nav with `pill-tab-active` indicator |
+| **Instructor** | Sidebar with hairline dividers; elevated stat cards on monitor; active nav uses `--color-primary-50` pill |
 | **Admin** | Same sidebar pattern; table cards with `--shadow-md` elevation |
-| **Auth** | **Split panel** (≥768 px): left brand panel (indigo gradient + product copy), right login card |
+| **Auth** | **Split panel** (≥768 px): left navy `hero-band-dark` panel + product copy, right login card with purple `button-primary` |
 | **QR projection** | Unchanged fullscreen inverse — no brand decoration on `--color-qr-bg` |
 
 Layout specs: [06-app-layout-components.md](./06-app-layout-components.md).
+
+**Workspace density (instructor/admin):** Sidebar rhythm, database-style filter toolbars, and table spacing per [`design-craft-notion` skill](../../ai-harness/skills/design-craft-notion/SKILL.md) — all tokens from [DESIGN.md](./DESIGN.md) / [04-design-tokens.md](./04-design-tokens.md).
 
 ### 5.7 Motion
 

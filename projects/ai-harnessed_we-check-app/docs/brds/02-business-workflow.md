@@ -63,21 +63,23 @@ flowchart TD
 flowchart TD
     A[Training Office Admin logs in] --> A0[Create class and subject reference records]
     A0 --> B{Academic API available?}
-    B -->|No — MVP default| C[Upload roster CSV per class]
+    B -->|No — MVP default| U[Upload user CSV bulk import]
+    U --> C[Upload roster CSV per class]
     B -->|Future| D[Sync from academic system]
     C --> E[System validates student IDs and class enrollment]
-    E --> F[Instructor sees assigned classes and rosters]
-    D --> F
+    D --> F[Instructor sees assigned classes and rosters]
+    E --> F
     F --> G[Admin provisions instructor accounts if needed]
 ```
 
 | Step | Actor | Action | Business rule / requirement |
 | --- | --- | --- | --- |
 | 0 | `TrainingOfficeAdmin` | Creates `Class` and `Subject` reference records via `/admin/classes/new` | [FR-03](./03-functional-requirements.md); [AC-03d](./08-acceptance-mvp-future.md) |
-| 1 | `TrainingOfficeAdmin` | Creates or imports student and instructor accounts | [FR-01](./03-functional-requirements.md) |
-| 2 | `TrainingOfficeAdmin` | Uploads roster CSV (student ID, name, class, subject) when API unavailable | [FR-03](./03-functional-requirements.md) |
-| 3 | System | Validates duplicate IDs and enrollment mapping | [FR-03](./03-functional-requirements.md) |
-| 4 | `Instructor` | Confirms roster for assigned class before first session | [FR-04](./03-functional-requirements.md) |
+| 1 | `TrainingOfficeAdmin` | Bulk-imports student accounts via user CSV (`/admin/users/import`) when cohort is large (1000+ rows) | [FR-01](./03-functional-requirements.md); [AC-01d](./08-acceptance-mvp-future.md); upsert by `institutional_id` |
+| 2 | `TrainingOfficeAdmin` | Creates individual accounts or imports instructors via form or user CSV | [FR-01](./03-functional-requirements.md) |
+| 3 | `TrainingOfficeAdmin` | Uploads roster CSV (student ID, name, class, subject) when API unavailable | [FR-03](./03-functional-requirements.md); links enrollments to users provisioned in step 1 |
+| 4 | System | Validates duplicate enrollments and enrollment mapping | [FR-03](./03-functional-requirements.md) |
+| 5 | `Instructor` | Confirms roster for assigned class before first session | [FR-04](./03-functional-requirements.md) |
 
 **Completion criteria:** Every enrolled student appears on the class roster; instructor can create a session linked to that class and subject.
 
@@ -230,6 +232,7 @@ flowchart LR
 | 1 | `Instructor` | Navigates to attendance reports for owned classes | Per-session and aggregate views |
 | 2 | `Instructor` | Reviews `Present` / `Absent` / `Excused` counts | Supports sponsor and internal review |
 | 3 | System | Computes unexcused absence rate per subject | Excused absences excluded from threshold ([BR-05](./04-business-rules.md)) |
+| 4 | `Instructor` | Clicks **Xuất CSV** on report page | Scoped CSV download for assigned class-subject; audit-logged ([FR-13](./03-functional-requirements.md), [AC-13c](./08-acceptance-mvp-future.md)) |
 
 Target: report available within **10 minutes** of session close ([OBJ-03](./00-project-overview.md)).
 
@@ -239,7 +242,7 @@ Target: report available within **10 minutes** of session close ([OBJ-03](./00-p
 | --- | --- | --- | --- |
 | 1 | `TrainingOfficeAdmin` | Opens institution-wide attendance reports | Full read across cohorts |
 | 2 | `TrainingOfficeAdmin` | Selects export scope (class, subject, date range) | Filters match on-screen report |
-| 3 | `TrainingOfficeAdmin` | Downloads CSV | **Training office admin only** ([BR-09](./04-business-rules.md), [FR-13](./03-functional-requirements.md)) |
+| 3 | `TrainingOfficeAdmin` | Downloads CSV via inline **Xuất CSV** or `/admin/export` | Institution-wide within filters ([BR-09](./04-business-rules.md), [FR-13](./03-functional-requirements.md), [AC-13d](./08-acceptance-mvp-future.md)) |
 | 4 | `TrainingOfficeAdmin` | Imports CSV into downstream academic system | Manual process in MVP |
 
 ---

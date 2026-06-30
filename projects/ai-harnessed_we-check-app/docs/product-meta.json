@@ -37,5 +37,9 @@
     "Tuition payment",
     "Exam schedule management"
   ],
-  "sourceDocument": "docs/initial-idea.md"
+  "sourceDocument": "docs/initial-idea.md",
+  "designSystem": {
+    "framework": "notion",
+    "sourceUrl": "https://raw.githubusercontent.com/VoltAgent/awesome-design-md/main/design-md/notion/DESIGN.md"
+  }
 }

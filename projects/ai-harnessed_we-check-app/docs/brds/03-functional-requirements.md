@@ -16,7 +16,7 @@ Implementable functional requirements (`FR-xx`) for **We Check** MVP. Each requi
 | FR-10 – FR-11 | Student history and manual corrections | Must |
 | FR-12 – FR-13 | Reporting and CSV export | Must |
 | FR-14 – FR-16 | Should-capability enhancements | Should |
-| FR-17 – FR-18 | Bootstrap, permission-gated nav and role hubs | Must |
+| FR-17 – FR-18 | Bootstrap, permission-gated nav, role hubs, chrome-less route discovery | Must |
 
 Business rules (`BR-xx`) refine enforcement; acceptance tests (`AC-xx`) are defined in [08-acceptance-mvp-future.md](./08-acceptance-mvp-future.md).
 
@@ -29,19 +29,27 @@ Business rules (`BR-xx`) refine enforcement; acceptance tests (`AC-xx`) are defi
 | Field | Specification |
 | --- | --- |
 | **Actor** | `TrainingOfficeAdmin` |
-| **Behavior** | Admin creates, updates, and deactivates user accounts for students and instructors. Each account has a unique institutional identifier (student ID or staff ID), display name, email, role assignment, and active flag. Deactivated users cannot log in or check in. |
-| **Inputs** | User profile fields; role (`Student`, `Instructor`, `TrainingOfficeAdmin`); optional bulk CSV upload |
-| **Outputs** | Persisted user record; validation errors for duplicate IDs or invalid email |
+| **Behavior** | Admin creates, updates, and deactivates user accounts for students and instructors. Each account has a unique institutional identifier (student ID or staff ID) matching VAL-05 (`^[A-Za-z0-9\-_.]{3,32}$` — letters, digits, hyphen, underscore, period), display name, email, role assignment, and active flag. Deactivated users cannot log in or check in. |
+| **Inputs** | User profile fields; role (`Student`, `Instructor`, `TrainingOfficeAdmin`); bulk CSV upload via `POST /users/import` (see below) |
+| **Outputs** | Persisted user record; validation errors for duplicate IDs or invalid email; async import batch summary for CSV |
 | **Traceability** | [02-business-workflow.md](./02-business-workflow.md) §3.1; capability: roster management baseline |
+
+**Bulk CSV import (`POST /users/import`):** Admin bulk-imports user accounts for large cohorts (1000+ rows). Match key = `institutional_id` (mã SV / mã cán bộ). Required CSV columns: `institutional_id`, `display_name`, `email`, `role`, `active`. **Upsert semantics:**
+
+- **Create** when ID not found: persist `display_name`, `email`, `role`, `active`; generate random initial password (not returned in import summary); `active` defaults `true` if column omitted.
+- **Update** when ID exists: update `display_name`, `email`, `role`, `active` from row; **do not** change password or revoke sessions.
+- **Reject row** on: invalid VAL-05, invalid email, invalid role enum, duplicate email belonging to a different `institutional_id`, malformed CSV row.
+
+Outputs async import batch with accepted/rejected counts and row-level `errorDetails` (mirror roster import UX). Same file limits as VAL-12 (5 MB CSV, UTF-8). See [05-api-design.md](../technical/05-api-design.md) §3.2a and [AC-01d](./08-acceptance-mvp-future.md).
 
 ### FR-02 — Authentication before check-in
 
 | Field | Specification |
 | --- | --- |
 | **Actor** | `Student`, `Instructor`, `TrainingOfficeAdmin` |
-| **Behavior** | System requires a valid authenticated session before any check-in submission or protected report action. Unauthenticated users attempting check-in are redirected to the login page. After successful login, the user returns to the intended check-in flow. Session expires after configurable inactivity (default 8 hours). |
-| **Inputs** | Email (or institutional username) and password |
-| **Outputs** | Auth session token; redirect to original URL on success; localized error on failure |
+| **Behavior** | System requires a valid authenticated session before any check-in submission or protected report action. Unauthenticated users attempting check-in are redirected to the login page. After successful login, the user returns to the intended check-in flow. Session expires after configurable inactivity (default 8 hours). Authenticated users end their session via the header **UserMenu** on all role shells (Student, Instructor, Admin). Logout calls `POST /auth/logout`, revokes the server session, clears the HTTP-only cookie, and redirects to `/login` (no `returnUrl`). UserMenu shows read-only identity from `GET /auth/me`: `displayName`, `email`, `institutionalId`, and localized role label. |
+| **Inputs** | Email (or institutional username) and password; logout action via UserMenu |
+| **Outputs** | Auth session token; redirect to original URL on login success; localized error on failure; revoked session and login redirect on logout success |
 | **Traceability** | [BR-06](./04-business-rules.md); workflow: [02-business-workflow.md](./02-business-workflow.md) §4.2 step 2 |
 
 ### FR-03 — Roster import and maintenance
@@ -49,10 +57,10 @@ Business rules (`BR-xx`) refine enforcement; acceptance tests (`AC-xx`) are defi
 | Field | Specification |
 | --- | --- |
 | **Actor** | `TrainingOfficeAdmin`, `Instructor` (read-only roster view) |
-| **Behavior** | Admin imports class rosters via CSV when academic API is unavailable. Required columns: student ID, full name, class code, subject code. System validates format, rejects duplicate student IDs within a class, and surfaces row-level errors without partial silent failure. Instructor views enrolled students for assigned classes only. **Manual reference data:** Admin creates `Class` (code, display name) and `Subject` (code, display name) via admin UI before roster import. Codes are unique, uppercase alphanumeric plus hyphen, max lengths per [08-validation-rules.md](../technical/08-validation-rules.md). Duplicate code → validation error. MVP: create-only — no delete; cannot delete class with active enrollments. |
-| **Inputs** | CSV file; class and subject identifiers; manual class/subject form fields |
-| **Outputs** | Enrollment records linked to students; import summary (accepted, rejected rows); persisted `Class` and `Subject` reference records |
-| **Traceability** | [02-business-workflow.md](./02-business-workflow.md) §3.0–§3.1; [01-stakeholders-scope.md](./01-stakeholders-scope.md) §2.1.1 |
+| **Behavior** | Admin imports class rosters via CSV when academic API is unavailable. Required columns: student ID, full name, class code, subject code. System validates format, rejects duplicate student IDs within a class, and surfaces row-level errors without partial silent failure. Roster import links enrollments to existing users by `institutional_id`; if user missing, creates student with synthetic email and random password (prefer bulk user CSV import first for large cohorts). When user exists, roster import updates `display_name` only — not email, role, password, or `active`. Instructor views enrolled students for assigned classes only. **Independent reference catalogs:** `Class` and `Subject` are separate entities — not paired 1:1. Many classes may share one subject (e.g. `HESD-01/SWE-101` and `HESD-02/SWE-101`); one class may have many subjects via distinct enrollment rows (e.g. same cohort in `SWE-101` and `SWE-102`). Linkage is many-to-many through `Enrollment(student, class, subject)`. **MVP admin surfaces:** Class catalog at `/admin/classes` (list + create); subject catalog at `/admin/subjects` (list + create). Roster CSV import references existing catalog codes. Codes are unique per entity, uppercase alphanumeric plus hyphen, max lengths per [08-validation-rules.md](../technical/08-validation-rules.md). Duplicate code → validation error. MVP: create-only — no edit/delete; cannot delete class with active enrollments. |
+| **Inputs** | CSV file; class and subject identifiers; `ClassForm` and `SubjectForm` fields |
+| **Outputs** | Enrollment records linked to students; import summary (accepted, rejected rows); persisted `Class` and `Subject` reference records visible on catalog list pages |
+| **Traceability** | [02-business-workflow.md](./02-business-workflow.md) §3.0–§3.1; [01-stakeholders-scope.md](./01-stakeholders-scope.md) §2.1.1; catalog list pages per [14-listing-pages-search-filter-sort.md](../ui-ux/14-listing-pages-search-filter-sort.md) §0 |
 
 ### FR-04 — Session creation with room GPS
 
@@ -139,20 +147,20 @@ Business rules (`BR-xx`) refine enforcement; acceptance tests (`AC-xx`) are defi
 | Field | Specification |
 | --- | --- |
 | **Actor** | `Instructor`, `TrainingOfficeAdmin` |
-| **Behavior** | Instructor views attendance reports for assigned classes and subjects: per-session roster with status, session-level summary counts, and date-range aggregation. Training office admin views institution-wide reports with the same filters plus cross-cohort scope. Unauthorized access to another instructor's class is denied. |
+| **Behavior** | Instructor views attendance reports for assigned classes and subjects: per-session roster with status, session-level summary counts, and date-range aggregation. Training office admin views institution-wide reports with the same filters plus cross-cohort scope. Unauthorized access to another instructor's class is denied. Report tables support sort and pagination per [14-listing-pages-search-filter-sort.md](../ui-ux/14-listing-pages-search-filter-sort.md) §0. |
 | **Inputs** | Class code, subject code, optional date range |
-| **Outputs** | Tabular report UI; summary metrics (present, absent, excused counts) |
-| **Traceability** | [BR-08](./04-business-rules.md); [02-business-workflow.md](./02-business-workflow.md) §6.1; target: report within 10 minutes of close |
+| **Outputs** | Paginated, sortable tabular report UI; summary metrics (present, absent, excused counts); inline **Xuất CSV** action on report pages ([AC-12d](../brds/08-acceptance-mvp-future.md)) |
+| **Traceability** | [BR-08](./04-business-rules.md); [02-business-workflow.md](./02-business-workflow.md) §6.1; [14-listing-pages-search-filter-sort.md](../ui-ux/14-listing-pages-search-filter-sort.md) §0; target: report within 10 minutes of close |
 
-### FR-13 — CSV export for training office
+### FR-13 — CSV export from report pages
 
 | Field | Specification |
 | --- | --- |
-| **Actor** | `TrainingOfficeAdmin` |
-| **Behavior** | Only users with `TrainingOfficeAdmin` role may export attendance data to CSV. Export respects current report filters (class, subject, date range). CSV includes student ID, name, class, subject, session date, attendance status, and check-in timestamp when present. Non-admin export attempts are rejected with localized permission error. |
+| **Actor** | `Instructor` (assigned class-subject scope), `TrainingOfficeAdmin` (institution-wide) |
+| **Behavior** | Instructor and training office admin may export attendance data to CSV from any report page using active `ReportFilterBar` filters. Instructor export is limited to assigned class-subject pairs ([BR-08](./04-business-rules.md), [BR-09](./04-business-rules.md)). Admin export spans all cohorts within filters. CSV includes student ID, name, class, subject, session date, attendance status, and check-in timestamp when present. `Student` export attempts are rejected with localized permission error. All successful exports and denied attempts are audit-logged. |
 | **Inputs** | Filter criteria matching on-screen report |
 | **Outputs** | CSV file download; audit log of export action |
-| **Traceability** | [BR-09](./04-business-rules.md); [02-business-workflow.md](./02-business-workflow.md) §6.2 |
+| **Traceability** | [BR-09](./04-business-rules.md); [02-business-workflow.md](./02-business-workflow.md) §6.1–6.2; [14-listing-pages-search-filter-sort.md](../ui-ux/14-listing-pages-search-filter-sort.md) §10 |
 
 ### FR-14 — Student personal attendance history
 
@@ -162,7 +170,7 @@ Business rules (`BR-xx`) refine enforcement; acceptance tests (`AC-xx`) are defi
 | **Behavior** | Student views read-only list of own attendance records across enrolled subjects: session date, subject, status (`Present`, `Absent`, `Excused`), and check-in time when applicable. Student cannot view other students' records or institution-wide aggregates. |
 | **Inputs** | Authenticated student session |
 | **Outputs** | Paginated attendance history list |
-| **Traceability** | [01-stakeholders-scope.md](./01-stakeholders-scope.md) §1.1; student stakeholder needs |
+| **Traceability** | [01-stakeholders-scope.md](./01-stakeholders-scope.md) §1.1; student stakeholder needs; list UX per [14-listing-pages-search-filter-sort.md](../ui-ux/14-listing-pages-search-filter-sort.md) §0 |
 
 ### FR-15 — Real-time attendance dashboard (Should)
 
@@ -198,11 +206,11 @@ Business rules (`BR-xx`) refine enforcement; acceptance tests (`AC-xx`) are defi
 
 | Field | Specification |
 | --- | --- |
-| **Actor** | All authenticated roles |
-| **Behavior** | **Nav visibility:** Each layout nav item (sidebar, bottom nav, quick-link card) maps to a required permission from [01-roles-permissions.md](../technical/01-roles-permissions.md) §2.1. Items the user lacks are **omitted** (not disabled, not shown). Cross-role routes never appear (e.g. instructor never sees admin sidebar items). **Role home:** After login (or visiting `/`), user lands on a role-specific hub page with navigation cards/buttons to permitted destinations and short workflow hints in Vietnamese. |
-| **Inputs** | Current `AuthSession` role + permission set |
-| **Outputs** | Filtered nav chrome; hub page with deep links to feature routes |
-| **Traceability** | [BR-14](./04-business-rules.md); [06-app-layout-components.md](../ui-ux/06-app-layout-components.md); [AC-18](./08-acceptance-mvp-future.md); [NFR-11](./07-non-functional-risk.md) |
+| **Actor** | All authenticated roles; unauthenticated visitors on chrome-less routes |
+| **Behavior** | **Nav visibility:** Each layout nav item (sidebar, bottom nav, quick-link card) maps to a required permission from [01-roles-permissions.md](../technical/01-roles-permissions.md) §2.1. Items the user lacks are **omitted** (not disabled, not shown). Cross-role routes never appear (e.g. instructor never sees admin sidebar items). **Active state:** At most one primary nav item per layout shows active styling; active link sets `aria-current="page"`. Route matching uses per-item `match` mode (`exact` or `prefix`) per [06-app-layout-components.md](../ui-ux/06-app-layout-components.md) §6.2a ([BR-14a](./04-business-rules.md)). **Role home:** After login (or visiting `/`), user lands on a role-specific hub page with navigation cards/buttons to permitted destinations and short workflow hints in Vietnamese. **Chrome-less navigation aids:** Routes without role layout chrome must expose at least one visible link or button to a sensible next destination — users must never need to memorize URLs. **`/` unauthenticated:** `ShellOverviewPage` renders a **Route discovery** section below the component showcase: grouped quick links with Vietnamese labels to `/login`, `/check-in`, `/sessions`, `/admin`. Protected targets still auth-redirect per [BR-06](./04-business-rules.md). Section hidden when authenticated ([AC-18g](./08-acceptance-mvp-future.md); [AC-18e](./08-acceptance-mvp-future.md) redirect applies). **Auth routes:** `/login` footer includes optional *Quay về trang chủ* → `/`. `/setup` when `needsSetup: false` shows link to `/login` ([AC-17c](./08-acceptance-mvp-future.md)). **Error routes:** `/forbidden` and `*` 404 recovery CTA targets role home when authenticated or `/login` when unauthenticated (extends existing *Về trang chủ* semantics). |
+| **Inputs** | Current `AuthSession` role + permission set; auth state for chrome-less routes |
+| **Outputs** | Filtered nav chrome with singleton active indicator; hub page with deep links to feature routes; route discovery panel on unauthenticated `/` |
+| **Traceability** | [BR-14](./04-business-rules.md), [BR-14a](./04-business-rules.md); [06-app-layout-components.md](../ui-ux/06-app-layout-components.md); [AC-18](./08-acceptance-mvp-future.md); [NFR-11](./07-non-functional-risk.md); [NFR-17](./07-non-functional-risk.md) |
 
 ---
 
@@ -219,7 +227,7 @@ Business rules (`BR-xx`) refine enforcement; acceptance tests (`AC-xx`) are defi
 | FR-07 | §4.2 | BR-03, BR-15 | Must |
 | FR-08 | §4.2 | BR-02, BR-12 | Must |
 | FR-17 | §3.0 | BR-13 | Must |
-| FR-18 | §3.0 | BR-14 | Must |
+| FR-18 | §3.0 | BR-14, BR-14a | Must |
 | FR-09 | §4.4 | BR-04, BR-11 | Must |
 | FR-10 | §4.4 | — | Must |
 | FR-11 | §5.1 | BR-10 | Must |

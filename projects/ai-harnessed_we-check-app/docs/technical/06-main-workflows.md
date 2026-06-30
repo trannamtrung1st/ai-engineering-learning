@@ -79,11 +79,11 @@ sequenceDiagram
 | Step | Action | API / service | Validation |
 | --- | --- | --- | --- |
 | 1 | Admin authenticates (or completes bootstrap) | `POST /auth/login` or `POST /setup/first-admin` | Valid credentials; `active = true` |
-| 2 | Create class and subject reference records | `POST /classes`, `POST /subjects` | Unique codes; required before CSV import ([AC-03d](../brds/08-acceptance-mvp-future.md)) |
-| 3 | Provision instructor accounts | `POST /users` × N | Unique `institutionalId`, `email`; role `Instructor` |
-| 4 | Provision student accounts (or rely on CSV auto-create policy) | `POST /users` or roster import | MVP: roster import creates missing students if policy enabled |
-| 5 | Upload roster CSV | `POST /roster/import` | Columns: `institutional_id`, `display_name`, `class_code`, `subject_code` |
-| 6 | System validates rows | `RosterService.importCsv` | Reject duplicate enrollment triple; row-level errors in `errorDetails` |
+| 2 | Create class and subject reference records | `POST /classes`, `POST /subjects`; verify via `GET /classes`, `GET /subjects` | Unique codes; independent catalogs; required before CSV import ([AC-03d](../brds/08-acceptance-mvp-future.md)–[AC-03f](../brds/08-acceptance-mvp-future.md)) |
+| 3 | Provision instructor accounts | `POST /users` or user CSV import | Unique `institutionalId`, `email`; role `Instructor` |
+| 4 | Bulk provision student accounts | `POST /users/import` | Preferred for large cohorts; upsert by `institutional_id` ([AC-01d](../brds/08-acceptance-mvp-future.md)) |
+| 5 | Upload roster CSV | `POST /roster/import` | Columns: `institutional_id`, `display_name`, `class_code`, `subject_code`; links enrollments to existing users by ID |
+| 6 | System validates rows | `RosterService.importCsv` | Reject duplicate enrollment triple; row-level errors in `errorDetails`; may update `display_name` on existing user only |
 | 7 | Assign instructors to class-subject | `ClassAssignment` records | Required before instructor can create sessions ([BR-08](../brds/04-business-rules.md)) |
 | 8 | Verify roster | `GET /enrollments` | Headcount matches expected cohort size (100–150) |
 

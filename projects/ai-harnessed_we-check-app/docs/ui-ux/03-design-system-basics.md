@@ -8,9 +8,16 @@ Core design system structure for **We Check** MVP: principles, semantic naming, 
 
 ## 1. Design System
 
-We Check uses a **lightweight in-repo design system** — not a published package. Tokens live in CSS variables; components live in `apps/web/src/components/`. The system optimizes for fast pilot delivery, accessibility via Radix primitives, Vietnamese-language clarity, and the **Campus Pulse** visual identity ([01-design-overview.md](./01-design-overview.md) §5).
+We Check uses a **lightweight in-repo design system** — not a published package. Tokens live in CSS variables; components live in `apps/web/src/components/`. The system optimizes for fast pilot delivery, accessibility via Radix primitives, Vietnamese-language clarity, and the **Notion workspace system** ([DESIGN.md](./DESIGN.md), [01-design-overview.md](./01-design-overview.md) §5).
 
-**Visual refresh v2:** See [04-design-tokens.md](./04-design-tokens.md) for Campus Pulse token values. Craft process: [`ai-harness/skills/frontend-design/SKILL.md`](../../ai-harness/skills/frontend-design/SKILL.md).
+**Authoritative spec:** [DESIGN.md](./DESIGN.md) · **CSS mapping:** [04-design-tokens.md](./04-design-tokens.md). Craft skills (harness-injected):
+
+| Skill | Role |
+| --- | --- |
+| [`frontend-design`](../../ai-harness/skills/frontend-design/SKILL.md) | Notion identity, signature moments, typography, screenshot self-critique |
+| [`design-craft-notion`](../../ai-harness/skills/design-craft-notion/SKILL.md) | Workspace density — sidebar, table toolbars, listing rhythm per [DESIGN.md](./DESIGN.md) |
+
+**Precedence:** [DESIGN.md](./DESIGN.md) > [04-design-tokens.md](./04-design-tokens.md) > [01-design-overview.md](./01-design-overview.md) §5 > harness craft skills.
 
 ---
 
@@ -19,7 +26,7 @@ We Check uses a **lightweight in-repo design system** — not a published packag
 | Principle | Description |
 | --- | --- |
 | Clarity over decoration | Every visual element supports scan, check-in, or audit tasks |
-| Deliberate aesthetic | Distinctive Campus Pulse identity — not generic SaaS template UI |
+| Deliberate aesthetic | Distinctive Notion workspace identity — not generic SaaS template UI |
 | Consistent semantics | Same color means same meaning everywhere (success = `Present`) |
 | Accessible by default | Radix primitives + focus tokens; no custom widgets without spec |
 | Mobile-first student | Student flows designed at 320 px; instructor/admin scale up |
@@ -56,7 +63,7 @@ flowchart BT
 
 | Role | Token prefix | Example use |
 | --- | --- | --- |
-| Brand indigo | `--color-brand-*` | Nav stripe, auth panel, headings accent |
+| Brand navy | `--color-brand-*` | Auth hero band, dark chrome accents |
 | Action primary | `--color-primary-*` | Primary buttons, links, focus ring |
 | Surface | `--color-surface-*` | Page background, cards |
 | Text | `--color-text-*` | Body, muted, inverse |
@@ -83,10 +90,10 @@ Concrete values: [04-design-tokens.md](./04-design-tokens.md).
 
 **Font loading policy:**
 
-- **Be Vietnam Pro** — body and UI (`--font-sans`); subset Vietnamese + Latin; `font-display: swap`
-- **Plus Jakarta Sans** — display and headings (`--font-display`); weights 500–700
+- **Inter** — all UI (`--font-sans`, `--font-display`); Google Fonts with `vietnamese` subset; `font-display: swap`
 - Fallback: system UI stack when web fonts unavailable
 - Load fonts in `apps/web/index.html` or `@font-face` in `globals.css`; avoid blocking student check-in path
+- Be Vietnam Pro optional fallback only if browser QA shows diacritic rendering issues
 
 ---
 
@@ -113,16 +120,16 @@ Concrete values: [04-design-tokens.md](./04-design-tokens.md).
 
 ## 7. Elevation and Surfaces
 
-Campus Pulse uses **layered warmth** — stone page base, elevated white cards, subtle depth on interaction.
+Notion workspace uses **layered calm** — warm gray page base (`colors.surface`), white elevated cards (`colors.canvas`), hairline borders and subtle shadows on interaction.
 
 | Level | Shadow token | Surface | Use |
 | --- | --- | --- | --- |
-| 0 | none | `--color-surface-default` | Page background (warm stone) |
+| 0 | none + hairline border | `--color-surface-default` | Page background (warm gray) |
 | 1 | `--shadow-sm` | `--color-surface-raised` | Default cards, list items |
 | 2 | `--shadow-md` | `--color-surface-raised` | Hovered cards, dropdowns, data tables |
 | 3 | `--shadow-lg` | `--color-surface-raised` | Modals, outcome panels |
 
-Border radius: `--radius-sm` 6 px (inputs), `--radius-md` 10 px (cards, buttons), `--radius-lg` 14 px (modals, outcome panels).
+Border radius: `--radius-xs` 4 px (chips), `--radius-sm` 6 px (badge tags), `--radius-md` 8 px (inputs, buttons), `--radius-lg` 12 px (cards, modals).
 
 **Hover (desktop only):** cards at level 1 promote to level 2 on `:hover` with `translateY(-1px)` unless `prefers-reduced-motion`.
 
@@ -221,8 +228,8 @@ Attendance-specific: QR display, scanner, status badges, roster row. Listed in [
 | --- | --- |
 | Use `StatusBadge` for attendance states | Invent new colors per screen |
 | Use token spacing scale | Arbitrary `margin: 13px` |
-| Apply Campus Pulse tokens from [04-design-tokens.md](./04-design-tokens.md) | Generic Tailwind blue admin look |
-| Use `--font-display` for headings, `--font-sans` for body | Mix arbitrary font families |
+| Apply Notion tokens from [04-design-tokens.md](./04-design-tokens.md) per [DESIGN.md](./DESIGN.md) | Generic Tailwind blue admin look |
+| Use Inter for all UI text | Mix arbitrary font families |
 | Wrap Radix once in `components/ui` | Import `@radix-ui/react-dialog` in features |
 | Show session state in header during live ops | Hide `Active`/`Closed` state |
 | Self-critique screenshots per frontend-design skill | Ship template-like undifferentiated UI |

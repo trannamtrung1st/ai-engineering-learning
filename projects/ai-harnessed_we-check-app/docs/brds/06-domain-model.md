@@ -256,12 +256,12 @@ Records manual attendance changes ([BR-10](./04-business-rules.md#br-10--manual-
 
 ### 3.12 ExportAuditLog
 
-Records CSV export actions ([BR-09](./04-business-rules.md#br-09--csv-export-restricted-to-training-office-admin)).
+Records CSV export actions — successful exports and denied attempts ([BR-09](./04-business-rules.md#br-09--csv-export-scoped-by-role)).
 
 | Attribute | Type | Constraints |
 | --- | --- | --- |
 | `id` | UUID | PK |
-| `adminId` | UUID | FK → `User` (TrainingOfficeAdmin) |
+| `exportedById` | UUID | FK → `User` (`Instructor` or `TrainingOfficeAdmin`) |
 | `filterSummary` | JSON | Class, subject, date range |
 | `exportedAt` | DateTime | Required |
 | `rowCount` | Integer | Required |
@@ -343,7 +343,7 @@ Logical projections for [FR-12](./03-functional-requirements.md) and [FR-13](./0
 | Session roster report | `AttendanceRecord`, `Session`, `User` | Session ID |
 | Class-subject summary | `AttendanceRecord`, `Session`, `Enrollment` | Class code, subject code, date range |
 | Student history | `AttendanceRecord`, `Session`, `Subject` | Authenticated student ID only ([FR-14](./03-functional-requirements.md)) |
-| CSV export row | Same as class-subject summary | Admin-only ([BR-09](./04-business-rules.md#br-09--csv-export-restricted-to-training-office-admin)) |
+| CSV export row | Same as class-subject summary | Role-scoped per [BR-09](./04-business-rules.md#br-09--csv-export-scoped-by-role): instructor within assignment; admin institution-wide |
 
 CSV columns: `institutionalId`, `displayName`, `classCode`, `subjectCode`, `sessionDate`, `attendanceStatus`, `checkedInAt`.
 
