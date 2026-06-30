@@ -36,6 +36,16 @@ const adminAuthUser: AuthOutletContext = {
   },
 };
 
+const instructorAuthUser: AuthOutletContext = {
+  user: {
+    id: "instructor-user",
+    institutionalId: "GV001",
+    displayName: "Giảng viên thử",
+    email: "instructor@example.edu.vn",
+    role: UserRole.Instructor,
+  },
+};
+
 function renderWithOutlet(
   ui: React.ReactElement,
   path = "/",
@@ -92,6 +102,14 @@ describe("App shell layouts (NFR-17, NFR-06)", () => {
     expect(screen.queryByTestId("admin-layout")).not.toBeInTheDocument();
     expect(screen.queryByTestId("admin-sidebar")).not.toBeInTheDocument();
     expect(screen.getByText(appCopy.forbiddenTitle)).toBeInTheDocument();
+  });
+
+  it("TC-AC-03-018: AdminLayout allows instructor roster shell without admin sidebar", () => {
+    renderWithOutlet(<AdminLayout />, "/admin/rosters", instructorAuthUser);
+    expect(screen.getByTestId("admin-roster-shell")).toBeInTheDocument();
+    expect(screen.queryByTestId("admin-layout")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("admin-sidebar")).not.toBeInTheDocument();
+    expect(screen.queryByText(appCopy.forbiddenTitle)).not.toBeInTheDocument();
   });
 
   it("FullscreenLayout shows Vietnamese exit control and QR countdown", () => {

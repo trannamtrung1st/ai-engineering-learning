@@ -13,6 +13,7 @@ export const classSubjectCopy = {
   saveButton: "Lưu lớp và môn",
   cancelButton: "Hủy",
   createSuccess: "Đã tạo lớp và môn học thành công",
+  createSuccessSubjectExists: "Đã tạo lớp thành công. Môn học đã tồn tại trong hệ thống",
   accessDenied: "Bạn không có quyền thêm lớp hoặc môn học",
   loadError: "Không thể lưu dữ liệu tham chiếu",
   duplicateClassCode: "Mã lớp đã tồn tại",

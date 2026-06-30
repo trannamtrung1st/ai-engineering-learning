@@ -1081,7 +1081,7 @@
     },
     {
       "id": "web-admin-classes",
-      "passes": false,
+      "passes": true,
       "priority": 39,
       "phase": 2,
       "agent": "frontend",
@@ -1098,6 +1098,9 @@
       ],
       "description": "Admin manual class and subject creation form at /admin/classes/new with code validation and duplicate rejection.",
       "testRequirements": {
+        "unit": [
+          "apps/web/src/lib/admin-route-access.test.ts"
+        ],
         "component": [
           "apps/web/src/components/admin/class-subject-form.test.tsx"
         ],

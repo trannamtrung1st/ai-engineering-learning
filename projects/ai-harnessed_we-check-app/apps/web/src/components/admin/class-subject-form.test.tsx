@@ -122,7 +122,7 @@ describe("ClassSubjectForm (AC-03, FR-03)", () => {
     expect(navigateMock).not.toHaveBeenCalled();
   });
 
-  it("TC-AC-03-023 / TC-FR-03-026: duplicate subject code shows inline field error", async () => {
+  it("TC-AC-03-023 / TC-FR-03-026: duplicate subject after class created succeeds when subject exists", async () => {
     vi.mocked(createClass).mockResolvedValue({
       ok: true,
       data: {
@@ -146,8 +146,8 @@ describe("ClassSubjectForm (AC-03, FR-03)", () => {
     fireEvent.click(screen.getByTestId("class-subject-form-submit"));
 
     await waitFor(() => {
-      expect(screen.getByText("Mã môn học đã tồn tại")).toBeInTheDocument();
+      expect(toast.success).toHaveBeenCalled();
     });
-    expect(navigateMock).not.toHaveBeenCalled();
+    expect(navigateMock).toHaveBeenCalledWith("/admin/rosters");
   });
 });

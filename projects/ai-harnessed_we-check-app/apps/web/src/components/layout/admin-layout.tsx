@@ -8,7 +8,7 @@ import {
   Users,
 } from "lucide-react";
 import { useState } from "react";
-import { Outlet, useOutletContext } from "react-router-dom";
+import { Outlet, useLocation, useOutletContext } from "react-router-dom";
 import { UserRole } from "@wecheck/domain";
 import { PageContent } from "@/components/layout/page-content";
 import { Breadcrumb } from "@/components/shared/navigation/breadcrumb";
@@ -18,6 +18,7 @@ import { IconButton } from "@/components/ui/icon-button";
 import { type AuthOutletContext } from "@/components/auth/require-auth";
 import { ForbiddenPage } from "@/components/layout/forbidden-page";
 import { getRoleHome } from "@/lib/auth-redirect";
+import { canAccessAdminShell } from "@/lib/admin-route-access";
 import { adminNavItems, appCopy } from "@/lib/copy/status-labels";
 import { cn } from "@/lib/cn";
 
@@ -37,10 +38,38 @@ export interface AdminLayoutProps {
 export function AdminLayout() {
   const authContext = useOutletContext<AuthOutletContext>();
   const user = authContext.user;
+  const { pathname } = useLocation();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  if (user.role !== UserRole.TrainingOfficeAdmin) {
+  if (!canAccessAdminShell(user.role, pathname)) {
     return <ForbiddenPage homeTo={getRoleHome(user.role)} />;
+  }
+
+  const isInstructorRosterShell =
+    user.role === UserRole.Instructor && canAccessAdminShell(user.role, pathname);
+
+  if (isInstructorRosterShell) {
+    return (
+      <div
+        className="min-h-screen bg-surface"
+        data-testid="admin-roster-shell"
+      >
+        <header className="sticky top-0 z-sticky flex h-16 items-center justify-between gap-4 border-b border-border bg-surface-raised px-4 lg:px-6">
+          <Breadcrumb
+            items={[
+              { label: "Buổi học", to: "/sessions" },
+              { label: "Danh sách lớp" },
+            ]}
+          />
+          <UserMenu displayName={user.displayName} role={UserRole.Instructor} />
+        </header>
+        <main id="main-content" className="flex-1">
+          <PageContent variant="wide">
+            <Outlet context={authContext} />
+          </PageContent>
+        </main>
+      </div>
+    );
   }
 
   return (

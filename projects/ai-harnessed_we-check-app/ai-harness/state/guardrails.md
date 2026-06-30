@@ -199,3 +199,6 @@ Verification failures and remediation notes for harness agents.
 - [web-admin-policy] Browser test failed — see 20260630T021753Z-browser-test.json
 - [web-admin-policy] Computational checks failed — see 20260630T023020Z-checks.json
 - **NotificationBell in role layouts:** `StudentLayout` / `InstructorLayout` mount `NotificationBell` which requires `QueryClientProvider` — wrap `app-shell.test.tsx` renders (or mock the hook) or `test:unit` fails with "No QueryClient set".
+- [web-admin-classes] Browser test failed — see 20260630T035506Z-browser-test.json
+- **ClassSubjectForm partial commit:** When class POST succeeds but subject returns DuplicateSubjectCode (e.g. SWE-102 pre-seeded), treat as success — toast + redirect to `/admin/rosters`; do not leave form with inline subject error (TC-AC-03-019, TC-FR-03-028).
+- **AdminLayout instructor rosters:** Allow Instructor on `/admin/rosters` and `/admin/rosters/:classCode` via `canAccessAdminShell` + minimal `admin-roster-shell` (no admin sidebar); other `/admin/*` routes still ForbiddenPage without admin chrome (TC-AC-03-018, TC-NFR-11-017).

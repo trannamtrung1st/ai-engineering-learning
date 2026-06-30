@@ -82,6 +82,11 @@ export function ClassSubjectForm() {
         setFormError(subjectResult.error.message ?? classSubjectCopy.accessDenied);
         return;
       }
+      if (subjectResult.error.errorCode === "DuplicateSubjectCode") {
+        toast.success(classSubjectCopy.createSuccessSubjectExists);
+        navigate("/admin/rosters");
+        return;
+      }
       const apiFieldErrors = mapReferenceApiErrorToFieldErrors(subjectResult.error);
       if (Object.keys(apiFieldErrors).length > 0) {
         setFieldErrors(apiFieldErrors);
