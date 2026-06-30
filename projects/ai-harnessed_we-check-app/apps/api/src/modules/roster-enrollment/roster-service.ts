@@ -1,16 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { RosterImportStatus, UserRole, type UserRole as UserRoleType } from "@wecheck/domain";
 import type { DbPool } from "../../infra/db.js";
-import {
-  duplicateClassCode,
-  duplicateSubjectCode,
-  forbidden,
-  notFound,
-} from "../../errors/api-error.js";
-import {
-  isUniqueViolation,
-  UserRepository,
-} from "../identity-auth/user-repository.js";
+import { forbidden, notFound } from "../../errors/api-error.js";
+import { UserRepository } from "../identity-auth/user-repository.js";
 import { hashPassword } from "../identity-auth/password-hasher.js";
 import { AssignmentRepository } from "./assignment-repository.js";
 import {
@@ -126,28 +118,6 @@ export class RosterService {
       return this.references.listSubjectsForInstructor(requesterId);
     }
     throw forbidden();
-  }
-
-  async createClass(code: string, name: string): Promise<ClassRecord> {
-    try {
-      return await this.references.createClass(code, name);
-    } catch (error) {
-      if (isUniqueViolation(error)) {
-        throw duplicateClassCode();
-      }
-      throw error;
-    }
-  }
-
-  async createSubject(code: string, name: string): Promise<SubjectRecord> {
-    try {
-      return await this.references.createSubject(code, name);
-    } catch (error) {
-      if (isUniqueViolation(error)) {
-        throw duplicateSubjectCode();
-      }
-      throw error;
-    }
   }
 
   async startImport(

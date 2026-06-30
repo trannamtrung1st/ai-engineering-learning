@@ -1015,7 +1015,7 @@
     },
     {
       "id": "module-class-management",
-      "passes": false,
+      "passes": true,
       "priority": 37,
       "phase": 1,
       "agent": "backend",
