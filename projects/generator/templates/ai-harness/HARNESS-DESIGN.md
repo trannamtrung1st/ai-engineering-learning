@@ -1,4 +1,4 @@
-# AI Harness Design — We Event
+# AI Harness Design
 
 Concise index for the 12 harness components. Referenced by `docs/technical/13-docker-compose-local-runtime.md`.
 
