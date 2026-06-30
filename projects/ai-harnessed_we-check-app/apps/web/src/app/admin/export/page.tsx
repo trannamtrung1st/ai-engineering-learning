@@ -4,7 +4,9 @@ import { Alert } from "@/components/ui/alert";
 import { AdminReportFilterBar } from "@/components/admin/admin-report-filter-bar";
 import { CsvExportPanel } from "@/components/admin/csv-export-panel";
 import { useAuthUser } from "@/components/auth/require-auth";
+import { ForbiddenPage } from "@/components/layout/forbidden-page";
 import { PageHeader } from "@/components/layout/page-header";
+import { getRoleHome } from "@/lib/auth-redirect";
 import { reportCopy } from "@/lib/copy/report-labels";
 import type { ExportFilterParams, ReportFilterParams } from "@/lib/reports-api";
 
@@ -32,12 +34,7 @@ export function AdminExportPage() {
   );
 
   if (!isAdmin) {
-    return (
-      <div data-testid="admin-export-page">
-        <Alert variant="danger">{reportCopy.exportDenied}</Alert>
-        <p className="mt-2 text-small text-text-secondary">{reportCopy.exportDeniedContact}</p>
-      </div>
-    );
+    return <ForbiddenPage homeTo={getRoleHome(user.role)} />;
   }
 
   return (

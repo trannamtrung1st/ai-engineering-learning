@@ -15,6 +15,8 @@ import { NavLink } from "@/components/shared/navigation/nav-link";
 import { UserMenu } from "@/components/shared/navigation/user-menu";
 import { IconButton } from "@/components/ui/icon-button";
 import { type AuthOutletContext } from "@/components/auth/require-auth";
+import { ForbiddenPage } from "@/components/layout/forbidden-page";
+import { getRoleHome } from "@/lib/auth-redirect";
 import { adminNavItems, appCopy } from "@/lib/copy/status-labels";
 import { cn } from "@/lib/cn";
 
@@ -34,6 +36,10 @@ export function AdminLayout() {
   const authContext = useOutletContext<AuthOutletContext>();
   const user = authContext.user;
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  if (user.role !== UserRole.TrainingOfficeAdmin) {
+    return <ForbiddenPage homeTo={getRoleHome(user.role)} />;
+  }
 
   return (
     <div

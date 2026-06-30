@@ -880,7 +880,7 @@
     },
     {
       "id": "web-admin-reports-export",
-      "passes": false,
+      "passes": true,
       "priority": 31,
       "phase": 2,
       "agent": "frontend",

@@ -192,3 +192,7 @@ Verification failures and remediation notes for harness agents.
 - [web-instructor-qr-display] Computational checks failed — see 20260629T230419Z-checks.json
 - **Preview active session after qr-present close:** TC-NFR-20-014 closes `sess-1` during browser gates — `ensurePreviewReferenceData` must reset `sessionActive` from Closed→Draft→open on `refreshPreviewBrowserFixtures` so later QR rotation cases (TC-NFR-06-016) stay runnable.
 - [web-admin-rosters] Browser test failed — see 20260630T004535Z-browser-test.json
+- [web-admin-reports-export] Browser test failed — see 20260630T013406Z-browser-test.json
+- **Admin route guard:** `AdminLayout` must render `ForbiddenPage` (no admin sidebar/chrome) for non-`TrainingOfficeAdmin` roles before `<Outlet>` — page-level inline denial inside admin chrome fails TC-NFR-11-017.
+- **Reports RBAC:** `/reports` must block `Student` at page entry with `ForbiddenPage` before report shell mounts — fails TC-NFR-07-016 when only API denial is used.
+- [web-admin-reports-export] Computational checks failed — see 20260630T015000Z-checks.json

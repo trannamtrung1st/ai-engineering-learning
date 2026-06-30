@@ -1,6 +1,7 @@
-import { SessionStatus } from "@wecheck/domain";
+import { SessionStatus, UserRole } from "@wecheck/domain";
 import { useEffect, useMemo, useState } from "react";
 import { Navigate, useSearchParams } from "react-router-dom";
+import { useAuthUser } from "@/components/auth/require-auth";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -21,6 +22,7 @@ import {
   formatReportDateVi,
   sessionDateInRange,
 } from "@/lib/report-date-defaults";
+import { getRoleHome } from "@/lib/auth-redirect";
 import { parseReportFiltersFromSearchParams } from "@/lib/report-filter-url";
 import type { ReportFilterParams } from "@/lib/reports-api";
 
@@ -58,6 +60,16 @@ function computeSummaryCardMetrics(
 
 /** FR-12 / AC-12 / BR-08 — instructor attendance reports scoped to assignments */
 export function ReportsPage() {
+  const user = useAuthUser();
+
+  if (user.role === UserRole.Student) {
+    return <ForbiddenPage homeTo={getRoleHome(user.role)} />;
+  }
+
+  return <ReportsPageContent />;
+}
+
+function ReportsPageContent() {
   const [searchParams] = useSearchParams();
   const view = searchParams.get("view");
   const urlFilters = useMemo(

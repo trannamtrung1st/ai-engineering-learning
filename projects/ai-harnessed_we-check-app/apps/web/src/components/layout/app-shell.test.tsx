@@ -15,7 +15,7 @@ import {
   studentNavItems,
 } from "@/lib/copy/status-labels";
 
-const mockAuthUser: AuthOutletContext = {
+const studentAuthUser: AuthOutletContext = {
   user: {
     id: "test-user",
     institutionalId: "SV001",
@@ -25,11 +25,25 @@ const mockAuthUser: AuthOutletContext = {
   },
 };
 
-function renderWithOutlet(ui: React.ReactElement, path = "/") {
+const adminAuthUser: AuthOutletContext = {
+  user: {
+    id: "admin-user",
+    institutionalId: "ADMIN001",
+    displayName: "Quản trị thử",
+    email: "admin@example.edu.vn",
+    role: UserRole.TrainingOfficeAdmin,
+  },
+};
+
+function renderWithOutlet(
+  ui: React.ReactElement,
+  path = "/",
+  authUser: AuthOutletContext = studentAuthUser,
+) {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
-        <Route path="*" element={<Outlet context={mockAuthUser} />}>
+        <Route path="*" element={<Outlet context={authUser} />}>
           <Route path="*" element={ui}>
             <Route index element={<p>Nội dung trang</p>} />
           </Route>
@@ -58,12 +72,19 @@ describe("App shell layouts (NFR-17, NFR-06)", () => {
   });
 
   it("AdminLayout renders Quản trị header and Vietnamese admin nav", () => {
-    renderWithOutlet(<AdminLayout />, "/admin/users");
+    renderWithOutlet(<AdminLayout />, "/admin/users", adminAuthUser);
     expect(screen.getByTestId("admin-layout")).toBeInTheDocument();
     expect(screen.getAllByText(appCopy.adminSection).length).toBeGreaterThan(0);
     for (const item of adminNavItems) {
       expect(screen.getAllByRole("link", { name: item.label }).length).toBeGreaterThan(0);
     }
+  });
+
+  it("TC-NFR-11-017: AdminLayout denies non-admin roles without admin chrome", () => {
+    renderWithOutlet(<AdminLayout />, "/admin/export", studentAuthUser);
+    expect(screen.queryByTestId("admin-layout")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("admin-sidebar")).not.toBeInTheDocument();
+    expect(screen.getByText(appCopy.forbiddenTitle)).toBeInTheDocument();
   });
 
   it("FullscreenLayout shows Vietnamese exit control and QR countdown", () => {

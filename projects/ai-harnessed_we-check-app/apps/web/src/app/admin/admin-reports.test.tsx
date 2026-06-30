@@ -7,6 +7,7 @@ import { AdminExportPage } from "@/app/admin/export/page";
 import { AdminReportsPage } from "@/app/admin/reports/page";
 import type { AuthOutletContext } from "@/components/auth/require-auth";
 import { reportCopy } from "@/lib/copy/report-labels";
+import { appCopy } from "@/lib/copy/status-labels";
 
 vi.mock("@/lib/reference-api", () => ({
   fetchClasses: vi.fn(),
@@ -152,11 +153,10 @@ describe("Admin report pages (NFR-17)", () => {
     expect(screen.getAllByRole("columnheader", { name: reportCopy.colAttendanceRate }).length).toBeGreaterThan(0);
   });
 
-  it("TC-AC-13-013 / BR-09: AdminExportPage denies Instructor with Vietnamese export-restriction message", () => {
+  it("TC-AC-13-013 / BR-09 / NFR-11: AdminExportPage denies Instructor with ForbiddenPage", () => {
     renderWithRole(<AdminExportPage />, UserRole.Instructor);
 
-    expect(screen.getByTestId("admin-export-page")).toBeInTheDocument();
-    expect(screen.getByText(reportCopy.exportDenied)).toBeInTheDocument();
+    expect(screen.getByText(appCopy.forbiddenTitle)).toBeInTheDocument();
     expect(screen.queryByText(reportCopy.exportButton)).not.toBeInTheDocument();
   });
 
