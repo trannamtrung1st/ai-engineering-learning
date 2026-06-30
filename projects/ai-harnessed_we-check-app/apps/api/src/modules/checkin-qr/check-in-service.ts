@@ -7,15 +7,11 @@ import {
   isQrTokenExpired,
   isWithinAttendanceWindow,
 } from "@wecheck/domain";
+import { PreflightService } from "./preflight/preflight-service.js";
 import type { DbPool } from "../../infra/db.js";
 import { now } from "../../infra/clock.js";
 import { EnrollmentRepository } from "../roster-enrollment/enrollment-repository.js";
-import {
-  checkInFailureMessage,
-  checkInSuccessMessage,
-  preflightFailureMessage,
-  SESSION_MISMATCH_CODE,
-} from "./check-in-response.js";
+import { checkInFailureMessage, checkInSuccessMessage } from "./check-in-response.js";
 import { verifyLocation } from "./geo-verification.js";
 import {
   CheckInAttemptRepository,
@@ -27,10 +23,7 @@ import type {
   CheckInFailureResponse,
   CheckInRequestBody,
   CheckInSuccessResponse,
-  PreflightErrorCode,
-  PreflightFailureResponse,
   PreflightResponse,
-  PreflightSuccessResponse,
 } from "./types.js";
 import { hasGpsCoordinates } from "./validation.js";
 
@@ -49,12 +42,14 @@ export class CheckInService {
   private readonly attempts: CheckInAttemptRepository;
   private readonly securityAudit: SecurityAuditRepository;
   private readonly enrollments: EnrollmentRepository;
+  private readonly preflightService: PreflightService;
 
   constructor(private readonly db: DbPool) {
     this.tokens = new QrTokenRepository(db);
     this.attempts = new CheckInAttemptRepository();
     this.securityAudit = new SecurityAuditRepository();
     this.enrollments = new EnrollmentRepository(db);
+    this.preflightService = new PreflightService(db);
   }
 
   async sessionIdForToken(tokenId: string): Promise<string | null> {
@@ -62,79 +57,13 @@ export class CheckInService {
     return token?.sessionId ?? null;
   }
 
-  /** BR-15 — read-only token validation before GPS capture (no writes) */
+  /** BR-15 — delegates to PreflightService (read-only token validation before GPS capture). */
   async preflight(
     tokenId: string,
     studentId: string,
     expectedSessionId?: string | null,
   ): Promise<PreflightResponse> {
-    const current = now();
-
-    const token = await this.tokens.findById(tokenId);
-    if (!token) {
-      return this.preflightFail(ErrorCode.TokenNotFound);
-    }
-
-    if (expectedSessionId && expectedSessionId !== token.sessionId) {
-      return this.preflightFail(SESSION_MISMATCH_CODE);
-    }
-
-    const session = await this.tokens.findSessionDisplayContext(token.sessionId);
-    if (!session || session.status !== SessionStatus.Active) {
-      return this.preflightFail(ErrorCode.SessionNotActive);
-    }
-
-    if (
-      !isWithinAttendanceWindow({
-        status: session.status as SessionStatus,
-        openedAt: session.openedAt,
-        scheduledStart: session.scheduledStart,
-        closedAt: session.closedAt,
-        now: current,
-      })
-    ) {
-      return this.preflightFail(ErrorCode.SessionNotActive);
-    }
-
-    if (
-      token.status === QrTokenStatus.Expired ||
-      isQrTokenExpired(token.issuedAt, current)
-    ) {
-      return this.preflightFail(ErrorCode.ExpiredQr);
-    }
-
-    if (token.status === QrTokenStatus.Consumed) {
-      return this.preflightFail(ErrorCode.TokenAlreadyUsed);
-    }
-
-    const enrolled = await this.enrollments.exists(
-      studentId,
-      session.classId,
-      session.subjectId,
-    );
-    if (!enrolled) {
-      return this.preflightFail(ErrorCode.NotEnrolled);
-    }
-
-    return {
-      outcome: "Valid",
-      tokenId: token.id,
-      sessionId: session.id,
-      session: {
-        classCode: session.classCode,
-        subjectCode: session.subjectCode,
-        roomName: session.roomName,
-        status: session.status,
-      },
-    } satisfies PreflightSuccessResponse;
-  }
-
-  private preflightFail(errorCode: PreflightErrorCode): PreflightFailureResponse {
-    return {
-      outcome: errorCode,
-      message: preflightFailureMessage(errorCode),
-      errorCode,
-    };
+    return this.preflightService.validate(tokenId, studentId, expectedSessionId);
   }
 
   async submit(

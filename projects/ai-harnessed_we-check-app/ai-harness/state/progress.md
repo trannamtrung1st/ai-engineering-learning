@@ -323,3 +323,5 @@ Append-only log of harness slice completions.
 - 2026-06-30T03:28:15Z | web-admin-bootstrap | passed
 - 2026-06-30T03:35:00Z | module-class-management | aih:check pass — class-subject-write submodule: POST /classes and POST /subjects with uppercase code validation, DuplicateClassCode/DuplicateSubjectCode (422), admin-only RBAC; 7 integration tests in class-management.integration.test.ts; traceability AC-03 FR-03
 - 2026-06-30T03:38:09Z | module-class-management | passed
+- 2026-06-30T03:50:00Z | module-checkin-qr-preflight | aih:check pass — PreflightService submodule (read-only chain per §3.6a), GET /check-in/tokens/:tokenId/preflight, TokenReuseAlert security log on consumed token; 2 unit + 9 integration tests; traceability AC-07 FR-07 BR-03 BR-11 BR-15
+- 2026-06-30T03:55:06Z | module-checkin-qr-preflight | passed

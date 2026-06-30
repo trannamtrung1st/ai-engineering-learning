@@ -1043,7 +1043,7 @@
     },
     {
       "id": "module-checkin-qr-preflight",
-      "passes": false,
+      "passes": true,
       "priority": 38,
       "phase": 1,
       "agent": "backend",
@@ -1064,8 +1064,11 @@
       ],
       "description": "Check-in token preflight API: GET /check-in/tokens/:tokenId/preflight validates token, session, and enrollment before client advances to GPS capture.",
       "testRequirements": {
+        "unit": [
+          "apps/api/src/modules/checkin-qr/preflight/preflight.test.ts"
+        ],
         "integration": [
-          "apps/api/src/modules/checkin-qr/preflight.integration.test.ts"
+          "apps/api/src/modules/checkin-qr/preflight/preflight.integration.test.ts"
         ],
         "acceptanceTags": [
           "AC-07",
