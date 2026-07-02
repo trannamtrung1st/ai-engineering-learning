@@ -1,0 +1,370 @@
+{
+  "productItemId": "BR-17",
+  "version": 1,
+  "docFingerprint": "sha256:0421ca4affe3aa70584e3b352a860d11de519a5a2aaff8c4d8e0f12d14d1a70a",
+  "generatedAt": "2026-07-02T12:45:00Z",
+  "cases": [
+    {
+      "id": "TC-BR-17-001",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["BR-17", "FR-26", "FR-09", "BR-13", "AC-12"],
+      "title": "Testing-plan close-time row plus MVP conditional absence alerts: post-close recalculation emits threshold alert",
+      "preconditions": [
+        "Testing-plan §3.1 Close-time absent finalization block applies (FR-09, BR-13, AC-12); MVP conditional scope includes absence threshold alerts per acceptance doc §3.2.",
+        "Class section has effective policy absenceThresholdPercent 20 and excusedCountsTowardThreshold false.",
+        "Five closed sessions exist; target student has four Absent and one Present (80% unexcused absence rate before next close).",
+        "M10 Notification module is enabled for the test environment."
+      ],
+      "steps": [
+        "Open a sixth session, leave target student Pending, and invoke M03 closeSession transitioning beforeState Open to afterState Closed.",
+        "Verify BR-13 marks the pending student Absent, yielding five Absent of six countable sessions.",
+        "Invoke M10 evaluateAbsenceThreshold(classSectionId, studentUserId) post-close hook per BR-17 trigger.",
+        "Query alert delivery queue or policy_alert_events table for the student-section pair.",
+        "Verify attendance_records statuses are unchanged by the alert event itself."
+      ],
+      "expected": "Scenario-matrix cross-walk links close-time absent finalization to BR-17: after session close recalculates unexcused absence rate (83.3% > 20% threshold) and emits an informational absence-threshold alert with logged alert event; attendance records are not auto-modified by the alert per BR-17 exception.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-17-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-17", "FR-26", "FR-25", "BR-20"],
+      "title": "M10 absence-rate evaluator compares against BR-20 effective policy absenceThresholdPercent",
+      "preconditions": [
+        "Real DB transaction boundary for attendance_policies, attendance_records, and M10 alert persistence.",
+        "Institution default absenceThresholdPercent 30; section-scoped override absenceThresholdPercent 20 via attendance_policies row.",
+        "Class section with ten closed sessions: student has three Absent (30% rate — below institution default but above section 20%)."
+      ],
+      "steps": [
+        "Call M06 resolveEffectivePolicy(classSectionId, now) and confirm absenceThresholdPercent 20 sourced from ClassSection per BR-20.",
+        "Invoke M10 evaluateAbsenceThreshold(classSectionId, studentUserId).",
+        "Assert alert generated because 30% exceeds 20% section threshold.",
+        "Repeat evaluation using institution-only policy (no section override, threshold 30%) and confirm no alert at 30% rate."
+      ],
+      "expected": "M10 integrates with M06 policy resolution: BR-17 comparison uses effective absenceThresholdPercent (section 20% wins over institution 30%); alert fires only when unexcused rate strictly exceeds the resolved threshold.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-17-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-17", "FR-26", "FR-24"],
+      "title": "Excused absences excluded from BR-17 rate when excusedCountsTowardThreshold is false",
+      "preconditions": [
+        "Section policy: absenceThresholdPercent 20, excusedCountsTowardThreshold false.",
+        "Ten closed sessions for one enrolled student: two Absent, two Excused, six Present.",
+        "M10 evaluator configured per domain model: Excused excluded from unexcused absence calculation when flag is false."
+      ],
+      "steps": [
+        "Seed attendance_records with two Absent, two Excused, six Present across ten closed sessions.",
+        "Invoke M10 evaluateAbsenceThreshold(classSectionId, studentUserId).",
+        "Verify computed unexcusedAbsenceRate excludes Excused sessions from numerator per BR-17 condition.",
+        "Toggle excusedCountsTowardThreshold true on policy, re-run evaluation, and compare alert outcome."
+      ],
+      "expected": "When excusedCountsTowardThreshold false, Excused sessions are excluded from unexcused absence rate per BR-17; alert decision reflects only unexcused Absent sessions; toggling the flag changes computed rate and may change alert eligibility.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-17-004",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["BR-17", "FR-09", "BR-13"],
+      "title": "Session Open to Closed transition triggers BR-17 post-close absence-threshold recalculation",
+      "preconditions": [
+        "Open class session with one enrolled student remaining Pending.",
+        "Section policy absenceThresholdPercent 20; student already has two Absent of nine prior closed sessions (22.2% after next Absent).",
+        "M10 post-close hook subscribed to M03 session-close domain event."
+      ],
+      "steps": [
+        "Capture beforeState: session Open, student Pending, no prior absence-threshold alert for this section.",
+        "Invoke closeSession(sessionId) transitioning session to Closed and applying BR-13 Absent for pending student.",
+        "Capture afterState: session Closed, student attendanceStatus Absent for this session.",
+        "Verify M10 evaluateAbsenceThreshold runs once post-close and persists alert event with computed rate and threshold snapshot."
+      ],
+      "expected": "beforeState Open → afterState Closed triggers BR-13 absent finalization then BR-17 threshold evaluation; alert event logged with unexcused rate exceeding 20% threshold; no attendance record statuses are auto-modified by the alert itself.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-17-005",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P1",
+      "traceability": ["BR-17", "FR-26"],
+      "title": "Concurrent session closes for same section dedupe BR-17 alerts to avoid noisy duplicates",
+      "preconditions": [
+        "Section with absenceThresholdPercent 20; student already exceeds threshold before test.",
+        "Three sessions in Open state for the same class section affecting the same at-risk student.",
+        "M10 alert deduplication window or idempotency key on (classSectionId, studentUserId, policyVersion) is configured per MVP conditional scope."
+      ],
+      "steps": [
+        "Fire three parallel closeSession commands for distinct session IDs in the same section.",
+        "Collect all M10 alert events or notification queue rows for the student-section pair within a 60-second window.",
+        "Verify attendance_records reflect three new Absent rows (one per session) without duplication errors.",
+        "Assert at most one absence-threshold alert notification is emitted per deduplication policy."
+      ],
+      "expected": "Concurrent closes update attendance correctly while BR-17 alert emission deduplicates per MVP conditional scope ('avoid noisy false alarms'); student receives one informational alert, not three identical notifications for the same threshold breach state.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-17-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-17", "FR-26", "FR-08", "FR-09"],
+      "title": "POST /v1/class-sessions/{sessionId}/close returns 200 and emits BR-17 alert auditable via GET /v1/audit-logs",
+      "preconditions": [
+        "Section policy absenceThresholdPercent 20 configured via POST /v1/policies.",
+        "Student enrolled in section with four Absent of five prior closed sessions.",
+        "Sixth session is Open with the student Pending; Lecturer assigned to section is authenticated."
+      ],
+      "steps": [
+        "Call POST /v1/class-sessions/{sessionId}/close with Lecturer Authorization and Idempotency-Key.",
+        "Assert HTTP 200 with data.state Closed and standard {data, meta, error} envelope.",
+        "Query GET /v1/audit-logs?actionType=AbsenceThresholdAlert&targetId={studentUserId}&from={closeTimestamp}.",
+        "Inspect audit payload: unexcusedAbsenceRate, absenceThresholdPercent, classSectionId, and recipient list metadata."
+      ],
+      "expected": "Session close HTTP 200 triggers BR-17 alert generation; audit log contains AbsenceThresholdAlert entry with computed rate above 20% threshold, student and section correlation IDs, and notification recipient configuration; attendance records remain unchanged by the alert event.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-17-007",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["BR-17", "FR-26", "FR-09", "BR-13"],
+      "title": "Primary close-session workflow triggers BR-17 notifications to student, lecturer, and academic admin",
+      "preconditions": [
+        "WF-01 complete: section, enrollments, policy absenceThresholdPercent 20, multiple sessions Scheduled.",
+        "Lecturer completes sequential open/close cycles leaving target student with repeated Absent outcomes.",
+        "M10 notification delivery queue captures student, lecturer, and academic-admin recipients per policy defaults."
+      ],
+      "steps": [
+        "Run sequential session open/close cycles until target student unexcused absence rate exceeds 20%.",
+        "On threshold-crossing close, verify BR-13 Absent applied for pending student in that session.",
+        "Query notification queue for three recipient types: student self, section lecturer, academic admin per BR-17 outcome.",
+        "Confirm each notification payload includes section code, student identifier, computed rate, and threshold percent.",
+        "Verify attendance ledger reflects only Absent/Present/Late statuses from close processing, not alert side effects."
+      ],
+      "expected": "Primary WF close-session happy path produces BR-17 informational notifications to student, lecturer, and academic admin when threshold is exceeded; alert event is logged; attendance ledger is not auto-modified by the alert.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-17-008",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P0",
+      "traceability": ["BR-17", "FR-26"],
+      "title": "Alternate trigger: scheduled job recalculates absence rate and emits BR-17 alert without new session close",
+      "preconditions": [
+        "Section policy absenceThresholdPercent 20; student already has unexcused absence rate above threshold from prior closed sessions.",
+        "No new session is closing during the test window.",
+        "M10 scheduled absence-threshold evaluation job is enabled per BR-17 trigger (scheduled job path)."
+      ],
+      "steps": [
+        "Record attendance_records beforeState: all statuses unchanged.",
+        "Invoke M10 scheduled evaluateAbsenceThresholdBatch(classSectionId) or equivalent cron job.",
+        "Query alert events and notification queue for at-risk student.",
+        "Re-query attendance_records and confirm no status mutations occurred."
+      ],
+      "expected": "BR-17 scheduled-job trigger recalculates unexcused absence rate and emits informational alert with logged event; attendance records remain identical to beforeState per BR-17 exception (alert is informational only).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-17-009",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P0",
+      "traceability": ["BR-17", "FR-26"],
+      "title": "Student remains below threshold until Nth absent session then BR-17 alert fires on crossing session only",
+      "preconditions": [
+        "Section policy absenceThresholdPercent 20; ten total sessions planned.",
+        "Student starts with zero Absent; each absent session increments rate by 10%."
+      ],
+      "steps": [
+        "Close sessions 1–2 with student Absent (20% rate — at threshold boundary).",
+        "Verify no absence-threshold alert emitted at exactly 20% because BR-17 condition is exceeds, not meets.",
+        "Close session 3 with student Absent (30% rate — exceeds 20%).",
+        "Verify alert emits on session 3 close only.",
+        "Close session 4 with student Present; verify absence rate recalculates but alert deduplication prevents duplicate notification if still above threshold."
+      ],
+      "expected": "Alternate branch: BR-17 alert fires only when rate strictly exceeds absenceThresholdPercent; threshold crossing on third absent session triggers first alert; subsequent closes while still above threshold do not spam duplicate alerts.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-17-010",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-c",
+      "priority": "P0",
+      "traceability": ["BR-17", "FR-24", "BR-22"],
+      "title": "Raising absenceThresholdPercent via policy PATCH suppresses BR-17 alert on next evaluation",
+      "preconditions": [
+        "Student unexcused absence rate 22% with policy absenceThresholdPercent 20; alert already emitted.",
+        "AcademicAdmin authenticated; section-scoped policy row exists.",
+        "Audit query available for policy mutation."
+      ],
+      "steps": [
+        "Record beforeState: student rate 22%, threshold 20%, alert active.",
+        "AcademicAdmin PATCH /v1/policies/{policyId} changing absenceThresholdPercent from 20 to 25.",
+        "Close another session (student Present) and invoke M10 re-evaluation.",
+        "Record afterState: rate ~20% (22% of 10 sessions if one more held), threshold 25%.",
+        "Query audit logs for policy mutation and verify no new absence-threshold alert for previously alerted student."
+      ],
+      "expected": "Critical policy configuration change updates threshold for subsequent BR-17 evaluations; student at 22% no longer exceeds 25% threshold; no new alert emitted; policy mutation audit captured per BR-22; prior attendance records unchanged.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-17-011",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-17", "BR-18", "BR-19", "FR-27"],
+      "title": "Student denied cross-student absence-threshold data; Lecturer denied unassigned section alerts per BR-19",
+      "preconditions": [
+        "Two class sections A and B each have students exceeding absence threshold.",
+        "Student S enrolled only in section A; Lecturer L assigned only to section A.",
+        "Valid bearer tokens for Student S, Lecturer L, and Lecturer L2 (assigned to section B only).",
+        "BR-18 scopes export to actor role; BR-19 denies unauthorized report access."
+      ],
+      "steps": [
+        "Student S calls GET /v1/alerts/absence-threshold?studentUserId={studentInSectionB}.",
+        "Assert HTTP 403 Forbidden; no other student's rate or alert metadata returned.",
+        "Student S calls POST /v1/exports/attendance with filters targeting section B absence-threshold data.",
+        "Assert HTTP 403 Forbidden without partial export data leakage per BR-18.",
+        "Lecturer L calls GET /v1/alerts/absence-threshold?classSectionId={sectionB}.",
+        "Assert HTTP 403 OutOfScope per BR-19.",
+        "Lecturer L calls GET /v1/alerts/absence-threshold?classSectionId={sectionA}; assert HTTP 200 with scoped results only."
+      ],
+      "expected": "RBAC enforces self-only alert read for Student and section-scoped read for Lecturer per BR-19; cross-student and cross-section absence-threshold data denied without partial leakage; student export denied per BR-18.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-17-012",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-17", "FR-26"],
+      "title": "Unexcused rate exactly at absenceThresholdPercent does not emit BR-17 alert; one additional Absent exceeds and emits",
+      "preconditions": [
+        "Section policy absenceThresholdPercent 20.00.",
+        "Student with exactly 20% unexcused absence rate (e.g. 2 Absent of 10 closed sessions).",
+        "M10 evaluator invoked after each session close."
+      ],
+      "steps": [
+        "Invoke M10 evaluateAbsenceThreshold at exactly 20.00% computed rate.",
+        "Assert no alert event persisted (BR-17 condition is exceeds, not meets).",
+        "Close one additional session with student Absent yielding 27.27% rate (3 of 11).",
+        "Re-invoke evaluator and assert alert event created with rate and threshold in payload."
+      ],
+      "expected": "Boundary enforces strict exceed semantics: 20.00% against 20% threshold produces no alert; crossing to 27.27% triggers BR-17 alert generation with logged event.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-17-013",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["BR-17", "FR-25", "BR-20"],
+      "title": "Null or undefined absenceThresholdPercent in effective policy disables BR-17 alert generation",
+      "preconditions": [
+        "Effective policy resolved for section has absenceThresholdPercent null (field undefined at all precedence levels per BR-20).",
+        "Student with high unexcused absence rate (e.g. 50% Absent).",
+        "M10 notification module enabled globally."
+      ],
+      "steps": [
+        "Call M06 resolveEffectivePolicy(classSectionId, now) and confirm absenceThresholdPercent is null.",
+        "Invoke M10 evaluateAbsenceThreshold(classSectionId, studentUserId) after session close.",
+        "Query alert events table for the student-section pair.",
+        "Verify no alert row created and no error thrown."
+      ],
+      "expected": "When effective policy omits absenceThresholdPercent, BR-17 alert evaluation is skipped gracefully; no false alerts for institutions that have not configured a threshold; attendance processing unaffected.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-17-014",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-17", "FR-26", "BR-13"],
+      "title": "BR-17 alert is informational only: attendance records unchanged after threshold breach notification",
+      "preconditions": [
+        "Student unexcused absence rate exceeds absenceThresholdPercent 20.",
+        "Student has mix of Absent, Present, Late, and Excused records across closed sessions.",
+        "BR-17 alert event has been generated for the student-section pair."
+      ],
+      "steps": [
+        "Capture beforeState: all AttendanceRecord statuses, checkInAt, and checkInMethod values for the student in the section.",
+        "Trigger BR-17 alert emission (via session close or scheduled job).",
+        "Capture afterState for all AttendanceRecord rows.",
+        "Compare beforeState and afterState field-by-field for every session in the section."
+      ],
+      "expected": "BR-17 exception holds: alert event and notifications are emitted but no AttendanceRecord status, checkInAt, or checkInMethod is auto-modified; informational alert does not substitute for BR-14/BR-16 manual correction paths.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-17-015",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-17", "FR-26", "FR-37"],
+      "title": "Student attendance history page shows warning when unexcused absence rate exceeds BR-17 threshold",
+      "preconditions": [
+        "Student logged in on mobile-web Chromium at personal attendance history route.",
+        "Student enrolled in section where unexcused absence rate exceeds absenceThresholdPercent 20.",
+        "BR-17 absence-threshold alert has been generated for the student-section pair."
+      ],
+      "steps": [
+        "Navigate to student attendance history for the at-risk section.",
+        "Verify section summary card displays unexcused absence rate percentage and configured threshold.",
+        "Observe warning alert component with localized copy explaining threshold breach per BR-17 outcome.",
+        "Confirm alert is informational only: no attendance status rows are editable by the student.",
+        "Verify other students' data is not visible on the page."
+      ],
+      "expected": "Student UI journey surfaces BR-17 threshold breach as a warning alert on personal attendance history; rate and threshold values match backend calculation; alert is informational and does not expose other students' records.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-17-016",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-17", "FR-26", "FR-10", "FR-19"],
+      "title": "Lecturer section dashboard highlights at-risk students with BR-17 absence-threshold badge",
+      "preconditions": [
+        "Lecturer logged in on desktop Chromium at assigned section dashboard.",
+        "At least one enrolled student exceeds absenceThresholdPercent 20; others remain below threshold.",
+        "Section has upcoming and past sessions listed per FR-10."
+      ],
+      "steps": [
+        "Navigate to class section detail or session list for the assigned section.",
+        "Locate student roster or section summary showing per-student absence rate.",
+        "Verify at-risk student row displays threshold-exceeded badge with rate and threshold tooltip.",
+        "Verify below-threshold students show no threshold badge.",
+        "Click at-risk student row and confirm detail panel shows alert timestamp and informational message without edit controls."
+      ],
+      "expected": "Lecturer browser journey satisfies BR-17 visibility: at-risk students are visually distinguished on section dashboard; badge reflects threshold breach; non-at-risk students remain unbadged; data scoped to lecturer-assigned section only.",
+      "edgeCase": false
+    }
+  ]
+}

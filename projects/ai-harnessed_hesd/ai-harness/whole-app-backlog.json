@@ -824,6 +824,7 @@
       "testRequirements": {
         "acceptanceTags": [
           "AC-25",
+          "BR-17",
           "FR-26"
         ]
       },
@@ -838,6 +839,12 @@
           "at": "2026-07-02T11:25:58Z",
           "kind": "drift",
           "reason": "Doc drift for FR-26 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T12:05:23Z",
+          "kind": "drift",
+          "reason": "Doc drift for BR-17 — reverify after TestGen",
           "source": "harness"
         }
       ]
