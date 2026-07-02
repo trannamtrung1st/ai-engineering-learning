@@ -1,0 +1,284 @@
+{
+  "productItemId": "BR-23",
+  "version": 1,
+  "docFingerprint": "sha256:0421ca4affe3aa70584e3b352a860d11de519a5a2aaff8c4d8e0f12d14d1a70a",
+  "generatedAt": "2026-07-02T15:45:00Z",
+  "cases": [
+    {
+      "id": "TC-BR-23-001",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["BR-23", "FR-22", "AC-18"],
+      "title": "Testing-plan Attempt/audit coverage row: every check-in submission persists CheckInAttempt",
+      "preconditions": [
+        "Testing-plan §3.1 Attempt/audit coverage block applies (FR-22, FR-29, FR-30, BR-22, BR-23, AC-18, AC-19).",
+        "Open class session exists with enrolled students; fixtures support one successful and one deterministic failure path."
+      ],
+      "steps": [
+        "Submit POST /v1/check-ins for enrolled student A with valid qrToken within present window.",
+        "Submit POST /v1/check-ins for enrolled student B with expired qrToken.",
+        "Query check_in_attempts for both student-session pairs and verify row count and outcome fields."
+      ],
+      "expected": "BR-23 satisfied for both paths: every terminal check-in submission persists exactly one CheckInAttempt with structured outcome (Success or rejection code), non-null submittedAt, student and session foreign keys, and token reference.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-23-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-23", "FR-22", "FR-23"],
+      "title": "Check-in transaction boundary inserts CheckInAttempt before attendance write on success",
+      "preconditions": [
+        "Real database transaction is enabled for check-in command processing per API design §5.3.",
+        "Open session with valid rotating QR token exists; enrolled student has no AttendanceRecord for the session.",
+        "Test harness can capture qr_session_token_id and correlation_id on write path."
+      ],
+      "steps": [
+        "Submit check-in command with valid qrToken and clientTimestamp within present window.",
+        "Query check_in_attempts for outcome Success, qr_session_token_id, submitted_at, and correlation_id.",
+        "Query attendance_records for source_attempt_id linkage to the inserted attempt row."
+      ],
+      "expected": "Success path inserts one CheckInAttempt with outcome Success, non-null qr_session_token_id reference, ISO-8601 submitted_at, and correlation metadata before AttendanceRecord is created; DI-10 invariant holds.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-23-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-23", "FR-34", "BR-09", "BR-10"],
+      "title": "Failed GPS validation persists optional GPS summary on CheckInAttempt",
+      "preconditions": [
+        "Effective policy for class section requires GPS validation with configured room radius.",
+        "Open session exists; enrolled student has no success AttendanceRecord.",
+        "Test harness can supply GPS coordinates outside allowed radius with accuracyMeters within threshold."
+      ],
+      "steps": [
+        "Submit check-in command with gps payload placing student outside configured radius.",
+        "Query check_in_attempts for outcome OutOfRadius, gps_latitude, gps_longitude, gps_accuracy_meters, distance_from_room_meters, and gps_validation_result.",
+        "Query attendance_records to confirm no Present/Late row was created."
+      ],
+      "expected": "BR-23 requires optional GPS validation summary on attempt row: OutOfRadius outcome with populated coordinate fields, distance_from_room_meters, gps_validation_result Fail, and submitted_at timestamp; no AttendanceRecord success mutation.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-23-004",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["BR-23", "BR-01", "BR-02", "FR-22"],
+      "title": "SM-04 terminal failure states each persist CheckInAttempt with matching outcome code",
+      "preconditions": [
+        "Integration database seeded with fixtures for Scheduled, Closed, and Open sessions.",
+        "Enrolled students available for each failure path; validation order short-circuit paths individually reachable."
+      ],
+      "steps": [
+        "Drive check-in against Scheduled session; capture SessionNotOpen attempt.",
+        "Drive check-in against Closed session; capture SessionClosed attempt.",
+        "Drive check-in with expired token on Open session; capture ExpiredQr attempt.",
+        "For each path, verify AttendanceRecord remains absent or unchanged."
+      ],
+      "expected": "Each SM-04 business-failure terminal state persists one CheckInAttempt with structured outcome code matching the short-circuit reason and non-null submitted_at; BR-23 exception clause (none) means zero submissions skip attempt logging.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-23-005",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P0",
+      "traceability": ["BR-23", "BR-07", "NFR-07"],
+      "title": "Concurrent distinct submissions each insert separate CheckInAttempt rows",
+      "preconditions": [
+        "Open session with valid rotating QR tokens exists.",
+        "Two enrolled students A and B have no success AttendanceRecord for the session.",
+        "Test harness can fire parallel POST /v1/check-ins requests with distinct Idempotency-Key values."
+      ],
+      "steps": [
+        "Submit concurrent POST /v1/check-ins for student A and student B with valid tokens.",
+        "Query check_in_attempts filtered by class_session_id and count rows per student.",
+        "Verify each terminal outcome has its own attempt row with submitted_at and token reference."
+      ],
+      "expected": "Each concurrent submission persists its own CheckInAttempt with terminal outcome and timestamp per BR-23; no attempt row is dropped or merged under peak load.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-23-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-23", "FR-22", "FR-23", "AC-11"],
+      "title": "POST /v1/check-ins 200 success envelope correlates with persisted Success CheckInAttempt",
+      "preconditions": [
+        "Open class session with valid qrToken exists in test environment.",
+        "Authenticated enrolled student bearer token is available.",
+        "Request includes Idempotency-Key and X-Request-Id headers."
+      ],
+      "steps": [
+        "Call POST /v1/check-ins with Authorization Bearer token, valid qrToken, clientTimestamp, and Idempotency-Key.",
+        "Inspect HTTP 200 response envelope data.outcome Success and meta.requestId.",
+        "Query persisted CheckInAttempt by correlation_id or requestId and compare outcome, submitted_at, and qr_session_token_id."
+      ],
+      "expected": "API returns HTTP 200 with data.outcome Success; persisted CheckInAttempt.outcome equals Success with matching correlation_id, non-null submitted_at, and token reference per BR-23 and API §5.3 step 4.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-23-007",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-23", "FR-22", "AC-18", "AC-04"],
+      "title": "POST /v1/check-ins 422 error.code maps one-to-one to persisted CheckInAttempt outcome",
+      "preconditions": [
+        "Open class session with rotating QR token exists in test environment.",
+        "Authenticated enrolled student bearer token is available.",
+        "Test clock can advance beyond token expiresAt."
+      ],
+      "steps": [
+        "Advance clock past qr.expiresAt for the current session token.",
+        "Call POST /v1/check-ins with Authorization Bearer token, expired qrToken, clientTimestamp, and Idempotency-Key.",
+        "Inspect HTTP 422 response envelope error.code and meta.requestId.",
+        "Query persisted CheckInAttempt for the request correlation id and compare outcome field."
+      ],
+      "expected": "API returns 422 with error.code ExpiredQr; persisted CheckInAttempt.outcome equals ExpiredQr with non-null submitted_at and token reference per BR-23 100% failed-attempt reason coverage.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-23-008",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["BR-23", "FR-15", "FR-16", "FR-23", "AC-06", "AC-11"],
+      "title": "WF-03 primary workflow logs success CheckInAttempt after auth and check-in submission",
+      "preconditions": [
+        "Lecturer has opened session; rotating valid QR token is displayed.",
+        "Unauthenticated enrolled student account exists with known credentials.",
+        "Student has no AttendanceRecord for the session."
+      ],
+      "steps": [
+        "Student calls POST /v1/auth/login and receives accessToken with Student role.",
+        "Student calls POST /v1/check-ins with Bearer token, valid qrToken, and clientTimestamp within present window.",
+        "Query check_in_attempts and attendance_records for the student-session pair."
+      ],
+      "expected": "WF-03 happy path persists one CheckInAttempt with outcome Success, token reference, submitted_at, and correlation metadata per BR-23; AttendanceRecord links to the attempt row with Present or Late status.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-23-009",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-23", "FR-22", "AC-18", "NFR-13"],
+      "title": "Documented failure outcome matrix achieves 100% CheckInAttempt persistence with structured reason codes",
+      "preconditions": [
+        "Test matrix covers canonical outcomes: ExpiredQr, SessionNotOpen, SessionClosed, NotEnrolled, DuplicateCheckIn, GpsRequired, GpsDisabled, OutOfRadius, LowAccuracy.",
+        "Each row has a deterministic fixture to reach that terminal outcome without bypassing validation order."
+      ],
+      "steps": [
+        "For each documented failure outcome code, trigger POST /v1/check-ins and capture HTTP status and error.code.",
+        "Query check_in_attempts filtered by studentUserId and classSessionId for each triggered failure.",
+        "Aggregate results against NFR-13 minimum evidence: 100% failed attempts include structured reason code."
+      ],
+      "expected": "Every matrix failure path returns documented error.code and persists exactly one CheckInAttempt with the same structured outcome, non-null submitted_at, and token reference; zero terminal failures lack a persisted attempt row per BR-23.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-23-010",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-23", "BR-01", "BR-03", "BR-06", "BR-07"],
+      "title": "Rule-order short-circuit BR-01 through BR-10 still logs attempt with first-failure reason code",
+      "preconditions": [
+        "Fixtures exist where multiple downstream rules would fail if session were Open: expired token, not enrolled, duplicate success, GPS outside radius.",
+        "Scheduled session exists to test BR-01 short-circuit before BR-03, BR-06, BR-07."
+      ],
+      "steps": [
+        "Submit POST /v1/check-ins with expired token against Scheduled session; assert error.code SessionNotOpen and query CheckInAttempt outcome.",
+        "Open session; submit as unenrolled student with valid token; assert NotEnrolled attempt logged.",
+        "Submit as already-checked-in student with GPS outside radius; assert DuplicateCheckIn not OutOfRadius in attempt outcome.",
+        "Verify each submission has exactly one attempt row regardless of which rule short-circuited."
+      ],
+      "expected": "Validation order per API §5.1 and business rules §11: each short-circuited submission persists CheckInAttempt with the first-failure structured reason code; BR-23 holds that logging is unconditional with no exception path.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-23-011",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-23", "BR-07", "FR-18", "NFR-07"],
+      "title": "Idempotency replay and duplicate submission both produce auditable CheckInAttempt rows",
+      "preconditions": [
+        "Student has completed one successful POST /v1/check-ins for an Open session with Idempotency-Key K1.",
+        "Session remains Open with freshly rotated valid QR token.",
+        "Idempotency store retains accepted command for (K1, actor, token) within replay window."
+      ],
+      "steps": [
+        "Replay POST /v1/check-ins with identical Idempotency-Key K1 and same qrToken; inspect response and query attempt rows.",
+        "Submit POST /v1/check-ins with new Idempotency-Key K2 and fresh valid qrToken for same student-session.",
+        "Query check_in_attempts for student-session pair and count rows by outcome."
+      ],
+      "expected": "Idempotency replay of K1 returns prior success summary; new-key duplicate returns 409 DuplicateCheckIn and persists failed CheckInAttempt with structured outcome; BR-07 one-success-per-session enforced while BR-23 logs every distinct submission attempt.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-23-012",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-23", "BR-18", "BR-19", "FR-27"],
+      "title": "Student export denied and cross-scope Lecturer cannot read attempt metadata from non-assigned roster",
+      "preconditions": [
+        "Open session exists in section A assigned to Lecturer-A with student who has failed ExpiredQr CheckInAttempt.",
+        "Lecturer-B is authenticated but not assigned to section A.",
+        "Student account is authenticated with enrollment in section A.",
+        "BR-18 scopes export to actor role; BR-19 denies unauthorized report access."
+      ],
+      "steps": [
+        "Student calls POST /v1/exports/attendance with filters targeting section A.",
+        "Assert HTTP 403 Forbidden without partial export data leakage.",
+        "Lecturer-B calls GET /v1/class-sessions/{sessionId}/attendance for section A session.",
+        "Assert HTTP 403 OutOfScope or Forbidden without Student A attempt details.",
+        "Lecturer-A (control) calls same roster endpoint and inspects rejectedAttempts and latestAttemptOutcome."
+      ],
+      "expected": "Student institution-wide export denied per BR-18; cross-scope Lecturer denied roster read per BR-19 without disclosing CheckInAttempt metadata; assigned Lecturer control sees scoped rejectedAttempts and latestAttemptOutcome derived from persisted attempts.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-23-013",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-23", "FR-22", "AC-18", "AC-04"],
+      "title": "UI journey maps API failure reason to CheckInResultScreen and lecturer roster attempt badge",
+      "preconditions": [
+        "Student is logged in on mobile-web browser at PG-02 check-in page.",
+        "Open session exists; test can supply an expired QR token via deep link query parameter.",
+        "Lecturer is logged in on desktop at PG-06 live roster for the same session."
+      ],
+      "steps": [
+        "Student navigates to /check-in?token=<expired> and submits check-in.",
+        "Observe CheckInResultScreen renders failure-expired-qr danger alert with localized copy and retry CTA.",
+        "Verify via API or harness that a CheckInAttempt with outcome ExpiredQr was persisted for the submission.",
+        "Lecturer refreshes PG-06 roster and inspects rejectedAttempts count and student row latestAttemptOutcome badge."
+      ],
+      "expected": "Student UI maps API ExpiredQr to failure-expired-qr state; each visible failure corresponds to one persisted CheckInAttempt per BR-23; lecturer roster shows incremented rejectedAttempts and latestAttemptOutcome ExpiredQr without exposing other students' attempt details.",
+      "edgeCase": false
+    }
+  ]
+}

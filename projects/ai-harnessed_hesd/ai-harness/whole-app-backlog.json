@@ -771,12 +771,19 @@
           "kind": "drift",
           "reason": "Doc drift for BR-22 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-02T12:16:02Z",
+          "kind": "drift",
+          "reason": "Doc drift for BR-23 — reverify after TestGen",
+          "source": "harness"
         }
       ],
       "testRequirements": {
         "acceptanceTags": [
           "AC-19",
           "BR-22",
+          "BR-23",
           "FR-29",
           "FR-30"
         ]
