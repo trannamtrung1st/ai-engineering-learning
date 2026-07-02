@@ -909,8 +909,19 @@
           "kind": "drift",
           "reason": "Doc drift for AC-16 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-02T11:49:18Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-37 — reverify after TestGen",
+          "source": "harness"
         }
-      ]
+      ],
+      "testRequirements": {
+        "acceptanceTags": [
+          "FR-37"
+        ]
+      }
     },
     {
       "id": "web-lecturer-session-control",
