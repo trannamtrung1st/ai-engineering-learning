@@ -92,7 +92,7 @@
     },
     "web-academic-admin-policy-management": {
       "specPath": "/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/tests/playwright-ui/scenarios/web-academic-admin-policy-management.spec.ts",
-      "lastRunId": "20260702T200305Z",
+      "lastRunId": "20260702T204216Z",
       "testCount": 6,
       "sourceTcIds": [
         "TC-AC-09-009",
@@ -106,7 +106,7 @@
         "TC-FR-25-015",
         "TC-FR-25-016"
       ],
-      "updatedAt": "2026-07-02T20:16:14Z"
+      "updatedAt": "2026-07-02T21:07:35Z"
     }
   }
 }

@@ -1070,7 +1070,15 @@
         "apps/web/src/lib/api/seed-fixtures.ts",
         "apps/web/src/lib/listing/policies-list-query.ts",
         "apps/web/src/lib/policy/resolve-preview.ts",
-        "apps/web/src/lib/i18n/policy-fields.ts"
+        "apps/web/src/lib/i18n/policy-fields.ts",
+        "apps/web/src/components/domain/AttemptOutcomeCell.tsx",
+        "apps/web/src/components/domain/AttemptOutcomeCell.module.css",
+        "apps/web/src/components/domain/LiveRosterPanel.tsx",
+        "apps/web/src/lib/api/roster-api.ts",
+        "apps/web/src/lib/i18n/attempt-outcomes.ts",
+        "apps/api/src/modules/attendance-ledger/types.ts",
+        "apps/api/src/modules/attendance-ledger/repository.ts",
+        "apps/api/src/modules/realtime-delivery/repository.ts"
       ],
       "testRequirements": {
         "acceptanceTags": [
@@ -1083,17 +1091,33 @@
         "unit": [
           "apps/web/src/lib/api/policy-api.test.ts",
           "apps/web/src/lib/listing/policies-list-query.test.ts",
-          "apps/web/src/lib/policy/resolve-preview.test.ts"
+          "apps/web/src/lib/policy/resolve-preview.test.ts",
+          "apps/web/src/lib/i18n/attempt-outcomes.test.ts"
         ],
         "component": [
           "apps/web/src/components/domain/PolicyList.test.tsx",
           "apps/web/src/components/domain/PolicyForm.test.tsx",
-          "apps/web/src/components/domain/PolicyResolutionSummary.test.tsx"
+          "apps/web/src/components/domain/PolicyResolutionSummary.test.tsx",
+          "apps/web/src/components/domain/AttemptOutcomeCell.test.tsx"
         ],
         "playwright": [
           "tests/playwright-ui/scenarios/web-academic-admin-policy-management.spec.ts"
         ]
-      }
+      },
+      "history": [
+        {
+          "at": "2026-07-02T20:18:09Z",
+          "kind": "gate_failed",
+          "reason": "AI review failed — see 20260702T200305Z-review.json",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T20:42:16Z",
+          "kind": "gate_failed",
+          "reason": "Browser test failed — see 20260702T201809Z-browser-test.json",
+          "source": "harness"
+        }
+      ]
     },
     {
       "id": "web-academic-admin-reporting-export",
