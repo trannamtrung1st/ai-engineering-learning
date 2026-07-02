@@ -33,6 +33,12 @@
           "kind": "drift",
           "reason": "Doc drift for FR-33 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-02T12:36:46Z",
+          "kind": "drift",
+          "reason": "Doc drift for NFR-16 — reverify after TestGen",
+          "source": "harness"
         }
       ]
     },
@@ -83,6 +89,12 @@
           "at": "2026-07-02T11:00:37Z",
           "kind": "drift",
           "reason": "Doc drift for FR-16 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T12:36:46Z",
+          "kind": "drift",
+          "reason": "Doc drift for NFR-16 — reverify after TestGen",
           "source": "harness"
         }
       ],
@@ -869,6 +881,12 @@
           "at": "2026-07-02T12:17:56Z",
           "kind": "drift",
           "reason": "Doc drift for NFR-01 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T12:36:46Z",
+          "kind": "drift",
+          "reason": "Doc drift for NFR-16 — reverify after TestGen",
           "source": "harness"
         }
       ]
@@ -1693,6 +1711,12 @@
           "at": "2026-07-02T12:19:24Z",
           "kind": "drift",
           "reason": "Doc drift for NFR-03 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T12:36:46Z",
+          "kind": "drift",
+          "reason": "Doc drift for NFR-16 — reverify after TestGen",
           "source": "harness"
         }
       ]
