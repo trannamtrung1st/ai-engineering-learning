@@ -1,0 +1,275 @@
+{
+  "productItemId": "FR-07",
+  "version": 1,
+  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+  "generatedAt": "2026-07-02T10:44:55Z",
+  "cases": [
+    {
+      "id": "TC-FR-07-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["FR-07", "BR-01", "AC-01"],
+      "title": "Assigned Lecturer opens Scheduled session and enables attendance window",
+      "preconditions": [
+        "Lecturer is authenticated and assigned to the target class section.",
+        "A class session exists in Scheduled state with enrolled students.",
+        "No openedAt timestamp is set on the session."
+      ],
+      "steps": [
+        "Call POST /v1/class-sessions/{sessionId}/open with Lecturer Authorization and Idempotency-Key headers.",
+        "Validate HTTP 200 and standard {data, meta, error} envelope.",
+        "Assert data.state is Open, openedAt is non-null ISO-8601 UTC, and data.qr contains expiresAt and qrPayload.",
+        "Call GET /v1/class-sessions/{sessionId}/qr/current and verify tokenState is Valid with matching session binding.",
+        "Submit POST /v1/check-ins as an enrolled student using the issued QR token and confirm check-in is not rejected with SessionNotOpen."
+      ],
+      "expected": "WF-01 / E2E-01 happy path: session transitions Scheduled to Open, openedAt and actor are recorded, QR rotation starts, and student check-in is no longer blocked by BR-01 SessionNotOpen.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-07-002",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["FR-07", "FR-08", "BR-01", "BR-02", "AC-01"],
+      "title": "Testing-plan session open/close row: open records metadata and gates check-in by state",
+      "preconditions": [
+        "Lecturer assigned to section is authenticated.",
+        "Session fixture is in Scheduled state per testing-plan §3.1 Session open/close coverage block.",
+        "Enrolled student account and valid QR token fixture are available after open."
+      ],
+      "steps": [
+        "While session is Scheduled, submit POST /v1/check-ins as enrolled student and record SessionNotOpen rejection.",
+        "Call POST /v1/class-sessions/{sessionId}/open as assigned Lecturer.",
+        "Assert response data.state Open with openedAt and qr metadata per AC-01 Given/When/Then.",
+        "Re-submit POST /v1/check-ins with current QR token and confirm outcome is not SessionNotOpen.",
+        "Call GET /v1/class-sessions/{sessionId}/attendance and assert data.state is Open with live roster counts."
+      ],
+      "expected": "Scenario-matrix maps to testing-plan Session open/close row: pre-open check-in fails with SessionNotOpen (BR-01); open succeeds with metadata; post-open check-in and roster reflect Open state.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-07-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-07"],
+      "title": "M03 Session Lifecycle atomically persists Open state with openedAt and openedByUserId",
+      "preconditions": [
+        "Integration harness uses real DB transaction boundaries for class_sessions table.",
+        "A Scheduled session row exists with known sessionId and assigned lecturerUserId on the parent section.",
+        "Lecturer auth context matches the section assignment."
+      ],
+      "steps": [
+        "Invoke M03 openSession(sessionId, actor) or POST /v1/class-sessions/{sessionId}/open through API service layer.",
+        "Query class_sessions table and assert state = Open, opened_at is non-null, and opened_by_user_id equals the Lecturer actor.",
+        "Invoke getSessionState(sessionId) and assert Open with no closedAt timestamp.",
+        "Verify a QRSessionToken row or equivalent is created with Valid state bound to the session per SM-02 rotation hook."
+      ],
+      "expected": "M03 module + repository integration commits state Open, openedAt, and openedByUserId atomically before returning QR metadata; no partial open state without actor/timestamp.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-07-004",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-07", "BR-01"],
+      "title": "POST /v1/class-sessions/{sessionId}/open returns 200 envelope with Open payload and QR preview",
+      "preconditions": [
+        "Assigned Lecturer is authenticated.",
+        "Target session is in Scheduled state.",
+        "Request includes Authorization and Idempotency-Key headers per API design §2.2."
+      ],
+      "steps": [
+        "Send POST /v1/class-sessions/{sessionId}/open with optional empty body.",
+        "Validate HTTP 200 and JSON envelope shape {data, meta, error} with error null.",
+        "Assert data contains classSessionId, state Open, openedAt, and qr object with expiresAt and qrPayload.",
+        "Assert meta includes requestId and timestamp fields."
+      ],
+      "expected": "Response is HTTP 200 with standard envelope; data reflects Open session with openedAt and QR preview metadata per API design §4.3.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-07-005",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["FR-07", "BR-01"],
+      "title": "Only Scheduled pre-state transitions to Open; Open Closed and Cancelled are rejected",
+      "preconditions": [
+        "Session fixtures exist in Scheduled, Open, Closed, and Cancelled states.",
+        "Assigned Lecturer auth context is available for all attempts."
+      ],
+      "steps": [
+        "Record beforeState Scheduled and invoke open for Scheduled session; record afterState Open.",
+        "Attempt open on session already in Open state.",
+        "Attempt open on Closed session.",
+        "Attempt open on Cancelled session.",
+        "Query persistence after each rejected attempt and confirm state unchanged."
+      ],
+      "expected": "beforeState Scheduled transitions to afterState Open; Open, Closed, and Cancelled pre-states reject with invalid-transition behavior (409 InvalidSessionTransition) and no illegal state persistence per SM-01.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-07-006",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-07", "BR-19"],
+      "title": "Non-assigned and non-lecturer roles are denied SessionControl.execute open",
+      "preconditions": [
+        "Student, ITAdmin, and Lecturer-not-assigned-to-section test accounts exist with valid tokens.",
+        "A Scheduled session exists in a section the out-of-scope Lecturer is not assigned to.",
+        "AcademicAdmin token is available as positive control for override permission."
+      ],
+      "steps": [
+        "Call POST /v1/class-sessions/{sessionId}/open as Student.",
+        "Call POST /v1/class-sessions/{sessionId}/open as ITAdmin.",
+        "Call POST /v1/class-sessions/{sessionId}/open as out-of-scope Lecturer.",
+        "Read HTTP status and error.code (expect 403 Forbidden or OutOfScope) for each denied request.",
+        "Query class_sessions table to confirm session state remains Scheduled.",
+        "Call POST /v1/class-sessions/{sessionId}/open as AcademicAdmin and assert override succeeds per permission matrix §3.1."
+      ],
+      "expected": "Student, ITAdmin, and out-of-scope Lecturer receive 403 without state change; AcademicAdmin override may open per roles doc; assigned Lecturer remains primary actor for FR-07.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-07-007",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-07", "BR-01"],
+      "title": "Open on Cancelled or Closed session returns InvalidSessionTransition",
+      "preconditions": [
+        "Cancelled and Closed session fixtures exist with known sessionIds.",
+        "Assigned Lecturer and AcademicAdmin tokens are available."
+      ],
+      "steps": [
+        "Call POST /v1/class-sessions/{cancelledSessionId}/open as assigned Lecturer.",
+        "Call POST /v1/class-sessions/{closedSessionId}/open as assigned Lecturer.",
+        "Read HTTP status and error.code for each response.",
+        "Verify class_sessions rows remain Cancelled and Closed respectively with no openedAt set."
+      ],
+      "expected": "API returns HTTP 409 with error.code InvalidSessionTransition for Cancelled and Closed targets; FR-07 explicitly rejects open when session is Cancelled or already Closed.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-07-008",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P1",
+      "traceability": ["FR-07", "FR-05"],
+      "title": "Lecturer opens session with optional roomId override for timetable change",
+      "preconditions": [
+        "Assigned Lecturer is authenticated.",
+        "Scheduled session exists with default room on the section.",
+        "An alternate roomId with valid room metadata exists for override."
+      ],
+      "steps": [
+        "Call POST /v1/class-sessions/{sessionId}/open with body {\"roomId\": \"{alternateRoomId}\"} per API design §4.3 optional room override.",
+        "Validate HTTP 200 and data.state Open.",
+        "Call GET /v1/class-sessions?classSectionId={sectionId} and locate the opened session.",
+        "Assert session roomId reflects the override while openedAt and QR metadata are present."
+      ],
+      "expected": "Alternate branch succeeds: session opens with room override applied for the session instance; attendance window opens normally with updated room binding.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-07-009",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P1",
+      "traceability": ["FR-07"],
+      "title": "Concurrent duplicate open requests are idempotent and return consistent Open state",
+      "preconditions": [
+        "Scheduled session exists with known sessionId.",
+        "Test harness can fire parallel POST /v1/class-sessions/{sessionId}/open with same Idempotency-Key.",
+        "Assigned Lecturer auth context is established."
+      ],
+      "steps": [
+        "Submit two or more parallel open requests with identical Idempotency-Key and Lecturer token.",
+        "Collect HTTP status codes and response data.state for all responses.",
+        "Query class_sessions table and assert exactly one Open transition with single openedAt/openedByUserId.",
+        "Verify no duplicate QR token issuance anomalies beyond expected rotation semantics."
+      ],
+      "expected": "All replayed open commands return consistent Open summary; persistence shows single legal transition per API idempotency rules §7.1; no duplicate side effects.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-07-010",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-07", "FR-15", "FR-36"],
+      "title": "Lecturer authenticates via login then opens assigned session",
+      "preconditions": [
+        "Lecturer credentials exist for POST /v1/auth/login.",
+        "A Scheduled session exists in a section assigned to that Lecturer."
+      ],
+      "steps": [
+        "Send POST /v1/auth/login with Lecturer credentials and capture accessToken and roles from HTTP 200 envelope.",
+        "Send GET /v1/me with bearer token and assert Lecturer identity and assigned section scope.",
+        "Send POST /v1/class-sessions/{sessionId}/open with bearer token and Idempotency-Key.",
+        "Assert open returns HTTP 200 with data.state Open within authenticated lecturer scope."
+      ],
+      "expected": "Login returns HTTP 200 with accessToken; GET /v1/me returns Lecturer identity; subsequent open succeeds in Open state for assigned session only.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-07-011",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-07", "FR-19"],
+      "title": "GET /v1/class-sessions/{sessionId}/attendance reflects Open state after open",
+      "preconditions": [
+        "Assigned Lecturer is authenticated.",
+        "Scheduled session with enrollments exists.",
+        "Session has not yet been opened."
+      ],
+      "steps": [
+        "Call POST /v1/class-sessions/{sessionId}/open and capture openedAt from response.",
+        "Call GET /v1/class-sessions/{sessionId}/attendance with Lecturer Authorization.",
+        "Validate HTTP 200 and envelope shape.",
+        "Assert data.state is Open, counts object includes present/late/pending/rejectedAttempts keys, and rows array reflects enrolled roster shape per API design §4.5."
+      ],
+      "expected": "Attendance roster endpoint returns HTTP 200 with data.state Open and live roster payload shape immediately after FR-07 open; enables FR-19 realtime dashboard prerequisite.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-07-012",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-07", "FR-10", "FR-11", "BR-01"],
+      "title": "Lecturer PG-04/PG-05 journey opens Scheduled session and shows Open badge with QR panel",
+      "preconditions": [
+        "Lecturer is logged in on desktop Chromium.",
+        "Assigned section has at least one Scheduled session visible on PG-04 session list.",
+        "Enrollments exist for the section."
+      ],
+      "steps": [
+        "Navigate to /lecturer/sessions (PG-04) and locate a Scheduled session row with Scheduled status badge.",
+        "Select the session and navigate to session detail / QR display (PG-05).",
+        "Tap or click Open Attendance (FRM-09) and observe loading then success feedback.",
+        "Verify session badge transitions to Open, openedAt indicator appears, and QR panel renders with countdown or refresh indicator.",
+        "Confirm Open CTA is disabled or hidden and close/view-roster actions become available per UI states §2."
+      ],
+      "expected": "Browser journey completes FLOW-05: UI transitions Scheduled to Open with openedAt metadata, active QR display, and state-appropriate control gating without full page reload.",
+      "edgeCase": false
+    }
+  ]
+}

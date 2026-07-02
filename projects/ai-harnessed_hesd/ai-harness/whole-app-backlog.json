@@ -59,8 +59,19 @@
           "kind": "drift",
           "reason": "Doc drift for AC-11 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-02T10:46:26Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-07 — reverify after TestGen",
+          "source": "harness"
         }
-      ]
+      ],
+      "testRequirements": {
+        "acceptanceTags": [
+          "FR-07"
+        ]
+      }
     },
     {
       "id": "infra-database-migrations",
@@ -269,11 +280,18 @@
           "kind": "drift",
           "reason": "Doc drift for AC-05 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-02T10:46:26Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-07 — reverify after TestGen",
+          "source": "harness"
         }
       ],
       "testRequirements": {
         "acceptanceTags": [
-          "AC-05"
+          "AC-05",
+          "FR-07"
         ]
       }
     },
@@ -729,12 +747,19 @@
           "kind": "drift",
           "reason": "Doc drift for AC-06 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-02T10:46:26Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-07 — reverify after TestGen",
+          "source": "harness"
         }
       ],
       "testRequirements": {
         "acceptanceTags": [
           "AC-02",
-          "AC-06"
+          "AC-06",
+          "FR-07"
         ]
       }
     },
