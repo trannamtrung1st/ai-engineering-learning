@@ -50,6 +50,12 @@ done
 require_gen_deps
 cd "$REPO_ROOT"
 
+if [[ "${GEN_SKIP_SELF_CHECK:-}" != "1" ]]; then
+  "${GEN_SCRIPTS_DIR}/self-check.sh"
+else
+  gen_warn "GEN_SKIP_SELF_CHECK=1 — skipping generator self-check"
+fi
+
 discover_docs
 
 if ! has_any_seed; then

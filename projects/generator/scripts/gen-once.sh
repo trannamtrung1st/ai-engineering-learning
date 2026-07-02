@@ -137,11 +137,32 @@ verify_status=${PIPESTATUS[0]}
 set -e
 
 if [[ "$verify_status" -ne 0 ]]; then
+  verify_feedback="$(
+    awk '
+      /ERROR:/ || /WARN:/ || /forbidden placeholder/ || /missing required/ || /missing output:/ || /verification failed/ {
+        print
+      }
+    ' "$verify_log" | tail -n 40
+  )"
+  if [[ -z "$verify_feedback" ]]; then
+    verify_feedback="$(tail -n 40 "$verify_log")"
+  fi
+
   if [[ "$kind" == "gate" ]]; then
     cp "$verify_log" "${GEN_STATE_DIR}/last-gate-failure.txt"
-    append_guardrail "$STEP_ID" "Gate verification failed — harness will attempt auto-repair on next loop iteration"
+    append_guardrail "$STEP_ID" "Gate verification failed — harness will attempt auto-repair on next loop iteration.
+
+Verifier feedback:
+${verify_feedback}
+
+Full log: ${verify_log}"
   else
-    append_guardrail "$STEP_ID" "Verification failed for step ${STEP_ID} — re-run gen:once after fixes"
+    append_guardrail "$STEP_ID" "Verification failed for step ${STEP_ID}.
+
+Use this verifier feedback to fix outputs in the next attempt:
+${verify_feedback}
+
+Full log: ${verify_log}"
   fi
   append_progress "$STEP_ID" "verify_failed"
   exit 1

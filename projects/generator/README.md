@@ -55,6 +55,7 @@ Run from `generator/`:
 | `npm run gen:loop` | Full autonomous loop until `GEN_COMPLETE` |
 | `npm run gen:once` | Single step |
 | `npm run gen:verify` | Check all steps passed |
+| `npm run gen:self-check` | Validate generator configs/scripts before loop |
 | `./scripts/generate.sh --apply --once` | Single step (shell) |
 
 The target repo's root `package.json` does **not** include generator scripts — only `aih:*` implementation harness commands.
@@ -69,6 +70,7 @@ The target repo's root `package.json` does **not** include generator scripts —
 | `GEN_INPUT_MODE=flexible` | Discover docs/, merge/enrich existing outputs (default) |
 | `GEN_INPUT_MODE=greenfield` | Strict scaffold overwrite (legacy behavior) |
 | `GEN_FORCE_DESIGN=1` | Overwrite existing `DESIGN.md` and design-system modules |
+| `GEN_SKIP_SELF_CHECK=1` | Skip generator startup self-check (debug only) |
 | `GEN_SKIP_AGENT=1` | Skip Cursor agent (testing) |
 | `GEN_SKIP_REVIEW=1` | Skip optional AI doc review |
 | `GEN_MODEL` | Override default model |

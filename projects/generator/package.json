@@ -9,6 +9,7 @@
   "scripts": {
     "gen:once": "./scripts/gen-once.sh",
     "gen:loop": "./scripts/generate.sh --apply",
-    "gen:verify": "./scripts/verify-step.sh --all-passed"
+    "gen:verify": "./scripts/verify-step.sh --all-passed",
+    "gen:self-check": "./scripts/self-check.sh"
   }
 }
