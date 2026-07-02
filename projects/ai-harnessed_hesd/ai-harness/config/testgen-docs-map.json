@@ -1,0 +1,55 @@
+{
+  "alwaysRead": [
+    "docs/brds/08-acceptance-mvp-future.md",
+    "docs/technical/11-testing-plan.md"
+  ],
+  "generationNotes": [
+    "TestGen emits integration, e2e (API), and browser (MCP checklist) layers only. Executable Playwright UI specs in tests/playwright-ui/scenarios/ are owned by the browser test agent codegen step — do not duplicate Playwright UI automation as layer:e2e cases in TestGen artifacts.",
+    "Harness planner regenerates rules[] from actual AC/FR/NFR tags in generated BRDs. coverageHints must reference routes and roles from product specs, not template literals."
+  ],
+  "rules": [
+    {
+      "match": "^AC-.*$",
+      "docs": [
+        "docs/brds/08-acceptance-mvp-future.md",
+        "docs/technical/05-api-design.md"
+      ],
+      "coverageHints": [
+        "integration: paginated list returns correct total, pageSize, and page-2 slice boundaries",
+        "pagination: invalid page/pageSize returns documented error code"
+      ]
+    },
+    {
+      "match": "^FR-.*$",
+      "docs": [
+        "docs/brds/03-functional-requirements.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/02-module-breakdown.md"
+      ]
+    },
+    {
+      "match": "^NFR-.*$",
+      "docs": [
+        "docs/brds/07-non-functional-risk.md",
+        "docs/technical/01-roles-permissions.md"
+      ],
+      "coverageHints": [
+        "rbac-negative: denied role cannot access privileged routes per 01-roles-permissions.md",
+        "browser-journey: primary user flow from 10-user-flows.md — navigate, act, verify visible state",
+        "http-contract: API endpoints referenced in flow return expected status codes"
+      ]
+    }
+  ],
+  "prefixDefaults": {
+    "FR": [
+      "docs/brds/03-functional-requirements.md",
+      "docs/technical/05-api-design.md"
+    ],
+    "BR": [
+      "docs/brds/04-business-rules.md",
+      "docs/technical/08-validation-rules.md",
+      "docs/technical/03-domain-model.md"
+    ],
+    "NFR": ["docs/brds/07-non-functional-risk.md"]
+  }
+}

@@ -452,7 +452,7 @@
     },
     {
       "id": "harness-scaffold",
-      "passes": false,
+      "passes": true,
       "priority": 40,
       "phase": 4,
       "kind": "scaffold",
