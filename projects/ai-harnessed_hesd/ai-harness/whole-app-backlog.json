@@ -698,7 +698,8 @@
       ],
       "testRequirements": {
         "acceptanceTags": [
-          "AC-25"
+          "AC-25",
+          "FR-26"
         ]
       },
       "history": [
@@ -706,6 +707,12 @@
           "at": "2026-07-02T10:36:11Z",
           "kind": "drift",
           "reason": "Doc drift for AC-25 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T11:25:58Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-26 — reverify after TestGen",
           "source": "harness"
         }
       ]
