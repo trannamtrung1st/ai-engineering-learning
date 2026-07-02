@@ -58,6 +58,24 @@
         "TC-FR-14-013"
       ],
       "updatedAt": "2026-07-02T19:05:40Z"
+    },
+    "web-lecturer-live-roster-fallback": {
+      "specPath": "/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/tests/playwright-ui/scenarios/web-lecturer-live-roster-fallback.spec.ts",
+      "lastRunId": "20260702T190853Z",
+      "testCount": 7,
+      "sourceTcIds": [
+        "TC-AC-13-011",
+        "TC-AC-14-010",
+        "TC-AC-25-011",
+        "TC-AC-25-012",
+        "TC-BR-14-009",
+        "TC-BR-14-010",
+        "TC-FR-19-012",
+        "TC-FR-19-013",
+        "TC-FR-19-014",
+        "TC-FR-20-015"
+      ],
+      "updatedAt": "2026-07-02T19:20:17Z"
     }
   }
 }

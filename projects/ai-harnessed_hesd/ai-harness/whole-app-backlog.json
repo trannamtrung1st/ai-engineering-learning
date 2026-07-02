@@ -912,9 +912,19 @@
       ],
       "description": "Deliver live roster with rejected-attempt visibility and in-context manual correction workflow for legitimate classroom exceptions.",
       "completionArtifacts": [
-        "Realtime roster table grouped by attendance states",
-        "Inline/manual correction action with reason capture",
-        "Window-expired and permission-denied UI treatments"
+        "apps/web/src/routes/router.tsx",
+        "apps/web/src/routes/StaffLayout.tsx",
+        "apps/web/src/routes/pages/LecturerRosterPage.tsx",
+        "apps/web/src/routes/pages/LecturerRosterPage.module.css",
+        "apps/web/src/components/domain/LiveRosterPanel.tsx",
+        "apps/web/src/components/domain/LiveRosterPanel.module.css",
+        "apps/web/src/components/domain/ManualCorrectionDialog.tsx",
+        "apps/web/src/components/domain/ManualCorrectionDialog.module.css",
+        "apps/web/src/components/domain/AttemptOutcomeCell.tsx",
+        "apps/web/src/components/domain/AttemptOutcomeCell.module.css",
+        "apps/web/src/lib/api/roster-api.ts",
+        "apps/web/src/lib/listing/roster-list-query.ts",
+        "apps/web/src/lib/i18n/attempt-outcomes.ts"
       ],
       "testRequirements": {
         "acceptanceTags": [
@@ -924,6 +934,20 @@
           "BR-14",
           "FR-19",
           "FR-20"
+        ],
+        "unit": [
+          "apps/web/src/lib/api/roster-api.test.ts",
+          "apps/web/src/lib/listing/roster-list-query.test.ts",
+          "apps/web/src/lib/i18n/attempt-outcomes.test.ts"
+        ],
+        "component": [
+          "apps/web/src/components/domain/LiveRosterPanel.test.tsx",
+          "apps/web/src/components/domain/ManualCorrectionDialog.test.tsx",
+          "apps/web/src/components/domain/AttemptOutcomeCell.test.tsx",
+          "apps/web/src/routes/pages/LecturerRosterPage.test.tsx"
+        ],
+        "playwright": [
+          "tests/playwright-ui/scenarios/web-lecturer-live-roster-fallback.spec.ts"
         ]
       }
     },
