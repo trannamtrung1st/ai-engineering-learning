@@ -1,0 +1,325 @@
+{
+  "productItemId": "FR-19",
+  "version": 1,
+  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+  "generatedAt": "2026-07-02T12:30:00Z",
+  "cases": [
+    {
+      "id": "TC-FR-19-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["FR-19", "FR-22", "FR-23", "AC-11", "AC-18", "BR-23"],
+      "title": "Testing-plan attempt/audit row: live roster reflects Present, Late, Pending, and rejected attempts during Open session",
+      "preconditions": [
+        "Testing-plan §3 Attempt/audit coverage block applies (FR-22, FR-29, BR-22, BR-23, AC-18).",
+        "Open class session exists with enrolled students and assigned Lecturer authenticated.",
+        "Fixtures include students for successful Present check-in, Late check-in, pending enrollment, and at least one failed attempt with structured reason code."
+      ],
+      "steps": [
+        "Call GET /v1/class-sessions/{sessionId}/attendance as assigned Lecturer and capture baseline counts and rows.",
+        "Submit POST /v1/check-ins as enrolled student A within present window; poll or re-fetch attendance roster.",
+        "Submit POST /v1/check-ins as enrolled student B after present window but before close; re-fetch roster.",
+        "Submit POST /v1/check-ins as non-enrolled or duplicate student to produce a rejected attempt with reason code; re-fetch roster.",
+        "Assert data.counts.present, data.counts.late, data.counts.pending, and data.counts.rejectedAttempts align with row-level attendanceStatus and latestAttemptOutcome fields."
+      ],
+      "expected": "Scenario-matrix maps to testing-plan Attempt/audit coverage: during Open session the live roster exposes checked-in students as Present or Late, unresolved enrollments as Pending, and failed attempts with structured reason per AC-18; counts and rows stay consistent without full page reload semantics at API layer.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-19-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-19"],
+      "title": "M09 Realtime Delivery publishes roster updates from M04 check-in and M05 attendance ledger with DB coherence",
+      "preconditions": [
+        "Integration harness uses real DB transaction boundaries for attendance_records, check_in_attempts, and enrollments tables.",
+        "Open session exists with known sessionId and enrolled student roster.",
+        "M04 submitCheckIn and M05 applyAttendanceOutcome emit events consumed by M09 realtime delivery path."
+      ],
+      "steps": [
+        "Query baseline roster via M05/M09 read path for the Open session; record pending count.",
+        "Invoke M04 submitCheckIn for enrolled student with valid token yielding Success outcome.",
+        "Assert AttendanceRecord row persisted as Present or Late and CheckInAttempt row has outcome Success.",
+        "Invoke M09 roster projection read and assert student row attendanceStatus updated and counts.present or counts.late incremented.",
+        "Submit a second check-in attempt for same student producing DuplicateCheckIn; assert M09 projection increments rejectedAttempts and row latestAttemptOutcome reflects rejection without mutating success status."
+      ],
+      "expected": "M09 module integration with M04/M05 boundaries delivers coherent live roster snapshot: successful check-in mutates ledger and projection counts; rejected duplicate attempt surfaces in rejectedAttempts without corrupting the original Present/Late record.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-19-003",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-19"],
+      "title": "GET /v1/class-sessions/{sessionId}/attendance returns 200 live roster envelope with counts and row shape",
+      "preconditions": [
+        "Assigned Lecturer is authenticated with Authorization bearer token.",
+        "Open session with mixed Present, Late, Pending, and rejected-attempt students exists."
+      ],
+      "steps": [
+        "Send GET /v1/class-sessions/{sessionId}/attendance with Authorization header.",
+        "Validate HTTP 200 and JSON envelope shape {data, meta, error} with error null.",
+        "Assert data contains classSessionId matching path param, state Open, counts object with present, late, pending, and rejectedAttempts integer keys.",
+        "Assert each row in data.rows includes studentUserId, studentCode, displayName, attendanceStatus, checkInMethod when applicable, checkInAt when checked in, and latestAttemptOutcome.",
+        "Assert meta includes requestId and timestamp fields per API design §2.3."
+      ],
+      "expected": "Endpoint returns HTTP 200 with stable envelope schema per API design §4.5; data.state is Open and counts/rows payload matches FR-19 live roster contract for lecturer dashboard consumption.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-19-004",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-19", "FR-04", "FR-17"],
+      "title": "POST /v1/enrollments/import row-level acceptance feeds Pending rows on live roster payload",
+      "preconditions": [
+        "AcademicAdmin is authenticated.",
+        "classSectionId exists with a session in Open state and assigned Lecturer available for roster read.",
+        "Import payload includes valid student rows and at least one row with StudentNotFound or equivalent rejection."
+      ],
+      "steps": [
+        "Send POST /v1/enrollments/import with mixed valid and invalid rows for the target classSectionId.",
+        "Assert HTTP 200 with data.acceptedRows count and data.rejectedRows array containing rowNumber, code, and message for invalid rows.",
+        "Call GET /v1/class-sessions/{sessionId}/attendance as assigned Lecturer.",
+        "Assert HTTP 200 roster envelope and verify each accepted import student appears in data.rows with attendanceStatus Pending.",
+        "Assert rejected import rows do not appear in roster and counts.pending reflects only accepted enrollments without successful check-in."
+      ],
+      "expected": "Enrollment import returns HTTP 200 with row-level rejection assertions per FR-04; accepted students surface as Pending rows on FR-19 live roster payload; rejected import rows are excluded from roster counts.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-19-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-19", "FR-15", "FR-36"],
+      "title": "Lecturer authenticates via login then fetches live roster for assigned Open session",
+      "preconditions": [
+        "Lecturer credentials exist for POST /v1/auth/login.",
+        "An Open session exists in a section assigned to that Lecturer with enrolled students."
+      ],
+      "steps": [
+        "Send POST /v1/auth/login with Lecturer credentials and capture accessToken from HTTP 200 envelope.",
+        "Send GET /v1/me with bearer token and assert Lecturer identity and assigned section scope.",
+        "Send GET /v1/class-sessions/{sessionId}/attendance with bearer token.",
+        "Assert HTTP 200 with data.state Open, counts object present, and data.rows array for enrolled students."
+      ],
+      "expected": "Login returns HTTP 200 with accessToken; GET /v1/me confirms Lecturer scope; subsequent GET attendance succeeds with FR-19 live roster payload for the assigned Open session only.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-19-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["FR-19", "FR-07", "FR-23", "AC-01", "AC-11"],
+      "title": "Primary FLOW-06 lifecycle: open session enables live roster that updates as students check in",
+      "preconditions": [
+        "Lecturer account and Scheduled session fixture with enrolled students are available.",
+        "Student accounts exist for at least two enrolled students with valid credentials."
+      ],
+      "steps": [
+        "Call POST /v1/class-sessions/{sessionId}/open as assigned Lecturer and assert session state Open.",
+        "Call GET /v1/class-sessions/{sessionId}/attendance and record baseline pending count equal to enrollment size.",
+        "Student A completes POST /v1/check-ins with valid QR within present window.",
+        "Re-fetch GET /v1/class-sessions/{sessionId}/attendance without closing the session.",
+        "Assert student A row shows attendanceStatus Present with checkInMethod QR and counts.present incremented; pending decremented.",
+        "Student B checks in during late window; re-fetch roster and assert Late status reflected in row and counts.late."
+      ],
+      "expected": "WF-01 open followed by FLOW-06 monitor live roster: dashboard payload transitions students from Pending to Present or Late as check-ins succeed; summary counts stay synchronized with row state during Open session.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-19-007",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P0",
+      "traceability": ["FR-19", "FR-22", "AC-18"],
+      "title": "Alternate flow: rejected check-in attempts appear on live roster with reason before retry succeeds",
+      "preconditions": [
+        "Open session with enrolled student exists.",
+        "Student is authenticated.",
+        "Expired or invalid QR token and fresh valid token fixtures are available."
+      ],
+      "steps": [
+        "Student submits POST /v1/check-ins with expired qrToken.",
+        "Lecturer calls GET /v1/class-sessions/{sessionId}/attendance and locates student row.",
+        "Assert latestAttemptOutcome reflects ExpiredQr (or equivalent) and counts.rejectedAttempts incremented; attendanceStatus remains Pending.",
+        "Student rescans and submits POST /v1/check-ins with current valid token.",
+        "Re-fetch roster and assert student transitions to Present or Late with latestAttemptOutcome Success and rejectedAttempts count unchanged or adjusted per single-student semantics."
+      ],
+      "expected": "FLOW-06 alternate branch: failed attempt surfaces on roster with structured rejection reason per AC-UI-05; subsequent successful check-in updates row to Present/Late without full page reload at API refresh layer.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-19-008",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["FR-19", "FR-08", "FR-09", "BR-02", "BR-13"],
+      "title": "Live roster payload reflects session state transition Open to Closed with finalized Absent rows",
+      "preconditions": [
+        "Open session fixture with mix of Present/Late and Pending students exists in integration database.",
+        "Assigned Lecturer auth context is available."
+      ],
+      "steps": [
+        "Record beforeState: GET roster for Open session with data.state Open and pending count > 0.",
+        "Invoke M03 closeSession(sessionId, actor) or POST /v1/class-sessions/{sessionId}/close.",
+        "Record afterState: GET roster for same sessionId.",
+        "Assert data.state is Closed.",
+        "Assert previously Pending students now show attendanceStatus Absent per FR-09 finalization.",
+        "Assert Present and Late rows are preserved unchanged."
+      ],
+      "expected": "beforeState Open exposes live updating roster; after Open to Closed transition roster reflects Closed state and FR-09 absent finalization on pending students while preserving resolved Present/Late records.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-19-009",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-19", "BR-19"],
+      "title": "Student, ITAdmin, and out-of-scope Lecturer denied live roster endpoint",
+      "preconditions": [
+        "Student, ITAdmin, and Lecturer-not-assigned-to-section test accounts exist with valid tokens.",
+        "An Open session exists in a section the out-of-scope Lecturer is not assigned to.",
+        "Assigned Lecturer token is available as positive control."
+      ],
+      "steps": [
+        "Call GET /v1/class-sessions/{sessionId}/attendance as Student.",
+        "Call GET /v1/class-sessions/{sessionId}/attendance as ITAdmin.",
+        "Call GET /v1/class-sessions/{sessionId}/attendance as out-of-scope Lecturer.",
+        "Read HTTP status and error.code for each denied request (expect 403 Forbidden or OutOfScope).",
+        "Call GET /v1/class-sessions/{sessionId}/attendance as assigned Lecturer and assert HTTP 200 with roster payload.",
+        "Call GET /v1/class-sessions/{sessionId}/attendance as SystemAuditor and assert read-only scoped access per permission matrix §3.1."
+      ],
+      "expected": "Unauthorized roles cannot retrieve live session roster per View live session roster matrix; assigned Lecturer, AcademicAdmin, and scoped SystemAuditor may read roster; no cross-scope row leakage to denied actors.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-19-010",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-19", "BR-01", "BR-02"],
+      "title": "Live roster access for non-Open session returns appropriate state or denial without stale Open counts",
+      "preconditions": [
+        "Assigned Lecturer is authenticated.",
+        "Session fixtures exist in Scheduled and Closed states with enrollment data."
+      ],
+      "steps": [
+        "Call GET /v1/class-sessions/{scheduledSessionId}/attendance for a Scheduled session.",
+        "Record HTTP status and whether data.state is Scheduled with no live check-in counts implying active window.",
+        "Open and close a separate session; call GET /v1/class-sessions/{closedSessionId}/attendance.",
+        "Assert data.state is Closed with finalized roster rows; counts do not imply an active Open attendance window.",
+        "Verify non-existent sessionId returns 404 SessionNotFound without partial roster data."
+      ],
+      "expected": "FR-19 live dashboard semantics apply during Open session; Scheduled and Closed targets return roster payload with correct session state without exposing active live-window counts for non-Open sessions; missing session returns 404.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-19-011",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P1",
+      "traceability": ["FR-19", "FR-18", "BR-07"],
+      "title": "Concurrent student check-ins during Open session produce consistent roster counts",
+      "preconditions": [
+        "Open session exists with at least five enrolled students and valid QR token.",
+        "Integration harness can dispatch parallel POST /v1/check-ins from distinct enrolled students.",
+        "Assigned Lecturer auth context is established for roster reads."
+      ],
+      "steps": [
+        "Record baseline GET /v1/class-sessions/{sessionId}/attendance counts.",
+        "Fire parallel POST /v1/check-ins from five distinct enrolled students using the same valid token.",
+        "Await all responses and assert each distinct student receives Success outcome.",
+        "Immediately call GET /v1/class-sessions/{sessionId}/attendance.",
+        "Assert counts.present plus counts.late increased by five and counts.pending decreased by five with no duplicate success rows per student."
+      ],
+      "expected": "Concurrent successful check-ins during class-start burst converge on consistent roster counts and one success row per student per session; no lost updates or double-counting in live projection.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-19-012",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-19", "AC-UI-05"],
+      "title": "PG-06 LiveRosterPanel renders summary chips and table columns with realtime row updates",
+      "preconditions": [
+        "Lecturer is logged in on desktop Chromium.",
+        "An Open session is available on PG-06 with LiveRosterPanel (DC-06) mounted.",
+        "Enrolled students exist with at least one Pending row."
+      ],
+      "steps": [
+        "Navigate to /lecturer/sessions/{sessionId}/roster (PG-06) and observe LiveRosterPanel.",
+        "Verify summary chips display present, late, pending, and rejectedAttempts counts sourced from attendance API.",
+        "Verify table columns include student identity (code + name), AttendanceStatusCell badge, and latest attempt outcome.",
+        "Trigger a student check-in from a separate client without reloading the lecturer browser tab.",
+        "Observe row and summary chip update within realtime delivery window without full-page reload."
+      ],
+      "expected": "Browser journey satisfies FLOW-06 and AC-UI-05: LiveRosterPanel shows count summary chips and roster table; student check-in event updates row status and chips without full page reload per NFR-UI-06.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-19-013",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-19", "FR-22", "AC-18", "AC-UI-05"],
+      "title": "Rejected attempt row displays reason badge and tooltip on live roster",
+      "preconditions": [
+        "Lecturer is logged in on desktop Chromium at PG-06 for an Open session.",
+        "A enrolled student has a recent failed check-in attempt with reason code such as NotEnrolled, DuplicateCheckIn, or ExpiredQr."
+      ],
+      "steps": [
+        "Navigate to PG-06 live roster for the Open session.",
+        "Locate the student row with a rejected latestAttemptOutcome.",
+        "Verify AttendanceStatusCell shows Pending or unchanged success status while rejection is surfaced separately.",
+        "Hover or focus the rejection StatusBadge and confirm tooltip displays human-readable reason aligned with API error code.",
+        "Confirm rejectedAttempts summary chip count matches visible rejected rows."
+      ],
+      "expected": "PG-06 displays rejected attempts with reason badge and tooltip per DC-06 spec and AC-UI-05; lecturer can identify failure cause without leaving the live roster view.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-19-014",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-19", "FR-09", "FR-08"],
+      "title": "Closed session PG-06 shows finalized roster without live-update affordances",
+      "preconditions": [
+        "Lecturer is logged in on desktop Chromium.",
+        "A Closed session fixture exists with mixed Present, Late, and Absent rows from prior open/close cycle."
+      ],
+      "steps": [
+        "Navigate to /lecturer/sessions/{closedSessionId}/roster (PG-06).",
+        "Verify StatusBadge or session header shows Closed state.",
+        "Assert LiveRosterPanel displays finalized Absent rows for students without successful check-in.",
+        "Confirm no live-update spinner or websocket reconnect banner implies active Open-session polling.",
+        "Verify summary chips reflect finalized present, late, pending (zero), and absent counts."
+      ],
+      "expected": "PG-06 Closed state shows static finalized roster per FLOW-07 step 5; Absent rows visible after close processing; UI does not behave as an active live dashboard for non-Open sessions.",
+      "edgeCase": false
+    }
+  ]
+}
