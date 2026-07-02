@@ -740,7 +740,7 @@
     },
     {
       "id": "web-student-attendance-history",
-      "passes": false,
+      "passes": true,
       "priority": 19,
       "phase": 2,
       "agent": "frontend",

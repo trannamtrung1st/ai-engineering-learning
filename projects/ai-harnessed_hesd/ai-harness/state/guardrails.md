@@ -31,3 +31,5 @@ apps/web/vitest.config.ts
 tests/playwright-ui/scenarios/web-design-system-shell.spec.ts
 - [web-design-system-shell] Browser test failed — see 20260702T163452Z-browser-test.json
 - [web-student-check-in-flow] Browser test failed — see 20260702T172530Z-browser-test.json
+- [web-student-attendance-history] Browser test failed — see 20260702T175527Z-browser-test.json
+- [web-student-attendance-history] Listing status filter `<option>` labels must not duplicate AttendanceStatusCell badge copy — Playwright `getByText('Có mặt').first()` matches hidden `<option>` before visible badge when labels collide

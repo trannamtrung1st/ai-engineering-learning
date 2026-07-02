@@ -1,9 +1,11 @@
 import { Navigate, useRoutes } from "react-router-dom";
 import { StaffLayout } from "./StaffLayout";
 import { StudentLayout } from "./StudentLayout";
+import { StudentAttendanceReportGuard } from "./pages/AttendanceReportPage";
 import { DesignSystemPage } from "./pages/DesignSystemPage";
 import { LecturerSessionPage } from "./pages/LecturerSessionPage";
 import { LoginPage } from "./pages/LoginPage";
+import { StudentAttendanceHistoryPage } from "./pages/StudentAttendanceHistoryPage";
 import { StudentCheckInPage } from "./pages/StudentCheckInPage";
 
 export function AppRouter() {
@@ -15,11 +17,15 @@ export function AppRouter() {
       children: [
         { path: "login", element: <LoginPage /> },
         { path: "check-in", element: <StudentCheckInPage /> },
+        { path: "me/attendance", element: <StudentAttendanceHistoryPage /> },
       ],
     },
     {
       element: <StaffLayout />,
-      children: [{ path: "lecturer/sessions/:sessionId", element: <LecturerSessionPage /> }],
+      children: [
+        { path: "lecturer/sessions/:sessionId", element: <LecturerSessionPage /> },
+        { path: "reports/attendance", element: <StudentAttendanceReportGuard /> },
+      ],
     },
   ]);
 }

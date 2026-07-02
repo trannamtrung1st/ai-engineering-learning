@@ -75,6 +75,7 @@ export async function registerAuthRoutes(
 
       const classSectionIds = [
         ...(await deps.repository.getLecturerClassSectionIds(request.actor.userId)),
+        ...(await deps.repository.getStudentEnrolledSectionIds(request.actor.userId)),
         ...request.actor.assignments
           .filter((a) => a.scopeType === "ClassSection" && a.scopeId)
           .map((a) => a.scopeId as string),

@@ -89,9 +89,14 @@ export async function registerReportingRoutes(
       );
       if (!scope) return;
 
+      const queryFilters = {
+        ...parsed.filters,
+        ...(scope.studentUserId ? { studentUserId: scope.studentUserId } : {}),
+      };
+
       const result = await repository.queryAttendanceReport({
         scope,
-        filters: parsed.filters,
+        filters: queryFilters,
         sortBy: parsed.sortBy,
         sortOrder: parsed.sortOrder,
         page: parsed.page,

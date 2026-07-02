@@ -141,6 +141,18 @@ export function createIdentityRepository(pool: pg.Pool) {
       return result.rows.map((r) => r.scope_id);
     },
 
+    async getStudentEnrolledSectionIds(userId: string): Promise<string[]> {
+      const result = await pool.query<{ class_section_id: string }>(
+        `
+        SELECT class_section_id
+        FROM enrollments
+        WHERE student_user_id = $1 AND status = 'Active'
+        `,
+        [userId],
+      );
+      return result.rows.map((r) => r.class_section_id);
+    },
+
   };
 }
 

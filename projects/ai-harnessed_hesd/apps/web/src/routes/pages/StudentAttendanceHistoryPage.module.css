@@ -1,0 +1,12 @@
+.content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.loading {
+  min-height: 120px;
+  border: var(--border-default);
+  box-shadow: var(--shadow-xs);
+  background: var(--color-neutral-secondary);
+}

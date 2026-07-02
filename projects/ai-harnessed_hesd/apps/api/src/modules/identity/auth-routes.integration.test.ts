@@ -1,6 +1,6 @@
 /**
- * Traceability: FR-15 FR-31 FR-32 BR-19 BR-22 NFR-09 AC-15 AC-19
- * TC-FR-15-003 TC-FR-15-004 TC-BR-19-004 TC-BR-19-005 TC-BR-19-009 TC-NFR-09-004 TC-NFR-09-005 TC-NFR-09-006 TC-NFR-09-012
+ * Traceability: FR-15 FR-31 FR-32 FR-37 BR-19 BR-22 NFR-09 AC-15 AC-19 PRM-03
+ * TC-FR-15-003 TC-FR-15-004 TC-FR-37-001 TC-FR-37-005 TC-FR-37-009 TC-BR-19-005 TC-BR-19-009 TC-NFR-09-004 TC-NFR-09-005 TC-NFR-09-006 TC-NFR-09-012
  * TC-FR-32-005 TC-FR-32-007 TC-FR-32-009
  */
 import { randomUUID } from "node:crypto";
@@ -102,15 +102,33 @@ describe("auth HTTP routes — FR-15 FR-31 FR-32 BR-19 NFR-09", () => {
     expect(body.error.code).toBe("Forbidden");
   });
 
-  it("TC-BR-19-004: student denied GET /reports/attendance without data leakage", async () => {
+  it("TC-FR-37-005 TC-FR-37-001 PRM-03: student GET /reports/attendance returns self-scoped envelope", async () => {
     const token = await login(app, "student1@attendly.local");
     const response = await app.inject({
       method: "GET",
       url: "/api/v1/reports/attendance?termId=20000000-0000-4000-8000-000000000001&page=1&pageSize=25",
       headers: { authorization: `Bearer ${token}` },
     });
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as {
+      data: unknown[] | null;
+      error: null;
+      meta: { pagination?: { page: number; pageSize: number; totalItems: number } };
+    };
+    expect(body.error).toBeNull();
+    expect(Array.isArray(body.data)).toBe(true);
+    expect(body.meta.pagination?.page).toBe(1);
+  });
+
+  it("TC-FR-37-009 PRM-03: student denied when querying another student via studentUserId override", async () => {
+    const token = await login(app, "student1@attendly.local");
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/v1/reports/attendance?termId=20000000-0000-4000-8000-000000000001&studentUserId=60000000-0000-4000-8000-000000000003&page=1&pageSize=25",
+      headers: { authorization: `Bearer ${token}` },
+    });
     expect(response.statusCode).toBe(403);
-    const body = response.json() as { data: null; error: { code: string }; meta: unknown };
+    const body = response.json() as { data: null; error: { code: string } };
     expect(body.data).toBeNull();
     expect(["Forbidden", "OutOfScope"]).toContain(body.error.code);
   });

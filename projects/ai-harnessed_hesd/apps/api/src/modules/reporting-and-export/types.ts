@@ -41,4 +41,6 @@ export interface ExportJobResult {
 
 export interface ResolvedReportScope {
   classSectionIds: string[] | null;
+  /** FR-37: mandatory self-filter for student personal history */
+  studentUserId?: string;
 }

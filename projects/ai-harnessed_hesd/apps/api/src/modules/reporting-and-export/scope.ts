@@ -8,6 +8,10 @@ export type ScopeAccessResult =
   | { allowed: true; scope: ResolvedReportScope }
   | { allowed: false; code: "Forbidden" | "OutOfScope" };
 
+function isStudentOnlyActor(actor: ActorContext): boolean {
+  return actor.roles.length === 1 && actor.roles[0] === "Student";
+}
+
 function actorDeniedForResource(actor: ActorContext, resource: "ReportView" | "ExportJob"): boolean {
   const action = resource === "ReportView" ? "read" : "execute";
   const capable = actor.assignments.some((assignment) => {
@@ -28,6 +32,39 @@ function actorDeniedForResource(actor: ActorContext, resource: "ReportView" | "E
     });
 
   return onlyStudent;
+}
+
+async function resolveStudentReportScope(
+  actor: ActorContext,
+  repository: IdentityRepository,
+  filters: AttendanceReportFilters,
+): Promise<ScopeAccessResult> {
+  if (filters.studentUserId && filters.studentUserId !== actor.userId) {
+    return { allowed: false, code: "Forbidden" };
+  }
+
+  const enrolledSections = await repository.getStudentEnrolledSectionIds(actor.userId);
+
+  if (filters.classSectionId) {
+    if (!enrolledSections.includes(filters.classSectionId)) {
+      return { allowed: false, code: "OutOfScope" };
+    }
+    return {
+      allowed: true,
+      scope: {
+        classSectionIds: [filters.classSectionId],
+        studentUserId: actor.userId,
+      },
+    };
+  }
+
+  return {
+    allowed: true,
+    scope: {
+      classSectionIds: enrolledSections,
+      studentUserId: actor.userId,
+    },
+  };
 }
 
 async function collectScopedSectionIds(
@@ -66,6 +103,10 @@ export async function resolveReportExportScope(
   filters: AttendanceReportFilters,
   resource: "ReportView" | "ExportJob",
 ): Promise<ScopeAccessResult> {
+  if (resource === "ReportView" && isStudentOnlyActor(actor)) {
+    return resolveStudentReportScope(actor, repository, filters);
+  }
+
   if (actorDeniedForResource(actor, resource)) {
     return { allowed: false, code: "Forbidden" };
   }
