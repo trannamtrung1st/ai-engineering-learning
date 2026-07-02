@@ -552,7 +552,8 @@
       "testRequirements": {
         "acceptanceTags": [
           "AC-15",
-          "AC-17"
+          "AC-17",
+          "FR-27"
         ]
       },
       "history": [
@@ -572,6 +573,12 @@
           "at": "2026-07-02T10:14:49Z",
           "kind": "drift",
           "reason": "Doc drift for AC-17 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T11:28:45Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-27 — reverify after TestGen",
           "source": "harness"
         }
       ]
@@ -1127,7 +1134,8 @@
       "testRequirements": {
         "acceptanceTags": [
           "AC-15",
-          "AC-17"
+          "AC-17",
+          "FR-27"
         ]
       },
       "history": [
@@ -1147,6 +1155,12 @@
           "at": "2026-07-02T10:14:49Z",
           "kind": "drift",
           "reason": "Doc drift for AC-17 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T11:28:45Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-27 — reverify after TestGen",
           "source": "harness"
         }
       ]
