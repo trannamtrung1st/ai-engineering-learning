@@ -20,6 +20,38 @@ jobs:
       - run: npm run build
       - run: npm run test:unit
 
+  integration-critical:
+    runs-on: ubuntu-latest
+    needs: quality
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: attendly
+          POSTGRES_PASSWORD: attendly
+          POSTGRES_DB: attendly_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U attendly -d attendly_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://attendly:attendly@localhost:5433/attendly_test
+      TEST_DATABASE_URL: postgresql://attendly:attendly@localhost:5433/attendly_test
+      JWT_SECRET: ci-test-jwt-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - run: npm run db:migrate
+      - run: npm run db:seed
+      - run: npm run test:integration:critical
+
   playwright-ui-smoke:
     runs-on: ubuntu-latest
     needs: quality

@@ -1251,7 +1251,7 @@
     },
     {
       "id": "test-backend-integration-critical-path",
-      "passes": false,
+      "passes": true,
       "priority": 26,
       "phase": 3,
       "agent": "test",

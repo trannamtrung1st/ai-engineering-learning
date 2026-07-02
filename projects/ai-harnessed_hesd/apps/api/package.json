@@ -13,7 +13,8 @@
     "typecheck": "npm run build -w @attendly/domain && tsc -p tsconfig.json --noEmit",
     "lint": "eslint src",
     "test:unit": "npm run build -w @attendly/domain && vitest run --config vitest.unit.config.ts",
-    "test:integration": "npm run build -w @attendly/domain && vitest run --config vitest.integration.config.ts"
+    "test:integration": "npm run build -w @attendly/domain && vitest run --config vitest.integration.config.ts",
+    "test:integration:critical": "npm run build -w @attendly/domain && vitest run --config vitest.integration.config.ts src/integration/critical-path.integration.test.ts"
   },
   "dependencies": {
     "@attendly/domain": "*",
