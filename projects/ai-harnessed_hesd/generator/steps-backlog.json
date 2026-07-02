@@ -326,7 +326,7 @@
     },
     {
       "id": "uiux-design-md",
-      "passes": false,
+      "passes": true,
       "priority": 29,
       "phase": 3,
       "kind": "agent",
