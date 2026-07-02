@@ -25,7 +25,7 @@
     },
     {
       "id": "brd-mvp-prompt",
-      "passes": false,
+      "passes": true,
       "priority": 10,
       "phase": 1,
       "kind": "agent",
