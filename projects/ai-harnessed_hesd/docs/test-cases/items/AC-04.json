@@ -1,0 +1,167 @@
+{
+  "productItemId": "AC-04",
+  "version": 1,
+  "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+  "generatedAt": "2026-07-02T09:44:10Z",
+  "cases": [
+    {
+      "id": "TC-AC-04-001",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["AC-04", "FR-13", "BR-03", "BR-04", "BR-23"],
+      "title": "Scenario-matrix row for QR token behavior rejects expired token",
+      "preconditions": [
+        "Student account is authenticated and enrolled in class section",
+        "Class session is Open and has rotating QR token with 30-second TTL"
+      ],
+      "steps": [
+        "Generate a valid token for the open session and advance test clock beyond token expiresAt",
+        "Submit POST /v1/check-ins with expired qrToken and idempotency key",
+        "Read persisted CheckInAttempt for the request correlation id"
+      ],
+      "expected": "Attempt is rejected and persisted with structured outcome code ExpiredQr under AC-04 coverage row.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-04-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["AC-04", "FR-13", "FR-22", "BR-03", "BR-04", "BR-23"],
+      "title": "Check-in transaction writes failed attempt for expired or wrong-session token",
+      "preconditions": [
+        "Database has one Open session A and one Open session B with distinct token bindings",
+        "Student is enrolled only in session A section",
+        "Request correlation and idempotency metadata are enabled"
+      ],
+      "steps": [
+        "Submit check-in with token bound to session B while student targets session A flow",
+        "Submit check-in with an expired token bound to session A",
+        "Query CheckInAttempt table and AttendanceRecord table in the same transaction boundary"
+      ],
+      "expected": "Each invalid request creates one failed CheckInAttempt with reason code (ExpiredQr or invalid-session equivalent) and creates no successful AttendanceRecord.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-04-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P1",
+      "traceability": ["AC-04", "AC-01", "AC-05", "FR-07", "FR-08", "BR-01", "BR-02"],
+      "title": "Lecturer open-close lifecycle gates token validity window",
+      "preconditions": [
+        "Lecturer is assigned to the class section",
+        "Session starts in Scheduled state"
+      ],
+      "steps": [
+        "Call POST /v1/class-sessions/{sessionId}/open as Lecturer and capture issued token metadata",
+        "Call POST /v1/class-sessions/{sessionId}/close as Lecturer",
+        "Attempt POST /v1/check-ins using the previously issued token after close"
+      ],
+      "expected": "Session transitions Scheduled->Open->Closed are accepted, and post-close check-in using stale token is rejected with structured failure without new success record.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-04-004",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P1",
+      "traceability": ["AC-04", "AC-08", "FR-18", "BR-07"],
+      "title": "Parallel duplicate submissions preserve single success invariant",
+      "preconditions": [
+        "Student has one valid token for an Open session",
+        "No existing successful attendance record exists for this student-session pair"
+      ],
+      "steps": [
+        "Send two concurrent POST /v1/check-ins requests for same student and same token with different idempotency keys",
+        "Collect both API outcomes and inspect persisted attendance records"
+      ],
+      "expected": "At most one request succeeds and any duplicate path returns DuplicateCheckIn conflict, preserving one success per student-session.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-04-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["AC-04", "FR-13", "FR-22", "BR-03", "BR-23"],
+      "title": "POST /v1/check-ins returns 422 envelope with ExpiredQr for expired token",
+      "preconditions": [
+        "Student is authenticated and enrolled",
+        "Open session exists with token that can be expired deterministically"
+      ],
+      "steps": [
+        "Let issued QR token exceed 30-second TTL",
+        "Call POST /v1/check-ins with expired qrToken and required headers",
+        "Validate HTTP status, envelope shape (data/meta/error), and error.code"
+      ],
+      "expected": "API returns 422 with error.code ExpiredQr and no restricted or inconsistent payload leakage.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-04-006",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["AC-04", "FR-13", "BR-04", "BR-23"],
+      "title": "Wrong-session token is rejected with invalid-session equivalent reason",
+      "preconditions": [
+        "Two active sessions exist in different sections with distinct QR tokens",
+        "Student is authenticated in a check-in flow for session A"
+      ],
+      "steps": [
+        "Submit POST /v1/check-ins using session B token while attempting session A attendance",
+        "Read response error payload and check-in attempt record from audit trail"
+      ],
+      "expected": "Request is rejected with structured invalid-session reason and logged as failed attempt; no successful attendance mutation is created.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-04-007",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P1",
+      "traceability": ["AC-04", "AC-16", "FR-27", "FR-28", "BR-19"],
+      "title": "Out-of-scope roles are denied report and export APIs without data leakage",
+      "preconditions": [
+        "Student and ITAdmin identities are available without explicit academic export grants",
+        "Attendance data exists in multiple sections"
+      ],
+      "steps": [
+        "Call GET /v1/reports/attendance as Student for non-self scope",
+        "Call POST /v1/exports/attendance as Student and ITAdmin for academic dataset",
+        "Verify status and body contain denial code and no partial restricted data"
+      ],
+      "expected": "Unauthorized role/scope calls are denied (403 Forbidden/OutOfScope) and return no cross-scope report or export content.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-04-008",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["AC-04", "FR-13", "FR-22", "BR-03", "BR-23"],
+      "title": "Student browser flow shows expired-token error and allows retry path",
+      "preconditions": [
+        "Student is logged in on mobile-web browser",
+        "Lecturer opened session and QR is displayed with rotating TTL"
+      ],
+      "steps": [
+        "Student scans token after TTL expiry and submits check-in form",
+        "Observe inline error reason displayed for expired token",
+        "Student rescans fresh QR token and re-submits"
+      ],
+      "expected": "UI surfaces structured expired-token failure feedback for first attempt and permits retry with fresh token without breaking session flow.",
+      "edgeCase": false
+    }
+  ]
+}
