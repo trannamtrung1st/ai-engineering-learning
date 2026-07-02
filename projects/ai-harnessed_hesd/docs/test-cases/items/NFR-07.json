@@ -1,0 +1,229 @@
+{
+  "productItemId": "NFR-07",
+  "version": 1,
+  "docFingerprint": "sha256:0091ebfac485b5b90c7a94c982196a35adddc3e7535aba555ed532f8d1599fd9",
+  "generatedAt": "2026-07-02T16:00:00Z",
+  "cases": [
+    {
+      "id": "TC-NFR-07-001",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["NFR-07", "AC-08", "FR-18", "BR-07"],
+      "title": "Testing-plan §11 NFR-07 verification row — one success per student/session under retries",
+      "preconditions": [
+        "Testing-plan §7.2 reliability tests and §11 NFR verification matrix row for NFR-07 apply.",
+        "Representative fixture: open class sessions with enrolled students, valid rotating QR tokens, and satisfied authentication and policy preconditions.",
+        "Test harness can submit retries (same Idempotency-Key replays and distinct-key duplicate attempts) and count AttendanceRecord rows per (studentUserId, classSessionId)."
+      ],
+      "steps": [
+        "For each enrolled student in the pilot cohort, execute an initial successful POST /v1/check-ins.",
+        "Replay each success with identical Idempotency-Key, actor, and qrToken per testing-plan §7.2 retry-storm profile.",
+        "Submit additional duplicate attempts with new Idempotency-Key values and fresh valid qrTokens for the same student-session pairs.",
+        "Query attendance_records and aggregate row counts per (studentUserId, classSessionId) across all retry and duplicate paths."
+      ],
+      "expected": "At most one successful AttendanceRecord exists per (studentUserId, classSessionId) after all retries and duplicate submissions; idempotent replays return prior success without a second ledger row; new-key duplicates return DuplicateCheckIn conflict, satisfying NFR-07 and linked AC-08 per testing-plan §11 minimum evidence.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-07-002",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-07", "FR-18", "BR-07", "BR-23"],
+      "title": "Attendance ledger DB unique key enforces one success record per student-session pair",
+      "preconditions": [
+        "Integration harness uses real DB transaction boundaries for attendance_records and check_in_attempts tables.",
+        "Domain model DI-04 unique constraint on (class_session_id, student_user_id) is active.",
+        "Open session with valid QR token exists; authenticated enrolled student has no prior success for the session."
+      ],
+      "steps": [
+        "Submit POST /v1/check-ins with valid qrToken, clientTimestamp, Idempotency-Key K1, and student bearer token; verify Success and persisted AttendanceRecord.",
+        "Submit duplicate POST /v1/check-ins with new Idempotency-Key K2 and fresh valid qrToken for the same student-session.",
+        "Query attendance_records filtered by (classSessionId, studentUserId) and verify row count and field immutability.",
+        "Inspect check_in_attempts for both submissions including failed duplicate outcome."
+      ],
+      "expected": "Exactly one AttendanceRecord row persists for the student-session pair; duplicate command persists a failed CheckInAttempt with DuplicateCheckIn without mutating the original success row; DB unique key and service-layer guard both enforce NFR-07 one-success invariant.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-07-003",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P0",
+      "traceability": ["NFR-07", "NFR-04", "FR-18", "BR-07"],
+      "title": "Retry storm with same Idempotency-Key after success does not create duplicate attendance rows",
+      "preconditions": [
+        "Student has completed one successful POST /v1/check-ins for an Open session with Idempotency-Key K1.",
+        "Idempotency store retains the accepted command for (K1, actor, token) within replay window per API design §7.1.",
+        "Test harness can fire 10+ parallel replay requests with identical K1, bearer token, and qrToken."
+      ],
+      "steps": [
+        "Fire parallel POST /v1/check-ins replays with identical Idempotency-Key K1, same actor bearer token, and same qrToken as the accepted success.",
+        "Collect all HTTP responses and inspect data.outcome and error.code.",
+        "Query attendance_records for (student, session) and count rows; query check_in_attempts for new rows attributable to replays."
+      ],
+      "expected": "All idempotent replays return HTTP 200 with prior success summary; no additional AttendanceRecord rows are created; retry storm under unstable network conditions preserves exactly one success per student/session per NFR-07 and testing-plan §7.2.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-07-004",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P0",
+      "traceability": ["NFR-07", "NFR-01", "NFR-03", "NFR-04", "FR-18", "BR-07"],
+      "title": "Class-start concurrent burst preserves one success per student/session across parallel first attempts and post-success duplicates",
+      "preconditions": [
+        "Multiple open class sessions each have 20+ enrolled students per representative pilot profile.",
+        "Test harness can fire parallel POST /v1/check-ins across sessions with distinct students, valid QR tokens, and unique Idempotency-Key values (performance-smoke profile).",
+        "After burst first-attempt phase completes, harness submits duplicate attempts with new keys for students who succeeded."
+      ],
+      "steps": [
+        "Trigger simultaneous first-attempt POST /v1/check-ins for distinct enrolled students across concurrent open sessions mimicking class-start burst.",
+        "Verify each (studentUserId, classSessionId) pair has at most one Success AttendanceRecord after the burst settles.",
+        "For a sample of students with success, fire concurrent duplicate POST /v1/check-ins with distinct Idempotency-Key values and fresh valid qrTokens.",
+        "Aggregate attendance_records row counts per student-session across the full burst and duplicate phase."
+      ],
+      "expected": "Under class-start concurrency, exactly one successful AttendanceRecord exists per (studentUserId, classSessionId); concurrent post-success duplicates all return DuplicateCheckIn without extra success rows; idempotency invariant holds at peak load per NFR-07, NFR-04, and testing-plan §5.2 data integrity checks.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-07-005",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["NFR-07", "NFR-06", "AC-05", "FR-08", "BR-02", "BR-07"],
+      "title": "In-flight check-in and session close overlap preserves one success and idempotent close semantics",
+      "preconditions": [
+        "Open class session exists with enrolled student who has no prior success.",
+        "Lecturer bearer token is available for POST /v1/class-sessions/{sessionId}/close.",
+        "Test harness can submit overlapping POST /v1/check-ins and close command with distinct Idempotency-Key values."
+      ],
+      "steps": [
+        "Submit POST /v1/check-ins from enrolled student with valid token while close command is in flight or immediately before close.",
+        "POST /v1/class-sessions/{sessionId}/close; verify session state Closed.",
+        "Replay close command with same Idempotency-Key; verify idempotent closed response per state machine SMI-02.",
+        "Query AttendanceRecord count for the student-session pair and attempt post-close duplicate check-in."
+      ],
+      "expected": "At most one successful AttendanceRecord exists for the student-session pair; close replay returns idempotent closed metadata without double finalization; post-close check-in returns SessionClosed not a second success; NFR-07 one-success invariant holds through session lifecycle overlap per testing-plan §7.2 and state machines §3.3.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-07-006",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-07", "FR-18", "FR-22", "BR-07", "BR-23"],
+      "title": "POST /v1/check-ins idempotent replay returns HTTP 200; new-key duplicate returns HTTP 409 DuplicateCheckIn",
+      "preconditions": [
+        "Open class session with valid qrToken exists in test environment.",
+        "Authenticated enrolled student bearer token has no prior success for the session.",
+        "E2E harness records HTTP status, envelope shape (data/meta/error), and persisted row counts."
+      ],
+      "steps": [
+        "Call POST /v1/check-ins with Authorization Bearer token, valid qrToken, clientTimestamp, and Idempotency-Key K1; verify HTTP 200, data.outcome Success, and data.attendanceStatus Present or Late.",
+        "Replay POST /v1/check-ins with identical K1, same actor, and same qrToken; inspect HTTP status and response body.",
+        "Call POST /v1/check-ins with new Idempotency-Key K2 and fresh valid qrToken for the same student-session.",
+        "Verify AttendanceRecord row count for (student, session) remains exactly one."
+      ],
+      "expected": "Idempotency replay of K1 returns HTTP 200 with prior success summary without second AttendanceRecord; new-key duplicate returns HTTP 409 with error.code DuplicateCheckIn and data null; API contract enforces NFR-07 one-success-per-session invariant per API design §5.1 and §7.1.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-07-007",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P0",
+      "traceability": ["NFR-07", "AC-08", "FR-18", "BR-07", "BR-23"],
+      "title": "E2E-03 alternate workflow branch — student duplicate submission preserves original success record",
+      "preconditions": [
+        "Lecturer has opened session (AC-01) and session is Open with rotating QR.",
+        "Student completes login gate (AC-06), enrollment validation (AC-07), and first successful check-in yielding Present or Late (AC-11).",
+        "Fresh valid QR token is available for a second submission attempt."
+      ],
+      "steps": [
+        "Student calls POST /v1/check-ins with valid qrToken and Idempotency-Key K1; record first success outcome and checkInAt timestamp T1.",
+        "Student calls POST /v1/check-ins again with a new valid qrToken and Idempotency-Key K2.",
+        "Lecturer queries GET /v1/class-sessions/{sessionId}/attendance for the student row.",
+        "Replay first submission with Idempotency-Key K1 and original qrToken."
+      ],
+      "expected": "Second submission fails with DuplicateCheckIn (409); roster shows unchanged single Present/Late row with original checkInAt T1; K1 replay returns HTTP 200 prior success summary; no extra success AttendanceRecord is created, satisfying NFR-07 and testing-plan E2E-03.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-07-008",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["NFR-07", "FR-18", "BR-07", "BR-23"],
+      "title": "Concurrent first-success race for same student-session yields exactly one AttendanceRecord",
+      "preconditions": [
+        "Open session with valid QR token exists; enrolled student has no prior success for the session.",
+        "Test harness can fire two or more parallel POST /v1/check-ins with different Idempotency-Key values and the same valid qrToken before any success commits.",
+        "Harness captures all HTTP outcomes and final DB state."
+      ],
+      "steps": [
+        "Fire concurrent POST /v1/check-ins requests for the same student-session pair with distinct Idempotency-Key values and identical valid qrToken.",
+        "Wait for all responses; classify outcomes as Success or DuplicateCheckIn/conflict.",
+        "Query attendance_records for (student, session) and count rows with Success-equivalent status.",
+        "Replay the winning Idempotency-Key and verify idempotent 200 response."
+      ],
+      "expected": "Exactly one successful AttendanceRecord is committed; concurrent losers return DuplicateCheckIn or deterministic conflict without a second success row; winning-key replay returns prior success summary; first-success-wins semantics per state machines §6.2 and NFR-07 hold under race conditions.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-07-009",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-07", "FR-18", "NFR-14", "AC-08", "BR-07"],
+      "title": "FLOW-02 mobile-web duplicate check-in journey shows localized info alert without retry CTA",
+      "preconditions": [
+        "Student is logged in on mobile-web viewport (Chromium mobile emulation) with open session and valid check-in deep link.",
+        "Student has already completed successful check-in for the target Open session (Present or Late).",
+        "Fresh valid QR token is available via deep link for a second submission attempt."
+      ],
+      "steps": [
+        "Navigate to /check-in?token=... with valid token for the already-checked-in session.",
+        "Submit check-in from the student check-in form.",
+        "Observe CheckInResultScreen failure-duplicate info alert styling and Vietnamese localized copy per NFR-14.",
+        "Verify absence of retry CTA and display of existing check-in status and timestamp.",
+        "Refresh page and resubmit; confirm UI still shows duplicate guidance without creating a second success state in roster API."
+      ],
+      "expected": "UI renders failure-duplicate info alert with localized Vietnamese message (e.g. 'Bạn đã điểm danh buổi học này rồi.'); no retry button is shown; student sees existing success status and timestamp; backend retains exactly one success AttendanceRecord per NFR-07.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-07-010",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["NFR-07", "NFR-14", "FR-18"],
+      "title": "Physical mobile retry behavior under campus network instability preserves one success per session",
+      "preconditions": [
+        "Staging pilot uses real iOS Safari or Android Chrome on campus Wi-Fi per testing-plan §6.2 browser matrix.",
+        "Open session with valid QR; enrolled student has not yet checked in.",
+        "Campus network conditions may cause client-side retries; physical device matrix is not reproducible in Playwright MCP harness."
+      ],
+      "steps": [
+        "Student scans classroom QR on physical mobile device and submits check-in.",
+        "If network stalls, student retries submission (browser or client retry) before seeing confirmation.",
+        "Verify UI eventually shows single success confirmation with one timestamp.",
+        "Student attempts second scan/submit; verify duplicate info alert and unchanged single success in lecturer roster."
+      ],
+      "expected": "Despite network retries on physical device, at most one successful attendance record exists per student-session; duplicate UI surfaces correctly on second intentional attempt; provides production-like NFR-07 evidence beyond emulated harness runs.",
+      "edgeCase": true,
+      "harnessSkip": "physical-device"
+    }
+  ]
+}
