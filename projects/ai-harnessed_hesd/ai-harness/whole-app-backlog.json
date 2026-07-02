@@ -818,7 +818,7 @@
     },
     {
       "id": "module-reporting-and-export",
-      "passes": false,
+      "passes": true,
       "priority": 13,
       "phase": 1,
       "agent": "backend",
@@ -838,11 +838,18 @@
       ],
       "description": "Build role-scoped attendance report and CSV export endpoints with strict filter validation and no cross-scope data leakage.",
       "completionArtifacts": [
-        "Paginated report query endpoint",
-        "CSV export job endpoint and metadata responses",
-        "Scope-filter enforcement shared by report/export paths"
+        "apps/api/src/modules/reporting-and-export",
+        "apps/api/db/migrations/0004_export_jobs.sql",
+        "apps/api/src/app.ts",
+        "apps/api/src/modules/identity/protected-stubs.ts"
       ],
       "testRequirements": {
+        "unit": [
+          "apps/api/src/modules/reporting-and-export/validation.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/modules/reporting-and-export/reporting-and-export.integration.test.ts"
+        ],
         "acceptanceTags": [
           "AC-15",
           "AC-17",
@@ -893,6 +900,12 @@
           "at": "2026-07-02T12:09:42Z",
           "kind": "drift",
           "reason": "Doc drift for BR-19 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T15:18:21Z",
+          "kind": "gate_failed",
+          "reason": "Computational checks failed — see 20260702T150919Z-checks.json",
           "source": "harness"
         }
       ]

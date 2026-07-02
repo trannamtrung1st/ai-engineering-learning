@@ -5,6 +5,7 @@ import { registerIdentityModule } from "./modules/identity/index.js";
 import { registerAttendanceLedgerModule } from "./modules/attendance-ledger/index.js";
 import { registerCheckInModule } from "./modules/check-in-and-qr-orchestrator/index.js";
 import { registerPolicyEngineModule } from "./modules/policy-engine/index.js";
+import { registerReportingModule } from "./modules/reporting-and-export/index.js";
 import { registerSessionLifecycleModule } from "./modules/session-lifecycle/index.js";
 import { registerHealthRoutes } from "./routes/health.js";
 
@@ -23,6 +24,7 @@ export async function buildApp() {
       await registerPolicyEngineModule(v1, { connectionString, pool: pool ?? undefined });
       await registerCheckInModule(v1, { connectionString, pool: pool ?? undefined });
       await registerAttendanceLedgerModule(v1, { connectionString, pool: pool ?? undefined });
+      await registerReportingModule(v1, { connectionString, pool: pool ?? undefined });
     },
     { prefix: "/api/v1" },
   );

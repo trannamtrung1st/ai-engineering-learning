@@ -107,3 +107,7 @@
 - 2026-07-02T15:00:55Z | module-policy-engine | review_failed
 - 2026-07-02T15:07:30Z | module-policy-engine | implementer: M06 policy engine — BR-20 per-field resolver, policy CRUD/effective API, GPS/edit validation wired into M04/M05 — added OutOfRadius, institution-default, edit-window, effective-sources integration tests — isolated policy test hierarchy to avoid cross-suite pollution — checks: full profile pass (unit 48/48, integration 157/157)
 - 2026-07-02T15:09:19Z | module-policy-engine | passed
+- 2026-07-02T15:17:43Z | module-reporting-and-export | implementer: M07 reporting and export — GET /v1/reports/attendance paginated query, POST /v1/exports/attendance CSV jobs with idempotency, shared scope resolver (BR-18/BR-19), export_jobs migration, audit on completion (AC-17) — checks: full profile pass
+- 2026-07-02T15:18:21Z | module-reporting-and-export | checks_failed
+- 2026-07-02T15:19:39Z | module-reporting-and-export | implementer: re-verified M07 after gate failure — GET /v1/reports/attendance, POST /v1/exports/attendance, scope resolver (BR-18/BR-19), export_jobs migration, audit on export (AC-17) — checks: full profile pass (unit 54/54, integration 167/167)
+- 2026-07-02T15:22:43Z | module-reporting-and-export | passed
