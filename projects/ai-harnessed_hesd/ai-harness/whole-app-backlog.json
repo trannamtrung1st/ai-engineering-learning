@@ -85,6 +85,19 @@
         "Initial migration chain with core tables and enums",
         "Unique and foreign key constraints from domain invariants",
         "Seed fixtures for term/course/section/session roles"
+      ],
+      "testRequirements": {
+        "acceptanceTags": [
+          "FR-04"
+        ]
+      },
+      "history": [
+        {
+          "at": "2026-07-02T10:40:29Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-04 — reverify after TestGen",
+          "source": "harness"
+        }
       ]
     },
     {
@@ -187,7 +200,8 @@
       "testRequirements": {
         "acceptanceTags": [
           "AC-07",
-          "FR-01"
+          "FR-01",
+          "FR-04"
         ]
       },
       "history": [
@@ -201,6 +215,12 @@
           "at": "2026-07-02T10:38:42Z",
           "kind": "drift",
           "reason": "Doc drift for FR-01 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T10:40:29Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-04 — reverify after TestGen",
           "source": "harness"
         }
       ]
@@ -790,7 +810,8 @@
       "testRequirements": {
         "acceptanceTags": [
           "AC-07",
-          "FR-01"
+          "FR-01",
+          "FR-04"
         ]
       },
       "history": [
@@ -804,6 +825,12 @@
           "at": "2026-07-02T10:38:42Z",
           "kind": "drift",
           "reason": "Doc drift for FR-01 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T10:40:29Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-04 — reverify after TestGen",
           "source": "harness"
         }
       ]

@@ -1,0 +1,219 @@
+{
+  "productItemId": "FR-04",
+  "version": 1,
+  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+  "generatedAt": "2026-07-02T10:38:00Z",
+  "cases": [
+    {
+      "id": "TC-FR-04-001",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-04", "FR-17"],
+      "title": "M02 persists enrollment rows from CSV import within a real DB transaction",
+      "preconditions": [
+        "Integration harness uses real DB transaction boundaries for enrollments and class_sections tables.",
+        "A class section exists with known classSectionId and matching student records for valid rows.",
+        "AcademicAdmin auth context is available to the M02 Academic Structure module."
+      ],
+      "steps": [
+        "Submit an enrollment import for a valid classSectionId with a mix of resolvable studentCode rows through the M02 import job or POST /v1/enrollments/import path.",
+        "Commit the import command boundary and query the enrollments table.",
+        "Assert accepted rows are persisted as active enrollments bound to the target classSectionId via FK.",
+        "Assert isStudentEnrolled(studentId, classSectionId) returns true for each accepted row."
+      ],
+      "expected": "Accepted enrollment rows are committed within one transaction and linked to the class section by FK; M02 eligibility lookup (isStudentEnrolled) resolves true for imported students, feeding FR-17 enrollment validation at check-in.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-04-002",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-04", "BR-06"],
+      "title": "POST /v1/enrollments/import returns 200 envelope with accepted count and row-level rejections",
+      "preconditions": [
+        "AcademicAdmin is authenticated.",
+        "A valid classSectionId exists.",
+        "Request body includes classSectionId and a rows array per API design §4.2 with at least one resolvable and one unresolvable studentCode."
+      ],
+      "steps": [
+        "Send POST /v1/enrollments/import with Authorization and Idempotency-Key headers and the mixed rows payload.",
+        "Validate HTTP 200 and the standard {data, meta, error} envelope.",
+        "Assert data.acceptedRows reflects the count of resolvable rows and data.rejectedRows lists each failed row with rowNumber, code, and message.",
+        "Assert meta includes requestId and timestamp."
+      ],
+      "expected": "Response is HTTP 200 with standard envelope; data.acceptedRows and data.rejectedRows[] (rowNumber, code, message) accurately report the outcome per row without a top-level error object.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-04-003",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-04", "BR-06"],
+      "title": "Invalid enrollment rows are reported row-level without silently skipping",
+      "preconditions": [
+        "AcademicAdmin is authenticated.",
+        "A valid classSectionId exists.",
+        "CSV payload contains an unknown studentCode, a row missing the required studentCode field, and a duplicate row."
+      ],
+      "steps": [
+        "Send POST /v1/enrollments/import with the payload containing the invalid and duplicate rows alongside valid rows.",
+        "Inspect data.rejectedRows and confirm each invalid row is represented with its rowNumber and a structured code (e.g. StudentNotFound) and message.",
+        "Sum acceptedRows plus rejectedRows length and compare against the total submitted rows.",
+        "Query the enrollments table to confirm only valid rows were persisted."
+      ],
+      "expected": "Every invalid or duplicate row appears in rejectedRows with a structured reason; acceptedRows + rejectedRows equals total submitted rows, proving no invalid row is silently skipped, and only valid rows are persisted.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-04-004",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["FR-04", "FR-17"],
+      "title": "Remove then add enrollment updates effective check-in eligibility on next attempt",
+      "preconditions": [
+        "A student is actively enrolled in a class section with an open or reopenable session available for the eligibility probe.",
+        "Integration harness can invoke enrollment add/remove and the enrollment eligibility lookup."
+      ],
+      "steps": [
+        "Record beforeState: isStudentEnrolled(studentId, classSectionId) returns true.",
+        "Remove the student's enrollment for the section and record afterState eligibility.",
+        "Probe enrollment validation and assert the student now resolves as not enrolled (NotEnrolled at next check-in attempt).",
+        "Re-add the enrollment and probe again to assert eligibility is restored on the next attempt."
+      ],
+      "expected": "beforeState enrolled transitions to not-enrolled after removal and back to enrolled after re-add; each change takes effect on the next check-in attempt with no cached stale eligibility.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-04-005",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-04", "BR-19"],
+      "title": "Non-authorized roles are denied enrollment import",
+      "preconditions": [
+        "Student, Lecturer, and SystemAuditor test accounts exist with valid tokens.",
+        "A valid classSectionId exists."
+      ],
+      "steps": [
+        "Send POST /v1/enrollments/import as Student, Lecturer, and SystemAuditor.",
+        "Read HTTP status and error.code for each request.",
+        "Query the enrollments table to confirm no rows were created by the denied requests."
+      ],
+      "expected": "Each unauthorized role receives 403 Forbidden or OutOfScope without importing any enrollment rows; no partial restricted data is disclosed.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-04-006",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["FR-04"],
+      "title": "Import against a non-existent class section is rejected",
+      "preconditions": [
+        "AcademicAdmin is authenticated."
+      ],
+      "steps": [
+        "Send POST /v1/enrollments/import with a classSectionId that does not exist and otherwise valid rows.",
+        "Read HTTP status and error.code from the response envelope.",
+        "Query the enrollments table to confirm no rows were created."
+      ],
+      "expected": "API returns a 404 (SessionNotFound/section-not-found equivalent) or 400 validation error; no enrollment rows are persisted for the missing section.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-04-007",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-04", "FR-15", "FR-36"],
+      "title": "AcademicAdmin authenticates then imports enrollments end to end",
+      "preconditions": [
+        "AcademicAdmin credentials exist for POST /v1/auth/login.",
+        "A valid classSectionId exists."
+      ],
+      "steps": [
+        "Send POST /v1/auth/login with AcademicAdmin credentials and capture accessToken and roles from the 200 envelope.",
+        "Send GET /v1/me with the bearer token and assert the actor identity and AcademicAdmin role/scope are returned.",
+        "Send POST /v1/enrollments/import with the bearer token and a valid rows payload.",
+        "Assert the import returns 200 with acceptedRows for the authenticated admin scope."
+      ],
+      "expected": "Login returns HTTP 200 with accessToken and roles; GET /v1/me returns the AcademicAdmin identity and scope; the subsequent import succeeds within that authenticated scope, chaining FR-36/FR-15 auth into FR-04 import.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-04-008",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P1",
+      "traceability": ["FR-04", "FR-19", "FR-17"],
+      "title": "Imported students appear in live roster payload shape",
+      "preconditions": [
+        "An enrollment import has committed accepted students for a class section.",
+        "A session for that section is Open with a Lecturer authenticated to view the roster."
+      ],
+      "steps": [
+        "Import a set of students via POST /v1/enrollments/import for the target section.",
+        "Open a session for the section and call GET /v1/class-sessions/{sessionId}/attendance as the assigned Lecturer.",
+        "Validate HTTP 200 and the standard envelope with data.counts and data.rows.",
+        "Assert each imported student appears in data.rows with studentUserId, studentCode, displayName, attendanceStatus (Pending prior to check-in), and that counts.pending reflects unresolved imported students."
+      ],
+      "expected": "Roster payload returns HTTP 200 with counts and rows shape per API design §4.5; imported (accepted) students are present as Pending rows, confirming enrollment import feeds the FR-19 live roster.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-04-009",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P1",
+      "traceability": ["FR-04"],
+      "title": "Concurrent imports of the same roster do not create duplicate enrollments",
+      "preconditions": [
+        "A valid classSectionId exists with a deterministic roster fixture.",
+        "Integration harness can issue parallel import commands sharing an Idempotency-Key or overlapping rows."
+      ],
+      "steps": [
+        "Fire two parallel POST /v1/enrollments/import requests for the same classSectionId with the same rows.",
+        "Await both responses and inspect acceptedRows and rejectedRows for each.",
+        "Query the enrollments table and count distinct (studentId, classSectionId) rows.",
+        "Assert idempotent replay per API §7.1 returns the existing result rather than double-inserting."
+      ],
+      "expected": "Parallel imports converge to exactly one enrollment per (student, section); duplicates are prevented via unique key or idempotent replay handling with no double-insert.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-04-010",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-04"],
+      "title": "Academic Admin CSV import journey shows accepted count and row-level errors",
+      "preconditions": [
+        "AcademicAdmin is logged in on desktop Chromium.",
+        "Admin navigation exposes the class section enrollment import screen.",
+        "A CSV file with a mix of valid and invalid student codes is available for upload."
+      ],
+      "steps": [
+        "Navigate to the class section detail and open the enrollment import (CSV upload) form.",
+        "Upload the mixed CSV and submit the import.",
+        "Observe the import result summary showing accepted count and a row-level rejection table with rowNumber, code, and message per rejected row.",
+        "Confirm accepted students then appear in the section's enrollment list/table without a full page reload where SPA routing applies."
+      ],
+      "expected": "Import UI surfaces the accepted count and an explicit per-row rejection table (no silent skips); accepted students render in the enrollment list, matching the FR-04 row-level error reporting requirement.",
+      "edgeCase": false
+    }
+  ]
+}
