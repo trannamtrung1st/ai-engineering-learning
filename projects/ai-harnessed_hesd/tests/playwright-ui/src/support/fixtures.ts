@@ -33,6 +33,9 @@ export const STUDENT_PERSONA: SmokePersona = {
   viewport: { width: 375, height: 667 },
 };
 
+/** Academic admin seed email — audit log verification (TC-AC-17-009). */
+export const ACADEMIC_ADMIN_SEED_EMAIL = "academic-admin@attendly.local";
+
 /** Deterministic IDs from scripts/db-seed.mjs for cross-layer traceability. */
 export const SEED_FIXTURE_IDS = {
   lecturerUser: "60000000-0000-4000-8000-000000000001",

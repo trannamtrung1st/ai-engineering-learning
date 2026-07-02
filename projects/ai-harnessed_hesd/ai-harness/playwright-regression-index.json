@@ -107,6 +107,24 @@
         "TC-FR-25-016"
       ],
       "updatedAt": "2026-07-02T21:07:35Z"
+    },
+    "web-academic-admin-reporting-export": {
+      "specPath": "/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/tests/playwright-ui/scenarios/web-academic-admin-reporting-export.spec.ts",
+      "lastRunId": "20260702T211149Z",
+      "testCount": 6,
+      "sourceTcIds": [
+        "TC-AC-15-009",
+        "TC-AC-16-012",
+        "TC-AC-16-013",
+        "TC-AC-17-009",
+        "TC-BR-18-015",
+        "TC-BR-18-016",
+        "TC-FR-27-015",
+        "TC-FR-27-016",
+        "TC-FR-28-017",
+        "TC-FR-28-018"
+      ],
+      "updatedAt": "2026-07-02T21:32:52Z"
     }
   }
 }

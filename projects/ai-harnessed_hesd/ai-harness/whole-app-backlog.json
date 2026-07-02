@@ -1140,17 +1140,40 @@
       ],
       "description": "Build report listing and CSV export UX with explicit scope context, filters, and pagination for academic admin workflows.",
       "completionArtifacts": [
-        "Attendance report route with filter and sort controls",
-        "Export action panel with scope confirmation",
-        "Export job status and completion feedback"
+        "apps/web/src/routes/StaffLayout.tsx",
+        "apps/web/src/routes/pages/AttendanceReportPage.tsx",
+        "apps/web/src/routes/pages/AttendanceReportPage.module.css",
+        "apps/web/src/components/domain/AttendanceReportList.tsx",
+        "apps/web/src/components/domain/AttendanceReportList.module.css",
+        "apps/web/src/components/domain/ExportScopeSummary.tsx",
+        "apps/web/src/components/domain/ExportScopeSummary.module.css",
+        "apps/web/src/components/ui/TableToolbar.tsx",
+        "apps/web/src/lib/api/reporting-api.ts",
+        "apps/web/src/lib/listing/query-state.ts",
+        "apps/api/src/modules/reporting-and-export/routes.ts",
+        "apps/api/src/modules/reporting-and-export/repository.ts"
       ],
       "testRequirements": {
+        "unit": [
+          "apps/web/src/lib/api/reporting-api.test.ts"
+        ],
+        "component": [
+          "apps/web/src/components/domain/AttendanceReportList.test.tsx",
+          "apps/web/src/components/domain/ExportScopeSummary.test.tsx"
+        ],
+        "integration": [
+          "apps/api/src/modules/reporting-and-export/reporting-and-export.integration.test.ts"
+        ],
         "acceptanceTags": [
           "AC-15",
+          "AC-16",
           "AC-17",
           "BR-18",
           "FR-27",
           "FR-28"
+        ],
+        "playwright": [
+          "tests/playwright-ui/scenarios/web-academic-admin-reporting-export.spec.ts"
         ]
       }
     },
