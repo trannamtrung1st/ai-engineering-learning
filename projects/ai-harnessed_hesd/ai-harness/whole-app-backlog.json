@@ -947,7 +947,8 @@
       ],
       "testRequirements": {
         "acceptanceTags": [
-          "FR-14"
+          "FR-14",
+          "NFR-15"
         ]
       },
       "history": [
@@ -961,6 +962,12 @@
           "at": "2026-07-02T12:30:43Z",
           "kind": "drift",
           "reason": "Doc drift for NFR-14 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T12:33:01Z",
+          "kind": "drift",
+          "reason": "Doc drift for NFR-15 — reverify after TestGen",
           "source": "harness"
         }
       ]

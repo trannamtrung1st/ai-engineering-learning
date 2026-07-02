@@ -1,0 +1,355 @@
+{
+  "productItemId": "NFR-15",
+  "version": 1,
+  "docFingerprint": "sha256:0091ebfac485b5b90c7a94c982196a35adddc3e7535aba555ed532f8d1599fd9",
+  "generatedAt": "2026-07-02T12:31:41Z",
+  "cases": [
+    {
+      "id": "TC-NFR-15-001",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["NFR-15", "FR-14", "AC-02", "AC-UI-06"],
+      "title": "Testing-plan §6.1 E2E-01 and §6.2 desktop browser matrix cover NFR-15 projection QR scenarios",
+      "preconditions": [
+        "Testing-plan §6.1 E2E-01 (lecturer opens session and displays rotating QR) and §6.2 Chromium desktop lecturer flow apply.",
+        "NFR-15 requires legible classroom projection display with clear refresh indication and open/closed state feedback per 07-non-functional-risk §2.5.",
+        "Fixture matrix seeds Open session with rotating QR, Closed session, and lecturer assignment per attendance-open-session fixture."
+      ],
+      "steps": [
+        "Map NFR-15 projection requirements to testing-plan §3 Session lifecycle and QR row (AC-01, AC-02, AC-05) and E2E-01 journey.",
+        "Verify integration harness can drive session open, qr/current rotation metadata, and session close state transitions.",
+        "Confirm desktop Chromium (lecturer/admin flow) is the default harness context for PG-05 projection scenarios per testing-plan §6.2.",
+        "Record pass/fail per scenario against NFR-15 legibility, refresh indication, and state feedback requirements."
+      ],
+      "expected": "E2E-01 and testing-plan Session lifecycle and QR row fully represent NFR-15 projection scenarios: Open session enables rotating QR display, refresh indication is verifiable via expiresAt/countdown metadata, and Closed state suppresses active QR per 02-business-workflow §3.2 step 6.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-15-002",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-15", "FR-14", "FR-11", "AC-02"],
+      "title": "M04 QR orchestrator returns projection-ready display bundle with session identity and TTL metadata at DB boundary",
+      "preconditions": [
+        "Integration harness uses real DB transaction boundaries for qr_session_tokens and class_sessions tables.",
+        "An Open class session row exists with known sessionId, section code, session name, and room.",
+        "M04 getCurrentToken(sessionId) and session read path are callable through service layer."
+      ],
+      "steps": [
+        "Invoke M04 getCurrentToken(sessionId) for the Open session.",
+        "Query qr_session_tokens and assert Valid row bound to sessionId with qrPayload resolvable server-side.",
+        "Join class_sessions and class_sections to retrieve section code and session display name.",
+        "Assert returned display bundle includes classSessionId, tokenState Valid, expiresAt within 30-second window, qrPayload, session state Open, section code, and session name.",
+        "Advance harness clock beyond TTL and re-invoke getCurrentToken; assert refreshed qrPayload with new expiresAt for projection countdown synchronization."
+      ],
+      "expected": "M04 module + repository integration returns projection-ready payload per 07-domain-specific-components §2.1: all fields required by QrDisplayPanel (DC-01) and QrCountdownRing (DC-02) are coherently bound for classroom projection without trusting client-supplied session hints.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-15-003",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["NFR-15", "FR-14", "FR-07", "FR-08", "BR-01", "BR-02", "AC-05"],
+      "title": "QrDisplayPanel data binding follows session state: Open enables projection QR, Closed and Cancelled suppress Valid token",
+      "preconditions": [
+        "Session fixtures exist in Scheduled, Open, Closed, and Cancelled states.",
+        "M03 session control and M04 QR orchestrator share the same database.",
+        "Display read path queries session state before returning QR metadata per 12-ui-states §5.1."
+      ],
+      "steps": [
+        "Attempt qr/current read for Scheduled session and record absence of Valid token or appropriate guard response.",
+        "Execute open transition (Scheduled to Open) and verify Valid token with expiresAt is returned.",
+        "Record beforeState Open with active qrPayload; invoke close transition (Open to Closed).",
+        "Query qr/current for Closed session and assert no Valid token with active qrPayload.",
+        "Attempt qr/current on Cancelled session fixture and assert QR display data is suppressed."
+      ],
+      "expected": "beforeState Scheduled blocks Valid QR display data; Open enables projection-ready Valid token with state feedback metadata; after Open to Closed or Cancelled, display binding suppresses active QR per QrDisplayPanel states spec and NFR-15 closed-state feedback requirement.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-15-004",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-15", "FR-14", "FR-11", "AC-02"],
+      "title": "GET /v1/class-sessions/{sessionId}/qr/current returns 200 projection-ready envelope with countdown synchronization fields",
+      "preconditions": [
+        "Assigned Lecturer is authenticated with Authorization bearer token.",
+        "Target session is currently Open with known section code and session name.",
+        "E2E harness validates standard { data, meta, error } response envelope per API §2.3."
+      ],
+      "steps": [
+        "Send GET /v1/class-sessions/{sessionId}/qr/current with Authorization header.",
+        "Validate HTTP 200 and JSON envelope shape { data, meta, error } with error null.",
+        "Assert data contains classSessionId matching path param, tokenState Valid, expiresAt ISO-8601 UTC, and non-empty qrPayload suitable for high-contrast QR canvas rendering.",
+        "Assert meta includes requestId and timestamp for QrCountdownRing synchronization.",
+        "Re-call endpoint after one TTL rollover and confirm HTTP 200 with refreshed expiresAt and updated qrPayload."
+      ],
+      "expected": "Endpoint returns HTTP 200 with stable envelope schema per API design §4.4; qr/current data exposes all fields required to render large high-contrast QR with countdown refresh indicator on lecturer projection view per NFR-15.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-15-005",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["NFR-15", "FR-14", "FR-07", "FR-11", "AC-01", "AC-02"],
+      "title": "WF-02 primary flow: open session enables projection QR display with session identity, rotation, and Open state feedback",
+      "preconditions": [
+        "Lecturer account and Scheduled session fixture are available per 02-business-workflow §3.2.",
+        "Session has section code, session name, room, and no prior openedAt timestamp.",
+        "FLOW-05 / E2E-01 lecturer session operations journey applies."
+      ],
+      "steps": [
+        "Call POST /v1/class-sessions/{sessionId}/open as assigned Lecturer.",
+        "Assert response data.state Open with qr preview containing expiresAt and qrPayload.",
+        "Call GET /v1/class-sessions/{sessionId}/qr/current and verify tokenState Valid bound to the same sessionId.",
+        "Call GET /v1/class-sessions/{sessionId}/attendance and assert data.state is Open with live count summary for PG-05 status strip.",
+        "Wait one TTL cycle and confirm qr/current returns refreshed token without session reopen or lecturer page reload."
+      ],
+      "expected": "WF-02 §3.2 happy path: session open commits Open state and projection display receives first Valid QR with session name, section code, countdown metadata, Open status feedback, and auto-rotation every ~30 seconds without lecturer reload per NFR-15.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-15-006",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P0",
+      "traceability": ["NFR-15", "FR-14", "FR-08", "AC-05", "AC-UI-06"],
+      "title": "WF-02 alternate flow: session close transitions projection display from live QR to locked Closed state feedback",
+      "preconditions": [
+        "Open session with active QR rotation is displayed on lecturer view.",
+        "Assigned Lecturer is authenticated.",
+        "Enrolled students exist with mixed attendance states."
+      ],
+      "steps": [
+        "Confirm GET /v1/class-sessions/{sessionId}/qr/current returns tokenState Valid.",
+        "Call POST /v1/class-sessions/{sessionId}/close as assigned Lecturer.",
+        "Assert response data.state Closed with closedAt timestamp.",
+        "Call GET /v1/class-sessions/{sessionId}/qr/current and record whether tokenState is non-Valid or endpoint returns appropriate error.",
+        "Call GET /v1/class-sessions/{sessionId}/attendance and assert data.state is Closed."
+      ],
+      "expected": "After Open to Closed transition, projection display must not show active rotating QR; Closed state message and Closed status badge replace QR panel per QrDisplayPanel states spec and NFR-15 open/closed state feedback requirement.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-15-007",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["NFR-15", "FR-14", "BR-19", "NFR-09"],
+      "title": "Student, ITAdmin, and out-of-scope Lecturer are denied QR projection display endpoint",
+      "preconditions": [
+        "Student, ITAdmin, and Lecturer-not-assigned-to-section test accounts exist with valid tokens per 01-roles-permissions.md §3.1.",
+        "An Open session exists in a section the out-of-scope Lecturer is not assigned to.",
+        "Assigned Lecturer token is available as positive control."
+      ],
+      "steps": [
+        "Call GET /v1/class-sessions/{sessionId}/qr/current as Student.",
+        "Call GET /v1/class-sessions/{sessionId}/qr/current as ITAdmin.",
+        "Call GET /v1/class-sessions/{sessionId}/qr/current as out-of-scope Lecturer.",
+        "Read HTTP status and error.code for each denied request (expect 403 Forbidden or OutOfScope).",
+        "Call GET /v1/class-sessions/{sessionId}/qr/current as assigned Lecturer and assert HTTP 200 with Valid token metadata.",
+        "Verify no qrPayload leakage in denied response bodies."
+      ],
+      "expected": "Unauthorized roles cannot retrieve QR projection metadata per SessionControl.execute deny rules; assigned Lecturer may fetch current QR; no qrPayload leakage to denied actors per NFR-09 and BR-19.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-15-008",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["NFR-15", "FR-14", "BR-01", "BR-02", "AC-05"],
+      "title": "QR display endpoint rejects or omits Valid token when session is not Open",
+      "preconditions": [
+        "Assigned Lecturer is authenticated.",
+        "Session fixtures exist in Scheduled and Closed states."
+      ],
+      "steps": [
+        "Call GET /v1/class-sessions/{scheduledSessionId}/qr/current for a Scheduled session.",
+        "Record HTTP status and whether data.tokenState is absent or non-Valid.",
+        "Open a separate session, then close it; call GET /v1/class-sessions/{closedSessionId}/qr/current.",
+        "Assert response does not return tokenState Valid with active qrPayload for Closed session.",
+        "Verify projection UI would render locked/hidden state rather than scannable QR for non-Open sessions."
+      ],
+      "expected": "NFR-15 restricts active projection QR to Open sessions only: Scheduled and Closed targets do not expose active Valid rotating QR metadata; display shows appropriate non-scannable locked state with correct Closed/Scheduled feedback.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-15-009",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P1",
+      "traceability": ["NFR-15", "FR-14", "FR-11", "AC-02"],
+      "title": "Concurrent qr/current fetches during display rotation return consistent projection metadata",
+      "preconditions": [
+        "Open session exists with QR rotation scheduler active.",
+        "Integration harness can dispatch parallel GET /v1/class-sessions/{sessionId}/qr/current requests.",
+        "Assigned Lecturer auth context is established."
+      ],
+      "steps": [
+        "Fire multiple parallel GET /v1/class-sessions/{sessionId}/qr/current requests at a fixed instant before TTL boundary.",
+        "Collect all responses and assert each returns HTTP 200 with tokenState Valid for the same sessionId.",
+        "Assert all responses share the same qrPayload and expiresAt for the current rotation window.",
+        "Repeat parallel fetches immediately after TTL rollover and confirm all responses converge on the next valid token without corrupt display state."
+      ],
+      "expected": "Concurrent reads during a rotation window return consistent current token metadata for projection display; post-TTL parallel reads converge on the next Valid token so QrDisplayPanel refresh indication remains coherent under class-start load.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-15-010",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-15", "FR-14", "AC-02", "AC-UI-06"],
+      "title": "PG-05 QrDisplayPanel renders large high-contrast QR with section code, session name, countdown, and Open badge for projection",
+      "preconditions": [
+        "Lecturer is logged in on desktop Chromium per testing-plan §6.2.",
+        "An Open session is available on PG-05 session control page.",
+        "QrDisplayPanel (DC-01) and QrCountdownRing (DC-02) components are mounted."
+      ],
+      "steps": [
+        "Navigate to /lecturer/sessions/{sessionId} (PG-05) and observe QrDisplayPanel.",
+        "Verify section code and session name appear in panel header alongside Open StatusBadge.",
+        "Assert QR canvas is high-contrast black-on-white without radius, gradients, or shadow on QR modules per DC-01 spec.",
+        "Verify QR occupies substantial viewport area (≥ 60% height in projection mode) and QrCountdownRing shows numeric seconds-remaining.",
+        "Confirm SessionControlBar shows room and scheduled time context per wireframe PG-05."
+      ],
+      "expected": "Browser journey satisfies AC-UI-06 and NFR-15 projection legibility: large high-contrast QR suitable for classroom projector with session identity, Open status badge, and countdown refresh indicator visible on one screen.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-15-011",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-15", "FR-14", "FR-11", "BR-03", "AC-02"],
+      "title": "QrDisplayPanel auto-refreshes QR with clear QrCountdownRing indication before TTL expiry without manual page reload",
+      "preconditions": [
+        "Lecturer is logged in on desktop Chromium.",
+        "An Open session is displayed on PG-05 with QrDisplayPanel and QrCountdownRing visible.",
+        "Session name, section code, and Open status badge are rendered."
+      ],
+      "steps": [
+        "Navigate to /lecturer/sessions/{sessionId} (PG-05) and observe QrDisplayPanel with high-contrast QR image and countdown indicator.",
+        "Note the visible countdown value and QR image fingerprint or payload preview.",
+        "Wait past one 30-second TTL cycle without refreshing the browser tab.",
+        "Observe QrCountdownRing reset and QR image crossfade or swap to a new token before prior expiry.",
+        "Verify session badge remains Open, session name and section code stay visible, and no full-page reload occurred.",
+        "Confirm refreshed QR remains scannable for student check-in flow."
+      ],
+      "expected": "Browser journey demonstrates NFR-15 clear refresh indication: QR refreshes automatically before 30-second TTL expires via QrDisplayPanel/QrCountdownRing without lecturer manual reload, maintaining Open-state indicators throughout rotation per 07-domain-specific-components §2.1.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-15-012",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-15", "FR-14", "FR-08", "AC-UI-06", "AC-05"],
+      "title": "Closed session PG-05 hides QR canvas and shows locked state message with Closed badge",
+      "preconditions": [
+        "Lecturer is logged in on desktop Chromium.",
+        "A Closed session fixture exists with prior attendance data.",
+        "Session was previously Open with active QR display."
+      ],
+      "steps": [
+        "Navigate to /lecturer/sessions/{closedSessionId} (PG-05).",
+        "Verify StatusBadge shows Closed state.",
+        "Assert QrDisplayPanel does not render scannable QR canvas; locked state message is visible instead.",
+        "Confirm QrCountdownRing is hidden per 12-ui-states §5.1 Closed state row.",
+        "Confirm Open/Close attendance CTAs are disabled or hidden per wireframe Closed state.",
+        "Verify section code and session name remain visible for classroom context."
+      ],
+      "expected": "PG-05 Closed state per wireframe §4.2: QR locked message replaces projection canvas; Closed badge displayed; no active countdown or rotating QR; session identity remains legible per NFR-15 open/closed state feedback.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-15-013",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-15", "FR-11", "AC-02"],
+      "title": "QrCountdownRing warning styling in final 5 seconds signals imminent QR rotation to lecturer",
+      "preconditions": [
+        "Lecturer is logged in on desktop Chromium at PG-05 with Open session.",
+        "QrCountdownRing (DC-02) is active with 30-second TTL cycle.",
+        "07-domain-specific-components §2.2 specifies warning token family in final ~5 seconds."
+      ],
+      "steps": [
+        "Navigate to /lecturer/sessions/{sessionId} (PG-05) immediately after QR token issuance.",
+        "Observe QrCountdownRing at > 5 seconds remaining and record default styling.",
+        "Wait until countdown reaches ≤ 5 seconds remaining.",
+        "Assert ring transitions to warning token family styling per DC-02 spec.",
+        "Verify numeric seconds-remaining label remains visible (e.g. aria-live 'Còn 4 giây' per 13-accessibility-basics.md).",
+        "Confirm QR refreshes before expiry and countdown resets to full cycle."
+      ],
+      "expected": "QrCountdownRing provides clear refresh indication: warning styling in final ~5 seconds alerts lecturer of imminent rotation; numeric label remains accessible; rotation completes without manual reload per NFR-15.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-15-014",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-15", "FR-14", "AC-UI-06"],
+      "title": "Typical projector viewport 1280x720 preserves QR legibility and state indicators without clipping",
+      "preconditions": [
+        "Lecturer is logged in on desktop Chromium.",
+        "Open session with active QR rotation is displayed on PG-05.",
+        "Harness can resize browser to 1280x720 (common classroom projector resolution)."
+      ],
+      "steps": [
+        "Set viewport to 1280x720 and navigate to /lecturer/sessions/{sessionId} (PG-05).",
+        "Measure QR canvas dimensions relative to viewport height.",
+        "Verify section code, session name, Open StatusBadge, and QrCountdownRing are fully visible without horizontal scroll or clipped text.",
+        "Assert QR modules remain high-contrast black-on-white at projector resolution.",
+        "Wait one TTL cycle and confirm refresh indication remains visible at 1280x720."
+      ],
+      "expected": "At typical classroom projector resolution (1280x720), NFR-15 projection legibility is maintained: QR occupies substantial viewport area, all state feedback elements remain readable, and refresh indication is visible without layout breakage.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-15-015",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["NFR-15", "FR-14"],
+      "title": "Physical classroom projector pilot verifies NFR-15 legibility under real projection conditions",
+      "preconditions": [
+        "Staging pilot has access to classroom projector and lectern display setup.",
+        "Open session with rotating QR is available on PG-05.",
+        "Physical projector brightness, ambient lighting, and throw distance are not reproducible in Playwright MCP harness."
+      ],
+      "steps": [
+        "Lecturer opens PG-05 on lectern browser and projects display to classroom screen.",
+        "Students at back of room attempt to scan projected QR during one full TTL cycle.",
+        "Verify QR remains scannable and countdown/refresh indication is visible from rear seating.",
+        "Close session and confirm Closed state message and badge are legible on projected display.",
+        "Document any legibility issues for triage."
+      ],
+      "expected": "Physical classroom projection delivers NFR-15 legibility with clear refresh indication and open/closed state feedback under real ambient lighting; provides production-like evidence beyond Chromium desktop emulation.",
+      "edgeCase": true,
+      "harnessSkip": "physical-device"
+    }
+  ]
+}
