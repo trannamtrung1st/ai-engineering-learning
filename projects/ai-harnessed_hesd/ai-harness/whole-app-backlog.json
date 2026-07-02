@@ -1197,18 +1197,57 @@
       ],
       "description": "Deliver read-only audit review interface for system auditor with searchable evidence trails for attendance disputes.",
       "completionArtifacts": [
-        "Audit log listing route with scoped filters",
-        "Detail view linking attempts, mutations, and actors",
-        "Read-only route guards and no-mutation affordances"
+        "apps/web/src/routes/router.tsx",
+        "apps/web/src/routes/StaffLayout.tsx",
+        "apps/web/src/routes/pages/AuditLogPage.tsx",
+        "apps/web/src/routes/pages/AuditLogPage.module.css",
+        "apps/web/src/routes/pages/AuditorSessionRosterPage.tsx",
+        "apps/web/src/routes/pages/AuditorSessionRosterPage.module.css",
+        "apps/web/src/routes/pages/AttendanceReportPage.tsx",
+        "apps/web/src/components/domain/AuditLogList.tsx",
+        "apps/web/src/components/domain/AuditLogList.module.css",
+        "apps/web/src/components/domain/AuditEntryRow.tsx",
+        "apps/web/src/components/domain/AuditEntryRow.module.css",
+        "apps/web/src/components/domain/AttendanceReportList.tsx",
+        "apps/web/src/components/domain/AttendanceReportList.module.css",
+        "apps/web/src/components/domain/LiveRosterPanel.tsx",
+        "apps/web/src/lib/api/audit-api.ts",
+        "apps/web/src/lib/api/seed-fixtures.ts",
+        "apps/web/src/lib/listing/audit-logs-list-query.ts",
+        "apps/web/src/lib/i18n/audit-action-types.ts",
+        "apps/web/src/lib/auth/role-guard.ts",
+        "scripts/db-seed.mjs",
+        "apps/api/src/modules/audit-and-compliance/routes.ts"
       ],
       "testRequirements": {
+        "unit": [
+          "apps/web/src/lib/api/audit-api.test.ts",
+          "apps/web/src/lib/listing/audit-logs-list-query.test.ts",
+          "apps/web/src/lib/auth/role-guard.test.ts"
+        ],
+        "component": [
+          "apps/web/src/components/domain/AuditLogList.test.tsx",
+          "apps/web/src/components/domain/AuditEntryRow.test.tsx"
+        ],
         "acceptanceTags": [
+          "AC-16",
           "AC-19",
           "BR-22",
           "FR-30",
           "FR-32"
+        ],
+        "playwright": [
+          "tests/playwright-ui/scenarios/web-system-auditor-audit-review.spec.ts"
         ]
-      }
+      },
+      "history": [
+        {
+          "at": "2026-07-02T21:56:55Z",
+          "kind": "gate_failed",
+          "reason": "Browser test failed — see 20260702T213529Z-browser-test.json",
+          "source": "harness"
+        }
+      ]
     },
     {
       "id": "test-backend-integration-critical-path",

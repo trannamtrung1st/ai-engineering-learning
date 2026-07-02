@@ -125,6 +125,22 @@
         "TC-FR-28-018"
       ],
       "updatedAt": "2026-07-02T21:32:52Z"
+    },
+    "web-system-auditor-audit-review": {
+      "specPath": "/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/tests/playwright-ui/scenarios/web-system-auditor-audit-review.spec.ts",
+      "lastRunId": "20260702T215655Z",
+      "testCount": 7,
+      "sourceTcIds": [
+        "TC-AC-16-012",
+        "TC-AC-16-013",
+        "TC-AC-19-013",
+        "TC-BR-22-016",
+        "TC-FR-30-018",
+        "TC-FR-30-019",
+        "TC-FR-32-014",
+        "TC-FR-32-015"
+      ],
+      "updatedAt": "2026-07-02T22:09:08Z"
     }
   }
 }
