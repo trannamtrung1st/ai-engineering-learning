@@ -141,6 +141,20 @@
         "TC-FR-32-015"
       ],
       "updatedAt": "2026-07-02T22:09:08Z"
+    },
+    "test-backend-integration-critical-path": {
+      "specPath": "/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/tests/playwright-ui/scenarios/test-backend-integration-critical-path.spec.ts",
+      "lastRunId": "20260702T221039Z",
+      "testCount": 5,
+      "sourceTcIds": [
+        "TC-AC-01-008",
+        "TC-AC-04-008",
+        "TC-AC-08-009",
+        "TC-AC-12-010",
+        "TC-AC-18-010",
+        "TC-NFR-07-009"
+      ],
+      "updatedAt": "2026-07-02T22:34:35Z"
     }
   }
 }

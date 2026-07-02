@@ -1270,14 +1270,31 @@
       ],
       "description": "Create integration tests for session transitions, check-in validation ordering, duplicate prevention, and close-time absent finalization.",
       "completionArtifacts": [
-        "Integration suite covering check-in critical path",
-        "Deterministic fixtures for role and session scenarios",
-        "CI gate for critical backend test group"
+        "apps/api/src/integration/critical-path.integration.test.ts",
+        "apps/api/src/integration/fixtures/critical-path-fixtures.ts",
+        "apps/api/package.json",
+        "package.json",
+        ".github/workflows/ci.yml"
       ],
-      "testRequirements": [
-        "Must enforce test isolation with DB reset between suites",
-        "Must fail build on unresolved critical flaky tests"
-      ]
+      "testRequirements": {
+        "unit": [
+          "apps/api/src/integration/fixtures/critical-path-fixtures.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/integration/critical-path.integration.test.ts"
+        ],
+        "acceptanceTags": [
+          "AC-01",
+          "AC-04",
+          "AC-08",
+          "AC-12",
+          "AC-18",
+          "NFR-07"
+        ],
+        "playwright": [
+          "tests/playwright-ui/scenarios/test-backend-integration-critical-path.spec.ts"
+        ]
+      }
     },
     {
       "id": "test-e2e-role-scope-and-export",
