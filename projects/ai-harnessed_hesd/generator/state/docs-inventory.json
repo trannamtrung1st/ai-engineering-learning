@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-02T08:57:02Z",
+  "generatedAt": "2026-07-02T09:14:17Z",
   "repoRoot": "/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd",
   "inputMode": "flexible",
   "zones": {
@@ -29,7 +29,13 @@
       "docs/technical/04-database-design.md",
       "docs/technical/05-api-design.md",
       "docs/technical/06-main-workflows.md",
-      "docs/technical/07-state-machines.md"
+      "docs/technical/07-state-machines.md",
+      "docs/technical/08-validation-rules.md",
+      "docs/technical/09-error-handling.md",
+      "docs/technical/10-local-development-setup.md",
+      "docs/technical/11-testing-plan.md",
+      "docs/technical/12-backend-frontend-tech-stack.md",
+      "docs/technical/13-docker-compose-local-runtime.md"
     ],
     "uiux": [],
     "designSystem": [
@@ -185,23 +191,65 @@
     {
       "path": "docs/technical/05-api-design.md",
       "zone": "technical",
-      "lines": 455,
+      "lines": 704,
       "hasRequirementIds": true,
       "outlineKey": "docs/technical/05-api-design.md"
     },
     {
       "path": "docs/technical/06-main-workflows.md",
       "zone": "technical",
-      "lines": 354,
+      "lines": 460,
       "hasRequirementIds": true,
       "outlineKey": "docs/technical/06-main-workflows.md"
     },
     {
       "path": "docs/technical/07-state-machines.md",
       "zone": "technical",
-      "lines": 323,
+      "lines": 396,
       "hasRequirementIds": true,
       "outlineKey": "docs/technical/07-state-machines.md"
+    },
+    {
+      "path": "docs/technical/08-validation-rules.md",
+      "zone": "technical",
+      "lines": 188,
+      "hasRequirementIds": true,
+      "outlineKey": "docs/technical/08-validation-rules.md"
+    },
+    {
+      "path": "docs/technical/09-error-handling.md",
+      "zone": "technical",
+      "lines": 207,
+      "hasRequirementIds": true,
+      "outlineKey": "docs/technical/09-error-handling.md"
+    },
+    {
+      "path": "docs/technical/10-local-development-setup.md",
+      "zone": "technical",
+      "lines": 193,
+      "hasRequirementIds": true,
+      "outlineKey": "docs/technical/10-local-development-setup.md"
+    },
+    {
+      "path": "docs/technical/11-testing-plan.md",
+      "zone": "technical",
+      "lines": 230,
+      "hasRequirementIds": true,
+      "outlineKey": "docs/technical/11-testing-plan.md"
+    },
+    {
+      "path": "docs/technical/12-backend-frontend-tech-stack.md",
+      "zone": "technical",
+      "lines": 181,
+      "hasRequirementIds": true,
+      "outlineKey": "docs/technical/12-backend-frontend-tech-stack.md"
+    },
+    {
+      "path": "docs/technical/13-docker-compose-local-runtime.md",
+      "zone": "technical",
+      "lines": 198,
+      "hasRequirementIds": true,
+      "outlineKey": "docs/technical/13-docker-compose-local-runtime.md"
     },
     {
       "path": "docs/ui-ux/DESIGN.md",
@@ -430,7 +478,7 @@
   "completeness": {
     "phase0": true,
     "phase1": true,
-    "phase2": false,
+    "phase2": true,
     "phase3": false
   }
 }
