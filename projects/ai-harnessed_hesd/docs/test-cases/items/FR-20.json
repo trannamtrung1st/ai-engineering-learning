@@ -1,0 +1,347 @@
+{
+  "productItemId": "FR-20",
+  "version": 1,
+  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+  "generatedAt": "2026-07-02T11:05:11Z",
+  "cases": [
+    {
+      "id": "TC-FR-20-001",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["FR-20", "BR-14", "BR-15", "AC-13", "AC-14"],
+      "title": "Testing-plan §3 Manual correction governance row covers lecturer scope, edit window, and reason mandate",
+      "preconditions": [
+        "Testing-plan §3 Manual correction governance block applies (FR-20, FR-21, BR-14/15/16, AC-13, AC-14).",
+        "Assigned Lecturer exists for class section; effective policy defines manualEditWindow from session close.",
+        "Closed session has enrolled student with AttendanceRecord status Absent from close-time finalization."
+      ],
+      "steps": [
+        "Resolve effective policy for class section and confirm manualEditWindow is active.",
+        "Authenticate as assigned Lecturer for the session class section.",
+        "Submit PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Manual Present and documented reason within window.",
+        "Query AttendanceRecord and AuditLog for the student-session pair.",
+        "Advance fixture clock beyond manualEditWindow and repeat lecturer PATCH attempt."
+      ],
+      "expected": "Scenario-matrix maps to testing-plan Manual correction governance: in-window correction succeeds per BR-14 with audit; post-window lecturer attempt is rejected or escalated per BR-15 and AC-14 without unauthorized mutation.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-20-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-20", "FR-29", "BR-14", "BR-22"],
+      "title": "M05 Attendance Ledger correctAttendance persists status change and audit row in DB transaction",
+      "preconditions": [
+        "Real database transaction is enabled for M05 Attendance Ledger and M08 Audit and Compliance modules.",
+        "Closed session exists with enrolled student AttendanceRecord status Absent.",
+        "Assigned Lecturer is within manualEditWindow per M06 policy resolution.",
+        "Policy mandates reason for manual corrections."
+      ],
+      "steps": [
+        "Capture beforeState: AttendanceRecord status Absent, checkInMethod null or system-assigned.",
+        "Invoke M05 correctAttendance through application service with status Manual Present, reason, actor Lecturer, and Idempotency-Key.",
+        "Query attendance_records and audit_logs tables for target studentUserId and classSessionId.",
+        "Verify M06 resolveEffectivePolicy was consulted for edit-window and reason requirements.",
+        "Assert correlation ID links mutation to audit entry."
+      ],
+      "expected": "M05 module boundary commits AttendanceRecord with afterState Manual Present and checkInMethod Manual; exactly one audit_logs row records actorUserId, oldStatus Absent, newStatus Manual Present, reason, and occurredAt per FR-29 and BR-22.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-20-003",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["FR-20", "BR-14"],
+      "title": "SM-03 AttendanceRecord transitions Pending to Manual Present and Present to Excused via lecturer correction",
+      "preconditions": [
+        "Open then closed session exists in integration test database.",
+        "Student A has AttendanceRecord Pending (no successful check-in); student B has Present from QR check-in.",
+        "Assigned Lecturer is within manualEditWindow for both students."
+      ],
+      "steps": [
+        "Capture beforeState for student A: status Pending; session state Closed.",
+        "Execute lecturer correction for student A with status Manual Present and required reason.",
+        "Capture afterState for student A and verify checkInMethod Manual.",
+        "Capture beforeState for student B: status Present, checkInMethod QR.",
+        "Execute lecturer correction for student B with status Excused and required reason.",
+        "Capture afterState for student B."
+      ],
+      "expected": "beforeState Pending transitions to afterState Manual Present; beforeState Present transitions to afterState Excused when lecturer is in scope and within edit window; session remains Closed; each transition is auditable per BR-14.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-20-004",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P1",
+      "traceability": ["FR-20", "FR-29", "BR-14", "BR-22"],
+      "title": "Idempotent PATCH attendance correction returns prior applied mutation without duplicate audit rows",
+      "preconditions": [
+        "Closed session with Absent student exists; assigned Lecturer is within edit window.",
+        "Idempotency-Key header support is enabled for PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId}.",
+        "Real database with audit_logs immutability constraints."
+      ],
+      "steps": [
+        "Issue PATCH correction with status Manual Present, reason, and Idempotency-Key K1; record response.",
+        "Replay identical PATCH with same Idempotency-Key K1, same body, and same actor.",
+        "Query AttendanceRecord and audit_logs count for the student-session pair.",
+        "Compare second response to first accepted mutation summary."
+      ],
+      "expected": "First request applies correction and writes one audit row; replay returns already-applied mutation summary without second AttendanceRecord change or duplicate audit_logs entry per API idempotency rules.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-20-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-20", "FR-29", "BR-14", "BR-22"],
+      "title": "PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} returns 200 with updated status envelope",
+      "preconditions": [
+        "Assigned Lecturer is authenticated with bearer token.",
+        "Closed session exists with student AttendanceRecord status Absent from session close.",
+        "Manual edit window is active; policy requires reason for corrections."
+      ],
+      "steps": [
+        "Lecturer calls PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with body {\"status\": \"Manual Present\", \"reason\": \"Sinh vien co mat nhung loi camera tren thiet bi.\"} and Idempotency-Key header.",
+        "Inspect HTTP status 200, response envelope data fields, and error is null.",
+        "Call GET /v1/class-sessions/{sessionId}/attendance and locate the corrected student row.",
+        "Query GET /v1/audit-logs filtered by targetId and actionType for manual attendance update."
+      ],
+      "expected": "PATCH returns HTTP 200 with standard envelope; roster row shows attendanceStatus Manual Present and checkInMethod Manual; audit query returns entry with oldStatus Absent, newStatus Manual Present, actor, reason, and timestamp.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-20-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-20", "FR-04", "BR-14", "BR-06"],
+      "title": "POST /v1/enrollments/import seeds roster then lecturer PATCH corrects imported student attendance",
+      "preconditions": [
+        "AcademicAdmin has created class section with closed session.",
+        "POST /v1/enrollments/import accepts enrolled student row for the section.",
+        "Session close assigned Absent to imported student without check-in.",
+        "Assigned Lecturer is within manualEditWindow."
+      ],
+      "steps": [
+        "AcademicAdmin calls POST /v1/enrollments/import with classSectionId and valid studentCode rows; assert HTTP 200 with acceptedRows count and no silent row skips.",
+        "Verify imported student appears in GET /v1/class-sessions/{sessionId}/attendance with Absent status.",
+        "Assigned Lecturer calls PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Manual Present and reason.",
+        "Re-fetch GET /v1/class-sessions/{sessionId}/attendance for the imported student row."
+      ],
+      "expected": "Enrollment import establishes eligible roster per FR-04; lecturer manual correction on imported enrolled student succeeds with HTTP 200 PATCH and roster reflects Manual Present per FR-20 and BR-14.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-20-007",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-20", "FR-15", "FR-36", "BR-14"],
+      "title": "POST /v1/auth/login and GET /v1/me establish Lecturer context before PATCH attendance correction",
+      "preconditions": [
+        "Lecturer account exists with institution-issued credentials and assigned class section scope.",
+        "Closed session with Absent student exists; manual edit window is active."
+      ],
+      "steps": [
+        "Call POST /v1/auth/login with lecturer email and password; assert HTTP 200 with accessToken and roles including Lecturer.",
+        "Call GET /v1/me with Authorization bearer token; assert HTTP 200 with actor identity and assigned section scope claims.",
+        "Call PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with Manual Present status, reason, and Idempotency-Key using the same bearer token.",
+        "Inspect PATCH HTTP 200 response envelope and error is null."
+      ],
+      "expected": "Authenticated lecturer session per FR-15 and FR-36 gates PATCH attendance correction; GET /v1/me confirms Lecturer role and scope before FR-20 manual correction succeeds with HTTP 200.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-20-008",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-20", "FR-19", "BR-14"],
+      "title": "GET /v1/class-sessions/{sessionId}/attendance live roster reflects manual correction payload shape",
+      "preconditions": [
+        "Open or closed session exists with enrolled student showing Absent on roster.",
+        "Assigned Lecturer is authenticated and within manualEditWindow.",
+        "Baseline GET /v1/class-sessions/{sessionId}/attendance captured before correction."
+      ],
+      "steps": [
+        "Lecturer calls PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Late and documented reason.",
+        "Call GET /v1/class-sessions/{sessionId}/attendance immediately after PATCH.",
+        "Assert HTTP 200 envelope with data.classSessionId, data.state, data.counts, and data.rows array.",
+        "Locate corrected student row and assert attendanceStatus Late, checkInMethod Manual, and counts reflect status change from baseline."
+      ],
+      "expected": "Live roster GET per FR-19 contract returns HTTP 200 with updated row showing attendanceStatus Late, checkInMethod Manual, and adjusted counts after FR-20 lecturer correction without full page reload at API layer.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-20-009",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["FR-20", "FR-29", "BR-14", "BR-22", "AC-13"],
+      "title": "E2E-06 primary workflow lecturer manual correction in allowed window updates status and audit",
+      "preconditions": [
+        "Lecturer opens and closes session for assigned section.",
+        "Session close assigns Absent to enrolled student without successful check-in.",
+        "Manual edit window from effective policy is not yet expired.",
+        "Lecturer bearer token is available."
+      ],
+      "steps": [
+        "Lecturer reviews GET /v1/class-sessions/{sessionId}/attendance showing student Absent.",
+        "Lecturer submits PATCH correction to Manual Present with documented reason after in-person verification.",
+        "Lecturer refreshes roster via GET /v1/class-sessions/{sessionId}/attendance.",
+        "AcademicAdmin or authorized role queries GET /v1/audit-logs for the correction event."
+      ],
+      "expected": "End-to-end E2E-06 happy path completes per FR-20: student status changes from Absent to Manual Present; roster reflects update; audit record is queryable with full actor/time/old/new/reason fields.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-20-010",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P0",
+      "traceability": ["FR-20", "BR-14", "AC-09", "AC-10"],
+      "title": "Alternate branch lecturer corrects GPS-rejected Pending student to Manual Present within window",
+      "preconditions": [
+        "Open session with GPS-required policy exists; student check-in rejected with OutOfRadius.",
+        "Student remains Pending on roster with failed attempt logged.",
+        "Lecturer verifies student in person and manual edit window is active per BR-14."
+      ],
+      "steps": [
+        "Confirm GET /v1/class-sessions/{sessionId}/attendance shows student Pending with latestAttemptOutcome OutOfRadius.",
+        "Lecturer calls PATCH correction with status Manual Present and reason after in-person verification.",
+        "Verify roster row and audit trail via GET attendance and GET audit-logs.",
+        "Confirm prior failed CheckInAttempt rows are preserved."
+      ],
+      "expected": "Manual fallback path per FR-20 succeeds within window: status becomes Manual Present without requiring QR re-check-in; failed GPS attempt history remains; audit captures old Pending to new Manual Present with reason.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-20-011",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-c",
+      "priority": "P0",
+      "traceability": ["FR-20", "FR-29", "BR-22", "AC-19"],
+      "title": "Flow C audit verification after lecturer manual attendance mutation",
+      "preconditions": [
+        "Closed session with Absent student exists.",
+        "Assigned Lecturer performs in-window correction changing status to Excused with reason.",
+        "Audit query endpoint is available to AcademicAdmin or SystemAuditor read scope."
+      ],
+      "steps": [
+        "Record roster status before correction via GET /v1/class-sessions/{sessionId}/attendance.",
+        "Lecturer applies PATCH correction with status Excused and reason documenting excused absence.",
+        "Query GET /v1/audit-logs with filters targetType AttendanceRecord, targetId, and time range covering correction.",
+        "Verify audit payload fields against CMP-01 minimum audit fields from roles-permissions doc."
+      ],
+      "expected": "Committed FR-20 mutation has corresponding audit record with actor, role Lecturer, target student/session, old status, new status Excused, reason, and timestamp; no mutation audit gap per BR-22.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-20-012",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-20", "BR-15", "AC-14"],
+      "title": "PATCH correction after edit window returns 409 EditWindowExpired and preserves Absent record",
+      "preconditions": [
+        "Closed session with Absent student exists; assigned Lecturer is in scope.",
+        "Effective policy manualEditWindow has elapsed since session closedAt.",
+        "Lecturer bearer token is authenticated."
+      ],
+      "steps": [
+        "Call PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Manual Present and valid reason.",
+        "Inspect HTTP status 409 and error.code EditWindowExpired in response envelope.",
+        "Query AttendanceRecord via GET /v1/class-sessions/{sessionId}/attendance.",
+        "Query GET /v1/audit-logs for manual correction from this lecturer attempt."
+      ],
+      "expected": "Request is rejected with HTTP 409 and error.code EditWindowExpired per BR-15; AttendanceRecord remains Absent; no audit_logs mutation entry is written for the failed attempt.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-20-013",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-20", "BR-14"],
+      "title": "PATCH correction without required reason returns ReasonRequired and preserves prior status",
+      "preconditions": [
+        "Closed session with Absent student exists; assigned Lecturer is within edit window.",
+        "Effective policy mandates reason for all manual corrections.",
+        "Lecturer bearer token is authenticated."
+      ],
+      "steps": [
+        "Call PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Manual Present and empty or omitted reason field.",
+        "Inspect HTTP status and error.code in response envelope.",
+        "Query AttendanceRecord and audit_logs for the student-session pair.",
+        "Retry with valid reason as control to confirm window still active."
+      ],
+      "expected": "Request is rejected with validation error ReasonRequired (400 class); AttendanceRecord remains Absent; no audit_logs mutation entry is written; control request with reason succeeds.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-20-014",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-20", "BR-14", "BR-19"],
+      "title": "Student, SystemAuditor, ITAdmin, and out-of-scope Lecturer denied PATCH attendance correction",
+      "preconditions": [
+        "Closed session in section A with Absent student; manual edit window is active.",
+        "Student, SystemAuditor, and ITAdmin bearer tokens and Lecturer token for unassigned section B are available.",
+        "Assigned Lecturer token for section A is available as authorized control."
+      ],
+      "steps": [
+        "Student calls PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Manual Present and reason.",
+        "SystemAuditor calls the same PATCH for the section A session.",
+        "ITAdmin calls the same PATCH without explicit academic grant.",
+        "Out-of-scope Lecturer (section B) calls the same PATCH for section A session.",
+        "Assigned Lecturer calls the same PATCH as control.",
+        "Verify AttendanceRecord state after denied attempts."
+      ],
+      "expected": "Student, SystemAuditor, and ITAdmin receive HTTP 403 Forbidden per permission matrix; out-of-scope Lecturer receives HTTP 403 OutOfScope per PRM-01; no attendance mutation or audit write occurs from denied roles; assigned Lecturer control succeeds and updates status per FR-20.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-20-015",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-20", "BR-14", "BR-22"],
+      "title": "Lecturer ManualCorrectionDialog on PG-06 submits correction with reason and updates roster badge",
+      "preconditions": [
+        "Lecturer is authenticated on desktop browser (PG-06 live roster view) for assigned section.",
+        "Closed session displays student row with Absent danger badge.",
+        "Manual edit window is active per effective policy; reason field is required."
+      ],
+      "steps": [
+        "Navigate to /lecturer/sessions/{id}/roster and locate Absent student row.",
+        "Open ManualCorrectionDialog from row action; select Manual Present in status dropdown.",
+        "Enter reason in labeled Lý do textarea and confirm via dialog submit.",
+        "Observe AttendanceStatusCell updates to Manual Present success variant and summary chips refresh.",
+        "Verify dialog closes and roster row reflects corrected status without full page reload."
+      ],
+      "expected": "Browser FLOW-08 completes per FR-20: form gating enforces required reason before submit; post-save roster row shows Manual Present badge; UI state matches API correction and audit write.",
+      "edgeCase": false
+    }
+  ]
+}
