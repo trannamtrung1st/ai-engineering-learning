@@ -620,7 +620,7 @@
     },
     {
       "id": "web-design-system-shell",
-      "passes": false,
+      "passes": true,
       "priority": 17,
       "phase": 2,
       "agent": "frontend",

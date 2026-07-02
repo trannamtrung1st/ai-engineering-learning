@@ -1,0 +1,23 @@
+.page {
+  min-height: 100vh;
+  background: var(--page-bg);
+}
+
+.header {
+  padding: var(--space-6) var(--space-4) var(--space-4);
+  border-bottom: var(--border-default);
+  background: var(--color-neutral-primary-soft);
+  box-shadow: var(--shadow-xs);
+}
+
+.subtitle {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.main {
+  padding: var(--space-4);
+  max-width: 28rem;
+  margin: 0 auto;
+}
