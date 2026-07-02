@@ -544,7 +544,7 @@
     },
     {
       "id": "repo-bootstrap",
-      "passes": false,
+      "passes": true,
       "priority": 50,
       "phase": 5,
       "kind": "scaffold",
