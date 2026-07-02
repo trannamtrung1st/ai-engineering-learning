@@ -87,3 +87,5 @@
 - 2026-07-02T13:32:15Z | module-identity-and-access | passed
 - 2026-07-02T13:45:00Z | module-academic-structure | implementer: M02 academic structure — terms/courses/rooms/class-sections CRUD, enrollment CSV import with row-level errors, isStudentEnrolled helper, schedule-template session generation — checks: full profile pass
 - 2026-07-02T13:41:54Z | module-academic-structure | passed
+- 2026-07-02T13:49:11Z | module-session-lifecycle | implementer: M03 session lifecycle — open/close handlers, state transition guards, QR issuance on open, absent finalization + close summary, audit logs — checks: full profile pass
+- 2026-07-02T13:52:09Z | module-session-lifecycle | passed

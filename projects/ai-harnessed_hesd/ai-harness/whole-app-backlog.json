@@ -429,7 +429,7 @@
     },
     {
       "id": "module-session-lifecycle",
-      "passes": false,
+      "passes": true,
       "priority": 9,
       "phase": 1,
       "agent": "backend",
@@ -448,9 +448,9 @@
       ],
       "description": "Implement class session open/close lifecycle with valid transition guards and idempotent command semantics.",
       "completionArtifacts": [
-        "Open and close session command handlers",
-        "Session state transition validation and errors",
-        "Session close summary payload with counts"
+        "apps/api/src/modules/session-lifecycle",
+        "apps/api/src/app.ts",
+        "apps/api/src/modules/identity/protected-stubs.ts"
       ],
       "history": [
         {
@@ -491,7 +491,14 @@
         }
       ],
       "testRequirements": {
+        "unit": [
+          "apps/api/src/modules/session-lifecycle/validation.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/modules/session-lifecycle/session-lifecycle.integration.test.ts"
+        ],
         "acceptanceTags": [
+          "AC-01",
           "AC-05",
           "BR-01",
           "BR-02",

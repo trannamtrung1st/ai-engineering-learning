@@ -58,12 +58,6 @@ export async function registerProtectedRouteStubs(
     resolveScope: paramsSessionId,
   });
 
-  const guardSessionControl = createAuthorizeGuard(services, {
-    resource: "SessionControl",
-    action: "execute",
-    resolveScope: paramsSessionId,
-  });
-
   const guardCheckIn = createAuthorizeGuard(services, {
     resource: "CheckInSubmit",
     action: "execute",
@@ -118,24 +112,6 @@ export async function registerProtectedRouteStubs(
     { preHandler: combineGuards(authenticate, guardAttendanceUpdate) },
     async (request, reply) => {
       sendApiSuccess(reply, request, 200, { status: "accepted" });
-    },
-  );
-
-  app.post(
-    "/class-sessions/:sessionId/open",
-    { preHandler: combineGuards(authenticate, guardSessionControl) },
-    async (request, reply) => {
-      const params = request.params as { sessionId: string };
-      sendApiSuccess(reply, request, 200, { classSessionId: params.sessionId, state: "Open" });
-    },
-  );
-
-  app.post(
-    "/class-sessions/:sessionId/close",
-    { preHandler: combineGuards(authenticate, guardSessionControl) },
-    async (request, reply) => {
-      const params = request.params as { sessionId: string };
-      sendApiSuccess(reply, request, 200, { classSessionId: params.sessionId, state: "Closed" });
     },
   );
 
