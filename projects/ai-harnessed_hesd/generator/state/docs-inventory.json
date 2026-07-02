@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-02T08:46:18Z",
+  "generatedAt": "2026-07-02T08:48:30Z",
   "repoRoot": "/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd",
   "inputMode": "flexible",
   "zones": {
@@ -17,6 +17,8 @@
       "docs/brds/04-business-rules.md",
       "docs/brds/05-state-machine.md",
       "docs/brds/06-domain-model.md",
+      "docs/brds/07-non-functional-risk.md",
+      "docs/brds/08-acceptance-mvp-future.md",
       "docs/brds/prompt.md"
     ],
     "technical": [],
@@ -100,6 +102,20 @@
       "lines": 480,
       "hasRequirementIds": true,
       "outlineKey": "docs/brds/06-domain-model.md"
+    },
+    {
+      "path": "docs/brds/07-non-functional-risk.md",
+      "zone": "brds",
+      "lines": 221,
+      "hasRequirementIds": true,
+      "outlineKey": "docs/brds/07-non-functional-risk.md"
+    },
+    {
+      "path": "docs/brds/08-acceptance-mvp-future.md",
+      "zone": "brds",
+      "lines": 339,
+      "hasRequirementIds": true,
+      "outlineKey": "docs/brds/08-acceptance-mvp-future.md"
     },
     {
       "path": "docs/brds/prompt.md",
@@ -313,6 +329,8 @@
     "docs/brds/04-business-rules.md",
     "docs/brds/05-state-machine.md",
     "docs/brds/06-domain-model.md",
+    "docs/brds/07-non-functional-risk.md",
+    "docs/brds/08-acceptance-mvp-future.md",
     "docs/brds/prompt.md",
     "docs/initial-idea.md",
     "docs/product-meta.json",
@@ -346,7 +364,7 @@
   "hasDesignSystem": true,
   "completeness": {
     "phase0": true,
-    "phase1": false,
+    "phase1": true,
     "phase2": false,
     "phase3": false
   }
