@@ -71,6 +71,7 @@ The target repo's root `package.json` does **not** include generator scripts —
 | `GEN_INPUT_MODE=greenfield` | Strict scaffold overwrite (legacy behavior) |
 | `GEN_FORCE_DESIGN=1` | Overwrite existing `DESIGN.md` and design-system modules |
 | `GEN_SKIP_SELF_CHECK=1` | Skip generator startup self-check (debug only) |
+| `GEN_VERIFY_SELF_FIX=0` | Disable auto self-fix pass after verification failure |
 | `GEN_SKIP_AGENT=1` | Skip Cursor agent (testing) |
 | `GEN_SKIP_REVIEW=1` | Skip optional AI doc review |
 | `GEN_MODEL` | Override default model |

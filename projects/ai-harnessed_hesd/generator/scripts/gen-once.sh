@@ -148,6 +148,85 @@ if [[ "$verify_status" -ne 0 ]]; then
     verify_feedback="$(tail -n 40 "$verify_log")"
   fi
 
+  if [[ "$kind" == "agent" && "${GEN_SKIP_AGENT:-}" != "1" && "${GEN_VERIFY_SELF_FIX:-1}" == "1" ]]; then
+    append_guardrail "$STEP_ID" "Verification failed for step ${STEP_ID}. Running automatic self-fix pass before failing.
+
+Verifier feedback:
+${verify_feedback}
+
+Full log: ${verify_log}"
+
+    require_agent
+    agent_mode="$(step_agent "$STEP_ID")"
+    fix_prompt="$("${GEN_SCRIPTS_DIR}/build-prompt.sh" "$STEP_ID" "$agent_mode")"
+    fix_model="$(get_model default)"
+    [[ "$agent_mode" == "harness-planner" ]] && fix_model="$(get_model harnessPlanner 2>/dev/null || get_model default)"
+
+    fix_outputs_reminder=""
+    while IFS= read -r out; do
+      [[ -z "$out" ]] && continue
+      abs="$(resolve_repo_path "$out")"
+      fix_outputs_reminder="${fix_outputs_reminder}
+Write exactly: \`${abs}\`"
+    done < <(step_outputs "$STEP_ID")
+
+    fix_full_prompt="${fix_prompt}
+
+## Self-check fix pass
+
+Your previous output failed verification. Apply targeted fixes now.
+
+Verifier feedback:
+${verify_feedback}
+
+## Harness reminder
+
+${fix_outputs_reminder}
+
+After writing all outputs, end with: STEP_DONE ${STEP_ID}
+"
+
+    fix_out="${RUNS_DIR}/${RID}-self-fix-agent.txt"
+    gen_step "Running self-fix pass (${agent_mode}, model=${fix_model})"
+    gen_agent_begin "self-fix ${agent_mode} (${fix_model})"
+    set +e
+    agent_invoke "$fix_model" "$fix_full_prompt" "$fix_out"
+    fix_agent_status=$?
+    set -e
+    gen_agent_end "$fix_agent_status"
+
+    if [[ "$fix_agent_status" -eq "$AGENT_TIMEOUT_EXIT" ]]; then
+      append_guardrail "$STEP_ID" "Self-fix pass timed out — see ${RID}-self-fix-agent.txt"
+      append_progress "$STEP_ID" "verify_self_fix_timeout"
+      exit 1
+    fi
+
+    fix_agent_text="$(cat "$fix_out")"
+    if echo "$fix_agent_text" | grep -q "STEP_BLOCKED"; then
+      fix_reason="$(echo "$fix_agent_text" | grep "STEP_BLOCKED" | tail -1)"
+      append_guardrail "$STEP_ID" "Self-fix pass blocked: ${fix_reason}"
+      append_progress "$STEP_ID" "verify_self_fix_blocked"
+      exit 1
+    fi
+
+    if ! echo "$fix_agent_text" | grep -q "STEP_DONE"; then
+      append_guardrail "$STEP_ID" "Self-fix pass did not emit STEP_DONE"
+      append_progress "$STEP_ID" "verify_self_fix_failed"
+      exit 1
+    fi
+
+    gen_step "Re-running step verification after self-fix"
+    verify_log="${RUNS_DIR}/${RID}-verify-self-fix.txt"
+    set +e
+    "${GEN_SCRIPTS_DIR}/verify-step.sh" "$STEP_ID" 2>&1 | tee "$verify_log"
+    verify_status=${PIPESTATUS[0]}
+    set -e
+  fi
+
+  if [[ "$verify_status" -eq 0 ]]; then
+    append_progress "$STEP_ID" "verify_self_fix_passed"
+    gen_ok "Verification passed after self-fix"
+  else
   if [[ "$kind" == "gate" ]]; then
     cp "$verify_log" "${GEN_STATE_DIR}/last-gate-failure.txt"
     append_guardrail "$STEP_ID" "Gate verification failed — harness will attempt auto-repair on next loop iteration.
@@ -166,6 +245,7 @@ Full log: ${verify_log}"
   fi
   append_progress "$STEP_ID" "verify_failed"
   exit 1
+  fi
 fi
 
 if [[ "$kind" == "gate" ]]; then
