@@ -315,8 +315,19 @@
           "kind": "drift",
           "reason": "Doc drift for AC-12 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-02T10:07:28Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-13 — reverify after TestGen",
+          "source": "harness"
         }
-      ]
+      ],
+      "testRequirements": {
+        "acceptanceTags": [
+          "AC-13"
+        ]
+      }
     },
     {
       "id": "module-policy-engine",
@@ -645,6 +656,19 @@
         "Realtime roster table grouped by attendance states",
         "Inline/manual correction action with reason capture",
         "Window-expired and permission-denied UI treatments"
+      ],
+      "testRequirements": {
+        "acceptanceTags": [
+          "AC-13"
+        ]
+      },
+      "history": [
+        {
+          "at": "2026-07-02T10:07:28Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-13 — reverify after TestGen",
+          "source": "harness"
+        }
       ]
     },
     {

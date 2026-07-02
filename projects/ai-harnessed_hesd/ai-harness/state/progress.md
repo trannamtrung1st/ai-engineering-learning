@@ -11,3 +11,5 @@
 - 2026-07-02T09:57:32Z | AC-10 | testgen_passed
 - 2026-07-02T09:59:55Z | AC-11 | testgen_passed
 - 2026-07-02T10:01:56Z | AC-12 | testgen_passed
+- 2026-07-02T10:04:41Z | AC-13 | testgen_validation_failed
+- 2026-07-02T10:07:28Z | AC-13 | testgen_passed
