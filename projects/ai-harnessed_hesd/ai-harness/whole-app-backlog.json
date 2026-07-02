@@ -970,18 +970,71 @@
       ],
       "description": "Build academic admin setup pages for terms/courses/sections and enrollment import workflow needed for session eligibility.",
       "completionArtifacts": [
-        "Academic structure listing/detail forms",
-        "Enrollment import UI with row-level result feedback",
-        "CRUD success/error states aligned with API contracts"
+        "apps/web/src/routes/AdminLayout.tsx",
+        "apps/web/src/routes/router.tsx",
+        "apps/web/src/routes/pages/AdminTermsPage.tsx",
+        "apps/web/src/routes/pages/AdminTermsPage.module.css",
+        "apps/web/src/routes/pages/AdminClassSectionsPage.tsx",
+        "apps/web/src/routes/pages/AdminClassSectionsPage.module.css",
+        "apps/web/src/routes/pages/AdminEnrollmentsPage.tsx",
+        "apps/web/src/routes/pages/AdminEnrollmentsPage.module.css",
+        "apps/web/src/components/domain/TermList.tsx",
+        "apps/web/src/components/domain/TermList.module.css",
+        "apps/web/src/components/domain/TermCreateForm.tsx",
+        "apps/web/src/components/domain/ClassSectionList.tsx",
+        "apps/web/src/components/domain/ClassSectionList.module.css",
+        "apps/web/src/components/domain/ClassSectionCreateForm.tsx",
+        "apps/web/src/components/domain/EnrollmentImportPanel.tsx",
+        "apps/web/src/components/domain/EnrollmentImportPanel.module.css",
+        "apps/web/src/components/domain/AcademicForm.module.css",
+        "apps/web/src/lib/api/academic-api.ts",
+        "apps/web/src/lib/api/seed-fixtures.ts",
+        "apps/web/src/lib/listing/terms-list-query.ts",
+        "apps/web/src/lib/listing/class-sections-list-query.ts",
+        "apps/web/src/lib/auth/role-guard.ts",
+        "apps/web/src/lib/i18n/check-in-outcomes.ts",
+        "apps/web/src/routes/pages/StudentCheckInPage.tsx",
+        "apps/web/src/components/domain/LecturerSessionList.tsx",
+        "apps/web/src/components/domain/LecturerSessionList.module.css",
+        "apps/web/src/lib/api/session-api.ts",
+        "apps/api/src/modules/session-lifecycle/types.ts",
+        "apps/api/src/modules/session-lifecycle/repository.ts",
+        "apps/api/src/modules/academic-structure/repository.ts",
+        "scripts/db-seed.mjs"
       ],
       "testRequirements": {
+        "unit": [
+          "apps/web/src/lib/api/academic-api.test.ts",
+          "apps/web/src/lib/listing/terms-list-query.test.ts",
+          "apps/web/src/lib/i18n/check-in-outcomes.test.ts",
+          "apps/web/src/lib/auth/role-guard.test.ts"
+        ],
+        "component": [
+          "apps/web/src/components/domain/TermList.test.tsx",
+          "apps/web/src/components/domain/TermCreateForm.test.tsx",
+          "apps/web/src/components/domain/ClassSectionList.test.tsx",
+          "apps/web/src/components/domain/ClassSectionCreateForm.test.tsx",
+          "apps/web/src/components/domain/EnrollmentImportPanel.test.tsx",
+          "apps/web/src/components/domain/LecturerSessionList.test.tsx"
+        ],
         "acceptanceTags": [
           "AC-07",
           "FR-01",
           "FR-04",
           "FR-06"
+        ],
+        "playwright": [
+          "tests/playwright-ui/scenarios/web-academic-admin-academic-setup.spec.ts"
         ]
-      }
+      },
+      "history": [
+        {
+          "at": "2026-07-02T19:42:07Z",
+          "kind": "gate_failed",
+          "reason": "Browser test failed — see 20260702T192214Z-browser-test.json",
+          "source": "harness"
+        }
+      ]
     },
     {
       "id": "web-academic-admin-policy-management",

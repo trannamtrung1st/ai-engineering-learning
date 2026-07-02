@@ -76,6 +76,19 @@
         "TC-FR-20-015"
       ],
       "updatedAt": "2026-07-02T19:20:17Z"
+    },
+    "web-academic-admin-academic-setup": {
+      "specPath": "/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/tests/playwright-ui/scenarios/web-academic-admin-academic-setup.spec.ts",
+      "lastRunId": "20260702T194207Z",
+      "testCount": 5,
+      "sourceTcIds": [
+        "TC-AC-07-008",
+        "TC-FR-01-011",
+        "TC-FR-04-010",
+        "TC-FR-06-012",
+        "TC-FR-06-013"
+      ],
+      "updatedAt": "2026-07-02T20:01:20Z"
     }
   }
 }
