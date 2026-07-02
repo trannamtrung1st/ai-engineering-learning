@@ -14,7 +14,7 @@ Concise index for the portable spec generator. Independent from `ai-harness/` an
 | Agents | `agents/doc-writer.prompt.md`, `harness-planner.prompt.md`, `doc-reviewer.prompt.md` |
 | Internal state | `state/progress.md`, `state/guardrails.md` |
 | Templates | `templates/ai-harness/` (vendored static harness) |
-| Validation | `scripts/verify-step.sh` and validators |
+| Validation | `scripts/verify-step.sh`, `scripts/self-check.sh`, and validators |
 | Observability | `generated/runs/<timestamp>-*.txt` |
 
 ## Loop flow
@@ -27,7 +27,9 @@ pick step → [scaffold|agent|gate]
   → mark passes → commit → repeat
 ```
 
-Scripts: `generate.sh` (entry), `gen-loop.sh` (autonomous), `gen-once.sh` (single step), `discover-docs.sh`, `auto-skip-complete-steps.sh`.
+Scripts: `generate.sh` (entry), `gen-loop.sh` (autonomous), `gen-once.sh` (single step), `discover-docs.sh`, `auto-skip-complete-steps.sh`, `self-check.sh`.
+
+Startup: `self-check.sh` validates generator internals before docs discovery.
 
 ## Docs intake (flexible input)
 
