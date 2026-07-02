@@ -407,7 +407,7 @@
     },
     {
       "id": "uiux-flows-wireframes-states",
-      "passes": false,
+      "passes": true,
       "priority": 32,
       "phase": 3,
       "kind": "agent",

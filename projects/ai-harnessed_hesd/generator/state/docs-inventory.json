@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-02T09:21:37Z",
+  "generatedAt": "2026-07-02T09:27:37Z",
   "repoRoot": "/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd",
   "inputMode": "flexible",
   "zones": {
@@ -45,7 +45,11 @@
       "docs/ui-ux/03-design-system-basics.md",
       "docs/ui-ux/04-design-tokens.md",
       "docs/ui-ux/05-common-ui-components.md",
-      "docs/ui-ux/06-app-layout-components.md"
+      "docs/ui-ux/06-app-layout-components.md",
+      "docs/ui-ux/07-domain-specific-components.md",
+      "docs/ui-ux/08-forms-validation-ux.md",
+      "docs/ui-ux/09-page-list.md",
+      "docs/ui-ux/README.md"
     ],
     "designSystem": [
       "docs/ui-ux/DESIGN.md",
@@ -317,11 +321,39 @@
       "outlineKey": "docs/ui-ux/06-app-layout-components.md"
     },
     {
+      "path": "docs/ui-ux/07-domain-specific-components.md",
+      "zone": "uiux",
+      "lines": 241,
+      "hasRequirementIds": true,
+      "outlineKey": "docs/ui-ux/07-domain-specific-components.md"
+    },
+    {
+      "path": "docs/ui-ux/08-forms-validation-ux.md",
+      "zone": "uiux",
+      "lines": 228,
+      "hasRequirementIds": true,
+      "outlineKey": "docs/ui-ux/08-forms-validation-ux.md"
+    },
+    {
+      "path": "docs/ui-ux/09-page-list.md",
+      "zone": "uiux",
+      "lines": 276,
+      "hasRequirementIds": true,
+      "outlineKey": "docs/ui-ux/09-page-list.md"
+    },
+    {
       "path": "docs/ui-ux/DESIGN.md",
       "zone": "designSystem",
       "lines": 183,
       "hasRequirementIds": true,
       "outlineKey": "docs/ui-ux/DESIGN.md"
+    },
+    {
+      "path": "docs/ui-ux/README.md",
+      "zone": "uiux",
+      "lines": 86,
+      "hasRequirementIds": false,
+      "outlineKey": "docs/ui-ux/README.md"
     },
     {
       "path": "docs/ui-ux/design-system/accordion.md",
