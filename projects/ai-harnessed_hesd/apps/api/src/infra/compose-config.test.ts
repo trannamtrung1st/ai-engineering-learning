@@ -23,7 +23,7 @@ describe("docker compose runtime config — FR-07 FR-16 NFR-16", () => {
     expect(compose).toMatch(/5433:5432/);
     expect(compose).toMatch(/6380:6379/);
     expect(compose).toMatch(/9002:9000/);
-    expect(compose).toMatch(/hesd_test/);
+    expect(compose).toMatch(/attendly_test/);
   });
 });
 

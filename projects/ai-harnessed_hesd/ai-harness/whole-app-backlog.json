@@ -118,6 +118,19 @@
           "kind": "drift",
           "reason": "Doc drift for NFR-16 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-02T14:23:21Z",
+          "kind": "manual",
+          "reason": "compose-config.test.ts expects hesd_test but docker-compose.test.yml uses attendly_test — blocks all backend test:unit gates",
+          "source": "human"
+        },
+        {
+          "at": "2026-07-02T14:23:35Z",
+          "kind": "deferred",
+          "reason": "compose-config.test.ts stale hesd_test assertion blocks test:unit for all backend slices; M05 implementation and integration tests are complete",
+          "source": "implementer",
+          "relatedSlice": "module-attendance-ledger"
         }
       ],
       "testRequirements": {
@@ -618,9 +631,13 @@
       ],
       "description": "Implement attendance record write paths for success, close-time absent finalization, and lecturer/admin manual corrections.",
       "completionArtifacts": [
-        "Attendance upsert logic with status transitions",
-        "Manual correction endpoint with policy window checks",
-        "Close-time unresolved enrollment finalizer"
+        "apps/api/src/modules/attendance-ledger",
+        "apps/api/src/modules/attendance-ledger/routes.ts",
+        "apps/api/src/modules/attendance-ledger/validation.ts",
+        "apps/api/src/modules/session-lifecycle/repository.ts",
+        "apps/api/src/modules/check-in-and-qr-orchestrator/repository.ts",
+        "apps/api/src/modules/identity/protected-stubs.ts",
+        "apps/api/src/app.ts"
       ],
       "history": [
         {
@@ -664,10 +681,30 @@
           "kind": "drift",
           "reason": "Doc drift for BR-14 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-02T14:18:10Z",
+          "kind": "blocked",
+          "reason": "SLICE_BLOCKED scope gate has unrelated out-of-scope apps/api/src/infra/compose-config.test.ts change and test:e2e targets missing @attendly/e2e workspace",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T14:23:35Z",
+          "kind": "deferred",
+          "reason": "compose-config.test.ts stale hesd_test assertion blocks test:unit for all backend slices; M05 implementation and integration tests are complete",
+          "source": "harness",
+          "relatedSlice": "infra-local-runtime-compose"
         }
       ],
       "testRequirements": {
+        "unit": [
+          "apps/api/src/modules/attendance-ledger/validation.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/modules/attendance-ledger/attendance-ledger.integration.test.ts"
+        ],
         "acceptanceTags": [
+          "AC-12",
           "AC-13",
           "BR-13",
           "BR-14",

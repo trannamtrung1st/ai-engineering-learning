@@ -91,3 +91,9 @@
 - 2026-07-02T13:52:09Z | module-session-lifecycle | passed
 - 2026-07-02T14:04:46Z | module-check-in-and-qr-orchestrator | implementer: M04 check-in and QR orchestrator — POST /v1/check-ins, GET qr/current, validation order, attempt persistence — checks: full profile pass
 - 2026-07-02T14:08:10Z | module-check-in-and-qr-orchestrator | passed
+- 2026-07-02T14:17:36Z | module-attendance-ledger | implementer: M05 attendance ledger — roster GET, correction PATCH with lecturer/admin policy windows, pending/missing absent finalization, QR success upsert from Pending — checks: typecheck pass; unit pass; integration pass; scope blocked by pre-existing apps/api/src/infra/compose-config.test.ts edit; e2e blocked by missing @attendly/e2e workspace
+- 2026-07-02T14:18:10Z | module-attendance-ledger | blocked
+- 2026-07-02T14:23:00Z | module-attendance-ledger | implementer: M05 attendance ledger complete — roster GET, PATCH correction with BR-15/AC-14 policy windows, close-time Pending/missing absent finalization, QR Pending upsert — backlog artifacts fixed — integration 4/4 pass — blocked by infra-local-runtime-compose compose-config.test.ts hesd_test vs attendly_test mismatch in test:unit
+- 2026-07-02T14:23:35Z | module-attendance-ledger | deferred_to:infra-local-runtime-compose
+- 2026-07-02T14:24:41Z | infra-local-runtime-compose | implementer: fixed compose-config.test.ts attendly_test assertion (was stale hesd_test) — reverted out-of-scope module edits — checks: full profile pass
+- 2026-07-02T14:26:48Z | infra-local-runtime-compose | passed
