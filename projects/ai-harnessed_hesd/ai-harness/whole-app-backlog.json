@@ -912,7 +912,7 @@
     },
     {
       "id": "module-audit-and-compliance",
-      "passes": false,
+      "passes": true,
       "priority": 14,
       "phase": 1,
       "agent": "backend",
@@ -932,9 +932,14 @@
       ],
       "description": "Implement immutable audit recording and query APIs for attendance mutations, failed attempts, and export activity.",
       "completionArtifacts": [
-        "Append-only audit write service",
-        "Audit query endpoint with scope constraints",
-        "Correlation-id propagation in mutation/event flows"
+        "apps/api/src/modules/audit-and-compliance",
+        "apps/api/src/app.ts",
+        "apps/api/src/modules/identity/protected-stubs.ts",
+        "apps/api/src/modules/attendance-ledger/repository.ts",
+        "apps/api/src/modules/check-in-and-qr-orchestrator/repository.ts",
+        "apps/api/src/modules/session-lifecycle/repository.ts",
+        "apps/api/src/modules/session-lifecycle/routes.ts",
+        "apps/api/src/modules/reporting-and-export/repository.ts"
       ],
       "history": [
         {
@@ -981,6 +986,12 @@
         }
       ],
       "testRequirements": {
+        "unit": [
+          "apps/api/src/modules/audit-and-compliance/validation.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/modules/audit-and-compliance/audit-and-compliance.integration.test.ts"
+        ],
         "acceptanceTags": [
           "AC-19",
           "BR-22",

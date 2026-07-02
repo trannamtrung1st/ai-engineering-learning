@@ -95,6 +95,7 @@ export async function registerSessionLifecycleRoutes(
 
       const outcome = await repository.closeSession(params.sessionId, actor.userId, {
         idempotencyKey: idempotencyKey(request),
+        correlationId: resolveRequestId(request),
       });
 
       if (!outcome.ok) {

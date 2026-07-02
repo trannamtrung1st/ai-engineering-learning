@@ -111,3 +111,5 @@
 - 2026-07-02T15:18:21Z | module-reporting-and-export | checks_failed
 - 2026-07-02T15:19:39Z | module-reporting-and-export | implementer: re-verified M07 after gate failure — GET /v1/reports/attendance, POST /v1/exports/attendance, scope resolver (BR-18/BR-19), export_jobs migration, audit on export (AC-17) — checks: full profile pass (unit 54/54, integration 167/167)
 - 2026-07-02T15:22:43Z | module-reporting-and-export | passed
+- 2026-07-02T15:37:15Z | module-audit-and-compliance | implementer: M08 audit and compliance — append-only writeAuditEvent service, GET /v1/audit-logs with scoped filters, correlation-id on mutations/exports, wired into M04/M05/M07/session-lifecycle — integration flake fixed (ephemeral export actor avoids M07 parallel cleanup) — checks: full profile pass (unit 61/61, integration 172/172)
+- 2026-07-02T15:39:29Z | module-audit-and-compliance | passed

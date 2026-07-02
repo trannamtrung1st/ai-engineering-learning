@@ -21,3 +21,4 @@ Verification failures and remediation notes for harness agents.
 - [module-policy-engine] AI review failed — see 20260702T145558Z-review.json
 - [module-policy-engine] Policy-engine integration tests must use dedicated faculty/course/section hierarchy (not shared seed section) — course/faculty scoped policies pollute parallel M04 check-in tests on the same course
 - [module-reporting-and-export] Computational checks failed — see 20260702T150919Z-checks.json
+- [module-audit-and-compliance] M07 reporting integration `deleteExportJobsForActor(lecturer|academicAdmin)` wipes all ExportJob audit rows for that actor — parallel audit export query tests must use an ephemeral actor user, not seed lecturer

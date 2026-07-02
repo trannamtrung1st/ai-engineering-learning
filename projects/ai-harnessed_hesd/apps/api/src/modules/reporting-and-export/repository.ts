@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
+import { writeAuditEvent } from "../audit-and-compliance/service.js";
 import type { ActorContext } from "../identity/types.js";
 import type {
   AttendanceReportFilters,
@@ -268,30 +269,22 @@ export function createReportingRepository(pool: pg.Pool) {
         );
 
         const primaryRole = params.actor.roles[0] ?? "Lecturer";
-        await client.query(
-          `
-          INSERT INTO audit_logs (
-            id, actor_user_id, action_type, target_type, target_id,
-            new_value, reason, scope_type, scope_id, correlation_id
-          )
-          VALUES ($1, $2, 'Export', 'ExportJob', $3, $4::jsonb, $5, $6, $7, $8)
-          `,
-          [
-            randomUUID(),
-            params.actor.userId,
-            jobId,
-            JSON.stringify({
-              format: params.format,
-              filters: params.filters,
-              rowCount: totalItems,
-              actorRole: primaryRole,
-            }),
-            "Attendance CSV export completed",
-            params.scope.classSectionIds?.length === 1 ? "ClassSection" : "Institution",
-            params.scope.classSectionIds?.[0] ?? null,
-            params.correlationId ?? null,
-          ],
-        );
+        await writeAuditEvent(client, {
+          actorUserId: params.actor.userId,
+          actionType: "Export",
+          targetType: "ExportJob",
+          targetId: jobId,
+          newValue: {
+            format: params.format,
+            filters: params.filters,
+            rowCount: totalItems,
+            actorRole: primaryRole,
+          },
+          reason: "Attendance CSV export completed",
+          scopeType: params.scope.classSectionIds?.length === 1 ? "ClassSection" : "Institution",
+          scopeId: params.scope.classSectionIds?.[0] ?? null,
+          correlationId: params.correlationId ?? null,
+        });
 
         await client.query("COMMIT");
 

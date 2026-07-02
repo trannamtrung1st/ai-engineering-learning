@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type pg from "pg";
 import { createAttendanceLedgerRepository } from "../attendance-ledger/repository.js";
+import { writeAuditEvent } from "../audit-and-compliance/service.js";
 import { validateCloseTransition, validateOpenTransition } from "./validation.js";
 import type {
   ClassSessionRow,
@@ -161,26 +162,18 @@ export function createSessionLifecycleRepository(pool: pg.Pool) {
       sessionId: string;
       oldValue: Record<string, unknown> | null;
       newValue: Record<string, unknown>;
-      correlationId?: string;
+      correlationId?: string | null;
     },
   ): Promise<void> {
-    await client.query(
-      `
-      INSERT INTO audit_logs (
-        id, actor_user_id, action_type, target_type, target_id, old_value, new_value, correlation_id
-      )
-      VALUES ($1, $2, $3, 'ClassSession', $4, $5, $6, $7)
-      `,
-      [
-        randomUUID(),
-        params.actorUserId,
-        params.actionType,
-        params.sessionId,
-        params.oldValue ? JSON.stringify(params.oldValue) : null,
-        JSON.stringify(params.newValue),
-        params.correlationId ?? null,
-      ],
-    );
+    await writeAuditEvent(client, {
+      actorUserId: params.actorUserId,
+      actionType: params.actionType,
+      targetType: "ClassSession",
+      targetId: params.sessionId,
+      oldValue: params.oldValue,
+      newValue: params.newValue,
+      correlationId: params.correlationId ?? null,
+    });
   }
 
   return {
@@ -380,6 +373,7 @@ export function createSessionLifecycleRepository(pool: pg.Pool) {
             closedByUserId: actorUserId,
             summary,
           },
+          correlationId: options.correlationId ?? null,
         });
 
         const result: CloseSessionResult = {

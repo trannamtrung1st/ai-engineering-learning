@@ -2,12 +2,16 @@ import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import type { ActorContext } from "../identity/types.js";
 import { isStudentEnrolled } from "../academic-structure/validation.js";
+import {
+  writeAttendanceAuditEvent,
+} from "../audit-and-compliance/service.js";
 import { createPolicyEngineRepository } from "../policy-engine/repository.js";
 import { INSTITUTION_POLICY_DEFAULTS } from "../policy-engine/defaults.js";
 import {
   resolveCheckInMethodForCorrection,
   validateCorrectionPayload,
   validateCorrectionWindow,
+  isAdminOverrideRole,
 } from "./validation.js";
 import type {
   AttendanceStatus,
@@ -51,30 +55,39 @@ export function createAttendanceLedgerRepository(pool: pg.Pool) {
     client: pg.PoolClient,
     params: {
       actorUserId: string | null;
+      actor?: ActorContext | null;
       attendanceRecordId: string;
+      studentUserId: string;
+      classSessionId: string;
+      classSectionId: string;
       oldStatus: AttendanceStatus | null;
       newStatus: AttendanceStatus;
       reason: string;
       correlationId?: string | null;
     },
   ): Promise<void> {
-    await client.query(
-      `
-      INSERT INTO audit_logs (
-        id, actor_user_id, action_type, target_type, target_id, old_value, new_value, reason, correlation_id
-      )
-      VALUES ($1, $2, 'AttendanceUpdate', 'AttendanceRecord', $3, $4, $5, $6, $7)
-      `,
-      [
-        randomUUID(),
-        params.actorUserId,
-        params.attendanceRecordId,
-        params.oldStatus ? JSON.stringify({ status: params.oldStatus }) : null,
-        JSON.stringify({ status: params.newStatus }),
-        params.reason,
-        params.correlationId ?? null,
-      ],
-    );
+    const subtype =
+      params.actorUserId === null
+        ? "status_finalization"
+        : params.actor && isAdminOverrideRole(params.actor)
+          ? "admin_override"
+          : "manual_update";
+    const actorRole =
+      params.actor?.roles[0] ?? (params.actorUserId === null ? "System" : null);
+
+    await writeAttendanceAuditEvent(client, {
+      actorUserId: params.actorUserId,
+      attendanceRecordId: params.attendanceRecordId,
+      oldStatus: params.oldStatus,
+      newStatus: params.newStatus,
+      reason: params.reason,
+      studentUserId: params.studentUserId,
+      classSessionId: params.classSessionId,
+      classSectionId: params.classSectionId,
+      actorRole,
+      subtype,
+      correlationId: params.correlationId,
+    });
   }
 
   return {
@@ -112,6 +125,9 @@ export function createAttendanceLedgerRepository(pool: pg.Pool) {
         await writeAttendanceAudit(client, {
           actorUserId: null,
           attendanceRecordId: row.id,
+          studentUserId: row.student_user_id,
+          classSessionId: session.id,
+          classSectionId: session.classSectionId,
           oldStatus: "Pending",
           newStatus: "Absent",
           reason: absentReason,
@@ -153,6 +169,9 @@ export function createAttendanceLedgerRepository(pool: pg.Pool) {
         await writeAttendanceAudit(client, {
           actorUserId: null,
           attendanceRecordId: row.id,
+          studentUserId: row.student_user_id,
+          classSessionId: session.id,
+          classSectionId: session.classSectionId,
           oldStatus: null,
           newStatus: "Absent",
           reason: absentReason,
@@ -240,6 +259,9 @@ export function createAttendanceLedgerRepository(pool: pg.Pool) {
       await writeAttendanceAudit(client, {
         actorUserId: params.studentUserId,
         attendanceRecordId: recordId,
+        studentUserId: params.studentUserId,
+        classSessionId: params.classSessionId,
+        classSectionId: params.classSectionId,
         oldStatus: previousStatus,
         newStatus: params.status,
         reason: auditReason,
@@ -500,7 +522,11 @@ export function createAttendanceLedgerRepository(pool: pg.Pool) {
 
         await writeAttendanceAudit(client, {
           actorUserId: params.actor.userId,
+          actor: params.actor,
           attendanceRecordId: recordId,
+          studentUserId: params.studentUserId,
+          classSessionId: params.sessionId,
+          classSectionId: session.class_section_id,
           oldStatus: existing.rows[0] ? previousStatus : null,
           newStatus: payload.status,
           reason: payload.reason,

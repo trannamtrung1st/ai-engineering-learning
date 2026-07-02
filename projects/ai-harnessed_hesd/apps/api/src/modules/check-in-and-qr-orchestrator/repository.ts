@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import { createAttendanceLedgerRepository } from "../attendance-ledger/repository.js";
+import { writeCheckInAttemptAuditEvent } from "../audit-and-compliance/service.js";
 import { isStudentEnrolled } from "../academic-structure/validation.js";
 import { createPolicyEngineRepository } from "../policy-engine/repository.js";
 import { INSTITUTION_POLICY_DEFAULTS } from "../policy-engine/defaults.js";
@@ -115,6 +116,7 @@ export function createCheckInRepository(pool: pg.Pool) {
     params: {
       attemptId: string;
       classSessionId: string;
+      classSectionId: string | null;
       studentUserId: string;
       qrSessionTokenId: string | null;
       outcome: string;
@@ -152,6 +154,17 @@ export function createCheckInRepository(pool: pg.Pool) {
         params.correlationId ?? null,
       ],
     );
+
+    if (params.outcome !== "Success" && params.classSectionId) {
+      await writeCheckInAttemptAuditEvent(client, {
+        attemptId: params.attemptId,
+        studentUserId: params.studentUserId,
+        classSessionId: params.classSessionId,
+        classSectionId: params.classSectionId,
+        outcome: params.outcome,
+        correlationId: params.correlationId,
+      });
+    }
   }
 
   return {
@@ -287,6 +300,7 @@ export function createCheckInRepository(pool: pg.Pool) {
             await persistAttempt(client, {
               attemptId,
               classSessionId: sessionId,
+              classSectionId,
               studentUserId: params.studentUserId,
               qrSessionTokenId: resolved?.id ?? null,
               outcome: failureOutcome,
@@ -344,6 +358,7 @@ export function createCheckInRepository(pool: pg.Pool) {
           await persistAttempt(client, {
             attemptId,
             classSessionId: session!.id,
+            classSectionId: session!.classSectionId,
             studentUserId: params.studentUserId,
             qrSessionTokenId: resolved!.id,
             outcome: "DuplicateCheckIn",
@@ -365,6 +380,7 @@ export function createCheckInRepository(pool: pg.Pool) {
         await persistAttempt(client, {
           attemptId,
           classSessionId: session!.id,
+          classSectionId: session!.classSectionId,
           studentUserId: params.studentUserId,
           qrSessionTokenId: resolved!.id,
           outcome: "Success",
