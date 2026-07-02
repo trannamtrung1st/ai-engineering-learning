@@ -1,0 +1,321 @@
+{
+  "productItemId": "NFR-13",
+  "version": 1,
+  "docFingerprint": "sha256:0091ebfac485b5b90c7a94c982196a35adddc3e7535aba555ed532f8d1599fd9",
+  "generatedAt": "2026-07-02T19:15:00Z",
+  "cases": [
+    {
+      "id": "TC-NFR-13-001",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["NFR-13", "AC-18", "AC-19", "AC-17", "FR-22", "FR-29", "FR-30", "BR-22", "BR-23", "BR-18"],
+      "title": "Testing-plan §3 Attempt/audit coverage and §11 NFR-13 row — 100% audit completeness across failures, edits, and exports",
+      "preconditions": [
+        "Testing-plan §3.1 Attempt/audit coverage block and §11 NFR verification matrix row for NFR-13 apply.",
+        "dispute-trail fixture provides failed check-in attempts, committed manual corrections, and completed export jobs across authorized scopes.",
+        "M08 Audit and Compliance module and check_in_attempts persistence use real database constraints."
+      ],
+      "steps": [
+        "Enumerate all failed POST /v1/check-ins in the fixture and query check_in_attempts plus audit_logs for CheckInAttemptRecorded events.",
+        "Enumerate all committed attendance status mutations and query audit_logs for manual_update or status_finalization action types.",
+        "Enumerate all completed export jobs and query audit_logs for Export action type with actor, scope, and format fields.",
+        "Compare event counts against triggered failure, mutation, and export counts for the same correlation scope."
+      ],
+      "expected": "Maps to testing-plan §3.1 Attempt/audit coverage row and §11 NFR-13 minimum evidence: 100% of failed check-in attempts, manual attendance edits, and export actions are logged with structured reason/context fields and remain queryable; zero audit gaps across the three event classes (NFR-13, CMP-01, CMP-02, CMP-03).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-13-002",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-13", "FR-22", "BR-23", "AC-18"],
+      "title": "Check-in module boundary persists failed CheckInAttempt and audit event with structured outcome at DB transaction",
+      "preconditions": [
+        "Real database transaction spans M04 Check-in Processing and M08 Audit and Compliance modules.",
+        "Open session exists with valid rotating QR; enrolled student has no success AttendanceRecord.",
+        "Test harness can supply expired qrToken to force ExpiredQr terminal outcome."
+      ],
+      "steps": [
+        "Submit check-in command that fails at token validation with correlationId captured.",
+        "Query check_in_attempts for studentUserId, classSessionId, outcome ExpiredQr, attemptedAt, token reference, and correlationId.",
+        "Query audit_logs for actionType CheckInAttemptRecorded or equivalent tied to the same correlationId.",
+        "Query attendance_records to confirm no success row was inserted."
+      ],
+      "expected": "Failed check-in inserts one CheckInAttempt with structured outcome code, ISO-8601 attemptedAt, and correlation metadata; corresponding audit_logs row is written with outcome, sessionId, studentUserId, and context fields per NFR-13 and BR-23.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-13-003",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-13", "FR-29", "FR-30", "BR-22", "BR-18", "AC-13", "AC-17"],
+      "title": "Manual correction and export completion each commit immutable audit_logs rows at module boundary",
+      "preconditions": [
+        "Integration database spans M05 Attendance Ledger, M07 Reporting/Export, and M08 Audit modules.",
+        "Closed session with Absent student exists; assigned Lecturer is within manual edit window.",
+        "Attendance rows exist in lecturer-scoped section for export job creation."
+      ],
+      "steps": [
+        "Lecturer invokes PATCH attendance correction with status Manual Present, reason, and Idempotency-Key; capture correlationId.",
+        "Query audit_logs for manual_update row with actorUserId, oldStatus, newStatus, reason, and occurredAt.",
+        "Lecturer completes POST /v1/exports/attendance with csv format and scoped filters; wait for job Completed.",
+        "Query audit_logs for Export action with actorUserId, scope filter summary, format csv, and occurredAt."
+      ],
+      "expected": "Each committed manual edit and each completed export writes exactly one immutable audit_logs row with structured reason/context fields per permissions §7.1; mutation and export audit counts match committed action counts (NFR-13, CMP-01, CMP-02).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-13-004",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["NFR-13", "FR-22", "BR-23", "AC-04", "AC-05", "AC-07", "AC-08"],
+      "title": "SM-04 terminal failure states each produce auditable CheckInAttempt with matching structured outcome",
+      "preconditions": [
+        "Integration database seeded with fixtures for Open, Closed, and cross-session token bindings.",
+        "Enrolled and not-enrolled students available; duplicate-success student has existing Present record.",
+        "Validation order short-circuit paths are individually reachable per SM-04."
+      ],
+      "steps": [
+        "Drive check-in to ExpiredQr, SessionClosed, NotEnrolled, and DuplicateCheckIn terminal states.",
+        "For each path, query check_in_attempts for outcome code and attemptedAt.",
+        "For each path, query audit_logs for CheckInAttemptRecorded event with matching outcome and correlationId.",
+        "Verify AttendanceRecord remains unchanged on all failure paths."
+      ],
+      "expected": "Every SM-04 business-failure terminal state persists CheckInAttempt with matching structured outcome code and timestamp plus queryable audit event; AMI-02 holds with zero success mutations on failures (NFR-13, AC-18).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-13-005",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P0",
+      "traceability": ["NFR-13", "FR-22", "BR-23", "AC-08"],
+      "title": "Concurrent failed check-in submissions each persist distinct auditable CheckInAttempt rows",
+      "preconditions": [
+        "Student already has one successful Present attendance for an Open session.",
+        "Test harness can fire parallel POST /v1/check-ins with distinct Idempotency-Key values and valid rotating QR tokens."
+      ],
+      "steps": [
+        "Submit three concurrent POST /v1/check-ins for the same enrolled student and session after initial success.",
+        "Collect all API outcomes and query check_in_attempts for the student-session pair.",
+        "Query audit_logs for CheckInAttemptRecorded events tied to each request correlationId.",
+        "Verify AttendanceRecord row count and field values remain unchanged from beforeState."
+      ],
+      "expected": "Each concurrent duplicate path returns DuplicateCheckIn and inserts its own failed CheckInAttempt with structured outcome and timestamp; each failure has a corresponding audit_logs entry; exactly one success AttendanceRecord persists unchanged (NFR-13, BR-23).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-13-006",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-13", "FR-22", "BR-23", "AC-18", "AC-04"],
+      "title": "HTTP contract — failed POST /v1/check-ins 422 ExpiredQr is queryable via GET /v1/audit-logs",
+      "preconditions": [
+        "Open class session with rotating QR token exists in test environment.",
+        "Authenticated enrolled student bearer token is available.",
+        "AcademicAdmin bearer token can query GET /v1/audit-logs.",
+        "Test clock can advance beyond token expiresAt."
+      ],
+      "steps": [
+        "Advance clock past qr.expiresAt for the current session token.",
+        "Call POST /v1/check-ins with Authorization Bearer token, expired qrToken, clientTimestamp, and Idempotency-Key; capture correlationId.",
+        "Validate HTTP 422 with standard envelope where error.code is ExpiredQr.",
+        "AcademicAdmin calls GET /v1/audit-logs?actionType=CheckInAttemptRecorded&targetId={studentUserId}&from={attemptStart}&to={attemptEnd}&page=1&pageSize=25.",
+        "Verify audit entry includes outcome ExpiredQr, studentUserId, classSessionId, and occurredAt."
+      ],
+      "expected": "Failed check-in returns HTTP 422 with error.code ExpiredQr; committed failure is queryable via GET /v1/audit-logs with structured outcome and context fields per NFR-13 and AC-18.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-13-007",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-13", "FR-29", "FR-30", "BR-22", "BR-18", "AC-13", "AC-17"],
+      "title": "HTTP contract — manual correction and export audit entries returned by GET /v1/audit-logs",
+      "preconditions": [
+        "Assigned Lecturer is authenticated with valid Bearer token.",
+        "Closed session exists with student AttendanceRecord status Absent within manual edit window.",
+        "AcademicAdmin bearer token can query audit logs per role policy."
+      ],
+      "steps": [
+        "Lecturer calls PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Manual Present, reason, and Idempotency-Key; confirm HTTP 200.",
+        "Lecturer calls POST /v1/exports/attendance with csv format and scoped filters; wait until job status is Completed.",
+        "AcademicAdmin calls GET /v1/audit-logs?targetType=AttendanceRecord&targetId={studentUserId}&actionType=manual_update&from={windowStart}&to={windowEnd}.",
+        "AcademicAdmin calls GET /v1/audit-logs?actorUserId={lecturerId}&actionType=Export&from={windowStart}&to={windowEnd}.",
+        "Verify both responses return HTTP 200 with standard envelope and complete audit field sets."
+      ],
+      "expected": "Committed manual correction and completed export each produce queryable GET /v1/audit-logs entries with actor, timestamp, structured reason/context (old/new status and reason for edit; scope and format for export) per NFR-13, FR-29, and FR-30.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-13-008",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "flow-c",
+      "priority": "P0",
+      "traceability": ["NFR-13", "AC-18", "AC-19", "AC-17", "FR-22", "FR-29", "FR-30", "BR-22", "BR-23"],
+      "title": "Flow C dispute-trail audit verification — failures, manual edits, and exports queryable end-to-end",
+      "preconditions": [
+        "dispute-trail fixture set from testing-plan §8.1 is loaded with mixed failure attempts, lecturer correction, and export completion.",
+        "SystemAuditor or AcademicAdmin can query GET /v1/audit-logs institution-scoped.",
+        "Known classSessionId and studentUserId anchor the dispute window."
+      ],
+      "steps": [
+        "Trigger ExpiredQr failed check-in for enrolled student; record API error.code and correlationId.",
+        "Lecturer applies PATCH correction with documented reason on Absent student.",
+        "Lecturer completes scoped CSV export for the section.",
+        "Query GET /v1/audit-logs filtered by classSessionId and dispute time range across CheckInAttemptRecorded, manual_update, and Export action types.",
+        "Verify each event class includes structured reason/context fields and correlates to the triggering action."
+      ],
+      "expected": "End-to-end dispute trail shows 100% audit coverage: every failed attempt, committed manual edit, and completed export is present in GET /v1/audit-logs with actor, timestamp, and structured context suitable for forensic review (NFR-13, launch gate control #2).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-13-009",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["NFR-13", "FR-22", "BR-23", "AC-18"],
+      "title": "Documented check-in failure outcome matrix achieves 100% auditable attempt coverage",
+      "preconditions": [
+        "Test matrix covers API §3.2 outcome codes: ExpiredQr, SessionNotOpen, SessionClosed, NotEnrolled, DuplicateCheckIn, GpsRequired, GpsDisabled, OutOfRadius, LowAccuracy.",
+        "Each row has a deterministic fixture to reach that terminal outcome without bypassing earlier guards incorrectly.",
+        "AcademicAdmin can query GET /v1/audit-logs after each failure."
+      ],
+      "steps": [
+        "For each documented failure outcome code, trigger POST /v1/check-ins and capture HTTP status and error.code.",
+        "Query check_in_attempts filtered by studentUserId and classSessionId for each triggered failure.",
+        "Query GET /v1/audit-logs for CheckInAttemptRecorded events matching each correlationId.",
+        "Aggregate pass/fail: count failures triggered versus auditable rows persisted."
+      ],
+      "expected": "Every matrix failure path returns documented error.code and persists exactly one CheckInAttempt with matching structured outcome plus queryable audit_logs entry; zero failures lack auditable reason/context coverage (NFR-13, CMP-03).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-13-010",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["NFR-13", "NFR-09", "FR-32", "BR-19"],
+      "title": "Student denied GET /v1/audit-logs without disclosing failed-attempt or export audit evidence",
+      "preconditions": [
+        "dispute-trail fixture includes failed check-in attempts, manual corrections, and export audit entries for institution scope.",
+        "Student bearer token is authenticated.",
+        "AcademicAdmin token is available as authorized control."
+      ],
+      "steps": [
+        "Student calls GET /v1/audit-logs?targetId={studentUserId}&classSessionId={sessionId}.",
+        "Student calls GET /v1/audit-logs?actionType=Export&from={start}&to={end}.",
+        "Student calls GET /v1/audit-logs?actionType=CheckInAttemptRecorded with no filters.",
+        "Inspect responses for partial leakage of outcome codes, old/new status, export scope, or actor identifiers.",
+        "AcademicAdmin calls the same queries as control."
+      ],
+      "expected": "All Student audit log queries return HTTP 403 Forbidden per AuditLog.read Deny; responses contain no audit items, failure reason codes, mutation trails, or export scope metadata; AcademicAdmin control returns 200 with full queryable audit entries (NFR-09, BR-19).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-13-011",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["NFR-13", "NFR-09", "FR-27", "BR-18", "BR-19", "AC-15"],
+      "title": "Out-of-scope Lecturer denied export and cross-section audit log read without evidence leakage",
+      "preconditions": [
+        "Lecturer L1 is assigned only to section A; section B has failed check-in audit entries and completed export audit.",
+        "Lecturer L1 bearer token is authenticated.",
+        "AcademicAdmin can query section B audit events as control."
+      ],
+      "steps": [
+        "Lecturer L1 calls POST /v1/exports/attendance with filters targeting section B classSectionId.",
+        "Lecturer L1 calls GET /v1/audit-logs filtered to section B CheckInAttemptRecorded and Export events.",
+        "Inspect denial responses for partial export rows or audit payload leakage.",
+        "AcademicAdmin queries section B audit logs as control."
+      ],
+      "expected": "Out-of-scope export returns HTTP 403 OutOfScope or Forbidden without generating completed export audit; cross-section audit query returns 403 without disclosing failure outcomes, edit trails, or export scope from section B (PRM-01, PRM-09, NFR-13 read boundary).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-13-012",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "pagination",
+      "priority": "P1",
+      "traceability": ["NFR-13", "FR-30", "FR-32", "BR-22"],
+      "title": "GET /v1/audit-logs pagination returns complete dispute-trail entries across page boundaries",
+      "preconditions": [
+        "dispute-trail fixture includes at least 30 audit entries spanning failed attempts, manual corrections, and exports for one class section.",
+        "AcademicAdmin bearer token is authenticated within institution scope.",
+        "Events span a bounded from/to window with known total count."
+      ],
+      "steps": [
+        "Query GET /v1/audit-logs?classSectionId={sectionId}&from={rangeStart}&to={rangeEnd}&page=1&pageSize=25.",
+        "Verify HTTP 200, meta.pagination page=1, pageSize=25, totalItems >= 30, and totalPages >= 2.",
+        "Record audit entry IDs from page 1 and verify each row includes actionType, actor, occurredAt, and structured context fields.",
+        "Query GET /v1/audit-logs with same filters and page=2; verify distinct IDs with no overlap and union covers all fixture events."
+      ],
+      "expected": "Paginated audit query honors page and pageSize invariants; all NFR-13 event classes (failures, edits, exports) remain queryable across pages with complete reason/context fields and no cross-scope count leakage.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-13-013",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-13", "FR-22", "FR-29", "FR-30", "BR-23", "AC-18", "AC-19"],
+      "title": "SystemAuditor browser journey — PG-15 audit log table shows failed attempts, manual edits, and export actions",
+      "preconditions": [
+        "SystemAuditor is logged in on desktop browser.",
+        "dispute-trail fixture has failed ExpiredQr attempt, lecturer manual correction, and completed CSV export in scoped section.",
+        "PG-15 audit log review route /audit/logs is available per FLOW-13."
+      ],
+      "steps": [
+        "Navigate to /audit/logs and confirm audit log table loads with default timestamp desc sort.",
+        "Filter by classSessionId or actionType CheckInAttemptRecorded and locate failed check-in row with outcome code column.",
+        "Filter by actionType manual_update and verify old status, new status, reason, and actor columns.",
+        "Filter by actionType Export and verify actor, scope summary, format, and timestamp columns.",
+        "Paginate to page 2 if total exceeds pageSize and confirm no duplicate or missing dispute-trail entries."
+      ],
+      "expected": "Audit log UI surfaces 100% of dispute-trail events with structured reason/context columns for failures (outcome code), manual edits (old/new/reason), and exports (scope/format); pagination preserves completeness per NFR-13 forensic review requirements.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-13-014",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["NFR-13", "NFR-09", "FR-32", "BR-19"],
+      "title": "Student browser journey blocked from audit log surfaces that expose failure and export evidence",
+      "preconditions": [
+        "Student is logged in on mobile or desktop browser.",
+        "dispute-trail audit data exists for sessions including the student's failed check-in attempts.",
+        "Application shell may expose /audit/logs or admin navigation routes."
+      ],
+      "steps": [
+        "Navigate personal attendance history and observe absence of audit log navigation links.",
+        "Attempt direct URL navigation to /audit/logs.",
+        "Verify access-denied state, redirect, or empty unauthorized view without displaying failure outcome codes, export scope, or other actors' audit evidence.",
+        "Confirm student check-in failure UI on PG-02 shows localized reason without exposing institution-wide audit trails."
+      ],
+      "expected": "Student cannot browse audit log listing or detail UI; no failure audit evidence, export metadata, or cross-student dispute trails are disclosed in browser surfaces (AuditLog.read Deny, NFR-09, BR-19).",
+      "edgeCase": false
+    }
+  ]
+}
