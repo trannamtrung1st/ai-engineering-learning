@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import type pg from "pg";
 import { createAttendanceLedgerRepository } from "../attendance-ledger/repository.js";
+import { createNotificationRepository } from "../notification/repository.js";
 import { writeAuditEvent } from "../audit-and-compliance/service.js";
 import {
   createRealtimeDeliveryRepository,
@@ -55,6 +56,7 @@ export type SessionCommandError =
 
 export function createSessionLifecycleRepository(pool: pg.Pool) {
   const attendanceLedger = createAttendanceLedgerRepository(pool);
+  const notification = createNotificationRepository(pool);
   const realtimeDelivery = createRealtimeDeliveryRepository(pool);
   const idempotencyCache = new Map<string, OpenSessionResult | CloseSessionResult>();
 
@@ -425,6 +427,10 @@ export function createSessionLifecycleRepository(pool: pg.Pool) {
         }
 
         await client.query("COMMIT");
+        await notification.evaluateAbsenceThresholdsForSection(session.classSectionId, {
+          correlationId: options.correlationId,
+          actorUserId,
+        });
         await realtimeDelivery.publishRosterUpdate({
           classSessionId: sessionId,
           reason: "SessionClosed",

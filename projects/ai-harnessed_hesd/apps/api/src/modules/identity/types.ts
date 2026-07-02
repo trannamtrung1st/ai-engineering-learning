@@ -28,6 +28,7 @@ export const RESOURCES = [
   "ReportView",
   "ExportJob",
   "AuditLog",
+  "AbsenceAlert",
   "SystemOps",
   "CheckInSubmit",
 ] as const;

@@ -24,3 +24,4 @@ Verification failures and remediation notes for harness agents.
 - [module-audit-and-compliance] M07 reporting integration `deleteExportJobsForActor(lecturer|academicAdmin)` wipes all ExportJob audit rows for that actor — parallel audit export query tests must use an ephemeral actor user, not seed lecturer
 - [module-realtime-delivery] Computational checks failed — see 20260702T153930Z-checks.json
 - [module-realtime-delivery] M09 integration fixtures must use dedicated faculty/term/course hierarchy (not shared seed term) — parallel runs pollute M07 reporting scope queries for SEED.term
+- [module-notification] AC-25 in slice acceptance was doc drift (manual-fallback operability) — notification slice owns FR-26/BR-17 only; remove AC-25 from acceptanceTags when TestGen maps manual-fallback cases

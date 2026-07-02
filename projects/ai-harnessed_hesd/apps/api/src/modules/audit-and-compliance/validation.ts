@@ -11,6 +11,7 @@ const API_ACTION_TYPES = new Set<string>([
   "SessionClose",
   "PolicyChange",
   "EnrollmentImport",
+  "AbsenceThresholdAlert",
 ]);
 
 export function parseAuditLogQuery(

@@ -117,3 +117,5 @@
 - 2026-07-02T15:49:48Z | module-realtime-delivery | checks_failed
 - 2026-07-02T15:51:00Z | module-realtime-delivery | implementer: re-verified M09 after gate failure — isolated integration fixtures to dedicated M09 faculty/term/course hierarchy (fixes M07 reporting parallel pollution) — checks: full profile pass (unit 64/64, integration 176/176)
 - 2026-07-02T15:56:45Z | module-realtime-delivery | passed
+- 2026-07-02T16:04:26Z | module-notification | implementer: M10 notification — absence-threshold evaluator, policy_alert_events + notification_delivery_queue, post-close hook, GET /alerts/absence-threshold, NOTIFICATION_MODULE_ENABLED toggle, audit AbsenceThresholdAlert — removed AC-25 from slice acceptance (manual-fallback doc drift) — checks: full profile pass
+- 2026-07-02T16:06:33Z | module-notification | passed

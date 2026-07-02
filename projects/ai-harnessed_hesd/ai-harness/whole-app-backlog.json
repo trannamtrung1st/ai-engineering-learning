@@ -1086,14 +1086,13 @@
     },
     {
       "id": "module-notification",
-      "passes": false,
+      "passes": true,
       "priority": 16,
       "phase": 1,
       "agent": "backend",
       "acceptance": [
         "FR-26",
-        "BR-17",
-        "AC-25"
+        "BR-17"
       ],
       "docs": [
         "docs/technical/02-module-breakdown.md",
@@ -1102,13 +1101,26 @@
       ],
       "description": "Add policy-threshold notification hooks for absence-rate alerts as a Should-scope backend capability.",
       "completionArtifacts": [
-        "Absence-threshold evaluator",
-        "Alert event generation payloads",
-        "Configuration toggle to keep capability optional in MVP"
+        "apps/api/src/modules/notification",
+        "apps/api/db/migrations/0005_notification_alerts.sql",
+        "apps/api/src/modules/session-lifecycle/repository.ts",
+        "apps/api/src/modules/attendance-ledger/repository.ts",
+        "apps/api/src/modules/attendance-ledger/types.ts",
+        "apps/api/src/modules/audit-and-compliance/types.ts",
+        "apps/api/src/modules/audit-and-compliance/validation.ts",
+        "apps/api/src/modules/identity/types.ts",
+        "apps/api/src/modules/identity/permissions.ts",
+        "apps/api/src/modules/policy-engine/repository.ts",
+        "apps/api/src/app.ts"
       ],
       "testRequirements": {
+        "unit": [
+          "apps/api/src/modules/notification/evaluator.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/modules/notification/notification.integration.test.ts"
+        ],
         "acceptanceTags": [
-          "AC-25",
           "BR-17",
           "FR-26"
         ]

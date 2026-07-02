@@ -77,6 +77,15 @@ const MATRIX: Record<Resource, Partial<Record<Action, Partial<Record<Role, Permi
       SystemAuditor: "scoped",
     },
   },
+  AbsenceAlert: {
+    read: {
+      Student: "scoped",
+      Lecturer: "scoped",
+      DepartmentAdmin: "scoped",
+      AcademicAdmin: "allow",
+      SystemAuditor: "scoped",
+    },
+  },
   SystemOps: {
     execute: { ITAdmin: "allow", AcademicAdmin: "scoped" },
   },

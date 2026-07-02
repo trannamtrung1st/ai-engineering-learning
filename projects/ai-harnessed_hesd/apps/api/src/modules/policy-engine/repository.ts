@@ -412,6 +412,7 @@ export function createPolicyEngineRepository(pool: pg.Pool) {
 
   return {
     loadSectionHierarchy,
+    loadPoliciesForHierarchy,
     resolveEffectivePolicy,
     resolveEffectivePolicyValues,
     savePolicySnapshot,

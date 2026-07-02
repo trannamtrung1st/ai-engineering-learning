@@ -7,6 +7,7 @@ import { registerCheckInModule } from "./modules/check-in-and-qr-orchestrator/in
 import { registerPolicyEngineModule } from "./modules/policy-engine/index.js";
 import { registerReportingModule } from "./modules/reporting-and-export/index.js";
 import { registerAuditModule } from "./modules/audit-and-compliance/index.js";
+import { registerNotificationModule } from "./modules/notification/index.js";
 import { registerRealtimeDeliveryModule } from "./modules/realtime-delivery/index.js";
 import { registerSessionLifecycleModule } from "./modules/session-lifecycle/index.js";
 import { registerHealthRoutes } from "./routes/health.js";
@@ -29,6 +30,7 @@ export async function buildApp() {
       await registerRealtimeDeliveryModule(v1, { connectionString, pool: pool ?? undefined });
       await registerReportingModule(v1, { connectionString, pool: pool ?? undefined });
       await registerAuditModule(v1, { connectionString, pool: pool ?? undefined });
+      await registerNotificationModule(v1, { connectionString, pool: pool ?? undefined });
     },
     { prefix: "/api/v1" },
   );

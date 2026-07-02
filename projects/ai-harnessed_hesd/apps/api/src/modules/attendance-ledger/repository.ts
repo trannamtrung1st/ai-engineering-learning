@@ -14,6 +14,8 @@ import {
   isAdminOverrideRole,
 } from "./validation.js";
 import { createRealtimeDeliveryRepository } from "../realtime-delivery/repository.js";
+import { createNotificationRepository } from "../notification/repository.js";
+import { isNotificationModuleEnabled } from "../notification/config.js";
 import type {
   AttendanceStatus,
   CorrectionResult,
@@ -40,6 +42,7 @@ export function createAttendanceLedgerRepository(pool: pg.Pool) {
   const idempotencyCache = new Map<string, CorrectionCache>();
   const policyEngine = createPolicyEngineRepository(pool);
   const realtimeDelivery = createRealtimeDeliveryRepository(pool);
+  const notification = createNotificationRepository(pool);
 
   async function loadEffectivePolicy(
     client: pg.PoolClient,
@@ -347,25 +350,41 @@ export function createAttendanceLedgerRepository(pool: pg.Pool) {
         rejectedAttempts: Number.parseInt(rejectedResult.rows[0]?.count ?? "0", 10),
       };
 
-      const rows = rowsResult.rows.map((row) => {
-        const attendanceStatus = (row.status ?? "Pending") as AttendanceStatus;
-        if (attendanceStatus === "Present") counts.present += 1;
-        else if (attendanceStatus === "Late") counts.late += 1;
-        else if (attendanceStatus === "Pending") counts.pending += 1;
-        else if (attendanceStatus === "Absent") counts.absent += 1;
-        else if (attendanceStatus === "Excused") counts.excused += 1;
-        else if (attendanceStatus === "Manual Present") counts.manualPresent += 1;
+      const notificationEnabled = isNotificationModuleEnabled();
 
-        return {
-          studentUserId: row.student_user_id,
-          studentCode: row.student_code,
-          displayName: row.display_name,
-          attendanceStatus,
-          checkInMethod: row.check_in_method as SessionRoster["rows"][number]["checkInMethod"],
-          checkInAt: row.check_in_at?.toISOString() ?? null,
-          latestAttemptOutcome: row.latest_attempt_outcome,
-        };
-      });
+      const rows = await Promise.all(
+        rowsResult.rows.map(async (row) => {
+          const attendanceStatus = (row.status ?? "Pending") as AttendanceStatus;
+          if (attendanceStatus === "Present") counts.present += 1;
+          else if (attendanceStatus === "Late") counts.late += 1;
+          else if (attendanceStatus === "Pending") counts.pending += 1;
+          else if (attendanceStatus === "Absent") counts.absent += 1;
+          else if (attendanceStatus === "Excused") counts.excused += 1;
+          else if (attendanceStatus === "Manual Present") counts.manualPresent += 1;
+
+          const baseRow = {
+            studentUserId: row.student_user_id,
+            studentCode: row.student_code,
+            displayName: row.display_name,
+            attendanceStatus,
+            checkInMethod: row.check_in_method as SessionRoster["rows"][number]["checkInMethod"],
+            checkInAt: row.check_in_at?.toISOString() ?? null,
+            latestAttemptOutcome: row.latest_attempt_outcome,
+          };
+
+          if (!notificationEnabled) {
+            return baseRow;
+          }
+
+          const risk = await notification.isStudentAtRisk(session.class_section_id, row.student_user_id);
+          return {
+            ...baseRow,
+            atRisk: risk.atRisk,
+            unexcusedAbsenceRate: risk.unexcusedAbsenceRate,
+            absenceThresholdPercent: risk.absenceThresholdPercent,
+          };
+        }),
+      );
 
       return {
         classSessionId: session.id,

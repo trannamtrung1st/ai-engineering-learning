@@ -6,7 +6,8 @@ export type DbAuditActionType =
   | "SessionClose"
   | "PolicyChange"
   | "EnrollmentImport"
-  | "CheckInAttempt";
+  | "CheckInAttempt"
+  | "AbsenceThresholdAlert";
 
 /** API-facing audit action filter values (GET /v1/audit-logs `actionType`). */
 export type ApiAuditActionType =
@@ -19,7 +20,8 @@ export type ApiAuditActionType =
   | "SessionOpen"
   | "SessionClose"
   | "PolicyChange"
-  | "EnrollmentImport";
+  | "EnrollmentImport"
+  | "AbsenceThresholdAlert";
 
 export type AttendanceAuditSubtype = "manual_update" | "admin_override" | "status_finalization";
 
