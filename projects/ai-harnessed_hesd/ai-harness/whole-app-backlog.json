@@ -226,6 +226,7 @@
       ],
       "testRequirements": {
         "acceptanceTags": [
+          "BR-19",
           "FR-15",
           "FR-31",
           "FR-32"
@@ -248,6 +249,12 @@
           "at": "2026-07-02T11:40:36Z",
           "kind": "drift",
           "reason": "Doc drift for FR-32 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T12:09:42Z",
+          "kind": "drift",
+          "reason": "Doc drift for BR-19 — reverify after TestGen",
           "source": "harness"
         }
       ]
@@ -651,6 +658,7 @@
           "AC-15",
           "AC-17",
           "BR-18",
+          "BR-19",
           "FR-27",
           "FR-28"
         ]
@@ -690,6 +698,12 @@
           "at": "2026-07-02T12:07:02Z",
           "kind": "drift",
           "reason": "Doc drift for BR-18 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T12:09:42Z",
+          "kind": "drift",
+          "reason": "Doc drift for BR-19 — reverify after TestGen",
           "source": "harness"
         }
       ]
@@ -992,10 +1006,17 @@
           "kind": "drift",
           "reason": "Doc drift for FR-37 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-02T12:09:42Z",
+          "kind": "drift",
+          "reason": "Doc drift for BR-19 — reverify after TestGen",
+          "source": "harness"
         }
       ],
       "testRequirements": {
         "acceptanceTags": [
+          "BR-19",
           "FR-37"
         ]
       }
