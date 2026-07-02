@@ -1,3 +1,5 @@
+import { getAccessToken } from "./session.js";
+
 export const STUDENT_AUTH_STORAGE_KEY = "attendly:student-auth";
 
 export interface AuthGateResult {
@@ -6,6 +8,9 @@ export interface AuthGateResult {
 }
 
 export function isStudentAuthenticated(): boolean {
+  if (getAccessToken()) {
+    return true;
+  }
   if (typeof sessionStorage === "undefined") {
     return false;
   }

@@ -77,7 +77,7 @@ export function CheckInResultScreen({
   return (
     <Card className={styles.screen} elevated>
       {success ? (
-        <div className={styles.success}>
+        <div className={styles.success} role="status" aria-live="polite">
           <h2 className={styles.title}>{title}</h2>
           <p className={styles.message}>{message}</p>
           {attendanceStatus ? (

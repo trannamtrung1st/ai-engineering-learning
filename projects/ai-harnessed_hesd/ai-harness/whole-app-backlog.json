@@ -674,7 +674,7 @@
     },
     {
       "id": "web-student-check-in-flow",
-      "passes": false,
+      "passes": true,
       "priority": 18,
       "phase": 2,
       "agent": "frontend",

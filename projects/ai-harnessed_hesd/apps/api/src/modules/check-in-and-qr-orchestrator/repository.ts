@@ -14,7 +14,11 @@ import {
   recordCheckInAttemptTelemetry,
 } from "../realtime-delivery/repository.js";
 import { getOrRotateCurrentQr, issueQrToken, resolveQrToken } from "./qr-service.js";
-import { evaluateCheckInFailure, resolveAttendanceStatus } from "./validation.js";
+import {
+  evaluateCheckInFailure,
+  isResolvedAttendanceStatus,
+  resolveAttendanceStatus,
+} from "./validation.js";
 import type {
   CheckInCommandResult,
   CheckInOutcome,
@@ -101,19 +105,43 @@ export function createCheckInRepository(pool: pg.Pool) {
     return { latitude: Number(row.latitude), longitude: Number(row.longitude) };
   }
 
+  interface ExistingAttendance {
+    status: string;
+    checkInAt: string | null;
+  }
+
   async function loadExistingAttendance(
     client: pg.PoolClient,
     sessionId: string,
     studentUserId: string,
-  ): Promise<string | null> {
-    const result = await client.query<{ status: string }>(
+  ): Promise<ExistingAttendance | null> {
+    const result = await client.query<{ status: string; check_in_at: Date | null }>(
       `
-      SELECT status FROM attendance_records
+      SELECT status, check_in_at FROM attendance_records
       WHERE class_session_id = $1 AND student_user_id = $2
       `,
       [sessionId, studentUserId],
     );
-    return result.rows[0]?.status ?? null;
+    const row = result.rows[0];
+    if (!row) return null;
+    return {
+      status: row.status,
+      checkInAt: row.check_in_at?.toISOString() ?? null,
+    };
+  }
+
+  function duplicateCheckInDetails(
+    sessionId: string,
+    existing: ExistingAttendance | null,
+  ): Record<string, unknown> {
+    const details: Record<string, unknown> = { classSessionId: sessionId };
+    if (existing?.status && isResolvedAttendanceStatus(existing.status)) {
+      details.attendanceStatus = existing.status;
+      if (existing.checkInAt) {
+        details.checkInAt = existing.checkInAt;
+      }
+    }
+    return details;
   }
 
   async function persistAttempt(
@@ -247,7 +275,7 @@ export function createCheckInRepository(pool: pg.Pool) {
             ? await isStudentEnrolled(client.query.bind(client), params.studentUserId, classSectionId)
             : false;
 
-        const existingStatus =
+        const existingAttendance =
           sessionId !== null
             ? await loadExistingAttendance(client, sessionId, params.studentUserId)
             : null;
@@ -293,7 +321,7 @@ export function createCheckInRepository(pool: pg.Pool) {
                 tokenFound: true,
                 tokenExpired,
                 enrolled,
-                existingAttendanceStatus: existingStatus,
+                existingAttendanceStatus: existingAttendance?.status ?? null,
                 policy,
                 gps: params.gps,
               }));
@@ -322,14 +350,16 @@ export function createCheckInRepository(pool: pg.Pool) {
           const failureResult: CheckInCommandResult = {
             outcome: failureOutcome,
             classSessionId: sessionId ?? undefined,
-            ...(failureOutcome === "OutOfRadius" && distanceFromRoom !== null
-              ? {
-                  details: {
-                    distanceMeters: distanceFromRoom,
-                    allowedRadiusMeters: policy.gpsRadiusMeters,
-                  },
-                }
-              : {}),
+            ...(failureOutcome === "DuplicateCheckIn" && sessionId
+              ? { details: duplicateCheckInDetails(sessionId, existingAttendance) }
+              : failureOutcome === "OutOfRadius" && distanceFromRoom !== null
+                ? {
+                    details: {
+                      distanceMeters: distanceFromRoom,
+                      allowedRadiusMeters: policy.gpsRadiusMeters,
+                    },
+                  }
+                : {}),
           };
 
           const statusCode = failureOutcome === "DuplicateCheckIn" ? 409 : 422;
@@ -363,16 +393,23 @@ export function createCheckInRepository(pool: pg.Pool) {
           `${session!.id}:${params.studentUserId}`,
         ]);
 
-        const recheckStatus = await loadExistingAttendance(client, session!.id, params.studentUserId);
-        if (recheckStatus && evaluateCheckInFailure({
-          sessionState: session!.state,
-          tokenFound: true,
-          tokenExpired: false,
-          enrolled: true,
-          existingAttendanceStatus: recheckStatus,
-          policy,
-          gps: params.gps,
-        }) === "DuplicateCheckIn") {
+        const recheckAttendance = await loadExistingAttendance(
+          client,
+          session!.id,
+          params.studentUserId,
+        );
+        if (
+          recheckAttendance &&
+          evaluateCheckInFailure({
+            sessionState: session!.state,
+            tokenFound: true,
+            tokenExpired: false,
+            enrolled: true,
+            existingAttendanceStatus: recheckAttendance.status,
+            policy,
+            gps: params.gps,
+          }) === "DuplicateCheckIn"
+        ) {
           await persistAttempt(client, {
             attemptId,
             classSessionId: session!.id,
@@ -388,6 +425,7 @@ export function createCheckInRepository(pool: pg.Pool) {
           const dupResult: CheckInCommandResult = {
             outcome: "DuplicateCheckIn",
             classSessionId: session!.id,
+            details: duplicateCheckInDetails(session!.id, recheckAttendance),
           };
           if (cacheKey) {
             idempotencyCache.set(cacheKey, { statusCode: 409, body: dupResult });
