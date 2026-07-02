@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import type { ActorContext } from "../identity/types.js";
 import { isStudentEnrolled } from "../academic-structure/validation.js";
+import { createPolicyEngineRepository } from "../policy-engine/repository.js";
+import { INSTITUTION_POLICY_DEFAULTS } from "../policy-engine/defaults.js";
 import {
   resolveCheckInMethodForCorrection,
   validateCorrectionPayload,
@@ -15,7 +17,7 @@ import type {
 } from "./types.js";
 
 const DEFAULT_POLICY: EffectivePolicy = {
-  manualEditWindowHours: 24,
+  manualEditWindowHours: INSTITUTION_POLICY_DEFAULTS.manualEditWindowHours,
   reasonRequired: true,
 };
 
@@ -31,30 +33,16 @@ export type CorrectionCommandError =
 
 export function createAttendanceLedgerRepository(pool: pg.Pool) {
   const idempotencyCache = new Map<string, CorrectionCache>();
+  const policyEngine = createPolicyEngineRepository(pool);
 
   async function loadEffectivePolicy(
     client: pg.PoolClient,
-    _classSectionId: string,
+    classSectionId: string,
   ): Promise<EffectivePolicy> {
-    const result = await client.query<{ manual_edit_window_hours: number }>(
-      `
-      SELECT manual_edit_window_hours
-      FROM attendance_policies
-      WHERE is_active = true
-      ORDER BY
-        CASE scope_type
-          WHEN 'ClassSection' THEN 1
-          WHEN 'Course' THEN 2
-          WHEN 'Faculty' THEN 3
-          WHEN 'Institution' THEN 4
-        END
-      LIMIT 1
-      `,
-    );
-    const row = result.rows[0];
-    if (!row) return DEFAULT_POLICY;
+    const values = await policyEngine.resolveEffectivePolicyValues(classSectionId, new Date(), client);
+    if (!values) return DEFAULT_POLICY;
     return {
-      manualEditWindowHours: row.manual_edit_window_hours,
+      manualEditWindowHours: values.manualEditWindowHours,
       reasonRequired: true,
     };
   }

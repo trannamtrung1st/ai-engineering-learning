@@ -4,6 +4,7 @@ import { registerAcademicStructureModule } from "./modules/academic-structure/in
 import { registerIdentityModule } from "./modules/identity/index.js";
 import { registerAttendanceLedgerModule } from "./modules/attendance-ledger/index.js";
 import { registerCheckInModule } from "./modules/check-in-and-qr-orchestrator/index.js";
+import { registerPolicyEngineModule } from "./modules/policy-engine/index.js";
 import { registerSessionLifecycleModule } from "./modules/session-lifecycle/index.js";
 import { registerHealthRoutes } from "./routes/health.js";
 
@@ -19,6 +20,7 @@ export async function buildApp() {
       pool = await registerIdentityModule(v1, { connectionString });
       await registerAcademicStructureModule(v1, { connectionString, pool: pool ?? undefined });
       await registerSessionLifecycleModule(v1, { connectionString, pool: pool ?? undefined });
+      await registerPolicyEngineModule(v1, { connectionString, pool: pool ?? undefined });
       await registerCheckInModule(v1, { connectionString, pool: pool ?? undefined });
       await registerAttendanceLedgerModule(v1, { connectionString, pool: pool ?? undefined });
     },

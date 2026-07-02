@@ -17,3 +17,6 @@ Verification failures and remediation notes for harness agents.
 - [infra-local-runtime-compose] apps/api/src/infra/compose-config.test.ts still asserts hesd_test while docker-compose.test.yml uses attendly_test — fails test:unit for every backend slice until infra slice is fixed
 - [module-attendance-ledger] Deferred to slice infra-local-runtime-compose: compose-config.test.ts stale hesd_test assertion blocks test:unit for all backend slices; M05 implementation and integration tests are complete
 - [module-attendance-ledger] AI review failed — see 20260702T142648Z-review.json
+- [module-policy-engine] Computational checks failed — see 20260702T144500Z-checks.json
+- [module-policy-engine] AI review failed — see 20260702T145558Z-review.json
+- [module-policy-engine] Policy-engine integration tests must use dedicated faculty/course/section hierarchy (not shared seed section) — course/faculty scoped policies pollute parallel M04 check-in tests on the same course

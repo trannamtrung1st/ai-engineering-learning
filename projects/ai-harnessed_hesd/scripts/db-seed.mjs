@@ -299,12 +299,28 @@ async function seedFixtures() {
         manual_edit_window_hours,
         gps_required,
         gps_radius_meters,
-        is_active
+        is_active,
+        field_overrides
       )
-      VALUES ($1, 'Institution', NULL, 15, 15, 24, false, 100, true)
+      VALUES ($1, 'Institution', NULL, 15, 15, 24, false, 100, true, $2::jsonb)
       ON CONFLICT (id) DO NOTHING
       `,
-      [SEED_IDS.institutionPolicy],
+      [
+        SEED_IDS.institutionPolicy,
+        JSON.stringify({
+          checkInOpeningOffsetMinutes: true,
+          presentWindowMinutes: true,
+          lateWindowMinutes: true,
+          autoCloseEnabled: true,
+          absenceThresholdPercent: true,
+          excusedCountsTowardThreshold: true,
+          manualEditWindowHours: true,
+          adminApprovalRequired: true,
+          gpsRequired: true,
+          gpsRadiusMeters: true,
+          gpsMinAccuracyMeters: true,
+        }),
+      ],
     );
 
     await markSeedApplied();

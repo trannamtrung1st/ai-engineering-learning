@@ -101,3 +101,9 @@
 - 2026-07-02T14:37:14Z | module-attendance-ledger | review_failed
 - 2026-07-02T14:42:16Z | module-attendance-ledger | implementer: M05 attendance ledger — BR-22 audit on close finalization (system actor), QR upsert from Pending, idempotency + Excused/Manual Present preservation tests — checks: full profile pass
 - 2026-07-02T14:45:00Z | module-attendance-ledger | passed
+- 2026-07-02T14:55:00Z | module-policy-engine | implementer: M06 policy engine — scoped storage with field_overrides, BR-20 resolver, GPS/edit validation, POST/PATCH/GET /v1/policies, effective policy API, wired into M04/M05 — checks: full profile pass
+- 2026-07-02T14:55:58Z | module-policy-engine | checks_failed
+- 2026-07-02T14:56:53Z | module-policy-engine | implementer: re-verified M06 policy engine after gate failure — field_overrides migration, BR-20 per-field resolver, policy CRUD/effective API, GPS/edit validation wired into M04/M05 — checks: full profile pass (typecheck, lint, unit 48/48, integration 153/153)
+- 2026-07-02T15:00:55Z | module-policy-engine | review_failed
+- 2026-07-02T15:07:30Z | module-policy-engine | implementer: M06 policy engine — BR-20 per-field resolver, policy CRUD/effective API, GPS/edit validation wired into M04/M05 — added OutOfRadius, institution-default, edit-window, effective-sources integration tests — isolated policy test hierarchy to avoid cross-suite pollution — checks: full profile pass (unit 48/48, integration 157/157)
+- 2026-07-02T15:09:19Z | module-policy-engine | passed

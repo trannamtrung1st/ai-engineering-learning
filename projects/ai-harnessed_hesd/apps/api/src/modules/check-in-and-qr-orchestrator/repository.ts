@@ -2,12 +2,14 @@ import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import { createAttendanceLedgerRepository } from "../attendance-ledger/repository.js";
 import { isStudentEnrolled } from "../academic-structure/validation.js";
-import { getOrRotateCurrentQr, issueQrToken, resolveQrToken } from "./qr-service.js";
+import { createPolicyEngineRepository } from "../policy-engine/repository.js";
+import { INSTITUTION_POLICY_DEFAULTS } from "../policy-engine/defaults.js";
 import {
-  evaluateCheckInFailure,
-  haversineMeters,
-  resolveAttendanceStatus,
-} from "./validation.js";
+  evaluateGpsDistance,
+  evaluateGpsPayload,
+} from "../policy-engine/validation.js";
+import { getOrRotateCurrentQr, issueQrToken, resolveQrToken } from "./qr-service.js";
+import { evaluateCheckInFailure, resolveAttendanceStatus } from "./validation.js";
 import type {
   CheckInCommandResult,
   CheckInOutcome,
@@ -23,16 +25,17 @@ type IdempotencyRecord = {
   body: CheckInSuccessResult | { outcome: string; classSessionId?: string };
 };
 
-const DEFAULT_POLICY: EffectivePolicy = {
-  presentWindowMinutes: 15,
-  lateWindowMinutes: 15,
-  gpsRequired: false,
-  gpsRadiusMeters: 100,
-  gpsMinAccuracyMeters: null,
+const DEFAULT_POLICY = {
+  presentWindowMinutes: INSTITUTION_POLICY_DEFAULTS.presentWindowMinutes,
+  lateWindowMinutes: INSTITUTION_POLICY_DEFAULTS.lateWindowMinutes,
+  gpsRequired: INSTITUTION_POLICY_DEFAULTS.gpsRequired,
+  gpsRadiusMeters: INSTITUTION_POLICY_DEFAULTS.gpsRadiusMeters,
+  gpsMinAccuracyMeters: INSTITUTION_POLICY_DEFAULTS.gpsMinAccuracyMeters,
 };
 
 export function createCheckInRepository(pool: pg.Pool) {
   const attendanceLedger = createAttendanceLedgerRepository(pool);
+  const policyEngine = createPolicyEngineRepository(pool);
   const idempotencyCache = new Map<string, IdempotencyRecord>();
 
   async function loadSession(client: pg.PoolClient, sessionId: string): Promise<SessionContext | null> {
@@ -61,39 +64,16 @@ export function createCheckInRepository(pool: pg.Pool) {
 
   async function loadEffectivePolicy(
     client: pg.PoolClient,
-    _classSectionId: string,
+    classSectionId: string,
   ): Promise<EffectivePolicy> {
-    const result = await client.query<{
-      present_window_minutes: number;
-      late_window_minutes: number;
-      gps_required: boolean;
-      gps_radius_meters: number | null;
-      gps_min_accuracy_meters: number | null;
-    }>(
-      `
-      SELECT present_window_minutes, late_window_minutes, gps_required,
-             gps_radius_meters, gps_min_accuracy_meters
-      FROM attendance_policies
-      WHERE is_active = true
-      ORDER BY
-        CASE scope_type
-          WHEN 'ClassSection' THEN 1
-          WHEN 'Course' THEN 2
-          WHEN 'Faculty' THEN 3
-          WHEN 'Institution' THEN 4
-        END
-      LIMIT 1
-      `,
-      [],
-    );
-    const row = result.rows[0];
-    if (!row) return DEFAULT_POLICY;
+    const values = await policyEngine.resolveEffectivePolicyValues(classSectionId, new Date(), client);
+    if (!values) return DEFAULT_POLICY;
     return {
-      presentWindowMinutes: row.present_window_minutes,
-      lateWindowMinutes: row.late_window_minutes,
-      gpsRequired: row.gps_required,
-      gpsRadiusMeters: row.gps_radius_meters,
-      gpsMinAccuracyMeters: row.gps_min_accuracy_meters,
+      presentWindowMinutes: values.presentWindowMinutes,
+      lateWindowMinutes: values.lateWindowMinutes,
+      gpsRequired: values.gpsRequired,
+      gpsRadiusMeters: values.gpsRadiusMeters,
+      gpsMinAccuracyMeters: values.gpsMinAccuracyMeters,
     };
   }
 
@@ -265,37 +245,23 @@ export function createCheckInRepository(pool: pg.Pool) {
 
         if (session?.state === "Open" && resolved && !tokenExpired && enrolled) {
           if (policy.gpsRequired) {
-            if (!params.gps) {
-              gpsFailure = "GpsRequired";
-            } else {
-              const baseFailure = evaluateCheckInFailure({
-                sessionState: session.state,
-                tokenFound: true,
-                tokenExpired: false,
-                enrolled: true,
-                existingAttendanceStatus: existingStatus,
-                policy,
-                gps: params.gps,
-              });
-              if (baseFailure && baseFailure !== "DuplicateCheckIn") {
-                gpsFailure = baseFailure;
-              } else {
-                const room = await loadRoomCoordinates(client, session.id);
-                if (room && policy.gpsRadiusMeters !== null) {
-                  distanceFromRoom = haversineMeters(
-                    params.gps.latitude,
-                    params.gps.longitude,
-                    room.latitude,
-                    room.longitude,
-                  );
-                  if (distanceFromRoom > policy.gpsRadiusMeters) {
-                    gpsFailure = "OutOfRadius";
-                    gpsValidationResult = "Fail";
-                  } else {
-                    gpsValidationResult = "Pass";
-                  }
+            const payloadFailure = evaluateGpsPayload(params.gps, policy);
+            if (payloadFailure) {
+              gpsFailure = payloadFailure;
+            } else if (params.gps) {
+              const room = await loadRoomCoordinates(client, session.id);
+              if (room && policy.gpsRadiusMeters !== null) {
+                const distanceCheck = evaluateGpsDistance(params.gps, room, policy.gpsRadiusMeters);
+                distanceFromRoom = distanceCheck.distanceMeters;
+                if (distanceCheck.outcome) {
+                  gpsFailure = distanceCheck.outcome;
+                  gpsValidationResult = "Fail";
+                } else {
+                  gpsValidationResult = "Pass";
                 }
               }
+            } else {
+              gpsFailure = "GpsRequired";
             }
           }
         }

@@ -722,7 +722,7 @@
     },
     {
       "id": "module-policy-engine",
-      "passes": false,
+      "passes": true,
       "priority": 12,
       "phase": 1,
       "agent": "backend",
@@ -741,11 +741,21 @@
       ],
       "description": "Implement effective policy resolution and policy-aware validation inputs for check-in windows, GPS requirements, and manual edit constraints.",
       "completionArtifacts": [
-        "Scoped policy storage and precedence resolver",
-        "Runtime policy snapshot helper for session/check-in",
-        "Policy validation utilities for GPS and edit window logic"
+        "apps/api/src/modules/policy-engine",
+        "apps/api/db/migrations/0003_policy_field_overrides.sql",
+        "apps/api/src/app.ts",
+        "apps/api/src/modules/check-in-and-qr-orchestrator/repository.ts",
+        "apps/api/src/modules/check-in-and-qr-orchestrator/validation.ts",
+        "apps/api/src/modules/attendance-ledger/repository.ts",
+        "scripts/db-seed.mjs"
       ],
       "testRequirements": {
+        "unit": [
+          "apps/api/src/modules/policy-engine/validation.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/modules/policy-engine/policy-engine.integration.test.ts"
+        ],
         "acceptanceTags": [
           "AC-09",
           "AC-10",
@@ -790,6 +800,18 @@
           "at": "2026-07-02T12:11:45Z",
           "kind": "drift",
           "reason": "Doc drift for BR-20 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T14:55:58Z",
+          "kind": "gate_failed",
+          "reason": "Computational checks failed — see 20260702T144500Z-checks.json",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T15:00:55Z",
+          "kind": "gate_failed",
+          "reason": "AI review failed — see 20260702T145558Z-review.json",
           "source": "harness"
         }
       ]
