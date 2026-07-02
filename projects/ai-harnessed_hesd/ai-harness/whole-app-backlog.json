@@ -286,12 +286,19 @@
           "kind": "drift",
           "reason": "Doc drift for FR-07 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-02T10:48:19Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-08 — reverify after TestGen",
+          "source": "harness"
         }
       ],
       "testRequirements": {
         "acceptanceTags": [
           "AC-05",
-          "FR-07"
+          "FR-07",
+          "FR-08"
         ]
       }
     },

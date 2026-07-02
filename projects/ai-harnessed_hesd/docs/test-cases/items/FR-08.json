@@ -1,0 +1,282 @@
+{
+  "productItemId": "FR-08",
+  "version": 1,
+  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+  "generatedAt": "2026-07-02T11:15:00Z",
+  "cases": [
+    {
+      "id": "TC-FR-08-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["FR-08", "BR-02", "AC-05"],
+      "title": "Assigned Lecturer closes Open session and blocks new student check-in",
+      "preconditions": [
+        "Lecturer is authenticated and assigned to the target class section.",
+        "A class session exists in Open state with active QR tokens and enrolled students.",
+        "At least one enrolled student has not yet checked in."
+      ],
+      "steps": [
+        "Call POST /v1/class-sessions/{sessionId}/close with Lecturer Authorization and Idempotency-Key headers.",
+        "Validate HTTP 200 and standard {data, meta, error} envelope.",
+        "Assert data.state is Closed, closedAt is non-null ISO-8601 UTC, and data.summary contains present/late/manualPresent/absent counts.",
+        "Call GET /v1/class-sessions/{sessionId}/qr/current and verify token is no longer Valid or request is rejected.",
+        "Submit POST /v1/check-ins as an enrolled student using a token from the closed session.",
+        "Assert check-in is rejected with error.code SessionClosed and no new successful attendance record is created."
+      ],
+      "expected": "WF-06 / E2E-07 happy path: session transitions Open to Closed, close summary is returned, QR tokens are invalidated, and subsequent student check-in is rejected with SessionClosed per BR-02 and AC-05.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-08-002",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["FR-08", "BR-02", "AC-05"],
+      "title": "Testing-plan session open/close row: close blocks self check-in after transition",
+      "preconditions": [
+        "Lecturer assigned to section is authenticated.",
+        "Session fixture is Open with enrolled students per testing-plan §3.1 Session open/close coverage block.",
+        "Student account and valid QR token fixture are available while session is Open."
+      ],
+      "steps": [
+        "While session is Open, submit POST /v1/check-ins as enrolled student and confirm check-in is not rejected with SessionClosed.",
+        "Call POST /v1/class-sessions/{sessionId}/close as assigned Lecturer.",
+        "Assert response data.state Closed with closedAt and summary per AC-05 Given/When/Then.",
+        "Re-submit POST /v1/check-ins with the same or a previously valid QR token.",
+        "Assert error.code SessionClosed and verify no new Present/Late success row is created.",
+        "Call GET /v1/class-sessions/{sessionId}/attendance and assert data.state is Closed."
+      ],
+      "expected": "Scenario-matrix maps to testing-plan Session open/close row: pre-close check-in succeeds or proceeds normally; close succeeds with Closed metadata; post-close check-in fails with SessionClosed and no new success attendance record per AC-05.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-08-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-08", "BR-02"],
+      "title": "M03 Session Lifecycle atomically persists Closed state with closedAt and closedByUserId",
+      "preconditions": [
+        "Integration harness uses real DB transaction boundaries for class_sessions table.",
+        "An Open session row exists with known sessionId and assigned lecturerUserId on the parent section.",
+        "Lecturer auth context matches the section assignment."
+      ],
+      "steps": [
+        "Invoke M03 closeSession(sessionId, actor) or POST /v1/class-sessions/{sessionId}/close through API service layer.",
+        "Query class_sessions table and assert state = Closed, closed_at is non-null, and closed_by_user_id equals the Lecturer actor.",
+        "Invoke getSessionState(sessionId) and assert Closed with no further open transition possible.",
+        "Verify active QRSessionToken rows for the session are invalidated or session-state guard rejects token validation.",
+        "Submit check-in through M04 for an enrolled student and assert SessionClosed outcome without AttendanceRecord success insert."
+      ],
+      "expected": "M03 module + repository integration commits state Closed, closedAt, and closedByUserId atomically; token invalidation and check-in rejection follow without partial close state.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-08-004",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-08", "BR-02"],
+      "title": "POST /v1/class-sessions/{sessionId}/close returns 200 envelope with Closed payload and summary",
+      "preconditions": [
+        "Assigned Lecturer is authenticated.",
+        "Target session is in Open state with enrolled students and mixed attendance outcomes.",
+        "Request includes Authorization and Idempotency-Key headers per API design §2.2."
+      ],
+      "steps": [
+        "Send POST /v1/class-sessions/{sessionId}/close with optional empty body.",
+        "Validate HTTP 200 and JSON envelope shape {data, meta, error} with error null.",
+        "Assert data contains classSessionId, state Closed, closedAt, and summary object with present, late, manualPresent, and absent integer counts.",
+        "Assert meta includes requestId and timestamp fields."
+      ],
+      "expected": "Response is HTTP 200 with standard envelope; data reflects Closed session with closedAt and attendance summary per API design §4.3.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-08-005",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["FR-08", "BR-02"],
+      "title": "Only Open pre-state transitions to Closed; Scheduled, Closed, and Cancelled reject close",
+      "preconditions": [
+        "Session fixtures exist in Scheduled, Open, Closed, and Cancelled states.",
+        "Assigned Lecturer auth context is available for all attempts."
+      ],
+      "steps": [
+        "Record beforeState Open and invoke close for Open session; record afterState Closed.",
+        "Attempt close on session in Scheduled state.",
+        "Attempt close on session already in Closed state.",
+        "Attempt close on Cancelled session.",
+        "Query persistence after each rejected or idempotent attempt and confirm state unchanged or idempotent Closed result only."
+      ],
+      "expected": "beforeState Open transitions to afterState Closed; Scheduled and Cancelled pre-states reject with invalid-transition behavior (409 InvalidSessionTransition); Closed pre-state returns idempotent closed summary without duplicate side effects per SM-01.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-08-006",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-08", "BR-19"],
+      "title": "Non-assigned and non-lecturer roles are denied SessionControl.execute close",
+      "preconditions": [
+        "Student, ITAdmin, and Lecturer-not-assigned-to-section test accounts exist with valid tokens.",
+        "An Open session exists in a section the out-of-scope Lecturer is not assigned to.",
+        "AcademicAdmin token is available as positive control for override permission."
+      ],
+      "steps": [
+        "Call POST /v1/class-sessions/{sessionId}/close as Student.",
+        "Call POST /v1/class-sessions/{sessionId}/close as ITAdmin.",
+        "Call POST /v1/class-sessions/{sessionId}/close as out-of-scope Lecturer.",
+        "Read HTTP status and error.code (expect 403 Forbidden or OutOfScope) for each denied request.",
+        "Query class_sessions table to confirm session state remains Open.",
+        "Call POST /v1/class-sessions/{sessionId}/close as AcademicAdmin and assert override succeeds per permission matrix §3.1."
+      ],
+      "expected": "Student, ITAdmin, and out-of-scope Lecturer receive 403 without state change; AcademicAdmin override may close per roles doc; assigned Lecturer remains primary actor for FR-08.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-08-007",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-08", "BR-02"],
+      "title": "Close on Scheduled or Cancelled session returns InvalidSessionTransition",
+      "preconditions": [
+        "Scheduled and Cancelled session fixtures exist with known sessionIds.",
+        "Assigned Lecturer and AcademicAdmin tokens are available."
+      ],
+      "steps": [
+        "Call POST /v1/class-sessions/{scheduledSessionId}/close as assigned Lecturer.",
+        "Call POST /v1/class-sessions/{cancelledSessionId}/close as assigned Lecturer.",
+        "Read HTTP status and error.code for each response.",
+        "Verify class_sessions rows remain Scheduled and Cancelled respectively with no closedAt set."
+      ],
+      "expected": "API returns HTTP 409 with error.code InvalidSessionTransition for Scheduled and Cancelled targets; FR-08 close is only valid from Open state.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-08-008",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P1",
+      "traceability": ["FR-08", "BR-21", "FR-09"],
+      "title": "System auto-closes Open session when policy late window elapses",
+      "preconditions": [
+        "Open session exists with effective policy defining auto-close after late window end.",
+        "Test harness can advance clock or trigger scheduler evaluation past late window.",
+        "Lecturer has not manually closed the session."
+      ],
+      "steps": [
+        "Open session and record openedAt and policy late window end timestamp.",
+        "Advance time past late window end or invoke auto-close scheduler job.",
+        "Query session state and assert Closed with closedAt set and closedByUserId indicating system actor if applicable.",
+        "Submit POST /v1/check-ins as enrolled student and assert SessionClosed rejection.",
+        "Verify GET /v1/class-sessions/{sessionId}/qr/current no longer returns Valid token."
+      ],
+      "expected": "Alternate branch per BR-21: system transitions Open to Closed when policy late window elapses; same post-close check-in blocking and token invalidation as manual close.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-08-009",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P1",
+      "traceability": ["FR-08", "BR-02"],
+      "title": "Concurrent close and in-flight check-in resolve against committed session state",
+      "preconditions": [
+        "Open session exists with enrolled student and valid QR token.",
+        "Test harness can fire parallel POST /v1/class-sessions/{sessionId}/close and POST /v1/check-ins.",
+        "Assigned Lecturer and Student auth contexts are established."
+      ],
+      "steps": [
+        "Submit parallel close command and student check-in request against the same Open session.",
+        "Collect HTTP outcomes for both requests.",
+        "Query class_sessions table and assert exactly one Closed transition with single closedAt.",
+        "Verify check-in attempt outcome is either Success (if evaluated before close commit) or SessionClosed (if evaluated after close commit) with no duplicate success rows.",
+        "Assert at most one successful AttendanceRecord per student-session pair."
+      ],
+      "expected": "Close overlaps check-in per testing-plan §7.2: committed session state at validation determines Success or SessionClosed; no duplicate success records or illegal dual transitions.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-08-010",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-08", "BR-02", "AC-05"],
+      "title": "Student check-in after close returns SessionClosed with 422 rule-failure envelope",
+      "preconditions": [
+        "Assigned Lecturer and enrolled Student accounts are authenticated.",
+        "A class session has been opened then closed by the assigned Lecturer.",
+        "Student has no prior successful attendance record for the session."
+      ],
+      "steps": [
+        "Student calls POST /v1/check-ins with qrToken bound to the closed session.",
+        "Inspect HTTP status and response envelope fields data/meta/error.",
+        "Assert error.code is SessionClosed with user-facing message key present.",
+        "Query attendance records and CheckInAttempt rows for the student-session pair."
+      ],
+      "expected": "Student request is rejected as a rule failure with error.code SessionClosed in the standard envelope; failed CheckInAttempt is logged with SessionClosed outcome and no Present/Late success row is created per AC-05.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-08-011",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-08", "FR-19", "BR-02"],
+      "title": "GET /v1/class-sessions/{sessionId}/attendance reflects Closed state after close",
+      "preconditions": [
+        "Assigned Lecturer is authenticated.",
+        "Open session with enrollments and mixed check-in outcomes exists.",
+        "Session has not yet been closed."
+      ],
+      "steps": [
+        "Call POST /v1/class-sessions/{sessionId}/close and capture closedAt and summary from response.",
+        "Call GET /v1/class-sessions/{sessionId}/attendance with Lecturer Authorization.",
+        "Validate HTTP 200 and envelope shape.",
+        "Assert data.state is Closed, counts object includes present/late/pending/rejectedAttempts keys consistent with close summary, and rows array reflects final roster shape per API design §4.5."
+      ],
+      "expected": "Attendance roster endpoint returns HTTP 200 with data.state Closed and finalized roster payload immediately after FR-08 close; live dashboard transitions to closed roster view per FR-19.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-08-012",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-08", "FR-10", "BR-02"],
+      "title": "Lecturer PG-04/PG-05 journey closes Open session and shows Closed badge with QR disabled",
+      "preconditions": [
+        "Lecturer is logged in on desktop Chromium.",
+        "Assigned section has at least one Open session visible on PG-04 session list.",
+        "QR panel is active on session detail page."
+      ],
+      "steps": [
+        "Navigate to /lecturer/sessions (PG-04) and locate an Open session row with Open status badge.",
+        "Select the session and navigate to session detail / QR display (PG-05).",
+        "Tap or click Close Attendance and observe loading then success feedback with close summary.",
+        "Verify session badge transitions to Closed, closedAt indicator appears, and QR panel is hidden or shows closed-state messaging.",
+        "Confirm Close CTA is disabled and view-roster or export actions reflect closed session per UI states §2.",
+        "Optionally verify student check-in page shows SessionClosed-equivalent error if navigated after closure."
+      ],
+      "expected": "Browser journey completes WF-06 UI path: session transitions Open to Closed with closedAt metadata, QR display stops, and state-appropriate control gating prevents further self-service check-in.",
+      "edgeCase": false
+    }
+  ]
+}
