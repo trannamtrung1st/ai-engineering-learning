@@ -1121,7 +1121,7 @@
     },
     {
       "id": "web-academic-admin-reporting-export",
-      "passes": false,
+      "passes": true,
       "priority": 24,
       "phase": 2,
       "agent": "frontend",

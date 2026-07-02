@@ -113,10 +113,14 @@ async function insertSectionB(pool: pg.Pool): Promise<string> {
   return sectionBId;
 }
 
-async function insertClosedSession(pool: pg.Pool, sectionId: string): Promise<string> {
+async function insertClosedSession(
+  pool: pg.Pool,
+  sectionId: string,
+  startAt = "2026-02-01T08:00:00Z",
+): Promise<string> {
   const sessionId = randomUUID();
-  const start = new Date("2026-02-01T08:00:00Z");
-  const end = new Date("2026-02-01T09:30:00Z");
+  const start = new Date(startAt);
+  const end = new Date(start.getTime() + 90 * 60 * 1000);
   await pool.query(
     `
     INSERT INTO class_sessions (
@@ -237,6 +241,44 @@ describe("M07 reporting and export — FR-27 FR-28 BR-18 BR-19 AC-15 AC-16 AC-17
     expect(body.data.format).toBe("csv");
     expect(body.meta.requestId).toBeTruthy();
     expect(body.meta.timestamp).toBeTruthy();
+  });
+
+  it("TC-FR-27-015 TC-AC-17-003: lecturer downloads completed CSV artifact for own export", async () => {
+    const sessionId = await insertClosedSession(pool, SEED.sectionA);
+    cleanupSessionIds.push(sessionId);
+    await insertAttendanceRow(pool, {
+      sessionId,
+      sectionId: SEED.sectionA,
+      studentUserId: SEED.student,
+      status: "Present",
+    });
+
+    const token = await login(app, "lecturer@attendly.local");
+    const exportResponse = await app.inject({
+      method: "POST",
+      url: "/api/v1/exports/attendance",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "idempotency-key": randomUUID(),
+      },
+      payload: {
+        format: "csv",
+        filters: { termId: SEED.term, classSectionId: SEED.sectionA },
+      },
+    });
+    const exportBody = exportResponse.json() as { data: { exportJobId: string } };
+
+    const downloadResponse = await app.inject({
+      method: "GET",
+      url: `/api/v1/exports/attendance/${exportBody.data.exportJobId}`,
+      headers: { authorization: `Bearer ${token}`, accept: "text/csv" },
+    });
+
+    expect(downloadResponse.statusCode).toBe(200);
+    expect(downloadResponse.headers["content-type"]).toContain("text/csv");
+    expect(downloadResponse.headers["content-disposition"]).toContain("attendance-export");
+    expect(downloadResponse.body).toContain("studentCode");
+    expect(downloadResponse.body).toContain(SEED.sectionA);
   });
 
   it("TC-FR-27-002 TC-AC-15-002 TC-BR-18-002: export scoped to lecturer assigned sections only", async () => {
@@ -362,9 +404,24 @@ describe("M07 reporting and export — FR-27 FR-28 BR-18 BR-19 AC-15 AC-16 AC-17
   it("TC-FR-28-010 TC-AC-15-007: pagination metadata reflects scoped totals only", async () => {
     const sectionB = await insertSectionB(pool);
     cleanupSectionIds.push(sectionB);
+    const scopedWindow = {
+      termId: SEED.term,
+      from: "2026-04-10T00:00:00.000Z",
+      to: "2026-04-10T23:59:59.999Z",
+    };
+    const actor = await identityRepo.buildActorContext(SEED.lecturer);
+    const access = await resolveReportExportScope(actor!, identityRepo, scopedWindow, "ReportView");
+    const baseline = await reportingRepo.queryAttendanceReport({
+      scope: access.scope,
+      filters: scopedWindow,
+      sortBy: "date",
+      sortOrder: "desc",
+      page: 1,
+      pageSize: 25,
+    });
 
     for (let i = 0; i < 3; i += 1) {
-      const sessionId = await insertClosedSession(pool, SEED.sectionA);
+      const sessionId = await insertClosedSession(pool, SEED.sectionA, `2026-04-10T0${i}:00:00Z`);
       cleanupSessionIds.push(sessionId);
       await insertAttendanceRow(pool, {
         sessionId,
@@ -375,7 +432,7 @@ describe("M07 reporting and export — FR-27 FR-28 BR-18 BR-19 AC-15 AC-16 AC-17
     }
 
     for (let i = 0; i < 10; i += 1) {
-      const sessionId = await insertClosedSession(pool, sectionB);
+      const sessionId = await insertClosedSession(pool, sectionB, `2026-04-10T1${i}:00:00Z`);
       cleanupSessionIds.push(sessionId);
       await insertAttendanceRow(pool, {
         sessionId,
@@ -385,18 +442,16 @@ describe("M07 reporting and export — FR-27 FR-28 BR-18 BR-19 AC-15 AC-16 AC-17
       });
     }
 
-    const actor = await identityRepo.buildActorContext(SEED.lecturer);
-    const access = await resolveReportExportScope(actor!, identityRepo, { termId: SEED.term }, "ReportView");
     const page1 = await reportingRepo.queryAttendanceReport({
       scope: access.scope,
-      filters: { termId: SEED.term },
+      filters: scopedWindow,
       sortBy: "date",
       sortOrder: "desc",
       page: 1,
       pageSize: 25,
     });
 
-    expect(page1.totalItems).toBe(3);
+    expect(page1.totalItems).toBe(baseline.totalItems + 3);
     expect(page1.rows.every((r) => r.classSectionId === SEED.sectionA)).toBe(true);
   });
 

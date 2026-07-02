@@ -14,13 +14,20 @@ export interface TableToolbarProps {
   sectionOptions?: FilterOption[];
   status?: string;
   statusOptions?: FilterOption[];
+  from?: string;
+  to?: string;
   search?: string;
   searchPlaceholder?: string;
   onSearchChange?: (value: string) => void;
+  sortBy?: string;
+  sortOptions?: FilterOption[];
   sortOrder?: "asc" | "desc";
   onTermChange?: (value: string) => void;
   onSectionChange?: (value: string) => void;
   onStatusChange?: (value: string) => void;
+  onFromChange?: (value: string) => void;
+  onToChange?: (value: string) => void;
+  onSortByChange?: (value: string) => void;
   onSortToggle?: () => void;
   onClearFilters?: () => void;
   showExport?: boolean;
@@ -36,13 +43,20 @@ export function TableToolbar({
   sectionOptions = [],
   status,
   statusOptions = [],
+  from,
+  to,
   search,
   searchPlaceholder = "Tìm kiếm…",
   onSearchChange,
+  sortBy,
+  sortOptions = [],
   sortOrder = "desc",
   onTermChange,
   onSectionChange,
   onStatusChange,
+  onFromChange,
+  onToChange,
+  onSortByChange,
   onSortToggle,
   onClearFilters,
   showExport = false,
@@ -50,7 +64,7 @@ export function TableToolbar({
   exportDisabled = false,
   children,
 }: TableToolbarProps) {
-  const hasActiveFilters = Boolean(termId || classSectionId || status || search);
+  const hasActiveFilters = Boolean(termId || classSectionId || status || search || from || to);
 
   return (
     <div className={styles.toolbar} data-testid="table-toolbar">
@@ -125,8 +139,52 @@ export function TableToolbar({
           </label>
         ) : null}
 
+        {onFromChange ? (
+          <label className={styles.field}>
+            <span className={styles.label}>Từ ngày</span>
+            <input
+              className={styles.input}
+              type="date"
+              aria-label="Từ ngày"
+              value={from ?? ""}
+              onChange={(event) => onFromChange(event.target.value)}
+            />
+          </label>
+        ) : null}
+
+        {onToChange ? (
+          <label className={styles.field}>
+            <span className={styles.label}>Đến ngày</span>
+            <input
+              className={styles.input}
+              type="date"
+              aria-label="Đến ngày"
+              value={to ?? ""}
+              onChange={(event) => onToChange(event.target.value)}
+            />
+          </label>
+        ) : null}
+
+        {sortOptions.length > 0 ? (
+          <label className={styles.field}>
+            <span className={styles.label}>Sắp xếp</span>
+            <select
+              className={styles.select}
+              aria-label="Sắp xếp theo"
+              value={sortBy ?? ""}
+              onChange={(event) => onSortByChange?.(event.target.value)}
+            >
+              {sortOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
+
         <Button variant="secondary" size="sm" type="button" onClick={onSortToggle}>
-          Ngày {sortOrder === "desc" ? "↓" : "↑"}
+          Thứ tự {sortOrder === "desc" ? "↓" : "↑"}
         </Button>
 
         {hasActiveFilters ? (

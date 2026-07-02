@@ -312,6 +312,23 @@ export function createReportingRepository(pool: pg.Pool) {
       return { csv: row.artifact_csv, rowCount: row.row_count ?? 0 };
     },
 
+    async getExportArtifactForActor(
+      exportJobId: string,
+      actorUserId: string,
+    ): Promise<{ csv: string; rowCount: number } | null> {
+      const result = await pool.query<{ artifact_csv: string | null; row_count: number | null }>(
+        `
+        SELECT artifact_csv, row_count
+        FROM export_jobs
+        WHERE id = $1 AND actor_user_id = $2 AND status = 'Completed'
+        `,
+        [exportJobId, actorUserId],
+      );
+      const row = result.rows[0];
+      if (!row?.artifact_csv) return null;
+      return { csv: row.artifact_csv, rowCount: row.row_count ?? 0 };
+    },
+
     /** Test helper — reset export jobs created in a test window. */
     async deleteExportJobsForActor(actorUserId: string): Promise<void> {
       await pool.query(`DELETE FROM audit_logs WHERE target_type = 'ExportJob' AND actor_user_id = $1`, [

@@ -1,0 +1,135 @@
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.meta {
+  margin-top: var(--space-1);
+  font-size: var(--font-size-xs);
+  color: var(--color-text-muted);
+}
+
+.activeFilters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.filterChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 36px;
+  padding: var(--space-1) var(--space-3);
+  font-family: var(--font-body-family);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-heading);
+  background: var(--color-neutral-secondary);
+  border: var(--border-default);
+  box-shadow: var(--shadow-2xs);
+  cursor: pointer;
+}
+
+.filterChip:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring-brand), var(--shadow-xs);
+}
+
+.filterChipRemove {
+  font-size: var(--font-size-sm);
+  line-height: 1;
+}
+
+.exportPanel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.exportActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.skeleton {
+  min-height: 220px;
+  background: linear-gradient(
+    90deg,
+    var(--color-neutral-secondary) 25%,
+    var(--color-neutral-tertiary) 50%,
+    var(--color-neutral-secondary) 75%
+  );
+  background-size: 200% 100%;
+  border: var(--border-default);
+  box-shadow: var(--shadow-xs);
+  animation: shimmer 1.2s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.retryRow {
+  margin-top: var(--space-3);
+}
+
+.pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  background: var(--page-surface);
+  border: var(--border-default);
+  box-shadow: var(--shadow-xs);
+}
+
+.paginationMeta {
+  margin: 0;
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.paginationActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.pageIndicator {
+  padding: 0 var(--space-2);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-heading);
+}
+
+@media (max-width: 640px) {
+  .exportActions,
+  .pagination,
+  .paginationActions {
+    align-items: stretch;
+  }
+
+  .pagination {
+    flex-direction: column;
+  }
+
+  .paginationActions {
+    justify-content: space-between;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}

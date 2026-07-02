@@ -8,29 +8,3 @@
   box-shadow: var(--shadow-sm);
   background: var(--color-neutral-secondary);
 }
-
-.exportRow {
-  margin-top: var(--space-4);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.exportStub {
-  align-self: flex-start;
-  min-height: var(--touch-target-min);
-  padding: var(--space-2) var(--space-4);
-  font-family: var(--font-body-family);
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text-body);
-  background: var(--color-neutral-primary);
-  border: var(--border-default);
-  box-shadow: var(--shadow-xs);
-  cursor: pointer;
-}
-
-.exportStub:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring-brand), var(--shadow-xs);
-}

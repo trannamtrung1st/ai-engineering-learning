@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Navigate, useSearchParams } from "react-router-dom";
-import { AttendanceHistoryList } from "../../components/domain/AttendanceHistoryList";
+import { AttendanceReportList } from "../../components/domain/AttendanceReportList";
 import { ContentSection } from "../../components/layout/ContentSection";
 import { FeedbackAlert } from "../../components/ui/FeedbackAlert";
 import { fetchCurrentUser } from "../../lib/api/me-api";
@@ -14,8 +14,8 @@ import {
   canAccessInstitutionReport,
   canExecuteExport,
 } from "../../lib/auth/role-guard";
-import { isStudentAuthenticated } from "../../lib/auth/auth-gate";
 import { getAccessToken } from "../../lib/auth/session";
+import { buildStaffLoginRedirect } from "../../lib/auth/staff-gate";
 import styles from "./AttendanceReportPage.module.css";
 
 export function AttendanceReportPage() {
@@ -25,11 +25,10 @@ export function AttendanceReportPage() {
     { value: SEED_SECTION_ID, label: DEFAULT_SECTION_LABEL },
   ]);
   const [accessDenied, setAccessDenied] = useState(false);
-  const [exportError, setExportError] = useState<string | null>(null);
 
   useEffect(() => {
     void (async () => {
-      if (!getAccessToken() && !isStudentAuthenticated()) {
+      if (!getAccessToken()) {
         setRoles([]);
         return;
       }
@@ -84,36 +83,21 @@ export function AttendanceReportPage() {
           thị.
         </FeedbackAlert>
       ) : (
-        <AttendanceHistoryList
+        <AttendanceReportList
+          roles={roles}
           defaultTermId={SEED_TERM_ID}
           termOptions={[{ value: SEED_TERM_ID, label: DEFAULT_TERM_LABEL }]}
           sectionOptions={sectionOptions}
+          canExport={canExecuteExport(roles)}
         />
       )}
-
-      {canExecuteExport(roles) ? (
-        <div className={styles.exportRow}>
-          <button
-            type="button"
-            className={styles.exportStub}
-            onClick={() => setExportError("Xuất CSV bị từ chối — lớp ngoài phạm vi.")}
-          >
-            Xuất CSV
-          </button>
-          {exportError ? (
-            <FeedbackAlert variant="warning" title="Không thể xuất">
-              {exportError}
-            </FeedbackAlert>
-          ) : null}
-        </div>
-      ) : null}
     </ContentSection>
   );
 }
 
 export function StudentAttendanceReportGuard() {
-  if (!isStudentAuthenticated() && !getAccessToken()) {
-    return <Navigate to="/login?returnUrl=%2Freports%2Fattendance" replace />;
+  if (!getAccessToken()) {
+    return <Navigate to={buildStaffLoginRedirect("/reports/attendance")} replace />;
   }
   return <AttendanceReportPage />;
 }

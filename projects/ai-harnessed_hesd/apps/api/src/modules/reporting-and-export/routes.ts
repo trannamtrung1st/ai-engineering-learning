@@ -156,4 +156,34 @@ export async function registerReportingRoutes(
       });
     },
   );
+
+  app.get<{ Params: { exportJobId: string } }>(
+    "/exports/attendance/:exportJobId",
+    { preHandler: authenticate },
+    async (request, reply) => {
+      const actor = request.actor;
+      if (!actor) {
+        sendApiError(reply, request, 401, ErrorCode.Unauthenticated);
+        return;
+      }
+
+      const artifact = await repository.getExportArtifactForActor(
+        request.params.exportJobId,
+        actor.userId,
+      );
+      if (!artifact) {
+        authDenied(reply, request, "OutOfScope");
+        return;
+      }
+
+      void reply
+        .status(200)
+        .header("content-type", "text/csv; charset=utf-8")
+        .header(
+          "content-disposition",
+          `attachment; filename="attendance-export-${request.params.exportJobId}.csv"`,
+        )
+        .send(artifact.csv);
+    },
+  );
 }
