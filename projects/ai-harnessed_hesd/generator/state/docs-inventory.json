@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-02T08:35:21Z",
+  "generatedAt": "2026-07-02T08:37:02Z",
   "repoRoot": "/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd",
   "inputMode": "flexible",
   "zones": {
@@ -9,7 +9,9 @@
     "meta": [
       "docs/product-meta.json"
     ],
-    "brds": [],
+    "brds": [
+      "docs/brds/prompt.md"
+    ],
     "technical": [],
     "uiux": [],
     "designSystem": [
@@ -43,6 +45,13 @@
     "misc": []
   },
   "files": [
+    {
+      "path": "docs/brds/prompt.md",
+      "zone": "brds",
+      "lines": 221,
+      "hasRequirementIds": true,
+      "outlineKey": "docs/brds/prompt.md"
+    },
     {
       "path": "docs/initial-idea.md",
       "zone": "seed",
@@ -241,6 +250,7 @@
     }
   ],
   "seedPaths": [
+    "docs/brds/prompt.md",
     "docs/initial-idea.md",
     "docs/product-meta.json",
     "docs/ui-ux/DESIGN.md",
