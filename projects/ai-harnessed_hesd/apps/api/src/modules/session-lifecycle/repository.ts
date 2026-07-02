@@ -10,9 +10,11 @@ import {
 } from "../realtime-delivery/repository.js";
 import { validateCloseTransition, validateOpenTransition } from "./validation.js";
 import type {
+  ClassSessionListItem,
   ClassSessionRow,
   CloseSessionResult,
   CloseSummary,
+  ListClassSessionsFilters,
   OpenSessionResult,
   SessionState,
 } from "./types.js";
@@ -456,6 +458,179 @@ export function createSessionLifecycleRepository(pool: pg.Pool) {
     /** Test helper — reset in-process idempotency cache between cases. */
     clearIdempotencyCache(): void {
       idempotencyCache.clear();
+    },
+
+    async listClassSessions(
+      filters: ListClassSessionsFilters,
+    ): Promise<{ items: ClassSessionListItem[]; total: number }> {
+      const conditions: string[] = [];
+      const params: unknown[] = [];
+      let paramIndex = 1;
+
+      if (filters.classSectionIds.length > 0) {
+        conditions.push(`cs.class_section_id = ANY($${paramIndex}::uuid[])`);
+        params.push(filters.classSectionIds);
+        paramIndex += 1;
+      }
+
+      if (filters.classSectionId) {
+        conditions.push(`cs.class_section_id = $${paramIndex}`);
+        params.push(filters.classSectionId);
+        paramIndex += 1;
+      }
+
+      if (filters.state) {
+        conditions.push(`cs.state = $${paramIndex}`);
+        params.push(filters.state);
+        paramIndex += 1;
+      }
+
+      if (filters.from) {
+        conditions.push(`cs.scheduled_start_at >= $${paramIndex}::timestamptz`);
+        params.push(filters.from);
+        paramIndex += 1;
+      }
+
+      if (filters.to) {
+        conditions.push(`cs.scheduled_start_at <= $${paramIndex}::timestamptz`);
+        params.push(filters.to);
+        paramIndex += 1;
+      }
+
+      if (filters.search?.trim()) {
+        const pattern = `%${filters.search.trim().toLowerCase()}%`;
+        conditions.push(
+          `(LOWER(sec.section_code) LIKE $${paramIndex} OR LOWER(c.name) LIKE $${paramIndex} OR LOWER(c.code) LIKE $${paramIndex})`,
+        );
+        params.push(pattern);
+        paramIndex += 1;
+      }
+
+      const whereClause =
+        conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+      const sortColumn =
+        filters.sortBy === "state" ? "cs.state" : "cs.scheduled_start_at";
+      const sortOrder = filters.sortOrder === "asc" ? "ASC" : "DESC";
+
+      const countResult = await pool.query<{ count: string }>(
+        `
+        SELECT COUNT(*)::text AS count
+        FROM class_sessions cs
+        JOIN class_sections sec ON sec.id = cs.class_section_id
+        JOIN courses c ON c.id = sec.course_id
+        ${whereClause}
+        `,
+        params,
+      );
+
+      const listParams = [...params, filters.limit, filters.offset];
+      const listResult = await pool.query<{
+        id: string;
+        class_section_id: string;
+        section_code: string;
+        course_name: string;
+        room_code: string | null;
+        room_name: string | null;
+        scheduled_start_at: Date;
+        scheduled_end_at: Date;
+        state: SessionState;
+        opened_at: Date | null;
+        closed_at: Date | null;
+      }>(
+        `
+        SELECT
+          cs.id,
+          cs.class_section_id,
+          sec.section_code,
+          c.name AS course_name,
+          r.code AS room_code,
+          r.name AS room_name,
+          cs.scheduled_start_at,
+          cs.scheduled_end_at,
+          cs.state,
+          cs.opened_at,
+          cs.closed_at
+        FROM class_sessions cs
+        JOIN class_sections sec ON sec.id = cs.class_section_id
+        JOIN courses c ON c.id = sec.course_id
+        LEFT JOIN rooms r ON r.id = cs.room_id
+        ${whereClause}
+        ORDER BY ${sortColumn} ${sortOrder}, cs.id ASC
+        LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+        `,
+        listParams,
+      );
+
+      return {
+        items: listResult.rows.map((row) => ({
+          classSessionId: row.id,
+          classSectionId: row.class_section_id,
+          sectionCode: row.section_code,
+          courseName: row.course_name,
+          roomCode: row.room_code,
+          roomName: row.room_name,
+          scheduledStartAt: row.scheduled_start_at.toISOString(),
+          scheduledEndAt: row.scheduled_end_at.toISOString(),
+          state: row.state,
+          openedAt: row.opened_at?.toISOString() ?? null,
+          closedAt: row.closed_at?.toISOString() ?? null,
+        })),
+        total: Number.parseInt(countResult.rows[0]?.count ?? "0", 10),
+      };
+    },
+
+    async getClassSessionById(sessionId: string): Promise<ClassSessionListItem | null> {
+      const result = await pool.query<{
+        id: string;
+        class_section_id: string;
+        section_code: string;
+        course_name: string;
+        room_code: string | null;
+        room_name: string | null;
+        scheduled_start_at: Date;
+        scheduled_end_at: Date;
+        state: SessionState;
+        opened_at: Date | null;
+        closed_at: Date | null;
+      }>(
+        `
+        SELECT
+          cs.id,
+          cs.class_section_id,
+          sec.section_code,
+          c.name AS course_name,
+          r.code AS room_code,
+          r.name AS room_name,
+          cs.scheduled_start_at,
+          cs.scheduled_end_at,
+          cs.state,
+          cs.opened_at,
+          cs.closed_at
+        FROM class_sessions cs
+        JOIN class_sections sec ON sec.id = cs.class_section_id
+        JOIN courses c ON c.id = sec.course_id
+        LEFT JOIN rooms r ON r.id = cs.room_id
+        WHERE cs.id = $1
+        `,
+        [sessionId],
+      );
+
+      const row = result.rows[0];
+      if (!row) return null;
+
+      return {
+        classSessionId: row.id,
+        classSectionId: row.class_section_id,
+        sectionCode: row.section_code,
+        courseName: row.course_name,
+        roomCode: row.room_code,
+        roomName: row.room_name,
+        scheduledStartAt: row.scheduled_start_at.toISOString(),
+        scheduledEndAt: row.scheduled_end_at.toISOString(),
+        state: row.state,
+        openedAt: row.opened_at?.toISOString() ?? null,
+        closedAt: row.closed_at?.toISOString() ?? null,
+      };
     },
   };
 }

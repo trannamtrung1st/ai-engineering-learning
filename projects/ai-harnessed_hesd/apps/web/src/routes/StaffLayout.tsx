@@ -5,8 +5,7 @@ import { TopContextHeader } from "../components/layout/TopContextHeader";
 
 const staffNav = [
   { to: "/showcase", label: "Design system" },
-  { to: "/lecturer/sessions/demo-open", label: "Buổi học (mở)" },
-  { to: "/lecturer/sessions/demo-closed", label: "Buổi học (đóng)" },
+  { to: "/lecturer/sessions", label: "Buổi học (PG-04)" },
 ];
 
 export function StaffLayout() {

@@ -115,10 +115,13 @@ describe("M03 session lifecycle — FR-07 FR-08 BR-01 BR-02 AC-01 AC-05", () => 
       `UPDATE class_sessions SET state = 'Scheduled', opened_at = NULL, opened_by_user_id = NULL, closed_at = NULL, closed_by_user_id = NULL WHERE id = $1`,
       [SEED.sessionScheduled],
     );
-    await pool.query(`DELETE FROM qr_session_tokens WHERE class_session_id = $1`, [
+    await pool.query(`DELETE FROM attendance_records WHERE class_session_id = $1`, [
       SEED.sessionScheduled,
     ]);
-    await pool.query(`DELETE FROM attendance_records WHERE class_session_id = $1`, [
+    await pool.query(`DELETE FROM check_in_attempts WHERE class_session_id = $1`, [
+      SEED.sessionScheduled,
+    ]);
+    await pool.query(`DELETE FROM qr_session_tokens WHERE class_session_id = $1`, [
       SEED.sessionScheduled,
     ]);
     await pool.query(`DELETE FROM audit_logs WHERE target_id = $1`, [SEED.sessionScheduled]);
@@ -424,6 +427,47 @@ describe("M03 session lifecycle — FR-07 FR-08 BR-01 BR-02 AC-01 AC-05", () => 
       [sessionId],
     );
     expect(absentCount.rows[0]?.count).toBe(firstAbsent);
+  });
+
+  it("TC-FR-07-012 FR-10: GET /class-sessions lists assigned lecturer sessions with pagination", async () => {
+    const token = await login(app, "lecturer@attendly.local");
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/v1/class-sessions?classSectionId=${SEED.section}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as {
+      data: { classSessionId: string; state: string; sectionCode: string }[];
+      meta: { pagination: { totalItems: number } };
+      error: null;
+    };
+    expect(body.error).toBeNull();
+    expect(body.data.length).toBeGreaterThan(0);
+    expect(body.data.some((row) => row.classSessionId === SEED.sessionScheduled)).toBe(true);
+    expect(body.meta.pagination.totalItems).toBeGreaterThan(0);
+  });
+
+  it("TC-FR-07-004: GET /class-sessions/{id} returns session detail for assigned lecturer", async () => {
+    const token = await login(app, "lecturer@attendly.local");
+
+    const response = await app.inject({
+      method: "GET",
+      url: `/api/v1/class-sessions/${SEED.sessionOpen}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(response.statusCode).toBe(200);
+    const body = response.json() as {
+      data: { classSessionId: string; state: string; sectionCode: string; courseName: string };
+      error: null;
+    };
+    expect(body.error).toBeNull();
+    expect(body.data.classSessionId).toBe(SEED.sessionOpen);
+    expect(body.data.sectionCode).toBeTruthy();
+    expect(body.data.courseName).toBeTruthy();
   });
 
   it.skip("TC-FR-08-008 TC-BR-02-011 BR-21 AC-12: policy auto-close — owned by module-policy-engine", () => {

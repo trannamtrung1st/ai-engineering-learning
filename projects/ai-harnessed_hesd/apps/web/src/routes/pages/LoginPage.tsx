@@ -28,12 +28,15 @@ export function LoginPage() {
     const form = new FormData(event.currentTarget);
     const studentId = String(form.get("studentId") ?? "");
     const password = String(form.get("password") ?? "");
-    const email = resolveStudentEmail(studentId);
+    const email = studentId.includes("@") ? studentId.trim() : resolveStudentEmail(studentId);
 
     try {
       const result = await loginStudent(email, password);
       if (result.ok) {
         setAccessToken(result.accessToken);
+        if (result.roles.includes("Student")) {
+          markStudentAuthenticated();
+        }
         navigate(returnUrl);
         return;
       }

@@ -6,9 +6,11 @@ import {
   createAuthorizeGuard,
   type IdentityServices,
 } from "../identity/middleware.js";
-import { resolveRequestId, sendApiError, sendApiSuccess } from "../identity/http.js";
+import { forbidden, resolveRequestId, sendApiError, sendApiSuccess } from "../identity/http.js";
 import type { ApiErrorEnvelope } from "@attendly/domain";
+import { buildPaginationMeta, parsePagination } from "../academic-structure/pagination.js";
 import type { SessionLifecycleRepository } from "./repository.js";
+import type { SessionState } from "./types.js";
 
 const INVALID_TRANSITION_MESSAGE =
   "Không thể thực hiện thao tác cho trạng thái hiện tại.";
@@ -43,6 +45,36 @@ function sendInvalidTransition(
   void reply.status(409).send(body);
 }
 
+function isStaffSessionReader(roles: string[]): boolean {
+  return roles.some((role) =>
+    ["Lecturer", "DepartmentAdmin", "AcademicAdmin"].includes(role),
+  );
+}
+
+async function resolveAuthorizedSectionIds(
+  services: IdentityServices,
+  actorUserId: string,
+  roles: string[],
+): Promise<string[] | null> {
+  const isBroadReader = roles.some((role) =>
+    ["DepartmentAdmin", "AcademicAdmin"].includes(role),
+  );
+  if (isBroadReader) {
+    return null;
+  }
+  return services.repository.getLecturerClassSectionIds(actorUserId);
+}
+
+function canAccessSection(
+  sectionId: string,
+  scopedSectionIds: string[] | null,
+): boolean {
+  if (scopedSectionIds === null) {
+    return true;
+  }
+  return scopedSectionIds.includes(sectionId);
+}
+
 export async function registerSessionLifecycleRoutes(
   app: FastifyInstance,
   services: IdentityServices,
@@ -55,6 +87,87 @@ export async function registerSessionLifecycleRoutes(
     action: "execute",
     resolveScope: paramsSessionId,
   });
+
+  app.get("/class-sessions", { preHandler: authenticate }, async (request, reply) => {
+    const actor = request.actor!;
+    if (!isStaffSessionReader(actor.roles)) {
+      forbidden(reply, request);
+      return;
+    }
+
+    const query = request.query as {
+      page?: string;
+      pageSize?: string;
+      classSectionId?: string;
+      state?: string;
+      search?: string;
+      from?: string;
+      to?: string;
+      sortBy?: string;
+      sortOrder?: string;
+    };
+
+    const scopedSectionIds = await resolveAuthorizedSectionIds(
+      services,
+      actor.userId,
+      actor.roles,
+    );
+
+    let effectiveSectionIds = scopedSectionIds ?? [];
+    if (scopedSectionIds === null) {
+      effectiveSectionIds = query.classSectionId ? [query.classSectionId] : [];
+    } else if (query.classSectionId) {
+      if (!canAccessSection(query.classSectionId, scopedSectionIds)) {
+        forbidden(reply, request);
+        return;
+      }
+      effectiveSectionIds = [query.classSectionId];
+    }
+
+    const { page, pageSize, offset } = parsePagination(query);
+    const sortBy = query.sortBy === "state" ? "state" : "startTime";
+    const sortOrder = query.sortOrder === "asc" ? "asc" : "desc";
+    const stateFilter = query.state as SessionState | undefined;
+    const validStates: SessionState[] = ["Scheduled", "Open", "Closed", "Cancelled"];
+    const state =
+      stateFilter && validStates.includes(stateFilter) ? stateFilter : undefined;
+
+    const { items, total } = await repository.listClassSessions({
+      classSectionIds: effectiveSectionIds,
+      state,
+      search: query.search,
+      from: query.from,
+      to: query.to,
+      sortBy,
+      sortOrder,
+      offset,
+      limit: pageSize,
+    });
+
+    void reply.status(200).send({
+      data: items,
+      meta: {
+        requestId: resolveRequestId(request),
+        timestamp: new Date().toISOString(),
+        pagination: buildPaginationMeta(page, pageSize, total),
+      },
+      error: null,
+    });
+  });
+
+  app.get(
+    "/class-sessions/:sessionId",
+    { preHandler: combineGuards(authenticate, guardSessionControl) },
+    async (request, reply) => {
+      const params = request.params as { sessionId: string };
+      const session = await repository.getClassSessionById(params.sessionId);
+      if (!session) {
+        sendApiError(reply, request, 404, ErrorCode.SessionNotFound);
+        return;
+      }
+      sendApiSuccess(reply, request, 200, session);
+    },
+  );
 
   app.post(
     "/class-sessions/:sessionId/open",

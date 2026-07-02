@@ -813,7 +813,7 @@
     },
     {
       "id": "web-lecturer-session-control",
-      "passes": false,
+      "passes": true,
       "priority": 20,
       "phase": 2,
       "agent": "frontend",

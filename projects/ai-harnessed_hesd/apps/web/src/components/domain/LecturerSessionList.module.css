@@ -1,0 +1,94 @@
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.skeleton {
+  min-height: 240px;
+  border: var(--border-default);
+  background: linear-gradient(
+    90deg,
+    var(--color-neutral-primary-soft) 0%,
+    var(--color-neutral-primary) 50%,
+    var(--color-neutral-primary-soft) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.2s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.sessionMeta {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.rowActions {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding-top: var(--space-2);
+}
+
+.paginationMeta {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.paginationActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.pageIndicator {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-body);
+}
+
+.retryRow {
+  margin-top: var(--space-3);
+}
+
+.linkAction,
+.linkPrimary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--touch-target-min);
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-body-family);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  text-decoration: none;
+  border: var(--border-default);
+  box-shadow: var(--shadow-2xs);
+}
+
+.linkAction {
+  color: var(--color-text-body);
+  background: var(--color-neutral-primary);
+}
+
+.linkPrimary {
+  color: var(--color-text-on-brand);
+  background: var(--color-brand-primary);
+  border-color: var(--color-brand-primary);
+}

@@ -5,6 +5,10 @@ import { SessionStatusBadge } from "../../components/ui/StatusBadge";
 import { ContentSection } from "../../components/layout/ContentSection";
 import { MobileFlowContainer } from "../../components/layout/MobileFlowContainer";
 import { Card } from "../../components/ui/Card";
+import {
+  SEED_SESSION_OPEN_ID,
+  SEED_SESSION_SCHEDULED_ID,
+} from "../../lib/api/seed-fixtures";
 import styles from "./DesignSystemPage.module.css";
 
 export function DesignSystemPage() {
@@ -37,11 +41,14 @@ export function DesignSystemPage() {
           <Link className={styles.routeLink} to="/login?returnUrl=%2Fcheck-in%3Ftoken%3Ddemo">
             PG-01 · Login gate với return URL
           </Link>
-          <Link className={styles.routeLink} to="/lecturer/sessions/demo-open">
+          <Link className={styles.routeLink} to={`/lecturer/sessions/${SEED_SESSION_OPEN_ID}`}>
             PG-05 · QrDisplayPanel (Open)
           </Link>
-          <Link className={styles.routeLink} to="/lecturer/sessions/demo-closed">
-            PG-05 · QrDisplayPanel (Closed)
+          <Link className={styles.routeLink} to="/lecturer/sessions">
+            PG-04 · Lecturer session list
+          </Link>
+          <Link className={styles.routeLink} to={`/lecturer/sessions/${SEED_SESSION_SCHEDULED_ID}`}>
+            PG-05 · Session control (Scheduled)
           </Link>
         </div>
       </ContentSection>

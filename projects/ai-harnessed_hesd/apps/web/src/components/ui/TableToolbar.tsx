@@ -14,6 +14,9 @@ export interface TableToolbarProps {
   sectionOptions?: FilterOption[];
   status?: string;
   statusOptions?: FilterOption[];
+  search?: string;
+  searchPlaceholder?: string;
+  onSearchChange?: (value: string) => void;
   sortOrder?: "asc" | "desc";
   onTermChange?: (value: string) => void;
   onSectionChange?: (value: string) => void;
@@ -33,6 +36,9 @@ export function TableToolbar({
   sectionOptions = [],
   status,
   statusOptions = [],
+  search,
+  searchPlaceholder = "Tìm kiếm…",
+  onSearchChange,
   sortOrder = "desc",
   onTermChange,
   onSectionChange,
@@ -44,11 +50,24 @@ export function TableToolbar({
   exportDisabled = false,
   children,
 }: TableToolbarProps) {
-  const hasActiveFilters = Boolean(termId || classSectionId || status);
+  const hasActiveFilters = Boolean(termId || classSectionId || status || search);
 
   return (
     <div className={styles.toolbar} data-testid="table-toolbar">
       <div className={styles.filters}>
+        {onSearchChange ? (
+          <label className={styles.field}>
+            <span className={styles.label}>Tìm kiếm</span>
+            <input
+              className={styles.input}
+              type="search"
+              aria-label="Tìm kiếm danh sách"
+              placeholder={searchPlaceholder}
+              value={search ?? ""}
+              onChange={(event) => onSearchChange(event.target.value)}
+            />
+          </label>
+        ) : null}
         {termOptions.length > 0 ? (
           <label className={styles.field}>
             <span className={styles.label}>Học kỳ</span>

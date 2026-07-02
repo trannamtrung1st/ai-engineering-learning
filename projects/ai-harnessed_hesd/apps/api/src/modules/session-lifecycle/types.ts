@@ -38,3 +38,30 @@ export interface CloseSessionResult {
   closedAt: string;
   summary: CloseSummary;
 }
+
+export interface ClassSessionListItem {
+  classSessionId: string;
+  classSectionId: string;
+  sectionCode: string;
+  courseName: string;
+  roomCode: string | null;
+  roomName: string | null;
+  scheduledStartAt: string;
+  scheduledEndAt: string;
+  state: SessionState;
+  openedAt: string | null;
+  closedAt: string | null;
+}
+
+export interface ListClassSessionsFilters {
+  classSectionIds: string[];
+  classSectionId?: string;
+  state?: SessionState;
+  search?: string;
+  from?: string;
+  to?: string;
+  sortBy?: "startTime" | "state";
+  sortOrder?: "asc" | "desc";
+  offset: number;
+  limit: number;
+}

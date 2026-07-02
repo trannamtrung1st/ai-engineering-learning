@@ -45,7 +45,24 @@
   box-shadow: var(--shadow-2xs);
 }
 
+.input {
+  min-height: var(--touch-target-min);
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-body-family);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-body);
+  background: var(--color-neutral-primary);
+  border: var(--border-default);
+  box-shadow: var(--shadow-2xs);
+  min-width: 200px;
+}
+
 .select:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring-brand), var(--shadow-xs);
+}
+
+.input:focus-visible {
   outline: none;
   box-shadow: var(--focus-ring-brand), var(--shadow-xs);
 }

@@ -1,70 +1,210 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Link, Navigate, useParams, useSearchParams } from "react-router-dom";
 import { QrDisplayPanel, type QrDisplayData } from "../../components/domain/QrDisplayPanel";
 import { SessionControlBar } from "../../components/domain/SessionControlBar";
-import { TTL_SECONDS } from "../../components/domain/QrCountdownRing";
 import { ContentSection } from "../../components/layout/ContentSection";
-import type { SessionState } from "../../components/ui/StatusBadge";
+import { FeedbackAlert } from "../../components/ui/FeedbackAlert";
+import {
+  closeClassSession,
+  fetchClassSessionById,
+  fetchCurrentQr,
+  formatRoomLabel,
+  formatScheduledAt,
+  formatSessionLabel,
+  openClassSession,
+  type ClassSessionSummary,
+} from "../../lib/api/session-api";
+import { buildStaffLoginRedirect, isStaffAuthenticated } from "../../lib/auth/staff-gate";
 import styles from "./LecturerSessionPage.module.css";
 
-function buildToken(seed: number): QrDisplayData {
-  const expiresAt = new Date(Date.now() + TTL_SECONDS * 1000).toISOString();
-  return {
-    qrPayload: `attendly://check-in/demo-${seed}`,
-    expiresAt,
-    tokenState: "Valid",
-  };
-}
-
 export function LecturerSessionPage() {
-  const { sessionId = "demo-open" } = useParams();
-  const sessionState: SessionState = sessionId.includes("closed") ? "Closed" : "Open";
-  const [rotation, setRotation] = useState(1);
-  const [qrData, setQrData] = useState<QrDisplayData | null>(() =>
-    sessionState === "Open" ? buildToken(1) : null,
-  );
+  const { sessionId = "" } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [session, setSession] = useState<ClassSessionSummary | null>(null);
+  const [qrData, setQrData] = useState<QrDisplayData | null>(null);
+  const [qrError, setQrError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [closeSummary, setCloseSummary] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [mutating, setMutating] = useState(false);
+  const autoOpenHandled = useRef(false);
 
-  const refreshQr = useCallback(() => {
-    setRotation((value) => {
-      const next = value + 1;
-      setQrData(buildToken(next));
-      return next;
-    });
-  }, []);
+  const refreshQr = useCallback(async () => {
+    if (!sessionId) return;
+    const result = await fetchCurrentQr(sessionId);
+    if (result.ok) {
+      setQrData(result.qr);
+      setQrError(null);
+      return;
+    }
+    setQrData(null);
+    setQrError(result.message);
+  }, [sessionId]);
+
+  const loadSession = useCallback(async () => {
+    if (!sessionId) return;
+    setLoading(true);
+    setLoadError(null);
+    const result = await fetchClassSessionById(sessionId);
+    if (result.ok) {
+      setSession(result.session);
+      if (result.session.state === "Open") {
+        await refreshQr();
+      } else {
+        setQrData(null);
+        setQrError(null);
+      }
+    } else {
+      setSession(null);
+      setLoadError(result.message);
+    }
+    setLoading(false);
+  }, [refreshQr, sessionId]);
 
   useEffect(() => {
-    if (sessionState !== "Open") {
-      setQrData(null);
-    }
-  }, [sessionState]);
+    void loadSession();
+  }, [loadSession]);
 
-  const sectionCode = useMemo(() => "CSE101-A", []);
-  const sessionName = useMemo(() => "Lập trình Web — Buổi 05", []);
+  const handleOpen = useCallback(async () => {
+    if (!sessionId) return;
+    setMutating(true);
+    setActionError(null);
+    setCloseSummary(null);
+    const result = await openClassSession(sessionId);
+    if (result.ok) {
+      setSession((current) =>
+        current
+          ? {
+              ...current,
+              state: "Open",
+              openedAt: result.data.openedAt,
+            }
+          : current,
+      );
+      setQrData({
+        qrPayload: result.data.qr.qrPayload,
+        expiresAt: result.data.qr.expiresAt,
+        tokenState: "Valid",
+      });
+      setQrError(null);
+    } else {
+      setActionError(result.message);
+    }
+    setMutating(false);
+  }, [sessionId]);
+
+  const handleClose = useCallback(async () => {
+    if (!sessionId) return;
+    setMutating(true);
+    setActionError(null);
+    const result = await closeClassSession(sessionId);
+    if (result.ok) {
+      setSession((current) =>
+        current
+          ? {
+              ...current,
+              state: "Closed",
+              closedAt: result.data.closedAt,
+            }
+          : current,
+      );
+      setQrData(null);
+      setQrError(null);
+      const summary = result.data.summary;
+      setCloseSummary(
+        `Đã đóng buổi học · Có mặt ${summary.present}, muộn ${summary.late}, vắng ${summary.absent}`,
+      );
+    } else {
+      setActionError(result.message);
+    }
+    setMutating(false);
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (
+      searchParams.get("action") === "open" &&
+      session?.state === "Scheduled" &&
+      !autoOpenHandled.current &&
+      !mutating
+    ) {
+      autoOpenHandled.current = true;
+      const next = new URLSearchParams(searchParams);
+      next.delete("action");
+      setSearchParams(next, { replace: true });
+      void handleOpen();
+    }
+  }, [handleOpen, mutating, searchParams, session?.state, setSearchParams]);
+
+  if (!isStaffAuthenticated()) {
+    return <Navigate to={buildStaffLoginRedirect(`/lecturer/sessions/${sessionId}`)} replace />;
+  }
+
+  if (!sessionId) {
+    return <Navigate to="/lecturer/sessions" replace />;
+  }
+
+  if (loading) {
+    return <div className={styles.page} aria-busy="true" data-testid="session-loading" />;
+  }
+
+  if (loadError || !session) {
+    return (
+      <div className={styles.page}>
+        <FeedbackAlert variant="danger" title="Không thể tải buổi học">
+          {loadError ?? "Buổi học không tồn tại hoặc bạn không có quyền truy cập."}
+        </FeedbackAlert>
+        <Link className={styles.backLink} to="/lecturer/sessions">
+          Quay lại danh sách
+        </Link>
+      </div>
+    );
+  }
 
   return (
     <div className={styles.page}>
+      <div className={styles.backRow}>
+        <Link className={styles.backLink} to="/lecturer/sessions">
+          ← Danh sách buổi học
+        </Link>
+      </div>
+
+      {actionError ? (
+        <FeedbackAlert variant="danger" title="Không thể cập nhật trạng thái">
+          {actionError}
+        </FeedbackAlert>
+      ) : null}
+
+      {closeSummary ? (
+        <FeedbackAlert variant="success" title="Đóng buổi học thành công">
+          {closeSummary}
+        </FeedbackAlert>
+      ) : null}
+
       <SessionControlBar
         className={styles.controlBar}
-        roomName="P.301"
-        scheduledAt="Thứ 3 · 08:00"
-        sessionState={sessionState}
+        sectionCode={session.sectionCode}
+        roomName={formatRoomLabel(session)}
+        scheduledAt={formatScheduledAt(session.scheduledStartAt)}
+        sessionState={session.state}
+        sessionId={session.classSessionId}
+        openedAt={session.openedAt}
+        onOpen={() => void handleOpen()}
+        onClose={() => void handleClose()}
+        loading={mutating}
       />
 
       <ContentSection title="Mã QR điểm danh" titleClassName={styles.sectionTitle}>
         <QrDisplayPanel
-          sectionCode={sectionCode}
-          sessionName={sessionName}
-          sessionState={sessionState}
+          sectionCode={session.sectionCode}
+          sessionName={formatSessionLabel(session)}
+          sessionState={session.state}
           qrData={qrData}
+          errorMessage={qrError}
           projectionMode
-          onRefresh={refreshQr}
-          onExpire={refreshQr}
+          onRefresh={() => void refreshQr()}
+          onExpire={() => void refreshQr()}
         />
-        {sessionState === "Open" ? (
-          <p className={styles.rotationMeta}>
-            Token rotation #{rotation} · TTL {TTL_SECONDS}s · FR-14 / NFR-15
-          </p>
-        ) : null}
       </ContentSection>
     </div>
   );
