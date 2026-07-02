@@ -1,0 +1,291 @@
+{
+  "productItemId": "BR-03",
+  "version": 1,
+  "docFingerprint": "sha256:0421ca4affe3aa70584e3b352a860d11de519a5a2aaff8c4d8e0f12d14d1a70a",
+  "generatedAt": "2026-07-02T11:53:23Z",
+  "cases": [
+    {
+      "id": "TC-BR-03-001",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["BR-03", "FR-11", "FR-12", "FR-13", "AC-02", "AC-03", "AC-04"],
+      "title": "Testing-plan QR token behavior row: expired token rejected and logged",
+      "preconditions": [
+        "Class session is Open with a QRSessionToken issued for that session.",
+        "Token expiresAt is more than 30 seconds after issuedAt per MVP default TTL.",
+        "Student is authenticated and actively enrolled in the session class section.",
+        "Student has no prior successful AttendanceRecord for this session."
+      ],
+      "steps": [
+        "Advance server time beyond the token expiresAt value.",
+        "Submit check-in command through the application service boundary with the expired qrToken.",
+        "Query CheckInAttempt rows for the student-session-token tuple.",
+        "Query AttendanceRecord rows for the same student-session pair."
+      ],
+      "expected": "Check-in is rejected with outcome ExpiredQr; exactly one failed CheckInAttempt is persisted with token reference and timestamp; no Present or Late AttendanceRecord is created.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-03-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-03", "BR-23", "FR-22", "AC-04", "AC-18"],
+      "title": "Check-in service persists ExpiredQr attempt without attendance mutation",
+      "preconditions": [
+        "Integration harness uses real DB transaction boundaries for qr_session_tokens, check_in_attempts, and attendance_records.",
+        "Open session row exists with an expired QRSessionToken whose classSessionId matches the target session.",
+        "Authenticated enrolled student has no success attendance row for the session."
+      ],
+      "steps": [
+        "Invoke POST /v1/check-ins command path with the expired qrToken.",
+        "Assert the command returns terminal outcome ExpiredQr.",
+        "Query check_in_attempts for the submitted correlation/request id.",
+        "Query attendance_records for the student-session pair.",
+        "Commit and re-read the persisted rows outside the command transaction."
+      ],
+      "expected": "The DB contains one CheckInAttempt with outcome ExpiredQr and no successful AttendanceRecord for the same student-session; persisted data remains visible after transaction commit.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-03-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-03", "FR-12", "FR-23", "AC-03", "AC-11"],
+      "title": "One valid QR token can be used by multiple enrolled students within TTL",
+      "preconditions": [
+        "Class session is Open with one QRSessionToken in Valid state and expiresAt in the future.",
+        "At least three authenticated Student actors are actively enrolled in the class section.",
+        "No enrolled test student has an existing AttendanceRecord for the session.",
+        "Effective policy does not require GPS or all supplied GPS data is valid."
+      ],
+      "steps": [
+        "Submit check-in command for Student A with the shared valid qrToken.",
+        "Submit check-in command for Student B with the same qrToken before expiresAt.",
+        "Submit check-in command for Student C with the same qrToken before expiresAt.",
+        "Query CheckInAttempt and AttendanceRecord rows for all three students.",
+        "Verify the token remains bound to the original ClassSession and was not globally consumed by the first success."
+      ],
+      "expected": "All enrolled students are processed independently; each valid request can create its own Success attempt and Present/Late AttendanceRecord; no request is rejected solely because another student used the same token.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-03-004",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-03", "FR-13", "FR-16", "FR-22", "AC-04"],
+      "title": "POST /v1/check-ins with expired QR returns 422 ExpiredQr envelope",
+      "preconditions": [
+        "Class session is Open.",
+        "QR token was issued for the open session and is now past its 30-second TTL by server time.",
+        "Enrolled Student is authenticated with Authorization bearer token.",
+        "Request includes Idempotency-Key and X-Request-Id headers."
+      ],
+      "steps": [
+        "Send POST /v1/check-ins with qrToken and clientTimestamp in JSON body.",
+        "Validate HTTP status code and response envelope shape {data, meta, error}.",
+        "Assert data is null and error.code is ExpiredQr.",
+        "Assert error.message is localized Vietnamese copy instructing the student to scan the current QR on the lecturer screen.",
+        "Assert meta.requestId and meta.timestamp are present.",
+        "Query the attendance roster or DB and confirm no success attendance row was created."
+      ],
+      "expected": "HTTP 422 rule-failure response with standard envelope; error.code ExpiredQr; localized current-QR guidance is returned; failed attempt is logged and attendance is unchanged.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-03-005",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-03", "FR-11", "FR-13", "AC-02", "AC-04"],
+      "title": "QR TTL boundary uses server-side 30-second expiry",
+      "preconditions": [
+        "Open session has a QR token with deterministic issuedAt timestamp.",
+        "Authenticated enrolled student has no prior success attendance.",
+        "Test harness can control or freeze server time around the token expiresAt boundary."
+      ],
+      "steps": [
+        "At issuedAt plus 29 seconds, submit POST /v1/check-ins with the token and otherwise valid payload.",
+        "Reset fixture state for a second student or second session using a token with the same deterministic issuedAt.",
+        "At issuedAt plus 30 seconds plus a minimal epsilon, submit POST /v1/check-ins with that token.",
+        "Compare returned outcomes and persisted CheckInAttempt rows.",
+        "Verify clientTimestamp skew does not extend the token lifetime."
+      ],
+      "expected": "The before-expiry request can proceed to Success when all later rules pass; the after-expiry request is rejected with ExpiredQr; server time, not clientTimestamp, controls token expiry.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-03-006",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-03", "BR-01", "BR-02", "FR-13"],
+      "title": "Rule-order short-circuit: session state failures precede expired QR evaluation",
+      "preconditions": [
+        "Student actor is authenticated.",
+        "One Scheduled session and one Closed session each have an expired or stale qrToken fixture.",
+        "The student is enrolled so enrollment would not mask the session-state result."
+      ],
+      "steps": [
+        "Submit POST /v1/check-ins with expired token bound to the Scheduled session.",
+        "Assert the returned code is SessionNotOpen, not ExpiredQr.",
+        "Submit POST /v1/check-ins with expired token bound to the Closed session.",
+        "Assert the returned code is SessionClosed, not ExpiredQr.",
+        "Confirm failed attempts are logged with the first terminal outcome selected by validation order."
+      ],
+      "expected": "Validation follows documented order: authentication then session state before token integrity and expiry; BR-03 is not evaluated when BR-01 or BR-02 has already rejected the request.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-03-007",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-03", "BR-06", "BR-07", "BR-08", "BR-09", "BR-10", "FR-22"],
+      "title": "Rule-order short-circuit: ExpiredQr precedes enrollment, duplicate, and GPS checks",
+      "preconditions": [
+        "Class session is Open.",
+        "Expired qrToken is bound to the open session.",
+        "Fixtures include at least one unenrolled student, one student with prior success, and one GPS-required session variant with missing or invalid GPS.",
+        "All actors are authenticated Student users."
+      ],
+      "steps": [
+        "Submit POST /v1/check-ins as an unenrolled student with the expired token.",
+        "Assert error.code is ExpiredQr, not NotEnrolled.",
+        "Submit as a student with a prior successful AttendanceRecord using the expired token.",
+        "Assert error.code is ExpiredQr, not DuplicateCheckIn.",
+        "Submit with missing or invalid GPS using the expired token where GPS is required.",
+        "Assert error.code is ExpiredQr, not GpsRequired, GpsDisabled, OutOfRadius, or LowAccuracy."
+      ],
+      "expected": "For an Open session, token expiry is the first failing rule after session state; later BR-06, BR-07, and BR-08 to BR-10 checks are not evaluated when the QR token is expired.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-03-008",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P0",
+      "traceability": ["BR-03", "BR-07", "FR-18", "NFR-07", "AC-08"],
+      "title": "Duplicate replay with valid BR-03 token preserves one success per student-session",
+      "preconditions": [
+        "Open session has a Valid multi-use QR token within TTL.",
+        "Authenticated enrolled student has no prior success attendance.",
+        "Harness can replay POST /v1/check-ins with identical and distinct Idempotency-Key headers."
+      ],
+      "steps": [
+        "Submit POST /v1/check-ins with the valid token and Idempotency-Key A.",
+        "Replay the exact same request with Idempotency-Key A.",
+        "Submit another check-in for the same student-session-token with new Idempotency-Key B before token expiry.",
+        "Query attendance_records and check_in_attempts for the student-session pair.",
+        "Verify the QR token was not made globally one-time-use by the first success."
+      ],
+      "expected": "Replay with the same idempotency key returns the prior success result without adding a second success row; the new-key duplicate is rejected with DuplicateCheckIn; there is still exactly one successful AttendanceRecord.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-03-009",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P1",
+      "traceability": ["BR-03", "BR-23", "FR-22", "NFR-07"],
+      "title": "Expired QR retry storm returns deterministic ExpiredQr without success writes",
+      "preconditions": [
+        "Open session has an expired QR token.",
+        "Authenticated enrolled student has no AttendanceRecord for the session.",
+        "Harness can send concurrent POST /v1/check-ins requests with the same actor, token, and idempotency key."
+      ],
+      "steps": [
+        "Launch multiple parallel check-in requests using the expired token and same Idempotency-Key.",
+        "Collect all command outcomes and response envelopes.",
+        "Query check_in_attempts for the correlation ids or idempotency record.",
+        "Query attendance_records for the student-session pair."
+      ],
+      "expected": "Every replay observes deterministic ExpiredQr behavior; idempotency returns the prior failure or equivalent failure envelope; no Present or Late AttendanceRecord is inserted under retry pressure.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-03-010",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-03", "BR-19", "FR-11", "FR-14"],
+      "title": "Student and cross-scope Lecturer cannot fetch current QR metadata",
+      "preconditions": [
+        "Open session exists in section A assigned to Lecturer A with a current Valid QR token.",
+        "Student user is authenticated.",
+        "Lecturer B is authenticated but is not assigned to section A.",
+        "AcademicAdmin or Lecturer A positive-control actor is available."
+      ],
+      "steps": [
+        "Student calls GET /v1/class-sessions/{sessionId}/qr/current for section A.",
+        "Assert HTTP 403 Forbidden or OutOfScope and no qrPayload or expiresAt leaks in response data.",
+        "Lecturer B calls GET /v1/class-sessions/{sessionId}/qr/current for section A.",
+        "Assert HTTP 403 OutOfScope or Forbidden and no QR payload leakage.",
+        "Lecturer A or AcademicAdmin calls the same endpoint and receives tokenState Valid with expiresAt."
+      ],
+      "expected": "Unauthorized actors cannot obtain current QR token metadata; scoped actor can fetch the current QR; no cross-scope or role-denied response leaks qrPayload or token timing.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-03-011",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P1",
+      "traceability": ["BR-03", "BR-18", "BR-19", "FR-27", "FR-28", "AC-16"],
+      "title": "Student export and cross-scope Lecturer report deny access to sessions with ExpiredQr attempts",
+      "preconditions": [
+        "Section A contains an Open session with at least one logged ExpiredQr CheckInAttempt.",
+        "Student user is authenticated.",
+        "Lecturer B is authenticated but not assigned to section A.",
+        "BR-18 scopes exports by actor role and BR-19 denies unauthorized report access."
+      ],
+      "steps": [
+        "Student calls POST /v1/exports/attendance with filters targeting section A.",
+        "Assert HTTP 403 Forbidden and no exportJobId or partial data is returned.",
+        "Lecturer B calls GET /v1/reports/attendance with classSectionId for section A.",
+        "Assert HTTP 403 OutOfScope or Forbidden.",
+        "Verify denied responses do not reveal counts of ExpiredQr attempts or attendance rows in data or pagination metadata."
+      ],
+      "expected": "Student export is denied per BR-18; cross-scope Lecturer report access is denied per BR-19; restricted sessions and BR-03 failure data are not leaked through data payloads or pagination counts.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-03-012",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-03", "FR-11", "FR-13", "FR-16", "AC-02", "AC-04"],
+      "title": "Student UI shows expired QR guidance and allows rescan of current lecturer QR",
+      "preconditions": [
+        "Lecturer has opened a session and the lecturer screen displays a rotating QR code with visible validity timing or refresh behavior.",
+        "Student is logged in on a supported mobile browser profile.",
+        "Student has scanned or opened a check-in deep link containing a QR token that has passed its 30-second TTL."
+      ],
+      "steps": [
+        "Student submits the check-in form using the expired QR token.",
+        "Observe the error banner, inline alert, or modal shown on the student check-in page.",
+        "Verify Vietnamese copy instructs the student to scan the current QR on the lecturer screen.",
+        "On the lecturer view, wait for QR refresh and confirm a new/current QR is displayed without page reload.",
+        "Student scans the current QR and submits again while still within TTL and otherwise eligible.",
+        "Verify the success or next-step UI is shown only for the current QR submission."
+      ],
+      "expected": "The browser journey surfaces ExpiredQr as localized current-QR guidance, lecturer QR rotation remains visible, and a fresh within-TTL QR can proceed without treating the old expired token as valid.",
+      "edgeCase": false
+    }
+  ]
+}

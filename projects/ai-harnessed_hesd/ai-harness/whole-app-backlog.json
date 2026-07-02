@@ -399,6 +399,7 @@
       "testRequirements": {
         "acceptanceTags": [
           "AC-02",
+          "BR-03",
           "FR-11",
           "FR-18",
           "FR-22"
@@ -433,6 +434,12 @@
           "at": "2026-07-02T11:12:39Z",
           "kind": "drift",
           "reason": "Doc drift for FR-22 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T11:54:49Z",
+          "kind": "drift",
+          "reason": "Doc drift for BR-03 — reverify after TestGen",
           "source": "harness"
         }
       ]
