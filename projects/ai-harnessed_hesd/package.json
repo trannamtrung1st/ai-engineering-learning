@@ -19,6 +19,8 @@
     "test:integration": "npm run test:integration -ws --if-present",
     "test:e2e": "npm run test:e2e -w @attendly/e2e --if-present",
     "test": "npm run test:unit && npm run test:integration && npm run test:e2e",
+    "dev:api": "npm run dev -w @attendly/api",
+    "dev:web": "npm run dev -w @attendly/web",
     "aih:once": "./ai-harness/scripts/ralph-once.sh",
     "aih:loop": "./ai-harness/scripts/ralph-loop.sh",
     "aih:loop:bg": "./ai-harness/scripts/ralph-loop-daemon.sh",

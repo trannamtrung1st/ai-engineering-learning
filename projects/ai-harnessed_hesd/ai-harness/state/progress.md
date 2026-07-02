@@ -75,3 +75,5 @@
 - 2026-07-02T12:30:43Z | NFR-14 | testgen_passed
 - 2026-07-02T12:33:01Z | NFR-15 | testgen_passed
 - 2026-07-02T12:36:46Z | NFR-16 | testgen_passed
+- 2026-07-02T12:43:26Z | infra-monorepo-foundation | implementer: monorepo bootstrap — apps/api, apps/web, packages/domain, packages/config, .github/workflows/ci.yml — checks: full profile pass
+- 2026-07-02T12:47:30Z | infra-monorepo-foundation | passed

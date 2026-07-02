@@ -3,7 +3,7 @@
   "slices": [
     {
       "id": "infra-monorepo-foundation",
-      "passes": false,
+      "passes": true,
       "priority": 1,
       "phase": 0,
       "agent": "infra",
@@ -18,13 +18,25 @@
       ],
       "description": "Bootstrap repository structure, shared TypeScript configs, package scripts, and baseline quality gates for backend/frontend/test workstreams.",
       "completionArtifacts": [
-        "Monorepo workspace with backend, web, and shared package boundaries",
-        "Root lint/typecheck/test scripts and CI entrypoints",
-        "Shared DTO/error-code package scaffold"
+        "package.json",
+        "apps/api",
+        "apps/web",
+        "packages/domain",
+        "packages/config",
+        ".github/workflows/ci.yml"
       ],
       "testRequirements": {
+        "unit": [
+          "packages/domain/src/error-codes.test.ts",
+          "packages/domain/src/monorepo.foundation.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/health.integration.test.ts",
+          "apps/api/src/traceability.tags.integration.test.ts"
+        ],
         "acceptanceTags": [
-          "FR-33"
+          "FR-33",
+          "NFR-16"
         ]
       },
       "history": [

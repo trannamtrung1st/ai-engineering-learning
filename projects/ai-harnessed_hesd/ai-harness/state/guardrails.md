@@ -10,3 +10,6 @@ Verification failures and remediation notes for harness agents.
 
 ## Signs
 
+- [AC-06] Test case validation failed — see 20260702T094600Z-testgen.txt
+- [AC-13] Test case validation failed — see 20260702T100156Z-testgen.txt
+- [AC-20] Test case validation failed — see 20260702T101958Z-testgen.txt
