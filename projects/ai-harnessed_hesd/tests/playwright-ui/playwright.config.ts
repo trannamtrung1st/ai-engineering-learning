@@ -9,13 +9,14 @@ export default defineConfig({
   forbidOnly: Boolean(process.env.CI),
   retries: process.env.CI ? 1 : 0,
   workers: 1,
-  reporter: [["list"], ["html", { open: "never" }]],
+  outputDir: "test-results",
+  reporter: [["list"], ["html", { open: "never", outputFolder: "playwright-report" }]],
   timeout: 60_000,
   use: {
     baseURL: WEB_BASE_URL,
-    trace: "on-first-retry",
+    trace: "retain-on-failure",
     screenshot: "only-on-failure",
-    video: "off",
+    video: "retain-on-failure",
   },
   projects: [
     {
@@ -24,7 +25,7 @@ export default defineConfig({
     },
     {
       name: "mobile",
-      use: { ...devices["iPhone 12"] },
+      use: { ...devices["Pixel 5"] },
     },
   ],
 });

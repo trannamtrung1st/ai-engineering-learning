@@ -19,3 +19,39 @@ jobs:
       - run: npm run lint
       - run: npm run build
       - run: npm run test:unit
+
+  playwright-ui-smoke:
+    runs-on: ubuntu-latest
+    needs: quality
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - run: npm ci
+      - name: Start preview stack services
+        run: |
+          npm run aih:dev:db:up
+          npm run db:migrate
+          npm run db:seed
+          npm run aih:preview &
+      - name: Wait for preview health
+        run: npm run aih:preview:verify
+      - name: Install Playwright Chromium
+        working-directory: tests/playwright-ui
+        run: npx playwright install --with-deps chromium
+      - name: Run Playwright UI smoke suite
+        run: npm run test:playwright-ui
+        env:
+          PLAYWRIGHT_BASE_URL: http://localhost:3007
+          PLAYWRIGHT_API_BASE_URL: http://localhost:3001/api/v1
+      - name: Upload Playwright failure artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-ui-failure-artifacts
+          path: |
+            tests/playwright-ui/test-results/
+            tests/playwright-ui/playwright-report/
+          if-no-files-found: ignore

@@ -81,3 +81,5 @@
 - 2026-07-02T12:59:55Z | infra-local-runtime-compose | passed
 - 2026-07-02T13:05:16Z | infra-database-migrations | implementer: apps/api/db/migrations/0001_initial_schema.sql — migrate/seed hooks — integration tests for BR-06 BR-07 FR-04 constraints — checks: full profile pass
 - 2026-07-02T13:08:01Z | infra-database-migrations | passed
+- 2026-07-02T13:15:11Z | playwright-ui-workspace | implementer: tests/playwright-ui workspace — student/lecturer smoke fixtures — CI playwright-ui-smoke job — trace/video on failure — checks: full profile pass
+- 2026-07-02T13:18:37Z | playwright-ui-workspace | passed

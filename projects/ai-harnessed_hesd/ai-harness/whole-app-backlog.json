@@ -211,7 +211,7 @@
     },
     {
       "id": "playwright-ui-workspace",
-      "passes": false,
+      "passes": true,
       "priority": 6,
       "phase": 0,
       "agent": "infra",
@@ -228,14 +228,28 @@
       ],
       "description": "Set up dedicated Playwright UI regression workspace and wiring for browser-driven visual and interaction verification on key user flows.",
       "completionArtifacts": [
-        "tests/playwright-ui workspace with config and runners",
-        "Base fixtures for student and lecturer smoke journeys",
-        "CI target for UI regression execution"
+        "tests/playwright-ui",
+        "apps/api/src/infra/playwright-ui-traceability.integration.test.ts",
+        ".github/workflows/ci.yml",
+        "package.json"
       ],
-      "testRequirements": [
-        "Run playwright-ui smoke suite in CI on pull requests",
-        "Capture trace/video artifacts for failed regression runs"
-      ],
+      "testRequirements": {
+        "unit": [
+          "tests/playwright-ui/src/support/fixtures.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/infra/playwright-ui-traceability.integration.test.ts"
+        ],
+        "playwright": [
+          "tests/playwright-ui/scenarios/playwright-ui-workspace.spec.ts"
+        ],
+        "acceptanceTags": [
+          "AC-01",
+          "AC-11",
+          "AC-16",
+          "NFR-14"
+        ]
+      },
       "history": [
         {
           "at": "2026-07-02T09:42:15Z",
