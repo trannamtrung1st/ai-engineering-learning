@@ -34,6 +34,14 @@ describe("check-in outcome i18n mapper (NFR-14)", () => {
     expect(copy.retryAllowed).toBe(false);
   });
 
+  it("TC-AC-07-008: maps NotEnrolled without retry and admin guidance", () => {
+    const copy = resolveCheckInOutcomeCopy(ErrorCode.NotEnrolled);
+    expect(copy.state).toBe("failure-not-enrolled");
+    expect(copy.message).toContain("Bạn không thuộc lớp học phần này");
+    expect(copy.message).toContain("phòng đào tạo");
+    expect(copy.retryAllowed).toBe(false);
+  });
+
   it("exposes login-required message for auth gate", () => {
     expect(loginRequiredMessage()).toBe("Đăng nhập để tiếp tục");
   });

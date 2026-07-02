@@ -36,3 +36,5 @@ tests/playwright-ui/scenarios/web-design-system-shell.spec.ts
 - [web-lecturer-session-control] Browser test failed — see 20260702T182222Z-browser-test.json
 - [web-lecturer-session-control] Do not hide `SessionControlBar` at `max-height: 720px` — Playwright lecturer viewport is 1280×720; hiding the bar breaks TC-FR-07-012/TC-FR-14-011/TC-AC-01-008 (Open CTA, room/time context, openedAt metadata)
 - [web-lecturer-session-control] Computational checks failed — see 20260702T184717Z-checks.json
+- [web-academic-admin-academic-setup] Browser test failed — see 20260702T192214Z-browser-test.json
+- [web-academic-admin-academic-setup] PG-04 FR-06 requires `Sĩ số` (enrolledCount) column from GET /class-sessions — preview seed sessions must stay Scheduled via `db:seed` refresh when browser gate retries TC-FR-06-012 in isolation

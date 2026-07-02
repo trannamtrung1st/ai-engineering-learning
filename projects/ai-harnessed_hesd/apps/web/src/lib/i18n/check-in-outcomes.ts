@@ -18,7 +18,8 @@ const VI_COPY: Record<string, CheckInOutcomeCopy> = {
   [ErrorCode.NotEnrolled]: {
     state: "failure-not-enrolled",
     title: "Không thuộc lớp học phần",
-    message: "Bạn không thuộc lớp học phần này.",
+    message:
+      "Bạn không thuộc lớp học phần này. Nếu bạn nghĩ đây là nhầm lẫn, vui lòng liên hệ phòng đào tạo.",
     retryAllowed: false,
   },
   [ErrorCode.DuplicateCheckIn]: {

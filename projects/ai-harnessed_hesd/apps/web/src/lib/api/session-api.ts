@@ -16,6 +16,7 @@ export interface ClassSessionSummary {
   state: SessionState;
   openedAt: string | null;
   closedAt: string | null;
+  enrolledCount?: number;
 }
 
 export interface PaginationMeta {

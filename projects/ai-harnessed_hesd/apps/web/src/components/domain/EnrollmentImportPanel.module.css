@@ -1,0 +1,19 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.resultSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.resultTitle {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-text-heading);
+}

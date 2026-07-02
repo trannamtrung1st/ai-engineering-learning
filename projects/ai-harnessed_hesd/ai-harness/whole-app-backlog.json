@@ -953,7 +953,7 @@
     },
     {
       "id": "web-academic-admin-academic-setup",
-      "passes": false,
+      "passes": true,
       "priority": 22,
       "phase": 2,
       "agent": "frontend",

@@ -67,14 +67,72 @@ async function markSeedApplied() {
   );
 }
 
-async function seedFixtures() {
+async function refreshSeedSessionFixtures() {
   const now = new Date();
-  const termStart = "2026-01-15";
-  const termEnd = "2026-06-30";
   const scheduledStart = new Date(now.getTime() + 24 * 60 * 60 * 1000);
   const scheduledEnd = new Date(scheduledStart.getTime() + 90 * 60 * 1000);
   const openStart = new Date(now.getTime() - 15 * 60 * 1000);
   const openEnd = new Date(openStart.getTime() + 90 * 60 * 1000);
+
+  await client.query(
+    `
+    INSERT INTO class_sessions (
+      id, class_section_id, room_id, scheduled_start_at, scheduled_end_at, state
+    )
+    VALUES ($1, $2, $3, $4, $5, 'Scheduled')
+    ON CONFLICT (id) DO UPDATE SET
+      class_section_id = EXCLUDED.class_section_id,
+      room_id = EXCLUDED.room_id,
+      scheduled_start_at = EXCLUDED.scheduled_start_at,
+      scheduled_end_at = EXCLUDED.scheduled_end_at,
+      state = 'Scheduled',
+      opened_at = NULL,
+      opened_by_user_id = NULL,
+      closed_at = NULL,
+      closed_by_user_id = NULL
+    `,
+    [SEED_IDS.sessionScheduled, SEED_IDS.section, SEED_IDS.room, scheduledStart, scheduledEnd],
+  );
+
+  await client.query(
+    `
+    INSERT INTO class_sessions (
+      id,
+      class_section_id,
+      room_id,
+      scheduled_start_at,
+      scheduled_end_at,
+      state,
+      opened_at,
+      opened_by_user_id
+    )
+    VALUES ($1, $2, $3, $4, $5, 'Open', $6, $7)
+    ON CONFLICT (id) DO UPDATE SET
+      class_section_id = EXCLUDED.class_section_id,
+      room_id = EXCLUDED.room_id,
+      scheduled_start_at = EXCLUDED.scheduled_start_at,
+      scheduled_end_at = EXCLUDED.scheduled_end_at,
+      state = 'Open',
+      opened_at = EXCLUDED.opened_at,
+      opened_by_user_id = EXCLUDED.opened_by_user_id,
+      closed_at = NULL,
+      closed_by_user_id = NULL
+    `,
+    [
+      SEED_IDS.sessionOpen,
+      SEED_IDS.section,
+      SEED_IDS.room,
+      openStart,
+      openEnd,
+      openStart,
+      SEED_IDS.lecturerUser,
+    ],
+  );
+}
+
+async function seedFixtures() {
+  const termStart = "2026-01-15";
+  const termEnd = "2026-06-30";
 
   await client.query("BEGIN");
   try {
@@ -210,42 +268,7 @@ async function seedFixtures() {
       );
     }
 
-    await client.query(
-      `
-      INSERT INTO class_sessions (
-        id, class_section_id, room_id, scheduled_start_at, scheduled_end_at, state
-      )
-      VALUES ($1, $2, $3, $4, $5, 'Scheduled')
-      ON CONFLICT (id) DO NOTHING
-      `,
-      [SEED_IDS.sessionScheduled, SEED_IDS.section, SEED_IDS.room, scheduledStart, scheduledEnd],
-    );
-
-    await client.query(
-      `
-      INSERT INTO class_sessions (
-        id,
-        class_section_id,
-        room_id,
-        scheduled_start_at,
-        scheduled_end_at,
-        state,
-        opened_at,
-        opened_by_user_id
-      )
-      VALUES ($1, $2, $3, $4, $5, 'Open', $6, $7)
-      ON CONFLICT (id) DO NOTHING
-      `,
-      [
-        SEED_IDS.sessionOpen,
-        SEED_IDS.section,
-        SEED_IDS.room,
-        openStart,
-        openEnd,
-        openStart,
-        SEED_IDS.lecturerUser,
-      ],
-    );
+    await refreshSeedSessionFixtures();
 
     const roleAssignments = [
       {
@@ -336,7 +359,8 @@ try {
   await ensureSeedBookkeeping();
 
   if (await isSeedApplied()) {
-    console.log(`db:seed — skip ${SEED_ID} (already applied)`);
+    await refreshSeedSessionFixtures();
+    console.log(`db:seed — skip ${SEED_ID} (already applied); refreshed session fixtures`);
     process.exit(0);
   }
 

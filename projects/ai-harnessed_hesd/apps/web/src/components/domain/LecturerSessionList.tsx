@@ -111,6 +111,13 @@ export function LecturerSessionList({ sectionOptions = [] }: LecturerSessionList
         cell: (row: ClassSessionSummary) => <SessionStatusBadge state={row.state} />,
       },
       {
+        id: "enrolled",
+        header: "Sĩ số",
+        cell: (row: ClassSessionSummary) => (
+          <span className={styles.enrolledCount}>{row.enrolledCount ?? 0}</span>
+        ),
+      },
+      {
         id: "actions",
         header: "Thao tác",
         cell: (row: ClassSessionSummary) => (

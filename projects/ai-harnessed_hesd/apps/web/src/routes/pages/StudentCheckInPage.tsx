@@ -27,6 +27,7 @@ type OutcomePreview =
   | "gps-denied"
   | "out-of-radius"
   | "duplicate"
+  | "not-enrolled"
   | "success-present"
   | "success-late";
 
@@ -35,6 +36,7 @@ const outcomeCodeMap: Record<Exclude<OutcomePreview, "form" | "success-present" 
   "gps-denied": ErrorCode.GpsDisabled,
   "out-of-radius": ErrorCode.OutOfRadius,
   duplicate: ErrorCode.DuplicateCheckIn,
+  "not-enrolled": ErrorCode.NotEnrolled,
 };
 
 const PREVIEW_OUTCOMES = new Set<string>([
@@ -43,6 +45,7 @@ const PREVIEW_OUTCOMES = new Set<string>([
   "gps-denied",
   "out-of-radius",
   "duplicate",
+  "not-enrolled",
   "success-present",
   "success-late",
 ]);

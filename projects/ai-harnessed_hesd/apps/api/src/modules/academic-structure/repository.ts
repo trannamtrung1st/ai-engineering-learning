@@ -343,6 +343,14 @@ export function createAcademicRepository(pool: pg.Pool) {
         ],
       );
 
+      await run(
+        `
+        INSERT INTO user_role_assignments (id, user_id, role, scope_type, scope_id)
+        VALUES ($1, $2, 'Lecturer', 'ClassSection', $3)
+        `,
+        [randomUUID(), input.lecturerUserId, id],
+      );
+
       let generatedSessionCount = 0;
       if (input.scheduleTemplate) {
         const termResult = await run<{ start_date: string | Date; end_date: string | Date }>(

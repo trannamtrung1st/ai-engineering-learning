@@ -1,7 +1,11 @@
 import { Navigate, useRoutes } from "react-router-dom";
+import { AdminLayout } from "./AdminLayout";
 import { StaffLayout } from "./StaffLayout";
 import { StudentLayout } from "./StudentLayout";
 import { StudentAttendanceReportGuard } from "./pages/AttendanceReportPage";
+import { AdminClassSectionsPage } from "./pages/AdminClassSectionsPage";
+import { AdminEnrollmentsPage } from "./pages/AdminEnrollmentsPage";
+import { AdminTermsPage } from "./pages/AdminTermsPage";
 import { DesignSystemPage } from "./pages/DesignSystemPage";
 import { LecturerRosterPage } from "./pages/LecturerRosterPage";
 import { LecturerSessionPage } from "./pages/LecturerSessionPage";
@@ -20,6 +24,14 @@ export function AppRouter() {
         { path: "login", element: <LoginPage /> },
         { path: "check-in", element: <StudentCheckInPage /> },
         { path: "me/attendance", element: <StudentAttendanceHistoryPage /> },
+      ],
+    },
+    {
+      element: <AdminLayout />,
+      children: [
+        { path: "admin/terms", element: <AdminTermsPage /> },
+        { path: "admin/class-sections", element: <AdminClassSectionsPage /> },
+        { path: "admin/class-sections/:sectionId/enrollments", element: <AdminEnrollmentsPage /> },
       ],
     },
     {

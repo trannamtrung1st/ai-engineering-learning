@@ -536,6 +536,7 @@ export function createSessionLifecycleRepository(pool: pg.Pool) {
         state: SessionState;
         opened_at: Date | null;
         closed_at: Date | null;
+        enrolled_count: string;
       }>(
         `
         SELECT
@@ -549,7 +550,13 @@ export function createSessionLifecycleRepository(pool: pg.Pool) {
           cs.scheduled_end_at,
           cs.state,
           cs.opened_at,
-          cs.closed_at
+          cs.closed_at,
+          (
+            SELECT COUNT(*)::text
+            FROM enrollments e
+            WHERE e.class_section_id = cs.class_section_id
+              AND e.status = 'Active'
+          ) AS enrolled_count
         FROM class_sessions cs
         JOIN class_sections sec ON sec.id = cs.class_section_id
         JOIN courses c ON c.id = sec.course_id
@@ -574,6 +581,7 @@ export function createSessionLifecycleRepository(pool: pg.Pool) {
           state: row.state,
           openedAt: row.opened_at?.toISOString() ?? null,
           closedAt: row.closed_at?.toISOString() ?? null,
+          enrolledCount: Number.parseInt(row.enrolled_count ?? "0", 10),
         })),
         total: Number.parseInt(countResult.rows[0]?.count ?? "0", 10),
       };
@@ -592,6 +600,7 @@ export function createSessionLifecycleRepository(pool: pg.Pool) {
         state: SessionState;
         opened_at: Date | null;
         closed_at: Date | null;
+        enrolled_count: string;
       }>(
         `
         SELECT
@@ -605,7 +614,13 @@ export function createSessionLifecycleRepository(pool: pg.Pool) {
           cs.scheduled_end_at,
           cs.state,
           cs.opened_at,
-          cs.closed_at
+          cs.closed_at,
+          (
+            SELECT COUNT(*)::text
+            FROM enrollments e
+            WHERE e.class_section_id = cs.class_section_id
+              AND e.status = 'Active'
+          ) AS enrolled_count
         FROM class_sessions cs
         JOIN class_sections sec ON sec.id = cs.class_section_id
         JOIN courses c ON c.id = sec.course_id
@@ -630,6 +645,7 @@ export function createSessionLifecycleRepository(pool: pg.Pool) {
         state: row.state,
         openedAt: row.opened_at?.toISOString() ?? null,
         closedAt: row.closed_at?.toISOString() ?? null,
+        enrolledCount: Number.parseInt(row.enrolled_count ?? "0", 10),
       };
     },
   };

@@ -67,6 +67,12 @@
   margin-top: var(--space-3);
 }
 
+.enrolledCount {
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--font-weight-semibold);
+  color: var(--color-text-body);
+}
+
 .linkAction,
 .linkPrimary {
   display: inline-flex;

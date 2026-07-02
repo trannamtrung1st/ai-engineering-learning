@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canAccessInstitutionReport,
   canExecuteExport,
+  isAcademicAdmin,
   isStudentOnly,
 } from "./role-guard.js";
 
@@ -23,5 +24,10 @@ describe("role-guard — BR-19 AC-16", () => {
   it("allows export for scoped staff roles", () => {
     expect(canExecuteExport(["Lecturer"])).toBe(true);
     expect(canExecuteExport(["AcademicAdmin"])).toBe(true);
+  });
+
+  it("identifies AcademicAdmin role for admin setup pages", () => {
+    expect(isAcademicAdmin(["AcademicAdmin"])).toBe(true);
+    expect(isAcademicAdmin(["Lecturer"])).toBe(false);
   });
 });

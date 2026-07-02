@@ -51,6 +51,7 @@ export interface ClassSessionListItem {
   state: SessionState;
   openedAt: string | null;
   closedAt: string | null;
+  enrolledCount: number;
 }
 
 export interface ListClassSessionsFilters {
