@@ -199,7 +199,8 @@
       ],
       "testRequirements": {
         "acceptanceTags": [
-          "FR-15"
+          "FR-15",
+          "FR-31"
         ]
       },
       "history": [
@@ -207,6 +208,12 @@
           "at": "2026-07-02T10:57:46Z",
           "kind": "drift",
           "reason": "Doc drift for FR-15 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T11:37:57Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-31 — reverify after TestGen",
           "source": "harness"
         }
       ]

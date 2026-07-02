@@ -1,0 +1,325 @@
+{
+  "productItemId": "FR-31",
+  "version": 1,
+  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+  "generatedAt": "2026-07-02T12:00:00Z",
+  "cases": [
+    {
+      "id": "TC-FR-31-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["FR-31", "AC-23", "BR-18", "BR-19"],
+      "title": "Scenario-matrix coverage for DepartmentAdmin faculty scope across protected routes",
+      "preconditions": [
+        "Testing-plan §7.3 security and authorization tests and AC-23 security/scope gate apply.",
+        "Role-matrix fixture provides DepartmentAdmin scoped to faculty X and AcademicAdmin with institution scope.",
+        "Attendance data, class sections, and sessions exist in faculty X and faculty Y."
+      ],
+      "steps": [
+        "As DepartmentAdmin scoped to faculty X, call GET /v1/reports/attendance with termId and default pagination.",
+        "Call GET /v1/class-sections?termId={termId} and inspect returned section facultyId values.",
+        "Call GET /v1/class-sessions/{sessionIdInFacultyX}/attendance for a session within faculty X.",
+        "Attempt GET /v1/reports/attendance with classSectionId from faculty Y.",
+        "Attempt PATCH /v1/class-sessions/{sessionIdInFacultyY}/attendance/{studentUserId} with status Excused and reason."
+      ],
+      "expected": "Maps to AC-23 role-based scope gate: DepartmentAdmin read and limited write succeed only within assigned faculty X per PRM-02; faculty Y report, roster, and correction requests are denied without partial data leakage (BR-19).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-31-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-31", "BR-16"],
+      "title": "M01 scope guard enforces facultyId boundary for DepartmentAdmin actions in DB transaction",
+      "preconditions": [
+        "Integration database seeded with class sections in faculty X and faculty Y.",
+        "M01 Identity and Access module authorize(action, resource, scopeContext) uses real repository lookups.",
+        "DepartmentAdmin actor has facultyId claim for faculty X only.",
+        "Closed session in faculty X has enrolled student with AttendanceRecord status Absent; lecturer edit window expired."
+      ],
+      "steps": [
+        "Invoke M01 authorize for DepartmentAdmin with AttendanceRecord.update targeting section in faculty X.",
+        "Invoke M05 correctAttendance as DepartmentAdmin for faculty X session with status Excused, reason, and Idempotency-Key.",
+        "Query attendance_records and audit_logs for the correction.",
+        "Invoke M01 authorize for DepartmentAdmin targeting classSectionId in faculty Y and observe denial.",
+        "Attempt M05 correctAttendance for faculty Y session and confirm no DB mutation."
+      ],
+      "expected": "M01 module boundary permits DepartmentAdmin update only when target section maps to assigned facultyId; faculty X correction commits with audit row per BR-16; faculty Y authorization fails at scope guard with no attendance or audit rows written.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-31-003",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-31", "FR-15", "FR-36"],
+      "title": "HTTP contract for DepartmentAdmin POST /v1/auth/login then GET /v1/me returns faculty scope claims",
+      "preconditions": [
+        "Provisioned DepartmentAdmin account scoped to faculty X with institution-issued credentials exists.",
+        "No active bearer token is held by the test client."
+      ],
+      "steps": [
+        "Send POST /v1/auth/login with DepartmentAdmin email and password.",
+        "Assert HTTP 200 with data.accessToken, data.expiresInSeconds, and data.roles containing DepartmentAdmin.",
+        "Send GET /v1/me with Authorization Bearer accessToken from login response.",
+        "Assert HTTP 200 with actor identity, DepartmentAdmin role, and facultyId scope claim for faculty X.",
+        "Verify response envelope matches standard { data, meta, error } shape with error null."
+      ],
+      "expected": "Login returns HTTP 200 with accessToken and DepartmentAdmin role per FR-36; GET /v1/me returns HTTP 200 with facultyId scope claims required for PRM-02 enforcement per FR-31 and API §4.1.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-31-004",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-31", "FR-19"],
+      "title": "HTTP contract for DepartmentAdmin GET /v1/class-sessions/{sessionId}/attendance live roster within faculty scope",
+      "preconditions": [
+        "DepartmentAdmin scoped to faculty X is authenticated.",
+        "Open class session in faculty X section has mixed Present, Late, Pending, and rejected attempt outcomes.",
+        "sessionId for faculty X session is known."
+      ],
+      "steps": [
+        "Send GET /v1/class-sessions/{sessionId}/attendance with DepartmentAdmin Authorization header.",
+        "Validate HTTP 200 and standard response envelope.",
+        "Assert data.classSessionId, data.state, data.counts (present, late, pending, rejectedAttempts), and data.rows[] are present.",
+        "Inspect each roster row for studentCode, attendanceStatus, checkInMethod, checkInAt, and latestAttemptOutcome per API §4.5.",
+        "Send GET /v1/class-sessions/{sessionIdFacultyY}/attendance for faculty Y session and validate denial."
+      ],
+      "expected": "Faculty X roster returns HTTP 200 with documented live roster payload shape per FR-19; faculty Y roster request returns HTTP 403 OutOfScope with no partial roster rows disclosed.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-31-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-31", "FR-04", "BR-06"],
+      "title": "HTTP contract for DepartmentAdmin POST /v1/enrollments/import with row-level rejection within faculty scope",
+      "preconditions": [
+        "DepartmentAdmin scoped to faculty X is authenticated with enrollment import permission enabled by policy.",
+        "Class section in faculty X exists with known classSectionId.",
+        "Import payload contains valid student rows and at least one invalid row (duplicate or malformed identifier)."
+      ],
+      "steps": [
+        "Send POST /v1/enrollments/import for faculty X classSectionId with mixed valid and invalid rows.",
+        "Assert HTTP 200 or 207 with per-row acceptance and rejection details in response envelope.",
+        "Verify rejected rows are not enrolled and valid rows are persisted.",
+        "Send POST /v1/enrollments/import targeting classSectionId in faculty Y.",
+        "Validate HTTP 403 OutOfScope with no enrollment mutations for faculty Y."
+      ],
+      "expected": "Faculty X import returns row-level rejection assertions for invalid rows per FR-04; valid rows persist; faculty Y import is denied before row processing with no cross-faculty enrollment writes.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-31-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["FR-31", "BR-16", "AC-23"],
+      "title": "Primary department admin workflow: view faculty report and correct attendance exception",
+      "preconditions": [
+        "DepartmentAdmin scoped to faculty X is authenticated.",
+        "Closed session in faculty X section has student with Absent status after close-time finalization.",
+        "Lecturer manual-edit window has expired; institution policy permits DepartmentAdmin correction per BR-16.",
+        "Attendance report data exists across faculty X and faculty Y."
+      ],
+      "steps": [
+        "Call GET /v1/reports/attendance?termId={termId}&page=1&pageSize=25 as DepartmentAdmin.",
+        "Verify returned rows belong only to faculty X sections.",
+        "Identify Absent student in faculty X section from report results.",
+        "Call PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Excused, documented reason, and Idempotency-Key.",
+        "Query GET /v1/audit-logs filtered by actor and target for the correction event."
+      ],
+      "expected": "End-to-end department admin happy path per workflow §7: faculty-scoped report returns only faculty X rows; attendance correction succeeds within scope after lecturer window expiry; audit entry records DepartmentAdmin actor, reason, old/new status per BR-16.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-31-007",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P0",
+      "traceability": ["FR-31", "FR-27", "BR-18"],
+      "title": "Alternate path: DepartmentAdmin CSV export scoped to assigned faculty via WF-07",
+      "preconditions": [
+        "DepartmentAdmin scoped to faculty X is authenticated.",
+        "Attendance records exist in faculty X and faculty Y sections for the same term.",
+        "Export permission is enabled for DepartmentAdmin per policy."
+      ],
+      "steps": [
+        "Call POST /v1/exports/attendance with format csv and filters { termId, status: Absent } as DepartmentAdmin.",
+        "Assert HTTP 202 with exportJobId and status Queued or Completed per API §4.6.",
+        "Download or poll export artifact and inspect CSV rows for classSectionId and faculty scope.",
+        "Query GET /v1/audit-logs for export execution event.",
+        "Attempt POST /v1/exports/attendance with classSectionId filter targeting faculty Y."
+      ],
+      "expected": "DepartmentAdmin export succeeds with CSV rows limited to faculty X sections per BR-18; export audit entry records actor, scope filter, and format; faculty Y export filter is denied with HTTP 403 OutOfScope.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-31-008",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "pagination",
+      "priority": "P1",
+      "traceability": ["FR-31", "FR-28"],
+      "title": "DepartmentAdmin report pagination invariants respect faculty scope at module boundary",
+      "preconditions": [
+        "Integration database seeded with more than 50 attendance report rows in faculty X and additional rows in faculty Y.",
+        "M07 report query supports page and pageSize with DepartmentAdmin facultyId scope filter."
+      ],
+      "steps": [
+        "Query page 1 with pageSize=25 as DepartmentAdmin scoped to faculty X and record totalItems, totalPages, and row identifiers.",
+        "Query page 2 with same filters and pageSize=25.",
+        "Query last page using totalPages from first response.",
+        "Verify no row identifiers from faculty Y appear on any page.",
+        "Confirm union of all pages equals totalItems and totalItems excludes faculty Y volume."
+      ],
+      "expected": "Pagination metadata is consistent within faculty X scope only: totalItems reflects faculty-scoped count; pages are non-overlapping; no faculty Y rows appear in any page.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-31-009",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-31", "BR-19", "AC-23"],
+      "title": "DepartmentAdmin denied report and roster access for other faculty data",
+      "preconditions": [
+        "DepartmentAdmin scoped to faculty X is authenticated.",
+        "Attendance data and open session roster exist in faculty Y section outside department scope."
+      ],
+      "steps": [
+        "Call GET /v1/reports/attendance?classSectionId={facultyYSectionId}&page=1&pageSize=25 as DepartmentAdmin.",
+        "Call GET /v1/class-sessions/{facultyYSessionId}/attendance as DepartmentAdmin.",
+        "Inspect HTTP status, error.code, and response body for restricted data leakage.",
+        "Verify response contains no faculty Y student identifiers, attendance statuses, or scoped pagination totals."
+      ],
+      "expected": "Both requests return HTTP 403 OutOfScope or Forbidden; data is null; no partial faculty Y attendance rows, student identifiers, or cross-scope totals are disclosed per PRM-02 and BR-19.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-31-010",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-31", "BR-19"],
+      "title": "DepartmentAdmin denied session control and institution-wide policy mutations",
+      "preconditions": [
+        "DepartmentAdmin scoped to faculty X is authenticated.",
+        "Scheduled session exists in faculty X section.",
+        "AttendancePolicy record exists at institution scope."
+      ],
+      "steps": [
+        "Call POST /v1/class-sessions/{sessionId}/open as DepartmentAdmin.",
+        "Call POST /v1/class-sessions/{sessionId}/close as DepartmentAdmin.",
+        "Call PATCH /v1/policies/{policyId} with modified GPS radius as DepartmentAdmin.",
+        "Call POST /v1/terms with new term payload as DepartmentAdmin.",
+        "Inspect each response for HTTP 403 Forbidden and absence of state mutations."
+      ],
+      "expected": "DepartmentAdmin receives HTTP 403 Forbidden for SessionControl.execute and AttendancePolicy.update per permission matrix §3.2; session state remains Scheduled; policy and term records are unchanged.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-31-011",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-31", "BR-19"],
+      "title": "Out-of-faculty classSectionId filter rejected before report query executes",
+      "preconditions": [
+        "DepartmentAdmin scoped to faculty X is authenticated.",
+        "Attendance data exists in faculty Y section outside department scope."
+      ],
+      "steps": [
+        "Submit GET /v1/reports/attendance with classSectionId targeting faculty Y.",
+        "Parse 403 response and any error.details field.",
+        "Verify no attendance rows from faculty Y appear in data or pagination metadata.",
+        "Retry with facultyId query parameter outside assigned scope if supported and observe same denial."
+      ],
+      "expected": "Scope validation short-circuits with HTTP 403 OutOfScope before unrestricted query; error.details contain no faculty Y attendance samples, student identifiers, or row counts per API §6.2.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-31-012",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["FR-31", "BR-16"],
+      "title": "DepartmentAdmin attendance correction rejected without documented reason when policy mandates",
+      "preconditions": [
+        "DepartmentAdmin scoped to faculty X is authenticated.",
+        "Closed session in faculty X has student with Absent status.",
+        "Effective policy requires reason field for admin corrections per BR-16."
+      ],
+      "steps": [
+        "Call PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Excused and empty or missing reason.",
+        "Validate HTTP 400 or 422 with error.code indicating validation failure.",
+        "Query AttendanceRecord and confirm status remains Absent.",
+        "Retry with documented reason and confirm correction succeeds."
+      ],
+      "expected": "Missing reason returns HTTP 400 with validation error and no AttendanceRecord mutation; correction with reason succeeds within faculty scope per department policy exception handling.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-31-013",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-31", "FR-28", "BR-18"],
+      "title": "DepartmentAdmin browser journey views PG-13 attendance report auto-scoped to assigned faculty",
+      "preconditions": [
+        "DepartmentAdmin is logged in on desktop browser.",
+        "PG-13 /reports/attendance is reachable with TableToolbar and DataTable components.",
+        "Attendance data exists in faculty X (assigned) and faculty Y (out of scope) for the active term."
+      ],
+      "steps": [
+        "Navigate to /reports/attendance and confirm section and course filter options list only faculty X offerings.",
+        "Apply term and status filters; verify table updates with faculty X rows only.",
+        "Enter student name or code in search field and confirm filtered results remain within faculty scope.",
+        "Navigate to page 2 via pagination controls if totalPages > 1.",
+        "Verify URL query params sync with toolbar state and no faculty Y section identifiers appear in filter dropdowns or table rows."
+      ],
+      "expected": "PG-13 listing auto-scopes DepartmentAdmin filters to assigned faculty per §14-listing-pages; displayed rows and filter options exclude faculty Y data; AttendanceStatusCell badges render for scoped rows only.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-31-014",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["FR-31", "FR-03"],
+      "title": "DepartmentAdmin browser journey lists PG-09 class sections within faculty scope with read-only policy controls",
+      "preconditions": [
+        "DepartmentAdmin is logged in on desktop browser.",
+        "PG-09 /admin/class-sections is reachable.",
+        "Class sections exist in faculty X and faculty Y for the active term."
+      ],
+      "steps": [
+        "Navigate to /admin/class-sections and verify table lists only faculty X sections.",
+        "Apply term and course filters; confirm results remain within faculty X.",
+        "Open a faculty X section detail view and confirm read access to enrollment and session metadata.",
+        "Verify institution-wide policy write controls on PG-12 are hidden or read-only for DepartmentAdmin per NFR-UI-03.",
+        "Attempt direct URL navigation to a faculty Y section detail and observe access-denied state."
+      ],
+      "expected": "PG-09 listing shows faculty-scoped sections only; filters and pagination respect department boundary; policy configuration pages show read-only or hidden write controls; faculty Y direct navigation shows access denial without partial section data.",
+      "edgeCase": false
+    }
+  ]
+}
