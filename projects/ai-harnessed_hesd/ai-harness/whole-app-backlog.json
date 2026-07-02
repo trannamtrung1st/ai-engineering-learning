@@ -226,6 +226,19 @@
         "POST /v1/check-ins endpoint with deterministic rule ordering",
         "QR token issuance and validation services",
         "Structured outcome-code persistence for all attempts"
+      ],
+      "testRequirements": {
+        "acceptanceTags": [
+          "AC-02"
+        ]
+      },
+      "history": [
+        {
+          "at": "2026-07-02T09:43:41Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-02 — reverify after TestGen",
+          "source": "harness"
+        }
       ]
     },
     {
@@ -358,6 +371,19 @@
         "Realtime channel/event gateway for session roster",
         "Event emitters for check-in and correction updates",
         "Fallback polling-compatible payload contracts"
+      ],
+      "testRequirements": {
+        "acceptanceTags": [
+          "AC-02"
+        ]
+      },
+      "history": [
+        {
+          "at": "2026-07-02T09:43:41Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-02 — reverify after TestGen",
+          "source": "harness"
+        }
       ]
     },
     {
@@ -485,8 +511,19 @@
           "kind": "drift",
           "reason": "Doc drift for AC-01 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-02T09:43:41Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-02 — reverify after TestGen",
+          "source": "harness"
         }
-      ]
+      ],
+      "testRequirements": {
+        "acceptanceTags": [
+          "AC-02"
+        ]
+      }
     },
     {
       "id": "web-lecturer-live-roster-fallback",

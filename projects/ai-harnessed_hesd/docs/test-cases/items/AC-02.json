@@ -1,0 +1,213 @@
+{
+  "productItemId": "AC-02",
+  "version": 1,
+  "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+  "generatedAt": "2026-07-02T09:42:46Z",
+  "cases": [
+    {
+      "id": "TC-AC-02-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["AC-02", "FR-11", "FR-14", "BR-03"],
+      "title": "Scenario-matrix coverage for rotating QR token in open session",
+      "preconditions": [
+        "Lecturer is authenticated and assigned to the class section.",
+        "Class session is in Open state."
+      ],
+      "steps": [
+        "Call GET /v1/class-sessions/{sessionId}/qr/current and capture qrPayload and expiresAt.",
+        "Wait until after first expiresAt and call GET /v1/class-sessions/{sessionId}/qr/current again.",
+        "Compare token metadata between the two responses."
+      ],
+      "expected": "QR token metadata aligns with testing-plan QR row: each token is valid for a 30-second window and next retrieval after expiry returns a new valid token for the same open session.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-02-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["AC-02", "FR-11", "FR-14", "BR-03"],
+      "title": "QR issuance module persists 30-second TTL token lifecycle at DB boundary",
+      "preconditions": [
+        "Integration suite runs against real database transaction boundaries.",
+        "An Open class session exists with lecturer assignment."
+      ],
+      "steps": [
+        "Invoke QR issuance/read module for the open session and persist token metadata.",
+        "Assert stored token expiry is exactly issuance time plus 30 seconds.",
+        "Advance time beyond TTL and invoke issuance/read again.",
+        "Assert newly persisted token differs from previous token and is marked valid for the new 30-second window."
+      ],
+      "expected": "Service + repository integration enforces deterministic 30-second TTL and rotation persistence without stale token reuse after expiry.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-02-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["AC-02", "AC-01", "AC-05", "FR-07", "FR-08", "FR-11", "BR-01", "BR-02", "BR-03"],
+      "title": "Token validity follows session state transitions open and close",
+      "preconditions": [
+        "Scheduled session exists for assigned lecturer.",
+        "Session control and QR services are wired to same database."
+      ],
+      "steps": [
+        "Execute POST /v1/class-sessions/{sessionId}/open as assigned Lecturer.",
+        "Verify QR token can be issued while state is Open.",
+        "Execute POST /v1/class-sessions/{sessionId}/close.",
+        "Attempt to use previously issued token in check-in flow after close."
+      ],
+      "expected": "Legal Scheduled->Open transition enables QR issuance; after Open->Closed transition, prior token is no longer accepted for successful check-in and no illegal token-valid state persists.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-02-004",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P0",
+      "traceability": ["AC-02", "AC-08", "FR-12", "FR-18", "BR-03", "BR-07"],
+      "title": "Parallel check-ins with same valid token keep independent outcomes",
+      "preconditions": [
+        "Session is Open and one QR token is currently valid.",
+        "At least two enrolled students are prepared for concurrent submissions.",
+        "Integration harness can dispatch parallel POST /v1/check-ins requests."
+      ],
+      "steps": [
+        "Send concurrent POST /v1/check-ins using the same qrToken for two different enrolled students before expiry.",
+        "For one of those students, immediately send a second concurrent retry for the same session.",
+        "Inspect attendance records and check-in-attempt rows."
+      ],
+      "expected": "Token is multi-use within TTL across different students, while duplicate success is prevented per student-session: each student has at most one success and duplicate attempts return DuplicateCheckIn.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-02-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["AC-02", "FR-11", "FR-14", "BR-03"],
+      "title": "HTTP contract for current QR endpoint exposes valid envelope and expiry fields",
+      "preconditions": [
+        "Assigned Lecturer is authenticated.",
+        "Target session is currently Open."
+      ],
+      "steps": [
+        "Send GET /v1/class-sessions/{sessionId}/qr/current with Authorization header.",
+        "Validate HTTP status and response envelope keys data/meta/error.",
+        "Validate data includes classSessionId, tokenState=Valid, expiresAt, and qrPayload.",
+        "Re-call endpoint after TTL rollover and confirm response remains contract-compliant with refreshed token metadata."
+      ],
+      "expected": "Endpoint returns 200 and stable envelope schema; qr/current data remains contract-valid across token rollover with updated expiry metadata.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-02-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["AC-02", "AC-01", "FR-07", "FR-11", "FR-16", "BR-01", "BR-03"],
+      "title": "Primary lifecycle flow open session then student checks in with active token",
+      "preconditions": [
+        "Lecturer account and enrolled student account are available.",
+        "Session starts in Scheduled state."
+      ],
+      "steps": [
+        "Lecturer opens attendance via POST /v1/class-sessions/{sessionId}/open.",
+        "Student submits POST /v1/check-ins with qrToken from active display before expiry.",
+        "Lecturer requests current QR metadata while session remains open."
+      ],
+      "expected": "Main flow succeeds end-to-end: session opens, student check-in accepts within TTL window, and QR remains actively refreshed for continued use without requiring session reopen.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-02-007",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P0",
+      "traceability": ["AC-02", "AC-04", "FR-13", "FR-14", "BR-03", "BR-04"],
+      "title": "Alternate flow expired token fails then refreshed token succeeds",
+      "preconditions": [
+        "Open session with rotating QR token is available.",
+        "Student is authenticated and enrolled."
+      ],
+      "steps": [
+        "Capture a QR token and wait until after its expiresAt boundary.",
+        "Submit POST /v1/check-ins with the expired token.",
+        "Fetch current token from active QR display endpoint and submit POST /v1/check-ins again within TTL."
+      ],
+      "expected": "First attempt fails due to expiry, while follow-up attempt with newly rotated valid token can succeed in the same open session.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-02-008",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P1",
+      "traceability": ["AC-02", "AC-16", "FR-27", "FR-28", "BR-19"],
+      "title": "Unauthorized and out-of-scope actors are denied report and export APIs",
+      "preconditions": [
+        "Student account and Lecturer account outside target section scope exist.",
+        "Attendance data exists in restricted section scope."
+      ],
+      "steps": [
+        "Call GET /v1/reports/attendance as Student and out-of-scope Lecturer.",
+        "Call POST /v1/exports/attendance using filters outside each actor scope.",
+        "Inspect responses for authorization behavior and data leakage."
+      ],
+      "expected": "Denied actors receive authorization denial semantics and cannot retrieve restricted report rows, pagination counts, or export jobs outside permitted scope.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-02-009",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["AC-02", "AC-04", "FR-13", "FR-22", "BR-03", "BR-23"],
+      "title": "TTL boundary enforcement returns structured ExpiredQr error",
+      "preconditions": [
+        "Student is authenticated and enrolled in an Open session.",
+        "A token with known expiresAt is available."
+      ],
+      "steps": [
+        "Submit POST /v1/check-ins just after token expiresAt.",
+        "Record HTTP status and error.code payload.",
+        "Verify failed attempt is queryable in check-in attempt logs."
+      ],
+      "expected": "API rejects out-of-window token with documented structured error behavior (ExpiredQr), and failure is persisted for audit/attempt coverage without creating successful attendance.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-02-010",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["AC-02", "FR-11", "FR-14", "BR-03"],
+      "title": "Lecturer UI journey shows auto-rotating QR without manual page reload",
+      "preconditions": [
+        "Lecturer is logged in on desktop browser and has access to an Open session page with QR panel.",
+        "Session row and QR panel are visible in UI."
+      ],
+      "steps": [
+        "Open the live attendance session page and observe current QR token and countdown/expiry indicator.",
+        "Wait past one TTL cycle without refreshing browser tab.",
+        "Confirm QR display updates to a new token and remains valid for ongoing student scans.",
+        "Verify session state indicator remains Open during token rotations."
+      ],
+      "expected": "Browser flow demonstrates UI auto-refresh of QR token every TTL cycle without lecturer reload, with consistent open-state indicators and usable next-token continuity.",
+      "edgeCase": false
+    }
+  ]
+}
