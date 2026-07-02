@@ -1298,7 +1298,7 @@
     },
     {
       "id": "test-e2e-role-scope-and-export",
-      "passes": false,
+      "passes": true,
       "priority": 27,
       "phase": 3,
       "agent": "test",

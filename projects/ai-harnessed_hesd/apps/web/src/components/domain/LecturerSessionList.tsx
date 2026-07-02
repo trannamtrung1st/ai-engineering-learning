@@ -145,84 +145,88 @@ export function LecturerSessionList({ sectionOptions = [] }: LecturerSessionList
 
   return (
     <div className={styles.list} data-testid="lecturer-session-list">
-      <TableToolbar
-        classSectionId={query.classSectionId}
-        sectionOptions={sectionOptions}
-        status={query.state}
-        statusOptions={STATE_OPTIONS}
-        search={searchDraft}
-        searchPlaceholder="Tìm mã lớp hoặc tên học phần…"
-        onSearchChange={setSearchDraft}
-        sortOrder={query.sortOrder}
-        onSectionChange={(value) =>
-          syncQuery({ ...query, classSectionId: value || undefined, page: 1 })
-        }
-        onStatusChange={(value) => syncQuery({ ...query, state: value || undefined, page: 1 })}
-        onSortToggle={() =>
-          syncQuery({
-            ...query,
-            sortOrder: query.sortOrder === "desc" ? "asc" : "desc",
-            page: 1,
-          })
-        }
-        onClearFilters={() => syncQuery({ ...DEFAULT_SESSION_LIST_QUERY })}
-      />
+      <div className={styles.listBody}>
+        {loading ? <div className={styles.skeleton} aria-busy="true" /> : null}
 
-      {loading ? <div className={styles.skeleton} aria-busy="true" /> : null}
-
-      {!loading && error ? (
-        <FeedbackAlert variant="danger" title="Không thể tải danh sách buổi học">
-          {error}
-          <div className={styles.retryRow}>
-            <Button variant="secondary" size="sm" onClick={() => void loadSessions()}>
-              Thử lại
-            </Button>
-          </div>
-        </FeedbackAlert>
-      ) : null}
-
-      {!loading && !error && items.length === 0 ? (
-        <FeedbackAlert variant="info" title="Chưa có buổi học">
-          Không có buổi học trong phạm vi lọc hiện tại.
-        </FeedbackAlert>
-      ) : null}
-
-      {!loading && !error && items.length > 0 ? (
-        <>
-          <DataTable
-            columns={columns}
-            rows={items}
-            rowKey={(row) => row.classSessionId}
-            caption="Danh sách buổi học được phân công"
-          />
-          <div className={styles.pagination}>
-            <p className={styles.paginationMeta}>
-              Hiển thị {pageStart}–{pageEnd} / {totalItems} buổi học
-            </p>
-            <div className={styles.paginationActions}>
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={query.page <= 1}
-                onClick={() => syncQuery({ ...query, page: query.page - 1 })}
-              >
-                Trang trước
-              </Button>
-              <span className={styles.pageIndicator}>
-                Trang {query.page} / {Math.max(totalPages, 1)}
-              </span>
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={query.page >= totalPages}
-                onClick={() => syncQuery({ ...query, page: query.page + 1 })}
-              >
-                Trang sau
+        {!loading && error ? (
+          <FeedbackAlert variant="danger" title="Không thể tải danh sách buổi học">
+            {error}
+            <div className={styles.retryRow}>
+              <Button variant="secondary" size="sm" onClick={() => void loadSessions()}>
+                Thử lại
               </Button>
             </div>
-          </div>
-        </>
-      ) : null}
+          </FeedbackAlert>
+        ) : null}
+
+        {!loading && !error && items.length === 0 ? (
+          <FeedbackAlert variant="info" title="Chưa có buổi học">
+            Không có buổi học trong phạm vi lọc hiện tại.
+          </FeedbackAlert>
+        ) : null}
+
+        {!loading && !error && items.length > 0 ? (
+          <>
+            <DataTable
+              columns={columns}
+              rows={items}
+              rowKey={(row) => row.classSessionId}
+              caption="Danh sách buổi học được phân công"
+            />
+            <div className={styles.pagination}>
+              <p className={styles.paginationMeta}>
+                Hiển thị {pageStart}–{pageEnd} / {totalItems} buổi học
+              </p>
+              <div className={styles.paginationActions}>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={query.page <= 1}
+                  onClick={() => syncQuery({ ...query, page: query.page - 1 })}
+                >
+                  Trang trước
+                </Button>
+                <span className={styles.pageIndicator}>
+                  Trang {query.page} / {Math.max(totalPages, 1)}
+                </span>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  disabled={query.page >= totalPages}
+                  onClick={() => syncQuery({ ...query, page: query.page + 1 })}
+                >
+                  Trang sau
+                </Button>
+              </div>
+            </div>
+          </>
+        ) : null}
+      </div>
+
+      <div className={styles.listToolbar}>
+        <TableToolbar
+          classSectionId={query.classSectionId}
+          sectionOptions={sectionOptions}
+          status={query.state}
+          statusOptions={STATE_OPTIONS}
+          search={searchDraft}
+          searchPlaceholder="Tìm mã lớp hoặc tên học phần…"
+          onSearchChange={setSearchDraft}
+          sortOrder={query.sortOrder}
+          onSectionChange={(value) =>
+            syncQuery({ ...query, classSectionId: value || undefined, page: 1 })
+          }
+          onStatusChange={(value) => syncQuery({ ...query, state: value || undefined, page: 1 })}
+          onSortToggle={() =>
+            syncQuery({
+              ...query,
+              sortOrder: query.sortOrder === "desc" ? "asc" : "desc",
+              page: 1,
+            })
+          }
+          onClearFilters={() => syncQuery({ ...DEFAULT_SESSION_LIST_QUERY })}
+        />
+      </div>
     </div>
   );
 }

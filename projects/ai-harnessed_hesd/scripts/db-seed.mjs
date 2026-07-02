@@ -68,6 +68,44 @@ async function markSeedApplied() {
   );
 }
 
+/** Preview-only refresh — parallel test-stack db:seed must not delete dynamic lecturer roles. */
+function shouldRefreshPreviewFixtures() {
+  if (process.env.SEED_REFRESH_FIXTURES === "true") {
+    return true;
+  }
+  if (process.env.SEED_REFRESH_FIXTURES === "false") {
+    return false;
+  }
+  const url = databaseUrl ?? "";
+  return !url.includes("attendly_test") && !url.includes(":5433/");
+}
+
+async function refreshSeedRoleAssignments() {
+  await client.query(
+    `
+    DELETE FROM user_role_assignments
+    WHERE user_id = $1
+      AND role = 'Lecturer'
+      AND scope_type = 'ClassSection'
+      AND scope_id IS DISTINCT FROM $2
+    `,
+    [SEED_IDS.lecturerUser, SEED_IDS.section],
+  );
+
+  await client.query(
+    `
+    INSERT INTO user_role_assignments (id, user_id, role, scope_type, scope_id)
+    VALUES ($1, $2, 'Lecturer', 'ClassSection', $3)
+    ON CONFLICT (id) DO UPDATE SET
+      user_id = EXCLUDED.user_id,
+      role = EXCLUDED.role,
+      scope_type = EXCLUDED.scope_type,
+      scope_id = EXCLUDED.scope_id
+    `,
+    ["90000000-0000-4000-8000-000000000001", SEED_IDS.lecturerUser, SEED_IDS.section],
+  );
+}
+
 async function refreshSeedSessionFixtures() {
   const now = new Date();
   const scheduledStart = new Date(now.getTime() + 24 * 60 * 60 * 1000);
@@ -372,8 +410,17 @@ try {
   await ensureSeedBookkeeping();
 
   if (await isSeedApplied()) {
-    await refreshSeedSessionFixtures();
-    console.log(`db:seed — skip ${SEED_ID} (already applied); refreshed session fixtures`);
+    if (shouldRefreshPreviewFixtures()) {
+      await refreshSeedSessionFixtures();
+      await refreshSeedRoleAssignments();
+      console.log(
+        `db:seed — skip ${SEED_ID} (already applied); refreshed session fixtures and seed role assignments`,
+      );
+    } else {
+      console.log(
+        `db:seed — skip ${SEED_ID} (already applied); test stack — fixture refresh skipped`,
+      );
+    }
     process.exit(0);
   }
 

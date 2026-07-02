@@ -23,6 +23,14 @@ export function canExecuteExport(roles: string[]): boolean {
   );
 }
 
+export function canAccessSessionControl(roles: string[]): boolean {
+  return roles.some((role) =>
+    (["Lecturer", "AcademicAdmin"] as const).includes(
+      role as "Lecturer" | "AcademicAdmin",
+    ),
+  );
+}
+
 export function isStudentOnly(roles: string[]): boolean {
   return roles.length === 1 && roles[0] === "Student";
 }

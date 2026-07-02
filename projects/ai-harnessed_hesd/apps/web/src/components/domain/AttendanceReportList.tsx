@@ -29,6 +29,8 @@ export interface AttendanceReportListProps {
   sectionOptions?: FilterOption[];
   canExport?: boolean;
   readOnlyStaff?: boolean;
+  /** When true, render listing chrome only while auth/scope resolves (no table fetch). */
+  authPending?: boolean;
 }
 
 const STATUS_OPTIONS: FilterOption[] = [
@@ -76,6 +78,7 @@ export function AttendanceReportList({
   sectionOptions = [],
   canExport = false,
   readOnlyStaff = false,
+  authPending = false,
 }: AttendanceReportListProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   const query = useMemo(() => {
@@ -133,8 +136,11 @@ export function AttendanceReportList({
   }, [query]);
 
   useEffect(() => {
+    if (authPending) {
+      return;
+    }
     void loadReport();
-  }, [loadReport]);
+  }, [authPending, loadReport]);
 
   const columns = useMemo(
     () => [
@@ -401,80 +407,86 @@ export function AttendanceReportList({
         </div>
       ) : null}
 
-      {loading ? <div className={styles.skeleton} aria-busy="true" /> : null}
-
-      {!loading && error ? (
-        <FeedbackAlert variant="danger" title="Không thể tải báo cáo">
-          {error}
-          <div className={styles.retryRow}>
-            <Button variant="secondary" size="sm" onClick={() => void loadReport()}>
-              Thử lại
-            </Button>
-          </div>
-        </FeedbackAlert>
-      ) : null}
-
-      {!loading && !error && rows.length === 0 ? (
-        <FeedbackAlert
-          variant={hasResultFilters(query) ? "warning" : "info"}
-          title={hasResultFilters(query) ? "Không tìm thấy kết quả" : "Chưa có dữ liệu báo cáo"}
-        >
-          {hasResultFilters(query)
-            ? "Không có bản ghi nào khớp với bộ lọc hiện tại trong phạm vi được cấp."
-            : "Chưa có bản ghi điểm danh trong phạm vi báo cáo này."}
-          {hasResultFilters(query) ? (
-            <div className={styles.retryRow}>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={() => {
-                  setSearchDraft("");
-                  syncQuery({ ...DEFAULT_LISTING_QUERY, termId: defaultTermId });
-                }}
-              >
-                Xóa bộ lọc
-              </Button>
-            </div>
-          ) : null}
-        </FeedbackAlert>
-      ) : null}
-
-      {!loading && !error && rows.length > 0 ? (
+      {authPending ? (
+        <div className={styles.skeleton} aria-busy="true" />
+      ) : (
         <>
-          <DataTable
-            columns={columns}
-            rows={rows}
-            rowKey={(row) => row.attendanceRecordId}
-            caption="Báo cáo điểm danh PG-13"
-          />
-          <div className={styles.pagination}>
-            <p className={styles.paginationMeta}>
-              Hiển thị {pageStart}–{pageEnd} / {totalItems} bản ghi trong phạm vi được cấp
-            </p>
-            <div className={styles.paginationActions}>
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={query.page <= 1}
-                onClick={() => syncQuery({ ...query, page: query.page - 1 })}
-              >
-                Trang trước
-              </Button>
-              <span className={styles.pageIndicator}>
-                Trang {query.page} / {Math.max(totalPages, 1)}
-              </span>
-              <Button
-                variant="secondary"
-                size="sm"
-                disabled={query.page >= totalPages}
-                onClick={() => syncQuery({ ...query, page: query.page + 1 })}
-              >
-                Trang sau
-              </Button>
-            </div>
-          </div>
+          {loading ? <div className={styles.skeleton} aria-busy="true" /> : null}
+
+          {!loading && error ? (
+            <FeedbackAlert variant="danger" title="Không thể tải báo cáo">
+              {error}
+              <div className={styles.retryRow}>
+                <Button variant="secondary" size="sm" onClick={() => void loadReport()}>
+                  Thử lại
+                </Button>
+              </div>
+            </FeedbackAlert>
+          ) : null}
+
+          {!loading && !error && rows.length === 0 ? (
+            <FeedbackAlert
+              variant={hasResultFilters(query) ? "warning" : "info"}
+              title={hasResultFilters(query) ? "Không tìm thấy kết quả" : "Chưa có dữ liệu báo cáo"}
+            >
+              {hasResultFilters(query)
+                ? "Không có bản ghi nào khớp với bộ lọc hiện tại trong phạm vi được cấp."
+                : "Chưa có bản ghi điểm danh trong phạm vi báo cáo này."}
+              {hasResultFilters(query) ? (
+                <div className={styles.retryRow}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => {
+                      setSearchDraft("");
+                      syncQuery({ ...DEFAULT_LISTING_QUERY, termId: defaultTermId });
+                    }}
+                  >
+                    Xóa bộ lọc
+                  </Button>
+                </div>
+              ) : null}
+            </FeedbackAlert>
+          ) : null}
+
+          {!loading && !error && rows.length > 0 ? (
+            <>
+              <DataTable
+                columns={columns}
+                rows={rows}
+                rowKey={(row) => row.attendanceRecordId}
+                caption="Báo cáo điểm danh PG-13"
+              />
+              <div className={styles.pagination}>
+                <p className={styles.paginationMeta}>
+                  Hiển thị {pageStart}–{pageEnd} / {totalItems} bản ghi trong phạm vi được cấp
+                </p>
+                <div className={styles.paginationActions}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={query.page <= 1}
+                    onClick={() => syncQuery({ ...query, page: query.page - 1 })}
+                  >
+                    Trang trước
+                  </Button>
+                  <span className={styles.pageIndicator}>
+                    Trang {query.page} / {Math.max(totalPages, 1)}
+                  </span>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    disabled={query.page >= totalPages}
+                    onClick={() => syncQuery({ ...query, page: query.page + 1 })}
+                  >
+                    Trang sau
+                  </Button>
+                </div>
+              </div>
+            </>
+          ) : null}
         </>
-      ) : null}
+      )}
     </div>
   );
 }

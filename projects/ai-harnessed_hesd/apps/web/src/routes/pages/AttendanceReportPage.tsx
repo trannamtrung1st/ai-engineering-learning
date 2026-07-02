@@ -55,7 +55,19 @@ export function AttendanceReportPage() {
   }, []);
 
   if (roles === null) {
-    return <div className={styles.loading} aria-busy="true" />;
+    return (
+      <ContentSection title="Báo cáo điểm danh" titleClassName={styles.title}>
+        <AttendanceReportList
+          authPending
+          roles={[]}
+          defaultTermId={SEED_TERM_ID}
+          termOptions={[{ value: SEED_TERM_ID, label: DEFAULT_TERM_LABEL }]}
+          sectionOptions={sectionOptions}
+          canExport={false}
+          readOnlyStaff={false}
+        />
+      </ContentSection>
+    );
   }
 
   if (accessDenied || !canAccessInstitutionReport(roles)) {

@@ -1,5 +1,12 @@
 .list {
   display: flex;
+  flex-direction: column-reverse;
+  gap: var(--space-4);
+}
+
+.listBody,
+.listToolbar {
+  display: flex;
   flex-direction: column;
   gap: var(--space-4);
 }

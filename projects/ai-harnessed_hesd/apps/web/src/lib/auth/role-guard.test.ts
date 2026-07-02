@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canAccessAuditLogs,
   canAccessInstitutionReport,
+  canAccessSessionControl,
   canExecuteExport,
   isAcademicAdmin,
   isReadOnlyStaffRole,
@@ -44,5 +45,12 @@ describe("role-guard — BR-19 AC-16 FR-32", () => {
 
   it("denies audit log access for students", () => {
     expect(canAccessAuditLogs(["Student"])).toBe(false);
+  });
+
+  it("gates session control nav for lecturer and admin only — AC-23 NFR-09", () => {
+    expect(canAccessSessionControl(["Lecturer"])).toBe(true);
+    expect(canAccessSessionControl(["AcademicAdmin"])).toBe(true);
+    expect(canAccessSessionControl(["Student"])).toBe(false);
+    expect(canAccessSessionControl(["SystemAuditor"])).toBe(false);
   });
 });

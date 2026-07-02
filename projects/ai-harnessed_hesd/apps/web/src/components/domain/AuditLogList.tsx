@@ -33,8 +33,11 @@ const TARGET_TYPE_OPTIONS: FilterOption[] = Object.keys(AUDIT_TARGET_TYPE_LABELS
 }));
 
 const ACTOR_OPTIONS: FilterOption[] = [
-  { value: SEED_LECTURER_USER_ID, label: "Nguyễn Văn Giảng (Lecturer)" },
-  { value: SEED_ACADEMIC_ADMIN_USER_ID, label: "Hoàng Quản Trị (AcademicAdmin)" },
+  { value: SEED_LECTURER_USER_ID, label: `${SEED_LECTURER_USER_ID.slice(0, 8)} (Lecturer)` },
+  {
+    value: SEED_ACADEMIC_ADMIN_USER_ID,
+    label: `${SEED_ACADEMIC_ADMIN_USER_ID.slice(0, 8)} (AcademicAdmin)`,
+  },
 ];
 
 const SORT_OPTIONS: FilterOption[] = [{ value: "timestamp", label: "Thời điểm" }];

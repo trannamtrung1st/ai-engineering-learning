@@ -49,3 +49,11 @@ tests/playwright-ui/scenarios/web-design-system-shell.spec.ts
 - [web-system-auditor-audit-review] Browser test failed — see 20260702T213529Z-browser-test.json
 - [web-system-auditor-audit-review] AuditorSessionRosterPage must not call GET /class-sessions/{id} (SessionControl:execute) — SystemAuditor has AttendanceRecord:read only; render LiveRosterPanel directly via GET /class-sessions/{id}/attendance
 - [test-backend-integration-critical-path] Critical-path integration fixtures must use dedicated section hierarchy with explicit gps-off Course/ClassSection policies and Self-scoped Student role for unenrolled actor — shared seed course policies and ClassSection-only student roles cause GpsRequired/403 flakes
+- [test-e2e-role-scope-and-export] Browser test failed — see 20260702T223549Z-browser-test.json
+- [test-e2e-role-scope-and-export] Preview DB accumulates extra Lecturer ClassSection role assignments from integration tests — `db:seed` refresh must call `refreshSeedRoleAssignments()` to reset seed lecturer to SE101-01 only
+- [test-e2e-role-scope-and-export] StaffLayout must filter sidebar nav by RBAC (`canAccessSessionControl`, `canAccessInstitutionReport`, `canAccessAuditLogs`) — students deep-linking staff routes must not see Buổi học/Báo cáo/Audit links
+- [test-e2e-role-scope-and-export] Playwright strict mode: hidden `<option>` labels must not duplicate visible row/badge copy (actor filter IDs, section table before toolbar DOM order via column-reverse)
+- [test-e2e-role-scope-and-export] Computational checks failed — see 20260702T224815Z-checks.json
+- [test-e2e-role-scope-and-export] AttendanceReportPage authPending shell + AttendanceReportList defer fetch until roles resolve — required for TC-AC-23-016 mobile navigation race; add both paths to completionArtifacts when scope gate blocks
+- [test-e2e-role-scope-and-export] Computational checks failed — see 20260702T230840Z-checks.json
+- [test-e2e-role-scope-and-export] db:seed refreshSeedRoleAssignments on skip path must be preview-only (not attendly_test/:5433) — parallel test-stack db:seed calls delete dynamic M09 lecturer ClassSection roles mid-suite

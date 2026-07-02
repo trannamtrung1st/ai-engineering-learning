@@ -50,8 +50,8 @@ export function LecturerRosterPage() {
   if (loadError || !session) {
     return (
       <div className={styles.page}>
-        <FeedbackAlert variant="danger" title="Không thể tải buổi học">
-          {loadError ?? "Buổi học không tồn tại hoặc bạn không có quyền truy cập."}
+        <FeedbackAlert variant="danger" title="Không có quyền truy cập">
+          Buổi học không tồn tại hoặc bạn không được phép xem danh sách điểm danh.
         </FeedbackAlert>
         <Link className={styles.backLink} to="/lecturer/sessions">
           Quay lại danh sách
