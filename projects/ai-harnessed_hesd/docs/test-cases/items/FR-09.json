@@ -1,0 +1,280 @@
+{
+  "productItemId": "FR-09",
+  "version": 1,
+  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+  "generatedAt": "2026-07-02T10:49:11Z",
+  "cases": [
+    {
+      "id": "TC-FR-09-001",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["FR-09", "BR-13", "AC-12"],
+      "title": "Testing-plan close-time absent finalization row: unresolved enrolled students become Absent",
+      "preconditions": [
+        "Testing-plan §3.1 Close-time absent finalization block applies (FR-09, BR-13, AC-12).",
+        "Open class session exists with multiple actively enrolled students.",
+        "At least one enrolled student has successful Present or Late attendance.",
+        "At least one enrolled student has no successful attendance record (Pending)."
+      ],
+      "steps": [
+        "Record roster beforeState: per-student attendance statuses and pending count.",
+        "Execute session close processing via POST /v1/class-sessions/{sessionId}/close service boundary.",
+        "Query AttendanceRecord rows for all enrolled students in the session.",
+        "Compare unresolved students against those with prior Present or Late success."
+      ],
+      "expected": "Scenario-matrix maps to testing-plan Close-time absent finalization row: enrolled students without successful attendance are assigned Absent per BR-13; students with existing Present or Late retain their status.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-09-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-09", "BR-13"],
+      "title": "M03 close event triggers M05 Attendance Ledger absent finalizer within DB transaction",
+      "preconditions": [
+        "Integration harness uses real DB transaction boundaries for class_sessions and attendance_records tables.",
+        "Open session exists with three enrolled students: one Present via QR check-in, two Pending with no success record.",
+        "M03 Session Lifecycle and M05 Attendance Ledger modules are wired per module breakdown §3.3 and §3.5."
+      ],
+      "steps": [
+        "Capture beforeState: session Open; two students Pending, one Present in attendance_records.",
+        "Invoke M03 closeSession(sessionId, actor) which emits session-close absent-finalization event to M05.",
+        "Query attendance_records table for all enrolled students within the same transaction boundary.",
+        "Verify session row state Closed with closedAt persisted.",
+        "Confirm prior CheckInAttempt rows for Pending students are not deleted."
+      ],
+      "expected": "M03→M05 module boundary commits Closed session and creates Absent AttendanceRecord rows for both Pending students; Present student remains Present; rejected attempt history is preserved.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-09-003",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["FR-09", "BR-13"],
+      "title": "SM-03 AttendanceRecord transitions Pending to Absent when SM-01 session becomes Closed",
+      "preconditions": [
+        "Open class session exists in integration test database.",
+        "Enrolled student has AttendanceRecord in Pending state with no successful check-in.",
+        "Session SM-01 state is Open."
+      ],
+      "steps": [
+        "Capture beforeState: AttendanceRecord status Pending for student-session pair; session state Open.",
+        "Execute close transition on SM-01 ClassSession (Open to Closed).",
+        "Capture afterState: AttendanceRecord status and session state.",
+        "Verify no illegal intermediate states are committed to persistence."
+      ],
+      "expected": "beforeState Pending transitions to afterState Absent when session beforeState Open becomes afterState Closed; transition occurs only for students without successful attendance per BR-13 guard.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-09-004",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-09", "BR-13", "FR-08"],
+      "title": "POST /v1/class-sessions/{sessionId}/close returns 200 with absent summary reflecting FR-09 finalization",
+      "preconditions": [
+        "Assigned Lecturer is authenticated with bearer token and Idempotency-Key header.",
+        "Open session exists with enrolled students: two checked in (Present/Late), three without success.",
+        "Session was opened via POST /v1/class-sessions/{sessionId}/open."
+      ],
+      "steps": [
+        "Lecturer calls POST /v1/class-sessions/{sessionId}/close with Authorization header.",
+        "Inspect HTTP status 200 and standard {data, meta, error} envelope with error null.",
+        "Assert data.state is Closed, data.closedAt is non-null ISO-8601 UTC, and data.summary.absent equals count of students without prior success.",
+        "Assert data.summary also includes present, late, and manualPresent integer counts per API design §4.3."
+      ],
+      "expected": "Close returns HTTP 200 with data.state Closed and data.summary.absent matching FR-09 auto-absent count; envelope meta includes requestId and timestamp.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-09-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-09", "FR-19", "BR-13"],
+      "title": "GET /v1/class-sessions/{sessionId}/attendance roster shows Absent rows after close finalization",
+      "preconditions": [
+        "Assigned Lecturer is authenticated.",
+        "Open session with five enrolled students: two Present/Late via QR, three Pending without success.",
+        "Session has not yet been closed."
+      ],
+      "steps": [
+        "Call POST /v1/class-sessions/{sessionId}/close and capture closedAt and summary.absent from response.",
+        "Call GET /v1/class-sessions/{sessionId}/attendance with Lecturer Authorization.",
+        "Validate HTTP 200 and envelope shape per API design §4.5.",
+        "Assert data.state is Closed, data.counts.absent reflects finalized count, and rows array entries for unresolved students show attendanceStatus Absent.",
+        "Verify Present/Late rows retain checkInMethod and checkInAt fields unchanged."
+      ],
+      "expected": "Attendance roster endpoint returns HTTP 200 with data.state Closed and rows showing attendanceStatus Absent for FR-09-finalized students; live roster payload shape matches FR-19 contract with updated counts.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-09-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["FR-09", "BR-13", "AC-12", "FR-08"],
+      "title": "E2E-07 primary workflow: session close finalizes unresolved enrolled students as Absent",
+      "preconditions": [
+        "Lecturer opens Scheduled session via POST /v1/class-sessions/{sessionId}/open.",
+        "Section has five enrolled students; two complete successful QR check-in (Present/Late).",
+        "Three students never achieve successful check-in while session is Open.",
+        "Lecturer is assigned to the session class section."
+      ],
+      "steps": [
+        "Lecturer opens session and confirms Open state.",
+        "Two students call POST /v1/check-ins with valid qrToken and receive Success outcomes.",
+        "Lecturer calls POST /v1/class-sessions/{sessionId}/close.",
+        "Lecturer queries GET /v1/class-sessions/{sessionId}/attendance for full roster.",
+        "Verify each of the three unresolved students has attendanceStatus Absent with no checkInAt."
+      ],
+      "expected": "WF-06 close-time outcome per §8.3: three unresolved enrolled students receive Absent; two checked-in students retain Present/Late; FR-09 system finalization completes as part of close workflow.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-09-007",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P0",
+      "traceability": ["FR-09", "BR-13", "BR-14", "AC-12", "AC-13"],
+      "title": "Alternate branch preserves Excused and Manual Present students during absent finalization",
+      "preconditions": [
+        "Open session exists with four enrolled students all without QR success.",
+        "Lecturer pre-applies manual corrections within edit window: one student to Excused, one to Manual Present with required reason.",
+        "Two students remain Pending with no manual resolution."
+      ],
+      "steps": [
+        "Verify pre-close roster shows Excused and Manual Present for corrected students.",
+        "Lecturer calls POST /v1/class-sessions/{sessionId}/close.",
+        "Query GET /v1/class-sessions/{sessionId}/attendance for all four students.",
+        "Inspect audit records for manual corrections remain intact."
+      ],
+      "expected": "FR-09 exception rule: Excused and Manual Present students are not overwritten to Absent; two unresolved Pending students become Absent; manual correction audit trail is preserved.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-09-008",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P1",
+      "traceability": ["FR-09", "BR-13", "BR-21", "FR-08"],
+      "title": "System auto-close per policy triggers FR-09 absent finalization for unresolved students",
+      "preconditions": [
+        "Open session exists with effective policy defining auto-close after late window end.",
+        "Multiple enrolled students: one Present, two Pending without success.",
+        "Test harness can advance clock or trigger scheduler evaluation past late window.",
+        "Lecturer has not manually closed the session."
+      ],
+      "steps": [
+        "Open session and record openedAt and policy late window end timestamp.",
+        "Advance time past late window end or invoke auto-close scheduler job.",
+        "Query session state and assert Closed with closedAt set.",
+        "Query GET /v1/class-sessions/{sessionId}/attendance for Pending students.",
+        "Verify Present student status unchanged and two Pending students now Absent."
+      ],
+      "expected": "Alternate branch per BR-21: system actor transitions Open to Closed and applies BR-13 absent finalization identically to manual close; FR-09 runs on policy auto-close trigger.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-09-009",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-09", "BR-13", "BR-11", "BR-12"],
+      "title": "Close finalization does not downgrade Present or Late success records to Absent",
+      "preconditions": [
+        "Open session with enrolled students holding Present, Late, and Pending statuses.",
+        "Present and Late were assigned via successful POST /v1/check-ins.",
+        "One student remains Pending with only failed check-in attempts logged (no success)."
+      ],
+      "steps": [
+        "Record attendance statuses and checkInAt before close for Present, Late, and Pending students.",
+        "Lecturer calls POST /v1/class-sessions/{sessionId}/close.",
+        "Query attendance records and verify status immutability for success paths.",
+        "Confirm Pending-only student receives Absent and failed attempts are retained."
+      ],
+      "expected": "FR-09 boundary: Present and Late records remain unchanged after close; only the Pending student without success is assigned Absent; failed attempt history for the absent student is not deleted.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-09-010",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P1",
+      "traceability": ["FR-09", "BR-13", "BR-21"],
+      "title": "Idempotent close applies BR-13 absent finalization exactly once per student",
+      "preconditions": [
+        "Open session with enrolled student in Pending state and no success record.",
+        "Idempotency-Key header support is enabled for POST /v1/class-sessions/{sessionId}/close.",
+        "Real database with unique constraint on (classSessionId, studentUserId) attendance records."
+      ],
+      "steps": [
+        "Issue two parallel or sequential POST /v1/class-sessions/{sessionId}/close requests with the same Idempotency-Key.",
+        "Query AttendanceRecord count and status for the Pending student.",
+        "Verify audit and close summary counts are not duplicated.",
+        "Confirm INV-06 idempotent finalization per state machine doc."
+      ],
+      "expected": "Student receives exactly one Absent AttendanceRecord; repeated close calls return current Closed state without duplicate absent rows or inflated summary.absent count.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-09-011",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-09", "BR-13", "BR-19"],
+      "title": "Unauthorized close attempts do not trigger FR-09 absent finalization",
+      "preconditions": [
+        "Open session exists in lecturer-assigned section with Pending enrolled students.",
+        "Student and SystemAuditor users are authenticated.",
+        "Assigned Lecturer bearer token is available as authorized control."
+      ],
+      "steps": [
+        "Student calls POST /v1/class-sessions/{sessionId}/close.",
+        "SystemAuditor calls POST /v1/class-sessions/{sessionId}/close.",
+        "Query session state and attendance records after denied attempts.",
+        "Assigned Lecturer calls the same endpoint as control and verify absent finalization occurs."
+      ],
+      "expected": "Student and SystemAuditor receive 403 Forbidden or OutOfScope; session remains Open and no Absent finalization occurs from denied calls; assigned Lecturer control succeeds and triggers FR-09 absent assignment.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-09-012",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-09", "BR-13", "AC-12", "FR-10"],
+      "title": "Lecturer PG-05 close journey updates roster with Absent badges for unresolved students",
+      "preconditions": [
+        "Lecturer is authenticated on desktop Chromium (PG-05 session control page).",
+        "Open session displays live roster with mix of Present/Late and Pending students.",
+        "ConfirmActionModal copy warns about auto-absent on close per FLOW-07."
+      ],
+      "steps": [
+        "Navigate to lecturer session detail page and verify Open status badge and active QR panel.",
+        "Tap Close attendance and confirm action in ConfirmActionModal warning about auto-absent.",
+        "Observe session status badge changes to Closed and QR panel is hidden.",
+        "Review PG-06 roster: Pending students show Absent danger badge; Present/Late rows unchanged.",
+        "Verify summary chips reflect updated present, late, and absent counts matching close API summary."
+      ],
+      "expected": "Browser flow reflects FR-09 outcome: unresolved enrolled students display Absent AttendanceStatusCell with danger variant; Excused/Manual Present rows if present are not overwritten; roster summary matches API close summary.",
+      "edgeCase": false
+    }
+  ]
+}
