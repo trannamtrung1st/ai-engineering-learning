@@ -3,4 +3,5 @@ export const WEB_BASE_URL =
 export const API_BASE_URL =
   process.env.PLAYWRIGHT_API_BASE_URL ?? "http://localhost:3001/api/v1";
 
-export const DEFAULT_PASSWORD = "TestPass123";
+/** Matches scripts/db-seed.mjs TEST_PASSWORD_HASH (attendly-test-password). */
+export const DEFAULT_PASSWORD = "attendly-test-password";

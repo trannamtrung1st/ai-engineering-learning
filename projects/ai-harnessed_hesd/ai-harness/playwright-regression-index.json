@@ -9,6 +9,26 @@
         "TC-NFR-15-014"
       ],
       "updatedAt": "2026-07-02T17:23:34Z"
+    },
+    "web-student-check-in-flow": {
+      "specPath": "/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/tests/playwright-ui/scenarios/web-student-check-in-flow.spec.ts",
+      "lastRunId": "20260702T173745Z",
+      "testCount": 8,
+      "sourceTcIds": [
+        "TC-AC-06-007",
+        "TC-AC-11-010",
+        "TC-FR-15-008",
+        "TC-FR-16-010",
+        "TC-FR-16-011",
+        "TC-FR-23-012",
+        "TC-NFR-14-009",
+        "TC-NFR-14-010",
+        "TC-NFR-14-011",
+        "TC-NFR-14-012",
+        "TC-NFR-14-013",
+        "TC-NFR-14-014"
+      ],
+      "updatedAt": "2026-07-02T17:53:24Z"
     }
   }
 }

@@ -693,18 +693,50 @@
       ],
       "description": "Build mobile-first student scan-to-check-in flow with login gate, outcome display, and concise recovery guidance.",
       "completionArtifacts": [
-        "Student check-in route and submit interaction",
-        "Success view showing Present/Late and timestamp",
-        "Localized error-state rendering for check-in outcomes"
+        "apps/web/vite.config.ts",
+        "apps/web/src/routes/pages/StudentCheckInPage.tsx",
+        "apps/web/src/routes/pages/StudentCheckInPage.module.css",
+        "apps/web/src/routes/pages/LoginPage.tsx",
+        "apps/web/src/lib/api",
+        "apps/web/src/lib/auth",
+        "apps/web/src/lib/check-in",
+        "apps/web/src/lib/geolocation",
+        "apps/web/src/components/domain/CheckInResultScreen.tsx",
+        "apps/api/src/modules/check-in-and-qr-orchestrator/repository.ts"
       ],
       "testRequirements": {
+        "unit": [
+          "apps/web/src/lib/api/config.test.ts",
+          "apps/web/src/lib/api/check-in-api.test.ts",
+          "apps/web/src/lib/auth/session.test.ts",
+          "apps/web/src/lib/auth/student-login.test.ts",
+          "apps/web/src/lib/check-in/format-timestamp.test.ts",
+          "apps/web/src/lib/check-in/success-copy.test.ts",
+          "apps/web/src/lib/check-in/duplicate-prior-status.test.ts"
+        ],
+        "component": [
+          "apps/web/src/routes/pages/StudentCheckInPage.test.tsx"
+        ],
         "acceptanceTags": [
           "AC-06",
+          "AC-11",
           "FR-15",
           "FR-16",
-          "FR-23"
+          "FR-23",
+          "NFR-14"
+        ],
+        "playwright": [
+          "tests/playwright-ui/scenarios/web-student-check-in-flow.spec.ts"
         ]
-      }
+      },
+      "history": [
+        {
+          "at": "2026-07-02T17:37:45Z",
+          "kind": "gate_failed",
+          "reason": "Browser test failed — see 20260702T172530Z-browser-test.json",
+          "source": "harness"
+        }
+      ]
     },
     {
       "id": "web-student-attendance-history",
