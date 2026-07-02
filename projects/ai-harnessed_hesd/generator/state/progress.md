@@ -18,3 +18,4 @@
 - [2026-07-02T08:38:28Z] **brd-foundation** — passed
 - [2026-07-02T08:41:44Z] **brd-workflows-fr** — passed
 - [2026-07-02T08:46:17Z] **brd-rules-states-domain** — passed
+- [2026-07-02T08:48:29Z] **brd-nfr-acceptance** — passed

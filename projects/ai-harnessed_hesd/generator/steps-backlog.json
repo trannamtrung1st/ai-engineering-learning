@@ -121,7 +121,7 @@
     },
     {
       "id": "brd-nfr-acceptance",
-      "passes": false,
+      "passes": true,
       "priority": 14,
       "phase": 1,
       "kind": "agent",
