@@ -409,7 +409,8 @@
       ],
       "testRequirements": {
         "acceptanceTags": [
-          "AC-15"
+          "AC-15",
+          "AC-17"
         ]
       },
       "history": [
@@ -423,6 +424,12 @@
           "at": "2026-07-02T10:12:42Z",
           "kind": "drift",
           "reason": "Doc drift for AC-16 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T10:14:49Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-17 — reverify after TestGen",
           "source": "harness"
         }
       ]
@@ -820,7 +827,8 @@
       ],
       "testRequirements": {
         "acceptanceTags": [
-          "AC-15"
+          "AC-15",
+          "AC-17"
         ]
       },
       "history": [
@@ -834,6 +842,12 @@
           "at": "2026-07-02T10:12:42Z",
           "kind": "drift",
           "reason": "Doc drift for AC-16 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T10:14:49Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-17 — reverify after TestGen",
           "source": "harness"
         }
       ]
@@ -954,7 +968,8 @@
       ],
       "testRequirements": {
         "acceptanceTags": [
-          "AC-15"
+          "AC-15",
+          "AC-17"
         ]
       },
       "history": [
@@ -968,6 +983,12 @@
           "at": "2026-07-02T10:12:42Z",
           "kind": "drift",
           "reason": "Doc drift for AC-16 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T10:14:49Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-17 — reverify after TestGen",
           "source": "harness"
         }
       ]
