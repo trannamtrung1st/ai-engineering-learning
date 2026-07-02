@@ -1560,7 +1560,8 @@
           "AC-15",
           "AC-17",
           "AC-23",
-          "NFR-09"
+          "NFR-09",
+          "NFR-10"
         ]
       },
       "history": [
@@ -1592,6 +1593,12 @@
           "at": "2026-07-02T12:23:46Z",
           "kind": "drift",
           "reason": "Doc drift for NFR-09 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T12:25:42Z",
+          "kind": "drift",
+          "reason": "Doc drift for NFR-10 — reverify after TestGen",
           "source": "harness"
         }
       ]
