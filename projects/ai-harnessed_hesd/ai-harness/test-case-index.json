@@ -271,6 +271,11 @@
       "current": true,
       "docFingerprint": "sha256:0421ca4affe3aa70584e3b352a860d11de519a5a2aaff8c4d8e0f12d14d1a70a",
       "generatedAt": "2026-07-02T11:54:49Z"
+    },
+    "BR-06": {
+      "current": true,
+      "docFingerprint": "sha256:0421ca4affe3aa70584e3b352a860d11de519a5a2aaff8c4d8e0f12d14d1a70a",
+      "generatedAt": "2026-07-02T11:56:27Z"
     }
   }
 }
