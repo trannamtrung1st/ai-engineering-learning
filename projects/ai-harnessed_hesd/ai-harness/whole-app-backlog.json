@@ -38,21 +38,7 @@
           "FR-33",
           "NFR-16"
         ]
-      },
-      "history": [
-        {
-          "at": "2026-07-02T11:43:53Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-33 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T12:36:46Z",
-          "kind": "drift",
-          "reason": "Doc drift for NFR-16 — reverify after TestGen",
-          "source": "harness"
-        }
-      ]
+      }
     },
     {
       "id": "infra-local-runtime-compose",
@@ -87,51 +73,6 @@
         "docs/technical/local-runtime-reset.md",
         "package.json",
         ".env.example"
-      ],
-      "history": [
-        {
-          "at": "2026-07-02T09:42:15Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-01 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T09:59:55Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-11 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T10:46:26Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-07 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T11:00:37Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-16 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T12:36:46Z",
-          "kind": "drift",
-          "reason": "Doc drift for NFR-16 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T14:23:21Z",
-          "kind": "manual",
-          "reason": "compose-config.test.ts expects hesd_test but docker-compose.test.yml uses attendly_test — blocks all backend test:unit gates",
-          "source": "human"
-        },
-        {
-          "at": "2026-07-02T14:23:35Z",
-          "kind": "deferred",
-          "reason": "compose-config.test.ts stale hesd_test assertion blocks test:unit for all backend slices; M05 implementation and integration tests are complete",
-          "source": "implementer",
-          "relatedSlice": "module-attendance-ledger"
-        }
       ],
       "testRequirements": {
         "unit": [
@@ -188,39 +129,7 @@
           "FR-18",
           "NFR-07"
         ]
-      },
-      "history": [
-        {
-          "at": "2026-07-02T10:40:29Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-04 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T11:02:15Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-18 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T11:56:27Z",
-          "kind": "drift",
-          "reason": "Doc drift for BR-06 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T11:58:16Z",
-          "kind": "drift",
-          "reason": "Doc drift for BR-07 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T12:21:26Z",
-          "kind": "drift",
-          "reason": "Doc drift for NFR-07 — reverify after TestGen",
-          "source": "harness"
-        }
-      ]
+      }
     },
     {
       "id": "playwright-ui-workspace",
@@ -262,33 +171,7 @@
           "AC-16",
           "NFR-14"
         ]
-      },
-      "history": [
-        {
-          "at": "2026-07-02T09:42:15Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-01 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T09:59:55Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-11 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T10:12:42Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-16 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T12:30:43Z",
-          "kind": "drift",
-          "reason": "Doc drift for NFR-14 — reverify after TestGen",
-          "source": "harness"
-        }
-      ]
+      }
     },
     {
       "id": "module-identity-and-access",
@@ -333,39 +216,7 @@
           "FR-32",
           "NFR-09"
         ]
-      },
-      "history": [
-        {
-          "at": "2026-07-02T10:57:46Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-15 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T11:37:57Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-31 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T11:40:36Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-32 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T12:09:42Z",
-          "kind": "drift",
-          "reason": "Doc drift for BR-19 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T12:23:46Z",
-          "kind": "drift",
-          "reason": "Doc drift for NFR-09 — reverify after TestGen",
-          "source": "harness"
-        }
-      ]
+      }
     },
     {
       "id": "module-academic-structure",
@@ -406,39 +257,7 @@
           "FR-04",
           "FR-06"
         ]
-      },
-      "history": [
-        {
-          "at": "2026-07-02T09:50:57Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-07 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T10:38:42Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-01 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T10:40:29Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-04 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T10:43:27Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-06 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T11:56:27Z",
-          "kind": "drift",
-          "reason": "Doc drift for BR-06 — reverify after TestGen",
-          "source": "harness"
-        }
-      ]
+      }
     },
     {
       "id": "module-session-lifecycle",
@@ -464,44 +283,6 @@
         "apps/api/src/modules/session-lifecycle",
         "apps/api/src/app.ts",
         "apps/api/src/modules/identity/protected-stubs.ts"
-      ],
-      "history": [
-        {
-          "at": "2026-07-02T09:42:15Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-01 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T09:45:59Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-05 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T10:46:26Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-07 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T10:48:19Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-08 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T11:51:09Z",
-          "kind": "drift",
-          "reason": "Doc drift for BR-01 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T11:52:54Z",
-          "kind": "drift",
-          "reason": "Doc drift for BR-02 — reverify after TestGen",
-          "source": "harness"
-        }
       ],
       "testRequirements": {
         "unit": [
@@ -563,51 +344,7 @@
           "FR-18",
           "FR-22"
         ]
-      },
-      "history": [
-        {
-          "at": "2026-07-02T09:43:41Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-02 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T09:53:24Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-08 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T10:53:04Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-11 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T11:02:15Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-18 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T11:12:39Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-22 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T11:54:49Z",
-          "kind": "drift",
-          "reason": "Doc drift for BR-03 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T11:58:16Z",
-          "kind": "drift",
-          "reason": "Doc drift for BR-07 — reverify after TestGen",
-          "source": "harness"
-        }
-      ]
+      }
     },
     {
       "id": "module-attendance-ledger",
@@ -638,69 +375,6 @@
         "apps/api/src/modules/check-in-and-qr-orchestrator/repository.ts",
         "apps/api/src/modules/identity/protected-stubs.ts",
         "apps/api/src/app.ts"
-      ],
-      "history": [
-        {
-          "at": "2026-07-02T10:01:56Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-12 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T10:07:28Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-13 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T10:50:13Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-09 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T11:06:40Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-20 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T11:09:26Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-21 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T12:00:41Z",
-          "kind": "drift",
-          "reason": "Doc drift for BR-13 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T12:03:13Z",
-          "kind": "drift",
-          "reason": "Doc drift for BR-14 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T14:18:10Z",
-          "kind": "blocked",
-          "reason": "SLICE_BLOCKED scope gate has unrelated out-of-scope apps/api/src/infra/compose-config.test.ts change and test:e2e targets missing @attendly/e2e workspace",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T14:23:35Z",
-          "kind": "deferred",
-          "reason": "compose-config.test.ts stale hesd_test assertion blocks test:unit for all backend slices; M05 implementation and integration tests are complete",
-          "source": "harness",
-          "relatedSlice": "infra-local-runtime-compose"
-        },
-        {
-          "at": "2026-07-02T14:37:14Z",
-          "kind": "gate_failed",
-          "reason": "AI review failed — see 20260702T142648Z-review.json",
-          "source": "harness"
-        }
       ],
       "testRequirements": {
         "unit": [
@@ -764,57 +438,7 @@
           "FR-25",
           "FR-35"
         ]
-      },
-      "history": [
-        {
-          "at": "2026-07-02T09:55:22Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-09 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T09:57:32Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-10 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T11:18:32Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-24 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T11:21:46Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-25 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T11:46:00Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-35 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T12:11:45Z",
-          "kind": "drift",
-          "reason": "Doc drift for BR-20 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T14:55:58Z",
-          "kind": "gate_failed",
-          "reason": "Computational checks failed — see 20260702T144500Z-checks.json",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T15:00:55Z",
-          "kind": "gate_failed",
-          "reason": "AI review failed — see 20260702T145558Z-review.json",
-          "source": "harness"
-        }
-      ]
+      }
     },
     {
       "id": "module-reporting-and-export",
@@ -858,57 +482,7 @@
           "FR-27",
           "FR-28"
         ]
-      },
-      "history": [
-        {
-          "at": "2026-07-02T10:11:21Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-15 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T10:12:42Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-16 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T10:14:49Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-17 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T11:28:45Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-27 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T11:31:36Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-28 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T12:07:02Z",
-          "kind": "drift",
-          "reason": "Doc drift for BR-18 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T12:09:42Z",
-          "kind": "drift",
-          "reason": "Doc drift for BR-19 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T15:18:21Z",
-          "kind": "gate_failed",
-          "reason": "Computational checks failed — see 20260702T150919Z-checks.json",
-          "source": "harness"
-        }
-      ]
+      }
     },
     {
       "id": "module-audit-and-compliance",
@@ -940,50 +514,6 @@
         "apps/api/src/modules/session-lifecycle/repository.ts",
         "apps/api/src/modules/session-lifecycle/routes.ts",
         "apps/api/src/modules/reporting-and-export/repository.ts"
-      ],
-      "history": [
-        {
-          "at": "2026-07-02T10:18:15Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-18 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T10:19:57Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-19 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T11:33:41Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-29 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T11:35:37Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-30 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T12:14:08Z",
-          "kind": "drift",
-          "reason": "Doc drift for BR-22 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T12:16:02Z",
-          "kind": "drift",
-          "reason": "Doc drift for BR-23 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T12:28:07Z",
-          "kind": "drift",
-          "reason": "Doc drift for NFR-13 — reverify after TestGen",
-          "source": "harness"
-        }
       ],
       "testRequirements": {
         "unit": [
@@ -1044,45 +574,7 @@
           "NFR-01",
           "NFR-16"
         ]
-      },
-      "history": [
-        {
-          "at": "2026-07-02T09:43:41Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-02 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T10:56:13Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-14 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T11:04:23Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-19 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T12:17:56Z",
-          "kind": "drift",
-          "reason": "Doc drift for NFR-01 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T12:36:46Z",
-          "kind": "drift",
-          "reason": "Doc drift for NFR-16 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T15:49:48Z",
-          "kind": "gate_failed",
-          "reason": "Computational checks failed — see 20260702T153930Z-checks.json",
-          "source": "harness"
-        }
-      ]
+      }
     },
     {
       "id": "module-notification",
@@ -1124,27 +616,7 @@
           "BR-17",
           "FR-26"
         ]
-      },
-      "history": [
-        {
-          "at": "2026-07-02T10:36:11Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-25 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T11:25:58Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-26 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T12:05:23Z",
-          "kind": "drift",
-          "reason": "Doc drift for BR-17 — reverify after TestGen",
-          "source": "harness"
-        }
-      ]
+      }
     },
     {
       "id": "web-design-system-shell",
@@ -1164,36 +636,41 @@
       ],
       "description": "Implement app shell primitives, token wiring, and shared component foundations aligned with Attendly design-system precedence.",
       "completionArtifacts": [
-        "Tokenized theme and layout scaffolding",
-        "Core primitive components and state variants",
-        "Route shell variants for student and staff contexts"
+        "apps/web/package.json",
+        "apps/web/vite.config.ts",
+        "apps/web/vitest.config.ts",
+        "apps/web/src/test/setup.ts",
+        "apps/web/src/styles",
+        "apps/web/src/components",
+        "apps/web/src/lib",
+        "apps/web/src/routes",
+        "apps/web/src/App.tsx",
+        "apps/web/src/main.tsx",
+        "apps/web/src/styles.css"
       ],
       "testRequirements": {
+        "unit": [
+          "apps/web/src/lib/i18n/check-in-outcomes.test.ts",
+          "apps/web/src/lib/auth/auth-gate.test.ts"
+        ],
+        "component": [
+          "apps/web/src/components/ui/Button.test.tsx",
+          "apps/web/src/components/ui/StatusBadge.test.tsx",
+          "apps/web/src/components/ui/FeedbackAlert.test.tsx",
+          "apps/web/src/components/domain/QrDisplayPanel.test.tsx",
+          "apps/web/src/components/domain/QrCountdownRing.test.tsx",
+          "apps/web/src/components/domain/CheckInResultScreen.test.tsx",
+          "apps/web/src/components/layout/AppShell.test.tsx"
+        ],
+        "playwright": [
+          "tests/playwright-ui/scenarios/web-design-system-shell.spec.ts"
+        ],
         "acceptanceTags": [
           "FR-14",
+          "NFR-14",
           "NFR-15"
         ]
-      },
-      "history": [
-        {
-          "at": "2026-07-02T10:56:13Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-14 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T12:30:43Z",
-          "kind": "drift",
-          "reason": "Doc drift for NFR-14 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T12:33:01Z",
-          "kind": "drift",
-          "reason": "Doc drift for NFR-15 — reverify after TestGen",
-          "source": "harness"
-        }
-      ]
+      }
     },
     {
       "id": "web-student-check-in-flow",
@@ -1227,45 +704,7 @@
           "FR-16",
           "FR-23"
         ]
-      },
-      "history": [
-        {
-          "at": "2026-07-02T09:49:06Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-06 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T09:59:55Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-11 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T10:57:46Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-15 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T11:00:37Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-16 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T11:15:17Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-23 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T12:30:43Z",
-          "kind": "drift",
-          "reason": "Doc drift for NFR-14 — reverify after TestGen",
-          "source": "harness"
-        }
-      ]
+      }
     },
     {
       "id": "web-student-attendance-history",
@@ -1288,26 +727,6 @@
         "Student history list route and detail states",
         "Role-safe guard to block cross-user access",
         "Pagination/search-ready UI contract support"
-      ],
-      "history": [
-        {
-          "at": "2026-07-02T10:12:42Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-16 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T11:49:18Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-37 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T12:09:42Z",
-          "kind": "drift",
-          "reason": "Doc drift for BR-19 — reverify after TestGen",
-          "source": "harness"
-        }
       ],
       "testRequirements": {
         "acceptanceTags": [
@@ -1339,38 +758,6 @@
         "Session list and control actions",
         "Projection-friendly QR panel with rotation indicator",
         "Transition and conflict error handling in UI"
-      ],
-      "history": [
-        {
-          "at": "2026-07-02T09:42:15Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-01 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T09:43:41Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-02 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T09:49:06Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-06 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T10:46:26Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-07 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T10:56:13Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-14 — reverify after TestGen",
-          "source": "harness"
-        }
       ],
       "testRequirements": {
         "acceptanceTags": [
@@ -1415,45 +802,7 @@
           "FR-19",
           "FR-20"
         ]
-      },
-      "history": [
-        {
-          "at": "2026-07-02T10:07:28Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-13 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T10:09:55Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-14 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T10:36:11Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-25 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T11:04:23Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-19 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T11:06:40Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-20 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T12:03:13Z",
-          "kind": "drift",
-          "reason": "Doc drift for BR-14 — reverify after TestGen",
-          "source": "harness"
-        }
-      ]
+      }
     },
     {
       "id": "web-academic-admin-academic-setup",
@@ -1485,33 +834,7 @@
           "FR-04",
           "FR-06"
         ]
-      },
-      "history": [
-        {
-          "at": "2026-07-02T09:50:57Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-07 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T10:38:42Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-01 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T10:40:29Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-04 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T10:43:27Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-06 — reverify after TestGen",
-          "source": "harness"
-        }
-      ]
+      }
     },
     {
       "id": "web-academic-admin-policy-management",
@@ -1545,39 +868,7 @@
           "FR-24",
           "FR-25"
         ]
-      },
-      "history": [
-        {
-          "at": "2026-07-02T09:55:22Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-09 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T09:57:32Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-10 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T11:18:32Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-24 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T11:21:46Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-25 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T12:11:45Z",
-          "kind": "drift",
-          "reason": "Doc drift for BR-20 — reverify after TestGen",
-          "source": "harness"
-        }
-      ]
+      }
     },
     {
       "id": "web-academic-admin-reporting-export",
@@ -1612,45 +903,7 @@
           "FR-27",
           "FR-28"
         ]
-      },
-      "history": [
-        {
-          "at": "2026-07-02T10:11:21Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-15 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T10:12:42Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-16 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T10:14:49Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-17 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T11:28:45Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-27 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T11:31:36Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-28 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T12:07:02Z",
-          "kind": "drift",
-          "reason": "Doc drift for BR-18 — reverify after TestGen",
-          "source": "harness"
-        }
-      ]
+      }
     },
     {
       "id": "web-system-auditor-audit-review",
@@ -1675,38 +928,6 @@
         "Audit log listing route with scoped filters",
         "Detail view linking attempts, mutations, and actors",
         "Read-only route guards and no-mutation affordances"
-      ],
-      "history": [
-        {
-          "at": "2026-07-02T10:12:42Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-16 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T10:19:57Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-19 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T11:35:37Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-30 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T11:40:36Z",
-          "kind": "drift",
-          "reason": "Doc drift for FR-32 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T12:14:08Z",
-          "kind": "drift",
-          "reason": "Doc drift for BR-22 — reverify after TestGen",
-          "source": "harness"
-        }
       ],
       "testRequirements": {
         "acceptanceTags": [
@@ -1745,44 +966,6 @@
       "testRequirements": [
         "Must enforce test isolation with DB reset between suites",
         "Must fail build on unresolved critical flaky tests"
-      ],
-      "history": [
-        {
-          "at": "2026-07-02T09:42:15Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-01 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T09:45:04Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-04 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T09:53:24Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-08 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T10:01:56Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-12 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T10:18:15Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-18 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T12:21:26Z",
-          "kind": "drift",
-          "reason": "Doc drift for NFR-07 — reverify after TestGen",
-          "source": "harness"
-        }
       ]
     },
     {
@@ -1818,45 +1001,7 @@
           "NFR-09",
           "NFR-10"
         ]
-      },
-      "history": [
-        {
-          "at": "2026-07-02T10:11:21Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-15 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T10:12:42Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-16 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T10:14:49Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-17 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T10:33:24Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-23 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T12:23:46Z",
-          "kind": "drift",
-          "reason": "Doc drift for NFR-09 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T12:25:42Z",
-          "kind": "drift",
-          "reason": "Doc drift for NFR-10 — reverify after TestGen",
-          "source": "harness"
-        }
-      ]
+      }
     },
     {
       "id": "test-nfr-performance-reliability-smoke",
@@ -1886,44 +1031,6 @@
       "testRequirements": [
         "Execute against compose-based test stack profile",
         "Publish test artifacts and metric snapshots in CI"
-      ],
-      "history": [
-        {
-          "at": "2026-07-02T10:24:59Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-20 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T10:27:34Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-21 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T10:29:34Z",
-          "kind": "drift",
-          "reason": "Doc drift for AC-22 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T12:17:56Z",
-          "kind": "drift",
-          "reason": "Doc drift for NFR-01 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T12:19:24Z",
-          "kind": "drift",
-          "reason": "Doc drift for NFR-03 — reverify after TestGen",
-          "source": "harness"
-        },
-        {
-          "at": "2026-07-02T12:36:46Z",
-          "kind": "drift",
-          "reason": "Doc drift for NFR-16 — reverify after TestGen",
-          "source": "harness"
-        }
       ]
     }
   ]

@@ -25,3 +25,8 @@ Verification failures and remediation notes for harness agents.
 - [module-realtime-delivery] Computational checks failed — see 20260702T153930Z-checks.json
 - [module-realtime-delivery] M09 integration fixtures must use dedicated faculty/term/course hierarchy (not shared seed term) — parallel runs pollute M07 reporting scope queries for SEED.term
 - [module-notification] AC-25 in slice acceptance was doc drift (manual-fallback operability) — notification slice owns FR-26/BR-17 only; remove AC-25 from acceptanceTags when TestGen maps manual-fallback cases
+- [web-design-system-shell] Browser test failed — see 20260702T160633Z-browser-test.json
+- [web-design-system-shell] Scope gate failed — out-of-scope files: apps/web/src/test/setup.ts
+apps/web/vitest.config.ts
+tests/playwright-ui/scenarios/web-design-system-shell.spec.ts
+- [web-design-system-shell] Browser test failed — see 20260702T163452Z-browser-test.json

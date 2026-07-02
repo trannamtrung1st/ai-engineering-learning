@@ -21,7 +21,7 @@ Concise index for the 12 harness components. Referenced by `docs/technical/13-do
 | TestGen | `scripts/testgen-loop.sh`, `scripts/check-test-case-drift.sh` — docs-driven catalog per requirement tag |
 | Guardrails | `state/guardrails.md` + forbidden patterns in `ralph-loop.json` |
 | Observability | `generated/runs/<timestamp>-*.json` — TTL-pruned each Ralph iteration (`loop.generatedRetentionMinutes`, default 60m; preview/loop runtime files excluded) |
-| Feedback loops | Failed scope/check/browser-test/review → guardrails append → retry; prior scope, checks (JSON + **log excerpts** with scope hints), browser-test, and review output injected into next implementer prompt; browser tester retries failed cases first (fail-fast) then full suite (`browserTest.retryFailedCasesFirst`) |
+| Feedback loops | Failed scope/check/browser-test/review → guardrails append → retry; prior scope, checks (JSON + **log excerpts** with scope hints), browser-test, and review output injected into next implementer prompt; browser tester retries failed cases first (fail-fast) then full suite (`browserTest.retryFailedCasesFirst`); on browser test pass syncs `testRequirements.playwright` and commits owned paths; on browser test fail reverts uncommitted Playwright/support/index changes |
 | Human review | `workflows/human-review-checklist.md` |
 | Preview runtime | `scripts/preview-stack.sh`, `docs/preview-runtime.md` |
 | Browser MCP | `.cursor/mcp.json`, `docs/browser-mcp.md` |

@@ -121,3 +121,27 @@ playwright-regression: tests/playwright-ui/scenarios/<slice-id>.spec.ts (4 tests
 ```
 
 Harness parses this line into `*-browser-test.json` → `playwrightSpec`, `playwrightTestCount`.
+
+## Scope gate alignment
+
+The mechanical scope gate (`npm run aih:scope`) runs **before** the browser test gate. Playwright codegen runs **after** scope passes, but paths must still be allowlisted for later iterations.
+
+### Browser-test-owned paths
+
+After `BROWSER_TEST_PASS`, the harness owns and commits:
+
+- `tests/playwright-ui/scenarios/<slice-id>.spec.ts` (or the path from the `playwright-regression:` output line)
+- `tests/playwright-ui/src/support/` — shared helpers created or updated during codegen
+- `ai-harness/playwright-regression-index.json`
+- `ai-harness/whole-app-backlog.json` — only when the harness syncs `testRequirements.playwright`
+
+The harness **does not** expect the browser tester agent to edit the backlog. On pass it calls `sync_playwright_spec_to_backlog` so the spec path is in the slice allowlist for future implementer iterations.
+
+### On browser test failure
+
+When the gate ends with `BROWSER_TEST_FAIL`, the harness reverts uncommitted changes under browser-test-owned paths so dirty Playwright files do not poison the next implementer scope gate.
+
+### Implementer rules
+
+- Do **not** create or edit committed Playwright specs before the browser test gate runs — leave codegen to the tester.
+- If you must touch a spec path before browser test (rare), add it to `testRequirements.playwright` in `whole-app-backlog.json` first, then run `npm run aih:scope -- <sliceId>`.

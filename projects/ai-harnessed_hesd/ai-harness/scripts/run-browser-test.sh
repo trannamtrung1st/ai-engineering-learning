@@ -18,6 +18,18 @@ ensure_runs_dir
 
 cd "$REPO_ROOT"
 
+browser_test_exit_failure() {
+  local outfile="${1:-}"
+  local spec_path=""
+  if [[ -n "$outfile" && -f "$outfile" ]]; then
+    if parse_line="$(parse_playwright_regression_from_output "$outfile" 2>/dev/null)"; then
+      spec_path="$(echo "$parse_line" | cut -f1)"
+    fi
+  fi
+  revert_browser_test_workspace_changes "$SLICE_ID" "$RID" "$spec_path"
+  exit 1
+}
+
 browser_test_required() {
   jq -r '.browserTest.required // true' "$LOOP_CONFIG"
 }
@@ -102,7 +114,7 @@ if [[ "$require_preview" == "true" ]]; then
       --arg ts "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
       '{slice: $slice, timestamp: $ts, pass: false, skipped: false, reason: "preview stack verification failed"}')"
     write_run_report "${RID}-browser-test.json" "$report"
-    exit 1
+    browser_test_exit_failure
   fi
 fi
 
@@ -310,7 +322,7 @@ if ((${#retry_ids[@]} > 0)); then
     report="$(write_browser_test_report false "$FINAL_TIMED_OUT" "$FINAL_TIMEOUT_REASON" "$FINAL_AGENT_STATUS" "$PHASES_JSON")"
     report="$(enrich_browser_test_report_json "$report" "$combined_outfile" "$SLICE_ID" "$RID")"
     write_run_report "${RID}-browser-test.json" "$report"
-    exit 1
+    browser_test_exit_failure "$combined_outfile"
   fi
 fi
 
@@ -348,13 +360,15 @@ report="$(enrich_browser_test_report_json "$report" "$combined_outfile" "$SLICE_
 write_run_report "${RID}-browser-test.json" "$report"
 
 if [[ "$FINAL_PASS" == true ]]; then
+  spec_path=""
   if parse_line="$(parse_playwright_regression_from_output "$combined_outfile" 2>/dev/null)"; then
     spec_path="$(echo "$parse_line" | cut -f1)"
     test_count="$(jq_number_or_default "$(echo "$parse_line" | cut -f2)")"
     tc_ids_json="$(jq_json_or_default "$(extract_source_tc_ids_from_output "$combined_outfile" | jq -R . | jq -s . 2>/dev/null || true)" '[]')"
+    sync_playwright_spec_to_backlog "$SLICE_ID" "$spec_path"
     update_playwright_regression_index "$SLICE_ID" "$spec_path" "$RID" "$test_count" "$tc_ids_json"
   fi
-  git_commit_browser_test_pass "$SLICE_ID" "$RID"
+  git_commit_browser_test_pass "$SLICE_ID" "$RID" "$spec_path"
   exit 0
 fi
-exit 1
+browser_test_exit_failure "$combined_outfile"

@@ -19,6 +19,8 @@ This is a **browser verification pass only**. Computational checks (typecheck, l
 - `tests/playwright-ui/src/support/` — shared helpers when this slice needs new fixtures (playwright-ui workspace only)
 - `{{UX_BUGS_PATH}}` — structured UX bug log JSON for this run
 
+The harness commits browser-test-owned paths on `BROWSER_TEST_PASS` (spec, support helpers, regression index) and syncs `testRequirements.playwright` in `whole-app-backlog.json` for scope-gate alignment. **Do not** edit `ai-harness/whole-app-backlog.json` or `ai-harness/playwright-regression-index.json` yourself.
+
 ## Slice
 
 - **ID:** `{{SLICE_ID}}`

@@ -1631,13 +1631,55 @@ playwright_spec_rel_path_for_slice() {
   echo "tests/playwright-ui/scenarios/${slice_id}.spec.ts"
 }
 
+playwright_support_dir_rel() {
+  echo "tests/playwright-ui/src/support"
+}
+
+normalize_repo_rel_path() {
+  local path="$1"
+  [[ -n "$path" ]] || return 0
+  if [[ "$path" == "$REPO_ROOT/"* ]]; then
+    path="${path#"$REPO_ROOT"/}"
+  fi
+  path="${path#./}"
+  printf '%s\n' "$path"
+}
+
+# Register committed Playwright spec in slice allowlist (tester cannot edit backlog directly).
+sync_playwright_spec_to_backlog() {
+  local slice_id="$1"
+  local spec_path="$2"
+  spec_path="$(normalize_repo_rel_path "$spec_path")"
+  [[ -n "$spec_path" ]] || return 0
+
+  local tmp
+  tmp="$(mktemp)"
+  jq --arg id "$slice_id" --arg spec "$spec_path" '
+    .slices |= map(
+      if .id == $id then
+        .testRequirements = (.testRequirements // {})
+        | .testRequirements.playwright = (
+            ((.testRequirements.playwright // []) + [$spec]) | unique
+          )
+      else . end
+    )
+  ' "$BACKLOG" >"$tmp" && mv "$tmp" "$BACKLOG"
+}
+
 # Paths written by the browser-test gate after implementer scope already passed.
 browser_test_owned_paths() {
   local slice_id="$1"
   local run_id="${2:-}"
+  local spec_path="${3:-}"
+  if [[ -z "$spec_path" ]]; then
+    spec_path="$(playwright_spec_rel_path_for_slice "$slice_id")"
+  else
+    spec_path="$(normalize_repo_rel_path "$spec_path")"
+  fi
   printf '%s\n' \
     "ai-harness/playwright-regression-index.json" \
-    "$(playwright_spec_rel_path_for_slice "$slice_id")"
+    "$spec_path" \
+    "$(playwright_support_dir_rel)"
   if [[ -n "$run_id" ]]; then
     printf '%s\n' "ai-harness/generated/runs/ux-bugs/${slice_id}/${run_id}.json"
   fi
@@ -1706,6 +1748,65 @@ revert_slice_workspace_changes() {
   if [[ ${#restore_paths[@]} -gt 0 || ${#clean_paths[@]} -gt 0 ]]; then
     aih_warn "Reverted in-scope workspace changes for slice ${slice_id} (${#restore_paths[@]} tracked, ${#clean_paths[@]} untracked)"
   fi
+}
+
+revert_browser_test_workspace_changes() {
+  local slice_id="$1"
+  local run_id="${2:-}"
+  local spec_path="${3:-}"
+  if ! git -C "$REPO_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+    return 0
+  fi
+
+  local prev_cwd="$PWD"
+  cd "$REPO_ROOT"
+
+  local -a owned_prefixes=() restore_paths=() clean_paths=()
+  local file_path owned_path is_owned
+
+  while IFS= read -r owned_path; do
+    [[ -z "$owned_path" ]] && continue
+    owned_prefixes+=("$owned_path")
+  done < <(browser_test_owned_paths "$slice_id" "$run_id" "$spec_path")
+
+  while IFS= read -r file_path; do
+    [[ -z "$file_path" ]] && continue
+    is_owned=false
+    for owned_path in "${owned_prefixes[@]}"; do
+      if [[ "$file_path" == "$owned_path" || "$file_path" == "${owned_path}/"* ]]; then
+        is_owned=true
+        break
+      fi
+    done
+    if [[ "$is_owned" != true ]]; then
+      continue
+    fi
+    if git -C "$REPO_ROOT" ls-files --error-unmatch "$file_path" >/dev/null 2>&1; then
+      restore_paths+=("$file_path")
+    else
+      clean_paths+=("$file_path")
+    fi
+  done < <(git_changed_files)
+
+  if ((${#restore_paths[@]} > 0)); then
+    git -C "$REPO_ROOT" restore -- "${restore_paths[@]}" 2>/dev/null || true
+  fi
+
+  if ((${#clean_paths[@]} > 0)); then
+    for file_path in "${clean_paths[@]}"; do
+      if [[ -d "$REPO_ROOT/$file_path" ]]; then
+        rm -rf "$REPO_ROOT/$file_path"
+      elif [[ -f "$REPO_ROOT/$file_path" ]]; then
+        rm -f "$REPO_ROOT/$file_path"
+      fi
+    done
+  fi
+
+  if ((${#restore_paths[@]} > 0 || ${#clean_paths[@]} > 0)); then
+    aih_warn "Reverted browser-test-owned workspace changes for slice ${slice_id} (${#restore_paths[@]} tracked, ${#clean_paths[@]} untracked)"
+  fi
+
+  cd "$prev_cwd" || true
 }
 
 parse_slice_defer_from_agent() {
@@ -2179,6 +2280,12 @@ git_path_has_changes() {
   return 1
 }
 
+git_path_is_ignored() {
+  local rel="$1"
+  [[ -n "$rel" ]] || return 1
+  git check-ignore -q -- "$rel" 2>/dev/null
+}
+
 git_commit_allowlisted_paths() {
   local message="$1"
   shift
@@ -2193,13 +2300,16 @@ git_commit_allowlisted_paths() {
   for rel in "${paths[@]}"; do
     [[ -n "$rel" ]] || continue
     [[ -e "$REPO_ROOT/$rel" ]] || continue
+    if git_path_is_ignored "$rel"; then
+      continue
+    fi
     if git_path_has_changes "$rel"; then
       to_add+=("$rel")
     fi
   done
 
   [[ ${#to_add[@]} -gt 0 ]] || return 0
-  git add -- "${to_add[@]}"
+  git add -- "${to_add[@]}" 2>/dev/null || true
   git commit -m "$message" --no-verify 2>/dev/null || true
 }
 
@@ -2226,12 +2336,16 @@ git_commit_testgen_pass() {
 git_commit_browser_test_pass() {
   local slice_id="$1"
   local run_id="$2"
+  local spec_path="${3:-}"
   local -a paths=()
   local path
   while IFS= read -r path; do
     [[ -z "$path" ]] && continue
     paths+=("$path")
-  done < <(browser_test_owned_paths "$slice_id" "$run_id")
+  done < <(browser_test_owned_paths "$slice_id" "$run_id" "$spec_path")
+  if git_path_has_changes "ai-harness/whole-app-backlog.json"; then
+    paths+=("ai-harness/whole-app-backlog.json")
+  fi
   git_commit_allowlisted_paths "aih: browser test regression for ${slice_id}" "${paths[@]}"
 }
 

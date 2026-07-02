@@ -129,6 +129,8 @@ After the `TC-*` checklist, the browser test agent:
 2. **UX bugs JSON** — `ai-harness/generated/runs/ux-bugs/<slice-id>/<run-id>.json`
 3. **Playwright codegen** — updates `tests/playwright-ui/scenarios/<slice-id>.spec.ts` per [`playwright-regression.md`](playwright-regression.md)
 
+On `BROWSER_TEST_PASS`, the harness syncs the spec path into `testRequirements.playwright`, commits spec + `src/support/` helpers + regression index, and records the run. On `BROWSER_TEST_FAIL`, uncommitted browser-test-owned files are reverted so the next implementer scope gate stays clean.
+
 See [`ux-bug-logging.md`](ux-bug-logging.md) for bug schema and severity rules.
 
 ### Out-of-scope case results

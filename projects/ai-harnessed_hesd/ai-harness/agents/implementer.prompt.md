@@ -21,6 +21,7 @@ You are the Attendly implementer. Work **one backlog slice** per session.
 - Edit **only** paths under this slice's `completionArtifacts` and `testRequirements`, harness state append-only files (`progress.md`, `guardrails.md`), and `scopeAllowlist` paths from `ralph-loop.json` when `guardrails.md` names them for the current failure.
 - Do **not** modify another slice's `tests/playwright-ui/scenarios/*.spec.ts` except this slice's own spec.
 - Do **not** modify `ai-harness/playwright-regression-index.json` — the browser-test gate owns, updates, and commits it **after** your scope gate passes; `git restore` on that file is not required before `SLICE_DONE`.
+- Do **not** create or edit committed Playwright UI specs (`tests/playwright-ui/scenarios/<slice-id>.spec.ts`) before scope passes — the browser tester gate codegen owns them; `testRequirements.playwright` is harness-populated after browser test pass.
 - Do **not** fix other slices' application code or tests when scope hints name another owner — revert your in-scope changes and signal `SLICE_DEFER <owner-slice-id> <reason>` so the harness reopens that slice next iteration.
 - Use `SLICE_BLOCKED <reason>` only when blocked with no clear owning slice (env flake, missing infra, ambiguous failure).
 - Do **not** bundle routes or features owned by excluded slices (see **Excludes** below) unless this slice's `completionArtifacts` include them.
