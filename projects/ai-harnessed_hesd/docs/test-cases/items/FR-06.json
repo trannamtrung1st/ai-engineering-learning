@@ -1,0 +1,286 @@
+{
+  "productItemId": "FR-06",
+  "version": 1,
+  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+  "generatedAt": "2026-07-02T11:15:00Z",
+  "cases": [
+    {
+      "id": "TC-FR-06-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["FR-06", "FR-03"],
+      "title": "Academic Admin generates Scheduled sessions from class section schedule template",
+      "preconditions": [
+        "AcademicAdmin is authenticated with institution scope.",
+        "Active term, course, room, and lecturer exist for section creation.",
+        "No existing section with code SE101-01 in the target term."
+      ],
+      "steps": [
+        "Call POST /v1/class-sections with sectionCode, termId, courseId, lecturerUserId, defaultRoomId, and scheduleTemplate (dayOfWeek, startTime, durationMinutes) per API design §4.2.",
+        "Inspect the success response for generated Scheduled session count when session generation is requested.",
+        "Call GET /v1/class-sessions?classSectionId={sectionId} as AcademicAdmin.",
+        "Assert each returned session has state Scheduled, scheduledStartAt, scheduledEndAt derived from duration, and roomId matching section default or template."
+      ],
+      "expected": "WF-01 step 3 completes: sessions are persisted in Scheduled state with scheduled start time, duration, and room bound to the section; lecturer can later list upcoming sessions (FR-10 prerequisite).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-06-002",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P0",
+      "traceability": ["FR-06"],
+      "title": "Academic Admin manually creates a one-off Scheduled session when timetable changes",
+      "preconditions": [
+        "AcademicAdmin is authenticated.",
+        "A class section exists with known classSectionId and default room.",
+        "A makeup session date/time is outside the recurring template pattern."
+      ],
+      "steps": [
+        "Call POST /v1/class-sessions with classSectionId, scheduledStartAt, durationMinutes, and optional roomId override for the changed venue.",
+        "Validate HTTP 200 and standard {data, meta, error} envelope.",
+        "Call GET /v1/class-sessions?classSectionId={classSectionId}&date={sessionDate} and locate the manually created session.",
+        "Verify the session state is Scheduled and roomId reflects the override when provided."
+      ],
+      "expected": "Manual session is created in Scheduled state with correct scheduled times, duration, and room; it appears in section session listings alongside template-generated sessions.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-06-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-06"],
+      "title": "M03 Session Lifecycle persists ClassSession row with section FK and Scheduled initial state",
+      "preconditions": [
+        "Integration harness uses real DB transaction boundaries for class_sessions and class_sections tables.",
+        "A valid classSectionId exists with FK-enforced section row.",
+        "AcademicAdmin auth context is available to M03."
+      ],
+      "steps": [
+        "Create a session through M03 create-session command or POST /v1/class-sessions API path.",
+        "Query class_sessions table and assert class_section_id FK, scheduled_start_at, scheduled_end_at, room_id, and state = Scheduled.",
+        "Invoke getSessionState(sessionId) and assert state Scheduled with no openedAt or closedAt timestamps.",
+        "Attempt create with non-existent classSectionId and observe rejection without orphan session row."
+      ],
+      "expected": "ClassSession row is committed with required attributes and section FK; initial state is Scheduled with no attendance-window timestamps; invalid section reference is rejected.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-06-004",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-06"],
+      "title": "POST /v1/class-sessions returns 200 envelope with Scheduled session payload",
+      "preconditions": [
+        "AcademicAdmin is authenticated.",
+        "Request body includes classSectionId, scheduledStartAt, and durationMinutes per domain model §4.3."
+      ],
+      "steps": [
+        "Send POST /v1/class-sessions with Authorization and Idempotency-Key headers.",
+        "Validate HTTP 200 and JSON envelope shape {data, meta, error}.",
+        "Assert data contains classSessionId (or id), classSectionId, state Scheduled, scheduledStartAt, scheduledEndAt, and roomId when supplied.",
+        "Assert meta includes requestId and timestamp."
+      ],
+      "expected": "Response is HTTP 200 with standard envelope; data reflects a newly created Scheduled session with persisted schedule and room attributes.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-06-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-06", "FR-10"],
+      "title": "GET /v1/class-sessions list returns paginated sessions with state filter",
+      "preconditions": [
+        "At least one Scheduled session exists for a class section in lecturer scope.",
+        "Lecturer assigned to the section is authenticated."
+      ],
+      "steps": [
+        "Send GET /v1/class-sessions?classSectionId={sectionId}&state=Scheduled with Lecturer Authorization header.",
+        "Validate HTTP 200 and standard envelope with data array.",
+        "Assert each row includes classSessionId, state, scheduledStartAt, and section reference.",
+        "Assert meta.pagination includes page, pageSize, totalItems, and totalPages per API conventions §2.5."
+      ],
+      "expected": "List response is HTTP 200 with paginated session collection filtered by classSectionId and state; Lecturer view scope is satisfied for FR-06 view permission.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-06-006",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["FR-06"],
+      "title": "Cancel command transitions Scheduled session to Cancelled",
+      "preconditions": [
+        "A class session exists in Scheduled state with known sessionId.",
+        "AcademicAdmin (or authorized Lecturer per policy) auth context is available.",
+        "Session has never been opened (no openedAt)."
+      ],
+      "steps": [
+        "Record beforeState state Scheduled for the target session.",
+        "Invoke POST /v1/class-sessions/{sessionId}/cancel with Authorization and Idempotency-Key.",
+        "Query persistence and record afterState.",
+        "Call GET /v1/class-sessions?classSectionId={sectionId}&state=Cancelled and verify the session appears with Cancelled badge semantics."
+      ],
+      "expected": "beforeState Scheduled transitions to afterState Cancelled; no QR tokens are issued and open attendance is blocked per SM-01 cancel invariants (SMI-INV-05).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-06-007",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "pagination",
+      "priority": "P1",
+      "traceability": ["FR-06", "FR-10"],
+      "title": "Session list pagination honors page and pageSize boundaries for lecturer dashboard",
+      "preconditions": [
+        "Database seed contains more than 25 Scheduled sessions across assigned sections for one Lecturer.",
+        "Lecturer auth context is established."
+      ],
+      "steps": [
+        "Call GET /v1/class-sessions?page=1&pageSize=25 as assigned Lecturer and record totalItems and row count.",
+        "Call GET /v1/class-sessions?page=2&pageSize=25 and assert a disjoint result set from page 1.",
+        "Request a page beyond totalPages and assert empty data array with consistent totalItems.",
+        "Verify all returned sessions belong to sections assigned to the Lecturer (no cross-scope leakage)."
+      ],
+      "expected": "Pagination returns correct page boundaries, stable totalItems across pages, empty data when page exceeds totalPages, and scope-filtered rows only.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-06-008",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-06", "BR-19"],
+      "title": "Non-admin roles are denied session create and cancel mutations",
+      "preconditions": [
+        "Student, Lecturer (assigned to a section), and ITAdmin test accounts exist with valid tokens.",
+        "A Scheduled session exists in a section the Lecturer is assigned to."
+      ],
+      "steps": [
+        "Call POST /v1/class-sessions as Student, Lecturer, and ITAdmin.",
+        "Call POST /v1/class-sessions/{sessionId}/cancel as Student and ITAdmin.",
+        "Read HTTP status and error.code for each denied request.",
+        "Query class_sessions table to confirm no new or cancelled rows were created by unauthorized actors."
+      ],
+      "expected": "Unauthorized roles receive 403 Forbidden or OutOfScope without creating or cancelling sessions; Lecturer retains read access via GET /v1/class-sessions but cannot mutate session lifecycle (FR-06 actor boundary).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-06-009",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-06"],
+      "title": "Session create rejects scheduled end before start with validation error",
+      "preconditions": [
+        "AcademicAdmin is authenticated.",
+        "A valid classSectionId exists."
+      ],
+      "steps": [
+        "Send POST /v1/class-sessions with scheduledStartAt 2026-07-02T10:00:00Z and durationMinutes yielding scheduledEndAt before start (e.g. negative duration or explicit invalid end).",
+        "Read HTTP status and error.code from the response envelope.",
+        "Query class_sessions table to confirm no row was created for the invalid payload."
+      ],
+      "expected": "API returns HTTP 400 with InvalidPayload or equivalent validation error; no ClassSession row is persisted for incoherent schedule times.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-06-010",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-06", "FR-07"],
+      "title": "Open and cancel rejected on terminal or invalid session states",
+      "preconditions": [
+        "A Cancelled session and a Closed session exist with known sessionIds.",
+        "Assigned Lecturer and AcademicAdmin tokens are available."
+      ],
+      "steps": [
+        "Call POST /v1/class-sessions/{cancelledSessionId}/open as assigned Lecturer.",
+        "Call POST /v1/class-sessions/{openSessionId}/cancel for a session already in Open state.",
+        "Read HTTP status and error.code (expect 409 InvalidSessionTransition) for each.",
+        "Verify session states remain unchanged in persistence."
+      ],
+      "expected": "Cancelled → Open and Open → Cancelled attempts return HTTP 409 InvalidSessionTransition per SM-01 invalid transitions; terminal Cancelled and Closed semantics are preserved.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-06-011",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P1",
+      "traceability": ["FR-06", "FR-15", "FR-36"],
+      "title": "AcademicAdmin authenticates then creates session end to end",
+      "preconditions": [
+        "AcademicAdmin credentials exist for POST /v1/auth/login.",
+        "A valid classSectionId exists."
+      ],
+      "steps": [
+        "Send POST /v1/auth/login with AcademicAdmin credentials and capture accessToken and roles from the 200 envelope.",
+        "Send GET /v1/me with the bearer token and assert AcademicAdmin identity and scope.",
+        "Send POST /v1/class-sessions with the bearer token and valid schedule payload.",
+        "Assert the create returns HTTP 200 with data.state Scheduled within the authenticated admin scope."
+      ],
+      "expected": "Login returns HTTP 200 with accessToken; GET /v1/me returns AcademicAdmin identity; subsequent session create succeeds in Scheduled state within authorized scope.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-06-012",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-06", "FR-10"],
+      "title": "Lecturer PG-04 session list shows status badges and enrolled count for generated sessions",
+      "preconditions": [
+        "Lecturer is logged in on desktop Chromium.",
+        "Assigned section has at least one Scheduled session generated from timetable or manual create.",
+        "Enrollments exist for the section."
+      ],
+      "steps": [
+        "Navigate to /lecturer/sessions (PG-04) and verify DataTable renders with session columns (section code, start time, state badge, enrolled count).",
+        "Apply state filter chip Scheduled and confirm only Scheduled sessions display.",
+        "Locate a Scheduled session row and verify StatusBadge shows Scheduled with open/view-roster quick actions gated appropriately.",
+        "If a Cancelled session exists in fixture, verify Cancelled badge renders and open CTA is disabled or hidden per UI states §2."
+      ],
+      "expected": "PG-04 displays paginated session list with Scheduled/Open/Closed/Cancelled badges, enrolled count, and state-appropriate actions; Lecturer view-only access to FR-06-generated sessions is satisfied.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-06-013",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-06", "FR-03"],
+      "title": "Academic Admin FRM-04 section create with schedule template generates sessions",
+      "preconditions": [
+        "AcademicAdmin is logged in on desktop Chromium.",
+        "Admin navigation exposes class sections at /admin/class-sections.",
+        "Active term, course, lecturer, and room fixtures are available."
+      ],
+      "steps": [
+        "Navigate to /admin/class-sections and open Create section (FRM-04).",
+        "Complete section code, term, course, lecturer, default room, and schedule template fields (dayOfWeek, startTime, durationMinutes).",
+        "Submit the form and observe success feedback including generated Scheduled session count when applicable.",
+        "Open the section detail or sessions sub-view and confirm Scheduled sessions appear with correct start times without full page reload where SPA routing applies."
+      ],
+      "expected": "FRM-04 create flow with schedule template persists the section and generates Scheduled sessions visible in admin UI; session rows reflect scheduled start, duration, and room per FR-06.",
+      "edgeCase": false
+    }
+  ]
+}

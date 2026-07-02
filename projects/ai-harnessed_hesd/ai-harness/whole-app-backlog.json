@@ -201,7 +201,8 @@
         "acceptanceTags": [
           "AC-07",
           "FR-01",
-          "FR-04"
+          "FR-04",
+          "FR-06"
         ]
       },
       "history": [
@@ -221,6 +222,12 @@
           "at": "2026-07-02T10:40:29Z",
           "kind": "drift",
           "reason": "Doc drift for FR-04 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T10:43:27Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-06 — reverify after TestGen",
           "source": "harness"
         }
       ]
@@ -811,7 +818,8 @@
         "acceptanceTags": [
           "AC-07",
           "FR-01",
-          "FR-04"
+          "FR-04",
+          "FR-06"
         ]
       },
       "history": [
@@ -831,6 +839,12 @@
           "at": "2026-07-02T10:40:29Z",
           "kind": "drift",
           "reason": "Doc drift for FR-04 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T10:43:27Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-06 — reverify after TestGen",
           "source": "harness"
         }
       ]
