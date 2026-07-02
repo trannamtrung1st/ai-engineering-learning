@@ -1,5 +1,5 @@
 # Ephemeral integration / API e2e test stack — isolated ports and volumes from dev preview.
-# Started by: npm run aih:test:stack:reset (project hesd-test)
+# Started by: npm run aih:test:stack:reset (project attendly-test)
 name: attendly-test
 
 services:
@@ -8,11 +8,11 @@ services:
     ports:
       - "5433:5432"
     environment:
-      POSTGRES_USER: hesd
-      POSTGRES_PASSWORD: hesd
-      POSTGRES_DB: hesd_test
+      POSTGRES_USER: attendly
+      POSTGRES_PASSWORD: attendly
+      POSTGRES_DB: attendly_test
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U hesd -d hesd_test"]
+      test: ["CMD-SHELL", "pg_isready -U attendly -d attendly_test"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -33,8 +33,8 @@ services:
     ports:
       - "9002:9000"
     environment:
-      MINIO_ROOT_USER: hesd
-      MINIO_ROOT_PASSWORD: hesdhesd
+      MINIO_ROOT_USER: attendly
+      MINIO_ROOT_PASSWORD: attendlyattendly
     command: server /data --console-address ":9001"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
