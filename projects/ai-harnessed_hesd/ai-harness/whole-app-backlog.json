@@ -520,7 +520,8 @@
           "AC-09",
           "AC-10",
           "FR-24",
-          "FR-25"
+          "FR-25",
+          "FR-35"
         ]
       },
       "history": [
@@ -546,6 +547,12 @@
           "at": "2026-07-02T11:21:46Z",
           "kind": "drift",
           "reason": "Doc drift for FR-25 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T11:46:00Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-35 — reverify after TestGen",
           "source": "harness"
         }
       ]
