@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-02T08:38:29Z",
+  "generatedAt": "2026-07-02T08:41:46Z",
   "repoRoot": "/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd",
   "inputMode": "flexible",
   "zones": {
@@ -12,6 +12,8 @@
     "brds": [
       "docs/brds/00-project-overview.md",
       "docs/brds/01-stakeholders-scope.md",
+      "docs/brds/02-business-workflow.md",
+      "docs/brds/03-functional-requirements.md",
       "docs/brds/prompt.md"
     ],
     "technical": [],
@@ -60,6 +62,20 @@
       "lines": 154,
       "hasRequirementIds": true,
       "outlineKey": "docs/brds/01-stakeholders-scope.md"
+    },
+    {
+      "path": "docs/brds/02-business-workflow.md",
+      "zone": "brds",
+      "lines": 352,
+      "hasRequirementIds": true,
+      "outlineKey": "docs/brds/02-business-workflow.md"
+    },
+    {
+      "path": "docs/brds/03-functional-requirements.md",
+      "zone": "brds",
+      "lines": 463,
+      "hasRequirementIds": true,
+      "outlineKey": "docs/brds/03-functional-requirements.md"
     },
     {
       "path": "docs/brds/prompt.md",
@@ -268,6 +284,8 @@
   "seedPaths": [
     "docs/brds/00-project-overview.md",
     "docs/brds/01-stakeholders-scope.md",
+    "docs/brds/02-business-workflow.md",
+    "docs/brds/03-functional-requirements.md",
     "docs/brds/prompt.md",
     "docs/initial-idea.md",
     "docs/product-meta.json",
