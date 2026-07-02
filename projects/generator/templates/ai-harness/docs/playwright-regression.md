@@ -105,7 +105,7 @@ CI cannot use physical cameras, live GPS, or other hardware-dependent APIs. Appr
 
 | Hook | Purpose |
 | --- | --- |
-| `window.__PRODUCT_TEST__` namespace | Inject inputs without hardware (e.g. `simulateQrDecode(raw)`) |
+| `window.__PRODUCT_TEST__` namespace | Inject inputs without hardware (e.g. `simulateExternalInput(payload)`) |
 | `page.addInitScript` | Stub `navigator.geolocation`, `permissions.query`, `getUserMedia` |
 | `page.route('**/api/...')` | Stub API responses for outcome paths |
 | `loginViaApi(page, …)` | Fast auth via API instead of form login |

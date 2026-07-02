@@ -7,6 +7,9 @@ const ERROR_MESSAGES: Record<string, string> = {
   [ErrorCode.Unauthenticated]: "Yêu cầu đăng nhập.",
   [ErrorCode.Forbidden]: "Không có quyền thực hiện thao tác này.",
   [ErrorCode.OutOfScope]: "Dữ liệu nằm ngoài phạm vi được phép.",
+  [ErrorCode.ExpiredQr]:
+    "Mã QR đã hết hạn. Vui lòng quét mã QR hiện tại trên màn hình giảng viên.",
+  [ErrorCode.DuplicateCheckIn]: "Bạn đã điểm danh buổi học này rồi.",
 };
 
 export function resolveRequestId(request: FastifyRequest): string {

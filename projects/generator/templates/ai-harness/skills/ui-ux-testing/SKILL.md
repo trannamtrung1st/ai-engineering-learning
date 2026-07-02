@@ -60,7 +60,7 @@ Each logged bug must include:
 
 1. **title** — one line summary
 2. **severity** — P0 | P1 | P2 | P3
-3. **page** — URL path (e.g. `/events`)
+3. **page** — URL path (e.g. `/dashboard`)
 4. **screenshot** — absolute path under `ai-harness/generated/runs/screenshots/<slice-id>/browser-test/`
 5. **repro** — numbered steps
 6. **expected** — what should happen per docs/quality bar

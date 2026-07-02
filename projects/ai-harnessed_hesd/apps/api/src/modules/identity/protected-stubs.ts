@@ -58,11 +58,6 @@ export async function registerProtectedRouteStubs(
     resolveScope: paramsSessionId,
   });
 
-  const guardCheckIn = createAuthorizeGuard(services, {
-    resource: "CheckInSubmit",
-    action: "execute",
-  });
-
   const emptyList = { items: [], pagination: { page: 1, pageSize: 25, totalItems: 0, totalPages: 0 } };
 
   app.get(
@@ -115,11 +110,4 @@ export async function registerProtectedRouteStubs(
     },
   );
 
-  app.post(
-    "/check-ins",
-    { preHandler: combineGuards(authenticate, guardCheckIn) },
-    async (request, reply) => {
-      sendApiSuccess(reply, request, 501, { outcome: "NotImplemented" });
-    },
-  );
 }

@@ -509,7 +509,7 @@
     },
     {
       "id": "module-check-in-and-qr-orchestrator",
-      "passes": false,
+      "passes": true,
       "priority": 10,
       "phase": 1,
       "agent": "backend",
@@ -529,13 +529,21 @@
       ],
       "description": "Deliver QR issuance and check-in decision pipeline with strict validation order, one-success constraint, and attempt outcome persistence.",
       "completionArtifacts": [
-        "POST /v1/check-ins endpoint with deterministic rule ordering",
-        "QR token issuance and validation services",
-        "Structured outcome-code persistence for all attempts"
+        "apps/api/src/modules/check-in-and-qr-orchestrator",
+        "apps/api/src/app.ts",
+        "apps/api/src/modules/identity/protected-stubs.ts",
+        "apps/api/src/modules/identity/http.ts"
       ],
       "testRequirements": {
+        "unit": [
+          "apps/api/src/modules/check-in-and-qr-orchestrator/validation.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/modules/check-in-and-qr-orchestrator/check-in-and-qr-orchestrator.integration.test.ts"
+        ],
         "acceptanceTags": [
           "AC-02",
+          "AC-08",
           "BR-03",
           "BR-07",
           "FR-11",
