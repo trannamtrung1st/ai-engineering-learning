@@ -493,7 +493,7 @@
     },
     {
       "id": "harness-context-maps",
-      "passes": false,
+      "passes": true,
       "priority": 42,
       "phase": 4,
       "kind": "agent",

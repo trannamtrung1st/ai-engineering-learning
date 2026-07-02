@@ -4,43 +4,68 @@
     "docs/technical/11-testing-plan.md"
   ],
   "generationNotes": [
-    "TestGen emits integration, e2e (API), and browser (MCP checklist) layers only. Executable Playwright UI specs in tests/playwright-ui/scenarios/ are owned by the browser test agent codegen step — do not duplicate Playwright UI automation as layer:e2e cases in TestGen artifacts.",
+    "TestGen emits integration, e2e (API), and browser (MCP checklist) layers only. Executable Playwright UI specs in tests/playwright-ui/scenarios/ are owned by the browser test agent codegen step \u2014 do not duplicate Playwright UI automation as layer:e2e cases in TestGen artifacts.",
     "Harness planner regenerates rules[] from actual AC/FR/NFR tags in generated BRDs. coverageHints must reference routes and roles from product specs, not template literals."
   ],
   "rules": [
     {
-      "match": "^AC-.*$",
+      "match": "^AC-[0-9]+$",
       "docs": [
         "docs/brds/08-acceptance-mvp-future.md",
-        "docs/technical/05-api-design.md"
-      ],
-      "coverageHints": [
-        "integration: paginated list returns correct total, pageSize, and page-2 slice boundaries",
-        "pagination: invalid page/pageSize returns documented error code"
-      ]
-    },
-    {
-      "match": "^FR-.*$",
-      "docs": [
-        "docs/brds/03-functional-requirements.md",
         "docs/technical/05-api-design.md",
-        "docs/technical/02-module-breakdown.md"
-      ]
-    },
-    {
-      "match": "^NFR-.*$",
-      "docs": [
-        "docs/brds/07-non-functional-risk.md",
         "docs/technical/01-roles-permissions.md"
       ],
       "coverageHints": [
-        "rbac-negative: denied role cannot access privileged routes per 01-roles-permissions.md",
-        "browser-journey: primary user flow from 10-user-flows.md — navigate, act, verify visible state",
-        "http-contract: API endpoints referenced in flow return expected status codes"
+        "integration: AC-01/AC-05 using POST /v1/class-sessions/{sessionId}/open and /close by Lecturer role",
+        "integration: AC-08 duplicate prevention on POST /v1/check-ins for Student role",
+        "api-e2e: AC-15/AC-16 enforce role scope on GET /v1/reports/attendance and POST /v1/exports/attendance"
+      ]
+    },
+    {
+      "match": "^FR-[0-9]+$",
+      "docs": [
+        "docs/brds/03-functional-requirements.md",
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/05-api-design.md"
+      ],
+      "coverageHints": [
+        "http-contract: FR-15 and FR-36 with POST /v1/auth/login then GET /v1/me",
+        "http-contract: FR-04 enrollment import on POST /v1/enrollments/import with row-level rejection assertions",
+        "http-contract: FR-19 live roster payload shape from GET /v1/class-sessions/{sessionId}/attendance"
+      ]
+    },
+    {
+      "match": "^BR-[0-9]+$",
+      "docs": [
+        "docs/brds/04-business-rules.md",
+        "docs/technical/08-validation-rules.md",
+        "docs/technical/05-api-design.md"
+      ],
+      "coverageHints": [
+        "rule-order: BR-01..BR-10 short-circuit behavior for POST /v1/check-ins",
+        "idempotency: BR-07 one-success-per-session enforced with duplicate replay attempts",
+        "authorization: BR-18 and BR-19 role-scope denials for Student and cross-scope Lecturer access"
+      ]
+    },
+    {
+      "match": "^NFR-[0-9]+$",
+      "docs": [
+        "docs/brds/07-non-functional-risk.md",
+        "docs/technical/11-testing-plan.md",
+        "docs/technical/01-roles-permissions.md"
+      ],
+      "coverageHints": [
+        "performance-smoke: NFR-01 and NFR-03 against POST /v1/check-ins under class-start concurrency",
+        "rbac-negative: NFR-09 deny Student on GET /v1/audit-logs and out-of-scope Lecturer exports",
+        "audit-completeness: NFR-13 verifies failed check-ins and manual corrections are queryable via GET /v1/audit-logs"
       ]
     }
   ],
   "prefixDefaults": {
+    "AC": [
+      "docs/brds/08-acceptance-mvp-future.md",
+      "docs/technical/05-api-design.md"
+    ],
     "FR": [
       "docs/brds/03-functional-requirements.md",
       "docs/technical/05-api-design.md"
@@ -50,6 +75,9 @@
       "docs/technical/08-validation-rules.md",
       "docs/technical/03-domain-model.md"
     ],
-    "NFR": ["docs/brds/07-non-functional-risk.md"]
+    "NFR": [
+      "docs/brds/07-non-functional-risk.md",
+      "docs/technical/11-testing-plan.md"
+    ]
   }
 }
