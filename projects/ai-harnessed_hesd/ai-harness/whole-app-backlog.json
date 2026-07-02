@@ -831,18 +831,65 @@
       ],
       "description": "Implement lecturer session operations page with open/close controls, rotating QR display, and visible session-state feedback.",
       "completionArtifacts": [
-        "Session list and control actions",
-        "Projection-friendly QR panel with rotation indicator",
-        "Transition and conflict error handling in UI"
+        "apps/web/src/routes/router.tsx",
+        "apps/web/src/routes/StaffLayout.tsx",
+        "apps/web/src/routes/pages/LecturerSessionsListPage.tsx",
+        "apps/web/src/routes/pages/LecturerSessionsListPage.module.css",
+        "apps/web/src/routes/pages/LecturerSessionPage.tsx",
+        "apps/web/src/routes/pages/LecturerSessionPage.module.css",
+        "apps/web/src/routes/pages/LoginPage.tsx",
+        "apps/web/src/routes/pages/DesignSystemPage.tsx",
+        "apps/web/src/components/domain/LecturerSessionList.tsx",
+        "apps/web/src/components/domain/LecturerSessionList.module.css",
+        "apps/web/src/components/domain/SessionControlBar.tsx",
+        "apps/web/src/components/domain/SessionControlBar.module.css",
+        "apps/web/src/components/ui/TableToolbar.tsx",
+        "apps/web/src/components/ui/TableToolbar.module.css",
+        "apps/web/src/lib/api/session-api.ts",
+        "apps/web/src/lib/api/seed-fixtures.ts",
+        "apps/web/src/lib/auth/staff-gate.ts",
+        "apps/web/src/lib/listing/session-list-query.ts",
+        "apps/api/src/modules/session-lifecycle/routes.ts",
+        "apps/api/src/modules/session-lifecycle/repository.ts",
+        "apps/api/src/modules/session-lifecycle/types.ts"
       ],
       "testRequirements": {
         "acceptanceTags": [
+          "AC-01",
           "AC-02",
           "AC-06",
           "FR-07",
           "FR-14"
+        ],
+        "unit": [
+          "apps/web/src/lib/api/session-api.test.ts",
+          "apps/web/src/lib/listing/session-list-query.test.ts"
+        ],
+        "component": [
+          "apps/web/src/components/domain/LecturerSessionList.test.tsx",
+          "apps/web/src/components/domain/SessionControlBar.test.tsx"
+        ],
+        "integration": [
+          "apps/api/src/modules/session-lifecycle/session-lifecycle.integration.test.ts"
+        ],
+        "playwright": [
+          "tests/playwright-ui/scenarios/web-lecturer-session-control.spec.ts"
         ]
-      }
+      },
+      "history": [
+        {
+          "at": "2026-07-02T18:47:17Z",
+          "kind": "gate_failed",
+          "reason": "Browser test failed — see 20260702T182222Z-browser-test.json",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T18:53:31Z",
+          "kind": "gate_failed",
+          "reason": "Computational checks failed — see 20260702T184717Z-checks.json",
+          "source": "harness"
+        }
+      ]
     },
     {
       "id": "web-lecturer-live-roster-fallback",

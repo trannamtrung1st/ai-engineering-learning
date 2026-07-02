@@ -43,6 +43,21 @@
         "TC-FR-37-015"
       ],
       "updatedAt": "2026-07-02T18:20:26Z"
+    },
+    "web-lecturer-session-control": {
+      "specPath": "/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/tests/playwright-ui/scenarios/web-lecturer-session-control.spec.ts",
+      "lastRunId": "20260702T185331Z",
+      "testCount": 4,
+      "sourceTcIds": [
+        "TC-AC-01-008",
+        "TC-AC-02-010",
+        "TC-AC-06-007",
+        "TC-FR-07-012",
+        "TC-FR-14-011",
+        "TC-FR-14-012",
+        "TC-FR-14-013"
+      ],
+      "updatedAt": "2026-07-02T19:05:40Z"
     }
   }
 }
