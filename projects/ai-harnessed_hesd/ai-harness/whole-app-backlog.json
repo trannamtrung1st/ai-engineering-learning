@@ -21,6 +21,19 @@
         "Monorepo workspace with backend, web, and shared package boundaries",
         "Root lint/typecheck/test scripts and CI entrypoints",
         "Shared DTO/error-code package scaffold"
+      ],
+      "testRequirements": {
+        "acceptanceTags": [
+          "FR-33"
+        ]
+      },
+      "history": [
+        {
+          "at": "2026-07-02T11:43:53Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-33 — reverify after TestGen",
+          "source": "harness"
+        }
       ]
     },
     {

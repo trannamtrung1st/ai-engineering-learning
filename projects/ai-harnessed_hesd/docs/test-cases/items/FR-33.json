@@ -1,0 +1,372 @@
+{
+  "productItemId": "FR-33",
+  "version": 1,
+  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+  "generatedAt": "2026-07-02T21:30:00Z",
+  "cases": [
+    {
+      "id": "TC-FR-33-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["FR-33", "AC-23", "NFR-09", "NFR-16"],
+      "title": "Scenario-matrix coverage for ITAdmin platform operations versus academic deny-by-default",
+      "preconditions": [
+        "Testing-plan §7.3 security and authorization tests and AC-23 security/scope gate apply.",
+        "Role-matrix fixture provides ITAdmin without explicit academic access grant and AcademicAdmin as control.",
+        "Platform health endpoint, technical audit logs, and academic resources (session roster, report, enrollment import) exist in test environment."
+      ],
+      "steps": [
+        "As ITAdmin, call GET /v1/health and GET /v1/me to verify platform operations identity context.",
+        "As ITAdmin, call GET /v1/audit-logs filtered to technical action types (login_lock, system_config, infrastructure).",
+        "As ITAdmin, attempt academic routes: GET /v1/reports/attendance, POST /v1/enrollments/import, GET /v1/class-sessions/{sessionId}/attendance, PATCH attendance correction.",
+        "As ITAdmin, attempt POST /v1/class-sessions/{sessionId}/open and POST /v1/check-ins.",
+        "As AcademicAdmin control, verify allowed academic routes succeed within institution scope."
+      ],
+      "expected": "Maps to testing-plan §7.3 and AC-23 six-role matrix: ITAdmin succeeds on platform operations (health, technical audit, SystemOps) and is denied on academic mutations and bulk attendance reads without explicit grant per permissions matrix §3.1–3.2 and §5.5.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-33-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-33", "FR-36"],
+      "title": "M01 SystemOps and user role provisioning enforce ITAdmin technical boundary at DB layer",
+      "preconditions": [
+        "Integration database seeded with users, user_role_assignments, and attendance records.",
+        "M01 Identity and Access module authorize(action, resource, scopeContext) and user provisioning service use real DB transactions.",
+        "ITAdmin actor exists without academic scope grant; target Student user exists for provisioning test."
+      ],
+      "steps": [
+        "Invoke M01 authorize for ITAdmin with SystemOps.execute; assert Allow.",
+        "Invoke M01 provisionUserRole or equivalent provisioning command to assign Lecturer role to existing user with scope; commit transaction.",
+        "Query user_role_assignments and audit_logs for provisioning event.",
+        "Invoke M01 authorize for ITAdmin with AttendanceRecord.update; assert Deny.",
+        "Attempt attendance correction service call as ITAdmin and confirm no attendance_records mutation."
+      ],
+      "expected": "M01 module boundary permits SystemOps.execute and user account provisioning integration for ITAdmin; AttendanceRecord.update is denied at authorize; provisioning writes user_role_assignments with audit trail; no attendance_records rows are mutated per FR-33 and permissions matrix §3.2.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-33-003",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-33", "FR-15", "FR-36"],
+      "title": "HTTP contract for ITAdmin POST /v1/auth/login then GET /v1/me returns technical operations role claims",
+      "preconditions": [
+        "Provisioned ITAdmin account with institution-issued credentials exists.",
+        "No active bearer token is held by the test client."
+      ],
+      "steps": [
+        "Send POST /v1/auth/login with ITAdmin email and password.",
+        "Assert HTTP 200 with data.accessToken, data.expiresInSeconds, and data.roles containing ITAdmin.",
+        "Send GET /v1/me with Authorization Bearer accessToken from login response.",
+        "Assert HTTP 200 with actor identity, ITAdmin role, and technical scope claims (no academic facultyId or classSectionId grants unless explicitly provisioned).",
+        "Verify response envelope matches standard { data, meta, error } shape with error null."
+      ],
+      "expected": "Login returns HTTP 200 with accessToken and ITAdmin role per FR-36; GET /v1/me returns HTTP 200 with ITAdmin identity and technical scope context required for platform operations per FR-33 and API §4.1.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-33-004",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-33", "NFR-16"],
+      "title": "HTTP contract for ITAdmin GET /v1/health returns system health status envelope",
+      "preconditions": [
+        "API service is running with postgres and redis dependencies healthy.",
+        "ITAdmin is authenticated with valid bearer token."
+      ],
+      "steps": [
+        "Send GET /v1/health with ITAdmin Authorization header.",
+        "Assert HTTP 200 and standard response envelope.",
+        "Assert data.status is ok and dependency indicators (db, cache) report connected or healthy state.",
+        "Verify meta.requestId and meta.timestamp are present.",
+        "Send GET /v1/health without Authorization and confirm health remains accessible for operational monitoring per platform reliability requirements."
+      ],
+      "expected": "GET /v1/health returns HTTP 200 with documented health payload including service and dependency status per FR-33 system health views and NFR-16 operational telemetry alignment.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-33-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-33", "FR-30", "NFR-16"],
+      "title": "HTTP contract for ITAdmin GET /v1/audit-logs returns technical operational log envelope",
+      "preconditions": [
+        "ITAdmin is authenticated with bearer token.",
+        "Fixture includes technical audit entries (login_lock, system_config, infrastructure) and academic attendance mutation entries.",
+        "Known actionType values exist for technical and academic event filters."
+      ],
+      "steps": [
+        "Send GET /v1/audit-logs?actionType=login_lock&page=1&pageSize=25 with ITAdmin Authorization header.",
+        "Assert HTTP 200 and standard response envelope with data.items array and meta.pagination.",
+        "Validate technical audit items include actorUserId, occurredAt, actionType, and targetType without academic PII beyond operational context.",
+        "Send GET /v1/audit-logs?actionType=attendance_status_mutation as ITAdmin without academic grant.",
+        "Inspect response for technical-scope filtering or HTTP 403 without academic mutation payload leakage."
+      ],
+      "expected": "Technical operational logs return HTTP 200 with paginated audit entries per API §4.7; academic mutation queries are filtered or denied for ITAdmin without explicit grant per FR-33 operational logs scope and permissions matrix AuditLog.read (technical audit only).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-33-006",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-33", "FR-04", "BR-06"],
+      "title": "HTTP contract for ITAdmin POST /v1/enrollments/import denied before row processing",
+      "preconditions": [
+        "ITAdmin is authenticated without academic enrollment import grant.",
+        "Class section with known classSectionId exists.",
+        "Import payload contains valid and invalid student rows."
+      ],
+      "steps": [
+        "Send POST /v1/enrollments/import for classSectionId with mixed valid and invalid rows as ITAdmin.",
+        "Assert HTTP 403 Forbidden or OutOfScope before row-level processing begins.",
+        "Verify no enrollments are persisted and no row-level acceptance or rejection summary is returned.",
+        "Query enrollments table for classSectionId and confirm zero new rows from ITAdmin attempt.",
+        "As AcademicAdmin control, send same import and verify HTTP 200 with row-level rejection assertions for invalid rows per FR-04."
+      ],
+      "expected": "ITAdmin enrollment import is denied at authorization boundary with HTTP 403; no row-level processing or enrollment mutations occur; AcademicAdmin control demonstrates FR-04 row-level rejection behavior separately.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-33-007",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-33", "FR-19", "BR-19"],
+      "title": "HTTP contract for ITAdmin GET /v1/class-sessions/{sessionId}/attendance denied without academic grant",
+      "preconditions": [
+        "ITAdmin is authenticated without explicit academic access grant.",
+        "Open class session exists with mixed Present, Late, Pending, and rejected attempt outcomes.",
+        "sessionId for in-scope session is known; Lecturer assigned to section is available as authorized control."
+      ],
+      "steps": [
+        "Send GET /v1/class-sessions/{sessionId}/attendance with ITAdmin Authorization header.",
+        "Assert HTTP 403 Forbidden or OutOfScope.",
+        "Verify response data is null and no partial roster rows (studentCode, attendanceStatus, latestAttemptOutcome) are disclosed.",
+        "As assigned Lecturer control, send GET /v1/class-sessions/{sessionId}/attendance and validate HTTP 200 with documented live roster payload shape per API §4.5.",
+        "Confirm ITAdmin denial does not alter session state or attendance records."
+      ],
+      "expected": "ITAdmin live roster request returns HTTP 403 without partial data disclosure per FR-33 academic edits out of scope; Lecturer control returns HTTP 200 with FR-19 roster payload shape.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-33-008",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["FR-33", "NFR-16", "AC-23"],
+      "title": "Primary IT Admin platform operations workflow: authenticate, verify health, review technical audit logs",
+      "preconditions": [
+        "ITAdmin is provisioned with institution-issued credentials.",
+        "Platform is running with healthy dependencies and recent technical audit events (login throttles, config changes).",
+        "No explicit academic access grant is assigned to ITAdmin actor."
+      ],
+      "steps": [
+        "ITAdmin completes POST /v1/auth/login and GET /v1/me to establish authenticated session.",
+        "ITAdmin calls GET /v1/health and records service status and dependency health indicators.",
+        "ITAdmin queries GET /v1/audit-logs with technical actionType and date range filters for operational triage.",
+        "ITAdmin attempts GET /v1/reports/attendance and PATCH attendance correction to confirm academic boundary.",
+        "Verify all platform operations succeed and all academic mutations are denied without data leakage."
+      ],
+      "expected": "End-to-end IT Admin happy path per FR-33: technical configuration visibility (health), operational log review, and identity context succeed; academic attendance edits and reports remain denied per permissions matrix §5.5 and AC-23.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-33-009",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P1",
+      "traceability": ["FR-33", "FR-36"],
+      "title": "Alternate path: ITAdmin admin-assisted account recovery and role provisioning integration",
+      "preconditions": [
+        "ITAdmin is authenticated with SystemOps.execute permission.",
+        "Student account exists in locked or throttled state after repeated failed logins per FR-36 security policy.",
+        "New Lecturer user record exists without role assignment."
+      ],
+      "steps": [
+        "ITAdmin queries GET /v1/audit-logs for login_lock or authentication_failure events for the locked student account.",
+        "ITAdmin executes admin-assisted account unlock or password reset via provisioning integration command (MVP: admin-assisted reset acceptable per FR-36).",
+        "ITAdmin provisions Lecturer role assignment for new user via user account provisioning integration.",
+        "Verify student can POST /v1/auth/login successfully after unlock.",
+        "Query audit_logs for provisioning and account recovery events with ITAdmin as actor."
+      ],
+      "expected": "Alternate IT Admin workflow completes user account provisioning integration and admin-assisted recovery per FR-33 and FR-36; all privileged actions produce audit entries with ITAdmin actor; no attendance record mutations occur.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-33-010",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-c",
+      "priority": "P1",
+      "traceability": ["FR-33", "FR-30", "NFR-16"],
+      "title": "Flow C audit verification: ITAdmin technical configuration change is recorded in operational logs",
+      "preconditions": [
+        "ITAdmin is authenticated with SystemOps.execute permission.",
+        "Login throttle or rate-limit configuration is modifiable by ITAdmin.",
+        "Baseline technical audit log count for system_config actionType is captured."
+      ],
+      "steps": [
+        "ITAdmin applies technical configuration change (e.g., login throttle threshold or session timeout) via SystemOps command.",
+        "ITAdmin queries GET /v1/audit-logs?actionType=system_config&actorUserId={itAdminId}.",
+        "Verify audit entry records ITAdmin actor, occurredAt, targetType, configuration key, and old/new values.",
+        "Attempt PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} as ITAdmin and confirm denial.",
+        "Re-query attendance_records to confirm no ITAdmin-initiated academic mutation."
+      ],
+      "expected": "Technical configuration change produces immutable audit evidence visible to ITAdmin in operational logs per FR-33 and NFR-16; ITAdmin cannot mutate attendance records; audit trail correlates config change actor and timestamp.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-33-011",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "pagination",
+      "priority": "P1",
+      "traceability": ["FR-33", "FR-30", "NFR-16"],
+      "title": "ITAdmin technical audit log pagination invariants at module boundary",
+      "preconditions": [
+        "Integration database contains more than 50 technical audit_logs rows (login_lock, system_config, infrastructure) and additional academic mutation rows.",
+        "M08 queryAuditLogs supports page and pageSize with ITAdmin technical-scope filter injection."
+      ],
+      "steps": [
+        "Query page 1 with pageSize=25 as ITAdmin and record meta.pagination.totalItems, totalPages, and item IDs.",
+        "Query page 2 with same technical filters and pageSize=25.",
+        "Query last page using totalPages from first response.",
+        "Verify returned items are limited to technical action types and contain no academic attendance mutation payloads without grant.",
+        "Confirm union of all page item IDs is disjoint across pages and totalItems excludes academic-only audit volume."
+      ],
+      "expected": "Pagination metadata is consistent within ITAdmin technical audit scope: totalItems reflects technical log count; pages are non-overlapping; academic mutation details are excluded per API §4.7 and permissions matrix AuditLog.read.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-33-012",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-33", "AC-23", "BR-19"],
+      "title": "ITAdmin denied academic attendance mutations, exports, and session control",
+      "preconditions": [
+        "ITAdmin is authenticated without explicit academic access grant.",
+        "Closed session with enrolled student and Absent AttendanceRecord exists.",
+        "Scheduled session exists; attendance report data spans institution scope."
+      ],
+      "steps": [
+        "Call PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Excused and reason as ITAdmin.",
+        "Call POST /v1/exports/attendance with format csv and term-wide filters as ITAdmin.",
+        "Call POST /v1/class-sessions/{scheduledSessionId}/open as ITAdmin.",
+        "Call POST /v1/check-ins with valid qrToken as ITAdmin.",
+        "Inspect each response for HTTP 403 Forbidden and verify AttendanceRecord, session state, and export jobs are unchanged."
+      ],
+      "expected": "All academic mutation endpoints return HTTP 403 Forbidden per permissions matrix §3.2 and §5.5; attendance status, session state, and export queue remain unchanged; no partial export artifact is returned per BR-19.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-33-013",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-33", "AC-16", "AC-23", "BR-19"],
+      "title": "ITAdmin denied institution-wide attendance report and export without elevated academic grant",
+      "preconditions": [
+        "ITAdmin is authenticated without explicit academic access grant.",
+        "Attendance data exists across institution scope for active term."
+      ],
+      "steps": [
+        "Call GET /v1/reports/attendance?termId={termId}&page=1&pageSize=25 as ITAdmin.",
+        "Call POST /v1/exports/attendance with term-wide csv filters as ITAdmin.",
+        "Call POST /v1/terms with new term payload as ITAdmin.",
+        "Call PATCH /v1/policies/{policyId} with modified GPS radius as ITAdmin.",
+        "Inspect HTTP status, error.code, and response body for restricted data leakage."
+      ],
+      "expected": "Report, export, term creation, and policy mutation requests return HTTP 403 Forbidden or OutOfScope; data is null; no partial attendance rows, student identifiers, or cross-scope totals are disclosed per AC-16, AC-23, and BR-19.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-33-014",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-33", "FR-29", "BR-19"],
+      "title": "ITAdmin academic audit query without explicit grant returns denial or technical-scope-only payload",
+      "preconditions": [
+        "Committed attendance mutation audit exists for known student-session pair with oldStatus, newStatus, and reason.",
+        "ITAdmin is authenticated without explicit academic access grant.",
+        "AcademicAdmin token is available as authorized control."
+      ],
+      "steps": [
+        "ITAdmin calls GET /v1/audit-logs?actionType=attendance_status_mutation&targetId={studentSessionTarget}.",
+        "Parse response for HTTP 403 or filtered technical-scope-only items without academic PII.",
+        "Verify response contains no oldStatus, newStatus, student identifiers, or reason text from academic mutation.",
+        "AcademicAdmin calls same query as control and validates full FR-29 audit fields.",
+        "Confirm ITAdmin query produces no attendance or audit mutations as side effect."
+      ],
+      "expected": "Academic mutation audit query short-circuits with HTTP 403 or returns technical-scope-only entries without academic mutation payload per API §4.7 and permissions matrix §5.5 exception rule; AcademicAdmin control returns full audit evidence.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-33-015",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-33", "FR-30", "NFR-16"],
+      "title": "ITAdmin browser journey reviews PG-15 operational audit logs with technical filter scope",
+      "preconditions": [
+        "ITAdmin is logged in on desktop browser.",
+        "PG-15 /audit/logs is reachable with TableToolbar, DataTable, and AuditEntryRow components.",
+        "Fixture provides technical audit entries (login_lock, system_config) within ITAdmin operational scope."
+      ],
+      "steps": [
+        "Navigate to /audit/logs and confirm audit log table loads with default timestamp desc sort.",
+        "Apply actionType filter for technical events (login_lock, system_config); verify table updates with scoped technical results.",
+        "Set from/to date range filters; confirm URL query params sync with toolbar state per PG-15 listing spec.",
+        "Navigate to page 2 via pagination controls if totalPages > 1.",
+        "Verify academic mutation edit controls are absent; AuditEntryRow displays operational fields read-only without attendance correction affordances."
+      ],
+      "expected": "PG-15 listing per FLOW-13 supports ITAdmin operational log review with filter, sort, and pagination; technical audit entries render read-only; academic write controls are hidden per FR-33, NFR-16, and NFR-UI-03.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-33-016",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["FR-33", "FR-15", "FR-36", "AC-23"],
+      "title": "ITAdmin browser journey authenticates via PG-01 and confirms academic admin routes are gated",
+      "preconditions": [
+        "ITAdmin credentials are provisioned for institution-issued login.",
+        "PG-01 /login is reachable; PG-13 /reports/attendance and PG-10 enrollment import routes exist.",
+        "Attendance data and class sections exist for gating verification."
+      ],
+      "steps": [
+        "Navigate to /login, submit ITAdmin credentials via FRM-01, and confirm successful authentication redirect.",
+        "Verify post-login navigation exposes platform operations routes (audit logs) and hides or denies academic setup write routes (terms, policies, enrollment import).",
+        "Attempt direct URL navigation to /reports/attendance and observe access-denied or empty scoped state without institution-wide rows.",
+        "Attempt direct URL navigation to /admin/class-sections/{id}/enrollments import view and observe access denial.",
+        "Confirm PG-01 locked/throttled state messaging is available for failed login attempts per FR-36 security policy."
+      ],
+      "expected": "FLOW-14 staff authentication succeeds for ITAdmin; academic listing and import routes show access denial or hidden write controls without cross-scope data per FR-33, FR-36, and AC-23; login form displays neutral throttle messaging on repeated failures.",
+      "edgeCase": false
+    }
+  ]
+}
