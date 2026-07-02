@@ -11,6 +11,9 @@
   "engines": {
     "node": ">=20"
   },
+  "devDependencies": {
+    "pg": "^8.13.1"
+  },
   "scripts": {
     "typecheck": "npm run typecheck -ws --if-present",
     "lint": "npm run lint -ws --if-present",
@@ -35,8 +38,8 @@
     "aih:run-check": "./ai-harness/scripts/run-logged-check.sh",
     "aih:browser-test": "./ai-harness/scripts/run-browser-test.sh",
     "aih:review": "./ai-harness/scripts/run-ai-review.sh",
-    "aih:dev:db:up": "docker compose up -d db",
-    "aih:dev:db:down": "docker compose stop db",
+    "aih:dev:db:up": "docker compose up -d db redis",
+    "aih:dev:db:down": "docker compose stop db redis",
     "aih:test:stack:up": "./ai-harness/scripts/test-stack.sh up",
     "aih:test:stack:reset": "./ai-harness/scripts/test-stack.sh reset",
     "aih:test:stack:down": "./ai-harness/scripts/test-stack.sh down",
@@ -55,6 +58,10 @@
     "aih:testgen:enhance": "./ai-harness/scripts/testgen-enhance.sh",
     "aih:testgen:drift": "./ai-harness/scripts/check-test-case-drift.sh",
     "aih:testgen:validate": "./ai-harness/scripts/validate-test-cases.sh",
-    "aih:testgen:audit": "./ai-harness/scripts/audit-test-coverage.sh"
+    "aih:testgen:audit": "./ai-harness/scripts/audit-test-coverage.sh",
+    "db:migrate": "node scripts/db-migrate.mjs",
+    "db:seed": "node scripts/db-seed.mjs",
+    "db:reset": "./scripts/local-runtime-reset.sh",
+    "db:reset:hard": "./scripts/local-runtime-reset.sh --hard"
   }
 }

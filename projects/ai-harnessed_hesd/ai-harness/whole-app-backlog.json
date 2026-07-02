@@ -56,7 +56,7 @@
     },
     {
       "id": "infra-local-runtime-compose",
-      "passes": false,
+      "passes": true,
       "priority": 2,
       "phase": 0,
       "agent": "infra",
@@ -74,9 +74,19 @@
       ],
       "description": "Provision local Docker runtime with postgres, redis, api, and web services, including health checks and migration/seed hooks.",
       "completionArtifacts": [
-        "Docker compose profiles for dev and test stacks",
-        "Container health checks and startup order enforcement",
-        "Documented reset and reseed workflow"
+        "docker-compose.yml",
+        "docker-compose.test.yml",
+        "apps/api/Dockerfile",
+        "apps/api/package.json",
+        "apps/api/src/app.ts",
+        "apps/api/src/infra",
+        "apps/web/Dockerfile",
+        "scripts/db-migrate.mjs",
+        "scripts/db-seed.mjs",
+        "scripts/local-runtime-reset.sh",
+        "docs/technical/local-runtime-reset.md",
+        "package.json",
+        ".env.example"
       ],
       "history": [
         {
@@ -111,9 +121,19 @@
         }
       ],
       "testRequirements": {
+        "unit": [
+          "apps/api/src/infra/compose-config.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/infra/compose-runtime.integration.test.ts",
+          "apps/api/src/infra/compose-traceability.integration.test.ts"
+        ],
         "acceptanceTags": [
           "FR-07",
-          "FR-16"
+          "FR-16",
+          "AC-01",
+          "AC-11",
+          "NFR-16"
         ]
       }
     },

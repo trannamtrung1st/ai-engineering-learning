@@ -77,3 +77,5 @@
 - 2026-07-02T12:36:46Z | NFR-16 | testgen_passed
 - 2026-07-02T12:43:26Z | infra-monorepo-foundation | implementer: monorepo bootstrap — apps/api, apps/web, packages/domain, packages/config, .github/workflows/ci.yml — checks: full profile pass
 - 2026-07-02T12:47:30Z | infra-monorepo-foundation | passed
+- 2026-07-02T12:55:56Z | infra-local-runtime-compose | implementer: docker-compose.yml + docker-compose.test.yml (db/redis/minio health checks, full-preview profile) — migrate/seed hooks — local-runtime-reset docs — checks: full profile pass
+- 2026-07-02T12:59:55Z | infra-local-runtime-compose | passed
