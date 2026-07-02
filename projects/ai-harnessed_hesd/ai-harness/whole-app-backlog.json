@@ -1,0 +1,511 @@
+{
+  "branchName": "aih/attendly-mvp",
+  "slices": [
+    {
+      "id": "infra-monorepo-foundation",
+      "passes": false,
+      "priority": 1,
+      "phase": 0,
+      "agent": "infra",
+      "acceptance": ["FR-33", "NFR-16"],
+      "docs": [
+        "docs/technical/00-system-overview.md",
+        "docs/technical/10-local-development-setup.md",
+        "docs/technical/12-backend-frontend-tech-stack.md"
+      ],
+      "description": "Bootstrap repository structure, shared TypeScript configs, package scripts, and baseline quality gates for backend/frontend/test workstreams.",
+      "completionArtifacts": [
+        "Monorepo workspace with backend, web, and shared package boundaries",
+        "Root lint/typecheck/test scripts and CI entrypoints",
+        "Shared DTO/error-code package scaffold"
+      ]
+    },
+    {
+      "id": "infra-local-runtime-compose",
+      "passes": false,
+      "priority": 2,
+      "phase": 0,
+      "agent": "infra",
+      "acceptance": ["FR-07", "FR-16", "AC-01", "AC-11", "NFR-16"],
+      "docs": [
+        "docs/technical/10-local-development-setup.md",
+        "docs/technical/13-docker-compose-local-runtime.md",
+        "docs/technical/04-database-design.md"
+      ],
+      "description": "Provision local Docker runtime with postgres, redis, api, and web services, including health checks and migration/seed hooks.",
+      "completionArtifacts": [
+        "Docker compose profiles for dev and test stacks",
+        "Container health checks and startup order enforcement",
+        "Documented reset and reseed workflow"
+      ]
+    },
+    {
+      "id": "infra-database-migrations",
+      "passes": false,
+      "priority": 3,
+      "phase": 0,
+      "agent": "infra",
+      "acceptance": ["FR-04", "FR-18", "BR-06", "BR-07", "NFR-07"],
+      "docs": [
+        "docs/technical/03-domain-model.md",
+        "docs/technical/04-database-design.md",
+        "docs/brds/06-domain-model.md"
+      ],
+      "description": "Implement baseline schema, constraints, and migrations for identity, academic structure, session, attendance, policy, and audit entities.",
+      "completionArtifacts": [
+        "Initial migration chain with core tables and enums",
+        "Unique and foreign key constraints from domain invariants",
+        "Seed fixtures for term/course/section/session roles"
+      ]
+    },
+    {
+      "id": "playwright-ui-workspace",
+      "passes": false,
+      "priority": 6,
+      "phase": 0,
+      "agent": "infra",
+      "acceptance": ["AC-01", "AC-11", "AC-16", "NFR-14"],
+      "docs": [
+        "docs/technical/11-testing-plan.md",
+        "docs/ui-ux/00-production-ui-quality-bar.md",
+        "docs/ui-ux/02-ui-framework-tech-stack.md"
+      ],
+      "description": "Set up dedicated Playwright UI regression workspace and wiring for browser-driven visual and interaction verification on key user flows.",
+      "completionArtifacts": [
+        "tests/playwright-ui workspace with config and runners",
+        "Base fixtures for student and lecturer smoke journeys",
+        "CI target for UI regression execution"
+      ],
+      "testRequirements": [
+        "Run playwright-ui smoke suite in CI on pull requests",
+        "Capture trace/video artifacts for failed regression runs"
+      ]
+    },
+    {
+      "id": "module-identity-and-access",
+      "passes": false,
+      "priority": 7,
+      "phase": 1,
+      "agent": "backend",
+      "acceptance": ["FR-15", "FR-31", "FR-32", "BR-19", "NFR-09"],
+      "docs": [
+        "docs/technical/01-roles-permissions.md",
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/05-api-design.md"
+      ],
+      "description": "Build authentication context resolution and role/scope authorization middleware for all protected API endpoints.",
+      "completionArtifacts": [
+        "Auth and authorization guards with scope evaluation",
+        "GET /v1/me actor context endpoint",
+        "Consistent Forbidden and OutOfScope error mapping"
+      ]
+    },
+    {
+      "id": "module-academic-structure",
+      "passes": false,
+      "priority": 8,
+      "phase": 1,
+      "agent": "backend",
+      "acceptance": ["FR-01", "FR-04", "FR-06", "BR-06", "AC-07"],
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/04-database-design.md"
+      ],
+      "description": "Implement term/course/section/room/enrollment APIs including CSV import with row-level validation and section ownership data.",
+      "completionArtifacts": [
+        "Academic CRUD endpoints and enrollment import endpoint",
+        "Enrollment validation helpers for check-in workflow",
+        "Import summary responses with row-level error reporting"
+      ]
+    },
+    {
+      "id": "module-session-lifecycle",
+      "passes": false,
+      "priority": 9,
+      "phase": 1,
+      "agent": "backend",
+      "acceptance": ["FR-07", "FR-08", "BR-01", "BR-02", "AC-01", "AC-05"],
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/07-state-machines.md",
+        "docs/technical/06-main-workflows.md"
+      ],
+      "description": "Implement class session open/close lifecycle with valid transition guards and idempotent command semantics.",
+      "completionArtifacts": [
+        "Open and close session command handlers",
+        "Session state transition validation and errors",
+        "Session close summary payload with counts"
+      ]
+    },
+    {
+      "id": "module-check-in-and-qr-orchestrator",
+      "passes": false,
+      "priority": 10,
+      "phase": 1,
+      "agent": "backend",
+      "acceptance": ["FR-11", "FR-18", "FR-22", "BR-03", "BR-07", "AC-02", "AC-08"],
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/08-validation-rules.md"
+      ],
+      "description": "Deliver QR issuance and check-in decision pipeline with strict validation order, one-success constraint, and attempt outcome persistence.",
+      "completionArtifacts": [
+        "POST /v1/check-ins endpoint with deterministic rule ordering",
+        "QR token issuance and validation services",
+        "Structured outcome-code persistence for all attempts"
+      ]
+    },
+    {
+      "id": "module-attendance-ledger",
+      "passes": false,
+      "priority": 11,
+      "phase": 1,
+      "agent": "backend",
+      "acceptance": ["FR-09", "FR-20", "FR-21", "BR-13", "BR-14", "AC-12", "AC-13"],
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/07-state-machines.md",
+        "docs/technical/06-main-workflows.md"
+      ],
+      "description": "Implement attendance record write paths for success, close-time absent finalization, and lecturer/admin manual corrections.",
+      "completionArtifacts": [
+        "Attendance upsert logic with status transitions",
+        "Manual correction endpoint with policy window checks",
+        "Close-time unresolved enrollment finalizer"
+      ]
+    },
+    {
+      "id": "module-policy-engine",
+      "passes": false,
+      "priority": 12,
+      "phase": 1,
+      "agent": "backend",
+      "acceptance": ["FR-24", "FR-25", "FR-35", "BR-20", "AC-09", "AC-10"],
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/08-validation-rules.md",
+        "docs/brds/04-business-rules.md"
+      ],
+      "description": "Implement effective policy resolution and policy-aware validation inputs for check-in windows, GPS requirements, and manual edit constraints.",
+      "completionArtifacts": [
+        "Scoped policy storage and precedence resolver",
+        "Runtime policy snapshot helper for session/check-in",
+        "Policy validation utilities for GPS and edit window logic"
+      ]
+    },
+    {
+      "id": "module-reporting-and-export",
+      "passes": false,
+      "priority": 13,
+      "phase": 1,
+      "agent": "backend",
+      "acceptance": ["FR-27", "FR-28", "BR-18", "BR-19", "AC-15", "AC-16", "AC-17"],
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/06-main-workflows.md"
+      ],
+      "description": "Build role-scoped attendance report and CSV export endpoints with strict filter validation and no cross-scope data leakage.",
+      "completionArtifacts": [
+        "Paginated report query endpoint",
+        "CSV export job endpoint and metadata responses",
+        "Scope-filter enforcement shared by report/export paths"
+      ]
+    },
+    {
+      "id": "module-audit-and-compliance",
+      "passes": false,
+      "priority": 14,
+      "phase": 1,
+      "agent": "backend",
+      "acceptance": ["FR-29", "FR-30", "BR-22", "BR-23", "AC-18", "AC-19", "NFR-13"],
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/09-error-handling.md",
+        "docs/technical/04-database-design.md"
+      ],
+      "description": "Implement immutable audit recording and query APIs for attendance mutations, failed attempts, and export activity.",
+      "completionArtifacts": [
+        "Append-only audit write service",
+        "Audit query endpoint with scope constraints",
+        "Correlation-id propagation in mutation/event flows"
+      ]
+    },
+    {
+      "id": "module-realtime-delivery",
+      "passes": false,
+      "priority": 15,
+      "phase": 1,
+      "agent": "backend",
+      "acceptance": ["FR-19", "FR-14", "AC-02", "NFR-01", "NFR-16"],
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/06-main-workflows.md",
+        "docs/technical/12-backend-frontend-tech-stack.md"
+      ],
+      "description": "Implement low-latency roster update delivery for open sessions and token refresh metadata for lecturer QR display.",
+      "completionArtifacts": [
+        "Realtime channel/event gateway for session roster",
+        "Event emitters for check-in and correction updates",
+        "Fallback polling-compatible payload contracts"
+      ]
+    },
+    {
+      "id": "module-notification",
+      "passes": false,
+      "priority": 16,
+      "phase": 1,
+      "agent": "backend",
+      "acceptance": ["FR-26", "BR-17", "AC-25"],
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/brds/03-functional-requirements.md",
+        "docs/brds/04-business-rules.md"
+      ],
+      "description": "Add policy-threshold notification hooks for absence-rate alerts as a Should-scope backend capability.",
+      "completionArtifacts": [
+        "Absence-threshold evaluator",
+        "Alert event generation payloads",
+        "Configuration toggle to keep capability optional in MVP"
+      ]
+    },
+    {
+      "id": "web-design-system-shell",
+      "passes": false,
+      "priority": 17,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": ["FR-14", "NFR-14", "NFR-15"],
+      "docs": [
+        "docs/ui-ux/DESIGN.md",
+        "docs/ui-ux/01-design-overview.md",
+        "docs/ui-ux/03-design-system-basics.md"
+      ],
+      "description": "Implement app shell primitives, token wiring, and shared component foundations aligned with Attendly design-system precedence.",
+      "completionArtifacts": [
+        "Tokenized theme and layout scaffolding",
+        "Core primitive components and state variants",
+        "Route shell variants for student and staff contexts"
+      ]
+    },
+    {
+      "id": "web-student-check-in-flow",
+      "passes": false,
+      "priority": 18,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": ["FR-15", "FR-16", "FR-23", "AC-06", "AC-11", "NFR-14"],
+      "docs": [
+        "docs/ui-ux/01-ui-ux-foundation.md",
+        "docs/technical/05-api-design.md",
+        "docs/brds/08-acceptance-mvp-future.md"
+      ],
+      "description": "Build mobile-first student scan-to-check-in flow with login gate, outcome display, and concise recovery guidance.",
+      "completionArtifacts": [
+        "Student check-in route and submit interaction",
+        "Success view showing Present/Late and timestamp",
+        "Localized error-state rendering for check-in outcomes"
+      ]
+    },
+    {
+      "id": "web-student-attendance-history",
+      "passes": false,
+      "priority": 19,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": ["FR-37", "BR-19", "AC-16"],
+      "docs": [
+        "docs/ui-ux/01-design-overview.md",
+        "docs/technical/05-api-design.md",
+        "docs/brds/03-functional-requirements.md"
+      ],
+      "description": "Deliver student personal attendance history view with scoped data-only visibility and clear session/status timeline.",
+      "completionArtifacts": [
+        "Student history list route and detail states",
+        "Role-safe guard to block cross-user access",
+        "Pagination/search-ready UI contract support"
+      ]
+    },
+    {
+      "id": "web-lecturer-session-control",
+      "passes": false,
+      "priority": 20,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": ["FR-07", "FR-14", "AC-01", "AC-02", "AC-06"],
+      "docs": [
+        "docs/ui-ux/00-production-ui-quality-bar.md",
+        "docs/ui-ux/01-ui-ux-foundation.md",
+        "docs/technical/06-main-workflows.md"
+      ],
+      "description": "Implement lecturer session operations page with open/close controls, rotating QR display, and visible session-state feedback.",
+      "completionArtifacts": [
+        "Session list and control actions",
+        "Projection-friendly QR panel with rotation indicator",
+        "Transition and conflict error handling in UI"
+      ]
+    },
+    {
+      "id": "web-lecturer-live-roster-fallback",
+      "passes": false,
+      "priority": 21,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": ["FR-19", "FR-20", "BR-14", "AC-13", "AC-14", "AC-25"],
+      "docs": [
+        "docs/ui-ux/00-production-ui-quality-bar.md",
+        "docs/technical/06-main-workflows.md",
+        "docs/technical/09-error-handling.md"
+      ],
+      "description": "Deliver live roster with rejected-attempt visibility and in-context manual correction workflow for legitimate classroom exceptions.",
+      "completionArtifacts": [
+        "Realtime roster table grouped by attendance states",
+        "Inline/manual correction action with reason capture",
+        "Window-expired and permission-denied UI treatments"
+      ]
+    },
+    {
+      "id": "web-academic-admin-academic-setup",
+      "passes": false,
+      "priority": 22,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": ["FR-01", "FR-04", "FR-06", "AC-07"],
+      "docs": [
+        "docs/ui-ux/01-design-overview.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/10-local-development-setup.md"
+      ],
+      "description": "Build academic admin setup pages for terms/courses/sections and enrollment import workflow needed for session eligibility.",
+      "completionArtifacts": [
+        "Academic structure listing/detail forms",
+        "Enrollment import UI with row-level result feedback",
+        "CRUD success/error states aligned with API contracts"
+      ]
+    },
+    {
+      "id": "web-academic-admin-policy-management",
+      "passes": false,
+      "priority": 23,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": ["FR-24", "FR-25", "BR-20", "AC-09", "AC-10"],
+      "docs": [
+        "docs/ui-ux/01-ui-ux-foundation.md",
+        "docs/technical/08-validation-rules.md",
+        "docs/brds/03-functional-requirements.md"
+      ],
+      "description": "Implement policy configuration interface for attendance windows, GPS constraints, and edit-window settings with precedence-aware inputs.",
+      "completionArtifacts": [
+        "Policy forms with scope selection and validation",
+        "Field-level helper text for policy effects",
+        "Save/preview behavior for effective policy values"
+      ]
+    },
+    {
+      "id": "web-academic-admin-reporting-export",
+      "passes": false,
+      "priority": 24,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": ["FR-27", "FR-28", "BR-18", "AC-15", "AC-16", "AC-17"],
+      "docs": [
+        "docs/ui-ux/00-production-ui-quality-bar.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/06-main-workflows.md"
+      ],
+      "description": "Build report listing and CSV export UX with explicit scope context, filters, and pagination for academic admin workflows.",
+      "completionArtifacts": [
+        "Attendance report route with filter and sort controls",
+        "Export action panel with scope confirmation",
+        "Export job status and completion feedback"
+      ]
+    },
+    {
+      "id": "web-system-auditor-audit-review",
+      "passes": false,
+      "priority": 25,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": ["FR-32", "FR-30", "BR-22", "AC-19", "AC-16"],
+      "docs": [
+        "docs/ui-ux/01-design-overview.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/06-main-workflows.md"
+      ],
+      "description": "Deliver read-only audit review interface for system auditor with searchable evidence trails for attendance disputes.",
+      "completionArtifacts": [
+        "Audit log listing route with scoped filters",
+        "Detail view linking attempts, mutations, and actors",
+        "Read-only route guards and no-mutation affordances"
+      ]
+    },
+    {
+      "id": "test-backend-integration-critical-path",
+      "passes": false,
+      "priority": 26,
+      "phase": 3,
+      "agent": "test",
+      "acceptance": ["AC-01", "AC-04", "AC-08", "AC-12", "AC-18", "NFR-07"],
+      "docs": [
+        "docs/technical/11-testing-plan.md",
+        "docs/technical/08-validation-rules.md",
+        "docs/technical/07-state-machines.md"
+      ],
+      "description": "Create integration tests for session transitions, check-in validation ordering, duplicate prevention, and close-time absent finalization.",
+      "completionArtifacts": [
+        "Integration suite covering check-in critical path",
+        "Deterministic fixtures for role and session scenarios",
+        "CI gate for critical backend test group"
+      ],
+      "testRequirements": [
+        "Must enforce test isolation with DB reset between suites",
+        "Must fail build on unresolved critical flaky tests"
+      ]
+    },
+    {
+      "id": "test-e2e-role-scope-and-export",
+      "passes": false,
+      "priority": 27,
+      "phase": 3,
+      "agent": "test",
+      "acceptance": ["AC-15", "AC-16", "AC-17", "AC-23", "NFR-09", "NFR-10"],
+      "docs": [
+        "docs/technical/11-testing-plan.md",
+        "docs/technical/06-main-workflows.md",
+        "docs/technical/09-error-handling.md"
+      ],
+      "description": "Implement end-to-end regression cases for role-scoped report/export permissions and audit side effects across lecturer/admin/auditor roles.",
+      "completionArtifacts": [
+        "Role matrix E2E scenarios for report/export access",
+        "Assertions for denial behavior without data leakage",
+        "Audit-write assertions tied to export actions"
+      ]
+    },
+    {
+      "id": "test-nfr-performance-reliability-smoke",
+      "passes": false,
+      "priority": 28,
+      "phase": 3,
+      "agent": "test",
+      "acceptance": ["AC-20", "AC-21", "AC-22", "NFR-01", "NFR-03", "NFR-16"],
+      "docs": [
+        "docs/technical/11-testing-plan.md",
+        "docs/brds/07-non-functional-risk.md",
+        "docs/technical/13-docker-compose-local-runtime.md"
+      ],
+      "description": "Add performance and reliability smoke tests for class-start burst behavior, check-in latency, and success-rate telemetry baselines.",
+      "completionArtifacts": [
+        "Load/smoke scripts for concurrent check-in scenarios",
+        "Result threshold checks for latency and success targets",
+        "Runbook notes for interpreting performance regressions"
+      ],
+      "testRequirements": [
+        "Execute against compose-based test stack profile",
+        "Publish test artifacts and metric snapshots in CI"
+      ]
+    }
+  ]
+}

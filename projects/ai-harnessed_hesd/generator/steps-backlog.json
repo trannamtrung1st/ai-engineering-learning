@@ -469,7 +469,7 @@
     },
     {
       "id": "harness-backlog",
-      "passes": false,
+      "passes": true,
       "priority": 41,
       "phase": 4,
       "kind": "agent",

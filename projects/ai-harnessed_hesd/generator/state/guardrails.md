@@ -43,3 +43,14 @@ ERROR: docs/ui-ux/00-production-ui-quality-bar.md: missing required substring: N
 ERROR: Step uiux-foundation-system verification failed
 
 Full log: /Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/generator/generated/runs/20260702T091657Z-verify.txt
+
+## harness-backlog (2026-07-02T09:35:43Z)
+
+Verification failed for step harness-backlog. Running automatic self-fix pass before failing.
+
+Verifier feedback:
+ERROR: backlog references unknown tag: BR-UI-01
+ERROR: backlog references unknown tag: NFR-UI-02
+ERROR: Step harness-backlog verification failed
+
+Full log: /Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/generator/generated/runs/20260702T093326Z-verify.txt
