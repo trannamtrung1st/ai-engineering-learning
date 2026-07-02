@@ -83,3 +83,5 @@
 - 2026-07-02T13:08:01Z | infra-database-migrations | passed
 - 2026-07-02T13:15:11Z | playwright-ui-workspace | implementer: tests/playwright-ui workspace — student/lecturer smoke fixtures — CI playwright-ui-smoke job — trace/video on failure — checks: full profile pass
 - 2026-07-02T13:18:37Z | playwright-ui-workspace | passed
+- 2026-07-02T13:28:50Z | module-identity-and-access | implementer: M01 identity module — JWT auth, RBAC authorize(), GET /me, protected route stubs, Forbidden/OutOfScope mapping — migration 0002_user_credentials + seed passwords — checks: full profile pass
+- 2026-07-02T13:32:15Z | module-identity-and-access | passed

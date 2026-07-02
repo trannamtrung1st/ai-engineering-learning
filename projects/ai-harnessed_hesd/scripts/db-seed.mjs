@@ -6,6 +6,7 @@ import pg from "pg";
 
 const databaseUrl = process.env.DATABASE_URL ?? process.env.TEST_DATABASE_URL;
 const SEED_ID = "infra-database-migrations-baseline";
+const TEST_PASSWORD_HASH = "$2b$10$1yMZjG/gIlHk/2kkZvMvt..ZRMavzIRAD9Rz9ipO7EHz87QF79Qpq";
 
 /** Deterministic fixture IDs for integration tests and local smoke flows. */
 const SEED_IDS = {
@@ -150,6 +151,14 @@ async function seedFixtures() {
         `,
         [user.id, user.email, user.displayName],
       );
+      await client.query(
+        `
+        INSERT INTO user_credentials (user_id, password_hash)
+        VALUES ($1, $2)
+        ON CONFLICT (user_id) DO NOTHING
+        `,
+        [user.id, TEST_PASSWORD_HASH],
+      );
     }
 
     await client.query(
@@ -267,7 +276,7 @@ async function seedFixtures() {
         `
         INSERT INTO user_role_assignments (id, user_id, role, scope_type, scope_id)
         VALUES ($1, $2, $3, $4, $5)
-        ON CONFLICT (user_id, role, scope_type, scope_id) DO NOTHING
+        ON CONFLICT (id) DO NOTHING
         `,
         [
           assignment.id,

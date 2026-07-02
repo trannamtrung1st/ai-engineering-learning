@@ -279,7 +279,7 @@
     },
     {
       "id": "module-identity-and-access",
-      "passes": false,
+      "passes": true,
       "priority": 7,
       "phase": 1,
       "agent": "backend",
@@ -297,11 +297,22 @@
       ],
       "description": "Build authentication context resolution and role/scope authorization middleware for all protected API endpoints.",
       "completionArtifacts": [
-        "Auth and authorization guards with scope evaluation",
-        "GET /v1/me actor context endpoint",
-        "Consistent Forbidden and OutOfScope error mapping"
+        "apps/api/src/modules/identity",
+        "apps/api/db/migrations/0002_user_credentials.sql",
+        "apps/api/src/app.ts",
+        "apps/api/package.json",
+        "scripts/db-seed.mjs"
       ],
       "testRequirements": {
+        "unit": [
+          "apps/api/src/modules/identity/authorize.test.ts",
+          "apps/api/src/modules/identity/permissions.test.ts",
+          "apps/api/src/modules/identity/jwt.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/modules/identity/identity.integration.test.ts",
+          "apps/api/src/modules/identity/auth-routes.integration.test.ts"
+        ],
         "acceptanceTags": [
           "BR-19",
           "FR-15",
