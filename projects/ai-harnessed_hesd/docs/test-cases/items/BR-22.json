@@ -1,0 +1,363 @@
+{
+  "productItemId": "BR-22",
+  "version": 1,
+  "docFingerprint": "sha256:0421ca4affe3aa70584e3b352a860d11de519a5a2aaff8c4d8e0f12d14d1a70a",
+  "generatedAt": "2026-07-02T12:12:40Z",
+  "cases": [
+    {
+      "id": "TC-BR-22-001",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["BR-22", "FR-29", "AC-19"],
+      "title": "Testing-plan §3 Attempt/audit coverage row requires 100% attendance mutation audit completeness",
+      "preconditions": [
+        "Testing-plan §3.1 Attempt/audit coverage block applies (FR-22, FR-29, FR-30, BR-22, BR-23, AC-18, AC-19).",
+        "dispute-trail fixture provides lecturer correction, admin override, and close-time absent assignments.",
+        "M08 Audit and Compliance module persists audit_logs with real database."
+      ],
+      "steps": [
+        "Enumerate all committed AttendanceRecord create/update/delete mutations in the fixture (manual correction, admin override, bulk correction, and system close assignments).",
+        "Query audit_logs for each mutation by targetType AttendanceRecord, targetId, and occurredAt window.",
+        "Verify each audit row includes actorUserId, timestamp, target student and session, oldValue/oldStatus, newValue/newStatus, reason where mandated, and correlationId.",
+        "Compare mutation count to audit row count for the same correlation scope."
+      ],
+      "expected": "Scenario-matrix maps to testing-plan §3.1 Attempt/audit coverage: every committed attendance mutation has exactly one queryable AuditLog record with full CMP-01 fields per BR-22 and FR-29; zero mutation-audit gaps.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-22-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-22", "FR-20", "BR-14", "AC-13"],
+      "title": "M08 writeAuditEvent persists lecturer roster edit audit row atomically with M05 ledger update",
+      "preconditions": [
+        "Real database transaction spans M05 Attendance Ledger and M08 Audit and Compliance modules.",
+        "Closed session exists with enrolled student AttendanceRecord status Absent.",
+        "Assigned Lecturer is within manualEditWindow per M06 policy resolution.",
+        "Policy mandates reason for manual corrections."
+      ],
+      "steps": [
+        "Capture beforeState: AttendanceRecord status Absent; count audit_logs rows for target studentUserId and classSessionId.",
+        "Invoke M05 correctAttendance through application service with status Manual Present, reason, actor Lecturer, and Idempotency-Key.",
+        "Query attendance_records and audit_logs tables within the same test transaction scope.",
+        "Verify M08 writeAuditEvent payload includes actorUserId, timestamp, target student/session, oldStatus Absent, newStatus Manual Present, reason, and correlationId.",
+        "Assert audit_logs row is append-only and immutable after commit."
+      ],
+      "expected": "M08 module boundary writes exactly one audit_logs row atomically with attendance mutation: actor ID, timestamp, target student and session, previous status Absent, new status Manual Present, reason, and correlation ID per BR-22 100% coverage requirement.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-22-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-22", "FR-09", "BR-13", "AC-12"],
+      "title": "M08 audit service records system-actor rows for each close-time auto-absent assignment",
+      "preconditions": [
+        "Open session exists with at least three enrolled students in Pending state without successful check-in.",
+        "M03 session close processor triggers M05 absent finalization as system process.",
+        "Real database with audit_logs append-only constraints."
+      ],
+      "steps": [
+        "Execute POST /v1/class-sessions/{sessionId}/close through session lifecycle service.",
+        "Query attendance_records confirming Pending students transitioned to Absent.",
+        "Query audit_logs filtered by actionType attendance_status_mutation and classSessionId for close-time events.",
+        "Verify each auto-absent student has a distinct audit row with system actor context per BR-22 exception, oldStatus Pending, newStatus Absent, timestamp, and correlationId."
+      ],
+      "expected": "100% coverage for system-process attendance mutations: each close-time Absent assignment writes one audit_logs row logged as system actor per BR-22 exception with actor context, timestamp, target student/session, previous Pending, new Absent.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-22-004",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-22", "FR-21", "BR-16", "AC-14"],
+      "title": "M08 audit service persists admin override audit row with full before/after status fields",
+      "preconditions": [
+        "Closed session exists with student AttendanceRecord status Absent after lecturer edit window expired.",
+        "AcademicAdmin actor is available with override authority per BR-16.",
+        "Policy requires documented reason for admin corrections."
+      ],
+      "steps": [
+        "Capture beforeState AttendanceRecord status Absent and baseline audit_logs count.",
+        "Invoke admin correction service with status Excused, documented reason, and Idempotency-Key as AcademicAdmin.",
+        "Query attendance_records and audit_logs within the same DB transaction scope.",
+        "Verify audit row includes actorUserId AcademicAdmin, timestamp, target student/session, oldStatus Absent, newStatus Excused, reason, and correlationId."
+      ],
+      "expected": "Admin override mutation commits exactly one AuditLog row with actor ID, timestamp, target student and session, previous status, new status, reason, and correlation ID per BR-22 and BR-16.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-22-005",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["BR-22", "FR-29", "BR-14", "BR-16"],
+      "title": "SM-03 attendance status transitions via manual and admin correction each produce auditable beforeState and afterState",
+      "preconditions": [
+        "Integration database seeded with students in Absent, Present, and Late states on a Closed session.",
+        "Assigned Lecturer and AcademicAdmin actors are available within policy windows.",
+        "Audit query module can filter by targetId and actionType."
+      ],
+      "steps": [
+        "Lecturer corrects Absent student to Manual Present with reason; capture beforeState, afterState, and audit row.",
+        "AcademicAdmin overrides Late student to Excused with reason; capture audit row.",
+        "Query audit_logs for both mutations and verify oldStatus/newStatus pairs match captured states.",
+        "Confirm checkInMethod Manual or Admin Correction is reflected where applicable."
+      ],
+      "expected": "Each legal SM-03 AttendanceRecord transition via roster edit or admin override commits with a queryable audit record documenting beforeState, afterState, actor, reason, timestamp, and correlationId per BR-22.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-22-006",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P1",
+      "traceability": ["BR-22", "FR-29", "BR-07"],
+      "title": "Idempotent attendance mutation replay returns prior summary without duplicate audit_logs rows",
+      "preconditions": [
+        "Closed session with Absent student exists; assigned Lecturer is within edit window.",
+        "Idempotency-Key support is enabled for PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId}.",
+        "Real database with audit_logs immutability constraints."
+      ],
+      "steps": [
+        "Issue PATCH correction with status Manual Present, reason, and Idempotency-Key K1; record audit row id and count.",
+        "Replay identical PATCH with same Idempotency-Key K1, same body, and same actor.",
+        "Count audit_logs rows for the student-session pair and compare second response to first.",
+        "Verify AttendanceRecord afterState unchanged from first successful mutation."
+      ],
+      "expected": "First committed mutation writes exactly one audit row per BR-22; idempotent replay returns already-applied summary without a second audit_logs entry, preserving 100% coverage without duplicate audit records.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-22-007",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-22", "FR-29", "AC-19"],
+      "title": "PATCH attendance correction returns HTTP 200 and mutation is queryable via GET /v1/audit-logs",
+      "preconditions": [
+        "Assigned Lecturer is authenticated with bearer token.",
+        "Closed session exists with student AttendanceRecord status Absent; manual edit window is active.",
+        "AcademicAdmin bearer token can query audit logs per role policy."
+      ],
+      "steps": [
+        "Lecturer calls PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Manual Present, reason, and Idempotency-Key; confirm HTTP 200.",
+        "AcademicAdmin calls GET /v1/audit-logs?targetType=AttendanceRecord&targetId={studentUserId}&actionType=manual_update&from={mutationStart}&to={mutationEnd}&page=1&pageSize=25.",
+        "Inspect HTTP 200 response envelope, meta.pagination, and matching audit entry payload fields.",
+        "Verify error is null and data array contains the committed mutation audit row with actorUserId, oldStatus, newStatus, reason, occurredAt, and correlationId."
+      ],
+      "expected": "PATCH returns HTTP 200 and committed mutation is queryable via GET /v1/audit-logs with standard envelope; audit entry includes all BR-22 required fields per API §4.7 and CMP-01.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-22-008",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-22", "FR-30", "BR-18", "AC-17"],
+      "title": "POST /v1/exports/attendance returns HTTP 202 and writes export audit entry per BR-22 and DI-09",
+      "preconditions": [
+        "Assigned Lecturer is authenticated with bearer token for section A.",
+        "Attendance records exist for section A within export scope.",
+        "Audit log baseline count for export actions is captured."
+      ],
+      "steps": [
+        "Lecturer calls POST /v1/exports/attendance with format csv, scoped filters for assigned section A, and Idempotency-Key.",
+        "Confirm HTTP 202 with exportJobId and status Queued in standard envelope.",
+        "Wait for or poll export completion and query GET /v1/audit-logs?actionType=export&actorUserId={lecturerId}&from={exportStart}&to={exportEnd}.",
+        "Verify audit row includes actor, timestamp, scope filter, format csv, and correlationId per CMP-02."
+      ],
+      "expected": "Successful export emits exactly one AuditLog entry with actor, timestamp, scope, and format per BR-22, BR-18, FR-30, and DI-09; HTTP 202 envelope matches API §4.6.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-22-009",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["BR-22", "FR-20", "BR-14", "AC-13"],
+      "title": "E2E-06 primary workflow lecturer manual correction produces complete BR-22 audit trail",
+      "preconditions": [
+        "Lecturer opens and closes session for assigned section.",
+        "Session close assigns Absent to enrolled student without successful check-in.",
+        "Manual edit window from effective policy is active.",
+        "Authorized role can query GET /v1/audit-logs."
+      ],
+      "steps": [
+        "Lecturer reviews GET /v1/class-sessions/{sessionId}/attendance showing student Absent.",
+        "Lecturer submits PATCH correction to Manual Present with documented reason.",
+        "Query GET /v1/audit-logs filtered by classSessionId and studentUserId for manual_update action.",
+        "Verify audit fields include actor ID, timestamp, target student and session, previous status Absent, new status Manual Present, reason, and correlation ID."
+      ],
+      "expected": "End-to-end E2E-06 path writes queryable audit record with 100% BR-22 field coverage: actor, timestamp, target student/session, previous status, new status, reason, and correlation ID per CMP-01.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-22-010",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-c",
+      "priority": "P0",
+      "traceability": ["BR-22", "FR-21", "BR-16", "AC-19"],
+      "title": "Flow C audit verification after AcademicAdmin escalated attendance override mutation",
+      "preconditions": [
+        "Closed session exists with student AttendanceRecord status Absent after lecturer edit window expired.",
+        "AcademicAdmin is authenticated with override authority per BR-16.",
+        "SystemAuditor read scope can query audit logs."
+      ],
+      "steps": [
+        "Record roster beforeState via GET /v1/class-sessions/{sessionId}/attendance.",
+        "AcademicAdmin applies PATCH correction with status Excused and documented override reason.",
+        "Query GET /v1/audit-logs with filters targetType AttendanceRecord, targetId, actionType admin_override, and time range.",
+        "Verify audit payload includes actor AcademicAdmin, old status, new status Excused, reason, correlationId, and occurredAt."
+      ],
+      "expected": "Committed admin override mutation has corresponding queryable audit record with full BR-22 fields; no mutation-audit gap per AC-19.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-22-011",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P0",
+      "traceability": ["BR-22", "FR-09", "BR-13", "AC-12"],
+      "title": "Alternate branch session close finalization writes system-actor audit row per auto-absent mutation",
+      "preconditions": [
+        "Open session has at least five enrolled students with mixed Present and Pending states.",
+        "Lecturer bearer token is available for session close.",
+        "AcademicAdmin can query audit logs institution-scoped."
+      ],
+      "steps": [
+        "Lecturer calls POST /v1/class-sessions/{sessionId}/close and records closedAt.",
+        "Query GET /v1/class-sessions/{sessionId}/attendance confirming Pending students became Absent.",
+        "Query GET /v1/audit-logs?targetType=AttendanceRecord&classSessionId={sessionId}&actionType=status_finalization&from={closedAt}&page=1&pageSize=100.",
+        "Count audit entries against number of students whose status mutated at close and verify each includes system actor, oldStatus Pending, newStatus Absent, and correlationId."
+      ],
+      "expected": "Each system-process absent assignment at close has a queryable audit record logged as system actor per BR-22 exception; audit count matches committed mutation count with full field set.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-22-012",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "pagination",
+      "priority": "P1",
+      "traceability": ["BR-22", "FR-32", "AC-19"],
+      "title": "GET /v1/audit-logs pagination returns scoped attendance mutation entries across page boundaries",
+      "preconditions": [
+        "dispute-trail fixture includes at least 30 committed attendance status mutation audit entries for one class section.",
+        "AcademicAdmin bearer token is authenticated within institution scope.",
+        "Mutations span lecturer corrections and close-time absent assignments with full CMP-01 fields."
+      ],
+      "steps": [
+        "Query GET /v1/audit-logs?targetType=AttendanceRecord&classSectionId={sectionId}&from={rangeStart}&to={rangeEnd}&page=1&pageSize=25.",
+        "Verify HTTP 200, meta.pagination page=1, pageSize=25, totalItems >= 30, and totalPages >= 2.",
+        "Record audit entry IDs from page 1 and verify each row includes actor, oldStatus, newStatus, reason where required, and occurredAt.",
+        "Query GET /v1/audit-logs with same filters and page=2; verify distinct IDs with no overlap."
+      ],
+      "expected": "Paginated audit query honors page and pageSize invariants; all BR-22 mutation audit entries remain queryable across pages with complete actor, timestamp, target, previous value, new value, reason, and correlationId fields.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-22-013",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-22", "BR-19", "FR-32", "AC-16"],
+      "title": "Student and cross-scope Lecturer denied audit log read without leaking mutation details",
+      "preconditions": [
+        "Committed attendance mutation audit exists for session in section A with known target student.",
+        "Student bearer token and Lecturer token for unassigned section B are available.",
+        "AcademicAdmin token is available as authorized control for audit query."
+      ],
+      "steps": [
+        "Student calls GET /v1/audit-logs?targetId={studentUserId}&classSessionId={sessionIdA}.",
+        "Out-of-scope Lecturer (section B) calls GET /v1/audit-logs filtered to section A mutation events.",
+        "Inspect responses for partial leakage of oldStatus, newStatus, actor, reason, or correlationId fields.",
+        "AcademicAdmin calls the same audit query as control and confirms HTTP 200 with full audit payload."
+      ],
+      "expected": "Student receives HTTP 403 Forbidden per AuditLog.read denial; cross-scope Lecturer receives HTTP 403 OutOfScope without partial mutation data; AcademicAdmin control returns HTTP 200 with full BR-22 audit fields per BR-19.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-22-014",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-22", "FR-20", "BR-15"],
+      "title": "Rejected PATCH correction outside edit window writes no attendance mutation audit row",
+      "preconditions": [
+        "Closed session with Absent student exists; manual edit window has expired for Lecturer.",
+        "Lecturer bearer token is authenticated for assigned section.",
+        "Audit log baseline count for the student-session pair is captured before test."
+      ],
+      "steps": [
+        "Call PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Manual Present and reason as Lecturer.",
+        "Confirm HTTP 409 EditWindowExpired; AttendanceRecord remains Absent.",
+        "Query GET /v1/audit-logs and audit_logs table for new manual_update rows tied to the rejected request.",
+        "Verify no committed mutation audit exists documenting old/new status change."
+      ],
+      "expected": "Rejected correction returns documented error without AttendanceRecord mutation; no audit_logs row documents a successful status change for the failed attempt; BR-22 applies only when mutation is committed.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-22-015",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-22", "BR-18", "BR-19", "AC-16"],
+      "title": "Student denied attendance export and no export audit row is created for unauthorized attempt",
+      "preconditions": [
+        "Student bearer token is authenticated.",
+        "Attendance data exists for sections the student is not authorized to export institution-wide.",
+        "Export audit baseline count is captured."
+      ],
+      "steps": [
+        "Student calls POST /v1/exports/attendance with format csv and broad filters.",
+        "Confirm HTTP 403 Forbidden with no partial export artifact.",
+        "Query GET /v1/audit-logs for export actionType tied to the student actor and request window.",
+        "Verify no successful export audit row was created for the denied request."
+      ],
+      "expected": "Student export denied per BR-18 and BR-19 without data leakage; no export AuditLog entry for unauthorized attempt; only successful exports produce audit rows per BR-22 and CMP-02.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-22-016",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-22", "FR-32", "AC-19"],
+      "title": "System Auditor PG-15 audit log review displays attendance mutation entry with old/new status columns",
+      "preconditions": [
+        "Committed lecturer manual correction audit exists for closed session with known student.",
+        "SystemAuditor is authenticated on desktop browser with read-only audit scope.",
+        "PG-15 Audit log review route /audit/logs is available per FLOW-13."
+      ],
+      "steps": [
+        "Navigate to /audit/logs and apply TableToolbar filters: targetType AttendanceRecord, actionType manual_update, and date range covering the mutation.",
+        "Locate AuditEntryRow for the committed correction in the paginated results table.",
+        "Verify row displays actor name, timestamp, target student/session identifiers, old status Absent, new status Manual Present, reason text, and correlation identifier.",
+        "Confirm pagination controls and default sort timestamp desc per PG-15 listing spec."
+      ],
+      "expected": "Browser FLOW-13 audit review journey displays queryable attendance mutation audit with all BR-22 required fields visible in AuditEntryRow per CMP-01; authorized SystemAuditor can investigate dispute trail without mutation privileges.",
+      "edgeCase": false
+    }
+  ]
+}
