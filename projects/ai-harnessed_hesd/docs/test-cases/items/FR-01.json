@@ -1,0 +1,230 @@
+{
+  "productItemId": "FR-01",
+  "version": 1,
+  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+  "generatedAt": "2026-07-02T10:37:34Z",
+  "cases": [
+    {
+      "id": "TC-FR-01-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["FR-01", "FR-03"],
+      "title": "Academic Admin creates term as first step of academic structure setup",
+      "preconditions": [
+        "AcademicAdmin user is authenticated with institution scope.",
+        "No existing term with code 2026-1 in the test institution."
+      ],
+      "steps": [
+        "Call POST /v1/terms with code, name, startDate, endDate, and isActive true using AcademicAdmin bearer token and Idempotency-Key.",
+        "Call GET /v1/terms and locate the newly created term by code.",
+        "Verify the term can be referenced as termId when creating a class section via POST /v1/class-sections."
+      ],
+      "expected": "Term is created and listable; FLOW-09 academic structure setup can proceed with the new term as the semester container for class sections.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-01-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-01", "FR-03"],
+      "title": "M02 Academic Structure persists term row and enforces class_section term FK",
+      "preconditions": [
+        "Integration harness uses real DB transaction boundaries for terms and class_sections tables.",
+        "AcademicAdmin auth context is available to the academic structure service."
+      ],
+      "steps": [
+        "Create a term through the M02 academic structure module or POST /v1/terms API path.",
+        "Query the terms table and assert code, name, startDate, endDate, and isActive match the request.",
+        "Create a class section bound to the term termId and assert class_sections.term_id FK references the term row.",
+        "Attempt to create a class section with a non-existent termId and observe rejection."
+      ],
+      "expected": "Term row is committed with all required attributes; class sections must reference exactly one valid term via FK; invalid termId is rejected without orphan section rows.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-01-003",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-01"],
+      "title": "HTTP contract for POST /v1/terms create returns 200 with standard envelope",
+      "preconditions": [
+        "AcademicAdmin is authenticated.",
+        "Request body includes code, name, startDate, endDate, and isActive per API design §4.2."
+      ],
+      "steps": [
+        "Send POST /v1/terms with Authorization and Idempotency-Key headers.",
+        "Validate HTTP status code and JSON envelope shape {data, meta, error}.",
+        "Assert data contains id, code, name, startDate, endDate, and isActive fields consistent with the request."
+      ],
+      "expected": "Response is HTTP 200 with standard envelope; data reflects the created term attributes and meta includes requestId and timestamp.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-01-004",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-01"],
+      "title": "HTTP contract for GET /v1/terms list returns paginated term collection",
+      "preconditions": [
+        "AcademicAdmin is authenticated.",
+        "At least one term exists in the institution scope."
+      ],
+      "steps": [
+        "Send GET /v1/terms with Authorization header.",
+        "Validate HTTP 200 and standard envelope with data array.",
+        "Assert meta.pagination includes page, pageSize, totalItems, and totalPages per API conventions §2.5."
+      ],
+      "expected": "List response is HTTP 200 with paginated data array of terms and complete pagination metadata in meta.pagination.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-01-005",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "pagination",
+      "priority": "P1",
+      "traceability": ["FR-01"],
+      "title": "Term list pagination honors page and pageSize boundaries",
+      "preconditions": [
+        "Database seed contains more than 25 terms for pagination testing.",
+        "AcademicAdmin auth context is established."
+      ],
+      "steps": [
+        "Call GET /v1/terms?page=1&pageSize=25 and record totalItems and row count.",
+        "Call GET /v1/terms?page=2&pageSize=25 and assert a disjoint result set from page 1.",
+        "Request a page beyond totalPages and assert empty data array with consistent totalItems."
+      ],
+      "expected": "Pagination returns correct page boundaries, stable totalItems across pages, and an empty data array when page exceeds totalPages without cross-scope count leakage.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-01-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P0",
+      "traceability": ["FR-01"],
+      "title": "Academic Admin updates an existing term name and date range",
+      "preconditions": [
+        "An active term exists with known termId.",
+        "AcademicAdmin is authenticated."
+      ],
+      "steps": [
+        "Call PATCH /v1/terms/{termId} with updated name and revised endDate within valid range.",
+        "Call GET /v1/terms/{termId} or filter GET /v1/terms to retrieve the updated record.",
+        "Verify linked class sections still reference the same termId."
+      ],
+      "expected": "Term name and date fields are updated in persistence; existing class sections remain bound to the same term without requiring re-creation.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-01-007",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["FR-01"],
+      "title": "Deactivate term transitions isActive from true to false",
+      "preconditions": [
+        "An active term with isActive true exists and has no blocking dependency policy in test fixture.",
+        "AcademicAdmin auth context is available."
+      ],
+      "steps": [
+        "Record beforeState isActive true for the target term.",
+        "Invoke deactivate via PATCH /v1/terms/{termId} setting isActive false.",
+        "Query persistence and record afterState.",
+        "Call GET /v1/terms with active-only filter if supported and verify deactivated term exclusion from active term dropdown semantics."
+      ],
+      "expected": "beforeState isActive true transitions to afterState isActive false; deactivated term is excluded from active-term selectors used by class section create form (FRM-04).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-01-008",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-01", "BR-19"],
+      "title": "Non-admin roles are denied term management endpoints",
+      "preconditions": [
+        "Student, Lecturer, and ITAdmin test accounts exist with valid authentication tokens.",
+        "At least one term exists in the system."
+      ],
+      "steps": [
+        "Call POST /v1/terms as Student, Lecturer, and ITAdmin.",
+        "Call GET /v1/terms as Student.",
+        "Call PATCH /v1/terms/{termId} as Lecturer and ITAdmin."
+      ],
+      "expected": "All unauthorized role requests return 403 Forbidden or equivalent authorization error without exposing term management data or allowing mutations; no partial restricted datasets are returned.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-01-009",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-01"],
+      "title": "Term create rejects endDate before startDate with validation error",
+      "preconditions": [
+        "AcademicAdmin is authenticated."
+      ],
+      "steps": [
+        "Send POST /v1/terms with startDate 2026-12-31 and endDate 2026-08-01.",
+        "Read HTTP status and error.code from the response envelope.",
+        "Query terms table to confirm no row was created for the invalid payload."
+      ],
+      "expected": "API returns HTTP 400 with InvalidPayload or equivalent validation error; no term row is persisted for the invalid date range.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-01-010",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["FR-01"],
+      "title": "Duplicate term code on create returns conflict without silent overwrite",
+      "preconditions": [
+        "AcademicAdmin is authenticated.",
+        "A term with code 2026-1 already exists in institution scope."
+      ],
+      "steps": [
+        "Send POST /v1/terms with the same code 2026-1 and different name/dates.",
+        "Read HTTP status and error.code.",
+        "Verify the original term record is unchanged."
+      ],
+      "expected": "API returns HTTP 409 or equivalent conflict error for duplicate code; existing term record remains unchanged with no silent overwrite.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-01-011",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-01"],
+      "title": "Academic Admin browser journey on PG-07 terms list and FRM-02 create form",
+      "preconditions": [
+        "AcademicAdmin is logged in on desktop Chromium.",
+        "Admin setup navigation exposes Terms page at /admin/terms."
+      ],
+      "steps": [
+        "Navigate to /admin/terms and verify TableToolbar and DataTable render with term columns (code, name, start date, end date, active status).",
+        "Click Create term and complete FRM-02 with valid code, name, dates, and active flag.",
+        "Submit the form and observe success feedback.",
+        "Confirm the new term row appears in the list without full page reload if SPA routing applies."
+      ],
+      "expected": "PG-07 displays paginated term list with expected columns; FRM-02 create flow succeeds and the new term is visible in the table with correct active badge/state.",
+      "edgeCase": false
+    }
+  ]
+}

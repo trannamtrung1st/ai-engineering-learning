@@ -116,6 +116,11 @@
       "current": true,
       "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
       "generatedAt": "2026-07-02T10:36:11Z"
+    },
+    "FR-01": {
+      "current": true,
+      "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+      "generatedAt": "2026-07-02T10:38:42Z"
     }
   }
 }

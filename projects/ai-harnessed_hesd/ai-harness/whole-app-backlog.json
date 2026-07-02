@@ -186,7 +186,8 @@
       ],
       "testRequirements": {
         "acceptanceTags": [
-          "AC-07"
+          "AC-07",
+          "FR-01"
         ]
       },
       "history": [
@@ -194,6 +195,12 @@
           "at": "2026-07-02T09:50:57Z",
           "kind": "drift",
           "reason": "Doc drift for AC-07 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T10:38:42Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-01 — reverify after TestGen",
           "source": "harness"
         }
       ]
@@ -782,7 +789,8 @@
       ],
       "testRequirements": {
         "acceptanceTags": [
-          "AC-07"
+          "AC-07",
+          "FR-01"
         ]
       },
       "history": [
@@ -790,6 +798,12 @@
           "at": "2026-07-02T09:50:57Z",
           "kind": "drift",
           "reason": "Doc drift for AC-07 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T10:38:42Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-01 — reverify after TestGen",
           "source": "harness"
         }
       ]
