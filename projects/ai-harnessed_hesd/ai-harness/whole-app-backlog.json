@@ -235,7 +235,8 @@
           "BR-19",
           "FR-15",
           "FR-31",
-          "FR-32"
+          "FR-32",
+          "NFR-09"
         ]
       },
       "history": [
@@ -261,6 +262,12 @@
           "at": "2026-07-02T12:09:42Z",
           "kind": "drift",
           "reason": "Doc drift for BR-19 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T12:23:46Z",
+          "kind": "drift",
+          "reason": "Doc drift for NFR-09 — reverify after TestGen",
           "source": "harness"
         }
       ]
@@ -1552,7 +1559,8 @@
         "acceptanceTags": [
           "AC-15",
           "AC-17",
-          "AC-23"
+          "AC-23",
+          "NFR-09"
         ]
       },
       "history": [
@@ -1578,6 +1586,12 @@
           "at": "2026-07-02T10:33:24Z",
           "kind": "drift",
           "reason": "Doc drift for AC-23 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T12:23:46Z",
+          "kind": "drift",
+          "reason": "Doc drift for NFR-09 — reverify after TestGen",
           "source": "harness"
         }
       ]
