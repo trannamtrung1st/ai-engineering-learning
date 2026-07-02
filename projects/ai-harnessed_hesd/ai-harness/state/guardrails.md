@@ -44,3 +44,7 @@ tests/playwright-ui/scenarios/web-design-system-shell.spec.ts
 - [web-academic-admin-policy-management] Browser test failed — see 20260702T201809Z-browser-test.json
 - [web-academic-admin-policy-management] PG-12 filter chip remove aria-label must use `Gỡ …` not `Xóa bộ lọc …` — collides with TableToolbar clear-all in Playwright strict mode (TC-FR-24-014)
 - [web-academic-admin-policy-management] AC-10 roster distance metadata requires attendance-ledger + AttemptOutcomeCell paths in slice completionArtifacts when extending GET /attendance rows
+- [web-system-auditor-audit-review] SystemAuditor GET /audit-logs list requires `createAuthorizeGuard` resolveScope to pass actor Faculty/ClassSection scope — empty scopeContext yields OutOfScope before M08 query runs
+- [web-system-auditor-audit-review] Preview seed SystemAuditor uses Faculty scope (not Institution) until M08 collectScopedSectionIds treats Institution-wide auditor; use `system-auditor@attendly.local` email to avoid identity.integration.test `auditor@attendly.local` collision
+- [web-system-auditor-audit-review] Browser test failed — see 20260702T213529Z-browser-test.json
+- [web-system-auditor-audit-review] AuditorSessionRosterPage must not call GET /class-sessions/{id} (SessionControl:execute) — SystemAuditor has AttendanceRecord:read only; render LiveRosterPanel directly via GET /class-sessions/{id}/attendance

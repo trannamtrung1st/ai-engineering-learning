@@ -40,6 +40,33 @@ export async function registerAuditRoutes(
   const guardAuditRead = createAuthorizeGuard(services, {
     resource: "AuditLog",
     action: "read",
+    resolveScope: async (request) => {
+      const actor = request.actor;
+      if (!actor) return {};
+
+      const institutionAssignment = actor.assignments.find(
+        (assignment) => assignment.scopeType === "Institution",
+      );
+      if (institutionAssignment) {
+        return {};
+      }
+
+      const facultyAssignment = actor.assignments.find(
+        (assignment) => assignment.scopeType === "Faculty" && assignment.scopeId,
+      );
+      if (facultyAssignment?.scopeId) {
+        return { facultyId: facultyAssignment.scopeId };
+      }
+
+      const sectionAssignment = actor.assignments.find(
+        (assignment) => assignment.scopeType === "ClassSection" && assignment.scopeId,
+      );
+      if (sectionAssignment?.scopeId) {
+        return { classSectionId: sectionAssignment.scopeId };
+      }
+
+      return {};
+    },
   });
 
   app.get(

@@ -1179,7 +1179,7 @@
     },
     {
       "id": "web-system-auditor-audit-review",
-      "passes": false,
+      "passes": true,
       "priority": 25,
       "phase": 2,
       "agent": "frontend",

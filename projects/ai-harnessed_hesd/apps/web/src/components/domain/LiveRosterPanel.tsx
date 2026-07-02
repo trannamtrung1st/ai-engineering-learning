@@ -45,9 +45,10 @@ const ATTEMPT_OUTCOME_OPTIONS: FilterOption[] = [
 export interface LiveRosterPanelProps {
   sessionId: string;
   sectionCode?: string;
+  readOnly?: boolean;
 }
 
-export function LiveRosterPanel({ sessionId, sectionCode }: LiveRosterPanelProps) {
+export function LiveRosterPanel({ sessionId, sectionCode, readOnly = false }: LiveRosterPanelProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   const query = useMemo(() => parseRosterListQuery(searchParams), [searchParams]);
   const [roster, setRoster] = useState<SessionRoster | null>(null);
@@ -245,26 +246,30 @@ export function LiveRosterPanel({ sessionId, sectionCode }: LiveRosterPanelProps
               </span>
             ),
           },
-          {
-            id: "action",
-            header: "Thao tác",
-            cell: (row) => (
-              <div className={styles.actions}>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  type="button"
-                  onClick={() => setCorrectionRow(row)}
-                >
-                  Điều chỉnh
-                </Button>
-              </div>
-            ),
-          },
+          ...(readOnly
+            ? []
+            : [
+                {
+                  id: "action",
+                  header: "Thao tác",
+                  cell: (row: RosterRow) => (
+                    <div className={styles.actions}>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        type="button"
+                        onClick={() => setCorrectionRow(row)}
+                      >
+                        Điều chỉnh
+                      </Button>
+                    </div>
+                  ),
+                },
+              ]),
         ]}
       />
 
-      {correctionRow ? (
+      {!readOnly && correctionRow ? (
         <ManualCorrectionDialog
           sessionId={sessionId}
           row={correctionRow}

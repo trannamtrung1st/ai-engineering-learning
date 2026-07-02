@@ -30,3 +30,23 @@ export function isStudentOnly(roles: string[]): boolean {
 export function isAcademicAdmin(roles: string[]): boolean {
   return roles.includes("AcademicAdmin");
 }
+
+const AUDIT_LOG_ROLES = new Set<StaffReportRole | "ITAdmin">([
+  "Lecturer",
+  "DepartmentAdmin",
+  "AcademicAdmin",
+  "SystemAuditor",
+  "ITAdmin",
+]);
+
+export function canAccessAuditLogs(roles: string[]): boolean {
+  return roles.some((role) => AUDIT_LOG_ROLES.has(role as StaffReportRole | "ITAdmin"));
+}
+
+export function isSystemAuditor(roles: string[]): boolean {
+  return roles.includes("SystemAuditor");
+}
+
+export function isReadOnlyStaffRole(roles: string[]): boolean {
+  return isSystemAuditor(roles);
+}

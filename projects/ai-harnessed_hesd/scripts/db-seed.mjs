@@ -22,6 +22,7 @@ const SEED_IDS = {
     "60000000-0000-4000-8000-000000000004",
   ],
   academicAdminUser: "60000000-0000-4000-8000-000000000005",
+  systemAuditorUser: "60000000-0000-4000-8000-000000000006",
   sessionScheduled: "70000000-0000-4000-8000-000000000001",
   sessionOpen: "70000000-0000-4000-8000-000000000002",
   institutionPolicy: "80000000-0000-4000-8000-000000000001",
@@ -198,6 +199,11 @@ async function seedFixtures() {
         email: "academic-admin@attendly.local",
         displayName: "Hoàng Quản Trị",
       },
+      {
+        id: SEED_IDS.systemAuditorUser,
+        email: "system-auditor@attendly.local",
+        displayName: "Nguyễn Thị Kiểm toán",
+      },
     ];
 
     for (const user of users) {
@@ -284,6 +290,13 @@ async function seedFixtures() {
         role: "AcademicAdmin",
         scopeType: "Institution",
         scopeId: null,
+      },
+      {
+        id: "90000000-0000-4000-8000-000000000003",
+        userId: SEED_IDS.systemAuditorUser,
+        role: "SystemAuditor",
+        scopeType: "Faculty",
+        scopeId: SEED_IDS.faculty,
       },
       ...SEED_IDS.studentUsers.map((userId, index) => ({
         id: `90000000-0000-4000-8000-0000000000${10 + index}`,

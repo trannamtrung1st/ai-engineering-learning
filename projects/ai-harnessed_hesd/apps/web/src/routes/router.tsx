@@ -3,6 +3,8 @@ import { AdminLayout } from "./AdminLayout";
 import { StaffLayout } from "./StaffLayout";
 import { StudentLayout } from "./StudentLayout";
 import { StudentAttendanceReportGuard } from "./pages/AttendanceReportPage";
+import { AuditLogPageGuard } from "./pages/AuditLogPage";
+import { AuditorSessionRosterPage } from "./pages/AuditorSessionRosterPage";
 import { AdminClassSectionsPage } from "./pages/AdminClassSectionsPage";
 import { AdminEnrollmentsPage } from "./pages/AdminEnrollmentsPage";
 import { AdminPoliciesPage } from "./pages/AdminPoliciesPage";
@@ -43,6 +45,8 @@ export function AppRouter() {
         { path: "lecturer/sessions/:sessionId", element: <LecturerSessionPage /> },
         { path: "lecturer/sessions/:sessionId/roster", element: <LecturerRosterPage /> },
         { path: "reports/attendance", element: <StudentAttendanceReportGuard /> },
+        { path: "audit/logs", element: <AuditLogPageGuard /> },
+        { path: "audit/sessions/:sessionId/roster", element: <AuditorSessionRosterPage /> },
       ],
     },
   ]);

@@ -3,24 +3,35 @@ import { AppShell } from "../components/layout/AppShell";
 import { SidebarNav } from "../components/layout/SidebarNav";
 import { TopContextHeader } from "../components/layout/TopContextHeader";
 
-const staffNav = [
+const baseStaffNav = [
   { to: "/showcase", label: "Design system" },
   { to: "/lecturer/sessions", label: "Buổi học (PG-04)" },
   { to: "/reports/attendance", label: "Báo cáo (PG-13)" },
+  { to: "/audit/logs", label: "Audit (PG-15)" },
 ];
 
 export function StaffLayout() {
   const projectionSession = useMatch("/lecturer/sessions/:sessionId");
   const rosterSession = useMatch("/lecturer/sessions/:sessionId/roster");
+  const auditRoster = useMatch("/audit/sessions/:sessionId/roster");
+  const auditLogs = useMatch("/audit/logs");
+
+  const headerTitle = auditLogs
+    ? "Tra cứu nhật ký audit"
+    : auditRoster
+      ? "Danh sách buổi học (chỉ đọc)"
+      : "Điều khiển buổi học";
+
+  const headerEyebrow = auditLogs || auditRoster ? "Không gian kiểm toán" : "Không gian giảng viên";
 
   return (
     <AppShell
-      compact={Boolean(projectionSession || rosterSession)}
-      sidebar={<SidebarNav items={staffNav} />}
+      compact={Boolean(projectionSession || rosterSession || auditRoster)}
+      sidebar={<SidebarNav items={baseStaffNav} />}
       header={
         <TopContextHeader
-          eyebrow="Không gian giảng viên"
-          title="Điều khiển buổi học"
+          eyebrow={headerEyebrow}
+          title={headerTitle}
           meta="LAY-02 · AppShell + SidebarNav + TopContextHeader"
         />
       }

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   createAttendanceExport,
   downloadAttendanceExport,
@@ -28,6 +28,7 @@ export interface AttendanceReportListProps {
   termOptions?: FilterOption[];
   sectionOptions?: FilterOption[];
   canExport?: boolean;
+  readOnlyStaff?: boolean;
 }
 
 const STATUS_OPTIONS: FilterOption[] = [
@@ -74,6 +75,7 @@ export function AttendanceReportList({
   termOptions = [],
   sectionOptions = [],
   canExport = false,
+  readOnlyStaff = false,
 }: AttendanceReportListProps) {
   const [searchParams, setSearchParams] = useSearchParams();
   const query = useMemo(() => {
@@ -178,8 +180,32 @@ export function AttendanceReportList({
         cell: (row: AttendanceReportRow) =>
           row.checkInAt ? formatCheckInTimestamp(row.checkInAt) : "—",
       },
+      ...(readOnlyStaff
+        ? [
+            {
+              id: "evidence",
+              header: "Bằng chứng",
+              cell: (row: AttendanceReportRow) => (
+                <div className={styles.evidenceLinks}>
+                  <Link
+                    className={styles.evidenceLink}
+                    to={`/audit/sessions/${row.classSessionId}/roster`}
+                  >
+                    Danh sách buổi học
+                  </Link>
+                  <Link
+                    className={styles.evidenceLink}
+                    to={`/audit/logs?targetId=${encodeURIComponent(row.studentUserId)}`}
+                  >
+                    Audit
+                  </Link>
+                </div>
+              ),
+            },
+          ]
+        : []),
     ],
-    [],
+    [readOnlyStaff],
   );
 
   const pageStart = totalItems === 0 ? 0 : (query.page - 1) * query.pageSize + 1;

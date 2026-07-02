@@ -13,6 +13,7 @@ import {
 import {
   canAccessInstitutionReport,
   canExecuteExport,
+  isReadOnlyStaffRole,
 } from "../../lib/auth/role-guard";
 import { getAccessToken } from "../../lib/auth/session";
 import { buildStaffLoginRedirect } from "../../lib/auth/staff-gate";
@@ -89,6 +90,7 @@ export function AttendanceReportPage() {
           termOptions={[{ value: SEED_TERM_ID, label: DEFAULT_TERM_LABEL }]}
           sectionOptions={sectionOptions}
           canExport={canExecuteExport(roles)}
+          readOnlyStaff={isReadOnlyStaffRole(roles)}
         />
       )}
     </ContentSection>
