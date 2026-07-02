@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-02T09:14:17Z",
+  "generatedAt": "2026-07-02T09:15:09Z",
   "repoRoot": "/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd",
   "inputMode": "flexible",
   "zones": {
@@ -233,21 +233,21 @@
     {
       "path": "docs/technical/11-testing-plan.md",
       "zone": "technical",
-      "lines": 230,
+      "lines": 242,
       "hasRequirementIds": true,
       "outlineKey": "docs/technical/11-testing-plan.md"
     },
     {
       "path": "docs/technical/12-backend-frontend-tech-stack.md",
       "zone": "technical",
-      "lines": 181,
+      "lines": 192,
       "hasRequirementIds": true,
       "outlineKey": "docs/technical/12-backend-frontend-tech-stack.md"
     },
     {
       "path": "docs/technical/13-docker-compose-local-runtime.md",
       "zone": "technical",
-      "lines": 198,
+      "lines": 210,
       "hasRequirementIds": true,
       "outlineKey": "docs/technical/13-docker-compose-local-runtime.md"
     },

@@ -264,7 +264,7 @@
     },
     {
       "id": "tech-consistency-gate",
-      "passes": false,
+      "passes": true,
       "priority": 24,
       "phase": 2,
       "kind": "gate",
