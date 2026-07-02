@@ -71,7 +71,7 @@
     },
     {
       "id": "brd-workflows-fr",
-      "passes": false,
+      "passes": true,
       "priority": 12,
       "phase": 1,
       "kind": "agent",

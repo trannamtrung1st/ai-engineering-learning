@@ -16,3 +16,4 @@
 - [2026-07-02T08:35:20Z] **input-validate** — passed
 - [2026-07-02T08:37:00Z] **brd-mvp-prompt** — passed
 - [2026-07-02T08:38:28Z] **brd-foundation** — passed
+- [2026-07-02T08:41:44Z] **brd-workflows-fr** — passed
