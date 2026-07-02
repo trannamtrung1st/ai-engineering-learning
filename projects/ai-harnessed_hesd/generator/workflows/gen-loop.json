@@ -1,0 +1,35 @@
+{
+  "inputMode": "flexible",
+  "loop": {
+    "maxIterations": 40,
+    "commitOnPass": true
+  },
+  "agent": {
+    "timeoutMs": 3600000,
+    "idleTimeoutMs": 300000,
+    "signalGraceMs": 15000,
+    "resultGraceMs": 5000
+  },
+  "signals": {
+    "complete": "GEN_COMPLETE",
+    "stepDone": "STEP_DONE",
+    "stepBlocked": "STEP_BLOCKED",
+    "gateRepairDone": "GATE_REPAIR_DONE",
+    "reviewPass": "REVIEW_PASS",
+    "reviewFail": "REVIEW_FAIL"
+  },
+  "aiReview": {
+    "required": false,
+    "modelKey": "reviewer"
+  },
+  "gateRecovery": {
+    "enabled": true,
+    "maxRepairAttemptsPerStep": 3
+  },
+  "placeholderPatterns": [
+    "TODO",
+    "TBD",
+    "lorem ipsum",
+    "{{"
+  ]
+}

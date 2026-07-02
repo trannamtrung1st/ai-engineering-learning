@@ -1,0 +1,127 @@
+{
+  "agents": {
+    "backend": {
+      "alwaysRead": [
+        "docs/technical/00-system-overview.md",
+        "docs/technical/08-validation-rules.md",
+        "docs/technical/12-backend-frontend-tech-stack.md"
+      ]
+    },
+    "frontend": {
+      "alwaysRead": [
+        "docs/ui-ux/DESIGN.md",
+        "docs/ui-ux/design-system/layout.md",
+        "docs/ui-ux/design-system/typography.md",
+        "docs/ui-ux/design-system/colors.md",
+        "docs/ui-ux/04-design-tokens.md",
+        "docs/ui-ux/00-production-ui-quality-bar.md",
+        "docs/ui-ux/01-ui-ux-foundation.md",
+        "docs/ui-ux/13-accessibility-basics.md",
+        "ai-harness/skills/visual-design/SKILL.md",
+        "ai-harness/docs/ui-visual-verification.md"
+      ]
+    },
+    "infra": {
+      "alwaysRead": [
+        "docs/technical/10-local-development-setup.md"
+      ]
+    },
+    "test": {
+      "alwaysRead": [
+        "docs/technical/11-testing-plan.md",
+        "docs/brds/08-acceptance-mvp-future.md"
+      ]
+    },
+    "tester": {
+      "alwaysRead": [
+        "docs/ui-ux/DESIGN.md",
+        "docs/ui-ux/design-system/layout.md",
+        "docs/ui-ux/design-system/buttons.md",
+        "docs/ui-ux/04-design-tokens.md",
+        "docs/technical/11-testing-plan.md",
+        "docs/brds/08-acceptance-mvp-future.md",
+        "ai-harness/docs/browser-mcp.md",
+        "ai-harness/docs/playwright-regression.md",
+        "ai-harness/docs/ux-bug-logging.md",
+        "ai-harness/docs/ui-visual-verification.md",
+        "docs/ui-ux/00-production-ui-quality-bar.md",
+        "docs/ui-ux/13-accessibility-basics.md",
+        "ai-harness/skills/visual-design/SKILL.md",
+        "ai-harness/skills/ui-ux-testing/SKILL.md"
+      ]
+    },
+    "testgen": {
+      "alwaysRead": [
+        "docs/technical/11-testing-plan.md",
+        "docs/brds/08-acceptance-mvp-future.md"
+      ]
+    }
+  },
+  "slices": {
+    "playwright-ui-workspace": {
+      "agent": "infra",
+      "docs": [
+        "ai-harness/docs/playwright-regression.md",
+        "docs/technical/11-testing-plan.md"
+      ]
+    },
+    "repo-monorepo-bootstrap": {
+      "agent": "infra",
+      "docs": [
+        "docs/technical/12-backend-frontend-tech-stack.md",
+        "docs/technical/10-local-development-setup.md"
+      ]
+    },
+    "docker-compose-db": {
+      "agent": "infra",
+      "docs": [
+        "docs/technical/13-docker-compose-local-runtime.md",
+        "docs/technical/04-database-design.md"
+      ]
+    },
+    "domain-package": {
+      "agent": "backend",
+      "docs": [
+        "docs/technical/03-domain-model.md",
+        "docs/technical/07-state-machines.md",
+        "docs/technical/08-validation-rules.md"
+      ]
+    },
+    "api-foundation": {
+      "agent": "backend",
+      "docs": [
+        "docs/technical/05-api-design.md",
+        "docs/technical/09-error-handling.md",
+        "docs/technical/01-roles-permissions.md"
+      ]
+    },
+    "web-design-system-shell": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/DESIGN.md",
+        "docs/ui-ux/design-system/buttons.md",
+        "docs/ui-ux/design-system/cards.md",
+        "docs/ui-ux/design-system/sidebars.md",
+        "docs/ui-ux/04-design-tokens.md",
+        "docs/ui-ux/05-common-ui-components.md",
+        "docs/ui-ux/06-app-layout-components.md"
+      ]
+    },
+    "web-auth-session-pages": {
+      "agent": "frontend",
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/10-user-flows.md",
+        "docs/ui-ux/06-app-layout-components.md",
+        "docs/ui-ux/02-ui-framework-tech-stack.md"
+      ]
+    },
+    "e2e-acceptance-suite": {
+      "agent": "test",
+      "docs": [
+        "docs/technical/11-testing-plan.md",
+        "docs/brds/08-acceptance-mvp-future.md"
+      ]
+    }
+  }
+}

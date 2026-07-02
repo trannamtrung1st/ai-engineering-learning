@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["steps"],
+  "properties": {
+    "description": { "type": "string" },
+    "apiBase": {
+      "type": "string",
+      "description": "Optional API base URL override (default: http://localhost:${AIH_PREVIEW_API_PORT}/api/v1)"
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["method", "path"],
+        "properties": {
+          "method": {
+            "type": "string",
+            "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+          },
+          "path": { "type": "string" },
+          "body": { "type": "object" },
+          "auth": {
+            "type": "boolean",
+            "description": "When true, send Authorization: Bearer from a prior saveToken step"
+          },
+          "saveToken": {
+            "type": "boolean",
+            "description": "When true, save .token from JSON response for later auth steps"
+          },
+          "expectStatus": { "type": "integer" },
+          "expectJson": {
+            "type": "object",
+            "description": "Key/value pairs that must match in the JSON response body"
+          },
+          "skipWhenEmpty": {
+            "type": "string",
+            "description": "jq expression; when true after the step, exit 0 with SKIP (e.g. missing seed data)"
+          }
+        }
+      }
+    }
+  }
+}

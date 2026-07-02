@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["branchName", "slices"],
+  "properties": {
+    "branchName": { "type": "string" },
+    "slices": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "passes", "priority", "phase", "agent", "acceptance", "docs", "description"],
+        "properties": {
+          "id": { "type": "string" },
+          "passes": { "type": "boolean" },
+          "priority": { "type": "integer" },
+          "phase": { "type": "integer" },
+          "agent": { "type": "string" },
+          "acceptance": { "type": "array", "items": { "type": "string" } },
+          "docs": { "type": "array", "items": { "type": "string" } },
+          "description": { "type": "string" },
+          "completionArtifacts": { "type": "array", "items": { "type": "string" } },
+          "testRequirements": { "type": "object" },
+          "excludes": { "type": "array", "items": { "type": "string" } },
+          "notes": { "type": "string" },
+          "reverifyOnDrift": { "type": "boolean" },
+          "history": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["at", "kind", "reason", "source"],
+              "properties": {
+                "at": { "type": "string" },
+                "kind": { "type": "string" },
+                "reason": { "type": "string" },
+                "source": { "type": "string" },
+                "relatedSlice": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

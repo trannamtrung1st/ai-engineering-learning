@@ -1,0 +1,280 @@
+{
+  "generatedAt": "2026-07-02T08:35:20Z",
+  "repoRoot": "/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd",
+  "inputMode": "flexible",
+  "zones": {
+    "seed": [
+      "docs/initial-idea.md"
+    ],
+    "meta": [
+      "docs/product-meta.json"
+    ],
+    "brds": [],
+    "technical": [],
+    "uiux": [],
+    "designSystem": [
+      "docs/ui-ux/DESIGN.md",
+      "docs/ui-ux/design-system/accordion.md",
+      "docs/ui-ux/design-system/alerts.md",
+      "docs/ui-ux/design-system/avatars.md",
+      "docs/ui-ux/design-system/badges.md",
+      "docs/ui-ux/design-system/borders.md",
+      "docs/ui-ux/design-system/button-group.md",
+      "docs/ui-ux/design-system/buttons.md",
+      "docs/ui-ux/design-system/cards.md",
+      "docs/ui-ux/design-system/colors.md",
+      "docs/ui-ux/design-system/content.md",
+      "docs/ui-ux/design-system/dropdown.md",
+      "docs/ui-ux/design-system/icon-shapes.md",
+      "docs/ui-ux/design-system/inputs.md",
+      "docs/ui-ux/design-system/layout.md",
+      "docs/ui-ux/design-system/lists.md",
+      "docs/ui-ux/design-system/modals.md",
+      "docs/ui-ux/design-system/pagination.md",
+      "docs/ui-ux/design-system/radios-checkboxes-toggle.md",
+      "docs/ui-ux/design-system/radius.md",
+      "docs/ui-ux/design-system/shadows.md",
+      "docs/ui-ux/design-system/sidebars.md",
+      "docs/ui-ux/design-system/tables.md",
+      "docs/ui-ux/design-system/tabs.md",
+      "docs/ui-ux/design-system/tooltips-popovers.md",
+      "docs/ui-ux/design-system/typography.md"
+    ],
+    "misc": []
+  },
+  "files": [
+    {
+      "path": "docs/initial-idea.md",
+      "zone": "seed",
+      "lines": 524,
+      "hasRequirementIds": true,
+      "outlineKey": null
+    },
+    {
+      "path": "docs/product-meta.json",
+      "zone": "meta",
+      "lines": 59,
+      "hasRequirementIds": false,
+      "outlineKey": null
+    },
+    {
+      "path": "docs/ui-ux/DESIGN.md",
+      "zone": "designSystem",
+      "lines": 57,
+      "hasRequirementIds": false,
+      "outlineKey": "docs/ui-ux/DESIGN.md"
+    },
+    {
+      "path": "docs/ui-ux/design-system/accordion.md",
+      "zone": "designSystem",
+      "lines": 59,
+      "hasRequirementIds": false,
+      "outlineKey": "docs/ui-ux/design-system/accordion.md"
+    },
+    {
+      "path": "docs/ui-ux/design-system/alerts.md",
+      "zone": "designSystem",
+      "lines": 33,
+      "hasRequirementIds": false,
+      "outlineKey": "docs/ui-ux/design-system/alerts.md"
+    },
+    {
+      "path": "docs/ui-ux/design-system/avatars.md",
+      "zone": "designSystem",
+      "lines": 44,
+      "hasRequirementIds": false,
+      "outlineKey": "docs/ui-ux/design-system/avatars.md"
+    },
+    {
+      "path": "docs/ui-ux/design-system/badges.md",
+      "zone": "designSystem",
+      "lines": 87,
+      "hasRequirementIds": false,
+      "outlineKey": "docs/ui-ux/design-system/badges.md"
+    },
+    {
+      "path": "docs/ui-ux/design-system/borders.md",
+      "zone": "designSystem",
+      "lines": 24,
+      "hasRequirementIds": false,
+      "outlineKey": "docs/ui-ux/design-system/borders.md"
+    },
+    {
+      "path": "docs/ui-ux/design-system/button-group.md",
+      "zone": "designSystem",
+      "lines": 34,
+      "hasRequirementIds": false,
+      "outlineKey": "docs/ui-ux/design-system/button-group.md"
+    },
+    {
+      "path": "docs/ui-ux/design-system/buttons.md",
+      "zone": "designSystem",
+      "lines": 104,
+      "hasRequirementIds": false,
+      "outlineKey": "docs/ui-ux/design-system/buttons.md"
+    },
+    {
+      "path": "docs/ui-ux/design-system/cards.md",
+      "zone": "designSystem",
+      "lines": 41,
+      "hasRequirementIds": false,
+      "outlineKey": "docs/ui-ux/design-system/cards.md"
+    },
+    {
+      "path": "docs/ui-ux/design-system/colors.md",
+      "zone": "designSystem",
+      "lines": 161,
+      "hasRequirementIds": false,
+      "outlineKey": "docs/ui-ux/design-system/colors.md"
+    },
+    {
+      "path": "docs/ui-ux/design-system/content.md",
+      "zone": "designSystem",
+      "lines": 55,
+      "hasRequirementIds": false,
+      "outlineKey": "docs/ui-ux/design-system/content.md"
+    },
+    {
+      "path": "docs/ui-ux/design-system/dropdown.md",
+      "zone": "designSystem",
+      "lines": 80,
+      "hasRequirementIds": false,
+      "outlineKey": "docs/ui-ux/design-system/dropdown.md"
+    },
+    {
+      "path": "docs/ui-ux/design-system/icon-shapes.md",
+      "zone": "designSystem",
+      "lines": 47,
+      "hasRequirementIds": false,
+      "outlineKey": "docs/ui-ux/design-system/icon-shapes.md"
+    },
+    {
+      "path": "docs/ui-ux/design-system/inputs.md",
+      "zone": "designSystem",
+      "lines": 68,
+      "hasRequirementIds": false,
+      "outlineKey": "docs/ui-ux/design-system/inputs.md"
+    },
+    {
+      "path": "docs/ui-ux/design-system/layout.md",
+      "zone": "designSystem",
+      "lines": 61,
+      "hasRequirementIds": false,
+      "outlineKey": "docs/ui-ux/design-system/layout.md"
+    },
+    {
+      "path": "docs/ui-ux/design-system/lists.md",
+      "zone": "designSystem",
+      "lines": 24,
+      "hasRequirementIds": false,
+      "outlineKey": "docs/ui-ux/design-system/lists.md"
+    },
+    {
+      "path": "docs/ui-ux/design-system/modals.md",
+      "zone": "designSystem",
+      "lines": 57,
+      "hasRequirementIds": false,
+      "outlineKey": "docs/ui-ux/design-system/modals.md"
+    },
+    {
+      "path": "docs/ui-ux/design-system/pagination.md",
+      "zone": "designSystem",
+      "lines": 38,
+      "hasRequirementIds": false,
+      "outlineKey": "docs/ui-ux/design-system/pagination.md"
+    },
+    {
+      "path": "docs/ui-ux/design-system/radios-checkboxes-toggle.md",
+      "zone": "designSystem",
+      "lines": 55,
+      "hasRequirementIds": false,
+      "outlineKey": "docs/ui-ux/design-system/radios-checkboxes-toggle.md"
+    },
+    {
+      "path": "docs/ui-ux/design-system/radius.md",
+      "zone": "designSystem",
+      "lines": 17,
+      "hasRequirementIds": false,
+      "outlineKey": "docs/ui-ux/design-system/radius.md"
+    },
+    {
+      "path": "docs/ui-ux/design-system/shadows.md",
+      "zone": "designSystem",
+      "lines": 35,
+      "hasRequirementIds": false,
+      "outlineKey": "docs/ui-ux/design-system/shadows.md"
+    },
+    {
+      "path": "docs/ui-ux/design-system/sidebars.md",
+      "zone": "designSystem",
+      "lines": 57,
+      "hasRequirementIds": false,
+      "outlineKey": "docs/ui-ux/design-system/sidebars.md"
+    },
+    {
+      "path": "docs/ui-ux/design-system/tables.md",
+      "zone": "designSystem",
+      "lines": 39,
+      "hasRequirementIds": false,
+      "outlineKey": "docs/ui-ux/design-system/tables.md"
+    },
+    {
+      "path": "docs/ui-ux/design-system/tabs.md",
+      "zone": "designSystem",
+      "lines": 66,
+      "hasRequirementIds": false,
+      "outlineKey": "docs/ui-ux/design-system/tabs.md"
+    },
+    {
+      "path": "docs/ui-ux/design-system/tooltips-popovers.md",
+      "zone": "designSystem",
+      "lines": 56,
+      "hasRequirementIds": false,
+      "outlineKey": "docs/ui-ux/design-system/tooltips-popovers.md"
+    },
+    {
+      "path": "docs/ui-ux/design-system/typography.md",
+      "zone": "designSystem",
+      "lines": 90,
+      "hasRequirementIds": false,
+      "outlineKey": "docs/ui-ux/design-system/typography.md"
+    }
+  ],
+  "seedPaths": [
+    "docs/initial-idea.md",
+    "docs/product-meta.json",
+    "docs/ui-ux/DESIGN.md",
+    "docs/ui-ux/design-system/accordion.md",
+    "docs/ui-ux/design-system/alerts.md",
+    "docs/ui-ux/design-system/avatars.md",
+    "docs/ui-ux/design-system/badges.md",
+    "docs/ui-ux/design-system/borders.md",
+    "docs/ui-ux/design-system/button-group.md",
+    "docs/ui-ux/design-system/buttons.md",
+    "docs/ui-ux/design-system/cards.md",
+    "docs/ui-ux/design-system/colors.md",
+    "docs/ui-ux/design-system/content.md",
+    "docs/ui-ux/design-system/dropdown.md",
+    "docs/ui-ux/design-system/icon-shapes.md",
+    "docs/ui-ux/design-system/inputs.md",
+    "docs/ui-ux/design-system/layout.md",
+    "docs/ui-ux/design-system/lists.md",
+    "docs/ui-ux/design-system/modals.md",
+    "docs/ui-ux/design-system/pagination.md",
+    "docs/ui-ux/design-system/radios-checkboxes-toggle.md",
+    "docs/ui-ux/design-system/radius.md",
+    "docs/ui-ux/design-system/shadows.md",
+    "docs/ui-ux/design-system/sidebars.md",
+    "docs/ui-ux/design-system/tables.md",
+    "docs/ui-ux/design-system/tabs.md",
+    "docs/ui-ux/design-system/tooltips-popovers.md",
+    "docs/ui-ux/design-system/typography.md"
+  ],
+  "hasDesignSystem": true,
+  "completeness": {
+    "phase0": true,
+    "phase1": false,
+    "phase2": false,
+    "phase3": false
+  }
+}

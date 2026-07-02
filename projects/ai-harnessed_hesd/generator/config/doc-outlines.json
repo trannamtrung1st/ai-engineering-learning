@@ -1,0 +1,214 @@
+{
+  "docs/brds/prompt.md": {
+    "requiredHeadings": ["Product Goal", "MVP Scope", "Roles", "Canonical States", "Output Rules"],
+    "minLines": 40
+  },
+  "docs/brds/00-project-overview.md": {
+    "requiredHeadings": ["Project Overview", "Business Context", "Objectives"],
+    "minLines": 25
+  },
+  "docs/brds/01-stakeholders-scope.md": {
+    "requiredHeadings": ["Stakeholders", "Scope"],
+    "requiredSubstrings": ["In scope", "Out of scope"],
+    "minLines": 30
+  },
+  "docs/brds/02-business-workflow.md": {
+    "requiredHeadings": ["Business Workflow"],
+    "minLines": 30
+  },
+  "docs/brds/03-functional-requirements.md": {
+    "requiredHeadings": ["Functional Requirements"],
+    "idPatterns": [{ "prefix": "FR", "minCount": 3 }],
+    "requiredSubstrings": ["Actor", "Behavior"],
+    "minLines": 50
+  },
+  "docs/brds/04-business-rules.md": {
+    "requiredHeadings": ["Business Rules"],
+    "idPatterns": [{ "prefix": "BR", "minCount": 2 }],
+    "minLines": 30
+  },
+  "docs/brds/05-state-machine.md": {
+    "requiredHeadings": ["State Machine"],
+    "minLines": 25
+  },
+  "docs/brds/06-domain-model.md": {
+    "requiredHeadings": ["Domain Model"],
+    "minLines": 25
+  },
+  "docs/brds/07-non-functional-risk.md": {
+    "requiredHeadings": ["Non-functional"],
+    "idPatterns": [{ "prefix": "NFR", "minCount": 2 }],
+    "minLines": 25
+  },
+  "docs/brds/08-acceptance-mvp-future.md": {
+    "requiredHeadings": ["Acceptance"],
+    "idPatterns": [{ "prefix": "AC", "minCount": 3 }],
+    "requiredSubstrings": ["Future"],
+    "minLines": 40
+  },
+  "docs/technical/00-system-overview.md": {
+    "requiredHeadings": ["System Overview", "Architecture"],
+    "requiredSubstrings": ["mermaid"],
+    "minLines": 30
+  },
+  "docs/technical/01-roles-permissions.md": {
+    "requiredHeadings": ["Roles", "Permissions"],
+    "minLines": 25
+  },
+  "docs/technical/02-module-breakdown.md": {
+    "requiredHeadings": ["Module"],
+    "minLines": 30
+  },
+  "docs/technical/03-domain-model.md": {
+    "requiredHeadings": ["Domain Model"],
+    "minLines": 25
+  },
+  "docs/technical/04-database-design.md": {
+    "requiredHeadings": ["Database"],
+    "requiredSubstrings": ["PRIMARY KEY"],
+    "minLines": 30
+  },
+  "docs/technical/05-api-design.md": {
+    "requiredHeadings": ["API"],
+    "minLines": 40
+  },
+  "docs/technical/06-main-workflows.md": {
+    "requiredHeadings": ["Workflow"],
+    "minLines": 30
+  },
+  "docs/technical/07-state-machines.md": {
+    "requiredHeadings": ["State"],
+    "requiredSubstrings": ["Concurrency"],
+    "minLines": 25
+  },
+  "docs/technical/08-validation-rules.md": {
+    "requiredHeadings": ["Validation"],
+    "minLines": 25
+  },
+  "docs/technical/09-error-handling.md": {
+    "requiredHeadings": ["Error"],
+    "minLines": 20
+  },
+  "docs/technical/10-local-development-setup.md": {
+    "requiredHeadings": ["Local Development"],
+    "minLines": 20
+  },
+  "docs/technical/11-testing-plan.md": {
+    "requiredHeadings": ["Testing"],
+    "requiredSubstrings": ["flaky", "test isolation"],
+    "minLines": 25
+  },
+  "docs/technical/12-backend-frontend-tech-stack.md": {
+    "requiredHeadings": ["Tech Stack"],
+    "requiredSubstrings": ["Postgres", "Next.js"],
+    "minLines": 20
+  },
+  "docs/technical/13-docker-compose-local-runtime.md": {
+    "requiredHeadings": ["Docker"],
+    "requiredSubstrings": ["test stack", "flake"],
+    "minLines": 20
+  },
+  "docs/ui-ux/00-production-ui-quality-bar.md": {
+    "requiredHeadings": ["Quality"],
+    "requiredSubstrings": ["Acceptable", "Not acceptable", "contrast"],
+    "minLines": 25
+  },
+  "docs/ui-ux/DESIGN.md": {
+    "requiredHeadings": ["Scope", "Module index"],
+    "requiredSubstrings": ["design-system/", "Precedence"],
+    "minLines": 40
+  },
+  "docs/ui-ux/design-system/accordion.md": { "requiredHeadings": ["Accordion"], "minLines": 10 },
+  "docs/ui-ux/design-system/alerts.md": { "requiredHeadings": ["Alerts"], "minLines": 10 },
+  "docs/ui-ux/design-system/avatars.md": { "requiredHeadings": ["Avatars"], "minLines": 10 },
+  "docs/ui-ux/design-system/badges.md": { "requiredHeadings": ["Badges"], "minLines": 10 },
+  "docs/ui-ux/design-system/borders.md": { "requiredHeadings": ["Borders"], "minLines": 10 },
+  "docs/ui-ux/design-system/button-group.md": { "requiredHeadings": ["Button Groups"], "minLines": 10 },
+  "docs/ui-ux/design-system/buttons.md": { "requiredHeadings": ["Buttons"], "minLines": 10 },
+  "docs/ui-ux/design-system/cards.md": { "requiredHeadings": ["Cards"], "minLines": 10 },
+  "docs/ui-ux/design-system/colors.md": { "requiredHeadings": ["Color Tokens"], "minLines": 10 },
+  "docs/ui-ux/design-system/content.md": { "requiredHeadings": ["Content & Grid System"], "minLines": 10 },
+  "docs/ui-ux/design-system/dropdown.md": { "requiredHeadings": ["Dropdown"], "minLines": 10 },
+  "docs/ui-ux/design-system/icon-shapes.md": { "requiredHeadings": ["Icon Shapes"], "minLines": 10 },
+  "docs/ui-ux/design-system/inputs.md": { "requiredHeadings": ["Inputs"], "minLines": 10 },
+  "docs/ui-ux/design-system/layout.md": { "requiredHeadings": ["Layout & Spacing"], "minLines": 10 },
+  "docs/ui-ux/design-system/lists.md": { "requiredHeadings": ["Lists"], "minLines": 10 },
+  "docs/ui-ux/design-system/modals.md": { "requiredHeadings": ["Modals"], "minLines": 10 },
+  "docs/ui-ux/design-system/pagination.md": { "requiredHeadings": ["Pagination"], "minLines": 10 },
+  "docs/ui-ux/design-system/radios-checkboxes-toggle.md": { "requiredHeadings": ["Radios, Checkboxes & Toggles"], "minLines": 10 },
+  "docs/ui-ux/design-system/radius.md": { "requiredHeadings": ["Border Radius"], "minLines": 10 },
+  "docs/ui-ux/design-system/shadows.md": { "requiredHeadings": ["Shadows"], "minLines": 10 },
+  "docs/ui-ux/design-system/sidebars.md": { "requiredHeadings": ["Sidebars"], "minLines": 10 },
+  "docs/ui-ux/design-system/tables.md": { "requiredHeadings": ["Tables"], "minLines": 10 },
+  "docs/ui-ux/design-system/tabs.md": { "requiredHeadings": ["Tabs"], "minLines": 10 },
+  "docs/ui-ux/design-system/tooltips-popovers.md": { "requiredHeadings": ["Tooltips & Popovers"], "minLines": 10 },
+  "docs/ui-ux/design-system/typography.md": { "requiredHeadings": ["Typography"], "minLines": 10 },
+  "docs/ui-ux/01-design-overview.md": {
+    "requiredHeadings": ["Design Overview"],
+    "minLines": 20
+  },
+  "docs/ui-ux/01-ui-ux-foundation.md": {
+    "requiredHeadings": ["Foundation"],
+    "minLines": 20
+  },
+  "docs/ui-ux/02-ui-framework-tech-stack.md": {
+    "requiredHeadings": ["Framework"],
+    "minLines": 20
+  },
+  "docs/ui-ux/03-design-system-basics.md": {
+    "requiredHeadings": ["Design System"],
+    "requiredSubstrings": ["design-system/", "Precedence"],
+    "minLines": 20
+  },
+  "docs/ui-ux/04-design-tokens.md": {
+    "requiredHeadings": ["Token"],
+    "requiredSubstrings": ["DESIGN", "Mapping"],
+    "minLines": 20
+  },
+  "docs/ui-ux/05-common-ui-components.md": {
+    "requiredHeadings": ["Component"],
+    "requiredSubstrings": ["TableToolbar"],
+    "minLines": 20
+  },
+  "docs/ui-ux/06-app-layout-components.md": {
+    "requiredHeadings": ["Layout"],
+    "minLines": 20
+  },
+  "docs/ui-ux/07-domain-specific-components.md": {
+    "requiredHeadings": ["Component"],
+    "minLines": 20
+  },
+  "docs/ui-ux/08-forms-validation-ux.md": {
+    "requiredHeadings": ["Form"],
+    "minLines": 20
+  },
+  "docs/ui-ux/09-page-list.md": {
+    "requiredHeadings": ["Page"],
+    "minLines": 25
+  },
+  "docs/ui-ux/10-user-flows.md": {
+    "requiredHeadings": ["Flow"],
+    "minLines": 25
+  },
+  "docs/ui-ux/11-wireframes.md": {
+    "requiredHeadings": ["Wireframe"],
+    "minLines": 25
+  },
+  "docs/ui-ux/12-ui-states.md": {
+    "requiredHeadings": ["State"],
+    "minLines": 20
+  },
+  "docs/ui-ux/13-accessibility-basics.md": {
+    "requiredHeadings": ["Accessibility"],
+    "minLines": 15
+  },
+  "docs/ui-ux/14-listing-pages-search-filter-sort.md": {
+    "requiredHeadings": ["Listing"],
+    "requiredSubstrings": ["Mandatory", "Search"],
+    "minLines": 20
+  },
+  "docs/ui-ux/README.md": {
+    "requiredHeadings": ["UI/UX"],
+    "minLines": 10
+  }
+}
