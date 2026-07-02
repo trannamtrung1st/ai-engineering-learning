@@ -519,7 +519,7 @@
     },
     {
       "id": "harness-customize-agents",
-      "passes": false,
+      "passes": true,
       "priority": 43,
       "phase": 4,
       "kind": "scaffold",
