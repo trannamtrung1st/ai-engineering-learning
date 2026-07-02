@@ -459,6 +459,14 @@
         "Append-only audit write service",
         "Audit query endpoint with scope constraints",
         "Correlation-id propagation in mutation/event flows"
+      ],
+      "history": [
+        {
+          "at": "2026-07-02T10:18:15Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-18 — reverify after TestGen",
+          "source": "harness"
+        }
       ]
     },
     {
@@ -937,6 +945,12 @@
           "at": "2026-07-02T10:01:56Z",
           "kind": "drift",
           "reason": "Doc drift for AC-12 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T10:18:15Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-18 — reverify after TestGen",
           "source": "harness"
         }
       ]
