@@ -539,6 +539,19 @@
         "Absence-threshold evaluator",
         "Alert event generation payloads",
         "Configuration toggle to keep capability optional in MVP"
+      ],
+      "testRequirements": {
+        "acceptanceTags": [
+          "AC-25"
+        ]
+      },
+      "history": [
+        {
+          "at": "2026-07-02T10:36:11Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-25 — reverify after TestGen",
+          "source": "harness"
+        }
       ]
     },
     {
@@ -719,7 +732,8 @@
       "testRequirements": {
         "acceptanceTags": [
           "AC-13",
-          "AC-14"
+          "AC-14",
+          "AC-25"
         ]
       },
       "history": [
@@ -733,6 +747,12 @@
           "at": "2026-07-02T10:09:55Z",
           "kind": "drift",
           "reason": "Doc drift for AC-14 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T10:36:11Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-25 — reverify after TestGen",
           "source": "harness"
         }
       ]
