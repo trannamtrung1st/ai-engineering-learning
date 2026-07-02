@@ -400,6 +400,19 @@
         "Paginated report query endpoint",
         "CSV export job endpoint and metadata responses",
         "Scope-filter enforcement shared by report/export paths"
+      ],
+      "testRequirements": {
+        "acceptanceTags": [
+          "AC-15"
+        ]
+      },
+      "history": [
+        {
+          "at": "2026-07-02T10:11:21Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-15 — reverify after TestGen",
+          "source": "harness"
+        }
       ]
     },
     {
@@ -784,6 +797,19 @@
         "Attendance report route with filter and sort controls",
         "Export action panel with scope confirmation",
         "Export job status and completion feedback"
+      ],
+      "testRequirements": {
+        "acceptanceTags": [
+          "AC-15"
+        ]
+      },
+      "history": [
+        {
+          "at": "2026-07-02T10:11:21Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-15 — reverify after TestGen",
+          "source": "harness"
+        }
       ]
     },
     {
@@ -891,6 +917,19 @@
         "Role matrix E2E scenarios for report/export access",
         "Assertions for denial behavior without data leakage",
         "Audit-write assertions tied to export actions"
+      ],
+      "testRequirements": {
+        "acceptanceTags": [
+          "AC-15"
+        ]
+      },
+      "history": [
+        {
+          "at": "2026-07-02T10:11:21Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-15 — reverify after TestGen",
+          "source": "harness"
+        }
       ]
     },
     {

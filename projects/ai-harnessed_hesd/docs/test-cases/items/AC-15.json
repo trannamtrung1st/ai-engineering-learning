@@ -1,0 +1,192 @@
+{
+  "productItemId": "AC-15",
+  "version": 1,
+  "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+  "generatedAt": "2026-07-02T12:00:00Z",
+  "cases": [
+    {
+      "id": "TC-AC-15-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["AC-15", "FR-27", "FR-28", "BR-18", "BR-19"],
+      "title": "Scenario-matrix coverage for lecturer export scope restriction",
+      "preconditions": [
+        "Lecturer user is authenticated and assigned to section A only.",
+        "Attendance records exist for section A (assigned) and section B (not assigned to lecturer).",
+        "Both sections belong to the same active term."
+      ],
+      "steps": [
+        "Call GET /v1/reports/attendance?termId={termId} as the lecturer.",
+        "Call POST /v1/exports/attendance with format csv and filters { termId } as the lecturer.",
+        "Poll or retrieve the completed export artifact and parse CSV rows."
+      ],
+      "expected": "Maps to testing-plan §3.1 reporting/export and scope row (E2E-08): report rows and export output include only section A attendance data and exclude section B by default.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-15-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["AC-15", "FR-27", "BR-18"],
+      "title": "Export module applies lecturer section scope at DB query boundary",
+      "preconditions": [
+        "Integration database seeded with lecturer-to-section assignments and attendance rows across assigned and unassigned sections.",
+        "Export service/repository uses real DB transactions."
+      ],
+      "steps": [
+        "Invoke export job creation use-case for lecturer actor with term-level filters and no explicit classSectionId.",
+        "Query persisted export job scope metadata and generated row set from repository layer.",
+        "Assert SQL-level or repository filter predicates restrict to lecturer assigned classSectionId set."
+      ],
+      "expected": "Module integration commits export job scoped to assigned sections only; persisted export rows and scope metadata contain zero records from unassigned sections (PRM-09 / BR-18).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-15-003",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["AC-15", "FR-27", "FR-30", "BR-18"],
+      "title": "HTTP contract for scoped lecturer export job creation",
+      "preconditions": [
+        "Assigned lecturer is authenticated with valid Bearer token.",
+        "Target classSectionId belongs to lecturer assignment set."
+      ],
+      "steps": [
+        "Send POST /v1/exports/attendance with body { format: csv, filters: { termId, classSectionId } } and required Idempotency-Key.",
+        "Validate HTTP status code and JSON response envelope.",
+        "Validate data.exportJobId, data.status, and data.format fields per API contract."
+      ],
+      "expected": "Response is 202 with standard { data, meta, error } envelope; data contains exportJobId, status Queued (or equivalent async state), and format csv.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-15-004",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["AC-15", "FR-28", "BR-18", "BR-19"],
+      "title": "HTTP contract for scoped lecturer attendance report query",
+      "preconditions": [
+        "Assigned lecturer is authenticated.",
+        "Attendance data exists in assigned and unassigned sections for the same term."
+      ],
+      "steps": [
+        "Send GET /v1/reports/attendance?termId={termId}&page=1&pageSize=25 with lecturer Authorization header.",
+        "Validate HTTP 200 and paginated response envelope.",
+        "Inspect data rows for classSectionId values."
+      ],
+      "expected": "Response is 200 with standard envelope and pagination meta; every returned row classSectionId is within lecturer assigned section set and excludes unassigned sections.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-15-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["AC-15", "FR-27", "BR-18"],
+      "title": "Primary lecturer export workflow limited to assigned sections",
+      "preconditions": [
+        "Lecturer is assigned to section SE101-01 with closed sessions containing attendance outcomes.",
+        "Another section SE101-02 in same term is taught by a different lecturer and has attendance data.",
+        "Lecturer has no assignment to SE101-02."
+      ],
+      "steps": [
+        "Authenticate as lecturer assigned to SE101-01.",
+        "Request POST /v1/exports/attendance with csv format and filters covering the term.",
+        "Wait for export completion and download the CSV artifact.",
+        "Verify each CSV row section identifier matches SE101-01 only."
+      ],
+      "expected": "End-to-end export happy path succeeds and CSV contains only SE101-01 attendance rows with no SE101-02 or other cross-section leakage (testing-plan E2E-08).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-15-006",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["AC-15", "AC-16", "FR-27", "FR-28", "BR-19"],
+      "title": "Lecturer denied report and export for unassigned classSectionId",
+      "preconditions": [
+        "Lecturer is authenticated and assigned only to section A.",
+        "Section B exists with attendance data and is not in lecturer assignment set."
+      ],
+      "steps": [
+        "Call GET /v1/reports/attendance?classSectionId={sectionBId} as lecturer.",
+        "Call POST /v1/exports/attendance with filters { classSectionId: sectionBId } as lecturer."
+      ],
+      "expected": "Both requests are denied with 403 Forbidden or OutOfScope semantics; responses contain no partial section B rows, counts, or export job identifiers.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-15-007",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "pagination",
+      "priority": "P1",
+      "traceability": ["AC-15", "FR-28", "BR-18", "BR-19"],
+      "title": "Report pagination totals reflect lecturer scope not institution-wide counts",
+      "preconditions": [
+        "Institution has 120 attendance rows across multiple sections; lecturer scope covers 25 rows in one assigned section.",
+        "Integration environment uses real report query with pagination."
+      ],
+      "steps": [
+        "Query GET /v1/reports/attendance with page=1 and pageSize=25 as scoped lecturer.",
+        "Read meta.pagination.totalItems and totalPages.",
+        "Advance to final page and verify row section identifiers."
+      ],
+      "expected": "Pagination metadata totalItems and totalPages are computed from scoped dataset (25) only; no cross-scope counts appear in meta.pagination per API §2.5.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-15-008",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["AC-15", "FR-27", "BR-18"],
+      "title": "Term-wide export filter still excludes unassigned sections by default",
+      "preconditions": [
+        "Lecturer assigned to one section in a multi-section term.",
+        "Attendance exists in assigned and multiple unassigned sections under same termId."
+      ],
+      "steps": [
+        "Submit POST /v1/exports/attendance with filters { termId } only (no classSectionId).",
+        "Complete export and inspect output rows.",
+        "Attempt to include unassigned section via filter manipulation in request body."
+      ],
+      "expected": "Default term-wide export for lecturer includes only assigned-section rows; explicit unassigned classSectionId in filters is rejected or ignored without leaking foreign section data.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-15-009",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["AC-15", "FR-27", "FR-28", "BR-18"],
+      "title": "Lecturer browser journey exports attendance from assigned sections only",
+      "preconditions": [
+        "Lecturer is logged in on desktop browser.",
+        "Reporting UI shows term filter and section selector populated from lecturer scope.",
+        "Attendance data exists in assigned and unassigned sections."
+      ],
+      "steps": [
+        "Navigate to attendance report or export page.",
+        "Open section filter dropdown and observe available options.",
+        "Select an assigned section, set export format CSV, and trigger export.",
+        "Confirm download or job status UI and verify exported file section scope."
+      ],
+      "expected": "UI section selector lists only assigned class sections; export action produces CSV scoped to selected assigned section with no unassigned section rows visible in filter or export output.",
+      "edgeCase": false
+    }
+  ]
+}
