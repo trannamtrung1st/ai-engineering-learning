@@ -34,7 +34,7 @@ GEN_REPO_ROOT=/path/to/target-repo GEN_APPLY=1 ./scripts/generate.sh --apply
 ## Prerequisites
 
 - [Cursor CLI](https://cursor.com/docs/cli): `agent login`
-- `jq`, `curl`, `rsync`
+- `jq`, `curl`, `rsync`, `node`
 
 ## Commands
 
@@ -59,6 +59,12 @@ The target repo's root `package.json` does **not** include generator scripts —
 | `GEN_SKIP_AGENT=1` | Skip Cursor agent (testing) |
 | `GEN_SKIP_REVIEW=1` | Skip optional AI doc review |
 | `GEN_MODEL` | Override default model |
+| `GEN_STREAM_AGENT=0` | Disable live stream-json agent output and use legacy text output |
+| `GEN_AGENT_VERBOSE=0` | Hide stream adapter tool/session diagnostics |
+| `GEN_AGENT_TIMEOUT_MS` | Override max wall-clock timeout for generator agents |
+| `GEN_AGENT_IDLE_TIMEOUT_MS` | Override stream idle timeout for generator agents |
+| `GEN_AGENT_SIGNAL_GRACE_MS` | Override grace period after completion signals |
+| `GEN_AGENT_RESULT_GRACE_MS` | Override grace period after Cursor CLI result events |
 
 ## Output
 

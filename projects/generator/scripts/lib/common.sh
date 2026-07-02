@@ -29,6 +29,9 @@ export GEN_ROOT GEN_SCRIPTS_DIR REPO_ROOT STEPS_BACKLOG LOOP_CONFIG MODELS_CONFI
 
 AGENT_TIMEOUT_EXIT=124
 AGENT_TIMEOUT_DEFAULT_MS=3600000
+AGENT_IDLE_TIMEOUT_DEFAULT_MS=300000
+AGENT_SIGNAL_GRACE_DEFAULT_MS=15000
+AGENT_RESULT_GRACE_DEFAULT_MS=5000
 
 require_cmd() {
   local cmd="$1"
@@ -84,6 +87,68 @@ get_agent_timeout_ms() {
   jq -r ".agent.timeoutMs // ${AGENT_TIMEOUT_DEFAULT_MS}" "$config"
 }
 
+get_agent_idle_timeout_ms() {
+  local config="${1:-$LOOP_CONFIG}"
+  if [[ -n "${GEN_AGENT_IDLE_TIMEOUT_MS:-}" ]]; then
+    echo "$GEN_AGENT_IDLE_TIMEOUT_MS"
+    return
+  fi
+  jq -r ".agent.idleTimeoutMs // ${AGENT_IDLE_TIMEOUT_DEFAULT_MS}" "$config"
+}
+
+get_agent_signal_grace_ms() {
+  local config="${1:-$LOOP_CONFIG}"
+  if [[ -n "${GEN_AGENT_SIGNAL_GRACE_MS:-}" ]]; then
+    echo "$GEN_AGENT_SIGNAL_GRACE_MS"
+    return
+  fi
+  jq -r ".agent.signalGraceMs // ${AGENT_SIGNAL_GRACE_DEFAULT_MS}" "$config"
+}
+
+get_agent_result_grace_ms() {
+  local config="${1:-$LOOP_CONFIG}"
+  if [[ -n "${GEN_AGENT_RESULT_GRACE_MS:-}" ]]; then
+    echo "$GEN_AGENT_RESULT_GRACE_MS"
+    return
+  fi
+  jq -r ".agent.resultGraceMs // ${AGENT_RESULT_GRACE_DEFAULT_MS}" "$config"
+}
+
+agent_completion_signals_csv() {
+  local config="${1:-$LOOP_CONFIG}"
+  jq -r '[.signals[]? // empty] | unique | join(",")' "$config"
+}
+
+agent_stream_enabled() {
+  [[ "${GEN_STREAM_AGENT:-1}" != "0" ]]
+}
+
+run_agent_uses_stream_json() {
+  local arg
+  for arg in "$@"; do
+    [[ "$arg" == "stream-json" ]] && return 0
+  done
+  return 1
+}
+
+agent_verbose_enabled() {
+  [[ "${GEN_AGENT_VERBOSE:-1}" == "1" ]]
+}
+
+agent_output_format_args() {
+  if agent_stream_enabled; then
+    echo '--output-format stream-json --stream-partial-output'
+  else
+    echo '--output-format text'
+  fi
+}
+
+agent_timeout_message() {
+  local timeout_ms="$1"
+  local timeout_min=$(( timeout_ms / 60000 ))
+  echo "ERROR: Agent timed out after ${timeout_ms}ms (${timeout_min}m)"
+}
+
 run_command_with_timeout_ms() {
   local timeout_ms="$1"
   shift
@@ -112,7 +177,39 @@ run_agent_with_timeout_ms() {
   local timeout_ms="$1"
   local outfile="$2"
   shift 2
-  local status
+  local status timeout_msg
+
+  if [[ -n "$outfile" ]] && agent_stream_enabled && run_agent_uses_stream_json "$@"; then
+    require_cmd node
+    local idle_ms signal_grace_ms result_grace_ms signals_csv
+    local -a stream_cmd
+    idle_ms="$(get_agent_idle_timeout_ms)"
+    signal_grace_ms="$(get_agent_signal_grace_ms)"
+    result_grace_ms="$(get_agent_result_grace_ms)"
+    signals_csv="$(agent_completion_signals_csv)"
+    stream_cmd=(node "${TEMPLATES_DIR}/ai-harness/scripts/lib/stream-agent-output.js" \
+      --outfile "$outfile" \
+      --idle-timeout-ms "$idle_ms" \
+      --max-timeout-ms "$timeout_ms" \
+      --signal-grace-ms "$signal_grace_ms" \
+      --result-grace-ms "$result_grace_ms")
+    if [[ -n "$signals_csv" ]]; then
+      stream_cmd+=(--signals "$signals_csv")
+    fi
+    if agent_verbose_enabled; then
+      stream_cmd+=(--verbose)
+    fi
+    stream_cmd+=(-- "$@")
+    set +e
+    "${stream_cmd[@]}"
+    status=$?
+    set -e
+    if [[ "$status" -eq "$AGENT_TIMEOUT_EXIT" ]] && [[ -n "$outfile" ]] && ! grep -q "ERROR: Agent timed out" "$outfile" 2>/dev/null; then
+      timeout_msg="$(agent_timeout_message "$timeout_ms")"
+      echo "$timeout_msg" | tee -a "$outfile" >&2
+    fi
+    return "$status"
+  fi
 
   if [[ -n "$outfile" ]]; then
     set +e
@@ -131,8 +228,12 @@ agent_invoke() {
   local outfile="${3:-}"
   require_agent
   local timeout_ms
+  local -a args fmt
+  args=(-p --force --model "$model")
+  read -ra fmt <<< "$(agent_output_format_args)"
+  args+=("${fmt[@]}")
   timeout_ms="$(get_agent_timeout_ms)"
-  run_agent_with_timeout_ms "$timeout_ms" "$outfile" "$AGENT_BIN" -p --force --model "$model" "$prompt"
+  run_agent_with_timeout_ms "$timeout_ms" "$outfile" "$AGENT_BIN" "${args[@]}" "$prompt"
 }
 
 agent_invoke_review() {
@@ -141,8 +242,12 @@ agent_invoke_review() {
   local outfile="${3:-}"
   require_agent
   local timeout_ms
+  local -a args fmt
+  args=(-p --force --trust --model "$model" --mode plan)
+  read -ra fmt <<< "$(agent_output_format_args)"
+  args+=("${fmt[@]}")
   timeout_ms="$(get_agent_timeout_ms)"
-  run_agent_with_timeout_ms "$timeout_ms" "$outfile" "$AGENT_BIN" -p --force --trust --model "$model" --mode plan "$prompt"
+  run_agent_with_timeout_ms "$timeout_ms" "$outfile" "$AGENT_BIN" "${args[@]}" "$prompt"
 }
 
 run_id() {
