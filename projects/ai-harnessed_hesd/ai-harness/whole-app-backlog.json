@@ -126,6 +126,12 @@
           "kind": "drift",
           "reason": "Doc drift for AC-11 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-02T10:12:42Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-16 — reverify after TestGen",
+          "source": "harness"
         }
       ]
     },
@@ -412,6 +418,12 @@
           "kind": "drift",
           "reason": "Doc drift for AC-15 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-02T10:12:42Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-16 — reverify after TestGen",
+          "source": "harness"
         }
       ]
     },
@@ -592,6 +604,14 @@
         "Student history list route and detail states",
         "Role-safe guard to block cross-user access",
         "Pagination/search-ready UI contract support"
+      ],
+      "history": [
+        {
+          "at": "2026-07-02T10:12:42Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-16 — reverify after TestGen",
+          "source": "harness"
+        }
       ]
     },
     {
@@ -809,6 +829,12 @@
           "kind": "drift",
           "reason": "Doc drift for AC-15 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-02T10:12:42Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-16 — reverify after TestGen",
+          "source": "harness"
         }
       ]
     },
@@ -835,6 +861,14 @@
         "Audit log listing route with scoped filters",
         "Detail view linking attempts, mutations, and actors",
         "Read-only route guards and no-mutation affordances"
+      ],
+      "history": [
+        {
+          "at": "2026-07-02T10:12:42Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-16 — reverify after TestGen",
+          "source": "harness"
+        }
       ]
     },
     {
@@ -928,6 +962,12 @@
           "at": "2026-07-02T10:11:21Z",
           "kind": "drift",
           "reason": "Doc drift for AC-15 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T10:12:42Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-16 — reverify after TestGen",
           "source": "harness"
         }
       ]
