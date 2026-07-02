@@ -761,7 +761,8 @@
         "acceptanceTags": [
           "AC-06",
           "FR-15",
-          "FR-16"
+          "FR-16",
+          "FR-23"
         ]
       },
       "history": [
@@ -787,6 +788,12 @@
           "at": "2026-07-02T11:00:37Z",
           "kind": "drift",
           "reason": "Doc drift for FR-16 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T11:15:17Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-23 — reverify after TestGen",
           "source": "harness"
         }
       ]
