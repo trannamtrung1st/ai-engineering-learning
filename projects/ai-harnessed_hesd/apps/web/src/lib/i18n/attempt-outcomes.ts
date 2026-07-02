@@ -37,3 +37,15 @@ export function isRejectedAttemptOutcome(outcome: string | null | undefined): bo
   if (!outcome || outcome === "Success") return false;
   return outcome in OUTCOME_LABELS || Boolean(OUTCOME_TOOLTIPS[outcome]);
 }
+
+export function formatOutOfRadiusReviewMeta(
+  distanceMeters: number | null | undefined,
+  allowedRadiusMeters: number | null | undefined,
+): string | null {
+  if (distanceMeters == null || allowedRadiusMeters == null) {
+    return null;
+  }
+  const distance = Math.round(distanceMeters);
+  const allowed = Math.round(allowedRadiusMeters);
+  return `${distance}m · giới hạn ${allowed}m`;
+}

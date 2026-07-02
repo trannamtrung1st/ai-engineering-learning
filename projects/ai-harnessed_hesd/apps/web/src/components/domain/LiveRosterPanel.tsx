@@ -228,7 +228,13 @@ export function LiveRosterPanel({ sessionId, sectionCode }: LiveRosterPanelProps
           {
             id: "attempt",
             header: "Lần thử gần nhất",
-            cell: (row) => <AttemptOutcomeCell outcome={row.latestAttemptOutcome} />,
+            cell: (row) => (
+              <AttemptOutcomeCell
+                outcome={row.latestAttemptOutcome}
+                distanceMeters={row.latestAttemptDistanceMeters}
+                allowedRadiusMeters={row.latestAttemptAllowedRadiusMeters}
+              />
+            ),
           },
           {
             id: "time",

@@ -1038,7 +1038,7 @@
     },
     {
       "id": "web-academic-admin-policy-management",
-      "passes": false,
+      "passes": true,
       "priority": 23,
       "phase": 2,
       "agent": "frontend",

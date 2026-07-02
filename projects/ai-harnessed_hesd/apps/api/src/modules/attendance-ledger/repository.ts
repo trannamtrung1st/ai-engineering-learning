@@ -300,6 +300,7 @@ export function createAttendanceLedgerRepository(pool: pg.Pool) {
         check_in_method: string | null;
         check_in_at: Date | null;
         latest_attempt_outcome: string | null;
+        latest_attempt_distance_meters: string | null;
       }>(
         `
         SELECT
@@ -309,20 +310,22 @@ export function createAttendanceLedgerRepository(pool: pg.Pool) {
           ar.status,
           ar.check_in_method,
           ar.check_in_at,
-          (
-            SELECT cia.outcome
-            FROM check_in_attempts cia
-            WHERE cia.class_session_id = $1
-              AND cia.student_user_id = u.id
-            ORDER BY cia.submitted_at DESC
-            LIMIT 1
-          ) AS latest_attempt_outcome
+          latest.outcome AS latest_attempt_outcome,
+          latest.distance_from_room_meters AS latest_attempt_distance_meters
         FROM enrollments e
         JOIN users u ON u.id = e.student_user_id
         JOIN student_profiles sp ON sp.user_id = u.id
         LEFT JOIN attendance_records ar
           ON ar.class_session_id = $1
           AND ar.student_user_id = e.student_user_id
+        LEFT JOIN LATERAL (
+          SELECT cia.outcome, cia.distance_from_room_meters
+          FROM check_in_attempts cia
+          WHERE cia.class_session_id = $1
+            AND cia.student_user_id = u.id
+          ORDER BY cia.submitted_at DESC
+          LIMIT 1
+        ) latest ON true
         WHERE e.class_section_id = $2
           AND e.status = 'Active'
         ORDER BY sp.student_code
@@ -351,6 +354,11 @@ export function createAttendanceLedgerRepository(pool: pg.Pool) {
       };
 
       const notificationEnabled = isNotificationModuleEnabled();
+      const policyValues = await policyEngine.resolveEffectivePolicyValues(
+        session.class_section_id,
+        new Date(),
+      );
+      const effectiveGpsRadiusMeters = policyValues?.gpsRadiusMeters ?? null;
 
       const rows = await Promise.all(
         rowsResult.rows.map(async (row) => {
@@ -362,6 +370,13 @@ export function createAttendanceLedgerRepository(pool: pg.Pool) {
           else if (attendanceStatus === "Excused") counts.excused += 1;
           else if (attendanceStatus === "Manual Present") counts.manualPresent += 1;
 
+          const latestAttemptDistanceMeters =
+            row.latest_attempt_distance_meters !== null
+              ? Number.parseFloat(row.latest_attempt_distance_meters)
+              : null;
+          const latestAttemptAllowedRadiusMeters =
+            row.latest_attempt_outcome === "OutOfRadius" ? effectiveGpsRadiusMeters : null;
+
           const baseRow = {
             studentUserId: row.student_user_id,
             studentCode: row.student_code,
@@ -370,6 +385,8 @@ export function createAttendanceLedgerRepository(pool: pg.Pool) {
             checkInMethod: row.check_in_method as SessionRoster["rows"][number]["checkInMethod"],
             checkInAt: row.check_in_at?.toISOString() ?? null,
             latestAttemptOutcome: row.latest_attempt_outcome,
+            latestAttemptDistanceMeters,
+            latestAttemptAllowedRadiusMeters,
           };
 
           if (!notificationEnabled) {

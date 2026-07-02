@@ -21,6 +21,8 @@ export interface RosterRow {
   checkInMethod: string | null;
   checkInAt: string | null;
   latestAttemptOutcome: string | null;
+  latestAttemptDistanceMeters?: number | null;
+  latestAttemptAllowedRadiusMeters?: number | null;
 }
 
 export interface SessionRoster {

@@ -29,6 +29,8 @@ export interface RosterRow {
   checkInMethod: CheckInMethod;
   checkInAt: string | null;
   latestAttemptOutcome: string | null;
+  latestAttemptDistanceMeters?: number | null;
+  latestAttemptAllowedRadiusMeters?: number | null;
   atRisk?: boolean;
   unexcusedAbsenceRate?: number | null;
   absenceThresholdPercent?: number | null;

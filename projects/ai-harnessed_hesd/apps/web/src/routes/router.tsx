@@ -5,6 +5,7 @@ import { StudentLayout } from "./StudentLayout";
 import { StudentAttendanceReportGuard } from "./pages/AttendanceReportPage";
 import { AdminClassSectionsPage } from "./pages/AdminClassSectionsPage";
 import { AdminEnrollmentsPage } from "./pages/AdminEnrollmentsPage";
+import { AdminPoliciesPage } from "./pages/AdminPoliciesPage";
 import { AdminTermsPage } from "./pages/AdminTermsPage";
 import { DesignSystemPage } from "./pages/DesignSystemPage";
 import { LecturerRosterPage } from "./pages/LecturerRosterPage";
@@ -32,6 +33,7 @@ export function AppRouter() {
         { path: "admin/terms", element: <AdminTermsPage /> },
         { path: "admin/class-sections", element: <AdminClassSectionsPage /> },
         { path: "admin/class-sections/:sectionId/enrollments", element: <AdminEnrollmentsPage /> },
+        { path: "admin/policies", element: <AdminPoliciesPage /> },
       ],
     },
     {

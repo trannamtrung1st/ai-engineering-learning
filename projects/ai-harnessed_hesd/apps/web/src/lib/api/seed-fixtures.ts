@@ -1,5 +1,6 @@
 /** Deterministic seed IDs aligned with scripts/db-seed.mjs — FR-37 PG-03 defaults */
 export const SEED_FACULTY_ID = "10000000-0000-4000-8000-000000000001";
+export const SEED_FACULTY_LABEL = "CNTT · Công nghệ thông tin";
 export const SEED_TERM_ID = "20000000-0000-4000-8000-000000000001";
 export const SEED_COURSE_ID = "30000000-0000-4000-8000-000000000001";
 export const SEED_ROOM_ID = "40000000-0000-4000-8000-000000000001";
@@ -13,3 +14,4 @@ export const DEFAULT_SECTION_LABEL = "SE101-01";
 export const DEFAULT_LECTURER_LABEL = "Nguyễn Văn Giảng";
 export const LECTURER_SEED_EMAIL = "lecturer@attendly.local";
 export const ACADEMIC_ADMIN_SEED_EMAIL = "academic-admin@attendly.local";
+export const POLICY_LIST_FIXTURE_SECTION_CODE = "SE101-02";

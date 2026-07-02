@@ -6,6 +6,7 @@ import { TopContextHeader } from "../components/layout/TopContextHeader";
 const adminNav = [
   { to: "/admin/terms", label: "Học kỳ (PG-07)" },
   { to: "/admin/class-sections", label: "Lớp học phần (PG-09)" },
+  { to: "/admin/policies", label: "Chính sách (PG-12)" },
 ];
 
 export function AdminLayout() {

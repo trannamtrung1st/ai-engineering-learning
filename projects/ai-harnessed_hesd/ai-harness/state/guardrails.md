@@ -38,3 +38,9 @@ tests/playwright-ui/scenarios/web-design-system-shell.spec.ts
 - [web-lecturer-session-control] Computational checks failed — see 20260702T184717Z-checks.json
 - [web-academic-admin-academic-setup] Browser test failed — see 20260702T192214Z-browser-test.json
 - [web-academic-admin-academic-setup] PG-04 FR-06 requires `Sĩ số` (enrolledCount) column from GET /class-sessions — preview seed sessions must stay Scheduled via `db:seed` refresh when browser gate retries TC-FR-06-012 in isolation
+- [web-academic-admin-policy-management] AI review failed — see 20260702T200305Z-review.json
+- [web-academic-admin-policy-management] PolicyForm must reset scopeId when scopeType changes (useEffect + scopeIdMatchesType validation) — Faculty policy cannot submit with ClassSection scopeId (FR-24)
+- [web-academic-admin-policy-management] PG-12 sort toggle must update local sortOrder state immediately; only one active ClassSection policy per section — bootstrap SE101-02 + second policy for TC-FR-24-014 sort assertion
+- [web-academic-admin-policy-management] Browser test failed — see 20260702T201809Z-browser-test.json
+- [web-academic-admin-policy-management] PG-12 filter chip remove aria-label must use `Gỡ …` not `Xóa bộ lọc …` — collides with TableToolbar clear-all in Playwright strict mode (TC-FR-24-014)
+- [web-academic-admin-policy-management] AC-10 roster distance metadata requires attendance-ledger + AttemptOutcomeCell paths in slice completionArtifacts when extending GET /attendance rows
