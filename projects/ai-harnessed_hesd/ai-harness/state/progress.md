@@ -97,3 +97,7 @@
 - 2026-07-02T14:23:35Z | module-attendance-ledger | deferred_to:infra-local-runtime-compose
 - 2026-07-02T14:24:41Z | infra-local-runtime-compose | implementer: fixed compose-config.test.ts attendly_test assertion (was stale hesd_test) — reverted out-of-scope module edits — checks: full profile pass
 - 2026-07-02T14:26:48Z | infra-local-runtime-compose | passed
+- 2026-07-02T14:34:19Z | module-attendance-ledger | implementer: M05 attendance ledger — GET roster, PATCH correction with lecturer/admin edit windows and audit, finalizeAbsentStudents (Pending→Absent + missing inserts), QR success via recordCheckInSuccess — checks: full profile pass
+- 2026-07-02T14:37:14Z | module-attendance-ledger | review_failed
+- 2026-07-02T14:42:16Z | module-attendance-ledger | implementer: M05 attendance ledger — BR-22 audit on close finalization (system actor), QR upsert from Pending, idempotency + Excused/Manual Present preservation tests — checks: full profile pass
+- 2026-07-02T14:45:00Z | module-attendance-ledger | passed

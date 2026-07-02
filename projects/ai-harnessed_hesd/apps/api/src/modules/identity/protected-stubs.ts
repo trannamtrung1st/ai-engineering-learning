@@ -12,11 +12,6 @@ function queryClassSectionId(request: FastifyRequest) {
   return { classSectionId: query.classSectionId };
 }
 
-function paramsSessionId(request: FastifyRequest) {
-  const params = request.params as { sessionId?: string };
-  return { classSessionId: params.sessionId };
-}
-
 function exportFilters(request: FastifyRequest) {
   const body = request.body as { filters?: { classSectionId?: string; termId?: string } };
   return { classSectionId: body?.filters?.classSectionId };
@@ -46,18 +41,6 @@ export async function registerProtectedRouteStubs(
     action: "read",
   });
 
-  const guardAttendanceRead = createAuthorizeGuard(services, {
-    resource: "AttendanceRecord",
-    action: "read",
-    resolveScope: paramsSessionId,
-  });
-
-  const guardAttendanceUpdate = createAuthorizeGuard(services, {
-    resource: "AttendanceRecord",
-    action: "update",
-    resolveScope: paramsSessionId,
-  });
-
   const emptyList = { items: [], pagination: { page: 1, pageSize: 25, totalItems: 0, totalPages: 0 } };
 
   app.get(
@@ -85,28 +68,6 @@ export async function registerProtectedRouteStubs(
     { preHandler: combineGuards(authenticate, guardAuditRead) },
     async (request, reply) => {
       sendApiSuccess(reply, request, 200, emptyList);
-    },
-  );
-
-  app.get(
-    "/class-sessions/:sessionId/attendance",
-    { preHandler: combineGuards(authenticate, guardAttendanceRead) },
-    async (request, reply) => {
-      const params = request.params as { sessionId: string };
-      sendApiSuccess(reply, request, 200, {
-        classSessionId: params.sessionId,
-        state: "Open",
-        counts: { present: 0, late: 0, pending: 0, rejectedAttempts: 0 },
-        rows: [],
-      });
-    },
-  );
-
-  app.patch(
-    "/class-sessions/:sessionId/attendance/:studentUserId",
-    { preHandler: combineGuards(authenticate, guardAttendanceUpdate) },
-    async (request, reply) => {
-      sendApiSuccess(reply, request, 200, { status: "accepted" });
     },
   );
 

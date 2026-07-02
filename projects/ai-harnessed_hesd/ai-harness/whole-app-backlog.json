@@ -611,7 +611,7 @@
     },
     {
       "id": "module-attendance-ledger",
-      "passes": false,
+      "passes": true,
       "priority": 11,
       "phase": 1,
       "agent": "backend",
@@ -694,6 +694,12 @@
           "reason": "compose-config.test.ts stale hesd_test assertion blocks test:unit for all backend slices; M05 implementation and integration tests are complete",
           "source": "harness",
           "relatedSlice": "infra-local-runtime-compose"
+        },
+        {
+          "at": "2026-07-02T14:37:14Z",
+          "kind": "gate_failed",
+          "reason": "AI review failed — see 20260702T142648Z-review.json",
+          "source": "harness"
         }
       ],
       "testRequirements": {

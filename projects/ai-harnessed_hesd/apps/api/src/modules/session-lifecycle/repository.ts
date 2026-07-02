@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import type pg from "pg";
+import { createAttendanceLedgerRepository } from "../attendance-ledger/repository.js";
 import { validateCloseTransition, validateOpenTransition } from "./validation.js";
 import type {
   ClassSessionRow,
@@ -47,6 +48,7 @@ export type SessionCommandError =
   | { code: "InvalidPayload" };
 
 export function createSessionLifecycleRepository(pool: pg.Pool) {
+  const attendanceLedger = createAttendanceLedgerRepository(pool);
   const idempotencyCache = new Map<string, OpenSessionResult | CloseSessionResult>();
 
   async function getSessionForUpdate(
@@ -149,38 +151,6 @@ export function createSessionLifecycleRepository(pool: pg.Pool) {
     }
 
     return counts;
-  }
-
-  async function finalizeAbsentStudents(
-    client: pg.PoolClient,
-    session: ClassSessionRow,
-    actorUserId: string,
-  ): Promise<void> {
-    await client.query(
-      `
-      INSERT INTO attendance_records (
-        id, class_session_id, class_section_id, student_user_id, status, last_modified_by_user_id
-      )
-      SELECT
-        gen_random_uuid(),
-        $1,
-        $2,
-        e.student_user_id,
-        'Absent',
-        $3
-      FROM enrollments e
-      WHERE e.class_section_id = $2
-        AND e.status = 'Active'
-        AND NOT EXISTS (
-          SELECT 1
-          FROM attendance_records ar
-          WHERE ar.class_session_id = $1
-            AND ar.student_user_id = e.student_user_id
-        )
-      ON CONFLICT (class_session_id, student_user_id) DO NOTHING
-      `,
-      [session.id, session.classSectionId, actorUserId],
-    );
   }
 
   async function writeAuditLog(
@@ -334,7 +304,7 @@ export function createSessionLifecycleRepository(pool: pg.Pool) {
     async closeSession(
       sessionId: string,
       actorUserId: string,
-      options: { idempotencyKey?: string } = {},
+      options: { idempotencyKey?: string; correlationId?: string | null } = {},
     ): Promise<{ ok: true; result: CloseSessionResult } | { ok: false; error: SessionCommandError }> {
       const cacheKey =
         options.idempotencyKey
@@ -393,7 +363,9 @@ export function createSessionLifecycleRepository(pool: pg.Pool) {
         );
 
         await invalidateSessionTokens(client, sessionId);
-        await finalizeAbsentStudents(client, session, actorUserId);
+        await attendanceLedger.finalizeAbsentStudents(client, session, actorUserId, {
+          correlationId: options.correlationId ?? sessionId,
+        });
 
         const summary = await computeCloseSummary(client, sessionId);
 

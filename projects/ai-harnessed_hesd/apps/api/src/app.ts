@@ -2,6 +2,7 @@ import Fastify from "fastify";
 import { createPostgresHealthProbe } from "./infra/db-probe.js";
 import { registerAcademicStructureModule } from "./modules/academic-structure/index.js";
 import { registerIdentityModule } from "./modules/identity/index.js";
+import { registerAttendanceLedgerModule } from "./modules/attendance-ledger/index.js";
 import { registerCheckInModule } from "./modules/check-in-and-qr-orchestrator/index.js";
 import { registerSessionLifecycleModule } from "./modules/session-lifecycle/index.js";
 import { registerHealthRoutes } from "./routes/health.js";
@@ -19,6 +20,7 @@ export async function buildApp() {
       await registerAcademicStructureModule(v1, { connectionString, pool: pool ?? undefined });
       await registerSessionLifecycleModule(v1, { connectionString, pool: pool ?? undefined });
       await registerCheckInModule(v1, { connectionString, pool: pool ?? undefined });
+      await registerAttendanceLedgerModule(v1, { connectionString, pool: pool ?? undefined });
     },
     { prefix: "/api/v1" },
   );

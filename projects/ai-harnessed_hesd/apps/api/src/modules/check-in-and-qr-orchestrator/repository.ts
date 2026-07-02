@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type pg from "pg";
+import { createAttendanceLedgerRepository } from "../attendance-ledger/repository.js";
 import { isStudentEnrolled } from "../academic-structure/validation.js";
 import { getOrRotateCurrentQr, issueQrToken, resolveQrToken } from "./qr-service.js";
 import {
@@ -31,6 +32,7 @@ const DEFAULT_POLICY: EffectivePolicy = {
 };
 
 export function createCheckInRepository(pool: pg.Pool) {
+  const attendanceLedger = createAttendanceLedgerRepository(pool);
   const idempotencyCache = new Map<string, IdempotencyRecord>();
 
   async function loadSession(client: pg.PoolClient, sessionId: string): Promise<SessionContext | null> {
@@ -408,27 +410,15 @@ export function createCheckInRepository(pool: pg.Pool) {
           correlationId: params.correlationId,
         });
 
-        const insertResult = await client.query<{ check_in_at: Date }>(
-          `
-          INSERT INTO attendance_records (
-            id, class_session_id, class_section_id, student_user_id, status,
-            check_in_method, check_in_at, last_modified_by_user_id, source_attempt_id
-          )
-          VALUES ($1, $2, $3, $4, $5, 'QR', $6, $4, $7)
-          RETURNING check_in_at
-          `,
-          [
-            randomUUID(),
-            session!.id,
-            session!.classSectionId,
-            params.studentUserId,
-            attendanceStatus,
-            checkInAt.toISOString(),
-            attemptId,
-          ],
-        );
-
-        const checkInAtIso = insertResult.rows[0]!.check_in_at.toISOString();
+        const checkInAtIso = await attendanceLedger.recordCheckInSuccess(client, {
+          classSessionId: session!.id,
+          classSectionId: session!.classSectionId,
+          studentUserId: params.studentUserId,
+          status: attendanceStatus,
+          checkInAt,
+          sourceAttemptId: attemptId,
+          correlationId: params.correlationId,
+        });
 
         await client.query("COMMIT");
 
