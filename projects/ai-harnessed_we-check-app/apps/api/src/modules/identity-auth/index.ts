@@ -1,4 +1,5 @@
 export { registerIdentityAuthRoutes } from "./routes.js";
+export { registerUserImportRoutes } from "./user-import-routes.js";
 export { AuthService } from "./auth-service.js";
 export { UserService } from "./user-service.js";
 export { UserRepository } from "./user-repository.js";

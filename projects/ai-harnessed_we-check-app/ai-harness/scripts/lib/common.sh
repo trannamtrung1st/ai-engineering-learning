@@ -690,7 +690,7 @@ After all \`TC-*\` cases complete:
 1. **UX audit** — review each screenshot per \`ai-harness/skills/ui-ux-testing/SKILL.md\`; log \`UX-${slice_id}-NNN\` bugs not already \`TC-*: FAIL\`
 2. **Write UX bugs JSON:** \`${ux_path}\` (schema: \`ai-harness/schemas/ux-bugs.schema.json\`)
 3. **Playwright codegen** — create or update \`${spec_path}\` per \`ai-harness/docs/playwright-regression.md\`
-4. Emit \`playwright-regression: ${spec_path} (N tests)\` before the signal line
+4. Emit a plain line (no markdown/backticks): \`playwright-regression: ${spec_path} (N tests)\` before the signal line
 5. P0/P1 UX bugs block \`BROWSER_TEST_PASS\` even when all \`TC-*\` cases pass
 EOF
 }
@@ -710,15 +710,42 @@ browser_output_has_actionable_failures() {
   browser_output_has_ux_blockers "$text_file"
 }
 
+# Coerce shell text to valid JSON for jq --argjson (fallback when empty/invalid).
+jq_json_or_default() {
+  local value="${1:-}"
+  local default="${2:-null}"
+  if [[ -z "$value" ]]; then
+    printf '%s' "$default"
+    return
+  fi
+  if jq -e . >/dev/null 2>&1 <<<"$value"; then
+    printf '%s' "$value"
+  else
+    printf '%s' "$default"
+  fi
+}
+
+jq_number_or_default() {
+  local value="${1:-}"
+  local default="${2:-0}"
+  if [[ "$value" =~ ^[0-9]+$ ]]; then
+    printf '%s' "$value"
+  else
+    printf '%s' "$default"
+  fi
+}
+
 parse_playwright_regression_from_output() {
   local text_file="$1"
   local line spec count
   [[ -f "$text_file" ]] || return 1
-  line="$(grep -E '^playwright-regression:' "$text_file" 2>/dev/null | tail -1 || true)"
+  line="$(grep -E 'playwright-regression:' "$text_file" 2>/dev/null | tail -1 || true)"
   [[ -n "$line" ]] || return 1
+  line="$(echo "$line" | sed -E 's/^[`[:space:]]*//; s/[`[:space:]]*$//')"
   spec="$(echo "$line" | sed -E 's/^playwright-regression:[[:space:]]*([^ (]+).*/\1/')"
-  count="$(echo "$line" | sed -nE 's/.*\(([0-9]+) tests\).*/\1/p')"
+  count="$(echo "$line" | sed -nE 's/.*\(([0-9]+) tests?\).*/\1/p')"
   [[ -z "$count" ]] && count="0"
+  [[ -z "$spec" || "$spec" == "$line" ]] && return 1
   printf '%s\t%s\n' "$spec" "$count"
 }
 
@@ -741,8 +768,10 @@ update_playwright_regression_index() {
   local slice_id="$1"
   local spec_path="$2"
   local run_id="$3"
-  local test_count="${4:-0}"
-  local tc_ids_json="$5"
+  local test_count
+  test_count="$(jq_number_or_default "${4:-0}")"
+  local tc_ids_json
+  tc_ids_json="$(jq_json_or_default "${5:-[]}" '[]')"
   local ts
   ts="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
   [[ -f "$PLAYWRIGHT_REGRESSION_INDEX" ]] || echo '{"slices":{}}' >"$PLAYWRIGHT_REGRESSION_INDEX"
@@ -774,12 +803,12 @@ enrich_browser_test_report_json() {
   ux_json_file="$(ux_bugs_path_for_slice_run "$slice_id" "$run_id")"
   local ux_bugs_json='[]'
   if [[ -f "$ux_json_file" ]]; then
-    ux_bugs_json="$(jq -c '.bugs // []' "$ux_json_file" 2>/dev/null || echo '[]')"
+    ux_bugs_json="$(jq_json_or_default "$(jq -c '.bugs // []' "$ux_json_file" 2>/dev/null || true)" '[]')"
   fi
-  local playwright_spec="" playwright_count=0
-  if parse_line="$(parse_playwright_regression_from_output "$text_file" 2>/dev/null || true)"; then
+  local playwright_spec="" playwright_count=0 parse_line=""
+  if parse_line="$(parse_playwright_regression_from_output "$text_file" 2>/dev/null)"; then
     playwright_spec="$(echo "$parse_line" | cut -f1)"
-    playwright_count="$(echo "$parse_line" | cut -f2)"
+    playwright_count="$(jq_number_or_default "$(echo "$parse_line" | cut -f2)")"
   fi
   jq \
     --argjson uxBugs "$ux_bugs_json" \
@@ -1143,13 +1172,14 @@ mark_test_cases_current() {
       generatedAt: $ts
     }
   ' "$TEST_CASE_INDEX" > "$tmp" && mv "$tmp" "$TEST_CASE_INDEX"
+  mark_slices_stale_for_tag "$requirement_tag"
 }
 
 reset_requirement_tag_on_doc_drift() {
   local requirement_tag="$1"
   local live_fp="$2"
   ensure_test_case_artifact_restored "$requirement_tag"
-  local tmp pi_tmp
+  local tmp
   tmp="$(mktemp)"
   jq --arg id "$requirement_tag" --arg fp "$live_fp" '
     .tags[$id] = {
@@ -1158,14 +1188,246 @@ reset_requirement_tag_on_doc_drift() {
       generatedAt: null
     }
   ' "$TEST_CASE_INDEX" > "$tmp" && mv "$tmp" "$TEST_CASE_INDEX"
+  append_guardrail "$requirement_tag" "Docs changed — run TestGen before Ralph (index current=false; fingerprint=${live_fp})"
+}
 
+mark_slices_stale_for_tag() {
+  local requirement_tag="$1"
+  local pi_tmp
   pi_tmp="$(mktemp)"
   jq --arg ref "$requirement_tag" '
     .slices |= map(
-      if (.acceptance // [] | index($ref)) then .passes = false else . end
+      if ((.acceptance // [] | index($ref)) and (.reverifyOnDrift // true)) then .passes = false else . end
     )
   ' "$BACKLOG" > "$pi_tmp" && mv "$pi_tmp" "$BACKLOG"
-  append_guardrail "$requirement_tag" "Docs changed — test cases need review (index current=false; fingerprint=${live_fp})"
+}
+
+playwright_scope_for_checks() {
+  jq -r '.computationalChecks.playwrightScope // "full"' "$LOOP_CONFIG"
+}
+
+playwright_full_every_n() {
+  jq -r '.computationalChecks.playwrightFullEveryN // 0' "$LOOP_CONFIG"
+}
+
+get_check_profile() {
+  local profile="${AIH_CHECK_PROFILE:-}"
+  if [[ -z "$profile" ]]; then
+    profile="$(jq -r '.computationalChecks.gateProfile // "full"' "$LOOP_CONFIG")"
+  fi
+  echo "$profile"
+}
+
+profile_includes_script() {
+  local profile="$1"
+  local script="$2"
+  jq -e --arg p "$profile" --arg s "$script" '
+    .computationalChecks.profiles[$p] | index($s)
+  ' "$LOOP_CONFIG" >/dev/null 2>&1
+}
+
+resolve_playwright_spec_for_slice() {
+  local slice_id="$1"
+  local slice_json spec
+  slice_json="$(get_slice_json "$slice_id")"
+  [[ -z "$slice_json" || "$slice_json" == "null" ]] && return 1
+
+  spec="$(echo "$slice_json" | jq -r '.testRequirements.playwright[0] // empty')"
+  if [[ -n "$spec" && -e "$REPO_ROOT/$spec" ]]; then
+    echo "$spec"
+    return 0
+  fi
+
+  spec="$(playwright_output_path_for_slice "$slice_id")"
+  if [[ -e "$REPO_ROOT/$spec" ]]; then
+    echo "$spec"
+    return 0
+  fi
+
+  if [[ -f "$PLAYWRIGHT_REGRESSION_INDEX" ]]; then
+    spec="$(jq -r --arg id "$slice_id" '.slices[$id].specPath // empty' "$PLAYWRIGHT_REGRESSION_INDEX")"
+    if [[ -n "$spec" && -e "$REPO_ROOT/$spec" ]]; then
+      echo "$spec"
+      return 0
+    fi
+  fi
+  return 1
+}
+
+should_run_full_playwright_suite() {
+  local slice_id="${1:-}"
+  local scope every_n counter_file count
+  scope="$(playwright_scope_for_checks)"
+  if [[ "$scope" == "full" || -z "$slice_id" ]]; then
+    return 0
+  fi
+  every_n="$(playwright_full_every_n)"
+  if [[ "$every_n" -le 0 ]]; then
+    return 1
+  fi
+  counter_file="${HARNESS_ROOT}/generated/playwright-full-counter.json"
+  mkdir -p "$(dirname "$counter_file")"
+  if [[ ! -f "$counter_file" ]]; then
+    echo '{"passCount":0}' >"$counter_file"
+  fi
+  count="$(jq -r '.passCount // 0' "$counter_file")"
+  if (( count > 0 && count % every_n == 0 )); then
+    return 0
+  fi
+  return 1
+}
+
+build_slice_scope_allowlist() {
+  local slice_id="$1"
+  local slice_json agent_type
+  slice_json="$(get_slice_json "$slice_id")"
+  [[ -z "$slice_json" || "$slice_json" == "null" ]] && return 1
+
+  agent_type="$(echo "$slice_json" | jq -r '.agent // "backend"')"
+  local -a allowlist=()
+  local artifact path layer
+
+  while IFS= read -r artifact; do
+    [[ -z "$artifact" ]] && continue
+    allowlist+=("$artifact")
+  done < <(echo "$slice_json" | jq -r '.completionArtifacts[]?')
+
+  for layer in unit integration component playwright; do
+    while IFS= read -r path; do
+      [[ -z "$path" ]] && continue
+      allowlist+=("$path")
+    done < <(echo "$slice_json" | jq -r --arg layer "$layer" '.testRequirements[$layer][]?')
+  done
+
+  allowlist+=("ai-harness/generated/runs/screenshots/${slice_id}")
+  allowlist+=("ai-harness/state/progress.md")
+  allowlist+=("ai-harness/state/guardrails.md")
+  allowlist+=("ai-harness/whole-app-backlog.json")
+
+  if [[ "$agent_type" == "frontend" ]]; then
+    while IFS= read -r path; do
+      [[ -z "$path" ]] && continue
+      allowlist+=("$path")
+    done < <(jq -r '.computationalChecks.scopeAllowlist[]?' "$LOOP_CONFIG")
+  fi
+
+  printf '%s\n' "${allowlist[@]}"
+}
+
+path_in_scope_allowlist() {
+  local file_path="$1"
+  shift
+  local entry
+  for entry in "$@"; do
+    [[ -z "$entry" ]] && continue
+    if [[ "$file_path" == "$entry" || "$file_path" == "${entry}/"* ]]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
+check_slice_scope_violations() {
+  local slice_id="$1"
+  local slice_json exclude_id artifact file_path
+  slice_json="$(get_slice_json "$slice_id")"
+  [[ -z "$slice_json" || "$slice_json" == "null" ]] && return 1
+
+  local -a allowlist=()
+  while IFS= read -r file_path; do
+    [[ -z "$file_path" ]] && continue
+    allowlist+=("$file_path")
+  done < <(build_slice_scope_allowlist "$slice_id")
+
+  local -a violations=()
+  while IFS= read -r file_path; do
+    [[ -z "$file_path" ]] && continue
+    if ! path_in_scope_allowlist "$file_path" "${allowlist[@]}"; then
+      violations+=("$file_path")
+    fi
+  done < <(git_changed_files)
+
+  while IFS= read -r exclude_id; do
+    [[ -z "$exclude_id" ]] && continue
+    while IFS= read -r artifact; do
+      [[ -z "$artifact" ]] && continue
+      while IFS= read -r file_path; do
+        [[ -z "$file_path" ]] && continue
+        if [[ "$file_path" == "$artifact" || "$file_path" == "${artifact}/"* ]]; then
+          violations+=("$file_path")
+        fi
+      done < <(git_changed_files)
+    done < <(get_slice_json "$exclude_id" | jq -r '.completionArtifacts[]?')
+  done < <(echo "$slice_json" | jq -r '.excludes[]?')
+
+  if [[ ${#violations[@]} -eq 0 ]]; then
+    return 0
+  fi
+  printf '%s\n' "$(printf '%s\n' "${violations[@]}" | sort -u)"
+  return 1
+}
+
+format_ui_screens_to_verify_block() {
+  local slice_id="$1"
+  local slice_json
+  slice_json="$(get_slice_json "$slice_id")"
+  [[ -z "$slice_json" || "$slice_json" == "null" ]] && return 0
+
+  local agent_type
+  agent_type="$(echo "$slice_json" | jq -r '.agent // "backend"')"
+  [[ "$agent_type" != "frontend" && "$agent_type" != "test" ]] && return 0
+
+  local desc keywords
+  desc="$(echo "$slice_json" | jq -r '.description // ""' | tr '[:upper:]' '[:lower:]')"
+  local -a states=()
+  if echo "$desc" | grep -qE 'list|table|collection'; then
+    states+=("list default")
+    states+=("list with filters/search applied")
+    states+=("empty state")
+  fi
+  if echo "$desc" | grep -qE 'form|create|edit|import'; then
+    states+=("create form")
+    states+=("edit form")
+    states+=("inline field error / validation state")
+  fi
+  if echo "$desc" | grep -qE 'forbidden|denied|role'; then
+    states+=("forbidden / denied state")
+  fi
+  if echo "$desc" | grep -qE 'modal|dialog|drawer'; then
+    states+=("modal open")
+  fi
+
+  local artifact route state
+  cat <<EOF
+## UI screens/states to verify (screenshot each)
+
+EOF
+  while IFS= read -r artifact; do
+    [[ -z "$artifact" ]] && continue
+    if [[ "$artifact" == apps/web/src/app/* ]]; then
+      route="$(echo "$artifact" | sed -E 's#apps/web/src/app/##; s#/page\.tsx$##; s#\(.*\)##g; s#\[([^\]]+)\]#:\1#g')"
+      route="/${route}"
+      route="$(echo "$route" | sed 's#//\+#/#g; s#/$##')"
+      [[ "$route" == "/" ]] || route="${route}"
+      if [[ ${#states[@]} -eq 0 ]]; then
+        printf -- '- %s — default (desktop + mobile where applicable)\n' "$route"
+      else
+        for state in "${states[@]}"; do
+          printf -- '- %s — %s\n' "$route" "$state"
+        done
+      fi
+    fi
+  done < <(echo "$slice_json" | jq -r '.completionArtifacts[]?')
+
+  while IFS= read -r ref; do
+    [[ -z "$ref" ]] && continue
+    artifact="$(test_case_artifact_abs "$ref")"
+    [[ -f "$artifact" ]] || continue
+    while IFS= read -r state; do
+      [[ -z "$state" ]] && continue
+      printf -- '- %s\n' "$state"
+    done < <(jq -r '.cases[]? | select(.layer == "browser") | "- \(.title // .id) — browser case"' "$artifact")
+  done < <(slice_requirement_tag_refs "$slice_id")
 }
 
 load_test_cases_json_for_slice() {
@@ -1340,11 +1602,28 @@ git_changed_files() {
   if ! git rev-parse --git-dir >/dev/null 2>&1; then
     return 0
   fi
-  {
+  local git_root repo_prefix path normalized
+  git_root="$(git rev-parse --show-toplevel 2>/dev/null || echo "$REPO_ROOT")"
+  repo_prefix="${REPO_ROOT#"${git_root}/"}"
+  if [[ "$repo_prefix" == "$REPO_ROOT" ]]; then
+    repo_prefix=""
+  fi
+  while IFS= read -r path; do
+    [[ -z "$path" ]] && continue
+    normalized="$path"
+    if [[ -n "$repo_prefix" ]]; then
+      if [[ "$path" == "${repo_prefix}/"* ]]; then
+        normalized="${path#${repo_prefix}/}"
+      else
+        continue
+      fi
+    fi
+    printf '%s\n' "$normalized"
+  done < <({
     git diff --name-only HEAD 2>/dev/null || true
     git diff --cached --name-only 2>/dev/null || true
     git ls-files --others --exclude-standard 2>/dev/null || true
-  } | sed '/^$/d' | sort -u
+  } | sed '/^$/d' | sort -u)
 }
 
 git_path_has_changes() {

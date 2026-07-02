@@ -1,4 +1,5 @@
 import { AttendanceStatus } from "@wecheck/domain";
+import { Search, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Alert } from "@/components/ui/alert";
@@ -12,6 +13,7 @@ import {
   filterMonitorRecords,
   formatMonitorTimestamp,
   formatPollTime,
+  searchMonitorRecords,
   sortMonitorRecords,
   type MonitorSortColumn,
   type MonitorSortDirection,
@@ -81,6 +83,7 @@ export function SessionMonitorDashboard({
   const data = monitorQuery.data;
 
   const [statusFilter, setStatusFilter] = useState<MonitorStatusFilter>("all");
+  const [searchInput, setSearchInput] = useState("");
   const [sortColumn, setSortColumn] = useState<MonitorSortColumn | null>(null);
   const [sortDirection, setSortDirection] = useState<MonitorSortDirection>("asc");
 
@@ -131,9 +134,10 @@ export function SessionMonitorDashboard({
       : []);
 
   const records = useMemo(() => {
-    const filtered = filterMonitorRecords(sourceRecords, statusFilter);
+    const searched = searchMonitorRecords(sourceRecords, searchInput);
+    const filtered = filterMonitorRecords(searched, statusFilter);
     return sortMonitorRecords(filtered, sortColumn, sortDirection);
-  }, [sourceRecords, statusFilter, sortColumn, sortDirection]);
+  }, [sourceRecords, searchInput, statusFilter, sortColumn, sortDirection]);
 
   function handleSort(column: MonitorSortColumn) {
     const nextDirection: MonitorSortDirection =
@@ -193,40 +197,76 @@ export function SessionMonitorDashboard({
           value={String(summary.present)}
           sublabel={`/ ${summary.enrolled}`}
           testId="stat-card-present"
+          accent="present"
+          pulse={pollingEnabled}
         />
         <StatCard
           label="Chưa điểm danh"
           value={String(summary.pending)}
           testId="stat-card-pending"
+          accent="pending"
         />
         <StatCard
           label="Vắng"
           value={String(summary.absent)}
           testId="stat-card-absent"
+          accent="absent"
         />
       </div>
       <p className="sr-only" data-testid="monitor-live-summary">
         {liveSummaryText}
       </p>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <label className="flex items-center gap-2 text-small text-text-secondary">
-          Trạng thái
-          <select
-            className="rounded-md border border-border bg-surface px-2 py-1 text-body text-text-primary"
-            data-testid="monitor-status-filter"
-            value={statusFilter}
-            onChange={(event) =>
-              setStatusFilter(event.target.value as MonitorStatusFilter)
-            }
-          >
-            {statusFilterOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
+      <div
+        className="rounded-md border border-border bg-surface-raised p-4 shadow-sm"
+        data-testid="monitor-roster-toolbar"
+      >
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+          <div className="relative min-w-0 flex-1">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted"
+              aria-hidden
+            />
+            <input
+              type="search"
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+              placeholder="Tìm sinh viên…"
+              className="min-h-touch w-full rounded-full border border-border bg-surface-default py-2 pl-10 pr-10 text-body text-text-primary placeholder:text-text-disabled focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+              data-testid="monitor-student-search"
+              aria-label="Tìm sinh viên"
+            />
+            {searchInput ? (
+              <button
+                type="button"
+                onClick={() => setSearchInput("")}
+                className="absolute right-2 top-1/2 flex min-h-touch min-w-touch -translate-y-1/2 items-center justify-center rounded-full text-text-secondary hover:bg-surface-muted hover:text-text-primary"
+                aria-label="Xóa tìm kiếm"
+                data-testid="monitor-search-clear"
+              >
+                <X className="h-4 w-4" aria-hidden />
+              </button>
+            ) : null}
+          </div>
+
+          <label className="flex shrink-0 items-center gap-2 text-small text-text-secondary">
+            Trạng thái
+            <select
+              className="min-h-touch rounded-md border border-border bg-surface px-2 py-1 text-body text-text-primary"
+              data-testid="monitor-status-filter"
+              value={statusFilter}
+              onChange={(event) =>
+                setStatusFilter(event.target.value as MonitorStatusFilter)
+              }
+            >
+              {statusFilterOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
 
       {codeSharingAlert ? (
@@ -304,22 +344,35 @@ function StatCard({
   value,
   sublabel,
   testId,
+  accent,
+  pulse = false,
 }: {
   label: string;
   value: string;
   sublabel?: string;
   testId: string;
+  accent?: "present" | "pending" | "absent";
+  pulse?: boolean;
 }) {
+  const accentClass =
+    accent === "present"
+      ? "border-l-success-500"
+      : accent === "pending"
+        ? "border-l-warning-500"
+        : accent === "absent"
+          ? "border-l-danger-500"
+          : "border-l-transparent";
+
   return (
     <div
-      className="rounded-md border border-border bg-surface-raised p-3"
+      className={`rounded-md border border-border border-l-4 bg-surface-raised p-3 shadow-md ${accentClass} ${pulse ? "motion-safe:animate-pulse" : ""}`}
       data-testid={testId}
     >
       <p className="text-small text-text-secondary">{label}</p>
-      <p className="text-h2 font-semibold">
+      <p className="font-display text-h2 font-semibold">
         {value}
         {sublabel ? (
-          <span className="text-body font-normal text-text-secondary"> {sublabel}</span>
+          <span className="font-sans text-body font-normal text-text-secondary"> {sublabel}</span>
         ) : null}
       </p>
     </div>

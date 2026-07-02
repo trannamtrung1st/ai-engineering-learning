@@ -72,6 +72,8 @@ description="$(echo "$slice_json" | jq -r '.description // ""')"
 acceptance="$(echo "$slice_json" | jq -r '.acceptance | join(", ")')"
 artifacts="$(echo "$slice_json" | jq -r '.completionArtifacts | join(", ")')"
 agent_type="$(echo "$slice_json" | jq -r '.agent // "backend"')"
+slice_excludes="$(echo "$slice_json" | jq -r '(.excludes // []) | join(", ")')"
+slice_notes="$(echo "$slice_json" | jq -r '.notes // ""')"
 prompt_agent="$agent_type"
 [[ "$MODE" == "tester" ]] && prompt_agent="tester"
 
@@ -98,6 +100,11 @@ prompt="${prompt//\{\{SLICE_ACCEPTANCE\}\}/$acceptance}"
 prompt="${prompt//\{\{SLICE_ARTIFACTS\}\}/$artifacts}"
 prompt="${prompt//\{\{SLICE_AGENT\}\}/$agent_type}"
 prompt="${prompt//\{\{SLICE_DOCS\}\}/$docs_list}"
+prompt="${prompt//\{\{SLICE_EXCLUDES\}\}/$slice_excludes}"
+prompt="${prompt//\{\{SLICE_NOTES\}\}/$slice_notes}"
+
+ui_screens_block="$(format_ui_screens_to_verify_block "$SLICE_ID" 2>/dev/null || true)"
+prompt="${prompt//\{\{UI_SCREENS_TO_VERIFY\}\}/$ui_screens_block}"
 
 missing_tags="$(slice_missing_test_case_tags "$SLICE_ID" | sed 's/^/- /')"
 if [[ -n "$missing_tags" ]]; then

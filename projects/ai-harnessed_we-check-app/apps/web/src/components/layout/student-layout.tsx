@@ -6,6 +6,7 @@ import { BottomNav } from "@/components/layout/bottom-nav";
 import { PageContent } from "@/components/layout/page-content";
 import { type AuthOutletContext } from "@/components/auth/require-auth";
 import { NotificationBell } from "@/components/notifications/notification-bell";
+import { logoutAuth } from "@/lib/auth-session";
 
 const studentNavIcons = {
   "/check-in": QrCode,
@@ -19,6 +20,9 @@ export interface StudentLayoutProps {
 
 export interface StudentShellProps {
   displayName: string;
+  email: string;
+  institutionalId: string;
+  onLogout: () => void | Promise<void>;
   hideBottomNav?: boolean;
   pathname?: string;
   children: React.ReactNode;
@@ -27,6 +31,9 @@ export interface StudentShellProps {
 /** AC-18b — student chrome reusable for route outlets and cross-role forbidden pages */
 export function StudentShell({
   displayName,
+  email,
+  institutionalId,
+  onLogout,
   hideBottomNav = false,
   pathname = "",
   children,
@@ -40,7 +47,10 @@ export function StudentShell({
         compact
         user={{
           displayName,
+          email,
+          institutionalId,
           role: UserRole.Student,
+          onLogout,
         }}
         headerActions={<NotificationBell />}
       />
@@ -61,6 +71,9 @@ export function StudentLayout({
   return (
     <StudentShell
       displayName={authContext.user.displayName}
+      email={authContext.user.email}
+      institutionalId={authContext.user.institutionalId}
+      onLogout={logoutAuth}
       hideBottomNav={hideBottomNav}
       pathname={location.pathname}
     >

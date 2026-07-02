@@ -348,10 +348,10 @@ report="$(enrich_browser_test_report_json "$report" "$combined_outfile" "$SLICE_
 write_run_report "${RID}-browser-test.json" "$report"
 
 if [[ "$FINAL_PASS" == true ]]; then
-  if parse_line="$(parse_playwright_regression_from_output "$combined_outfile" 2>/dev/null || true)"; then
+  if parse_line="$(parse_playwright_regression_from_output "$combined_outfile" 2>/dev/null)"; then
     spec_path="$(echo "$parse_line" | cut -f1)"
-    test_count="$(echo "$parse_line" | cut -f2)"
-    tc_ids_json="$(extract_source_tc_ids_from_output "$combined_outfile" | jq -R . | jq -s . 2>/dev/null || echo '[]')"
+    test_count="$(jq_number_or_default "$(echo "$parse_line" | cut -f2)")"
+    tc_ids_json="$(jq_json_or_default "$(extract_source_tc_ids_from_output "$combined_outfile" | jq -R . | jq -s . 2>/dev/null || true)" '[]')"
     update_playwright_regression_index "$SLICE_ID" "$spec_path" "$RID" "$test_count" "$tc_ids_json"
   fi
   exit 0

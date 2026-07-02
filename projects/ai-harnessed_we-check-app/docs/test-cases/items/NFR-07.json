@@ -1,8 +1,8 @@
 {
   "productItemId": "NFR-07",
   "version": 1,
-  "docFingerprint": "sha256:0d26880a4e8810f84506707bdccda5daa34c51f30d098691abe2c1b678fecb37",
-  "generatedAt": "2026-06-29T18:54:50Z",
+  "docFingerprint": "sha256:1e05c5e756e7bae838350bc41fd8bdb05f9041145b60c4f1a5161a9b6169369e",
+  "generatedAt": "2026-07-01T02:33:10Z",
   "cases": [
     {
       "id": "TC-NFR-07-001",
@@ -182,8 +182,8 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["NFR-07", "FR-12", "AC-12"],
-      "title": "Instructor /reports/sessions/:sessionId UI shows complete roster within 10 minutes of session close",
+      "traceability": ["NFR-07", "FR-12", "FR-13", "AC-12", "AC-12d", "AC-13c"],
+      "title": "Instructor /reports/sessions/:sessionId UI shows complete roster and scoped inline Xuất CSV within 10 minutes of session close",
       "preconditions": [
         "Authenticated Instructor on desktop viewport assigned to session class-subject with report:read",
         "Active session with enrolled students and at least one Present check-in",
@@ -197,9 +197,11 @@
         "Poll page reload or wait for ReportSummaryCards and AttendanceRosterTable to render complete data every 30 s",
         "Assert ReportSummaryCards show present, absent, excused counts matching finalized attendance",
         "Assert AttendanceRosterTable lists all enrolled students with status badges (no Pending rows)",
-        "Record T1 when complete roster visible; assert T1 minus T0 ≤ 600 seconds"
+        "When roster populated, assert page header or toolbar shows enabled **Xuất CSV** control per AC-12d and 00-production-ui-quality-bar §2",
+        "Click inline **Xuất CSV** and assert scoped CSV download succeeds with attendance-export filename and assigned class-subject rows only per AC-13c and API design §8.3",
+        "Record T1 when complete roster visible and inline CSV export succeed; assert T1 minus T0 ≤ 600 seconds"
       ],
-      "expected": "Browser journey: instructor views complete session report UI within NFR-07 10-minute window per 07-non-functional-risk timed report access verification",
+      "expected": "Browser journey: instructor views complete session report UI and downloads scoped inline CSV within NFR-07 10-minute window per AC-12d and AC-13c",
       "edgeCase": false
     },
     {
@@ -208,23 +210,24 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["NFR-07", "FR-12", "FR-13", "AC-12", "AC-13"],
-      "title": "TrainingOfficeAdmin CSV export and summary report UI available within 10 minutes of session close",
+      "traceability": ["NFR-07", "FR-12", "FR-13", "AC-12", "AC-12d", "AC-13", "AC-13d"],
+      "title": "TrainingOfficeAdmin inline Xuất CSV and summary report UI available within 10 minutes of session close",
       "preconditions": [
         "Authenticated TrainingOfficeAdmin on desktop viewport",
         "Closed session with attendance data for HESD-01 / SWE-101",
         "closedAt timestamp recorded at session close",
-        "Admin sidebar Báo cáo and Xuất CSV navigation available per 06-app-layout-components §7.2 and roles-permissions §2.3a"
+        "Admin sidebar Báo cáo available per 06-app-layout-components §7.2 and roles-permissions §2.3a"
       ],
       "steps": [
         "Record T0 at session close completion",
         "Navigate to /admin/reports and apply date filter covering closed session",
         "Wait until ReportSummaryCards and SessionReportTable render closed session with correct counts (poll up to 10 min)",
-        "Click CSV export control and assert download succeeds with attendance-export filename",
-        "Assert CSV contains institutional_id, display_name, attendance_status columns per API design §8.3",
-        "Record T1 when both summary UI and CSV export succeed; assert T1 minus T0 ≤ 600 seconds per MVP exit §9 Report readiness"
+        "Assert page header or toolbar shows enabled **Xuất CSV** button per AC-12d and AC-13d",
+        "Click inline **Xuất CSV** without navigating to /admin/export and assert download succeeds with attendance-export filename",
+        "Assert CSV contains institutional_id, display_name, class_code, subject_code, session_date, attendance_status, checked_in_at columns per API design §8.3",
+        "Record T1 when both summary UI and inline CSV export succeed; assert T1 minus T0 ≤ 600 seconds per MVP exit §9 Report readiness"
       ],
-      "expected": "MVP exit indicator satisfied: attendance report and admin CSV both available within 10 minutes of close per 08-acceptance-mvp-future §9 and NFR-07",
+      "expected": "MVP exit indicator satisfied: institution-wide report and inline admin Xuất CSV on /admin/reports both available within 10 minutes of close per AC-13d, §9, and NFR-07",
       "edgeCase": false
     },
     {
@@ -306,8 +309,8 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P1",
-      "traceability": ["NFR-07", "FR-12", "NFR-11", "BR-14"],
-      "title": "Student receives immediate 403 on report endpoints; NFR-07 latency applies only to authorized instructor report access",
+      "traceability": ["NFR-07", "FR-12", "FR-13", "NFR-11", "BR-08", "BR-14", "AC-13b"],
+      "title": "Student receives immediate 403 on report and export endpoints; authorized instructor report and scoped export within NFR-07",
       "preconditions": [
         "Session Closed with complete attendance data available to instructor",
         "Authenticated Student session (no report:read per roles-permissions §2.2)",
@@ -316,11 +319,13 @@
       "steps": [
         "Student GET /api/v1/reports/session/:sessionId and assert immediate HTTP 403 with errorCode Forbidden or ReportAccessDenied (no 10-minute wait)",
         "Student GET /api/v1/reports/summary and assert immediate HTTP 403 with localized permission-denied message per roles-permissions §2.5",
+        "Student POST /api/v1/reports/export with valid filter body and assert immediate HTTP 403 ExportNotAllowed per AC-13b and API design §8.3",
         "Instructor GET /api/v1/reports/session/:sessionId and assert HTTP 200 with complete roster within 10 minutes of closedAt",
+        "Instructor POST /api/v1/reports/export for assigned class-subject filters and assert HTTP 200 text/csv within 10 minutes of closedAt per AC-13c",
         "Verify NFR-07 timing measurement uses authorized actor only",
-        "Assert Student denial does not leak roster data regardless of elapsed time since close"
+        "Assert Student denial does not leak roster or CSV data regardless of elapsed time since close"
       ],
-      "expected": "NFR-07 report availability SLA targets authorized instructor/admin viewers; unauthorized roles denied immediately per BR-08 and roles-permissions §2.5 without exposing report data during latency window",
+      "expected": "NFR-07 report availability SLA targets authorized instructor/admin viewers; student report and export denied immediately; instructor in-scope export available within NFR-07 window per BR-08, AC-13b, and AC-13c",
       "edgeCase": false
     },
     {
@@ -363,12 +368,14 @@
       "steps": [
         "Navigate to /sessions and assert InstructorLayout SidebarNav visible",
         "Assert SidebarNav contains Báo cáo link with href /reports (report:read permitted)",
-        "Assert RoleHomeHub shows Tạo buổi học mới and Báo cáo điểm danh cards per AC-18d",
+        "Assert RoleHomeHub shows Tạo buổi học mới, Buổi học của tôi, and Báo cáo điểm danh cards per AC-18d and 06-app-layout-components §6.2",
+        "Assert SidebarNav contains Báo cáo (/reports) but omits admin Xuất CSV nav link to /admin/export; instructor uses inline Xuất CSV on /reports per AC-13c and roles-permissions §2.3a",
         "Query all anchor href attributes in layout chrome (sidebar, top bar, hub cards)",
         "Assert zero href values match /admin or /admin/* prefix per AC-18a and BR-14",
+        "Direct navigate to /admin/export and assert ForbiddenPage without AdminLayout chrome leaked",
         "On viewport < md, open hamburger drawer and re-assert zero /admin/* links"
       ],
-      "expected": "Report nav exposed only on permitted instructor routes; NFR-07 latency verification applies to authorized Báo cáo entry points without admin nav leakage per 06-app-layout-components §6.2",
+      "expected": "Report nav exposed only on permitted instructor routes; SidebarNav omits admin-only items; NFR-07 latency verification applies to authorized Báo cáo entry points without admin nav leakage per 06-app-layout-components §6.2",
       "edgeCase": false
     },
     {
@@ -389,10 +396,37 @@
         "Assert BottomNav contains only Điểm danh (/check-in) and Lịch sử (/history) per roles-permissions §2.3a",
         "Assert no nav item or hub card href matches /reports, /admin, or /admin/*",
         "Assert Báo cáo label absent from DOM (omitted not disabled) per BR-14",
-        "Direct navigate to /reports and assert ForbiddenPage without report roster data",
+        "Direct navigate to /reports and assert ForbiddenPage without report shell, ReportSummaryCards, or Báo cáo điểm danh chrome per guardrails Reports RBAC",
+        "Assert no **Xuất CSV** control visible anywhere in student layout per AC-13b",
         "Assert denial is immediate (NFR-07 10-minute SLA applies only to authorized viewers)"
       ],
-      "expected": "Student chrome omits report and admin navigation items; unauthorized report access denied immediately so NFR-07 latency scope is instructor and admin viewers only",
+      "expected": "Student chrome omits report and admin navigation items; /reports renders ForbiddenPage before report shell mounts; unauthorized access denied immediately so NFR-07 latency scope is instructor and admin viewers only",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-07-017",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-07", "FR-13", "AC-13", "AC-13c", "BR-08"],
+      "title": "Instructor POST /reports/export returns scoped HTTP 200 CSV within 10 minutes of session close",
+      "preconditions": [
+        "Authenticated Instructor assigned to HESD-01 / SWE-101 with report:read for class-subject pair",
+        "Active session closed with mixed attendance for assigned class-subject",
+        "closedAt timestamp recorded at POST /api/v1/sessions/:sessionId/close",
+        "Export filter body matches closed session classCode, subjectCode, and date range"
+      ],
+      "steps": [
+        "Record T0 at session close completion (HTTP 200 status Closed)",
+        "Poll POST /api/v1/reports/export with body { classCode: HESD-01, subjectCode: SWE-101, from, to } using Instructor session every 60 s until HTTP 200 or 10-minute timeout",
+        "On HTTP 200, assert Content-Type text/csv; charset=utf-8 and Content-Disposition attachment filename",
+        "Assert CSV rows include closed session students with attendance_status and checked_in_at where Present",
+        "Assert CSV contains only assigned class-subject scope (no cross-assignment rows) per AC-13c and API design §8.3",
+        "Record T1 on first successful scoped export",
+        "Assert T1 minus T0 ≤ 600 seconds"
+      ],
+      "expected": "Instructor scoped CSV export HTTP contract available within NFR-07 window after session close per AC-13c, FR-13, and MVP exit Report readiness indicator",
       "edgeCase": false
     }
   ]

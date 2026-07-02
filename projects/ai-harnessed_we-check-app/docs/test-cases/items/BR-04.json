@@ -1,8 +1,8 @@
 {
   "productItemId": "BR-04",
   "version": 1,
-  "docFingerprint": "sha256:7fa6e5f0fa1fb178b99256355a681409f9ca3b3a224ea6b785c745d780059c2e",
-  "generatedAt": "2026-06-29T18:30:00.000Z",
+  "docFingerprint": "sha256:2f4339d78ef523c323a8974779165acbd0a71755d9c7e3df622be9ab3506c35c",
+  "generatedAt": "2026-06-30T10:22:07.000Z",
   "cases": [
     {
       "id": "TC-BR-04-001",
@@ -23,11 +23,12 @@
         "POST /api/v1/check-in with tokenId, in-radius coordinates, and spoofMetadata using Student A session",
         "Assert HTTP status 409 Conflict",
         "Assert response outcome DuplicateCheckIn and errorCode DuplicateCheckIn",
+        "Assert response body includes priorCheckedInAt matching existing Present row checkedInAt",
         "Assert message Bạn đã điểm danh buổi học này rồi per BR-04 outcome specification",
         "Query attendance_records for Student A and sessionId and assert exactly one Present row unchanged",
         "Query check_in_attempts and assert latest attempt outcome DuplicateCheckIn"
       ],
-      "expected": "BR-04 enforced: HTTP 409 DuplicateCheckIn semantics; no duplicate Present record created for same student in same session",
+      "expected": "BR-04 enforced: HTTP 409 DuplicateCheckIn semantics with priorCheckedInAt; no duplicate Present record created for same student in same session",
       "edgeCase": false
     },
     {
@@ -41,7 +42,7 @@
       "preconditions": [
         "Real PostgreSQL with Active session, enrollment, Pending attendance_records row",
         "Valid qr_tokens row with status Valid",
-        "CheckInService wired with AttendanceRecordRepository and QrTokenRepository per domain model §5.2"
+        "CheckInService wired with AttendanceRecordRepository and QrTokenRepository per checkin-qr module §2.4"
       ],
       "steps": [
         "Invoke CheckInService.submit with valid tokenId and in-radius locationPayload for studentId (first call)",
@@ -68,7 +69,7 @@
         "TestClock within attendance window and token TTL"
       ],
       "steps": [
-        "Fire two parallel POST /check-in or CheckInService.submit calls for same studentId and sessionId",
+        "Fire two parallel POST /api/v1/check-in or CheckInService.submit calls for same studentId and sessionId",
         "Collect both HTTP responses or CheckInResult outcomes",
         "Assert exactly one response is HTTP 200 outcome Success with attendance Present",
         "Assert the other response is HTTP 409 outcome DuplicateCheckIn",
@@ -96,7 +97,8 @@
         "Assert Content-Type application/json; charset=utf-8",
         "Assert response body outcome DuplicateCheckIn and errorCode DuplicateCheckIn",
         "Assert response body message Bạn đã điểm danh buổi học này rồi",
-        "Assert no attendance field with updated Present on failure envelope per API design §6.2"
+        "Assert response body priorCheckedInAt is ISO-8601 timestamp of prior successful check-in",
+        "Assert no attendance field with updated Present on failure envelope per API design §6.3"
       ],
       "expected": "HTTP 409 DuplicateCheckIn contract per validation-rules §4 BR-04 mapping and API design §6.3 idempotency note",
       "edgeCase": false
@@ -142,6 +144,7 @@
         "Student A GET /api/v1/check-in/tokens/:tokenId/preflight with fresh Valid tokenId and assert HTTP 200 outcome Valid",
         "Student A POST /api/v1/check-in again with fresh Valid tokenId and in-radius coordinates",
         "Assert HTTP 409 with outcome DuplicateCheckIn and errorCode DuplicateCheckIn",
+        "Assert response body includes priorCheckedInAt matching Student A checkedInAt from step 2",
         "Assert Vietnamese message Bạn đã điểm danh buổi học này rồi",
         "Query attendance_records and assert exactly one Present row for Student A",
         "Verify Flow B anti-fraud path step 3 per testing-plan §6 Flow B tags BR-04"
@@ -229,20 +232,21 @@
       "preconditions": [
         "Authenticated Student on mobile viewport 375×812 with Present attendance for session",
         "Active session with valid check-in deep link /check-in?token=:tokenId&session=:sessionId",
-        "GPS permission granted with in-radius coordinates"
+        "VITE_ENABLE_DEVICE_SIMULATION=true with gpsSim=delay query param for harness in-room coordinates",
+        "Preflight returns HTTP 200 outcome Valid per BR-04 evaluated at POST only (TC-BR-04-017)"
       ],
       "steps": [
-        "Navigate to /check-in deep link for session where student is already Present",
-        "Assert validating_token inline spinner during GET /api/v1/check-in/tokens/:tokenId/preflight",
-        "Assert GpsCaptureStep mounts after preflight returns HTTP 200 outcome Valid per BR-15",
-        "Wait for GpsCaptureStep ready substate (Vị trí đã sẵn sàng; no spinner; aria-busy false; submit enabled per AC-08f)",
+        "Navigate to /check-in?token=:tokenId&session=:sessionId&gpsSim=delay deep link where student is already Present",
+        "Assert validating_token inline spinner on scan step during GET /api/v1/check-in/tokens/:tokenId/preflight per ui-states §4.1",
+        "Assert data-testid gps-capture-step absent until preflight HTTP 200 outcome Valid per BR-15",
+        "Assert GpsCaptureStep mounts after preflight pass with session summary visible",
+        "Wait for GpsCaptureStep ready substate per ui-states §4.2: check icon visible, copy Vị trí đã sẵn sàng, no Spinner in GPS region, submit region aria-busy false, Xác nhận điểm danh enabled",
         "Tap Xác nhận điểm danh submit control",
-        "Verify CheckInOutcomePanel displays info-level DuplicateCheckIn state",
-        "Verify message Bạn đã điểm danh buổi học này rồi per user-flows §WF-03",
-        "Verify prior check-in timestamp displayed",
-        "Verify Xem lịch sử link navigates to /history per ui-states DuplicateCheckIn action"
+        "Verify CheckInOutcomePanel DuplicateCheckIn variant per ui-states §4.3: info wash (--color-info-50), History icon, message Bạn đã điểm danh buổi học này rồi per user-flows §3",
+        "Verify prior check-in timestamp displayed from priorCheckedInAt in API response",
+        "Verify primary CTA Xem lịch sử navigates to /history"
       ],
-      "expected": "BR-04 surfaced in mobile web UI after BR-15 preflight pass and GPS ready; student informed of prior check-in with history navigation per CheckInOutcomePanel traceability",
+      "expected": "BR-04 surfaced in mobile web UI after BR-15 preflight pass and AC-08f-ready GPS step; DuplicateCheckIn outcome panel shows prior timestamp and history CTA per ui-states §4.3",
       "edgeCase": false
     },
     {
@@ -308,9 +312,10 @@
         "POST /api/v1/check-in with valid tokenId and out-of-radius coordinates using Student session",
         "Assert HTTP status 409 with outcome DuplicateCheckIn (not OutOfRadius)",
         "Assert errorCode DuplicateCheckIn takes precedence per validation-rules §5.1 step 10 before step 13 radius check",
+        "Assert response body includes priorCheckedInAt matching existing Present row checkedInAt",
         "Verify check_in_attempts logged with outcome DuplicateCheckIn not OutOfRadius"
       ],
-      "expected": "BR-04 evaluated at pipeline step 10 before BR-02 radius (step 13); DuplicateCheckIn short-circuits pipeline per validation-rules §5.1",
+      "expected": "BR-04 evaluated at pipeline step 10 before BR-02 radius (step 13); DuplicateCheckIn short-circuits pipeline per validation-rules §5.1 and rule interaction matrix §8 order 5",
       "edgeCase": false
     },
     {
@@ -347,16 +352,18 @@
       "preconditions": [
         "Authenticated Student on mobile viewport with Present attendance for Active session",
         "Fresh QR deep link available for same session",
-        "GPS permission granted with in-radius coordinates"
+        "VITE_ENABLE_DEVICE_SIMULATION=true with gpsSim=delay for harness in-room coordinates",
+        "Preflight returns HTTP 200 outcome Valid per BR-04 evaluated at POST only (TC-BR-04-017)"
       ],
       "steps": [
-        "Open check-in deep link and assert validating_token spinner during GET /api/v1/check-in/tokens/:tokenId/preflight",
-        "Assert GpsCaptureStep mounts after preflight HTTP 200 outcome Valid per BR-15",
-        "Complete GPS capture to ready substate and tap submit",
-        "Observe DuplicateCheckIn outcome panel",
+        "Open /check-in?token=:tokenId&session=:sessionId&gpsSim=delay deep link and assert validating_token spinner on scan step during GET /api/v1/check-in/tokens/:tokenId/preflight per ui-states §4.1",
+        "Assert data-testid gps-capture-step absent until preflight HTTP 200 outcome Valid per BR-15",
+        "Assert GpsCaptureStep mounts after preflight pass with session summary visible",
+        "Complete GPS capture to ready substate per ui-states §4.2 and tap Xác nhận điểm danh",
+        "Observe CheckInOutcomePanel DuplicateCheckIn variant per ui-states §4.3 with message Bạn đã điểm danh buổi học này rồi",
         "Verify submit control is disabled or replaced with guidance after duplicate rejection",
         "Verify no success badge or Present confirmation shown",
-        "Verify panel does not offer retry with same session without navigating to history"
+        "Verify panel does not offer retry with same session without navigating to history via Xem lịch sử CTA"
       ],
       "expected": "BR-04 duplicate rejection UX prevents repeated submission attempts; student cannot obtain second Present via UI for same session",
       "edgeCase": false
@@ -403,9 +410,33 @@
         "Verify preflight chain per validation-rules §3.6a: token exists → status Valid → session Active → enrollment confirmed",
         "Query attendance_records and qr_tokens and assert no writes from preflight alone",
         "Invoke POST /api/v1/check-in with same tokenId and in-radius coordinates",
-        "Assert HTTP status 409 outcome DuplicateCheckIn per BR-04 evaluated at submit layer only"
+        "Assert HTTP status 409 outcome DuplicateCheckIn with priorCheckedInAt per BR-04 evaluated at submit layer only"
       ],
       "expected": "BR-15 preflight is read-only and does not evaluate BR-04 duplicate guard; DuplicateCheckIn rejection occurs only at POST pipeline step 10 per validation-rules §5.1",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-04-018",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-04", "FR-09", "NFR-24"],
+      "title": "gpsSim query params ignored when VITE_ENABLE_DEVICE_SIMULATION=false on duplicate check-in path",
+      "preconditions": [
+        "Web build compiled with VITE_ENABLE_DEVICE_SIMULATION=false (production default per AC-08e)",
+        "Authenticated enrolled Student already Present for Active session",
+        "Fresh Valid unexpired QrToken; GET /api/v1/check-in/tokens/:tokenId/preflight returns 200 outcome Valid",
+        "Check-in deep link includes gpsSim=delay and gpsLat/gpsLng in-room coordinates"
+      ],
+      "steps": [
+        "Load /check-in?token=:tokenId&session=:sessionId&gpsSim=delay&gpsLat=10.762700&gpsLng=106.660200 in browser with simulation flag off",
+        "Verify client does not auto-resolve simulated coordinates from gpsSim or gpsLat/gpsLng query params",
+        "Verify browser geolocation API is invoked (or permission prompt shown) instead of simulation layer",
+        "Without granting real GPS, assert student cannot reach DuplicateCheckIn outcome panel solely from gpsSim params",
+        "Grant mocked in-radius geolocation, complete submit, and assert HTTP 409 DuplicateCheckIn with priorCheckedInAt per BR-04"
+      ],
+      "expected": "AC-08e/NFR-24 production path applies to BR-04 duplicate flow: sim-disabled builds ignore gpsSim URL params; DuplicateCheckIn reached only after real GPS capture and POST /check-in",
       "edgeCase": false
     }
   ]

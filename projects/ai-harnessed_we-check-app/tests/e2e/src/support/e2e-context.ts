@@ -65,7 +65,7 @@ export class E2eContext {
   }
 
   async teardown(): Promise<void> {
-    this.sessionService.qr.stopAll();
+    await this.sessionService.qr.stopAll();
     resetClock();
     await this.app.close();
     await closePool();
@@ -73,7 +73,7 @@ export class E2eContext {
 
   async resetDb(afterTruncate?: () => Promise<void>): Promise<void> {
     await withIntegrationTestDbReset(this.db, async () => {
-      this.sessionService.qr.stopAll();
+      await this.sessionService.qr.stopAll();
       await truncateCheckInTables(this.db);
       await truncateNotificationTables(this.db);
       await truncateSessionTables(this.db);

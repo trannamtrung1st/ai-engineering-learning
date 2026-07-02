@@ -216,6 +216,7 @@ export const ERROR_MESSAGES: Readonly<Record<ErrorCodeType, string>> = {
   [ErrorCode.MalformedJson]: "Định dạng yêu cầu không hợp lệ",
   [ErrorCode.DuplicateClassCode]: "Mã lớp đã tồn tại",
   [ErrorCode.DuplicateSubjectCode]: "Mã môn học đã tồn tại",
+  [ErrorCode.DuplicateEmail]: "Email đã tồn tại",
   [ErrorCode.SetupAlreadyComplete]:
     "Hệ thống đã hoàn tất thiết lập ban đầu. Vui lòng đăng nhập.",
 };

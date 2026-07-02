@@ -42,19 +42,18 @@ export class QrScheduler {
     this.intervals.set(sessionId, handle);
   }
 
-  stop(sessionId: string): void {
+  async stop(sessionId: string): Promise<void> {
     const handle = this.intervals.get(sessionId);
     if (handle) {
       clearInterval(handle);
       this.intervals.delete(sessionId);
     }
-    void this.expireValidTokens(sessionId);
+    await this.expireValidTokens(sessionId);
   }
 
-  stopAll(): void {
-    for (const sessionId of this.intervals.keys()) {
-      this.stop(sessionId);
-    }
+  async stopAll(): Promise<void> {
+    const sessionIds = [...this.intervals.keys()];
+    await Promise.all(sessionIds.map((sessionId) => this.stop(sessionId)));
   }
 
   async rotate(sessionId: string): Promise<void> {

@@ -1,8 +1,8 @@
 {
   "productItemId": "BR-05",
   "version": 1,
-  "docFingerprint": "sha256:7fa6e5f0fa1fb178b99256355a681409f9ca3b3a224ea6b785c745d780059c2e",
-  "generatedAt": "2026-06-29T18:24:20Z",
+  "docFingerprint": "sha256:2f4339d78ef523c323a8974779165acbd0a71755d9c7e3df622be9ab3506c35c",
+  "generatedAt": "2026-06-30T10:25:49Z",
   "cases": [
     {
       "id": "TC-BR-05-001",
@@ -16,7 +16,7 @@
         "Student A enrolled in class HESD-2026-A / subject SWE-101 with assigned Instructor I via ClassAssignment",
         "Four prior Closed sessions for Student A in SWE-101: 3 Present, 1 unexcused Absent (25% rate before next session)",
         "Fifth session created, opened Active, and Student A remains Pending (will become Absent on close)",
-        "Should-capability enabled; default policy absence_threshold_percent = 20 per BR-05",
+        "BR-05 Should rule enabled; default policy absence_threshold_percent = 20 per validation rules §3.9",
         "Authenticated Instructor I session with session:write"
       ],
       "steps": [
@@ -95,17 +95,17 @@
         "Real PostgreSQL with Active session; attendance_records in Pending state for enrolled students",
         "Student E has prior Closed sessions yielding unexcused rate above 20% threshold",
         "SessionStateGuard allows Active → Closed per state machines §2",
-        "AttendanceService.finalizeOnClose configured per API design §5.5 side effects"
+        "AttendanceService.finalizeOnClose configured per domain model §5.1 and WF-06 §7.1"
       ],
       "steps": [
         "Assert session beforeState Active and attendance summary pending > 0",
         "Execute session close transition (AttendanceService.finalizeOnClose: Pending → Absent)",
         "Assert session afterState Closed with closedAt set",
         "Assert attendance summary absent count incremented and pending count zeroed",
-        "Verify SessionClosed domain event emitted and consumed by NotificationService",
-        "Assert threshold evaluation runs post-close and creates notifications when rate exceeds policy"
+        "Verify SessionClosed domain event emitted per domain model §8 and consumed by notifications module",
+        "Assert NotificationService.evaluateAbsenceThresholds runs asynchronously post-close and creates notifications when rate exceeds policy"
       ],
-      "expected": "BR-05 trigger satisfied: recalculation runs asynchronously after each session transitions to Closed",
+      "expected": "BR-05 trigger satisfied: recalculation runs asynchronously after each session transitions to Closed (manual or scheduler auto-close per BR-01)",
       "edgeCase": false
     },
     {
@@ -450,22 +450,24 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P1",
-      "traceability": ["BR-05"],
-      "title": "Manual attendance edit to Excused removes absence from numerator on subsequent recalculation",
+      "traceability": ["BR-05", "BR-10", "FR-16"],
+      "title": "AttendanceManuallyEdited triggers threshold recalculation excluding Excused from numerator",
       "preconditions": [
         "Real PostgreSQL with Student R: 3 Absent of 5 Closed sessions (60% rate, above threshold)",
         "AbsenceThresholdWarning notification already exists for Student R",
-        "Instructor changes one Absent record to Excused within 24-hour edit window per BR-10"
+        "Instructor changes one Absent record to Excused within 24-hour edit window per BR-10",
+        "AttendanceManuallyEdited domain event consumed by NotificationService per domain model §8 and WF-06"
       ],
       "steps": [
         "Invoke AttendanceService.manualEdit to change one Absent to Excused with note",
         "Assert AttendanceManuallyEdited domain event emitted",
-        "Invoke NotificationService.evaluateAbsenceThresholds for most recent closed session",
+        "Invoke NotificationService.evaluateAbsenceThresholds triggered by AttendanceManuallyEdited consumer",
         "Recalculate rate: 2 Absent of 5 = 40% (still above 20%)",
-        "Change second Absent to Excused; recalculate: 1 Absent of 5 = 20% (not > 20%)",
+        "Change second Absent to Excused via manualEdit; invoke evaluateAbsenceThresholds again",
+        "Recalculate rate: 1 Absent of 5 = 20% (not > 0.20 per BR-05 condition)",
         "Assert no new AbsenceThresholdWarning created after rate drops to exactly 20%"
       ],
-      "expected": "BR-05 recalculation after manual Excused edit excludes those absences from numerator; rate drops accordingly",
+      "expected": "BR-05 recalculation on AttendanceManuallyEdited excludes Excused absences from numerator; rate drops accordingly and no new warning when rate no longer strictly exceeds threshold",
       "edgeCase": false
     },
     {
@@ -512,6 +514,57 @@
         "Assert each item on first page has type AbsenceThresholdWarning with payload fields subjectCode, absenceRate, threshold, sessionCount, unexcusedAbsenceCount per domain model §4.13"
       ],
       "expected": "BR-05 in-app warnings paginate correctly via cursor-based GET /notifications per API design §1 and §9.1",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-05-022",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": ["BR-05", "FR-16"],
+      "title": "Rejected attendance status excluded from unexcused absence numerator",
+      "preconditions": [
+        "Real PostgreSQL with Student S enrolled in subject CALC-101",
+        "Ten completed Closed sessions for Student S: 3 Absent, 2 Rejected, 5 Present",
+        "BR-05 formula counts only Absent in numerator, not Rejected or Excused",
+        "Policy threshold 20%; naive count including Rejected would be 5/10 = 50%"
+      ],
+      "steps": [
+        "Query attendance_records for Student S in CALC-101 where parent session status Closed",
+        "Count records with status Absent only (exclude Rejected and Excused from unexcusedAbsenceCount)",
+        "Assert unexcusedAbsenceCount === 3 and sessionCount === 10",
+        "Invoke NotificationService.evaluateAbsenceThresholds after closing eleventh session where Student S is Present",
+        "Assert calculated absenceRate === 3/11 ≈ 27% > 20% threshold",
+        "Query notifications for Student S and assert AbsenceThresholdWarning created with payload.unexcusedAbsenceCount === 3"
+      ],
+      "expected": "BR-05 numerator includes only Absent records; Rejected check-in outcomes do not inflate unexcused absence rate",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-05-023",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": ["BR-05", "FR-16", "AC-16"],
+      "title": "Absence threshold rate calculated independently per subject per BR-05 scope",
+      "preconditions": [
+        "Real PostgreSQL with Student T enrolled in SWE-101 and SWE-102 via same class",
+        "SWE-101: 4 completed Closed sessions with 3 Absent (75% rate, above threshold)",
+        "SWE-102: 4 completed Closed sessions with 0 Absent (0% rate, below threshold)",
+        "Fifth SWE-102 session just closed with Student T Present"
+      ],
+      "steps": [
+        "Invoke NotificationService.evaluateAbsenceThresholds for closed SWE-102 sessionId",
+        "Query notifications for Student T with payload.subjectCode SWE-101",
+        "Assert AbsenceThresholdWarning exists for SWE-101 reflecting 75% rate",
+        "Query notifications for Student T with payload.subjectCode SWE-102",
+        "Assert no AbsenceThresholdWarning for SWE-102 (0/5 = 0% does not exceed 20%)",
+        "Close a sixth SWE-101 session with Student T Absent and re-evaluate",
+        "Assert SWE-101 notification payload updates; SWE-102 remains without warning"
+      ],
+      "expected": "BR-05 scope per subject: high absence rate in one subject does not trigger warning for another subject with acceptable rate",
       "edgeCase": false
     }
   ]

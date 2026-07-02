@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-12",
   "version": 1,
-  "docFingerprint": "sha256:4486180b32d8648d5a1ee357e0aa5d25b19ad2677ee28cac6fb15694f053de0e",
-  "generatedAt": "2026-06-29T17:27:29Z",
+  "docFingerprint": "sha256:805ac1ddee505b3ab130e4e7ac335d0c6b50f90bd34dbe4c080b375bcf06977e",
+  "generatedAt": "2026-07-01T00:00:00Z",
   "cases": [
     {
       "id": "TC-AC-12-001",
@@ -203,7 +203,7 @@
       "steps": [
         "Invoke ReportService.getSessionRoster(assignedSessionId, instructorAId) and assert ReportDto with student status rows returned",
         "Assert aggregation counts (present, absent, excused) computed from attendance_records join enrollments",
-        "Invoke ReportService.getSessionRoster(unassignedSessionId, instructorAId) and assert BR-08 scope rejection",
+        "Invoke ReportService.getSessionRoster(unassignedSessionId, instructorAId) and assert BR-08 scope rejection (403 ReportAccessDenied or Forbidden)",
         "Verify no cross-assignment rows returned when querying with wrong requesterId"
       ],
       "expected": "Per-session report module boundary enforces ClassAssignment scope at service/repository layer with real DB transaction per reporting-export §2.6",
@@ -345,6 +345,78 @@
       ],
       "expected": "Report summary date range boundary enforced at 366 days; malformed span rejected with ValidationFailed per validation-rules §3.8",
       "edgeCase": true
+    },
+    {
+      "id": "TC-AC-12-016",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["AC-12", "FR-12", "FR-13", "BR-08"],
+      "title": "Instructor report page shows inline Xuất CSV using current ReportFilterBar state (AC-12d)",
+      "preconditions": [
+        "Authenticated Instructor assigned to HESD-01 / SWE-101 on desktop viewport",
+        "Closed sessions with attendance exist in selected date range",
+        "Populated report visible after filters applied per AC-12a"
+      ],
+      "steps": [
+        "Navigate to /reports",
+        "Select class HESD-01, subject SWE-101, and valid date range in ReportFilterBar; click Áp dụng",
+        "Verify page header or toolbar displays enabled **Xuất CSV** button per AC-12d and page-list §4.5",
+        "Click **Xuất CSV**",
+        "Verify POST /reports/export request body mirrors active filter state (classCode, subjectCode, from, to) per 14-listing §10.1 and API design §8.3",
+        "Verify CSV file download starts with scoped rows for assigned class-subject only"
+      ],
+      "expected": "AC-12d satisfied: instructor sees inline **Xuất CSV** on populated report page; export uses current filter state and respects BR-08 assignment scope per AC-13c",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-12-017",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["AC-12", "FR-12", "FR-13", "BR-09"],
+      "title": "TrainingOfficeAdmin report page shows inline Xuất CSV with institution-wide filters (AC-12d)",
+      "preconditions": [
+        "Authenticated TrainingOfficeAdmin on desktop viewport",
+        "Multiple cohorts with Closed sessions in overlapping date range",
+        "Populated institution-wide report after ReportFilterBar applied"
+      ],
+      "steps": [
+        "Navigate to /admin/reports",
+        "Set date filter from 2026-06-01 to 2026-06-30 and apply without restricting to single class",
+        "Verify page header or toolbar displays **Xuất CSV** button per AC-12d and page-list §5.5",
+        "Click **Xuất CSV**",
+        "Verify POST /reports/export uses same filter params as on-screen report per 14-listing §10.1",
+        "Verify CSV download includes rows from all cohorts within active date filter per AC-13d"
+      ],
+      "expected": "AC-12d satisfied: admin sees inline **Xuất CSV** on /admin/reports; export mirrors active institution-wide filters per BR-09 and AC-13d",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-12-018",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["AC-12", "FR-12"],
+      "title": "Report SessionReportTable sorts by column headers and paginates at 50 rows per page",
+      "preconditions": [
+        "Authenticated Instructor or TrainingOfficeAdmin on desktop viewport",
+        "More than 50 Closed sessions in selected class-subject and date range to trigger pagination UI",
+        "Report filters applied and SessionReportTable populated per 14-listing §0"
+      ],
+      "steps": [
+        "Navigate to /reports or /admin/reports and apply ReportFilterBar to load session report table",
+        "Verify default sort is session date descending per 14-listing §5.2",
+        "Click Ngày column header and verify sort toggles asc → desc with aria-sort on active column",
+        "Verify pagination footer shows Trang 1 / {total} with Trước disabled and Sau enabled",
+        "Click Sau to navigate to page 2 and verify next 50 rows render",
+        "Verify Trước/Sau disabled at first and last page boundaries per 14-listing §6"
+      ],
+      "expected": "Report tables implement mandatory listing capabilities: column sort and offset pagination at 50 rows per page per 14-listing §0, §5.2, and §6",
+      "edgeCase": false
     }
   ]
 }

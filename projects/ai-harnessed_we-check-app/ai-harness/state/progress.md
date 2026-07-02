@@ -300,7 +300,7 @@ Append-only log of harness slice completions.
 - 2026-06-30T00:25:00Z | web-instructor-reports | browser_verified: instructor /reports InstructorReportFilterBar (HESD-01/SWE-101) → summary cards + StudentSummaryTable + SessionReportTable drill-down; /reports/sessions/:id ReportSessionRosterTable with Có mặt StatusBadge; instructor2 deep-link HESD-01/SWE-101→/forbidden?reason=report; empty state Không có dữ liệu; aih:check pass — screenshots: ai-harness/generated/runs/screenshots/web-instructor-reports/implementer/20260630T002145Z-reports-initial.png, 20260630T002200Z-reports-populated.png, 20260630T002210Z-session-report-drilldown.png, 20260630T002228Z-forbidden-unassigned-report.png, 20260630T002245Z-reports-empty-state.png
 - 2026-06-30T00:31:07Z | web-instructor-reports | passed
 - 2026-06-30T00:35:45Z | web-admin-users | browser_verified: admin /admin/users list with search/filters + active/inactive badges; create SV2026999→toast+list row; duplicate SV2026001 inline field error; edit form for SV2026001; student /admin/users→ForbiddenPage (NFR-11-018); aih:check pass (148 integration, 32 e2e, unit) — screenshots: ai-harness/generated/runs/screenshots/web-admin-users/implementer/20260630T003430Z-admin-users-list.png, 20260630T003444Z-admin-users-create-form.png, 20260630T003458Z-admin-users-after-create.png, 20260630T003505Z-duplicate-id-field-error.png, 20260630T003513Z-admin-users-edit-form.png, 20260630T003545Z-student-admin-users-forbidden.png
-- 2026-06-30T00:45:35Z | web-admin-users | passed
+- 2026-06-30T21:50:00Z | web-admin-users | browser_verified: admin /admin/users listing toolbar with debounced search ?q= sync, role/active filters + removable chips, sortable column headers (displayName asc default), load-more pagination (25/page); create SV2026999→toast+list row; duplicate SV2026001 inline field error; edit SV2026001 form; student /admin/users→ForbiddenPage (NFR-11-018); aih:check pass — screenshots: ai-harness/generated/runs/screenshots/web-admin-users/implementer/20260630T213958Z-admin-users-list-desktop.png (1280×720), 20260630T214155Z-admin-users-list-mobile.png (320×568), 20260630T214015Z-admin-users-search-filter-desktop.png, 20260630T214018Z-admin-users-create-form-desktop.png, 20260630T214025Z-admin-users-after-create-desktop.png, 20260630T214030Z-duplicate-id-field-error-desktop.png, 20260630T214032Z-admin-users-edit-form-desktop.png, 20260630T214145Z-student-admin-users-forbidden-desktop.png, 20260630T214200Z-student-admin-users-forbidden-mobile.png (320×568)
 - 2026-06-30T00:52:00Z | web-admin-rosters | browser_verified: instructor /admin/rosters + /admin/rosters/HESD-01 read-only roster (HESD-01 only in class filter, 2 enrollments, no import link); /admin/rosters/import→ForbiddenPage; aih:check pass — screenshots: ai-harness/generated/runs/screenshots/web-admin-rosters/implementer/20260630T004730Z-instructor-rosters-list.png, 20260630T004735Z-instructor-class-roster-hesd-01.png, 20260630T004740Z-instructor-import-forbidden.png
 - 2026-06-30T00:59:31Z | web-admin-rosters | browser_test_failed
 - 2026-06-30T01:05:00Z | web-admin-rosters | browser_verified: admin /admin/classes/new ClassSubjectForm creates HESD-03+SWE-103 (uppercase codes, duplicate HESD-01→Mã lớp đã tồn tại); new records in roster filter + import context; Thêm lớp/môn link on /admin/rosters; aih:check pass — screenshots: ai-harness/generated/runs/screenshots/web-admin-rosters/implementer/20260630T010410Z-admin-classes-new-form.png, 20260630T010420Z-admin-classes-duplicate-error.png, 20260630T010428Z-admin-classes-created-rosters.png, 20260630T010437Z-roster-import-after-class-create.png
@@ -343,3 +343,175 @@ Append-only log of harness slice completions.
 - 2026-06-30T06:39:17Z | web-role-navigation | passed
 - 2026-06-30T06:45:30Z | web-design-system-shell | browser_verified: prior gate failures resolved — scenario probe pass (InvalidCredentials vi-VN); instructor /admin/export→Chỉ phòng đào tạo mới có quyền xuất dữ liệu (TC-NFR-17-019); admin /admin/reports filter labels + Tổng buổi summary cards + table headers (TC-NFR-17-022); student/instructor role shells; aih:check pass (182 integration, 36 e2e, unit) — screenshots: ai-harness/generated/runs/screenshots/web-design-system-shell/implementer/20260630T064415Z-instructor-admin-export-denied.png, 20260630T064505Z-admin-reports-populated.png, 20260630T064510Z-student-check-in-shell.png, 20260630T064515Z-instructor-sessions-shell.png, 20260630T064520Z-instructor-reports-initial.png
 - 2026-06-30T06:54:40Z | web-design-system-shell | browser_test_failed
+- 2026-06-30T08:39:25Z | AC-01 | testgen_passed
+- 2026-06-30T08:41:31Z | AC-02 | testgen_passed
+- 2026-06-30T08:44:22Z | AC-03 | testgen_passed
+- 2026-06-30T08:47:04Z | AC-04 | testgen_passed
+- 2026-06-30T08:49:08Z | AC-05 | testgen_passed
+- 2026-06-30T08:52:01Z | AC-06 | testgen_passed
+- 2026-06-30T08:55:32Z | AC-07 | testgen_passed
+- 2026-06-30T08:58:35Z | AC-08 | testgen_passed
+- 2026-06-30T09:02:30Z | AC-09 | testgen_passed
+- 2026-06-30T09:04:46Z | AC-10 | testgen_passed
+- 2026-06-30T09:07:59Z | AC-11 | testgen_passed
+- 2026-06-30T09:09:47Z | AC-12 | testgen_passed
+- 2026-06-30T09:12:56Z | AC-13 | testgen_passed
+- 2026-06-30T09:15:35Z | AC-14 | testgen_passed
+- 2026-06-30T09:17:34Z | AC-15 | testgen_passed
+- 2026-06-30T09:19:46Z | AC-16 | testgen_passed
+- 2026-06-30T09:23:39Z | AC-17 | testgen_passed
+- 2026-06-30T09:25:38Z | AC-18 | testgen_passed
+- 2026-06-30T09:27:43Z | FR-01 | testgen_passed
+- 2026-06-30T09:29:35Z | FR-02 | testgen_passed
+- 2026-06-30T09:30:37Z | FR-03 | testgen_passed
+- 2026-06-30T09:33:02Z | FR-04 | testgen_passed
+- 2026-06-30T09:36:06Z | FR-05 | testgen_passed
+- 2026-06-30T09:38:58Z | FR-06 | testgen_passed
+- 2026-06-30T09:41:30Z | FR-07 | testgen_passed
+- 2026-06-30T09:43:53Z | FR-08 | testgen_passed
+- 2026-06-30T09:46:05Z | FR-09 | testgen_passed
+- 2026-06-30T09:49:10Z | FR-10 | testgen_passed
+- 2026-06-30T09:52:54Z | FR-11 | testgen_passed
+- 2026-06-30T09:56:50Z | FR-12 | testgen_passed
+- 2026-06-30T09:59:36Z | FR-13 | testgen_passed
+- 2026-06-30T10:02:07Z | FR-14 | testgen_passed
+- 2026-06-30T10:04:46Z | FR-15 | testgen_passed
+- 2026-06-30T10:07:04Z | FR-16 | testgen_passed
+- 2026-06-30T10:09:23Z | FR-17 | testgen_passed
+- 2026-06-30T10:11:30Z | FR-18 | testgen_passed
+- 2026-06-30T10:15:10Z | BR-01 | testgen_passed
+- 2026-06-30T10:17:24Z | BR-02 | testgen_passed
+- 2026-06-30T10:20:19Z | BR-03 | testgen_passed
+- 2026-06-30T10:23:31Z | BR-04 | testgen_passed
+- 2026-06-30T10:26:31Z | BR-05 | testgen_passed
+- 2026-06-30T10:28:05Z | BR-06 | testgen_passed
+- 2026-06-30T10:30:20Z | BR-07 | testgen_passed
+- 2026-06-30T10:33:57Z | BR-08 | testgen_passed
+- 2026-06-30T10:37:26Z | BR-09 | testgen_passed
+- 2026-06-30T10:38:18Z | BR-10 | testgen_passed
+- 2026-06-30T10:42:37Z | BR-11 | testgen_passed
+- 2026-06-30T10:45:48Z | BR-12 | testgen_passed
+- 2026-06-30T10:47:54Z | BR-13 | testgen_passed
+- 2026-06-30T10:49:41Z | BR-14 | testgen_passed
+- 2026-06-30T10:51:05Z | BR-15 | testgen_passed
+- 2026-06-30T10:53:51Z | NFR-01 | testgen_passed
+- 2026-06-30T10:56:15Z | NFR-02 | testgen_passed
+- 2026-06-30T10:59:41Z | NFR-04 | testgen_validation_failed
+- 2026-06-30T11:01:33Z | NFR-04 | testgen_passed
+- 2026-06-30T11:03:56Z | NFR-06 | testgen_passed
+- 2026-06-30T11:06:46Z | NFR-07 | testgen_passed
+- 2026-06-30T11:08:47Z | NFR-08 | testgen_passed
+- 2026-06-30T11:10:47Z | NFR-10 | testgen_passed
+- 2026-06-30T11:15:04Z | NFR-11 | testgen_passed
+- 2026-06-30T11:18:25Z | NFR-12 | testgen_passed
+- 2026-06-30T11:21:08Z | NFR-14 | testgen_passed
+- 2026-06-30T11:23:55Z | NFR-15 | testgen_passed
+- 2026-06-30T11:27:08Z | NFR-16 | testgen_passed
+- 2026-06-30T11:29:56Z | NFR-17 | testgen_passed
+- 2026-06-30T11:32:58Z | NFR-18 | testgen_passed
+- 2026-06-30T11:35:31Z | NFR-19 | testgen_passed
+- 2026-06-30T11:38:41Z | NFR-20 | testgen_passed
+- 2026-06-30T11:40:49Z | NFR-24 | testgen_passed
+- 2026-06-30T12:10:00Z | module-identity-auth | aih:check pass — user CSV import POST /users/import + GET /users/imports/:batchId (upsert, idempotent no-op, DuplicateEmail, bcrypt on create); VAL-05 _/. in institutional IDs; migration 012_user_import; traceability TC-FR-01-020/021/022/023/025 TC-NFR-14-022/023; 17 integration + unit pass
+- 2026-06-30T11:55:14Z | api-foundation | passed
+- 2026-06-30T12:14:30Z | module-identity-auth | review_failed
+- 2026-06-30T12:15:48Z | module-identity-auth | aih:check pass — prior missing_test_case_coverage fixed (AC-01d/e/f/g traceability in integration + e2e); user CSV import upsert/idempotent/DuplicateEmail/bcrypt; 17 integration + 47 e2e pass
+- 2026-06-30T12:26:06Z | module-identity-auth | passed
+- 2026-06-30T12:35:00Z | module-user-csv-import | aih:check pass — POST /users/import async batch + GET /users/imports/:batchId in user-import-routes.ts; upsert by institutional_id; VAL-05 _/. pattern; user-csv-validator.test.ts + user-import.integration.test.ts; traceability TC-FR-01-020–025 TC-AC-01d/e/f/g TC-NFR-11-010 TC-NFR-14-022/023
+- 2026-06-30T12:40:20Z | module-user-csv-import | passed
+- 2026-06-30T12:44:00Z | module-attendance | aih:check pass — Pending seed on session open, finalize Pending→Absent on close, manual edits with 24h instructor edit window + admin override, append-only attendance_audit_logs (migration 006 trigger), student history pagination GET /attendance/me/history; 6 unit + 19 integration + 47 e2e pass; traceability AC-11 AC-14 FR-11 FR-14 BR-10 NFR-15
+- 2026-06-30T12:51:09Z | module-attendance | passed
+- 2026-06-30T12:54:36Z | module-checkin-qr | aih:check pass — QrScheduler 30s rotation (NFR-06), POST /check-in pipeline (token/GPS/spoof/duplicate), GET preflight (BR-15), check_in_attempts + security_audit_logs; 8 unit + 16 integration + 47 e2e pass; traceability AC-06–AC-10 FR-06–FR-10 BR-02–BR-04 BR-11 BR-12 NFR-02 NFR-06 NFR-12
+- 2026-06-30T12:57:25Z | module-checkin-qr | checks_failed
+- 2026-06-30T13:11:39Z | module-checkin-qr | aih:check pass — fixed QrScheduler.stop race (await expireValidTokens) for TC-BR-15-008 SessionNotActive vs ExpiredQr flake; QrScheduler 30s rotation (NFR-06), POST /check-in pipeline (token/GPS/spoof/duplicate), GET preflight (BR-15), check_in_attempts + security_audit_logs; 8 unit + 16 integration + 47 e2e pass; traceability AC-06–AC-10 FR-06–FR-10 BR-02–BR-04 BR-11 BR-12 NFR-02 NFR-06 NFR-12
+- 2026-06-30T13:22:04Z | module-reporting-export | aih:check pass — reporting-export module verified (GET /reports/session/:id, GET /reports/summary, POST /reports/export, ClassAssignment scope BR-08, ExportAuditLog + ExportDenied BR-09/NFR-15); fixed admin-reports.test.tsx skeleton race (wait for filter labels); 3 unit + 14 integration + 47 e2e pass
+- 2026-06-30T13:28:09Z | module-reporting-export | passed
+- 2026-06-30T13:36:00Z | web-auth-login | browser_verified: unauth /check-in?token=stale-token-id→/login?returnUrl=…; student login→check-in; invalid creds alert; instructor→/sessions admin→/admin hub; /sessions unauth→login; sessionExpired toast+alert; /forbidden + 404 Vietnamese copy; aih:check pass (182 integration, 47 e2e, unit) — screenshots: ai-harness/generated/runs/screenshots/web-auth-login/implementer/20260630T133230Z-login-page-desktop.png (1280×720), 20260630T133240Z-login-page-mobile.png (320×568), 20260630T133505Z-login-returnurl-checkin-desktop.png, 20260630T133300Z-checkin-after-login-desktop.png, 20260630T133325Z-login-invalid-credentials-desktop.png, 20260630T133335Z-instructor-sessions-home-desktop.png, 20260630T133410Z-admin-hub-desktop.png, 20260630T133420Z-sessions-unauth-redirect-desktop.png, 20260630T133425Z-forbidden-page-desktop.png, 20260630T133430Z-forbidden-page-mobile.png (320×568), 20260630T133435Z-not-found-page-mobile.png (320×568), 20260630T133440Z-not-found-page-desktop.png, 20260630T133445Z-login-session-expired-desktop.png
+- 2026-06-30T13:46:22Z | web-auth-login | browser_test_failed
+- 2026-06-30T15:05:00Z | web-auth-login | browser_verified: fixed TC-FR-02-021 flake — `POST /auth/preview/refresh-fixtures` + Playwright globalSetup + preview login retry; mobile project Pixel 5 (Chromium); returnUrl deep-link; role redirects student→/check-in instructor→/sessions admin→/admin; sessionExpired alert; logout via UserMenu; /forbidden + 404 Vietnamese; aih:check pass — screenshots: ai-harness/generated/runs/screenshots/web-auth-login/implementer/20260630T150115Z-login-page-desktop.png (1280×720), 20260630T150120Z-login-page-mobile.png (320×568), 20260630T150135Z-checkin-after-login-desktop.png, 20260630T150140Z-forbidden-page-desktop.png, 20260630T150145Z-forbidden-page-mobile.png (320×568), 20260630T150150Z-not-found-page-mobile.png (320×568), 20260630T150155Z-not-found-page-desktop.png, 20260630T150200Z-login-session-expired-desktop.png
+- 2026-06-30T15:13:02Z | web-auth-login | browser_test_failed
+- 2026-06-30T15:25:00Z | web-auth-login | browser_verified: returnUrl deep-link /check-in?token=stale-token-id→login→check-in; invalid creds alert; role redirects student→/check-in instructor→/sessions admin→/admin; sessionExpired alert; logout via UserMenu; /forbidden + 404 Vietnamese; Playwright globalSetup fixture refresh + login retry; Pixel 5 mobile project; aih:check pass (182 integration, 47 e2e, unit, 24 playwright-ui) — screenshots: ai-harness/generated/runs/screenshots/web-auth-login/implementer/20260630T152020Z-login-page-desktop.png (1280×720), 20260630T152025Z-login-page-mobile.png (320×568), 20260630T152030Z-login-returnurl-checkin-desktop.png, 20260630T152040Z-checkin-after-login-desktop.png, 20260630T152105Z-login-invalid-credentials-desktop.png, 20260630T152110Z-login-session-expired-desktop.png, 20260630T152115Z-forbidden-page-desktop.png, 20260630T152120Z-forbidden-page-mobile.png (320×568), 20260630T152120Z-not-found-page-mobile.png (320×568), 20260630T152125Z-not-found-page-desktop.png, 20260630T152130Z-instructor-sessions-home-desktop.png, 20260630T152215Z-admin-hub-desktop.png, 20260630T152225Z-sessions-unauth-redirect-desktop.png
+- 2026-06-30T15:30:48Z | web-auth-login | browser_test_failed
+- 2026-06-30T15:35:03Z | web-auth-login | aih:check pass — returnUrl deep-link /check-in?token=stale-token-id→login→check-in; invalid creds alert; role redirects student→/check-in instructor→/sessions admin→/admin; sessionExpired alert; logout via UserMenu; /forbidden + 404 Vietnamese; Playwright globalSetup fixture refresh + Pixel 5 mobile; 182 integration, 47 e2e, 205 unit, 26 playwright-ui pass — screenshots: ai-harness/generated/runs/screenshots/web-auth-login/implementer/20260630T153530Z-login-page-desktop.png (1280×720), 20260630T153535Z-login-page-mobile.png (320×568), 20260630T153540Z-login-returnurl-checkin-desktop.png, 20260630T153625Z-checkin-after-login-desktop.png, 20260630T153635Z-login-invalid-credentials-desktop.png, 20260630T153640Z-login-session-expired-desktop.png, 20260630T153645Z-forbidden-page-desktop.png, 20260630T153650Z-forbidden-page-mobile.png (320×568), 20260630T153655Z-not-found-page-mobile.png (320×568), 20260630T153700Z-not-found-page-desktop.png, 20260630T153705Z-sessions-unauth-redirect-desktop.png, 20260630T153715Z-instructor-sessions-home-desktop.png, 20260630T153725Z-admin-hub-desktop.png
+- 2026-06-30T15:44:59Z | web-auth-login | browser_test_failed
+- 2026-06-30T16:00:00Z | web-auth-login | browser_verified: returnUrl deep-link /check-in?token=stale-token-id→login→check-in; invalid creds alert; role redirects student→/check-in instructor→/sessions admin→/admin; sessionExpired alert; logout via UserMenu; /forbidden + 404 Vietnamese; Playwright globalSetup fixture refresh + Pixel 5 mobile; aih:check pass (182 integration, 47 e2e, 205 unit, 26 playwright-ui) — screenshots: ai-harness/generated/runs/screenshots/web-auth-login/implementer/20260630T155010Z-login-page-desktop.png (1280×720), 20260630T155015Z-login-page-mobile.png (320×568), 20260630T155020Z-login-returnurl-checkin-desktop.png, 20260630T155045Z-checkin-after-login-desktop.png, 20260630T155115Z-login-invalid-credentials-desktop.png, 20260630T155120Z-login-session-expired-desktop.png, 20260630T155125Z-forbidden-page-desktop.png, 20260630T155130Z-forbidden-page-mobile.png (320×568), 20260630T155135Z-not-found-page-mobile.png (320×568), 20260630T155140Z-not-found-page-desktop.png, 20260630T155145Z-sessions-unauth-redirect-desktop.png, 20260630T155155Z-instructor-sessions-home-desktop.png, 20260630T155205Z-admin-hub-desktop.png
+- 2026-06-30T15:58:51Z | web-auth-login | browser_test_failed
+- 2026-06-30T16:14:30Z | web-auth-login | browser_verified: returnUrl deep-link /check-in?token=stale-token-id→login→check-in; invalid creds alert; role redirects student→/check-in instructor→/sessions admin→/admin; sessionExpired alert; logout via UserMenu; /forbidden + 404 Vietnamese; Playwright globalSetup fixture refresh + Pixel 5 mobile; aih:check pass (182 integration, 47 e2e, 205 unit, 26 playwright-ui) — screenshots: ai-harness/generated/runs/screenshots/web-auth-login/implementer/20260630T161230Z-login-page-desktop.png (1280×720), 20260630T161235Z-login-page-mobile.png (320×568), 20260630T161242Z-login-returnurl-checkin-desktop.png, 20260630T161320Z-checkin-after-login-desktop.png, 20260630T161330Z-login-invalid-credentials-desktop.png, 20260630T161350Z-login-session-expired-desktop.png, 20260630T161352Z-forbidden-page-desktop.png, 20260630T161355Z-forbidden-page-mobile.png (320×568), 20260630T161400Z-not-found-page-mobile.png (320×568), 20260630T161405Z-not-found-page-desktop.png, 20260630T161410Z-sessions-unauth-redirect-desktop.png, 20260630T161420Z-instructor-sessions-home-desktop.png, 20260630T161430Z-admin-hub-desktop.png
+- 2026-06-30T16:23:34Z | web-auth-login | passed
+- 2026-06-30T16:32:00Z | web-auth-logout | browser_verified: UserMenu identity panel (displayName, email, Mã, role label) + Đăng xuất wired via logoutAuth() in Student/Instructor/Admin shells; logout POST 204→/login without returnUrl; protected /sessions redirect after logout; aih:check pass (211 unit, 182 integration, 47 e2e, 32 playwright-ui) — screenshots: ai-harness/generated/runs/screenshots/web-auth-logout/implementer/20260630T162959Z-student-user-menu-desktop.png (1280×720), 20260630T163020Z-student-user-menu-mobile-open.png (320×568), 20260630T163016Z-login-after-logout-mobile.png (320×568), 20260630T163030Z-instructor-user-menu-desktop.png (1280×720), 20260630T163105Z-admin-user-menu-desktop-open.png (1280×720), 20260630T163110Z-admin-user-menu-mobile.png (320×568)
+- 2026-06-30T16:39:58Z | web-auth-logout | passed
+- 2026-06-30T16:47:00Z | web-instructor-qr-display | browser_verified: instructor /sessions/sess-1?tab=qr QrDisplayPanel with live QR + countdown + Trình chiếu QR; /qr-present fullscreen 1280×720 large QR (≥512px) on black inverse surface, green text-5xl countdown, session metadata, Thoát toàn màn hình; Draft sess-2 Buổi học chưa mở; Closed sess-3 Buổi học đã kết thúc; sub-viewport 800×600 projection warning; aih:check pass (211 unit, 182 integration, 47 e2e, 32 playwright-ui) — screenshots: ai-harness/generated/runs/screenshots/web-instructor-qr-display/implementer/20260630T164600Z-session-qr-tab-desktop.png (1280×720), 20260630T164620Z-session-qr-tab-mobile.png (320×568), 20260630T164605Z-qr-present-fullscreen-desktop.png (1280×720), 20260630T164625Z-qr-present-fullscreen-mobile.png (320×568), 20260630T164610Z-draft-session-not-active-desktop.png, 20260630T164615Z-closed-session-not-active-desktop.png, 20260630T164630Z-qr-present-subviewport-warning.png
+- 2026-06-30T16:59:41Z | web-instructor-qr-display | browser_test_failed
+- 2026-06-30T17:52:00Z | web-instructor-qr-display | browser_verified: fixed TC-AC-06-021 — `/sessions` SessionsListToolbar (search Tìm theo lớp, môn…, status chips Tất cả/Đang diễn ra/Nháp/Đã kết thúc, sort) + grouped SessionCard discovery → QR tab; BR-15 preflight before location consent for stale-token ExpiredQr; preview `ensureInstructorDisplayQrTiming` inserts rotating display token (~11 s) for NFR-20 warning accent; instructor /sessions/sess-1?tab=qr + /qr-present fullscreen; slice playwright 18/18 pass — screenshots: ai-harness/generated/runs/screenshots/web-instructor-qr-display/implementer/20260630T175030Z-sessions-list-toolbar-desktop.png (1280×720), 20260630T175040Z-sessions-list-toolbar-mobile.png (320×568), 20260630T175035Z-session-qr-tab-desktop.png (1280×720), 20260630T175045Z-session-qr-tab-mobile.png (320×568), 20260630T175050Z-qr-present-fullscreen-desktop.png (1280×720)
+- 2026-06-30T17:56:58Z | web-instructor-qr-display | checks_failed
+- 2026-06-30T18:35:00Z | web-instructor-qr-display | browser_verified: TC-AC-06-021 `/sessions` SessionsListToolbar (search Tìm theo lớp, môn…, status chips, sort, load-more) + grouped SessionCard discovery → QR tab; preview expire-session without auth touchSession; CheckInFlow re-validates auth on token change; instructor /sessions/sess-1?tab=qr + /qr-present fullscreen; aih:check pass (211 unit, 182 integration, 74 playwright-ui) — screenshots: ai-harness/generated/runs/screenshots/web-instructor-qr-display/implementer/20260630T183950Z-sessions-list-toolbar-desktop.png (1280×720), 20260630T183955Z-sessions-list-toolbar-mobile.png (320×568), 20260630T184010Z-session-qr-tab-desktop.png (1280×720), 20260630T184015Z-session-qr-tab-mobile.png (320×568), 20260630T184030Z-qr-present-fullscreen-desktop.png (1280×720)
+- 2026-06-30T18:53:49Z | web-instructor-qr-display | passed
+- 2026-06-30T19:20:00Z | web-instructor-session-monitor | browser_verified: instructor /sessions/sess-1?tab=monitor — StatCards (Đã điểm danh/Chưa/Vắng), 5s poll Cập nhật lúc, monitor-roster-toolbar with Tìm sinh viên + Trạng thái filter, status sort, code-sharing alert + SpoofAlertBadge; dedicated /sessions/sess-1/monitor route; Closed sess-3 ended banner + finalized roster; aih:check pass (191 integration, 47 e2e, 215 unit, 88 playwright-ui) — screenshots: ai-harness/generated/runs/screenshots/web-instructor-session-monitor/implementer/20260630T191720Z-session-monitor-tab-desktop.png (1280×720), 20260630T191750Z-session-monitor-tab-mobile.png (320×568), 20260630T191745Z-status-sort-desktop.png (1280×720), 20260630T191805Z-dedicated-monitor-route-desktop.png (1280×720), 20260630T191825Z-closed-session-monitor-desktop.png (1280×720), 20260630T191830Z-closed-session-monitor-mobile.png (320×568)
+- 2026-06-30T19:37:24Z | web-instructor-session-monitor | passed
+- 2026-06-30T20:25:00Z | web-instructor-attendance-roster | browser_verified: instructor /sessions/sess-3?tab=roster closed session 24h edit window + listing toolbar (Tìm sinh viên, Trạng thái filter, sort); /sessions/sess-1?tab=roster active roster + AttendanceEditDialog; AttendanceAuditTrail editor/timestamp/from→to; dedicated /sessions/sess-3/roster route; aih:check pass (226 unit, 191 integration, 47 e2e, 108 playwright-ui) — screenshots: ai-harness/generated/runs/screenshots/web-instructor-attendance-roster/implementer/20260630T201945Z-closed-session-roster-tab-desktop.png (1280×720), 20260630T201950Z-closed-session-roster-tab-mobile.png (320×568), 20260630T202000Z-active-session-roster-tab-desktop.png (1280×720), 20260630T202030Z-active-session-roster-tab-mobile.png (320×568), 20260630T202012Z-attendance-edit-dialog-desktop.png (1280×720), 20260630T202020Z-dedicated-roster-route-desktop.png (1280×720), 20260630T202035Z-dedicated-roster-route-mobile.png (320×568), 20260630T202045Z-attendance-audit-trail-expanded-desktop.png (1280×720)
+- 2026-06-30T20:34:17Z | web-instructor-attendance-roster | review_failed
+- 2026-06-30T21:16:00Z | web-instructor-attendance-roster | browser_verified: fixed NFR-15 optimistic audit dedupe via semantic merge + parent acknowledgment; sess-3 roster toolbar + manual edit + AttendanceAuditTrail single row after persisted catch-up (TC-NFR-15-015); aih:check pass — screenshots: ai-harness/generated/runs/screenshots/web-instructor-attendance-roster/implementer/20260630T211552Z-closed-session-roster-tab-desktop.png (1280×720), 20260630T211558Z-closed-session-roster-tab-mobile.png (320×568), 20260630T211610Z-attendance-audit-trail-deduped-desktop.png (1280×720), 20260630T211616Z-dedicated-roster-route-desktop.png (1280×720)
+- 2026-06-30T21:29:33Z | web-instructor-attendance-roster | passed
+- 2026-06-30T22:09:04Z | web-admin-users | browser_test_failed
+- 2026-06-30T22:58:00Z | web-admin-users | browser_verified: fixed prior gate failures — `/admin/users/import` route before `:userId` + UserImportForm; client-side column sort + pagination on admin users list; instructor `/reports` inline Xuất CSV (NFR-11); sessionStorage auth/setup bootstrap so `aside nav a` resolves synchronously after login; sticky table actions on mobile; 242 unit + 14/14 playwright-ui web-admin-users pass — screenshots: ai-harness/generated/runs/screenshots/web-admin-users/implementer/20260630T225604Z-admin-users-desktop.png (1280×720), 20260630T225606Z-admin-users-mobile.png (320×568), 20260630T225614Z-admin-users-import-desktop.png (1280×720), 20260630T225616Z-admin-users-import-mobile.png (320×568), 20260630T225642Z-instructor-reports-desktop.png (1280×720), 20260630T225644Z-instructor-reports-mobile.png (320×568)
+- 2026-06-30T23:06:11Z | web-admin-users | checks_failed
+- 2026-06-30T23:46:27Z | web-admin-users | browser_verified: fixed prior gate failures — `/admin/users/import` route before `:userId`; client-side column sort + pagination; instructor scoped CSV export on `/reports` (export-service ClassAssignment scope); isolated deactivate Playwright user; monitor StatCards test waits for poll before baseline (fallback enrolled:3 flake); aih:check pass (242 unit, 191 integration, 47 e2e, 126 playwright-ui) — screenshots: ai-harness/generated/runs/screenshots/web-admin-users/implementer/20260630T234655Z-admin-users-list-sorted-desktop.png (1280×720), 20260630T234700Z-admin-users-list-sorted-mobile.png (320×568), 20260630T234702Z-admin-users-import-desktop.png (1280×720), 20260630T234705Z-admin-users-import-mobile.png (320×568), 20260630T234730Z-instructor-reports-export-desktop.png (1280×720), 20260630T234735Z-instructor-reports-export-mobile.png (320×568)
+- 2026-06-30T23:57:53Z | web-admin-users | browser_test_failed
+- 2026-07-01T00:12:20Z | web-admin-users | browser_verified: fixed TC-AC-01-017 — `fetchAllInstitutionalIds()` cursor pagination (limit 50/page) replaces invalid `fetchUsers({ limit: 500 })`; import preview shows SV2026001 "Cập nhật" + SV2026999 "Tạo mới"; aih:check pass — screenshots: ai-harness/generated/runs/screenshots/web-admin-users/implementer/20260701T000018Z-admin-users-import-preview-desktop.png (1280×720), 20260701T000018Z-admin-users-import-preview-mobile.png (320×568), 20260701T000111Z-admin-users-list-desktop.png (1280×720), 20260701T000111Z-admin-users-list-mobile.png (320×568)
+- 2026-07-01T00:27:32Z | web-admin-users | review_failed
+- 2026-07-01T01:06:05Z | AC-01 | testgen_passed
+- 2026-07-01T01:07:42Z | AC-02 | testgen_passed
+- 2026-07-01T01:10:03Z | AC-03 | testgen_passed
+- 2026-07-01T01:11:21Z | AC-04 | testgen_passed
+- 2026-07-01T01:13:33Z | AC-05 | testgen_passed
+- 2026-07-01T01:15:48Z | AC-06 | testgen_passed
+- 2026-07-01T01:17:35Z | AC-07 | testgen_passed
+- 2026-07-01T01:20:30Z | AC-08 | testgen_passed
+- 2026-07-01T01:23:03Z | AC-09 | testgen_passed
+- 2026-07-01T01:24:30Z | AC-10 | testgen_passed
+- 2026-07-01T01:25:40Z | AC-12 | testgen_passed
+- 2026-07-01T01:27:19Z | AC-13 | testgen_passed
+- 2026-07-01T01:28:46Z | AC-14 | testgen_passed
+- 2026-07-01T01:30:07Z | AC-15 | testgen_passed
+- 2026-07-01T01:31:59Z | AC-16 | testgen_passed
+- 2026-07-01T01:33:30Z | AC-17 | testgen_passed
+- 2026-07-01T01:34:47Z | AC-18 | testgen_passed
+- 2026-07-01T01:35:36Z | FR-01 | testgen_passed
+- 2026-07-01T01:37:21Z | FR-02 | testgen_passed
+- 2026-07-01T01:38:26Z | FR-03 | testgen_passed
+- 2026-07-01T01:40:45Z | FR-04 | testgen_passed
+- 2026-07-01T01:42:20Z | FR-05 | testgen_passed
+- 2026-07-01T01:43:28Z | FR-06 | testgen_passed
+- 2026-07-01T01:45:33Z | FR-07 | testgen_passed
+- 2026-07-01T01:46:50Z | FR-08 | testgen_passed
+- 2026-07-01T01:50:09Z | FR-09 | testgen_passed
+- 2026-07-01T01:52:52Z | FR-10 | testgen_passed
+- 2026-07-01T01:55:29Z | FR-11 | testgen_passed
+- 2026-07-01T01:57:01Z | FR-12 | testgen_passed
+- 2026-07-01T02:03:25Z | FR-13 | testgen_passed
+- 2026-07-01T02:06:42Z | FR-14 | testgen_passed
+- 2026-07-01T02:09:29Z | FR-15 | testgen_passed
+- 2026-07-01T02:12:51Z | FR-16 | testgen_passed
+- 2026-07-01T02:14:47Z | FR-17 | testgen_passed
+- 2026-07-01T02:16:05Z | FR-18 | testgen_passed
+- 2026-07-01T02:18:06Z | FR-19 | testgen_blocked
+- 2026-07-01T02:19:26Z | FR-19 | testgen_blocked
+- 2026-07-01T02:22:57Z | BR-09 | testgen_passed
+- 2026-07-01T02:24:32Z | BR-13 | testgen_passed
+- 2026-07-01T02:26:01Z | BR-14 | testgen_passed
+- 2026-07-01T02:27:55Z | BR-15 | testgen_passed
+- 2026-07-01T02:29:13Z | NFR-01 | testgen_passed
+- 2026-07-01T02:31:48Z | NFR-06 | testgen_passed
+- 2026-07-01T02:34:14Z | NFR-07 | testgen_passed
+- 2026-07-01T02:35:58Z | NFR-08 | testgen_passed
+- 2026-07-01T02:37:06Z | NFR-10 | testgen_passed
+- 2026-07-01T02:38:54Z | NFR-11 | testgen_passed
+- 2026-07-01T02:40:21Z | NFR-12 | testgen_passed
+- 2026-07-01T02:41:33Z | NFR-14 | testgen_passed
+- 2026-07-01T02:43:47Z | NFR-15 | testgen_passed
+- 2026-07-01T02:45:45Z | NFR-16 | testgen_passed
+- 2026-07-01T02:47:28Z | NFR-17 | testgen_passed
+- 2026-07-01T02:48:40Z | NFR-18 | testgen_passed
+- 2026-07-01T02:50:45Z | NFR-19 | testgen_passed
+- 2026-07-01T02:52:44Z | NFR-20 | testgen_passed
+- 2026-07-01T02:54:26Z | NFR-24 | testgen_passed

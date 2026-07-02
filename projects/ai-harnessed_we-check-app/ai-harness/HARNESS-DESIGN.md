@@ -70,8 +70,6 @@ Ralph and TestGen can run independently. Set `testCaseGate.mode` to `required` i
 
 `ai-harness/whole-app-backlog.json` — phased slices with `passes`, `priority`, `acceptance`, `completionArtifacts`. Set `passes: false` to re-queue a slice for another Ralph iteration.
 
-**Queue (priorities 35–43):** `module-identity-bootstrap`, `web-admin-bootstrap`, `module-class-management`, `module-checkin-qr-preflight`, `web-admin-classes`, then `web-visual-refresh-v2` (38), `web-admin-subjects` (39), `web-role-navigation` (40), `web-design-system-shell` (41), `web-student-checkin` (42), `e2e-acceptance-suite` (43). See [docs/brds/prompt.md](../docs/brds/prompt.md) for capability summary.
-
 ## Persistence policy
 
 Harness hard-fails: in-memory repos, SQLite, mock page data, lorem ipsum. See `ralph-loop.json` → `forbiddenPatterns`.
@@ -87,7 +85,8 @@ Harness hard-fails: in-memory repos, SQLite, mock page data, lorem ipsum. See `r
     "build": 600000,
     "test:unit": 600000,
     "test:integration": 900000,
-    "test:e2e": 900000
+    "test:e2e": 900000,
+    "test:playwright-ui": 900000
   },
   "runtimeValidation": {
   "db": {
@@ -114,6 +113,6 @@ Harness hard-fails: in-memory repos, SQLite, mock page data, lorem ipsum. See `r
 
 `run-checks.sh` enforces `db` and quick stack probes. Full stack poll via `AIH_VERIFY_STACK=1` or `npm run aih:preview:verify`.
 
-**Product customization:** replace `verify-scenarios.sh` with an app-specific live-stack probe when the default participant-registration flow does not apply (We Check uses an auth/login envelope probe).
+**Product customization:** `verify-scenarios.sh` probes We Check auth by default (`GET /setup/status`, `POST /auth/login`, `GET /auth/me` as Student). Set `AIH_PREVIEW_SEED_ENABLED=1` (or `SEED_ENABLED=true`) so preview has seed users for the scenario gate.
 
 Dev mode: DB in Docker; API/web as local Node processes per `docs/technical/13-docker-compose-local-runtime.md`. Full preview: all services via Compose `full-preview` profile.

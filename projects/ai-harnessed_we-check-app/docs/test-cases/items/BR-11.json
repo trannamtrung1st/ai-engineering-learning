@@ -1,8 +1,8 @@
 {
   "productItemId": "BR-11",
   "version": 1,
-  "docFingerprint": "sha256:7fa6e5f0fa1fb178b99256355a681409f9ca3b3a224ea6b785c745d780059c2e",
-  "generatedAt": "2026-06-29T12:30:00Z",
+  "docFingerprint": "sha256:2f4339d78ef523c323a8974779165acbd0a71755d9c7e3df622be9ab3506c35c",
+  "generatedAt": "2026-06-30T10:40:20Z",
   "cases": [
     {
       "id": "TC-BR-11-001",
@@ -10,24 +10,23 @@
       "layer": "e2e",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["BR-11", "FR-06", "FR-09", "AC-09"],
+      "traceability": ["BR-11", "FR-06", "FR-09", "AC-09", "AC-10c"],
       "title": "TS-27: Second student submitting Consumed token rejected with security log entry",
       "preconditions": [
         "Active session with two enrolled students Student A and Student B",
         "Student A successfully checked in; QrToken status Consumed with consumedByStudentId Student A",
-        "Token still within 30-second validity window (TestClock fixed before expires_at)",
+        "Token still within 30-second validity window (TestClock fixed before expiry)",
         "Student B authenticated with in-radius coordinates and Pending attendance"
       ],
       "steps": [
-        "POST /api/v1/check-in as Student B using same tokenId consumed by Student A",
-        "Assert HTTP status 400 Bad Request",
-        "Assert response outcome TokenAlreadyUsed and errorCode TokenAlreadyUsed",
-        "Assert message Mã QR đã được sử dụng per error-handling §4",
+        "GET /api/v1/check-in/tokens/:consumedTokenId/preflight as Student B and assert HTTP 403 errorCode TokenAlreadyUsed per API design §6.2",
+        "Assert message Mã QR đã được sử dụng per error-handling §4.4",
         "Assert Student B attendance remains Pending (not Present)",
-        "Verify security log entry contains sessionId, tokenId, and submitting Student B id per BR-11 outcome specification",
-        "Query check_in_attempts for Student B and assert outcome TokenAlreadyUsed"
+        "Verify TokenReuseAlert security audit entry contains sessionId, tokenId, and submitting Student B id per BR-11 outcome and AC-10c",
+        "Optionally POST /api/v1/check-in as Student B with same tokenId and assert HTTP 400 TokenAlreadyUsed as defense-in-depth per validation-rules §4 BR-11",
+        "Query check_in_attempts for optional POST attempt and assert outcome TokenAlreadyUsed when submit path exercised"
       ],
-      "expected": "BR-11 enforced: consumed token reuse rejected within validity window; append-only security log with session ID, token ID, and submitting student ID",
+      "expected": "BR-11 enforced: consumed token reuse rejected at preflight (403) or submit (400) within validity window; append-only TokenReuseAlert security audit with session ID, token ID, and submitting student ID",
       "edgeCase": true
     },
     {
@@ -50,7 +49,7 @@
         "Query attendance_records for Student B and assert status remains Pending",
         "Query qr_tokens and assert status remains Consumed (no double-consumption)",
         "Insert check_in_attempts row and assert outcome TokenAlreadyUsed logged",
-        "Verify pipeline short-circuits at step 8 before BR-04 duplicate evaluation per rule interaction matrix order 4"
+        "Verify pipeline short-circuits at validation-rules §5.1 step 8 before step 10 BR-04 duplicate evaluation per business rules §8 order 4"
       ],
       "expected": "BR-11 enforced at Layer 4 step 8; TokenAlreadyUsed returned without consuming token again or creating Present record",
       "edgeCase": false
@@ -100,7 +99,7 @@
         "Assert response body message Mã QR đã được sử dụng per validation-rules §4 BR-11 mapping",
         "Verify CheckInAttempt row inserted with outcome TokenAlreadyUsed"
       ],
-      "expected": "HTTP 400 TokenAlreadyUsed contract for one-time-use token violation; distinct from 409 DuplicateCheckIn per BR-11",
+      "expected": "HTTP 400 TokenAlreadyUsed contract for one-time-use token violation at submit layer; distinct from 409 DuplicateCheckIn per BR-11",
       "edgeCase": true
     },
     {
@@ -109,22 +108,24 @@
       "layer": "e2e",
       "technique": "flow-b",
       "priority": "P0",
-      "traceability": ["BR-11", "FR-09", "AC-09"],
-      "title": "Flow B step 4: Student B same-token reuse rejected in anti-fraud path",
+      "traceability": ["BR-11", "FR-09", "AC-09", "AC-10c"],
+      "title": "Flow B steps 3–4: Student A duplicate retry then Student B same-token reuse in anti-fraud path",
       "preconditions": [
-        "Flow B steps 1–3 complete: Active session with valid QR, Student A checked in successfully",
+        "Flow B steps 1–2 complete: Active session with valid QR, Student A checked in successfully",
         "Student A attendance Present; tokenId from step 2 status Consumed",
         "Student B enrolled and authenticated with in-radius coordinates",
         "TestClock within 30-second token validity window"
       ],
       "steps": [
-        "Student B GET /api/v1/check-in/tokens/:tokenId/preflight with same tokenId consumed in step 2",
+        "Student A GET /api/v1/check-in/tokens/:freshValidTokenId/preflight and assert HTTP 200 outcome Valid",
+        "Student A POST /api/v1/check-in with fresh Valid tokenId and assert HTTP 409 DuplicateCheckIn",
+        "Student B GET /api/v1/check-in/tokens/:consumedTokenId/preflight with same tokenId consumed in step 2",
         "Assert HTTP 403 with errorCode TokenAlreadyUsed per API design §6.2 preflight table",
-        "Verify security log entry for Student B attempt with sessionId, tokenId, studentId",
+        "Verify TokenReuseAlert security audit entry for Student B attempt with sessionId, tokenId, studentId per AC-10c",
         "Assert Student B attendance remains Pending; GpsCaptureStep never reached per BR-15",
-        "Confirm Flow B anti-fraud rejection path per testing-plan §6 Flow B step 4 tags BR-11"
+        "Confirm Flow B anti-fraud rejection path per testing-plan §6 Flow B steps 3–4 tags BR-11"
       ],
-      "expected": "Flow B validates BR-11 token-sharing rejection at preflight after first successful consumption in anti-fraud e2e flow",
+      "expected": "Flow B validates BR-11 token-sharing rejection at preflight after first successful consumption; TokenReuseAlert security audit created for Student B reuse attempt",
       "edgeCase": false
     },
     {
@@ -133,7 +134,7 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["BR-11", "FR-06"],
+      "traceability": ["BR-11", "FR-06", "AC-10c"],
       "title": "QrToken transitions Valid to Consumed only on first successful check-in not on reuse rejection",
       "preconditions": [
         "Real PostgreSQL with qr_tokens row status Valid linked to Active session",
@@ -147,9 +148,9 @@
         "Assert afterState: qr_token status Consumed with consumedAt and consumedByStudentId Student A",
         "Invoke CheckInService.submit for Student B with same tokenId",
         "Assert outcome TokenAlreadyUsed; qr_token afterState remains Consumed (no re-transition)",
-        "Verify security audit entry created for Student B attempt per BR-11 outcome"
+        "Verify TokenReuseAlert security audit entry created for Student B attempt per BR-11 outcome and AC-10c"
       ],
-      "expected": "beforeState Valid → afterState Consumed on first Success only; reuse attempts do not alter token state but create security log",
+      "expected": "beforeState Valid → afterState Consumed on first Success only; reuse attempts do not alter token state but create TokenReuseAlert security audit",
       "edgeCase": true
     },
     {
@@ -158,7 +159,7 @@
       "layer": "integration",
       "technique": "concurrency",
       "priority": "P0",
-      "traceability": ["BR-11", "FR-09", "NFR-02"],
+      "traceability": ["BR-11", "FR-09", "NFR-02", "AC-10c"],
       "title": "Parallel check-in with same token from two students yields one Success and one TokenAlreadyUsed",
       "preconditions": [
         "Real PostgreSQL test database with serializable or SELECT FOR UPDATE on qr_tokens",
@@ -173,9 +174,9 @@
         "Assert the other response is HTTP 400 outcome TokenAlreadyUsed",
         "Query qr_tokens for T1 and assert status Consumed with exactly one consumedByStudentId",
         "Query attendance_records and assert exactly one Present row among the two students",
-        "Verify security log entry for the losing student's attempt"
+        "Verify TokenReuseAlert security audit entry for the losing student's attempt per AC-10c"
       ],
-      "expected": "BR-11 concurrency invariant: row lock on qr_tokens ensures at most one successful consumption; loser receives TokenAlreadyUsed per NFR-02",
+      "expected": "BR-11 concurrency invariant: row lock on qr_tokens ensures at most one successful consumption; loser receives TokenAlreadyUsed and TokenReuseAlert audit per NFR-02",
       "edgeCase": true
     },
     {
@@ -184,23 +185,23 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["BR-11"],
-      "title": "Security log entry persisted on token reuse with sessionId, tokenId, and submitting studentId",
+      "traceability": ["BR-11", "AC-10c"],
+      "title": "TokenReuseAlert security audit persisted on token reuse with sessionId, tokenId, and submitting studentId",
       "preconditions": [
         "Real PostgreSQL test database is running",
         "Active session with Consumed qr_tokens row consumed by Student A",
         "Student B enrolled with Pending attendance",
-        "Security audit or check_in_attempts append-only store queryable"
+        "Security audit store queryable per error-handling §6.2 TokenReuseAlert event type"
       ],
       "steps": [
-        "Record security log or check_in_attempts count before reuse attempt",
+        "Record TokenReuseAlert security audit count before reuse attempt",
         "Invoke CheckInService.submit with Consumed tokenId for Student B",
         "Assert outcome TokenAlreadyUsed",
-        "Query security audit store and assert new entry contains sessionId matching token sessionId",
+        "Query security audit store and assert new TokenReuseAlert entry contains sessionId matching token sessionId",
         "Assert entry contains tokenId and submitting studentId Student B",
-        "Assert entry is append-only (no update or delete of prior entries)"
+        "Assert entry is append-only (no update or delete of prior entries) per AC-10c"
       ],
-      "expected": "BR-11 outcome requires security log with session ID, token ID, and submitting student ID on every consumed-token reuse attempt",
+      "expected": "BR-11 outcome requires append-only TokenReuseAlert security audit with session ID, token ID, and submitting student ID on every consumed-token reuse attempt",
       "edgeCase": false
     },
     {
@@ -224,7 +225,7 @@
         "Verify check_in_attempts logged with outcome TokenAlreadyUsed not DuplicateCheckIn",
         "Query qr_tokens for T1 and assert status remains Consumed"
       ],
-      "expected": "BR-11 evaluated at pipeline step 8 before BR-04 DuplicateCheckIn (step 10); Consumed token short-circuits per rule interaction matrix order 4",
+      "expected": "BR-11 evaluated at validation-rules §5.1 step 8 before BR-04 DuplicateCheckIn (step 10); Consumed token short-circuits per business rules §8 order 4",
       "edgeCase": true
     },
     {
@@ -233,7 +234,7 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["BR-11", "BR-03"],
+      "traceability": ["BR-11", "BR-03", "AC-10c"],
       "title": "Consumed token reuse within 30s window returns TokenAlreadyUsed not ExpiredQr",
       "preconditions": [
         "QrToken consumed by Student A at time T with expires_at T + 30 s",
@@ -245,7 +246,7 @@
         "Assert HTTP 400 with outcome TokenAlreadyUsed (not ExpiredQr)",
         "Assert errorCode TokenAlreadyUsed per BR-11 condition: token Consumed while still within 30-second window",
         "Verify Student B attendance remains Pending",
-        "Verify security log entry created for reuse attempt"
+        "Verify TokenReuseAlert security audit entry created for reuse attempt per AC-10c"
       ],
       "expected": "BR-11 applies when token state is Consumed regardless of remaining TTL; distinct from BR-03 ExpiredQr path for expired-but-not-consumed tokens",
       "edgeCase": true
@@ -267,8 +268,8 @@
         "POST /api/v1/check-in with consumed tokenId and in-radius coordinates using Instructor session cookie",
         "Assert HTTP status 403 Forbidden and errorCode Forbidden",
         "Verify no Present attendance created for instructor userId",
-        "Verify no security log entry implying successful token consumption by instructor",
-        "Assert permission guard runs at pipeline step 3 before BR-11 token consumption evaluation"
+        "Verify no TokenReuseAlert or successful token consumption audit for instructor",
+        "Assert permission guard runs at validation-rules §5.1 step 3 before BR-11 token consumption evaluation at step 8"
       ],
       "expected": "Only Student role triggers BR-11 check-in pipeline; staff accounts cannot consume or reuse QR tokens preventing proxy attendance",
       "edgeCase": false
@@ -288,14 +289,14 @@
       ],
       "steps": [
         "Student B opens /check-in?token=:consumedTokenId&session=:sessionId",
-        "Assert validating_token inline spinner during GET /api/v1/check-in/tokens/:consumedTokenId/preflight",
-        "Verify preflight returns 403 with errorCode TokenAlreadyUsed and message Mã QR đã được sử dụng per API design §6.2",
-        "Assert data-testid gps-capture-step is absent; GpsCaptureStep never mounts per BR-15",
-        "Verify error outcome displayed on scan step with TokenAlreadyUsed state",
+        "Assert validating_token state per ui-states §4.1: inline spinner on scan step during GET /api/v1/check-in/tokens/:consumedTokenId/preflight",
+        "Verify preflight returns HTTP 403 with errorCode TokenAlreadyUsed and message Mã QR đã được sử dụng per API design §6.2",
+        "Assert data-testid gps-capture-step is absent; GpsCaptureStep never mounts after preflight failure per BR-15 and event-specific §2.3",
+        "Verify error outcome displayed on scan step (outcome state, not gps_capture)",
         "Verify no success confirmation or Present badge shown",
         "Verify recovery guidance to scan fresh QR from projector"
       ],
-      "expected": "BR-11 anti-proxy token sharing rejection visible at preflight on mobile web UI; GPS step unreachable per BR-15; student directed to obtain new rotating QR",
+      "expected": "BR-11 anti-proxy token sharing rejection visible at preflight on mobile web UI; scan step does not mount gps-capture-step until preflight passes; student directed to obtain new rotating QR",
       "edgeCase": true
     },
     {
@@ -309,7 +310,7 @@
       "preconditions": [
         "Active session with instructor viewing live attendance monitor at /sessions/:sessionId/monitor",
         "Student A checked in successfully consuming token T1",
-        "Student B attempted check-in with same consumed token T1 (TokenAlreadyUsed logged per BR-11)"
+        "Student B attempted check-in with same consumed token T1 (TokenReuseAlert logged per BR-11)"
       ],
       "steps": [
         "As Instructor, open session monitor page for Active session",
@@ -319,7 +320,7 @@
         "Verify Student B remains Pending in roster grid",
         "Verify Student A remains Present in roster grid"
       ],
-      "expected": "BR-11 security log entry for token reuse may surface instructor-facing code-sharing alert during Active session monitor",
+      "expected": "BR-11 TokenReuseAlert security audit for token reuse may surface instructor-facing code-sharing alert during Active session monitor",
       "edgeCase": false
     },
     {
@@ -363,7 +364,7 @@
         "Student B POST /api/v1/check-in with tokenId T1 and assert HTTP 400 TokenAlreadyUsed",
         "Student A POST /api/v1/check-in with fresh Valid tokenId T2 and assert HTTP 409 DuplicateCheckIn",
         "Compare response envelopes: TokenAlreadyUsed uses 400; DuplicateCheckIn uses 409",
-        "Assert distinct errorCode and Vietnamese messages per error-handling §4",
+        "Assert distinct errorCode and Vietnamese messages per error-handling §4.4",
         "Verify both failures create check_in_attempts rows with correct outcomes"
       ],
       "expected": "BR-11 TokenAlreadyUsed (400) contract is distinguishable from BR-04 DuplicateCheckIn (409) for correct client handling of token-sharing vs duplicate-student scenarios",
@@ -375,8 +376,8 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P1",
-      "traceability": ["BR-11"],
-      "title": "Third sequential reuse attempt on same Consumed token creates additional security log without state change",
+      "traceability": ["BR-11", "AC-10c"],
+      "title": "Third sequential reuse attempt on same Consumed token creates additional TokenReuseAlert without state change",
       "preconditions": [
         "QrToken T1 Consumed by Student A",
         "Student B and Student C enrolled with Pending attendance",
@@ -385,35 +386,35 @@
       "steps": [
         "Student B CheckInService.submit with T1 and assert TokenAlreadyUsed",
         "Student C CheckInService.submit with T1 and assert TokenAlreadyUsed",
-        "Query security log or check_in_attempts and assert two distinct entries for Student B and Student C",
+        "Query TokenReuseAlert security audit entries and assert two distinct entries for Student B and Student C per AC-10c",
         "Query qr_tokens for T1 and assert status remains Consumed with consumedByStudentId Student A",
         "Assert no Present records created for Student B or Student C"
       ],
-      "expected": "BR-11 has no exceptions: each token supports at most one successful consumption; every reuse attempt rejected and logged",
+      "expected": "BR-11 has no exceptions: each token supports at most one successful consumption; every reuse attempt rejected and logged as append-only TokenReuseAlert",
       "edgeCase": true
     },
     {
       "id": "TC-BR-11-017",
       "category": "edge",
-      "layer": "e2e",
+      "layer": "integration",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["BR-11", "BR-15"],
-      "title": "GET preflight rejects Consumed token with 403 TokenAlreadyUsed and security log before GPS step",
+      "traceability": ["BR-11", "BR-15", "AC-10c"],
+      "title": "Preflight rejects Consumed token with 403 TokenAlreadyUsed and TokenReuseAlert before GPS step",
       "preconditions": [
-        "Active session with qr_tokens row status Consumed by Student A",
-        "Token still within 30-second validity window (TestClock fixed before expires_at)",
+        "Real PostgreSQL with Active session and qr_tokens row status Consumed by Student A",
+        "Token still within 30-second validity window (TestClock fixed before expiry)",
         "Authenticated enrolled Student B with Pending attendance"
       ],
       "steps": [
-        "GET /api/v1/check-in/tokens/:consumedTokenId/preflight as Student B",
+        "Invoke GET /api/v1/check-in/tokens/:consumedTokenId/preflight as Student B",
         "Assert HTTP status 403 Forbidden",
         "Assert Content-Type application/json; charset=utf-8",
         "Assert response errorCode TokenAlreadyUsed and message Mã QR đã được sử dụng per API design §6.2",
-        "Verify security log entry contains sessionId, tokenId, and submitting Student B id per BR-11 outcome",
+        "Verify TokenReuseAlert security audit entry contains sessionId, tokenId, and submitting Student B id per BR-11 outcome and AC-10c",
         "Query attendance_records and qr_tokens and assert no writes occurred (read-only preflight per validation-rules §3.6a)"
       ],
-      "expected": "BR-11 enforced at preflight layer: 403 TokenAlreadyUsed and security log; client must not enter GPS capture per BR-15",
+      "expected": "BR-11 enforced at preflight layer: 403 TokenAlreadyUsed and TokenReuseAlert security audit; client must not enter GPS capture per BR-15",
       "edgeCase": true
     }
   ]

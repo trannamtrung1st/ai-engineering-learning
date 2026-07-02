@@ -1,8 +1,8 @@
 {
   "productItemId": "NFR-14",
   "version": 1,
-  "docFingerprint": "sha256:14f24faa2e4617efd1a5dd11c8715409687e5114d45c2e642d4ea173adcd0b51",
-  "generatedAt": "2026-06-29T19:03:59.000Z",
+  "docFingerprint": "sha256:d0f742a55dc5982c5ffe505704d039fb3fdb52dcc349f4838459ccb793df8c15",
+  "generatedAt": "2026-07-01T02:41:12.000Z",
   "cases": [
     {
       "id": "TC-NFR-14-001",
@@ -468,6 +468,99 @@
         "Submit form and assert POST /api/v1/setup/first-admin succeeds with hashed credential persisted"
       ],
       "expected": "NFR-14 browser journey on bootstrap path: /setup UI enforces minimum 8-character password before first-admin creation; aligns with server PasswordTooShort contract per VAL-03",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-14-022",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-14", "FR-01", "AC-01d"],
+      "title": "POST /users/import create row persists bcrypt/argon2 hash — random initial password never plaintext",
+      "preconditions": [
+        "Real PostgreSQL with authenticated TrainingOfficeAdmin session",
+        "No user exists with institutionalId SV2026401",
+        "UserImportService configured with PasswordHasher per tech stack §3.4 and §8"
+      ],
+      "steps": [
+        "POST /api/v1/users/import with CSV row institutional_id SV2026401, valid display_name, email, role Student, active true",
+        "Poll GET /api/v1/users/imports/:batchId until status Completed",
+        "Assert batch summary createdCount=1 and response contains no password or initialPassword field",
+        "Query users.password_hash directly via SQL for institutionalId SV2026401",
+        "Assert password_hash matches bcrypt pattern (^\\$2[aby]\\$) OR argon2 pattern (^\\$argon2)",
+        "Assert password_hash value is not empty and does not equal any CSV column value"
+      ],
+      "expected": "NFR-14 bulk provisioning per API design §3.2a and validation §3.2b: new import row stores one-way hash; system-generated random password never persisted as plaintext; not exposed in import batch API",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-14-023",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-14", "FR-01", "AC-01d"],
+      "title": "GET /users/imports/:batchId completed batch excludes password fields from JSON envelope",
+      "preconditions": [
+        "TrainingOfficeAdmin session available",
+        "Completed user import batch with at least one created user row"
+      ],
+      "steps": [
+        "GET /api/v1/users/imports/:batchId with admin session cookie",
+        "Assert HTTP status 200",
+        "Assert response JSON contains id, status, totalRows, successRows, errorRows, createdCount, updatedCount, errorDetails",
+        "Assert response JSON does NOT contain password, passwordHash, password_hash, initialPassword, or generatedPassword at any nesting level",
+        "Inspect errorDetails array items and assert no password material in row-level error payloads"
+      ],
+      "expected": "HTTP 200 UserImportBatch contract: credential material never serialized to import status clients per NFR-14 and API design §3.2b",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-14-024",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-14", "FR-02", "FR-01"],
+      "title": "Auth and user-provisioning request logs omit plaintext password per error-handling §6.1",
+      "preconditions": [
+        "API server running with structured JSON logging (Pino) captured to test sink",
+        "Student account exists for login probe",
+        "TrainingOfficeAdmin session for user create probe"
+      ],
+      "steps": [
+        "POST /api/v1/auth/login with valid email and password ProbeLogin8; capture log output for requestId",
+        "Assert completed log line for POST /auth/login contains no substring ProbeLogin8 and no password field with plaintext value",
+        "POST /api/v1/users with password CreateLogPass8 and otherwise valid body via admin session; capture logs",
+        "Assert log line for POST /users contains no substring CreateLogPass8",
+        "Assert log entries may include method, path, status, requestId per NFR-21 but never passwords per tech stack §8 guardrails"
+      ],
+      "expected": "NFR-14 credential confidentiality extends to observability: structured request logs never record plaintext passwords on login or admin provisioning paths",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-14-025",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["NFR-14", "FR-01", "AC-01d"],
+      "title": "User import update preserves password_hash — CSV upsert does not rotate credential on existing row",
+      "preconditions": [
+        "Real PostgreSQL with user institutionalId SV2026402 created via POST /users with password ImportKeep8",
+        "Record beforeState: users.password_hash = H1 for institutionalId SV2026402",
+        "Authenticated TrainingOfficeAdmin session"
+      ],
+      "steps": [
+        "POST /api/v1/users/import with CSV row updating display_name and email for institutional_id SV2026402 only",
+        "Poll GET /api/v1/users/imports/:batchId until status Completed",
+        "Assert updatedCount=1; response contains successRows and errorRows counts and no password fields",
+        "Query users.password_hash for SV2026402 and assert afterState value equals beforeState H1",
+        "POST /api/v1/auth/login with updated email and password ImportKeep8 and assert HTTP 200",
+        "POST /api/v1/auth/login with updated email and wrong password and assert InvalidCredentials"
+      ],
+      "expected": "NFR-14 import upsert per API design §3.2a and validation §3.2b: profile fields updated but password_hash unchanged; existing credential still authenticates",
       "edgeCase": false
     }
   ]

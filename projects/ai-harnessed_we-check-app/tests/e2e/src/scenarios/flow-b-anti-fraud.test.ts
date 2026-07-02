@@ -21,7 +21,7 @@ import { advanceClock } from "../../../../apps/api/src/infra/clock.js";
  * Flow B — Anti-fraud rejection paths (testing-plan §6)
  * Traceability: AC-02 AC-06 AC-08 AC-09 AC-10
  * FR-02 FR-06 FR-07 FR-08 FR-09 FR-10 BR-02 BR-03 BR-04 BR-06 BR-11 BR-12 NFR-02 NFR-12 NFR-24
- * Cases: TC-AC-02-001 TC-AC-06-002 TC-AC-07-024 TC-AC-08-002 TC-AC-08-019 TC-AC-09-001 TC-AC-09-002 TC-AC-10-001 TC-AC-10-018 TC-FR-08-024
+ * Cases: TC-AC-02-001 TC-AC-06-002 TC-AC-07-024 TC-AC-08-002 TC-AC-08-019 TC-AC-09-001 TC-AC-09-002 TC-AC-10-001 TC-AC-10-018 TC-FR-02-027 TC-FR-08-024
  */
 describe("Flow B — anti-fraud rejection paths (AC-02, AC-06, AC-08–AC-10)", () => {
   before(async () => {
@@ -78,6 +78,32 @@ describe("Flow B — anti-fraud rejection paths (AC-02, AC-06, AC-08–AC-10)", 
     });
     assert.equal(me.statusCode, 200);
     assert.equal(me.json<{ role: string }>().role, UserRole.Student);
+  });
+
+  it("POST /auth/logout returns 204 and revokes session (TC-FR-02-027, AC-02d, BR-06, FR-02)", async () => {
+    await ctx.resetDb(ctx.seedReferenceData.bind(ctx));
+    const student = await ctx.seedStudent("SV-LOGOUT", "logout-e2e@example.edu.vn");
+
+    const logoutRes = await ctx.app.inject({
+      method: "POST",
+      url: "/api/v1/auth/logout",
+      headers: { cookie: student.cookie },
+    });
+    assert.equal(logoutRes.statusCode, 204);
+
+    const setCookie = logoutRes.headers["set-cookie"];
+    assert.ok(setCookie);
+
+    const meRes = await ctx.app.inject({
+      method: "GET",
+      url: "/api/v1/auth/me",
+      headers: { cookie: student.cookie },
+    });
+    assert.equal(meRes.statusCode, 401);
+    assert.equal(
+      meRes.json<{ errorCode: string }>().errorCode,
+      ErrorCode.Unauthenticated,
+    );
   });
 
   it("student A success then duplicate check-in returns 409 DuplicateCheckIn (TC-AC-09-001, BR-04)", async () => {

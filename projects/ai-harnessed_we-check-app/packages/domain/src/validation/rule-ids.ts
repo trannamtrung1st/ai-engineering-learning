@@ -76,6 +76,7 @@ export const ErrorCode = {
   MalformedJson: "MalformedJson",
   DuplicateClassCode: "DuplicateClassCode",
   DuplicateSubjectCode: "DuplicateSubjectCode",
+  DuplicateEmail: "DuplicateEmail",
   SetupAlreadyComplete: "SetupAlreadyComplete",
 } as const;
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];

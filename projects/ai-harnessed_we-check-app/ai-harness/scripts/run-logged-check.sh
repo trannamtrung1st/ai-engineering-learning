@@ -2,13 +2,32 @@
 # Run one root package.json script with harness timeout, live output, heartbeat, and log file.
 # Use for ad-hoc agent self-checks (especially test:integration) to avoid silent hangs.
 #
-# Usage: run-logged-check.sh <npm-script>
-# Example: ./ai-harness/scripts/run-logged-check.sh test:integration
+# Usage: run-logged-check.sh <npm-script> [--profile fast|full] [extra npm args...]
 set -euo pipefail
 source "$(dirname "$0")/lib/common.sh"
 
-SCRIPT="${1:?npm script name required — e.g. test:integration}"
-shift || true
+SCRIPT=""
+CHECK_PROFILE=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --profile)
+      CHECK_PROFILE="${2:?profile required}"
+      shift 2
+      ;;
+    --profile=*)
+      CHECK_PROFILE="${1#--profile=}"
+      shift
+      ;;
+    *)
+      if [[ -z "$SCRIPT" ]]; then
+        SCRIPT="$1"
+      fi
+      shift
+      ;;
+  esac
+done
+SCRIPT="${SCRIPT:?npm script name required — e.g. test:integration}"
+[[ -n "$CHECK_PROFILE" ]] && export AIH_CHECK_PROFILE="$CHECK_PROFILE"
 
 require_harness_deps
 ensure_runs_dir
@@ -32,11 +51,12 @@ label="npm run ${SCRIPT}"
 
 echo "==> ${label} (timeout: $(( timeout_ms / 1000 ))s, log: ${log_file})"
 
+npm_extra=("$@")
 set +e
 if [[ "$SCRIPT" == "build" ]]; then
   run_check_with_timeout_ms "$timeout_ms" --log "$log_file" --label "$label" --fn run_build_for_checks
 else
-  run_check_with_timeout_ms "$timeout_ms" --log "$log_file" --label "$label" npm run "$SCRIPT" "$@"
+  run_check_with_timeout_ms "$timeout_ms" --log "$log_file" --label "$label" npm run "$SCRIPT" "${npm_extra[@]}"
 fi
 status=$?
 set -e

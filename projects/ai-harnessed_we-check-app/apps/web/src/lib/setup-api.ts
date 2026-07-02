@@ -30,6 +30,28 @@ export type SetupMutationResult =
   | { ok: true; data: FirstAdminResponse }
   | { ok: false; status: number; error: ApiErrorBody };
 
+const SETUP_COMPLETE_CACHE_KEY = "wecheck-setup-complete";
+
+export function getCachedSetupComplete(): boolean {
+  try {
+    return sessionStorage.getItem(SETUP_COMPLETE_CACHE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function setCachedSetupComplete(complete: boolean): void {
+  try {
+    if (complete) {
+      sessionStorage.setItem(SETUP_COMPLETE_CACHE_KEY, "1");
+    } else {
+      sessionStorage.removeItem(SETUP_COMPLETE_CACHE_KEY);
+    }
+  } catch {
+    // ignore storage failures
+  }
+}
+
 /** FR-17 — poll deployment bootstrap gate */
 export async function fetchSetupStatus(): Promise<
   | { ok: true; data: SetupStatusResponse }
@@ -38,6 +60,9 @@ export async function fetchSetupStatus(): Promise<
   const res = await apiFetch<SetupStatusResponse>("/setup/status");
   if (!res.ok) {
     return { ok: false, status: res.status, error: res.data };
+  }
+  if (!res.data.needsSetup) {
+    setCachedSetupComplete(true);
   }
   return { ok: true, data: res.data };
 }

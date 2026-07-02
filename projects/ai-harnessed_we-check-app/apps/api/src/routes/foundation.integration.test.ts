@@ -28,7 +28,7 @@ const DEFAULT_DATABASE_URL =
  * Traceability: FR-02 FR-03 FR-04 FR-06 NFR-10 NFR-11 NFR-16 AC-03 AC-12 AC-13 AC-14
  * Cases: TC-NFR-10-003 TC-NFR-10-009 TC-NFR-10-010 TC-NFR-11-004 TC-NFR-11-005
  * TC-NFR-11-006 TC-NFR-11-007 TC-NFR-11-008 TC-NFR-11-011 TC-NFR-11-012 TC-NFR-11-013
- * TC-NFR-11-014 TC-NFR-11-020 TC-NFR-16-003 TC-NFR-16-004 TC-FR-02-006
+ * TC-NFR-11-014 TC-NFR-11-020 TC-NFR-16-003 TC-NFR-16-004 TC-FR-02-006 TC-FR-02-009
  */
 describe("api foundation integration (FR-02, FR-03, NFR-10, NFR-11, NFR-16)", () => {
   let db: DbPool;
@@ -306,6 +306,46 @@ describe("api foundation integration (FR-02, FR-03, NFR-10, NFR-11, NFR-16)", ()
       response.json<{ errorCode: string }>().errorCode,
       ErrorCode.Unauthenticated,
     );
+  });
+
+  it("POST /auth/logout revokes session and clears cookie (TC-FR-02-009, AC-02d, BR-06, FR-02)", async () => {
+    const student = await seedSession(UserRole.Student);
+    const cookie = `${SESSION_COOKIE_NAME}=${student.sessionId}`;
+
+    const logoutRes = await app.inject({
+      method: "POST",
+      url: "/api/v1/auth/logout",
+      headers: { cookie },
+    });
+    assert.equal(logoutRes.statusCode, 204);
+
+    const setCookie = logoutRes.headers["set-cookie"];
+    assert.ok(setCookie);
+    const cookieHeaders = Array.isArray(setCookie) ? setCookie : [setCookie];
+    assert.ok(
+      cookieHeaders.some(
+        (header) =>
+          header.includes(SESSION_COOKIE_NAME) &&
+          (header.includes("Max-Age=0") || /Expires=/i.test(header)),
+      ),
+    );
+
+    const meRes = await app.inject({
+      method: "GET",
+      url: "/api/v1/auth/me",
+      headers: { cookie },
+    });
+    assert.equal(meRes.statusCode, 401);
+    assert.equal(
+      meRes.json<{ errorCode: string }>().errorCode,
+      ErrorCode.Unauthenticated,
+    );
+
+    const revoked = await db.query<{ revoked_at: Date | null }>(
+      "SELECT revoked_at FROM auth_sessions WHERE id = $1",
+      [student.sessionId],
+    );
+    assert.ok(revoked.rows[0]?.revoked_at);
   });
 
   it("malformed session cookie returns 401 (TC-NFR-10-012)", async () => {

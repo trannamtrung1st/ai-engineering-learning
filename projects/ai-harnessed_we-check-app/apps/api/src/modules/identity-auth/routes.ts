@@ -13,6 +13,7 @@ import { AuthService } from "./auth-service.js";
 import { PolicyService } from "./policy-service.js";
 import { UserRepository } from "./user-repository.js";
 import { UserService } from "./user-service.js";
+import { registerUserImportRoutes } from "./user-import-routes.js";
 import {
   validateCreateUserBody,
   validateListUsersQuery,
@@ -20,6 +21,7 @@ import {
   validateSessionInactivityHours,
   validateUpdateUserBody,
 } from "./validation.js";
+import { refreshPreviewBrowserFixtures } from "../../infra/preview-seed.js";
 import { registerSetupRoutes } from "./setup/index.js";
 
 function requireAdmin(request: FastifyRequest): void {
@@ -58,6 +60,7 @@ export async function registerIdentityAuthRoutes(
   const secureCookies = process.env.NODE_ENV === "production";
 
   await registerSetupRoutes(app, db, store);
+  await registerUserImportRoutes(app, db, store);
 
   app.post("/auth/login", async (request, reply) => {
     const parsed = validateLoginBody(request.body);
@@ -117,25 +120,28 @@ export async function registerIdentityAuthRoutes(
     process.env.SEED_ENABLED === "true" || process.env.SEED_ENABLED === "1";
 
   if (seedEnabled) {
+    /** Preview-only: restore core auth + browser fixtures after integration truncates (TC-FR-02-021) */
+    app.post("/auth/preview/refresh-fixtures", async () => {
+      await refreshPreviewBrowserFixtures(db);
+      return { ok: true };
+    });
+
     /** Preview-only: backdate current session for AC-02c browser gate (TC-AC-02-013) */
-    app.post(
-      "/auth/preview/expire-session",
-      { preHandler: [auth] },
-      async (request) => {
-        const sessionId = extractSessionId(request);
-        if (!sessionId) {
-          throw notFound();
-        }
-        await db.query(
-          `UPDATE auth_sessions
-           SET last_activity_at = NOW() - INTERVAL '9 hours',
-               expires_at = NOW() - INTERVAL '1 hour'
-           WHERE id = $1 AND revoked_at IS NULL`,
-          [sessionId],
-        );
-        return { ok: true };
-      },
-    );
+    app.post("/auth/preview/expire-session", async (request) => {
+      const sessionId = extractSessionId(request);
+      if (!sessionId) {
+        throw notFound();
+      }
+      // Do not run auth middleware — touchSession would refresh activity before backdate.
+      await db.query(
+        `UPDATE auth_sessions
+         SET last_activity_at = NOW() - INTERVAL '9 hours',
+             expires_at = NOW() - INTERVAL '1 hour'
+         WHERE id = $1 AND revoked_at IS NULL`,
+        [sessionId],
+      );
+      return { ok: true };
+    });
   }
 
   app.get(

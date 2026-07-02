@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-16",
   "version": 1,
-  "docFingerprint": "sha256:554cd68fa4b094de2ef18b944150230ba9af83d371db2c45ca6b0517495be659",
-  "generatedAt": "2026-06-29T18:30:00Z",
+  "docFingerprint": "sha256:70664f4bcec7e745bdcd06197b935919d3e19855c18c5b6fb91cd47efbd1e5ca",
+  "generatedAt": "2026-07-01T12:30:00Z",
   "cases": [
     {
       "id": "TC-FR-16-001",
@@ -172,7 +172,7 @@
         "Assert HTTP status 403 Forbidden",
         "Assert response errorCode Forbidden",
         "Assert message Bạn không có quyền thực hiện thao tác này per roles-permissions §2.5",
-        "GET /api/v1/policy/absence-threshold using Instructor session and assert 403 or read denied per product policy",
+        "GET /api/v1/policy/absence-threshold using Instructor session and assert HTTP 403 Forbidden with errorCode Forbidden per roles-permissions §2.2",
         "Verify policy value unchanged in database (still 20)"
       ],
       "expected": "Only TrainingOfficeAdmin holds policy:write; instructor threshold configuration denied per RBAC matrix for FR-16 policy inputs",
@@ -330,22 +330,21 @@
       "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["FR-16", "BR-05"],
-      "title": "Admin configures absence threshold via AttendancePolicyForm at /admin/policy",
+      "title": "Admin configures absence threshold at /admin/policy via AttendancePolicyForm",
       "preconditions": [
-        "Authenticated TrainingOfficeAdmin on desktop viewport",
-        "Should-capability FR-16 UI enabled; AttendancePolicyForm interactive per page-list §5.7",
-        "Default Ngưỡng vắng (%) 20 and Gửi cảnh báo tự động toggle off displayed per forms §4.9 and component doc §7.3"
+        "Authenticated TrainingOfficeAdmin with policy:write per roles-permissions §2.2",
+        "FR-16 Should-capability enabled; /admin/policy accessible from admin chrome (Chính sách nav item)",
+        "Default policy absence_threshold_percent = 20 seeded"
       ],
       "steps": [
-        "Navigate to /admin/policy",
-        "Verify Ngưỡng vắng (%) field displays default 20 and Gửi cảnh báo tự động toggle visible",
-        "Verify helper text *Sinh viên vượt ngưỡng sẽ nhận cảnh báo cùng giảng viên phụ trách* per forms §4.9",
-        "Change threshold input to 25 and click Lưu chính sách",
-        "Assert success toast confirms policy saved",
-        "Reload page and verify threshold displays 25%",
-        "Restore threshold to 20% for test isolation"
+        "Navigate to /admin/policy from admin hub or Chính sách sidebar item",
+        "Assert AttendancePolicyForm displays Ngưỡng vắng (%) field with default 20, Gửi cảnh báo tự động toggle, and helper text per forms-validation §4.9",
+        "Change threshold input to 25",
+        "Click Lưu chính sách and assert success toast appears",
+        "Verify persisted value via GET /api/v1/policy/absence-threshold or form reload shows 25",
+        "Restore threshold to 20 for test isolation"
       ],
-      "expected": "FR-16 policy threshold configurable by admin via AttendancePolicyForm; persisted value drives absence warning evaluation per BR-05 and WF-06 §7.2 step 3",
+      "expected": "User flows §11 policy configuration satisfied: admin saves absence threshold at /admin/policy; persisted value drives FR-16 evaluation on next session close per WF-06 §7.2 step 3",
       "edgeCase": false
     },
     {
@@ -427,9 +426,9 @@
       "technique": "pagination",
       "priority": "P1",
       "traceability": ["FR-16"],
-      "title": "GET /notifications cursor pagination returns bounded page with nextCursor",
+      "title": "GET /notifications cursor pagination returns bounded pages of AbsenceThresholdWarning items",
       "preconditions": [
-        "Student P with 55 unread AbsenceThresholdWarning notifications seeded (or mixed notification types)",
+        "Student P with 55 AbsenceThresholdWarning notifications seeded after repeated threshold breaches in subject",
         "Authenticated Student P session with notification:read",
         "API default limit=50, max limit=200 per API design §1"
       ],
@@ -439,9 +438,9 @@
         "GET /api/v1/notifications?limit=20&cursor={nextCursor} and assert second page returns remaining items",
         "Assert no duplicate notification ids across pages",
         "Assert total items across pages equals 55",
-        "Assert each item on first page has type and payload fields required for AbsenceThresholdWarning"
+        "Assert each item on first page has type AbsenceThresholdWarning with payload fields subjectCode, absenceRate, threshold, sessionCount, unexcusedAbsenceCount per domain model §4.13"
       ],
-      "expected": "Notification inbox supports cursor-based pagination per API design §1; FR-16 warnings paginate correctly for students with many alerts",
+      "expected": "FR-16 in-app warnings paginate correctly via cursor-based GET /notifications per API design §1 and §9.1",
       "edgeCase": false
     },
     {
@@ -488,6 +487,31 @@
         "Assert response contains no items array or notification payload data"
       ],
       "expected": "Notification inbox requires authentication; unauthenticated callers denied with no absence warning data leaked",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-16-021",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": ["FR-16", "BR-05"],
+      "title": "AttendanceManuallyEdited triggers threshold recalculation with Excused excluded from numerator",
+      "preconditions": [
+        "Real PostgreSQL with Student R: 3 Absent of 5 completed Closed sessions in TEST-102 (60% unexcused rate)",
+        "AbsenceThresholdWarning notification already created for Student R in TEST-102",
+        "One Absent attendance record on a Closed session within instructor 24-hour edit window per BR-10",
+        "AttendanceManuallyEdited event consumer wired per main-workflows §8"
+      ],
+      "steps": [
+        "PATCH /api/v1/attendance/:recordId changing one Absent record to Excused with note (≥10 characters per validation §3.8)",
+        "Assert HTTP 200 and attendance record status Excused with audit log entry",
+        "Await NotificationService threshold re-evaluation triggered by AttendanceManuallyEdited event",
+        "Assert unexcusedAbsenceCount recalculated as 2 Absent of 5 completed sessions (Excused excluded per FR-16 and BR-05)",
+        "Query notifications for Student R and assert payload absenceRate = 0.40 and unexcusedAbsenceCount = 2 per domain model §4.13",
+        "Assert assigned instructor notification payload reflects same updated rate and counts"
+      ],
+      "expected": "WF-06 §8 and main-workflows §8: manual attendance edit triggers absence threshold recalculation; Excused exclusion applied on post-edit evaluation per FR-16",
       "edgeCase": false
     }
   ]

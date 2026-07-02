@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { Outlet, useLocation, useOutletContext } from "react-router-dom";
+import { useAuthBootUser } from "@/components/auth/auth-boot-context";
 import { Spinner } from "@/components/ui/spinner";
-import type { AuthUser } from "@/lib/auth-session";
-import { fetchAuthUser } from "@/lib/auth-session";
+import { fetchAuthUser, getCachedAuthUser, setCachedAuthUser, type AuthUser } from "@/lib/auth-session";
 import {
   currentPathWithSearch,
   loginReturnUrl,
@@ -15,11 +15,15 @@ export interface AuthOutletContext {
 /** BR-06 / FR-02 — gate protected routes; preserve returnUrl on auth failure */
 export function RequireAuth() {
   const location = useLocation();
-  const [user, setUser] = useState<AuthUser | null>(null);
+  const bootAuthUser = useAuthBootUser();
+  const [user, setUser] = useState<AuthUser | null>(
+    () => bootAuthUser ?? getCachedAuthUser(),
+  );
   const [networkError, setNetworkError] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+    setNetworkError(false);
 
     void (async () => {
       const result = await fetchAuthUser();
@@ -35,6 +39,7 @@ export function RequireAuth() {
         return;
       }
 
+      setCachedAuthUser(null);
       const returnPath = currentPathWithSearch(location);
       window.location.href = loginReturnUrl(returnPath, {
         sessionExpired: result.errorCode === "SessionExpired",
@@ -56,7 +61,9 @@ export function RequireAuth() {
     );
   }
 
-  if (!user) {
+  const activeUser = user ?? bootAuthUser ?? getCachedAuthUser();
+
+  if (!activeUser) {
     return (
       <div className="flex min-h-screen items-center justify-center" aria-busy="true">
         <Spinner />
@@ -64,7 +71,7 @@ export function RequireAuth() {
     );
   }
 
-  return <Outlet context={{ user } satisfies AuthOutletContext} />;
+  return <Outlet context={{ user: activeUser } satisfies AuthOutletContext} />;
 }
 
 export function useAuthUser(): AuthUser {

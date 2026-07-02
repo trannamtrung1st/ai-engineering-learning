@@ -15,6 +15,9 @@ const MIGRATION_FILES = [
   "007_checkin_qr.sql",
   "008_reporting_export.sql",
   "009_notifications.sql",
+  "010_policy_auto_warning.sql",
+  "011_auto_warning_default_off.sql",
+  "012_user_import.sql",
 ] as const;
 
 export async function runMigrations(db: DbPool): Promise<void> {

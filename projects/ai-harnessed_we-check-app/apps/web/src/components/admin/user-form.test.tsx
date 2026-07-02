@@ -1,4 +1,5 @@
 import { UserRole } from "@wecheck/domain";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -40,10 +41,15 @@ describe("UserForm (FR-01, AC-01)", () => {
   });
 
   function renderForm(mode: "create" | "edit" = "create") {
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
     return render(
-      <MemoryRouter>
-        <UserForm mode={mode} />
-      </MemoryRouter>,
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter>
+          <UserForm mode={mode} />
+        </MemoryRouter>
+      </QueryClientProvider>,
     );
   }
 

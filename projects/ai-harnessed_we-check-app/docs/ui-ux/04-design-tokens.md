@@ -302,7 +302,7 @@ Level 0: no shadow; `--color-border-default` hairline border only.
 }
 ```
 
-Full set includes all rows in sections 3–10. Implement in `web-visual-refresh-v2` slice.
+Full set includes all rows in sections 3–10. Implement in `web-design-system-shell` slice (first frontend slice).
 
 ---
 

@@ -69,7 +69,7 @@ describe("session-management integration (AC-04, AC-05, FR-04, FR-05, BR-01, BR-
   });
 
   after(async () => {
-    sessionService.qr.stopAll();
+    await sessionService.qr.stopAll();
     resetClock();
     await app.close();
     await closePool();
@@ -77,7 +77,7 @@ describe("session-management integration (AC-04, AC-05, FR-04, FR-05, BR-01, BR-
 
   async function resetDb(afterTruncate?: () => Promise<void>): Promise<void> {
     await withIntegrationTestDbReset(db, async () => {
-      sessionService.qr.stopAll();
+      await sessionService.qr.stopAll();
       await truncateSessionTables(db);
       await truncateRosterTables(db);
       await truncateAuthTables(db);

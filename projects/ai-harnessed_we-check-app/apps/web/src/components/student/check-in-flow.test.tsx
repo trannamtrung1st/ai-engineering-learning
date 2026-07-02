@@ -169,6 +169,21 @@ describe("CheckInFlow (AC-07, AC-08, FR-07, FR-08, NFR-18, NFR-19)", () => {
     expect(screen.getByRole("button", { name: "Quét lại" })).toBeInTheDocument();
   });
 
+  it("shows ExpiredQr for stale deep link before location consent (BR-15, TC-AC-06-020)", async () => {
+    localStorage.removeItem(LOCATION_CONSENT_KEY);
+    vi.mocked(fetchCheckInPreflight).mockResolvedValue({
+      ok: false,
+      outcome: "ExpiredQr",
+      message: "Mã QR đã hết hạn, vui lòng quét mã mới",
+    });
+    renderFlow(`/check-in?token=stale-token-id`);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("check-in-outcome-ExpiredQr")).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId("location-consent-banner")).not.toBeInTheDocument();
+  });
+
   it("shows SessionNotActive for closed session deep link (TC-AC-05-023, AC-05)", async () => {
     vi.mocked(fetchSession).mockResolvedValue({
       id: "30000000-0000-4000-8000-000000000303",

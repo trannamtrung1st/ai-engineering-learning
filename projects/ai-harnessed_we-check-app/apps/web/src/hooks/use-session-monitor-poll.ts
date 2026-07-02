@@ -15,7 +15,9 @@ export function useSessionMonitorPoll(
     queryFn: () => fetchSessionMonitor(sessionId!),
     // Closed sessions still load roster once (AC-05 / TC-AC-05-020); only polling stops.
     enabled: hasSession,
+    staleTime: 0,
     refetchInterval: hasSession && pollingEnabled ? MONITOR_POLL_MS : false,
+    refetchIntervalInBackground: true,
     retry: false,
   });
 }

@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-07",
   "version": 1,
-  "docFingerprint": "sha256:f2be054127cda5ab7ddfda342c8e7b3e55526aeddccbbae25889d8502f5dbe96",
-  "generatedAt": "2026-06-29T17:16:31Z",
+  "docFingerprint": "sha256:9e085d864cfa9ea5a3355a44144bc24cef245d8507af723d1f6a720bbb89b3ce",
+  "generatedAt": "2026-07-01T08:00:00Z",
   "cases": [
     {
       "id": "TC-AC-07-001",
@@ -10,7 +10,7 @@
       "layer": "e2e",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["AC-07", "FR-07", "NFR-04"],
+      "traceability": ["AC-07", "FR-07", "BR-03", "BR-15", "NFR-04", "NFR-18"],
       "title": "TS-20: Authenticated enrolled student mobile check-in marks Present within 2 s",
       "preconditions": [
         "Active session with valid room GPS (10.762622, 106.660172) and gpsRadiusMeters 100",
@@ -40,7 +40,7 @@
       "layer": "e2e",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["AC-07", "FR-07", "FR-03"],
+      "traceability": ["AC-07", "FR-07", "FR-03", "BR-15"],
       "title": "TS-21: Student not enrolled in session check-in rejected with no Present record",
       "preconditions": [
         "Active session for class HESD-01 / subject SWE-101 exists",
@@ -296,7 +296,7 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["AC-07", "FR-07", "NFR-18"],
+      "traceability": ["AC-07", "FR-07", "BR-15", "NFR-18"],
       "title": "Mobile web QR scan check-in journey: scan deep link → preflight → GPS capture → success confirmation",
       "preconditions": [
         "Authenticated Student logged in on mobile viewport 375×812 (iOS Safari user-agent or Android Chrome)",
@@ -348,7 +348,7 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["AC-07", "FR-07", "FR-03"],
+      "traceability": ["AC-07", "FR-07", "FR-03", "BR-15"],
       "title": "Mobile check-in page shows NotEnrolled at preflight without mounting GPS step",
       "preconditions": [
         "Authenticated Student B (studentb) not enrolled in target session on mobile viewport 375px width",
@@ -395,7 +395,7 @@
       "layer": "integration",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["AC-07", "FR-07"],
+      "traceability": ["AC-07", "FR-07", "BR-15"],
       "title": "GET /check-in/tokens/:tokenId/preflight returns 200 with session summary for enrolled student on Active session",
       "preconditions": [
         "Real PostgreSQL with Active session for class HESD-01 / subject SWE-101",
@@ -419,21 +419,21 @@
       "layer": "integration",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["AC-07", "FR-07"],
+      "traceability": ["AC-07", "FR-07", "BR-03", "BR-15"],
       "title": "Preflight rejects ExpiredQr, NotEnrolled, SessionMismatch, and TokenNotFound before GPS step",
       "preconditions": [
         "Real PostgreSQL with Active session, enrolled Student A, non-enrolled Student B",
         "Fixtures: expired qr_token (>30 s), unknown tokenId UUID, valid token with mismatched sessionId query param",
-        "CheckInPreflightService evaluates validation-rules §3.6a chain"
+        "CheckInPreflightService evaluates validation-rules §3.6a chain in order"
       ],
       "steps": [
+        "GET /api/v1/check-in/tokens/:unknownUuid/preflight as Student A; assert HTTP 404 errorCode TokenNotFound and message Không nhận diện được mã QR",
+        "GET /api/v1/check-in/tokens/:validTokenId/preflight?sessionId=:wrongSessionId as Student A; assert HTTP 403 errorCode SessionMismatch",
         "GET /api/v1/check-in/tokens/:expiredTokenId/preflight as Student A; assert HTTP 403 errorCode ExpiredQr",
         "GET /api/v1/check-in/tokens/:validTokenId/preflight as Student B; assert HTTP 403 errorCode NotEnrolled",
-        "GET /api/v1/check-in/tokens/:validTokenId/preflight?sessionId=:wrongSessionId as Student A; assert HTTP 403 errorCode SessionMismatch",
-        "GET /api/v1/check-in/tokens/:unknownUuid/preflight as Student A; assert HTTP 404 errorCode TokenNotFound",
         "Verify no attendance_records or qr_tokens rows modified by any preflight call"
       ],
-      "expected": "AC-07d, AC-07e, AC-07f satisfied: all preflight failure outcomes reject before GPS capture; read-only chain per validation-rules §3.6a",
+      "expected": "AC-07d, AC-07e, AC-07f satisfied: all preflight failure outcomes reject before GPS capture; read-only chain per validation-rules §3.6a; session mismatch returns SessionMismatch or TokenNotFound per AC-07f",
       "edgeCase": true
     },
     {
@@ -442,7 +442,7 @@
       "layer": "e2e",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["AC-07", "FR-07"],
+      "traceability": ["AC-07", "FR-07", "BR-15"],
       "title": "TS-21a: QR preflight valid token for enrolled student returns 200 with session summary",
       "preconditions": [
         "Active session with class HESD-01, subject SWE-101, room Phòng A201",
@@ -465,7 +465,7 @@
       "layer": "e2e",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["AC-07", "FR-07", "FR-06"],
+      "traceability": ["AC-07", "FR-07", "FR-06", "BR-03", "BR-15"],
       "title": "TS-21b: QR preflight expired or unknown token rejects without advancing to GPS",
       "preconditions": [
         "Active session exists",
@@ -476,7 +476,7 @@
         "GET /api/v1/check-in/tokens/:expiredTokenId/preflight using Student session",
         "Assert HTTP status 403 with errorCode ExpiredQr and message Mã QR đã hết hạn, vui lòng quét mã mới",
         "GET /api/v1/check-in/tokens/:unknownTokenId/preflight using Student session",
-        "Assert HTTP status 404 with errorCode TokenNotFound",
+        "Assert HTTP status 404 with errorCode TokenNotFound and message Không nhận diện được mã QR",
         "Verify no Present attendance created for either call"
       ],
       "expected": "TS-21b and AC-07d: expired or unknown token preflight fails; client must remain on scan step without GPS mount per BR-15",
@@ -488,7 +488,7 @@
       "layer": "e2e",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["AC-07", "FR-07"],
+      "traceability": ["AC-07", "FR-07", "BR-15"],
       "title": "TS-21c: QR preflight session mismatch rejects with SessionMismatch",
       "preconditions": [
         "Active session A with valid QrToken bound to session A",
@@ -501,7 +501,7 @@
         "Assert response message indicates QR session does not match token bound session",
         "Verify no attendance status change and token remains Valid"
       ],
-      "expected": "TS-21c and AC-07f: deep-link session id mismatch rejected at preflight; GpsCaptureStep must not mount",
+      "expected": "TS-21c and AC-07f: deep-link session id mismatch rejected at preflight with SessionMismatch or TokenNotFound (HTTP 403 or 404); GpsCaptureStep must not mount",
       "edgeCase": true
     },
     {
@@ -510,7 +510,7 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["AC-07", "FR-07"],
+      "traceability": ["AC-07", "FR-07", "BR-15"],
       "title": "CheckInFlow does not mount GpsCaptureStep until preflight returns outcome Valid",
       "preconditions": [
         "Authenticated enrolled Student on mobile viewport 375px",
@@ -534,7 +534,7 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["AC-07", "FR-07", "FR-08"],
+      "traceability": ["AC-07", "FR-07", "FR-08", "BR-15"],
       "title": "GpsCaptureStep ready state shows check icon without Spinner; aria-busy false; submit enabled",
       "preconditions": [
         "Authenticated enrolled Student on mobile viewport",
@@ -550,7 +550,7 @@
         "Assert submit region aria-busy is false",
         "Assert Xác nhận điểm danh button is enabled and clickable"
       ],
-      "expected": "GPS ready-state UX per ui-states §4.2 and ui-ux §2.2: static check icon, no spinner, submit enabled immediately when coordinates acquired after preflight pass",
+      "expected": "GPS ready-state UX per ui-states §4.2 and event-specific §2.2: static check icon, no spinner, aria-busy false, submit enabled immediately when coordinates acquired after preflight pass",
       "edgeCase": false
     },
     {
@@ -559,7 +559,7 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["AC-07", "FR-07", "NFR-24"],
+      "traceability": ["AC-07", "FR-07", "FR-08", "NFR-24"],
       "title": "gpsSim query params ignored when VITE_ENABLE_DEVICE_SIMULATION=false",
       "preconditions": [
         "Web build compiled with VITE_ENABLE_DEVICE_SIMULATION=false (production default)",
@@ -574,8 +574,55 @@
         "Without granting real GPS, assert check-in cannot proceed to success solely from gpsSim params",
         "Optionally grant mocked geolocation in test harness and complete successful POST /check-in"
       ],
-      "expected": "AC-08e and NFR-24: production builds ignore gpsSim/cameraSim URL params; client uses real navigator.geolocation per demo-guides §7 and testing-plan §8",
+      "expected": "NFR-24 device fidelity: production builds ignore gpsSim/cameraSim URL params; client uses real navigator.geolocation per AC-08e, demo-guides §7, and testing-plan §8",
       "edgeCase": false
+    },
+    {
+      "id": "TC-AC-07-025",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["AC-07", "FR-07", "BR-15"],
+      "title": "Mobile check-in page shows TokenNotFound for unknown token without mounting GPS step",
+      "preconditions": [
+        "Authenticated enrolled Student on mobile viewport 375px width",
+        "Active session exists; deep link uses random unknown tokenId UUID not in database"
+      ],
+      "steps": [
+        "Navigate to /check-in?token=:unknownTokenId&session=:sessionId",
+        "Verify GET /api/v1/check-in/tokens/:unknownTokenId/preflight returns 404 with errorCode TokenNotFound",
+        "Verify GpsCaptureStep does not mount (no data-testid gps-capture-step or GPS permission prompt)",
+        "Verify error panel displays Không nhận diện được mã QR (TokenNotFound outcome)",
+        "Verify student remains on scan step or outcome panel without success confirmation"
+      ],
+      "expected": "AC-07d satisfied in mobile web UI: unknown token rejected at preflight with TokenNotFound message; GpsCaptureStep never mounts per BR-15",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-07-026",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["AC-07", "FR-07", "BR-15"],
+      "title": "Mobile check-in page shows SessionMismatch for mismatched deep-link session without mounting GPS step",
+      "preconditions": [
+        "Authenticated enrolled Student on mobile viewport 375px width",
+        "Active session A with valid QrToken bound to session A",
+        "Second session B exists with different sessionId",
+        "Deep link uses tokenId from session A but sessionId query param set to session B"
+      ],
+      "steps": [
+        "Navigate to /check-in?token=:tokenId&session=:sessionBId",
+        "Verify GET /api/v1/check-in/tokens/:tokenId/preflight?sessionId=:sessionBId returns HTTP 403 with errorCode SessionMismatch (or HTTP 404 TokenNotFound per AC-07f)",
+        "Verify GpsCaptureStep does not mount (no data-testid gps-capture-step or GPS permission prompt)",
+        "Verify error panel displays session-mismatch outcome message",
+        "Verify no success confirmation or Present badge shown",
+        "Verify qr_tokens row for tokenId remains status Valid (no consumption on preflight failure)"
+      ],
+      "expected": "TS-21c and AC-07f satisfied in mobile web UI: session id mismatch rejected at preflight with SessionMismatch or TokenNotFound; GpsCaptureStep never mounts per BR-15",
+      "edgeCase": true
     }
   ]
 }

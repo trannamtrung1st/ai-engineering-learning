@@ -1,0 +1,8 @@
+[2026-07-02T06:52:04Z][db] db-1  | 2026-07-02 06:52:04.872 UTC [1] LOG:  received fast shutdown request
+[2026-07-02T06:52:04Z][db] db-1  | 2026-07-02 06:52:04.874 UTC [1] LOG:  aborting any active transactions
+[2026-07-02T06:52:04Z][db] db-1  | 2026-07-02 06:52:04.883 UTC [1] LOG:  background worker "logical replication launcher" (PID 32) exited with exit code 1
+[2026-07-02T06:52:04Z][db] db-1  | 2026-07-02 06:52:04.884 UTC [27] LOG:  shutting down
+[2026-07-02T06:52:04Z][db] db-1  | 2026-07-02 06:52:04.886 UTC [27] LOG:  checkpoint starting: shutdown immediate
+[2026-07-02T06:52:04Z][db] db-1  | 2026-07-02 06:52:04.920 UTC [27] LOG:  checkpoint complete: wrote 0 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.015 s, sync=0.001 s, total=0.037 s; sync files=0, longest=0.000 s, average=0.000 s; distance=0 kB, estimate=220 kB
+[2026-07-02T06:52:04Z][db] db-1  | 2026-07-02 06:52:04.931 UTC [1] LOG:  database system is shut down
+[2026-07-02T06:52:05Z][db] [Kdb-1 exited with code 0

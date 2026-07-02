@@ -2,7 +2,7 @@
 
 Structured visual QA for **frontend** and **test** slices. Run before `SLICE_DONE`. Screenshots are the **primary** evidence for contrast and padding; accessibility snapshots are for interaction debugging only.
 
-**Authoritative specs:** [04-design-tokens.md](../../docs/ui-ux/04-design-tokens.md) §3.2.1 (button contrast pairs), §5.1 (control spacing) · [05-common-ui-components.md](../../docs/ui-ux/05-common-ui-components.md) §2.1 · [00-production-ui-quality-bar.md](../../docs/ui-ux/00-production-ui-quality-bar.md)
+**Authoritative specs:** [04-design-tokens.md](../../docs/ui-ux/04-design-tokens.md) · [05-common-ui-components.md](../../docs/ui-ux/05-common-ui-components.md) · [00-production-ui-quality-bar.md](../../docs/ui-ux/00-production-ui-quality-bar.md)
 
 ---
 
@@ -16,19 +16,19 @@ Structured visual QA for **frontend** and **test** slices. Run before `SLICE_DON
 
 ## How to capture
 
-1. Start preview: `npm run aih:preview:verify` (stack at `http://localhost:3007`)
+1. Start preview: `npm run aih:preview:verify` (stack at `http://localhost:3007` by default)
 2. Use **Playwright MCP** or **cursor-ide-browser** `browser_take_screenshot`
 3. Save to `ai-harness/generated/runs/screenshots/<slice-id>/implementer/`
 4. Filename: `<UTC-timestamp>-<route-slug>-<viewport>.png` (e.g. `20250630T120000Z-login-320w.png`)
 
 ### Required viewports
 
-| Viewport | Size | Routes |
+| Viewport | Size | When |
 | --- | --- | --- |
-| Student mobile | **320×568** | All student routes (`/check-in`, `/history`, `/login` on mobile) |
-| Desktop | **1280×720** | Instructor, admin, auth desktop layouts |
+| Mobile | **320×568** | Mobile-first or narrow layouts |
+| Desktop | **1280×720** | Desktop layouts, admin tables, wide shells |
 
-Capture **both** viewports for every route you created or modified in the slice.
+Capture **both** viewports for every route you created or modified in the slice when the product serves both form factors.
 
 ---
 
@@ -38,14 +38,14 @@ Open each screenshot and verify. Any **FAIL** → fix code → re-screenshot bef
 
 | # | Check | PASS criteria |
 | --- | --- | --- |
-| 1 | **Primary CTA** | Label readable at arm's length on 320px screenshot; `--color-primary-foreground` on `--color-primary-600` (not washed-out blue) |
-| 2 | **Secondary / outline / ghost** | Text distinguishable from `--color-surface-default` page background; outline border visible |
+| 1 | **Primary CTA** | Label readable at arm's length on 320px screenshot; primary foreground on primary background (not washed-out) |
+| 2 | **Secondary / outline / ghost** | Text distinguishable from page background; outline border visible |
 | 3 | **Disabled buttons** | Visibly disabled (muted surface) but label still legible (≥ **3:1**) |
-| 4 | **Button padding** | No cramped labels — `md` buttons have comfortable inset (min `--space-3` vertical, `--space-4` horizontal) |
-| 5 | **Stacked actions** | Gap between primary and secondary buttons (`--space-3`); not touching |
-| 6 | **Cards / tables** | Content not flush against edges — at least `--space-4` internal padding |
-| 7 | **Danger actions** | White/inverse text on `--color-danger-500`; not red-on-red |
-| 8 | **Outcome CTAs** | Check-in outcome panel recovery button meets primary contrast pair |
+| 4 | **Button padding** | No cramped labels — comfortable inset per design tokens |
+| 5 | **Stacked actions** | Gap between primary and secondary buttons; not touching |
+| 6 | **Cards / tables** | Content not flush against edges — adequate internal padding |
+| 7 | **Danger actions** | Inverse text on danger background; not same-hue on same-hue |
+| 8 | **Outcome / recovery CTAs** | Recovery actions meet primary contrast pair |
 
 ---
 
@@ -74,4 +74,4 @@ List every screenshot path under the required directory. Browser tester gate re-
 ## Related docs
 
 - [browser-mcp.md](./browser-mcp.md) — Playwright setup, screenshot paths, timeouts
-- [frontend-design skill](../skills/frontend-design/SKILL.md) — Notion craft and tester FAIL criteria
+- [frontend-design skill](../skills/frontend-design/SKILL.md) — visual craft and tester FAIL criteria

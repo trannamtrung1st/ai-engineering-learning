@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-04",
   "version": 1,
-  "docFingerprint": "sha256:ce4c73a90cbe521ea8ad065e22af5a6cf305ae62ba9191af08f27cbf588c8319",
-  "generatedAt": "2026-06-29T17:11:16Z",
+  "docFingerprint": "sha256:7ecc7e7aaa2f7d4b58c035fd9972735baacdb9e8daaaea4acfe91500a24df191",
+  "generatedAt": "2026-07-01T10:00:00Z",
   "cases": [
     {
       "id": "TC-AC-04-001",
@@ -417,16 +417,16 @@
       "title": "WF-02: Create Draft session then PATCH room GPS before open",
       "preconditions": [
         "Authenticated Instructor with ClassAssignment for HESD-01 / SWE-101",
-        "Roster enrolled for class-subject pair per WF-02 step 2"
+        "Roster enrolled for class-subject pair per WF-02 §3.2 step 2 (06-main-workflows.md)"
       ],
       "steps": [
-        "POST /api/v1/sessions with classId, subjectId, title, roomName, and scheduledStart but omit roomLatitude and roomLongitude",
+        "POST /api/v1/sessions with classId, subjectId, title, roomName, and scheduledStart but omit roomLatitude and roomLongitude (WF-02 §3.2 step 3)",
         "Assert HTTP status 201 Created and response status Draft with null GPS fields",
-        "PATCH /api/v1/sessions/:sessionId with roomLatitude 10.762622 and roomLongitude 106.660172",
+        "PATCH /api/v1/sessions/:sessionId with roomLatitude 10.762622 and roomLongitude 106.660172 (WF-02 §3.2 step 4)",
         "Assert HTTP status 200 with updated coordinates",
         "GET /api/v1/sessions/:sessionId and verify GPS fields persisted and status remains Draft"
       ],
-      "expected": "Two-step session preparation per WF-02 §3.2 completes in Draft with valid GPS; instructor ready to open check-in per AC-04a",
+      "expected": "Two-step session preparation per WF-02 §3.2 (06-main-workflows.md) completes in Draft with valid GPS; instructor ready to open check-in per AC-04a",
       "edgeCase": false
     },
     {
@@ -533,6 +533,139 @@
       ],
       "expected": "Custom radius override saved and displayed per AC-04a; default 100 m overridden when instructor adjusts for room size",
       "edgeCase": false
+    },
+    {
+      "id": "TC-AC-04-026",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["AC-04", "FR-04"],
+      "title": "Instructor browses /sessions with class/subject search, status filter chips, sort, and pagination",
+      "preconditions": [
+        "Authenticated Instructor is logged in to instructor SPA",
+        "At least 25 sessions exist across Draft, Active, and Closed/Cancelled statuses for assigned classes",
+        "Sessions include varying class codes (e.g. HESD-01) and subject names for search"
+      ],
+      "steps": [
+        "Navigate to /sessions",
+        "Verify grouped SessionCard layout with status filter chips Tất cả, Đang diễn ra, Nháp, Đã kết thúc and search input with placeholder Tìm theo lớp, môn…",
+        "Click Nháp chip and verify only Draft sessions displayed with Nháp status badges",
+        "Type HESD in search field and wait 300 ms debounce; verify results filter by classCode, className, subjectCode, or subjectName",
+        "Clear search via × control and click Tất cả chip; verify grouping order Đang diễn ra → Nháp → Đã kết thúc per 14-listing §4.3 status grouping",
+        "Verify scheduledStartTime desc default sort within active status group (most recent first)",
+        "Navigate to page 2 via Pagination footer (offset 20) or load-more and verify next batch of SessionCards loads",
+        "Apply search that matches no sessions and verify Không tìm thấy kết quả empty state with Xóa bộ lọc action"
+      ],
+      "expected": "Session list shows created Draft sessions with search, status filter chips, scheduledStartTime desc sort within group, and offset-20 pagination on /sessions instructor hub per 14-listing §0 and AC-04a",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-04-027",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "pagination",
+      "priority": "P1",
+      "traceability": ["AC-04", "FR-04"],
+      "title": "GET /api/v1/sessions with status filter and cursor/limit returns paginated instructor-scoped sessions",
+      "preconditions": [
+        "Authenticated Instructor session cookie is set with ClassAssignment for HESD-01 / SWE-101",
+        "At least 25 sessions exist for instructor scope including Draft, Active, and Closed statuses"
+      ],
+      "steps": [
+        "GET /api/v1/sessions?status=Draft&limit=20 with Instructor session cookie",
+        "Assert HTTP 200; response items length ≤ 20; every item has status Draft",
+        "Assert pagination envelope includes nextCursor when more Draft sessions exist beyond limit",
+        "Follow nextCursor on second GET /api/v1/sessions?status=Draft&limit=20&cursor=<nextCursor> and assert non-overlapping session ids",
+        "GET /api/v1/sessions?q=HESD&limit=20 and assert filtered items match class or subject search scope"
+      ],
+      "expected": "Paginated session list per API design §5.1 and §1 cursor pagination; status filter and search query params applied within instructor assignment scope for AC-04-created sessions",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-04-028",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["AC-04", "FR-04"],
+      "title": "Đã kết thúc filter chip shows Closed and Cancelled sessions in grouped list",
+      "preconditions": [
+        "Authenticated Instructor is logged in to instructor SPA",
+        "At least one Closed session and one Cancelled Draft session exist for assigned classes"
+      ],
+      "steps": [
+        "Navigate to /sessions",
+        "Click Đã kết thúc status filter chip",
+        "Verify Closed sessions display with Đã kết thúc status badge",
+        "Verify Cancelled sessions display within the same filtered view per 14-listing §4.3 instructor session list grouping",
+        "Verify open-session and QR actions are unavailable on Cancelled session cards",
+        "Click SessionCard for a Draft-created-then-cancelled session and verify detail shows Đã hủy badge"
+      ],
+      "expected": "Đã kết thúc chip filters to Closed and Cancelled terminal sessions per 14-listing §4.3; Cancelled Draft sessions from AC-04c appear in instructor session list",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-04-029",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P1",
+      "traceability": ["AC-04", "FR-04"],
+      "title": "POST /api/v1/sessions with custom gpsRadiusMeters override persists non-default radius",
+      "preconditions": [
+        "Instructor session cookie is set with assignment to target class-subject",
+        "Session payload includes gpsRadiusMeters 200 within 20–500 allowed range per API design §5.2"
+      ],
+      "steps": [
+        "POST /api/v1/sessions with roomLatitude 10.762622, roomLongitude 106.660172, gpsRadiusMeters 200, and other required fields",
+        "Assert HTTP status 201 Created",
+        "Assert response body gpsRadiusMeters is 200 and status is Draft",
+        "GET /api/v1/sessions/:sessionId and verify gpsRadiusMeters persisted as 200"
+      ],
+      "expected": "Optional GPS radius override stored per AC-04a and FR-04; default 100 m not applied when explicit override provided",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-04-030",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["AC-04", "FR-04"],
+      "title": "PATCH /api/v1/sessions/:sessionId blocked when session is Active with 409 InvalidSessionState",
+      "preconditions": [
+        "Instructor owns an Active session with valid GPS",
+        "Instructor session cookie is set"
+      ],
+      "steps": [
+        "PATCH /api/v1/sessions/:sessionId with roomLatitude 10.770000 and roomLongitude 106.670000",
+        "Assert HTTP status 409 or 422 with errorCode InvalidSessionState",
+        "GET /api/v1/sessions/:sessionId and verify original GPS coordinates unchanged"
+      ],
+      "expected": "Draft-only PATCH guard per API design §5.3 and validation rules §3.4; Active session GPS fields not mutated after open",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-04-031",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P1",
+      "traceability": ["AC-04", "FR-04"],
+      "title": "SessionService.cancel rejects non-Draft session with InvalidSessionState",
+      "preconditions": [
+        "Active session row exists in PostgreSQL test database",
+        "SessionService.cancel invoked under owning Instructor context"
+      ],
+      "steps": [
+        "Record beforeState as Active from sessions table",
+        "Invoke SessionService.cancel(sessionId) for Active session",
+        "Capture thrown domain exception with errorCode InvalidSessionState",
+        "Query sessions table and verify status remains Active"
+      ],
+      "expected": "beforeState Active, afterState Active; cancel only permitted from Draft per API design §5.6 and AC-04c; InvalidSessionState thrown",
+      "edgeCase": true
     }
   ]
 }

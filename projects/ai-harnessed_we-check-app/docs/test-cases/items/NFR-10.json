@@ -1,8 +1,8 @@
 {
   "productItemId": "NFR-10",
   "version": 1,
-  "docFingerprint": "sha256:42bc503b34306c743742631b6ce966c3b677f61a78ea9c5d1d4baaa2dbc79d93",
-  "generatedAt": "2026-06-29T18:58:09.000Z",
+  "docFingerprint": "sha256:c846b27c93f7d5a2fca97ea30039f8021ebfe5ee04711f351fc18db986850ffe",
+  "generatedAt": "2026-07-01T12:00:00.000Z",
   "cases": [
     {
       "id": "TC-NFR-10-001",
@@ -65,11 +65,12 @@
         "For each protected route in check-in category (POST /check-in, GET /check-in/tokens/:tokenId/preflight), call without auth and assert HTTP 401",
         "For each protected route in reporting category (GET /reports/session/:id, GET /reports/summary), call without auth and assert HTTP 401",
         "For export category (POST /reports/export), call without auth and assert HTTP 401",
-        "For admin category (GET /users, POST /users, PATCH /users/:id, POST /roster/import, POST /classes, POST /subjects), call without auth and assert HTTP 401",
-        "For session and attendance category (POST /sessions/:id/open, GET /sessions/:id/qr/current, GET /attendance/me/history, PATCH /attendance/:recordId, GET /auth/me), call without auth and assert HTTP 401",
+        "For admin and user category (GET /users, POST /users, PATCH /users/:id, POST /users/import, GET /users/imports/:batchId, POST /roster/import, GET /roster/imports/:batchId, POST /classes, POST /subjects, GET /classes, GET /subjects, GET /enrollments), call without auth and assert HTTP 401",
+        "For session and attendance category (GET /sessions, POST /sessions, GET /sessions/:id, POST /sessions/:id/open, POST /sessions/:id/close, GET /sessions/:id/qr/current, GET /sessions/:id/attendance, GET /attendance/me/history, PATCH /attendance/:recordId, GET /auth/me), call without auth and assert HTTP 401",
+        "For notifications and policy category (GET /notifications, PATCH /notifications/:id/read, GET /policy/absence-threshold, PUT /policy/absence-threshold), call without auth and assert HTTP 401",
         "Compute rejection rate and assert equals 100% across all sampled protected operations"
       ],
-      "expected": "NFR-10 target met: every protected operation in check-in (including BR-15 preflight), reporting, export, admin, session, and attendance categories returns HTTP 401 Unauthenticated when AuthSession is absent",
+      "expected": "NFR-10 target met: every protected operation in check-in (including BR-15 preflight), reporting, export, admin, roster catalog, session, attendance, notifications, and policy categories returns HTTP 401 Unauthenticated when AuthSession is absent",
       "edgeCase": false
     },
     {
@@ -398,6 +399,92 @@
         "Verify personal attendance history table is not rendered"
       ],
       "expected": "NFR-10 applies to student self-scoped attendance routes; unauthenticated navigation blocked with login redirect and returnUrl preserved",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-10-020",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-10", "FR-01", "BR-06", "AC-01"],
+      "title": "POST /users/import without session returns 401 before bulk user CSV processing",
+      "preconditions": [
+        "No session cookie or Authorization header",
+        "Valid user CSV multipart payload prepared per API design §3.2a"
+      ],
+      "steps": [
+        "POST /api/v1/users/import with valid CSV file and no auth credentials",
+        "Assert HTTP status 401 and errorCode Unauthenticated",
+        "Query users table and confirm no new rows from import attempt"
+      ],
+      "expected": "NFR-10 admin category: bulk user import endpoint rejects unauthenticated callers with HTTP 401 Unauthenticated; no user records created or updated",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-10-021",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-10", "FR-03", "FR-16", "BR-06"],
+      "title": "GET /classes, GET /enrollments, and GET /notifications without session return 401",
+      "preconditions": [
+        "No session cookie or Authorization header",
+        "Classes, enrollments, and notification fixtures exist in database"
+      ],
+      "steps": [
+        "GET /api/v1/classes without auth credentials",
+        "Assert HTTP status 401 and errorCode Unauthenticated",
+        "GET /api/v1/enrollments?classId=<uuid>&subjectId=<uuid> without auth",
+        "Assert HTTP status 401 and errorCode Unauthenticated",
+        "GET /api/v1/notifications without auth",
+        "Assert HTTP status 401 and errorCode Unauthenticated; response contains no notification payload"
+      ],
+      "expected": "NFR-10 roster catalog and notifications categories: HTTP 401 Unauthenticated on all sampled list endpoints; no roster or notification data returned to unauthenticated caller",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-10-022",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-10", "FR-12", "BR-06"],
+      "title": "Protected instructor report route redirects unauthenticated user to login",
+      "preconditions": [
+        "User is not logged in",
+        "Instructor report route exists at /reports per roles-permissions §2.3a"
+      ],
+      "steps": [
+        "Navigate directly to /reports without authentication",
+        "Observe redirect to /login with returnUrl encoding the reports path",
+        "Verify report table and filter controls are not rendered"
+      ],
+      "expected": "NFR-10 applies to instructor report UI surface; unauthenticated navigation blocked with login redirect and returnUrl preserved; no report data visible",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-10-023",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-10", "FR-18", "BR-06", "AC-18"],
+      "title": "Route discovery quick links on / redirect protected targets to login with returnUrl",
+      "preconditions": [
+        "Bootstrap complete (needsSetup false)",
+        "User is not logged in (no wecheck_session cookie)"
+      ],
+      "steps": [
+        "Navigate to / without authentication",
+        "Assert RouteDiscoveryPanel visible with quick links labeled Đăng nhập, Điểm danh, Buổi học, and Quản trị per AC-18f",
+        "Click Điểm danh link and assert redirect to /login with returnUrl encoding /check-in",
+        "Return to /; click Buổi học link and assert redirect to /login with returnUrl encoding /sessions",
+        "Return to /; click Quản trị link and assert redirect to /login with returnUrl encoding /admin",
+        "Verify protected page content is not rendered at any step"
+      ],
+      "expected": "NFR-10 browser auth gate: all protected route-discovery entry points on unauthenticated / enforce login redirect with returnUrl; no protected UI or data visible before authentication per AC-18f and BR-06",
       "edgeCase": false
     }
   ]

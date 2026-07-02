@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SessionStatus } from "@wecheck/domain";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { toast } from "sonner";
 import { CameraConsentBanner } from "@/components/domain/check-in/camera-consent-banner";
 import { LocationConsentBanner } from "@/components/domain/check-in/location-consent-banner";
 import { UnsupportedBrowserGate } from "@/components/domain/check-in/unsupported-browser-gate";
@@ -23,7 +22,6 @@ import {
   resolveOutcomeAction,
 } from "@/lib/checkin-outcome";
 import type { CheckInOutcomeCode } from "@/lib/copy/checkin-messages";
-import { authMessages } from "@/lib/copy/checkin-messages";
 import { resolveBrowserSupport } from "@/lib/detect-browser-support";
 import { resolveMobilePlatform } from "@/lib/detect-platform";
 import {
@@ -85,6 +83,9 @@ function clearPreviewConsentIfRequested(): void {
       localStorage.removeItem(LOCATION_CONSENT_KEY);
       localStorage.removeItem(CAMERA_CONSENT_KEY);
     }
+    if (readExpireSessionOnSubmit()) {
+      markLocationConsent();
+    }
   } catch {
     // ignore storage failures
   }
@@ -118,7 +119,8 @@ export function CheckInFlow({ initialTokenId, previewOutcome }: CheckInFlowProps
       if (readClearConsentOnEntry() && !hasCameraConsent()) return "camera_consent";
       return "scan";
     }
-    if (deepLinkTokenId) return hasLocationConsent() ? "preflight" : "consent";
+    // BR-15 — run token preflight before location consent (ExpiredQr needs no GPS)
+    if (deepLinkTokenId) return "preflight";
     if (hasLocationConsent()) return hasCameraConsent() ? "scan" : "camera_consent";
     return "consent";
   };
@@ -143,7 +145,7 @@ export function CheckInFlow({ initialTokenId, previewOutcome }: CheckInFlowProps
 
   const [step, setStep] = useState<CheckInStep>(resolveInitialStep);
   const [showConsent, setShowConsent] = useState(
-    () => !previewOutcome && !forceScanner && !hasLocationConsent(),
+    () => !previewOutcome && !forceScanner && !deepLinkTokenId && !hasLocationConsent(),
   );
   const [showCameraConsent, setShowCameraConsent] = useState(() => {
     if (previewOutcome) return false;
@@ -160,7 +162,6 @@ export function CheckInFlow({ initialTokenId, previewOutcome }: CheckInFlowProps
   const [preflightPassed, setPreflightPassed] = useState(false);
   const preflightStarted = useRef(false);
   const autoGpsStarted = useRef(false);
-  const authVerified = useRef(false);
   const sessionBlocked = useRef(false);
   const [sessionGate, setSessionGate] = useState<SessionGate>(() =>
     sessionId && !previewOutcome ? "checking" : "idle",
@@ -171,24 +172,14 @@ export function CheckInFlow({ initialTokenId, previewOutcome }: CheckInFlowProps
   const redirectToLogin = useCallback(
     (options?: { sessionExpired?: boolean }) => {
       const returnPath = buildReturnPath(rawTokenId, searchParams.get("session"));
-      if (options?.sessionExpired) {
-        toast.error(authMessages.sessionExpired, { id: "session-expired" });
-        window.setTimeout(() => {
-          window.location.href = loginReturnUrl(returnPath, options);
-        }, 0);
-        return;
-      }
       window.location.href = loginReturnUrl(returnPath, options);
     },
     [rawTokenId, searchParams],
   );
 
   const ensureAuthenticated = useCallback(async (): Promise<boolean> => {
-    if (authVerified.current) return true;
-
     const result = await fetchAuthUser();
     if (result.ok) {
-      authVerified.current = true;
       return true;
     }
 
@@ -242,9 +233,14 @@ export function CheckInFlow({ initialTokenId, previewOutcome }: CheckInFlowProps
   }, [previewOutcome, sessionId]);
 
   useEffect(() => {
+    preflightStarted.current = false;
+    setPreflightPassed(false);
+  }, [rawTokenId, sessionId]);
+
+  useEffect(() => {
     if (previewOutcome) return;
     void ensureAuthenticated();
-  }, [ensureAuthenticated, previewOutcome]);
+  }, [ensureAuthenticated, previewOutcome, rawTokenId, sessionId]);
 
   const runPreflight = useCallback(
     async (tokenId: string) => {
@@ -281,11 +277,15 @@ export function CheckInFlow({ initialTokenId, previewOutcome }: CheckInFlowProps
 
     preflightStarted.current = true;
     void runPreflight(activeTokenId).then((passed) => {
-      if (passed) {
-        setStep("gps");
-        setGpsAttempt(0);
-        autoGpsStarted.current = false;
+      if (!passed) return;
+      if (!hasLocationConsent()) {
+        setStep("consent");
+        setShowConsent(true);
+        return;
       }
+      setStep("gps");
+      setGpsAttempt(0);
+      autoGpsStarted.current = false;
     });
   }, [
     activeTokenId,

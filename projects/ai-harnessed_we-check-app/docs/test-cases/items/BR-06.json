@@ -1,8 +1,8 @@
 {
   "productItemId": "BR-06",
   "version": 1,
-  "docFingerprint": "sha256:7fa6e5f0fa1fb178b99256355a681409f9ca3b3a224ea6b785c745d780059c2e",
-  "generatedAt": "2026-06-29T18:26:02.000Z",
+  "docFingerprint": "sha256:2f4339d78ef523c323a8974779165acbd0a71755d9c7e3df622be9ab3506c35c",
+  "generatedAt": "2026-06-30T12:00:00.000Z",
   "cases": [
     {
       "id": "TC-BR-06-001",
@@ -19,7 +19,7 @@
       "steps": [
         "POST /api/v1/check-in with valid tokenId, latitude, and longitude and no auth credentials",
         "Assert HTTP status 401 and errorCode Unauthenticated",
-        "Assert response message is Vui lòng đăng nhập để tiếp tục per error-handling §4.1",
+        "Assert response message is Vui lòng đăng nhập để tiếp tục per error-handling §2.2",
         "Query attendance_records and check_in_attempts for the session to confirm no Present status or Success outcome"
       ],
       "expected": "BR-06 blocks check-in at Layer 2 authentication before session state, token, or GPS evaluation; HTTP 401 Unauthenticated; no attendance record created or updated",
@@ -441,6 +441,29 @@
         "Verify response body contains no session summary fields (class, subject, room) indicating BR-15 domain chain did not run"
       ],
       "expected": "BR-06 blocks preflight at Layer 2 authentication per BR-15 scope; HTTP 401 Unauthenticated; enrollment and token validity checks never execute for unauthenticated callers",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-06-022",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-06", "FR-02", "AC-02"],
+      "title": "UserMenu Đăng xuất clears session, lands on login, and blocks protected routes",
+      "preconditions": [
+        "Authenticated student or instructor session established via login",
+        "User is on a protected role shell route with UserMenu visible"
+      ],
+      "steps": [
+        "Open UserMenu in layout chrome",
+        "Select Đăng xuất",
+        "Assert POST /api/v1/auth/logout returns HTTP 204 and Set-Cookie clears wecheck_session cookie",
+        "Observe browser navigates to /login without returnUrl query parameter",
+        "Navigate directly to a protected route (e.g. /sessions or /check-in) without logging in again",
+        "Observe redirect to /login with returnUrl encoding the attempted protected path"
+      ],
+      "expected": "AC-02d satisfied: logout revokes session per BR-06 and API design §2.3; user lands on /login; subsequent protected navigation blocked with login redirect and returnUrl preserved",
       "edgeCase": false
     }
   ]

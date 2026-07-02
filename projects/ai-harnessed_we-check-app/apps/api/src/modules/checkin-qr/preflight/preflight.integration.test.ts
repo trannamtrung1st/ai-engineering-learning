@@ -64,7 +64,7 @@ describe("check-in preflight integration (AC-07, FR-07, BR-03, BR-11, BR-15)", (
   });
 
   after(async () => {
-    sessionService.qr.stopAll();
+    await sessionService.qr.stopAll();
     resetClock();
     await app.close();
     await closePool();
@@ -72,7 +72,7 @@ describe("check-in preflight integration (AC-07, FR-07, BR-03, BR-11, BR-15)", (
 
   async function resetDb(afterTruncate?: () => Promise<void>): Promise<void> {
     await withIntegrationTestDbReset(db, async () => {
-      sessionService.qr.stopAll();
+      await sessionService.qr.stopAll();
       await truncateCheckInTables(db);
       await truncateRosterTables(db);
       await truncateAuthTables(db);

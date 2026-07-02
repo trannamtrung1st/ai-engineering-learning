@@ -77,6 +77,32 @@ export class UserRepository {
     return row ? mapRow(row) : null;
   }
 
+  async findByEmailOnClient(
+    client: PoolClient,
+    email: string,
+  ): Promise<UserRecord | null> {
+    const result = await client.query<UserRow>(
+      `SELECT id, institutional_id, display_name, email, password_hash, role, active, created_at, updated_at
+       FROM users WHERE email = $1`,
+      [email],
+    );
+    const row = result.rows[0];
+    return row ? mapRow(row) : null;
+  }
+
+  async findByInstitutionalIdOnClient(
+    client: PoolClient,
+    institutionalId: string,
+  ): Promise<UserRecord | null> {
+    const result = await client.query<UserRow>(
+      `SELECT id, institutional_id, display_name, email, password_hash, role, active, created_at, updated_at
+       FROM users WHERE institutional_id = $1`,
+      [institutionalId],
+    );
+    const row = result.rows[0];
+    return row ? mapRow(row) : null;
+  }
+
   async create(
     input: CreateUserInput & { passwordHash: string },
   ): Promise<UserRecord> {
@@ -194,6 +220,48 @@ export class UserRepository {
     return row ? mapRow(row) : null;
   }
 
+  async updateOnClient(
+    client: PoolClient,
+    userId: string,
+    fields: {
+      displayName?: string;
+      email?: string;
+      role?: UserRole;
+      active?: boolean;
+    },
+  ): Promise<UserRecord | null> {
+    const sets: string[] = ["updated_at = NOW()"];
+    const values: unknown[] = [];
+    let idx = 1;
+
+    if (fields.displayName !== undefined) {
+      sets.push(`display_name = $${idx++}`);
+      values.push(fields.displayName);
+    }
+    if (fields.email !== undefined) {
+      sets.push(`email = $${idx++}`);
+      values.push(fields.email);
+    }
+    if (fields.role !== undefined) {
+      sets.push(`role = $${idx++}`);
+      values.push(fields.role);
+    }
+    if (fields.active !== undefined) {
+      sets.push(`active = $${idx++}`);
+      values.push(fields.active);
+    }
+
+    values.push(userId);
+    const result = await client.query<UserRow>(
+      `UPDATE users SET ${sets.join(", ")}
+       WHERE id = $${idx}
+       RETURNING id, institutional_id, display_name, email, password_hash, role, active, created_at, updated_at`,
+      values,
+    );
+    const row = result.rows[0];
+    return row ? mapRow(row) : null;
+  }
+
   async list(options: {
     role?: UserRole;
     active?: boolean;
@@ -215,7 +283,7 @@ export class UserRepository {
     }
     if (options.search) {
       conditions.push(
-        `(email ILIKE $${idx} OR institutional_id ILIKE $${idx})`,
+        `(email ILIKE $${idx} OR institutional_id ILIKE $${idx} OR display_name ILIKE $${idx})`,
       );
       values.push(`%${options.search}%`);
       idx++;

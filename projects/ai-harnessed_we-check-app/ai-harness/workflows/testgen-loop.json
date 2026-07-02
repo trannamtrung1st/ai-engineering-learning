@@ -72,7 +72,7 @@
         "require": ["concurrency"]
       },
       {
-        "tagMatches": "^AC-1[34]$|^FR-29$",
+        "tagMatches": "^AC-1[34]$",
         "require": ["pagination"]
       },
       {
@@ -84,8 +84,7 @@
       "tagMatches": [
         "^AC-1[34]$",
         "^AC-1[567]$",
-        "^FR-2[89]$",
-        "^FR-3[0-6]$"
+        "^FR-18$"
       ],
       "minBrowserCases": 1
     }

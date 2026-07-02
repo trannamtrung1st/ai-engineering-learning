@@ -12,6 +12,7 @@ import { UserMenu } from "@/components/shared/navigation/user-menu";
 import { IconButton } from "@/components/ui/icon-button";
 import { type AuthOutletContext } from "@/components/auth/require-auth";
 import { NotificationBell } from "@/components/notifications/notification-bell";
+import { logoutAuth } from "@/lib/auth-session";
 
 const instructorNavIcons = {
   "/sessions": Calendar,
@@ -90,7 +91,13 @@ export function InstructorLayout({
           </div>
           <div className="flex items-center gap-2">
             <NotificationBell />
-            <UserMenu displayName={user.displayName} role={UserRole.Instructor} />
+            <UserMenu
+              displayName={user.displayName}
+              email={user.email}
+              institutionalId={user.institutionalId}
+              role={UserRole.Instructor}
+              onLogout={logoutAuth}
+            />
           </div>
         </header>
         <main id="main-content" className="flex-1">

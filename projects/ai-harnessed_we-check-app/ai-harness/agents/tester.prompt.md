@@ -33,13 +33,13 @@ This is a **browser verification pass only**. Computational checks (typecheck, l
 Also read when relevant:
 
 - `docs/brds/08-acceptance-mvp-future.md` — map each acceptance tag to expected behavior
-- `ai-harness/docs/browser-mcp.md` — standard participant/organizer flows
+- `ai-harness/docs/browser-mcp.md` — standard student/instructor/admin flows
 - `ai-harness/docs/playwright-regression.md` — Playwright spec template and codegen rules
 - `ai-harness/docs/ux-bug-logging.md` — UX bug schema and severity gate
 - `docs/ui-ux/00-production-ui-quality-bar.md` — UI quality expectations for frontend slices
 - `docs/ui-ux/14-listing-pages-search-filter-sort.md` — §0 mandatory search/filter/sort/pagination on listing slices
-- `ai-harness/skills/frontend-design/SKILL.md` — visual craft and Notion design system direction
-- `ai-harness/skills/design-craft-notion/SKILL.md` — workspace density, sidebar, database toolbars
+- `ai-harness/skills/frontend-design/SKILL.md` — visual craft direction
+- `ai-harness/skills/design-craft-notion/SKILL.md` — workspace density, listing toolbars (when applicable)
 - `ai-harness/skills/ui-ux-testing/SKILL.md` — UX defect taxonomy and `UX-*` bug logging
 
 ## Generated test cases (mandatory checklist)
@@ -55,7 +55,7 @@ Before attempting a case, decide whether Playwright MCP against the local previe
 | Situation | Report format |
 |-----------|---------------|
 | Requires real physical devices (pilot device matrix, native camera/GPS on hardware, physical iOS/Android walkthrough) | `TC-…: SKIP — physical-device — <brief reason>` |
-| Not applicable in this harness pass (Lighthouse/4G audit, axe-core tooling not available, instructor-only slice scope, case preconditions impossible in preview) | `TC-…: SKIP — not-applicable — <brief reason>` |
+| Not applicable in this harness pass (Lighthouse/4G audit, axe-core tooling not available, role-only slice scope, case preconditions impossible in preview) | `TC-…: SKIP — not-applicable — <brief reason>` |
 
 Skipped cases are **ignored** in the final result — they do not block `BROWSER_TEST_PASS` and do not trigger retry fail-fast. Only mark `SKIP` when the limitation is environmental/tooling, not a product defect.
 
@@ -74,12 +74,20 @@ The harness may run browser verification in one or two phases. Follow the **phas
 
 ### Full phase (`## Full verification phase`)
 
-1. Execute **every** `layer: browser` case (normal mandatory checklist behavior)
-2. **UX audit pass** — review each screenshot against `ui-ux-testing` skill; log `UX-*` bugs not already covered by `TC-*: FAIL`
+1. Execute **every** `layer: browser` case (normal mandatory checklist behavior). When the checklist exceeds `playwrightMaxCasesPerSlice` in `ralph-loop.json`, prioritize P0/P1 cases first.
+2. **UI/UX screen audit** (after functional cases, before final signal):
+   - Enumerate every **screen/state** exercised (from test cases + slice `completionArtifacts`)
+   - For each, capture screenshot to `ai-harness/generated/runs/screenshots/<slice-id>/browser-test/`
+   - Run the 10-item checklist from `ai-harness/docs/ui-visual-verification.md` on each screenshot
+   - Log defects as `UX-<slice-id>-NNN` per `ai-harness/docs/ux-bug-logging.md` (P0/P1 = contrast, illegible disabled, missing forbidden chrome, broken touch targets; P2/P3 = spacing, breadcrumb, minor alignment)
+   - Minimum: **1 screenshot per distinct screen/state** verified in full phase
+   - Include in browser test summary: `uiScreensAudited: [{ "screen": "/route", "screenshot": "...", "checklistPass": true|false, "failedChecks": [1,4] }]`
 3. Write `{{UX_BUGS_PATH}}` per schema before final signal
 4. **Playwright regression codegen** — update `{{PLAYWRIGHT_OUTPUT_PATH}}` from exercised flows (see `ai-harness/docs/playwright-regression.md`)
 5. Emit `playwright-regression: {{PLAYWRIGHT_OUTPUT_PATH}} (N tests)` where N = count of `test()` blocks written
 6. Emit `BROWSER_TEST_PASS` only when all runnable cases pass **and** no P0/P1 UX bugs remain
+
+Retry phase: skip UX audit (unchanged).
 
 **Fail-fast vs step timeout:** per-action 30s timeouts still apply (do not abandon a stuck step before its timeout). Fail-fast means stop the **case list** after the first failing case in a retry phase — not skip waiting for expected UI within a case.
 
@@ -87,7 +95,7 @@ The harness may run browser verification in one or two phases. Follow the **phas
 
 {{SCREENSHOT_DIR_BLOCK}}
 
-1. Confirm preview stack is up: `http://localhost:3007` (web), API at `http://localhost:3001/api/v1/health`
+1. Confirm preview stack is up: `http://localhost:3007` (web preview default), API at `http://localhost:3001/api/v1/health`
 2. Authenticate when routes require it (dev login or token flow)
 3. For each browser test case: follow `preconditions`, `steps`, verify `expected`
 4. **For each distinct page visited**, save a screenshot to the directory above when visual state matters (layout, badges, tables, forms, empty/error/loading states, mobile-relevant UI). Review against quality bar, `frontend-design`, `design-craft-notion`, and `ui-ux-testing` skills
@@ -99,14 +107,14 @@ Browser verification must finish in **one bounded pass**:
 
 1. **Per navigation/action:** abandon after **30s** without expected content — FAIL the case with URL and last visible state; do not retry the same stuck step indefinitely
 2. **Whole pass:** complete within **15 minutes**; if over budget, FAIL remaining cases as `timeout — pass incomplete` and emit `BROWSER_TEST_FAIL`
-3. Do **not** wait on infinite spinners, permission dialogs you cannot dismiss, or camera/GPS prompts that never resolve
+3. Do **not** wait on infinite spinners, permission dialogs you cannot dismiss, or device prompts that never resolve
 4. Run `npm run aih:preview:verify` once at start — do not restart preview unless necessary
 
 ### Minimum coverage by slice type
 
-- **Student frontend:** check-in flow, outcome panels, permission errors, mobile viewport
-- **Instructor frontend:** session list/monitor, roster tables, report filter bar + scoped CSV when in scope
-- **Admin frontend:** listing pages with §0 toolbar matrix, catalog CRUD, export flows
+- **Student frontend:** check-in flow (QR scan, GPS, outcome panel), attendance history pagination when in scope
+- **Instructor frontend:** paginated session table, session create/open, QR display, live monitor, roster edits
+- **Admin frontend:** user/class/roster admin tables, reports, CSV export, policy screens when in scope
 - **Test slice:** flows tied to generated cases and `acceptanceTags` in backlog `testRequirements`
 
 ## Output format

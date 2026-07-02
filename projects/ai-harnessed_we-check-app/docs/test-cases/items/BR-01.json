@@ -1,8 +1,8 @@
 {
   "productItemId": "BR-01",
   "version": 1,
-  "docFingerprint": "sha256:7fa6e5f0fa1fb178b99256355a681409f9ca3b3a224ea6b785c745d780059c2e",
-  "generatedAt": "2026-06-29T18:17:17Z",
+  "docFingerprint": "sha256:2f4339d78ef523c323a8974779165acbd0a71755d9c7e3df622be9ab3506c35c",
+  "generatedAt": "2026-06-30T10:13:39Z",
   "cases": [
     {
       "id": "TC-BR-01-001",
@@ -11,20 +11,20 @@
       "technique": "scenario-matrix",
       "priority": "P0",
       "traceability": ["BR-01", "FR-05", "AC-05"],
-      "title": "TS-14: Check-in allowed while session Active and now ≤ scheduledStart + 10 minutes",
+      "title": "TS-14: Check-in allowed while session Active and within attendance window",
       "preconditions": [
         "Active session with openedAt set, scheduledStart in the past, and status Active",
-        "Test clock fixed so openedAt ≤ now ≤ scheduledStart + 10 minutes per state-machines §2.4",
+        "Test clock fixed so openedAt ≤ now ≤ min(closedAt, scheduledStart + 10 minutes) per state-machines §2.4",
         "Authenticated enrolled Student with valid unexpired QR token",
         "Student coordinates within session gpsRadiusMeters"
       ],
       "steps": [
-        "POST /check-in with tokenId and in-radius coordinates using Student session",
+        "POST /api/v1/check-in with tokenId and in-radius coordinates using Student session",
         "Assert HTTP status 200 and outcome Success",
-        "GET /sessions/:sessionId/attendance for the student",
+        "GET /api/v1/sessions/:sessionId/attendance for the student",
         "Assert attendance status is Present with checkedInAt populated"
       ],
-      "expected": "Check-in succeeds within attendance window per BR-01; session remains Active until window end or manual close",
+      "expected": "Check-in succeeds when session Active and windowStart ≤ now ≤ windowEnd per state-machines §2.4 and BR-01; session remains Active until window end or manual close",
       "edgeCase": false
     },
     {
@@ -43,11 +43,11 @@
       ],
       "steps": [
         "Trigger AutoCloseScheduler tick at advanced clock time",
-        "GET /sessions/:sessionId and assert status Closed with closedAt set",
-        "GET /sessions/:sessionId/attendance and assert summary.pending is 0 and summary.absent equals M",
+        "GET /api/v1/sessions/:sessionId and assert status Closed with closedAt set",
+        "GET /api/v1/sessions/:sessionId/attendance and assert summary.pending is 0 and summary.absent equals M",
         "Query attendance_records for sessionId and verify all previously Pending rows are Absent"
       ],
-      "expected": "System scheduler auto-closes session per BR-01 trigger; all Pending attendance records become Absent",
+      "expected": "System scheduler auto-closes session per BR-01 trigger when now ≥ scheduledStart + 10 min; all Pending attendance records become Absent",
       "edgeCase": false
     },
     {
@@ -64,10 +64,10 @@
         "QR token for the closed session (valid or expired)"
       ],
       "steps": [
-        "POST /check-in with tokenId and valid coordinates using Student session",
+        "POST /api/v1/check-in with tokenId and valid coordinates using Student session",
         "Assert HTTP status 403 and outcome SessionNotActive with errorCode SessionNotActive",
         "Assert localized Vietnamese message indicates session is not active",
-        "GET /sessions/:sessionId/attendance for the student and assert status remains Absent"
+        "GET /api/v1/sessions/:sessionId/attendance for the student and assert status remains Absent"
       ],
       "expected": "Late check-in rejected per BR-01 outcome; Absent status unchanged unless instructor manually overrides per BR-10",
       "edgeCase": false
@@ -106,7 +106,7 @@
       "preconditions": [
         "Active session row with scheduled_start in the past and status Active",
         "TestClock fixed at scheduledStart + 10 minutes",
-        "AutoCloseScheduler queries Active sessions past window end"
+        "AutoCloseScheduler queries Active sessions past window end per state-machines §2.4"
       ],
       "steps": [
         "Record beforeState Active from sessions table",
@@ -124,11 +124,11 @@
       "technique": "module-integration",
       "priority": "P0",
       "traceability": ["BR-01"],
-      "title": "CheckInService rejects check-in when now exceeds scheduledStart + 10 minutes before close",
+      "title": "CheckInService rejects check-in when now exceeds windowEnd before close",
       "preconditions": [
-        "Active session row in PostgreSQL with scheduled_start known",
+        "Active session row in PostgreSQL with scheduled_start and openedAt known",
         "TestClock fixed at scheduledStart + 10 minutes + 1 second",
-        "CheckInService attendance window guard reads scheduledStart + 10 min per validation-rules §5.1 step 6"
+        "CheckInService attendance window guard uses windowEnd = min(closedAt, scheduledStart + 10 min) per validation-rules §5.1 step 6"
       ],
       "steps": [
         "Invoke CheckInService.submitCheckIn with valid token, enrollment, and coordinates",
@@ -136,7 +136,7 @@
         "Query attendance_records for studentId and sessionId",
         "Assert outcome SessionNotActive and attendance status remains Pending"
       ],
-      "expected": "Attendance window end enforced at Layer 4 before token expiry checks complete; no Present record created per BR-01",
+      "expected": "Attendance window end enforced at Layer 4 when now > windowEnd per state-machines §2.4; no Present record created per BR-01",
       "edgeCase": false
     },
     {
@@ -146,13 +146,13 @@
       "technique": "http-contract",
       "priority": "P0",
       "traceability": ["BR-01"],
-      "title": "POST /check-in returns 403 SessionNotActive when session is Closed",
+      "title": "POST /api/v1/check-in returns 403 SessionNotActive when session is Closed",
       "preconditions": [
         "Closed sessionId with enrolled Student authenticated",
         "Student has Absent attendance record from session finalize"
       ],
       "steps": [
-        "POST /check-in with tokenId and valid coordinates using Student session",
+        "POST /api/v1/check-in with tokenId and valid coordinates using Student session",
         "Assert HTTP status 403",
         "Assert response body contains errorCode SessionNotActive and outcome SessionNotActive",
         "Assert response envelope matches check-in failure contract per API design §6.3"
@@ -167,19 +167,19 @@
       "technique": "http-contract",
       "priority": "P0",
       "traceability": ["BR-01", "FR-05"],
-      "title": "POST /sessions/:sessionId/close returns 200 with Closed Session DTO and stops check-in",
+      "title": "POST /api/v1/sessions/:sessionId/close returns 200 with Closed Session DTO and stops check-in",
       "preconditions": [
         "Instructor session cookie is set",
         "Active sessionId owned by instructor with at least one Pending attendance record",
         "Current time is before scheduledStart + 10 minutes (manual early close scenario)"
       ],
       "steps": [
-        "Send POST /sessions/:sessionId/close with Instructor session",
+        "Send POST /api/v1/sessions/:sessionId/close with Instructor session",
         "Assert HTTP status 200",
         "Assert response body contains status Closed and closedAt timestamp earlier than scheduledStart + 10 min",
-        "POST /check-in as enrolled Student and assert HTTP 403 SessionNotActive"
+        "POST /api/v1/check-in as enrolled Student and assert HTTP 403 SessionNotActive"
       ],
-      "expected": "Manual instructor close per BR-01 trigger ends attendance window immediately; subsequent check-in rejected",
+      "expected": "Manual instructor close per BR-01 trigger sets closedAt as effective windowEnd; subsequent check-in rejected",
       "edgeCase": false
     },
     {
@@ -189,19 +189,19 @@
       "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["BR-01"],
-      "title": "Check-in at scheduledStart + 10 minutes exactly is allowed (inclusive window end)",
+      "title": "Check-in at scheduledStart + 10 minutes exactly is allowed (inclusive windowEnd)",
       "preconditions": [
-        "Active session with scheduledStart in the past",
+        "Active session with openedAt ≤ scheduledStart + 10 minutes",
         "Test clock fixed at exactly scheduledStart + 10 minutes",
         "Authenticated enrolled Student with valid unexpired QR token and in-radius coordinates"
       ],
       "steps": [
-        "POST /check-in with tokenId and coordinates using Student session",
+        "POST /api/v1/check-in with tokenId and coordinates using Student session",
         "Assert HTTP status 200 and outcome Success",
-        "GET /sessions/:sessionId/attendance for the student",
+        "GET /api/v1/sessions/:sessionId/attendance for the student",
         "Assert attendance status is Present"
       ],
-      "expected": "Window end is inclusive (now ≤ scheduledStart + 10 min) per BR-01 condition; check-in allowed at exact boundary",
+      "expected": "windowEnd is inclusive (now ≤ min(closedAt, scheduledStart + 10 min)) per state-machines §2.4; check-in allowed at exact boundary",
       "edgeCase": true
     },
     {
@@ -211,19 +211,19 @@
       "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["BR-01"],
-      "title": "Check-in one second after window end returns 403 SessionNotActive while session still Active",
+      "title": "Check-in one second after windowEnd returns 403 SessionNotActive while session still Active",
       "preconditions": [
-        "Active session with scheduledStart in the past",
+        "Active session with scheduledStart in the past and openedAt ≤ scheduledStart + 10 minutes",
         "Test clock fixed at scheduledStart + 10 minutes + 1 second before auto-close scheduler runs",
         "Authenticated enrolled Student with valid QR token"
       ],
       "steps": [
-        "POST /check-in with valid tokenId and in-radius coordinates using Student session",
+        "POST /api/v1/check-in with valid tokenId and in-radius coordinates using Student session",
         "Assert HTTP status 403 and outcome SessionNotActive with errorCode SessionNotActive",
-        "GET /sessions/:sessionId and assert status is still Active until scheduler runs",
-        "GET /sessions/:sessionId/attendance for student and assert status remains Pending"
+        "GET /api/v1/sessions/:sessionId and assert status is still Active until scheduler runs",
+        "GET /api/v1/sessions/:sessionId/attendance for student and assert status remains Pending"
       ],
-      "expected": "Check-in rejected when now > scheduledStart + 10 min per BR-01; SessionNotActive returned before auto-close finalize",
+      "expected": "Check-in rejected when now > windowEnd per state-machines §2.4 and BR-01; SessionNotActive returned before auto-close finalize",
       "edgeCase": true
     },
     {
@@ -233,19 +233,19 @@
       "technique": "state-transition",
       "priority": "P0",
       "traceability": ["BR-01", "FR-05"],
-      "title": "Manual close before scheduled window end sets closedAt as effective window end",
+      "title": "Manual close before scheduled window end sets closedAt as effective windowEnd",
       "preconditions": [
         "Active session opened 2 minutes ago with scheduledStart in the past",
-        "Current time is scheduledStart + 5 minutes (before 10-minute window end)",
+        "Current time is scheduledStart + 5 minutes (before nominal 10-minute window end)",
         "SessionService.close available under Instructor context"
       ],
       "steps": [
-        "Record scheduledStart and compute nominal window end scheduledStart + 10 min",
+        "Record scheduledStart and compute nominal windowEnd scheduledStart + 10 min",
         "Invoke SessionService.close(sessionId)",
-        "Query sessions table and assert closed_at is before nominal window end",
+        "Query sessions table and assert closed_at is before nominal windowEnd",
         "Attempt CheckInService.submitCheckIn and assert SessionNotActive outcome"
       ],
-      "expected": "Instructor manual close ends attendance window early per BR-01 exception clause; closedAt replaces nominal window end",
+      "expected": "Instructor manual close sets closedAt as effective windowEnd per state-machines §2.4; check-in rejected when now > closedAt even if before scheduledStart + 10 min",
       "edgeCase": false
     },
     {
@@ -255,16 +255,16 @@
       "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["BR-01", "FR-05"],
-      "title": "Student denied POST /sessions/:sessionId/close with 403 Forbidden",
+      "title": "Student denied POST /api/v1/sessions/:sessionId/close with 403 Forbidden",
       "preconditions": [
         "Authenticated Student session is available",
         "Active sessionId within attendance window exists",
         "Student role lacks session:write permission per roles-permissions §2.2"
       ],
       "steps": [
-        "POST /sessions/:sessionId/close using Student session cookie",
+        "POST /api/v1/sessions/:sessionId/close using Student session cookie",
         "Assert HTTP status 403 Forbidden and errorCode Forbidden",
-        "GET /sessions/:sessionId and assert status remains Active",
+        "GET /api/v1/sessions/:sessionId and assert status remains Active",
         "Verify attendance window remains open for eligible check-ins"
       ],
       "expected": "Only instructor may manually close session per BR-01 trigger; Student cannot end attendance window via close endpoint",
@@ -277,16 +277,16 @@
       "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["BR-01"],
-      "title": "Student denied POST /sessions/:sessionId/open with 403 Forbidden",
+      "title": "Student denied POST /api/v1/sessions/:sessionId/open with 403 Forbidden",
       "preconditions": [
         "Authenticated Student session is available",
         "Draft session with valid GPS exists",
         "Student role lacks session:write permission"
       ],
       "steps": [
-        "POST /sessions/:sessionId/open using Student session cookie",
+        "POST /api/v1/sessions/:sessionId/open using Student session cookie",
         "Assert HTTP status 403 Forbidden and errorCode Forbidden",
-        "GET /sessions/:sessionId and assert status remains Draft"
+        "GET /api/v1/sessions/:sessionId and assert status remains Draft"
       ],
       "expected": "Student cannot open sessions; attendance window cannot be started by Student role",
       "edgeCase": false
@@ -309,6 +309,7 @@
         "Confirm close in dialog prompt (*Kết thúc điểm danh?*)",
         "Wait for status badge update to Đã kết thúc (Closed)",
         "Verify roster table shows remaining Pending students marked Vắng (Absent)",
+        "Verify monitor tab shows banner *Buổi học đã kết thúc* and polling stops",
         "Verify QR display and check-in actions are unavailable"
       ],
       "expected": "Manual close via UI per BR-01 instructor trigger; attendance window closed; Pending students finalized to Absent",
@@ -346,7 +347,7 @@
       "title": "Instructor session detail shows Active status badge during open attendance window",
       "preconditions": [
         "Instructor is logged in with Active session in progress",
-        "Current time is within scheduledStart + 10 minute window",
+        "Current time satisfies openedAt ≤ now ≤ min(closedAt, scheduledStart + 10 minutes) per state-machines §2.4",
         "Instructor navigates to session detail page"
       ],
       "steps": [
@@ -369,7 +370,7 @@
       "preconditions": [
         "Active session past scheduledStart + 10 minutes on TestClock",
         "AutoCloseScheduler and SessionService.close both eligible to run",
-        "Optimistic lock on Session.version enabled"
+        "Optimistic lock on Session.version enabled per 06-main-workflows.md §9"
       ],
       "steps": [
         "Launch parallel SessionService.close(sessionId) and AutoCloseScheduler tick for same sessionId",
@@ -392,15 +393,15 @@
       "preconditions": [
         "Roster seeded for HESD-01 / SWE-101",
         "Draft session with valid GPS created and opened to Active",
-        "Test clock within scheduledStart + 10 minute window",
+        "Test clock within attendance window (openedAt ≤ now ≤ scheduledStart + 10 min)",
         "Authenticated enrolled Student and Instructor sessions available"
       ],
       "steps": [
-        "Student POST /check-in with valid token and coordinates; assert outcome Success",
-        "Instructor GET /sessions/:sessionId/attendance; assert Present count incremented",
-        "Instructor POST /sessions/:sessionId/close before window end",
+        "Student POST /api/v1/check-in with valid token and coordinates; assert outcome Success",
+        "Instructor GET /api/v1/sessions/:sessionId/attendance; assert Present count incremented",
+        "Instructor POST /api/v1/sessions/:sessionId/close before window end",
         "Assert session status Closed and remaining Pending rows become Absent",
-        "Student POST /check-in again and assert SessionNotActive"
+        "Student POST /api/v1/check-in again and assert SessionNotActive"
       ],
       "expected": "End-to-end BR-01 lifecycle: window open allows check-in; manual close ends window and rejects late check-in",
       "edgeCase": false
@@ -434,13 +435,13 @@
       "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["BR-01"],
-      "title": "POST /sessions/:sessionId/close on non-Active session returns InvalidSessionState",
+      "title": "POST /api/v1/sessions/:sessionId/close on non-Active session returns InvalidSessionState",
       "preconditions": [
         "Draft or Closed session exists",
         "Authenticated Instructor session cookie is set"
       ],
       "steps": [
-        "POST /sessions/:sessionId/close for Draft session",
+        "POST /api/v1/sessions/:sessionId/close for Draft session",
         "Assert HTTP status 409 and errorCode InvalidSessionState",
         "Repeat for Closed session and assert same rejection",
         "Verify no attendance finalize side effects occurred"
@@ -477,7 +478,7 @@
       "technique": "http-contract",
       "priority": "P1",
       "traceability": ["BR-01", "FR-05", "AC-05"],
-      "title": "GET /sessions/:sessionId/qr/current exposes attendanceWindowClosesAt at scheduledStart + 10 minutes",
+      "title": "GET /api/v1/sessions/:sessionId/qr/current exposes attendanceWindowClosesAt at scheduledStart + 10 minutes",
       "preconditions": [
         "Instructor session cookie is set",
         "Active session with scheduledStart known and QR scheduler running",
@@ -512,6 +513,49 @@
         "Verify Vietnamese message indicates session not active or attendance window ended"
       ],
       "expected": "UI enforces BR-01 attendance window at preflight gate per validation-rules §3.6a; student cannot reach GPS capture after window end while session still Active",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-01-024",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["BR-01"],
+      "title": "Check-in rejected when openedAt exceeds scheduledStart + 10 min windowEnd",
+      "preconditions": [
+        "Active session opened late: openedAt > scheduledStart + 10 minutes per state-machines §2.4",
+        "TestClock fixed at openedAt + 1 second while session status remains Active",
+        "CheckInService attendance window guard uses windowEnd = min(closedAt, scheduledStart + 10 min)"
+      ],
+      "steps": [
+        "Invoke CheckInService.submitCheckIn with valid token, enrollment, and in-radius coordinates",
+        "Capture result outcome",
+        "Query attendance_records for studentId and sessionId",
+        "Assert outcome SessionNotActive and attendance status remains Pending"
+      ],
+      "expected": "When windowStart (openedAt) > windowEnd (scheduledStart + 10 min), no valid check-in window exists per state-machines §2.4; SessionNotActive returned per BR-01",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-01-025",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["BR-01"],
+      "title": "Check-in before openedAt returns SessionNotActive per windowStart guard",
+      "preconditions": [
+        "Active session with openedAt known",
+        "TestClock fixed at openedAt minus 1 second",
+        "Authenticated enrolled Student with valid unexpired QR token"
+      ],
+      "steps": [
+        "POST /api/v1/check-in with tokenId and in-radius coordinates using Student session",
+        "Assert HTTP status 403 and outcome SessionNotActive with errorCode SessionNotActive",
+        "GET /api/v1/sessions/:sessionId/attendance for student and assert status remains Pending"
+      ],
+      "expected": "Check-in rejected when now < windowStart (openedAt) per state-machines §2.4 even if session status is Active",
       "edgeCase": true
     }
   ]

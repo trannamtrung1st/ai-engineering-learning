@@ -63,7 +63,7 @@ describe("checkin-qr integration (AC-06–AC-10, FR-06–FR-10, BR-02–BR-04, B
   });
 
   after(async () => {
-    sessionService.qr.stopAll();
+    await sessionService.qr.stopAll();
     resetClock();
     await app.close();
     await closePool();
@@ -71,7 +71,7 @@ describe("checkin-qr integration (AC-06–AC-10, FR-06–FR-10, BR-02–BR-04, B
 
   async function resetDb(afterTruncate?: () => Promise<void>): Promise<void> {
     await withIntegrationTestDbReset(db, async () => {
-      sessionService.qr.stopAll();
+      await sessionService.qr.stopAll();
       await truncateCheckInTables(db);
       await truncateRosterTables(db);
       await truncateAuthTables(db);

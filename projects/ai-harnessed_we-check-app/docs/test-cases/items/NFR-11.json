@@ -1,8 +1,8 @@
 {
   "productItemId": "NFR-11",
   "version": 1,
-  "docFingerprint": "sha256:7c3a06eac41d3ebaa216e1eb9eeeb0ecc9411edcf1cbcb0a135ac6fd55757a5f",
-  "generatedAt": "2026-06-29T20:00:00.000Z",
+  "docFingerprint": "sha256:c846b27c93f7d5a2fca97ea30039f8021ebfe5ee04711f351fc18db986850ffe",
+  "generatedAt": "2026-07-01T02:38:21.000Z",
   "cases": [
     {
       "id": "TC-NFR-11-001",
@@ -34,19 +34,20 @@
       "technique": "module-integration",
       "priority": "P0",
       "traceability": ["NFR-11", "FR-13", "BR-09", "NFR-15"],
-      "title": "Denied CSV export attempt by Instructor writes security audit record per BR-09",
+      "title": "Out-of-scope instructor CSV export denied with ExportDenied security audit per BR-09",
       "preconditions": [
-        "Real PostgreSQL with attendance data and authenticated Instructor session",
-        "Instructor role lacks report:export per roles-permissions §2.2",
-        "ExportAuditLog or security log table available for denied attempts"
+        "Real PostgreSQL with attendance for HESD-01 / SWE-101 (assigned) and HESD-02 / SWE-102 (unassigned)",
+        "Instructor A with ClassAssignment to HESD-01 / SWE-101 only; report:read scoped per API design §8.3",
+        "ExportDenied security log table available for denied attempts"
       ],
       "steps": [
-        "POST /reports/export with valid filter body using Instructor session cookie",
-        "Assert HTTP status 403 and errorCode ExportNotAllowed",
-        "Query export_audit_logs or security log and assert denied attempt recorded with actor userId, timestamp, and action detail",
-        "Assert no CSV file content generated and no success export audit row created"
+        "POST /reports/export with filter { classCode: HESD-02, subjectCode: SWE-102, from, to } using Instructor A session",
+        "Assert HTTP status 403 Forbidden with errorCode Forbidden or ReportAccessDenied per BR-08 scope",
+        "Query security audit log and assert ExportDenied entry with actor instructorAId, timestamp, and denial reason",
+        "Assert no CSV file content generated and no ExportAuditLog success row created",
+        "Contrast: POST /reports/export for assigned HESD-01 / SWE-101 filters returns HTTP 200 text/csv with ExportAuditLog success"
       ],
-      "expected": "NFR-11 target: 100% out-of-scope export denied with audit log per BR-09; message Chỉ phòng đào tạo mới có quyền xuất dữ liệu",
+      "expected": "NFR-11 module boundary: instructor in-scope export permitted; out-of-scope export denied with audit per BR-09 and API design §8.3",
       "edgeCase": false
     },
     {
@@ -101,19 +102,20 @@
       "technique": "scenario-matrix",
       "priority": "P0",
       "traceability": ["NFR-11", "AC-13", "FR-13", "BR-09"],
-      "title": "TS-32: Non-admin CSV export rejected; TrainingOfficeAdmin export succeeds",
+      "title": "TS-32: Student export denied; instructor scoped export; admin institution-wide export",
       "preconditions": [
-        "Attendance data exists for export filter parameters",
-        "Authenticated Instructor and Student sessions",
-        "Authenticated TrainingOfficeAdmin session with report:export"
+        "Attendance data exists for HESD-01 / SWE-101 and HESD-02 / SWE-102",
+        "Instructor A assigned to HESD-01 / SWE-101 only",
+        "Authenticated Student and TrainingOfficeAdmin sessions"
       ],
       "steps": [
-        "Instructor POST /api/v1/reports/export with valid filter body and assert HTTP 403 ExportNotAllowed",
-        "Student POST /api/v1/reports/export with same body and assert HTTP 403 ExportNotAllowed",
-        "TrainingOfficeAdmin POST /api/v1/reports/export with same body and assert HTTP 200 text/csv",
-        "Query export_audit_logs and confirm success audit for admin export and denied attempt log for instructor per BR-09"
+        "Student POST /api/v1/reports/export with filter body and assert HTTP 403 ExportNotAllowed per AC-13b",
+        "Instructor A POST /api/v1/reports/export for assigned HESD-01 / SWE-101 and assert HTTP 200 text/csv per AC-13c",
+        "Instructor A POST /api/v1/reports/export for unassigned HESD-02 / SWE-102 and assert HTTP 403 Forbidden",
+        "TrainingOfficeAdmin POST /api/v1/reports/export with institution-wide filters and assert HTTP 200 text/csv",
+        "Query export audit logs: ExportAuditLog success for instructor in-scope and admin exports; ExportDenied for student and instructor out-of-scope per BR-09"
       ],
-      "expected": "NFR-11 scenario-matrix TS-32: 100% non-admin export denial; admin-only report:export per AC-13 and BR-09",
+      "expected": "NFR-11 scenario-matrix TS-32: student export always denied; instructor export scoped to assignment; admin institution-wide export per AC-13 and BR-09",
       "edgeCase": false
     },
     {
@@ -122,7 +124,7 @@
       "layer": "e2e",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["NFR-11", "AC-03", "FR-03", "BR-08"],
+      "traceability": ["NFR-11", "AC-03", "AC-03i", "FR-03", "BR-08"],
       "title": "TS-09: Instructor views unassigned class roster returns 403 Forbidden",
       "preconditions": [
         "Instructor assigned to HESD-01 only; enrollments exist for HESD-01 and HESD-02",
@@ -165,18 +167,19 @@
       "technique": "http-contract",
       "priority": "P0",
       "traceability": ["NFR-11", "FR-13", "BR-09", "AC-13"],
-      "title": "POST /reports/export by Instructor returns 403 ExportNotAllowed error envelope",
+      "title": "POST /reports/export by Student returns 403 ExportNotAllowed error envelope",
       "preconditions": [
-        "Authenticated Instructor session",
+        "Authenticated Student session (no report:read or report:export per roles-permissions §2.2)",
         "Valid export filter body matching API design §8.3"
       ],
       "steps": [
-        "POST /api/v1/reports/export with JSON filter body using Instructor session cookie",
+        "POST /api/v1/reports/export with JSON filter body using Student session cookie",
         "Assert HTTP status 403 Forbidden",
-        "Assert response JSON contains errorCode ExportNotAllowed and message Chỉ phòng đào tạo mới có quyền xuất dữ liệu",
-        "Assert Content-Type is application/json not text/csv"
+        "Assert response JSON contains errorCode ExportNotAllowed and message Chỉ phòng đào tạo mới có quyền xuất dữ liệu per AC-13b",
+        "Assert Content-Type is application/json not text/csv",
+        "Verify ExportDenied security audit entry created per BR-09"
       ],
-      "expected": "HTTP 403 ExportNotAllowed contract per roles-permissions §2.5; CSV export blocked for non-admin per BR-09",
+      "expected": "HTTP 403 ExportNotAllowed contract per API design §8.3; student CSV export always denied per NFR-11 and BR-09",
       "edgeCase": false
     },
     {
@@ -227,17 +230,18 @@
       "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["NFR-11", "FR-03", "FR-13"],
-      "title": "Instructor denied roster:write and report:export admin-only endpoints",
+      "title": "Instructor denied roster:write, audit:read, and out-of-scope CSV export",
       "preconditions": [
-        "Authenticated Instructor session assigned to at least one class-subject",
-        "Valid CSV roster import and export filter payloads prepared"
+        "Instructor A assigned to HESD-01 / SWE-101 only",
+        "Valid CSV roster import payload and export filter for unassigned HESD-02 / SWE-102 prepared"
       ],
       "steps": [
         "POST /api/v1/roster/import with valid CSV multipart using Instructor session and assert HTTP 403 Forbidden",
-        "POST /api/v1/reports/export with valid filter using Instructor session and assert HTTP 403 ExportNotAllowed",
-        "GET /api/v1/audit/logs or audit:read endpoint with Instructor session and assert HTTP 403 Forbidden"
+        "POST /api/v1/reports/export with unassigned HESD-02 / SWE-102 filters using Instructor session and assert HTTP 403 Forbidden",
+        "GET /api/v1/audit/logs or audit:read endpoint with Instructor session and assert HTTP 403 Forbidden",
+        "Contrast: POST /api/v1/reports/export for assigned HESD-01 / SWE-101 returns HTTP 200 text/csv per API design §8.3"
       ],
-      "expected": "NFR-11 rbac-negative matrix: Instructor denied roster:write, report:export, and audit:read per roles-permissions §2.2 empty cells",
+      "expected": "NFR-11 rbac-negative matrix: Instructor denied roster:write, audit:read, and out-of-scope export; in-scope export permitted per BR-09",
       "edgeCase": false
     },
     {
@@ -288,19 +292,20 @@
       "technique": "scenario-matrix",
       "priority": "P0",
       "traceability": ["NFR-11", "AC-12", "AC-13", "BR-08", "BR-09"],
-      "title": "Flow D reporting authorization: assigned 200, unassigned 403, non-admin export 403, admin export 200",
+      "title": "Flow D reporting authorization: assigned report/export 200, unassigned 403, admin export 200",
       "preconditions": [
         "Instructor A assigned to HESD-01 / SWE-101; Instructor B unassigned",
         "TrainingOfficeAdmin account exists",
-        "Closed sessions with attendance for HESD-01 / SWE-101"
+        "Closed sessions with attendance for HESD-01 / SWE-101 and HESD-02 / SWE-102"
       ],
       "steps": [
-        "Instructor A GET /api/v1/reports/summary for assigned class-subject and assert HTTP 200 with data",
-        "Instructor A GET /api/v1/reports/summary for unassigned class and assert HTTP 403 ReportAccessDenied",
-        "Instructor A POST /api/v1/reports/export and assert HTTP 403 ExportNotAllowed",
-        "TrainingOfficeAdmin POST /api/v1/reports/export with same filters and assert HTTP 200 CSV with export audit log"
+        "Instructor A GET /api/v1/reports/summary for assigned HESD-01 / SWE-101 and assert HTTP 200 with data",
+        "Instructor A GET /api/v1/reports/summary for unassigned HESD-02 / SWE-102 and assert HTTP 403 ReportAccessDenied",
+        "Instructor A POST /api/v1/reports/export for assigned HESD-01 / SWE-101 and assert HTTP 200 CSV with ExportAuditLog per AC-13c",
+        "Instructor A POST /api/v1/reports/export for unassigned HESD-02 / SWE-102 and assert HTTP 403 Forbidden with ExportDenied audit",
+        "TrainingOfficeAdmin POST /api/v1/reports/export with institution-wide filters and assert HTTP 200 CSV with export audit log"
       ],
-      "expected": "NFR-11 Flow D complete: report scope and export authorization enforced end-to-end per testing-plan §6 Flow D and AC-12/AC-13",
+      "expected": "NFR-11 Flow D complete: report and export scope enforced — instructor in-scope 200, out-of-scope 403, admin institution-wide export per testing-plan §6 Flow D and AC-12/AC-13",
       "edgeCase": false
     },
     {
@@ -318,7 +323,7 @@
       ],
       "steps": [
         "Instructor PATCH /api/v1/attendance/:recordId to Present and assert HTTP 403 EditWindowExpired",
-        "Assert message Đã quá thời hạn chỉnh sửa điểm danh (24 giờ) per error-handling §3.1",
+        "Assert message Đã quá thời hạn chỉnh sửa điểm danh (24 giờ) per error-handling §4.2",
         "TrainingOfficeAdmin PATCH same record to Present and assert HTTP 200",
         "Query AttendanceAuditLog and confirm admin edit recorded with actor and timestamps"
       ],
@@ -352,22 +357,22 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["NFR-11", "FR-12", "FR-13", "FR-18", "AC-12", "AC-13", "AC-18", "BR-14"],
-      "title": "Instructor UI hides export controls and shows ForbiddenPage on admin-only report routes",
+      "traceability": ["NFR-11", "FR-12", "FR-13", "FR-18", "AC-12", "AC-12d", "AC-13", "AC-18", "BR-14"],
+      "title": "Instructor inline Xuất CSV on /reports for assigned scope; zero /admin/* nav; /admin/export ForbiddenPage",
       "preconditions": [
-        "Authenticated Instructor session in browser",
-        "Instructor layout renders SidebarNav per UI layout components §6",
-        "Admin export route /admin/export exists but is not in instructor nav"
+        "Authenticated Instructor assigned to HESD-01 / SWE-101 in browser",
+        "Closed sessions with attendance for HESD-01 / SWE-101",
+        "Instructor layout renders SidebarNav per UI layout components §6"
       ],
       "steps": [
-        "Navigate to instructor-scoped report page for assigned class-subject and verify report table renders",
+        "Navigate to /reports, apply HESD-01 / SWE-101 filters, and verify report table renders",
+        "Verify page header or toolbar shows enabled Xuất CSV button per AC-12d and listing-pages §10",
         "Query SidebarNav DOM and assert zero anchor elements with href matching /admin/* anywhere in instructor layout chrome",
         "Verify SidebarNav renders only Buổi học and Báo cáo items per usePermittedNav() — unauthorized items omitted not disabled",
-        "Verify CSV export button or link is not visible in instructor report view",
-        "Navigate directly to /admin/export or /admin/reports/export URL as Instructor",
-        "Observe ForbiddenPage with title Không có quyền truy cập; no export form or admin SidebarNav rendered"
+        "Click Xuất CSV and verify scoped CSV download for assigned class-subject per AC-13c",
+        "Navigate directly to /admin/export as Instructor and observe ForbiddenPage with title Không có quyền truy cập; no AdminLayout chrome or admin export form rendered"
       ],
-      "expected": "NFR-11 UI nav negative matrix: instructor chrome contains zero /admin/* links per AC-18a and BR-14; direct URL blocked by route guard per roles-permissions §2.4",
+      "expected": "NFR-11 UI scope: instructor inline export on /reports for assigned scope; zero /admin/* nav links per AC-18a and BR-14; /admin/export blocked by route guard",
       "edgeCase": false
     },
     {
@@ -399,19 +404,21 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["NFR-11", "FR-13", "BR-09", "AC-13"],
-      "title": "Admin CSV export confirm dialog succeeds; instructor export modal shows denial message on 403",
+      "traceability": ["NFR-11", "FR-13", "BR-09", "AC-13", "AC-13d"],
+      "title": "Admin inline and /admin/export CSV succeed; instructor scoped /reports export; student /reports ForbiddenPage",
       "preconditions": [
-        "TrainingOfficeAdmin authenticated with report data visible on admin reports page",
-        "Instructor authenticated on equivalent report view if accessible"
+        "TrainingOfficeAdmin authenticated with report data on /admin/reports",
+        "Instructor assigned to HESD-01 / SWE-101 with attendance data on /reports",
+        "Student authenticated session available"
       ],
       "steps": [
-        "As TrainingOfficeAdmin open CSV export confirm dialog, submit export, and verify file download or success toast",
-        "Log out and authenticate as Instructor",
-        "If export action reachable via devtools or stale UI, trigger export and observe modal with message Chỉ phòng đào tạo mới có quyền xuất dữ liệu per error-handling §6 UI mapping",
-        "Verify no CSV download initiated for Instructor"
+        "As TrainingOfficeAdmin on /admin/reports with filters applied, click inline Xuất CSV and verify CSV downloads without navigating to /admin/export per AC-13d",
+        "As TrainingOfficeAdmin on /admin/export open confirm dialog, submit export, and verify institution-wide CSV download per AC-13a",
+        "As Instructor on /reports with assigned filters click Xuất CSV and verify scoped CSV download per AC-13c",
+        "As Student navigate to /reports and observe ForbiddenPage with title Không có quyền truy cập — no Báo cáo report shell or Xuất CSV control per AC-13b and BR-14",
+        "Verify no CSV download initiated for Student on any export surface or API attempt"
       ],
-      "expected": "NFR-11 UI enforcement: admin export permitted; non-admin export blocked with localized BR-09 message per CsvExportConfirmForm traceability",
+      "expected": "NFR-11 UI enforcement: admin inline export on /admin/reports and /admin/export both permitted; instructor scoped inline export on /reports; student blocked at /reports with no export chrome per BR-09 and AC-13",
       "edgeCase": false
     },
     {
@@ -429,11 +436,11 @@
       ],
       "steps": [
         "For Student role, call each endpoint requiring permissions denied in §2.2 (session:write, report:read, report:export, user:write, roster:write, policy:write, audit:read) and assert HTTP 403",
-        "For Instructor role, call denied endpoints (report:export, user:write, roster:write, policy:write, audit:read, checkin:submit) and assert HTTP 403",
+        "For Instructor role, call denied endpoints (user:write, roster:write, policy:write, audit:read, checkin:submit, out-of-scope POST /reports/export) and assert HTTP 403; confirm in-scope POST /reports/export for assigned class-subject returns HTTP 200",
         "For TrainingOfficeAdmin, call denied endpoints (checkin:submit, qr:display) and assert HTTP 403",
         "Compute denial rate across full matrix sample and assert equals 100%"
       ],
-      "expected": "NFR-11 verification criterion met: RBAC negative test matrix per role denies 100% of out-of-scope access attempts per testing-plan §5 RbacNegativeMatrix",
+      "expected": "NFR-11 verification criterion met: RBAC negative test matrix per role denies 100% of out-of-scope access attempts; instructor in-scope export permitted per BR-09 per testing-plan §5 RbacNegativeMatrix",
       "edgeCase": false
     },
     {
@@ -478,6 +485,30 @@
         "As TrainingOfficeAdmin on /admin verify SidebarNav includes admin items and zero student-only /check-in nav in admin chrome"
       ],
       "expected": "NFR-11 component nav enforcement: SidebarNav and BottomNav filter via usePermittedNav(); unauthorized destinations omitted from DOM per BR-14 — showing forbidden nav items is a spec violation",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-11-023",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-11", "FR-13", "BR-09", "AC-13"],
+      "title": "POST /reports/export by assigned Instructor returns 200 text/csv with scoped rows",
+      "preconditions": [
+        "Instructor A assigned to HESD-01 / SWE-101 via ClassAssignment",
+        "Closed sessions with attendance exist for HESD-01 / SWE-101 in June 2026",
+        "Authenticated Instructor A session"
+      ],
+      "steps": [
+        "POST /api/v1/reports/export with body { classCode: HESD-01, subjectCode: SWE-101, from: 2026-06-01, to: 2026-06-30 } using Instructor A session",
+        "Assert HTTP status 200 OK",
+        "Assert Content-Type text/csv; charset=utf-8 and Content-Disposition attachment filename per API design §8.3",
+        "Assert CSV header contains institutional_id, display_name, class_code, subject_code, session_date, attendance_status, checked_in_at",
+        "Assert all CSV data rows are scoped to HESD-01 / SWE-101 only",
+        "Query ExportAuditLog and assert success entry with actor instructorAId per AC-13c"
+      ],
+      "expected": "HTTP 200 instructor scoped CSV export contract per API design §8.3 and NFR-11 instructor assignment boundary; audit-logged per BR-09",
       "edgeCase": false
     }
   ]

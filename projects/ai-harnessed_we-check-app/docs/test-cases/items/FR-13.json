@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-13",
   "version": 1,
-  "docFingerprint": "sha256:7e5d37d85efa6556576a48d4938dea47ad6d388f6d3a3dcbae936d4cccaebe76",
-  "generatedAt": "2026-06-29T18:05:20Z",
+  "docFingerprint": "sha256:70664f4bcec7e745bdcd06197b935919d3e19855c18c5b6fb91cd47efbd1e5ca",
+  "generatedAt": "2026-07-01T01:58:37Z",
   "cases": [
     {
       "id": "TC-FR-13-001",
@@ -37,20 +37,20 @@
       "technique": "scenario-matrix",
       "priority": "P0",
       "traceability": ["FR-13", "AC-13", "BR-09", "NFR-11"],
-      "title": "TS-32: Non-admin POST /reports/export returns 403 Forbidden",
+      "title": "TS-32: Student POST /reports/export returns 403 Forbidden",
       "preconditions": [
-        "Authenticated Instructor session (lacks report:export per roles-permissions §2.2)",
+        "Authenticated Student session (no report:export or report:read per roles-permissions §2.2)",
         "Attendance data exists for export-eligible class-subject filters"
       ],
       "steps": [
-        "POST /api/v1/reports/export with valid filter body using Instructor session",
+        "POST /api/v1/reports/export with valid filter body using Student session",
         "Assert HTTP status 403 Forbidden",
-        "Assert response errorCode Forbidden or ExportNotAllowed",
-        "Assert message Chỉ phòng đào tạo mới có quyền xuất dữ liệu per FR-13 and roles-permissions §2.5",
+        "Assert response errorCode ExportNotAllowed per API design §8.3",
+        "Assert message Chỉ phòng đào tạo mới có quyền xuất dữ liệu per AC-13b, FR-13, and roles-permissions §2.5",
         "Assert response body is not text/csv and contains no attendance data",
-        "Verify ExportDenied security audit entry created with actor instructorId and denial reason per error-handling §6.2"
+        "Verify ExportDenied security audit entry created with actor studentId and denial reason per error-handling §6.2"
       ],
-      "expected": "Testing-plan TS-32 satisfied: non-admin CSV export rejected with localized permission error and denied attempt logged per FR-13 and BR-09",
+      "expected": "Testing-plan TS-32 satisfied for Student: CSV export rejected with localized permission error and denied attempt logged per FR-13 and BR-09",
       "edgeCase": false
     },
     {
@@ -64,7 +64,7 @@
       "preconditions": [
         "Real PostgreSQL test database with Closed sessions, enrollments, and attendance records for HESD-01 / SWE-101",
         "ExportService wired with attendance and session read models per reporting-export module §2.6",
-        "TrainingOfficeAdmin userId available as adminId context"
+        "TrainingOfficeAdmin userId available as actor context"
       ],
       "steps": [
         "Seed attendance records with known institutionalId, displayName, classCode, subjectCode, sessionDate, status Present/Absent/Excused, and checkedInAt for Present rows",
@@ -88,12 +88,12 @@
       "preconditions": [
         "Real PostgreSQL with attendance data for export filters",
         "ExportService and audit logger append-only per reporting-export §2.6",
-        "No prior ExportAuditLog for test adminId in filter scope"
+        "No prior ExportAuditLog for test actor in filter scope"
       ],
       "steps": [
         "Record ExportAuditLog row count before export",
-        "Invoke ExportService.exportCsv(filters, adminId) and capture returned row count",
-        "Query ExportAuditLog table for new entry with adminId matching actor",
+        "Invoke ExportService.exportCsv(filters, actorId) for TrainingOfficeAdmin or assigned Instructor and capture returned row count",
+        "Query ExportAuditLog table for new entry with actorId matching actor",
         "Assert stored filterSummary JSON contains classCode, subjectCode, and date range matching request filters per domain model §3.12",
         "Assert stored rowCount matches number of CSV data rows exported",
         "Assert exportedAt timestamp is within test transaction window per testing-plan §5 ExportAuditLog suite"
@@ -107,7 +107,7 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-13", "BR-09"],
+      "traceability": ["FR-13", "AC-13", "BR-09"],
       "title": "POST /reports/export returns 200 with CSV attachment response envelope",
       "preconditions": [
         "Authenticated TrainingOfficeAdmin session",
@@ -128,23 +128,23 @@
       "id": "TC-FR-13-006",
       "category": "functional",
       "layer": "e2e",
-      "technique": "rbac-negative",
+      "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["FR-13", "AC-13", "BR-09", "NFR-11"],
-      "title": "Instructor POST /reports/export rejected with localized permission message",
+      "traceability": ["FR-13", "AC-13", "BR-08", "BR-09"],
+      "title": "Instructor POST /reports/export for assigned class-subject returns scoped CSV and audit log",
       "preconditions": [
-        "Authenticated Instructor assigned to HESD-01 / SWE-101 with report:read but without report:export",
-        "Attendance data exists for export filters"
+        "Authenticated Instructor assigned to HESD-01 / SWE-101 with report:read per API design §8.3",
+        "Closed sessions with attendance exist for HESD-01 / SWE-101 within June 2026 filter range"
       ],
       "steps": [
-        "POST /api/v1/reports/export with valid filter body using Instructor session",
-        "Assert HTTP status 403 Forbidden",
-        "Assert errorCode Forbidden or ExportNotAllowed",
-        "Assert Vietnamese message Chỉ phòng đào tạo mới có quyền xuất dữ liệu per roles-permissions §2.5 and FR-13",
-        "Assert no CSV attachment in response",
-        "Verify ExportDenied audit log entry with actor instructorId per BR-09"
+        "POST /api/v1/reports/export with body { classCode: HESD-01, subjectCode: SWE-101, from: 2026-06-01, to: 2026-06-30 } using Instructor session",
+        "Assert HTTP status 200 OK",
+        "Assert Content-Type text/csv; charset=utf-8",
+        "Parse CSV and assert header columns match API design §8.3",
+        "Assert all data rows have class_code HESD-01 and subject_code SWE-101 only (BR-08 assignment scope)",
+        "Query ExportAuditLog and assert entry with actor instructorId, filterSummary, and row count matching exported rows per AC-13c"
       ],
-      "expected": "FR-13 actor restriction: Instructor export rejected with localized permission error and denied attempt logged per BR-09",
+      "expected": "FR-13 instructor scope: assigned class-subject CSV export succeeds with audit log per BR-08, BR-09, and API design §8.3",
       "edgeCase": false
     },
     {
@@ -162,8 +162,8 @@
       "steps": [
         "POST /api/v1/reports/export with valid filter body using Student session",
         "Assert HTTP status 403 Forbidden",
-        "Assert errorCode Forbidden or ExportNotAllowed",
-        "Assert message Chỉ phòng đào tạo mới có quyền xuất dữ liệu per roles-permissions §2.5",
+        "Assert errorCode ExportNotAllowed per API design §8.3",
+        "Assert message Chỉ phòng đào tạo mới có quyền xuất dữ liệu per AC-13b and roles-permissions §2.5",
         "Assert response contains no peer attendance or roster data",
         "Verify ExportDenied security audit entry created per error-handling §6.2"
       ],
@@ -199,20 +199,20 @@
       "technique": "scenario-matrix",
       "priority": "P0",
       "traceability": ["FR-13", "AC-13", "BR-08", "BR-09"],
-      "title": "Flow D: Instructor export 403, TrainingOfficeAdmin export 200 with audit",
+      "title": "Flow D: Instructor in-scope export 200, out-of-scope export 403, admin export 200 with audit",
       "preconditions": [
         "Instructor A assigned to HESD-01 / SWE-101 with report:read",
         "TrainingOfficeAdmin authenticated",
-        "Closed session with attendance in HESD-01 / SWE-101"
+        "Closed session with attendance in HESD-01 / SWE-101 and separate data in unassigned HESD-02 / SWE-102"
       ],
       "steps": [
-        "Instructor A POST /reports/export for assigned HESD-01 / SWE-101 filters and assert HTTP 403 ExportNotAllowed per roles-permissions §2.5",
-        "TrainingOfficeAdmin POST /reports/export for same filters and assert HTTP 200 with valid CSV",
-        "Assert admin export CSV contains attendance rows for session scope",
-        "Assert ExportAuditLog written for admin success and ExportDenied for instructor attempt",
-        "Confirm Flow D steps 3–4 per testing-plan §6 tags AC-12, AC-13, BR-08, BR-09, FR-13"
+        "Instructor A POST /reports/export for assigned HESD-01 / SWE-101 filters and assert HTTP 200 with scoped CSV per AC-13c",
+        "Instructor A POST /reports/export for unassigned HESD-02 / SWE-102 filters and assert HTTP 403 Forbidden with localized permission error per BR-08 (Flow D step 3 out-of-scope export)",
+        "TrainingOfficeAdmin POST /reports/export for HESD-01 / SWE-101 filters and assert HTTP 200 with valid CSV",
+        "Assert ExportAuditLog written for instructor in-scope success and admin success; ExportDenied for instructor out-of-scope attempt",
+        "Confirm Flow D reporting authorization per testing-plan §6 tags AC-12, AC-13, BR-08, BR-09, FR-13"
       ],
-      "expected": "Flow D reporting authorization: instructor export denied with ExportNotAllowed, admin export succeeds with audit per FR-13 and testing-plan §6",
+      "expected": "Flow D reporting authorization: instructor in-scope export succeeds with audit; out-of-scope denied; admin export succeeds with audit per FR-13 and testing-plan §6",
       "edgeCase": false
     },
     {
@@ -234,9 +234,9 @@
         "Assert all rows have class_code HESD-01 and subject_code SWE-101",
         "Assert session_date values fall within from/to inclusive range",
         "Assert no rows from HESD-02 / SWE-102 or sessions outside June 2026 appear",
-        "Compare row count to GET /reports/summary for same filters and assert consistency per listing-pages §10 export uses same filter params as report API"
+        "Compare row count to GET /reports/summary for same filters and assert consistency per 14-listing §10.1 export uses same filter params as report API"
       ],
-      "expected": "FR-13 filter behavior: CSV export mirrors on-screen report filters (class, subject, date range) per AC-13a, listing-pages §10, and functional spec",
+      "expected": "FR-13 filter behavior: CSV export mirrors on-screen report filters (class, subject, date range) per AC-13a, 14-listing §10, and functional spec",
       "edgeCase": false
     },
     {
@@ -276,7 +276,7 @@
       ],
       "steps": [
         "Navigate to /admin/export",
-        "Set class HESD-01, subject SWE-101, and date range 2026-06-01 to 2026-06-30 in ReportFilterBar (same filter model as /admin/reports per listing-pages §10)",
+        "Set class HESD-01, subject SWE-101, and date range 2026-06-01 to 2026-06-30 in ReportFilterBar (same filter model as /admin/reports per 14-listing §10.2)",
         "Verify CsvExportPanel transitions through Estimating then Ready states with estimated row count from dry-run HEAD request per ui-states §12",
         "Verify Xuất CSV button enabled when estimated rows > 0",
         "Click Xuất CSV to open ConfirmDialog showing scope summary and compliance note: Dữ liệu xuất chỉ dùng cho mục đích học vụ. Mọi lần xuất được ghi nhật ký. per forms-validation §4.8",
@@ -284,7 +284,7 @@
         "Wait for browser download and verify success toast Đã tải xuống per ui-states §12",
         "Open downloaded attendance-export CSV and verify header columns institutional_id, display_name, class_code, subject_code, session_date, attendance_status, checked_in_at"
       ],
-      "expected": "FR-13 browser journey: admin export page filter → confirm with compliance note → CSV download with required columns per page-list §5.6 and user-flows §10",
+      "expected": "FR-13 browser journey: admin export page filter → confirm with compliance note → CSV download with required columns per page-list §5.6 and 14-listing §10.2",
       "edgeCase": false
     },
     {
@@ -294,20 +294,20 @@
       "technique": "browser-journey",
       "priority": "P0",
       "traceability": ["FR-13", "AC-13", "BR-09", "NFR-11"],
-      "title": "Instructor sees export denial modal with Vietnamese message on export attempt",
+      "title": "Student report pages show no Xuất CSV control and export API denied",
       "preconditions": [
-        "Authenticated Instructor on desktop viewport assigned to HESD-01 / SWE-101",
-        "Instructor may access /reports but lacks report:export; instructor report listing has no export action per listing-pages §10",
-        "Export UI entry hidden or guarded per AdminLayout export guard"
+        "Authenticated Student on desktop viewport",
+        "Student has personal attendance history records",
+        "Student routes (/history) lack report:export and report:read per page-list §2 and 14-listing §10"
       ],
       "steps": [
-        "Attempt to navigate to /admin/export or trigger export action if exposed in instructor UI",
-        "Verify UI shows ForbiddenPage, route guard redirect, or inline denial per page-list §2.2 and ui-states §12 Denied state",
-        "If export API invoked from UI, verify modal displays message Chỉ phòng đào tạo mới có quyền xuất dữ liệu with admin contact hint per error-handling §7 Export modal on 403",
-        "Verify no CSV file download initiated",
-        "Verify no attendance data table rendered on export page for instructor role"
+        "Navigate to /history and verify page toolbar contains no Xuất CSV button per AC-13b and 14-listing §10",
+        "Verify student layout nav omits /admin/export and /admin/reports links per BR-09 and page-list",
+        "If export API invoked directly from client tooling, verify modal or error displays message Chỉ phòng đào tạo mới có quyền xuất dữ liệu with admin contact hint per error-handling §7",
+        "Verify no CSV file download initiated from student UI",
+        "Verify no peer attendance data exposed on student-facing pages"
       ],
-      "expected": "FR-13 UI authorization: instructor export denied with localized Vietnamese message and admin contact hint; mirrors rbac-negative API behavior per BR-09",
+      "expected": "FR-13 UI authorization: student sees no export control on report-facing pages; export denied with localized Vietnamese message per AC-13b",
       "edgeCase": false
     },
     {
@@ -320,7 +320,7 @@
       "title": "CSV export row count exceeds report table pageSize boundary and includes all filter-matched rows",
       "preconditions": [
         "Authenticated TrainingOfficeAdmin session",
-        "75 attendance records seeded for HESD-01 / SWE-101 between 2026-06-01 and 2026-06-30 (exceeds report table pageSize 50 per listing-pages §6)",
+        "75 attendance records seeded for HESD-01 / SWE-101 between 2026-06-01 and 2026-06-30 (exceeds report table pageSize 50 per 14-listing §6)",
         "Known total matching attendance row count recorded before export"
       ],
       "steps": [
@@ -328,9 +328,9 @@
         "Assert HTTP status 200 OK and parse CSV data rows (exclude header)",
         "Assert exported row count equals 75 and is greater than pageSize 50 boundary",
         "Assert no truncation at page boundary — rows that would appear only on page 2 of a 50-row paginated table are present in CSV",
-        "Compare exported row count to CsvExportPanel estimated row count from dry-run (listing-pages §10 step 2) and assert totals match"
+        "Compare exported row count to CsvExportPanel estimated row count from dry-run (14-listing §10.2 step 2) and assert totals match"
       ],
-      "expected": "Pagination invariant: CSV export returns full filter scope across page boundaries; export not capped at UI report table pageSize 50 per FR-13 filter-respect requirement and listing-pages §6, §10",
+      "expected": "Pagination invariant: CSV export returns full filter scope across page boundaries; export not capped at UI report table pageSize 50 per FR-13 filter-respect requirement and 14-listing §6, §10",
       "edgeCase": false
     },
     {
@@ -354,6 +354,148 @@
       ],
       "expected": "Export filter date range boundary enforced at 366 days; malformed span rejected with ValidationFailed per validation-rules §3.8",
       "edgeCase": true
+    },
+    {
+      "id": "TC-FR-13-016",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-13", "AC-13", "BR-09"],
+      "title": "TrainingOfficeAdmin clicks inline Xuất CSV on /admin/reports without navigating to /admin/export",
+      "preconditions": [
+        "Authenticated TrainingOfficeAdmin on desktop viewport",
+        "Multiple cohorts with Closed sessions in June 2026 date range",
+        "Populated institution-wide report after ReportFilterBar applied per AC-13d"
+      ],
+      "steps": [
+        "Navigate to /admin/reports (not /admin/export)",
+        "Set date filter from 2026-06-01 to 2026-06-30 and apply filters matching on-screen report",
+        "Verify page header or toolbar displays enabled Xuất CSV button per AC-13d and page-list §5.5",
+        "Click Xuất CSV without navigating away from /admin/reports",
+        "Verify POST /reports/export request body mirrors active ReportFilterBar state (classCode, subjectCode, from, to) per 14-listing §10.1 and API design §8.3",
+        "Verify CSV file download starts in-browser and URL remains on /admin/reports",
+        "Open downloaded CSV and verify rows match institution-wide filter scope within active date range"
+      ],
+      "expected": "FR-13 browser journey: admin inline Xuất CSV on /admin/reports downloads CSV without /admin/export navigation; filters match on-screen report per AC-13d and 14-listing §10.1",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-13-017",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-13", "AC-13", "BR-08", "BR-09"],
+      "title": "ExportService.exportCsv scopes rows to instructor ClassAssignment at DB boundary",
+      "preconditions": [
+        "Real PostgreSQL with attendance for HESD-01 / SWE-101 (assigned) and HESD-02 / SWE-102 (unassigned to test instructor)",
+        "Instructor userId with ClassAssignment to HESD-01 / SWE-101 only",
+        "ExportService enforces BR-08 assignment scope per reporting-export §2.6 and API design §8.3"
+      ],
+      "steps": [
+        "Seed attendance records for both HESD-01 / SWE-101 and HESD-02 / SWE-102 within same date range",
+        "Invoke ExportService.exportCsv({ classCode: HESD-01, subjectCode: SWE-101, from, to }, instructorId) for assigned pair",
+        "Assert returned CSV contains only HESD-01 / SWE-101 rows and excludes HESD-02 / SWE-102 data",
+        "Assert CSV header and column mapping match API design §8.3",
+        "Invoke ExportService.exportCsv({ classCode: HESD-02, subjectCode: SWE-102, from, to }, instructorId) for unassigned pair",
+        "Assert export raises authorization error or returns denial without leaking out-of-scope rows per BR-08"
+      ],
+      "expected": "FR-13 module-integration: instructor scoped CSV export succeeds for assigned class-subject and rejects out-of-scope at service/repository boundary per tag-specific integration hint",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-13-018",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-13", "AC-13", "BR-08", "BR-09", "NFR-11"],
+      "title": "Instructor POST /reports/export for unassigned class-subject returns 403 Forbidden",
+      "preconditions": [
+        "Authenticated Instructor assigned only to HESD-01 / SWE-101",
+        "Attendance data exists for unassigned HESD-02 / SWE-102"
+      ],
+      "steps": [
+        "POST /api/v1/reports/export with body { classCode: HESD-02, subjectCode: SWE-102, from: 2026-06-01, to: 2026-06-30 } using Instructor session",
+        "Assert HTTP status 403 Forbidden",
+        "Assert errorCode Forbidden or ExportNotAllowed with localized permission error per BR-08 and BR-09",
+        "Assert response body is not text/csv and contains no out-of-scope attendance data",
+        "Verify ExportDenied security audit entry created with actor instructorId and denial reason per error-handling §6.2"
+      ],
+      "expected": "FR-13 scope enforcement: instructor out-of-scope export denied with localized message and denied attempt logged; no data leak per BR-08",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-13-019",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-13", "AC-13", "BR-08", "BR-09"],
+      "title": "Instructor clicks inline Xuất CSV on /reports with assigned ReportFilterBar filters",
+      "preconditions": [
+        "Authenticated Instructor on desktop viewport assigned to HESD-01 / SWE-101",
+        "Closed sessions with attendance in HESD-01 / SWE-101 for June 2026",
+        "Instructor report page shows Xuất CSV in header or toolbar per 14-listing §10 and AC-12d"
+      ],
+      "steps": [
+        "Navigate to /reports",
+        "Set class HESD-01, subject SWE-101, and date range 2026-06-01 to 2026-06-30 in ReportFilterBar and click Áp dụng",
+        "Verify page header or toolbar displays enabled Xuất CSV button per AC-13c and 14-listing §10",
+        "Click Xuất CSV without navigating to /admin/export",
+        "Verify POST /reports/export request body mirrors active ReportFilterBar state per 14-listing §10.1",
+        "Wait for browser download and verify CSV contains only HESD-01 / SWE-101 scoped rows",
+        "Open downloaded CSV and verify header columns institutional_id, display_name, class_code, subject_code, session_date, attendance_status, checked_in_at"
+      ],
+      "expected": "FR-13 browser journey: instructor inline Xuất CSV on /reports downloads scoped CSV using active report filters per AC-13c and 14-listing §10",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-13-020",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-13", "AC-13", "BR-09", "NFR-11"],
+      "title": "Instructor denied on /admin/export route; nav omits admin Xuất CSV link",
+      "preconditions": [
+        "Authenticated Instructor assigned to HESD-01 / SWE-101 on desktop viewport",
+        "Instructor sidebar shows Báo cáo (/reports) but omits Xuất CSV nav to /admin/export per roles-permissions §2.3a"
+      ],
+      "steps": [
+        "Verify instructor layout nav contains /reports link and omits /admin/export per BR-09 and page-list",
+        "Navigate directly to /admin/export",
+        "Verify UI shows ForbiddenPage, route guard redirect, or inline denial per page-list §2.2 and ui-states §12 Denied state",
+        "Verify no CSV file download initiated and no attendance data table rendered for instructor on admin export page",
+        "Verify instructor may still export via inline Xuất CSV on /reports for assigned scope per 14-listing §10.2"
+      ],
+      "expected": "FR-13 UI scope: /admin/export is admin-only; instructor uses inline Xuất CSV on /reports for assigned class-subject export per BR-09 and 14-listing §10.2",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-13-021",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-c",
+      "priority": "P0",
+      "traceability": ["FR-13", "AC-13", "BR-09", "NFR-15"],
+      "title": "Flow C: CSV export writes ExportAuditLog verifiable via audit query",
+      "preconditions": [
+        "Authenticated TrainingOfficeAdmin session",
+        "Closed session attendance data exists for export filters",
+        "ExportAuditLog query endpoint or direct DB access available for verification"
+      ],
+      "steps": [
+        "Record ExportAuditLog count before export",
+        "POST /api/v1/reports/export with valid filter body and assert HTTP 200 CSV download",
+        "Query ExportAuditLog for new entry with actor adminId",
+        "Assert audit entry filterSummary matches request classCode, subjectCode, from, and to",
+        "Assert audit entry rowCount matches parsed CSV data row count",
+        "Confirm Flow C audit verification pattern per testing-plan coverage techniques for export actions"
+      ],
+      "expected": "Flow C satisfied: successful CSV export produces verifiable ExportAuditLog entry with actor, filter params, and row count per FR-13, NFR-15, and error-handling §6.2",
+      "edgeCase": false
     }
   ]
 }

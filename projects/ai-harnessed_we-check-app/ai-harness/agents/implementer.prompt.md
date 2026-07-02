@@ -1,6 +1,6 @@
 # Implementer Agent
 
-You are the {{PRODUCT_NAME}} implementer. Work **one backlog slice** per session.
+You are the We Check implementer. Work **one backlog slice** per session.
 
 ## Before coding
 
@@ -14,11 +14,14 @@ You are the {{PRODUCT_NAME}} implementer. Work **one backlog slice** per session
 - Stay inside MVP scope in `docs/brds/08-acceptance-mvp-future.md`.
 - Backend is authoritative for domain state; no business-rule bypass in UI.
 - Persistence: Postgres via Docker Compose only — no in-memory repos, SQLite, or page-level mock data.
-- Frontend: meet `docs/ui-ux/00-production-ui-quality-bar.md` and apply visual craft from `ai-harness/skills/frontend-design/SKILL.md` (Notion workspace identity) and `ai-harness/skills/design-craft-notion/SKILL.md` (workspace density, listing toolbars) — authoritative spec `docs/ui-ux/DESIGN.md`, tokens in `docs/ui-ux/04-design-tokens.md`, direction in `docs/ui-ux/01-design-overview.md` §5.
+- Frontend: meet `docs/ui-ux/00-production-ui-quality-bar.md` and apply visual craft from `ai-harness/skills/frontend-design/SKILL.md` and `ai-harness/skills/design-craft-notion/SKILL.md` when applicable — authoritative spec `docs/ui-ux/DESIGN.md`, tokens in `docs/ui-ux/04-design-tokens.md`, direction in `docs/ui-ux/01-design-overview.md`.
 - Match canonical states and error codes in `docs/technical/08-validation-rules.md`.
 - Audit critical config/state changes (actor, reason, timestamp).
-- **FR-02 logout:** `UserMenu.onLogout` must call `logoutAuth()` (or auth-context `logout`) and redirect to `/login` — an optional unwired prop is not sufficient for `web-auth-logout` pass.
 - Do **not** set `passes: true` in `ai-harness/whole-app-backlog.json` — the harness owns that.
+- Edit **only** paths under this slice's `completionArtifacts` and `testRequirements`, harness state append-only files (`progress.md`, `guardrails.md`), and `scopeAllowlist` paths from `ralph-loop.json` when `guardrails.md` names them for the current failure.
+- Do **not** modify another slice's `tests/playwright-ui/scenarios/*.spec.ts` except this slice's own spec.
+- Do **not** fix other slices' application code or tests — signal `SLICE_BLOCKED <reason>` if a prior gate requires out-of-slice work.
+- Do **not** bundle routes or features owned by excluded slices (see **Excludes** below) unless this slice's `completionArtifacts` include them.
 
 ## Testing
 
@@ -36,7 +39,7 @@ Before signaling `SLICE_DONE`, all applicable layers must pass locally:
 
 Computational gates enforce wall-clock timeouts. **Apply the same discipline when you run checks yourself** — unbounded `npm run test:*` / `typecheck` / `lint` / `build` can deadlock and waste the iteration.
 
-1. **Final verification (preferred):** `npm run aih:check -- {{SLICE_ID}}` — same script, slice scope, timeouts, and per-script logs as the harness gate
+1. **Final verification (preferred):** `npm run aih:check -- {{SLICE_ID}}` — same script, slice scope, timeouts, and per-script logs as the harness gate (full profile). For faster self-check: `npm run aih:check -- {{SLICE_ID}} --profile fast` — skips build/integration/e2e; runs slice-scoped Playwright when configured.
 2. **Ad-hoc single script (especially `test:integration`):** `npm run aih:run-check -- test:integration` — live output, 30s heartbeats, log under `ai-harness/generated/runs/`; or prefix env var e.g. `AIH_CHECK_TIMEOUT_test_integration_MS=900000 npm run test:integration`
 3. **If a command exceeds its budget or hangs with no output:** stop the process tree, read the log file path printed by `aih:run-check` / `aih:check` (tail last lines), fix deadlock/hang before `SLICE_DONE`; use `SLICE_BLOCKED` if you cannot resolve
 4. Do **not** wait on hung tests hoping they finish — the gate will timeout and fail the slice anyway
@@ -64,16 +67,51 @@ When the slice agent is `frontend` or `test`, Playwright MCP is available (`--ap
 
 {{SCREENSHOT_DIR_BLOCK}}
 
+{{UI_SCREENS_TO_VERIFY}}
+
+#### Coverage rule
+
+For **every route, page, modal, drawer, or distinct outcome state** created or modified in this slice:
+
+1. Capture **at least one screenshot** per screen/state (more when layout differs by viewport).
+2. Required viewports:
+   - **320×568** — mobile routes, mobile auth
+   - **1280×720** — desktop admin/instructor/auth split-panel
+3. Save under: `ai-harness/generated/runs/screenshots/<slice-id>/implementer/`
+4. Filename: `<UTC-timestamp>-<route-or-state-slug>-<viewport>.png`
+
+**Screen/state examples** (capture each that exists in slice): list default; list with filters/search; empty state; create/edit form; inline validation error; success toast or post-submit row; forbidden/denied state; modal open; distinct outcome panels when slice touches check-in or similar flows.
+
+#### Per-screenshot self-critique checklist
+
+After each capture, verify in the screenshot (not snapshot-only) per `ai-harness/docs/ui-visual-verification.md`:
+
+| # | Check | FAIL if |
+|---|--------|---------|
+| 1 | Primary CTA contrast | Label washed out on primary background |
+| 2 | Secondary/outline/ghost | Text indistinguishable from page background |
+| 3 | Disabled buttons | Illegible label (< 3:1) or looks enabled |
+| 4 | Button padding | Cramped label, insufficient inset |
+| 5 | Stacked actions | Primary/secondary touching, no gap |
+| 6 | Cards/tables | Content flush to edges, no inset padding |
+| 7 | Danger actions | Poor contrast on destructive buttons |
+| 8 | Listing toolbars | Missing search/filter/sort/pagination on collection views |
+| 9 | Typography | Copy clipped, truncated headings |
+| 10 | Focus/active nav | Wrong sidebar highlight for current route |
+
+Any FAIL → fix code → re-screenshot before `SLICE_DONE`.
+
+#### Execution
+
 1. Use **Playwright MCP** or **cursor-ide-browser** to navigate `http://localhost:3007`
-2. Exercise the slice user flow (browse, register, paginate, check-in, organizer tables)
-3. **For each page or route you created or modified:**
-   - Capture screenshots at **320×568** (student mobile) and **1280×720** (desktop) into the directory above (`browser_take_screenshot` with explicit `filename`, or Playwright MCP screenshot tool)
-   - **Self-critique each screenshot** using `ai-harness/docs/ui-visual-verification.md` — primary/secondary button contrast, padding, disabled legibility, card inset spacing
-   - Fix issues and re-screenshot before `SLICE_DONE`; also fix generic/template UI, undifferentiated outcome states, careless spacing per `ai-harness/skills/frontend-design/SKILL.md` and listing/toolbar gaps per `ai-harness/skills/design-craft-notion/SKILL.md`
-   - Use accessibility snapshots **only** for interaction/focus debugging — not as the primary visual review
-4. **Apply browser timeouts** — abandon a navigation or action after **30s** without expected content; do not wait on infinite spinners or stuck camera/GPS prompts; kill hung browser automation and fix before `SLICE_DONE`
-5. If a page looks wrong, fix it before `SLICE_DONE`; cite the screenshot path(s) under the required directory
-6. Append a one-line browser verification note to `ai-harness/state/progress.md` listing screenshot paths and viewports saved under the required directory
+2. Exercise the slice user flow per slice scope
+3. Apply the coverage rule and checklist above for each screen/state
+4. **Apply browser timeouts** — abandon a navigation or action after **30s** without expected content
+5. Append to `ai-harness/state/progress.md`:
+
+```
+<timestamp> | <slice-id> | browser_verified: <flows> — ui_checklist: <N screens/states> — screenshots: <comma-separated paths> (320w + desktop where applicable)
+```
 
 See `ai-harness/docs/browser-mcp.md` for the full runbook. The harness will **re-verify** your work via a dedicated browser test agent gate after computational checks.
 
@@ -93,6 +131,8 @@ When you must restart preview:
 - **Description:** {{SLICE_DESCRIPTION}}
 - **Acceptance tags:** {{SLICE_ACCEPTANCE}}
 - **Required artifacts:** {{SLICE_ARTIFACTS}}
+- **Excludes (do not edit):** {{SLICE_EXCLUDES}}
+- **Notes:** {{SLICE_NOTES}}
 
 ## Docs to read
 

@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-01",
   "version": 1,
-  "docFingerprint": "sha256:46a74e7dd400d0bcac48b5d2f04254825be36fcb9409b80d705fa0172e545ac0",
-  "generatedAt": "2026-06-29T17:42:38Z",
+  "docFingerprint": "sha256:641de2ba59b84e30a793fd3df36ec32172e82dac4637921efd1763bae1303e58",
+  "generatedAt": "2026-07-01T00:00:00.000Z",
   "cases": [
     {
       "id": "TC-FR-01-001",
@@ -379,10 +379,179 @@
       "steps": [
         "POST /api/v1/users with institutionalId AB (below VAL-05 minimum length 3) and otherwise valid fields",
         "Assert response status and error envelope",
-        "POST /api/v1/users with institutionalId containing invalid characters (e.g. spaces or underscores) and otherwise valid fields",
-        "Assert response status and error envelope for each invalid payload"
+        "POST /api/v1/users with institutionalId containing invalid characters (e.g. spaces or @) and otherwise valid fields",
+        "Assert response status and error envelope for each invalid payload",
+        "POST /api/v1/users with institutionalId SV-2026-001 (hyphen within VAL-05 charset) and otherwise valid fields",
+        "Assert HTTP 201 and persisted institutionalId SV-2026-001"
       ],
-      "expected": "HTTP 422 ValidationFailed with errorCode InvalidInstitutionalId and field-level detail for institutionalId per VAL-05; no user row created",
+      "expected": "Invalid IDs return HTTP 422 ValidationFailed with errorCode InvalidInstitutionalId and field-level detail per VAL-05 (`^[A-Za-z0-9\\-_.]{3,32}$`); hyphen, underscore, and period are accepted per AC-01f; no user row created for invalid payloads",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-01-020",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-01", "AC-01d"],
+      "title": "POST /users/import upsert creates new users and updates existing by institutional_id",
+      "preconditions": [
+        "TrainingOfficeAdmin session available",
+        "Existing user SV2026100 with known display_name, email, role, and active flag in database",
+        "No user exists with institutionalId SV2026101"
+      ],
+      "steps": [
+        "Upload CSV via POST /api/v1/users/import with row for new SV2026101 and row for existing SV2026100 with changed display_name, email, role, and active",
+        "Poll GET /api/v1/users/imports/:batchId until status Completed",
+        "Query users table for SV2026101 and SV2026100",
+        "Verify password_hash for SV2026100 is unchanged from pre-import value"
+      ],
+      "expected": "Batch summary shows createdCount=1 and updatedCount=1; new user SV2026101 persisted with active=true; existing user SV2026100 updated on display_name, email, role, and active per AC-01d; password and sessions unchanged on update",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-01-021",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": ["FR-01", "AC-01e"],
+      "title": "CSV import idempotent no-op when institutional_id exists with unchanged profile fields",
+      "preconditions": [
+        "TrainingOfficeAdmin session available",
+        "User SV2026200 exists with known display_name, email, role, and active matching a CSV row exactly"
+      ],
+      "steps": [
+        "POST /api/v1/users/import with CSV row identical to existing SV2026200 profile",
+        "Poll GET /api/v1/users/imports/:batchId until status Completed",
+        "Query users table count and row for institutionalId SV2026200"
+      ],
+      "expected": "Row counted as success in batch summary per AC-01e; exactly one user row remains for SV2026200 with unchanged field values; no duplicate user created",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-01-022",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-01", "AC-01g"],
+      "title": "CSV import row rejected with DuplicateEmail when email belongs to different institutional_id",
+      "preconditions": [
+        "TrainingOfficeAdmin session available",
+        "User SV2026300 owns email taken@example.edu.vn",
+        "No user exists with institutionalId SV2026301 or SV2026302"
+      ],
+      "steps": [
+        "POST /api/v1/users/import with CSV containing valid new row SV2026301, valid update row, and row SV2026302 using email taken@example.edu.vn",
+        "Poll GET /api/v1/users/imports/:batchId until status Completed",
+        "Inspect errorDetails for rejected row"
+      ],
+      "expected": "Rejected row returns errorCode DuplicateEmail per AC-01g; valid rows still process; batch summary shows errorRows=1, createdCount and updatedCount for successful rows, and row-level errorDetails; no user SV2026302 created",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-01-023",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P1",
+      "traceability": ["FR-01", "AC-01f"],
+      "title": "Institutional ID with underscore and period accepted on POST /users and CSV import",
+      "preconditions": [
+        "TrainingOfficeAdmin is authenticated",
+        "No user exists with institutionalId SV_2026.001"
+      ],
+      "steps": [
+        "POST /api/v1/users with institutionalId SV_2026.001 and otherwise valid student fields",
+        "Assert HTTP 201 and response institutionalId is SV_2026.001",
+        "POST /api/v1/users/import with CSV row institutional_id SV_2026.002, valid display_name, email, role Student, active true",
+        "Poll import batch until Completed and query users for SV_2026.002"
+      ],
+      "expected": "VAL-05 IDs containing _ and . accepted per AC-01f; values persisted trimmed as submitted; both API create and CSV import succeed",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-01-024",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-01", "AC-01d"],
+      "title": "Admin user CSV import upload shows preview then summary with created and updated counts",
+      "preconditions": [
+        "TrainingOfficeAdmin is logged in",
+        "CSV file prepared with one new institutional_id and one existing institutional_id marked for update",
+        "Admin navigates to /admin/users/import"
+      ],
+      "steps": [
+        "Upload CSV file via UserImportForm file select",
+        "Verify ImportPreviewTable shows row status create, update, or error per row",
+        "Click Xác nhận nhập to submit import",
+        "Observe ImportSummary screen after batch completes"
+      ],
+      "expected": "Preview displays column validation and per-row create/update status; summary lists createdCount, updatedCount, and rejected counts per AC-01d; partial success allowed when some rows error",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-01-025",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P1",
+      "traceability": ["FR-01", "AC-01d"],
+      "title": "POST /users/import returns 202 Accepted with batchId envelope",
+      "preconditions": [
+        "TrainingOfficeAdmin session cookie is set",
+        "Valid UTF-8 CSV with required columns institutional_id, display_name, email, role, active"
+      ],
+      "steps": [
+        "Send POST /api/v1/users/import as multipart/form-data with file field",
+        "Assert HTTP status 202",
+        "Assert response body contains batchId, status Processing, and Vietnamese message",
+        "GET /api/v1/users/imports/:batchId and assert UserImportBatch shape with totalRows, createdCount, updatedCount, errorDetails"
+      ],
+      "expected": "HTTP 202 Accepted with batchId; poll endpoint returns completed UserImportBatch with totalRows, successRows, errorRows, createdCount, updatedCount, and errorDetails per API design §3.2a–3.2b",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-01-026",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": ["FR-01"],
+      "title": "CSV import create row with omitted active column defaults active=true",
+      "preconditions": [
+        "TrainingOfficeAdmin session available",
+        "No user exists with institutionalId SV2026400"
+      ],
+      "steps": [
+        "POST /api/v1/users/import with CSV row containing institutional_id SV2026400, display_name, email, role Student, and no active column",
+        "Poll GET /api/v1/users/imports/:batchId until status Completed",
+        "Query users table for institutionalId SV2026400"
+      ],
+      "expected": "Row processed as create with successRows incremented; new user persisted with active=true per FR-01 default when active column omitted",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-01-027",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["FR-01"],
+      "title": "CSV import row with invalid email format rejected without blocking valid rows",
+      "preconditions": [
+        "TrainingOfficeAdmin session available",
+        "No user exists with institutionalId SV2026401 or SV2026402"
+      ],
+      "steps": [
+        "POST /api/v1/users/import with CSV containing valid row SV2026401 and row SV2026402 with malformed email (not VAL-02)",
+        "Poll GET /api/v1/users/imports/:batchId until status Completed",
+        "Inspect errorDetails for rejected row and query users table"
+      ],
+      "expected": "Invalid-email row rejected with row-level errorDetails per FR-01; valid row SV2026401 still created; batch shows errorRows=1 and createdCount=1; no user SV2026402 persisted",
       "edgeCase": true
     }
   ]

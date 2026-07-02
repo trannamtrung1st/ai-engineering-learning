@@ -12,7 +12,7 @@ The browser test agent exercises generated `layer: browser` cases and acceptance
 UX-<slice-id>-<NNN>
 ```
 
-Examples: `UX-web-student-checkin-001`, `UX-web-auth-login-002`
+Examples: `UX-web-auth-login-001`, `UX-web-student-checkin-002`
 
 ## Severity and gate impact
 
@@ -24,6 +24,8 @@ Aligned with [11-testing-plan.md](../../docs/technical/11-testing-plan.md) §12:
 | P1 | Yes |
 | P2 | No (logged only) |
 | P3 | No (logged only) |
+
+The AI reviewer treats P2/P3 as non-blocking notes unless slice `completionArtifacts` explicitly include nav/breadcrumb work. P0/P1 still block `BROWSER_TEST_PASS` and may block `REVIEW_PASS` on critical flows.
 
 ## Artifacts
 
@@ -39,20 +41,20 @@ Schema: [ux-bugs.schema.json](../schemas/ux-bugs.schema.json)
 
 ```json
 {
-  "sliceId": "web-student-checkin",
+  "sliceId": "<slice-id>",
   "runId": "20250630T120000Z",
   "generatedAt": "2025-06-30T12:00:00Z",
   "bugs": [
     {
-      "id": "UX-web-student-checkin-001",
+      "id": "UX-<slice-id>-001",
       "severity": "P1",
-      "title": "GPS submit button below 44px touch target",
-      "page": "/check-in",
-      "screenshot": "ai-harness/generated/runs/screenshots/web-student-checkin/browser-test/20250630T120000Z-check-in-submit.png",
-      "repro": ["Navigate to /check-in", "Complete preflight", "Inspect submit control dimensions"],
+      "title": "Primary submit button below 44px touch target",
+      "page": "/register",
+      "screenshot": "ai-harness/generated/runs/screenshots/<slice-id>/browser-test/20250630T120000Z-register-submit.png",
+      "repro": ["Navigate to /register", "Inspect submit control dimensions"],
       "expected": "Touch targets ≥ 44×44 px per quality bar",
       "actual": "Submit button measures 36×40 px",
-      "relatedTags": ["NFR-18", "AC-08f"]
+      "relatedTags": ["NFR-18", "AC-03"]
     }
   ]
 }
@@ -61,7 +63,7 @@ Schema: [ux-bugs.schema.json](../schemas/ux-bugs.schema.json)
 ## Markdown output (in `*-browser-test.txt`)
 
 ```
-UX-web-student-checkin-001: P1 — GPS submit button below 44px touch target — screenshot: .../20250630T120000Z-check-in-submit.png
+UX-<slice-id>-001: P1 — Primary submit button below 44px touch target — screenshot: .../20250630T120000Z-register-submit.png
 ```
 
 ## Feedback to implementer

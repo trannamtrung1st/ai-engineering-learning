@@ -1,8 +1,8 @@
 {
   "productItemId": "NFR-20",
   "version": 1,
-  "docFingerprint": "sha256:20263a0511e70f72e04b576ee98a37e2b2abfe28c0133ecefa43a1d87166aaa4",
-  "generatedAt": "2026-06-29T19:17:02Z",
+  "docFingerprint": "sha256:c846b27c93f7d5a2fca97ea30039f8021ebfe5ee04711f351fc18db986850ffe",
+  "generatedAt": "2026-07-01T02:51:36Z",
   "cases": [
     {
       "id": "TC-NFR-20-001",
@@ -104,8 +104,8 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["NFR-20", "FR-06"],
-      "title": "GET /api/v1/sessions/:sessionId/qr/current returns 403 when session not Active — no projection token for Draft or Closed",
+      "traceability": ["NFR-20", "FR-06", "AC-06"],
+      "title": "TS-19: GET /api/v1/sessions/:sessionId/qr/current returns 403 when session not Active — no projection token for Draft or Closed",
       "preconditions": [
         "Authenticated Instructor session with qr:display permission",
         "Draft sessionId with valid GPS configured but status Draft",
@@ -209,7 +209,8 @@
         "Verify header strip shows session title, room name, and StatusBadge Active with --color-text-inverse",
         "Verify Quét mã để điểm danh helper text visible below QR",
         "Verify minimal chrome: no sidebar; Thoát toàn màn hình ghost button accessible in footer",
-        "Verify QrCountdown numeric display visible and updating each second"
+        "Verify QrCountdown numeric display visible and updating each second",
+        "Capture 1280×720 screenshot per ui-visual-verification.md for contrast and layout evidence"
       ],
       "expected": "NFR-20 projector display: fullscreen presenter at 1280×720 uses high-contrast inverse QR surface with large scannable code, header metadata, and visible countdown per ui-states §13 and quality bar §2",
       "edgeCase": false
@@ -230,9 +231,10 @@
       "steps": [
         "Locate QrCountdown element with variant fullscreen on qr-present route",
         "Assert computed font-size ≥ 48 px and font-weight bold per ui-ux-foundation §7 presentation mode",
-        "When secondsRemaining > 10, assert color uses --color-qr-accent (#22c55e) on --color-qr-bg (#000000) per app-layout-components §8",
-        "When secondsRemaining ≤ 10, assert accent switches to --color-qr-warning (#facc15) per design tokens §3.4",
-        "Verify countdown remains legible without zoom at 1280×720"
+        "When secondsRemaining > 10, assert color uses --color-qr-accent (#22c55e) on --color-qr-bg (#000000) per design tokens §3.5",
+        "When secondsRemaining ≤ 10, assert accent switches to --color-qr-warning (#facc15) per design tokens §3.5",
+        "Verify countdown remains legible without zoom at 1280×720",
+        "Capture desktop screenshot; verify numerals readable at arm's length per ui-visual-verification.md"
       ],
       "expected": "NFR-20 countdown visibility: timer numerals meet minimum 48 px bold size for classroom projection distance with accent/warning token progression per ui-ux-foundation §7 and 07-non-functional-risk §2.4",
       "edgeCase": false
@@ -244,22 +246,21 @@
       "technique": "browser-journey",
       "priority": "P0",
       "traceability": ["NFR-20"],
-      "title": "axe-core contrast audit: QrCountdown text meets 4.5:1 minimum on fullscreen presenter",
+      "title": "QrCountdown screenshot review: timer text meets 4.5:1 minimum on fullscreen presenter",
       "preconditions": [
         "Authenticated Instructor on /sessions/:id/qr-present at 1280×720",
         "Active session with countdown visible",
-        "axe-core or equivalent accessibility engine available in Playwright test harness"
+        "Harness verifies contrast via browser screenshots per accessibility-basics §3 and ui-visual-verification.md — not axe-core"
       ],
       "steps": [
-        "Run axe-core color-contrast rule scoped to QrCountdown and session metadata text on qr-present page",
-        "Assert no contrast violations for countdown numerals against --color-qr-bg when > 10 s (--color-qr-accent)",
-        "Assert contrast ratio ≥ 4.5:1 for timer text per NFR-20 target and quality bar §4 Not acceptable negation",
-        "Repeat audit when countdown switches to --color-qr-warning at ≤ 10 s remaining",
-        "Assert warning-state countdown still meets 4.5:1 against black background"
+        "Capture 1280×720 screenshot of qr-present page with countdown > 10 s remaining",
+        "Assert computed color of countdown numerals is --color-qr-accent (#22c55e) against --color-qr-bg (#000000) per 04-design-tokens §3.5",
+        "Verify timer text visually legible at projection distance; token pair meets NFR-20 target ≥ 4.5:1 per production-ui-quality-bar §4 Not acceptable negation",
+        "Wait until countdown ≤ 10 s and capture second screenshot with --color-qr-warning (#facc15) accent",
+        "Verify warning-state countdown remains legible against black background on screenshot review"
       ],
-      "expected": "NFR-20 measurable target satisfied: countdown timer text contrast ratio ≥ 4.5:1 on projector fullscreen for both accent and warning states per 07-non-functional-risk §2.4 and production-ui-quality-bar §2",
-      "edgeCase": false,
-      "harnessSkip": "not-applicable"
+      "expected": "NFR-20 measurable target satisfied: countdown timer text contrast ratio ≥ 4.5:1 on projector fullscreen for both accent and warning states per 07-non-functional-risk §2.4, production-ui-quality-bar §2, and ui-visual-verification.md",
+      "edgeCase": false
     },
     {
       "id": "TC-NFR-20-012",
@@ -316,7 +317,7 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["NFR-20", "FR-06"],
+      "traceability": ["NFR-20", "FR-06", "NFR-06", "AC-06"],
       "title": "QR fullscreen state transitions: Entering → Live → Token refresh → Session ended overlay",
       "preconditions": [
         "Authenticated Instructor with Active session",
@@ -365,19 +366,134 @@
       "title": "Low-contrast countdown styling fails quality gate — blocks merge per Not acceptable list",
       "preconditions": [
         "Test harness can render QrCountdown with intentionally degraded contrast (e.g., #666 on #000)",
-        "axe-core color-contrast rule enabled",
+        "Screenshot review per ui-visual-verification.md and accessibility-basics §3",
         "Simulates regression where design tokens bypassed"
       ],
       "steps": [
         "Render qr-present with countdown text color below 4.5:1 contrast against --color-qr-bg",
-        "Run axe-core color-contrast audit on countdown element",
-        "Assert audit reports violation with contrast ratio below 4.5:1",
+        "Capture 1280×720 screenshot and verify countdown numerals visually fail legibility at projection distance",
+        "Assert computed color deviates from --color-qr-accent and --color-qr-warning token pairs per 04-design-tokens §3.5",
         "Verify test fails CI browser gate per production-ui-quality-bar §4 Not acceptable: QR countdown below 4.5:1",
-        "Restore --color-qr-accent and --color-qr-warning tokens and re-run audit to confirm pass"
+        "Restore --color-qr-accent and --color-qr-warning tokens and re-capture screenshot to confirm pass"
       ],
       "expected": "NFR-20 contrast boundary enforced: countdown below 4.5:1 contrast detected as merge-blocking defect per quality bar §4 and NFR-20 measurable target",
-      "edgeCase": true,
-      "harnessSkip": "not-applicable"
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-20-017",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["NFR-20"],
+      "title": "Admin users listing TableToolbar exposes search + filter row per 14-listing §0",
+      "preconditions": [
+        "Authenticated TrainingOfficeAdmin session",
+        "Seeded users spanning multiple roles and active states",
+        "Desktop Chrome viewport 1280×720 on /admin/users per ui-visual-verification.md"
+      ],
+      "steps": [
+        "Navigate to /admin/users and verify TableToolbar renders search pill on left with Vietnamese placeholder per 14-listing §3 and design-craft-notion database toolbar layout",
+        "Verify filter controls for role and active status appear in toolbar row with Vietnamese labels per 14-listing §4.1",
+        "Verify sortable column headers and offset pagination footer present per 14-listing §0 mandatory capabilities matrix",
+        "Verify primary toolbar action aligned right with --space-4 toolbar padding and --space-3 control gap per common-ui-components §4.2",
+        "Type a debounced search query and confirm results filter without English-only toolbar strings",
+        "Capture desktop screenshot and verify toolbar controls legible on --color-surface-default warm stone page background"
+      ],
+      "expected": "NFR-20 admin listing craft: TableToolbar search + filter row meets legible control contrast on warm stone workspace per 14-listing §0, design-craft-notion skill, and production-ui-quality-bar §2 control contrast",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-20-018",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["NFR-20", "FR-05"],
+      "title": "Instructor session list table action buttons legible on warm stone background",
+      "preconditions": [
+        "Authenticated Instructor with Draft, Active, and Closed sessions",
+        "Desktop Chrome viewport 1280×720 per ui-visual-verification.md",
+        "Session detail roster tab has editable rows within instructor edit window"
+      ],
+      "steps": [
+        "Navigate to /sessions populated view on --color-surface-default warm stone background and verify SessionCard lifecycle action buttons (Mở buổi học, Đóng buổi học) use readable --color-text-primary or --color-primary-600 labels against card and page surfaces",
+        "Open Active session detail roster tab and verify table row action controls meet ≥4.5:1 label contrast on --color-surface-raised rows over warm stone page per 04-design-tokens §3.2.1",
+        "Verify disabled edit-locked actions still meet ≥3:1 disabled pair (--color-text-disabled on --color-surface-muted) per production-ui-quality-bar §4",
+        "Capture desktop screenshot of session list and roster tab; confirm no ghost/outline labels wash out against --color-surface-default (#f6f5f4)"
+      ],
+      "expected": "NFR-20 instructor UI legibility: session list and roster action buttons remain readable on warm stone Notion workspace background per production-ui-quality-bar §2 control contrast and 05-common-ui-components §9",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-20-019",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-20", "FR-02", "AC-02"],
+      "title": "Login primary and outline buttons meet ≥4.5:1 label contrast at 320px",
+      "preconditions": [
+        "Application running with default locale vi-VN",
+        "Playwright emulates mobile viewport 320×568 per ui-visual-verification.md",
+        "Unauthenticated session on /login"
+      ],
+      "steps": [
+        "Navigate to /login at 320px width and capture screenshot per ui-visual-verification.md filename convention",
+        "Inspect primary submit button: assert --color-primary-foreground label on --color-primary-600 background per 04-design-tokens §3.2.1 primary pair",
+        "Inspect outline or secondary action if present: assert --color-primary-600 label on --color-surface-default meets ≥4.5:1",
+        "Verify md button min-height --size-touch-min (44px) and comfortable padding per §5.1 — no cramped labels on student mobile route",
+        "Verify stacked actions have --space-3 gap and all visible labels remain Vietnamese"
+      ],
+      "expected": "NFR-20 login contrast: primary and outline button labels meet token contrast pairs at 320px per 04-design-tokens §3.2.1 and ui-visual-verification.md checklist items 1–4",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-20-020",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-20", "FR-07", "AC-07"],
+      "title": "Student check-in outcome panels use distinct washes with readable CTA button at 320px",
+      "preconditions": [
+        "Authenticated Student on mobile viewport 320×568",
+        "Test harness triggers Success (success-50) and ExpiredQr (warning-50) outcome panels",
+        "VITE_ENABLE_DEVICE_SIMULATION enabled in Playwright harness per NFR-24 for deterministic outcome triggers"
+      ],
+      "steps": [
+        "Trigger Present success outcome and verify panel wash --color-success-50 with CheckCircle2 icon in --color-success-500 per ui-states §4.3, 04-design-tokens §13, and common-ui-components §5.3",
+        "Verify success primary CTA Xong uses --color-primary-foreground on --color-primary-600 with ≥4.5:1 contrast per ui-visual-verification.md item 8",
+        "Trigger ExpiredQr outcome and verify distinct --color-warning-50 wash with Clock icon — not interchangeable with success styling per production-ui-quality-bar §4",
+        "Verify each outcome panel has --space-6 padding, --size-icon-lg hero icon, and single primary recovery CTA with min-height --size-touch-min",
+        "Capture 320px screenshot per outcome; assert CTA label readable at arm's length and Vietnamese"
+      ],
+      "expected": "NFR-20 outcome moment craft: check-in panels apply distinct semantic washes with legible CTAs — not generic identical alert styling per frontend-design skill signature moments and ui-visual-verification.md",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-20-021",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-20"],
+      "title": "Button variants on student and instructor routes use token fg/bg pairs per §3.2.1",
+      "preconditions": [
+        "Authenticated and unauthenticated fixtures available",
+        "Routes exposing Button variants: /login (primary, outline), /sessions (primary lifecycle), /check-in outcome (primary CTA)",
+        "Mobile viewport 320×568 and desktop 1280×720 per ui-visual-verification.md"
+      ],
+      "steps": [
+        "On /login at 320px verify primary variant: --color-primary-600 bg, --color-primary-foreground label with ≥4.5:1",
+        "On /login verify outline variant if present: --color-primary-600 text/border on --color-surface-default with ≥4.5:1",
+        "On /sessions at 1280×720 verify primary lifecycle button (Mở buổi học) maintains primary token pair on warm stone background",
+        "On check-in outcome panel verify recovery CTA primary variant maintains --color-primary-foreground on --color-primary-600 over semantic wash background",
+        "Verify disabled controls use --color-text-disabled on --color-surface-muted at ≥3:1 per 05-common-ui-components §2.1",
+        "Capture screenshots at both viewports; flag any ad-hoc opacity or off-token shades weakening contrast"
+      ],
+      "expected": "NFR-20 Button contract: primary, outline, and ghost variants use documented foreground/background token pairs from 04-design-tokens §3.2.1 per production-ui-quality-bar §2 and ui-visual-verification.md",
+      "edgeCase": false
     }
   ]
 }

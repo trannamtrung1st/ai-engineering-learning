@@ -1,8 +1,8 @@
 {
   "productItemId": "NFR-06",
   "version": 1,
-  "docFingerprint": "sha256:f93b811fb4583167a37d209b328ff95c1e18db43a08f585c3e0dca0eddfa3099",
-  "generatedAt": "2026-06-29T18:52:22Z",
+  "docFingerprint": "sha256:88fe43a9148fb92bf183628958f2390ffada7de7491bd4040aea7e1079b01932",
+  "generatedAt": "2026-07-01T02:31:02Z",
   "cases": [
     {
       "id": "TC-NFR-06-001",
@@ -227,7 +227,7 @@
       "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["NFR-06", "BR-03", "AC-06"],
-      "title": "Expired token rejected at T + 31 s confirms NFR-06 expiry enforcement per BR-03",
+      "title": "TS-18: Expired token rejected at T + 31 s confirms NFR-06 expiry enforcement per BR-03",
       "preconditions": [
         "Active session with enrolled Student authenticated",
         "QrToken issued at time T with status Valid",
@@ -241,7 +241,7 @@
         "Verify attendance remains Pending",
         "Confirm token age exceeds 30 s absolute window per NFR-06 expired-token rejection target"
       ],
-      "expected": "NFR-06 requires expired tokens rejected per BR-03; 31 s scan fails with ExpiredQr confirming 30 s hard window",
+      "expected": "Testing-plan §3 TS-18 satisfied: NFR-06 requires expired tokens rejected per BR-03; 31 s scan fails with ExpiredQr confirming 30 s hard window",
       "edgeCase": true
     },
     {
@@ -251,7 +251,7 @@
       "technique": "flow-a",
       "priority": "P0",
       "traceability": ["NFR-06", "FR-06", "AC-06"],
-      "title": "Flow A step 3: QR poll returns token with secondsRemaining ≥ 20 within NFR-06 validity window",
+      "title": "Flow A step 3: QR poll returns token with secondsRemaining within NFR-06 30 s validity window",
       "preconditions": [
         "Instructor opened Draft session to Active (Flow A steps 1–2 complete)",
         "Authenticated Instructor session available",
@@ -300,7 +300,8 @@
       "preconditions": [
         "Instructor is logged in to instructor SPA",
         "Active session exists for assigned class HESD-01",
-        "Instructor navigates to session detail QR tab with QrCountdown visible"
+        "Instructor navigates to session detail QR tab with QrCountdown visible",
+        "Displayed QR token rotates via scheduler cadence (protected preview fixture IDs excluded from instructor display per NFR-06)"
       ],
       "steps": [
         "Verify QrCountdown shows seconds remaining (Mã mới sau X giây) between 1 and 30 on load",
@@ -324,17 +325,19 @@
       "preconditions": [
         "Instructor is logged in with Active session in progress",
         "Browser viewport set to 1280×720 per device matrix and NFR-20 field test spec",
-        "Instructor navigates to /sessions/:id/qr-present fullscreen mode"
+        "Instructor navigates to /sessions/:id/qr-present fullscreen mode",
+        "Displayed token rotates on 30 s scheduler cadence (not static preview fixture token)"
       ],
       "steps": [
-        "Verify large QR code renders on --color-qr-bg with --color-qr-fg modules per design tokens §3.5",
-        "Verify countdown timer (--color-qr-countdown) visible and updating each second",
+        "Verify no instructor sidebar or nav chrome obscures QR in fullscreen presentation per production UI quality bar §5.2",
+        "Verify large QR code renders on --color-qr-bg (#000000) with --color-qr-fg (#ffffff) modules per design tokens §3.5",
+        "Verify countdown timer using --color-qr-countdown (#ffffff) on black background is visible and updating each second",
         "Record timestamp T_start when countdown shows 30",
         "Wait one full rotation cycle until QR image updates",
         "Assert elapsed time T_rotate minus T_start is between 29 and 31 seconds",
         "Verify countdown resets to approximately 30 after rotation without full page reload"
       ],
-      "expected": "Projector display check per NFR-06 verification: 30 s ± 1 s rotation with visible countdown at 1280×720 per NFR-20 and production UI quality bar §2",
+      "expected": "Projector display check per NFR-06 verification: 30 s ± 1 s rotation with visible countdown at 1280×720; high-contrast QR mode and no chrome obscuring QR per production UI quality bar §2 and §5.2",
       "edgeCase": false
     },
     {
@@ -348,12 +351,12 @@
       "preconditions": [
         "Instructor is logged in with Active session QR tab open",
         "QrCountdown component visible with countdown above 10 seconds",
-        "Design tokens §3.5 define --color-qr-accent for > 10 s and --color-qr-warning for ≤ 10 s"
+        "Design tokens §3.5 define --color-qr-accent (#22c55e) for > 10 s and --color-qr-warning (#facc15) for ≤ 10 s"
       ],
       "steps": [
-        "Observe QrCountdown text color uses --color-qr-accent (green) when secondsRemaining > 10",
+        "Observe QrCountdown text color uses --color-qr-accent (#22c55e) when secondsRemaining > 10",
         "Wait until countdown reaches 10 seconds or below",
-        "Verify countdown text color switches to --color-qr-warning (yellow)",
+        "Verify countdown text color switches to --color-qr-warning (#facc15)",
         "Verify countdown continues decrementing each second through warning state",
         "Verify QR rotates and countdown resets to accent color after 30 s cycle completes"
       ],
@@ -429,6 +432,52 @@
       ],
       "expected": "NFR-06 and BR-03 boundary: token valid at 29 s, rejected at 31 s; no exceptions to 30-second absolute validity window",
       "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-06-019",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["NFR-06", "AC-06", "FR-06"],
+      "title": "TS-19: GET /sessions/:sessionId/qr/current when session not Active returns no valid token",
+      "preconditions": [
+        "Draft session exists (status Draft) with valid GPS configured",
+        "Closed session exists (status Closed) from prior workshop",
+        "Authenticated Instructor with assignment to both sessions"
+      ],
+      "steps": [
+        "GET /api/v1/sessions/:draftSessionId/qr/current with Instructor session",
+        "Assert HTTP 403 with errorCode SessionNotActive and no qrPayload or tokenId in response body",
+        "GET /api/v1/sessions/:closedSessionId/qr/current with Instructor session",
+        "Assert same session-not-active rejection with no valid rotating token",
+        "Query qr_tokens table for both sessionIds and assert no Valid token rows exist"
+      ],
+      "expected": "Testing-plan §3 TS-19 satisfied: NFR-06 cadence applies only while Active; no valid QR token issued when session is Draft or Closed per AC-06c and SM-03 §4.5",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-06-020",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-06", "AC-06", "FR-06"],
+      "title": "Instructor QR tab shows session-not-active state when session is Draft or Closed",
+      "preconditions": [
+        "Instructor is logged in to instructor SPA",
+        "Draft session with GPS configured exists (not yet opened)",
+        "Closed session from prior workshop exists"
+      ],
+      "steps": [
+        "Navigate to QR tab on Draft session detail page",
+        "Verify illustration and message Buổi học chưa mở displayed per ui-states §7.2",
+        "Verify no QR image or QrCountdown rendered and no successful poll to /api/v1/sessions/:id/qr/current",
+        "Navigate to Closed session QR tab and verify session-not-active illustration with no rotating countdown",
+        "Confirm Trình chiếu QR action is disabled or absent until session is Active"
+      ],
+      "expected": "AC-06c UI state: no valid QR token or NFR-06 countdown displayed when session not Active; instructor sees Buổi học chưa mở placeholder instead of rotation UI",
+      "edgeCase": false
     }
   ]
 }

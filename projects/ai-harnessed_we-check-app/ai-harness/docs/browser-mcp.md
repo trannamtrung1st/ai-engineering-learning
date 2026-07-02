@@ -91,21 +91,26 @@ See implementer/tester prompts for full rules. Computational timeouts are enforc
 
 ## Standard flows
 
-### Participant
+### Student
 
-1. Open `http://localhost:3000`
-2. Browse paginated events — confirm prev/next controls and page changes
-3. Open event detail → register → confirm status badge
-4. My registrations — confirm paginated list loads without N+1 errors
-5. Check-in and feedback flows when in scope for the slice
+1. Open `http://localhost:3007` and authenticate as student (preview credentials or dev login)
+2. `/check-in` — QR scan flow (use simulation flags when `VITE_ENABLE_DEVICE_SIMULATION=true`)
+3. GPS capture step and check-in outcome panel states (success, rejection, preflight gate)
+4. `/history` — paginated attendance history when in scope for the slice
 
-### Organizer
+### Instructor
 
-1. Open organizer event list — paginated table
-2. Create or edit event
-3. Dashboard, check-in console, registrations/eligibility tables
+1. Open session list (`/sessions`) — paginated table, filters, and range label
+2. Create or open session, QR display, live attendance monitor
+3. Attendance roster — manual status edits and audit trail when in scope
 
-Use dev auth tokens or the app's dev login flow as documented in `docs/technical/10-local-development-setup.md`.
+### Training Office Admin
+
+1. User, class, subject, and roster admin tables — paginated listings
+2. Reports and CSV export flows
+3. Policy configuration screens
+
+Use preview seed credentials or the app's dev login flow as documented in `docs/technical/10-local-development-setup.md`.
 
 ## What the harness automates vs agent-driven
 

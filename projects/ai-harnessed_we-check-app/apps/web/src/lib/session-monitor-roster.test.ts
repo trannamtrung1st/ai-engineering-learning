@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { SessionMonitorRecord } from "@/lib/session-monitor-api";
 import {
   filterMonitorRecords,
+  searchMonitorRecords,
   sortMonitorRecords,
   STATUS_SORT_ORDER,
 } from "@/lib/session-monitor-roster";
@@ -52,5 +53,11 @@ describe("session-monitor-roster (AC-15, FR-15)", () => {
     const filtered = filterMonitorRecords(records, AttendanceStatus.Present);
     expect(filtered).toHaveLength(1);
     expect(filtered[0]?.institutionalId).toBe("SV1");
+  });
+
+  it("TC-AC-15-013: searchMonitorRecords matches displayName and institutionalId", () => {
+    expect(searchMonitorRecords(records, "alpha")).toHaveLength(1);
+    expect(searchMonitorRecords(records, "SV3")[0]?.displayName).toBe("Beta");
+    expect(searchMonitorRecords(records, "  ")).toHaveLength(records.length);
   });
 });

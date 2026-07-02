@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-06",
   "version": 1,
-  "docFingerprint": "sha256:ce4c73a90cbe521ea8ad065e22af5a6cf305ae62ba9191af08f27cbf588c8319",
-  "generatedAt": "2026-06-29T17:14:33Z",
+  "docFingerprint": "sha256:9e085d864cfa9ea5a3355a44144bc24cef245d8507af723d1f6a720bbb89b3ce",
+  "generatedAt": "2026-07-01T01:15:13Z",
   "cases": [
     {
       "id": "TC-AC-06-001",
@@ -67,12 +67,12 @@
       ],
       "steps": [
         "GET /api/v1/sessions/:draftSessionId/qr/current with Instructor session",
-        "Assert HTTP 403 with errorCode SessionNotActive or no qrPayload in response body",
+        "Assert HTTP 403 with errorCode SessionNotActive and message Buổi học chưa mở hoặc đã kết thúc per error-handling §4.2",
         "GET /api/v1/sessions/:closedSessionId/qr/current with Instructor session",
-        "Assert same session-not-active rejection with no valid tokenId or qrPayload",
+        "Assert HTTP 403 SessionNotActive with no qrPayload or tokenId in response body",
         "Query qr_tokens table for both sessionIds and assert no Valid token rows exist"
       ],
-      "expected": "No valid QR token issued when session is not Active per AC-06c; API rejects with SessionNotActive or returns empty invalid payload",
+      "expected": "No valid QR token issued when session is not Active per AC-06c and API design §6.1 preconditions; HTTP 403 SessionNotActive per error-handling §4.2",
       "edgeCase": false
     },
     {
@@ -205,7 +205,7 @@
         "Assert response errorCode Forbidden with localized permission-denied message",
         "Verify no qrPayload or tokenId returned in response body"
       ],
-      "expected": "Student cannot access instructor QR display endpoint; HTTP 403 per AC-06c no valid token for student role",
+      "expected": "Student lacks qr:display permission; HTTP 403 Forbidden with no qrPayload returned per roles-permissions §2.3 and API design §6.1",
       "edgeCase": false
     },
     {
@@ -377,13 +377,14 @@
         "Instructor navigates to session detail QR tab (/sessions/:id with QR panel visible)"
       ],
       "steps": [
+        "Verify QrDisplayPanel polls GET /api/v1/sessions/:sessionId/qr/current every 5 seconds per main-workflows §4.2",
         "Verify QrCodeImage component renders scannable QR code",
         "Verify QrCountdown shows seconds remaining (e.g. Mã mới sau X giây) between 1 and 30",
         "Wait 30 seconds and observe QR image src or token payload change",
         "Verify countdown resets to approximately 30 seconds after refresh",
         "Verify countdown decrements visibly each second without full page reload"
       ],
-      "expected": "QR display auto-refreshes every 30 s with visible countdown per AC-06a and ui-states §7.2",
+      "expected": "Instructor-facing display polls every 5 s and refreshes QR every 30 s with visible countdown per AC-06a, main-workflows §4.2, and ui-states §7.2",
       "edgeCase": false
     },
     {
@@ -400,12 +401,13 @@
         "Instructor clicks Trình chiếu QR or navigates to /sessions/:id/qr-present"
       ],
       "steps": [
-        "Verify FullscreenLayout renders large QR code readable at 5 m simulated scale",
+        "Verify QrFullscreenPresentation renders large QR code readable at 5 m simulated scale per event-specific-components §3.8",
         "Verify countdown timer visible and updating",
-        "Wait one 30-second rotation cycle and verify QR image updates",
-        "Verify no instructor navigation chrome obscures QR (fullscreen mode)"
+        "Wait one 30-second rotation cycle and verify QR image cross-fades with countdown reset per ui-states §13",
+        "Verify no instructor navigation chrome obscures QR (fullscreen mode)",
+        "Verify Thoát toàn màn hình ghost button returns to session detail QR tab"
       ],
-      "expected": "Fullscreen QR presentation rotates every 30 s per AC-06a; suitable for classroom projector per NFR-20",
+      "expected": "Fullscreen QR presentation rotates every 30 s per AC-06a; suitable for classroom projector per NFR-20 and ui-states §13",
       "edgeCase": false
     },
     {
@@ -427,7 +429,7 @@
         "Verify no QR image rendered and no polling requests to /api/v1/sessions/:id/qr/current succeed with 200",
         "Navigate to Closed session QR tab and verify session-not-active illustration with Buổi học chưa mở per ui-states §7.2"
       ],
-      "expected": "UI shows session-not-active state per AC-06c and ui-states §7.2; no valid QR token displayed when session not Active",
+      "expected": "UI shows session-not-active state per AC-06c; no valid QR token displayed when session not Active",
       "edgeCase": false
     },
     {
@@ -436,7 +438,7 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["AC-06", "FR-06", "BR-03"],
+      "traceability": ["AC-06", "FR-06", "FR-07", "BR-03", "BR-15", "AC-07d"],
       "title": "Student check-in page shows ExpiredQr message after scanning stale QR",
       "preconditions": [
         "Authenticated Student on mobile viewport (375px width)",
@@ -450,8 +452,55 @@
         "Verify error panel displays Mã QR đã hết hạn, vui lòng quét mã mới",
         "Verify Quét lại action returns student to scanner view per user-flows §3"
       ],
-      "expected": "Student UI surfaces AC-06b ExpiredQr outcome with Vietnamese message and retry path",
+      "expected": "Student UI surfaces AC-06b ExpiredQr outcome at BR-15 preflight gate with Vietnamese message and retry path; GpsCaptureStep never mounts per AC-07d",
       "edgeCase": true
+    },
+    {
+      "id": "TC-AC-06-021",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["AC-06", "FR-06"],
+      "title": "Instructor locates Active session via /sessions search, status chips, sort, and pagination to open QR display",
+      "preconditions": [
+        "Authenticated Instructor is logged in to instructor SPA",
+        "At least one Active session with rotating QR exists among 21+ sessions across Draft, Active, and Closed/Cancelled statuses",
+        "Sessions span multiple class codes (e.g. HESD-01) and subject names for search filtering"
+      ],
+      "steps": [
+        "Navigate to /sessions",
+        "Verify grouped SessionCard layout with status filter chips Tất cả, Đang diễn ra, Nháp, Đã kết thúc and search input with placeholder Tìm theo lớp, môn…",
+        "Click Đang diễn ra chip and verify only Active sessions shown with Đang diễn ra status badges",
+        "Type HESD in search field and wait 300 ms debounce; verify results filter by classCode, className, subjectCode, or subjectName",
+        "Click a matching Active SessionCard and navigate to session detail QR tab",
+        "Verify QrCodeImage and QrCountdown render with seconds remaining between 1 and 30 per AC-06a",
+        "Clear search via × control and click Tất cả chip; verify grouping order Đang diễn ra → Nháp → Đã kết thúc with scheduledStartTime desc within each group per 14-listing §4.3 and §5.2",
+        "Navigate to page 2 via Pagination footer (offset 20) or load-more and verify next batch of SessionCards loads without duplicate ids"
+      ],
+      "expected": "Instructor discovers Active session through /sessions listing per 14-listing §0 and reaches rotating QR display per AC-06a",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-06-022",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P1",
+      "traceability": ["AC-06", "FR-06"],
+      "title": "TrainingOfficeAdmin denied GET /sessions/:sessionId/qr/current without qr:display scope",
+      "preconditions": [
+        "Authenticated TrainingOfficeAdmin session is available",
+        "Active session owned by assigned Instructor for HESD-01",
+        "Admin has session:read institution-wide but lacks qr:display for instructor-owned sessions per roles-permissions §2.3"
+      ],
+      "steps": [
+        "GET /api/v1/sessions/:sessionId/qr/current using TrainingOfficeAdmin session cookie",
+        "Assert HTTP status 403 Forbidden and errorCode Forbidden",
+        "Assert no qrPayload or tokenId returned in response body"
+      ],
+      "expected": "QR display restricted to Instructor with qr:display on owned session; TrainingOfficeAdmin denied HTTP 403 without qrPayload per roles-permissions §2.3 and API design §6.1",
+      "edgeCase": false
     }
   ]
 }
