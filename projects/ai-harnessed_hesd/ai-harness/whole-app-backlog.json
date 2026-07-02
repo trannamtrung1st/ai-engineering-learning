@@ -756,16 +756,60 @@
       ],
       "description": "Deliver student personal attendance history view with scoped data-only visibility and clear session/status timeline.",
       "completionArtifacts": [
-        "Student history list route and detail states",
-        "Role-safe guard to block cross-user access",
-        "Pagination/search-ready UI contract support"
+        "apps/web/src/routes/router.tsx",
+        "apps/web/src/routes/pages/StudentAttendanceHistoryPage.tsx",
+        "apps/web/src/routes/pages/StudentAttendanceHistoryPage.module.css",
+        "apps/web/src/routes/pages/AttendanceReportPage.tsx",
+        "apps/web/src/routes/pages/AttendanceReportPage.module.css",
+        "apps/web/src/components/domain/AttendanceHistoryList.tsx",
+        "apps/web/src/components/domain/AttendanceHistoryList.module.css",
+        "apps/web/src/components/domain/AttendanceStatusCell.tsx",
+        "apps/web/src/components/domain/AttendanceStatusCell.module.css",
+        "apps/web/src/components/ui/TableToolbar.tsx",
+        "apps/web/src/components/ui/TableToolbar.module.css",
+        "apps/web/src/components/ui/DataTable.tsx",
+        "apps/web/src/components/ui/DataTable.module.css",
+        "apps/web/src/lib/api/attendance-history-api.ts",
+        "apps/web/src/lib/api/me-api.ts",
+        "apps/web/src/lib/api/seed-fixtures.ts",
+        "apps/web/src/lib/auth/role-guard.ts",
+        "apps/web/src/lib/listing/query-state.ts",
+        "apps/api/src/modules/reporting-and-export/scope.ts",
+        "apps/api/src/modules/reporting-and-export/routes.ts",
+        "apps/api/src/modules/reporting-and-export/types.ts",
+        "apps/api/src/modules/identity/repository.ts",
+        "apps/api/src/modules/identity/auth-routes.ts",
+        "apps/api/src/modules/identity/auth-routes.integration.test.ts"
       ],
       "testRequirements": {
+        "unit": [
+          "apps/web/src/lib/listing/query-state.test.ts",
+          "apps/web/src/lib/auth/role-guard.test.ts",
+          "apps/web/src/lib/api/attendance-history-api.test.ts",
+          "apps/api/src/modules/reporting-and-export/scope.test.ts"
+        ],
+        "component": [
+          "apps/web/src/components/domain/AttendanceStatusCell.test.tsx",
+          "apps/web/src/components/domain/AttendanceHistoryList.test.tsx",
+          "apps/web/src/routes/pages/StudentAttendanceHistoryPage.test.tsx"
+        ],
         "acceptanceTags": [
           "BR-19",
-          "FR-37"
+          "FR-37",
+          "AC-16"
+        ],
+        "playwright": [
+          "tests/playwright-ui/scenarios/web-student-attendance-history.spec.ts"
         ]
-      }
+      },
+      "history": [
+        {
+          "at": "2026-07-02T18:12:36Z",
+          "kind": "gate_failed",
+          "reason": "Browser test failed — see 20260702T175527Z-browser-test.json",
+          "source": "harness"
+        }
+      ]
     },
     {
       "id": "web-lecturer-session-control",
