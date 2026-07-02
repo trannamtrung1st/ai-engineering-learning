@@ -89,6 +89,24 @@
         "TC-FR-06-013"
       ],
       "updatedAt": "2026-07-02T20:01:20Z"
+    },
+    "web-academic-admin-policy-management": {
+      "specPath": "/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/tests/playwright-ui/scenarios/web-academic-admin-policy-management.spec.ts",
+      "lastRunId": "20260702T200305Z",
+      "testCount": 6,
+      "sourceTcIds": [
+        "TC-AC-09-009",
+        "TC-AC-09-010",
+        "TC-AC-10-009",
+        "TC-AC-10-010",
+        "TC-BR-20-015",
+        "TC-BR-20-016",
+        "TC-FR-24-014",
+        "TC-FR-24-015",
+        "TC-FR-25-015",
+        "TC-FR-25-016"
+      ],
+      "updatedAt": "2026-07-02T20:16:14Z"
     }
   }
 }

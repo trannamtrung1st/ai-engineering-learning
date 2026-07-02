@@ -1056,9 +1056,21 @@
       ],
       "description": "Implement policy configuration interface for attendance windows, GPS constraints, and edit-window settings with precedence-aware inputs.",
       "completionArtifacts": [
-        "Policy forms with scope selection and validation",
-        "Field-level helper text for policy effects",
-        "Save/preview behavior for effective policy values"
+        "apps/web/src/routes/AdminLayout.tsx",
+        "apps/web/src/routes/router.tsx",
+        "apps/web/src/routes/pages/AdminPoliciesPage.tsx",
+        "apps/web/src/routes/pages/AdminPoliciesPage.module.css",
+        "apps/web/src/components/domain/PolicyList.tsx",
+        "apps/web/src/components/domain/PolicyList.module.css",
+        "apps/web/src/components/domain/PolicyForm.tsx",
+        "apps/web/src/components/domain/PolicyForm.module.css",
+        "apps/web/src/components/domain/PolicyResolutionSummary.tsx",
+        "apps/web/src/components/domain/PolicyResolutionSummary.module.css",
+        "apps/web/src/lib/api/policy-api.ts",
+        "apps/web/src/lib/api/seed-fixtures.ts",
+        "apps/web/src/lib/listing/policies-list-query.ts",
+        "apps/web/src/lib/policy/resolve-preview.ts",
+        "apps/web/src/lib/i18n/policy-fields.ts"
       ],
       "testRequirements": {
         "acceptanceTags": [
@@ -1067,6 +1079,19 @@
           "BR-20",
           "FR-24",
           "FR-25"
+        ],
+        "unit": [
+          "apps/web/src/lib/api/policy-api.test.ts",
+          "apps/web/src/lib/listing/policies-list-query.test.ts",
+          "apps/web/src/lib/policy/resolve-preview.test.ts"
+        ],
+        "component": [
+          "apps/web/src/components/domain/PolicyList.test.tsx",
+          "apps/web/src/components/domain/PolicyForm.test.tsx",
+          "apps/web/src/components/domain/PolicyResolutionSummary.test.tsx"
+        ],
+        "playwright": [
+          "tests/playwright-ui/scenarios/web-academic-admin-policy-management.spec.ts"
         ]
       }
     },
