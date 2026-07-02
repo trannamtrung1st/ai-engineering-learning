@@ -198,8 +198,19 @@
           "kind": "drift",
           "reason": "Doc drift for AC-01 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-02T09:45:59Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-05 — reverify after TestGen",
+          "source": "harness"
         }
-      ]
+      ],
+      "testRequirements": {
+        "acceptanceTags": [
+          "AC-05"
+        ]
+      }
     },
     {
       "id": "module-check-in-and-qr-orchestrator",

@@ -1,0 +1,150 @@
+{
+  "productItemId": "AC-05",
+  "version": 1,
+  "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+  "generatedAt": "2026-07-02T09:45:00Z",
+  "cases": [
+    {
+      "id": "TC-AC-05-001",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["AC-05", "FR-08", "BR-02"],
+      "title": "Scenario matrix row for session close blocking self check-in",
+      "preconditions": [
+        "A class session exists and is transitioned from Scheduled to Open by assigned Lecturer.",
+        "Student is actively enrolled in the session class section."
+      ],
+      "steps": [
+        "Transition the same session to Closed via session lifecycle service path.",
+        "Submit a student check-in command referencing a valid token previously issued for that session.",
+        "Query attendance records for the student and session."
+      ],
+      "expected": "The check-in result is rejected with SessionClosed and no new successful attendance record is created for that student-session pair.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-05-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["AC-05", "FR-08", "BR-02", "BR-13"],
+      "title": "Close session transaction persists state and blocks subsequent success writes",
+      "preconditions": [
+        "Real database transaction is enabled for session and attendance modules.",
+        "Session is Open with at least one enrolled student without a success check-in yet."
+      ],
+      "steps": [
+        "Execute POST /v1/class-sessions/{sessionId}/close through the application service boundary.",
+        "Immediately execute POST /v1/check-ins for the enrolled student against the same session token context.",
+        "Read persisted Session, CheckInAttempt, and AttendanceRecord rows for this student and session."
+      ],
+      "expected": "Session state is persisted as Closed, failed attempt is recorded with SessionClosed, and no new Present/Late success row is inserted after closure.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-05-003",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["AC-05", "FR-08", "BR-02"],
+      "title": "Illegal check-in after Closed state transition",
+      "preconditions": [
+        "Session currently in Open state and then moved to Closed.",
+        "Student actor and enrollment are valid for the class section."
+      ],
+      "steps": [
+        "Capture beforeState as Closed after invoking close transition.",
+        "Invoke check-in command for the closed session.",
+        "Capture afterState and attendance mutation outcome."
+      ],
+      "expected": "beforeState remains Closed and afterState remains Closed with no attendance success mutation; the check-in path returns SessionClosed.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-05-004",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["AC-05", "FR-08", "BR-02", "AC-01"],
+      "title": "HTTP contract for close then student check-in denial",
+      "preconditions": [
+        "Assigned Lecturer and enrolled Student accounts are authenticated.",
+        "A Scheduled class session exists for lecturer scope."
+      ],
+      "steps": [
+        "Lecturer calls POST /v1/class-sessions/{sessionId}/open and receives 200 with data.state Open.",
+        "Lecturer calls POST /v1/class-sessions/{sessionId}/close and receives 200 with data.state Closed.",
+        "Student calls POST /v1/check-ins with qrToken bound to the same session.",
+        "Inspect HTTP status and response envelope fields data/meta/error."
+      ],
+      "expected": "Student request is rejected as a rule failure with error.code SessionClosed in the standard envelope and no successful attendance outcome is returned.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-05-005",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P1",
+      "traceability": ["AC-05", "FR-08", "BR-02", "BR-19"],
+      "title": "RBAC denial when non-lecturer roles attempt session close",
+      "preconditions": [
+        "One Open session exists in lecturer-owned section.",
+        "Student and ITAdmin users are authenticated."
+      ],
+      "steps": [
+        "Student calls POST /v1/class-sessions/{sessionId}/close.",
+        "ITAdmin calls POST /v1/class-sessions/{sessionId}/close.",
+        "Lecturer in assigned scope calls the same endpoint as control."
+      ],
+      "expected": "Student and ITAdmin receive authorization denial (403 Forbidden or OutOfScope) while assigned Lecturer succeeds; denied calls do not alter session state.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-05-006",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["AC-05", "FR-08", "BR-02", "AC-08", "BR-07"],
+      "title": "Boundary ordering: duplicate check-in after closure still resolves to SessionClosed",
+      "preconditions": [
+        "Student already has one successful check-in in an Open session.",
+        "Session is then closed by assigned Lecturer."
+      ],
+      "steps": [
+        "Student re-submits POST /v1/check-ins after session is Closed.",
+        "Capture returned error.code and status.",
+        "Verify successful attendance row count for student-session remains one."
+      ],
+      "expected": "API returns SessionClosed for post-close attempts and no additional successful attendance record is created.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-05-007",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["AC-05", "FR-08", "BR-02", "AC-01"],
+      "title": "UI journey shows closed-state gating for student check-in",
+      "preconditions": [
+        "Lecturer UI can open and close a session for an assigned section.",
+        "Student opens check-in page/session URL in supported mobile browser profile."
+      ],
+      "steps": [
+        "Lecturer opens session from session list and confirms Open badge/indicator is visible.",
+        "Lecturer closes the same session and verifies session status badge changes to Closed.",
+        "Student attempts to submit check-in from check-in form after closure.",
+        "Observe UI error message, disabled or blocked submission path, and absence of success confirmation."
+      ],
+      "expected": "Browser flow reflects Closed state and prevents successful student check-in, surfacing SessionClosed-equivalent feedback without showing a success state.",
+      "edgeCase": false
+    }
+  ]
+}
