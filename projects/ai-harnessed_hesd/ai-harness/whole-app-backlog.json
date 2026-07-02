@@ -182,6 +182,19 @@
         "Auth and authorization guards with scope evaluation",
         "GET /v1/me actor context endpoint",
         "Consistent Forbidden and OutOfScope error mapping"
+      ],
+      "testRequirements": {
+        "acceptanceTags": [
+          "FR-15"
+        ]
+      },
+      "history": [
+        {
+          "at": "2026-07-02T10:57:46Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-15 — reverify after TestGen",
+          "source": "harness"
+        }
       ]
     },
     {
@@ -697,7 +710,8 @@
       ],
       "testRequirements": {
         "acceptanceTags": [
-          "AC-06"
+          "AC-06",
+          "FR-15"
         ]
       },
       "history": [
@@ -711,6 +725,12 @@
           "at": "2026-07-02T09:59:55Z",
           "kind": "drift",
           "reason": "Doc drift for AC-11 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T10:57:46Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-15 — reverify after TestGen",
           "source": "harness"
         }
       ]

@@ -1,0 +1,191 @@
+{
+  "productItemId": "FR-15",
+  "version": 1,
+  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+  "generatedAt": "2026-07-02T11:15:00Z",
+  "cases": [
+    {
+      "id": "TC-FR-15-001",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["FR-15", "AC-06", "BR-05"],
+      "title": "Scenario matrix row for student authentication gate before check-in",
+      "preconditions": [
+        "Testing-plan §3 Student check-in validation block applies (FR-15, FR-16, FR-17, FR-18, BR-05 to BR-07).",
+        "An Open class session exists with a valid QR token and enrolled student fixture available."
+      ],
+      "steps": [
+        "Open the student check-in entry path without establishing an authenticated session.",
+        "Attempt to proceed to check-in submission.",
+        "After successful student login, retry submission with the same check-in context."
+      ],
+      "expected": "Unauthenticated access is blocked with login redirect or Unauthenticated rejection per AC-06; after successful authentication the student can proceed to submit check-in.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-15-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-15", "BR-05"],
+      "title": "M01 identity module short-circuits check-in at auth boundary without attendance write",
+      "preconditions": [
+        "Real database transaction is enabled for M01 Identity and Access and M04 Check-in modules.",
+        "Open session with valid QR token exists; no authenticated Student actor is bound to the request context."
+      ],
+      "steps": [
+        "Invoke the check-in command path with a valid qrToken but no resolved student actor through the M01/M04 integration boundary.",
+        "Query CheckInAttempt and AttendanceRecord tables for the target session.",
+        "Repeat with authenticated enrolled student actor as control."
+      ],
+      "expected": "Unauthenticated invocation terminates at the M01 auth gate with outcome Unauthenticated and creates no Present/Late AttendanceRecord; authenticated enrolled student control passes the auth boundary.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-15-003",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-15", "FR-36", "BR-05"],
+      "title": "HTTP contract for student POST /v1/auth/login then GET /v1/me",
+      "preconditions": [
+        "A provisioned student account with institution-issued credentials exists in the test environment.",
+        "No active bearer token is held by the test client."
+      ],
+      "steps": [
+        "Send POST /v1/auth/login with student email and password.",
+        "Assert HTTP 200 and standard envelope with data.accessToken, data.expiresInSeconds, and data.roles containing Student.",
+        "Send GET /v1/me with Authorization Bearer accessToken from the login response.",
+        "Assert HTTP 200 with data reflecting the student actor identity and Student role scope claims."
+      ],
+      "expected": "Login returns HTTP 200 with accessToken and Student role; GET /v1/me returns HTTP 200 with the authenticated student identity and scope, establishing the session context required by FR-15 before check-in.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-15-004",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-15", "BR-05"],
+      "title": "HTTP contract for unauthenticated POST /v1/check-ins rejection",
+      "preconditions": [
+        "Open class session with valid qrToken exists in test environment.",
+        "Request is sent without Authorization header."
+      ],
+      "steps": [
+        "Call POST /v1/check-ins with body containing qrToken and clientTimestamp.",
+        "Omit Authorization header entirely.",
+        "Inspect HTTP status, response envelope data/meta/error fields."
+      ],
+      "expected": "API returns 401 with standard envelope where data is null and error.code is Unauthenticated; no successful attendance outcome is returned.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-15-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["FR-15", "FR-36", "BR-05"],
+      "title": "Primary workflow login gate then successful student check-in",
+      "preconditions": [
+        "Open session with rotating valid QR token and enrolled student account exist.",
+        "Student begins flow without an active auth session."
+      ],
+      "steps": [
+        "Student obtains check-in URL or token from QR scan while unauthenticated.",
+        "Student completes POST /v1/auth/login and receives accessToken with Student role.",
+        "Student calls POST /v1/check-ins with Authorization Bearer token and valid qrToken within present window."
+      ],
+      "expected": "Authentication gate is satisfied first per validation order §5.1; subsequent check-in returns 200 with data.outcome Success and attendance status Present or Late per policy.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-15-006",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-15", "BR-05", "BR-19"],
+      "title": "RBAC denial when non-student roles attempt QR check-in submission",
+      "preconditions": [
+        "Open session with valid qrToken exists.",
+        "Lecturer and ITAdmin users are authenticated with valid bearer tokens."
+      ],
+      "steps": [
+        "Lecturer calls POST /v1/check-ins with valid qrToken and Authorization header.",
+        "ITAdmin calls POST /v1/check-ins with the same token context.",
+        "Enrolled Student calls the same endpoint as authorized control."
+      ],
+      "expected": "Lecturer and ITAdmin receive authorization denial (403 Forbidden) per permission matrix §3.1; enrolled Student passes the auth gate and proceeds to business validation.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-15-007",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-15", "FR-36", "BR-05"],
+      "title": "Boundary error for invalid or expired bearer token on check-in",
+      "preconditions": [
+        "Open session with valid qrToken exists.",
+        "Test client holds an expired or malformed JWT bearer token."
+      ],
+      "steps": [
+        "Call POST /v1/check-ins with Authorization Bearer set to expired token.",
+        "Call POST /v1/check-ins with Authorization Bearer set to malformed token.",
+        "Inspect HTTP status and error.code for both requests."
+      ],
+      "expected": "Both requests fail authentication with 401 and error.code Unauthenticated in the standard envelope; no attendance success row is created.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-15-008",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-15", "FR-36", "BR-05"],
+      "title": "UI journey redirects unauthenticated student to login and returns to check-in",
+      "preconditions": [
+        "Student check-in deep link or QR-resolved URL is available for an Open session.",
+        "Browser profile has no active Attendly session cookie."
+      ],
+      "steps": [
+        "Navigate directly to the student check-in URL without logging in.",
+        "Verify redirect to login page with return URL preserved where supported.",
+        "Submit valid student credentials on login form.",
+        "Confirm browser returns to check-in page with prior token context retained.",
+        "Complete check-in submission from the restored check-in UI."
+      ],
+      "expected": "Unauthenticated visit cannot submit check-in; login form accepts credentials; post-login navigation returns student to check-in flow with token context preserved and enables submission.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-15-009",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["FR-15", "BR-05"],
+      "title": "Check-in attempt terminates at Unauthenticated without attendance mutation",
+      "preconditions": [
+        "Open class session with valid qrToken exists in integration test database.",
+        "Request context has no resolved Student actor (missing or invalid Authorization)."
+      ],
+      "steps": [
+        "Capture beforeState: no Present/Late AttendanceRecord for the target session and no authenticated student actor bound.",
+        "Submit check-in command with valid qrToken through the module integration boundary without Authorization.",
+        "Capture afterState for session roster rows and any persisted attempt records."
+      ],
+      "expected": "Validation order short-circuits at Unauthenticated as the first guard per API §5.1; afterState shows no Present/Late AttendanceRecord mutation and the API layer returns 401 with error.code Unauthenticated.",
+      "edgeCase": true
+    }
+  ]
+}
