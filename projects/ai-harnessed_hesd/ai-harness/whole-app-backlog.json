@@ -308,6 +308,14 @@
         "Attendance upsert logic with status transitions",
         "Manual correction endpoint with policy window checks",
         "Close-time unresolved enrollment finalizer"
+      ],
+      "history": [
+        {
+          "at": "2026-07-02T10:01:56Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-12 — reverify after TestGen",
+          "source": "harness"
+        }
       ]
     },
     {
@@ -818,6 +826,12 @@
           "at": "2026-07-02T09:53:24Z",
           "kind": "drift",
           "reason": "Doc drift for AC-08 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T10:01:56Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-12 — reverify after TestGen",
           "source": "harness"
         }
       ]
