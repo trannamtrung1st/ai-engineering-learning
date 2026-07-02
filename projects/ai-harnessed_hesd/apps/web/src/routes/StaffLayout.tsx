@@ -10,10 +10,11 @@ const staffNav = [
 
 export function StaffLayout() {
   const projectionSession = useMatch("/lecturer/sessions/:sessionId");
+  const rosterSession = useMatch("/lecturer/sessions/:sessionId/roster");
 
   return (
     <AppShell
-      compact={Boolean(projectionSession)}
+      compact={Boolean(projectionSession || rosterSession)}
       sidebar={<SidebarNav items={staffNav} />}
       header={
         <TopContextHeader

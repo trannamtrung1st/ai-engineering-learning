@@ -3,6 +3,7 @@ import { StaffLayout } from "./StaffLayout";
 import { StudentLayout } from "./StudentLayout";
 import { StudentAttendanceReportGuard } from "./pages/AttendanceReportPage";
 import { DesignSystemPage } from "./pages/DesignSystemPage";
+import { LecturerRosterPage } from "./pages/LecturerRosterPage";
 import { LecturerSessionPage } from "./pages/LecturerSessionPage";
 import { LecturerSessionsListPage } from "./pages/LecturerSessionsListPage";
 import { LoginPage } from "./pages/LoginPage";
@@ -26,6 +27,7 @@ export function AppRouter() {
       children: [
         { path: "lecturer/sessions", element: <LecturerSessionsListPage /> },
         { path: "lecturer/sessions/:sessionId", element: <LecturerSessionPage /> },
+        { path: "lecturer/sessions/:sessionId/roster", element: <LecturerRosterPage /> },
         { path: "reports/attendance", element: <StudentAttendanceReportGuard /> },
       ],
     },

@@ -893,7 +893,7 @@
     },
     {
       "id": "web-lecturer-live-roster-fallback",
-      "passes": false,
+      "passes": true,
       "priority": 21,
       "phase": 2,
       "agent": "frontend",

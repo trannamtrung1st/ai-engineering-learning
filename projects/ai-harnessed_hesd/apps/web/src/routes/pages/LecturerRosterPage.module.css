@@ -1,0 +1,34 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+}
+
+.backRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.backLink {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--color-text-heading);
+  text-decoration: none;
+}
+
+.backLink:hover {
+  text-decoration: underline;
+}
+
+.sessionLink {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text-body);
+  text-decoration: none;
+}
+
+.sessionLink:hover {
+  text-decoration: underline;
+}

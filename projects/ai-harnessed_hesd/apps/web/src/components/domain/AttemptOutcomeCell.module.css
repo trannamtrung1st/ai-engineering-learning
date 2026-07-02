@@ -1,0 +1,8 @@
+.attemptCell {
+  display: inline-flex;
+  align-items: center;
+}
+
+.tooltipBadge {
+  cursor: help;
+}
