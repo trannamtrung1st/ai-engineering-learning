@@ -1,15 +1,25 @@
 # Portable Spec Generator
 
-Turn a single **initial idea** into a full spec package (BRD, technical, UI/UX, AI harness) using a Ralph-style stepped loop with verification gates.
+Turn product material under **`docs/`** into a full spec package (BRD, technical, UI/UX, AI harness) using a Ralph-style stepped loop with verification gates.
+
+Supports **flexible seed input** (ideas, partial BRDs, existing `DESIGN.md`, design-system modules) and **merge/enrich** mode for existing files.
 
 ## Fresh repo (portable)
 
-Copy only these into a new repository:
+Copy these into a new repository:
 
 ```
 generator/
-docs/initial-idea.md
+docs/          # seed material (see below)
 ```
+
+**Minimum seed** — at least one of:
+
+- `docs/initial-idea.md` (traditional)
+- `docs/product-meta.json`
+- `docs/brds/*.md`
+- `docs/ui-ux/DESIGN.md` or `docs/ui-ux/design-system/*.md`
+- Other markdown under `docs/` (excluding `test-cases/`)
 
 Then run from the generator directory:
 
@@ -56,6 +66,9 @@ The target repo's root `package.json` does **not** include generator scripts —
 | `GEN_APPLY=1` | Required to write `docs/` and `ai-harness/` |
 | `GEN_REPO_ROOT` | Target repo root (default: parent of `generator/`) |
 | `GEN_FORCE=1` | Overwrite existing harness backlog |
+| `GEN_INPUT_MODE=flexible` | Discover docs/, merge/enrich existing outputs (default) |
+| `GEN_INPUT_MODE=greenfield` | Strict scaffold overwrite (legacy behavior) |
+| `GEN_FORCE_DESIGN=1` | Overwrite existing `DESIGN.md` and design-system modules |
 | `GEN_SKIP_AGENT=1` | Skip Cursor agent (testing) |
 | `GEN_SKIP_REVIEW=1` | Skip optional AI doc review |
 | `GEN_MODEL` | Override default model |
@@ -89,6 +102,8 @@ npm run aih:loop
 ## Safety in existing repos
 
 The generator **does not write** unless `GEN_APPLY=1`. It refuses to overwrite an existing `ai-harness/whole-app-backlog.json` unless `GEN_FORCE=1`.
+
+On start, `discover-docs.sh` scans `docs/` and `auto-skip-complete-steps.sh` marks steps whose outputs already pass validators. Design scaffolds skip existing `DESIGN.md` and design-system modules unless `GEN_FORCE_DESIGN=1` or `GEN_INPUT_MODE=greenfield`.
 
 Generated artifacts must not reference `generator/` — validators enforce this.
 

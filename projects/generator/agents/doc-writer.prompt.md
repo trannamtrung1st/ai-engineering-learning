@@ -6,7 +6,17 @@ You are the **spec doc writer**. Produce documentation for **one step** per sess
 
 1. Read the step metadata injected below (ID, outputs, context docs).
 2. Read prior guardrails and fix verification failures first.
-3. Read **only** the context docs listed below (do not load the entire repo).
+3. Read the context docs listed below (includes discovered docs/ material for this phase).
+4. When an output file already exists, read it first and work in **merge/enrich** mode (see below).
+
+## Merge / enrich mode (when output already exists)
+
+- Read the existing file first.
+- Preserve requirement IDs, design tokens, tables, and cross-links.
+- Fill missing required headings (per doc-outlines); do not wipe unrelated sections.
+- For `DESIGN.md` and `design-system/` modules: treat on-disk content as authoritative — extend, do not replace wholesale.
+- If content conflicts with `product-meta.json`, prefer on-disk docs and note conflicts in guardrails.
+- For `input-validate`: if `product-meta.json` already exists, enrich missing fields instead of rewriting valid values.
 
 ## Rules
 
@@ -42,7 +52,23 @@ When writing UI/UX outputs:
 
 {{STEP_CONTEXT_DOCS}}
 
-## Initial idea path
+## Docs inventory
+
+{{DOCS_INVENTORY_SUMMARY}}
+
+## Seed docs discovered under docs/
+
+{{SEED_DOCS}}
+
+## Existing outputs for this step (merge/enrich if listed)
+
+{{EXISTING_OUTPUTS}}
+
+## Input mode
+
+{{INPUT_MODE}}
+
+## Initial idea path (preferred seed when present)
 
 {{INITIAL_IDEA}}
 

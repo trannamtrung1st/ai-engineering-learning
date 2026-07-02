@@ -6,6 +6,8 @@ source "$(dirname "$0")/lib/common.sh"
 require_gen_deps
 cd "$REPO_ROOT"
 
+discover_docs
+
 if all_steps_pass; then
   echo "GEN_COMPLETE"
   exit 0
@@ -62,8 +64,8 @@ if [[ "$kind" == "agent" ]]; then
     "${GEN_SCRIPTS_DIR}/emit-design-md.sh"
   fi
 
-  if [[ ! -f "$INITIAL_IDEA" ]]; then
-    gen_err "Missing docs/initial-idea.md — create it before running generator"
+  if ! has_any_seed; then
+    gen_err "No seed docs found under docs/ — add idea, BRD, design-system, or product-meta material"
     exit 1
   fi
 

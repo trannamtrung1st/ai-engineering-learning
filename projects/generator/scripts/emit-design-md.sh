@@ -16,6 +16,24 @@ source_url="$(load_product_meta | jq -r '.designSystem.sourceUrl // empty')"
 dest="${REPO_ROOT}/docs/ui-ux/DESIGN.md"
 mkdir -p "$(dirname "$dest")"
 
+force_design=false
+[[ "${GEN_FORCE_DESIGN:-}" == "1" ]] && force_design=true
+[[ "$(gen_input_mode)" == "greenfield" ]] && force_design=true
+
+design_min_lines=40
+if jq -e '.["docs/ui-ux/DESIGN.md"].minLines' "$DOC_OUTLINES" >/dev/null 2>&1; then
+  design_min_lines="$(jq -r '.["docs/ui-ux/DESIGN.md"].minLines // 40' "$DOC_OUTLINES")"
+fi
+
+if [[ -f "$dest" && "$force_design" != true ]]; then
+  line_count="$(wc -l < "$dest" | tr -d ' ')"
+  if [[ "$line_count" -ge "$design_min_lines" ]]; then
+    gen_ok "DESIGN.md exists (${line_count} lines) — skipping scaffold emit (agent will enrich)"
+    exit 0
+  fi
+  gen_info "DESIGN.md exists but below min lines (${line_count} < ${design_min_lines}) — re-emitting"
+fi
+
 write_preamble() {
   local out="$1"
   cat > "$out" <<EOF

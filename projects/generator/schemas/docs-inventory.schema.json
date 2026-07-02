@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["generatedAt", "repoRoot", "zones", "files", "seedPaths", "hasDesignSystem", "completeness"],
+  "properties": {
+    "generatedAt": { "type": "string" },
+    "repoRoot": { "type": "string" },
+    "inputMode": { "type": "string", "enum": ["flexible", "greenfield"] },
+    "zones": {
+      "type": "object",
+      "properties": {
+        "seed": { "type": "array", "items": { "type": "string" } },
+        "meta": { "type": "array", "items": { "type": "string" } },
+        "brds": { "type": "array", "items": { "type": "string" } },
+        "technical": { "type": "array", "items": { "type": "string" } },
+        "uiux": { "type": "array", "items": { "type": "string" } },
+        "designSystem": { "type": "array", "items": { "type": "string" } },
+        "misc": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": true
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "zone", "lines"],
+        "properties": {
+          "path": { "type": "string" },
+          "zone": { "type": "string" },
+          "lines": { "type": "integer" },
+          "hasRequirementIds": { "type": "boolean" },
+          "outlineKey": { "type": ["string", "null"] }
+        }
+      }
+    },
+    "seedPaths": { "type": "array", "items": { "type": "string" } },
+    "hasDesignSystem": { "type": "boolean" },
+    "completeness": {
+      "type": "object",
+      "properties": {
+        "phase0": { "type": "boolean" },
+        "phase1": { "type": "boolean" },
+        "phase2": { "type": "boolean" },
+        "phase3": { "type": "boolean" }
+      }
+    }
+  },
+  "additionalProperties": true
+}

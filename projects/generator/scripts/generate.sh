@@ -23,13 +23,15 @@ Usage: generate.sh [--apply] [--force] [--once]
   --force   Overwrite existing ai-harness/whole-app-backlog.json
   --once    Run a single step instead of the full loop
 
-Fresh repo needs only:
+Fresh repo needs:
   generator/
-  docs/initial-idea.md
+  docs/  (seed material: initial-idea.md, BRD drafts, DESIGN.md, design-system, etc.)
 
 Environment:
   GEN_APPLY=1       Same as --apply
   GEN_FORCE=1       Same as --force
+  GEN_INPUT_MODE=flexible|greenfield  Docs intake mode (default: flexible)
+  GEN_FORCE_DESIGN=1  Overwrite existing design-system / DESIGN.md scaffolds
   GEN_SKIP_AGENT=1  Skip Cursor agent (testing)
   GEN_SKIP_REVIEW=1 Skip optional doc review
   GEN_MODEL=...     Override default model
@@ -48,11 +50,16 @@ done
 require_gen_deps
 cd "$REPO_ROOT"
 
-if [[ ! -f "$INITIAL_IDEA" ]]; then
-  gen_err "Missing ${INITIAL_IDEA}"
-  gen_err "Create docs/initial-idea.md with your product idea before running."
+discover_docs
+
+if ! has_any_seed; then
+  gen_err "No seed docs found under docs/"
+  gen_err "Add at least one of: docs/initial-idea.md, docs/product-meta.json, docs/brds/*.md,"
+  gen_err "docs/ui-ux/DESIGN.md, docs/ui-ux/design-system/*.md, or other markdown under docs/"
   exit 1
 fi
+
+"${GEN_SCRIPTS_DIR}/auto-skip-complete-steps.sh" || true
 
 if [[ -f "${REPO_ROOT}/ai-harness/whole-app-backlog.json" && "${GEN_FORCE:-}" != "1" && "${GEN_APPLY:-}" == "1" ]]; then
   if all_steps_pass; then

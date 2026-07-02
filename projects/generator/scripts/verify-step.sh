@@ -37,6 +37,15 @@ run_validator() {
   gen_step "Validator: $vid"
   set +e
   case "$vid" in
+    seed-present)
+      discover_docs
+      if has_any_seed; then
+        gen_ok "seed-present ok"
+      else
+        gen_err "no seed docs found under docs/"
+        fail=1
+      fi
+      ;;
     input-meta)
       meta="$(product_meta_file)"
       if [[ ! -f "$meta" ]]; then

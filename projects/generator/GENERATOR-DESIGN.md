@@ -7,7 +7,8 @@ Concise index for the portable spec generator. Independent from `ai-harness/` an
 | Component | Location |
 |---|---|
 | Step queue | `steps-backlog.json` |
-| Loop policy | `workflows/gen-loop.json` |
+| Loop policy | `workflows/gen-loop.json` (`inputMode`: `flexible` \| `greenfield`) |
+| Docs intake | `scripts/discover-docs.sh`, `scripts/lib/docs-intake.sh`, `state/docs-inventory.json` |
 | Models | `config/models.json`, env `GEN_MODEL` |
 | Doc outlines | `config/doc-outlines.json` |
 | Agents | `agents/doc-writer.prompt.md`, `harness-planner.prompt.md`, `doc-reviewer.prompt.md` |
@@ -26,13 +27,32 @@ pick step → [scaffold|agent|gate]
   → mark passes → commit → repeat
 ```
 
-Scripts: `generate.sh` (entry), `gen-loop.sh` (autonomous), `gen-once.sh` (single step).
+Scripts: `generate.sh` (entry), `gen-loop.sh` (autonomous), `gen-once.sh` (single step), `discover-docs.sh`, `auto-skip-complete-steps.sh`.
+
+## Docs intake (flexible input)
+
+```
+discover docs/ → state/docs-inventory.json → auto-skip complete steps → loop
+```
+
+| Zone | Paths | Role |
+|---|---|---|
+| seed | `initial-idea.md`, loose `docs/*.md` | Idea notes |
+| meta | `product-meta.json` | Product metadata |
+| brds | `brds/` | Business requirements |
+| technical | `technical/` | Architecture specs |
+| uiux | `ui-ux/*.md` | UI/UX product specs |
+| designSystem | `DESIGN.md`, `design-system/` | Authoritative visual spec (never scaffold-overwritten in flexible mode) |
+
+Agents run in **merge/enrich** mode: preserve existing IDs, tokens, and content; fill gaps to satisfy `doc-outlines.json` validators.
+
+Env: `GEN_INPUT_MODE=flexible` (default), `GEN_FORCE_DESIGN=1` to overwrite design assets.
 
 ## Phases
 
 | Phase | Steps | Output |
 |---|---|---|
-| 0 | input-validate | `docs/product-meta.json` |
+| 0 | input-validate | `docs/product-meta.json` (infer/enrich from docs/ seeds) |
 | 1 | BRD (6 steps) | `docs/brds/*.md` |
 | 2 | Technical (5 steps) | `docs/technical/*.md` |
 | 3 | UI/UX (4 steps) | `docs/ui-ux/*.md` |
