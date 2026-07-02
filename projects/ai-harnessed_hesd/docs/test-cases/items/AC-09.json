@@ -1,0 +1,220 @@
+{
+  "productItemId": "AC-09",
+  "version": 1,
+  "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+  "generatedAt": "2026-07-02T09:53:57Z",
+  "cases": [
+    {
+      "id": "TC-AC-09-001",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["AC-09", "FR-34", "FR-35", "BR-08", "BR-14"],
+      "title": "Scenario matrix row for GPS-required policy rejection when location unavailable",
+      "preconditions": [
+        "Testing-plan §3 GPS validation block applies (FR-34, FR-35, BR-08/09/10, AC-09, AC-10).",
+        "gps-required-session fixture: Open class session with effective policy gpsRequired=true and valid QR token.",
+        "Authenticated enrolled student has no successful attendance record for the session."
+      ],
+      "steps": [
+        "Resolve effective attendance policy for the open session and confirm gpsRequired=true.",
+        "Submit check-in command with valid qrToken but without usable GPS coordinates (permission denied or gps payload omitted).",
+        "Query persisted CheckInAttempt and AttendanceRecord for the student-session pair."
+      ],
+      "expected": "Self check-in is rejected with outcome GpsDisabled or GpsRequired per AC-09 coverage row; no Present/Late AttendanceRecord is created and a failed CheckInAttempt is logged with structured reason code.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-09-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["AC-09", "FR-34", "FR-35", "FR-22", "BR-08", "BR-23"],
+      "title": "GPS policy module rejects check-in without attendance ledger write",
+      "preconditions": [
+        "Real database transaction is enabled for policy resolution, check-in, and attendance ledger modules.",
+        "Open session exists with gpsRequired=true in effective policy; student is actively enrolled with no prior success record."
+      ],
+      "steps": [
+        "Capture beforeState: zero Present/Late AttendanceRecord rows for (classSessionId, studentUserId).",
+        "Invoke check-in command with valid qrToken passing auth, session Open, token Valid, enrollment, and duplicate guards but omitting gps payload.",
+        "Query check_in_attempts and attendance_records within the same transaction boundary."
+      ],
+      "expected": "Policy evaluation at GPS guard step 6 persists one failed CheckInAttempt with outcome GpsRequired; AttendanceRecord row count remains zero and beforeState is unchanged.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-09-003",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["AC-09", "FR-34", "FR-22", "BR-08", "BR-23"],
+      "title": "CheckInAttempt SM-04 terminates at GpsDisabled without attendance mutation",
+      "preconditions": [
+        "Open gps-required session with valid qrToken exists in integration test database.",
+        "Authenticated enrolled student has no existing successful attendance for the session.",
+        "Client context simulates browser geolocation permission denied (no coordinates available to submit)."
+      ],
+      "steps": [
+        "Capture beforeState: session roster shows student in Pending with no success AttendanceRecord.",
+        "Submit check-in command that passes validation order steps 1–5 but cannot supply GPS due to permission denial.",
+        "Capture afterState for CheckInAttempt outcome and AttendanceRecord rows."
+      ],
+      "expected": "SM-04 evaluation reaches GpsDisabled terminal state at GPS policy guard; afterState shows persisted failed attempt with GpsDisabled and AttendanceRecord identical to beforeState (still Pending, no success write).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-09-004",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["AC-09", "FR-20", "FR-29", "BR-08", "BR-14", "BR-22"],
+      "title": "Lecturer manual fallback remains available after GPS rejection",
+      "preconditions": [
+        "Open gps-required session with enrolled student who has a failed GpsDisabled or GpsRequired CheckInAttempt and no success AttendanceRecord.",
+        "Assigned lecturer is within manual edit window per effective policy (BR-14).",
+        "Real database transaction is enabled for attendance correction and audit modules."
+      ],
+      "steps": [
+        "Verify student AttendanceRecord remains Pending after GPS rejection attempt.",
+        "Lecturer invokes PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Manual Present and required reason.",
+        "Query AttendanceRecord, AuditLog, and session roster counts."
+      ],
+      "expected": "Manual correction succeeds despite prior GPS rejection; student status becomes Manual Present with audit record containing actor, old/new status, reason, and timestamp per BR-14 and BR-22.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-09-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["AC-09", "FR-34", "FR-22", "BR-08", "BR-23"],
+      "title": "POST /v1/check-ins returns 422 GpsRequired when gps payload omitted under GPS policy",
+      "preconditions": [
+        "Open gps-required session with valid qrToken exists in test environment.",
+        "Authenticated student bearer token belongs to actively enrolled user with no prior success for the session."
+      ],
+      "steps": [
+        "Call POST /v1/check-ins with Authorization Bearer token, valid qrToken, clientTimestamp, and no gps field in body.",
+        "Inspect HTTP status, response envelope (data/meta/error), and error.code.",
+        "Verify no success attendance payload is returned."
+      ],
+      "expected": "API returns 422 with standard envelope where data is null and error.code is GpsRequired; response includes classSessionId in details where applicable and no Present/Late attendance row is created.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-09-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P0",
+      "traceability": ["AC-09", "FR-34", "FR-35", "FR-20", "BR-08", "BR-14", "AC-18"],
+      "title": "E2E-05 alternate workflow branch rejects GPS-denied check-in with manual fallback path",
+      "preconditions": [
+        "Lecturer has opened gps-required session (AC-01) and session is Open with rotating QR.",
+        "Student completes login gate (AC-06) and enrollment validation (AC-07) prerequisites.",
+        "Student device or test client simulates geolocation permission denied before submission."
+      ],
+      "steps": [
+        "Student calls POST /v1/auth/login and receives Student role accessToken.",
+        "Student calls POST /v1/check-ins with valid qrToken but without usable GPS coordinates (permission denied scenario).",
+        "Lecturer queries GET /v1/class-sessions/{sessionId}/attendance for the student row and rejectedAttempts count.",
+        "Lecturer applies PATCH manual correction for the same student with Manual Present and documented reason."
+      ],
+      "expected": "Check-in fails with GpsDisabled (422); roster shows student Pending with rejectedAttempts incremented and failed attempt auditable per AC-18; lecturer manual fallback succeeds per BR-14 without bypassing audit requirements.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-09-007",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["AC-09", "FR-34", "FR-35", "BR-08", "BR-23"],
+      "title": "Boundary error distinguishes GpsRequired missing payload from GpsDisabled permission denied",
+      "preconditions": [
+        "Open gps-required session with valid qrToken exists.",
+        "Authenticated enrolled student has no successful attendance for the session.",
+        "Test harness can simulate both omitted gps field and explicit permission-denied client context."
+      ],
+      "steps": [
+        "Submit POST /v1/check-ins with valid token but gps field entirely omitted; record status and error.code.",
+        "Submit POST /v1/check-ins with valid token where client signals geolocation permission denied or unavailable; record status and error.code.",
+        "Verify AttendanceRecord row count and CheckInAttempt outcomes for both requests."
+      ],
+      "expected": "Omitted gps payload returns 422 with error.code GpsRequired; permission-denied scenario returns 422 with error.code GpsDisabled; neither path creates a success AttendanceRecord and both log structured failed attempts.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-09-008",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["AC-09", "FR-34", "BR-08", "BR-19"],
+      "title": "Non-Student roles denied POST /v1/check-ins on GPS-required session",
+      "preconditions": [
+        "Open gps-required session with valid QR token exists.",
+        "Lecturer and ITAdmin identities are available with valid bearer tokens per permission matrix."
+      ],
+      "steps": [
+        "Call POST /v1/check-ins as Lecturer with valid qrToken and gps payload for the open session.",
+        "Call POST /v1/check-ins as ITAdmin with the same token context.",
+        "Call POST /v1/check-ins as enrolled Student (control) omitting gps under GPS-required policy.",
+        "Verify denial responses contain no partial attendance mutation from privileged roles."
+      ],
+      "expected": "Lecturer and ITAdmin receive 403 Forbidden before GPS policy evaluation; Student control reaches business validation and receives 422 GpsRequired or GpsDisabled; no AttendanceRecord is created by denied roles.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-09-009",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["AC-09", "FR-34", "FR-35", "FR-20", "BR-08", "BR-14"],
+      "title": "UI journey surfaces GpsDisabled failure with recovery guidance and lecturer fallback hint",
+      "preconditions": [
+        "Student is logged in on mobile-web browser (PG-02 check-in page).",
+        "Target session has gpsRequired=true in effective policy and is Open with valid QR token.",
+        "Browser geolocation permission is denied or blocked for the test profile."
+      ],
+      "steps": [
+        "Navigate to check-in URL with valid token query parameter for the gps-required session.",
+        "Observe GpsPermissionPrompt risk-reduction copy per FLOW-03 step 1.",
+        "Deny or block browser location permission when prompted.",
+        "Submit check-in from the student check-in form.",
+        "Observe CheckInResultScreen failure-gps-denied warning styling, recovery steps, and lecturer fallback guidance."
+      ],
+      "expected": "UI renders failure-gps-denied alert with localized message (e.g. 'Cần quyền vị trí'); recovery copy explains how to enable location and offers 'báo giảng viên' manual fallback path; no success status is shown and student remains Pending on roster.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-09-010",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["AC-09", "FR-34", "BR-08", "BR-14"],
+      "title": "Lecturer roster shows GPS-rejected student as Pending with manual correction affordance",
+      "preconditions": [
+        "Student has failed GpsDisabled check-in attempt on an Open gps-required session.",
+        "Lecturer is authenticated on desktop browser (PG-06 live roster view) for the assigned section.",
+        "Manual edit window is active per effective policy."
+      ],
+      "steps": [
+        "Lecturer navigates to live session roster for the gps-required session.",
+        "Locate the student row showing Pending status with latestAttemptOutcome GpsDisabled in rejected summary.",
+        "Open ManualCorrectionDialog for the student.",
+        "Submit Manual Present correction with required reason text."
+      ],
+      "expected": "Roster displays student as Pending with GPS rejection visible in attempt summary; ManualCorrectionDialog opens and accepts correction; post-save row updates to Manual Present confirming lecturer fallback path remains operable per AC-09 and BR-14.",
+      "edgeCase": true
+    }
+  ]
+}

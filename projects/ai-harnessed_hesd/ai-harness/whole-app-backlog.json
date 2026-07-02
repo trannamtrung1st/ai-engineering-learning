@@ -322,6 +322,19 @@
         "Scoped policy storage and precedence resolver",
         "Runtime policy snapshot helper for session/check-in",
         "Policy validation utilities for GPS and edit window logic"
+      ],
+      "testRequirements": {
+        "acceptanceTags": [
+          "AC-09"
+        ]
+      },
+      "history": [
+        {
+          "at": "2026-07-02T09:55:22Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-09 — reverify after TestGen",
+          "source": "harness"
+        }
       ]
     },
     {
@@ -661,6 +674,19 @@
         "Policy forms with scope selection and validation",
         "Field-level helper text for policy effects",
         "Save/preview behavior for effective policy values"
+      ],
+      "testRequirements": {
+        "acceptanceTags": [
+          "AC-09"
+        ]
+      },
+      "history": [
+        {
+          "at": "2026-07-02T09:55:22Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-09 — reverify after TestGen",
+          "source": "harness"
+        }
       ]
     },
     {
