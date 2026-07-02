@@ -79,3 +79,5 @@
 - 2026-07-02T12:47:30Z | infra-monorepo-foundation | passed
 - 2026-07-02T12:55:56Z | infra-local-runtime-compose | implementer: docker-compose.yml + docker-compose.test.yml (db/redis/minio health checks, full-preview profile) — migrate/seed hooks — local-runtime-reset docs — checks: full profile pass
 - 2026-07-02T12:59:55Z | infra-local-runtime-compose | passed
+- 2026-07-02T13:05:16Z | infra-database-migrations | implementer: apps/api/db/migrations/0001_initial_schema.sql — migrate/seed hooks — integration tests for BR-06 BR-07 FR-04 constraints — checks: full profile pass
+- 2026-07-02T13:08:01Z | infra-database-migrations | passed

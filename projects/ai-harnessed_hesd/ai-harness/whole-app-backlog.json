@@ -139,7 +139,7 @@
     },
     {
       "id": "infra-database-migrations",
-      "passes": false,
+      "passes": true,
       "priority": 3,
       "phase": 0,
       "agent": "infra",
@@ -157,16 +157,23 @@
       ],
       "description": "Implement baseline schema, constraints, and migrations for identity, academic structure, session, attendance, policy, and audit entities.",
       "completionArtifacts": [
-        "Initial migration chain with core tables and enums",
-        "Unique and foreign key constraints from domain invariants",
-        "Seed fixtures for term/course/section/session roles"
+        "apps/api/db/migrations",
+        "scripts/db-migrate.mjs",
+        "scripts/db-seed.mjs"
       ],
       "testRequirements": {
+        "unit": [
+          "apps/api/src/infra/schema-migrations.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/infra/database-migrations.integration.test.ts"
+        ],
         "acceptanceTags": [
           "BR-06",
           "BR-07",
           "FR-04",
-          "FR-18"
+          "FR-18",
+          "NFR-07"
         ]
       },
       "history": [
