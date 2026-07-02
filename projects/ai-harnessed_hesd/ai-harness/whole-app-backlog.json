@@ -65,11 +65,18 @@
           "kind": "drift",
           "reason": "Doc drift for FR-07 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-02T11:00:37Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-16 — reverify after TestGen",
+          "source": "harness"
         }
       ],
       "testRequirements": {
         "acceptanceTags": [
-          "FR-07"
+          "FR-07",
+          "FR-16"
         ]
       }
     },
@@ -711,7 +718,8 @@
       "testRequirements": {
         "acceptanceTags": [
           "AC-06",
-          "FR-15"
+          "FR-15",
+          "FR-16"
         ]
       },
       "history": [
@@ -731,6 +739,12 @@
           "at": "2026-07-02T10:57:46Z",
           "kind": "drift",
           "reason": "Doc drift for FR-15 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T11:00:37Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-16 — reverify after TestGen",
           "source": "harness"
         }
       ]
