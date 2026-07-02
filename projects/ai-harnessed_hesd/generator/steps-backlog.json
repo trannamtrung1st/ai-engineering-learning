@@ -382,7 +382,7 @@
     },
     {
       "id": "uiux-components-pages",
-      "passes": false,
+      "passes": true,
       "priority": 31,
       "phase": 3,
       "kind": "agent",

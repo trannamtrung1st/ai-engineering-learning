@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-02T09:20:25Z",
+  "generatedAt": "2026-07-02T09:21:37Z",
   "repoRoot": "/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd",
   "inputMode": "flexible",
   "zones": {
@@ -263,7 +263,7 @@
     {
       "path": "docs/ui-ux/00-production-ui-quality-bar.md",
       "zone": "uiux",
-      "lines": 93,
+      "lines": 109,
       "hasRequirementIds": false,
       "outlineKey": "docs/ui-ux/00-production-ui-quality-bar.md"
     },
