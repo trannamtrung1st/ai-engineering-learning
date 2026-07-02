@@ -2,25 +2,13 @@
   "slices": {
     "web-design-system-shell": {
       "specPath": "/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/tests/playwright-ui/scenarios/web-design-system-shell.spec.ts",
-      "lastRunId": "20260702T163452Z",
-      "testCount": 5,
+      "lastRunId": "20260702T170743Z",
+      "testCount": 6,
       "sourceTcIds": [
-        "TC-FR-14-011",
-        "TC-FR-14-012",
-        "TC-FR-14-013",
-        "TC-NFR-14-009",
         "TC-NFR-14-010",
-        "TC-NFR-14-011",
-        "TC-NFR-14-012",
-        "TC-NFR-14-013",
-        "TC-NFR-14-014",
-        "TC-NFR-15-010",
-        "TC-NFR-15-011",
-        "TC-NFR-15-012",
-        "TC-NFR-15-013",
         "TC-NFR-15-014"
       ],
-      "updatedAt": "2026-07-02T16:51:24Z"
+      "updatedAt": "2026-07-02T17:23:34Z"
     }
   }
 }
