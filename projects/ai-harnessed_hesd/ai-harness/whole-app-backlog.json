@@ -356,7 +356,7 @@
     },
     {
       "id": "module-academic-structure",
-      "passes": false,
+      "passes": true,
       "priority": 8,
       "phase": 1,
       "agent": "backend",
@@ -374,11 +374,18 @@
       ],
       "description": "Implement term/course/section/room/enrollment APIs including CSV import with row-level validation and section ownership data.",
       "completionArtifacts": [
-        "Academic CRUD endpoints and enrollment import endpoint",
-        "Enrollment validation helpers for check-in workflow",
-        "Import summary responses with row-level error reporting"
+        "apps/api/src/modules/academic-structure",
+        "apps/api/src/app.ts",
+        "apps/api/src/modules/identity/protected-stubs.ts",
+        "packages/domain/src/error-codes.ts"
       ],
       "testRequirements": {
+        "unit": [
+          "apps/api/src/modules/academic-structure/validation.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/modules/academic-structure/academic-structure.integration.test.ts"
+        ],
         "acceptanceTags": [
           "AC-07",
           "BR-06",

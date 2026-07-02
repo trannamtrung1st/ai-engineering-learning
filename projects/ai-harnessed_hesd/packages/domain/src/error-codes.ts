@@ -20,6 +20,9 @@ export const ErrorCode = {
   UnsupportedFormat: "UnsupportedFormat",
   ReasonRequired: "ReasonRequired",
   EditWindowExpired: "EditWindowExpired",
+  Conflict: "Conflict",
+  SessionNotFound: "SessionNotFound",
+  StudentNotFound: "StudentNotFound",
 } as const;
 
 export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];

@@ -85,3 +85,5 @@
 - 2026-07-02T13:18:37Z | playwright-ui-workspace | passed
 - 2026-07-02T13:28:50Z | module-identity-and-access | implementer: M01 identity module — JWT auth, RBAC authorize(), GET /me, protected route stubs, Forbidden/OutOfScope mapping — migration 0002_user_credentials + seed passwords — checks: full profile pass
 - 2026-07-02T13:32:15Z | module-identity-and-access | passed
+- 2026-07-02T13:45:00Z | module-academic-structure | implementer: M02 academic structure — terms/courses/rooms/class-sections CRUD, enrollment CSV import with row-level errors, isStudentEnrolled helper, schedule-template session generation — checks: full profile pass
+- 2026-07-02T13:41:54Z | module-academic-structure | passed

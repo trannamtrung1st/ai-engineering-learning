@@ -69,15 +69,6 @@ export async function registerProtectedRouteStubs(
     action: "execute",
   });
 
-  const guardEnrollmentImport = createAuthorizeGuard(services, {
-    resource: "Enrollment",
-    action: "create",
-    resolveScope: (request) => {
-      const body = request.body as { classSectionId?: string };
-      return { classSectionId: body.classSectionId };
-    },
-  });
-
   const emptyList = { items: [], pagination: { page: 1, pageSize: 25, totalItems: 0, totalPages: 0 } };
 
   app.get(
@@ -153,14 +144,6 @@ export async function registerProtectedRouteStubs(
     { preHandler: combineGuards(authenticate, guardCheckIn) },
     async (request, reply) => {
       sendApiSuccess(reply, request, 501, { outcome: "NotImplemented" });
-    },
-  );
-
-  app.post(
-    "/enrollments/import",
-    { preHandler: combineGuards(authenticate, guardEnrollmentImport) },
-    async (request, reply) => {
-      sendApiSuccess(reply, request, 200, { acceptedRows: 0, rejectedRows: [] });
     },
   );
 }
