@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import type pg from "pg";
+import { recordQrTokenIssuedTelemetry } from "../realtime-delivery/repository.js";
 import type { CurrentQrResult, ResolvedQrToken } from "./types.js";
 
 export const QR_TTL_MS = 30_000;
@@ -60,6 +61,14 @@ export async function issueQrToken(
     `,
     [tokenId, sessionId, token, issuedAt.toISOString(), expiresAt.toISOString()],
   );
+
+  recordQrTokenIssuedTelemetry({
+    classSessionId: sessionId,
+    tokenId,
+    issuedAt: issuedAt.toISOString(),
+    expiresAt: expiresAt.toISOString(),
+    ttlMs: QR_TTL_MS,
+  });
 
   return { expiresAt: expiresAt.toISOString(), qrPayload: token, tokenId };
 }

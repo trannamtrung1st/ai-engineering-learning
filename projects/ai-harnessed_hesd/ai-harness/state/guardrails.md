@@ -22,3 +22,5 @@ Verification failures and remediation notes for harness agents.
 - [module-policy-engine] Policy-engine integration tests must use dedicated faculty/course/section hierarchy (not shared seed section) — course/faculty scoped policies pollute parallel M04 check-in tests on the same course
 - [module-reporting-and-export] Computational checks failed — see 20260702T150919Z-checks.json
 - [module-audit-and-compliance] M07 reporting integration `deleteExportJobsForActor(lecturer|academicAdmin)` wipes all ExportJob audit rows for that actor — parallel audit export query tests must use an ephemeral actor user, not seed lecturer
+- [module-realtime-delivery] Computational checks failed — see 20260702T153930Z-checks.json
+- [module-realtime-delivery] M09 integration fixtures must use dedicated faculty/term/course hierarchy (not shared seed term) — parallel runs pollute M07 reporting scope queries for SEED.term

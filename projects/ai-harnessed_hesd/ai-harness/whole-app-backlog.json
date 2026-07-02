@@ -1004,7 +1004,7 @@
     },
     {
       "id": "module-realtime-delivery",
-      "passes": false,
+      "passes": true,
       "priority": 15,
       "phase": 1,
       "agent": "backend",
@@ -1022,15 +1022,27 @@
       ],
       "description": "Implement low-latency roster update delivery for open sessions and token refresh metadata for lecturer QR display.",
       "completionArtifacts": [
-        "Realtime channel/event gateway for session roster",
-        "Event emitters for check-in and correction updates",
-        "Fallback polling-compatible payload contracts"
+        "apps/api/src/modules/realtime-delivery",
+        "apps/api/src/modules/check-in-and-qr-orchestrator/repository.ts",
+        "apps/api/src/modules/check-in-and-qr-orchestrator/qr-service.ts",
+        "apps/api/src/modules/session-lifecycle/repository.ts",
+        "apps/api/src/modules/session-lifecycle/routes.ts",
+        "apps/api/src/modules/attendance-ledger/repository.ts",
+        "apps/api/src/app.ts"
       ],
       "testRequirements": {
+        "unit": [
+          "apps/api/src/modules/realtime-delivery/event-gateway.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/modules/realtime-delivery/realtime-delivery.integration.test.ts"
+        ],
         "acceptanceTags": [
           "AC-02",
           "FR-14",
-          "FR-19"
+          "FR-19",
+          "NFR-01",
+          "NFR-16"
         ]
       },
       "history": [
@@ -1062,6 +1074,12 @@
           "at": "2026-07-02T12:36:46Z",
           "kind": "drift",
           "reason": "Doc drift for NFR-16 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T15:49:48Z",
+          "kind": "gate_failed",
+          "reason": "Computational checks failed — see 20260702T153930Z-checks.json",
           "source": "harness"
         }
       ]

@@ -13,6 +13,7 @@ import {
   validateCorrectionWindow,
   isAdminOverrideRole,
 } from "./validation.js";
+import { createRealtimeDeliveryRepository } from "../realtime-delivery/repository.js";
 import type {
   AttendanceStatus,
   CorrectionResult,
@@ -38,6 +39,7 @@ export type CorrectionCommandError =
 export function createAttendanceLedgerRepository(pool: pg.Pool) {
   const idempotencyCache = new Map<string, CorrectionCache>();
   const policyEngine = createPolicyEngineRepository(pool);
+  const realtimeDelivery = createRealtimeDeliveryRepository(pool);
 
   async function loadEffectivePolicy(
     client: pg.PoolClient,
@@ -548,6 +550,11 @@ export function createAttendanceLedgerRepository(pool: pg.Pool) {
         }
 
         await client.query("COMMIT");
+        await realtimeDelivery.publishRosterUpdate({
+          classSessionId: params.sessionId,
+          reason: "AttendanceCorrected",
+          correlationId: params.correlationId,
+        });
         return { ok: true, result };
       } catch (error) {
         await client.query("ROLLBACK");

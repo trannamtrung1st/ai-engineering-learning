@@ -113,3 +113,7 @@
 - 2026-07-02T15:22:43Z | module-reporting-and-export | passed
 - 2026-07-02T15:37:15Z | module-audit-and-compliance | implementer: M08 audit and compliance — append-only writeAuditEvent service, GET /v1/audit-logs with scoped filters, correlation-id on mutations/exports, wired into M04/M05/M07/session-lifecycle — integration flake fixed (ephemeral export actor avoids M07 parallel cleanup) — checks: full profile pass (unit 61/61, integration 172/172)
 - 2026-07-02T15:39:29Z | module-audit-and-compliance | passed
+- 2026-07-02T15:48:47Z | module-realtime-delivery | implementer: M09 realtime delivery — SSE roster event gateway with polling-compatible roster snapshots, check-in/correction/open/close emitters, QR rotation and failure-distribution telemetry — isolated integration fixtures — checks: full profile pass (unit 64/64, integration 176/176)
+- 2026-07-02T15:49:48Z | module-realtime-delivery | checks_failed
+- 2026-07-02T15:51:00Z | module-realtime-delivery | implementer: re-verified M09 after gate failure — isolated integration fixtures to dedicated M09 faculty/term/course hierarchy (fixes M07 reporting parallel pollution) — checks: full profile pass (unit 64/64, integration 176/176)
+- 2026-07-02T15:56:45Z | module-realtime-delivery | passed

@@ -2,6 +2,11 @@ import { createHash, randomUUID } from "node:crypto";
 import type pg from "pg";
 import { createAttendanceLedgerRepository } from "../attendance-ledger/repository.js";
 import { writeAuditEvent } from "../audit-and-compliance/service.js";
+import {
+  createRealtimeDeliveryRepository,
+  recordQrTokenIssuedTelemetry,
+  recordSessionLifecycleTelemetry,
+} from "../realtime-delivery/repository.js";
 import { validateCloseTransition, validateOpenTransition } from "./validation.js";
 import type {
   ClassSessionRow,
@@ -50,6 +55,7 @@ export type SessionCommandError =
 
 export function createSessionLifecycleRepository(pool: pg.Pool) {
   const attendanceLedger = createAttendanceLedgerRepository(pool);
+  const realtimeDelivery = createRealtimeDeliveryRepository(pool);
   const idempotencyCache = new Map<string, OpenSessionResult | CloseSessionResult>();
 
   async function getSessionForUpdate(
@@ -85,11 +91,12 @@ export function createSessionLifecycleRepository(pool: pg.Pool) {
   async function issueQrToken(
     client: pg.PoolClient,
     sessionId: string,
-  ): Promise<{ expiresAt: string; qrPayload: string }> {
+  ): Promise<{ expiresAt: string; issuedAt: string; qrPayload: string; tokenId: string }> {
     const token = randomUUID();
     const tokenHash = hashToken(token);
     const issuedAt = new Date();
     const expiresAt = new Date(issuedAt.getTime() + QR_TTL_MS);
+    const tokenId = randomUUID();
 
     await client.query(
       `
@@ -105,10 +112,15 @@ export function createSessionLifecycleRepository(pool: pg.Pool) {
       INSERT INTO qr_session_tokens (id, class_session_id, token_hash, state, issued_at, expires_at)
       VALUES ($1, $2, $3, 'Valid', $4, $5)
       `,
-      [randomUUID(), sessionId, tokenHash, issuedAt.toISOString(), expiresAt.toISOString()],
+      [tokenId, sessionId, tokenHash, issuedAt.toISOString(), expiresAt.toISOString()],
     );
 
-    return { expiresAt: expiresAt.toISOString(), qrPayload: token };
+    return {
+      expiresAt: expiresAt.toISOString(),
+      issuedAt: issuedAt.toISOString(),
+      qrPayload: token,
+      tokenId,
+    };
   }
 
   async function invalidateSessionTokens(client: pg.PoolClient, sessionId: string): Promise<void> {
@@ -206,7 +218,7 @@ export function createSessionLifecycleRepository(pool: pg.Pool) {
     async openSession(
       sessionId: string,
       actorUserId: string,
-      options: { roomId?: string | null; idempotencyKey?: string } = {},
+      options: { roomId?: string | null; idempotencyKey?: string; correlationId?: string | null } = {},
     ): Promise<{ ok: true; result: OpenSessionResult } | { ok: false; error: SessionCommandError }> {
       const cacheKey =
         options.idempotencyKey
@@ -277,7 +289,10 @@ export function createSessionLifecycleRepository(pool: pg.Pool) {
           classSessionId: sessionId,
           state: "Open",
           openedAt: openedAt.toISOString(),
-          qr,
+          qr: {
+            expiresAt: qr.expiresAt,
+            qrPayload: qr.qrPayload,
+          },
         };
 
         if (cacheKey) {
@@ -285,6 +300,28 @@ export function createSessionLifecycleRepository(pool: pg.Pool) {
         }
 
         await client.query("COMMIT");
+        recordQrTokenIssuedTelemetry({
+          classSessionId: sessionId,
+          tokenId: qr.tokenId,
+          issuedAt: qr.issuedAt,
+          expiresAt: qr.expiresAt,
+          ttlMs: QR_TTL_MS,
+          correlationId: options.correlationId,
+        });
+        const rosterEvent = await realtimeDelivery.publishRosterUpdate({
+          classSessionId: sessionId,
+          reason: "SessionOpened",
+          correlationId: options.correlationId,
+        });
+        recordSessionLifecycleTelemetry({
+          type: "SessionOpened",
+          classSessionId: sessionId,
+          actorUserId,
+          beforeState: session.state,
+          afterState: "Open",
+          correlationId: options.correlationId,
+          initialRosterCount: rosterEvent?.roster.rows.length,
+        });
         return { ok: true, result };
       } catch (error) {
         await client.query("ROLLBACK");
@@ -388,6 +425,19 @@ export function createSessionLifecycleRepository(pool: pg.Pool) {
         }
 
         await client.query("COMMIT");
+        await realtimeDelivery.publishRosterUpdate({
+          classSessionId: sessionId,
+          reason: "SessionClosed",
+          correlationId: options.correlationId,
+        });
+        recordSessionLifecycleTelemetry({
+          type: "SessionClosed",
+          classSessionId: sessionId,
+          actorUserId,
+          beforeState: session.state,
+          afterState: "Closed",
+          correlationId: options.correlationId,
+        });
         return { ok: true, result };
       } catch (error) {
         await client.query("ROLLBACK");

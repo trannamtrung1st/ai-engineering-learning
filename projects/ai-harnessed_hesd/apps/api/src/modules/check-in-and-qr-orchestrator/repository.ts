@@ -9,6 +9,10 @@ import {
   evaluateGpsDistance,
   evaluateGpsPayload,
 } from "../policy-engine/validation.js";
+import {
+  createRealtimeDeliveryRepository,
+  recordCheckInAttemptTelemetry,
+} from "../realtime-delivery/repository.js";
 import { getOrRotateCurrentQr, issueQrToken, resolveQrToken } from "./qr-service.js";
 import { evaluateCheckInFailure, resolveAttendanceStatus } from "./validation.js";
 import type {
@@ -37,6 +41,7 @@ const DEFAULT_POLICY = {
 export function createCheckInRepository(pool: pg.Pool) {
   const attendanceLedger = createAttendanceLedgerRepository(pool);
   const policyEngine = createPolicyEngineRepository(pool);
+  const realtimeDelivery = createRealtimeDeliveryRepository(pool);
   const idempotencyCache = new Map<string, IdempotencyRecord>();
 
   async function loadSession(client: pg.PoolClient, sessionId: string): Promise<SessionContext | null> {
@@ -331,6 +336,19 @@ export function createCheckInRepository(pool: pg.Pool) {
           if (cacheKey) {
             idempotencyCache.set(cacheKey, { statusCode, body: failureResult });
           }
+          if (sessionId) {
+            recordCheckInAttemptTelemetry({
+              classSessionId: sessionId,
+              studentUserId: params.studentUserId,
+              outcome: failureOutcome,
+              correlationId: params.correlationId,
+            });
+            await realtimeDelivery.publishRosterUpdate({
+              classSessionId: sessionId,
+              reason: "CheckInRecorded",
+              correlationId: params.correlationId,
+            });
+          }
           return { statusCode, result: failureResult };
         }
 
@@ -374,6 +392,17 @@ export function createCheckInRepository(pool: pg.Pool) {
           if (cacheKey) {
             idempotencyCache.set(cacheKey, { statusCode: 409, body: dupResult });
           }
+          recordCheckInAttemptTelemetry({
+            classSessionId: session!.id,
+            studentUserId: params.studentUserId,
+            outcome: "DuplicateCheckIn",
+            correlationId: params.correlationId,
+          });
+          await realtimeDelivery.publishRosterUpdate({
+            classSessionId: session!.id,
+            reason: "CheckInRecorded",
+            correlationId: params.correlationId,
+          });
           return { statusCode: 409, result: dupResult };
         }
 
@@ -414,6 +443,17 @@ export function createCheckInRepository(pool: pg.Pool) {
         if (cacheKey) {
           idempotencyCache.set(cacheKey, { statusCode: 200, body: successResult });
         }
+        recordCheckInAttemptTelemetry({
+          classSessionId: session!.id,
+          studentUserId: params.studentUserId,
+          outcome: "Success",
+          correlationId: params.correlationId,
+        });
+        await realtimeDelivery.publishRosterUpdate({
+          classSessionId: session!.id,
+          reason: "CheckInRecorded",
+          correlationId: params.correlationId,
+        });
         return { statusCode: 200, result: successResult };
       } catch (error) {
         await client.query("ROLLBACK");
