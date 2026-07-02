@@ -10,6 +10,7 @@ Verification failures and remediation notes for harness agents.
 
 ## Signs
 
+- **SetupGuard async spinner vs Playwright `page.evaluate`:** `SetupGuard` blocks the entire tree until `GET /setup/status` returns — Playwright specs that run `document.querySelectorAll("aside nav a")` immediately after `page.goto` see an empty array even when the sidebar renders moments later. Cache `needsSetup === false` in `sessionStorage` after the first successful status check (and prime auth user cache on login) so repeat navigations paint sidebar links on first paint.
 - **Sonner toast + React StrictMode:** Do not guard session-expired (or bootstrap) toasts with a `useRef` "shown once" flag. StrictMode remounts `<Toaster />` and drops the first toast; the ref blocks the second `toast.error` call. Use `toast.error(..., { id })` and defer with `setTimeout(0)` in `useEffect` so the toast fires after the remount.
 - **Preview seed idempotency:** Do not gate `runPreviewSeed` on a policy_settings marker alone — integration tests truncate auth tables but can leave `preview_seed_version` set, causing browser gates to skip seed and miss deactivated/student fixtures. Verify fixture rows (e.g. `deactivated@example.edu.vn`) exist before skipping.
 - [web-design-system-shell] Browser test failed — see 20260628T215822Z-browser-test.json
@@ -45,6 +46,9 @@ Verification failures and remediation notes for harness agents.
 - [web-instructor-sessions] Browser test failed — see 20260629T092108Z-browser-test.json
 - **Closed-session monitor poll:** `useSessionMonitorPoll` must fetch roster when `pollingEnabled=false` — only disable `refetchInterval`; setting `enabled:false` skips the initial load and TC-AC-05-020 shows empty monitor after close.
 - [web-instructor-attendance-roster] Computational checks failed — see 20260629T113410Z-checks.json
+- **Monitor poll staleTime:** `useSessionMonitorPoll` must set `staleTime: 0` (global default 30s blocks 5s `refetchInterval` UI refresh) and `refetchIntervalInBackground: true` — TC-NFR-08-004 StatCards flake after student API check-in.
+- **Playwright monitor check-in prep:** StatCards poll test must reset SV2026001 to Absent via instructor PATCH when already Present, wait for poll to reflect, and use isolated `request.newContext()` for student check-in so instructor monitor cookies are not overwritten.
+- **Monitor StatCards placeholder vs API:** `SessionMonitorDashboard` shows fallback summary (`enrolled: 3`) before the first poll completes — Playwright specs that read StatCard text before `monitor-poll-status` shows `Cập nhật lúc` capture the placeholder and fail when real API totals load (e.g. `1 / 3` → `1 / 2`). Wait for poll status + stable `\d+ / \d+` text before asserting filter/search does not change totals.
 - **Component test fixture status:** When asserting `initialEditStatus` behavior (Pending → Present default), pass `AttendanceStatus.Pending` on the mock record — reusing an Absent fixture makes TC-AC-11-016 fail while the component is correct.
 - [web-admin-rosters] Browser test failed — see 20260629T131937Z-browser-test.json
 - **Integration truncate + preview export:** `truncateAuthTables` must `TRUNCATE export_audit_logs` (and `notifications`) before `DELETE FROM users` — preview CSV export audit rows with `ON DELETE RESTRICT` block integration resets when preview stack runs during `aih:check`.
@@ -457,3 +461,82 @@ Verification failures and remediation notes for harness agents.
 - [NFR-18] Docs changed — test cases need review (index current=false; fingerprint=sha256:0f69f47cceb0aabe2f681a2da79af5a731ce67d621d128928b18ea279dcd87c5)
 - [NFR-19] Docs changed — test cases need review (index current=false; fingerprint=sha256:0f69f47cceb0aabe2f681a2da79af5a731ce67d621d128928b18ea279dcd87c5)
 - [NFR-20] Docs changed — test cases need review (index current=false; fingerprint=sha256:0f69f47cceb0aabe2f681a2da79af5a731ce67d621d128928b18ea279dcd87c5)
+- [NFR-04] Test case validation failed — see 20260630T105617Z-testgen.txt
+- [module-identity-auth] AI review failed — see 20260630T115515Z-review.json
+- [module-checkin-qr] Computational checks failed — see 20260630T125109Z-checks.json
+- **QrScheduler.stop race:** `expireValidTokens` must be awaited in `stop()` — fire-and-forget expiry after `close()` races integration tests that re-validate tokens on Closed sessions (TC-BR-15-008 returns `ExpiredQr` instead of `SessionNotActive`).
+- [web-auth-login] Browser test failed — see 20260630T132809Z-browser-test.json
+- **Playwright after integration truncate:** Call `POST /auth/preview/refresh-fixtures` in Playwright `globalSetup` and retry preview login helpers when still on `/login` — integration `truncateAuthTables` races first UI login before `runWhenPreviewDbIdle` refresh completes (TC-FR-02-021 flake).
+- **Playwright mobile project:** Use `devices["Pixel 5"]` (Chromium) instead of `iPhone 12` (WebKit) — WebKit launch hangs 180s+ on this host and blocks `test:playwright-ui` gate.
+- [web-auth-login] Browser test failed — see 20260630T142658Z-browser-test.json
+- [web-auth-login] Browser test failed — see 20260630T151302Z-browser-test.json
+- [web-auth-login] Browser test failed — see 20260630T153048Z-browser-test.json
+- [web-auth-login] Browser test failed — see 20260630T154459Z-browser-test.json
+- [web-instructor-qr-display] Browser test failed — see 20260630T163958Z-browser-test.json
+- **Instructor display QR on refresh:** `refreshPreviewBrowserFixtures` must insert a non-protected valid token (~11 s remaining) after `ensurePreviewTokenFixtures` — otherwise `GET qr/current` returns protected `validQrToken` (30 s) and NFR-20 warning-accent Playwright gates never reach ≤10 s.
+- [web-instructor-qr-display] Computational checks failed — see 20260630T171825Z-checks.json
+- **Preview expire-session touchSession:** `POST /auth/preview/expire-session` must not run `auth` middleware — `touchSession` refreshes activity before backdate and breaks TC-NFR-16-013 when prior Playwright cases already warmed the session.
+- **CheckInFlow auth cache:** Do not cache `authVerified` across token/search-param changes — re-call `fetchAuthUser` when `rawTokenId` or `sessionId` changes or expired-session deep-link gates flake after `expireSessionOnSubmit` cases.
+- [web-instructor-attendance-roster] AI review failed — see 20260630T195831Z-review.json
+- [web-admin-users] Browser test failed — see 20260630T212934Z-browser-test.json
+- [web-admin-users] Computational checks failed — see 20260630T220904Z-checks.json
+- [web-admin-users] Browser test failed — see 20260630T230611Z-browser-test.json
+- **User import preview existingIds:** `fetchUsers({ limit: 500 })` exceeds API max (50 default / 200 cap) and fails silently — preview marks all rows "Tạo mới". Use cursor pagination via `fetchAllInstitutionalIds()` (limit 50 per page) for create/update badges (TC-AC-01-017).
+- [web-admin-users] AI review failed — see 20260630T235753Z-review.json
+- [AC-01] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:7ecc7e7aaa2f7d4b58c035fd9972735baacdb9e8daaaea4acfe91500a24df191)
+- [AC-02] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:7ecc7e7aaa2f7d4b58c035fd9972735baacdb9e8daaaea4acfe91500a24df191)
+- [AC-03] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:7ecc7e7aaa2f7d4b58c035fd9972735baacdb9e8daaaea4acfe91500a24df191)
+- [AC-04] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:7ecc7e7aaa2f7d4b58c035fd9972735baacdb9e8daaaea4acfe91500a24df191)
+- [AC-05] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:9e085d864cfa9ea5a3355a44144bc24cef245d8507af723d1f6a720bbb89b3ce)
+- [AC-06] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:9e085d864cfa9ea5a3355a44144bc24cef245d8507af723d1f6a720bbb89b3ce)
+- [AC-07] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:9e085d864cfa9ea5a3355a44144bc24cef245d8507af723d1f6a720bbb89b3ce)
+- [AC-08] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:21885253bc59e4e006a2df50845a0e4251c2c2ac6237c793d14f3b2729e5480e)
+- [AC-09] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:21885253bc59e4e006a2df50845a0e4251c2c2ac6237c793d14f3b2729e5480e)
+- [AC-10] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:21885253bc59e4e006a2df50845a0e4251c2c2ac6237c793d14f3b2729e5480e)
+- [AC-12] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:805ac1ddee505b3ab130e4e7ac335d0c6b50f90bd34dbe4c080b375bcf06977e)
+- [AC-13] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:9fd0cdc20e60929dada0a6770bbbcebc69ff91fc6cb5408596a94390b60778eb)
+- [AC-14] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:9fd0cdc20e60929dada0a6770bbbcebc69ff91fc6cb5408596a94390b60778eb)
+- [AC-15] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:7e3a3404d1fa949a12d9bbd2f7bcff57584570c63c719a18d2d6a1562023fc5c)
+- [AC-16] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:7e3a3404d1fa949a12d9bbd2f7bcff57584570c63c719a18d2d6a1562023fc5c)
+- [AC-17] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:e4953201ecab8ff01f201e6fd6ec4976b67139f804bbae81dce36c142996ceac)
+- [AC-18] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:cf99d0b4a9883d43097d1d16e66321623bb4ee55f1f06141d0ebfdb0e4e55214)
+- [FR-01] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:641de2ba59b84e30a793fd3df36ec32172e82dac4637921efd1763bae1303e58)
+- [FR-02] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:641de2ba59b84e30a793fd3df36ec32172e82dac4637921efd1763bae1303e58)
+- [FR-03] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:641de2ba59b84e30a793fd3df36ec32172e82dac4637921efd1763bae1303e58)
+- [FR-04] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:641de2ba59b84e30a793fd3df36ec32172e82dac4637921efd1763bae1303e58)
+- [FR-05] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:6c7678f94cb9169287510a56d60b05b785753e869c92ffab3c3fb6445986f640)
+- [FR-06] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:6c7678f94cb9169287510a56d60b05b785753e869c92ffab3c3fb6445986f640)
+- [FR-07] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:6c7678f94cb9169287510a56d60b05b785753e869c92ffab3c3fb6445986f640)
+- [FR-08] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:6c7678f94cb9169287510a56d60b05b785753e869c92ffab3c3fb6445986f640)
+- [FR-09] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:6c7678f94cb9169287510a56d60b05b785753e869c92ffab3c3fb6445986f640)
+- [FR-10] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:6c7678f94cb9169287510a56d60b05b785753e869c92ffab3c3fb6445986f640)
+- [FR-11] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:6c7678f94cb9169287510a56d60b05b785753e869c92ffab3c3fb6445986f640)
+- [FR-12] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:6c7678f94cb9169287510a56d60b05b785753e869c92ffab3c3fb6445986f640)
+- [FR-13] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:70664f4bcec7e745bdcd06197b935919d3e19855c18c5b6fb91cd47efbd1e5ca)
+- [FR-14] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:70664f4bcec7e745bdcd06197b935919d3e19855c18c5b6fb91cd47efbd1e5ca)
+- [FR-15] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:70664f4bcec7e745bdcd06197b935919d3e19855c18c5b6fb91cd47efbd1e5ca)
+- [FR-16] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:70664f4bcec7e745bdcd06197b935919d3e19855c18c5b6fb91cd47efbd1e5ca)
+- [FR-17] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:70664f4bcec7e745bdcd06197b935919d3e19855c18c5b6fb91cd47efbd1e5ca)
+- [FR-18] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:447fe8437a2db197936baf94c2dfc27df624096ac72b1e3fa81bad5e0d2dc23b)
+- [BR-09] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:2f4339d78ef523c323a8974779165acbd0a71755d9c7e3df622be9ab3506c35c)
+- [BR-13] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:2f4339d78ef523c323a8974779165acbd0a71755d9c7e3df622be9ab3506c35c)
+- [BR-14] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:2f4339d78ef523c323a8974779165acbd0a71755d9c7e3df622be9ab3506c35c)
+- [BR-15] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:2f4339d78ef523c323a8974779165acbd0a71755d9c7e3df622be9ab3506c35c)
+- [NFR-01] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:c846b27c93f7d5a2fca97ea30039f8021ebfe5ee04711f351fc18db986850ffe)
+- [NFR-06] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:96d9ad89ae38cd2d1a0a2a1a4a0e283696ce0804fb927435fd36f8f0ba57a1e4)
+- [NFR-07] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:1e05c5e756e7bae838350bc41fd8bdb05f9041145b60c4f1a5161a9b6169369e)
+- [NFR-08] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:1e05c5e756e7bae838350bc41fd8bdb05f9041145b60c4f1a5161a9b6169369e)
+- [NFR-10] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:c846b27c93f7d5a2fca97ea30039f8021ebfe5ee04711f351fc18db986850ffe)
+- [NFR-11] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:c846b27c93f7d5a2fca97ea30039f8021ebfe5ee04711f351fc18db986850ffe)
+- [NFR-12] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:c846b27c93f7d5a2fca97ea30039f8021ebfe5ee04711f351fc18db986850ffe)
+- [NFR-14] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:d0f742a55dc5982c5ffe505704d039fb3fdb52dcc349f4838459ccb793df8c15)
+- [NFR-15] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:c846b27c93f7d5a2fca97ea30039f8021ebfe5ee04711f351fc18db986850ffe)
+- [NFR-16] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:c846b27c93f7d5a2fca97ea30039f8021ebfe5ee04711f351fc18db986850ffe)
+- [NFR-17] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:1e05c5e756e7bae838350bc41fd8bdb05f9041145b60c4f1a5161a9b6169369e)
+- [NFR-18] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:b2911b5a40eefc87a5f489a620cbbe553c6eb1aae90f09a36ad56a4a4b1c771a)
+- [NFR-19] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:c846b27c93f7d5a2fca97ea30039f8021ebfe5ee04711f351fc18db986850ffe)
+- [NFR-20] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:c846b27c93f7d5a2fca97ea30039f8021ebfe5ee04711f351fc18db986850ffe)
+- [NFR-24] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:c846b27c93f7d5a2fca97ea30039f8021ebfe5ee04711f351fc18db986850ffe)
+- [FR-19] TESTGEN_BLOCKED FR-19 has no specification in mapped docs (03-functional-requirements.md ends at FR-18; no AC-19; no backlog slice references this tag)
+- [NFR-06] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:88fe43a9148fb92bf183628958f2390ffada7de7491bd4040aea7e1079b01932)
+- [FR-19] TESTGEN_BLOCKED FR-19 has no specification in mapped docs (03-functional-requirements.md ends at FR-18; no AC-19; no backlog slice references this tag)

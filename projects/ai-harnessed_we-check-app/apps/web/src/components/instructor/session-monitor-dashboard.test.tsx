@@ -171,6 +171,18 @@ describe("SessionMonitorDashboard (AC-15, FR-15, NFR-08)", () => {
     expect(screen.getByTestId("stat-card-pending")).toHaveTextContent("2");
   });
 
+  it("TC-AC-15-013: student search filters roster without changing StatCards", () => {
+    renderDashboard();
+
+    fireEvent.change(screen.getByTestId("monitor-student-search"), {
+      target: { value: "Trần" },
+    });
+
+    expect(screen.getByTestId("monitor-row-sv2026002")).toBeInTheDocument();
+    expect(screen.queryByTestId("monitor-row-sv2026001")).not.toBeInTheDocument();
+    expect(screen.getByTestId("stat-card-present")).toHaveTextContent("1");
+  });
+
   it("TC-AC-15-003: roster rows show StatusBadge and check-in timestamp for Present", () => {
     renderDashboard();
 

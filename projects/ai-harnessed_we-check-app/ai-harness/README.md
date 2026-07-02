@@ -31,8 +31,8 @@ Harness-owned skills live under [`skills/`](skills/) (e.g. [`skills/frontend-des
 
 | Skill | Agents | Purpose |
 |---|---|---|
-| `frontend-design` | `frontend` implementer, browser `tester` | Notion visual craft, signature moments, screenshot self-critique |
-| `design-craft-notion` | `frontend` implementer, browser `tester` | Notion workspace density — sidebar, database toolbars, listing §0 rhythm |
+| `frontend-design` | `frontend` implementer, browser `tester` | Visual craft, signature moments, screenshot self-critique |
+| `design-craft-notion` | `frontend` implementer, browser `tester` | Workspace density — sidebar, listing toolbars (optional extension) |
 | `ui-ux-testing` | browser `tester` | UX defect taxonomy, `UX-*` bug logging, screenshot audit beyond `TC-*` checklist |
 
 Harness doc index: [`docs/requirements-index.md`](docs/requirements-index.md).
@@ -93,7 +93,9 @@ Defaults live in `ai-harness/config/models.json`.
 | `npm run aih:loop` | **Autonomous loop** — repeats until all slices pass or max iterations (30) |
 | `npm run aih:loop:bg` | Same as loop, but **background/unattended** (nohup + log file) |
 | `npm run aih:loop:stop` | Stop background loop |
-| `npm run aih:check` | Computational gates only (no agent) |
+| `npm run aih:loop:safe` | Like `aih:loop` but exits if any test-case tag has `current: false` |
+| `npm run aih:status` | Loop health dashboard (pending slices, stale tags, recent failures) |
+| `npm run aih:check` | Computational gates only (no agent); add `--profile fast` for slice self-check |
 | `npm run aih:run-check -- <script>` | One npm script with timeout, heartbeat, and log file (for agent ad-hoc runs) |
 | `npm run aih:browser-test` | Playwright MCP functional + UX test for next/current slice; emits Playwright regression spec |
 | `npm run aih:review` | AI review for next pending slice |
@@ -107,7 +109,7 @@ Defaults live in `ai-harness/config/models.json`.
 | `npm run aih:testgen:once` | Generate test cases for one slice from docs |
 | `npm run aih:testgen:loop` | Autonomous TestGen loop until all slices have current test cases |
 | `npm run aih:testgen:enhance` | Ad-hoc improve test cases for one tag with free-text instructions |
-| `npm run aih:testgen:drift` | Detect doc drift; reset passes + test case state |
+| `npm run aih:testgen:drift` | Detect doc drift; mark tags stale (`current: false`) — slices reopen after TestGen |
 | `npm run aih:testgen:validate` | Validate generated test case JSON for a slice |
 
 ### Preview (API + web)
@@ -136,22 +138,25 @@ Startup success requires API `GET /api/v1/health` with `status=ok` and `db=conne
 
 ### Recommended workflow
 
-Ralph and TestGen can run in parallel — implementation does not require test cases upfront (default `testCaseGate.mode: optional` in `ralph-loop.json`):
+Default `testCaseGate.mode` is `required` in `ralph-loop.json` — run TestGen before Ralph when tags are stale.
 
 ```bash
-# Option A: parallel — implement while TestGen catches up
-npm run aih:loop &
-npm run aih:testgen:loop
+# After editing docs — two-phase drift model
+npm run aih:testgen:drift && npm run aih:testgen:loop && npm run aih:loop
 
-# Option B: TestGen first (strict mode — set testCaseGate.mode to "required" in ralph-loop.json)
-npm run aih:testgen:loop
-npm run aih:loop
+# Safe loop — refuses to start if any tag is stale
+npm run aih:loop:safe
 
-# After editing docs — drift check resets passes; regenerate test cases
-npm run aih:testgen:drift && npm run aih:testgen:loop
+# Fast implementer self-check (slice-scoped Playwright, skips build/integration/e2e)
+npm run aih:check -- <sliceId> --profile fast
+
+# Loop health
+npm run aih:status
 ```
 
-To re-run implementer and tester gates after TestGen catches up, set `passes: false` on that slice in `whole-app-backlog.json`.
+Doc drift alone sets `test-case-index` `current: false` and appends guardrails — it does **not** reset slice `passes` until TestGen successfully regenerates the artifact (`mark_slices_stale_for_tag`).
+
+To re-run implementer and tester gates after TestGen catches up, set `passes: false` on that slice in `whole-app-backlog.json` (or let TestGen regeneration do it when `reverifyOnDrift` is true).
 
 ### Autonomous loop (hands-off)
 
@@ -196,7 +201,7 @@ AIH_SKIP_AGENT=1 AIH_SKIP_REVIEW=1 npm run aih:once
 ### Review a specific slice
 
 ```bash
-./ai-harness/scripts/run-ai-review.sh module-registration
+./ai-harness/scripts/run-ai-review.sh module-checkin-qr
 ```
 
 ## Flow
@@ -262,11 +267,11 @@ On a docs-only repo (no `apps/`), `npm run aih:check` passes without code-qualit
 
 ## Key files
 
-- `ai-harness/whole-app-backlog.json` — slice queue (includes pending slices for bootstrap, class management, QR preflight, role nav, GPS ready UX — priorities 35–42)
+- `ai-harness/whole-app-backlog.json` — slice queue
 - `ai-harness/workflows/ralph-loop.json` — loop policy (`testCaseGate.mode`)
 - `ai-harness/workflows/testgen-loop.json` — TestGen loop policy
 - `ai-harness/config/testgen-docs-map.json` — doc resolution rules per requirement tag
-- `ai-harness/test-case-index.json` — slim TestGen generation state (current, fingerprint)
+- `ai-harness/test-case-index.json` — slim generation state (current, fingerprint)
 - `ai-harness/playwright-regression-index.json` — browser-tester Playwright spec tracking per slice
 - `docs/test-cases/items/` — generated test case artifacts per tag
 - `ai-harness/config/context-map.json` — which docs to read per slice

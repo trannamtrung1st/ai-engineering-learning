@@ -8,6 +8,7 @@ import { AdminReportsPage } from "@/app/admin/reports/page";
 import { AdminUsersPage } from "@/app/admin/users/page";
 import { CreateUserPage } from "@/app/admin/users/new/page";
 import { EditUserPage } from "@/app/admin/users/[userId]/page";
+import { UserImportPage } from "@/app/admin/users/import/page";
 import { AdminClassRosterPage } from "@/app/admin/rosters/[classCode]/page";
 import { AdminRostersPage } from "@/app/admin/rosters/page";
 import { RosterImportPage } from "@/app/admin/rosters/import/page";
@@ -141,6 +142,7 @@ const router = createBrowserRouter([
                   { index: true, element: <AdminHomePage /> },
                   { path: "users", element: <AdminUsersPage /> },
                   { path: "users/new", element: <CreateUserPage /> },
+                  { path: "users/import", element: <UserImportPage /> },
                   { path: "users/:userId", element: <EditUserPage /> },
                   { path: "rosters", element: <AdminRostersPage /> },
                   { path: "rosters/import", element: <RosterImportPage /> },

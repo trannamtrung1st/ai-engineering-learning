@@ -1,8 +1,8 @@
 {
   "productItemId": "BR-14",
   "version": 1,
-  "docFingerprint": "sha256:b51b06151a55724f091e1a2a17e028f2001b19301895dfd37dd3b0fba234a6d4",
-  "generatedAt": "2026-06-29T22:15:00.000Z",
+  "docFingerprint": "sha256:2f4339d78ef523c323a8974779165acbd0a71755d9c7e3df622be9ab3506c35c",
+  "generatedAt": "2026-07-01T02:25:18.000Z",
   "cases": [
     {
       "id": "TC-BR-14-001",
@@ -46,7 +46,7 @@
         "Invoke filterPermittedNav with Instructor permissions [session:read] only (report:read absent)",
         "Assert Buổi học → /sessions present; Báo cáo → /reports absent from result array",
         "Invoke filterPermittedNav with full TrainingOfficeAdmin permission set",
-        "Assert all admin sidebar items from §2.3a present including Trang chủ, Người dùng, Xuất CSV"
+        "Assert all admin sidebar items from §2.3a present including Trang chủ, Người dùng, Lớp học, Môn học, Danh sách ghi danh, Nhập danh sách, Báo cáo, Xuất CSV, and Chính sách"
       ],
       "expected": "BR-14 module boundary: usePermittedNav omits nav items user lacks; cross-role prefixes never co-mingle in filtered descriptor set",
       "edgeCase": false
@@ -66,12 +66,15 @@
       "steps": [
         "For each StudentLayout bottom-nav item, assert required permission from §2.3a is evaluated before inclusion",
         "For each InstructorLayout sidebar item, assert session:read or report:read gate applied",
-        "For each AdminLayout sidebar item, assert matching permission (user:read, roster:read, report:export, policy:write) required",
+        "For each AdminLayout sidebar item, assert matching permission (user:read, roster:read, roster:write, report:read, report:export, policy:write) required",
         "Invoke filterHubCards with admin permissions excluding policy:write",
         "Assert Chính sách card absent from hub descriptor result (not present with disabled flag)",
-        "Invoke filterHubCards for Student and assert only check-in and history cards returned"
+        "Invoke filterHubCards with full admin permissions including roster:read",
+        "Assert Lớp học and Môn học hub cards present with href /admin/classes and /admin/subjects",
+        "Invoke filterHubCards for Student and assert only check-in and history cards returned",
+        "Invoke filterHubCards for Instructor with session:read and report:read and assert Tạo buổi học mới and Báo cáo điểm danh cards present per AC-18d"
       ],
-      "expected": "BR-14 scope all layout chrome: sidebar, bottom nav, and hub quick-link cards all omit unauthorized destinations per shared permission map",
+      "expected": "BR-14 scope all layout chrome: sidebar, bottom nav, and hub quick-link cards all omit unauthorized destinations per shared permission map including class and subject catalogs",
       "edgeCase": false
     },
     {
@@ -108,16 +111,16 @@
       "title": "RBAC negative: Student and Instructor denied admin routes backing omitted nav items",
       "preconditions": [
         "RbacNegativeMatrix fixture per testing-plan §5 with Student and Instructor sessions",
-        "Representative admin endpoints matching AdminLayout nav: GET /users, GET /admin/reports, POST /admin/export"
+        "Representative admin endpoints matching AdminLayout nav: GET /users, GET /classes, GET /subjects, GET /admin/reports, POST /reports/export"
       ],
       "steps": [
-        "For each admin endpoint in matrix, invoke with Student session",
+        "For each admin endpoint in matrix (including GET /classes and GET /subjects), invoke with Student session",
         "Assert HTTP 403 for every request; no institution-wide data in response body",
-        "Repeat matrix with Instructor session for /admin/users, /admin/rosters, /admin/reports, /admin/export",
+        "Repeat matrix with Instructor session for /admin/users, /classes, /subjects, /admin/rosters, /admin/reports, POST /reports/export",
         "Assert HTTP 403 Forbidden or ExportNotAllowed per roles-permissions §2.5",
         "Assert Instructor retains HTTP 200 on scoped routes GET /sessions and GET /reports when assigned"
       ],
-      "expected": "NFR-11 rbac-negative coverage for BR-14: non-admin roles cannot access admin API surfaces; nav chrome omission aligns with API denial matrix",
+      "expected": "NFR-11 rbac-negative coverage for BR-14: non-admin roles cannot access admin API surfaces including class and subject catalogs; nav chrome omission aligns with API denial matrix",
       "edgeCase": false
     },
     {
@@ -137,7 +140,7 @@
         "Invoke filterPermittedNav for InstructorLayout",
         "Assert sidebar contains Buổi học only; Báo cáo item absent from array (no disabled placeholder entry)",
         "Invoke filterHubCards for /sessions instructor hub",
-        "Assert Tạo buổi học mới present but Báo cáo / Báo cáo điểm danh card absent",
+        "Assert Tạo buổi học mới present but Báo cáo điểm danh card absent",
         "Direct GET /reports with Instructor session returns HTTP 403 ReportAccessDenied or Forbidden"
       ],
       "expected": "BR-14 boundary inverse: partial permission set omits report nav and hub destinations entirely; direct URL still denied — showing disabled link would violate BR-14",
@@ -182,7 +185,7 @@
         "Navigate browser to /admin with permission-reduced admin session",
         "Inspect AdminLayout SidebarNav DOM via accessibility snapshot",
         "Assert Chính sách (/admin/policy) nav item is absent from DOM (not present with aria-disabled or disabled attribute)",
-        "Assert permitted items such as Trang chủ and Người dùng remain visible and clickable",
+        "Assert permitted items such as Trang chủ, Người dùng, Lớp học, and Môn học remain visible and clickable",
         "Assert RoleHomeHub omits Chính sách NavCard when policy:write missing",
         "Direct-navigate to /admin/policy and assert ForbiddenPage without policy nav leaked in chrome"
       ],
@@ -266,15 +269,136 @@
       "title": "Instructor chrome omits Xuất CSV nav; export API returns 403 ExportNotAllowed",
       "preconditions": [
         "Instructor authenticated via session cookie",
-        "Admin export nav item requires report:export per §2.3a"
+        "Admin export nav item requires report:export per §2.3a; export API is POST /reports/export per validation-rules §3.8"
       ],
       "steps": [
         "Resolve filterPermittedNav for InstructorLayout and assert zero items with route /admin/export",
-        "POST /api/v1/admin/export or equivalent CSV export endpoint with Instructor session",
+        "POST /api/v1/reports/export with valid filter body using Instructor session",
         "Assert HTTP 403 with errorCode ExportNotAllowed and Vietnamese message per roles-permissions §2.5",
         "GET /api/v1/auth/me with Instructor session and assert report:export not in permissions"
       ],
-      "expected": "BR-14 and BR-09 alignment: export nav item omitted for non-admin; API export denial matches omitted chrome per NFR-11 nav negative matrix",
+      "expected": "BR-14 and BR-09 alignment: export nav item omitted for non-admin; POST /reports/export denial matches omitted chrome per NFR-11 nav negative matrix",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-14-013",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-14", "BR-14a", "AC-18", "FR-18"],
+      "title": "Tag-specific browser-journey: admin on /admin/rosters/import has singleton active nav — Nhập danh sách only (AC-18h)",
+      "preconditions": [
+        "TrainingOfficeAdmin authenticated with roster:read and roster:write permissions",
+        "Bootstrap complete"
+      ],
+      "steps": [
+        "Navigate authenticated TrainingOfficeAdmin to /admin/rosters/import",
+        "Within AdminLayout sidebar, query all nav links with aria-current=\"page\"",
+        "Assert exactly one element has aria-current=\"page\"",
+        "Assert the active link text is Nhập danh sách and href is /admin/rosters/import",
+        "Assert Danh sách ghi danh nav item is present but lacks aria-current=\"page\" and active styling classes",
+        "Assert no other sidebar items share active styling simultaneously"
+      ],
+      "expected": "AC-18h and BR-14a satisfied: on /admin/rosters/import exactly one nav item is active (Nhập danh sách); parent prefix item Danh sách ghi danh is not active per app-layout-components §6.2a match rules",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-14-014",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-14", "BR-14a", "AC-18", "FR-18"],
+      "title": "Tag-specific browser-journey: instructor on /sessions/new has singleton active nav — Buổi học only (AC-18i)",
+      "preconditions": [
+        "Instructor authenticated with session:read and report:read",
+        "Bootstrap complete"
+      ],
+      "steps": [
+        "Navigate authenticated Instructor to /sessions/new",
+        "Within InstructorLayout sidebar, query all nav links with aria-current=\"page\"",
+        "Assert exactly one element has aria-current=\"page\"",
+        "Assert the active link text is Buổi học",
+        "Assert Báo cáo nav item lacks aria-current=\"page\" and active styling despite /sessions/new sharing /sessions prefix",
+        "Assert active item uses prefix match per §6.2a (NavLink end={false} for Buổi học descriptor)"
+      ],
+      "expected": "AC-18i and BR-14a satisfied: on /sessions/new exactly one instructor sidebar item shows active styling (Buổi học); sibling Báo cáo remains inactive per §6.2a prefix rules",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-14-015",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-14", "BR-14a", "FR-18"],
+      "title": "resolveActiveNavItem applies §6.2a match/end rules — longest sibling prefix wins",
+      "preconditions": [
+        "Nav descriptor catalog loaded from roles-permissions §2.3a with match modes per app-layout-components §6.2a",
+        "resolveActiveNavItem (or equivalent) module boundary available for integration test without browser"
+      ],
+      "steps": [
+        "Load AdminLayout descriptors: Danh sách ghi danh (prefix, end on /admin/rosters) and Nhập danh sách (exact /admin/rosters/import)",
+        "Invoke resolveActiveNavItem with currentPath /admin/rosters/import",
+        "Assert active descriptor is Nhập danh sách; Danh sách ghi danh is not active",
+        "Invoke with currentPath /admin/rosters/HESD-01",
+        "Assert Danh sách ghi danh active; Nhập danh sách inactive",
+        "Load InstructorLayout descriptors and invoke with currentPath /sessions/new",
+        "Assert Buổi học active via prefix match; Báo cáo inactive",
+        "Load StudentLayout descriptors and invoke with currentPath /history",
+        "Assert Lịch sử active via exact match; Điểm danh inactive"
+      ],
+      "expected": "Tag-specific component hint satisfied: BR-14a singleton active state enforced at module boundary via per-item match/end rules; sibling prefix routes do not co-highlight",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-14-016",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-14", "AC-18", "FR-18"],
+      "title": "Browser-journey: admin /admin hub NavCards deep-link to permitted routes including Lớp học and Môn học (AC-18c)",
+      "preconditions": [
+        "TrainingOfficeAdmin authenticated in browser with full admin permission set",
+        "Bootstrap complete; admin hub page reachable at /admin"
+      ],
+      "steps": [
+        "Navigate browser to /admin",
+        "Assert RoleHomeHub renders with QuickActionGrid of NavCard components",
+        "Collect href attributes from all visible NavCard anchor elements",
+        "Assert each href matches a permitted /admin/* route from roles-permissions §2.3a",
+        "Click Quản lý người dùng card and assert navigation to /admin/users without ForbiddenPage",
+        "Click Lớp học card and assert navigation to /admin/classes succeeds",
+        "Click Môn học card and assert navigation to /admin/subjects succeeds",
+        "Click Báo cáo card and assert navigation to /admin/reports succeeds",
+        "Navigate back to /admin and assert AdminLayout sidebar active item reflects current route"
+      ],
+      "expected": "AC-18c and BR-14 satisfied: admin hub cards provide working deep links only to permission-gated admin workflow routes including class and subject catalogs; unauthorized cards omitted not disabled",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-14-017",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-14", "AC-18", "FR-18"],
+      "title": "Browser-journey: Instructor with report:read sees Tạo buổi học mới and Báo cáo hub links on /sessions (AC-18d)",
+      "preconditions": [
+        "Instructor authenticated with session:read and report:read per standard role matrix",
+        "Web app and API running"
+      ],
+      "steps": [
+        "Navigate authenticated Instructor to /sessions",
+        "Assert RoleHomeHub section visible above session list",
+        "Assert NavCard or link with text Tạo buổi học mới present and href targets session creation route",
+        "Assert NavCard or link with text Báo cáo or Báo cáo điểm danh present with href /reports",
+        "Click Báo cáo card and assert navigation to /reports without ForbiddenPage",
+        "Assert zero hub cards link to any /admin/* route"
+      ],
+      "expected": "AC-18d and BR-14 satisfied: instructor role home hub shows only permission-gated workflow quick links; report hub card present when report:read granted and absent when revoked",
       "edgeCase": false
     }
   ]

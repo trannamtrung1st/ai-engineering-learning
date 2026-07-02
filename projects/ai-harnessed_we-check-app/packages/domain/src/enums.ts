@@ -74,6 +74,14 @@ export const RosterImportStatus = {
 export type RosterImportStatus =
   (typeof RosterImportStatus)[keyof typeof RosterImportStatus];
 
+export const UserImportStatus = {
+  Processing: "Processing",
+  Completed: "Completed",
+  Failed: "Failed",
+} as const;
+export type UserImportStatus =
+  (typeof UserImportStatus)[keyof typeof UserImportStatus];
+
 export const GeoPlatform = {
   Ios: "ios",
   Android: "android",

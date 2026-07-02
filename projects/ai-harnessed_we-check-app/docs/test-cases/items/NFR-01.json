@@ -1,8 +1,8 @@
 {
   "productItemId": "NFR-01",
   "version": 1,
-  "docFingerprint": "sha256:ed2f2a01af64f91a7bd1aa1df43796784981c952d0a4a18ac9807f4aa24ca5e5",
-  "generatedAt": "2026-06-29T18:45:58Z",
+  "docFingerprint": "sha256:c846b27c93f7d5a2fca97ea30039f8021ebfe5ee04711f351fc18db986850ffe",
+  "generatedAt": "2026-07-01T02:28:54Z",
   "cases": [
     {
       "id": "TC-NFR-01-001",
@@ -66,11 +66,11 @@
       "steps": [
         "Send GET /api/v1/health without authentication",
         "Assert HTTP status 200",
-        "Assert response body matches { \"status\": \"ok\", \"db\": \"connected\" } per docker-compose §9",
+        "Assert response body matches { \"status\": \"ok\", \"db\": \"connected\" } per 13-docker-compose-local-runtime.md §9",
         "Repeat health poll every 10 seconds for duration of simulated 2-minute Active check-in window",
         "Assert every poll returns HTTP 200 with db connected"
       ],
-      "expected": "Liveness/readiness endpoint confirms service and database reachable throughout live session per NFR-01 and docker-compose §9 health contract",
+      "expected": "Liveness/readiness endpoint confirms service and database reachable throughout live session per NFR-01 and 13-docker-compose-local-runtime.md §9 health contract",
       "edgeCase": false
     },
     {
@@ -238,7 +238,7 @@
         "Verify session status in database remains Active if recovery occurs before scheduledStart + 10 minutes",
         "Assert check-in succeeds for remaining Pending student after recovery"
       ],
-      "expected": "Dependency failure is observable via health contract per docker-compose §9; after recovery within window, service resumes and check-in continues with zero additional unplanned downtime beyond controlled test interruption",
+      "expected": "Dependency failure is observable via health contract per 13-docker-compose-local-runtime.md §9; after recovery within window, service resumes and check-in continues with zero additional unplanned downtime beyond controlled test interruption",
       "edgeCase": true
     },
     {

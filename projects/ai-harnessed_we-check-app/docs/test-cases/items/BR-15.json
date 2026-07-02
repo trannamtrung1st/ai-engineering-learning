@@ -1,8 +1,8 @@
 {
   "productItemId": "BR-15",
   "version": 1,
-  "docFingerprint": "sha256:a03e7f92b46aae5eb29521b17ddc1031ceed6ab22798d1e2ff36baed1f08e9ca",
-  "generatedAt": "2026-06-29T23:30:00.000Z",
+  "docFingerprint": "sha256:2f4339d78ef523c323a8974779165acbd0a71755d9c7e3df622be9ab3506c35c",
+  "generatedAt": "2026-07-01T02:27:04.000Z",
   "cases": [
     {
       "id": "TC-BR-15-001",
@@ -18,16 +18,17 @@
         "Valid qr_tokens row with status Valid linked to sessionId",
         "Enrolled studentId with Pending attendance_records row",
         "PreflightService wired to QrTokenRepository, SessionRepository, and EnrollmentRepository",
+        "TestClock within attendance window (scheduledStart + 10 min)",
         "beforeState: qr_token status Valid, attendance status Pending, no check_in_attempts row for this call"
       ],
       "steps": [
-        "Invoke PreflightService.validate(tokenId, studentId) for enrolled student",
+        "Invoke PreflightService.validate(tokenId, studentId) for enrolled student with TestClock within attendance window",
         "Assert result outcome Valid with session summary (classCode HESD-01, subjectCode SWE-101, roomName Phòng A201, status Active)",
         "Query qr_tokens for tokenId and assert status remains Valid (not Consumed or Expired)",
         "Query attendance_records for studentId and sessionId and assert status remains Pending",
         "Verify no INSERT or UPDATE executed during preflight per validation-rules §3.6a and API design §6.2"
       ],
-      "expected": "BR-15 preflight read-only chain: token exists Valid, parent session Active, student enrolled; zero side effects before POST /check-in",
+      "expected": "BR-15 preflight read-only chain per validation-rules §3.6a steps 1–6: token exists Valid, optional sessionId matches, parent session Active within attendance window, student enrolled; zero side effects before POST /check-in",
       "edgeCase": false
     },
     {
@@ -45,12 +46,13 @@
       ],
       "steps": [
         "Invoke PreflightService.validate(consumedTokenId, enrolledStudentId)",
-        "Assert result outcome TokenAlreadyUsed without reaching enrollment or session-active checks",
+        "Assert result outcome TokenAlreadyUsed without reaching enrollment check",
         "Query qr_tokens and assert status remains Consumed (read-only)",
         "Query attendance_records and assert no status change",
-        "Repeat with unknown tokenId and assert TokenNotFound at step 1 before any session lookup"
+        "Repeat with unknown tokenId and assert TokenNotFound at step 1 before any session lookup",
+        "Repeat with valid token and mismatched optional sessionId query and assert SessionMismatch at step 2 before token status check"
       ],
-      "expected": "BR-15 server-side preflight chain evaluates token → session mismatch → token status → session active → enrollment in fixed order; failures are read-only",
+      "expected": "BR-15 server-side preflight chain per validation-rules §3.6a: (1) token exists → (2) session mismatch → (3) token status → (4) session Active and attendance window → (5) enrollment; failures are read-only",
       "edgeCase": false
     },
     {
@@ -95,6 +97,7 @@
         "Assert Vietnamese message Mã QR đã hết hạn, vui lòng quét mã mới",
         "Send GET /api/v1/check-in/tokens/:unknownTokenId/preflight using Student session",
         "Assert HTTP status 404 with outcome TokenNotFound and errorCode TokenNotFound",
+        "Assert Vietnamese message Không nhận diện được mã QR per API design §6.2",
         "Verify qr_tokens and attendance_records unchanged (read-only preflight)"
       ],
       "expected": "AC-07d and TS-21b satisfied: expired or unknown token preflight fails; client must not enter gps_capture per BR-15",
@@ -142,7 +145,7 @@
         "Verify qr_tokens row status unchanged and attendance remains Pending",
         "Assert client must not mount GpsCaptureStep per BR-15 and AC-07f"
       ],
-      "expected": "AC-07f and TS-21c satisfied: deep-link session mismatch rejected at preflight; GPS capture never starts",
+      "expected": "AC-07f and TS-21c satisfied: deep-link session mismatch rejected at preflight with SessionMismatch; GPS capture never starts",
       "edgeCase": true
     },
     {
@@ -155,10 +158,11 @@
       "title": "GET /check-in/tokens/:tokenId/preflight returns 200 Valid envelope per API design §6.2",
       "preconditions": [
         "Authenticated enrolled Student session cookie is set",
-        "Active session with Valid unexpired QrToken"
+        "Active session with Valid unexpired QrToken",
+        "TestClock within attendance window (scheduledStart + 10 min)"
       ],
       "steps": [
-        "Send GET /api/v1/check-in/tokens/:tokenId/preflight using Student session",
+        "Send GET /api/v1/check-in/tokens/:tokenId/preflight?sessionId=:sessionId using Student session",
         "Assert HTTP status 200",
         "Assert Content-Type application/json; charset=utf-8",
         "Assert response body contains outcome Valid, tokenId, sessionId matching request",
@@ -174,18 +178,21 @@
       "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["BR-15", "BR-01", "AC-05", "FR-07"],
-      "title": "GET preflight for Closed session or after attendance window returns SessionNotActive",
+      "title": "GET preflight returns SessionNotActive when session Closed or past attendance window",
       "preconditions": [
         "Authenticated enrolled Student session cookie is set",
-        "Valid unexpired QrToken linked to session in Closed state OR Active session with TestClock after scheduledStart + 10 min"
+        "Fixture A: Valid unexpired QrToken linked to session in Closed state",
+        "Fixture B: Active session with TestClock fixed at scheduledStart + 10 minutes + 1 second and Valid unexpired QrToken"
       ],
       "steps": [
         "Send GET /api/v1/check-in/tokens/:tokenId/preflight using Student session against Closed session fixture",
         "Assert HTTP status 403 with outcome SessionNotActive and errorCode SessionNotActive",
-        "Verify attendance status remains Absent or Pending (not Present)",
-        "Verify qr_token status remains Valid (preflight read-only; not consumed)"
+        "Send GET /api/v1/check-in/tokens/:tokenId/preflight using Student session against Fixture B past attendance window",
+        "Assert HTTP status 403 with outcome SessionNotActive and errorCode SessionNotActive",
+        "Assert localized Vietnamese message indicates session is not active for check-in",
+        "Verify attendance status remains Absent or Pending (not Present) and qr_token status remains Valid (read-only preflight)"
       ],
-      "expected": "BR-15 preflight enforces session Active and within attendance window per validation-rules §3.6a step 4; gps_capture blocked",
+      "expected": "BR-15 preflight enforces session Active and within attendance window per validation-rules §3.6a step 4; gps_capture blocked without DB writes",
       "edgeCase": true
     },
     {
@@ -204,11 +211,12 @@
       "steps": [
         "Send GET /api/v1/check-in/tokens/:consumedTokenId/preflight using Student B session",
         "Assert HTTP status 403 with outcome TokenAlreadyUsed and errorCode TokenAlreadyUsed",
-        "Verify security audit log entry with session ID, token ID, and submitting student ID",
+        "Assert Vietnamese message Mã QR đã được sử dụng per API design §6.2",
         "Query attendance_records for Student B and assert status is not Present",
-        "Assert preflight did not consume or mutate token state further"
+        "Assert preflight did not consume or mutate token state; no check_in_attempts or security audit rows written (read-only gate)",
+        "Assert client must not mount GpsCaptureStep per BR-15 and AC-07d"
       ],
-      "expected": "BR-11 token reuse rejected at BR-15 preflight layer; GPS capture unreachable; security log created per AC-09b",
+      "expected": "BR-11 token reuse rejected at BR-15 preflight layer without GPS step; preflight remains read-only — security log deferred to POST /check-in per BR-11 and AC-09b",
       "edgeCase": true
     },
     {
@@ -227,7 +235,7 @@
         "Send GET /api/v1/check-in/tokens/:tokenId/preflight without authentication",
         "Assert HTTP status 401 with outcome Unauthenticated and errorCode Unauthenticated",
         "Verify response body contains no session summary fields (class, subject, room)",
-        "Assert BR-15 domain chain did not execute past authentication gate per validation-rules §5.1"
+        "Assert BR-15 domain chain did not execute past authentication gate per validation-rules Layer 2"
       ],
       "expected": "BR-06 blocks preflight at authentication layer; BR-15 enrollment and token checks never run for unauthenticated callers",
       "edgeCase": false
@@ -292,7 +300,7 @@
         "VITE_ENABLE_DEVICE_SIMULATION=true for harness geolocation stub"
       ],
       "steps": [
-        "Navigate to check-in deep link and observe validating_token inline spinner on scan step",
+        "Navigate to check-in deep link and observe validating_token inline spinner on scan step per ui-states §4.1",
         "Wait for GET /api/v1/check-in/tokens/:tokenId/preflight to return HTTP 200 outcome Valid",
         "Verify data-testid gps-capture-step is present in DOM",
         "Verify GPS step header displays class code, subject code, and room name from preflight session summary",
@@ -316,7 +324,7 @@
       ],
       "steps": [
         "Trigger QR scan decode so client initiates GET /api/v1/check-in/tokens/:tokenId/preflight",
-        "While preflight response pending, assert data-testid gps-capture-step is absent",
+        "While preflight response pending, assert data-testid gps-capture-step is absent and validating_token spinner visible per ui-states §4.1",
         "Assert no GPS permission prompt, no Vị trí đã sẵn sàng text, no Xác nhận điểm danh submit control",
         "After preflight returns HTTP 200 outcome Valid, assert gps-capture-step mounts",
         "Verify transition scan → gps_capture occurred only on preflight success per BR-15"
@@ -361,13 +369,107 @@
       ],
       "steps": [
         "Navigate directly to /check-in?token=:tokenId&session=:sessionId",
-        "Assert validating_token preflight spinner visible before any GPS UI",
+        "Assert validating_token preflight spinner visible before any GPS UI per ui-states §4.1",
         "Assert data-testid gps-capture-step absent until GET preflight returns HTTP 200",
         "After preflight 200, verify QrScannerView skipped but GpsCaptureStep mounted with session summary",
         "Repeat navigation with tokenId that fails preflight and verify scan step remains (scanner not skipped)"
       ],
       "expected": "BR-15 and event-specific-components §2.3: deep link runs same preflight gate; scan UI skipped only after preflight pass, never on token parse alone",
       "edgeCase": false
+    },
+    {
+      "id": "TC-BR-15-017",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-15", "FR-07", "AC-07"],
+      "title": "Preflight read-only chain rejects all failure outcomes per validation-rules §3.6a without writes",
+      "preconditions": [
+        "Real PostgreSQL with Active session, enrolled Student A, non-enrolled Student B",
+        "Fixtures: unknown tokenId UUID, valid token with mismatched sessionId query param, expired qr_token (>30 s), Consumed qr_token within 30s window",
+        "PreflightService evaluates validation-rules §3.6a chain in order without writes"
+      ],
+      "steps": [
+        "Invoke PreflightService.validate(unknownUuid, studentAId) and assert outcome TokenNotFound",
+        "Invoke with valid token and mismatched sessionId query and assert outcome SessionMismatch",
+        "Invoke with expired tokenId and assert outcome ExpiredQr",
+        "Invoke with consumed tokenId and assert outcome TokenAlreadyUsed",
+        "Invoke with valid token and studentBId and assert outcome NotEnrolled",
+        "Query attendance_records and qr_tokens and assert no rows modified by any preflight call"
+      ],
+      "expected": "BR-15 preflight failure outcomes reject before GPS capture per validation-rules §3.6a; SessionMismatch at step 2, TokenAlreadyUsed at step 3; read-only chain with zero side effects",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-15-018",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-15", "AC-07", "FR-07"],
+      "title": "Mobile check-in page shows TokenNotFound for unknown token without mounting GPS step",
+      "preconditions": [
+        "Authenticated enrolled Student on mobile viewport 375px width",
+        "Active session exists; deep link uses random unknown tokenId UUID not in database"
+      ],
+      "steps": [
+        "Navigate to /check-in?token=:unknownTokenId&session=:sessionId",
+        "Verify GET /api/v1/check-in/tokens/:unknownTokenId/preflight returns 404 with errorCode TokenNotFound",
+        "Verify data-testid gps-capture-step is absent from DOM (no GPS permission prompt)",
+        "Verify error panel displays Không nhận diện được mã QR (TokenNotFound outcome)",
+        "Verify student remains on scan step or outcome panel without success confirmation"
+      ],
+      "expected": "AC-07d satisfied in mobile web UI: unknown token rejected at preflight with TokenNotFound message; GpsCaptureStep never mounts per BR-15",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-15-019",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-15", "AC-07", "FR-07"],
+      "title": "Mobile check-in page shows SessionMismatch for mismatched deep-link session without mounting GPS step",
+      "preconditions": [
+        "Authenticated enrolled Student on mobile viewport 375px width",
+        "Active session A with valid QrToken bound to session A",
+        "Second session B exists with different sessionId",
+        "Deep link uses tokenId from session A but sessionId query param set to session B"
+      ],
+      "steps": [
+        "Navigate to /check-in?token=:tokenId&session=:sessionBId",
+        "Verify GET /api/v1/check-in/tokens/:tokenId/preflight?sessionId=:sessionBId returns HTTP 403 with errorCode SessionMismatch",
+        "Verify data-testid gps-capture-step is absent from DOM (no GPS permission prompt)",
+        "Verify error panel displays session-mismatch outcome message",
+        "Verify no success confirmation or Present badge shown",
+        "Verify qr_tokens row for tokenId remains status Valid (no consumption on preflight failure)"
+      ],
+      "expected": "TS-21c and AC-07f satisfied in mobile web UI: session id mismatch rejected at preflight with SessionMismatch; GpsCaptureStep never mounts per BR-15",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-15-020",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-15", "BR-11", "FR-07", "AC-09"],
+      "title": "Mobile check-in page shows TokenAlreadyUsed for consumed token without mounting GPS step",
+      "preconditions": [
+        "Authenticated enrolled Student B on mobile viewport 375px width",
+        "QrToken already Consumed by Student A within 30-second validity window",
+        "Deep link encodes consumed tokenId and bound sessionId"
+      ],
+      "steps": [
+        "Student B navigates to /check-in?token=:consumedTokenId&session=:sessionId",
+        "Verify GET /api/v1/check-in/tokens/:consumedTokenId/preflight returns HTTP 403 with errorCode TokenAlreadyUsed",
+        "Verify error panel displays Mã QR đã được sử dụng per API design §6.2",
+        "Verify data-testid gps-capture-step is absent from DOM (no GPS permission prompt, no Vị trí đã sẵn sàng)",
+        "Verify student remains on scan step or outcome panel without Present badge"
+      ],
+      "expected": "BR-15 preflight gate rejects consumed token in mobile web UI per validation-rules §3.6a step 3; GPS capture never starts; security log deferred to POST per BR-11",
+      "edgeCase": true
     }
   ]
 }

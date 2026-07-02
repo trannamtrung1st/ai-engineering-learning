@@ -1,8 +1,8 @@
 {
   "productItemId": "BR-02",
   "version": 1,
-  "docFingerprint": "sha256:7fa6e5f0fa1fb178b99256355a681409f9ca3b3a224ea6b785c745d780059c2e",
-  "generatedAt": "2026-06-29T18:18:15Z",
+  "docFingerprint": "sha256:2f4339d78ef523c323a8974779165acbd0a71755d9c7e3df622be9ab3506c35c",
+  "generatedAt": "2026-06-30T10:16:19Z",
   "cases": [
     {
       "id": "TC-BR-02-001",
@@ -83,7 +83,7 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["BR-02"],
+      "traceability": ["BR-02", "AC-08", "FR-08"],
       "title": "CheckInService OutOfRadius persists distance_meters on check_in_attempts without raw coordinates",
       "preconditions": [
         "Real PostgreSQL with Active session, enrollment, Valid QrToken, Pending attendance",
@@ -318,12 +318,12 @@
       "steps": [
         "Navigate to check-in page on mobile viewport",
         "Verify validating_token inline spinner during preflight; GpsCaptureStep mounts only after preflight 200 per BR-15",
-        "Verify GPS capture indicator shows coordinates acquired",
-        "Tap submit control (Xác nhận điểm danh)",
+        "Wait for GpsCaptureStep ready substate: Vị trí đã sẵn sàng without Spinner; submit region aria-busy false or absent per AC-08f",
+        "Tap submit control (Xác nhận điểm danh); verify submitting substate with spinner until API responds per AC-08g",
         "Verify success panel with Present status after BR-02 radius validation passes on server",
         "Verify no raw GPS coordinates displayed in UI beyond transient capture state"
       ],
-      "expected": "Mobile web path: BR-15 preflight gates GPS step; client captures GPS; server enforces BR-02 Haversine check; success confirmation shown",
+      "expected": "Mobile web path: BR-15 preflight gates GPS step; AC-08f ready UX then AC-08g submit flight; server enforces BR-02 Haversine check; success confirmation shown",
       "edgeCase": false
     },
     {
@@ -344,7 +344,7 @@
         "Navigate to /check-in page; wait for preflight pass then GPS capture with outside coordinates",
         "Submit check-in",
         "Verify outcome panel displays OutOfRadius state with message Bạn đang ngoài phạm vi phòng học",
-        "Verify distance hint (e.g. Bạn cách phòng học khoảng {n} m) or move-closer guidance visible per user-flows §3 and ui-ux §07 GpsCaptureStep",
+        "Verify distance hint Bạn cách phòng học khoảng {n} m (cho phép {radius} m) visible per event-specific-components §2.2 and user-flows §3",
         "Verify no Present success badge; student can retry after moving closer within radius"
       ],
       "expected": "BR-02 OutOfRadius outcome surfaced in mobile UI after BR-15 preflight and GPS capture; localized message and recovery action shown",
@@ -438,6 +438,77 @@
       ],
       "expected": "BR-02 honors maximum instructor-adjustable gpsRadiusMeters 500 m; distance ≤ configured radius passes; just outside maximum fails",
       "edgeCase": true
+    },
+    {
+      "id": "TC-BR-02-020",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-02", "AC-08", "FR-08"],
+      "title": "TS-21e: GpsCaptureStep ready substate hides spinner and enables submit before BR-02 server validation",
+      "preconditions": [
+        "Authenticated enrolled Student on mobile viewport 375×812",
+        "Valid token deep link; GET /api/v1/check-in/tokens/:tokenId/preflight returns 200 outcome Valid per BR-15",
+        "Geolocation resolves in-radius coordinates (gpsState transitions to ready)"
+      ],
+      "steps": [
+        "Navigate to /check-in?token=:tokenId&session=:sessionId and wait for preflight pass",
+        "Wait for GpsCaptureStep substate ready after coordinates acquired within session gpsRadiusMeters",
+        "Assert no spinner visible in GPS step region",
+        "Assert check icon and text Vị trí đã sẵn sàng displayed",
+        "Assert submit region aria-busy is false or absent per AC-08f",
+        "Assert Xác nhận điểm danh button enabled immediately before POST /check-in"
+      ],
+      "expected": "AC-08f satisfied: GPS ready-state UX per ui-states §4.2 — static check icon, no spinner, submit enabled when in-radius coordinates acquired; BR-02 validation occurs only on submit",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-02-021",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-02", "AC-08", "FR-08"],
+      "title": "GpsCaptureStep submitting substate shows spinner until BR-02 radius-validated API outcome",
+      "preconditions": [
+        "Authenticated enrolled Student on mobile viewport",
+        "Valid token deep link; preflight passed; GpsCaptureStep in ready state with in-radius coordinates",
+        "Mocked geolocation granted or VITE_ENABLE_DEVICE_SIMULATION=true with gpsSim=delay for harness"
+      ],
+      "steps": [
+        "Navigate to check-in page and wait for GpsCaptureStep ready state (Vị trí đã sẵn sàng)",
+        "Tap Xác nhận điểm danh submit control",
+        "Assert GpsCaptureStep enters submitting substate with spinner visible",
+        "Assert copy Đang gửi điểm danh… displayed",
+        "Assert submit region aria-busy is true and submit button disabled",
+        "Wait for POST /api/v1/check-in response and assert transition to CheckInOutcomePanel with BR-02-validated Success outcome"
+      ],
+      "expected": "AC-08g satisfied: submit in flight shows spinner and disables submit until API returns BR-02 radius-validated outcome per ui-states §4.2 submitting row",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-02-022",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-02", "AC-08", "FR-08"],
+      "title": "TS-25: Successful BR-02 radius pass logs distance_meters without persisting raw client coordinates",
+      "preconditions": [
+        "Real PostgreSQL; successful check-in transaction via CheckInService with in-radius coordinates",
+        "Active session with room GPS (10.762622, 106.660172) and gpsRadiusMeters 100",
+        "check_in_attempts schema per domain model §4.10"
+      ],
+      "steps": [
+        "Complete successful check-in with in-radius coordinates (10.762700, 106.660200) via CheckInService integration harness",
+        "SELECT columns from check_in_attempts for the attempt row",
+        "Assert outcome Success and distance_meters is NOT NULL and ≤ session gpsRadiusMeters",
+        "Assert no latitude or longitude columns exist or are populated on check_in_attempts or attendance_records",
+        "Verify BR-02 privacy rule: coordinates used only in request handler memory per AC-08d and domain model §4.10"
+      ],
+      "expected": "BR-02 outcome enforced at persistence: Haversine distance logged for audit without long-term coordinate storage on success path",
+      "edgeCase": false
     }
   ]
 }

@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-18",
   "version": 1,
-  "docFingerprint": "sha256:6657f09e6c2c9036a31a09cbf66226b0385b690ddb340e7751f826dda6088416",
-  "generatedAt": "2026-06-29T18:15:04.000Z",
+  "docFingerprint": "sha256:447fe8437a2db197936baf94c2dfc27df624096ac72b1e3fa81bad5e0d2dc23b",
+  "generatedAt": "2026-07-01T12:00:00.000Z",
   "cases": [
     {
       "id": "TC-FR-18-001",
@@ -21,7 +21,7 @@
         "Resolve permitted nav descriptors for InstructorLayout via API or nav module",
         "Assert every returned route matches /sessions, /reports, or instructor sub-routes only",
         "Assert zero descriptors with route prefix /admin",
-        "GET /api/v1/users (admin user list) with Instructor session",
+        "GET /api/v1/users or GET /api/v1/admin/users (admin user list endpoint per API design) with Instructor session",
         "Assert HTTP 403 Forbidden with errorCode Forbidden per roles-permissions §2.5"
       ],
       "expected": "Testing-plan §3 TS-21f and AC-18a satisfied: FR-18 nav visibility rule — instructor chrome never includes cross-role admin destinations; direct admin API denied",
@@ -46,7 +46,7 @@
         "Invoke filterPermittedNav with Instructor permissions [session:read] only (report:read absent)",
         "Assert Buổi học → /sessions present; Báo cáo → /reports absent from result array",
         "Invoke filterPermittedNav with full TrainingOfficeAdmin permission set",
-        "Assert all admin sidebar items from §2.3a present including Trang chủ, Người dùng, Xuất CSV"
+        "Assert all admin sidebar items from §2.3a present including Trang chủ, Người dùng, Lớp học, Môn học, Danh sách ghi danh, Nhập danh sách, Báo cáo, Xuất CSV, and Chính sách"
       ],
       "expected": "Tag-specific component hint satisfied: usePermittedNav omits nav items user lacks; cross-role prefixes never co-mingle per BR-14 and FR-18 nav visibility rule",
       "edgeCase": false
@@ -65,9 +65,10 @@
       ],
       "steps": [
         "Invoke filterHubCards with full admin permissions including policy:write",
-        "Assert cards for Quản lý người dùng, Danh sách lớp, Báo cáo, Xuất CSV, and Chính sách all returned",
+        "Assert cards for Quản lý người dùng, Lớp học, Môn học, Danh sách ghi danh, Nhập CSV, Báo cáo, Xuất CSV, and Chính sách all returned",
         "Invoke filterHubCards with admin permissions excluding policy:write",
         "Assert Chính sách card absent from result (not present with disabled flag)",
+        "Assert remaining cards href values point only to routes user still holds permission for",
         "Invoke filterHubCards for Student with checkin:submit and attendance:read",
         "Assert Quét mã điểm danh and Xem lịch sử cards present per StudentLayout §5.3",
         "Invoke filterHubCards for Instructor with session:read and report:read",
@@ -93,8 +94,8 @@
         "Invoke createFirstAdmin with valid DTO and capture returned AuthSession",
         "Resolve permission set for new TrainingOfficeAdmin from session context",
         "Invoke filterPermittedNav with resolved permissions for AdminLayout",
-        "Assert Trang chủ → /admin and Người dùng → /admin/users descriptors present",
-        "Invoke filterHubCards for admin hub and assert Quản lý người dùng and Báo cáo cards returned",
+        "Assert Trang chủ → /admin, Người dùng → /admin/users, Lớp học → /admin/classes, and Môn học → /admin/subjects descriptors present",
+        "Invoke filterHubCards for admin hub and assert Quản lý người dùng, Lớp học, and Báo cáo cards returned",
         "GET /api/v1/setup/status and assert needsSetup false"
       ],
       "expected": "Tag-specific integration hint satisfied: setup status and first-admin API contracts produce admin session whose permission set enables FR-18 role home hub and nav filtering at module boundary",
@@ -156,12 +157,12 @@
       "title": "RBAC negative: Student and Instructor denied all /admin/* API surfaces",
       "preconditions": [
         "RbacNegativeMatrix fixture per testing-plan §5 with Student and Instructor sessions",
-        "Representative admin endpoints: GET /users, GET /admin/reports, POST /admin/export"
+        "Representative admin endpoints: user list, GET /classes, GET /subjects, roster list, GET /admin/reports, POST /admin/export"
       ],
       "steps": [
-        "For each admin endpoint in matrix, invoke with Student session",
+        "For each admin endpoint in matrix (including GET /classes and GET /subjects per AC-03i), invoke with Student session",
         "Assert HTTP 403 for every request; no institution-wide data in response body",
-        "Repeat matrix with Instructor session for /admin/users, /admin/rosters, /admin/reports, /admin/export",
+        "Repeat matrix with Instructor session for /admin/users, /classes, /subjects, /admin/rosters, /admin/reports, /admin/export",
         "Assert HTTP 403 Forbidden or ExportNotAllowed per roles-permissions §2.5",
         "Assert Instructor retains HTTP 200 on scoped routes GET /sessions and GET /reports when assigned"
       ],
@@ -232,10 +233,12 @@
         "Collect href attributes from all visible NavCard anchor elements",
         "Assert each href matches a permitted /admin/* route from page-list §5.0",
         "Click Quản lý người dùng card and assert navigation to /admin/users without ForbiddenPage",
+        "Click Lớp học card and assert navigation to /admin/classes succeeds",
+        "Click Môn học card and assert navigation to /admin/subjects succeeds",
         "Click Báo cáo card and assert navigation to /admin/reports succeeds",
         "Navigate back to /admin and assert AdminLayout sidebar active item reflects current route"
       ],
-      "expected": "Tag-specific browser-journey hint satisfied: AC-18c admin hub cards provide working deep links to permitted admin workflow routes only",
+      "expected": "Tag-specific browser-journey hint satisfied: AC-18c admin hub cards provide working deep links to permitted admin workflow routes including class and subject catalogs",
       "edgeCase": false
     },
     {
@@ -254,7 +257,7 @@
         "Navigate browser to /admin with permission-reduced admin session",
         "Inspect AdminLayout SidebarNav DOM via accessibility snapshot",
         "Assert Chính sách (/admin/policy) nav item is absent from DOM (not disabled, not aria-disabled)",
-        "Assert permitted items such as Trang chủ and Người dùng remain visible",
+        "Assert permitted items such as Trang chủ, Người dùng, Lớp học, and Môn học remain visible",
         "Assert RoleHomeHub omits Chính sách NavCard when policy:write missing",
         "Direct-navigate to /admin/policy and assert ForbiddenPage without policy nav leaked in chrome"
       ],
@@ -342,13 +345,13 @@
       ],
       "steps": [
         "Log in as Student, navigate browser to /",
-        "Assert URL becomes /check-in",
+        "Assert URL becomes /check-in; assert [data-testid=\"route-discovery-panel\"] absent from DOM",
         "Log out; log in as Instructor, navigate to /",
-        "Assert URL becomes /sessions",
+        "Assert URL becomes /sessions; assert route discovery panel not rendered",
         "Log out; log in as TrainingOfficeAdmin, navigate to /",
-        "Assert URL becomes /admin with RoleHomeHub visible"
+        "Assert URL becomes /admin with RoleHomeHub visible; assert ShellOverviewPage and RouteDiscoveryPanel not shown"
       ],
-      "expected": "AC-18e browser outcome: root route redirects each authenticated role to documented role home per page-list §1 and FR-18 role home specification",
+      "expected": "AC-18e and AC-18g browser outcome: root route redirects each authenticated role to documented role home per page-list §1; route discovery section never shown when session exists",
       "edgeCase": false
     },
     {
@@ -372,6 +375,165 @@
         "Click Xem lịch sử card and assert navigation to /history with StudentLayout bottom nav"
       ],
       "expected": "FR-18 student role home hub displays permission-filtered workflow cards with Vietnamese hints; cross-role destinations omitted per BR-14",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-18-017",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-18", "AC-18", "BR-14"],
+      "title": "Tag-specific browser-journey: unauthenticated / shows RouteDiscoveryPanel with four Vietnamese entry links (AC-18f)",
+      "preconditions": [
+        "Bootstrap complete (needsSetup false)",
+        "No active session cookie; browser logged out"
+      ],
+      "steps": [
+        "Navigate browser to / without authentication",
+        "Assert ShellOverviewPage showcase content visible",
+        "Assert [data-testid=\"route-discovery-panel\"] present with section heading Đi tới trang",
+        "Assert link [data-testid=\"route-discovery-login\"] labeled Đăng nhập with href /login",
+        "Assert link [data-testid=\"route-discovery-check-in\"] labeled Điểm danh with href /check-in",
+        "Assert link [data-testid=\"route-discovery-sessions\"] labeled Buổi học with href /sessions",
+        "Assert link [data-testid=\"route-discovery-admin\"] labeled Quản trị with href /admin",
+        "Click Đăng nhập and assert navigation to /login",
+        "Return to /; click Điểm danh without session and assert redirect to /login with returnUrl containing /check-in per BR-06"
+      ],
+      "expected": "AC-18f satisfied: unauthenticated / exposes RouteDiscoveryPanel with four Vietnamese-labeled entry links and data-testids; protected targets auth-redirect to login with returnUrl per FR-18 chrome-less route discovery",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-18-018",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-18", "AC-18", "BR-14a"],
+      "title": "Tag-specific browser-journey: admin on /admin/rosters/import has singleton active nav — Nhập danh sách only (AC-18h)",
+      "preconditions": [
+        "TrainingOfficeAdmin authenticated with roster:read and roster:write permissions",
+        "Bootstrap complete"
+      ],
+      "steps": [
+        "Navigate authenticated TrainingOfficeAdmin to /admin/rosters/import",
+        "Within AdminLayout sidebar, query all nav links with aria-current=\"page\"",
+        "Assert exactly one element has aria-current=\"page\"",
+        "Assert the active link text is Nhập danh sách and href is /admin/rosters/import",
+        "Assert Danh sách ghi danh nav item is present but lacks aria-current=\"page\" and active styling classes",
+        "Assert no other sidebar items share active styling simultaneously"
+      ],
+      "expected": "AC-18h and BR-14a satisfied: on /admin/rosters/import exactly one nav item is active (Nhập danh sách); parent prefix item Danh sách ghi danh is not active per §6.2a match rules",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-18-019",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-18", "AC-18", "BR-14a"],
+      "title": "Tag-specific browser-journey: instructor on /sessions/new has singleton active nav — Buổi học only (AC-18i)",
+      "preconditions": [
+        "Instructor authenticated with session:read and report:read",
+        "Bootstrap complete"
+      ],
+      "steps": [
+        "Navigate authenticated Instructor to /sessions/new",
+        "Within InstructorLayout sidebar, query all nav links with aria-current=\"page\"",
+        "Assert exactly one element has aria-current=\"page\"",
+        "Assert the active link text is Buổi học",
+        "Assert Báo cáo nav item lacks aria-current=\"page\" and active styling despite /sessions/new sharing /sessions prefix",
+        "Assert active item uses prefix match per §6.2a (NavLink end={false} for Buổi học descriptor)"
+      ],
+      "expected": "AC-18i and BR-14a satisfied: on /sessions/new exactly one instructor sidebar item shows active styling (Buổi học); sibling Báo cáo remains inactive per §6.2a prefix rules",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-18-020",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-18", "BR-14"],
+      "title": "Chrome-less auth route: /login footer exposes Quay về trang chủ link to /",
+      "preconditions": [
+        "Bootstrap complete (needsSetup false)",
+        "Browser logged out; no active session cookie"
+      ],
+      "steps": [
+        "Navigate browser to /login",
+        "Assert AuthLayout renders LoginForm without role shell chrome",
+        "Assert footer link with text Quay về trang chủ present and href is /",
+        "Click Quay về trang chủ and assert navigation to /",
+        "Assert ShellOverviewPage and RouteDiscoveryPanel visible on / per AC-18f"
+      ],
+      "expected": "FR-18 chrome-less navigation aid satisfied: /login exposes visible link back to / so users need not memorize URLs per page-list §2.1 and 06-app-layout-components §4",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-18-021",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-18", "BR-14"],
+      "title": "NotFoundPage (404): recovery CTA Về trang chủ targets role home when authenticated",
+      "preconditions": [
+        "Bootstrap complete; seeded Student, Instructor, and TrainingOfficeAdmin accounts"
+      ],
+      "steps": [
+        "Log in as Student and navigate browser to /nonexistent-route-404-test",
+        "Assert NotFoundPage renders with heading Không tìm thấy trang and button Về trang chủ",
+        "Click Về trang chủ and assert URL becomes /check-in (student role home per page-list §1)",
+        "Log out; log in as Instructor; navigate to /unknown-path-404-test",
+        "Click Về trang chủ and assert URL becomes /sessions",
+        "Log out; log in as TrainingOfficeAdmin; navigate to /missing-page-404-test",
+        "Click Về trang chủ and assert URL becomes /admin with RoleHomeHub visible"
+      ],
+      "expected": "FR-18 error-route rule satisfied: catch-all 404 recovery CTA navigates each authenticated role to documented role home hub per page-list §2.3 and wireframes §14.2",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-18-022",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-18", "BR-14"],
+      "title": "NotFoundPage (404): recovery CTA Về trang chủ targets /login when unauthenticated",
+      "preconditions": [
+        "Bootstrap complete (needsSetup false)",
+        "No active session cookie; browser logged out"
+      ],
+      "steps": [
+        "Navigate browser to /does-not-exist-404 while logged out",
+        "Assert NotFoundPage renders with Về trang chủ button visible",
+        "Click Về trang chủ and assert navigation to /login",
+        "Assert LoginForm visible in AuthLayout without role shell chrome"
+      ],
+      "expected": "FR-18 error-route rule satisfied: unauthenticated 404 recovery CTA targets /login per page-list §2.3; chrome-less route provides sensible next destination",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-18-023",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["FR-18", "BR-14", "NFR-11"],
+      "title": "ForbiddenPage (/forbidden): recovery CTA Về trang chủ targets role home when authenticated",
+      "preconditions": [
+        "Bootstrap complete; Student and Instructor sessions available in browser"
+      ],
+      "steps": [
+        "Log in as Student and navigate browser directly to /forbidden",
+        "Assert ForbiddenPage renders with title Không có quyền truy cập and button Về trang chủ",
+        "Click Về trang chủ and assert URL becomes /check-in",
+        "Log out; log in as Instructor; navigate to /forbidden",
+        "Click Về trang chủ and assert URL becomes /sessions"
+      ],
+      "expected": "FR-18 error-route rule satisfied: /forbidden recovery CTA returns authenticated user to role home hub per 06-app-layout-components §9.4 and wireframes §14.1",
       "edgeCase": false
     }
   ]

@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-14",
   "version": 1,
-  "docFingerprint": "sha256:7e5d37d85efa6556576a48d4938dea47ad6d388f6d3a3dcbae936d4cccaebe76",
-  "generatedAt": "2026-06-29T18:06:59Z",
+  "docFingerprint": "sha256:70664f4bcec7e745bdcd06197b935919d3e19855c18c5b6fb91cd47efbd1e5ca",
+  "generatedAt": "2026-07-01T02:15:00Z",
   "cases": [
     {
       "id": "TC-FR-14-001",
@@ -16,17 +16,17 @@
         "Authenticated Student A session with enrollment history across at least two Closed sessions",
         "Student B has attendance records in the same class-subject sessions",
         "Student A has mixed statuses (Present with checkedInAt, Absent, Excused) across Closed sessions",
-        "At least 25 history rows exist for Student A to exercise pagination"
+        "At least 25 history rows exist for Student A to exercise cursor-based pagination"
       ],
       "steps": [
         "GET /api/v1/attendance/me/history?limit=20 using Student A session cookie",
         "Assert HTTP status 200 OK",
         "Assert response items array length ≤ 20 and every item belongs to Student A (no Student B institutionalId or displayName)",
         "Assert each item includes sessionDate (scheduled_start), subject name or subjectId, status (Present, Absent, or Excused), and checkedInAt populated only when status is Present",
-        "Follow nextCursor with second GET /attendance/me/history?limit=20&cursor={nextCursor} and assert remaining own records returned without peer rows",
+        "Follow nextCursor with second GET /api/v1/attendance/me/history?limit=20&cursor={nextCursor} and assert remaining own records returned without peer rows",
         "Assert totalCount reflects Student A Closed-session attendance count only per FR-14 and AC-14a"
       ],
-      "expected": "FR-14 satisfied: paginated read-only list shows only own records with session date, subject, status, and check-in time when applicable per testing-plan TS-34",
+      "expected": "FR-14 satisfied: paginated read-only list shows only own records with session date, subject, status, and check-in time when applicable per testing-plan TS-34 and listing UX §0 for /history",
       "edgeCase": false
     },
     {
@@ -48,9 +48,10 @@
         "Assert pagination envelope includes items, nextCursor (non-null when more rows exist), and totalCount equal to Student A row count",
         "Invoke getStudentHistory(studentAId, { limit: 20, cursor: nextCursor }) and assert second page rows are disjoint from first page",
         "Query attendance_records directly and assert no Student B session rows appear in either page",
-        "Verify SQL join filters ar.student_id = $authenticated_student_id and s.status = Closed per database design §8.4"
+        "Verify SQL join filters ar.student_id = $authenticated_student_id and s.status = Closed per database design §8.4",
+        "Assert getStudentHistory executes as a single SELECT with JOINs (attendance_records, sessions, subjects) per database design §8.4 — no per-row subject or session fan-out (N+1)"
       ],
-      "expected": "Module-integration boundary: AttendanceService.getStudentHistory returns self-scoped paginated history only per attendance module §2.5 and database design §8.4",
+      "expected": "Module-integration boundary: AttendanceService.getStudentHistory returns self-scoped paginated history only via single joined query per attendance module §2.5 and database design §8.4",
       "edgeCase": false
     },
     {
@@ -70,7 +71,7 @@
         "Assert HTTP status 200 OK",
         "Assert Content-Type application/json; charset=utf-8",
         "Assert response body contains items array, nextCursor, and totalCount per API design §10.1 success list envelope",
-        "Assert each item in items includes subject identifier or name, sessionDate (ISO 8601), status enum (Present, Absent, Excused), and checkedInAt when status is Present",
+        "Assert each item in items includes subject identifier or name, sessionDate (ISO 8601), status enum (Present, Absent, or Excused), and checkedInAt when status is Present",
         "Assert response body does not contain errorCode on success"
       ],
       "expected": "HTTP 200 success contract for GET /attendance/me/history per API design §7.3 and §10.1; history DTO fields match FR-14 outputs",
@@ -94,9 +95,9 @@
         "Invoke getStudentHistory(studentAId, { limit: 20, cursor: nextCursor }) and assert items.length === 20",
         "Invoke getStudentHistory(studentAId, { limit: 20, cursor: secondPageCursor }) and assert items.length === 5 (final page)",
         "Assert nextCursor is null on final page and union of all pages equals 45 unique session attendance rows",
-        "Assert no duplicate items across pages and ordering remains session date descending per 14-listing-pages-search-filter-sort.md §5.2"
+        "Assert no duplicate items across pages and ordering remains session date descending per 14-listing-pages-search-filter-sort.md §5.2 and §6 (20 per fetch on /history)"
       ],
-      "expected": "Pagination invariant: page size, totalCount, cursor continuity, and final-page boundary behave correctly for student history per FR-14 and 14-listing-pages-search-filter-sort.md §6 (20 per fetch)",
+      "expected": "Pagination invariant: page size, totalCount, cursor continuity, and final-page boundary behave correctly for student history per FR-14 and 14-listing-pages-search-filter-sort.md §6 (20 per fetch on /history)",
       "edgeCase": false
     },
     {
@@ -176,23 +177,24 @@
       "technique": "browser-journey",
       "priority": "P0",
       "traceability": ["FR-14", "AC-14"],
-      "title": "/history shows paginated card list with StatusBadge per attendance row",
+      "title": "/history shows paginated card list with StatusBadge and load-more per listing §0",
       "preconditions": [
         "Authenticated Student on mobile viewport (StudentLayout)",
         "At least 25 Closed-session attendance records with mixed Present, Absent, and Excused statuses",
-        "Student bottom nav includes Lịch sử link to /history per page-list §3.2"
+        "Student bottom nav includes Lịch sử link to /history per page-list §3.2",
+        "TableToolbar visible on /history per page-list §3.2 and 14-listing §0"
       ],
       "steps": [
         "Navigate to /history",
-        "Wait for AttendanceHistoryList to load and assert skeleton transitions to data rows",
+        "Wait for AttendanceHistoryList to load and assert **3** skeleton cards during loading per ui-states §5, then transitions to data rows",
         "Verify each card row displays subject name, session date (vi-VN formatted), StatusBadge with correct variant for Present/Absent/Excused, and check-in time only on Present rows",
         "Verify first page shows up to 20 rows per 14-listing-pages-search-filter-sort.md §6 cursor/load-more page size",
         "Click Tải thêm (load more) and verify inline spinner on button during fetch per ui-states §5",
         "Verify additional rows append without duplicating first page",
         "When all records loaded verify Tải thêm is hidden and Đã hiển thị tất cả is shown per ui-states §5",
-        "Verify rows sorted by session date descending and list is read-only (no edit controls) per FR-14"
+        "Verify rows sorted by session date descending by default and list is read-only (no edit controls) per 14-listing §5.2 and FR-14"
       ],
-      "expected": "FR-14 browser journey: /history paginated read-only list with status badges per page-list §3.2, ui-states §5, and event-specific-components §2.4",
+      "expected": "FR-14 browser journey: /history paginated read-only list with status badges and load-more per listing §0, page-list §3.2, ui-states §5, and event-specific-components §2.4",
       "edgeCase": false
     },
     {
@@ -205,12 +207,13 @@
       "title": "Student /history empty state when no Closed sessions exist",
       "preconditions": [
         "Authenticated Student with enrollments but no Closed-session attendance records yet",
-        "Student has not completed any workshop session to Closed state"
+        "Student has not completed any workshop session to Closed state",
+        "TableToolbar visible on /history per page-list §3.2"
       ],
       "steps": [
         "Navigate to /history",
         "Wait for API GET /attendance/me/history to complete",
-        "Verify EmptyState displays message Chưa có buổi học nào per ui-states §5 and event-specific-components §2.4",
+        "Verify EmptyState displays message Chưa có buổi học nào per ui-states §5 and 14-listing §7",
         "Verify no StatusBadge or attendance cards rendered",
         "Verify load-more control hidden or disabled when items array is empty"
       ],
@@ -289,19 +292,21 @@
       "technique": "scenario-matrix",
       "priority": "P0",
       "traceability": ["FR-14", "AC-14"],
-      "title": "GET /attendance/me/history supports subjectId and date range filters scoped to self",
+      "title": "GET /attendance/me/history supports subjectId, date range, q, and status filters scoped to self",
       "preconditions": [
         "Authenticated Student A with Closed sessions in SWE-101 (June 2026) and SWE-102 (July 2026)",
-        "Mixed Present and Absent records in each subject"
+        "Mixed Present, Absent, and Excused records in each subject"
       ],
       "steps": [
         "GET /api/v1/attendance/me/history?subjectId={swe101Id}&from=2026-06-01&to=2026-06-30 using Student A session",
         "Assert HTTP 200 and all items reference SWE-101 subject with sessionDate within from/to inclusive",
         "Assert no SWE-102 session rows appear in filtered result",
-        "GET /attendance/me/history without filters and assert totalCount ≥ filtered totalCount",
+        "GET /api/v1/attendance/me/history?q=SWE-101&status=Present using Student A session",
+        "Assert HTTP 200 and all items show status Present with subject matching q token; no peer student data",
+        "GET /api/v1/attendance/me/history without filters and assert totalCount ≥ filtered totalCount",
         "Assert all filtered items remain Student A records only per self-scope invariant"
       ],
-      "expected": "History endpoint optional filters (subjectId, from, to) apply within self-scoped result set per API design §7.3 query parameters and FR-14 enrolled-subjects scope",
+      "expected": "History endpoint filters (subjectId, from, to, q, status) apply within self-scoped result set per API design §7.3 and 14-listing-pages-search-filter-sort.md §12",
       "edgeCase": false
     },
     {
@@ -318,7 +323,7 @@
         "Student A lacks attendance:write per roles-permissions §2.2"
       ],
       "steps": [
-        "PATCH /api/v1/attendance/:peerRecordId with body { status: \"Present\", note: \"Unauthorized edit\" } using Student A session",
+        "PATCH /api/v1/attendance/:peerRecordId with body { \"status\": \"Present\", \"note\": \"Unauthorized edit\" } using Student A session",
         "Assert HTTP status 403 Forbidden",
         "Assert errorCode Forbidden",
         "Assert no attendance_records row updated for peerRecordId",
@@ -327,6 +332,121 @@
       ],
       "expected": "FR-14 read-only guarantee: student cannot mutate another student's attendance record; peer data not exposed per AC-14b",
       "edgeCase": false
+    },
+    {
+      "id": "TC-FR-14-015",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-14", "AC-14"],
+      "title": "/history TableToolbar subject search filters card list per 14-listing §3.2",
+      "preconditions": [
+        "Authenticated Student on mobile viewport with Closed-session records in SWE-101 and SWE-102",
+        "TableToolbar search input visible with placeholder Tìm theo môn học… per 14-listing §3.2"
+      ],
+      "steps": [
+        "Navigate to /history and wait for populated card list",
+        "Type SWE-101 (or partial subject name) into TableToolbar search input",
+        "Wait for debounced filter (300 ms per 14-listing §3.1) and verify only SWE-101 rows remain visible",
+        "Assert no SWE-102 cards shown and all visible rows remain self-scoped attendance records",
+        "Click × clear control in search input and verify full history list restores",
+        "Verify search state encoded in URL ?q= when applicable per 14-listing §12"
+      ],
+      "expected": "FR-14 listing compliance: /history subject search filters results within self-scoped history per 14-listing §0 and §3.2",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-14-016",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-14", "AC-14"],
+      "title": "AttendanceService.getStudentHistory applies status and text search filters within self-scoped history while preserving pagination invariants",
+      "preconditions": [
+        "Real PostgreSQL test database with Closed-session attendance_records for Student A across multiple subjects and statuses (Present, Absent, Excused)",
+        "At least 30 records for Student A, including 10 Present rows in subject SWE-101 whose subject name/code contains a common token (e.g. SWE)",
+        "AttendanceService.getStudentHistory supports filter arguments { status, q, limit, cursor } mapped to /history search and status Select per 14-listing-pages-search-filter-sort.md §3.2 and §4.3.1"
+      ],
+      "steps": [
+        "Invoke AttendanceService.getStudentHistory(studentAId, { status: \"Present\", limit: 20 }) and assert all returned rows have status Present and student_id = studentAId",
+        "Invoke AttendanceService.getStudentHistory(studentAId, { q: \"SWE\", limit: 20 }) and assert all returned rows have subjects whose code or name fuzzy-matches the query while still being scoped to studentAId",
+        "Invoke AttendanceService.getStudentHistory(studentAId, { status: \"Excused\", q: \"SWE\", limit: 20 }) and assert intersection of filters is applied (only Excused SWE rows for Student A are returned)",
+        "For at least one filtered invocation with >20 matching rows, follow nextCursor into a second page and assert no duplicates across pages, totalCount equals count of matching Student A rows in attendance_records, and ordering is consistent with sessionDate DESC",
+        "Verify that the same filter combinations applied directly at repository/query level would not surface any other student's records even if they share the same subject or name tokens"
+      ],
+      "expected": "Module-integration test proves AttendanceService.getStudentHistory enforces self-scope while correctly applying status and text search filters and preserving pagination invariants required by /history listing UX and AC-14a",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-14-017",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-14", "AC-14"],
+      "title": "/history status Select filter shows only matching StatusBadge rows",
+      "preconditions": [
+        "Authenticated Student with mixed Present, Absent, and Excused Closed-session records",
+        "TableToolbar status Select visible with options Tất cả / Có mặt / Vắng / Có phép per 14-listing §4.3.1"
+      ],
+      "steps": [
+        "Navigate to /history and wait for populated card list",
+        "Select Có mặt in Trạng thái filter",
+        "Verify every visible card shows Present StatusBadge variant only",
+        "Select Vắng and verify only Absent StatusBadge rows remain",
+        "Select Có phép and verify only Excused StatusBadge rows remain",
+        "Reset filter to Tất cả and verify all status variants return",
+        "Assert filter applies on change without separate Apply button per 14-listing §4.1 toolbar pattern"
+      ],
+      "expected": "FR-14 listing compliance: /history status filter narrows self-scoped card list per 14-listing §0 and §4.3.1",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-14-018",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-14", "AC-14"],
+      "title": "/history sort control reorders cards by date, subject, or status",
+      "preconditions": [
+        "Authenticated Student with at least six Closed-session records spanning multiple subjects and dates",
+        "Sort control available per 14-listing §5.2 (Date, Môn, Trạng thái) on /history mobile layout"
+      ],
+      "steps": [
+        "Navigate to /history and wait for populated card list",
+        "Verify default order is session date descending per 14-listing §5.2",
+        "Change sort to Môn ascending and verify subject names appear in locale-aware ascending order",
+        "Change sort to Trạng thái and verify cards group or order by status per sortable column spec",
+        "Change sort back to Date descending and verify newest session appears first",
+        "Assert sort preference does not expose peer records and list remains read-only"
+      ],
+      "expected": "FR-14 listing compliance: /history sort variants work on self-scoped card list per 14-listing §0 and §5.2",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-14-019",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["FR-14", "AC-14"],
+      "title": "/history search or filter with no matches shows Không tìm thấy kết quả empty state",
+      "preconditions": [
+        "Authenticated Student with at least one Closed-session attendance record",
+        "TableToolbar search and status filter available on /history"
+      ],
+      "steps": [
+        "Navigate to /history and wait for populated card list",
+        "Enter non-matching search text (e.g. ZZZ-NOMATCH) in subject search input",
+        "Verify no-result message Không tìm thấy kết quả displayed per 14-listing §7",
+        "Verify Xóa bộ lọc CTA clears search and restores populated list",
+        "Apply status filter Có phép when student has no Excused records and verify same no-results state with clear-filter CTA"
+      ],
+      "expected": "Search/filter no-match state shows localized empty message and clear-filter action without peer data per 14-listing §7",
+      "edgeCase": true
     }
   ]
 }

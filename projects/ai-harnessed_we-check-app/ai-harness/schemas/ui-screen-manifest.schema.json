@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://we-check.local/ai-harness/schemas/ui-screen-manifest.schema.json",
+  "title": "UI screen manifest",
+  "type": "object",
+  "required": ["sliceId", "screens"],
+  "properties": {
+    "sliceId": { "type": "string" },
+    "screens": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["route", "state"],
+        "properties": {
+          "route": { "type": "string" },
+          "state": { "type": "string" },
+          "viewports": {
+            "type": "array",
+            "items": { "type": "string", "enum": ["320x568", "1280x720"] }
+          }
+        }
+      }
+    }
+  }
+}

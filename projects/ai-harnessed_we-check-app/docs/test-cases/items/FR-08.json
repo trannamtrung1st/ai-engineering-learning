@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-08",
   "version": 1,
-  "docFingerprint": "sha256:9341c504e60b47051391329406e99dc5fb1f319639e550abcfbf5323c69fe44d",
-  "generatedAt": "2026-06-29T22:30:00.000Z",
+  "docFingerprint": "sha256:6c7678f94cb9169287510a56d60b05b785753e869c92ffab3c3fb6445986f640",
+  "generatedAt": "2026-07-01T00:00:00.000Z",
   "cases": [
     {
       "id": "TC-FR-08-001",
@@ -47,7 +47,7 @@
         "POST /api/v1/check-in with tokenId, latitude 10.764122, longitude 106.660172 using Student session",
         "Assert HTTP status 400",
         "Assert response outcome OutOfRadius and errorCode OutOfRadius",
-        "Assert localized message contains Bạn đang ngoài phạm vi phòng học per API design §6.2",
+        "Assert localized message contains Bạn đang ngoài phạm vi phòng học (full copy per API design §6.2 includes move-closer guidance)",
         "Query attendance_records for studentId and sessionId and assert status remains Pending (not Present)",
         "Query check_in_attempts and assert outcome OutOfRadius with distance_meters logged (no raw lat/lng persisted)"
       ],
@@ -364,7 +364,7 @@
       ],
       "steps": [
         "Navigate to check-in page on mobile viewport after preflight returns outcome Valid",
-        "Verify GpsCaptureStep reaches ready substate: Vị trí đã sẵn sàng without Spinner; aria-busy false per AC-08f",
+        "Verify GpsCaptureStep reaches ready substate: Vị trí đã sẵn sàng without Spinner; submit region aria-busy false or absent per AC-08f and ui-states §4.2",
         "Tap submit control (Xác nhận điểm danh)",
         "Verify success panel with Present status after server radius validation passes",
         "Verify no raw GPS coordinates displayed in UI beyond transient capture state"
@@ -389,7 +389,7 @@
         "Navigate to /check-in page and wait for GPS capture with outside coordinates",
         "Submit check-in",
         "Verify outcome panel displays OutOfRadius state with message Bạn đang ngoài phạm vi phòng học",
-        "Verify distance hint or move-closer guidance visible per user-flows §3",
+        "Verify distance hint displays Bạn cách phòng học khoảng {n} m (cho phép {radius} m) per event-specific-components §2.2",
         "Verify no Present success badge; student can retry after moving closer"
       ],
       "expected": "FR-08 OutOfRadius outcome surfaced in mobile UI with localized message and recovery action",
@@ -483,8 +483,9 @@
         "Navigate to /check-in?token=:tokenId&session=:sessionId and wait for preflight pass",
         "Wait for GpsCaptureStep substate ready after coordinates acquired",
         "Assert no spinner visible in GPS step region",
-        "Assert check icon and text Vị trí đã sẵn sàng displayed",
-        "Assert submit region aria-busy is false",
+        "Assert CheckCircle2 check icon and text Vị trí đã sẵn sàng displayed per ui-states §4.2 and event-specific-components §2.2",
+        "Assert submit region aria-busy is false or absent per AC-08f",
+        "Assert Cần bật GPS badge on submit row is cleared when gpsState is ready and capturedCoords present per ui-states §4.2",
         "Assert Xác nhận điểm danh button enabled immediately",
         "Verify sessionGate checking in parallel does not restore spinner once ready per FR-08 behavior"
       ],
@@ -559,7 +560,54 @@
         "Without granting real GPS, assert check-in cannot proceed to success solely from gpsSim params",
         "Grant mocked geolocation in harness and complete successful POST /check-in with in-radius coords"
       ],
-      "expected": "AC-08e satisfied: production builds ignore gpsSim URL params; client uses real navigator.geolocation per NFR-24 and local-development-setup §simulation",
+      "expected": "AC-08e production path: builds with VITE_ENABLE_DEVICE_SIMULATION=false ignore gpsSim URL params; client uses real navigator.geolocation per NFR-24 (sim-enabled path covered by TC-FR-08-026)",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-08-025",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-08", "BR-15"],
+      "title": "GET /check-in/tokens/:tokenId/preflight returns 200 Valid envelope before GPS capture",
+      "preconditions": [
+        "Active session with Valid unexpired QrToken in PostgreSQL",
+        "Authenticated enrolled Student session with checkin:submit permission"
+      ],
+      "steps": [
+        "Invoke GET /api/v1/check-in/tokens/:tokenId/preflight with authenticated enrolled Student session",
+        "Assert HTTP status 200 and Content-Type application/json; charset=utf-8",
+        "Assert response outcome \"Valid\" with tokenId, sessionId, and session summary (classCode, subjectCode, roomName, status Active) per API design §6.2",
+        "Query attendance_records and qr_tokens and assert no writes occurred (read-only preflight per validation-rules §3.6a)"
+      ],
+      "expected": "FR-08 prerequisite: preflight 200 HTTP contract confirms token Valid, session Active, and enrollment — enables GpsCaptureStep without DB mutations per BR-15",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-08-026",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-08", "AC-08", "NFR-24"],
+      "title": "AC-08e sim-enabled: gpsSim=delay resolves in-room coordinates without real GPS permission",
+      "preconditions": [
+        "VITE_ENABLE_DEVICE_SIMULATION=true per 10-local-development-setup.md and testing-plan §8",
+        "Authenticated enrolled Student on mobile viewport",
+        "Valid token deep link; GET /check-in/tokens/:tokenId/preflight returns 200 outcome Valid",
+        "gpsSim=delay query param on check-in URL"
+      ],
+      "steps": [
+        "Navigate to /check-in?token=:tokenId&session=:sessionId&gpsSim=delay",
+        "Verify gpsSim=delay resolves in-room coordinates without navigator.geolocation permission prompt per FR-08 simulation enabled path",
+        "Wait for GpsCaptureStep ready substate: copy Vị trí đã sẵn sàng visible on data-testid gps-capture-step",
+        "Assert CheckCircle2 check icon visible; no Spinner element in GPS step region per AC-08f",
+        "Assert submit region aria-busy is false or absent; Xác nhận điểm danh enabled immediately",
+        "If sessionGate checking runs in parallel, assert GPS step stays in ready state without reverting to spinner",
+        "Tap submit and verify POST /check-in returns radius-validated Present outcome"
+      ],
+      "expected": "FR-08 simulation enabled: URL gpsSim params override device APIs when VITE_ENABLE_DEVICE_SIMULATION=true per AC-08e; ready-state UX and server radius verification complete without real GPS hardware",
       "edgeCase": false
     }
   ]

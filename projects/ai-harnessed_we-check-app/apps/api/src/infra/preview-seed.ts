@@ -6,6 +6,7 @@ import {
   UserRole,
   computeTokenExpiresAt,
 } from "@wecheck/domain";
+import { randomUUID } from "node:crypto";
 import type { DbPool } from "./db.js";
 import { now } from "./clock.js";
 import { runWhenPreviewDbIdle } from "./integration-test-lock.js";
@@ -261,7 +262,7 @@ export async function ensurePreviewReferenceData(db: DbPool): Promise<void> {
       PREVIEW_IDS.instructor,
       UserRole.Instructor,
     );
-    sessionService.qr.stopAll();
+    await sessionService.qr.stopAll();
   }
 
   const closedAt = now();
@@ -687,7 +688,10 @@ export async function ensurePreviewHistoryFixtures(db: DbPool): Promise<void> {
     const closedAt = new Date(scheduledStart.getTime() + 2 * 60 * 60 * 1000);
     const subjectId =
       i % 2 === 0 ? PREVIEW_IDS.subjectSwe101 : PREVIEW_IDS.subjectSwe102;
-    const status = PREVIEW_HISTORY_STATUSES[i % PREVIEW_HISTORY_STATUSES.length]!;
+    const status =
+      sessionId === PREVIEW_IDS.sessionClosed
+        ? AttendanceStatus.Absent
+        : PREVIEW_HISTORY_STATUSES[i % PREVIEW_HISTORY_STATUSES.length]!;
     const checkedInAt =
       status === AttendanceStatus.Present
         ? new Date(scheduledStart.getTime() + 15 * 60 * 1000)
@@ -867,6 +871,54 @@ async function ensurePreviewAbsenceNotificationFixtures(db: DbPool): Promise<voi
   );
 }
 
+/**
+ * Insert a fresh instructor display token (~11 s remaining) excluded from fixture IDs
+ * so GET qr/current rotates independently of browser-gate student tokens (NFR-06).
+ */
+async function ensureInstructorDisplayQrTiming(db: DbPool): Promise<void> {
+  const current = now();
+  const secondsRemaining = 11;
+  const issuedAt = new Date(current.getTime() + 1_000);
+  const expiresAt = new Date(current.getTime() + secondsRemaining * 1000);
+
+  await db.query(
+    `UPDATE qr_tokens SET status = $2
+     WHERE session_id = $1 AND status = $3
+       AND NOT (id = ANY($4::uuid[]))`,
+    [
+      PREVIEW_IDS.sessionActive,
+      QrTokenStatus.Expired,
+      QrTokenStatus.Valid,
+      PREVIEW_QR_TOKEN_FIXTURE_IDS,
+    ],
+  );
+
+  await db.query(
+    `INSERT INTO qr_tokens (id, session_id, status, issued_at, expires_at)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [
+      randomUUID(),
+      PREVIEW_IDS.sessionActive,
+      QrTokenStatus.Valid,
+      issuedAt,
+      expiresAt,
+    ],
+  );
+}
+
+/** Closed sess-3 roster rows for instructor attendance roster browser gates (TC-FR-11-021). */
+async function ensurePreviewClosedRosterFixtures(db: DbPool): Promise<void> {
+  await db.query(
+    `INSERT INTO attendance_records (id, session_id, student_id, status, checked_in_at)
+     VALUES (gen_random_uuid(), $1, $2, $3, NULL)
+     ON CONFLICT (session_id, student_id) DO UPDATE SET
+       status = EXCLUDED.status,
+       checked_in_at = EXCLUDED.checked_in_at,
+       updated_at = NOW()`,
+    [PREVIEW_IDS.sessionClosed, PREVIEW_IDS.student, AttendanceStatus.Absent],
+  );
+}
+
 /** Lightweight refresh after integration truncates sessions — history before QR tokens (FK order). */
 export async function refreshPreviewBrowserFixtures(db: DbPool): Promise<void> {
   await ensurePreviewCoreAuthFixtures(db);
@@ -886,6 +938,8 @@ export async function refreshPreviewBrowserFixtures(db: DbPool): Promise<void> {
   }
 
   await ensurePreviewTokenFixtures(db);
+  await ensurePreviewClosedRosterFixtures(db);
+  await ensureInstructorDisplayQrTiming(db);
   await ensurePreviewAbsenceNotificationFixtures(db);
   await ensurePreviewAbsencePolicyFixtures(db);
 }
@@ -1068,10 +1122,11 @@ export async function runPreviewSeed(db: DbPool): Promise<void> {
   await ensurePreviewInstructor2Fixtures(db);
   await ensurePreviewMonitorFixtures(db);
   await ensurePreviewHistoryFixtures(db);
+  await ensurePreviewClosedRosterFixtures(db);
 
   await ensurePreviewAbsencePolicyFixtures(db);
   await ensurePreviewAbsenceNotificationFixtures(db);
 
-  sessionService.qr.stopAll();
+  await sessionService.qr.stopAll();
   await markSeedApplied(db);
 }

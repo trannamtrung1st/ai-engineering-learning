@@ -1,12 +1,14 @@
 import { useEffect, useState } from "react";
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { Spinner } from "@/components/ui/spinner";
-import { fetchSetupStatus } from "@/lib/setup-api";
+import { fetchSetupStatus, getCachedSetupComplete } from "@/lib/setup-api";
 
 /** FR-17 / AC-17 — gate routes until first admin bootstrap completes */
 export function SetupGuard() {
   const location = useLocation();
-  const [needsSetup, setNeedsSetup] = useState<boolean | null>(null);
+  const [needsSetup, setNeedsSetup] = useState<boolean | null>(() =>
+    getCachedSetupComplete() ? false : null,
+  );
   const [networkError, setNetworkError] = useState(false);
 
   useEffect(() => {

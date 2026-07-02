@@ -1,8 +1,8 @@
 {
   "productItemId": "NFR-15",
   "version": 1,
-  "docFingerprint": "sha256:7c3a06eac41d3ebaa216e1eb9eeeb0ecc9411edcf1cbcb0a135ac6fd55757a5f",
-  "generatedAt": "2026-06-29T19:05:45.000Z",
+  "docFingerprint": "sha256:c846b27c93f7d5a2fca97ea30039f8021ebfe5ee04711f351fc18db986850ffe",
+  "generatedAt": "2026-07-01T02:43:10.000Z",
   "cases": [
     {
       "id": "TC-NFR-15-001",
@@ -148,19 +148,22 @@
       "technique": "scenario-matrix",
       "priority": "P0",
       "traceability": ["NFR-15", "FR-13", "BR-09", "AC-13"],
-      "title": "TS-32: Non-admin CSV export denial writes ExportDenied security audit with actor and reason",
+      "title": "TS-32 / Flow D: denied exports audit-logged; instructor in-scope and admin success exports produce ExportAuditLog",
       "preconditions": [
-        "Authenticated Instructor session lacking report:export per roles-permissions §2.2",
-        "Attendance data exists for valid export filter scope"
+        "Attendance data for HESD-01 / SWE-101 and HESD-02 / SWE-102",
+        "Instructor A assigned to HESD-01 / SWE-101 only",
+        "Authenticated Student and TrainingOfficeAdmin sessions"
       ],
       "steps": [
-        "POST /api/v1/reports/export with valid filter body using Instructor session",
-        "Assert HTTP 403 with errorCode ExportNotAllowed",
-        "Query security_audit_logs for event type ExportDenied",
-        "Assert audit entry contains actor_id instructorId, denial reason, and timestamp",
-        "Assert no ExportAuditLog success row and no CSV content returned"
+        "Student POST /api/v1/reports/export with valid filter body and assert HTTP 403 ExportNotAllowed with message Chỉ phòng đào tạo mới có quyền xuất dữ liệu per AC-13b",
+        "Query security_audit_logs and assert ExportDenied entry for student actor",
+        "Instructor A POST /api/v1/reports/export for assigned HESD-01 / SWE-101 and assert HTTP 200 text/csv per AC-13c",
+        "Query export_audit_logs and assert ExportAuditLog success row for instructor actor with filterSummary and rowCount",
+        "Instructor A POST /api/v1/reports/export for unassigned HESD-02 / SWE-102 and assert HTTP 403 Forbidden (Flow D step 3 out-of-scope export)",
+        "Query security_audit_logs and assert ExportDenied entry for instructor out-of-scope attempt",
+        "TrainingOfficeAdmin POST /api/v1/reports/export with institution-wide filters and assert HTTP 200 with ExportAuditLog success row"
       ],
-      "expected": "Testing-plan §3 TS-32: denied export attempt 100% audit-logged per NFR-15, BR-09, AC-13b, and error-handling §6.2 ExportDenied",
+      "expected": "Testing-plan §3 TS-32 and §6 Flow D: 100% denied export attempts produce ExportDenied audit; successful instructor in-scope and admin exports produce ExportAuditLog per NFR-15, BR-09, AC-13b, and AC-13c",
       "edgeCase": false
     },
     {
@@ -258,20 +261,22 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["NFR-15", "FR-13", "BR-09", "NFR-11"],
-      "title": "Instructor POST /reports/export denied at permission guard with ExportDenied audit regardless of data scope",
+      "traceability": ["NFR-15", "FR-13", "BR-09", "AC-13", "AC-13b"],
+      "title": "Student and out-of-scope instructor export denied with ExportDenied audit; in-scope instructor produces ExportAuditLog",
       "preconditions": [
-        "Authenticated Instructor session assigned to class with export-eligible attendance data",
-        "Instructor lacks report:export per roles-permissions permission matrix",
+        "Instructor A assigned to HESD-01 / SWE-101 with export-eligible attendance data for assigned and unassigned class-subjects",
+        "Authenticated Student session lacking report:export per roles-permissions §2.2",
         "Security audit writer enabled for denied export attempts"
       ],
       "steps": [
-        "POST /api/v1/reports/export with filter for instructor's own assigned class-subject",
-        "Assert HTTP 403 Forbidden with errorCode ExportNotAllowed before CSV generation",
-        "Query security_audit_logs for ExportDenied with actor instructorId and reason ExportNotAllowed",
-        "Assert Student role export attempt also produces ExportDenied audit when tested in matrix sample"
+        "Student POST /api/v1/reports/export with any valid filter body and assert HTTP 403 ExportNotAllowed with message Chỉ phòng đào tạo mới có quyền xuất dữ liệu before CSV generation per AC-13b",
+        "Query security_audit_logs for ExportDenied with actor studentId and reason ExportNotAllowed",
+        "Instructor A POST /api/v1/reports/export for unassigned HESD-02 / SWE-102 filter and assert HTTP 403 Forbidden",
+        "Query security_audit_logs for ExportDenied with actor instructorAId and denial reason",
+        "Instructor A POST /api/v1/reports/export for assigned HESD-01 / SWE-101 filter and assert HTTP 200 text/csv per AC-13c",
+        "Query export_audit_logs and assert ExportAuditLog success row for instructor in-scope export — not ExportDenied"
       ],
-      "expected": "NFR-15: 100% denied export attempts produce security audit with actor and reason per BR-09 and roles-permissions §2.6 regardless of RBAC scope",
+      "expected": "NFR-15: 100% denied export attempts (student, out-of-scope instructor) produce ExportDenied security audit; successful instructor in-scope export produces ExportAuditLog per BR-09 and API design §8.3",
       "edgeCase": false
     },
     {
@@ -280,18 +285,18 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["NFR-15", "FR-11", "BR-10", "AC-11"],
-      "title": "EditWindowExpired instructor PATCH produces no AttendanceAuditLog; denied export still audits",
+      "traceability": ["NFR-15", "FR-11", "BR-10", "AC-11", "AC-13"],
+      "title": "EditWindowExpired instructor PATCH produces no AttendanceAuditLog; denied student export still audits",
       "preconditions": [
         "Closed session with closedAt 25 hours before TestClock",
         "Assigned Instructor with attendance:write",
-        "Separate Instructor session for export denial test"
+        "Authenticated Student session for export denial contrast test"
       ],
       "steps": [
         "Instructor PATCH /api/v1/attendance/:recordId { status: Present } and assert HTTP 403 EditWindowExpired",
         "Query attendance_audit_logs and assert zero new rows for this failed attempt",
-        "Same Instructor POST /api/v1/reports/export and assert HTTP 403 ExportNotAllowed",
-        "Query security_audit_logs and assert ExportDenied row created for export denial",
+        "Student POST /api/v1/reports/export with valid filter body and assert HTTP 403 ExportNotAllowed",
+        "Query security_audit_logs and assert ExportDenied row created for student export denial",
         "Contrast NFR-15 listed actions: failed manual edit not in audit scope; denied export always logged"
       ],
       "expected": "Boundary: EditWindowExpired blocks edit without audit pollution; ExportDenied still 100% logged per NFR-15 sensitive-action list and error-handling §6.2",
@@ -303,8 +308,8 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["NFR-15", "FR-11", "BR-10"],
-      "title": "AttendanceManualEdit audit captures beforeState and afterState for each permitted status transition",
+      "traceability": ["NFR-15", "FR-10", "FR-11", "BR-10", "AC-10b"],
+      "title": "AttendanceManualEdit audit captures beforeState and afterState for each permitted status transition including spoof override",
       "preconditions": [
         "Real PostgreSQL with Closed session within instructor edit window",
         "Attendance records with beforeState Absent, Rejected, and Excused on separate rows",
@@ -348,22 +353,25 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["NFR-15", "FR-13", "BR-09", "AC-13"],
-      "title": "Instructor /admin/export denial shows 403 UX; admin /admin/export download succeeds with audit side effect",
+      "traceability": ["NFR-15", "FR-12", "FR-13", "BR-09", "AC-12d", "AC-13"],
+      "title": "Instructor inline Xuất CSV on /reports audit-logged; student denied; admin /admin/export and inline export succeed with audit",
       "preconditions": [
-        "Instructor authenticated session; instructor chrome omits Xuất CSV nav per roles-permissions §2.3a and ui-ux/06-app-layout-components.md §5.3",
-        "TrainingOfficeAdmin session on /admin/export with ReportFilterBar and Xuất CSV action per ui-states §12",
-        "Export audit data seeded for admin filter scope"
+        "Instructor authenticated with ClassAssignment to HESD-01 / SWE-101; instructor chrome omits /admin/* nav per roles-permissions §2.3a and ui-ux/06-app-layout-components.md §5.3",
+        "Student authenticated session; no export control visible on report pages per AC-13b",
+        "TrainingOfficeAdmin session on /admin/export and /admin/reports with ReportFilterBar per ui-states §12",
+        "Export audit data seeded for admin and instructor filter scopes"
       ],
       "steps": [
-        "As Instructor, navigate directly to /admin/export and assert ForbiddenPage or modal with message Chỉ phòng đào tạo mới có quyền xuất dữ liệu per error-handling §7 and BR-09",
-        "Verify network tab shows POST /api/v1/reports/export returns 403 ExportNotAllowed with ExportDenied security audit",
-        "Verify no file download initiated for Instructor",
-        "As TrainingOfficeAdmin on /admin/export, apply report filters and click Xuất CSV",
-        "Assert browser file download starts with attendance-export filename per API design §8.3",
-        "Query export_audit_logs and assert ExportAuditLog row for admin actor and filter params"
+        "As Instructor on /reports with assigned filters, assert SidebarNav contains zero href matching /admin/* and no Xuất CSV nav item for /admin/export",
+        "Assert page header or toolbar displays Xuất CSV button using current filter state per AC-12d before export",
+        "Click inline Xuất CSV on /reports and assert scoped CSV download per AC-13c",
+        "Query export_audit_logs and assert ExportAuditLog row for instructor actor, filter params, and row count",
+        "As Student, attempt export via API or hidden control and assert 403 ExportNotAllowed with ExportDenied security audit; verify no CSV download",
+        "As Instructor navigate directly to /admin/export and assert ForbiddenPage without CSV download",
+        "As TrainingOfficeAdmin on /admin/reports, click inline Xuất CSV per AC-13d and assert CSV download with ExportAuditLog for on-screen filters",
+        "As TrainingOfficeAdmin on /admin/export, apply filters and click Xuất CSV; assert download and ExportAuditLog row"
       ],
-      "expected": "Browser journey: instructor direct /admin/export denied without download and ExportDenied audit logged; admin /admin/export completes with NFR-15 ExportAuditLog per AC-13a and AC-13b",
+      "expected": "Browser journey: instructor scoped inline export audit-logged on /reports with AC-12d toolbar Xuất CSV; student export denied with ExportDenied audit; admin inline and dedicated export both produce NFR-15 ExportAuditLog per AC-13a, AC-13c, and AC-13d",
       "edgeCase": false
     },
     {
@@ -387,6 +395,97 @@
       ],
       "expected": "NFR-15 append-only guarantee: all listed sensitive-action audit entities resist mutation after creation per 07-non-functional-risk §2.3 NFR-15 target",
       "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-15-018",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-15", "FR-13", "BR-08", "BR-09", "AC-13"],
+      "title": "Instructor scoped ExportService.exportCsv writes ExportAuditLog with actor, filter params, and row count",
+      "preconditions": [
+        "Real PostgreSQL with attendance for HESD-01 / SWE-101 (assigned) and HESD-02 / SWE-102 (unassigned)",
+        "Instructor userId with ClassAssignment to HESD-01 / SWE-101 only",
+        "ExportService enforces BR-08 assignment scope per API design §8.3"
+      ],
+      "steps": [
+        "Invoke ExportService.exportCsv({ classCode: HESD-01, subjectCode: SWE-101, from, to }, instructorId) for assigned pair",
+        "Assert CSV stream returned with scoped row count N containing only HESD-01 / SWE-101 data",
+        "Query export_audit_logs and assert exactly one new ExportAuditLog row with actor_id instructorId, filter_summary matching request, row_count N",
+        "Invoke ExportService.exportCsv({ classCode: HESD-02, subjectCode: SWE-102, from, to }, instructorId) for unassigned pair",
+        "Assert authorization failure with ExportDenied security audit and no ExportAuditLog success row"
+      ],
+      "expected": "NFR-15 module boundary: instructor in-scope CSV export 100% audit-logged via ExportAuditLog; out-of-scope denial produces ExportDenied per BR-09, AC-13c, and error-handling §6.2",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-15-019",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-15", "FR-13", "BR-09", "AC-13"],
+      "title": "POST /reports/export by assigned instructor HTTP 200 contract includes ExportAuditLog side effect",
+      "preconditions": [
+        "Authenticated Instructor A assigned to HESD-01 / SWE-101",
+        "Attendance records exist for HESD-01 / SWE-101 within export date range"
+      ],
+      "steps": [
+        "POST /api/v1/reports/export with body { classCode: HESD-01, subjectCode: SWE-101, from: 2026-06-01, to: 2026-06-30 } using Instructor A session",
+        "Assert HTTP status 200, Content-Type text/csv; charset=utf-8, and Content-Disposition attachment per API design §8.3",
+        "Parse CSV row count N and assert scoped data only for assigned class-subject per AC-13c",
+        "Query export_audit_logs and assert ExportAuditLog row with actor instructorAId, filterSummary, and rowCount N within same request window"
+      ],
+      "expected": "HTTP 200 instructor in-scope POST /reports/export always writes ExportAuditLog per API design §8.3, BR-09, AC-13c, and NFR-15 100% coverage target",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-15-020",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-15", "FR-13", "BR-09", "BR-14", "AC-13", "AC-18a"],
+      "title": "SidebarNav and BottomNav omit unauthorized export nav items; non-admin chrome has zero /admin/* links",
+      "preconditions": [
+        "Instructor authenticated on /sessions with ClassAssignment granting report:read",
+        "Student authenticated on /check-in with checkin:submit",
+        "TrainingOfficeAdmin authenticated on /admin",
+        "usePermittedNav() filters nav descriptors per ui-ux/06-app-layout-components.md §6.2a"
+      ],
+      "steps": [
+        "As Instructor inspect SidebarNav DOM and assert zero anchor elements with href matching /admin/*",
+        "Assert SidebarNav renders Buổi học and Báo cáo only; Xuất CSV (/admin/export) and other admin nav labels absent from DOM not merely hidden",
+        "As Student inspect BottomNav and assert only Điểm danh and Lịch sử items present; zero /admin/* href values in student layout chrome",
+        "As Instructor on /reports verify inline Xuất CSV button present for scoped export per AC-13c",
+        "As TrainingOfficeAdmin on /admin verify SidebarNav includes Xuất CSV nav item linking to /admin/export"
+      ],
+      "expected": "NFR-15 UI accountability: unauthorized export destinations omitted from nav chrome per BR-14 and AC-18a; instructor uses inline Xuất CSV on /reports for scoped audit-logged export; non-admin roles contain zero /admin/* layout nav links",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-15-021",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["NFR-15", "AC-10b", "FR-10", "FR-11", "BR-10"],
+      "title": "AC-10b: Instructor overrides SpoofSuspected attendance to Present with AttendanceManualEdit audit",
+      "preconditions": [
+        "Closed session with student attendance record in Rejected status from prior SpoofSuspected check-in",
+        "Assigned Instructor authenticated with attendance:write within 24 h edit window",
+        "SpoofFlagged security audit row already exists for the student from check-in rejection"
+      ],
+      "steps": [
+        "GET /api/v1/sessions/:sessionId/attendance and confirm student status Rejected from SpoofSuspected outcome",
+        "PATCH /api/v1/attendance/:recordId { status: Present, note: \"Xác minh trực tiếp sau nghi ngờ GPS\" } using Instructor session",
+        "Assert HTTP 200 and attendance status Present per AC-10b",
+        "Query attendance_audit_logs and assert AttendanceManualEdit row with editorId Instructor, previousStatus Rejected, newStatus Present, note, and editedAt timestamp",
+        "Assert prior SpoofFlagged security audit row unchanged (append-only); no duplicate SpoofFlagged entry on manual override"
+      ],
+      "expected": "AC-10b and NFR-15: instructor physical-verification override after SpoofSuspected produces append-only AttendanceManualEdit audit with actor, timestamp, and before/after status per error-handling §6.2",
+      "edgeCase": false
     }
   ]
 }

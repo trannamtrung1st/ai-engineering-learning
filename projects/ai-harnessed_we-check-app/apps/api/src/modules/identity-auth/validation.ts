@@ -14,7 +14,7 @@ import type {
 } from "./types.js";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const INSTITUTIONAL_ID_RE = /^[A-Za-z0-9-]{3,32}$/;
+const INSTITUTIONAL_ID_RE = /^[A-Za-z0-9\-_.]{3,32}$/;
 const USER_ROLES = new Set<string>(Object.values(UserRole));
 
 export interface ValidationResult<T> {

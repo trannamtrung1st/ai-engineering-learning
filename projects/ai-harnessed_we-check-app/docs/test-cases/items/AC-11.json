@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-11",
   "version": 1,
-  "docFingerprint": "sha256:5a4efa7b36857f09487b21ebeda8b568b6d9b7231f7df80369274cfc39c47638",
-  "generatedAt": "2026-06-29T17:25:39Z",
+  "docFingerprint": "sha256:805ac1ddee505b3ab130e4e7ac335d0c6b50f90bd34dbe4c080b375bcf06977e",
+  "generatedAt": "2026-06-30T09:06:09Z",
   "cases": [
     {
       "id": "TC-AC-11-001",
@@ -20,10 +20,10 @@
       ],
       "steps": [
         "Record attendance recordId for student with status Absent",
-        "PATCH /attendance/:recordId with body { status: \"Present\", note: \"Xác minh trực tiếp tại lớp\" } using Instructor A session",
+        "PATCH /api/v1/attendance/:recordId with body { status: \"Present\", note: \"Xác minh trực tiếp tại lớp\" } using Instructor A session",
         "Assert HTTP status 200 with updated record status Present",
         "Query attendance_records and assert status Present for recordId",
-        "Query attendance_audit_log and assert entry with editorId Instructor A, previousStatus Absent, afterStatus Present, note, and editedAt timestamp per AC-11a",
+        "Query attendance_audit_logs and assert entry with editorId Instructor A, previousStatus Absent, newStatus Present, note, and editedAt timestamp per AC-11a",
         "Verify AttendanceManualEdit audit event fields match error-handling §6.2"
       ],
       "expected": "AC-11a satisfied: instructor edit within 24 h of closedAt updates status; append-only audit captures editor ID, timestamp, previous and new status per testing-plan TS-30",
@@ -43,12 +43,12 @@
         "TestClock within 24 h of session closedAt"
       ],
       "steps": [
-        "POST /sessions/:sessionId/close using Instructor A session",
+        "POST /api/v1/sessions/:sessionId/close using Instructor A session",
         "Assert session status Closed and Pending students transitioned to Absent per BR-01",
-        "Instructor A GET /sessions/:sessionId/attendance and identify Absent recordId for target student",
-        "Instructor A PATCH /attendance/:recordId { status: \"Present\", note: \"Điểm danh thủ công sau khi đóng buổi\" }",
+        "Instructor A GET /api/v1/sessions/:sessionId/attendance and identify Absent recordId for target student",
+        "Instructor A PATCH /api/v1/attendance/:recordId { status: \"Present\", note: \"Điểm danh thủ công sau khi đóng buổi\" }",
         "Assert HTTP 200 and attendance status Present",
-        "Verify audit log actor Instructor A, beforeStatus Absent, afterStatus Present, timestamps within edit window",
+        "Verify audit log actor Instructor A, previousStatus Absent, newStatus Present, timestamps within edit window",
         "Confirm Flow C steps 1–3 satisfied per testing-plan §6"
       ],
       "expected": "End-to-end manual fallback flow: closed session roster correction within 24 h with full audit trail per Flow C tags AC-11, BR-10, NFR-15",
@@ -96,8 +96,8 @@
         "Record beforeState: status Absent, checkedInAt null on attendance_records row",
         "Invoke AttendanceService.manualEdit(recordId, Present, editorId, optional note)",
         "Query attendance_records and assert afterState status Present",
-        "Assert checkedInAt may be set on manual Present per domain model §7.2",
-        "Verify SM-02 manualEdit transition Absent → Present permitted per 07-state-machines.md §3.4"
+        "Verify SM-02 manualEdit transition Absent → Present permitted per 07-state-machines.md §3.4",
+        "Assert AttendanceAuditLog entry with previousStatus Absent and newStatus Present"
       ],
       "expected": "beforeState Absent; afterState Present; state machine manualEdit transition satisfied for instructor within BR-10 window",
       "edgeCase": false
@@ -140,12 +140,12 @@
         "EditWindowPolicy instructor window is 24 h per BR-10"
       ],
       "steps": [
-        "PATCH /attendance/:recordId with body { status: \"Present\", note: \"Late override attempt\" } using Instructor A session",
+        "PATCH /api/v1/attendance/:recordId with body { status: \"Present\", note: \"Late override attempt\" } using Instructor A session",
         "Assert HTTP status 403 Forbidden",
         "Assert response errorCode EditWindowExpired",
         "Assert message Đã quá thời hạn chỉnh sửa điểm danh (24 giờ) per error-handling §4.2",
         "Query attendance_records and assert status remains Absent unchanged",
-        "Assert no AttendanceManualEdit audit entry created"
+        "Assert no AttendanceAuditLog entry created for this edit attempt"
       ],
       "expected": "AC-11b satisfied: instructor blocked after 24-hour window; EditWindowExpired per Flow C step 4 and testing-plan §6",
       "edgeCase": true
@@ -164,9 +164,9 @@
         "Student attendance record with status Absent"
       ],
       "steps": [
-        "PATCH /attendance/:recordId with body { status: \"Excused\", note: \"Admin correction — có giấy phép\" } using TrainingOfficeAdmin session",
+        "PATCH /api/v1/attendance/:recordId with body { status: \"Excused\", note: \"Admin correction — có giấy phép\" } using TrainingOfficeAdmin session",
         "Assert HTTP status 200 with updated record status Excused",
-        "Query attendance_audit_log and assert entry with editorId admin userId, previousStatus Absent, afterStatus Excused, note",
+        "Query attendance_audit_logs and assert entry with editorId admin userId, previousStatus Absent, newStatus Excused, note",
         "Contrast: same request with Instructor session on same record returns 403 EditWindowExpired per AC-11b"
       ],
       "expected": "AC-11c satisfied: admin override succeeds beyond 24 h with full audit log; instructor would be denied on same record",
@@ -186,10 +186,10 @@
         "Instructor A assigned; TrainingOfficeAdmin account available"
       ],
       "steps": [
-        "Instructor A PATCH /attendance/:recordId { status: Present } and assert HTTP 403 EditWindowExpired",
-        "TrainingOfficeAdmin PATCH /attendance/:recordId { status: Present, note: \"Admin override sau 24h\" }",
+        "Instructor A PATCH /api/v1/attendance/:recordId { status: \"Present\" } and assert HTTP 403 EditWindowExpired",
+        "TrainingOfficeAdmin PATCH /api/v1/attendance/:recordId { status: \"Present\", note: \"Admin override sau 24h\" }",
         "Assert HTTP 200 and attendance status Present",
-        "Verify audit log for admin edit with beforeStatus Absent, afterStatus Present",
+        "Verify audit log for admin edit with previousStatus Absent, newStatus Present",
         "Confirm Flow C steps 4–5 satisfied per testing-plan §6"
       ],
       "expected": "Flow C end-to-end: instructor blocked at 25 h; admin edit succeeds with audit per AC-11b and AC-11c",
@@ -209,10 +209,10 @@
         "Known attendance recordId for own Absent row"
       ],
       "steps": [
-        "PATCH /attendance/:recordId with body { status: \"Present\", note: \"Self mark\" } using Student session cookie",
+        "PATCH /api/v1/attendance/:recordId with body { status: \"Present\", note: \"Self mark\" } using Student session cookie",
         "Assert HTTP status 403 Forbidden and errorCode Forbidden",
         "Verify attendance status remains Absent",
-        "Assert no AttendanceManualEdit audit entry created for student actor"
+        "Assert no AttendanceAuditLog entry created for student actor"
       ],
       "expected": "Only Instructor or TrainingOfficeAdmin hold attendance:write; students cannot self-correct attendance per FR-11 RBAC",
       "edgeCase": false
@@ -231,10 +231,10 @@
         "Authenticated Instructor B not assigned to session class-subject pair"
       ],
       "steps": [
-        "PATCH /attendance/:recordId with body { status: \"Present\", note: \"Cross-instructor edit\" } using Instructor B session",
+        "PATCH /api/v1/attendance/:recordId with body { status: \"Present\", note: \"Cross-instructor edit\" } using Instructor B session",
         "Assert HTTP status 403 Forbidden",
         "Verify attendance status remains Absent",
-        "Assert no AttendanceManualEdit audit entry for Instructor B"
+        "Assert no AttendanceAuditLog entry for Instructor B"
       ],
       "expected": "Manual edit requires assigned instructor scope per BR-08; cross-instructor edit denied even within 24 h window",
       "edgeCase": false
@@ -302,9 +302,9 @@
       ],
       "steps": [
         "Set TestClock to closedAt plus exactly 24 hours minus 1 second",
-        "PATCH /attendance/:recordId1 { status: Present } using Instructor A and assert HTTP 200",
+        "PATCH /api/v1/attendance/:recordId1 { status: \"Present\" } using Instructor A and assert HTTP 200",
         "Advance TestClock to closedAt plus 24 hours plus 1 second",
-        "PATCH /attendance/:recordId2 { status: Present } using Instructor A",
+        "PATCH /api/v1/attendance/:recordId2 { status: \"Present\" } using Instructor A",
         "Assert HTTP 403 EditWindowExpired on recordId2",
         "Verify recordId1 Present and recordId2 remains Absent"
       ],
@@ -320,7 +320,7 @@
       "traceability": ["AC-11", "FR-11", "BR-10"],
       "title": "EditWindowPolicy denies instructor manualEdit when closedAt exceeds 24 h",
       "preconditions": [
-        "AttendanceService with EditWindowPolicy injected per testing-plan §4 EditWindowPolicy unit boundary",
+        "AttendanceService with EditWindowPolicy injected per testing-plan §4 EditWindowPolicy",
         "Session entity with status Closed and closedAt 25 hours before TestClock",
         "Editor role Instructor (not TrainingOfficeAdmin)"
       ],
@@ -328,7 +328,8 @@
         "Invoke AttendanceService.manualEdit(recordId, Present, instructorEditorId, note) against session outside window",
         "Assert domain rejection EditWindowExpired (mapped to HTTP 403 at API layer)",
         "Assert attendance_records status unchanged",
-        "Repeat with editor role TrainingOfficeAdmin and assert edit succeeds without window rejection"
+        "Repeat with editor role TrainingOfficeAdmin and assert edit succeeds without window rejection",
+        "Assert AttendanceAuditLog created only for successful admin edit"
       ],
       "expected": "EditWindowPolicy module boundary enforces instructor 24 h limit and admin unlimited override per BR-10 at service layer",
       "edgeCase": false
@@ -354,7 +355,7 @@
         "Assert response body message Đã quá thời hạn chỉnh sửa điểm danh (24 giờ) per error-handling §4.2",
         "Assert response body contains requestId UUID"
       ],
-      "expected": "HTTP 403 EditWindowExpired contract per API design §7.2 and error-handling §3.1 for instructor past BR-10 window",
+      "expected": "HTTP 403 EditWindowExpired contract per API design §7.2 and error-handling §4.2 for instructor past BR-10 window",
       "edgeCase": false
     },
     {
@@ -375,9 +376,9 @@
         "Invoke AttendanceService.manualEdit(recordId, Present, instructorEditorId, note) while session Active",
         "Query attendance_records and assert afterState status Present",
         "Verify session status remains Active (edit does not close session)",
-        "Assert audit log entry created with beforeStatus Pending, afterStatus Present"
+        "Assert AttendanceAuditLog entry with previousStatus Pending, newStatus Present"
       ],
-      "expected": "Instructor may correct attendance during Active session per API design guards; Pending → Present manualEdit transition with audit",
+      "expected": "Instructor may correct attendance during Active session per API design §7.2 guards; Pending → Present manualEdit transition with audit",
       "edgeCase": false
     },
     {
@@ -397,11 +398,57 @@
         "Record beforeState: attendance_records.status Rejected for target student",
         "PATCH /api/v1/attendance/:recordId with body { status: \"Present\", note: \"Xác minh trực tiếp tại lớp — GPS nghi ngờ giả mạo\" } using Instructor A session",
         "Assert HTTP status 200 with updated record status Present",
-        "Query attendance_audit_log and assert AttendanceManualEdit entry with previousStatus Rejected, afterStatus Present, editorId Instructor A per error-handling §6.2",
-        "Verify BR-10 exception: Rejected → Present allowed as spoof override within instructor window"
+        "Query attendance_audit_logs and assert AttendanceManualEdit entry with previousStatus Rejected, newStatus Present, editorId Instructor A per error-handling §6.2",
+        "Verify BR-10 exception: Rejected → Present allowed as spoof override within instructor window per AC-10b"
       ],
-      "expected": "BR-10 spoof override satisfied: instructor within 24 h changes Rejected to Present with audit; supports user-flows §6 spoof override path tied to AC-11",
+      "expected": "BR-10 spoof override satisfied: instructor within 24 h changes Rejected to Present with audit; supports WF-04 §5.3 spoof override path tied to AC-11",
       "edgeCase": false
+    },
+    {
+      "id": "TC-AC-11-018",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["AC-11", "FR-11", "BR-10"],
+      "title": "PATCH /attendance/:recordId rejects note exceeding 500 chars with 422 ValidationFailed",
+      "preconditions": [
+        "Authenticated assigned Instructor session",
+        "Closed session within 24 h with known attendance recordId",
+        "VAL-10 note max 500 chars per 08-validation-rules.md §3.7"
+      ],
+      "steps": [
+        "Send PATCH /api/v1/attendance/:recordId with body { status: \"Present\", note: \"<501-char string>\" }",
+        "Assert HTTP status 422 Unprocessable Entity",
+        "Assert response errorCode ValidationFailed",
+        "Query attendance_records and assert status unchanged",
+        "Assert no AttendanceAuditLog entry created"
+      ],
+      "expected": "Manual edit note bounded by VAL-10 per API design §7.2; invalid input rejected without state change or audit",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-11-019",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["AC-11", "FR-11", "BR-10"],
+      "title": "PATCH /attendance/:recordId rejects invalid status enum with 422 ValidationFailed",
+      "preconditions": [
+        "Authenticated assigned Instructor session",
+        "Closed session within 24 h with known attendance recordId",
+        "API validation per 05-api-design.md §7.2 allowed status values"
+      ],
+      "steps": [
+        "Send PATCH /api/v1/attendance/:recordId with body { status: \"Pending\", note: \"Invalid transition\" }",
+        "Assert HTTP status 422 Unprocessable Entity",
+        "Assert response errorCode ValidationFailed",
+        "Query attendance_records and assert status unchanged",
+        "Assert no AttendanceAuditLog entry created"
+      ],
+      "expected": "Manual edit accepts only Present, Absent, Excused, Rejected per API design §7.2; invalid status rejected without state change or audit",
+      "edgeCase": true
     }
   ]
 }

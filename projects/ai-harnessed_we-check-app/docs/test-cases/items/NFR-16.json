@@ -1,8 +1,8 @@
 {
   "productItemId": "NFR-16",
   "version": 1,
-  "docFingerprint": "sha256:42bc503b34306c743742631b6ce966c3b677f61a78ea9c5d1d4baaa2dbc79d93",
-  "generatedAt": "2026-06-29T19:08:19.000Z",
+  "docFingerprint": "sha256:c846b27c93f7d5a2fca97ea30039f8021ebfe5ee04711f351fc18db986850ffe",
+  "generatedAt": "2026-07-01T02:45:24.000Z",
   "cases": [
     {
       "id": "TC-NFR-16-001",
@@ -20,7 +20,7 @@
       "steps": [
         "POST /api/v1/check-in with expired session cookie and valid tokenId, latitude, and longitude",
         "Assert HTTP status 401 and errorCode SessionExpired",
-        "Assert response message is Phiên đăng nhập đã hết hạn per error-handling §4",
+        "Assert response message is Phiên đăng nhập đã hết hạn per error-handling §4.1",
         "Query attendance_records and confirm no Present status created for the student"
       ],
       "expected": "NFR-16 default 8-hour inactivity target met: expired session rejected with HTTP 401 SessionExpired on check-in; user must re-authenticate per AC-02c and BR-06; no attendance mutation",
@@ -112,7 +112,7 @@
         "Assert HTTP status 401",
         "Assert response JSON contains errorCode SessionExpired, message Phiên đăng nhập đã hết hạn, and requestId"
       ],
-      "expected": "HTTP 401 with standard error envelope per API design §10.2 and error-handling §4; SessionExpired blocks check-in until re-authentication",
+      "expected": "HTTP 401 with standard error envelope per API design §10.2 and error-handling §4.1; SessionExpired blocks check-in until re-authentication",
       "edgeCase": false
     },
     {
@@ -187,7 +187,7 @@
       "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["NFR-16", "FR-02"],
-      "title": "Instructor denied PUT /policy/session-inactivity — policy:write restricted to TrainingOfficeAdmin",
+      "title": "Instructor denied PUT and GET /policy/session-inactivity — policy:write restricted to TrainingOfficeAdmin",
       "preconditions": [
         "Authenticated Instructor session established",
         "Instructor lacks policy:write per roles-permissions §2.2",
@@ -196,10 +196,10 @@
       "steps": [
         "PUT /api/v1/policy/session-inactivity with body { \"inactivityHours\": 6 } using Instructor session cookie",
         "Assert HTTP status 403 Forbidden with localized permission-denied message",
-        "GET /api/v1/policy/session-inactivity using Instructor session and assert 403 or read denied",
+        "GET /api/v1/policy/session-inactivity using Instructor session and assert HTTP 403 Forbidden",
         "Verify system policy remains at default 8 hours"
       ],
-      "expected": "NFR-16 admin-only configurability enforced: Instructor cannot change session inactivity timeout; HTTP 403; default 8-hour target unchanged",
+      "expected": "NFR-16 admin-only configurability enforced: Instructor cannot read or change session inactivity timeout; HTTP 403; default 8-hour target unchanged",
       "edgeCase": false
     },
     {
@@ -283,11 +283,11 @@
       "steps": [
         "Observe client preflight call to GET /api/v1/check-in/tokens/:tokenId/preflight returns 401 SessionExpired",
         "Verify GpsCaptureStep does not mount per BR-15 preflight gate",
-        "Observe toast or alert with message Phiên đăng nhập đã hết hạn",
-        "Verify browser redirects to /login with returnUrl encoding the check-in path",
+        "Observe redirect to /login with returnUrl encoding the check-in path and sessionExpired=1 query param",
+        "Verify login page displays session-expired alert with data-testid login-session-expired and message Phiên đăng nhập đã hết hạn",
         "Confirm check-in success confirmation is not shown"
       ],
-      "expected": "NFR-16 UI enforcement per AC-02c, BR-15, and ui-states §401 handling: expired session blocks preflight before GPS step; session-expired toast displayed; redirect to login with returnUrl preserved; check-in blocked until re-authentication",
+      "expected": "NFR-16 UI enforcement per AC-02c, BR-15, and LoginForm session-expired handling: expired session blocks preflight before GPS step; login redirect preserves returnUrl with sessionExpired flag; session-expired alert visible; check-in blocked until re-authentication",
       "edgeCase": true
     },
     {
@@ -320,17 +320,18 @@
       "traceability": ["NFR-16", "FR-02", "AC-02"],
       "title": "Successful re-login after session expiry returns user to preserved check-in deep link",
       "preconditions": [
-        "Student session expired while on check-in flow; redirected to login with returnUrl=/check-in?token=<token-id>",
+        "Student session expired while on check-in flow; redirected to /login?returnUrl=/check-in?token=<token-id>&sessionExpired=1",
         "Student has valid active account credentials",
         "QR token still valid within 30-second window or fresh token available"
       ],
       "steps": [
+        "Verify login page shows session-expired alert with data-testid login-session-expired",
         "Enter valid email and password on LoginForm after session-expired redirect",
         "Submit login",
         "Observe post-login navigation returns to /check-in?token=<token-id>",
         "Verify new session cookie issued and check-in flow UI renders"
       ],
-      "expected": "NFR-16 expiry recovery path: re-authentication establishes fresh session; returnUrl preserved per FR-02 and AC-02b; student can complete check-in after idle timeout",
+      "expected": "NFR-16 expiry recovery path: session-expired alert shown on login; re-authentication establishes fresh session; returnUrl preserved per FR-02 and AC-02b; student can complete check-in after idle timeout",
       "edgeCase": false
     },
     {
@@ -373,7 +374,7 @@
       "steps": [
         "GET /api/v1/check-in/tokens/:tokenId/preflight with expired wecheck_session cookie",
         "Assert HTTP status 401 and errorCode SessionExpired",
-        "Assert response message is Phiên đăng nhập đã hết hạn per error-handling §2.2",
+        "Assert response message is Phiên đăng nhập đã hết hạn per error-handling §4.1",
         "Assert no preflight success envelope with outcome Valid is returned"
       ],
       "expected": "NFR-16 and BR-15: idle-expired session rejected at preflight gate with HTTP 401 SessionExpired before enrollment or GPS validation chain executes; client must not advance to gps_capture step",
@@ -400,6 +401,28 @@
       ],
       "expected": "AC-17 bootstrap path per acceptance matrix NFR-16 trace: first-admin session obeys same 8-hour default inactivity target as POST /auth/login per API design §2.0 and §2.2",
       "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-16-019",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["NFR-16", "FR-02"],
+      "title": "Maximum 12-hour admin policy expires session after 12 hours inactivity",
+      "preconditions": [
+        "Real PostgreSQL with sessionInactivityHours policy set to 12 by Admin via PUT /api/v1/policy/session-inactivity",
+        "Student AuthSession created at T0 after policy change",
+        "TestClock fixture controls current time"
+      ],
+      "steps": [
+        "Verify GET /api/v1/auth/me succeeds at T0 + 11h 59m",
+        "Advance TestClock to T0 + 12h 1m without activity",
+        "Invoke AuthService.requireUser(sessionId) and assert session-expired failure",
+        "POST /api/v1/check-in with expired session and assert HTTP 401 SessionExpired"
+      ],
+      "expected": "NFR-16 maximum configurable bound (12 hours) honored: session expires after 12 hours idle when policy set to maximum allowed value per domain constants SESSION_INACTIVITY_MAX_HOURS",
+      "edgeCase": true
     }
   ]
 }

@@ -58,7 +58,7 @@ describe("concurrent check-in (AC-09c, NFR-02)", () => {
   });
 
   after(async () => {
-    sessionService.qr.stopAll();
+    await sessionService.qr.stopAll();
     resetClock();
     await app.close();
     await closePool();
@@ -71,7 +71,7 @@ describe("concurrent check-in (AC-09c, NFR-02)", () => {
     tokenIds: [string, string];
   }> {
     await withIntegrationTestDbReset(db, async () => {
-      sessionService.qr.stopAll();
+      await sessionService.qr.stopAll();
       await truncateCheckInTables(db);
       await truncateRosterTables(db);
       await truncateAuthTables(db);

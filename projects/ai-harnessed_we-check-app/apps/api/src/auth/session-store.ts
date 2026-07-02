@@ -181,6 +181,7 @@ export async function truncateAuthTables(db: DbPool): Promise<void> {
   );
   await db.query(`
     TRUNCATE TABLE
+      user_import_batches,
       roster_import_batches,
       enrollments,
       class_assignments,

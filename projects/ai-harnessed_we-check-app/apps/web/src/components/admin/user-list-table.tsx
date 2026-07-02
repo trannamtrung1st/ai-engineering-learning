@@ -10,6 +10,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { userCopy } from "@/lib/copy/user-labels";
 import { roleLabels } from "@/lib/copy/status-labels";
 import { cn } from "@/lib/cn";
+import {
+  nextUsersSortDirection,
+  type UsersSortColumn,
+  type UsersSortDirection,
+} from "@/lib/users-list-filters";
 import { updateUser, type UserDto } from "@/lib/users-api";
 
 function UserActiveBadge({ active }: { active: boolean }) {
@@ -92,10 +97,53 @@ export interface UserListTableProps {
   users: UserDto[];
   loading?: boolean;
   onUserUpdated?: () => void;
+  sortColumn?: UsersSortColumn;
+  sortDirection?: UsersSortDirection;
+  onSortChange?: (column: UsersSortColumn, direction: UsersSortDirection) => void;
+}
+
+function SortableHeader({
+  label,
+  column,
+  activeColumn,
+  direction,
+  onSort,
+  testId,
+}: {
+  label: string;
+  column: UsersSortColumn;
+  activeColumn: UsersSortColumn;
+  direction: UsersSortDirection;
+  onSort: (column: UsersSortColumn, direction: UsersSortDirection) => void;
+  testId: string;
+}) {
+  const active = column === activeColumn;
+
+  return (
+    <button
+      type="button"
+      className="inline-flex items-center gap-1 font-medium text-text-secondary hover:text-text-primary"
+      onClick={() =>
+        onSort(column, nextUsersSortDirection(column, activeColumn, direction))
+      }
+      aria-sort={active ? (direction === "asc" ? "ascending" : "descending") : "none"}
+      data-testid={testId}
+    >
+      {label}
+      <span aria-hidden="true">{active ? (direction === "asc" ? "↑" : "↓") : "↕"}</span>
+    </button>
+  );
 }
 
 /** FR-01 / AC-01 / NFR-11 — admin user directory table */
-export function UserListTable({ users, loading, onUserUpdated }: UserListTableProps) {
+export function UserListTable({
+  users,
+  loading,
+  onUserUpdated,
+  sortColumn = "displayName",
+  sortDirection = "asc",
+  onSortChange,
+}: UserListTableProps) {
   const [deactivateTarget, setDeactivateTarget] = useState<UserDto | null>(null);
 
   if (loading) {
@@ -111,25 +159,61 @@ export function UserListTable({ users, loading, onUserUpdated }: UserListTablePr
   return (
     <>
       <div className="overflow-x-auto rounded-md border border-border" data-testid="user-list-table">
-        <table className="w-full min-w-[720px] text-left text-body">
+        <table
+          className="w-full min-w-[720px] text-left text-body"
+          data-testid="user-list-sort-state"
+          data-sort-column={sortColumn}
+          data-sort-direction={sortDirection}
+        >
           <thead className="border-b border-border bg-surface-raised">
             <tr>
-              <th scope="col" className="px-4 py-3 font-medium text-text-secondary">
-                {userCopy.colInstitutionalId}
+              <th scope="col" className="px-4 py-3">
+                <SortableHeader
+                  label={userCopy.colInstitutionalId}
+                  column="institutionalId"
+                  activeColumn={sortColumn}
+                  direction={sortDirection}
+                  onSort={(column, direction) => onSortChange?.(column, direction)}
+                  testId="user-sort-institutional-id"
+                />
               </th>
-              <th scope="col" className="px-4 py-3 font-medium text-text-secondary">
-                {userCopy.colDisplayName}
+              <th scope="col" className="px-4 py-3">
+                <SortableHeader
+                  label={userCopy.colDisplayName}
+                  column="displayName"
+                  activeColumn={sortColumn}
+                  direction={sortDirection}
+                  onSort={(column, direction) => onSortChange?.(column, direction)}
+                  testId="user-sort-display-name"
+                />
               </th>
-              <th scope="col" className="px-4 py-3 font-medium text-text-secondary">
-                {userCopy.colEmail}
+              <th scope="col" className="px-4 py-3">
+                <SortableHeader
+                  label={userCopy.colEmail}
+                  column="email"
+                  activeColumn={sortColumn}
+                  direction={sortDirection}
+                  onSort={(column, direction) => onSortChange?.(column, direction)}
+                  testId="user-sort-email"
+                />
               </th>
-              <th scope="col" className="px-4 py-3 font-medium text-text-secondary">
-                {userCopy.colRole}
+              <th scope="col" className="px-4 py-3">
+                <SortableHeader
+                  label={userCopy.colRole}
+                  column="role"
+                  activeColumn={sortColumn}
+                  direction={sortDirection}
+                  onSort={(column, direction) => onSortChange?.(column, direction)}
+                  testId="user-sort-role"
+                />
               </th>
               <th scope="col" className="px-4 py-3 font-medium text-text-secondary">
                 {userCopy.colActive}
               </th>
-              <th scope="col" className="px-4 py-3 font-medium text-text-secondary">
+              <th
+                scope="col"
+                className="sticky right-0 bg-surface-raised px-4 py-3 font-medium text-text-secondary shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.08)]"
+              >
                 <span className="sr-only">{userCopy.colActions}</span>
               </th>
             </tr>
@@ -151,7 +235,12 @@ export function UserListTable({ users, loading, onUserUpdated }: UserListTablePr
                 <td className="px-4 py-3">
                   <UserActiveBadge active={user.active} />
                 </td>
-                <td className="px-4 py-3">
+                <td
+                  className={cn(
+                    "sticky right-0 px-4 py-3 shadow-[-4px_0_8px_-4px_rgba(0,0,0,0.08)]",
+                    user.active ? "bg-surface" : "bg-surface",
+                  )}
+                >
                   <div className="flex items-center gap-1">
                     <Link
                       to={`/admin/users/${user.id}`}

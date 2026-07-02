@@ -1,6 +1,7 @@
 import { useInfiniteQuery } from "@tanstack/react-query";
 import type { UserRole } from "@wecheck/domain";
 import { fetchUsers } from "@/lib/users-api";
+import { USERS_PAGE_SIZE } from "@/lib/users-list-filters";
 
 export interface UsersListFilters {
   role?: UserRole;
@@ -17,7 +18,7 @@ export function useUsersList(filters: UsersListFilters) {
         role: filters.role,
         active: filters.active,
         search: filters.search || undefined,
-        limit: 50,
+        limit: USERS_PAGE_SIZE,
         cursor: pageParam as string | undefined,
       });
       if (!result.ok) {

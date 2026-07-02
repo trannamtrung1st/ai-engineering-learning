@@ -1,14 +1,13 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { type UserRole as UserRoleType } from "@wecheck/domain";
-import { toast } from "sonner";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { authMessages } from "@/lib/copy/checkin-messages";
-import { appCopy } from "@/lib/copy/status-labels";
 import { isSafeReturnUrl, resolvePostLoginRedirect } from "@/lib/auth-redirect";
+import { primeAuthSessionCache } from "@/lib/auth-session";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "/api/v1";
 
@@ -32,17 +31,6 @@ export function LoginForm() {
 
   const sessionExpired = searchParams.get("sessionExpired") === "1";
   const returnUrl = searchParams.get("returnUrl");
-
-  useEffect(() => {
-    if (!sessionExpired) return;
-    const timer = window.setTimeout(() => {
-      toast.error(authMessages.sessionExpired, {
-        id: "session-expired",
-        duration: 5000,
-      });
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [sessionExpired]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -79,6 +67,7 @@ export function LoginForm() {
       }
 
       if (res.ok && data.user?.role) {
+        await primeAuthSessionCache();
         const destination = resolvePostLoginRedirect(data.user.role, {
           returnUrl: safeReturnUrl,
           redirectTo: data.redirectTo,
@@ -97,10 +86,7 @@ export function LoginForm() {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4" data-testid="login-form">
-      <div>
-        <h1 className="text-h1 font-semibold">{authMessages.loginTitle}</h1>
-        <p className="mt-1 text-body text-text-secondary">{appCopy.productSubtitle}</p>
-      </div>
+      <h1 className="text-h1 font-semibold">{authMessages.loginTitle}</h1>
 
       {sessionExpired ? (
         <Alert variant="warning" data-testid="login-session-expired">

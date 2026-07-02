@@ -372,7 +372,7 @@ describe("identity-auth integration (AC-01, AC-02, FR-01, FR-02, BR-06, NFR-14, 
     assert.equal(response.statusCode, 403);
   });
 
-  it("POST /auth/logout revokes session (TC-FR-02-009, FR-02)", async () => {
+  it("POST /auth/logout revokes session (TC-FR-02-009, AC-02d, FR-02)", async () => {
     await resetDb();
     const passwordHash = await hashPassword("LogoutPass8");
     await db.query(

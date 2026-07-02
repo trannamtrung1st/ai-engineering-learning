@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-16",
   "version": 1,
-  "docFingerprint": "sha256:570e2b7cf71ee69f846fdb406de6f277c232d53e0884fc69a5623d1f12d0f82a",
-  "generatedAt": "2026-06-29T17:35:29Z",
+  "docFingerprint": "sha256:7e3a3404d1fa949a12d9bbd2f7bcff57584570c63c719a18d2d6a1562023fc5c",
+  "generatedAt": "2026-07-01T01:31:26Z",
   "cases": [
     {
       "id": "TC-AC-16-001",
@@ -139,7 +139,7 @@
       "technique": "module-integration",
       "priority": "P0",
       "traceability": ["AC-16", "FR-16", "BR-05"],
-      "title": "Tag-specific integration: finalized absent counts after session close feed threshold rate calculation",
+      "title": "Tag-specific integration: session monitor poll returns updated present/absent counts after close",
       "preconditions": [
         "Real PostgreSQL with Active session and 10 enrolled students; 8 Present, 2 Pending",
         "Student F among Pending with prior 2 Absent of 4 completed sessions in subject (40% before close)",
@@ -244,7 +244,7 @@
         "Assert HTTP 200 and items array contains no notification with userId or payload referencing Student I",
         "GET /api/v1/notifications using Student I session cookie",
         "Assert HTTP 200 and items contain Student I's AbsenceThresholdWarning only",
-        "Attempt GET /api/v1/notifications/:studentINotificationId/read as Student H",
+        "Attempt PATCH /api/v1/notifications/:studentINotificationId/read as Student H",
         "Assert HTTP 403 Forbidden; Student I notification readAt remains null"
       ],
       "expected": "Notifications scoped to authenticated user; students cannot read or mark peer absence warnings per notification:read (self)",
@@ -378,7 +378,7 @@
       "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["AC-16", "FR-16", "BR-05", "NFR-08"],
-      "title": "Tag-specific browser-journey: instructor session detail reflects finalized counts within 5 seconds after close before notification",
+      "title": "Tag-specific browser-journey: instructor monitor dashboard refreshes within 5 seconds after session close",
       "preconditions": [
         "Authenticated Instructor on /sessions/:sessionId Theo dõi or Danh sách tab",
         "Active session with mixed Present and Pending students including threshold-affected student",
@@ -465,6 +465,55 @@
         "Assert AbsenceThresholdWarning notification created because 20% > 15% per FR-16 admin-configured threshold"
       ],
       "expected": "FR-16 evaluation uses admin-configured policy threshold from PolicySetting, not hardcoded 20%; notification fires only when rate exceeds configured threshold",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-16-020",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["AC-16", "FR-16", "BR-05"],
+      "title": "Admin configures absence threshold at /admin/policy via AttendancePolicyForm",
+      "preconditions": [
+        "Authenticated TrainingOfficeAdmin with policy:write per roles-permissions §2.2",
+        "FR-16 Should-capability enabled; /admin/policy accessible from admin chrome (Chính sách nav item)",
+        "Default policy absence_threshold_percent = 20 seeded"
+      ],
+      "steps": [
+        "Navigate to /admin/policy from admin hub or Chính sách sidebar item",
+        "Assert AttendancePolicyForm displays Ngưỡng vắng (%) field with default 20 and helper text per forms-validation §4.9",
+        "Change threshold input to 25",
+        "Click Lưu chính sách and assert success toast appears",
+        "Verify persisted value via GET /api/v1/policy/absence-threshold or form reload shows 25",
+        "Restore threshold to 20 for test isolation"
+      ],
+      "expected": "User flows §11 policy configuration satisfied: admin saves absence threshold at /admin/policy; persisted value drives BR-05 evaluation on next session close",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-16-021",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": ["AC-16", "FR-16", "BR-05"],
+      "title": "AttendanceManuallyEdited triggers threshold recalculation with Excused excluded from numerator",
+      "preconditions": [
+        "Real PostgreSQL with Student P: 3 Absent of 5 completed Closed sessions in TEST-102 (60% unexcused rate)",
+        "AbsenceThresholdWarning notification already created for Student P in TEST-102",
+        "One Absent attendance record on a Closed session within instructor 24-hour edit window",
+        "AttendanceManuallyEdited event consumer wired per main-workflows §8"
+      ],
+      "steps": [
+        "PATCH /api/v1/attendance/:recordId changing one Absent record to Excused with note (≥10 characters per validation §3.8)",
+        "Assert HTTP 200 and attendance record status Excused with audit log entry",
+        "Await NotificationService threshold re-evaluation triggered by AttendanceManuallyEdited event",
+        "Assert unexcusedAbsenceCount recalculated as 2 Absent of 5 completed sessions (Excused excluded per AC-16b)",
+        "Query notifications for Student P and assert payload absenceRate = 0.40 and unexcusedAbsenceCount = 2 per domain model §4.13",
+        "Assert assigned instructor notification payload reflects same updated rate and counts"
+      ],
+      "expected": "WF-06 §8: manual attendance edit triggers absence threshold recalculation; AC-16b Excused exclusion applied on post-edit evaluation",
       "edgeCase": false
     }
   ]

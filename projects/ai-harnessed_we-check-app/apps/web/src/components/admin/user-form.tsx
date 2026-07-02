@@ -1,4 +1,5 @@
 import { UserRole, type UserRole as UserRoleType } from "@wecheck/domain";
+import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -82,6 +83,7 @@ export interface UserFormProps {
 /** FR-01 / AC-01 / NFR-11 — provision and edit user accounts */
 export function UserForm({ mode, user, onSaved }: UserFormProps) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const [values, setValues] = useState<UserFormValues>(() =>
     user
       ? {
@@ -188,6 +190,7 @@ export function UserForm({ mode, user, onSaved }: UserFormProps) {
       toast.success(userCopy.createSuccess);
       onSaved?.(result.data);
       navigate("/admin/users");
+      void queryClient.invalidateQueries({ queryKey: ["users"] });
       return;
     }
 
@@ -221,6 +224,7 @@ export function UserForm({ mode, user, onSaved }: UserFormProps) {
     toast.success(userCopy.saveSuccess);
     onSaved?.(result.data);
     navigate("/admin/users");
+    void queryClient.invalidateQueries({ queryKey: ["users"] });
   }
 
   return (

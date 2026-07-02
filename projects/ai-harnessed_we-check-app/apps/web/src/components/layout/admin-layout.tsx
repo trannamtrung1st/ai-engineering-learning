@@ -23,7 +23,9 @@ import {
   canAccessAdminShell,
   getAdminForbiddenDescription,
 } from "@/lib/admin-route-access";
+import { getAdminBreadcrumbItems } from "@/lib/admin-breadcrumb";
 import { appCopy } from "@/lib/copy/status-labels";
+import { logoutAuth } from "@/lib/auth-session";
 
 const adminNavIcons = {
   "/admin": Home,
@@ -47,7 +49,13 @@ export function AdminLayout() {
   if (!canAccessAdminShell(user.role, pathname)) {
     if (user.role === UserRole.Student) {
       return (
-        <StudentShell displayName={user.displayName} pathname={pathname}>
+        <StudentShell
+          displayName={user.displayName}
+          email={user.email}
+          institutionalId={user.institutionalId}
+          onLogout={logoutAuth}
+          pathname={pathname}
+        >
           <ForbiddenPage homeTo={getRoleHome(user.role)} />
         </StudentShell>
       );
@@ -77,7 +85,13 @@ export function AdminLayout() {
               { label: "Danh sách lớp" },
             ]}
           />
-          <UserMenu displayName={user.displayName} role={UserRole.Instructor} />
+          <UserMenu
+            displayName={user.displayName}
+            email={user.email}
+            institutionalId={user.institutionalId}
+            role={UserRole.Instructor}
+            onLogout={logoutAuth}
+          />
         </header>
         <main id="main-content" className="flex-1">
           <PageContent variant="wide">
@@ -148,14 +162,15 @@ export function AdminLayout() {
             >
               <Menu className="h-5 w-5" />
             </IconButton>
-            <Breadcrumb
-              items={[
-                { label: appCopy.adminSection, to: "/admin" },
-                { label: "Bảng điều khiển" },
-              ]}
-            />
+            <Breadcrumb items={getAdminBreadcrumbItems(pathname)} />
           </div>
-          <UserMenu displayName={user.displayName} role={UserRole.TrainingOfficeAdmin} />
+          <UserMenu
+            displayName={user.displayName}
+            email={user.email}
+            institutionalId={user.institutionalId}
+            role={UserRole.TrainingOfficeAdmin}
+            onLogout={logoutAuth}
+          />
         </header>
         <main id="main-content" className="flex-1">
           <PageContent variant="wide">

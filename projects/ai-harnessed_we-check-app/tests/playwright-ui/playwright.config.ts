@@ -3,6 +3,7 @@ import { defineConfig, devices } from "@playwright/test";
 const WEB_BASE_URL = process.env.PLAYWRIGHT_BASE_URL ?? "http://localhost:3007";
 
 export default defineConfig({
+  globalSetup: "./global-setup.ts",
   testDir: "./scenarios",
   testMatch: "**/*.spec.ts",
   fullyParallel: false,
@@ -24,7 +25,7 @@ export default defineConfig({
     },
     {
       name: "mobile",
-      use: { ...devices["iPhone 12"] },
+      use: { ...devices["Pixel 5"] },
     },
   ],
 });

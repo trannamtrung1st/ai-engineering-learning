@@ -1,0 +1,204 @@
+[2026-07-02T05:52:03Z][web]  ⨯ Module not found: Error: Can't resolve 'next-flight-client-entry-loader' in '/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/apps/web'
+[2026-07-02T05:53:03Z][web] Error: ENOENT: no such file or directory, scandir '/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/apps/web/src/app'
+[2026-07-02T05:53:03Z][web]     at async Object.readdir (node:internal/fs/promises:955:18)
+[2026-07-02T05:53:03Z][web]     at async /Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/node_modules/next/dist/lib/recursive-readdir.js:39:29
+[2026-07-02T05:53:03Z][web]     at async Promise.all (index 0)
+[2026-07-02T05:53:03Z][web]     at async recursiveReadDir (/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/node_modules/next/dist/lib/recursive-readdir.js:32:25)
+[2026-07-02T05:53:03Z][web]     at async /Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/node_modules/next/dist/server/future/route-matcher-providers/dev/helpers/file-reader/batched-file-reader.js:71:25
+[2026-07-02T05:53:03Z][web]     at async Promise.all (index 0)
+[2026-07-02T05:53:03Z][web]     at async BatchedFileReader.load (/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/node_modules/next/dist/server/future/route-matcher-providers/dev/helpers/file-reader/batched-file-reader.js:67:25)
+[2026-07-02T05:53:03Z][web]     at async /Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/node_modules/next/dist/server/future/route-matcher-providers/dev/helpers/file-reader/batched-file-reader.js:41:26 {
+[2026-07-02T05:53:03Z][web]   errno: -2,
+[2026-07-02T05:53:03Z][web]   code: 'ENOENT',
+[2026-07-02T05:53:03Z][web]   syscall: 'scandir',
+[2026-07-02T05:53:03Z][web]   path: '/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/apps/web/src/app'
+[2026-07-02T05:53:03Z][web] }
+[2026-07-02T05:53:03Z][web]  ⨯ unhandledRejection: Error: ENOENT: no such file or directory, scandir '/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/apps/web/src/app'
+[2026-07-02T05:53:03Z][web]     at async Object.readdir (node:internal/fs/promises:955:18)
+[2026-07-02T05:53:03Z][web]     at async /Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/node_modules/next/dist/lib/recursive-readdir.js:39:29
+[2026-07-02T05:53:03Z][web]     at async Promise.all (index 0)
+[2026-07-02T05:53:03Z][web]     at async recursiveReadDir (/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/node_modules/next/dist/lib/recursive-readdir.js:32:25)
+[2026-07-02T05:53:03Z][web]     at async /Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/node_modules/next/dist/server/future/route-matcher-providers/dev/helpers/file-reader/batched-file-reader.js:71:25
+[2026-07-02T05:53:03Z][web]     at async Promise.all (index 0)
+[2026-07-02T05:53:03Z][web]     at async BatchedFileReader.load (/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/node_modules/next/dist/server/future/route-matcher-providers/dev/helpers/file-reader/batched-file-reader.js:67:25)
+[2026-07-02T05:53:03Z][web]     at async /Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/node_modules/next/dist/server/future/route-matcher-providers/dev/helpers/file-reader/batched-file-reader.js:41:26 {
+[2026-07-02T05:53:03Z][web]   errno: -2,
+[2026-07-02T05:53:03Z][web]   code: 'ENOENT',
+[2026-07-02T05:53:03Z][web]   syscall: 'scandir',
+[2026-07-02T05:53:03Z][web]   path: '/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/apps/web/src/app'
+[2026-07-02T05:53:03Z][web] }
+[2026-07-02T05:53:03Z][web]  ⨯ unhandledRejection: Error: ENOENT: no such file or directory, scandir '/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/apps/web/src/app'
+[2026-07-02T05:53:03Z][web]     at async Object.readdir (node:internal/fs/promises:955:18)
+[2026-07-02T05:53:03Z][web]     at async /Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/node_modules/next/dist/lib/recursive-readdir.js:39:29
+[2026-07-02T05:53:03Z][web]     at async Promise.all (index 0)
+[2026-07-02T05:53:03Z][web]     at async recursiveReadDir (/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/node_modules/next/dist/lib/recursive-readdir.js:32:25)
+[2026-07-02T05:53:03Z][web]     at async /Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/node_modules/next/dist/server/future/route-matcher-providers/dev/helpers/file-reader/batched-file-reader.js:71:25
+[2026-07-02T05:53:03Z][web]     at async Promise.all (index 0)
+[2026-07-02T05:53:03Z][web]     at async BatchedFileReader.load (/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/node_modules/next/dist/server/future/route-matcher-providers/dev/helpers/file-reader/batched-file-reader.js:67:25)
+[2026-07-02T05:53:03Z][web]     at async /Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/node_modules/next/dist/server/future/route-matcher-providers/dev/helpers/file-reader/batched-file-reader.js:41:26 {
+[2026-07-02T05:53:03Z][web]   errno: -2,
+[2026-07-02T05:53:03Z][web]   code: 'ENOENT',
+[2026-07-02T05:53:03Z][web]   syscall: 'scandir',
+[2026-07-02T05:53:03Z][web]   path: '/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/apps/web/src/app'
+[2026-07-02T05:53:03Z][web] }
+[2026-07-02T05:54:20Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T05:54:20Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:20Z][web] note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+[2026-07-02T05:54:20Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T05:54:20Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:20Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T05:54:20Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:20Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T05:54:20Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:20Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T05:54:20Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:20Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T05:54:20Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:20Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T05:54:20Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:20Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T05:54:20Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:20Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T05:54:20Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:20Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T05:54:20Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:20Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T05:54:20Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:20Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T05:54:20Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:20Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T05:54:20Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:20Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T05:54:20Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:20Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T05:54:20Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:20Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T05:54:20Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:20Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T05:54:20Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:20Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T05:54:20Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:20Z][web]  ⨯ ../../node_modules/next/dist/client/next-dev.js
+[2026-07-02T05:54:20Z][web] Error: failed to process called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:21Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T05:54:21Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:21Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T05:54:21Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:21Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T05:54:21Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:21Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T05:54:21Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:21Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T05:54:21Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:21Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T05:54:21Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:21Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T05:54:21Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:21Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T05:54:21Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:21Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T05:54:21Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:21Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T05:54:21Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:21Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T05:54:21Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:21Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T05:54:21Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:21Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T05:54:21Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:21Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T05:54:21Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:21Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T05:54:21Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:21Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T05:54:21Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:21Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T05:54:21Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:21Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T05:54:21Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T05:54:21Z][web]  ⨯ ../../node_modules/next/dist/client/next-dev.js
+[2026-07-02T05:54:21Z][web] Error: failed to process called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:50:29Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rsthread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T06:50:29Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:50:29Z][web] :826:31:
+[2026-07-02T06:50:29Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:50:29Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T06:50:29Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:50:29Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T06:50:29Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:50:29Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T06:50:29Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:50:29Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T06:50:29Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:50:29Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T06:50:29Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:50:29Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T06:50:29Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:50:29Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T06:50:29Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:50:29Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T06:50:29Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:50:29Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T06:50:29Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:50:29Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T06:50:29Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:50:29Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T06:50:29Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:50:29Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T06:50:29Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:50:29Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T06:50:29Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:50:29Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T06:50:29Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:50:29Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T06:50:29Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:50:29Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T06:50:29Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:50:29Z][web]  ⨯ ../../node_modules/next/dist/client/next-dev.js
+[2026-07-02T06:50:29Z][web] Error: failed to process called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:52:04Z][db] db-1  | 2026-07-02 06:52:04.872 UTC [1] LOG:  received fast shutdown request
+[2026-07-02T06:52:04Z][db] db-1  | 2026-07-02 06:52:04.874 UTC [1] LOG:  aborting any active transactions
+[2026-07-02T06:52:04Z][db] db-1  | 2026-07-02 06:52:04.883 UTC [1] LOG:  background worker "logical replication launcher" (PID 32) exited with exit code 1
+[2026-07-02T06:52:04Z][db] db-1  | 2026-07-02 06:52:04.884 UTC [27] LOG:  shutting down
+[2026-07-02T06:52:04Z][db] db-1  | 2026-07-02 06:52:04.886 UTC [27] LOG:  checkpoint starting: shutdown immediate
+[2026-07-02T06:52:04Z][db] db-1  | 2026-07-02 06:52:04.920 UTC [27] LOG:  checkpoint complete: wrote 0 buffers (0.0%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.015 s, sync=0.001 s, total=0.037 s; sync files=0, longest=0.000 s, average=0.000 s; distance=0 kB, estimate=220 kB
+[2026-07-02T06:52:04Z][db] db-1  | 2026-07-02 06:52:04.931 UTC [1] LOG:  database system is shut down
+[2026-07-02T06:52:05Z][db] [Kdb-1 exited with code 0
+[2026-07-02T06:55:06Z][web] thread 'thread 'libuv-workerlibuv-worker' panicked at ' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T06:55:06Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:55:06Z][web] /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T06:55:06Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:55:06Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T06:55:06Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:55:06Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T06:55:06Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:55:06Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T06:55:06Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:55:06Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T06:55:06Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:55:06Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T06:55:06Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:55:06Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T06:55:06Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:55:06Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T06:55:06Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:55:06Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826thread ':libuv-worker31' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T06:55:06Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:55:06Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T06:55:06Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:55:06Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T06:55:06Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:55:06Z][web] :
+[2026-07-02T06:55:06Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:55:06Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rsthread ':826:31libuv-worker:
+[2026-07-02T06:55:06Z][web] ' panicked at called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }/Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs
+[2026-07-02T06:55:06Z][web] :826:31:
+[2026-07-02T06:55:06Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:55:06Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T06:55:06Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:55:06Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T06:55:06Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:55:06Z][web] thread 'libuv-worker' panicked at /Users/geist/.cargo/registry/src/index.crates.io-6f17d22bba15001f/swc-0.273.24/src/config/mod.rs:826:31:
+[2026-07-02T06:55:06Z][web] called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }
+[2026-07-02T06:55:06Z][web]  ⨯ ../../node_modules/next/dist/client/next-dev.js
+[2026-07-02T06:55:06Z][web] Error: failed to process called `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: "No such file or directory" }

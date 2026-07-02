@@ -1,8 +1,8 @@
 {
   "productItemId": "BR-07",
   "version": 1,
-  "docFingerprint": "sha256:7fa6e5f0fa1fb178b99256355a681409f9ca3b3a224ea6b785c745d780059c2e",
-  "generatedAt": "2026-06-29T18:27:25Z",
+  "docFingerprint": "sha256:2f4339d78ef523c323a8974779165acbd0a71755d9c7e3df622be9ab3506c35c",
+  "generatedAt": "2026-06-30T14:15:00Z",
   "cases": [
     {
       "id": "TC-BR-07-001",
@@ -20,10 +20,10 @@
       "steps": [
         "POST /api/v1/sessions/:sessionId/open with Instructor session cookie",
         "Assert HTTP status 422",
-        "Assert response errorCode RoomGpsRequired with Vietnamese message requiring room GPS configuration",
+        "Assert response errorCode RoomGpsRequired with message Vui lòng cấu hình tọa độ GPS phòng học trước khi mở buổi per error-handling §4.3",
         "GET /api/v1/sessions/:sessionId and assert status remains Draft with openedAt null"
       ],
-      "expected": "Draft to Active transition blocked per BR-07; session status unchanged; error surfaces RoomGpsRequired per AC-04b",
+      "expected": "Draft to Active transition blocked per BR-07; session status unchanged; error surfaces RoomGpsRequired per AC-04b and validation-rules §4",
       "edgeCase": false
     },
     {
@@ -148,10 +148,10 @@
       "steps": [
         "Send POST /api/v1/sessions/:sessionId/open with Instructor session",
         "Assert HTTP status 422",
-        "Assert response body contains errorCode RoomGpsRequired",
+        "Assert response body contains errorCode RoomGpsRequired and message Vui lòng cấu hình tọa độ GPS phòng học trước khi mở buổi",
         "Assert response envelope matches validation error contract per API design §6.3"
       ],
-      "expected": "HTTP 422 with RoomGpsRequired errorCode per validation-rules §4 BR-07 mapping",
+      "expected": "HTTP 422 with RoomGpsRequired errorCode and localized message per error-handling §4.3 and validation-rules §4 BR-07 mapping",
       "edgeCase": false
     },
     {
@@ -310,12 +310,12 @@
         "Instructor navigates to Draft session detail settings tab (Cài đặt) without room GPS configured"
       ],
       "steps": [
-        "Observe Mở buổi học (open session) action button state",
+        "Observe Mở buổi học (open session) action button state on Cài đặt tab",
         "Verify button is disabled or blocked from submission",
-        "Verify inline error message requires room GPS configuration before opening check-in",
+        "Verify inline Alert component displays GPS configuration required message per ui-states §7.5 blocked-open state",
         "Attempt to click open action and confirm session status badge remains Nháp (Draft)"
       ],
-      "expected": "Open session UI blocked per BR-07; Vietnamese inline message prompts GPS configuration; session remains Draft with no check-in window",
+      "expected": "Open session UI blocked per BR-07 and AC-04b; inline Alert on Cài đặt tab prompts GPS configuration; session remains Draft with no check-in window",
       "edgeCase": true
     },
     {

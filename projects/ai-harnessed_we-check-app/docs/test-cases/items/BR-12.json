@@ -1,8 +1,8 @@
 {
   "productItemId": "BR-12",
   "version": 1,
-  "docFingerprint": "sha256:7fa6e5f0fa1fb178b99256355a681409f9ca3b3a224ea6b785c745d780059c2e",
-  "generatedAt": "2026-06-29T18:38:59Z",
+  "docFingerprint": "sha256:2f4339d78ef523c323a8974779165acbd0a71755d9c7e3df622be9ab3506c35c",
+  "generatedAt": "2026-06-30T10:44:20Z",
   "cases": [
     {
       "id": "TC-BR-12-001",
@@ -152,19 +152,20 @@
       "technique": "http-contract",
       "priority": "P0",
       "traceability": ["BR-12"],
-      "title": "POST /check-in with gpsAvailable false flag returns 400 GpsDisabled when client signals denial",
+      "title": "POST /check-in with client GPS flag false returns 400 GpsDisabled before radius check",
       "preconditions": [
         "Authenticated enrolled Student session",
         "Active session with Valid QrToken",
-        "API accepts optional client GPS availability flag per check-in DTO extension"
+        "Client GPS availability flag per validation-rules §5.1 step 11 (Client GPS flag / missing coords)"
       ],
       "steps": [
-        "POST /api/v1/check-in with body { tokenId, gpsAvailable: false } (no coordinates)",
+        "POST /api/v1/check-in with body signaling GPS unavailable via client flag (no valid coordinates)",
         "Assert HTTP status 400 outcome GpsDisabled",
         "Assert errorCode GpsDisabled in response envelope",
-        "Contrast: same request with gpsAvailable true and valid coordinates returns 200 Success"
+        "Assert message Vui lòng bật GPS và cấp quyền định vị để điểm danh per AC-08c",
+        "Contrast: same request with valid in-radius coordinates returns 200 Success"
       ],
-      "expected": "BR-12 server-side guard rejects when client explicitly signals geolocation unavailable before radius check",
+      "expected": "BR-12 pipeline step 11 rejects when client signals geolocation unavailable before step 13 radius check per validation-rules §5.1",
       "edgeCase": true
     },
     {
@@ -184,7 +185,7 @@
         "POST /api/v1/check-in with tokenId only (no coordinates)",
         "Assert outcome GpsDisabled (not OutOfRadius)",
         "Query check_in_attempts and assert outcome GpsDisabled with distance_meters NULL",
-        "Verify pipeline order per validation-rules §5.1 steps 11 (BR-12) before 13 (BR-02) and business rules §8 matrix order 6 before 8"
+        "Verify pipeline order per validation-rules §5.1 steps 11 (BR-12) before 12 (spoof) and 13 (BR-02); business rules §8 server matrix order 6 before 8"
       ],
       "expected": "BR-12 evaluated before BR-02 radius check; missing GPS yields GpsDisabled not OutOfRadius even when hypothetical coords would fail radius",
       "edgeCase": true
@@ -205,8 +206,8 @@
       "steps": [
         "POST /api/v1/check-in as same student with tokenId only (no coordinates)",
         "Assert HTTP status 409 outcome DuplicateCheckIn (not GpsDisabled)",
-        "Assert errorCode DuplicateCheckIn per BR-04 pipeline step 10 precedence",
-        "Verify BR-12 step 11 not reached when duplicate detected at step 10"
+        "Assert errorCode DuplicateCheckIn per BR-04 validation-rules §5.1 step 10 precedence",
+        "Verify BR-12 step 11 not reached when duplicate detected at step 10; business rules §8 matrix order 5 (BR-04) before 6 (BR-12)"
       ],
       "expected": "BR-12 applies only when prior pipeline steps pass; DuplicateCheckIn takes precedence over GpsDisabled for already-Present student",
       "edgeCase": true

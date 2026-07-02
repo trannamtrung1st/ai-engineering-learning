@@ -82,11 +82,35 @@ export async function fetchUsers(
   return { ok: true, data: res.data };
 }
 
+const USERS_LIST_PAGE_SIZE = 50;
+
+/** Paginate all users and collect institutional IDs for import preview (AC-01). */
+export async function fetchAllInstitutionalIds(): Promise<
+  | { ok: true; data: Set<string> }
+  | { ok: false; status: number; error: ApiErrorBody }
+> {
+  const ids = new Set<string>();
+  let cursor: string | undefined;
+
+  do {
+    const result = await fetchUsers({ limit: USERS_LIST_PAGE_SIZE, cursor });
+    if (!result.ok) {
+      return { ok: false, status: result.status, error: result.error };
+    }
+    for (const user of result.data.items) {
+      ids.add(user.institutionalId);
+    }
+    cursor = result.data.nextCursor ?? undefined;
+  } while (cursor);
+
+  return { ok: true, data: ids };
+}
+
 /** Resolve a user by id from paginated list (no GET /users/:id on API). */
 export async function fetchUserById(userId: string): Promise<UserDto | null> {
   let cursor: string | undefined;
   do {
-    const result = await fetchUsers({ limit: 100, cursor });
+    const result = await fetchUsers({ limit: USERS_LIST_PAGE_SIZE, cursor });
     if (!result.ok) return null;
     const match = result.data.items.find((item) => item.id === userId);
     if (match) return match;

@@ -113,6 +113,25 @@ if [[ "$check_status" -ne 0 ]]; then
   exit 1
 fi
 
+# --- Mechanical scope gate ---
+aih_step "Running slice scope gate"
+set +e
+scope_out="$(./ai-harness/scripts/check-slice-scope.sh "$SLICE_ID" 2>&1)"
+scope_status=$?
+set -e
+echo "$scope_out"
+if [[ "$scope_status" -ne 0 ]]; then
+  violating="$(echo "$scope_out" | grep -v '^\[' | grep -v 'slice scope' | grep -v '^\s*$' | tail -n +1 || true)"
+  append_guardrail "$SLICE_ID" "Scope gate failed — out-of-scope files: ${violating:-see check output}"
+  append_progress "$SLICE_ID" "scope_failed"
+  exit 1
+fi
+
+# --- UI screenshot evidence (warn-only) ---
+set +e
+./ai-harness/scripts/check-ui-screenshot-evidence.sh "$SLICE_ID" 2>&1
+set -e
+
 # --- Browser functional test (Playwright MCP) ---
 if [[ "${AIH_SKIP_BROWSER_TEST:-}" != "1" ]]; then
   aih_step "Running browser functional test (Playwright MCP)"

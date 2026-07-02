@@ -59,6 +59,9 @@ describe("identity-auth validation (AC-01, AC-02, FR-01, FR-02, NFR-14)", () => 
 
     const good = validateInstitutionalId("SV2026001");
     assert.equal(good.ok, true);
+
+    const underscore = validateInstitutionalId("SV_2026.001");
+    assert.equal(underscore.ok, true);
   });
 
   it("validateReturnUrl blocks open redirects (VAL-09)", () => {

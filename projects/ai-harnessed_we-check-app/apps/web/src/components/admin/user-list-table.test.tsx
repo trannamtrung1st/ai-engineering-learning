@@ -13,6 +13,7 @@ vi.mock("@/lib/users-api", () => ({
 }));
 
 import { updateUser } from "@/lib/users-api";
+import { sortUsers } from "@/lib/users-list-filters";
 import { toast } from "sonner";
 
 const activeStudent = {
@@ -94,5 +95,71 @@ describe("UserListTable (FR-01, AC-01, NFR-11)", () => {
     expect(screen.getByText("SV2026001")).toBeInTheDocument();
     expect(screen.getByText("student@example.edu.vn")).toBeInTheDocument();
     expect(screen.getByText("Sinh viên")).toBeInTheDocument();
+  });
+
+  it("TC-AC-01-018: column header sort toggles aria-sort", () => {
+    const onSortChange = vi.fn();
+    render(
+      <MemoryRouter>
+        <UserListTable
+          users={[activeStudent]}
+          sortColumn="displayName"
+          sortDirection="asc"
+          onSortChange={onSortChange}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByTestId("user-sort-display-name")).toHaveAttribute(
+      "aria-sort",
+      "ascending",
+    );
+
+    fireEvent.click(screen.getByTestId("user-sort-email"));
+    expect(onSortChange).toHaveBeenCalledWith("email", "asc");
+  });
+
+  it("TC-AC-01-018: column sort reorders rows in DOM", () => {
+    const users = [
+      activeStudent,
+      {
+        ...activeStudent,
+        id: "user-3",
+        institutionalId: "SV2026003",
+        displayName: "An Văn C",
+        email: "c@example.edu.vn",
+      },
+    ];
+    const { rerender } = render(
+      <MemoryRouter>
+        <UserListTable
+          users={sortUsers(users, "institutionalId", "asc")}
+          sortColumn="institutionalId"
+          sortDirection="asc"
+          onSortChange={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+
+    const rowsAsc = screen.getAllByRole("row").slice(1);
+    expect(rowsAsc[0]).toHaveAttribute("data-testid", "user-row-SV2026001");
+
+    rerender(
+      <MemoryRouter>
+        <UserListTable
+          users={sortUsers(users, "institutionalId", "desc")}
+          sortColumn="institutionalId"
+          sortDirection="desc"
+          onSortChange={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+
+    const rowsDesc = screen.getAllByRole("row").slice(1);
+    expect(rowsDesc[0]).toHaveAttribute("data-testid", "user-row-SV2026003");
+    expect(screen.getByTestId("user-list-sort-state")).toHaveAttribute(
+      "data-sort-column",
+      "institutionalId",
+    );
   });
 });

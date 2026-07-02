@@ -1,8 +1,8 @@
 {
   "productItemId": "BR-13",
   "version": 1,
-  "docFingerprint": "sha256:2d41baeef4c27d694f5ba150a4803d36051ecf63e3905e4a87cea58ce3212102",
-  "generatedAt": "2026-06-29T21:00:00.000Z",
+  "docFingerprint": "sha256:2f4339d78ef523c323a8974779165acbd0a71755d9c7e3df622be9ab3506c35c",
+  "generatedAt": "2026-07-01T02:23:49.000Z",
   "cases": [
     {
       "id": "TC-BR-13-001",
@@ -11,9 +11,10 @@
       "technique": "scenario-matrix",
       "priority": "P0",
       "traceability": ["BR-13", "FR-17", "AC-17"],
-      "title": "TS-21d: Empty deployment bootstrap — needsSetup true then POST first-admin creates single TrainingOfficeAdmin",
+      "title": "TS-21d: Bootstrap first admin — POST /setup/first-admin on empty DB creates TrainingOfficeAdmin and session",
       "preconditions": [
         "PostgreSQL database with User.count = 0 (no seed users)",
+        "SEED_ENABLED=false or equivalent so no seed users exist",
         "API running at /api/v1 with no session cookie"
       ],
       "steps": [
@@ -189,19 +190,20 @@
       "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["BR-13", "FR-17", "AC-17"],
-      "title": "AC-17d: Duplicate email or institutionalId on setup returns validation error; no user created",
+      "title": "AC-17d: Sequential duplicate email or institutionalId on setup returns 422 ValidationFailed; no user created",
       "preconditions": [
         "Empty database (User.count = 0); needsSetup true",
-        "Setup payload with duplicate email or institutionalId"
+        "Valid first setup payload prepared; duplicate-field variants for email and institutionalId"
       ],
       "steps": [
-        "POST /api/v1/setup/first-admin with duplicate email and valid other fields",
-        "Assert HTTP 422 ValidationFailed with duplicate email field detail",
-        "Assert no user row created in users table",
-        "POST with duplicate institutionalId and unique email",
-        "Assert HTTP 422 with duplicate institutionalId detail and User.count remains 0"
+        "POST /api/v1/setup/first-admin with duplicate email and otherwise valid fields",
+        "Assert HTTP 422 ValidationFailed with duplicate email field detail and Vietnamese message per forms-validation-ux §4.1a",
+        "Assert users table count remains 0 and GET /api/v1/setup/status returns needsSetup true",
+        "POST /api/v1/setup/first-admin with duplicate institutionalId and unique email",
+        "Assert HTTP 422 ValidationFailed with duplicate institutionalId field detail",
+        "Assert users table count remains 0"
       ],
-      "expected": "AC-17d boundary: duplicate email or institutional ID on bootstrap rejected with field validation; deployment remains in needsSetup true state",
+      "expected": "AC-17d boundary: duplicate email or institutional ID on bootstrap rejected with field validation; deployment remains in needsSetup true state per BR-13",
       "edgeCase": true
     },
     {
@@ -259,7 +261,7 @@
       "title": "Parallel SetupService.createFirstAdmin calls on empty DB create at most one admin",
       "preconditions": [
         "Empty PostgreSQL database",
-        "SetupService with transactional User.count guard and row-level or advisory lock"
+        "SetupService with transactional User.count guard and pg_advisory_xact_lock or equivalent serialization"
       ],
       "steps": [
         "Fire parallel SetupService.createFirstAdmin invocations with distinct valid DTOs",
@@ -286,8 +288,9 @@
       "steps": [
         "Navigate browser to / (root route)",
         "Assert URL redirects to /setup per BR-13 route guard",
-        "Navigate to /login and assert redirect to /setup (or login link hidden/disabled on /setup)",
+        "Navigate to /login and assert redirect to /setup (login unavailable while needsSetup true per BR-13)",
         "Navigate to /admin/users and assert redirect to /setup",
+        "Assert login link to /login is hidden or disabled in AuthLayout per forms-validation-ux §4.1a",
         "Assert SetupAdminForm visible with Vietnamese fields (Mã cán bộ, Họ và tên, Email, Mật khẩu)"
       ],
       "expected": "BR-13 outcome: while User.count = 0 all routes except /setup redirect to /setup; login unavailable until bootstrap completes per AC-17a",
@@ -303,12 +306,12 @@
       "title": "Successful setup form submission establishes session and redirects to /admin hub",
       "preconditions": [
         "Web app with empty database (needsSetup true)",
-        "Valid setup credentials prepared"
+        "Valid setup credentials prepared per forms-validation-ux §4.1a"
       ],
       "steps": [
         "Navigate browser to /setup",
         "Fill institutionalId, displayName, email, and password fields with valid values",
-        "Submit SetupAdminForm",
+        "Submit SetupAdminForm (primary button Tạo tài khoản)",
         "Assert POST /api/v1/setup/first-admin succeeds (network tab or outcome UI)",
         "Assert browser navigates to /admin hub per BR-13 outcome",
         "Assert AdminLayout chrome visible (e.g. Trang chủ sidebar item)"
@@ -346,20 +349,110 @@
       "technique": "browser-journey",
       "priority": "P0",
       "traceability": ["BR-13", "FR-17", "AC-17"],
-      "title": "After bootstrap /setup unavailable — redirects to login; root no longer routes to setup",
+      "title": "After bootstrap /setup unavailable — redirects or links to login; root shows route discovery not setup gate",
       "preconditions": [
         "Bootstrap already complete (needsSetup false)",
         "Browser has no active session"
       ],
       "steps": [
         "Navigate browser directly to /setup",
-        "Assert redirect to /login OR forbidden state without SetupAdminForm",
-        "Navigate to / from unauthenticated state",
-        "Assert redirect to /login (not /setup) when needsSetup false",
-        "Assert no setup form fields rendered on any attempted route"
+        "Assert redirect to /login OR forbidden/unavailable state without SetupAdminForm",
+        "If page remains on /setup without redirect, assert visible link to /login per FR-18 auth routes and AC-17c",
+        "Assert no institutional ID / password setup fields rendered",
+        "Navigate browser to / from unauthenticated state when needsSetup false",
+        "Assert URL stays at / (not /setup) and SetupAdminForm is not shown",
+        "Assert RouteDiscoveryPanel visible with quick links labeled Đăng nhập, Điểm danh, Buổi học, Quản trị per AC-18f"
       ],
-      "expected": "AC-17c and BR-13 post-bootstrap outcome: /setup returns 403 or redirects to login; repeat bootstrap unavailable in UI",
+      "expected": "AC-17c and BR-13 post-bootstrap outcome: /setup not available after bootstrap; visitor directed to login flow; root no longer gates to /setup and shows route discovery per AC-18f",
       "edgeCase": false
+    },
+    {
+      "id": "TC-BR-13-017",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-13", "FR-17", "AC-17"],
+      "title": "AC-17d: Concurrent setup POST with identical institutionalId yields single admin and validation or bootstrap-closed error",
+      "preconditions": [
+        "Empty database (User.count = 0); needsSetup true",
+        "Two payloads sharing institutionalId ADMIN001 but different email values (admin1@example.edu.vn, admin2@example.edu.vn)"
+      ],
+      "steps": [
+        "Fire two parallel POST /api/v1/setup/first-admin requests with identical institutionalId and distinct emails on empty DB",
+        "Assert exactly one HTTP 201 Created response with wecheck_session cookie",
+        "Assert the other response is HTTP 422 ValidationFailed with duplicate institutionalId field detail OR HTTP 403 SetupAlreadyComplete if first transaction committed",
+        "Query users table and assert User.count === 1",
+        "GET /api/v1/setup/status and assert needsSetup false"
+      ],
+      "expected": "AC-17d boundary under concurrency: duplicate institutional ID on bootstrap rejected; at most one TrainingOfficeAdmin persisted per BR-13 exactly-one invariant",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-13-018",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-13", "FR-17", "AC-17"],
+      "title": "AC-17d browser: SetupAdminForm shows inline Vietnamese errors when duplicate email submission rejected",
+      "preconditions": [
+        "Web app with empty database (needsSetup true)",
+        "Two browser contexts (tabs) with no session cookie"
+      ],
+      "steps": [
+        "Open /setup in both browser contexts",
+        "Fill both SetupAdminForms with identical email dup@example.edu.vn and distinct institutionalIds (ADMIN001, ADMIN002) plus valid displayName and password",
+        "Submit Tạo tài khoản in both contexts nearly simultaneously",
+        "Assert exactly one context navigates to /admin hub with session established",
+        "Assert the other context remains on /setup with inline Vietnamese validation error on email field OR bootstrap-closed error message (not a successful redirect)",
+        "Assert GET /api/v1/setup/status returns needsSetup false and users table User.count === 1"
+      ],
+      "expected": "AC-17d UI outcome per forms-validation-ux §4.1a: duplicate email on setup form surfaces inline Vietnamese field error; at most one TrainingOfficeAdmin created per BR-13",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-13-019",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-13", "FR-17"],
+      "title": "POST /setup/first-admin with password below minimum strength returns 422 ValidationFailed",
+      "preconditions": [
+        "Empty database; needsSetup true",
+        "Password shorter than 8 characters per VAL-03 and forms-validation-ux §4.1a"
+      ],
+      "steps": [
+        "POST /api/v1/setup/first-admin with valid institutionalId, displayName, email, and password 'short'",
+        "Assert HTTP 422 ValidationFailed",
+        "Assert response details include password field validation error",
+        "Assert users table count remains 0 and GET /api/v1/setup/status returns needsSetup true"
+      ],
+      "expected": "Bootstrap password boundary enforced: weak password rejected; deployment remains in needsSetup true state per BR-13 condition and validation rules §3.1a",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-13-020",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-13", "FR-17", "AC-17"],
+      "title": "AC-17d: Concurrent setup POST with identical email yields single admin and validation or bootstrap-closed error",
+      "preconditions": [
+        "Empty database (User.count = 0); needsSetup true",
+        "Two payloads sharing email dup@example.edu.vn but different institutionalId values (ADMIN001, ADMIN002)"
+      ],
+      "steps": [
+        "Fire two parallel POST /api/v1/setup/first-admin requests with identical email and distinct institutionalIds on empty DB",
+        "Assert exactly one HTTP 201 Created response with wecheck_session cookie",
+        "Assert the other response is HTTP 422 ValidationFailed with duplicate email field detail OR HTTP 403 SetupAlreadyComplete if first transaction committed",
+        "Query users table and assert User.count === 1",
+        "GET /api/v1/setup/status and assert needsSetup false"
+      ],
+      "expected": "AC-17d boundary under concurrency: duplicate email on bootstrap rejected; at most one TrainingOfficeAdmin persisted per BR-13 exactly-one invariant",
+      "edgeCase": true
     }
   ]
 }

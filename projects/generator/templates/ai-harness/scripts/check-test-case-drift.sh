@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Check doc drift for requirement tags; reset passes on referencing slices
+# Check doc drift for requirement tags; mark index stale (slices reopen after TestGen)
 # Usage: check-test-case-drift.sh [--quiet] [requirementTag]
 set -euo pipefail
 source "$(dirname "$0")/lib/common.sh"
@@ -72,7 +72,7 @@ else
 fi
 
 if [[ "$DRIFT_COUNT" -gt 0 ]]; then
-  echo "==> Doc drift: ${DRIFT_COUNT} requirement tag(s) reset"
+  echo "==> Doc drift: ${DRIFT_COUNT} requirement tag(s) marked stale (run: npm run aih:testgen:loop)"
   exit 1
 fi
 

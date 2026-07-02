@@ -25,6 +25,8 @@
     "aih:loop": "./ai-harness/scripts/ralph-loop.sh",
     "aih:loop:bg": "./ai-harness/scripts/ralph-loop-daemon.sh",
     "aih:loop:stop": "./ai-harness/scripts/ralph-loop-stop.sh",
+    "aih:loop:safe": "./ai-harness/scripts/loop-safe.sh",
+    "aih:status": "./ai-harness/scripts/loop-status.sh",
     "aih:check": "./ai-harness/scripts/run-checks.sh",
     "aih:run-check": "./ai-harness/scripts/run-logged-check.sh",
     "aih:browser-test": "./ai-harness/scripts/run-browser-test.sh",

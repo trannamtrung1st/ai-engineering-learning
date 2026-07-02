@@ -1,8 +1,8 @@
 {
   "productItemId": "NFR-08",
   "version": 1,
-  "docFingerprint": "sha256:0d26880a4e8810f84506707bdccda5daa34c51f30d098691abe2c1b678fecb37",
-  "generatedAt": "2026-06-29T20:15:00Z",
+  "docFingerprint": "sha256:1e05c5e756e7bae838350bc41fd8bdb05f9041145b60c4f1a5161a9b6169369e",
+  "generatedAt": "2026-07-01T02:45:00Z",
   "cases": [
     {
       "id": "TC-NFR-08-001",
@@ -21,14 +21,16 @@
       ],
       "steps": [
         "GET /api/v1/sessions/:sessionId/attendance using Instructor session and record summary.present baseline (3)",
-        "Record T0 at moment POST /api/v1/check-in returns HTTP 200 outcome Success for Student A",
-        "Poll GET /api/v1/sessions/:sessionId/attendance every 500 ms until summary.present === 4 or 5-second timeout elapses",
+        "POST /api/v1/check-in with Student A session, valid tokenId, and in-radius coordinates",
+        "Assert check-in HTTP 200 with outcome Success and attendance status Present",
+        "Record T0 at moment check-in returns Success",
+        "Poll GET /api/v1/sessions/:sessionId/attendance every 1 second until summary.present === 4 or 5-second timeout elapses",
         "Record T1 at first poll response where summary.present incremented to 4",
-        "Assert summary.pending decremented by 1",
+        "Assert summary.pending decremented by 1 and summary.enrolled unchanged (Present vs total enrolled per AC-15a)",
         "Assert T1 minus T0 ≤ 5000 ms per NFR-08 target",
         "Assert no manual page reload or cache-bypass header required between T0 and T1"
       ],
-      "expected": "Testing-plan §3 TS-35 satisfied: delay between successful check-in and updated Present count on instructor dashboard ≤ 5 seconds without manual reload per NFR-08 and AC-15a",
+      "expected": "Testing-plan §3 TS-35 satisfied: delay between successful check-in and updated Present count on instructor dashboard ≤ 5 seconds without manual reload per NFR-08, AC-15a, and FR-15 (testing-plan matrix lists AC-17 — acceptance authority is AC-15)",
       "edgeCase": false
     },
     {
@@ -76,7 +78,7 @@
         "Within 5 seconds, send GET /api/v1/sessions/:sessionId/attendance with Instructor session cookie",
         "Assert HTTP status 200 OK and Content-Type application/json",
         "Assert response summary.present === baseline + 1",
-        "Assert response body contains sessionId, summary object with enrolled/present/pending fields, and records array per API design §7.1",
+        "Assert response body contains sessionId, summary object with enrolled, present, pending, absent, excused, and rejected fields, and records array per API design §7.1",
         "Assert no errorCode in success envelope"
       ],
       "expected": "HTTP 200 contract for live monitor poll delivers updated Present count within NFR-08 5-second refresh budget per API design §7.1 and §11",
@@ -91,21 +93,23 @@
       "traceability": ["NFR-08", "AC-15", "FR-15"],
       "title": "Instructor Theo dõi tab StatCards refresh within 5 seconds after student check-in without page reload",
       "preconditions": [
-        "Authenticated Instructor on desktop viewport at /sessions/:sessionId with Active session defaulting to Theo dõi tab per layout §11",
-        "Active session with SessionMonitorDashboard polling every 5 seconds per API design §11",
-        "Should-capability FR-15 enabled; baseline StatCard Đã điểm danh shows 3 of 10 enrolled",
-        "Student A can complete check-in in parallel browser context or via API trigger"
+        "Authenticated Instructor on desktop viewport at /sessions/:sessionId with Active session defaulting to Theo dõi tab per page-list §4.3.2",
+        "Active session with SessionMonitorDashboard polling every 5 seconds (staleTime: 0, refetchIntervalInBackground: true) per API design §11 and ui-states §7.3",
+        "Should-capability FR-15 enabled; StatCard row shows Đã điểm danh 3, Chưa điểm danh 7, Vắng 0 of 10 enrolled",
+        "Student A reset to Pending or Absent if already Present; check-in via isolated request context so instructor monitor cookies are not overwritten"
       ],
       "steps": [
         "Navigate to /sessions/:sessionId and select Theo dõi tab",
-        "Verify StatCard Đã điểm danh displays count 3 matching initial API poll",
+        "Wait for monitor-poll-status to show Cập nhật lúc and StatCard Đã điểm danh / Chưa điểm danh / Vắng counts to stabilize (not placeholder fallback) before timing",
+        "Verify StatCard row displays Đã điểm danh 3, Chưa điểm danh 7, and Vắng 0 matching initial API poll per 07-event-specific-components §3.9",
         "Record T0 when Student A check-in succeeds (API 200 or mobile confirmation visible)",
         "Wait up to 5 seconds without manual page reload, refresh button, or F5",
         "Record T1 when StatCard Đã điểm danh updates to 4",
-        "Verify roster grid row for Student A shows Present StatusBadge",
+        "Verify roster grid row for Student A shows Present StatusBadge and check-in timestamp",
+        "Verify stale indicator shows Cập nhật lúc {HH:mm} within 5 seconds of check-in per ui-states §15",
         "Assert T1 minus T0 ≤ 5000 ms per NFR-08"
       ],
-      "expected": "NFR-08 browser verification: instructor dashboard Present vs enrolled StatCards update within 5 seconds without manual reload per AC-15a and 07-non-functional-risk §2.2",
+      "expected": "NFR-08 browser verification: instructor dashboard Present vs enrolled StatCards update within 5 seconds without manual reload per AC-15a, FR-15, and 07-non-functional-risk §2.2",
       "edgeCase": false
     },
     {
@@ -147,7 +151,7 @@
       ],
       "steps": [
         "Record T0 at POST /api/v1/check-in HTTP 200 Success for Student A",
-        "Poll GET /api/v1/sessions/:sessionId/attendance every 500 ms for up to 6 seconds",
+        "Poll GET /api/v1/sessions/:sessionId/attendance every 1 second for up to 6 seconds",
         "If summary.present does not increment within 5000 ms, mark test FAIL for NFR-08",
         "If summary.present increments at T1 where T1 minus T0 ≤ 5000 ms, mark test PASS",
         "Document measured delay in test report for pilot APM baseline comparison"
@@ -196,7 +200,7 @@
       "steps": [
         "GET /api/v1/sessions/:sessionId/attendance before check-in and record summary.present baseline",
         "Record T0 at POST /api/v1/check-in HTTP 200 outcome Success",
-        "Poll GET /api/v1/sessions/:sessionId/attendance until summary.present === baseline + 1 or 5-second timeout",
+        "Poll GET /api/v1/sessions/:sessionId/attendance every 1 second until summary.present === baseline + 1 or 5-second timeout",
         "Assert records array contains student row with status Present and checkedInAt timestamp",
         "Assert T1 minus T0 ≤ 5000 ms per NFR-08",
         "Confirm Flow A step 5 per testing-plan §6 includes live monitor refresh timing"
@@ -214,7 +218,7 @@
       "title": "SessionMonitorDashboard auto-polls every 5 seconds without instructor manual refresh action",
       "preconditions": [
         "Authenticated Instructor on /sessions/:sessionId Theo dõi tab",
-        "Active session with SessionMonitorDashboard mounted",
+        "Active session with SessionMonitorDashboard mounted and staleTime: 0 on poll hook",
         "Network log or Playwright request interception for GET /sessions/:sessionId/attendance",
         "Should-capability FR-15 enabled"
       ],
@@ -223,10 +227,10 @@
         "Record timestamps of consecutive GET /api/v1/sessions/:sessionId/attendance requests over 15 seconds",
         "Assert poll interval is approximately 5 seconds (4–6 s tolerance) per API design §11",
         "Verify no manual refresh button click or full page reload occurs between polls",
-        "Assert polling status bar displays Cập nhật lúc HH:mm:ss after each successful poll per layout §12",
-        "Close session via instructor action; assert attendance polls cease and status bar no longer updates"
+        "Assert polling status bar displays Cập nhật lúc HH:mm:ss after each successful poll per ui-states §15",
+        "Close session via instructor action; assert periodic refetchInterval polls cease (no further GET /attendance after close) while roster retains final static counts"
       ],
-      "expected": "UI polling cadence aligns with 5-second server poll interval and layout §12 live-region chrome; polls stop when session is no longer Active so NFR-08 refresh target applies only during live monitor window per API design §11",
+      "expected": "UI polling cadence aligns with 5-second server poll interval and ui-states §15 live-region chrome; refetchInterval stops when session is no longer Active so NFR-08 refresh target applies only during live monitor window per API design §11",
       "edgeCase": false
     },
     {
@@ -269,7 +273,7 @@
       ],
       "steps": [
         "Record initial summary.present baseline",
-        "For each of 3 students at ~2-second intervals: POST /check-in Success, then poll attendance until present count increments or 5-second timeout",
+        "For each of 3 students at ~2-second intervals: POST /check-in Success, then poll attendance every 1 second until present count increments or 5-second timeout",
         "Assert each individual check-in produces dashboard count update within 5000 ms",
         "Assert final summary.present === baseline + 3 and summary.pending === initial pending - 3",
         "Assert no manual page reload required between sequential updates"
@@ -310,13 +314,13 @@
       "title": "Dashboard preserves poll state and refreshes counts after transient API error without full reload",
       "preconditions": [
         "Authenticated Instructor on /sessions/:sessionId Theo dõi tab",
-        "Active session with baseline StatCard counts visible",
+        "Active session with baseline StatCard counts visible after initial poll stabilizes",
         "Ability to simulate one failed attendance poll followed by recovery (mock 503 or network blip)",
         "Student A ready to check in after poll recovery"
       ],
       "steps": [
-        "Navigate to Theo dõi tab and verify initial StatCard counts from successful poll",
-        "Simulate one GET /sessions/:sessionId/attendance failure; verify toast per error-handling §7 and status bar Không thể cập nhật — thử lại per layout §12",
+        "Navigate to Theo dõi tab and wait for monitor-poll-status Cập nhật lúc with stable StatCard counts",
+        "Simulate one GET /sessions/:sessionId/attendance failure; verify toast per error-handling §7 and status bar Không thể cập nhật — thử lại per ui-states §15",
         "Click retry or wait for automatic poll resume without instructor manual page reload",
         "Trigger successful check-in for Student A",
         "Assert StatCard Đã điểm danh updates within 5 seconds of check-in on next successful poll cycle",
@@ -365,10 +369,34 @@
         "Navigate to /sessions/:sessionId and confirm Theo dõi tab is active for Active session",
         "Query SidebarNav and full layout DOM for anchor elements with href matching /admin",
         "Assert zero /admin/* navigation links anywhere in layout chrome per BR-14 and roles-permissions §2.3a",
-        "Assert SidebarNav renders only Buổi học and Báo cáo items when instructor holds session:read and report:read; admin-only items omitted from DOM not disabled",
-        "Assert BottomNav is absent in InstructorLayout (desktop shell) and student-only routes are not shown"
+        "Assert SidebarNav via usePermittedNav() renders only Buổi học and Báo cáo when instructor holds session:read and report:read; admin-only items (Người dùng, Xuất CSV, etc.) omitted from DOM not disabled per §6.2 and BR-14",
+        "Assert BottomNav is absent in InstructorLayout desktop shell; student-only routes (/check-in, /history) are not shown in instructor chrome"
       ],
       "expected": "Tag-specific browser-journey hint satisfied: instructor live monitor context exposes no forbidden admin route prefixes; SidebarNav omits items lacking required permission so NFR-08 dashboard testing occurs within correctly scoped instructor chrome",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-08-016",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["NFR-08", "NFR-11", "AC-18"],
+      "title": "Student BottomNav omits /admin and instructor routes — only permitted Điểm danh and Lịch sử items",
+      "preconditions": [
+        "Authenticated Student on mobile viewport (≤480 px) at /check-in per StudentLayout §5",
+        "Student holds checkin:submit and attendance:read (self) per roles-permissions §2.2",
+        "Should-capability FR-15 enabled in environment (student check-in feeds instructor NFR-08 monitor)"
+      ],
+      "steps": [
+        "Navigate to /check-in and wait for StudentLayout to mount with BottomNav visible",
+        "Query BottomNav anchor elements filtered by usePermittedNav() per layout §5.3",
+        "Assert exactly two nav items rendered: Điểm danh (/check-in) and Lịch sử (/history)",
+        "Assert zero anchor elements with href matching /admin, /sessions, or /reports anywhere in layout chrome",
+        "Assert unauthorized nav descriptors are omitted from DOM (not disabled) per BR-14 and AC-18a/b",
+        "Navigate to /history and confirm BottomNav Lịch sử item shows active pill styling"
+      ],
+      "expected": "Tag-specific per-role browser-journey: student mobile chrome exposes no forbidden admin or instructor route prefixes; BottomNav omits items lacking required permission adjacent to check-in flows that update the NFR-08 instructor monitor",
       "edgeCase": false
     }
   ]

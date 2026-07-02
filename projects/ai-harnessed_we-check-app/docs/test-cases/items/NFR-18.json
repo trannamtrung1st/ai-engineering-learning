@@ -1,8 +1,8 @@
 {
   "productItemId": "NFR-18",
   "version": 1,
-  "docFingerprint": "sha256:20263a0511e70f72e04b576ee98a37e2b2abfe28c0133ecefa43a1d87166aaa4",
-  "generatedAt": "2026-06-29T19:12:23.000Z",
+  "docFingerprint": "sha256:b2911b5a40eefc87a5f489a620cbbe553c6eb1aae90f09a36ad56a4a4b1c771a",
+  "generatedAt": "2026-07-01T02:48:20.000Z",
   "cases": [
     {
       "id": "TC-NFR-18-001",
@@ -52,7 +52,7 @@
         "Invoke CheckInService.submit(tokenId, locationPayload, studentId) with in-radius mobile coordinates",
         "Query attendance_records for sessionId and studentId and assert status Present with checkedInAt set",
         "Query qr_tokens for tokenId and assert status Consumed",
-        "Query check_in_attempts and assert outcome Success with platform metadata captured if persisted",
+        "Query check_in_attempts and assert outcome Success with spoof_flags JSONB capturing platform hints per database design §5.10",
         "Assert raw latitude/longitude not stored in attendance_records per NFR-12"
       ],
       "expected": "NFR-18 module boundary: mobile web GPS payload processed through full check-in pipeline; Present + Consumed atomically per FR-07 and FR-08 without native SDK",
@@ -220,10 +220,11 @@
         "Grant geolocation via browser context and verify ready substate: check icon + Vị trí đã sẵn sàng with no spinner and submit enabled per AC-08f",
         "Tap Xác nhận điểm danh submit control; verify submitting substate with aria-busy until API responds per AC-08g",
         "Verify CheckInOutcomePanel success variant displays Điểm danh thành công with CTA Xong",
+        "Verify Present outcome uses `--color-success-50` wash with CheckCircle2 icon and primary CTA meets ≥4.5:1 contrast per ui-states §4.3 and 04-design-tokens §3.2.1",
         "Verify no App Store link, native app install banner, or unsupported-browser gate appears",
         "Verify page renders without horizontal scroll at 375px width"
       ],
-      "expected": "NFR-18 iOS 15+ Safari target satisfied: preflight gate then functional QR token check-in and GPS on mobile web without native app install per 07-non-functional-risk §2.4",
+      "expected": "NFR-18 iOS 15+ Safari target satisfied: preflight gate then functional QR token check-in and GPS on mobile web without native app install; success outcome panel uses distinct semantic wash with readable CTA per 07-non-functional-risk §2.4 and ui-visual-verification.md",
       "edgeCase": false
     },
     {
@@ -348,9 +349,10 @@
         "Verify no horizontal scroll overflow on check-in page shell",
         "Measure bounding box of primary submit button and scan/confirm controls",
         "Assert each interactive touch target width and height ≥ 44 px per production-ui-quality-bar §2 and §4 Not acceptable",
+        "Verify primary submit button label uses `--color-primary-foreground` on `--color-primary-600` with ≥4.5:1 contrast per 04-design-tokens §3.2.1 and ui-visual-verification.md checklist item 1",
         "Complete check-in submit and verify success outcome panel visible without clipping"
       ],
-      "expected": "NFR-18 mobile UX bar: student check-in flow usable at 320 px width with accessible touch targets per production-ui-quality-bar §2 mobile check-in dimension",
+      "expected": "NFR-18 mobile UX bar: student check-in flow usable at 320 px width with accessible touch targets and primary CTA contrast per production-ui-quality-bar §2 mobile check-in dimension and control contrast dimension",
       "edgeCase": false
     },
     {
@@ -395,7 +397,7 @@
       "steps": [
         "Navigate to /check-in?token=:tokenId&session=:sessionId with geolocation permission denied",
         "Verify GpsCaptureStep enters permission-denied substate per ui-states §4.2",
-        "Verify CheckInOutcomePanel or PermissionGuideModal displays GpsDisabled variant with CTA Hướng dẫn cấp quyền",
+        "Verify CheckInOutcomePanel GpsDisabled variant uses `--color-danger-50` wash with LocateOff icon and CTA Hướng dẫn cấp quyền meeting primary token contrast pair per ui-states §4.3",
         "Verify platform-specific Vietnamese instructions differ for Safari vs Chrome per NFR-19",
         "Verify manual attendance fallback link visible per production-ui-quality-bar §3 and FR-11",
         "Assert no Present attendance created server-side"
@@ -506,7 +508,7 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["NFR-18", "AC-07", "FR-07", "BR-15"],
+      "traceability": ["NFR-18", "AC-07", "AC-07d", "FR-07", "BR-15"],
       "title": "Mobile browser expired QR preflight shows ExpiredQr without mounting GPS step",
       "preconditions": [
         "Authenticated enrolled Student on iOS Safari or Android Chrome mobile viewport 375×812",
@@ -516,7 +518,7 @@
       "steps": [
         "Navigate to /check-in?token=:expiredTokenId&session=:sessionId on mobile viewport",
         "Verify validating_token spinner during GET /api/v1/check-in/tokens/:expiredTokenId/preflight",
-        "Assert preflight returns HTTP 403 errorCode ExpiredQr with message Mã QR đã hết hạn, vui lòng quét mã mới per AC-06b",
+        "Assert preflight returns HTTP 403 errorCode ExpiredQr with message Mã QR đã hết hạn, vui lòng quét mã mới per AC-07d and API design §6.2",
         "Verify GpsCaptureStep does not mount (no data-testid gps-capture-step or GPS permission prompt) per AC-07d and BR-15",
         "Verify CheckInOutcomePanel ExpiredQr variant with CTA Quét lại per ui-states §4.3",
         "Assert no Present attendance created server-side"
@@ -596,6 +598,150 @@
       ],
       "expected": "NFR-24 device API fidelity on mobile web: production builds ignore gpsSim URL params; real browser Geolocation API used per AC-08e and testing-plan §8",
       "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-18-025",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-18", "FR-02", "AC-02"],
+      "title": "Mobile web login primary and outline buttons meet ≥4.5:1 label contrast at 320px",
+      "preconditions": [
+        "Application running with default locale vi-VN",
+        "Playwright emulates iOS 15+ Safari or Android 10+ Chrome at viewport 320×568 per ui-visual-verification.md",
+        "Unauthenticated session on /login — entry point for mobile check-in deep link auth per AC-02a"
+      ],
+      "steps": [
+        "Navigate to /login at 320px width on iOS Safari emulation and capture screenshot",
+        "Inspect primary submit button: assert `--color-primary-foreground` label on `--color-primary-600` background per 04-design-tokens §3.2.1 primary pair",
+        "Inspect outline or secondary action if present: assert `--color-primary-600` label on `--color-surface-default` meets ≥4.5:1",
+        "Verify `md` button min-height `--size-touch-min` (44px) and comfortable padding per §5.1 — no cramped labels on student mobile route",
+        "Repeat contrast and touch-target checks on Android 10+ Chrome emulation at 320px width",
+        "Verify stacked actions have `--space-3` gap and all visible labels remain Vietnamese"
+      ],
+      "expected": "NFR-18 mobile web login path: primary and outline button labels meet token contrast pairs at 320px on iOS Safari and Android Chrome per 04-design-tokens §3.2.1, production-ui-quality-bar §2 control contrast, and ui-visual-verification.md checklist items 1–4",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-18-026",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-18", "FR-07", "AC-07", "AC-08"],
+      "title": "Mobile check-in outcome panels use distinct semantic washes with readable recovery CTA at 320px",
+      "preconditions": [
+        "Authenticated Student on iOS Safari or Android Chrome mobile viewport 320×568",
+        "Test harness triggers at minimum Present (success-50), ExpiredQr (warning-50), GpsDisabled (danger-50), and DuplicateCheckIn (info-50) outcomes",
+        "VITE_ENABLE_DEVICE_SIMULATION enabled in Playwright harness per NFR-24 for deterministic outcome triggers"
+      ],
+      "steps": [
+        "Trigger Present outcome and verify panel wash `--color-success-50` with CheckCircle2 icon in `--color-success-500` per ui-states §4.3 and 04-design-tokens §13",
+        "Trigger ExpiredQr and verify `--color-warning-50` wash distinct from Present success wash",
+        "Trigger GpsDisabled and verify `--color-danger-50` wash with LocateOff icon — not interchangeable with warning variant",
+        "Trigger DuplicateCheckIn and verify `--color-info-50` wash per production-ui-quality-bar §4 identical outcome treatment negation",
+        "For each triggered outcome, verify primary recovery CTA uses primary token pair (`--color-primary-foreground` on `--color-primary-600`) with ≥4.5:1 contrast per ui-visual-verification.md item 8",
+        "Capture 320px screenshot per outcome on both iOS Safari and Android Chrome emulation; assert CTA label readable at arm's length and Vietnamese"
+      ],
+      "expected": "NFR-18 mobile outcome moment craft: each check-in outcome panel on iOS Safari and Android Chrome applies distinct §13 semantic wash and icon with readable primary CTA — not generic identical alert styling per frontend-design skill signature moments",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-18-027",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["NFR-18"],
+      "title": "Admin users listing TableToolbar exposes search + filter row per 14-listing §0 on Chrome",
+      "preconditions": [
+        "Authenticated TrainingOfficeAdmin session",
+        "Seeded users spanning multiple roles and active states",
+        "Desktop Chrome viewport 1280px on /admin/users per testing-plan §9 admin device matrix"
+      ],
+      "steps": [
+        "Navigate to /admin/users and verify TableToolbar renders search pill on left with Vietnamese placeholder per 14-listing §3 and design-craft-notion database toolbar layout",
+        "Verify filter controls for role and active status appear in toolbar row with Vietnamese labels per 14-listing §4.1",
+        "Verify sortable column headers and offset pagination footer present per 14-listing §0 mandatory capabilities matrix",
+        "Verify primary toolbar action aligned right with `--space-4` toolbar padding and `--space-3` control gap per design-craft-notion skill",
+        "Type a debounced search query and confirm results filter without English-only toolbar strings",
+        "Capture desktop screenshot and verify toolbar controls legible on `--color-surface-default` warm stone page background"
+      ],
+      "expected": "NFR-18 admin Chrome device matrix: /admin/users listing toolbar implements mandatory search + filter + sort + pagination with Vietnamese labels per 14-listing §0 and Notion database toolbar pattern",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-18-028",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["NFR-18", "FR-05", "FR-06"],
+      "title": "Instructor session list table action buttons legible on warm stone background in Chrome",
+      "preconditions": [
+        "Authenticated Instructor with Draft, Active, and Closed sessions",
+        "Desktop Chrome viewport 1280px per testing-plan §9 instructor laptop device class",
+        "Session detail roster tab has editable rows within instructor edit window"
+      ],
+      "steps": [
+        "Navigate to /sessions populated view on `--color-surface-default` warm stone background and verify SessionCard lifecycle action buttons (Mở buổi học, Đóng buổi học) use readable `--color-text-primary` or `--color-primary-600` labels against card and page surfaces",
+        "Open Active session detail roster tab and verify table row action controls meet ≥4.5:1 label contrast on `--color-surface-raised` rows over warm stone page per 04-design-tokens §3.2.1",
+        "Verify disabled edit-locked actions still meet ≥3:1 disabled pair (`--color-text-disabled` on `--color-surface-muted`) per production-ui-quality-bar §4",
+        "Capture desktop Chrome screenshot of session list and roster tab; confirm no ghost/outline labels wash out against `--color-surface-default` (#f6f5f4)"
+      ],
+      "expected": "NFR-18 instructor Chrome platform: session list and roster table action buttons remain readable on warm stone Notion workspace background per 00-production-ui-quality-bar control contrast dimension and design-craft-notion table rhythm",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-18-029",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-18", "FR-07", "FR-02"],
+      "title": "Student mobile Button variants on /login and /check-in use token fg/bg pairs per §3.2.1",
+      "preconditions": [
+        "Authenticated and unauthenticated Student fixtures available",
+        "Routes exposing mobile student Button variants: /login (primary, outline), /check-in submit row (primary), error recovery CTAs (primary on outcome panels)",
+        "Mobile viewport 320×568 on iOS Safari and Android 10+ Chrome emulation per ui-visual-verification.md"
+      ],
+      "steps": [
+        "On /login at 320px verify `primary` variant: `--color-primary-600` bg, `--color-primary-foreground` label with ≥4.5:1",
+        "On /login verify `outline` variant if present: `--color-primary-600` text/border on `--color-surface-default` with ≥4.5:1",
+        "On /check-in gps_capture ready substate verify Xác nhận điểm danh `primary` submit uses authoritative token pair per 05-common-ui-components §2.1",
+        "Trigger GpsDisabled or ExpiredQr outcome and verify recovery CTA `primary` variant maintains `--color-primary-foreground` on `--color-primary-600` over semantic wash background",
+        "Verify disabled submit during `submitting` substate uses `--color-text-disabled` on `--color-surface-muted` at ≥3:1",
+        "Capture 320px screenshots on iOS Safari and Android Chrome; flag any ad-hoc opacity or off-token shades weakening contrast on student mobile routes"
+      ],
+      "expected": "NFR-18 mobile web Button contract: student-visible primary, outline, and recovery CTAs on iOS Safari and Android Chrome use documented foreground/background token pairs from 04-design-tokens §3.2.1 — no low-contrast off-token styling per production-ui-quality-bar §4",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-18-030",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-18", "AC-07", "FR-07", "BR-15"],
+      "title": "Mobile browser SessionMismatch preflight blocks GPS step for mismatched deep-link session id",
+      "preconditions": [
+        "Authenticated enrolled Student on iOS Safari or Android Chrome mobile viewport 375px width",
+        "Active session A with valid QrToken bound to session A",
+        "Second session B exists with different sessionId",
+        "Deep link /check-in?token=:tokenId&session=:sessionBId uses token from session A with mismatched session query param"
+      ],
+      "steps": [
+        "Navigate to /check-in?token=:tokenId&session=:sessionBId on mobile viewport",
+        "Verify validating_token spinner during GET /api/v1/check-in/tokens/:tokenId/preflight?sessionId=:sessionBId",
+        "Assert preflight returns HTTP 403 with errorCode SessionMismatch per API design §6.2 and AC-07f",
+        "Verify GpsCaptureStep does not mount (no data-testid gps-capture-step or GPS permission prompt) per BR-15",
+        "Verify CheckInOutcomePanel SessionMismatch variant with Vietnamese guidance and recovery CTA",
+        "Assert qr_tokens row for tokenId remains status Valid (preflight is read-only)",
+        "Verify no Present attendance created server-side"
+      ],
+      "expected": "NFR-18 mobile web: TS-21c and AC-07f satisfied — session id mismatch rejected at preflight on iOS Safari and Android Chrome; GPS capture unreachable before valid token binding per BR-15",
+      "edgeCase": true
     }
   ]
 }

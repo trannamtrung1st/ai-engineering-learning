@@ -17,16 +17,30 @@ export async function apiFetch<T>(
   path: string,
   init?: RequestInit,
 ): Promise<{ ok: true; status: number; data: T } | { ok: false; status: number; data: ApiErrorBody }> {
+  const headers = new Headers(init?.headers);
+  if (init?.body !== undefined && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
   const res = await fetch(`${API_BASE}${path}`, {
     credentials: "include",
     ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...init?.headers,
-    },
+    headers,
   });
 
-  const data = (await res.json()) as T & ApiErrorBody;
+  if (res.status === 204) {
+    if (res.ok) {
+      return { ok: true, status: res.status, data: undefined as T };
+    }
+    return { ok: false, status: res.status, data: {} };
+  }
+
+  let data: T & ApiErrorBody;
+  try {
+    data = (await res.json()) as T & ApiErrorBody;
+  } catch {
+    data = {} as T & ApiErrorBody;
+  }
   if (res.ok) {
     return { ok: true, status: res.status, data };
   }

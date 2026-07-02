@@ -21,14 +21,14 @@ After executing `layer: browser` cases (or during execution when a screenshot re
 
 | Category | Look for | Example UX bug |
 | --- | --- | --- |
-| **Layout / responsive** | Overflow, clipped content, horizontal scroll on 320px viewport | Submit button below fold on iPhone SE width |
+| **Layout / responsive** | Overflow, clipped content, horizontal scroll on 320px viewport | Submit button below fold on narrow mobile width |
 | **Touch / interaction** | Targets &lt; 44×44 px, dead clicks, missing focus ring on desktop | Icon-only nav item 32px wide |
-| **Visual hierarchy** | Low contrast (&lt; 4.5:1), identical error/success styling, missing headings | All check-in outcomes use same red alert |
-| **Copy / i18n** | English on user paths, raw API text, missing recovery CTA | Button label "Submit" on `/check-in` |
+| **Visual hierarchy** | Low contrast (&lt; 4.5:1), identical error/success styling, missing headings | All outcome states use same alert styling |
+| **Copy / i18n** | Wrong locale on user paths, raw API text, missing recovery CTA | Generic "Submit" on localized route |
 | **Forms** | Missing labels, toast vs inline misuse, validation on blur vs submit | Email error only in console, not UI |
-| **Navigation** | Forbidden links in chrome, dead-end pages, broken back | Instructor sees `/admin/users` in sidebar |
-| **Loading honesty** | Infinite spinner, layout shift, optimistic success before server | GPS ready copy with spinner still visible |
-| **Craft (Notion)** | Generic template UI, flat gray SaaS, undifferentiated cards | Interchangeable white cards, no signature moment |
+| **Navigation** | Forbidden links in chrome, dead-end pages, broken back | Student sees admin route in sidebar |
+| **Loading honesty** | Infinite spinner, layout shift, optimistic success before server | Success copy with spinner still visible |
+| **Craft** | Generic template UI, flat gray SaaS, undifferentiated cards | Interchangeable white cards, no signature moment |
 
 Cross-reference [frontend-design](../frontend-design/SKILL.md) for craft-specific FAIL criteria.
 
@@ -46,8 +46,8 @@ Cross-reference [frontend-design](../frontend-design/SKILL.md) for craft-specifi
 
 | Severity | UX examples |
 | --- | --- |
-| **P0** | Auth bypass via UI; data loss on form submit; check-in marked success before server confirms |
-| **P1** | Core flow blocked (cannot submit, cannot navigate to required screen); forbidden admin link visible to student |
+| **P0** | Auth bypass via UI; data loss on form submit; success shown before server confirms |
+| **P1** | Core flow blocked (cannot submit, cannot navigate to required screen); forbidden link visible to wrong role |
 | **P2** | Should-capability degraded; confusing but recoverable messaging; slow perceived load (&gt; 2s spinner) |
 | **P3** | Cosmetic misalignment; minor copy typo; non-blocking spacing issue |
 
@@ -59,7 +59,7 @@ Each logged bug must include:
 
 1. **title** — one line summary
 2. **severity** — P0 | P1 | P2 | P3
-3. **page** — URL path (e.g. `/check-in`)
+3. **page** — URL path (e.g. `/check-in`, `/sessions`)
 4. **screenshot** — absolute path under `ai-harness/generated/runs/screenshots/<slice-id>/browser-test/`
 5. **repro** — numbered steps
 6. **expected** — what should happen per docs/quality bar
@@ -73,7 +73,7 @@ Each logged bug must include:
 ### Markdown (in browser test report)
 
 ```
-UX-web-student-checkin-001: P1 — touch target too small on GPS submit — screenshot: .../20250630T120000Z-check-in-submit.png
+UX-<slice-id>-001: P1 — touch target too small on submit — screenshot: .../20250630T120000Z-register-submit.png
 ```
 
 ### JSON artifact
@@ -87,7 +87,7 @@ Write `ai-harness/generated/runs/ux-bugs/<slice-id>/<run-id>.json` per [ux-bugs.
 1. Capture screenshot for each distinct page/state visited during `TC-*` execution
 2. Review each screenshot against this taxonomy **and** [00-production-ui-quality-bar.md](../../../docs/ui-ux/00-production-ui-quality-bar.md)
 3. Log `UX-*` bugs for issues **not** already reported as `TC-*: FAIL`
-4. Do **not** duplicate: if `TC-AC-07-013: FAIL` already covers the issue, skip a separate UX entry
+4. Do **not** duplicate: if a `TC-*: FAIL` already covers the issue, skip a separate UX entry
 5. Write UX bugs JSON before emitting final `BROWSER_TEST_PASS` or `BROWSER_TEST_FAIL`
 6. P0/P1 UX bugs must appear in the blocker summary before the signal line
 

@@ -1,8 +1,8 @@
 {
   "productItemId": "NFR-19",
   "version": 1,
-  "docFingerprint": "sha256:20263a0511e70f72e04b576ee98a37e2b2abfe28c0133ecefa43a1d87166aaa4",
-  "generatedAt": "2026-06-29T19:15:36.000Z",
+  "docFingerprint": "sha256:c846b27c93f7d5a2fca97ea30039f8021ebfe5ee04711f351fc18db986850ffe",
+  "generatedAt": "2026-07-01T03:15:00.000Z",
   "cases": [
     {
       "id": "TC-NFR-19-001",
@@ -156,7 +156,7 @@
       "preconditions": [
         "Playwright emulates iPhone 12+ iOS 15+ Safari viewport 375×812",
         "Authenticated enrolled Student session on /check-in route",
-        "Browser camera permission denied or blocked via context permissions",
+        "Browser camera permission denied via context permissions or harness cameraSim=deny&platform=ios per demo-guides §7 when VITE_ENABLE_DEVICE_SIMULATION=true",
         "QrScannerView mounted in scanning step per ui-states §4.1 camera_denied state"
       ],
       "steps": [
@@ -181,7 +181,7 @@
       "preconditions": [
         "Playwright emulates Android mid-range device Chrome Android 10+ viewport 360×640",
         "Authenticated enrolled Student session on /check-in",
-        "Camera permission denied in browser context",
+        "Camera permission denied via browser context or harness cameraSim=deny&platform=android per demo-guides §7 when VITE_ENABLE_DEVICE_SIMULATION=true",
         "QrScannerView active per event-specific-components §2.1"
       ],
       "steps": [
@@ -210,13 +210,15 @@
       ],
       "steps": [
         "Navigate to /check-in?token=:tokenId&session=:sessionId with geolocation permission denied",
-        "Verify GpsCaptureStep enters permission-denied substate per ui-states §4.2",
-        "Verify CheckInOutcomePanel GpsDisabled outcome moment per ui-states §4.3: LocateOff icon, --color-danger-50 wash, headline, message Vui lòng bật GPS và cấp quyền định vị để điểm danh",
+        "Verify GpsCaptureStep enters `denied` substate per ui-states §4.2 and event-specific-components §2.2: error copy, permission guide CTA, submit disabled, no spinner",
+        "Verify CheckInOutcomePanel GpsDisabled outcome moment per ui-states §4.3 and common-ui-components §5.3: LocateOff icon at --size-icon-lg, --color-danger-50 wash, --space-6 padding, headline, message Vui lòng bật GPS và cấp quyền định vị để điểm danh",
+        "Verify primary CTA Hướng dẫn cấp quyền uses --color-primary-foreground on --color-primary-600 with ≥4.5:1 contrast over danger wash per 04-design-tokens §3.2.1 and ui-visual-verification.md item 8",
+        "Capture 320×568 screenshot; assert recovery CTA label readable at arm's length on mobile viewport",
         "Tap primary CTA Hướng dẫn cấp quyền and verify PermissionGuideModal type gps opens",
         "Assert no POST /check-in API call occurred while permission denied per validation-rules §5.1 client guard",
         "Verify role alert on blocking error per accessibility-basics §6"
       ],
-      "expected": "NFR-19 GPS denial UX: distinct GpsDisabled outcome moment (not generic alert) with actionable CTA opening platform-specific help modal; no premature API submit per AC-08c, ui-states §4.3, and user-flows §3",
+      "expected": "NFR-19 GPS denial UX: distinct GpsDisabled outcome moment with legible recovery CTA opening platform-specific help modal; no premature API submit per AC-08c, ui-states §4.3, common-ui-components §5.3, and ui-visual-verification.md",
       "edgeCase": false
     },
     {
@@ -235,8 +237,8 @@
       ],
       "steps": [
         "Navigate to check-in flow and trigger GpsDisabled or camera_denied state",
-        "Verify visible link or text block explaining manual fallback: contact instructor or see instructor for manual mark",
-        "Assert fallback copy in Vietnamese references instructor manual attendance per FR-11 and BR-10",
+        "Verify visible link or text block explaining manual fallback per design-overview §3.1: ask instructor for manual mark",
+        "Assert fallback copy in Vietnamese references instructor manual attendance per FR-11, BR-10, and production-ui-quality-bar §3",
         "Verify link does not navigate to instructor-only routes without role guard",
         "Cross-check copy aligns with risk R-07 mitigation in 07-non-functional-risk §3"
       ],
@@ -351,12 +353,13 @@
       "preconditions": [
         "Authenticated Student on /check-in?token=:tokenId&session=:sessionId mobile viewport",
         "Geolocation permission granted but mock returns no fix within 15 s timeout per AC-08c",
-        "GpsCaptureStep acquiring substate active per ui-states §4.2 (permission granted, fix pending)"
+        "GpsCaptureStep acquiring substate active per ui-states §4.2 (permission granted, fix pending)",
+        "Optional harness shortcut: gpsSim=timeout&gpsTimeoutMs=500 per demo-guides §7 when VITE_ENABLE_DEVICE_SIMULATION=true"
       ],
       "steps": [
-        "Navigate to gps_capture step with geolocation permission granted but mock that never resolves within 15 s",
+        "Navigate to gps_capture step with geolocation permission granted but mock that never resolves within 15 s (or gpsSim=timeout harness param)",
         "Verify acquiring substate spinner displays Đang xác minh vị trí… per ui-states §4.2",
-        "Wait 15 seconds and verify transition to GpsDisabled outcome or permission-denied substate",
+        "Wait 15 seconds (or harness timeout) and verify transition to GpsDisabled outcome or GpsCaptureStep `denied` substate per §4.2",
         "Assert no POST /check-in network request fired before timeout boundary",
         "Verify GpsDisabled message and Hướng dẫn cấp quyền CTA displayed",
         "Verify Thử lại retry control available up to 3 attempts per ui-states §4.2"
@@ -397,8 +400,8 @@
       "title": "PermissionGuideModal meets accessibility bar: numbered steps, focus trap, and reachable Đóng control",
       "preconditions": [
         "PermissionGuideModal open on /check-in with type gps or camera",
-        "axe-core or manual accessibility audit harness available",
-        "accessibility-basics §10 and §12 requirements for permission help"
+        "Mobile viewport 320×568 per ui-visual-verification.md required viewports",
+        "accessibility-basics §10 and §12 requirements for permission help; harness verifies contrast via screenshots not axe-core per §3"
       ],
       "steps": [
         "Open PermissionGuideModal via Hướng dẫn cấp quyền from GpsDisabled or camera_denied state",
@@ -406,9 +409,9 @@
         "Tab through modal and verify focus trapped inside until Đóng clicked",
         "Verify aria-labelledby references modal title in Vietnamese",
         "Press Escape or tap Đóng and verify focus returns to triggering CTA",
-        "Run axe-core on modal subtree and assert no critical violations on permission help dialog"
+        "Capture 320×568 screenshot; verify Đóng button and any primary actions meet token contrast pairs per ui-visual-verification.md checklist items 1–4"
       ],
-      "expected": "NFR-19 help content accessible: PermissionGuideModal readable steps with focus trap and dismiss control per accessibility-basics §10–§12 aligned with NFR-19 error clarity",
+      "expected": "NFR-19 help content accessible: PermissionGuideModal readable steps with focus trap, reachable Đóng control, and legible button contrast per accessibility-basics §10–§12 and ui-visual-verification.md",
       "edgeCase": false
     },
     {
@@ -480,6 +483,146 @@
         "Verify denial path opens PermissionGuideModal per NFR-19 camera flow"
       ],
       "expected": "NFR-19 permission onboarding: camera consent priming reduces denial confusion with Vietnamese purpose-limited copy before browser prompt per production-ui-quality-bar §4 GPS/camera consent requirement",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-19-021",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["NFR-19"],
+      "title": "Admin users listing TableToolbar exposes search + filter row per 14-listing §0",
+      "preconditions": [
+        "Authenticated TrainingOfficeAdmin session",
+        "Seeded users spanning multiple roles and active states",
+        "Desktop Chrome viewport 1280×720 on /admin/users per ui-visual-verification.md"
+      ],
+      "steps": [
+        "Navigate to /admin/users and verify TableToolbar renders search pill on left with Vietnamese placeholder per 14-listing §3 and design-craft-notion database toolbar layout",
+        "Verify filter controls for role and active status appear in toolbar row with Vietnamese labels per 14-listing §4.1",
+        "Verify sortable column headers and offset pagination footer present per 14-listing §0 mandatory capabilities matrix",
+        "Verify primary toolbar action aligned right with --space-4 toolbar padding and --space-3 control gap per common-ui-components §4.2",
+        "Type a debounced search query and confirm results filter without English-only toolbar strings",
+        "Capture desktop screenshot and verify toolbar controls legible on --color-surface-default warm stone page background"
+      ],
+      "expected": "NFR-19 admin listing craft: TableToolbar search + filter row supports legible Vietnamese error and recovery flows on admin paths per 14-listing §0, design-craft-notion skill, and production-ui-quality-bar §2",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-19-022",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["NFR-19", "FR-05"],
+      "title": "Instructor session list table action buttons legible on warm stone background",
+      "preconditions": [
+        "Authenticated Instructor with Draft, Active, and Closed sessions",
+        "Desktop Chrome viewport 1280×720 per ui-visual-verification.md",
+        "Session detail roster tab has editable rows within instructor edit window"
+      ],
+      "steps": [
+        "Navigate to /sessions populated view on --color-surface-default warm stone background and verify SessionCard lifecycle action buttons (Mở buổi học, Đóng buổi học) use readable --color-text-primary or --color-primary-600 labels against card and page surfaces",
+        "Open Active session detail roster tab and verify table row action controls meet ≥4.5:1 label contrast on --color-surface-raised rows over warm stone page per 04-design-tokens §3.2.1",
+        "Verify disabled edit-locked actions still meet ≥3:1 disabled pair (--color-text-disabled on --color-surface-muted) per production-ui-quality-bar §4",
+        "Capture desktop screenshot of session list and roster tab; confirm no ghost/outline labels wash out against --color-surface-default (#f6f5f4)"
+      ],
+      "expected": "NFR-19 instructor UI legibility: session list and roster action buttons remain readable on warm stone Notion workspace background so manual-attendance fallback paths stay discoverable per production-ui-quality-bar §2 control contrast",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-19-023",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-19", "FR-02", "AC-02"],
+      "title": "Login primary and outline buttons meet ≥4.5:1 label contrast at 320px",
+      "preconditions": [
+        "Application running with default locale vi-VN",
+        "Playwright emulates mobile viewport 320×568 per ui-visual-verification.md",
+        "Unauthenticated session on /login — entry point before student reaches permission-denied check-in flows"
+      ],
+      "steps": [
+        "Navigate to /login at 320px width and capture screenshot per ui-visual-verification.md filename convention",
+        "Inspect primary submit button: assert --color-primary-foreground label on --color-primary-600 background per 04-design-tokens §3.2.1 primary pair",
+        "Inspect outline or secondary action if present: assert --color-primary-600 label on --color-surface-default meets ≥4.5:1",
+        "Verify md button min-height --size-touch-min (44px) and comfortable padding per §5.1 — no cramped labels on student mobile route",
+        "Verify stacked actions have --space-3 gap and all visible labels remain Vietnamese"
+      ],
+      "expected": "NFR-19 login entry contrast: primary and outline button labels meet token contrast pairs at 320px before student reaches camera/GPS permission recovery per 04-design-tokens §3.2.1 and ui-visual-verification.md checklist items 1–4",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-19-024",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-19", "NFR-24", "FR-08", "AC-08", "AC-08e", "BR-12"],
+      "title": "Permission-denied check-in outcome panels use distinct washes with readable recovery CTA at 320px",
+      "preconditions": [
+        "Authenticated Student on mobile viewport 320×568",
+        "Test harness triggers GpsDisabled (danger-50) and camera_denied recovery path outcomes via gpsSim=deny|timeout or cameraSim=deny per demo-guides §7",
+        "VITE_ENABLE_DEVICE_SIMULATION enabled in Playwright harness per NFR-24 and AC-08e for deterministic permission denial triggers"
+      ],
+      "steps": [
+        "Trigger GpsDisabled outcome and verify panel wash --color-danger-50 with LocateOff icon in --color-danger-500 per ui-states §4.3, 04-design-tokens §13, and common-ui-components §5.3",
+        "Verify GpsDisabled primary CTA Hướng dẫn cấp quyền uses --color-primary-foreground on --color-primary-600 with ≥4.5:1 contrast per ui-visual-verification.md item 8",
+        "Trigger camera_denied state and verify PermissionGuideModal or inline recovery path is distinct from GpsDisabled wash — not interchangeable generic alert per production-ui-quality-bar §4",
+        "Verify each outcome panel has --space-6 padding, --size-icon-lg hero icon, and single primary recovery CTA with min-height --size-touch-min",
+        "Capture 320px screenshot per permission-denied outcome; assert CTA label readable at arm's length and Vietnamese"
+      ],
+      "expected": "NFR-19 outcome moment craft: permission-denied check-in panels apply distinct semantic washes with legible recovery CTAs — not generic identical alert styling per frontend-design skill signature moments and ui-visual-verification.md",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-19-025",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-19", "FR-07", "FR-08"],
+      "title": "Student mobile Button variants on recovery paths use token fg/bg pairs per §3.2.1",
+      "preconditions": [
+        "Authenticated and unauthenticated Student fixtures available",
+        "Routes exposing recovery Button variants: /login (primary, outline), /check-in GpsDisabled outcome (Hướng dẫn cấp quyền primary), PermissionGuideModal Đóng (secondary)",
+        "Mobile viewport 320×568 per ui-visual-verification.md"
+      ],
+      "steps": [
+        "On /login at 320px verify primary variant: --color-primary-600 bg, --color-primary-foreground label with ≥4.5:1",
+        "On /login verify outline variant if present: --color-primary-600 text/border on --color-surface-default with ≥4.5:1",
+        "Trigger GpsDisabled outcome and verify recovery CTA primary variant maintains --color-primary-foreground on --color-primary-600 over semantic danger wash background",
+        "Open PermissionGuideModal and verify Đóng secondary/outline control meets secondary or outline token pair per 05-common-ui-components §2.1",
+        "Verify disabled submit during submitting substate uses --color-text-disabled on --color-surface-muted at ≥3:1",
+        "Capture 320px screenshots; flag any ad-hoc opacity or off-token shades weakening contrast on permission-recovery routes"
+      ],
+      "expected": "NFR-19 Button contract on recovery paths: student-visible primary, outline, and permission-help CTAs use documented foreground/background token pairs from 04-design-tokens §3.2.1 per production-ui-quality-bar §2 and ui-visual-verification.md",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-19-026",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-19", "NFR-24", "AC-08e", "FR-07", "FR-08"],
+      "title": "Harness demo-guides §7 sim params deterministically trigger camera and GPS denial recovery with platform-specific Vietnamese steps",
+      "preconditions": [
+        "VITE_ENABLE_DEVICE_SIMULATION=true in Playwright harness per NFR-24 and AC-08e",
+        "Authenticated enrolled Student session with Active session valid token deep link",
+        "demo-guides §7 query params available: cameraSim, gpsSim, platform"
+      ],
+      "steps": [
+        "Navigate to /check-in?token=:tokenId&session=:sessionId&cameraSim=deny&platform=ios on mobile viewport",
+        "Verify CheckInFlow camera_denied state per ui-states §4.1 and PermissionGuideModal type camera with iOS Vietnamese numbered steps",
+        "Navigate to /check-in?token=:tokenId&session=:sessionId&gpsSim=deny&platform=android after preflight pass",
+        "Verify GpsCaptureStep `denied` substate or GpsDisabled outcome with Android-specific GPS PermissionGuideModal",
+        "Assert platform=ios and platform=android produce distinct recovery copy per common-ui-components §5.2",
+        "Verify no POST /check-in while camera or GPS permission denied per validation-rules §6 and BR-12"
+      ],
+      "expected": "NFR-19 harness path: demo-guides §7 simulation params trigger clear Vietnamese platform-specific permission recovery when NFR-24 sim flag enabled; production builds ignore params per AC-08e",
       "edgeCase": false
     }
   ]

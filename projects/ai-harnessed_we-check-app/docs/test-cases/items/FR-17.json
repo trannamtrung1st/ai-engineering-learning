@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-17",
   "version": 1,
-  "docFingerprint": "sha256:6657f09e6c2c9036a31a09cbf66226b0385b690ddb340e7751f826dda6088416",
-  "generatedAt": "2026-06-29T20:15:00.000Z",
+  "docFingerprint": "sha256:70664f4bcec7e745bdcd06197b935919d3e19855c18c5b6fb91cd47efbd1e5ca",
+  "generatedAt": "2026-07-01T02:14:08.000Z",
   "cases": [
     {
       "id": "TC-FR-17-001",
@@ -10,7 +10,7 @@
       "layer": "e2e",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["FR-17", "AC-17", "BR-13"],
+      "traceability": ["FR-17", "AC-17", "BR-13", "NFR-16"],
       "title": "TS-21d: Empty DB bootstrap — GET needsSetup true then POST first-admin creates TrainingOfficeAdmin",
       "preconditions": [
         "PostgreSQL database with User.count = 0 (SEED_ENABLED=false or truncated users table)",
@@ -56,7 +56,7 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["FR-17", "BR-13"],
+      "traceability": ["FR-17", "BR-13", "NFR-16"],
       "title": "SetupService.createFirstAdmin persists admin user, auth session, and enforces one-time bootstrap",
       "preconditions": [
         "Real PostgreSQL with User.count = 0",
@@ -122,7 +122,7 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-17", "BR-13"],
+      "traceability": ["FR-17", "BR-13", "NFR-16"],
       "title": "POST /api/v1/setup/first-admin returns 201 with session cookie on empty DB",
       "preconditions": [
         "Empty database; no session cookie",
@@ -145,7 +145,7 @@
       "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["FR-17", "BR-13"],
-      "title": "POST /setup/first-admin returns 403 SetupAlreadyComplete when bootstrap already complete",
+      "title": "POST /setup/first-admin returns 403 SetupAlreadyComplete when bootstrap already complete (not 201 or 422)",
       "preconditions": [
         "Database with User.count >= 1; needsSetup false",
         "No valid bootstrap window open"
@@ -153,11 +153,12 @@
       "steps": [
         "GET /api/v1/setup/status and assert needsSetup false",
         "POST /api/v1/setup/first-admin with valid new-admin payload without session",
-        "Assert HTTP 403 Forbidden",
-        "Assert response errorCode SetupAlreadyComplete per API design §2.0",
+        "Assert HTTP 403 Forbidden (not 201, not 422)",
+        "Assert response errorCode SetupAlreadyComplete per API design §2.0 and error-handling §2.4",
+        "Assert Vietnamese user-facing message present and no stack trace",
         "Query users table and assert User.count unchanged"
       ],
-      "expected": "/setup first-admin endpoint denied after bootstrap per roles-permissions §2.3b; repeat POST rejected with SetupAlreadyComplete per FR-17",
+      "expected": "/setup first-admin endpoint denied after bootstrap per roles-permissions §2.3b; repeat POST rejected with SetupAlreadyComplete per FR-17 and AC-17c",
       "edgeCase": false
     },
     {
@@ -167,17 +168,18 @@
       "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["FR-17", "AC-17", "BR-13"],
-      "title": "AC-17d: Duplicate email on setup form returns validation error; no second user created",
+      "title": "AC-17d: Sequential duplicate email or institutional ID on setup returns 422 ValidationFailed; no user created",
       "preconditions": [
         "Empty database (User.count = 0); needsSetup true",
-        "Setup payload with email already used in a prior rejected attempt or duplicate institutionalId"
+        "Valid first setup payload prepared; duplicate-field variants for email and institutionalId"
       ],
       "steps": [
-        "POST /api/v1/setup/first-admin with duplicate email and valid other fields",
-        "Assert HTTP 422 ValidationFailed with duplicate email field detail",
-        "Assert no user row created in users table",
-        "POST with duplicate institutionalId and unique email",
-        "Assert HTTP 422 with duplicate institutionalId detail and User.count remains 0"
+        "POST /api/v1/setup/first-admin with duplicate email and otherwise valid fields",
+        "Assert HTTP 422 ValidationFailed with duplicate email field detail and inline Vietnamese message per forms-validation §4.1a",
+        "Assert users table count remains 0 and GET /api/v1/setup/status returns needsSetup true",
+        "POST /api/v1/setup/first-admin with duplicate institutionalId and unique email",
+        "Assert HTTP 422 ValidationFailed with duplicate institutionalId field detail",
+        "Assert users table count remains 0"
       ],
       "expected": "AC-17d boundary: duplicate email or institutional ID on bootstrap rejected with field validation; no user created per FR-17 inputs validation",
       "edgeCase": true
@@ -192,7 +194,7 @@
       "title": "POST /setup/first-admin with password below minimum strength returns 422 ValidationFailed",
       "preconditions": [
         "Empty database; needsSetup true",
-        "Password shorter than 8 characters per VAL-03 and NFR-14"
+        "Password shorter than 8 characters per VAL-03 and forms-validation §4.1a"
       ],
       "steps": [
         "POST /api/v1/setup/first-admin with valid institutionalId, displayName, email, and password 'short'",
@@ -213,7 +215,8 @@
       "title": "Parallel POST /setup/first-admin on empty DB creates at most one TrainingOfficeAdmin",
       "preconditions": [
         "Empty PostgreSQL database",
-        "Two or more concurrent valid setup payloads with unique emails and institutionalIds"
+        "Two or more concurrent valid setup payloads with unique emails and institutionalIds",
+        "SetupService uses pg_advisory_xact_lock or equivalent serialization per module-identity-bootstrap"
       ],
       "steps": [
         "Fire parallel POST /api/v1/setup/first-admin requests against empty DB",
@@ -231,8 +234,8 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["FR-17", "AC-17", "BR-13"],
-      "title": "Fresh deploy: all routes except /setup redirect to setup form; login link hidden",
+      "traceability": ["FR-17", "AC-17", "BR-13", "NFR-16"],
+      "title": "Fresh deploy: all routes except /setup redirect to setup form; AuthLayout hides login link",
       "preconditions": [
         "Web app running with empty database (needsSetup true)",
         "No session cookie in browser"
@@ -240,7 +243,7 @@
       "steps": [
         "Navigate browser to / (root route)",
         "Assert URL redirects to /setup per FR-17 route guard",
-        "Navigate to /login and assert redirect to /setup (or login link hidden/disabled on /setup per page-list §2.0)",
+        "Navigate to /login and assert redirect to /setup (login link hidden in AuthLayout per page-list §2.0 and forms-validation §4.1a)",
         "Navigate to /admin/users and assert redirect to /setup",
         "Assert SetupAdminForm visible with Vietnamese fields (Mã cán bộ, Họ và tên, Email, Mật khẩu)"
       ],
@@ -253,66 +256,21 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["FR-17", "AC-17", "BR-13"],
+      "traceability": ["FR-17", "AC-17", "BR-13", "NFR-16"],
       "title": "Successful setup form submission establishes session and redirects to /admin hub",
       "preconditions": [
         "Web app with empty database (needsSetup true)",
-        "Valid setup credentials prepared"
+        "Valid setup credentials prepared per forms-validation §4.1a"
       ],
       "steps": [
         "Navigate browser to /setup",
         "Fill institutionalId, displayName, email, and password fields with valid values",
-        "Submit SetupAdminForm",
+        "Submit SetupAdminForm (primary button Tạo tài khoản)",
         "Assert POST /api/v1/setup/first-admin succeeds (network tab or outcome UI)",
-        "Assert browser navigates to /admin hub per FR-17 outputs",
+        "Assert browser navigates to /admin hub per FR-17 outputs and page-list §2.0",
         "Assert AdminLayout chrome visible (e.g. Trang chủ sidebar item or Quản trị label)"
       ],
       "expected": "FR-17 outputs: first admin created, authenticated session established, redirect to /admin hub per AC-17b",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-FR-17-013",
-      "category": "functional",
-      "layer": "browser",
-      "technique": "browser-journey",
-      "priority": "P0",
-      "traceability": ["FR-17", "FR-18", "BR-14"],
-      "title": "Post-bootstrap /admin hub NavCards deep-link only to permitted admin routes",
-      "preconditions": [
-        "Bootstrap complete; TrainingOfficeAdmin session active in browser",
-        "Admin holds full permission set per roles-permissions §2.2"
-      ],
-      "steps": [
-        "Navigate browser to /admin (post-bootstrap landing per FR-17)",
-        "Assert RoleHomeHub renders with Vietnamese quick-link cards",
-        "Collect href attributes from all NavCard or hub card anchor elements",
-        "Assert each href matches a permitted /admin/* route from page-list §5.0",
-        "Click Quản lý người dùng card and assert navigation to /admin/users succeeds",
-        "Click Báo cáo card and assert navigation to /admin/reports succeeds"
-      ],
-      "expected": "Tag-specific browser-journey hint satisfied: post-bootstrap admin hub cards deep-link only to routes the admin role is permitted to access",
-      "edgeCase": false
-    },
-    {
-      "id": "TC-FR-17-014",
-      "category": "functional",
-      "layer": "browser",
-      "technique": "browser-journey",
-      "priority": "P0",
-      "traceability": ["FR-17", "FR-18", "BR-14"],
-      "title": "usePermittedNav omits admin sidebar items lacking permission after bootstrap",
-      "preconditions": [
-        "Bootstrap complete; TrainingOfficeAdmin authenticated",
-        "Test admin user missing policy:write permission (or equivalent scoped fixture)"
-      ],
-      "steps": [
-        "Navigate browser to /admin with permission-reduced admin session",
-        "Inspect AdminLayout SidebarNav DOM via accessibility snapshot",
-        "Assert Chính sách (/admin/policy) nav item is absent from DOM (not disabled)",
-        "Assert permitted items such as Trang chủ and Người dùng remain visible",
-        "Direct-navigate to /admin/policy and assert ForbiddenPage or 403 without policy nav leaked"
-      ],
-      "expected": "Tag-specific component hint satisfied: usePermittedNav filters nav items by permission matrix; unauthorized items omitted per BR-14",
       "edgeCase": false
     },
     {
@@ -322,20 +280,89 @@
       "technique": "browser-journey",
       "priority": "P0",
       "traceability": ["FR-17", "AC-17", "BR-13"],
-      "title": "After bootstrap /setup unavailable — redirects to login; root no longer routes to setup",
+      "title": "AC-17c browser: /setup unavailable after bootstrap — redirects to login or shows forbidden",
       "preconditions": [
         "Bootstrap already complete (needsSetup false)",
         "Browser has no active session"
       ],
       "steps": [
         "Navigate browser directly to /setup",
-        "Assert redirect to /login OR forbidden state without SetupAdminForm",
-        "Navigate to / from unauthenticated state",
-        "Assert redirect to /login (not /setup) when needsSetup false",
-        "Assert no setup form fields rendered on any attempted route"
+        "Assert redirect to /login OR forbidden/unavailable state without SetupAdminForm",
+        "If page remains on /setup without redirect, assert visible link to /login per FR-18 auth routes and AC-17c",
+        "Assert no institutional ID / password setup fields rendered",
+        "Navigate browser to / from unauthenticated state when needsSetup false",
+        "Assert URL stays at / (not /setup) and SetupAdminForm is not shown",
+        "Assert RouteDiscoveryPanel visible with quick links labeled Đăng nhập, Điểm danh, Buổi học, Quản trị per AC-18f"
       ],
-      "expected": "AC-17c UI outcome: /setup not available after bootstrap; visitor directed to login per FR-17 post-bootstrap behavior",
+      "expected": "AC-17c UI outcome: /setup not available after bootstrap; visitor directed to login flow; root no longer gates to /setup and shows route discovery per AC-18f",
       "edgeCase": false
+    },
+    {
+      "id": "TC-FR-17-016",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-17", "AC-17", "BR-13"],
+      "title": "AC-17d: Concurrent setup POST with identical email yields single admin and validation or bootstrap-closed error",
+      "preconditions": [
+        "Empty database (User.count = 0); needsSetup true",
+        "Two payloads sharing email dup@example.edu.vn but different institutionalId values (ADMIN001, ADMIN002)"
+      ],
+      "steps": [
+        "Fire two parallel POST /api/v1/setup/first-admin requests with identical email and distinct institutionalIds on empty DB",
+        "Assert exactly one HTTP 201 Created response with wecheck_session cookie",
+        "Assert the other response is HTTP 422 ValidationFailed with duplicate email field detail OR HTTP 403 SetupAlreadyComplete if first transaction committed",
+        "Query users table and assert User.count === 1",
+        "GET /api/v1/setup/status and assert needsSetup false"
+      ],
+      "expected": "AC-17d edge: duplicate email on concurrent bootstrap rejected; at most one TrainingOfficeAdmin persisted per BR-13",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-17-017",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-17", "AC-17", "BR-13"],
+      "title": "AC-17d: Concurrent setup POST with identical institutionalId yields single admin and validation or bootstrap-closed error",
+      "preconditions": [
+        "Empty database (User.count = 0); needsSetup true",
+        "Two payloads sharing institutionalId ADMIN001 but different email values (admin1@example.edu.vn, admin2@example.edu.vn)"
+      ],
+      "steps": [
+        "Fire two parallel POST /api/v1/setup/first-admin requests with identical institutionalId and distinct emails on empty DB",
+        "Assert exactly one HTTP 201 Created response with wecheck_session cookie",
+        "Assert the other response is HTTP 422 ValidationFailed with duplicate institutionalId field detail OR HTTP 403 SetupAlreadyComplete if first transaction committed",
+        "Query users table and assert User.count === 1",
+        "GET /api/v1/setup/status and assert needsSetup false"
+      ],
+      "expected": "AC-17d boundary: duplicate institutional ID on concurrent bootstrap rejected; at most one TrainingOfficeAdmin persisted per BR-13",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-17-018",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-17", "AC-17", "BR-13"],
+      "title": "AC-17d browser: SetupAdminForm shows inline Vietnamese errors when duplicate email submission rejected",
+      "preconditions": [
+        "Web app with empty database (needsSetup true)",
+        "Two browser contexts (tabs) with no session cookie"
+      ],
+      "steps": [
+        "Open /setup in both browser contexts",
+        "Fill both SetupAdminForms with identical email dup@example.edu.vn and distinct institutionalIds (ADMIN001, ADMIN002) plus valid displayName and password",
+        "Submit Tạo tài khoản in both contexts nearly simultaneously",
+        "Assert exactly one context navigates to /admin hub with session established",
+        "Assert the other context remains on /setup with inline Vietnamese validation error on email field OR bootstrap-closed error message (not a successful redirect)",
+        "Assert GET /api/v1/setup/status returns needsSetup false and users table User.count === 1"
+      ],
+      "expected": "AC-17d UI outcome: duplicate email on setup form surfaces inline Vietnamese field error per forms-validation-ux §4.1a; at most one TrainingOfficeAdmin created",
+      "edgeCase": true
     }
   ]
 }

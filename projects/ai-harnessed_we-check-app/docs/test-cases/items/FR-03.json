@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-03",
   "version": 1,
-  "docFingerprint": "sha256:46a74e7dd400d0bcac48b5d2f04254825be36fcb9409b80d705fa0172e545ac0",
-  "generatedAt": "2026-06-29T17:45:54Z",
+  "docFingerprint": "sha256:641de2ba59b84e30a793fd3df36ec32172e82dac4637921efd1763bae1303e58",
+  "generatedAt": "2026-07-01T12:00:00Z",
   "cases": [
     {
       "id": "TC-FR-03-001",
@@ -480,7 +480,7 @@
       "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["FR-03", "AC-03"],
-      "title": "Duplicate class code rejected with 422 DuplicateClassCode",
+      "title": "Duplicate class code rejected with 400 DuplicateClassCode",
       "preconditions": [
         "Real PostgreSQL test database is running",
         "Class with code HESD-03 already exists",
@@ -491,7 +491,7 @@
         "Capture domain/HTTP error mapping",
         "Query classes table count for code HESD-03"
       ],
-      "expected": "Request rejected with HTTP 422 and errorCode DuplicateClassCode; exactly one class row remains for HESD-03 per AC-03e",
+      "expected": "Request rejected with HTTP 400 and errorCode DuplicateClassCode; exactly one class row remains for HESD-03 per AC-03e and API design §4.1a",
       "edgeCase": true
     },
     {
@@ -544,17 +544,17 @@
       "technique": "boundary-error",
       "priority": "P1",
       "traceability": ["FR-03"],
-      "title": "Duplicate subject code returns 422 DuplicateSubjectCode",
+      "title": "Duplicate subject code returns 400 DuplicateSubjectCode",
       "preconditions": [
         "TrainingOfficeAdmin is authenticated",
         "Subject with code SWE-102 already exists"
       ],
       "steps": [
         "POST /api/v1/subjects with { code: \"SWE-102\", name: \"Duplicate attempt\" }",
-        "Assert HTTP status 422 and errorCode DuplicateSubjectCode",
+        "Assert HTTP status 400 and errorCode DuplicateSubjectCode",
         "GET /api/v1/subjects and verify only one SWE-102 record exists"
       ],
-      "expected": "Duplicate subject code rejected with localized validation error; no second subject row created",
+      "expected": "Duplicate subject code rejected with localized validation error per AC-03g and API design §4.1a; no second subject row created",
       "edgeCase": true
     },
     {
@@ -584,7 +584,7 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["FR-03", "AC-03"],
+      "traceability": ["FR-03", "AC-03", "AC-03d", "AC-03i"],
       "title": "Admin creates class via /admin/classes/new form before roster import",
       "preconditions": [
         "TrainingOfficeAdmin is logged in to admin SPA",
@@ -598,6 +598,199 @@
       ],
       "expected": "Manual class creation via admin UI persists reference data and makes class available for roster workflows per AC-03d",
       "edgeCase": false
+    },
+    {
+      "id": "TC-FR-03-029",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["FR-03"],
+      "title": "Roster CSV row with institutional_id containing underscore and period accepted under VAL-05",
+      "preconditions": [
+        "Real PostgreSQL test database is running",
+        "Class HESD-01 and subject SWE-101 exist",
+        "No enrollment exists for institutional_id SV_2026.001 in HESD-01 / SWE-101"
+      ],
+      "steps": [
+        "Import CSV row with institutional_id SV_2026.001, display_name, class_code HESD-01, subject_code SWE-101",
+        "Assert row accepted in ImportSummary with successRows incremented",
+        "Query users table for institutional_id SV_2026.001 and enrollment for HESD-01 / SWE-101"
+      ],
+      "expected": "VAL-05 pattern ^[A-Za-z0-9\\-_.]{3,32}$ accepted; enrollment persisted without InvalidInstitutionalId row error",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-03-030",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-03"],
+      "title": "Roster import updates display_name only on existing user — not email, role, or password",
+      "preconditions": [
+        "Real PostgreSQL test database is running",
+        "Student user SV2026001 exists with known display_name, email, role Student, active true, and password hash",
+        "Class HESD-01 and subject SWE-101 exist; no prior enrollment for SV2026001 in that pair"
+      ],
+      "steps": [
+        "Record current email, role, active flag, and password hash for SV2026001",
+        "Import CSV row with institutional_id SV2026001, new display_name, class_code HESD-01, subject_code SWE-101",
+        "Re-query user row for SV2026001 and enrollment record"
+      ],
+      "expected": "display_name updated to CSV value; email, role, active, and password hash unchanged per FR-03; enrollment row created for class-subject pair",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-03-031",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["FR-03", "AC-03"],
+      "title": "AC-03h: CSV import for HESD-01 and HESD-02 sharing subject SWE-101 creates both enrollments",
+      "preconditions": [
+        "TrainingOfficeAdmin is authenticated with roster:write permission",
+        "Classes HESD-01 and HESD-02 and subject SWE-101 exist in reference data",
+        "CSV contains valid rows for students in HESD-01/SWE-101 and HESD-02/SWE-101 with distinct institutional IDs"
+      ],
+      "steps": [
+        "POST /api/v1/roster/import with CSV referencing both class codes and shared subject_code SWE-101",
+        "Poll GET /api/v1/roster/imports/:batchId until Completed",
+        "Assert successRows matches total valid rows and errorRows=0",
+        "GET /api/v1/enrollments for HESD-01 / SWE-101 and HESD-02 / SWE-101 and verify counts per class"
+      ],
+      "expected": "Enrollments created for both class-subject pairs per AC-03h; independent Class and Subject catalogs linked via Enrollment without 1:1 pairing constraint",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-03-032",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "pagination",
+      "priority": "P0",
+      "traceability": ["FR-03", "AC-03"],
+      "title": "GET /classes and GET /subjects return paginated catalog with offset, limit, and total",
+      "preconditions": [
+        "TrainingOfficeAdmin session cookie is set with roster:read permission",
+        "At least 30 class and 30 subject reference records exist in database"
+      ],
+      "steps": [
+        "GET /api/v1/classes?offset=0&limit=25&sort=code with admin session",
+        "Assert HTTP 200; response items length=25; total≥30; offset=0; limit=25",
+        "GET /api/v1/classes?offset=25&limit=25 and assert items length equals remainder",
+        "GET /api/v1/subjects?q=SWE&offset=0&limit=25 and assert filtered items match search query",
+        "GET /api/v1/subjects?offset=0&limit=25&sort=code and assert codes sorted ascending"
+      ],
+      "expected": "Paginated catalog envelope per API design §4.1 and AC-03i; offset/limit boundaries respected; search and sort query params applied",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-03-033",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P1",
+      "traceability": ["FR-03", "AC-03", "BR-08"],
+      "title": "Instructor GET /classes and GET /subjects returns only ClassAssignment-scoped items",
+      "preconditions": [
+        "Instructor is authenticated with ClassAssignment for HESD-01 / SWE-101 only",
+        "Reference data includes HESD-01, HESD-02, SWE-101, and SWE-102"
+      ],
+      "steps": [
+        "GET /api/v1/classes with Instructor session",
+        "Assert HTTP 200; items contain HESD-01 only; HESD-02 absent",
+        "GET /api/v1/subjects with Instructor session",
+        "Assert HTTP 200; items contain SWE-101 only; SWE-102 absent"
+      ],
+      "expected": "Instructor catalog scoped to ClassAssignment per AC-03i and roster:read rules; institution-wide reference data not exposed",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-03-034",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-03"],
+      "title": "Roster import provisions new student when institutional_id not found",
+      "preconditions": [
+        "Real PostgreSQL test database is running",
+        "Class HESD-01 and subject SWE-101 exist",
+        "No user row exists for institutional_id SV2026999"
+      ],
+      "steps": [
+        "Import CSV row with institutional_id SV2026999, display_name, class_code HESD-01, subject_code SWE-101",
+        "Query users table for institutional_id SV2026999",
+        "Assert user created with role Student, synthetic email, random password hash, and active true",
+        "Query enrollment for SV2026999 in HESD-01 / SWE-101"
+      ],
+      "expected": "Missing user auto-provisioned with synthetic email and random password per FR-03; enrollment row linked to new student user",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-03-035",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-03", "AC-03"],
+      "title": "Admin creates subject SWE-102 via /admin/subjects/new and sees it on catalog list",
+      "preconditions": [
+        "TrainingOfficeAdmin is logged in to admin SPA",
+        "Subject SWE-102 does not yet exist in reference data"
+      ],
+      "steps": [
+        "Navigate to /admin/subjects and verify SubjectCatalogTable with search and pagination",
+        "Click Thêm môn to open /admin/subjects/new",
+        "Submit SubjectForm with code SWE-102 and display name Software Engineering 102",
+        "Verify success confirmation and SWE-102 appears on /admin/subjects list",
+        "Open roster import page and confirm SWE-102 accepted as subject_code in validation context"
+      ],
+      "expected": "Subject persisted per AC-03f; visible on /admin/subjects catalog and available for roster import validation",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-03-036",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["FR-03", "AC-03"],
+      "title": "Admin browses /admin/classes with code/name search, sort, and pagination",
+      "preconditions": [
+        "TrainingOfficeAdmin is logged in to admin SPA",
+        "At least 30 class reference records exist including HESD-03"
+      ],
+      "steps": [
+        "Navigate to /admin/classes",
+        "Verify ClassCatalogTable renders with TableToolbar search and Pagination footer",
+        "Type HESD in search field and wait 300 ms debounce; verify filtered results",
+        "Click code column header to toggle sort and verify order changes",
+        "Navigate to page 2 via Pagination and verify next offset of 25 rows loads"
+      ],
+      "expected": "Class catalog listing complies with 14-listing §0 search, sort (code asc default), and offset-25 pagination per AC-03i",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-03-037",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["FR-03"],
+      "title": "Unknown subject_code row rejected with UnknownSubjectCode error",
+      "preconditions": [
+        "RosterService.importCsv invoked under admin context",
+        "Class HESD-01 exists; CSV row references subject_code NONEXIST-99 with otherwise valid fields"
+      ],
+      "steps": [
+        "Import CSV with one row containing unknown subject_code NONEXIST-99",
+        "Capture ImportSummary errorDetails",
+        "Query enrollments table for any row referencing NONEXIST-99"
+      ],
+      "expected": "Row rejected with errorCode UnknownSubjectCode per validation rules §3.3; zero enrollment rows created for unknown subject",
+      "edgeCase": true
     }
   ]
 }

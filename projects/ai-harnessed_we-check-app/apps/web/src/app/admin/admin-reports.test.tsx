@@ -126,10 +126,9 @@ describe("Admin report pages (NFR-17)", () => {
     renderWithRole(<AdminReportsPage />, UserRole.TrainingOfficeAdmin);
 
     await waitFor(() => {
-      expect(screen.getByTestId("report-filter-bar")).toBeInTheDocument();
+      expect(screen.getByLabelText(reportCopy.filterClass)).toBeInTheDocument();
     });
 
-    expect(screen.getByLabelText(reportCopy.filterClass)).toBeInTheDocument();
     expect(screen.getByLabelText(reportCopy.filterSubject)).toBeInTheDocument();
     expect(screen.getByLabelText(reportCopy.filterFromDate)).toBeInTheDocument();
     expect(screen.getByLabelText(reportCopy.filterToDate)).toBeInTheDocument();
@@ -165,7 +164,7 @@ describe("Admin report pages (NFR-17)", () => {
     renderWithRole(<AdminExportPage />, UserRole.TrainingOfficeAdmin);
 
     await waitFor(() => {
-      expect(screen.getByTestId("report-filter-bar")).toBeInTheDocument();
+      expect(screen.getByLabelText(reportCopy.filterClass)).toBeInTheDocument();
     });
 
     fireEvent.click(screen.getByRole("button", { name: reportCopy.filterApply }));

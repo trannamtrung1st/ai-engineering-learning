@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start stack (dev or full preview) and verify API + web startup.
+# Start We Check stack (dev or full preview) and verify API + web startup.
 # Usage: preview-stack.sh [--mode dev|full] [--verify-only] [--down]
 set -euo pipefail
 source "$(dirname "$0")/lib/common.sh"

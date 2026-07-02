@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Computational validation gates
-# Usage: run-checks.sh [sliceId]
+# Usage: run-checks.sh [sliceId] [--profile fast|full]
 set -euo pipefail
 source "$(dirname "$0")/lib/common.sh"
 
@@ -8,10 +8,35 @@ require_harness_deps
 ensure_runs_dir
 
 # Omit slice id for global checks only (docs-only repo). Ralph passes slice id explicitly.
-SLICE_ID="${1:-${AIH_CHECK_SLICE:-}}"
+SLICE_ID=""
+CHECK_PROFILE=""
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --profile)
+      CHECK_PROFILE="${2:?profile required after --profile}"
+      shift 2
+      ;;
+    --profile=*)
+      CHECK_PROFILE="${1#--profile=}"
+      shift
+      ;;
+    *)
+      if [[ -z "$SLICE_ID" ]]; then
+        SLICE_ID="$1"
+      fi
+      shift
+      ;;
+  esac
+done
+SLICE_ID="${SLICE_ID:-${AIH_CHECK_SLICE:-}}"
+[[ -n "$CHECK_PROFILE" ]] && export AIH_CHECK_PROFILE="$CHECK_PROFILE"
+CHECK_PROFILE="$(get_check_profile)"
 RID="$(run_id)"
 FAILURES=()
 PASS=true
+PLAYWRIGHT_SCOPE_USED=""
+PLAYWRIGHT_SPEC_USED=""
+PLAYWRIGHT_TEST_COUNT=""
 
 cd "$REPO_ROOT"
 
@@ -235,6 +260,68 @@ check_generated_test_case_coverage() {
   fi
 }
 
+run_slice_scoped_playwright() {
+  local label timeout_ms timeout_sec log_file status spec_path rel_spec pw_dir
+  if [[ ! -d "$REPO_ROOT/tests/playwright-ui" ]]; then
+    aih_check_skip "slice playwright (tests/playwright-ui missing)"
+    return 0
+  fi
+
+  if should_run_full_playwright_suite "$SLICE_ID"; then
+    PLAYWRIGHT_SCOPE_USED="full"
+    label="npm run test:playwright-ui (full suite)"
+    timeout_ms="$(get_check_command_timeout_ms "test:playwright-ui")"
+    timeout_sec=$(( timeout_ms / 1000 ))
+    log_file="$(check_log_path_for_script "test:playwright-ui")"
+    set +e
+    run_shell_check "$label" "$timeout_ms" "$log_file" npm run test:playwright-ui
+    status=$?
+    set -e
+    if [[ "$status" -ne 0 ]]; then
+      record_npm_check_failure "test:playwright-ui" "$status" "$timeout_ms" "$log_file"
+    fi
+    return "$status"
+  fi
+
+  spec_path="$(resolve_playwright_spec_for_slice "$SLICE_ID" 2>/dev/null || true)"
+  if [[ -z "$spec_path" ]]; then
+    aih_check_skip "slice playwright (no spec for ${SLICE_ID})"
+    return 0
+  fi
+
+  PLAYWRIGHT_SCOPE_USED="slice"
+  PLAYWRIGHT_SPEC_USED="$spec_path"
+  pw_dir="${REPO_ROOT}/tests/playwright-ui"
+  rel_spec="${spec_path#tests/playwright-ui/}"
+  label="playwright slice spec (${rel_spec})"
+  timeout_ms="$(get_check_command_timeout_ms "test:playwright-ui")"
+  timeout_sec=$(( timeout_ms / 1000 ))
+  log_file="$(check_log_path_for_script "test:playwright-ui")"
+
+  aih_check_begin "${label} (timeout: ${timeout_sec}s)"
+  aih_info "    log: ${log_file}"
+  set +e
+  run_check_with_timeout_ms "$timeout_ms" --log "$log_file" --label "$label" \
+    bash -c "cd \"${pw_dir}\" && npx playwright test \"${rel_spec}\""
+  status=$?
+  set -e
+
+  if [[ "$status" -eq "$AGENT_TIMEOUT_EXIT" ]]; then
+    check_timeout_message "$timeout_ms" "$label"
+    aih_check_fail "${label} (timed out after ${timeout_sec}s)"
+    record_npm_check_failure "test:playwright-ui" "$status" "$timeout_ms" "$log_file"
+    return "$status"
+  fi
+  if [[ "$status" -ne 0 ]]; then
+    emit_check_log_tail "$log_file" 30
+    aih_check_fail "${label} (exit ${status})"
+    record_npm_check_failure "test:playwright-ui" "$status" "$timeout_ms" "$log_file"
+    return "$status"
+  fi
+  aih_check_ok "$label"
+  return 0
+}
+
 check_npm_commands() {
   if [[ ! -f package.json ]]; then
     aih_check_skip "npm scripts (no package.json)"
@@ -246,6 +333,10 @@ check_npm_commands() {
     script="$(echo "$line" | jq -r '.script')"
     optional="$(echo "$line" | jq -r '.optional // true')"
     active_when="$(echo "$line" | jq -r '.activeWhen // empty')"
+    if ! profile_includes_script "$CHECK_PROFILE" "$script"; then
+      aih_check_skip "npm run ${script} (profile ${CHECK_PROFILE})"
+      continue
+    fi
     timeout_ms="$(get_check_command_timeout_ms "$script")"
     timeout_sec=$(( timeout_ms / 1000 ))
     log_file="$(check_log_path_for_script "$script")"
@@ -254,7 +345,15 @@ check_npm_commands() {
       continue
     fi
     if jq -e --arg s "$script" '.scripts[$s]' package.json >/dev/null 2>&1; then
-      if [[ "$script" == "build" ]]; then
+      if [[ "$script" == "test:playwright-ui" && -n "$SLICE_ID" && "$(playwright_scope_for_checks)" == "slice" ]]; then
+        set +e
+        run_slice_scoped_playwright
+        status=$?
+        set -e
+        if [[ "$status" -ne 0 ]]; then
+          : # failures already recorded
+        fi
+      elif [[ "$script" == "build" ]]; then
         label="npm run build (preview-aware workspace build)"
         aih_check_begin "${label} (timeout: ${timeout_sec}s)"
         aih_info "    log: ${log_file}"
@@ -478,7 +577,7 @@ check_stack_startup() {
 
   if [[ "$scenario_status" -ne 0 ]]; then
     aih_check_fail "$scenario_label (exit ${scenario_status})"
-    FAILURES+=("{\"type\":\"runtime\",\"message\":\"participant registration scenario probe failed\"}")
+    FAILURES+=("{\"type\":\"runtime\",\"message\":\"student auth scenario probe failed\"}")
     PASS=false
   else
     aih_check_ok "$scenario_label"
@@ -486,9 +585,9 @@ check_stack_startup() {
 }
 
 if [[ -n "$SLICE_ID" ]]; then
-  aih_info "Computational checks for slice: ${SLICE_ID}"
+  aih_info "Computational checks for slice: ${SLICE_ID} (profile: ${CHECK_PROFILE})"
 else
-  aih_info "Computational checks (global — no slice id)"
+  aih_info "Computational checks (global — no slice id, profile: ${CHECK_PROFILE})"
 fi
 aih_blank
 
@@ -517,9 +616,12 @@ fi
 report="$(jq -n \
   --arg slice "$SLICE_ID" \
   --arg ts "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+  --arg profile "$CHECK_PROFILE" \
+  --arg playwrightScope "$PLAYWRIGHT_SCOPE_USED" \
+  --arg playwrightSpec "$PLAYWRIGHT_SPEC_USED" \
   --argjson pass "$([ "$PASS" = true ] && echo true || echo false)" \
   --argjson failures "$failures_json" \
-  '{slice: $slice, timestamp: $ts, pass: $pass, failures: $failures}')"
+  '{slice: $slice, timestamp: $ts, profile: $profile, playwrightScope: (if $playwrightScope == "" then null else $playwrightScope end), playwrightSpec: (if $playwrightSpec == "" then null else $playwrightSpec end), pass: $pass, failures: $failures}')"
 
 write_run_report "${RID}-checks.json" "$report"
 aih_info "Report: ${RID}-checks.json"

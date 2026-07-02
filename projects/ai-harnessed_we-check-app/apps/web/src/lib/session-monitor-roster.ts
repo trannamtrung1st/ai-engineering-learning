@@ -23,6 +23,22 @@ export function filterMonitorRecords(
   return records.filter((record) => record.status === filter);
 }
 
+/** 14-listing §3.2 — client search on displayName and institutionalId */
+export function searchMonitorRecords(
+  records: SessionMonitorRecord[],
+  rawQuery: string,
+): SessionMonitorRecord[] {
+  const query = rawQuery.trim().toLocaleLowerCase("vi");
+  if (!query) return records;
+
+  return records.filter((record) => {
+    const haystack = [record.displayName, record.institutionalId]
+      .join(" ")
+      .toLocaleLowerCase("vi");
+    return haystack.includes(query);
+  });
+}
+
 export function sortMonitorRecords(
   records: SessionMonitorRecord[],
   column: MonitorSortColumn | null,

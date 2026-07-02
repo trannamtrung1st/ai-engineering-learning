@@ -1,9 +1,28 @@
 import assert from "node:assert/strict";
 import { after, before, describe, it } from "node:test";
-import { ErrorCode, UserRole } from "@wecheck/domain";
+import { ErrorCode, UserImportStatus, UserRole } from "@wecheck/domain";
 import { ctx } from "../support/e2e-context.js";
 import { CLASS_HESD_01, CLASS_HESD_02, DEFAULT_PASSWORD, SUBJECT_SWE_101 } from "../support/constants.js";
-import { buildCsv, multipartPayload } from "../support/multipart.js";
+import { buildCsv, buildUserCsv, multipartPayload, multipartUserPayload } from "../support/multipart.js";
+
+async function pollUserImportBatch(
+  batchId: string,
+  cookie: string,
+): Promise<Record<string, unknown>> {
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    const response = await ctx.app.inject({
+      method: "GET",
+      url: `/api/v1/users/imports/${batchId}`,
+      headers: { cookie },
+    });
+    const body = response.json<{ status: string }>();
+    if (body.status === UserImportStatus.Completed) {
+      return body as Record<string, unknown>;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  throw new Error(`User import batch ${batchId} did not complete`);
+}
 
 /**
  * Flow D — Reporting authorization (testing-plan §6)
@@ -12,7 +31,7 @@ import { buildCsv, multipartPayload } from "../support/multipart.js";
  * Cases: TC-AC-01-004 TC-AC-01-005 TC-AC-03-004 TC-AC-03-006 TC-AC-12-003
  * TC-AC-13-002 TC-AC-14-003 TC-AC-14-005 TC-NFR-07-013 TC-NFR-10-009 TC-NFR-11-004
  * TC-NFR-11-005 TC-NFR-11-006 TC-NFR-11-007 TC-NFR-11-008 TC-NFR-11-012
- * TC-NFR-11-013 TC-NFR-11-014
+ * TC-NFR-11-013 TC-NFR-11-014 TC-FR-01-023 TC-FR-01-025 TC-NFR-14-023
  */
 describe("Flow D — reporting authorization (AC-01, AC-02, AC-03, AC-12–AC-14)", () => {
   before(async () => {
@@ -411,5 +430,111 @@ describe("Flow D — reporting authorization (AC-01, AC-02, AC-03, AC-12–AC-14
     });
     assert.equal(qrDenied.statusCode, 403);
     assert.equal(qrDenied.json<{ errorCode: string }>().errorCode, ErrorCode.Forbidden);
+  });
+
+  it("institutional ID with underscore and period accepted (TC-FR-01-023, AC-01f)", async () => {
+    await ctx.resetDb(ctx.seedReferenceData.bind(ctx));
+    const admin = await ctx.seedAdmin();
+
+    const createRes = await ctx.app.inject({
+      method: "POST",
+      url: "/api/v1/users",
+      headers: { cookie: admin.cookie },
+      payload: {
+        institutionalId: "SV_2026.001",
+        displayName: "Underscore Student",
+        email: "underscore001@example.edu.vn",
+        password: DEFAULT_PASSWORD,
+        role: UserRole.Student,
+      },
+    });
+    assert.equal(createRes.statusCode, 201);
+    assert.equal(
+      createRes.json<{ institutionalId: string }>().institutionalId,
+      "SV_2026.001",
+    );
+
+    const csv = buildUserCsv([
+      "SV_2026.002,Period Student,period002@example.edu.vn,Student,true",
+    ]);
+    const { payload, contentType } = multipartUserPayload(csv);
+    const importRes = await ctx.app.inject({
+      method: "POST",
+      url: "/api/v1/users/import",
+      headers: { cookie: admin.cookie, "content-type": contentType },
+      payload,
+    });
+    assert.equal(importRes.statusCode, 202);
+    const { batchId } = importRes.json<{ batchId: string }>();
+    const batch = await pollUserImportBatch(batchId, admin.cookie);
+    assert.equal(batch.createdCount, 1);
+
+    const row = await ctx.db.query(
+      "SELECT institutional_id FROM users WHERE institutional_id = $1",
+      ["SV_2026.002"],
+    );
+    assert.equal(row.rowCount, 1);
+  });
+
+  it("POST /users/import returns 202 with batch envelope (TC-FR-01-025, AC-01d)", async () => {
+    await ctx.resetDb(ctx.seedReferenceData.bind(ctx));
+    const admin = await ctx.seedAdmin();
+    const csv = buildUserCsv([
+      "SV-IMPORT-01,Import One,import01@example.edu.vn,Student,true",
+    ]);
+    const { payload, contentType } = multipartUserPayload(csv);
+
+    const importRes = await ctx.app.inject({
+      method: "POST",
+      url: "/api/v1/users/import",
+      headers: { cookie: admin.cookie, "content-type": contentType },
+      payload,
+    });
+    assert.equal(importRes.statusCode, 202);
+    const body = importRes.json<{
+      batchId: string;
+      status: string;
+      message: string;
+    }>();
+    assert.ok(body.batchId);
+    assert.equal(body.status, UserImportStatus.Processing);
+    assert.match(body.message, /Đang xử lý/);
+
+    const batch = await pollUserImportBatch(body.batchId, admin.cookie);
+    assert.equal(batch.status, UserImportStatus.Completed);
+    assert.equal(typeof batch.totalRows, "number");
+    assert.equal(typeof batch.createdCount, "number");
+    assert.equal(typeof batch.updatedCount, "number");
+    assert.ok(Array.isArray(batch.errorDetails));
+  });
+
+  it("GET /users/imports/:batchId excludes password fields (TC-NFR-14-023, AC-01d, NFR-14)", async () => {
+    await ctx.resetDb(ctx.seedReferenceData.bind(ctx));
+    const admin = await ctx.seedAdmin();
+    const csv = buildUserCsv([
+      "SV-IMPORT-02,Import Two,import02@example.edu.vn,Student,true",
+    ]);
+    const { payload, contentType } = multipartUserPayload(csv);
+    const importRes = await ctx.app.inject({
+      method: "POST",
+      url: "/api/v1/users/import",
+      headers: { cookie: admin.cookie, "content-type": contentType },
+      payload,
+    });
+    const { batchId } = importRes.json<{ batchId: string }>();
+    await pollUserImportBatch(batchId, admin.cookie);
+
+    const batchRes = await ctx.app.inject({
+      method: "GET",
+      url: `/api/v1/users/imports/${batchId}`,
+      headers: { cookie: admin.cookie },
+    });
+    assert.equal(batchRes.statusCode, 200);
+    const json = JSON.stringify(batchRes.json());
+    assert.equal(json.includes("password"), false);
+    assert.equal(json.includes("passwordHash"), false);
+    assert.equal(json.includes("password_hash"), false);
+    assert.equal(json.includes("initialPassword"), false);
+    assert.equal(json.includes("generatedPassword"), false);
   });
 });

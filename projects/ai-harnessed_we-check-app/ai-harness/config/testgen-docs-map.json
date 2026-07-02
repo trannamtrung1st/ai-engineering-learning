@@ -8,170 +8,62 @@
   ],
   "rules": [
     {
-      "match": "^AC-02$",
+      "match": "^AC-0[1-4]$",
       "docs": [
         "docs/brds/03-functional-requirements.md",
         "docs/brds/04-business-rules.md",
         "docs/technical/02-module-breakdown.md",
-        "docs/technical/05-api-design.md",
-        "docs/ui-ux/05-common-ui-components.md",
-        "docs/ui-ux/10-user-flows.md",
-        "docs/technical/12-backend-frontend-tech-stack.md"
-      ],
-      "coverageHints": [
-        "browser-journey: open UserMenu → identity panel shows displayName, email, institutionalId, role (AC-02e)",
-        "browser-journey: select Đăng xuất → lands on /login; /auth/me returns 401 (AC-02d)",
-        "browser-journey: login redirect with returnUrl preserved (AC-02a/b)",
-        "browser-journey: session expired toast on protected route (AC-02c)"
+        "docs/technical/05-api-design.md"
       ]
     },
     {
-      "match": "^FR-02$",
-      "docs": [
-        "docs/brds/03-functional-requirements.md",
-        "docs/technical/05-api-design.md",
-        "docs/ui-ux/05-common-ui-components.md",
-        "docs/ui-ux/10-user-flows.md",
-        "docs/technical/12-backend-frontend-tech-stack.md"
-      ],
-      "coverageHints": [
-        "component: UserMenu renders identity fields and logout item with data-testids",
-        "integration: POST /auth/logout 204 + cookie cleared (TC-FR-02-009)",
-        "browser-journey: logout from student, instructor, and admin shells"
-      ]
-    },
-    {
-      "match": "^AC-0[1-3]$",
-      "docs": [
-        "docs/brds/03-functional-requirements.md",
-        "docs/brds/04-business-rules.md",
-        "docs/technical/02-module-breakdown.md",
-        "docs/technical/05-api-design.md",
-        "docs/technical/08-validation-rules.md",
-        "docs/ui-ux/08-forms-validation-ux.md",
-        "docs/ui-ux/10-user-flows.md",
-        "docs/ui-ux/14-listing-pages-search-filter-sort.md"
-      ],
-      "coverageHints": [
-        "integration: POST /users/import upsert — create new student, update existing by institutional_id (AC-01d)",
-        "integration: CSV row DuplicateEmail when email belongs to different institutional_id (AC-01g)",
-        "integration: institutional ID with underscore and period accepted (AC-01f)",
-        "integration: roster CSV row with institutional_id containing _ or . accepted under VAL-05",
-        "integration: roster import updates display_name only on existing user — not email, role, or password",
-        "browser-journey: /admin/users/import upload → preview → summary with created/updated counts",
-        "integration: POST /classes and POST /subjects create reference records with uppercase code validation",
-        "integration: GET /classes and GET /subjects return paginated catalog (AC-03i)",
-        "integration: duplicate class code returns DuplicateClassCode with localized error",
-        "integration: duplicate subject code returns DuplicateSubjectCode (AC-03g)",
-        "integration: CSV import with two classes sharing one subject code succeeds (AC-03h)",
-        "browser-journey: /admin/classes list + /admin/classes/new create class HESD-03 (AC-03d)",
-        "browser-journey: /admin/subjects list + /admin/subjects/new create subject SWE-102 (AC-03f)",
-        "browser-journey: /admin/users search/filter/sort/pagination per 14-listing §0",
-        "browser-journey: /admin/rosters class search, cohort filter, sort, pagination on detail"
-      ]
-    },
-    {
-      "match": "^AC-0[456]$",
+      "match": "^AC-0[5-7]$",
       "docs": [
         "docs/technical/02-module-breakdown.md",
-        "docs/technical/06-main-workflows.md",
         "docs/technical/07-state-machines.md",
-        "docs/technical/05-api-design.md",
-        "docs/ui-ux/14-listing-pages-search-filter-sort.md"
-      ],
-      "coverageHints": [
-        "browser-journey: /sessions search, status filter chips, sort, pagination per 14-listing §0"
+        "docs/technical/05-api-design.md"
       ]
     },
     {
-      "match": "^AC-(07|08|09|10)$",
+      "match": "^AC-(08|09|10)$",
       "docs": [
         "docs/technical/02-module-breakdown.md",
         "docs/technical/03-domain-model.md",
-        "docs/technical/05-api-design.md",
-        "docs/technical/08-validation-rules.md",
-        "docs/technical/06-main-workflows.md",
-        "docs/ui-ux/07-event-specific-components.md",
-        "docs/ui-ux/12-ui-states.md"
-      ],
-      "coverageHints": [
-        "integration: GET /check-in/tokens/:tokenId/preflight returns 200 for valid enrolled token on Active session",
-        "integration: preflight rejects ExpiredQr, NotEnrolled, SessionMismatch, TokenNotFound before GPS step",
-        "browser-journey: scan step does not mount gps-capture-step until preflight passes",
-        "component: GpsCaptureStep ready state shows check icon without Spinner; aria-busy false; submit enabled",
-        "e2e: gpsSim params ignored when VITE_ENABLE_DEVICE_SIMULATION=false"
+        "docs/technical/05-api-design.md"
       ]
     },
     {
-      "match": "^AC-1[78]$",
-      "docs": [
-        "docs/brds/03-functional-requirements.md",
-        "docs/brds/04-business-rules.md",
-        "docs/brds/08-acceptance-mvp-future.md",
-        "docs/technical/05-api-design.md",
-        "docs/technical/01-roles-permissions.md",
-        "docs/ui-ux/09-page-list.md",
-        "docs/ui-ux/06-app-layout-components.md",
-        "docs/ui-ux/10-user-flows.md"
-      ],
-      "coverageHints": [
-        "integration: GET /setup/status returns needsSetup true when User count is zero",
-        "integration: POST /setup/first-admin rejected with 403 after bootstrap complete",
-        "browser-journey: instructor layout chrome contains zero href matching /admin",
-        "browser-journey: authenticated admin lands on /admin hub with permission-filtered cards"
-      ]
-    },
-    {
-      "match": "^AC-1[1-4]$",
+      "match": "^AC-1[12]$",
       "docs": [
         "docs/technical/02-module-breakdown.md",
-        "docs/technical/05-api-design.md",
-        "docs/technical/09-error-handling.md"
-      ]
-    },
-    {
-      "match": "^AC-12$",
-      "docs": [
-        "docs/technical/05-api-design.md",
-        "docs/technical/01-roles-permissions.md",
-        "docs/ui-ux/09-page-list.md",
-        "docs/ui-ux/14-listing-pages-search-filter-sort.md"
-      ],
-      "coverageHints": [
-        "integration: instructor report scoped to assigned class-subject pairs only",
-        "rbac-negative: unassigned instructor receives 403 on report endpoint",
-        "e2e: admin institution-wide report returns all cohorts within date filter",
-        "browser-journey: report tables sort and paginate per 14-listing §0",
-        "browser-journey: report page shows inline Xuất CSV for permitted roles per BR-09 (AC-12d, AC-13c)"
+        "docs/technical/09-error-handling.md",
+        "docs/technical/05-api-design.md"
       ]
     },
     {
       "match": "^AC-13$",
       "docs": [
         "docs/technical/05-api-design.md",
-        "docs/brds/04-business-rules.md",
-        "docs/ui-ux/09-page-list.md",
-        "docs/ui-ux/14-listing-pages-search-filter-sort.md"
+        "docs/ui-ux/09-page-list.md"
       ],
       "coverageHints": [
-        "integration: CSV export columns match spec; export action audit-logged",
-        "integration: instructor scoped CSV export succeeds for assigned class-subject (AC-13c)",
-        "rbac-negative: student export rejected with localized message; no export control visible (AC-13b)",
-        "e2e: admin inline Xuất CSV on /admin/reports without /admin/export navigation (AC-13d)",
-        "e2e: admin CSV download via dedicated /admin/export confirm flow"
+        "integration: paginated list returns correct total, pageSize, and page-2 slice boundaries",
+        "e2e: sessions list page 2 returns correct slice per testing-plan §3",
+        "browser-journey: student/instructor/admin paginated tables show range label (e.g. 1–20 of N)",
+        "pagination: invalid page/pageSize returns INVALID_PAGINATION"
       ]
     },
     {
       "match": "^AC-14$",
       "docs": [
         "docs/technical/05-api-design.md",
-        "docs/ui-ux/09-page-list.md",
-        "docs/ui-ux/14-listing-pages-search-filter-sort.md"
+        "docs/ui-ux/09-page-list.md"
       ],
       "coverageHints": [
-        "integration: student history returns only own records with pagination envelope",
-        "rbac-negative: student cannot access peer attendance via API",
-        "browser-journey: /history search, status filter, sort, load-more pagination per 14-listing §0"
+        "integration: attendance history list uses single query — no N+1 fan-out",
+        "e2e: GET student attendance history paginated envelope with page, pageSize, total",
+        "browser-journey: /history paginates with correct range and session details",
+        "pagination: page-2 boundary returns expected slice"
       ]
     },
     {
@@ -179,176 +71,37 @@
       "docs": [
         "docs/technical/05-api-design.md",
         "docs/ui-ux/10-user-flows.md",
-        "docs/technical/01-roles-permissions.md",
-        "docs/ui-ux/14-listing-pages-search-filter-sort.md"
+        "docs/technical/01-roles-permissions.md"
       ],
       "coverageHints": [
-        "integration: session monitor poll returns updated present/absent counts",
-        "browser-journey: instructor monitor dashboard refreshes within 5 seconds",
-        "browser-journey: monitor roster search and status filter per 14-listing §0",
-        "e2e: absence threshold notification fires when unexcused rate exceeds 20%"
+        "browser-journey: student/instructor/admin flow from user-flows doc — navigate, act, verify visible state",
+        "rbac-negative: denied role cannot access instructor-only or admin-only routes",
+        "http-contract: API endpoints referenced in flow return expected status codes"
       ]
     },
     {
       "match": "^AC-17$",
       "docs": [
-        "docs/brds/03-functional-requirements.md",
-        "docs/brds/08-acceptance-mvp-future.md",
         "docs/technical/05-api-design.md",
-        "docs/ui-ux/09-page-list.md",
-        "docs/ui-ux/08-forms-validation-ux.md"
-      ],
-      "coverageHints": [
-        "e2e: GET /setup/status needsSetup true on empty DB",
-        "e2e: POST /setup/first-admin creates admin; repeat returns SetupAlreadyComplete",
-        "browser-journey: / redirects to /setup when needsSetup; lands on /admin after form"
-      ]
-    },
-    {
-      "match": "^AC-18$",
-      "docs": [
-        "docs/brds/03-functional-requirements.md",
-        "docs/brds/04-business-rules.md",
-        "docs/ui-ux/06-app-layout-components.md",
-        "docs/ui-ux/05-common-ui-components.md",
-        "docs/ui-ux/01-ui-ux-foundation.md",
-        "docs/technical/01-roles-permissions.md"
-      ],
-      "coverageHints": [
-        "browser-journey: instructor zero /admin href in layout chrome",
-        "browser-journey: admin /admin hub cards deep-link to permitted routes",
-        "browser-journey: unauthenticated / shows RouteDiscoveryPanel with four role entry links (AC-18f)",
-        "browser-journey: authenticated / redirects without discovery panel (AC-18g)",
-        "browser-journey: admin on /admin/rosters/import has exactly one aria-current=page — Nhập danh sách active, not Danh sách ghi danh (AC-18h)",
-        "browser-journey: instructor on /sessions/new has exactly one active nav item — Buổi học (AC-18i)",
-        "component: usePermittedNav omits unauthorized nav items",
-        "component: nav match/end rules per 06-app-layout-components §6.2a (BR-14a)",
-        "component: RouteDiscoveryPanel renders links with Vietnamese labels and data-testids"
-      ]
-    },
-    {
-      "match": "^BR-09$",
-      "docs": [
-        "docs/brds/04-business-rules.md",
-        "docs/brds/03-functional-requirements.md",
-        "docs/technical/05-api-design.md",
-        "docs/ui-ux/14-listing-pages-search-filter-sort.md"
-      ],
-      "coverageHints": [
-        "rbac-negative: student export denied with localized message",
-        "integration: instructor export scoped to ClassAssignment; out-of-scope denied",
-        "integration: admin institution-wide export within filters",
-        "browser-journey: inline Xuất CSV on report pages per role scope"
-      ]
-    },
-    {
-      "match": "^BR-13$",
-      "docs": [
-        "docs/brds/04-business-rules.md",
-        "docs/technical/05-api-design.md",
-        "docs/technical/08-validation-rules.md"
-      ],
-      "coverageHints": [
-        "integration: bootstrap allowed only when User.count = 0",
-        "e2e: concurrent bootstrap requests produce single admin"
-      ]
-    },
-    {
-      "match": "^BR-14$",
-      "docs": [
-        "docs/brds/04-business-rules.md",
-        "docs/technical/01-roles-permissions.md",
-        "docs/ui-ux/06-app-layout-components.md"
-      ],
-      "coverageHints": [
-        "browser-journey: nav chrome derived from same permission matrix as API guards",
-        "component: forbidden nav items omitted not disabled",
-        "browser-journey: singleton active nav on /admin/rosters/import — only Nhập danh sách active (BR-14a, AC-18h)",
-        "component: nav match/end rules per 06-app-layout-components §6.2a"
-      ]
-    },
-    {
-      "match": "^BR-15$",
-      "docs": [
-        "docs/brds/04-business-rules.md",
-        "docs/technical/05-api-design.md",
-        "docs/technical/06-main-workflows.md",
         "docs/ui-ux/07-event-specific-components.md"
-      ],
-      "coverageHints": [
-        "integration: preflight read-only chain before POST /check-in",
-        "browser-journey: gps-capture-step absent until preflight 200"
       ]
     },
     {
-      "match": "^NFR-24$",
-      "docs": [
-        "docs/brds/07-non-functional-risk.md",
-        "docs/technical/10-local-development-setup.md",
-        "docs/demo-guides.md",
-        "docs/technical/11-testing-plan.md"
-      ],
-      "coverageHints": [
-        "unit: preview-sim helpers no-op when VITE_ENABLE_DEVICE_SIMULATION=false",
-        "e2e: Playwright config sets sim flag on; production build ignores gpsSim and cameraSim query params"
-      ]
-    },
-    {
-      "match": "^NFR-0(1|2|4)$",
-      "docs": [
-        "docs/technical/13-docker-compose-local-runtime.md",
-        "docs/brds/07-non-functional-risk.md"
-      ]
+      "match": "^NFR-0(2|4)$",
+      "docs": ["docs/technical/13-docker-compose-local-runtime.md"]
     },
     {
       "match": "^NFR-06$",
       "docs": [
         "docs/ui-ux/00-production-ui-quality-bar.md",
-        "docs/ui-ux/04-design-tokens.md",
-        "docs/ui-ux/06-app-layout-components.md",
-        "docs/technical/07-state-machines.md"
+        "docs/ui-ux/04-design-tokens.md"
       ]
     },
     {
-      "match": "^NFR-(07|08|11|15)$",
+      "match": "^NFR-(07|08|17)$",
       "docs": [
         "docs/technical/01-roles-permissions.md",
-        "docs/technical/05-api-design.md",
-        "docs/technical/09-error-handling.md",
-        "docs/ui-ux/06-app-layout-components.md"
-      ],
-      "coverageHints": [
-        "browser-journey: per role assert zero layout nav links to forbidden route prefixes (/admin/* for non-admin)",
-        "component: SidebarNav and BottomNav omit items lacking required permission"
-      ]
-    },
-    {
-      "match": "^NFR-1[0-6]$",
-      "docs": [
-        "docs/technical/05-api-design.md",
-        "docs/technical/01-roles-permissions.md",
-        "docs/brds/04-business-rules.md"
-      ]
-    },
-    {
-      "match": "^NFR-1[789]$|^NFR-20$",
-      "docs": [
-        "docs/ui-ux/00-production-ui-quality-bar.md",
-        "docs/ui-ux/04-design-tokens.md",
-        "docs/ui-ux/05-common-ui-components.md",
-        "docs/ui-ux/12-ui-states.md",
-        "docs/ui-ux/13-accessibility-basics.md",
-        "docs/brds/07-non-functional-risk.md",
-        "ai-harness/docs/ui-visual-verification.md",
-        "ai-harness/skills/frontend-design/SKILL.md",
-        "ai-harness/skills/design-craft-notion/SKILL.md"
-      ],
-      "coverageHints": [
-        "browser-journey: screenshot /login primary + outline buttons at 320px — label contrast ≥4.5:1",
-        "browser-journey: student check-in outcome panels — distinct wash + readable CTA button",
-        "browser-journey: instructor session list — table action buttons legible on warm stone background",
-        "browser-journey: admin listing toolbar — search + filter row per 14-listing §0 and design-craft-notion skill",
-        "component: Button variants use token fg/bg pairs from 04-design-tokens §3.2.1"
+        "docs/technical/05-api-design.md"
       ]
     },
     {
@@ -356,114 +109,47 @@
       "docs": ["docs/technical/12-backend-frontend-tech-stack.md"]
     },
     {
-      "match": "^FR-0[1-3]$",
+      "match": "^NFR-18$",
+      "docs": [
+        "docs/technical/04-database-design.md",
+        "docs/technical/05-api-design.md"
+      ]
+    },
+    {
+      "match": "^FR-0[1-4]$",
       "docs": [
         "docs/brds/03-functional-requirements.md",
         "docs/technical/02-module-breakdown.md",
         "docs/technical/05-api-design.md",
-        "docs/technical/04-database-design.md",
-        "docs/technical/08-validation-rules.md"
-      ],
-      "coverageHints": [
-        "integration: POST /classes creates Class with unique uppercase code",
-        "integration: POST /subjects creates Subject with unique uppercase code",
-        "integration: duplicate class code returns 422 DuplicateClassCode"
+        "docs/technical/06-main-workflows.md"
       ]
     },
     {
-      "match": "^FR-0[45]$",
-      "docs": [
-        "docs/brds/03-functional-requirements.md",
-        "docs/technical/02-module-breakdown.md",
-        "docs/technical/06-main-workflows.md",
-        "docs/technical/07-state-machines.md"
-      ]
-    },
-    {
-      "match": "^FR-0[6-9]$|^FR-10$",
+      "match": "^FR-0[5-9]$|^FR-1[0-2]$",
       "docs": [
         "docs/brds/03-functional-requirements.md",
         "docs/brds/04-business-rules.md",
         "docs/technical/02-module-breakdown.md",
         "docs/technical/05-api-design.md",
-        "docs/technical/08-validation-rules.md",
-        "docs/technical/06-main-workflows.md",
-        "docs/ui-ux/07-event-specific-components.md"
-      ],
-      "coverageHints": [
-        "integration: preflight endpoint read-only chain token → session Active → enrollment",
-        "browser-journey: client calls getUserMedia and geolocation when sim flag off",
-        "component: GpsCaptureStep ready substate hides spinner per ui-states §4.2"
+        "docs/technical/07-state-machines.md"
       ]
     },
     {
-      "match": "^FR-1[1-4]$",
+      "match": "^FR-1[3-7]$",
       "docs": [
         "docs/brds/03-functional-requirements.md",
         "docs/technical/02-module-breakdown.md",
-        "docs/technical/05-api-design.md",
-        "docs/technical/09-error-handling.md",
-        "docs/ui-ux/14-listing-pages-search-filter-sort.md"
-      ],
-      "coverageHints": [
-        "browser-journey: listing pages meet 14-listing §0 search/filter/sort/pagination matrix",
-        "integration: instructor scoped CSV export when tag is FR-13",
-        "browser-journey: report pages expose inline Xuất CSV for permitted roles"
+        "docs/technical/07-state-machines.md",
+        "docs/technical/05-api-design.md"
       ]
     },
     {
-      "match": "^FR-1[78]$",
+      "match": "^FR-18$",
       "docs": [
         "docs/brds/03-functional-requirements.md",
-        "docs/technical/05-api-design.md",
-        "docs/technical/01-roles-permissions.md",
-        "docs/ui-ux/06-app-layout-components.md",
-        "docs/ui-ux/09-page-list.md"
-      ],
-      "coverageHints": [
-        "integration: setup status and first-admin API contracts",
-        "component: usePermittedNav filters nav items by permission matrix",
-        "browser-journey: role home hub cards deep-link to permitted routes only"
-      ]
-    },
-    {
-      "match": "^FR-01$",
-      "docs": [
-        "docs/brds/03-functional-requirements.md",
-        "docs/technical/05-api-design.md",
-        "docs/technical/08-validation-rules.md",
+        "docs/technical/02-module-breakdown.md",
         "docs/technical/03-domain-model.md",
-        "docs/ui-ux/08-forms-validation-ux.md",
-        "docs/ui-ux/10-user-flows.md",
-        "docs/ui-ux/09-page-list.md"
-      ],
-      "coverageHints": [
-        "integration: POST /users/import upsert — create new student, update existing by institutional_id (AC-01d)",
-        "integration: CSV row DuplicateEmail when email belongs to different institutional_id (AC-01g)",
-        "integration: institutional ID with underscore and period accepted (AC-01f)",
-        "browser-journey: /admin/users/import upload → preview → summary with created/updated counts"
-      ]
-    },
-    {
-      "match": "^FR-03$",
-      "docs": [
-        "docs/brds/03-functional-requirements.md",
-        "docs/technical/05-api-design.md",
-        "docs/technical/08-validation-rules.md",
-        "docs/ui-ux/08-forms-validation-ux.md"
-      ],
-      "coverageHints": [
-        "integration: roster CSV row with institutional_id containing _ or . accepted under VAL-05",
-        "integration: roster import updates display_name only on existing user — not email, role, or password"
-      ]
-    },
-    {
-      "match": "^FR-1[56]$",
-      "docs": [
-        "docs/brds/03-functional-requirements.md",
-        "docs/technical/02-module-breakdown.md",
-        "docs/technical/05-api-design.md",
-        "docs/ui-ux/10-user-flows.md"
+        "docs/technical/05-api-design.md"
       ]
     }
   ],
@@ -499,9 +185,6 @@
       "docs/technical/08-validation-rules.md",
       "docs/technical/03-domain-model.md"
     ],
-    "NFR": ["docs/brds/07-non-functional-risk.md"],
-    "AC": [
-      "docs/brds/08-acceptance-mvp-future.md"
-    ]
+    "NFR": ["docs/brds/07-non-functional-risk.md"]
   }
 }

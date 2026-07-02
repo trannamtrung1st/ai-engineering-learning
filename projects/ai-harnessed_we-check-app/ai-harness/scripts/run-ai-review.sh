@@ -25,10 +25,34 @@ diff_context=""
 changed_files=""
 checks_summary=""
 artifacts_list=""
+scope_gate_status="not_run"
+allowlisted_files=""
 
 if git rev-parse --git-dir >/dev/null 2>&1; then
-  diff_context="$(git diff HEAD 2>/dev/null | head -c 50000 || true)"
-  changed_files="$(git_changed_files | sed 's/^/- /')"
+  allowlist_arr=()
+  while IFS= read -r _al_entry; do
+    [[ -z "$_al_entry" ]] && continue
+    allowlist_arr+=("$_al_entry")
+  done < <(build_slice_scope_allowlist "$SLICE_ID" 2>/dev/null || true)
+  if [[ ${#allowlist_arr[@]} -gt 0 ]]; then
+    allowlisted_files="$(printf '%s\n' "${allowlist_arr[@]}" | sed 's/^/- /')"
+    while IFS= read -r f; do
+      [[ -z "$f" ]] && continue
+      if path_in_scope_allowlist "$f" "${allowlist_arr[@]}"; then
+        changed_files+="- ${f}"$'\n'
+      fi
+    done < <(git_changed_files)
+    scope_violations="$(check_slice_scope_violations "$SLICE_ID" 2>/dev/null || true)"
+    if [[ -z "$scope_violations" ]]; then
+      scope_gate_status="pass"
+    else
+      scope_gate_status="fail"
+    fi
+    diff_context="$(git diff HEAD -- "${allowlist_arr[@]}" 2>/dev/null | head -c 50000 || true)"
+  else
+    diff_context="$(git diff HEAD 2>/dev/null | head -c 50000 || true)"
+    changed_files="$(git_changed_files | sed 's/^/- /')"
+  fi
 fi
 
 checks_summary="$(find_checks_report_for_slice "$SLICE_ID" "$RUN_ID")"
@@ -39,9 +63,18 @@ full_prompt="${prompt}
 
 ## Harness reminder
 
-Computational checks already passed. Browser functional test report is bundled below when applicable. Review **only** from the evidence below and by reading listed files. Do not run shell, npm, docker, tests, builds, servers, or browser/MCP.
+Computational checks already passed. Mechanical scope gate: \`${scope_gate_status}\`. Browser functional test report is bundled below when applicable. Review **only** from the evidence below and by reading listed files. Do not run shell, npm, docker, tests, builds, servers, or browser/MCP.
 
-## Changed files (read these + completion artifacts only)
+## Scope gate
+
+- **scope_gate:** ${scope_gate_status}
+- **allowlisted_files:**
+
+${allowlisted_files:-_(not computed)_}
+
+When scope_gate is \`pass\`, checklist item 1 trusts the allowlist — focus on acceptance and craft only.
+
+## Changed files (allowlisted only)
 
 ${changed_files:-_(none detected)_}
 

@@ -1,0 +1,53 @@
+services:
+  postgres:
+    image: postgres:16
+    profiles: [local, integration]
+    environment:
+      POSTGRES_USER: hesd
+      POSTGRES_PASSWORD: hesd_dev
+      POSTGRES_DB: hesd
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hesd -d hesd"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile.dev
+    profiles: [local, integration]
+    ports:
+      - "3001:3001"
+    volumes:
+      - ./api:/app
+      - ./supabase:/supabase
+      - /app/node_modules
+    environment:
+      DATABASE_URL: postgresql://hesd:hesd_dev@postgres:5432/hesd
+      PORT: 3001
+      WEB_ORIGIN: http://localhost:3000
+      CHOKIDAR_USEPOLLING: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: npm run start:dev
+
+  migrate:
+    build:
+      context: ./api
+      dockerfile: Dockerfile.dev
+    profiles: [integration]
+    volumes:
+      - ./api:/app
+      - ./supabase:/supabase
+      - /app/node_modules
+    environment:
+      DATABASE_URL: postgresql://hesd:hesd_dev@postgres:5432/hesd
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: sh -c "npm run db:migrate && npm run db:seed"
+    restart: "no"

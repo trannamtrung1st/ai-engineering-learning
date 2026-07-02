@@ -1,8 +1,8 @@
 {
   "productItemId": "NFR-04",
   "version": 1,
-  "docFingerprint": "sha256:ed2f2a01af64f91a7bd1aa1df43796784981c952d0a4a18ac9807f4aa24ca5e5",
-  "generatedAt": "2026-06-29T18:50:44Z",
+  "docFingerprint": "sha256:5b3f17bf9e4022ec4b61eaa6dd31b209338f3eb3f7625a2df1fa4375c7f77934",
+  "generatedAt": "2026-06-30T11:15:00Z",
   "cases": [
     {
       "id": "TC-NFR-04-001",
@@ -26,7 +26,7 @@
         "Assert p95 ≤ 2000 ms",
         "Assert each Success response contains outcome Success and attendance.status Present"
       ],
-      "expected": "Testing-plan §3 TS-20 satisfied: check-in API p95 ≤ 2 s under normal pilot network per NFR-04 and AC-07a confirmation SLA",
+      "expected": "Testing-plan §3 TS-20 satisfied: check-in API p95 ≤ 2 s under normal pilot network per NFR-04 and AC-07a; complements pilot APM p95 metrics per NFR-04 verification method",
       "edgeCase": false
     },
     {
@@ -107,7 +107,7 @@
       "layer": "e2e",
       "technique": "flow-a",
       "priority": "P0",
-      "traceability": ["NFR-04", "FR-07", "AC-07", "BR-15"],
+      "traceability": ["NFR-04", "FR-07", "AC-07", "BR-15", "NFR-24"],
       "title": "Flow A step 4: enrolled student check-in completes within 2000 ms in workshop lifecycle",
       "preconditions": [
         "Flow A steps 1–3 complete: roster seeded, session opened Active, QR token polled via GET /sessions/:id/qr/current",
@@ -155,15 +155,16 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["NFR-04", "AC-07", "FR-07", "BR-15"],
+      "traceability": ["NFR-04", "AC-07", "FR-07", "BR-15", "NFR-24"],
       "title": "Mobile check-in success confirmation UI visible within 2000 ms of submit tap",
       "preconditions": [
         "Authenticated Student on mobile viewport 375×812 with GPS permission granted",
+        "Playwright MCP harness with VITE_ENABLE_DEVICE_SIMULATION=true per testing-plan §8 and NFR-24",
         "Active session with valid check-in deep link /check-in?token=:tokenId&session=:sessionId",
         "Preflight already passed and GpsCaptureStep in ready state (Vị trí đã sẵn sàng per AC-08f)",
         "Auth user prefetched on mount so submit timing excludes duplicate auth round-trip",
         "Normal network profile (no throttling); web on port 3000, API healthy",
-        "In-radius geolocation mocked or granted (10.762700, 106.660200) for room (10.762622, 106.660172)"
+        "In-radius geolocation via sim layer or granted coords (10.762700, 106.660200) for room (10.762622, 106.660172)"
       ],
       "steps": [
         "Navigate to /check-in deep link on mobile viewport",
@@ -182,12 +183,13 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["NFR-04", "FR-07", "AC-08", "NFR-18"],
+      "traceability": ["NFR-04", "FR-07", "AC-08", "NFR-18", "NFR-24"],
       "title": "Mobile check-in page shows loading state during submit without premature success before API completes",
       "preconditions": [
         "Authenticated Student on mobile viewport with valid check-in deep link",
+        "Playwright MCP harness with VITE_ENABLE_DEVICE_SIMULATION=true per testing-plan §8 and NFR-24",
         "Preflight passed; GPS step in ready state (Vị trí đã sẵn sàng) per AC-08f",
-        "GPS permission granted with in-radius coordinates (10.762700, 106.660200)",
+        "GPS permission granted or sim layer with in-radius coordinates (10.762700, 106.660200)",
         "Network request to POST /api/v1/check-in observable in browser devtools or Playwright network log"
       ],
       "steps": [

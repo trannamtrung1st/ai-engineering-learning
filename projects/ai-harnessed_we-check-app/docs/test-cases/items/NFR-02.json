@@ -1,8 +1,8 @@
 {
   "productItemId": "NFR-02",
   "version": 1,
-  "docFingerprint": "sha256:ed2f2a01af64f91a7bd1aa1df43796784981c952d0a4a18ac9807f4aa24ca5e5",
-  "generatedAt": "2026-06-29T18:48:46Z",
+  "docFingerprint": "sha256:5b3f17bf9e4022ec4b61eaa6dd31b209338f3eb3f7625a2df1fa4375c7f77934",
+  "generatedAt": "2026-06-30T10:55:37Z",
   "cases": [
     {
       "id": "TC-NFR-02-001",
@@ -26,7 +26,7 @@
         "Query qr_tokens and assert status Consumed with consumedByStudentId set",
         "Verify both updates share same transaction commit timestamp (no intermediate visible state)"
       ],
-      "expected": "NFR-02 core invariant: successful check-in commits exactly one Present record and marks token Consumed atomically per 07-non-functional-risk §2.1 NFR-02",
+      "expected": "NFR-02 core invariant: validation-rules §5.1 step 14 serializable transaction commits exactly one Present record and marks token Consumed atomically per 07-non-functional-risk §2.1",
       "edgeCase": false
     },
     {
@@ -172,7 +172,7 @@
         "Verify no intermediate state where Present exists but token remains Valid",
         "Verify no intermediate state where token Consumed but attendance remains Pending"
       ],
-      "expected": "beforeState Pending+Valid; afterState Present+Consumed atomically; no partial commit visible per NFR-02 and validation-rules §5.1 transaction boundary",
+      "expected": "beforeState Pending+Valid; afterState Present+Consumed atomically; steps 4–13 and step 14 commit share one transaction with row-level lock per validation-rules §5.1 and NFR-02",
       "edgeCase": false
     },
     {
@@ -204,7 +204,7 @@
       "layer": "integration",
       "technique": "concurrency",
       "priority": "P0",
-      "traceability": ["NFR-02", "FR-09", "BR-11"],
+      "traceability": ["NFR-02", "FR-09", "AC-09", "BR-11"],
       "title": "Parallel same-token submissions from two students: exactly one Present, one TokenAlreadyUsed",
       "preconditions": [
         "Real PostgreSQL with row-level lock on qr_tokens",
@@ -218,9 +218,10 @@
         "Assert exactly one Success with Present for winning student",
         "Assert exactly one TokenAlreadyUsed for losing student",
         "Query qr_tokens and assert single Consumed row (not double-consumed)",
-        "Query attendance_records and assert exactly one new Present row"
+        "Query attendance_records and assert exactly one new Present row",
+        "Verify security audit entry with session ID, token ID, and submitting student ID for losing student per AC-09b"
       ],
-      "expected": "BR-11 one-time-use token enforced under concurrency: atomic first-wins consumption; no double Present or token corruption per NFR-02",
+      "expected": "BR-11 one-time-use token enforced under concurrency: atomic first-wins consumption; TokenReuseAlert security log for loser per AC-09b; no double Present or token corruption per NFR-02",
       "edgeCase": true
     },
     {
@@ -330,8 +331,9 @@
       ],
       "steps": [
         "Launch 150 concurrent POST /api/v1/check-in requests staggered over 0–5 minutes (one per unique student) per testing-plan §7 Peak concurrent check-in",
-        "Collect all HTTP status codes and response outcomes",
+        "Collect all HTTP status codes, response outcomes, and server response times",
         "Assert 150 responses with HTTP 200 outcome Success",
+        "Assert p95 server response time ≤ 2 seconds per testing-plan §7 and NFR-04 load pass criteria",
         "Assert zero HTTP 500, 502, or 503 responses indicating transaction corruption",
         "Assert overall error rate < 0.1% per testing-plan §7 pass criteria",
         "Final DB query: exactly 150 Present rows, 150 Consumed tokens, zero duplicates"
@@ -349,20 +351,22 @@
       "title": "Student mobile check-in shows success confirmation only after server commits Present transaction",
       "preconditions": [
         "Full-preview or dev stack with web on port 3000 and API + PostgreSQL healthy",
+        "Playwright harness with VITE_ENABLE_DEVICE_SIMULATION=true per testing-plan §8",
         "Authenticated Student on mobile viewport (375×812)",
-        "Active session with valid check-in deep link and in-radius GPS mock",
+        "Active session with valid check-in deep link /check-in?token=:tokenId&session=:sessionId",
+        "In-radius GPS fixture per testing-plan §11 (room 10.762622, 106.660172)",
         "Student attendance beforeState Pending"
       ],
       "steps": [
-        "Navigate to /check-in deep link with valid tokenId and sessionId",
-        "Assert GET /api/v1/check-in/tokens/:tokenId/preflight returns HTTP 200 and GPS capture step mounts with session summary per AC-07c",
-        "Complete GPS capture and tap submit control",
-        "Wait for server response (no optimistic success before network completes)",
+        "Navigate to /check-in?token=:tokenId&session=:sessionId deep link",
+        "Assert GET /api/v1/check-in/tokens/:tokenId/preflight returns HTTP 200 outcome Valid and GpsCaptureStep mounts with session summary per AC-07c",
+        "Wait for GpsCaptureStep ready substate per AC-08f: Vị trí đã sẵn sàng shown, submit enabled, aria-busy absent",
+        "Tap Xác nhận điểm danh and wait for POST /api/v1/check-in response (no optimistic success before network completes)",
         "Assert Vietnamese success confirmation appears with Present status",
         "Navigate to /history and assert session shows Present with check-in timestamp",
         "Refresh page and verify Present status persists (committed to DB, not client cache only)"
       ],
-      "expected": "UI reflects NFR-02 server-authoritative state: success confirmation and history badge appear only after atomic transaction commit; refresh confirms durable Present record per AC-07a",
+      "expected": "UI reflects NFR-02 server-authoritative state: success confirmation and history badge appear only after validation-rules §5.1 step 14 atomic commit; refresh confirms durable Present record per AC-07a",
       "edgeCase": false
     },
     {
@@ -374,19 +378,21 @@
       "traceability": ["NFR-02", "FR-09", "AC-09"],
       "title": "Duplicate mobile check-in shows DuplicateCheckIn UI without creating second Present in history",
       "preconditions": [
-        "Authenticated Student on mobile viewport already Present for session",
-        "Active session with valid check-in deep link",
-        "GPS permission granted with in-radius coordinates"
+        "Authenticated Student on mobile viewport (375×812) already Present for session",
+        "Active session with valid check-in deep link /check-in?token=:tokenId&session=:sessionId",
+        "GET /api/v1/check-in/tokens/:tokenId/preflight returns HTTP 200 outcome Valid (BR-04 evaluated at POST only per BR-15)",
+        "Playwright harness with VITE_ENABLE_DEVICE_SIMULATION=true and in-radius GPS fixture"
       ],
       "steps": [
-        "Navigate to /check-in deep link for session where student is already Present",
-        "Complete preflight and GPS capture steps with in-radius coordinates",
-        "Tap submit control and await server response",
-        "Verify CheckInOutcomePanel displays DuplicateCheckIn with message Bạn đã điểm danh buổi học này rồi",
+        "Navigate to /check-in?token=:tokenId&session=:sessionId where student is already Present",
+        "Assert preflight HTTP 200 and GpsCaptureStep mounts with session summary per AC-07c",
+        "Complete AC-08f GPS ready substate and tap Xác nhận điểm danh",
+        "Await POST /api/v1/check-in and assert HTTP 409 outcome DuplicateCheckIn",
+        "Verify CheckInOutcomePanel DuplicateCheckIn variant with message Bạn đã điểm danh buổi học này rồi and priorCheckedInAt timestamp",
         "Navigate to /history and assert exactly one Present entry for the session (no duplicate rows)",
         "Verify prior check-in timestamp unchanged from first successful submission"
       ],
-      "expected": "NFR-02 integrity visible in UI: duplicate attempt rejected client-side after server 409; history confirms single committed Present record per student per session",
+      "expected": "NFR-02 integrity visible in UI: BR-15 preflight passes but POST returns 409 DuplicateCheckIn without partial commit; history confirms single committed Present record per student per session",
       "edgeCase": true
     },
     {

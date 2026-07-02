@@ -85,14 +85,26 @@ describe("LoginForm (AC-02, FR-02, BR-06, NFR-16)", () => {
   });
 
   it("sends returnUrl in login body and navigates to redirectTo (TC-AC-02-002)", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        user: { id: "u1", role: UserRole.Student },
-        redirectTo: "/check-in?token=test-token",
-      }),
-    } as Response);
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          user: { id: "u1", role: UserRole.Student },
+          redirectTo: "/check-in?token=test-token",
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: "u1",
+          institutionalId: "SV2026001",
+          displayName: "Sinh viên",
+          email: "student@example.edu.vn",
+          role: UserRole.Student,
+        }),
+      } as Response);
 
     renderForm("/login?returnUrl=%2Fcheck-in%3Ftoken%3Dtest-token");
     await submitLogin("student@example.edu.vn", "StudentPass8");
@@ -117,13 +129,25 @@ describe("LoginForm (AC-02, FR-02, BR-06, NFR-16)", () => {
   });
 
   it("redirects instructor to /sessions when no returnUrl (TC-FR-02-021)", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce({
-      ok: true,
-      status: 200,
-      json: async () => ({
-        user: { id: "u2", role: UserRole.Instructor },
-      }),
-    } as Response);
+    vi.mocked(fetch)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          user: { id: "u2", role: UserRole.Instructor },
+        }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          id: "u2",
+          institutionalId: "GV2026001",
+          displayName: "Giảng viên",
+          email: "instructor@example.edu.vn",
+          role: UserRole.Instructor,
+        }),
+      } as Response);
 
     renderForm("/login");
     await submitLogin("instructor@example.edu.vn", "InstructorPass8");

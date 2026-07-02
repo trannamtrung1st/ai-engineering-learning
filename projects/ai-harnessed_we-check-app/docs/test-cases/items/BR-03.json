@@ -1,8 +1,8 @@
 {
   "productItemId": "BR-03",
   "version": 1,
-  "docFingerprint": "sha256:7fa6e5f0fa1fb178b99256355a681409f9ca3b3a224ea6b785c745d780059c2e",
-  "generatedAt": "2026-06-29T18:20:03Z",
+  "docFingerprint": "sha256:2f4339d78ef523c323a8974779165acbd0a71755d9c7e3df622be9ab3506c35c",
+  "generatedAt": "2026-06-30T10:19:44Z",
   "cases": [
     {
       "id": "TC-BR-03-001",
@@ -364,6 +364,7 @@
       "steps": [
         "Student scans QR or opens check-in deep link with expired tokenId",
         "Verify client invokes GET /api/v1/check-in/tokens/:tokenId/preflight",
+        "Assert preflight HTTP status 403 with errorCode ExpiredQr per API design §6.2",
         "Verify error panel displays Mã QR đã hết hạn, vui lòng quét mã mới",
         "Verify GpsCaptureStep component is not mounted in DOM",
         "Verify Quét lại action returns student to scanner view",
@@ -386,8 +387,8 @@
         "Student device ready to scan (simulated deep link capture)"
       ],
       "steps": [
-        "Observe QrCountdown decrement from approximately 5 seconds to 0",
-        "Verify QR image or token payload changes when countdown reaches 0",
+        "Observe QrCountdown decrement toward 0 within AC-06a 30-second token rotation cycle (5-second poll per API design §6.1)",
+        "Verify QR image or token payload changes when countdown reaches 0 and new token issued",
         "Simulate student submitting check-in with previous tokenId via API or deep link",
         "Verify student receives ExpiredQr error with Vietnamese message",
         "Verify new QR scan with current token succeeds within fresh 30 s window"
@@ -479,13 +480,38 @@
       ],
       "steps": [
         "GET /api/v1/check-in/tokens/:tokenId/preflight using Student session at T + 31 s",
-        "Assert HTTP status 400",
+        "Assert HTTP status 403",
         "Assert response outcome ExpiredQr and errorCode ExpiredQr",
         "Assert response message is Mã QR đã hết hạn, vui lòng quét mã mới",
-        "Assert no check_in_attempts row created (preflight is read-only per validation-rules §3.6a)",
+        "Assert no check_in_attempts row created (read-only preflight per API design §6.2 and validation-rules §3.6a)",
         "Verify client would not mount GpsCaptureStep per BR-15 gate"
       ],
-      "expected": "BR-03 expiry enforced at preflight per validation-rules §3.6a step 3; expired token blocked before GPS capture per BR-15 and AC-07d",
+      "expected": "BR-03 expiry enforced at preflight step 3 per validation-rules §3.6a; GET preflight returns HTTP 403 ExpiredQr per API design §6.2 (distinct from POST 400 per §6.3); expired token blocked before GPS capture per BR-15 and AC-07d",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-03-022",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-03", "BR-15", "FR-07"],
+      "title": "PreflightService rejects token past issuedAt + 30 s at step 3 without DB writes",
+      "preconditions": [
+        "Real PostgreSQL test database is running",
+        "Active session with enrolled Student and Pending attendance record",
+        "QrToken row with issued_at at T, expires_at T + 30 s, status Valid",
+        "TestClock fixed at T + 31 seconds",
+        "PreflightService wired to QrTokenRepository, SessionRepository, and EnrollmentRepository per validation-rules §3.6a"
+      ],
+      "steps": [
+        "Invoke PreflightService.validate(tokenId, enrolledStudentId) at TestClock T + 31 s",
+        "Assert result outcome ExpiredQr (not Valid or TokenAlreadyUsed)",
+        "Query qr_tokens for tokenId and assert status is not Consumed",
+        "Query attendance_records for studentId and sessionId and assert status remains Pending",
+        "Verify no check_in_attempts row inserted (read-only preflight per API design §6.2)"
+      ],
+      "expected": "BR-03 absolute 30-second window enforced at preflight step 3 before GPS capture; read-only ExpiredQr outcome with zero attendance or attempt side effects per BR-15",
       "edgeCase": false
     }
   ]

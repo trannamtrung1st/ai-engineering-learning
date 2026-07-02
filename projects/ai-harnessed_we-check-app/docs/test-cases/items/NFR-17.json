@@ -1,8 +1,8 @@
 {
   "productItemId": "NFR-17",
   "version": 1,
-  "docFingerprint": "sha256:20263a0511e70f72e04b576ee98a37e2b2abfe28c0133ecefa43a1d87166aaa4",
-  "generatedAt": "2026-06-29T20:15:00.000Z",
+  "docFingerprint": "sha256:1e05c5e756e7bae838350bc41fd8bdb05f9041145b60c4f1a5161a9b6169369e",
+  "generatedAt": "2026-07-01T12:00:00.000Z",
   "cases": [
     {
       "id": "TC-NFR-17-001",
@@ -172,7 +172,7 @@
         "Execute TS-18 expired QR check-in and assert Vietnamese ExpiredQr message per AC-06b",
         "Execute TS-24 GPS disabled check-in and assert Vietnamese GpsDisabled message per AC-08c",
         "Execute TS-26 duplicate check-in and assert Vietnamese DuplicateCheckIn message per AC-09a",
-        "Execute TS-32 non-admin CSV export and assert Vietnamese Chỉ phòng đào tạo mới có quyền xuất dữ liệu per AC-13b",
+        "Execute TS-32 Student CSV export and assert HTTP 403 ExportNotAllowed with Vietnamese Chỉ phòng đào tạo mới có quyền xuất dữ liệu per AC-13b and BR-09",
         "Record pass rate across all four spot-checks"
       ],
       "expected": "NFR-17 verification method satisfied: acceptance-matrix spot-check of BR-documented Vietnamese messages passes for core rejection scenarios mapped in testing-plan §3",
@@ -185,18 +185,18 @@
       "technique": "rbac-negative",
       "priority": "P0",
       "traceability": ["NFR-17", "AC-13", "BR-09"],
-      "title": "Instructor POST /reports/export denied with 403 and Vietnamese export-restriction message",
+      "title": "Student POST /reports/export denied with 403 ExportNotAllowed and Vietnamese message",
       "preconditions": [
-        "Authenticated Instructor session with valid report filter context",
-        "Instructor lacks export permission per BR-09 and roles-permissions"
+        "Authenticated Student session",
+        "Valid report filter body prepared (classCode, subjectCode, date range)"
       ],
       "steps": [
-        "POST /api/v1/reports/export with valid filter body using Instructor session cookie",
-        "Assert HTTP status 403 Forbidden",
+        "POST /api/v1/reports/export with valid filter body using Student session cookie",
+        "Assert HTTP status 403 and errorCode ExportNotAllowed per BR-09 and roles-permissions §2.5",
         "Assert message Chỉ phòng đào tạo mới có quyền xuất dữ liệu per AC-13b",
         "Assert no CSV response body returned"
       ],
-      "expected": "NFR-17 RBAC denial: export rejection message localized in Vietnamese; permission error not exposed as raw English Forbidden text",
+      "expected": "NFR-17 RBAC denial: Student export rejection surfaces Vietnamese ExportNotAllowed message; English errorCode stable for client logic per BR-09 spot-check",
       "edgeCase": false
     },
     {
@@ -213,11 +213,11 @@
       ],
       "steps": [
         "GET /api/v1/reports/summary?classCode=HESD-02&subjectCode=SWE-101 using Instructor session",
-        "Assert HTTP status 403 and errorCode Forbidden",
-        "Assert message Bạn không có quyền thực hiện thao tác này per error-handling §4.2 and AC-12b",
+        "Assert HTTP status 403 and errorCode ReportAccessDenied per BR-08 and roles-permissions §2.5",
+        "Assert message Bạn không có quyền xem báo cáo này per AC-12b",
         "Assert response contains no student or attendance data"
       ],
-      "expected": "NFR-17 authorization denial: unassigned report access blocked with Vietnamese Forbidden message per AC-12b localized permission error",
+      "expected": "NFR-17 authorization denial: unassigned report access blocked with Vietnamese ReportAccessDenied message per AC-12b and roles-permissions §2.5",
       "edgeCase": false
     },
     {
@@ -281,6 +281,7 @@
         "Submit invalid credentials and verify alert Email hoặc mật khẩu không đúng per ui-states §3",
         "Submit deactivated account credentials and verify Tài khoản đã bị vô hiệu hóa message",
         "Trigger session-expired redirect and verify toast Phiên đăng nhập đã hết hạn per ui-states §2",
+        "Log in successfully, open UserMenu, and verify panel shows displayName, email, institutionalId, and localized role label in Vietnamese per AC-02e",
         "Scan visible text for English-only user-facing strings on login form controls"
       ],
       "expected": "NFR-17 student/instructor auth UI: 100% Vietnamese copy on /login including error and session-expiry states per ui-states §3 and production-ui-quality-bar §4 Not acceptable",
@@ -334,9 +335,11 @@
         "Trigger SessionNotActive and verify warning copy with CTA Đóng",
         "Trigger NotEnrolled and verify danger copy with CTA Đóng per error-handling §4.2",
         "Simulate network error and verify danger copy Không có kết nối mạng with CTA Thử lại per ui-states §4.3 and error-handling §7",
-        "Confirm each variant icon and heading text is Vietnamese; no raw API errorCode shown to user"
+        "Confirm each variant icon and heading text is Vietnamese; no raw API errorCode shown to user",
+        "For each variant, assert panel wash matches 04-design-tokens §13 mapping (success-50, warning-50, danger-50, info-50) — not identical styling across outcomes",
+        "Capture 320px screenshot per outcome and verify primary recovery CTA label meets ≥4.5:1 contrast per ui-visual-verification.md checklist item 8"
       ],
-      "expected": "NFR-17 outcome coverage: all CheckInOutcomePanel variants including Present, NotEnrolled, and network error display Vietnamese messages and CTAs per ui-states §4.3 catalog; distinct UI treatment per outcome",
+      "expected": "NFR-17 outcome coverage: all CheckInOutcomePanel variants display Vietnamese messages and CTAs per ui-states §4.3; each outcome uses distinct semantic wash and icon per §13 with readable primary CTA contrast on mobile",
       "edgeCase": false
     },
     {
@@ -423,8 +426,8 @@
         "Application ForbiddenPage component at /forbidden or inline denial on /reports and /admin/export"
       ],
       "steps": [
-        "Navigate to unassigned class report as Instructor and verify ForbiddenPage or inline permission alert in Vietnamese",
-        "Navigate to admin export route as Instructor and verify denial message Chỉ phòng đào tạo mới có quyền xuất dữ liệu per AC-13b",
+        "Navigate to unassigned class report as Instructor and verify ForbiddenPage or inline alert with Bạn không có quyền xem báo cáo này per AC-12b and ReportAccessDenied",
+        "Navigate to /admin/export as Instructor and verify denial message Chỉ phòng đào tạo mới có quyền xuất dữ liệu per AC-13b and BR-09 admin-route boundary",
         "Verify no English-only Access denied or You do not have permission text visible",
         "Verify navigation CTAs (return home, contact admin) use Vietnamese labels"
       ],
@@ -440,7 +443,7 @@
       "traceability": ["NFR-17"],
       "title": "Production routes contain no English user-facing strings; technical IDs and data-testid exempt",
       "preconditions": [
-        "Crawl list of all shipped MVP routes per ui-states §14 and page-list §9: /setup, /login, /check-in, /history, /sessions, /sessions/new, /sessions/:id, /sessions/:id/qr-present, /reports, /admin, /admin/users, /admin/users/new, /admin/rosters, /admin/rosters/import, /admin/classes/new, /admin/reports, /admin/export, /forbidden",
+        "Crawl list of all shipped MVP routes per ui-states §14 and page-list §9: /, /setup, /login, /check-in, /history, /sessions, /sessions/new, /sessions/:id, /sessions/:id/qr-present, /reports, /admin, /admin/users, /admin/users/new, /admin/rosters, /admin/rosters/import, /admin/classes, /admin/classes/new, /admin/subjects, /admin/reports, /admin/export, /forbidden",
         "Authenticated fixtures for Student, Instructor, and TrainingOfficeAdmin roles",
         "English-detection heuristic excluding UUIDs, errorCode data-testid values, and institutional IDs"
       ],
@@ -492,12 +495,14 @@
       ],
       "steps": [
         "Navigate to /reports as Instructor and verify initial filter prompt Chọn bộ lọc và nhấn Áp dụng per ui-states §9",
+        "Apply filters for assigned class HESD-01 with results and verify inline Xuất CSV control visible per AC-12d",
+        "Click Xuất CSV with matching assigned filters and verify success toast Đã tải xuống in Vietnamese per AC-13c",
         "Apply filters with no results and verify empty state Không có dữ liệu trong khoảng thời gian đã chọn",
-        "Navigate to unassigned class report and verify ForbiddenPage or permission-denied copy in Vietnamese per AC-12b",
+        "Navigate to unassigned class report and verify ForbiddenPage or ReportAccessDenied copy Bạn không có quyền xem báo cáo này per AC-12b",
         "Navigate to /admin/reports as TrainingOfficeAdmin and verify filter labels, summary cards, and table column headers in Vietnamese",
         "Simulate fetch error and verify Alert with Thử lại CTA in Vietnamese"
       ],
-      "expected": "NFR-17 reports UI: instructor and admin report surfaces use Vietnamese for filters, empty states, errors, and permission denial per ui-states §9",
+      "expected": "NFR-17 reports UI: instructor and admin report surfaces use Vietnamese for filters, Xuất CSV control, export success toast, empty states, errors, and ReportAccessDenied per ui-states §9 and AC-12d–AC-13c",
       "edgeCase": false
     },
     {
@@ -610,6 +615,171 @@
         "Assert technical route segments and data-testid values may remain English while visible labels are Vietnamese"
       ],
       "expected": "NFR-17 role hub localization: admin, instructor, and student home hubs expose Vietnamese workflow guidance per AC-18, FR-18, and production-ui-quality-bar §3 role home next actions",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-17-028",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-17", "FR-01"],
+      "title": "Admin users listing TableToolbar exposes Vietnamese search + filter row per 14-listing §0",
+      "preconditions": [
+        "Authenticated TrainingOfficeAdmin session",
+        "Seeded users spanning multiple roles and active states",
+        "Desktop viewport 1280px on /admin/users"
+      ],
+      "steps": [
+        "Navigate to /admin/users and verify TableToolbar renders search pill on left with Vietnamese placeholder per 14-listing §3 and design-craft-notion database toolbar layout",
+        "Verify filter controls for role and active status appear in toolbar row with Vietnamese labels per 14-listing §4.1",
+        "Verify sortable column headers and offset pagination footer present per 14-listing §0 mandatory capabilities matrix",
+        "Verify primary toolbar action (e.g. Thêm người dùng) aligned right with `--space-4` toolbar padding and `--space-3` control gap per design-craft-notion skill",
+        "Type a debounced search query and confirm results filter without English-only toolbar strings",
+        "Capture desktop screenshot and verify toolbar controls legible on `--color-surface-default` warm stone page background"
+      ],
+      "expected": "NFR-17 admin listing craft: /admin/users implements mandatory search + filter + sort + pagination toolbar with Vietnamese labels per 14-listing §0 and Notion database toolbar pattern",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-17-029",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-17", "FR-05", "FR-06"],
+      "title": "Instructor session list and roster row actions legible on warm stone background",
+      "preconditions": [
+        "Authenticated Instructor with Draft, Active, and Closed sessions",
+        "Desktop viewport 1280px",
+        "Session detail roster tab has editable rows within instructor edit window"
+      ],
+      "steps": [
+        "Navigate to /sessions populated view on `--color-surface-default` warm stone background and verify SessionCard lifecycle action buttons (Mở buổi học, Đóng buổi học) use `--color-text-primary` or `--color-primary-600` labels readable against card and page surfaces",
+        "Open Active session detail roster tab and verify table row action controls (edit, overflow menu) meet ≥4.5:1 label contrast on `--color-surface-raised` rows over warm stone page per 04-design-tokens §3.2.1",
+        "Verify disabled edit-locked actions still meet ≥3:1 disabled pair (`--color-text-disabled` on `--color-surface-muted`) per production-ui-quality-bar §4",
+        "Capture desktop screenshot of session list and roster tab; confirm no ghost/outline labels wash out against `--color-surface-default` (#f6f5f4)"
+      ],
+      "expected": "NFR-17 instructor listing legibility: session list and roster table action buttons remain readable on warm stone Notion workspace background per 00-production-ui-quality-bar control contrast dimension",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-17-030",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-17", "FR-02", "AC-02"],
+      "title": "Login page primary and outline buttons meet ≥4.5:1 label contrast at 320px viewport",
+      "preconditions": [
+        "Application running with default locale vi-VN",
+        "Mobile viewport 320×568 per ui-visual-verification.md required viewports",
+        "Unauthenticated session on /login"
+      ],
+      "steps": [
+        "Navigate to /login at 320px width and capture screenshot per ui-visual-verification.md filename convention",
+        "Inspect primary submit button: assert `--color-primary-foreground` label on `--color-primary-600` background per 04-design-tokens §3.2.1 primary pair",
+        "Inspect outline/secondary action if present (e.g. forgot-password or alternate link styled as outline): assert `--color-primary-600` label on `--color-surface-default` meets ≥4.5:1",
+        "Verify `md` button min-height `--size-touch-min` (44px) and padding `--space-4` horizontal / `--space-3` vertical inset per §5.1 — no cramped labels",
+        "Verify stacked actions have `--space-3` gap and labels remain Vietnamese",
+        "Confirm disabled state (if triggerable) uses `--color-text-disabled` on `--color-surface-muted` at ≥3:1"
+      ],
+      "expected": "NFR-17 login control contrast: primary and outline button labels meet token contrast pairs at 320px student mobile viewport per 04-design-tokens §3.2.1 and ui-visual-verification.md checklist items 1–4",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-17-031",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-17", "FR-07", "AC-07"],
+      "title": "Check-in outcome panels use distinct semantic washes with readable recovery CTA contrast",
+      "preconditions": [
+        "Authenticated Student on mobile viewport 320×568",
+        "Test harness triggers at minimum Present (success-50), ExpiredQr (warning-50), GpsDisabled (danger-50), and DuplicateCheckIn (info-50) outcomes",
+        "VITE_ENABLE_DEVICE_SIMULATION enabled in Playwright harness per NFR-24"
+      ],
+      "steps": [
+        "Trigger Present outcome and verify panel wash `--color-success-50` with CheckCircle2 icon in `--color-success-500` per 04-design-tokens §13",
+        "Trigger ExpiredQr and verify `--color-warning-50` wash distinct from Present success wash",
+        "Trigger GpsDisabled and verify `--color-danger-50` wash with LocateOff icon",
+        "Trigger DuplicateCheckIn and verify `--color-info-50` wash — not interchangeable with danger/warning variants per production-ui-quality-bar §4 identical outcome treatment negation",
+        "For each triggered outcome, verify primary recovery CTA uses primary token pair (`--color-primary-foreground` on `--color-primary-600`) with ≥4.5:1 contrast per ui-visual-verification.md item 8",
+        "Capture 320px screenshot per outcome; assert CTA label readable at arm's length and Vietnamese"
+      ],
+      "expected": "NFR-17 outcome moment craft: each check-in outcome panel applies distinct §13 semantic wash and icon with readable primary CTA — not generic identical alert styling",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-17-032",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-17"],
+      "title": "Button variants across representative routes use authoritative token fg/bg pairs per §3.2.1",
+      "preconditions": [
+        "Authenticated fixtures for Student, Instructor, and TrainingOfficeAdmin",
+        "Routes exposing each Button variant: /login (primary), session form or dialog (secondary, outline, ghost), lifecycle confirm (danger)",
+        "Desktop 1280px and mobile 320px viewports per ui-visual-verification.md"
+      ],
+      "steps": [
+        "On /login verify `primary` variant: `--color-primary-600` bg, `--color-primary-foreground` label",
+        "On instructor session form or settings verify `secondary` variant: `--color-surface-raised` bg with `--color-text-primary` label and hairline border",
+        "On same or adjacent control surface verify `outline` variant: `--color-primary-600` text/border on `--color-surface-default`",
+        "On cancel/back navigation verify `ghost` variant: `--color-text-primary` on transparent over `--color-surface-default`",
+        "Open Hủy buổi học or equivalent destructive confirm and verify `danger` variant: `--color-danger-500` bg with `--color-text-inverse` label",
+        "Verify hover primary uses `--color-primary-700` while maintaining ≥4.5:1 per §3.2.1 hover pair",
+        "Capture screenshots at 320px for student-visible buttons and 1280px for instructor/admin; flag any ad-hoc opacity or off-token shades weakening contrast"
+      ],
+      "expected": "NFR-17 Button component contract: all five variants use documented foreground/background token pairs from 04-design-tokens §3.2.1 and 05-common-ui-components §2.1 — no low-contrast off-token styling",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-17-033",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-17", "AC-13", "BR-09"],
+      "title": "Instructor POST /reports/export with assigned class-subject filters returns 200 CSV per AC-13c",
+      "preconditions": [
+        "Authenticated Instructor assigned to class HESD-01 and subject SWE-101",
+        "Attendance report data exists for HESD-01 / SWE-101 within requested date range",
+        "API server running with vi-VN default locale"
+      ],
+      "steps": [
+        "POST /api/v1/reports/export with body classCode HESD-01, subjectCode SWE-101, and valid from/to dates using Instructor session",
+        "Assert HTTP status 200 and Content-Type text/csv; charset=utf-8 per 05-api-design §8.3",
+        "Assert Content-Disposition attachment filename present",
+        "Assert CSV body contains header row with institutional_id, display_name, class_code, subject_code columns",
+        "Assert no JSON error envelope returned on success path"
+      ],
+      "expected": "NFR-17 scoped export success: instructor assigned-scope CSV export succeeds via POST /reports/export per AC-13c and BR-09 exception; denial messages remain Vietnamese on out-of-scope roles only",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-17-034",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["NFR-17", "AC-18", "FR-18"],
+      "title": "Unauthenticated landing route discovery links use Vietnamese labels per AC-18f",
+      "preconditions": [
+        "Bootstrap complete (needsSetup false)",
+        "Unauthenticated browser session",
+        "Desktop viewport 1280px"
+      ],
+      "steps": [
+        "Navigate to / as unauthenticated visitor",
+        "Verify route discovery section visible with links labeled Đăng nhập, Điểm danh, Buổi học, and Quản trị per AC-18f",
+        "Click each discovery link and verify navigation occurs (protected routes redirect to /login with returnUrl)",
+        "Verify no English-only link labels (Login, Check in, Sessions, Admin) in discovery section",
+        "Log in as any role, revisit /, and verify route discovery section is hidden per AC-18g"
+      ],
+      "expected": "NFR-17 public landing UI: unauthenticated / route discovery exposes Vietnamese navigation labels; authenticated users redirect to role home without discovery chrome per AC-18f–AC-18g",
       "edgeCase": false
     }
   ]

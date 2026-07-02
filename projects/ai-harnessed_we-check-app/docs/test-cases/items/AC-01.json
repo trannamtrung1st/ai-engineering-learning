@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-01",
   "version": 1,
-  "docFingerprint": "sha256:c7d3f05bcd7f282254c6df7321da31c143e51b3076c4c3bcf928d7b2b5244926",
-  "generatedAt": "2026-06-29T08:00:00Z",
+  "docFingerprint": "sha256:7ecc7e7aaa2f7d4b58c035fd9972735baacdb9e8daaaea4acfe91500a24df191",
+  "generatedAt": "2026-07-01T01:05:47Z",
   "cases": [
     {
       "id": "TC-AC-01-001",
@@ -244,6 +244,176 @@
       ],
       "expected": "HTTP 422 ValidationFailed with email field detail; only one user row retains that email address",
       "edgeCase": true
+    },
+    {
+      "id": "TC-AC-01-013",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["AC-01", "FR-01"],
+      "title": "POST /users/import upsert creates new users and updates existing by institutional_id",
+      "preconditions": [
+        "TrainingOfficeAdmin session available",
+        "Existing user SV2026100 with known display_name, email, role, and active flag in database",
+        "No user exists with institutionalId SV2026101"
+      ],
+      "steps": [
+        "Upload CSV via POST /api/v1/users/import with row for new SV2026101 and row for existing SV2026100 with changed display_name, email, role, and active",
+        "Poll GET /api/v1/users/imports/:batchId until status Completed",
+        "Query users table for SV2026101 and SV2026100",
+        "Verify password_hash for SV2026100 is unchanged from pre-import value"
+      ],
+      "expected": "Batch summary shows createdCount=1 and updatedCount=1; new user SV2026101 persisted with active=true; existing user SV2026100 updated on display_name, email, role, and active per AC-01d; password and sessions unchanged on update",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-01-014",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": ["AC-01", "FR-01"],
+      "title": "CSV import idempotent no-op when institutional_id exists with unchanged profile fields",
+      "preconditions": [
+        "TrainingOfficeAdmin session available",
+        "User SV2026200 exists with known display_name, email, role, and active matching a CSV row exactly"
+      ],
+      "steps": [
+        "POST /api/v1/users/import with CSV row identical to existing SV2026200 profile",
+        "Poll GET /api/v1/users/imports/:batchId until status Completed",
+        "Query users table count and row for institutionalId SV2026200"
+      ],
+      "expected": "Row counted as success in batch summary per AC-01e; exactly one user row remains for SV2026200 with unchanged field values; no duplicate user created",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-01-015",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P1",
+      "traceability": ["AC-01", "FR-01"],
+      "title": "Institutional ID with underscore and period accepted on POST /users and CSV import",
+      "preconditions": [
+        "TrainingOfficeAdmin is authenticated",
+        "No user exists with institutionalId SV_2026.001"
+      ],
+      "steps": [
+        "POST /api/v1/users with institutionalId SV_2026.001 and otherwise valid student fields",
+        "Assert HTTP 201 and response institutionalId is SV_2026.001",
+        "POST /api/v1/users/import with CSV row institutional_id SV_2026.002, valid display_name, email, role Student, active true",
+        "Poll import batch until Completed and query users for SV_2026.002"
+      ],
+      "expected": "VAL-05 IDs containing _ and . accepted per AC-01f; values persisted trimmed as submitted; both API create and CSV import succeed",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-01-016",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["AC-01", "FR-01"],
+      "title": "CSV import row rejected with DuplicateEmail when email belongs to different institutional_id",
+      "preconditions": [
+        "TrainingOfficeAdmin session available",
+        "User SV2026300 owns email taken@example.edu.vn",
+        "No user exists with institutionalId SV2026301"
+      ],
+      "steps": [
+        "POST /api/v1/users/import with CSV containing valid new row SV2026301, valid update row, and row SV2026302 using email taken@example.edu.vn",
+        "Poll GET /api/v1/users/imports/:batchId until status Completed",
+        "Inspect errorDetails for rejected row"
+      ],
+      "expected": "Rejected row returns errorCode DuplicateEmail per AC-01g; valid rows still process; batch summary shows rejected count and created/updated counts for successful rows; no user SV2026302 created",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-01-017",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["AC-01", "FR-01"],
+      "title": "Admin user CSV import upload shows preview then summary with created and updated counts",
+      "preconditions": [
+        "TrainingOfficeAdmin is logged in",
+        "CSV file prepared with one new institutional_id and one existing institutional_id marked for update",
+        "Admin navigates to /admin/users/import"
+      ],
+      "steps": [
+        "Upload CSV file via UserImportForm file select",
+        "Verify ImportPreviewTable shows row status create, update, or error per row",
+        "Click Xác nhận nhập to submit import",
+        "Observe ImportSummary screen after batch completes"
+      ],
+      "expected": "Preview displays column validation and per-row create/update status; summary lists createdCount, updatedCount, and rejected counts per AC-01d; partial success allowed when some rows error",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-01-018",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["AC-01", "FR-01"],
+      "title": "Admin user list supports search, role/active filters, column sort, and cursor pagination",
+      "preconditions": [
+        "TrainingOfficeAdmin is logged in",
+        "Database seeded with more than 50 users across roles and active states",
+        "Admin navigates to /admin/users"
+      ],
+      "steps": [
+        "Enter search query in toolbar (min 2 chars) and verify URL syncs ?q= and table filters by name, MSSV, or email",
+        "Apply Vai trò filter to Sinh viên and Trạng thái filter to Hoạt động",
+        "Click a sortable column header and verify sort order changes",
+        "Navigate to next page via Pagination control; verify URL syncs ?cursor= and table shows non-overlapping rows per API design §3.1 cursor model"
+      ],
+      "expected": "UserListTable implements search debounce, role and active filters, column sort, and cursor-based pagination per API design §3.1; filter chips removable; results update without full page reload",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-01-019",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P1",
+      "traceability": ["AC-01", "FR-01"],
+      "title": "POST /users/import returns 202 Accepted with batchId envelope",
+      "preconditions": [
+        "TrainingOfficeAdmin session cookie is set",
+        "Valid UTF-8 CSV with required columns institutional_id, display_name, email, role, active"
+      ],
+      "steps": [
+        "Send POST /api/v1/users/import as multipart/form-data with file field",
+        "Assert HTTP status 202",
+        "Assert response body contains batchId, status Processing, and Vietnamese message",
+        "GET /api/v1/users/imports/:batchId and assert UserImportBatch shape with totalRows, successRows, errorRows, createdCount, updatedCount, errorDetails"
+      ],
+      "expected": "HTTP 202 Accepted with batchId; poll endpoint returns completed import summary per API design §3.2a–3.2b",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-01-020",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "pagination",
+      "priority": "P1",
+      "traceability": ["AC-01", "FR-01"],
+      "title": "GET /users cursor pagination respects limit boundary and nextCursor without overlap",
+      "preconditions": [
+        "TrainingOfficeAdmin is authenticated",
+        "Database seeded with more than 50 user records across roles and active states"
+      ],
+      "steps": [
+        "GET /api/v1/users?limit=25 and assert HTTP 200 with items length 25 and nextCursor non-null",
+        "GET /api/v1/users?cursor={nextCursor}&limit=25 and assert HTTP 200 with 25 items and no duplicate ids from first page",
+        "GET /api/v1/users?role=Student&active=true&limit=50 and assert every item has role Student and active true",
+        "Request final page until nextCursor is null and assert total unique ids matches seeded count within applied filters"
+      ],
+      "expected": "Cursor-based list per API design §3.1 and §1 overview: each page respects limit boundary, nextCursor advances without id overlap, role and active filters apply across paginated results",
+      "edgeCase": false
     }
   ]
 }

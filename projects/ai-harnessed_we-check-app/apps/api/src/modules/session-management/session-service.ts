@@ -413,7 +413,7 @@ export class SessionService {
 
       await client.query("COMMIT");
 
-      this.qr.stop(sessionId);
+      await this.qr.stop(sessionId);
 
       void this.notifications
         ?.evaluateAbsenceThresholds(sessionId)

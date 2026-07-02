@@ -2,35 +2,8 @@
   "branchName": "aih/we-check-mvp",
   "slices": [
     {
-      "id": "playwright-ui-workspace",
-      "passes": true,
-      "priority": 34.5,
-      "phase": 0,
-      "agent": "infra",
-      "acceptance": [
-        "NFR-24"
-      ],
-      "docs": [
-        "ai-harness/docs/playwright-regression.md",
-        "docs/technical/11-testing-plan.md"
-      ],
-      "completionArtifacts": [
-        "tests/playwright-ui"
-      ],
-      "description": "Playwright UI regression workspace scaffold: @playwright/test config, auth helpers, and npm run test:playwright-ui for browser-tester-generated specs.",
-      "testRequirements": {
-        "playwright": [
-          "tests/playwright-ui/playwright.config.ts",
-          "tests/playwright-ui/src/support/auth.ts"
-        ],
-        "acceptanceTags": [
-          "NFR-24"
-        ]
-      }
-    },
-    {
       "id": "repo-monorepo-bootstrap",
-      "passes": true,
+      "passes": false,
       "priority": 0,
       "phase": 0,
       "agent": "infra",
@@ -63,7 +36,7 @@
     },
     {
       "id": "docker-compose-db",
-      "passes": true,
+      "passes": false,
       "priority": 1,
       "phase": 0,
       "agent": "infra",
@@ -92,7 +65,7 @@
     },
     {
       "id": "domain-package",
-      "passes": true,
+      "passes": false,
       "priority": 2,
       "phase": 0,
       "agent": "infra",
@@ -125,6 +98,33 @@
           "BR-03",
           "BR-04",
           "BR-10"
+        ]
+      }
+    },
+    {
+      "id": "playwright-ui-workspace",
+      "passes": false,
+      "priority": 3,
+      "phase": 0,
+      "agent": "infra",
+      "acceptance": [
+        "NFR-24"
+      ],
+      "docs": [
+        "ai-harness/docs/playwright-regression.md",
+        "docs/technical/11-testing-plan.md"
+      ],
+      "completionArtifacts": [
+        "tests/playwright-ui"
+      ],
+      "description": "Playwright UI regression workspace scaffold: @playwright/test config, auth helpers, and npm run test:playwright-ui for browser-tester-generated specs.",
+      "testRequirements": {
+        "playwright": [
+          "tests/playwright-ui/playwright.config.ts",
+          "tests/playwright-ui/src/support/auth.ts"
+        ],
+        "acceptanceTags": [
+          "NFR-24"
         ]
       }
     },
@@ -211,8 +211,39 @@
       }
     },
     {
+      "id": "module-identity-bootstrap",
+      "passes": false,
+      "priority": 11.5,
+      "phase": 1,
+      "agent": "backend",
+      "acceptance": [
+        "AC-17",
+        "FR-17",
+        "BR-13"
+      ],
+      "docs": [
+        "docs/technical/05-api-design.md",
+        "docs/technical/08-validation-rules.md",
+        "docs/technical/02-module-breakdown.md"
+      ],
+      "completionArtifacts": [
+        "apps/api/src/modules/identity-auth/setup"
+      ],
+      "description": "Identity-auth bootstrap: GET /setup/status and POST /setup/first-admin for one-time TrainingOfficeAdmin creation when User count is zero.",
+      "testRequirements": {
+        "integration": [
+          "apps/api/src/modules/identity-auth/setup.integration.test.ts"
+        ],
+        "acceptanceTags": [
+          "AC-17",
+          "BR-13",
+          "FR-17"
+        ]
+      }
+    },
+    {
       "id": "module-roster-enrollment",
-      "passes": true,
+      "passes": false,
       "priority": 12,
       "phase": 1,
       "agent": "backend",
@@ -241,6 +272,34 @@
         "acceptanceTags": [
           "AC-03",
           "BR-08",
+          "FR-03"
+        ]
+      }
+    },
+    {
+      "id": "module-class-management",
+      "passes": false,
+      "priority": 12.3,
+      "phase": 1,
+      "agent": "backend",
+      "acceptance": [
+        "AC-03",
+        "FR-03"
+      ],
+      "docs": [
+        "docs/technical/05-api-design.md",
+        "docs/technical/08-validation-rules.md"
+      ],
+      "completionArtifacts": [
+        "apps/api/src/modules/roster-enrollment/class-subject-write"
+      ],
+      "description": "Roster-enrollment catalog APIs: GET /classes and GET /subjects (paginated list) plus POST /classes and POST /subjects for reference record creation before CSV import.",
+      "testRequirements": {
+        "integration": [
+          "apps/api/src/modules/roster-enrollment/class-management.integration.test.ts"
+        ],
+        "acceptanceTags": [
+          "AC-03",
           "FR-03"
         ]
       }
@@ -282,7 +341,7 @@
     },
     {
       "id": "module-session-management",
-      "passes": true,
+      "passes": false,
       "priority": 13,
       "phase": 1,
       "agent": "backend",
@@ -433,6 +492,44 @@
       }
     },
     {
+      "id": "module-checkin-qr-preflight",
+      "passes": false,
+      "priority": 15.5,
+      "phase": 1,
+      "agent": "backend",
+      "acceptance": [
+        "AC-07",
+        "FR-07",
+        "BR-03",
+        "BR-11",
+        "BR-15"
+      ],
+      "docs": [
+        "docs/technical/05-api-design.md",
+        "docs/technical/08-validation-rules.md",
+        "docs/technical/06-main-workflows.md"
+      ],
+      "completionArtifacts": [
+        "apps/api/src/modules/checkin-qr/preflight"
+      ],
+      "description": "Check-in token preflight API: GET /check-in/tokens/:tokenId/preflight validates token, session, and enrollment before client advances to GPS capture.",
+      "testRequirements": {
+        "unit": [
+          "apps/api/src/modules/checkin-qr/preflight/preflight.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/modules/checkin-qr/preflight/preflight.integration.test.ts"
+        ],
+        "acceptanceTags": [
+          "AC-07",
+          "BR-03",
+          "BR-11",
+          "BR-15",
+          "FR-07"
+        ]
+      }
+    },
+    {
       "id": "module-reporting-export",
       "passes": false,
       "priority": 16,
@@ -485,7 +582,7 @@
     },
     {
       "id": "module-notifications",
-      "passes": true,
+      "passes": false,
       "priority": 17,
       "phase": 1,
       "agent": "backend",
@@ -519,7 +616,7 @@
     {
       "id": "web-design-system-shell",
       "passes": false,
-      "priority": 41,
+      "priority": 20,
       "phase": 2,
       "agent": "frontend",
       "acceptance": [
@@ -527,7 +624,8 @@
         "FR-18",
         "BR-14",
         "NFR-17",
-        "NFR-06"
+        "NFR-06",
+        "NFR-18"
       ],
       "docs": [
         "ai-harness/docs/ui-visual-verification.md",
@@ -536,13 +634,23 @@
         "docs/ui-ux/04-design-tokens.md",
         "docs/ui-ux/05-common-ui-components.md",
         "docs/ui-ux/06-app-layout-components.md",
-        "docs/ui-ux/13-accessibility-basics.md"
+        "docs/ui-ux/13-accessibility-basics.md",
+        "docs/ui-ux/DESIGN.md",
+        "docs/ui-ux/01-design-overview.md",
+        "docs/ui-ux/03-design-system-basics.md"
       ],
       "completionArtifacts": [
         "apps/web/src/app/layout.tsx",
-        "apps/web/src/components"
+        "apps/web/src/components",
+        "apps/web/src/styles/tokens.css",
+        "apps/web/src/styles/globals.css",
+        "apps/web/index.html",
+        "apps/web/src/components/ui/button.tsx",
+        "apps/web/src/components/ui/card.tsx",
+        "apps/web/src/components/layout/auth-layout.tsx",
+        "apps/web/src/components/domain/check-in/check-in-outcome-panel.tsx"
       ],
-      "description": "Design tokens, role layouts (Student, Instructor, Admin), shared primitives — button contrast and padding verified via browser screenshots. Browser tester performs UX audit and emits tests/playwright-ui/scenarios/web-design-system-shell.spec.ts on pass.",
+      "description": "Design tokens (DESIGN.md / 04-design-tokens.md), fonts in index.html, shared UI primitives, auth layout, role shells (Student, Instructor, Admin), check-in outcome panel — built to production quality (NFR-17/NFR-18) from the start; button contrast and padding verified via browser screenshots. Browser tester performs UX audit and emits tests/playwright-ui/scenarios/web-design-system-shell.spec.ts on pass.",
       "testRequirements": {
         "integration": [
           "apps/api/src/infra/preview-seed.integration.test.ts"
@@ -561,7 +669,8 @@
           "BR-14",
           "FR-18",
           "NFR-06",
-          "NFR-17"
+          "NFR-17",
+          "NFR-18"
         ],
         "playwright": [
           "tests/playwright-ui/scenarios/web-design-system-shell.spec.ts"
@@ -569,9 +678,47 @@
       }
     },
     {
-      "id": "web-auth-login",
+      "id": "web-admin-bootstrap",
       "passes": false,
       "priority": 21,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": [
+        "AC-17",
+        "FR-17",
+        "NFR-16"
+      ],
+      "docs": [
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/10-user-flows.md",
+        "docs/ui-ux/08-forms-validation-ux.md"
+      ],
+      "completionArtifacts": [
+        "apps/web/src/app/setup",
+        "apps/web/src/components/auth/setup-admin-form.tsx"
+      ],
+      "description": "First-deploy /setup page and route guard: create first TrainingOfficeAdmin when needsSetup is true; redirect to /admin hub on success.",
+      "testRequirements": {
+        "component": [
+          "apps/web/src/components/auth/setup-admin-form.test.tsx"
+        ],
+        "e2e": [
+          "tests/e2e/src/scenarios/bootstrap-first-admin.test.ts"
+        ],
+        "acceptanceTags": [
+          "AC-17",
+          "FR-17",
+          "NFR-16"
+        ],
+        "playwright": [
+          "tests/playwright-ui/scenarios/web-admin-bootstrap.spec.ts"
+        ]
+      }
+    },
+    {
+      "id": "web-auth-login",
+      "passes": false,
+      "priority": 22,
       "phase": 2,
       "agent": "frontend",
       "acceptance": [
@@ -612,7 +759,7 @@
     {
       "id": "web-auth-logout",
       "passes": false,
-      "priority": 22,
+      "priority": 23,
       "phase": 2,
       "agent": "frontend",
       "acceptance": [
@@ -647,8 +794,9 @@
         ],
         "acceptanceTags": [
           "AC-02",
+          "BR-06",
           "FR-02",
-          "BR-06"
+          "NFR-16"
         ],
         "playwright": [
           "tests/playwright-ui/scenarios/web-auth-logout.spec.ts"
@@ -656,9 +804,62 @@
       }
     },
     {
+      "id": "web-role-navigation",
+      "passes": false,
+      "priority": 24,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": [
+        "AC-18",
+        "FR-18",
+        "BR-14",
+        "NFR-11"
+      ],
+      "docs": [
+        "ai-harness/skills/design-craft-notion/SKILL.md",
+        "docs/technical/01-roles-permissions.md",
+        "docs/ui-ux/01-ui-ux-foundation.md",
+        "docs/ui-ux/05-common-ui-components.md",
+        "docs/ui-ux/06-app-layout-components.md",
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/11-wireframes.md"
+      ],
+      "completionArtifacts": [
+        "apps/web/src/app/admin/page.tsx",
+        "apps/web/src/app/router.tsx",
+        "apps/web/src/components/layout/sidebar-nav.tsx",
+        "apps/web/src/components/layout/bottom-nav.tsx",
+        "apps/web/src/components/layout/role-home-hub.tsx",
+        "apps/web/src/components/layout/route-discovery-panel.tsx",
+        "apps/web/src/components/layout/route-discovery-panel.test.tsx"
+      ],
+      "description": "Permission-gated navigation chrome with singleton active nav (BR-14a), expanded admin sidebar (Lớp học, Môn học, Danh sách ghi danh), role home hubs, and chrome-less route discovery on unauthenticated `/`.",
+      "testRequirements": {
+        "component": [
+          "apps/web/src/components/layout/sidebar-nav.test.tsx",
+          "apps/web/src/components/layout/role-home-hub.test.tsx",
+          "apps/web/src/components/layout/route-discovery-panel.test.tsx"
+        ],
+        "e2e": [
+          "tests/e2e/src/scenarios/nav-permission-gate.test.ts",
+          "tests/e2e/src/scenarios/admin-hub-deep-links.test.ts",
+          "tests/e2e/src/scenarios/route-discovery.test.ts"
+        ],
+        "acceptanceTags": [
+          "AC-18",
+          "BR-14",
+          "FR-18",
+          "NFR-11"
+        ],
+        "playwright": [
+          "tests/playwright-ui/scenarios/web-role-navigation.spec.ts"
+        ]
+      }
+    },
+    {
       "id": "web-student-checkin",
       "passes": false,
-      "priority": 42,
+      "priority": 25,
       "phase": 2,
       "agent": "frontend",
       "acceptance": [
@@ -736,8 +937,8 @@
     },
     {
       "id": "web-student-history",
-      "passes": true,
-      "priority": 23,
+      "passes": false,
+      "priority": 26,
       "phase": 2,
       "agent": "frontend",
       "acceptance": [
@@ -772,8 +973,8 @@
     },
     {
       "id": "web-instructor-sessions",
-      "passes": true,
-      "priority": 24,
+      "passes": false,
+      "priority": 27,
       "phase": 2,
       "agent": "frontend",
       "acceptance": [
@@ -816,7 +1017,7 @@
     {
       "id": "web-instructor-qr-display",
       "passes": false,
-      "priority": 25,
+      "priority": 28,
       "phase": 2,
       "agent": "frontend",
       "acceptance": [
@@ -837,7 +1038,11 @@
       "testRequirements": {
         "component": [
           "apps/web/src/components/instructor/qr-display-panel.test.tsx",
-          "apps/web/src/components/instructor/qr-fullscreen-presentation.test.tsx"
+          "apps/web/src/components/instructor/qr-fullscreen-presentation.test.tsx",
+          "apps/web/src/components/instructor/sessions-list-toolbar.test.tsx"
+        ],
+        "unit": [
+          "apps/web/src/lib/sessions-list-filters.test.ts"
         ],
         "acceptanceTags": [
           "AC-06",
@@ -853,7 +1058,7 @@
     {
       "id": "web-instructor-session-monitor",
       "passes": false,
-      "priority": 26,
+      "priority": 29,
       "phase": 2,
       "agent": "frontend",
       "acceptance": [
@@ -890,7 +1095,7 @@
     {
       "id": "web-instructor-attendance-roster",
       "passes": false,
-      "priority": 27,
+      "priority": 30,
       "phase": 2,
       "agent": "frontend",
       "acceptance": [
@@ -913,7 +1118,8 @@
       "testRequirements": {
         "component": [
           "apps/web/src/components/instructor/attendance-roster-table.test.tsx",
-          "apps/web/src/components/instructor/attendance-edit-dialog.test.tsx"
+          "apps/web/src/components/instructor/attendance-edit-dialog.test.tsx",
+          "apps/web/src/components/domain/attendance/attendance-audit-trail.test.tsx"
         ],
         "acceptanceTags": [
           "AC-11",
@@ -928,8 +1134,8 @@
     },
     {
       "id": "web-instructor-reports",
-      "passes": true,
-      "priority": 28,
+      "passes": false,
+      "priority": 31,
       "phase": 2,
       "agent": "frontend",
       "acceptance": [
@@ -972,7 +1178,7 @@
     {
       "id": "web-admin-users",
       "passes": false,
-      "priority": 29,
+      "priority": 32,
       "phase": 2,
       "agent": "frontend",
       "acceptance": [
@@ -990,7 +1196,16 @@
         "apps/web/src/app/admin/users"
       ],
       "description": "Admin user list with 14-listing §0 search/filter/sort/pagination plus create/edit forms for account provisioning.",
+      "excludes": [
+        "web-instructor-reports",
+        "web-admin-reports-export",
+        "web-instructor-session-monitor"
+      ],
       "testRequirements": {
+        "unit": [
+          "apps/web/src/lib/users-list-filters.test.ts",
+          "apps/web/src/lib/admin-breadcrumb.test.ts"
+        ],
         "component": [
           "apps/web/src/components/admin/user-form.test.tsx",
           "apps/web/src/components/admin/user-list-table.test.tsx"
@@ -1008,7 +1223,7 @@
     {
       "id": "web-admin-users-import",
       "passes": false,
-      "priority": 29.5,
+      "priority": 32.5,
       "phase": 2,
       "agent": "frontend",
       "acceptance": [
@@ -1025,6 +1240,7 @@
         "apps/web/src/app/admin/users/import"
       ],
       "description": "Admin user CSV import at /admin/users/import: upload, preview table, import summary with created/updated counts.",
+      "notes": "Import-only slice; do not modify list CRUD paths owned by web-admin-users.",
       "testRequirements": {
         "component": [
           "apps/web/src/components/admin/user-import-form.test.tsx"
@@ -1040,9 +1256,82 @@
       }
     },
     {
+      "id": "web-admin-classes",
+      "passes": false,
+      "priority": 33,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": [
+        "AC-03",
+        "FR-03"
+      ],
+      "docs": [
+        "ai-harness/skills/design-craft-notion/SKILL.md",
+        "docs/ui-ux/08-forms-validation-ux.md",
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/10-user-flows.md",
+        "docs/ui-ux/14-listing-pages-search-filter-sort.md"
+      ],
+      "completionArtifacts": [
+        "apps/web/src/app/admin/classes"
+      ],
+      "description": "Admin class catalog at /admin/classes (list + 14-listing §0) and ClassForm at /admin/classes/new with code validation and duplicate rejection.",
+      "testRequirements": {
+        "unit": [
+          "apps/web/src/lib/admin-route-access.test.ts"
+        ],
+        "component": [
+          "apps/web/src/components/admin/class-form.test.tsx",
+          "apps/web/src/components/admin/class-catalog-table.test.tsx"
+        ],
+        "acceptanceTags": [
+          "AC-03",
+          "FR-03"
+        ],
+        "playwright": [
+          "tests/playwright-ui/scenarios/web-admin-classes.spec.ts"
+        ]
+      }
+    },
+    {
+      "id": "web-admin-subjects",
+      "passes": false,
+      "priority": 33.5,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": [
+        "AC-03",
+        "FR-03"
+      ],
+      "docs": [
+        "ai-harness/skills/design-craft-notion/SKILL.md",
+        "docs/ui-ux/08-forms-validation-ux.md",
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/10-user-flows.md",
+        "docs/ui-ux/14-listing-pages-search-filter-sort.md"
+      ],
+      "completionArtifacts": [
+        "apps/web/src/app/admin/subjects"
+      ],
+      "description": "Admin subject catalog at /admin/subjects (list + 14-listing §0) and SubjectForm at /admin/subjects/new with code validation and duplicate rejection.",
+      "testRequirements": {
+        "component": [
+          "apps/web/src/components/admin/subject-form.test.tsx",
+          "apps/web/src/components/admin/subject-catalog-table.test.tsx"
+        ],
+        "acceptanceTags": [
+          "AC-03",
+          "FR-03"
+        ],
+        "playwright": [
+          "tests/playwright-ui/scenarios/web-admin-subjects.spec.ts"
+        ]
+      }
+    },
+    {
       "id": "web-admin-rosters",
-      "passes": true,
-      "priority": 30,
+      "passes": false,
+      "priority": 34,
       "phase": 2,
       "agent": "frontend",
       "acceptance": [
@@ -1078,7 +1367,7 @@
     {
       "id": "web-admin-reports-export",
       "passes": false,
-      "priority": 31,
+      "priority": 35,
       "phase": 2,
       "agent": "frontend",
       "acceptance": [
@@ -1120,8 +1409,8 @@
     },
     {
       "id": "web-admin-policy",
-      "passes": true,
-      "priority": 32,
+      "passes": false,
+      "priority": 36,
       "phase": 2,
       "agent": "frontend",
       "acceptance": [
@@ -1148,318 +1437,6 @@
         ],
         "playwright": [
           "tests/playwright-ui/scenarios/web-admin-policy.spec.ts"
-        ]
-      }
-    },
-    {
-      "id": "module-identity-bootstrap",
-      "passes": false,
-      "priority": 35,
-      "phase": 1,
-      "agent": "backend",
-      "acceptance": [
-        "AC-17",
-        "FR-17",
-        "BR-13"
-      ],
-      "docs": [
-        "docs/technical/05-api-design.md",
-        "docs/technical/08-validation-rules.md",
-        "docs/technical/02-module-breakdown.md"
-      ],
-      "completionArtifacts": [
-        "apps/api/src/modules/identity-auth/setup"
-      ],
-      "description": "Identity-auth bootstrap: GET /setup/status and POST /setup/first-admin for one-time TrainingOfficeAdmin creation when User count is zero.",
-      "testRequirements": {
-        "integration": [
-          "apps/api/src/modules/identity-auth/setup.integration.test.ts"
-        ],
-        "acceptanceTags": [
-          "AC-17",
-          "BR-13",
-          "FR-17"
-        ]
-      }
-    },
-    {
-      "id": "web-admin-bootstrap",
-      "passes": false,
-      "priority": 36,
-      "phase": 2,
-      "agent": "frontend",
-      "acceptance": [
-        "AC-17",
-        "FR-17",
-        "NFR-16"
-      ],
-      "docs": [
-        "docs/ui-ux/09-page-list.md",
-        "docs/ui-ux/10-user-flows.md",
-        "docs/ui-ux/08-forms-validation-ux.md"
-      ],
-      "completionArtifacts": [
-        "apps/web/src/app/setup",
-        "apps/web/src/components/auth/setup-admin-form.tsx"
-      ],
-      "description": "First-deploy /setup page and route guard: create first TrainingOfficeAdmin when needsSetup is true; redirect to /admin hub on success.",
-      "testRequirements": {
-        "component": [
-          "apps/web/src/components/auth/setup-admin-form.test.tsx"
-        ],
-        "e2e": [
-          "tests/e2e/src/scenarios/bootstrap-first-admin.test.ts"
-        ],
-        "acceptanceTags": [
-          "AC-17",
-          "FR-17",
-          "NFR-16"
-        ],
-        "playwright": [
-          "tests/playwright-ui/scenarios/web-admin-bootstrap.spec.ts"
-        ]
-      }
-    },
-    {
-      "id": "module-class-management",
-      "passes": true,
-      "priority": 37,
-      "phase": 1,
-      "agent": "backend",
-      "acceptance": [
-        "AC-03",
-        "FR-03"
-      ],
-      "docs": [
-        "docs/technical/05-api-design.md",
-        "docs/technical/08-validation-rules.md"
-      ],
-      "completionArtifacts": [
-        "apps/api/src/modules/roster-enrollment/class-subject-write"
-      ],
-      "description": "Roster-enrollment catalog APIs: GET /classes and GET /subjects (paginated list) plus POST /classes and POST /subjects for reference record creation before CSV import.",
-      "testRequirements": {
-        "integration": [
-          "apps/api/src/modules/roster-enrollment/class-management.integration.test.ts"
-        ],
-        "acceptanceTags": [
-          "AC-03",
-          "FR-03"
-        ]
-      }
-    },
-    {
-      "id": "module-checkin-qr-preflight",
-      "passes": false,
-      "priority": 38,
-      "phase": 1,
-      "agent": "backend",
-      "acceptance": [
-        "AC-07",
-        "FR-07",
-        "BR-03",
-        "BR-11",
-        "BR-15"
-      ],
-      "docs": [
-        "docs/technical/05-api-design.md",
-        "docs/technical/08-validation-rules.md",
-        "docs/technical/06-main-workflows.md"
-      ],
-      "completionArtifacts": [
-        "apps/api/src/modules/checkin-qr/preflight"
-      ],
-      "description": "Check-in token preflight API: GET /check-in/tokens/:tokenId/preflight validates token, session, and enrollment before client advances to GPS capture.",
-      "testRequirements": {
-        "unit": [
-          "apps/api/src/modules/checkin-qr/preflight/preflight.test.ts"
-        ],
-        "integration": [
-          "apps/api/src/modules/checkin-qr/preflight/preflight.integration.test.ts"
-        ],
-        "acceptanceTags": [
-          "AC-07",
-          "BR-03",
-          "BR-11",
-          "BR-15",
-          "FR-07"
-        ]
-      }
-    },
-    {
-      "id": "web-admin-classes",
-      "passes": true,
-      "priority": 39,
-      "phase": 2,
-      "agent": "frontend",
-      "acceptance": [
-        "AC-03",
-        "FR-03"
-      ],
-      "docs": [
-        "ai-harness/skills/design-craft-notion/SKILL.md",
-        "docs/ui-ux/08-forms-validation-ux.md",
-        "docs/ui-ux/09-page-list.md",
-        "docs/ui-ux/10-user-flows.md",
-        "docs/ui-ux/14-listing-pages-search-filter-sort.md"
-      ],
-      "completionArtifacts": [
-        "apps/web/src/app/admin/classes"
-      ],
-      "description": "Admin class catalog at /admin/classes (list + 14-listing §0) and ClassForm at /admin/classes/new with code validation and duplicate rejection.",
-      "testRequirements": {
-        "unit": [
-          "apps/web/src/lib/admin-route-access.test.ts"
-        ],
-        "component": [
-          "apps/web/src/components/admin/class-form.test.tsx",
-          "apps/web/src/components/admin/class-catalog-table.test.tsx"
-        ],
-        "acceptanceTags": [
-          "AC-03",
-          "FR-03"
-        ],
-        "playwright": [
-          "tests/playwright-ui/scenarios/web-admin-classes.spec.ts"
-        ]
-      }
-    },
-    {
-      "id": "web-admin-subjects",
-      "passes": true,
-      "priority": 39,
-      "phase": 2,
-      "agent": "frontend",
-      "acceptance": [
-        "AC-03",
-        "FR-03"
-      ],
-      "docs": [
-        "ai-harness/skills/design-craft-notion/SKILL.md",
-        "docs/ui-ux/08-forms-validation-ux.md",
-        "docs/ui-ux/09-page-list.md",
-        "docs/ui-ux/10-user-flows.md",
-        "docs/ui-ux/14-listing-pages-search-filter-sort.md"
-      ],
-      "completionArtifacts": [
-        "apps/web/src/app/admin/subjects"
-      ],
-      "description": "Admin subject catalog at /admin/subjects (list + 14-listing §0) and SubjectForm at /admin/subjects/new with code validation and duplicate rejection.",
-      "testRequirements": {
-        "component": [
-          "apps/web/src/components/admin/subject-form.test.tsx",
-          "apps/web/src/components/admin/subject-catalog-table.test.tsx"
-        ],
-        "acceptanceTags": [
-          "AC-03",
-          "FR-03"
-        ],
-        "playwright": [
-          "tests/playwright-ui/scenarios/web-admin-subjects.spec.ts"
-        ]
-      }
-    },
-    {
-      "id": "web-visual-refresh-v2",
-      "passes": false,
-      "priority": 38,
-      "phase": 2,
-      "agent": "frontend",
-      "acceptance": [
-        "NFR-17",
-        "NFR-18",
-        "AC-07"
-      ],
-      "docs": [
-        "docs/ui-ux/DESIGN.md",
-        "ai-harness/docs/ui-visual-verification.md",
-        "ai-harness/skills/design-craft-notion/SKILL.md",
-        "docs/ui-ux/01-design-overview.md",
-        "docs/ui-ux/03-design-system-basics.md",
-        "docs/ui-ux/04-design-tokens.md",
-        "docs/ui-ux/05-common-ui-components.md",
-        "docs/ui-ux/06-app-layout-components.md",
-        "docs/ui-ux/13-accessibility-basics.md"
-      ],
-      "completionArtifacts": [
-        "apps/web/src/styles/tokens.css",
-        "apps/web/src/styles/globals.css",
-        "apps/web/index.html",
-        "apps/web/src/components/ui/button.tsx",
-        "apps/web/src/components/ui/card.tsx",
-        "apps/web/src/components/layout/auth-layout.tsx",
-        "apps/web/src/components/layout/student-layout.tsx",
-        "apps/web/src/components/layout/instructor-layout.tsx",
-        "apps/web/src/components/layout/admin-layout.tsx",
-        "apps/web/src/components/domain/check-in/check-in-outcome-panel.tsx"
-      ],
-      "description": "Notion design system (spec in DESIGN.md): tokens from 04-design-tokens.md, Inter font with Vietnamese subset, navy auth panel, workspace shells, check-in outcome pastel panels — button contrast and padding verified via dual-viewport browser screenshots. Docs/harness spec phase precedes implementation.",
-      "testRequirements": {
-        "component": [
-          "apps/web/src/components/ui/badge.test.tsx",
-          "apps/web/src/components/domain/check-in/check-in-outcome-panel.test.tsx",
-          "apps/web/src/components/layout/app-shell.test.tsx"
-        ],
-        "acceptanceTags": [
-          "AC-07",
-          "NFR-17",
-          "NFR-18"
-        ],
-        "playwright": [
-          "tests/playwright-ui/scenarios/web-visual-refresh-v2.spec.ts"
-        ]
-      }
-    },
-    {
-      "id": "web-role-navigation",
-      "passes": false,
-      "priority": 40,
-      "phase": 2,
-      "agent": "frontend",
-      "acceptance": [
-        "AC-18",
-        "FR-18",
-        "BR-14",
-        "NFR-11"
-      ],
-      "docs": [
-        "ai-harness/skills/design-craft-notion/SKILL.md",
-        "docs/technical/01-roles-permissions.md",
-        "docs/ui-ux/01-ui-ux-foundation.md",
-        "docs/ui-ux/05-common-ui-components.md",
-        "docs/ui-ux/06-app-layout-components.md",
-        "docs/ui-ux/09-page-list.md",
-        "docs/ui-ux/11-wireframes.md"
-      ],
-      "completionArtifacts": [
-        "apps/web/src/app/admin/page.tsx",
-        "apps/web/src/app/router.tsx",
-        "apps/web/src/components/layout/sidebar-nav.tsx",
-        "apps/web/src/components/layout/bottom-nav.tsx",
-        "apps/web/src/components/layout/role-home-hub.tsx",
-        "apps/web/src/components/layout/route-discovery-panel.tsx",
-        "apps/web/src/components/layout/route-discovery-panel.test.tsx"
-      ],
-      "description": "Permission-gated navigation chrome with singleton active nav (BR-14a), expanded admin sidebar (Lớp học, Môn học, Danh sách ghi danh), role home hubs, and chrome-less route discovery on unauthenticated `/`.",
-      "testRequirements": {
-        "component": [
-          "apps/web/src/components/layout/sidebar-nav.test.tsx",
-          "apps/web/src/components/layout/role-home-hub.test.tsx",
-          "apps/web/src/components/layout/route-discovery-panel.test.tsx"
-        ],
-        "e2e": [
-          "tests/e2e/src/scenarios/nav-permission-gate.test.ts",
-          "tests/e2e/src/scenarios/admin-hub-deep-links.test.ts",
-          "tests/e2e/src/scenarios/route-discovery.test.ts"
-        ],
-        "acceptanceTags": [
-          "AC-18",
-          "BR-14",
-          "FR-18",
-          "NFR-11"
-        ],
-        "playwright": [
-          "tests/playwright-ui/scenarios/web-role-navigation.spec.ts"
         ]
       }
     },

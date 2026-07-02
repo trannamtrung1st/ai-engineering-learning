@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-15",
   "version": 1,
-  "docFingerprint": "sha256:570e2b7cf71ee69f846fdb406de6f277c232d53e0884fc69a5623d1f12d0f82a",
-  "generatedAt": "2026-06-29T17:33:24Z",
+  "docFingerprint": "sha256:7e3a3404d1fa949a12d9bbd2f7bcff57584570c63c719a18d2d6a1562023fc5c",
+  "generatedAt": "2026-07-01T01:29:44Z",
   "cases": [
     {
       "id": "TC-AC-15-001",
@@ -23,11 +23,11 @@
         "POST /api/v1/check-in with Student A session, valid tokenId, and in-radius coordinates",
         "Assert check-in HTTP 200 with outcome Success and attendance status Present",
         "Poll GET /api/v1/sessions/:sessionId/attendance every 1 second until summary.present increments to 4 or 5-second timeout elapses",
-        "Assert summary.present === 4 and summary.pending decremented by 1",
+        "Assert summary.present === 4, summary.pending decremented by 1, and summary.enrolled unchanged (Present vs total enrolled per AC-15a)",
         "Record elapsed time from check-in success to first poll response reflecting updated count",
         "Assert elapsed time ≤ 5 seconds per AC-15a and NFR-08"
       ],
-      "expected": "AC-15a and testing-plan TS-35 satisfied: Present vs enrolled counts update within 5 seconds of successful check-in without manual reload",
+      "expected": "AC-15a and testing-plan §3 TS-35 satisfied: Present count vs total enrolled updates within 5 seconds of successful check-in without manual reload",
       "edgeCase": false
     },
     {
@@ -144,9 +144,9 @@
         "Trigger successful check-in for Student A (mobile context or API)",
         "Wait up to 5 seconds without manual page reload for StatCard Đã điểm danh to update to 4",
         "Verify roster grid row for Student A shows Present StatusBadge and check-in timestamp",
-        "Assert poll status bar indicates last refresh within 5 seconds per NFR-08"
+        "Verify stale indicator shows Cập nhật lúc {HH:mm} within 5 seconds of check-in per listing-pages §8 and ui-states §15"
       ],
-      "expected": "AC-15a and tag-specific browser-journey hint: instructor monitor dashboard StatCards refresh within 5 seconds without manual reload per page-list §4.3.2",
+      "expected": "AC-15a and tag-specific browser-journey hint: instructor Theo dõi tab StatCards refresh within 5 seconds without manual reload per page-list §4.3.2 and user-flows §5.2",
       "edgeCase": false
     },
     {
@@ -282,12 +282,12 @@
       ],
       "steps": [
         "GET /api/v1/sessions/:sessionId/attendance?sort=invalidField using Instructor session",
-        "Assert HTTP status 400 Bad Request",
+        "Assert HTTP status 422 Unprocessable Entity per API design §10.2 validation failures",
         "Assert response errorCode ValidationFailed",
         "Assert field-level detail references sort parameter",
         "Assert response contains no summary or records data in error envelope"
       ],
-      "expected": "Invalid sort boundary rejected with ValidationFailed; no attendance roster leaked on malformed query",
+      "expected": "Invalid sort boundary rejected with 422 ValidationFailed per API design §10.2; no attendance roster leaked on malformed query",
       "edgeCase": true
     },
     {
@@ -300,8 +300,8 @@
       "title": "Monitor tab status filter shows only matching roster rows from polled data",
       "preconditions": [
         "Authenticated Instructor on /sessions/:sessionId Theo dõi tab",
-        "Active session with mixed Present, Pending, and Absent students",
-        "Client-side status filter per listing-pages §4.4"
+        "Active session with mixed Present, Pending, Absent, and Excused students",
+        "Monitor tab listing compliance per page-list §4.3.2 — status filter options per listing-pages §4.4 (Tất cả / Có mặt / Vắng / Có phép / Chờ)"
       ],
       "steps": [
         "Navigate to Theo dõi tab and wait for roster poll",
@@ -378,6 +378,30 @@
         "Assert no manual page reload required between updates"
       ],
       "expected": "NFR-08 sustained: multiple check-ins during Active session each propagate to live counts within 5 seconds without reload",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-15-017",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["AC-15", "FR-15"],
+      "title": "Monitor tab text search filters roster by student name or MSSV",
+      "preconditions": [
+        "Authenticated Instructor on /sessions/:sessionId Theo dõi tab",
+        "Active session with ≥10 enrolled students with distinct displayName and institutionalId values",
+        "TableToolbar search on monitor tab per page-list §4.3.2 and 14-listing §0 (client-side, min 0 chars)"
+      ],
+      "steps": [
+        "Navigate to Theo dõi tab and wait for roster poll to complete",
+        "Type partial student displayName in Tìm sinh viên search input",
+        "Verify roster grid shows only rows matching displayName or studentId (case-insensitive, diacritic-aware per 14-listing §3.1)",
+        "Clear search with × control and verify full roster restored",
+        "Type institutionalId fragment and verify matching student row visible",
+        "Verify StatCard summary row still reflects full session counts during filtered view"
+      ],
+      "expected": "Mandatory §0 search on monitor roster tab scopes visible rows client-side without altering live summary StatCards per 14-listing §3.2 and page-list §4.3.2",
       "edgeCase": false
     }
   ]

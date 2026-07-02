@@ -6,5 +6,5 @@ https://github.com/anthropics/skills/tree/main/skills/frontend-design
 Refer to the anthropics/skills repository for complete license terms applicable
 to the original skill content.
 
-We Check-specific adaptations (precedence rules, Campus Pulse grounding,
-harness checklists) are project-owned documentation in this repository.
+Product-specific adaptations (precedence rules, harness checklists) are
+owned documentation in each generated repository.

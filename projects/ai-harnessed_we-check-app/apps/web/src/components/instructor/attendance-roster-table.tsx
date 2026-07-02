@@ -3,7 +3,8 @@ import {
   SessionStatus,
   type UserRole,
 } from "@wecheck/domain";
-import { useMemo, useState } from "react";
+import { Search, X } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -21,6 +22,7 @@ import {
 import {
   filterMonitorRecords,
   formatMonitorTimestamp,
+  searchMonitorRecords,
   sortMonitorRecords,
   type MonitorSortColumn,
   type MonitorSortDirection,
@@ -52,6 +54,7 @@ export function AttendanceRosterTable({
   const rosterQuery = useSessionRoster(sessionId);
   const invalidateRoster = useInvalidateSessionRoster();
 
+  const [searchInput, setSearchInput] = useState("");
   const [statusFilter, setStatusFilter] = useState<MonitorStatusFilter>("all");
   const [sortColumn, setSortColumn] = useState<MonitorSortColumn>("displayName");
   const [sortDirection, setSortDirection] = useState<MonitorSortDirection>("asc");
@@ -59,6 +62,15 @@ export function AttendanceRosterTable({
   const [optimisticAudits, setOptimisticAudits] = useState<
     Record<string, AttendanceAuditEntry>
   >({});
+
+  const acknowledgeOptimisticAudit = useCallback((recordId: string) => {
+    setOptimisticAudits((prev) => {
+      if (!prev[recordId]) return prev;
+      const next = { ...prev };
+      delete next[recordId];
+      return next;
+    });
+  }, []);
 
   const editAllowed = isAttendanceEditAllowed({
     editorRole: user.role as UserRole,
@@ -78,9 +90,10 @@ export function AttendanceRosterTable({
 
   const records = useMemo(() => {
     const source = rosterQuery.data?.records ?? [];
-    const filtered = filterMonitorRecords(source, statusFilter);
+    const searched = searchMonitorRecords(source, searchInput);
+    const filtered = filterMonitorRecords(searched, statusFilter);
     return sortMonitorRecords(filtered, sortColumn, sortDirection);
-  }, [rosterQuery.data?.records, statusFilter, sortColumn, sortDirection]);
+  }, [rosterQuery.data?.records, searchInput, statusFilter, sortColumn, sortDirection]);
 
   function handleSort(column: MonitorSortColumn) {
     const nextDirection: MonitorSortDirection =
@@ -138,24 +151,56 @@ export function AttendanceRosterTable({
         </p>
       ) : null}
 
-      <div className="flex flex-wrap items-center gap-3">
-        <label className="flex items-center gap-2 text-small text-text-secondary">
-          Lọc trạng thái
-          <select
-            className="rounded-md border border-border bg-surface px-2 py-1 text-body text-text-primary"
-            data-testid="roster-status-filter"
-            value={statusFilter}
-            onChange={(event) =>
-              setStatusFilter(event.target.value as MonitorStatusFilter)
-            }
-          >
-            {statusFilterOptions.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
+      <div
+        className="rounded-md border border-border bg-surface-raised p-4 shadow-sm"
+        data-testid="roster-toolbar"
+      >
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+          <div className="relative min-w-0 flex-1">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted"
+              aria-hidden
+            />
+            <input
+              type="search"
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+              placeholder="Tìm sinh viên…"
+              className="min-h-touch w-full rounded-full border border-border bg-surface-default py-2 pl-10 pr-10 text-body text-text-primary placeholder:text-text-disabled focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-500"
+              data-testid="roster-student-search"
+              aria-label="Tìm sinh viên"
+            />
+            {searchInput ? (
+              <button
+                type="button"
+                onClick={() => setSearchInput("")}
+                className="absolute right-2 top-1/2 flex min-h-touch min-w-touch -translate-y-1/2 items-center justify-center rounded-full text-text-secondary hover:bg-surface-muted hover:text-text-primary"
+                aria-label="Xóa tìm kiếm"
+                data-testid="roster-search-clear"
+              >
+                <X className="h-4 w-4" aria-hidden />
+              </button>
+            ) : null}
+          </div>
+
+          <label className="flex shrink-0 items-center gap-2 text-small text-text-secondary">
+            Trạng thái
+            <select
+              className="min-h-touch rounded-md border border-border bg-surface px-2 py-1 text-body text-text-primary"
+              data-testid="roster-status-filter"
+              value={statusFilter}
+              onChange={(event) =>
+                setStatusFilter(event.target.value as MonitorStatusFilter)
+              }
+            >
+              {statusFilterOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </div>
 
       <div className="overflow-x-auto">
@@ -221,6 +266,11 @@ export function AttendanceRosterTable({
                           variant="ghost"
                           size="sm"
                           disabled={!rowEditAllowed}
+                          title={
+                            !rowEditAllowed && windowExpired
+                              ? "Chỉ phòng đào tạo có thể chỉnh sửa sau 24 giờ"
+                              : undefined
+                          }
                           aria-label={`Chỉnh sửa điểm danh ${record.displayName}`}
                           data-testid={`roster-edit-${record.institutionalId.toLowerCase()}`}
                           onClick={() => setEditingRecord(record)}
@@ -231,6 +281,9 @@ export function AttendanceRosterTable({
                           <AttendanceAuditTrail
                             recordId={record.id}
                             optimisticEntry={optimisticAudits[record.id] ?? null}
+                            onOptimisticAcknowledged={() =>
+                              acknowledgeOptimisticAudit(record.id)
+                            }
                           />
                         ) : null}
                       </div>

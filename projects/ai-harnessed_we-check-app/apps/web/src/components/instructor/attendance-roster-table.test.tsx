@@ -211,4 +211,33 @@ describe("AttendanceRosterTable (AC-11, FR-11, BR-10)", () => {
     expect(screen.getByTestId("roster-row-sv2026002")).toBeInTheDocument();
     expect(screen.queryByTestId("roster-row-sv2026001")).not.toBeInTheDocument();
   });
+
+  it("TC-FR-11-021: student search filters roster by displayName and institutionalId", () => {
+    renderTable();
+
+    expect(screen.getByTestId("roster-toolbar")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText("Tìm sinh viên…")).toBeInTheDocument();
+
+    fireEvent.change(screen.getByTestId("roster-student-search"), {
+      target: { value: "Nguyễn" },
+    });
+    expect(screen.getByTestId("roster-row-sv2026001")).toBeInTheDocument();
+    expect(screen.queryByTestId("roster-row-sv2026002")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("roster-search-clear"));
+    expect(screen.getByTestId("roster-student-search")).toHaveValue("");
+
+    fireEvent.change(screen.getByTestId("roster-student-search"), {
+      target: { value: "SV2026003" },
+    });
+    expect(screen.getByTestId("roster-row-sv2026003")).toBeInTheDocument();
+    expect(screen.queryByTestId("roster-row-sv2026001")).not.toBeInTheDocument();
+  });
+
+  it("TC-FR-11-021: column sort toggles Trạng thái order", () => {
+    renderTable();
+
+    fireEvent.click(screen.getByTestId("roster-sort-status"));
+    expect(screen.getByTestId("roster-sort-status")).toHaveAttribute("aria-sort", "ascending");
+  });
 });

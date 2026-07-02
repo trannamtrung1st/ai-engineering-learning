@@ -8,16 +8,43 @@ import {
 } from "@/lib/attendance-roster-api";
 import { formatMonitorTimestamp } from "@/lib/session-monitor-roster";
 
+/** Client optimistic ids differ from persisted audit log ids — match on edit semantics (NFR-15). */
+export function auditEntryMatches(
+  a: AttendanceAuditEntry,
+  b: AttendanceAuditEntry,
+): boolean {
+  return (
+    a.editorId === b.editorId &&
+    a.previousStatus === b.previousStatus &&
+    a.newStatus === b.newStatus &&
+    (a.note ?? "") === (b.note ?? "")
+  );
+}
+
+export function mergeAuditEntriesWithOptimistic(
+  entries: AttendanceAuditEntry[],
+  optimisticEntry?: AttendanceAuditEntry | null,
+): AttendanceAuditEntry[] {
+  if (!optimisticEntry) return entries;
+  if (entries.some((entry) => auditEntryMatches(optimisticEntry, entry))) {
+    return entries;
+  }
+  return [optimisticEntry, ...entries];
+}
+
 export interface AttendanceAuditTrailProps {
   recordId: string;
   /** Optimistic entry shown immediately after a successful edit */
   optimisticEntry?: AttendanceAuditEntry | null;
+  /** Called when persisted audit rows subsume the optimistic entry */
+  onOptimisticAcknowledged?: () => void;
 }
 
 /** FR-11 / BR-10 / NFR-15 — read-only audit log panel for edited rows */
 export function AttendanceAuditTrail({
   recordId,
   optimisticEntry,
+  onOptimisticAcknowledged,
 }: AttendanceAuditTrailProps) {
   const [expanded, setExpanded] = useState(false);
   const [entries, setEntries] = useState<AttendanceAuditEntry[]>([]);
@@ -50,11 +77,20 @@ export function AttendanceAuditTrail({
     return () => {
       cancelled = true;
     };
-  }, [expanded, recordId, optimisticEntry?.id]);
+  }, [expanded, recordId, optimisticEntry]);
 
-  const displayEntries = optimisticEntry
-    ? [optimisticEntry, ...entries.filter((e) => e.id !== optimisticEntry.id)]
-    : entries;
+  useEffect(() => {
+    if (
+      !optimisticEntry ||
+      entries.length === 0 ||
+      !entries.some((entry) => auditEntryMatches(optimisticEntry, entry))
+    ) {
+      return;
+    }
+    onOptimisticAcknowledged?.();
+  }, [entries, optimisticEntry, onOptimisticAcknowledged]);
+
+  const displayEntries = mergeAuditEntriesWithOptimistic(entries, optimisticEntry);
 
   return (
     <div data-testid={`attendance-audit-trail-${recordId}`}>

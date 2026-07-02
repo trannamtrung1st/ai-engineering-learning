@@ -1,5 +1,6 @@
 import { cn } from "@/lib/cn";
 import type { LucideIcon } from "lucide-react";
+import type { ComponentPropsWithoutRef } from "react";
 
 const variantClasses = {
   info: "border-info-500 bg-info-50 text-info-500",
@@ -10,12 +11,11 @@ const variantClasses = {
 
 export type AlertVariant = keyof typeof variantClasses;
 
-export interface AlertProps {
+export interface AlertProps extends ComponentPropsWithoutRef<"div"> {
   variant?: AlertVariant;
   title?: string;
   children: React.ReactNode;
   icon?: LucideIcon;
-  className?: string;
 }
 
 export function Alert({
@@ -24,6 +24,7 @@ export function Alert({
   children,
   icon: Icon,
   className,
+  ...rest
 }: AlertProps) {
   return (
     <div
@@ -33,6 +34,7 @@ export function Alert({
         variantClasses[variant],
         className,
       )}
+      {...rest}
     >
       {Icon ? <Icon className="mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" /> : null}
       <div>

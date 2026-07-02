@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-05",
   "version": 1,
-  "docFingerprint": "sha256:308b096116bdccfb2f529c7c25ea74eab6b3f506c3728246a7177d7d892415fc",
-  "generatedAt": "2026-06-29T17:50:24Z",
+  "docFingerprint": "sha256:6c7678f94cb9169287510a56d60b05b785753e869c92ffab3c3fb6445986f640",
+  "generatedAt": "2026-07-01T02:15:00Z",
   "cases": [
     {
       "id": "TC-FR-05-001",
@@ -80,7 +80,7 @@
       "title": "TS-14: Enrolled student check-in within 10-minute attendance window succeeds",
       "preconditions": [
         "Active session with openedAt set and scheduledStart in the past",
-        "Test clock fixed so now ≤ scheduledStart + 10 minutes",
+        "Test clock fixed so openedAt ≤ now ≤ scheduledStart + 10 minutes per SM-01 §2.4",
         "Authenticated enrolled Student with valid unexpired QR token from GET /sessions/:id/qr/current",
         "Student coordinates within session gpsRadiusMeters"
       ],
@@ -90,7 +90,7 @@
         "GET /api/v1/sessions/:sessionId/attendance and locate student record",
         "Assert attendance status is Present with checkedInAt populated"
       ],
-      "expected": "Check-in evaluated per BR interaction matrix within attendance window per FR-05, AC-05b, and BR-01",
+      "expected": "Check-in allowed when session Active and openedAt ≤ now ≤ min(closedAt, scheduledStart + 10 min) per SM-01 §2.4, FR-05, AC-05b, and BR-01",
       "edgeCase": false
     },
     {
@@ -99,7 +99,7 @@
       "layer": "e2e",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["FR-05", "AC-05", "BR-01"],
+      "traceability": ["FR-05", "AC-05", "BR-01", "NFR-01"],
       "title": "TS-15: Auto-close after scheduledStart + 10 minutes sets Closed and Pending to Absent",
       "preconditions": [
         "Active session with M students still in Pending status",
@@ -113,7 +113,7 @@
         "GET /api/v1/sessions/:sessionId/attendance and assert summary.pending is 0 and summary.absent equals M",
         "Query all attendance_records for sessionId and verify all previously Pending rows are Absent"
       ],
-      "expected": "Session auto-transitions to Closed per FR-05 and AC-05c; all Pending records become Absent without instructor action",
+      "expected": "Session auto-transitions to Closed per FR-05, AC-05c, and BR-01; all Pending records become Absent without instructor action",
       "edgeCase": false
     },
     {
@@ -188,7 +188,7 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["FR-05", "BR-01"],
+      "traceability": ["FR-05", "BR-01", "NFR-01"],
       "title": "AutoCloseScheduler transitions Active session to Closed at scheduledStart + 10 min",
       "preconditions": [
         "Active session row with scheduled_start in the past and status Active",
@@ -329,7 +329,7 @@
         "Assert response outcome SessionNotActive with errorCode SessionNotActive and Vietnamese message",
         "GET /api/v1/sessions/:sessionId/attendance for student and assert status remains Pending or becomes Absent after subsequent close"
       ],
-      "expected": "Check-in rejected when now > scheduledStart + 10 min per FR-05 and BR-01 window end; outcome SessionNotActive",
+      "expected": "Check-in rejected when now > scheduledStart + 10 min per SM-01 §2.4 window end and BR-01; outcome SessionNotActive before or after close finalize",
       "edgeCase": true
     },
     {
@@ -360,7 +360,7 @@
       "technique": "flow-a",
       "priority": "P0",
       "traceability": ["FR-05", "BR-01"],
-      "title": "Flow A step 3: Instructor opens Draft session to start live check-in",
+      "title": "Flow A step 2: Instructor opens Draft session to start live check-in",
       "preconditions": [
         "Roster seeded for HESD-01 / SWE-101 via prior CSV import (Flow A step 1)",
         "Draft session with valid GPS created (Flow A step 2)",
@@ -369,10 +369,10 @@
       "steps": [
         "POST /api/v1/sessions/:sessionId/open with Instructor session",
         "Assert session status Active and openedAt set",
-        "GET /api/v1/sessions/:sessionId/qr/current and capture token for student check-in (Flow A step 4)",
+        "GET /api/v1/sessions/:sessionId/qr/current and capture token for student check-in (Flow A step 3)",
         "GET /api/v1/sessions/:sessionId/attendance and verify Pending count matches enrolled roster"
       ],
-      "expected": "Session opened as Flow A prerequisite per testing-plan §6 Flow A step 2; QR and attendance bootstrap ready for student check-in and eventual close",
+      "expected": "Session opened as Flow A step 2 per testing-plan §6; QR and attendance bootstrap ready for student check-in (step 4) and eventual close (step 6)",
       "edgeCase": false
     },
     {
@@ -389,14 +389,14 @@
         "Instructor navigates to session detail page for the Draft session"
       ],
       "steps": [
-        "Verify Mở buổi học action is enabled when GPS is configured",
+        "Verify Mở buổi học (open session) action is enabled when GPS is configured",
         "Click Mở buổi học and confirm dialog *Xác nhận mở buổi học?*",
         "Wait for status badge update and button loading to complete",
         "Verify session status badge shows Đang diễn ra (Active) and openedAt timestamp is visible",
         "Verify tab switches to Theo dõi (monitor) per ui-states §7.5",
         "Verify navigation links to QR display and live monitor are available"
       ],
-      "expected": "Session opened via UI per FR-05; Active status displayed; monitor tab active; instructor can proceed to QR projection",
+      "expected": "Session opened via UI per FR-05 and AC-05a; Active status displayed; monitor tab active; instructor can proceed to QR projection and monitoring",
       "edgeCase": false
     },
     {
@@ -409,18 +409,16 @@
       "title": "Instructor live monitor shows enrolled count and Present vs Pending progress during Active session",
       "preconditions": [
         "Instructor is logged in with Active session in progress",
-        "At least one student has checked in Present; others remain Pending; optional Rejected record exists",
-        "Instructor navigates to /sessions/:id Theo dõi (monitor) tab"
+        "At least one student has checked in Present; others remain Pending",
+        "Instructor navigates to /sessions/:sessionId and selects Theo dõi (monitor) tab per ui-states §7.3 and WF-03 §4.5"
       ],
       "steps": [
         "Verify summary panel shows summary.present and summary.enrolled matching GET /api/v1/sessions/:sessionId/attendance",
         "Verify roster table lists students with status badges Present and Chờ (Pending)",
-        "Verify Rejected rows are visually highlighted when present per WF-03 §4.5",
-        "Verify recent check-ins sorted by checkedInAt descending",
         "Wait up to 5 seconds for poll refresh after a new check-in per ui-states §7.3",
         "Verify present count increments without manual page reload"
       ],
-      "expected": "Live monitor reflects FR-05 monitoring requirement per WF-03 §4.5; attendance counts update every 5 s during Active window",
+      "expected": "Live monitor reflects FR-05 monitoring requirement per AC-05 and WF-03 §4.5; attendance counts update every 5 s during Active window",
       "edgeCase": false
     },
     {
@@ -436,8 +434,8 @@
         "Session has Pending students not yet checked in"
       ],
       "steps": [
-        "Click Đóng buổi học action",
-        "Confirm close in dialog *Kết thúc điểm danh?*",
+        "Click Đóng buổi học (close session) action",
+        "Confirm close in dialog prompt (*Kết thúc điểm danh?*)",
         "Wait for status badge update and button loading to complete",
         "Verify session status badge shows Đã kết thúc (Closed)",
         "Verify QR display and open-session actions are unavailable",
@@ -453,7 +451,7 @@
       "layer": "integration",
       "technique": "concurrency",
       "priority": "P1",
-      "traceability": ["FR-05", "BR-01"],
+      "traceability": ["FR-05", "BR-01", "NFR-01"],
       "title": "Parallel manual close and auto-close yield single Closed transition without duplicate finalize",
       "preconditions": [
         "Active session past scheduledStart + 10 minutes on TestClock",
@@ -574,9 +572,57 @@
         "Assert HTTP status 200 with qrPayload, tokenId, issuedAt, expiresAt, secondsRemaining, and attendanceWindowClosesAt",
         "Assert attendanceWindowClosesAt equals scheduledStart + 10 minutes per BR-01 window end",
         "POST /api/v1/sessions/:sessionId/close",
-        "GET /api/v1/sessions/:sessionId/qr/current and assert no valid token or session-not-active error response"
+        "GET /api/v1/sessions/:sessionId/qr/current and assert no valid token or 403/422 session-not-active response"
       ],
-      "expected": "QR current endpoint contract per API design §6.1 exposes attendance window close time during Active; token unavailable after close",
+      "expected": "QR current endpoint contract per API design §6.1 exposes attendanceWindowClosesAt during Active; token unavailable after close",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-05-027",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-05", "BR-07"],
+      "title": "POST /sessions/:sessionId/open without room GPS returns 422 RoomGpsRequired",
+      "preconditions": [
+        "Authenticated Instructor session is set",
+        "Draft sessionId owned by instructor with roomLatitude and roomLongitude null or invalid"
+      ],
+      "steps": [
+        "POST /api/v1/sessions/:sessionId/open with Instructor session",
+        "Assert HTTP status 422",
+        "Assert response errorCode RoomGpsRequired with localized message requiring GPS configuration",
+        "GET /api/v1/sessions/:sessionId and assert status remains Draft with no openedAt"
+      ],
+      "expected": "Open blocked per API design §5.4 and validation VAL session open guard; session stays Draft until GPS configured per BR-07 and ui-states §7.5 blocked-open state",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-05-028",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-05", "AC-05", "BR-01"],
+      "title": "Instructor locates Draft, Active, and Closed sessions via /sessions search, status chips, sort, and pagination",
+      "preconditions": [
+        "Authenticated Instructor is logged in to instructor SPA",
+        "At least 21 sessions exist across Draft, Active, and Closed/Cancelled statuses for assigned classes",
+        "Sessions span multiple class codes (e.g. HESD-01) and subject names for search filtering"
+      ],
+      "steps": [
+        "Navigate to /sessions",
+        "Verify grouped SessionCard layout with status filter chips Tất cả, Đang diễn ra, Nháp, Đã kết thúc and search input with placeholder Tìm theo lớp, môn…",
+        "Click Đang diễn ra chip and verify only Active sessions shown with Đang diễn ra status badges",
+        "Click a visible Active SessionCard and verify detail or monitor links are available for live session management",
+        "Click Nháp chip and verify only Draft sessions shown; open one Draft session detail and confirm Mở buổi học action is available",
+        "Click Đã kết thúc chip and verify Closed and Cancelled sessions grouped with Đã kết thúc badges",
+        "Type HESD in search field and wait 300 ms debounce; verify results filter by classCode, className, subjectCode, or subjectName",
+        "Clear search via × control and click Tất cả chip; verify grouping order Đang diễn ra → Nháp → Đã kết thúc with scheduledStartTime desc within each group per 14-listing §4.3 and §5.2",
+        "Navigate to page 2 via Pagination footer (offset 20) or load-more and verify next batch of SessionCards loads without duplicate ids"
+      ],
+      "expected": "Session list supports lifecycle discovery per FR-05: instructor can filter by Active/Draft/Closed status, search class-subject, sort by scheduledStartTime desc within group, and paginate at offset 20 on /sessions hub",
       "edgeCase": false
     }
   ]

@@ -7,7 +7,10 @@ import { cn } from "@/lib/cn";
 export interface AppHeaderProps {
   homeTo?: string;
   compact?: boolean;
-  user?: Pick<UserMenuProps, "displayName" | "role" | "onLogout">;
+  user?: Pick<
+    UserMenuProps,
+    "displayName" | "email" | "institutionalId" | "role" | "onLogout"
+  >;
   headerActions?: ReactNode;
   className?: string;
 }
@@ -39,6 +42,8 @@ export function AppHeader({
           {headerActions}
           <UserMenu
             displayName={user.displayName}
+            email={user.email}
+            institutionalId={user.institutionalId}
             role={user.role}
             onLogout={user.onLogout}
           />
