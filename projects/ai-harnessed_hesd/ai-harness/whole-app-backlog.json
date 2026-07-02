@@ -7,7 +7,10 @@
       "priority": 1,
       "phase": 0,
       "agent": "infra",
-      "acceptance": ["FR-33", "NFR-16"],
+      "acceptance": [
+        "FR-33",
+        "NFR-16"
+      ],
       "docs": [
         "docs/technical/00-system-overview.md",
         "docs/technical/10-local-development-setup.md",
@@ -26,7 +29,13 @@
       "priority": 2,
       "phase": 0,
       "agent": "infra",
-      "acceptance": ["FR-07", "FR-16", "AC-01", "AC-11", "NFR-16"],
+      "acceptance": [
+        "FR-07",
+        "FR-16",
+        "AC-01",
+        "AC-11",
+        "NFR-16"
+      ],
       "docs": [
         "docs/technical/10-local-development-setup.md",
         "docs/technical/13-docker-compose-local-runtime.md",
@@ -37,6 +46,14 @@
         "Docker compose profiles for dev and test stacks",
         "Container health checks and startup order enforcement",
         "Documented reset and reseed workflow"
+      ],
+      "history": [
+        {
+          "at": "2026-07-02T09:42:15Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-01 — reverify after TestGen",
+          "source": "harness"
+        }
       ]
     },
     {
@@ -45,7 +62,13 @@
       "priority": 3,
       "phase": 0,
       "agent": "infra",
-      "acceptance": ["FR-04", "FR-18", "BR-06", "BR-07", "NFR-07"],
+      "acceptance": [
+        "FR-04",
+        "FR-18",
+        "BR-06",
+        "BR-07",
+        "NFR-07"
+      ],
       "docs": [
         "docs/technical/03-domain-model.md",
         "docs/technical/04-database-design.md",
@@ -64,7 +87,12 @@
       "priority": 6,
       "phase": 0,
       "agent": "infra",
-      "acceptance": ["AC-01", "AC-11", "AC-16", "NFR-14"],
+      "acceptance": [
+        "AC-01",
+        "AC-11",
+        "AC-16",
+        "NFR-14"
+      ],
       "docs": [
         "docs/technical/11-testing-plan.md",
         "docs/ui-ux/00-production-ui-quality-bar.md",
@@ -79,6 +107,14 @@
       "testRequirements": [
         "Run playwright-ui smoke suite in CI on pull requests",
         "Capture trace/video artifacts for failed regression runs"
+      ],
+      "history": [
+        {
+          "at": "2026-07-02T09:42:15Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-01 — reverify after TestGen",
+          "source": "harness"
+        }
       ]
     },
     {
@@ -87,7 +123,13 @@
       "priority": 7,
       "phase": 1,
       "agent": "backend",
-      "acceptance": ["FR-15", "FR-31", "FR-32", "BR-19", "NFR-09"],
+      "acceptance": [
+        "FR-15",
+        "FR-31",
+        "FR-32",
+        "BR-19",
+        "NFR-09"
+      ],
       "docs": [
         "docs/technical/01-roles-permissions.md",
         "docs/technical/02-module-breakdown.md",
@@ -106,7 +148,13 @@
       "priority": 8,
       "phase": 1,
       "agent": "backend",
-      "acceptance": ["FR-01", "FR-04", "FR-06", "BR-06", "AC-07"],
+      "acceptance": [
+        "FR-01",
+        "FR-04",
+        "FR-06",
+        "BR-06",
+        "AC-07"
+      ],
       "docs": [
         "docs/technical/02-module-breakdown.md",
         "docs/technical/05-api-design.md",
@@ -125,7 +173,14 @@
       "priority": 9,
       "phase": 1,
       "agent": "backend",
-      "acceptance": ["FR-07", "FR-08", "BR-01", "BR-02", "AC-01", "AC-05"],
+      "acceptance": [
+        "FR-07",
+        "FR-08",
+        "BR-01",
+        "BR-02",
+        "AC-01",
+        "AC-05"
+      ],
       "docs": [
         "docs/technical/02-module-breakdown.md",
         "docs/technical/07-state-machines.md",
@@ -136,6 +191,14 @@
         "Open and close session command handlers",
         "Session state transition validation and errors",
         "Session close summary payload with counts"
+      ],
+      "history": [
+        {
+          "at": "2026-07-02T09:42:15Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-01 — reverify after TestGen",
+          "source": "harness"
+        }
       ]
     },
     {
@@ -144,7 +207,15 @@
       "priority": 10,
       "phase": 1,
       "agent": "backend",
-      "acceptance": ["FR-11", "FR-18", "FR-22", "BR-03", "BR-07", "AC-02", "AC-08"],
+      "acceptance": [
+        "FR-11",
+        "FR-18",
+        "FR-22",
+        "BR-03",
+        "BR-07",
+        "AC-02",
+        "AC-08"
+      ],
       "docs": [
         "docs/technical/02-module-breakdown.md",
         "docs/technical/05-api-design.md",
@@ -163,7 +234,15 @@
       "priority": 11,
       "phase": 1,
       "agent": "backend",
-      "acceptance": ["FR-09", "FR-20", "FR-21", "BR-13", "BR-14", "AC-12", "AC-13"],
+      "acceptance": [
+        "FR-09",
+        "FR-20",
+        "FR-21",
+        "BR-13",
+        "BR-14",
+        "AC-12",
+        "AC-13"
+      ],
       "docs": [
         "docs/technical/02-module-breakdown.md",
         "docs/technical/07-state-machines.md",
@@ -182,7 +261,14 @@
       "priority": 12,
       "phase": 1,
       "agent": "backend",
-      "acceptance": ["FR-24", "FR-25", "FR-35", "BR-20", "AC-09", "AC-10"],
+      "acceptance": [
+        "FR-24",
+        "FR-25",
+        "FR-35",
+        "BR-20",
+        "AC-09",
+        "AC-10"
+      ],
       "docs": [
         "docs/technical/02-module-breakdown.md",
         "docs/technical/08-validation-rules.md",
@@ -201,7 +287,15 @@
       "priority": 13,
       "phase": 1,
       "agent": "backend",
-      "acceptance": ["FR-27", "FR-28", "BR-18", "BR-19", "AC-15", "AC-16", "AC-17"],
+      "acceptance": [
+        "FR-27",
+        "FR-28",
+        "BR-18",
+        "BR-19",
+        "AC-15",
+        "AC-16",
+        "AC-17"
+      ],
       "docs": [
         "docs/technical/02-module-breakdown.md",
         "docs/technical/05-api-design.md",
@@ -220,7 +314,15 @@
       "priority": 14,
       "phase": 1,
       "agent": "backend",
-      "acceptance": ["FR-29", "FR-30", "BR-22", "BR-23", "AC-18", "AC-19", "NFR-13"],
+      "acceptance": [
+        "FR-29",
+        "FR-30",
+        "BR-22",
+        "BR-23",
+        "AC-18",
+        "AC-19",
+        "NFR-13"
+      ],
       "docs": [
         "docs/technical/02-module-breakdown.md",
         "docs/technical/09-error-handling.md",
@@ -239,7 +341,13 @@
       "priority": 15,
       "phase": 1,
       "agent": "backend",
-      "acceptance": ["FR-19", "FR-14", "AC-02", "NFR-01", "NFR-16"],
+      "acceptance": [
+        "FR-19",
+        "FR-14",
+        "AC-02",
+        "NFR-01",
+        "NFR-16"
+      ],
       "docs": [
         "docs/technical/02-module-breakdown.md",
         "docs/technical/06-main-workflows.md",
@@ -258,7 +366,11 @@
       "priority": 16,
       "phase": 1,
       "agent": "backend",
-      "acceptance": ["FR-26", "BR-17", "AC-25"],
+      "acceptance": [
+        "FR-26",
+        "BR-17",
+        "AC-25"
+      ],
       "docs": [
         "docs/technical/02-module-breakdown.md",
         "docs/brds/03-functional-requirements.md",
@@ -277,7 +389,11 @@
       "priority": 17,
       "phase": 2,
       "agent": "frontend",
-      "acceptance": ["FR-14", "NFR-14", "NFR-15"],
+      "acceptance": [
+        "FR-14",
+        "NFR-14",
+        "NFR-15"
+      ],
       "docs": [
         "docs/ui-ux/DESIGN.md",
         "docs/ui-ux/01-design-overview.md",
@@ -296,7 +412,14 @@
       "priority": 18,
       "phase": 2,
       "agent": "frontend",
-      "acceptance": ["FR-15", "FR-16", "FR-23", "AC-06", "AC-11", "NFR-14"],
+      "acceptance": [
+        "FR-15",
+        "FR-16",
+        "FR-23",
+        "AC-06",
+        "AC-11",
+        "NFR-14"
+      ],
       "docs": [
         "docs/ui-ux/01-ui-ux-foundation.md",
         "docs/technical/05-api-design.md",
@@ -315,7 +438,11 @@
       "priority": 19,
       "phase": 2,
       "agent": "frontend",
-      "acceptance": ["FR-37", "BR-19", "AC-16"],
+      "acceptance": [
+        "FR-37",
+        "BR-19",
+        "AC-16"
+      ],
       "docs": [
         "docs/ui-ux/01-design-overview.md",
         "docs/technical/05-api-design.md",
@@ -334,7 +461,13 @@
       "priority": 20,
       "phase": 2,
       "agent": "frontend",
-      "acceptance": ["FR-07", "FR-14", "AC-01", "AC-02", "AC-06"],
+      "acceptance": [
+        "FR-07",
+        "FR-14",
+        "AC-01",
+        "AC-02",
+        "AC-06"
+      ],
       "docs": [
         "docs/ui-ux/00-production-ui-quality-bar.md",
         "docs/ui-ux/01-ui-ux-foundation.md",
@@ -345,6 +478,14 @@
         "Session list and control actions",
         "Projection-friendly QR panel with rotation indicator",
         "Transition and conflict error handling in UI"
+      ],
+      "history": [
+        {
+          "at": "2026-07-02T09:42:15Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-01 — reverify after TestGen",
+          "source": "harness"
+        }
       ]
     },
     {
@@ -353,7 +494,14 @@
       "priority": 21,
       "phase": 2,
       "agent": "frontend",
-      "acceptance": ["FR-19", "FR-20", "BR-14", "AC-13", "AC-14", "AC-25"],
+      "acceptance": [
+        "FR-19",
+        "FR-20",
+        "BR-14",
+        "AC-13",
+        "AC-14",
+        "AC-25"
+      ],
       "docs": [
         "docs/ui-ux/00-production-ui-quality-bar.md",
         "docs/technical/06-main-workflows.md",
@@ -372,7 +520,12 @@
       "priority": 22,
       "phase": 2,
       "agent": "frontend",
-      "acceptance": ["FR-01", "FR-04", "FR-06", "AC-07"],
+      "acceptance": [
+        "FR-01",
+        "FR-04",
+        "FR-06",
+        "AC-07"
+      ],
       "docs": [
         "docs/ui-ux/01-design-overview.md",
         "docs/technical/05-api-design.md",
@@ -391,7 +544,13 @@
       "priority": 23,
       "phase": 2,
       "agent": "frontend",
-      "acceptance": ["FR-24", "FR-25", "BR-20", "AC-09", "AC-10"],
+      "acceptance": [
+        "FR-24",
+        "FR-25",
+        "BR-20",
+        "AC-09",
+        "AC-10"
+      ],
       "docs": [
         "docs/ui-ux/01-ui-ux-foundation.md",
         "docs/technical/08-validation-rules.md",
@@ -410,7 +569,14 @@
       "priority": 24,
       "phase": 2,
       "agent": "frontend",
-      "acceptance": ["FR-27", "FR-28", "BR-18", "AC-15", "AC-16", "AC-17"],
+      "acceptance": [
+        "FR-27",
+        "FR-28",
+        "BR-18",
+        "AC-15",
+        "AC-16",
+        "AC-17"
+      ],
       "docs": [
         "docs/ui-ux/00-production-ui-quality-bar.md",
         "docs/technical/05-api-design.md",
@@ -429,7 +595,13 @@
       "priority": 25,
       "phase": 2,
       "agent": "frontend",
-      "acceptance": ["FR-32", "FR-30", "BR-22", "AC-19", "AC-16"],
+      "acceptance": [
+        "FR-32",
+        "FR-30",
+        "BR-22",
+        "AC-19",
+        "AC-16"
+      ],
       "docs": [
         "docs/ui-ux/01-design-overview.md",
         "docs/technical/05-api-design.md",
@@ -448,7 +620,14 @@
       "priority": 26,
       "phase": 3,
       "agent": "test",
-      "acceptance": ["AC-01", "AC-04", "AC-08", "AC-12", "AC-18", "NFR-07"],
+      "acceptance": [
+        "AC-01",
+        "AC-04",
+        "AC-08",
+        "AC-12",
+        "AC-18",
+        "NFR-07"
+      ],
       "docs": [
         "docs/technical/11-testing-plan.md",
         "docs/technical/08-validation-rules.md",
@@ -463,6 +642,14 @@
       "testRequirements": [
         "Must enforce test isolation with DB reset between suites",
         "Must fail build on unresolved critical flaky tests"
+      ],
+      "history": [
+        {
+          "at": "2026-07-02T09:42:15Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-01 — reverify after TestGen",
+          "source": "harness"
+        }
       ]
     },
     {
@@ -471,7 +658,14 @@
       "priority": 27,
       "phase": 3,
       "agent": "test",
-      "acceptance": ["AC-15", "AC-16", "AC-17", "AC-23", "NFR-09", "NFR-10"],
+      "acceptance": [
+        "AC-15",
+        "AC-16",
+        "AC-17",
+        "AC-23",
+        "NFR-09",
+        "NFR-10"
+      ],
       "docs": [
         "docs/technical/11-testing-plan.md",
         "docs/technical/06-main-workflows.md",
@@ -490,7 +684,14 @@
       "priority": 28,
       "phase": 3,
       "agent": "test",
-      "acceptance": ["AC-20", "AC-21", "AC-22", "NFR-01", "NFR-03", "NFR-16"],
+      "acceptance": [
+        "AC-20",
+        "AC-21",
+        "AC-22",
+        "NFR-01",
+        "NFR-03",
+        "NFR-16"
+      ],
       "docs": [
         "docs/technical/11-testing-plan.md",
         "docs/brds/07-non-functional-risk.md",
