@@ -579,7 +579,8 @@
       ],
       "testRequirements": {
         "acceptanceTags": [
-          "AC-02"
+          "AC-02",
+          "FR-14"
         ]
       },
       "history": [
@@ -587,6 +588,12 @@
           "at": "2026-07-02T09:43:41Z",
           "kind": "drift",
           "reason": "Doc drift for AC-02 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T10:56:13Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-14 — reverify after TestGen",
           "source": "harness"
         }
       ]
@@ -648,6 +655,19 @@
         "Tokenized theme and layout scaffolding",
         "Core primitive components and state variants",
         "Route shell variants for student and staff contexts"
+      ],
+      "testRequirements": {
+        "acceptanceTags": [
+          "FR-14"
+        ]
+      },
+      "history": [
+        {
+          "at": "2026-07-02T10:56:13Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-14 — reverify after TestGen",
+          "source": "harness"
+        }
       ]
     },
     {
@@ -774,13 +794,20 @@
           "kind": "drift",
           "reason": "Doc drift for FR-07 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-02T10:56:13Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-14 — reverify after TestGen",
+          "source": "harness"
         }
       ],
       "testRequirements": {
         "acceptanceTags": [
           "AC-02",
           "AC-06",
-          "FR-07"
+          "FR-07",
+          "FR-14"
         ]
       }
     },
