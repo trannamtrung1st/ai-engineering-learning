@@ -1,0 +1,283 @@
+{
+  "productItemId": "BR-01",
+  "version": 1,
+  "docFingerprint": "sha256:0421ca4affe3aa70584e3b352a860d11de519a5a2aaff8c4d8e0f12d14d1a70a",
+  "generatedAt": "2026-07-02T11:50:08Z",
+  "cases": [
+    {
+      "id": "TC-BR-01-001",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["BR-01", "FR-07", "FR-08", "AC-01", "AC-05"],
+      "title": "Testing-plan session open/close row: check-in rejected before session is Open",
+      "preconditions": [
+        "Class session exists in Scheduled state with enrolled students per testing-plan §3.1 Session open/close coverage block.",
+        "Student actor is authenticated with active enrollment in the session class section.",
+        "A QR token fixture bound to the session exists (may be pre-issued or synthetic for API path)."
+      ],
+      "steps": [
+        "While session state is Scheduled, submit POST /v1/check-ins as enrolled student with valid qrToken.",
+        "Record HTTP response error.code and persisted CheckInAttempt outcome.",
+        "Lecturer opens session via POST /v1/class-sessions/{sessionId}/open.",
+        "Re-submit POST /v1/check-ins with current valid QR token for the same student.",
+        "Query attendance records for the student-session pair."
+      ],
+      "expected": "Pre-open check-in is rejected with SessionNotOpen and a failed CheckInAttempt is persisted; after open, check-in is no longer blocked by BR-01 and may proceed to downstream rules.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-01-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-01", "FR-22", "BR-23"],
+      "title": "Check-in service persists failed CheckInAttempt with SessionNotOpen when session is Scheduled",
+      "preconditions": [
+        "Integration harness uses real DB transaction boundaries for class_sessions, check_in_attempts, and attendance_records tables.",
+        "A Scheduled session row exists with at least one active enrollment.",
+        "Student auth context matches enrolled studentUserId."
+      ],
+      "steps": [
+        "Invoke check-in command (POST /v1/check-ins service path) against Scheduled session with valid token binding.",
+        "Query check_in_attempts table for the student and session.",
+        "Query attendance_records table for the same student-session pair.",
+        "Assert session row state remains Scheduled with no openedAt mutation."
+      ],
+      "expected": "Exactly one CheckInAttempt row is inserted with outcome SessionNotOpen and submittedAt timestamp; no AttendanceRecord success row is created; session state remains Scheduled.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-01-003",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["BR-01", "FR-07"],
+      "title": "Non-Open session states reject check-in without illegal state mutation",
+      "preconditions": [
+        "Session fixtures exist in Scheduled, Closed, and Cancelled states with known sessionIds.",
+        "Enrolled student accounts and token bindings are available for each fixture."
+      ],
+      "steps": [
+        "Record beforeState for Scheduled session and invoke check-in command.",
+        "Record afterState and rejection code for Scheduled session.",
+        "Repeat check-in attempt against Closed session fixture; capture SessionClosed rejection.",
+        "Repeat check-in attempt against Cancelled session fixture; capture SessionNotOpen rejection.",
+        "Query persistence after each attempt and confirm session state unchanged."
+      ],
+      "expected": "beforeState equals afterState for all three fixtures (Scheduled, Closed, Cancelled); Scheduled and Cancelled return SessionNotOpen; Closed returns SessionClosed; no attendance success mutation occurs.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-01-004",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-01", "FR-16", "FR-22"],
+      "title": "POST /v1/check-ins on Scheduled session returns 422 SessionNotOpen envelope",
+      "preconditions": [
+        "Enrolled Student is authenticated with Bearer token and Idempotency-Key header.",
+        "Target class session is in Scheduled state.",
+        "qrToken is non-empty and bound to the target session."
+      ],
+      "steps": [
+        "Send POST /v1/check-ins with qrToken, Authorization, and Idempotency-Key headers.",
+        "Validate HTTP status code and JSON envelope shape {data, meta, error}.",
+        "Assert data is null and error.code is SessionNotOpen.",
+        "Assert error.message is localized Vietnamese text explaining attendance is not yet open.",
+        "Assert meta includes requestId and timestamp fields."
+      ],
+      "expected": "HTTP 422 rule-failure response with standard envelope; error.code SessionNotOpen; localized message per API design §2.3 and BR-01 outcome.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-01-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-01", "BR-02", "FR-08", "AC-05"],
+      "title": "POST /v1/check-ins on Closed session returns 422 SessionClosed envelope",
+      "preconditions": [
+        "Class session was Open and is now Closed with closedAt recorded.",
+        "Enrolled Student is authenticated.",
+        "qrToken was valid during Open window or synthetic token bound to closed session."
+      ],
+      "steps": [
+        "Send POST /v1/check-ins as enrolled Student against the Closed session.",
+        "Validate HTTP 422 and envelope fields.",
+        "Assert error.code is SessionClosed with Vietnamese message indicating attendance has ended.",
+        "Query GET /v1/class-sessions/{sessionId}/attendance or DB and confirm no new success attendance row for this attempt."
+      ],
+      "expected": "HTTP 422 with error.code SessionClosed per BR-01/BR-02 distinction; no new successful AttendanceRecord created; failed attempt logged.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-01-006",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-01", "FR-13"],
+      "title": "Cancelled session check-in returns SessionNotOpen not success path",
+      "preconditions": [
+        "Class session fixture exists in Cancelled state.",
+        "Enrolled student with valid authentication is available.",
+        "qrToken payload references the cancelled session context."
+      ],
+      "steps": [
+        "Submit POST /v1/check-ins for the Cancelled session.",
+        "Capture HTTP status, error.code, and error.message.",
+        "Verify no AttendanceRecord with Present or Late status is created.",
+        "Verify CheckInAttempt row exists with SessionNotOpen outcome."
+      ],
+      "expected": "API rejects with SessionNotOpen for Cancelled state; persistence shows failed attempt only; session remains Cancelled.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-01-007",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-01", "BR-03", "BR-06", "BR-07", "FR-22"],
+      "title": "Rule-order short-circuit: SessionNotOpen returned before token, enrollment, and duplicate checks",
+      "preconditions": [
+        "Scheduled session exists (not Open).",
+        "Student is not enrolled in the section OR has prior successful attendance OR token is expired—conditions that would fail BR-06, BR-07, or BR-03 if session were Open.",
+        "Student actor is authenticated."
+      ],
+      "steps": [
+        "Submit POST /v1/check-ins with expired qrToken against Scheduled session.",
+        "Assert error.code is SessionNotOpen, not ExpiredQr.",
+        "Submit with unenrolled student token against Scheduled session.",
+        "Assert error.code is SessionNotOpen, not NotEnrolled.",
+        "Submit duplicate-prone payload for student with existing success record against Scheduled session.",
+        "Assert error.code is SessionNotOpen, not DuplicateCheckIn."
+      ],
+      "expected": "Validation order per API design §5.1 and validation rules §2.2: session state check (BR-01) short-circuits before BR-03, BR-06, and BR-07 evaluations when session is not Open.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-01-008",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-01", "BR-19", "FR-15"],
+      "title": "Lecturer denied POST /v1/check-ins; Student denied session open control",
+      "preconditions": [
+        "Scheduled session exists in lecturer-assigned section.",
+        "Lecturer and Student accounts are authenticated with valid tokens.",
+        "Permission matrix §3.1: only Student may submit QR check-in; only Lecturer may open session."
+      ],
+      "steps": [
+        "Lecturer calls POST /v1/check-ins with qrToken for the Scheduled session.",
+        "Assert HTTP 403 with error.code Forbidden per VR-CI-02.",
+        "Student calls POST /v1/class-sessions/{sessionId}/open.",
+        "Assert HTTP 403 Forbidden or OutOfScope.",
+        "Query class_sessions and confirm state remains Scheduled.",
+        "Assigned Lecturer calls POST /v1/class-sessions/{sessionId}/open as positive control."
+      ],
+      "expected": "Lecturer check-in submission denied with 403 Forbidden; Student session open denied; session state unchanged until assigned Lecturer opens; RBAC enforced independently of BR-01 business-rule evaluation.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-01-009",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P1",
+      "traceability": ["BR-01", "BR-18", "BR-19", "FR-27", "AC-16"],
+      "title": "Student export denied and cross-scope Lecturer cannot access non-assigned session roster",
+      "preconditions": [
+        "Scheduled session exists in section A assigned to Lecturer-A.",
+        "Lecturer-B is authenticated but not assigned to section A.",
+        "Student account is authenticated.",
+        "BR-18 scopes export to actor role; BR-19 denies unauthorized report access."
+      ],
+      "steps": [
+        "Student calls POST /v1/exports/attendance with filters targeting section A.",
+        "Assert HTTP 403 Forbidden without partial export data leakage.",
+        "Lecturer-B calls GET /v1/class-sessions/{sessionId}/attendance for section A session.",
+        "Assert HTTP 403 OutOfScope or Forbidden.",
+        "Lecturer-A calls the same attendance endpoint as scoped positive control."
+      ],
+      "expected": "Student institution-wide export denied per BR-18; cross-scope Lecturer denied roster read per BR-19 without data leakage; assigned Lecturer succeeds.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-01-010",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P1",
+      "traceability": ["BR-01", "BR-07", "FR-22"],
+      "title": "Idempotent replay on non-Open session returns consistent SessionNotOpen not DuplicateCheckIn",
+      "preconditions": [
+        "Scheduled session exists with enrolled student.",
+        "Test harness can replay POST /v1/check-ins with identical Idempotency-Key, actor, and token.",
+        "Student has no successful AttendanceRecord for this session."
+      ],
+      "steps": [
+        "Submit first POST /v1/check-ins against Scheduled session; record SessionNotOpen outcome.",
+        "Replay identical request with same Idempotency-Key immediately.",
+        "Submit parallel duplicate requests with same key from harness.",
+        "Query check_in_attempts and attendance_records for student-session.",
+        "Confirm no Present/Late success row exists."
+      ],
+      "expected": "All replays return deterministic SessionNotOpen per idempotency rules §7.1; BR-07 DuplicateCheckIn is not evaluated because BR-01 short-circuits first; no success attendance record created.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-01-011",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P1",
+      "traceability": ["BR-01", "FR-07", "FR-08", "AC-01"],
+      "title": "Alternate path: student deep-link check-in before lecturer opens returns not-open feedback then succeeds after open",
+      "preconditions": [
+        "Scheduled session exists; lecturer has not yet opened attendance.",
+        "Student opens check-in URL from QR scan or deep link with token preserved.",
+        "Student is authenticated and enrolled."
+      ],
+      "steps": [
+        "Student submits check-in while session is still Scheduled.",
+        "Observe SessionNotOpen rejection with Vietnamese guidance.",
+        "Lecturer opens session from assigned scope.",
+        "Student re-submits check-in with refreshed valid QR token.",
+        "Verify second attempt is not rejected with SessionNotOpen."
+      ],
+      "expected": "Pre-open branch fails with BR-01 SessionNotOpen and instructs student; post-open branch proceeds past session-state gate to downstream validation.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-01-012",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-01", "FR-16", "AC-01"],
+      "title": "Student mobile UI shows Vietnamese not-open error when submitting check-in before session opens",
+      "preconditions": [
+        "Class session is Scheduled; lecturer has not opened attendance.",
+        "Student is logged in on mobile browser profile (iOS Safari or Android Chrome).",
+        "Student navigates to check-in page via QR scan or deep link with token in URL."
+      ],
+      "steps": [
+        "Open student check-in form and confirm session context is displayed.",
+        "Attempt to submit check-in while session remains Scheduled.",
+        "Observe error banner or inline message in Vietnamese explaining attendance is not yet open.",
+        "Verify success confirmation UI is not shown and submit may be blocked or retriable.",
+        "After lecturer opens session in separate browser context, refresh or rescan and confirm not-open error no longer appears on valid submission path."
+      ],
+      "expected": "Browser journey surfaces BR-01 rejection with localized Vietnamese copy (SessionNotOpen equivalent); no false success state; after session opens, not-open gating is removed.",
+      "edgeCase": false
+    }
+  ]
+}
