@@ -325,7 +325,8 @@
       ],
       "testRequirements": {
         "acceptanceTags": [
-          "AC-09"
+          "AC-09",
+          "AC-10"
         ]
       },
       "history": [
@@ -333,6 +334,12 @@
           "at": "2026-07-02T09:55:22Z",
           "kind": "drift",
           "reason": "Doc drift for AC-09 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T09:57:32Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-10 — reverify after TestGen",
           "source": "harness"
         }
       ]
@@ -677,7 +684,8 @@
       ],
       "testRequirements": {
         "acceptanceTags": [
-          "AC-09"
+          "AC-09",
+          "AC-10"
         ]
       },
       "history": [
@@ -685,6 +693,12 @@
           "at": "2026-07-02T09:55:22Z",
           "kind": "drift",
           "reason": "Doc drift for AC-09 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T09:57:32Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-10 — reverify after TestGen",
           "source": "harness"
         }
       ]

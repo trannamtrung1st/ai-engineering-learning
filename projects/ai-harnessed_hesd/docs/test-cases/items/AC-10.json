@@ -1,0 +1,222 @@
+{
+  "productItemId": "AC-10",
+  "version": 1,
+  "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+  "generatedAt": "2026-07-02T10:15:00Z",
+  "cases": [
+    {
+      "id": "TC-AC-10-001",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["AC-10", "FR-35", "FR-22", "BR-09", "BR-10", "BR-23"],
+      "title": "Scenario matrix row for out-of-radius handling when GPS policy and room coordinates are configured",
+      "preconditions": [
+        "Testing-plan §3 GPS validation block applies (FR-34, FR-35, BR-08/09/10, AC-09, AC-10).",
+        "gps-required-session fixture: Open class session with effective policy gpsRequired=true, gpsRadiusMeters=100, and Room latitude/longitude configured.",
+        "Authenticated enrolled student has no successful attendance record for the session."
+      ],
+      "steps": [
+        "Resolve effective attendance policy for the open session and confirm gpsRequired=true with room coordinates present.",
+        "Submit check-in command with valid qrToken and GPS coordinates farther than effective gpsRadiusMeters from session Room anchor.",
+        "Query persisted CheckInAttempt and AttendanceRecord for the student-session pair."
+      ],
+      "expected": "Self check-in is rejected or flagged per institution policy (OutOfRadius rejection or Suspicious flag per BR-09); distance and validation metadata are logged on CheckInAttempt; no Present/Late AttendanceRecord is created when rejection policy applies.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-10-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["AC-10", "FR-35", "FR-22", "BR-09", "BR-23"],
+      "title": "GPS radius module rejects out-of-radius check-in and persists distance metadata without attendance write",
+      "preconditions": [
+        "Real database transaction is enabled for policy resolution, GPS validation, check-in, and attendance ledger modules.",
+        "Open session exists with gpsRequired=true, room at (10.762622, 106.660172), gpsRadiusMeters=100; student is actively enrolled with no prior success record.",
+        "Institution policy configured for strict rejection on out-of-radius (default BR-09 reject path)."
+      ],
+      "steps": [
+        "Capture beforeState: zero Present/Late AttendanceRecord rows for (classSessionId, studentUserId).",
+        "Invoke check-in command with valid qrToken passing auth, session Open, token Valid, enrollment, and duplicate guards; supply gps coordinates approximately 162 m from room anchor (e.g. latitude 10.764080, longitude 106.660172) with accuracyMeters=24.5.",
+        "Query check_in_attempts row for outcome, distanceMeters, allowedRadiusMeters, and attendance_records within the same transaction boundary."
+      ],
+      "expected": "GPS guard step 6 persists one failed CheckInAttempt with outcome OutOfRadius and validation metadata (distanceMeters > allowedRadiusMeters); AttendanceRecord row count remains zero and beforeState is unchanged.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-10-003",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["AC-10", "FR-35", "FR-22", "BR-09", "BR-23"],
+      "title": "CheckInAttempt SM-04 terminates at OutOfRadius without attendance mutation",
+      "preconditions": [
+        "Open gps-required session with valid qrToken and configured room coordinates exists in integration test database.",
+        "Authenticated enrolled student has no existing successful attendance for the session.",
+        "Submitted GPS coordinates are outside effective gpsRadiusMeters per BR-09."
+      ],
+      "steps": [
+        "Capture beforeState: session roster shows student in Pending with no success AttendanceRecord.",
+        "Submit check-in command that passes validation order steps 1–5 but fails GPS distance check at step 6.",
+        "Capture afterState for CheckInAttempt outcome and AttendanceRecord rows."
+      ],
+      "expected": "SM-04 evaluation reaches OutOfRadius terminal state at GPS policy guard; afterState shows persisted failed attempt with OutOfRadius and distance validation metadata; AttendanceRecord identical to beforeState (still Pending, no success write).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-10-004",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": ["AC-10", "FR-35", "FR-22", "BR-09", "BR-10"],
+      "title": "Institution flag policy accepts out-of-radius check-in with Suspicious outcome per BR-09 alternate path",
+      "preconditions": [
+        "Real database transaction is enabled for policy resolution and check-in modules.",
+        "Open gps-required session with room coordinates configured; institution policy sets outOfRadiusAction=flag (accept with Suspicious) rather than strict reject.",
+        "Authenticated enrolled student has no prior success record; GPS coordinates are outside configured radius."
+      ],
+      "steps": [
+        "Submit check-in command with valid qrToken and out-of-radius GPS payload under flag policy configuration.",
+        "Query CheckInAttempt for outcome Suspicious and validation metadata (distanceMeters, allowedRadiusMeters).",
+        "Query AttendanceRecord and session roster for the student row."
+      ],
+      "expected": "Per BR-09 exception path, check-in is accepted with Suspicious flag rather than hard OutOfRadius rejection; CheckInAttempt logs distance and validation result; attendance state reflects flagged outcome for lecturer review without silent success as Present.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-10-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["AC-10", "FR-35", "FR-22", "BR-09", "BR-23"],
+      "title": "POST /v1/check-ins returns 422 OutOfRadius with distance details when coordinates exceed radius",
+      "preconditions": [
+        "Open gps-required session with room coordinates and gpsRadiusMeters=100 exists in test environment.",
+        "Authenticated student bearer token belongs to actively enrolled user with no prior success for the session.",
+        "Valid qrToken is available for the open session."
+      ],
+      "steps": [
+        "Call POST /v1/check-ins with Authorization Bearer token, valid qrToken, clientTimestamp, and gps payload with coordinates outside allowed radius (e.g. distanceMeters > 100).",
+        "Inspect HTTP status, response envelope (data/meta/error), error.code, and error.details.",
+        "Verify no success attendance payload is returned."
+      ],
+      "expected": "API returns 422 with standard envelope where data is null and error.code is OutOfRadius; error.details includes distanceMeters and allowedRadiusMeters per API design §4.4; no Present/Late attendance row is created.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-10-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P0",
+      "traceability": ["AC-10", "FR-35", "FR-20", "BR-09", "BR-14", "AC-18"],
+      "title": "FLOW-03 alternate branch rejects out-of-radius check-in with auditable attempt and manual fallback path",
+      "preconditions": [
+        "Lecturer has opened gps-required session (AC-01) with room coordinates configured and session is Open with rotating QR.",
+        "Student completes login gate (AC-06) and enrollment validation (AC-07) prerequisites.",
+        "Student device supplies GPS coordinates outside configured radius."
+      ],
+      "steps": [
+        "Student calls POST /v1/auth/login and receives Student role accessToken.",
+        "Student calls POST /v1/check-ins with valid qrToken and out-of-radius gps payload.",
+        "Lecturer queries GET /v1/class-sessions/{sessionId}/attendance for the student row and rejectedAttempts count.",
+        "Lecturer applies PATCH manual correction for the same student with Manual Present and documented reason after in-person verification."
+      ],
+      "expected": "Check-in fails with OutOfRadius (422); roster shows student Pending with rejectedAttempts incremented and failed attempt auditable per AC-18 with distance metadata; lecturer manual fallback succeeds per BR-14 without bypassing audit requirements.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-10-007",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["AC-10", "FR-35", "BR-09", "BR-10", "BR-23"],
+      "title": "Boundary distinguishes within-radius success from just-beyond-radius OutOfRadius rejection",
+      "preconditions": [
+        "Open gps-required session with room at known anchor and gpsRadiusMeters=100 exists.",
+        "Authenticated enrolled student has no successful attendance for the session.",
+        "Test harness can supply deterministic GPS coordinates at 99 m (pass) and 101 m (fail) from room anchor."
+      ],
+      "steps": [
+        "Submit POST /v1/check-ins with valid token and gps coordinates approximately 99 m from room anchor; record status and outcome.",
+        "Reset student attempt state or use a second enrolled student for the fail case.",
+        "Submit POST /v1/check-ins with valid token and gps coordinates approximately 101 m from room anchor; record status and error.code.",
+        "Verify CheckInAttempt metadata and AttendanceRecord outcomes for both submissions."
+      ],
+      "expected": "Within-radius submission (99 m) proceeds past GPS distance guard to Present/Late assignment; just-beyond-radius submission (101 m) returns 422 with error.code OutOfRadius and logs distanceMeters/allowedRadiusMeters; boundary enforces effective gpsRadiusMeters per BR-09.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-10-008",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["AC-10", "FR-35", "BR-09", "BR-19"],
+      "title": "Non-Student roles denied POST /v1/check-ins with out-of-radius GPS payload",
+      "preconditions": [
+        "Open gps-required session with valid QR token and configured room coordinates exists.",
+        "Lecturer and ITAdmin identities are available with valid bearer tokens per permission matrix."
+      ],
+      "steps": [
+        "Call POST /v1/check-ins as Lecturer with valid qrToken and out-of-radius gps payload for the open session.",
+        "Call POST /v1/check-ins as ITAdmin with the same token context.",
+        "Call POST /v1/check-ins as enrolled Student (control) with out-of-radius gps coordinates.",
+        "Verify denial responses contain no partial attendance mutation from privileged roles."
+      ],
+      "expected": "Lecturer and ITAdmin receive 403 Forbidden before GPS radius evaluation; Student control reaches business validation and receives 422 OutOfRadius; no AttendanceRecord is created by denied roles.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-10-009",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["AC-10", "FR-35", "FR-20", "BR-09", "BR-14"],
+      "title": "UI journey surfaces failure-out-of-radius warning with recovery guidance and lecturer fallback hint",
+      "preconditions": [
+        "Student is logged in on mobile-web browser (PG-02 check-in page).",
+        "Target session has gpsRequired=true, room coordinates configured, and is Open with valid QR token.",
+        "Browser geolocation is granted but test profile supplies coordinates outside configured radius."
+      ],
+      "steps": [
+        "Navigate to check-in URL with valid token query parameter for the gps-required session.",
+        "Grant browser location permission when prompted per FLOW-03 step 2.",
+        "Submit check-in from the student check-in form with out-of-radius coordinates.",
+        "Observe CheckInResultScreen failure-out-of-radius warning styling, recovery steps, and lecturer fallback guidance."
+      ],
+      "expected": "UI renders failure-out-of-radius alert with localized message (e.g. 'Ngoài phạm vi lớp'); recovery copy prompts student to move closer or báo giảng viên for manual fallback; no success status is shown and student remains Pending on roster.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-10-010",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["AC-10", "FR-35", "FR-22", "BR-09", "BR-14"],
+      "title": "Lecturer roster shows OutOfRadius rejected attempt with distance metadata visible for review",
+      "preconditions": [
+        "Student has failed OutOfRadius check-in attempt on an Open gps-required session with distance metadata logged.",
+        "Lecturer is authenticated on desktop browser (PG-06 live roster view) for the assigned section.",
+        "Manual edit window is active per effective policy."
+      ],
+      "steps": [
+        "Lecturer navigates to live session roster for the gps-required session.",
+        "Locate the student row showing Pending status with latestAttemptOutcome OutOfRadius in rejected summary.",
+        "Verify distance or out-of-radius indicator is visible for lecturer review per WF-04 §6.5.",
+        "Open ManualCorrectionDialog and submit Manual Present correction with required reason after in-person verification."
+      ],
+      "expected": "Roster displays student as Pending with OutOfRadius rejection visible in attempt summary including review metadata; ManualCorrectionDialog accepts correction; post-save row updates to Manual Present confirming lecturer fallback path remains operable per AC-10 and BR-14.",
+      "edgeCase": true
+    }
+  ]
+}
