@@ -534,12 +534,19 @@
           "kind": "drift",
           "reason": "Doc drift for BR-13 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-02T12:03:13Z",
+          "kind": "drift",
+          "reason": "Doc drift for BR-14 — reverify after TestGen",
+          "source": "harness"
         }
       ],
       "testRequirements": {
         "acceptanceTags": [
           "AC-13",
           "BR-13",
+          "BR-14",
           "FR-09",
           "FR-20",
           "FR-21"
@@ -1074,6 +1081,7 @@
           "AC-13",
           "AC-14",
           "AC-25",
+          "BR-14",
           "FR-19",
           "FR-20"
         ]
@@ -1107,6 +1115,12 @@
           "at": "2026-07-02T11:06:40Z",
           "kind": "drift",
           "reason": "Doc drift for FR-20 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T12:03:13Z",
+          "kind": "drift",
+          "reason": "Doc drift for BR-14 — reverify after TestGen",
           "source": "harness"
         }
       ]

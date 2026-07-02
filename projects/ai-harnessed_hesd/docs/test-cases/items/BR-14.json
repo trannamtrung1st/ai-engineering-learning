@@ -1,0 +1,205 @@
+{
+  "productItemId": "BR-14",
+  "version": 1,
+  "docFingerprint": "sha256:0421ca4affe3aa70584e3b352a860d11de519a5a2aaff8c4d8e0f12d14d1a70a",
+  "generatedAt": "2026-07-02T12:00:00Z",
+  "cases": [
+    {
+      "id": "TC-BR-14-001",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-14", "FR-20", "FR-29", "BR-22"],
+      "title": "Assigned lecturer corrects attendance within edit window and writes audit row",
+      "preconditions": [
+        "Closed ClassSession exists for a section assigned to the acting lecturer",
+        "Effective policy manualEditWindow has not elapsed since session close",
+        "Enrolled student has an existing AttendanceRecord (e.g. Absent) for the session",
+        "Policy mandates a reason for manual corrections"
+      ],
+      "steps": [
+        "As the assigned lecturer, invoke the attendance correction service for PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status 'Manual Present' and a non-empty reason inside a real DB transaction",
+        "Commit the transaction",
+        "Read back the AttendanceRecord and the AuditLog rows for the target student/session"
+      ],
+      "expected": "AttendanceRecord.status is updated to 'Manual Present' with checkInMethod 'Manual'; exactly one AuditLog row is persisted with actorUserId, timestamp, oldValue (Absent), newValue (Manual Present), and the supplied reason (VR-MC-04, VR-MC-05, DI-07, DI-09)",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-14-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P1",
+      "traceability": ["BR-14", "BR-13", "FR-20"],
+      "title": "Manual correction transitions Absent to Excused for enrolled student",
+      "preconditions": [
+        "Session is Closed and student was auto-assigned Absent per BR-13",
+        "Acting lecturer is assigned to the section and within manualEditWindow"
+      ],
+      "steps": [
+        "Capture beforeState of AttendanceRecord (status 'Absent')",
+        "Apply lecturer correction to status 'Excused' with reason",
+        "Capture afterState of AttendanceRecord"
+      ],
+      "expected": "beforeState status is 'Absent' and afterState status is 'Excused'; prior rejected CheckInAttempt rows are not deleted; lastModifiedAt is updated",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-14-003",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-14", "FR-20", "AC-13"],
+      "title": "PATCH attendance correction returns applied mutation envelope",
+      "preconditions": [
+        "Lecturer is authenticated and assigned to the target section",
+        "Correction is within the edit window"
+      ],
+      "steps": [
+        "Send PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with Authorization Bearer, Idempotency-Key header, and body { status: 'Manual Present', reason: '...' }",
+        "Inspect HTTP status code and response body"
+      ],
+      "expected": "Response is HTTP 200 with the standard envelope { data, meta.requestId, meta.timestamp, error: null } reflecting the applied status 'Manual Present'; error is null",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-14-004",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-14", "BR-19", "FR-20"],
+      "title": "Student is denied attendance correction endpoint",
+      "preconditions": [
+        "A Student user is authenticated",
+        "A valid session and target student row exist"
+      ],
+      "steps": [
+        "As a Student, send PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with body { status: 'Manual Present', reason: '...' }",
+        "Inspect status code, error.code, and any leaked data"
+      ],
+      "expected": "Response is HTTP 403 with error.code 'Forbidden'; no AttendanceRecord is mutated and no restricted data is disclosed (VR-MC-01, BR-19)",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-14-005",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-14", "BR-18", "BR-19"],
+      "title": "Cross-scope lecturer denied correction on unassigned section",
+      "preconditions": [
+        "Lecturer A is authenticated but is NOT assigned to the section that owns the target session",
+        "Correction would otherwise be within the edit window"
+      ],
+      "steps": [
+        "As Lecturer A, send PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} for a section assigned to Lecturer B",
+        "Inspect status code and error.code"
+      ],
+      "expected": "Response is HTTP 403 with error.code 'OutOfScope'; the AttendanceRecord is unchanged and no audit mutation entry is written (VR-MC-01, BR-14 exception 'deny if section not assigned to lecturer')",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-14-006",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["BR-14", "BR-15", "FR-20"],
+      "title": "Lecturer correction after edit window is rejected or escalated",
+      "preconditions": [
+        "Lecturer is assigned to the section",
+        "Current time is past manualEditWindow from session close"
+      ],
+      "steps": [
+        "Send PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with a valid status and reason after the edit window has elapsed",
+        "Inspect status code and error.code"
+      ],
+      "expected": "Response is HTTP 409 with error.code 'EditWindowExpired' (or documented escalation-to-admin response per policy); no AttendanceRecord mutation is committed by the lecturer path (VR-MC-03, BR-15)",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-14-007",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["BR-14", "FR-20"],
+      "title": "Correction rejected when policy-required reason is missing",
+      "preconditions": [
+        "Lecturer is assigned to the section and within the edit window",
+        "Effective policy requires a reason for manual corrections"
+      ],
+      "steps": [
+        "Send PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with a valid status but an empty/missing reason",
+        "Inspect status code and error.code"
+      ],
+      "expected": "Response is HTTP 400 with error.code 'ReasonRequired'; no mutation and no audit row are written (VR-MC-04)",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-14-008",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P1",
+      "traceability": ["BR-14", "BR-22", "FR-29"],
+      "title": "Idempotent replay of correction returns applied mutation without duplicate audit",
+      "preconditions": [
+        "Lecturer is assigned and within the edit window",
+        "A correction command has a fixed Idempotency-Key + target attendance row"
+      ],
+      "steps": [
+        "Submit two parallel PATCH corrections with the same Idempotency-Key, actor, and target attendance row and identical body",
+        "Read back the AttendanceRecord and count AuditLog rows for the mutation"
+      ],
+      "expected": "Both responses reflect the same already-applied mutation summary; exactly one AttendanceRecord update and exactly one AuditLog entry exist (idempotency validation §5.2, BR-22)",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-14-009",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["BR-14", "FR-20", "AC-13", "BR-22"],
+      "title": "Lecturer roster UI applies manual correction with reason and gates save",
+      "preconditions": [
+        "Lecturer is signed in on the desktop roster view for an assigned Closed session within the edit window",
+        "Target student row is visible in the roster table"
+      ],
+      "steps": [
+        "Open the session roster and locate the target student row",
+        "Change the attendance status control to 'Manual Present'",
+        "Attempt to save with the reason field empty and observe form gating",
+        "Enter a reason and save",
+        "Observe the updated status badge and roster row"
+      ],
+      "expected": "Save is blocked while the reason is empty; after a reason is provided the row status badge updates to 'Manual Present' and a success confirmation is shown, reflecting the persisted correction",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-14-010",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P2",
+      "traceability": ["BR-14", "BR-15"],
+      "title": "Lecturer roster UI surfaces edit-window-expired message",
+      "preconditions": [
+        "Lecturer is signed in on the roster view for an assigned session whose manualEditWindow has expired"
+      ],
+      "steps": [
+        "Open the session roster",
+        "Attempt to change a student's attendance status and save",
+        "Observe the UI feedback"
+      ],
+      "expected": "The UI blocks the save and displays an edit-window-expired message directing the lecturer to the admin override path, consistent with the 409 EditWindowExpired backend behavior (BR-15)",
+      "edgeCase": true
+    }
+  ]
+}
