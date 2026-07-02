@@ -330,7 +330,8 @@
       ],
       "testRequirements": {
         "acceptanceTags": [
-          "AC-02"
+          "AC-02",
+          "FR-11"
         ]
       },
       "history": [
@@ -344,6 +345,12 @@
           "at": "2026-07-02T09:53:24Z",
           "kind": "drift",
           "reason": "Doc drift for AC-08 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T10:53:04Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-11 — reverify after TestGen",
           "source": "harness"
         }
       ]
