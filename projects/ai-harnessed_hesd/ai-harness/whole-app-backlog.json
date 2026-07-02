@@ -659,7 +659,8 @@
       ],
       "testRequirements": {
         "acceptanceTags": [
-          "AC-13"
+          "AC-13",
+          "AC-14"
         ]
       },
       "history": [
@@ -667,6 +668,12 @@
           "at": "2026-07-02T10:07:28Z",
           "kind": "drift",
           "reason": "Doc drift for AC-13 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T10:09:55Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-14 — reverify after TestGen",
           "source": "harness"
         }
       ]
