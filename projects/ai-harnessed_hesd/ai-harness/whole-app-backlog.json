@@ -1317,19 +1317,62 @@
       ],
       "description": "Implement end-to-end regression cases for role-scoped report/export permissions and audit side effects across lecturer/admin/auditor roles.",
       "completionArtifacts": [
-        "Role matrix E2E scenarios for report/export access",
-        "Assertions for denial behavior without data leakage",
-        "Audit-write assertions tied to export actions"
+        "tests/e2e",
+        "package.json",
+        "apps/web/src/routes/StaffLayout.tsx",
+        "apps/web/src/lib/auth/role-guard.ts",
+        "apps/web/src/routes/pages/LecturerSessionsListPage.tsx",
+        "apps/web/src/routes/pages/LecturerRosterPage.tsx",
+        "apps/web/src/routes/pages/AttendanceReportPage.tsx",
+        "apps/web/src/components/domain/LecturerSessionList.tsx",
+        "apps/web/src/components/domain/LecturerSessionList.module.css",
+        "apps/web/src/components/domain/AttendanceReportList.tsx",
+        "apps/web/src/components/domain/AuditLogList.tsx",
+        "scripts/db-seed.mjs"
       ],
       "testRequirements": {
+        "unit": [
+          "tests/e2e/src/fixtures/role-matrix-fixtures.test.ts",
+          "apps/web/src/lib/auth/role-guard.test.ts"
+        ],
         "acceptanceTags": [
           "AC-15",
+          "AC-16",
           "AC-17",
           "AC-23",
           "NFR-09",
           "NFR-10"
+        ],
+        "playwright": [
+          "tests/playwright-ui/scenarios/test-e2e-role-scope-and-export.spec.ts"
         ]
-      }
+      },
+      "history": [
+        {
+          "at": "2026-07-02T22:48:15Z",
+          "kind": "gate_failed",
+          "reason": "Browser test failed — see 20260702T223549Z-browser-test.json",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T22:58:58Z",
+          "kind": "gate_failed",
+          "reason": "Computational checks failed — see 20260702T224815Z-checks.json",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T23:08:40Z",
+          "kind": "gate_failed",
+          "reason": "Scope gate failed — out-of-scope files: apps/web/src/components/domain/AttendanceReportList.tsx\napps/web/src/routes/pages/AttendanceReportPage.tsx",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T23:16:33Z",
+          "kind": "gate_failed",
+          "reason": "Computational checks failed — see 20260702T230840Z-checks.json",
+          "source": "harness"
+        }
+      ]
     },
     {
       "id": "test-nfr-performance-reliability-smoke",
