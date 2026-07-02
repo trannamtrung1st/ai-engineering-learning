@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-02T08:48:32Z",
+  "generatedAt": "2026-07-02T08:51:30Z",
   "repoRoot": "/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd",
   "inputMode": "flexible",
   "zones": {
@@ -21,7 +21,11 @@
       "docs/brds/08-acceptance-mvp-future.md",
       "docs/brds/prompt.md"
     ],
-    "technical": [],
+    "technical": [
+      "docs/technical/00-system-overview.md",
+      "docs/technical/01-roles-permissions.md",
+      "docs/technical/02-module-breakdown.md"
+    ],
     "uiux": [],
     "designSystem": [
       "docs/ui-ux/DESIGN.md",
@@ -137,6 +141,27 @@
       "lines": 59,
       "hasRequirementIds": false,
       "outlineKey": null
+    },
+    {
+      "path": "docs/technical/00-system-overview.md",
+      "zone": "technical",
+      "lines": 234,
+      "hasRequirementIds": true,
+      "outlineKey": "docs/technical/00-system-overview.md"
+    },
+    {
+      "path": "docs/technical/01-roles-permissions.md",
+      "zone": "technical",
+      "lines": 244,
+      "hasRequirementIds": true,
+      "outlineKey": "docs/technical/01-roles-permissions.md"
+    },
+    {
+      "path": "docs/technical/02-module-breakdown.md",
+      "zone": "technical",
+      "lines": 436,
+      "hasRequirementIds": true,
+      "outlineKey": "docs/technical/02-module-breakdown.md"
     },
     {
       "path": "docs/ui-ux/DESIGN.md",
