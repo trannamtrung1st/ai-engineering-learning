@@ -1,9 +1,0 @@
-{
-  "extends": "{{WORKSPACE_NAME}}config/tsconfig/base.json",
-  "include": ["src", "scenarios", "playwright.config.ts"],
-  "compilerOptions": {
-    "noEmit": true,
-    "noUnusedLocals": false,
-    "noUnusedParameters": false
-  }
-}
