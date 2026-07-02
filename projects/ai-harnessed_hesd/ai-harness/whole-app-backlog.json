@@ -165,6 +165,19 @@
         "Academic CRUD endpoints and enrollment import endpoint",
         "Enrollment validation helpers for check-in workflow",
         "Import summary responses with row-level error reporting"
+      ],
+      "testRequirements": {
+        "acceptanceTags": [
+          "AC-07"
+        ]
+      },
+      "history": [
+        {
+          "at": "2026-07-02T09:50:57Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-07 — reverify after TestGen",
+          "source": "harness"
+        }
       ]
     },
     {
@@ -604,6 +617,19 @@
         "Academic structure listing/detail forms",
         "Enrollment import UI with row-level result feedback",
         "CRUD success/error states aligned with API contracts"
+      ],
+      "testRequirements": {
+        "acceptanceTags": [
+          "AC-07"
+        ]
+      },
+      "history": [
+        {
+          "at": "2026-07-02T09:50:57Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-07 — reverify after TestGen",
+          "source": "harness"
+        }
       ]
     },
     {
