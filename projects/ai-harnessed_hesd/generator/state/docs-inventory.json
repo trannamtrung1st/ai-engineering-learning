@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-02T09:15:12Z",
+  "generatedAt": "2026-07-02T09:20:25Z",
   "repoRoot": "/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd",
   "inputMode": "flexible",
   "zones": {
@@ -37,7 +37,16 @@
       "docs/technical/12-backend-frontend-tech-stack.md",
       "docs/technical/13-docker-compose-local-runtime.md"
     ],
-    "uiux": [],
+    "uiux": [
+      "docs/ui-ux/00-production-ui-quality-bar.md",
+      "docs/ui-ux/01-design-overview.md",
+      "docs/ui-ux/01-ui-ux-foundation.md",
+      "docs/ui-ux/02-ui-framework-tech-stack.md",
+      "docs/ui-ux/03-design-system-basics.md",
+      "docs/ui-ux/04-design-tokens.md",
+      "docs/ui-ux/05-common-ui-components.md",
+      "docs/ui-ux/06-app-layout-components.md"
+    ],
     "designSystem": [
       "docs/ui-ux/DESIGN.md",
       "docs/ui-ux/design-system/accordion.md",
@@ -252,10 +261,66 @@
       "outlineKey": "docs/technical/13-docker-compose-local-runtime.md"
     },
     {
+      "path": "docs/ui-ux/00-production-ui-quality-bar.md",
+      "zone": "uiux",
+      "lines": 93,
+      "hasRequirementIds": false,
+      "outlineKey": "docs/ui-ux/00-production-ui-quality-bar.md"
+    },
+    {
+      "path": "docs/ui-ux/01-design-overview.md",
+      "zone": "uiux",
+      "lines": 93,
+      "hasRequirementIds": true,
+      "outlineKey": "docs/ui-ux/01-design-overview.md"
+    },
+    {
+      "path": "docs/ui-ux/01-ui-ux-foundation.md",
+      "zone": "uiux",
+      "lines": 100,
+      "hasRequirementIds": true,
+      "outlineKey": "docs/ui-ux/01-ui-ux-foundation.md"
+    },
+    {
+      "path": "docs/ui-ux/02-ui-framework-tech-stack.md",
+      "zone": "uiux",
+      "lines": 93,
+      "hasRequirementIds": true,
+      "outlineKey": "docs/ui-ux/02-ui-framework-tech-stack.md"
+    },
+    {
+      "path": "docs/ui-ux/03-design-system-basics.md",
+      "zone": "uiux",
+      "lines": 89,
+      "hasRequirementIds": false,
+      "outlineKey": "docs/ui-ux/03-design-system-basics.md"
+    },
+    {
+      "path": "docs/ui-ux/04-design-tokens.md",
+      "zone": "uiux",
+      "lines": 149,
+      "hasRequirementIds": true,
+      "outlineKey": "docs/ui-ux/04-design-tokens.md"
+    },
+    {
+      "path": "docs/ui-ux/05-common-ui-components.md",
+      "zone": "uiux",
+      "lines": 109,
+      "hasRequirementIds": true,
+      "outlineKey": "docs/ui-ux/05-common-ui-components.md"
+    },
+    {
+      "path": "docs/ui-ux/06-app-layout-components.md",
+      "zone": "uiux",
+      "lines": 97,
+      "hasRequirementIds": true,
+      "outlineKey": "docs/ui-ux/06-app-layout-components.md"
+    },
+    {
       "path": "docs/ui-ux/DESIGN.md",
       "zone": "designSystem",
-      "lines": 57,
-      "hasRequirementIds": false,
+      "lines": 183,
+      "hasRequirementIds": true,
       "outlineKey": "docs/ui-ux/DESIGN.md"
     },
     {

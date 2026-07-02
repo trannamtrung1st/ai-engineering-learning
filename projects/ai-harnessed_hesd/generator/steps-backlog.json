@@ -352,7 +352,7 @@
     },
     {
       "id": "uiux-foundation-system",
-      "passes": false,
+      "passes": true,
       "priority": 30,
       "phase": 3,
       "kind": "agent",
