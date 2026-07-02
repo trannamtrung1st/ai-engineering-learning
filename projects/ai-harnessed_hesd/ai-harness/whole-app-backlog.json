@@ -1057,6 +1057,14 @@
       "testRequirements": [
         "Execute against compose-based test stack profile",
         "Publish test artifacts and metric snapshots in CI"
+      ],
+      "history": [
+        {
+          "at": "2026-07-02T10:24:59Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-20 — reverify after TestGen",
+          "source": "harness"
+        }
       ]
     }
   ]

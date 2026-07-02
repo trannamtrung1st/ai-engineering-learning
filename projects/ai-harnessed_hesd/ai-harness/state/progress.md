@@ -19,3 +19,5 @@
 - 2026-07-02T10:14:49Z | AC-17 | testgen_passed
 - 2026-07-02T10:18:15Z | AC-18 | testgen_passed
 - 2026-07-02T10:19:57Z | AC-19 | testgen_passed
+- 2026-07-02T10:22:40Z | AC-20 | testgen_validation_failed
+- 2026-07-02T10:24:59Z | AC-20 | testgen_passed
