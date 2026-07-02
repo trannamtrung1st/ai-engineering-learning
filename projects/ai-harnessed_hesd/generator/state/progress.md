@@ -22,3 +22,5 @@
 - [2026-07-02T08:48:31Z] **brd-consistency-gate** — passed
 - [2026-07-02T08:51:28Z] **tech-overview-modules** — passed
 - [2026-07-02T08:53:40Z] **tech-domain-db** — passed
+- [2026-07-02T08:57:01Z] **tech-api-workflows** — verify_failed
+- [2026-07-02T08:59:36Z] **tech-api-workflows** — passed

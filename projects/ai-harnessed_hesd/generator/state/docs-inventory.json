@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-02T08:51:30Z",
+  "generatedAt": "2026-07-02T08:57:02Z",
   "repoRoot": "/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd",
   "inputMode": "flexible",
   "zones": {
@@ -24,7 +24,12 @@
     "technical": [
       "docs/technical/00-system-overview.md",
       "docs/technical/01-roles-permissions.md",
-      "docs/technical/02-module-breakdown.md"
+      "docs/technical/02-module-breakdown.md",
+      "docs/technical/03-domain-model.md",
+      "docs/technical/04-database-design.md",
+      "docs/technical/05-api-design.md",
+      "docs/technical/06-main-workflows.md",
+      "docs/technical/07-state-machines.md"
     ],
     "uiux": [],
     "designSystem": [
@@ -162,6 +167,41 @@
       "lines": 436,
       "hasRequirementIds": true,
       "outlineKey": "docs/technical/02-module-breakdown.md"
+    },
+    {
+      "path": "docs/technical/03-domain-model.md",
+      "zone": "technical",
+      "lines": 217,
+      "hasRequirementIds": true,
+      "outlineKey": "docs/technical/03-domain-model.md"
+    },
+    {
+      "path": "docs/technical/04-database-design.md",
+      "zone": "technical",
+      "lines": 367,
+      "hasRequirementIds": true,
+      "outlineKey": "docs/technical/04-database-design.md"
+    },
+    {
+      "path": "docs/technical/05-api-design.md",
+      "zone": "technical",
+      "lines": 455,
+      "hasRequirementIds": true,
+      "outlineKey": "docs/technical/05-api-design.md"
+    },
+    {
+      "path": "docs/technical/06-main-workflows.md",
+      "zone": "technical",
+      "lines": 354,
+      "hasRequirementIds": true,
+      "outlineKey": "docs/technical/06-main-workflows.md"
+    },
+    {
+      "path": "docs/technical/07-state-machines.md",
+      "zone": "technical",
+      "lines": 323,
+      "hasRequirementIds": true,
+      "outlineKey": "docs/technical/07-state-machines.md"
     },
     {
       "path": "docs/ui-ux/DESIGN.md",
