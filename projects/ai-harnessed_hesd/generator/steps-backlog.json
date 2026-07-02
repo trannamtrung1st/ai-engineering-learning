@@ -434,7 +434,7 @@
     },
     {
       "id": "uiux-consistency-gate",
-      "passes": false,
+      "passes": true,
       "priority": 33,
       "phase": 3,
       "kind": "gate",

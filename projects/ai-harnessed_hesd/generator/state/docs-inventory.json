@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-02T09:27:37Z",
+  "generatedAt": "2026-07-02T09:33:22Z",
   "repoRoot": "/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd",
   "inputMode": "flexible",
   "zones": {
@@ -49,6 +49,11 @@
       "docs/ui-ux/07-domain-specific-components.md",
       "docs/ui-ux/08-forms-validation-ux.md",
       "docs/ui-ux/09-page-list.md",
+      "docs/ui-ux/10-user-flows.md",
+      "docs/ui-ux/11-wireframes.md",
+      "docs/ui-ux/12-ui-states.md",
+      "docs/ui-ux/13-accessibility-basics.md",
+      "docs/ui-ux/14-listing-pages-search-filter-sort.md",
       "docs/ui-ux/README.md"
     ],
     "designSystem": [
@@ -342,6 +347,41 @@
       "outlineKey": "docs/ui-ux/09-page-list.md"
     },
     {
+      "path": "docs/ui-ux/10-user-flows.md",
+      "zone": "uiux",
+      "lines": 283,
+      "hasRequirementIds": true,
+      "outlineKey": "docs/ui-ux/10-user-flows.md"
+    },
+    {
+      "path": "docs/ui-ux/11-wireframes.md",
+      "zone": "uiux",
+      "lines": 372,
+      "hasRequirementIds": true,
+      "outlineKey": "docs/ui-ux/11-wireframes.md"
+    },
+    {
+      "path": "docs/ui-ux/12-ui-states.md",
+      "zone": "uiux",
+      "lines": 240,
+      "hasRequirementIds": true,
+      "outlineKey": "docs/ui-ux/12-ui-states.md"
+    },
+    {
+      "path": "docs/ui-ux/13-accessibility-basics.md",
+      "zone": "uiux",
+      "lines": 236,
+      "hasRequirementIds": true,
+      "outlineKey": "docs/ui-ux/13-accessibility-basics.md"
+    },
+    {
+      "path": "docs/ui-ux/14-listing-pages-search-filter-sort.md",
+      "zone": "uiux",
+      "lines": 255,
+      "hasRequirementIds": true,
+      "outlineKey": "docs/ui-ux/14-listing-pages-search-filter-sort.md"
+    },
+    {
       "path": "docs/ui-ux/DESIGN.md",
       "zone": "designSystem",
       "lines": 183,
@@ -576,6 +616,6 @@
     "phase0": true,
     "phase1": true,
     "phase2": true,
-    "phase3": false
+    "phase3": true
   }
 }
