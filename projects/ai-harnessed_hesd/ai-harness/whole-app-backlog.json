@@ -589,6 +589,7 @@
         "acceptanceTags": [
           "AC-09",
           "AC-10",
+          "BR-20",
           "FR-24",
           "FR-25",
           "FR-35"
@@ -623,6 +624,12 @@
           "at": "2026-07-02T11:46:00Z",
           "kind": "drift",
           "reason": "Doc drift for FR-35 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T12:11:45Z",
+          "kind": "drift",
+          "reason": "Doc drift for BR-20 — reverify after TestGen",
           "source": "harness"
         }
       ]
@@ -1246,6 +1253,7 @@
         "acceptanceTags": [
           "AC-09",
           "AC-10",
+          "BR-20",
           "FR-24",
           "FR-25"
         ]
@@ -1273,6 +1281,12 @@
           "at": "2026-07-02T11:21:46Z",
           "kind": "drift",
           "reason": "Doc drift for FR-25 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T12:11:45Z",
+          "kind": "drift",
+          "reason": "Doc drift for BR-20 — reverify after TestGen",
           "source": "harness"
         }
       ]

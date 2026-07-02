@@ -1,0 +1,381 @@
+{
+  "productItemId": "BR-20",
+  "version": 1,
+  "docFingerprint": "sha256:0421ca4affe3aa70584e3b352a860d11de519a5a2aaff8c4d8e0f12d14d1a70a",
+  "generatedAt": "2026-07-02T12:10:24Z",
+  "cases": [
+    {
+      "id": "TC-BR-20-001",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["BR-20", "FR-25", "AC-09", "AC-10", "AC-11", "AC-12"],
+      "title": "Testing-plan policy-dependent rows consume single BR-20 effective policy at check-in and close",
+      "preconditions": [
+        "Testing-plan §3.1 coverage blocks for GPS validation, Attendance status assignment, and Close-time absent finalization apply.",
+        "Hierarchy fixtures exist: institution, faculty, course, and class-section policies with distinct field values.",
+        "Open class session exists for the target section with enrolled students and valid QR token."
+      ],
+      "steps": [
+        "Invoke M06 resolveEffectivePolicy(classSectionId, sessionScheduledStart) and record resolved presentWindowMinutes, lateWindowMinutes, gpsRequired, and manualEditWindowHours with per-field source levels.",
+        "Submit student check-in within resolved present window and verify Present assignment (AC-11 row).",
+        "Submit check-in with resolved gpsRequired true and missing GPS payload; verify GpsRequired rejection (AC-09 row).",
+        "Close session with pending students; verify Absent finalization applies per resolved policy at close (AC-12 row)."
+      ],
+      "expected": "Scenario-matrix cross-walk confirms BR-20 produces one merged effective policy feeding all testing-plan policy-dependent rows: check-in status windows, GPS enforcement, and close-time absent processing each consume the same precedence-resolved policy.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-20-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-20", "FR-24", "FR-25"],
+      "title": "M06 resolveEffectivePolicy merges per-field precedence section over course over faculty over institution",
+      "preconditions": [
+        "Integration harness uses real DB transaction boundaries for attendance_policies table.",
+        "Institution policy: presentWindowMinutes 10, lateWindowMinutes 10, gpsRequired false, manualEditWindowHours 24.",
+        "Faculty policy: presentWindowMinutes 12 (other fields undefined).",
+        "Course policy: lateWindowMinutes 18, gpsRequired true, gpsRadiusMeters 120 (presentWindowMinutes undefined).",
+        "Class-section policy: presentWindowMinutes 20 only (other fields undefined).",
+        "Target classSectionId belongs to the configured hierarchy."
+      ],
+      "steps": [
+        "Seed four active AttendancePolicy rows at Institution, Faculty, Course, and ClassSection scopes.",
+        "Call resolveEffectivePolicy(classSectionId, sessionTimestamp) from M06 Policy Engine.",
+        "Assert presentWindowMinutes 20 sourced from ClassSection.",
+        "Assert lateWindowMinutes 18 sourced from Course (section and faculty undefined).",
+        "Assert gpsRequired true and gpsRadiusMeters 120 sourced from Course.",
+        "Assert manualEditWindowHours 24 sourced from Institution (undefined at all child levels)."
+      ],
+      "expected": "BR-20 produces one merged effective policy: each field uses the most specific defined value (section > course > faculty > institution); undefined fields fall back to parent levels without requiring duplicate configuration at every scope.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-20-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-20", "FR-25", "FR-09", "BR-13", "BR-21"],
+      "title": "M06 resolves identical effective policy at check-in timestamp and session close for same class section",
+      "preconditions": [
+        "Class section has section-scoped policy with presentWindowMinutes 15, lateWindowMinutes 15, and autoCloseEnabled true.",
+        "Open class session exists with known scheduledStart and classSectionId.",
+        "M04 check-in pipeline and M03 session-close hook both call resolveEffectivePolicy."
+      ],
+      "steps": [
+        "Call resolveEffectivePolicy(classSectionId, checkInTimestamp) during an open session and capture resolved policy snapshot.",
+        "Process a successful check-in and verify Present/Late decision uses the captured present and late window values.",
+        "Call resolveEffectivePolicy(classSectionId, sessionCloseTimestamp) from M03 close processing.",
+        "Compare close-time snapshot to check-in snapshot for presentWindowMinutes, lateWindowMinutes, autoCloseEnabled, and manualEditWindowHours.",
+        "Verify auto-absent finalization (BR-13) and auto-close evaluation (BR-21) reference the close-time resolved policy."
+      ],
+      "expected": "BR-20 mandates resolution at check-in validation, session open/close, and manual edit authorization; for the same section and session, effective policy fields are consistent unless an admin mutates policy between events.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-20-004",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["BR-20", "FR-20", "BR-14", "BR-15"],
+      "title": "Manual edit authorization uses BR-20 resolved manualEditWindowHours at session close time",
+      "preconditions": [
+        "Institution default manualEditWindowHours 24; section-scoped override manualEditWindowHours 72.",
+        "Closed session exists with known closedAt timestamp.",
+        "Lecturer is assigned to the section."
+      ],
+      "steps": [
+        "Capture beforeState: resolveEffectivePolicy(classSectionId, closedAt) shows manualEditWindowHours 72 from section.",
+        "Lecturer attempts PATCH attendance correction at closedAt + 48 hours (within 72-hour resolved window).",
+        "Assert correction is accepted per BR-14 using resolved edit window, not institution default 24.",
+        "Lecturer attempts correction at closedAt + 80 hours (outside 72-hour resolved window).",
+        "Assert rejection with EditWindowExpired per BR-15."
+      ],
+      "expected": "beforeState Closed with resolved manualEditWindowHours 72 governs lecturer edit authorization; corrections within 72 hours succeed; beyond 72 hours are rejected; institution default 24 does not apply when section override exists.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-20-005",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-20", "FR-25"],
+      "title": "Institution-only default policy resolves when no faculty, course, or section overrides exist",
+      "preconditions": [
+        "Class section exists with no faculty, course, or section AttendancePolicy rows.",
+        "Single institution-scoped policy defines presentWindowMinutes 10, lateWindowMinutes 15, gpsRequired false.",
+        "Open session scheduled for the section."
+      ],
+      "steps": [
+        "Call resolveEffectivePolicy(classSectionId, sessionTimestamp).",
+        "Assert all behavioral fields match institution policy values with source level Institution.",
+        "Submit check-in at scheduledStart + 8 minutes; verify Present.",
+        "Submit check-in for second student at scheduledStart + 12 minutes; verify Late.",
+        "Confirm no null or error returned at any resolution point."
+      ],
+      "expected": "BR-20 resolves institution defaults as the effective policy when no more specific overrides exist; check-in Present/Late boundaries follow institution presentWindowMinutes 10 and lateWindowMinutes 15 without requiring child-scope rows.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-20-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-20", "FR-25", "FR-23", "AC-11", "BR-11", "BR-12"],
+      "title": "POST /v1/check-ins assigns Present using section-resolved presentWindowMinutes overriding institution default",
+      "preconditions": [
+        "Institution default presentWindowMinutes 10; section-scoped override presentWindowMinutes 25 via POST /v1/policies.",
+        "Lecturer has opened session; valid qrToken is available.",
+        "Two authenticated enrolled students have no prior success for the session.",
+        "Session scheduledStart is known."
+      ],
+      "steps": [
+        "Student A calls POST /v1/check-ins with clientTimestamp at scheduledStart + 12 minutes.",
+        "Assert HTTP 200, data.outcome Success, data.attendanceStatus Present (section window 25 applies, not institution 10).",
+        "Student B calls POST /v1/check-ins with clientTimestamp at scheduledStart + 22 minutes.",
+        "Assert HTTP 200 with data.attendanceStatus Present for Student B confirming section override governs outcome."
+      ],
+      "expected": "Effective policy resolution at check-in uses section presentWindowMinutes 25 per BR-20; students checking in between minute 10 and 25 receive Present rather than Late; HTTP 200 success envelope includes correct attendanceStatus.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-20-007",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-20", "FR-25", "FR-08", "FR-09", "AC-12", "BR-13"],
+      "title": "POST /v1/class-sessions/{sessionId}/close finalizes Absent per BR-20 effective policy at close time",
+      "preconditions": [
+        "Open session with five enrolled students: two Present, one Late, two Pending.",
+        "Section-scoped policy defines standard absent finalization; no Excused students among pending.",
+        "Lecturer assigned to section is authenticated."
+      ],
+      "steps": [
+        "Call POST /v1/class-sessions/{sessionId}/close with Lecturer Authorization and Idempotency-Key.",
+        "Assert HTTP 200 with data.state Closed and data.summary.absent reflecting two previously Pending students.",
+        "Call GET /v1/class-sessions/{sessionId}/attendance and verify pending students now show attendanceStatus Absent.",
+        "Confirm Present and Late students retain prior statuses."
+      ],
+      "expected": "Session close HTTP 200 response includes absent summary count driven by BR-20 effective policy at close; pending enrolled students without success become Absent per BR-13; existing Present/Late records unchanged.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-20-008",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["BR-20", "FR-25", "FR-23", "AC-11"],
+      "title": "WF-03 student check-in happy path uses BR-20 resolved effective policy for Present assignment",
+      "preconditions": [
+        "WF-01 complete: section, enrollments, sessions Scheduled; section policy override presentWindowMinutes 15.",
+        "Lecturer completes WF-02: POST /class-sessions/{id}/open transitions session to Open with QR.",
+        "Authenticated enrolled student has no prior success; check-in occurs within resolved present window."
+      ],
+      "steps": [
+        "Resolve effective policy for class section at session scheduled start and record presentWindowMinutes.",
+        "Student scans QR and POST /v1/check-ins succeeds within present window per WF-03.",
+        "Verify WF-03 checkpoint: status assignment Present or Late is derived from effective policy windows.",
+        "Confirm CheckInAttempt outcome Success and AttendanceRecord method QR are persisted."
+      ],
+      "expected": "WF-03 primary lifecycle completes with Present status determined by BR-20 effective policy resolution at check-in time; AC-11 checkpoint satisfied via precedence chain section > course > faculty > institution.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-20-009",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P0",
+      "traceability": ["BR-20", "FR-25", "AC-09", "AC-10", "BR-08", "BR-09"],
+      "title": "Per-field fallback: section defines presentWindow only; lateWindow and GPS inherit from course level",
+      "preconditions": [
+        "Institution default: presentWindowMinutes 10, lateWindowMinutes 10, gpsRequired false.",
+        "Course policy: lateWindowMinutes 20, gpsRequired true, gpsRadiusMeters 100 (presentWindowMinutes undefined).",
+        "Section policy: presentWindowMinutes 30 only (lateWindowMinutes and gpsRequired undefined).",
+        "Open session exists for the section with room coordinates configured."
+      ],
+      "steps": [
+        "Resolve effective policy and confirm presentWindowMinutes 30 (section), lateWindowMinutes 20 (course), gpsRequired true (course).",
+        "Student checks in at scheduledStart + 25 minutes; assert Present (within section present window 30).",
+        "Student checks in at scheduledStart + 35 minutes without GPS; assert HTTP 422 with error.code GpsRequired (inherited from course).",
+        "Student checks in at scheduledStart + 35 minutes with valid in-radius GPS; assert Late (after present window 30, within late window ending at +50)."
+      ],
+      "expected": "Alternate precedence branch: section overrides present window only; late window and GPS requirement inherit from course per BR-20 per-field fallback; check-in outcomes reflect merged effective policy not any single scope row alone.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-20-010",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-c",
+      "priority": "P0",
+      "traceability": ["BR-20", "FR-24", "FR-29", "BR-22"],
+      "title": "Flow C audit verification after section policy PATCH changes subsequent BR-20 resolution",
+      "preconditions": [
+        "Open session with section policy presentWindowMinutes 15.",
+        "Student A successfully checked in Present under 15-minute window.",
+        "AcademicAdmin is authenticated; audit query endpoint GET /v1/audit-logs is available."
+      ],
+      "steps": [
+        "Record beforeState: resolveEffectivePolicy shows presentWindowMinutes 15.",
+        "AcademicAdmin PATCH /v1/policies/{policyId} changing presentWindowMinutes to 30.",
+        "Record afterState: resolveEffectivePolicy shows presentWindowMinutes 30.",
+        "Student B checks in at scheduledStart + 20 minutes; assert Present (would have been Late under beforeState).",
+        "Query GET /v1/audit-logs for policy mutation with old and new presentWindowMinutes values.",
+        "Verify Student A AttendanceRecord remains Present unchanged."
+      ],
+      "expected": "Critical policy configuration change updates BR-20 resolution for subsequent check-ins immediately; prior attendance records are immutable; audit trail captures policy mutation per BR-22 with actor, old value, and new value.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-20-011",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-20", "BR-18", "BR-19", "FR-27", "AC-16"],
+      "title": "Student denied policy read and export; cross-scope Lecturer denied effective-policy for unassigned section",
+      "preconditions": [
+        "Student and Lecturer test accounts exist with valid bearer tokens.",
+        "Attendance policies exist at institution and section levels for section A.",
+        "Lecturer-A is assigned to section A; Lecturer-B is not assigned to section A.",
+        "BR-18 scopes export to actor role; BR-19 denies unauthorized report and policy access."
+      ],
+      "steps": [
+        "Student calls GET /v1/policies or effective-policy endpoint.",
+        "Assert HTTP 403 Forbidden; no policy configuration or precedence details leaked.",
+        "Student calls POST /v1/exports/attendance with filters targeting section A.",
+        "Assert HTTP 403 Forbidden without partial export data leakage per BR-18.",
+        "Lecturer-B calls effective-policy read for section A; assert HTTP 403 OutOfScope per BR-19.",
+        "Lecturer-A calls effective-policy read for assigned section A; assert HTTP 200 with resolved values only."
+      ],
+      "expected": "RBAC enforces AttendancePolicy.read Deny for Student; Student institution-wide export denied per BR-18; cross-scope Lecturer denied effective-policy read per BR-19; assigned Lecturer receives resolved values without full policy administration APIs.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-20-012",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-20", "AC-09", "BR-08", "FR-35"],
+      "title": "GPS rejection uses course-level gpsRequired from BR-20 merged policy not institution default",
+      "preconditions": [
+        "Institution default gpsRequired false.",
+        "Course-scoped policy: gpsRequired true, gpsRadiusMeters 100.",
+        "No section override for gpsRequired.",
+        "Open session exists with room coordinates; valid qrToken available.",
+        "Authenticated enrolled student has no prior success."
+      ],
+      "steps": [
+        "Resolve effective policy and confirm gpsRequired true sourced from Course per BR-20.",
+        "Student calls POST /v1/check-ins with valid qrToken but without GPS coordinates.",
+        "Assert HTTP 422 with error.code GpsRequired in response envelope.",
+        "Query attendance_records and confirm student remains Pending with failed CheckInAttempt logged."
+      ],
+      "expected": "BR-20 merged policy applies course-level gpsRequired true despite institution default false; missing GPS payload is rejected with GpsRequired per AC-09; no Present/Late AttendanceRecord is created.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-20-013",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-20", "BR-07", "BR-08", "BR-09", "FR-22"],
+      "title": "Rule-order short-circuit: DuplicateCheckIn before GPS checks when gpsRequired resolved true",
+      "preconditions": [
+        "Open session exists with course-level gpsRequired true per BR-20 merged policy.",
+        "Enrolled student already has Present or Late AttendanceRecord for the session.",
+        "Duplicate submission payload includes GPS coordinates outside allowed radius or omits GPS entirely."
+      ],
+      "steps": [
+        "Submit POST /v1/check-ins as already-checked-in student with GPS payload outside configured radius.",
+        "Assert error.code is DuplicateCheckIn, not OutOfRadius.",
+        "Submit POST /v1/check-ins as same student with GPS omitted on GPS-required session.",
+        "Assert error.code is DuplicateCheckIn, not GpsDisabled or GpsRequired.",
+        "Verify original AttendanceRecord unchanged after both attempts."
+      ],
+      "expected": "Validation order per API design §5.1: duplicate-success check (BR-07 step 5) short-circuits before BR-08 to BR-10 GPS evaluations even when BR-20 resolves gpsRequired true from course-level policy.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-20-014",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P0",
+      "traceability": ["BR-20", "BR-07", "NFR-07"],
+      "title": "Idempotent replay and concurrent check-ins use consistent BR-20 policy snapshot",
+      "preconditions": [
+        "Open session with section-scoped policy presentWindowMinutes 15.",
+        "Student has completed one successful POST /v1/check-ins with Idempotency-Key K1.",
+        "Ten additional enrolled students with no prior success are available for concurrent submission."
+      ],
+      "steps": [
+        "Replay POST /v1/check-ins with identical Idempotency-Key K1, same actor, and same qrToken.",
+        "Assert HTTP 200 with prior success summary without second AttendanceRecord per BR-07.",
+        "Submit duplicate with new Idempotency-Key K2 and fresh valid qrToken; assert 409 DuplicateCheckIn.",
+        "Fire ten concurrent POST /v1/check-ins from distinct students within present window.",
+        "Verify all successful outcomes used presentWindowMinutes 15 from stable BR-20 resolution."
+      ],
+      "expected": "BR-07 idempotency replay returns prior accepted result; new-key duplicate returns 409; concurrent check-ins during stable policy configuration all resolve the same effective policy with no split-brain window application.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-20-015",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-20", "FR-24", "FR-25"],
+      "title": "PolicyResolutionSummary accordion displays BR-20 precedence chain and per-field source levels",
+      "preconditions": [
+        "AcademicAdmin logged in on desktop Chromium at /admin/policies create or edit route.",
+        "Institution, course, and section policies exist with different presentWindowMinutes values.",
+        "PolicyResolutionSummary (DC-09) renders for target class section."
+      ],
+      "steps": [
+        "Navigate to FRM-07 policy form for a class section with partial override.",
+        "Expand PolicyResolutionSummary accordion sections for present window, late window, GPS required, and manual-edit window.",
+        "Verify each field shows resolved effective value and source level badge (section, course, faculty, or institution).",
+        "Confirm precedence order displayed as section → course → faculty → institution.",
+        "Change section present window value and observe summary preview updates before save."
+      ],
+      "expected": "DC-09 browser journey satisfies BR-20 explainability: admins see single effective policy with precedence chain and per-field provenance before and during configuration.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-20-016",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-20", "FR-19", "FR-25", "AC-11"],
+      "title": "Lecturer live roster shows Present and Late badges driven by BR-20 effective policy windows",
+      "preconditions": [
+        "Lecturer logged in on desktop Chromium.",
+        "Open session with section policy presentWindowMinutes 15; students have checked in within present and late windows.",
+        "Lecturer navigates to session roster page for assigned section."
+      ],
+      "steps": [
+        "Open live roster view for open session and verify SessionStatusBadge shows Open.",
+        "Confirm DataTable columns include student name, attendance status badge, check-in time, and method.",
+        "Verify students who checked in within 15-minute present window display Present badge.",
+        "Verify students who checked in after present window display Late badge.",
+        "Observe roster counts update without full page reload when a new student checks in within policy window."
+      ],
+      "expected": "Lecturer UI reflects BR-20 effective policy at runtime: Present/Late badges and roster counts match policy-resolved windows; live updates align with GET /v1/class-sessions/{sessionId}/attendance data per FR-19.",
+      "edgeCase": false
+    }
+  ]
+}
