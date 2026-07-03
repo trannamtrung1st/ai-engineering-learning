@@ -620,7 +620,7 @@
     },
     {
       "id": "web-design-system-shell",
-      "passes": true,
+      "passes": false,
       "priority": 17,
       "phase": 2,
       "agent": "frontend",
@@ -632,9 +632,12 @@
       "docs": [
         "docs/ui-ux/DESIGN.md",
         "docs/ui-ux/01-design-overview.md",
-        "docs/ui-ux/03-design-system-basics.md"
+        "docs/ui-ux/03-design-system-basics.md",
+        "docs/ui-ux/06-app-layout-components.md",
+        "docs/ui-ux/design-system/sidebars.md",
+        "docs/technical/01-roles-permissions.md"
       ],
-      "description": "Implement app shell primitives, token wiring, and shared component foundations aligned with Attendly design-system precedence.",
+      "description": "Implement app shell primitives, token wiring, and shared component foundations aligned with Attendly design-system precedence. Layout shells (StaffLayout, AdminLayout, StudentLayout) must provide a persistent nav surface on every authenticated page. SidebarNav must include the role's primary home link at the top of the list per docs/ui-ux/design-system/sidebars.md. RBAC nav gating: render only items the current role is permitted to access per role-guard.ts — omit forbidden items entirely from the DOM, never render them as disabled.",
       "completionArtifacts": [
         "apps/web/package.json",
         "apps/web/vite.config.ts",
@@ -674,7 +677,7 @@
     },
     {
       "id": "web-student-check-in-flow",
-      "passes": true,
+      "passes": false,
       "priority": 18,
       "phase": 2,
       "agent": "frontend",
@@ -689,9 +692,10 @@
       "docs": [
         "docs/ui-ux/01-ui-ux-foundation.md",
         "docs/technical/05-api-design.md",
-        "docs/brds/08-acceptance-mvp-future.md"
+        "docs/brds/08-acceptance-mvp-future.md",
+        "docs/technical/01-roles-permissions.md"
       ],
-      "description": "Build mobile-first student scan-to-check-in flow with login gate, outcome display, and concise recovery guidance.",
+      "description": "Build mobile-first student scan-to-check-in flow with login gate, outcome display, and concise recovery guidance. LoginPage heading must be generic ('Đăng nhập') with no role-specific copy. After successful auth, redirect to the role's default route per docs/technical/01-roles-permissions.md when no returnUrl is present: Student → /check-in, Lecturer/DepartmentAdmin → /lecturer/sessions, AcademicAdmin → /admin/terms, ITAdmin/SystemAuditor → /audit/logs.",
       "completionArtifacts": [
         "apps/web/vite.config.ts",
         "apps/web/src/routes/pages/StudentCheckInPage.tsx",
@@ -740,7 +744,7 @@
     },
     {
       "id": "web-student-attendance-history",
-      "passes": true,
+      "passes": false,
       "priority": 19,
       "phase": 2,
       "agent": "frontend",
@@ -752,9 +756,10 @@
       "docs": [
         "docs/ui-ux/01-design-overview.md",
         "docs/technical/05-api-design.md",
-        "docs/brds/03-functional-requirements.md"
+        "docs/brds/03-functional-requirements.md",
+        "docs/technical/01-roles-permissions.md"
       ],
-      "description": "Deliver student personal attendance history view with scoped data-only visibility and clear session/status timeline.",
+      "description": "Deliver student personal attendance history view with scoped data-only visibility and clear session/status timeline. Attendance status labels must use readable Vietnamese copy (Có mặt, Vắng mặt, Đi muộn) — never raw enum literals. Access-denied surfaces for out-of-scope requests must use FeedbackAlert variant=danger and include a 'Về trang chủ' link back to the student's home route (/check-in).",
       "completionArtifacts": [
         "apps/web/src/routes/router.tsx",
         "apps/web/src/routes/pages/StudentAttendanceHistoryPage.tsx",
@@ -813,7 +818,7 @@
     },
     {
       "id": "web-lecturer-session-control",
-      "passes": true,
+      "passes": false,
       "priority": 20,
       "phase": 2,
       "agent": "frontend",
@@ -827,9 +832,10 @@
       "docs": [
         "docs/ui-ux/00-production-ui-quality-bar.md",
         "docs/ui-ux/01-ui-ux-foundation.md",
-        "docs/technical/06-main-workflows.md"
+        "docs/technical/06-main-workflows.md",
+        "docs/ui-ux/06-app-layout-components.md"
       ],
-      "description": "Implement lecturer session operations page with open/close controls, rotating QR display, and visible session-state feedback.",
+      "description": "Implement lecturer session operations page with open/close controls, rotating QR display, and visible session-state feedback. Session detail page (/lecturer/sessions/{id}) must display a breadcrumb row via TopContextHeader per docs/ui-ux/06-app-layout-components.md; first breadcrumb links back to /lecturer/sessions. Access-denied surfaces (wrong role or out-of-scope attempt) must use FeedbackAlert variant=danger and include a 'Về trang chủ' link.",
       "completionArtifacts": [
         "apps/web/src/routes/router.tsx",
         "apps/web/src/routes/StaffLayout.tsx",
@@ -893,7 +899,7 @@
     },
     {
       "id": "web-lecturer-live-roster-fallback",
-      "passes": true,
+      "passes": false,
       "priority": 21,
       "phase": 2,
       "agent": "frontend",
@@ -908,9 +914,10 @@
       "docs": [
         "docs/ui-ux/00-production-ui-quality-bar.md",
         "docs/technical/06-main-workflows.md",
-        "docs/technical/09-error-handling.md"
+        "docs/technical/09-error-handling.md",
+        "docs/ui-ux/06-app-layout-components.md"
       ],
-      "description": "Deliver live roster with rejected-attempt visibility and in-context manual correction workflow for legitimate classroom exceptions.",
+      "description": "Deliver live roster with rejected-attempt visibility and in-context manual correction workflow for legitimate classroom exceptions. Roster page must not be a dead end — breadcrumb or sidebar home link must be present. Attempt outcome labels must use readable Vietnamese copy (Có mặt, Vắng mặt, Đi muộn) via i18n layer — never raw enum literals.",
       "completionArtifacts": [
         "apps/web/src/routes/router.tsx",
         "apps/web/src/routes/StaffLayout.tsx",
@@ -953,7 +960,7 @@
     },
     {
       "id": "web-academic-admin-academic-setup",
-      "passes": true,
+      "passes": false,
       "priority": 22,
       "phase": 2,
       "agent": "frontend",
@@ -966,9 +973,10 @@
       "docs": [
         "docs/ui-ux/01-design-overview.md",
         "docs/technical/05-api-design.md",
-        "docs/technical/10-local-development-setup.md"
+        "docs/technical/10-local-development-setup.md",
+        "docs/ui-ux/06-app-layout-components.md"
       ],
-      "description": "Build academic admin setup pages for terms/courses/sections and enrollment import workflow needed for session eligibility.",
+      "description": "Build academic admin setup pages for terms/courses/sections and enrollment import workflow needed for session eligibility. Admin detail forms (term detail, class section detail) must not be dead ends — breadcrumb via TopContextHeader links back to the parent listing. Access-denied surfaces on admin routes must use FeedbackAlert variant=danger with a 'Về trang chủ' link. No technical field names or enum literals in form labels or table headers.",
       "completionArtifacts": [
         "apps/web/src/routes/AdminLayout.tsx",
         "apps/web/src/routes/router.tsx",
@@ -1038,7 +1046,7 @@
     },
     {
       "id": "web-academic-admin-policy-management",
-      "passes": true,
+      "passes": false,
       "priority": 23,
       "phase": 2,
       "agent": "frontend",
@@ -1052,9 +1060,10 @@
       "docs": [
         "docs/ui-ux/01-ui-ux-foundation.md",
         "docs/technical/08-validation-rules.md",
-        "docs/brds/03-functional-requirements.md"
+        "docs/brds/03-functional-requirements.md",
+        "docs/ui-ux/06-app-layout-components.md"
       ],
-      "description": "Implement policy configuration interface for attendance windows, GPS constraints, and edit-window settings with precedence-aware inputs.",
+      "description": "Implement policy configuration interface for attendance windows, GPS constraints, and edit-window settings with precedence-aware inputs. Policy form and detail pages must not be dead ends — breadcrumb or sidebar home link must be present. Policy field labels must use readable Vietnamese domain copy — no raw field names (e.g. 'late_threshold_minutes' must render as a human label).",
       "completionArtifacts": [
         "apps/web/src/routes/AdminLayout.tsx",
         "apps/web/src/routes/router.tsx",
@@ -1121,7 +1130,7 @@
     },
     {
       "id": "web-academic-admin-reporting-export",
-      "passes": true,
+      "passes": false,
       "priority": 24,
       "phase": 2,
       "agent": "frontend",
@@ -1136,9 +1145,10 @@
       "docs": [
         "docs/ui-ux/00-production-ui-quality-bar.md",
         "docs/technical/05-api-design.md",
-        "docs/technical/06-main-workflows.md"
+        "docs/technical/06-main-workflows.md",
+        "docs/technical/01-roles-permissions.md"
       ],
-      "description": "Build report listing and CSV export UX with explicit scope context, filters, and pagination for academic admin workflows.",
+      "description": "Build report listing and CSV export UX with explicit scope context, filters, and pagination for academic admin workflows. Access-denied surface for unauthorized role access to reports must use FeedbackAlert variant=danger with a 'Về trang chủ' home link — never a silent redirect or blank render. Export and report actions must not be visible in nav chrome for roles that lack the required permissions.",
       "completionArtifacts": [
         "apps/web/src/routes/StaffLayout.tsx",
         "apps/web/src/routes/pages/AttendanceReportPage.tsx",
@@ -1179,7 +1189,7 @@
     },
     {
       "id": "web-system-auditor-audit-review",
-      "passes": true,
+      "passes": false,
       "priority": 25,
       "phase": 2,
       "agent": "frontend",
@@ -1193,9 +1203,10 @@
       "docs": [
         "docs/ui-ux/01-design-overview.md",
         "docs/technical/05-api-design.md",
-        "docs/technical/06-main-workflows.md"
+        "docs/technical/06-main-workflows.md",
+        "docs/ui-ux/06-app-layout-components.md"
       ],
-      "description": "Deliver read-only audit review interface for system auditor with searchable evidence trails for attendance disputes.",
+      "description": "Deliver read-only audit review interface for system auditor with searchable evidence trails for attendance disputes. Deep audit roster page (/audit/sessions/{id}) must display a breadcrumb row via TopContextHeader linking back to /audit/logs. Access-denied surfaces for non-auditor roles must use FeedbackAlert variant=danger with a 'Về trang chủ' link. Audit action labels must use readable Vietnamese copy — never raw action type keys.",
       "completionArtifacts": [
         "apps/web/src/routes/router.tsx",
         "apps/web/src/routes/StaffLayout.tsx",
