@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-13",
   "version": 1,
-  "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
-  "generatedAt": "2026-07-02T10:06:51Z",
+  "docFingerprint": "sha256:a297e0ef15d9279cea05e3e0486a1edbcbff0f8ff12f9ba243a6f6c60b73f5f1",
+  "generatedAt": "2026-07-03T04:11:05Z",
   "cases": [
     {
       "id": "TC-AC-13-001",
@@ -272,6 +272,30 @@
         "Verify page 2 returns distinct IDs with no overlap against page 1 and includes additional AC-13 correction rows."
       ],
       "expected": "Paginated audit query honors page and pageSize invariants; totalItems and totalPages reflect only authorized-scope correction events without cross-scope count leakage; manual correction audit rows from AC-13 are queryable across pages with full CMP-01 fields.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-13-013",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-form-ux",
+      "priority": "P1",
+      "traceability": ["AC-13", "FR-20", "BR-14"],
+      "title": "ManualCorrectionDialog FRM-08 enforces inline reason validation and submit feedback on PG-06",
+      "preconditions": [
+        "Lecturer is authenticated on PG-06 live roster (/lecturer/sessions/{sessionId}/roster) for assigned closed session.",
+        "Student row displays Absent status badge; manual edit window is active per effective policy.",
+        "Policy mandates reason for manual corrections (VR-MC-04, FRM-08)."
+      ],
+      "steps": [
+        "Open ManualCorrectionDialog (DC-08) from Absent student row action.",
+        "Select Manual Present in status dropdown; leave Lý do reason textarea empty and attempt submit.",
+        "Observe inline validation on reason field with aria-invalid and aria-describedby error message per FR-VAL-02.",
+        "Verify submit control remains disabled or blocked until reason is valid; confirm focus moves to first invalid field on submit.",
+        "Enter valid reason text; observe submit shows submitting/disabled state during PATCH request.",
+        "On success, verify dialog closes, post-action feedback appears, and roster row updates to Manual Present badge without stale inline errors."
+      ],
+      "expected": "FRM-08 form UX gates submission when reason is missing; inline ReasonRequired-style validation is visible and recoverable; submit feedback shows disabled/submitting states during request; successful in-window correction updates roster per AC-13 without silent failure.",
       "edgeCase": false
     }
   ]

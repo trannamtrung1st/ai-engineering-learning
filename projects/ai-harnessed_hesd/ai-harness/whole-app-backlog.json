@@ -505,6 +505,12 @@
           "kind": "drift",
           "reason": "Doc drift for AC-12 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-03T04:11:21Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-13 — reverify after TestGen",
+          "source": "harness"
         }
       ]
     },
@@ -1158,7 +1164,15 @@
         "playwright": [
           "tests/playwright-ui/scenarios/web-lecturer-live-roster-fallback.spec.ts"
         ]
-      }
+      },
+      "history": [
+        {
+          "at": "2026-07-03T04:11:21Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-13 — reverify after TestGen",
+          "source": "harness"
+        }
+      ]
     },
     {
       "id": "web-academic-admin-academic-setup",
