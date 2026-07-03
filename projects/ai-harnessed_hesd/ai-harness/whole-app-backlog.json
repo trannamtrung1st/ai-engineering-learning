@@ -42,7 +42,7 @@
     },
     {
       "id": "infra-local-runtime-compose",
-      "passes": true,
+      "passes": false,
       "priority": 2,
       "phase": 0,
       "agent": "infra",
@@ -83,13 +83,21 @@
           "apps/api/src/infra/compose-traceability.integration.test.ts"
         ],
         "acceptanceTags": [
-          "FR-07",
-          "FR-16",
           "AC-01",
           "AC-11",
+          "FR-07",
+          "FR-16",
           "NFR-16"
         ]
-      }
+      },
+      "history": [
+        {
+          "at": "2026-07-03T03:40:47Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-01 — reverify after TestGen",
+          "source": "harness"
+        }
+      ]
     },
     {
       "id": "infra-database-migrations",
@@ -133,7 +141,7 @@
     },
     {
       "id": "playwright-ui-workspace",
-      "passes": true,
+      "passes": false,
       "priority": 6,
       "phase": 0,
       "agent": "infra",
@@ -171,7 +179,15 @@
           "AC-16",
           "NFR-14"
         ]
-      }
+      },
+      "history": [
+        {
+          "at": "2026-07-03T03:40:47Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-01 — reverify after TestGen",
+          "source": "harness"
+        }
+      ]
     },
     {
       "id": "module-identity-and-access",
@@ -261,7 +277,7 @@
     },
     {
       "id": "module-session-lifecycle",
-      "passes": true,
+      "passes": false,
       "priority": 9,
       "phase": 1,
       "agent": "backend",
@@ -299,7 +315,15 @@
           "FR-07",
           "FR-08"
         ]
-      }
+      },
+      "history": [
+        {
+          "at": "2026-07-03T03:40:47Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-01 — reverify after TestGen",
+          "source": "harness"
+        }
+      ]
     },
     {
       "id": "module-check-in-and-qr-orchestrator",
@@ -894,6 +918,12 @@
           "kind": "gate_failed",
           "reason": "Computational checks failed — see 20260702T184717Z-checks.json",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-03T03:40:47Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-01 — reverify after TestGen",
+          "source": "harness"
         }
       ]
     },
@@ -1262,7 +1292,7 @@
     },
     {
       "id": "test-backend-integration-critical-path",
-      "passes": true,
+      "passes": false,
       "priority": 26,
       "phase": 3,
       "agent": "test",
@@ -1305,7 +1335,15 @@
         "playwright": [
           "tests/playwright-ui/scenarios/test-backend-integration-critical-path.spec.ts"
         ]
-      }
+      },
+      "history": [
+        {
+          "at": "2026-07-03T03:40:47Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-01 — reverify after TestGen",
+          "source": "harness"
+        }
+      ]
     },
     {
       "id": "test-e2e-role-scope-and-export",

@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-01",
   "version": 1,
-  "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
-  "generatedAt": "2026-07-02T09:41:34Z",
+  "docFingerprint": "sha256:9ba57023d6454a237bfa8bfdee6f7fe0224827f1bfbb80b8ab5fb692431c9b66",
+  "generatedAt": "2026-07-03T03:39:00Z",
   "cases": [
     {
       "id": "TC-AC-01-001",
@@ -10,7 +10,7 @@
       "layer": "e2e",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["AC-01", "FR-07", "BR-01"],
+      "traceability": ["AC-01", "FR-07", "FR-11", "BR-01"],
       "title": "Scenario-matrix coverage for lecturer opening scheduled session",
       "preconditions": [
         "Lecturer user is authenticated and assigned to the target class section.",
@@ -21,7 +21,7 @@
         "Read the open response payload and metadata.",
         "Call GET /v1/class-sessions/{sessionId}/qr/current immediately after opening."
       ],
-      "expected": "Open call succeeds and maps to testing-plan session open/close row: session is Open, openedAt and actor context are recorded, and QR endpoint returns Valid token metadata with expiry.",
+      "expected": "Open call succeeds and maps to testing-plan session open/close row: session is Open, openedAt and actor context are recorded, and QR endpoint returns Valid token metadata with expiry so QR display can start rotating.",
       "edgeCase": false
     },
     {
@@ -61,7 +61,7 @@
         "Attempt open transition for already Open session.",
         "Attempt open transition for Closed session."
       ],
-      "expected": "Scheduled session transitions to Open; Open/Closed pre-states are rejected with invalid-transition behavior and no illegal state persistence.",
+      "expected": "Scheduled session transitions to Open; Open/Closed pre-states are rejected with 409 InvalidSessionTransition (or equivalent invalid-transition behavior) and no illegal state persistence.",
       "edgeCase": true
     },
     {
@@ -89,7 +89,7 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["AC-01", "FR-07", "BR-01"],
+      "traceability": ["AC-01", "FR-07", "FR-11", "BR-01"],
       "title": "HTTP contract for opening session returns expected status and envelope",
       "preconditions": [
         "Assigned Lecturer is authenticated.",
@@ -98,9 +98,9 @@
       "steps": [
         "Send POST /v1/class-sessions/{sessionId}/open with Authorization and Idempotency-Key headers.",
         "Validate HTTP status code and JSON envelope shape.",
-        "Validate data fields state, openedAt, and qr.expiresAt are present and consistent."
+        "Validate data fields state, openedAt, and qr.expiresAt/qr.qrPayload are present and consistent."
       ],
-      "expected": "Response is 200 with standard envelope {data, meta, error}; data.state is Open and includes QR metadata required by API contract.",
+      "expected": "Response is 200 with standard envelope {data, meta, error}; data.state is Open and includes QR metadata (expiresAt, qrPayload) required by API contract.",
       "edgeCase": false
     },
     {
@@ -119,7 +119,7 @@
         "Call GET /v1/reports/attendance as Student and as out-of-scope Lecturer.",
         "Call POST /v1/exports/attendance with filters outside actor scope for same accounts."
       ],
-      "expected": "Requests are denied with authorization errors (Forbidden/OutOfScope semantics), and responses do not leak restricted rows, counts, or export artifacts.",
+      "expected": "Requests are denied with authorization errors (403 Forbidden/OutOfScope semantics), and responses do not leak restricted rows, counts, or export artifacts.",
       "edgeCase": true
     },
     {
@@ -152,14 +152,35 @@
       "title": "Lecturer browser journey opens session and sees live open-state indicators",
       "preconditions": [
         "Lecturer is logged in on desktop browser and assigned to section.",
-        "Session appears in Scheduled state on lecturer session management page."
+        "Session appears in Scheduled state on /lecturer/sessions (PG-04)."
       ],
       "steps": [
         "Open session list page and select a Scheduled session row.",
-        "Trigger Open Attendance action from UI.",
-        "Observe session badge/state, opened time indicator, and QR panel refresh behavior without full page reload."
+        "Navigate to /lecturer/sessions/{sessionId} (PG-05) and trigger Open Attendance action from SessionControlBar.",
+        "Observe session badge/state, openedAt indicator, and QrDisplayPanel refresh behavior without full page reload."
       ],
-      "expected": "UI transitions session row from Scheduled to Open, shows openedAt metadata and active QR display/refresh indicators consistent with backend open state.",
+      "expected": "UI transitions session from Scheduled to Open on PG-05, shows openedAt metadata and active QR display/refresh indicators consistent with backend open state.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-01-009",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["AC-01", "FR-07", "FR-11", "BR-01"],
+      "title": "Lecturer session list and control pages render distinct loading, empty, error, and open-state visuals",
+      "preconditions": [
+        "Lecturer is logged in on desktop staff shell.",
+        "Fixtures can produce empty session list, slow session fetch, fetch error, and a Scheduled session eligible for open."
+      ],
+      "steps": [
+        "Navigate to /lecturer/sessions (PG-04) with no sessions in scope and observe empty state.",
+        "Reload with throttled GET /v1/class-sessions and confirm loading state is visible before list renders.",
+        "Simulate session list fetch failure and observe error state with retry affordance.",
+        "Open a Scheduled session on PG-05, trigger Open Attendance, and observe Open visual state: state badge, openedAt, QrDisplayPanel with QrCountdownRing."
+      ],
+      "expected": "PG-04 shows visually distinct empty, loading, and error states per NFR-UI-07; PG-05 Open state displays rotating QR countdown and active QR panel distinct from Scheduled/Closed visuals.",
       "edgeCase": false
     }
   ]
