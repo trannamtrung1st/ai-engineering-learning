@@ -2,7 +2,7 @@
   "productItemId": "NFR-09",
   "version": 1,
   "docFingerprint": "sha256:0091ebfac485b5b90c7a94c982196a35adddc3e7535aba555ed532f8d1599fd9",
-  "generatedAt": "2026-07-02T16:30:00Z",
+  "generatedAt": "2026-07-03T05:36:00Z",
   "cases": [
     {
       "id": "TC-NFR-09-001",
@@ -327,6 +327,28 @@
         "Observe UI error state and network response for export request."
       ],
       "expected": "UI does not list unassigned sections; assigned-section export succeeds with scoped output; tampered foreign-section export request shows access-denied feedback without previewing section B attendance rows or partial export download.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-09-016",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-navigation",
+      "priority": "P1",
+      "traceability": ["NFR-09", "AC-16", "AC-23", "FR-27", "FR-32", "BR-19"],
+      "title": "Role-scoped navigation chrome omits unauthorized PG-13 report and PG-15 audit routes per permission matrix",
+      "preconditions": [
+        "Role-matrix fixtures for Student (mobile viewport 375×667) and Lecturer (desktop viewport 1280×720) are available.",
+        "Institution data includes PG-13 /reports/attendance rows and PG-15 /audit/logs entries visible to authorized staff roles only.",
+        "StaffLayout sidebar and Student mobile shell follow permissions matrix §3.1 capability-level entries and 09-page-list.md §2 home-hub and §3 nav matrix."
+      ],
+      "steps": [
+        "As Student on mobile shell, inspect persistent nav chrome and confirm no links to /reports/attendance, /audit/logs, or export actions appear.",
+        "Direct-navigate Student to /reports/attendance and /audit/logs; confirm scoped access-denied surfaces with visible home recovery link and no report table rows or audit entry evidence.",
+        "As Lecturer on desktop StaffLayout, confirm sidebar lists session control and scoped /reports/attendance for assigned sections; verify PG-15 /audit/logs and admin setup routes are omitted from nav chrome per 09-page-list.md §3.",
+        "Direct-navigate Lecturer to /audit/logs and confirm scoped access-denied surface with home recovery and no institution-wide audit listing per AuditLog.read scoped-limited boundary."
+      ],
+      "expected": "Navigation chrome enforces NFR-09 role boundaries: Student shell exposes only check-in and self-attendance surfaces without PG-13/PG-15 destinations; Lecturer staff shell shows assigned-scope report entry without PG-15 audit home hub or admin routes; unauthorized deep-links render scoped access-denied with home recovery and no cross-scope attendance or audit metadata (permissions §3.1, AC-16, BR-19).",
       "edgeCase": false
     }
   ]
