@@ -2,7 +2,7 @@
   "productItemId": "AC-05",
   "version": 1,
   "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
-  "generatedAt": "2026-07-02T09:45:00Z",
+  "generatedAt": "2026-07-03T03:46:00Z",
   "cases": [
     {
       "id": "TC-AC-05-001",
@@ -10,7 +10,7 @@
       "layer": "integration",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["AC-05", "FR-08", "BR-02"],
+      "traceability": ["AC-05", "FR-08", "BR-02", "AC-18"],
       "title": "Scenario matrix row for session close blocking self check-in",
       "preconditions": [
         "A class session exists and is transitioned from Scheduled to Open by assigned Lecturer.",
@@ -19,9 +19,9 @@
       "steps": [
         "Transition the same session to Closed via session lifecycle service path.",
         "Submit a student check-in command referencing a valid token previously issued for that session.",
-        "Query attendance records for the student and session."
+        "Query attendance records and CheckInAttempt rows for the student and session."
       ],
-      "expected": "The check-in result is rejected with SessionClosed and no new successful attendance record is created for that student-session pair.",
+      "expected": "The check-in result is rejected with SessionClosed, a failed CheckInAttempt is persisted with structured outcome, and no new successful attendance record is created for that student-session pair.",
       "edgeCase": false
     },
     {
@@ -30,7 +30,7 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["AC-05", "FR-08", "BR-02", "BR-13"],
+      "traceability": ["AC-05", "FR-08", "BR-02", "BR-13", "AC-18"],
       "title": "Close session transaction persists state and blocks subsequent success writes",
       "preconditions": [
         "Real database transaction is enabled for session and attendance modules.",
@@ -41,7 +41,7 @@
         "Immediately execute POST /v1/check-ins for the enrolled student against the same session token context.",
         "Read persisted Session, CheckInAttempt, and AttendanceRecord rows for this student and session."
       ],
-      "expected": "Session state is persisted as Closed, failed attempt is recorded with SessionClosed, and no new Present/Late success row is inserted after closure.",
+      "expected": "Session state is persisted as Closed, failed attempt is recorded with SessionClosed outcome, and no new Present/Late success row is inserted after closure.",
       "edgeCase": false
     },
     {
@@ -70,7 +70,7 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["AC-05", "FR-08", "BR-02", "AC-01"],
+      "traceability": ["AC-05", "FR-08", "BR-02", "AC-01", "AC-18"],
       "title": "HTTP contract for close then student check-in denial",
       "preconditions": [
         "Assigned Lecturer and enrolled Student accounts are authenticated.",
@@ -82,7 +82,7 @@
         "Student calls POST /v1/check-ins with qrToken bound to the same session.",
         "Inspect HTTP status and response envelope fields data/meta/error."
       ],
-      "expected": "Student request is rejected as a rule failure with error.code SessionClosed in the standard envelope and no successful attendance outcome is returned.",
+      "expected": "Student request returns HTTP 422 with error.code SessionClosed in the standard envelope, a failed CheckInAttempt is logged, and no successful attendance outcome is returned.",
       "edgeCase": false
     },
     {
@@ -119,10 +119,10 @@
       ],
       "steps": [
         "Student re-submits POST /v1/check-ins after session is Closed.",
-        "Capture returned error.code and status.",
+        "Capture returned error.code and HTTP status.",
         "Verify successful attendance row count for student-session remains one."
       ],
-      "expected": "API returns SessionClosed for post-close attempts and no additional successful attendance record is created.",
+      "expected": "API returns HTTP 422 SessionClosed (session-state check before duplicate rule) for post-close attempts and no additional successful attendance record is created.",
       "edgeCase": true
     },
     {
@@ -144,6 +144,27 @@
         "Observe UI error message, disabled or blocked submission path, and absence of success confirmation."
       ],
       "expected": "Browser flow reflects Closed state and prevents successful student check-in, surfacing SessionClosed-equivalent feedback without showing a success state.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-05-008",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["AC-05", "FR-08", "BR-02", "AC-18"],
+      "title": "Closed session renders distinct lecturer and student visual states with SessionClosed outcome",
+      "preconditions": [
+        "Lecturer is logged in on desktop staff shell with an Open session on PG-05.",
+        "Student is logged in on mobile student shell at PG-02 check-in route for the same session."
+      ],
+      "steps": [
+        "On PG-05, lecturer confirms Close attendance via ConfirmActionModal and observe Closed StatusBadge, hidden QrDisplayPanel, and locked SessionControlBar per ui-states §2.",
+        "Student submits check-in after closure and observe CheckInResultScreen outcome state failure-closed.",
+        "Verify danger alert variant, Vietnamese copy intent for SessionClosed, and no retry CTA per FLOW-02.",
+        "Confirm success-present or success-late states are not shown."
+      ],
+      "expected": "Lecturer surface shows Closed domain state (badge, QR hidden, CTAs locked) and student surface shows failure-closed danger alert with SessionClosed messaging — visually distinct from Open and success outcome states.",
       "edgeCase": false
     }
   ]
