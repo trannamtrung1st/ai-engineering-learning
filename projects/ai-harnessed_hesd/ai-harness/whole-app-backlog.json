@@ -898,7 +898,7 @@
     },
     {
       "id": "module-notification",
-      "passes": true,
+      "passes": false,
       "priority": 16,
       "phase": 1,
       "agent": "backend",
@@ -936,7 +936,15 @@
           "BR-17",
           "FR-26"
         ]
-      }
+      },
+      "history": [
+        {
+          "at": "2026-07-03T04:52:37Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-26 — reverify after TestGen",
+          "source": "harness"
+        }
+      ]
     },
     {
       "id": "web-design-system-shell",
