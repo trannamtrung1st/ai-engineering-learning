@@ -2311,7 +2311,9 @@ git_commit_allowlisted_paths() {
 
   [[ ${#to_add[@]} -gt 0 ]] || return 0
   git add -- "${to_add[@]}" 2>/dev/null || true
-  git commit -m "$message" --no-verify 2>/dev/null || true
+  # Pass an explicit pathspec so git commits ONLY the allowlisted paths (--only
+  # mode) instead of sweeping up any other pre-staged/unreviewed changes.
+  git commit -m "$message" --no-verify -- "${to_add[@]}" 2>/dev/null || true
 }
 
 testgen_owned_paths() {
