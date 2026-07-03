@@ -454,7 +454,7 @@
     },
     {
       "id": "module-attendance-ledger",
-      "passes": true,
+      "passes": false,
       "priority": 11,
       "phase": 1,
       "agent": "backend",
@@ -498,7 +498,15 @@
           "FR-20",
           "FR-21"
         ]
-      }
+      },
+      "history": [
+        {
+          "at": "2026-07-03T04:10:27Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-12 — reverify after TestGen",
+          "source": "harness"
+        }
+      ]
     },
     {
       "id": "module-policy-engine",
@@ -1565,6 +1573,12 @@
           "at": "2026-07-03T04:06:49Z",
           "kind": "drift",
           "reason": "Doc drift for AC-08 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T04:10:27Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-12 — reverify after TestGen",
           "source": "harness"
         }
       ]

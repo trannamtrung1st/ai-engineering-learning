@@ -2,7 +2,7 @@
   "productItemId": "AC-12",
   "version": 1,
   "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
-  "generatedAt": "2026-07-02T10:15:00Z",
+  "generatedAt": "2026-07-03T04:09:00Z",
   "cases": [
     {
       "id": "TC-AC-12-001",
@@ -13,7 +13,7 @@
       "traceability": ["AC-12", "FR-09", "BR-13"],
       "title": "Scenario matrix row for close-time absent finalization",
       "preconditions": [
-        "Testing-plan §3 Close-time absent finalization block applies (FR-09, BR-13, AC-12).",
+        "Testing-plan §3.1 Close-time absent finalization block applies (FR-09, BR-13, AC-12).",
         "Open class session exists with multiple enrolled students.",
         "At least one enrolled student has no successful attendance record (status Pending).",
         "At least one enrolled student has successful Present or Late check-in."
@@ -107,7 +107,7 @@
       ],
       "steps": [
         "Lecturer calls POST /v1/class-sessions/{sessionId}/close with Authorization header.",
-        "Inspect HTTP status 200, data.state Closed, data.closedAt, and data.summary.absent count.",
+        "Inspect HTTP status 200, data.state Closed, data.closedAt, and data.summary (present, late, manualPresent, absent).",
         "Call GET /v1/class-sessions/{sessionId}/attendance and inspect rows for unresolved students.",
         "Verify response envelope meta fields and error is null."
       ],
@@ -225,6 +225,29 @@
         "Verify summary chips reflect updated present, late, and absent counts."
       ],
       "expected": "Browser flow reflects Closed state per UI transition rules; unresolved enrolled students display Absent AttendanceStatusCell with danger variant; roster summary updates match close API summary; Excused/Manual Present rows if present are not overwritten.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-12-011",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["AC-12", "FR-09", "BR-13"],
+      "title": "PG-06 roster renders distinct Absent (post-close) danger badges for auto-absent students",
+      "preconditions": [
+        "Lecturer is logged in on desktop staff shell at PG-05 with an Open session.",
+        "PG-06 LiveRosterPanel shows enrolled students: at least one Present/Late, at least two Pending without successful check-in.",
+        "ConfirmActionModal auto-absent warning copy is visible per FLOW-07 step 1."
+      ],
+      "steps": [
+        "Before close, verify Pending students render neutral Pending badge in Pending group per ui-states §4.2.",
+        "Confirm close via ConfirmActionModal on PG-05 and observe Closed StatusBadge and hidden QrDisplayPanel per ui-states §2.3.",
+        "On PG-06, verify previously Pending rows transition to Absent (post-close) group with danger variant AttendanceStatusCell per ui-states §4.1.",
+        "Verify Present/Late rows retain success/warning badge variants and remain in Checked-in group.",
+        "Confirm roster summary chips update absent count to match API data.summary.absent."
+      ],
+      "expected": "Post-close PG-06 visually distinguishes auto-absent students (danger Absent badge in Absent post-close group) from checked-in students (success/warning badges) and from pre-close Pending state (neutral badge); summary chips reflect finalized absent count per AC-12 and ui-states §4.",
       "edgeCase": false
     }
   ]
