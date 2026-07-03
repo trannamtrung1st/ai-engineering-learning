@@ -113,7 +113,7 @@
     },
     {
       "id": "infra-database-migrations",
-      "passes": true,
+      "passes": false,
       "priority": 3,
       "phase": 0,
       "agent": "infra",
@@ -149,7 +149,15 @@
           "FR-18",
           "NFR-07"
         ]
-      }
+      },
+      "history": [
+        {
+          "at": "2026-07-03T04:25:14Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-04 — reverify after TestGen",
+          "source": "harness"
+        }
+      ]
     },
     {
       "id": "playwright-ui-workspace",
@@ -321,6 +329,12 @@
           "at": "2026-07-03T04:24:24Z",
           "kind": "drift",
           "reason": "Doc drift for FR-01 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T04:25:14Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-04 — reverify after TestGen",
           "source": "harness"
         }
       ]
@@ -1340,6 +1354,12 @@
           "at": "2026-07-03T04:24:24Z",
           "kind": "drift",
           "reason": "Doc drift for FR-01 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T04:25:14Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-04 — reverify after TestGen",
           "source": "harness"
         }
       ]

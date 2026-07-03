@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-04",
   "version": 1,
-  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
-  "generatedAt": "2026-07-02T10:38:00Z",
+  "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
+  "generatedAt": "2026-07-03T04:24:00Z",
   "cases": [
     {
       "id": "TC-FR-04-001",
@@ -42,10 +42,10 @@
       "steps": [
         "Send POST /v1/enrollments/import with Authorization and Idempotency-Key headers and the mixed rows payload.",
         "Validate HTTP 200 and the standard {data, meta, error} envelope.",
-        "Assert data.acceptedRows reflects the count of resolvable rows and data.rejectedRows lists each failed row with rowNumber, code, and message.",
+        "Assert data.classSectionId matches the request, data.acceptedRows reflects the count of resolvable rows, and data.rejectedRows lists each failed row with rowNumber, code, and message.",
         "Assert meta includes requestId and timestamp."
       ],
-      "expected": "Response is HTTP 200 with standard envelope; data.acceptedRows and data.rejectedRows[] (rowNumber, code, message) accurately report the outcome per row without a top-level error object.",
+      "expected": "Response is HTTP 200 with standard envelope; data.classSectionId, data.acceptedRows, and data.rejectedRows[] (rowNumber, code, message) accurately report the outcome per row without a top-level error object.",
       "edgeCase": false
     },
     {
@@ -76,7 +76,7 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["FR-04", "FR-17"],
+      "traceability": ["FR-04", "FR-17", "AC-07"],
       "title": "Remove then add enrollment updates effective check-in eligibility on next attempt",
       "preconditions": [
         "A student is actively enrolled in a class section with an open or reopenable session available for the eligibility probe.",
@@ -127,7 +127,7 @@
         "Read HTTP status and error.code from the response envelope.",
         "Query the enrollments table to confirm no rows were created."
       ],
-      "expected": "API returns a 404 (SessionNotFound/section-not-found equivalent) or 400 validation error; no enrollment rows are persisted for the missing section.",
+      "expected": "API returns HTTP 404 with SessionNotFound or equivalent section-not-found code; no enrollment rows are persisted for the missing section.",
       "edgeCase": true
     },
     {
@@ -182,15 +182,15 @@
       "title": "Concurrent imports of the same roster do not create duplicate enrollments",
       "preconditions": [
         "A valid classSectionId exists with a deterministic roster fixture.",
-        "Integration harness can issue parallel import commands sharing an Idempotency-Key or overlapping rows."
+        "Integration harness can issue parallel import commands with overlapping rows."
       ],
       "steps": [
         "Fire two parallel POST /v1/enrollments/import requests for the same classSectionId with the same rows.",
         "Await both responses and inspect acceptedRows and rejectedRows for each.",
         "Query the enrollments table and count distinct (studentId, classSectionId) rows.",
-        "Assert idempotent replay per API §7.1 returns the existing result rather than double-inserting."
+        "Assert duplicate student/section pairs are rejected or converged so only one enrollment row exists per pair."
       ],
-      "expected": "Parallel imports converge to exactly one enrollment per (student, section); duplicates are prevented via unique key or idempotent replay handling with no double-insert.",
+      "expected": "Parallel imports converge to exactly one enrollment per (student, section); duplicates are prevented via unique key or idempotent handling with no double-insert.",
       "edgeCase": true
     },
     {
@@ -200,19 +200,63 @@
       "technique": "browser-journey",
       "priority": "P0",
       "traceability": ["FR-04"],
-      "title": "Academic Admin CSV import journey shows accepted count and row-level errors",
+      "title": "Academic Admin CSV import journey on PG-10 shows accepted count and row-level errors",
       "preconditions": [
-        "AcademicAdmin is logged in on desktop Chromium.",
-        "Admin navigation exposes the class section enrollment import screen.",
+        "AcademicAdmin is logged in on desktop Chromium AdminLayout shell.",
+        "A class section exists and PG-10 enrollment import is reachable at /admin/class-sections/{id}/enrollments from PG-09 row actions.",
         "A CSV file with a mix of valid and invalid student codes is available for upload."
       ],
       "steps": [
-        "Navigate to the class section detail and open the enrollment import (CSV upload) form.",
-        "Upload the mixed CSV and submit the import.",
-        "Observe the import result summary showing accepted count and a row-level rejection table with rowNumber, code, and message per rejected row.",
-        "Confirm accepted students then appear in the section's enrollment list/table without a full page reload where SPA routing applies."
+        "Navigate from PG-09 class sections to PG-10 enrollment import for the target section.",
+        "Upload the mixed CSV via FRM-06 file-drop zone and submit the import.",
+        "Observe the import result summary showing acceptedRows count and a row-level rejection table with rowNumber, code, and message per rejected row.",
+        "Confirm accepted students appear in the section enrollment DataTable without full page reload where SPA routing applies."
       ],
-      "expected": "Import UI surfaces the accepted count and an explicit per-row rejection table (no silent skips); accepted students render in the enrollment list, matching the FR-04 row-level error reporting requirement.",
+      "expected": "PG-10 FRM-06 import UI surfaces the accepted count and an explicit per-row rejection table (no silent skips); accepted students render in the enrollment list, matching the FR-04 row-level error reporting requirement.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-04-011",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-form-ux",
+      "priority": "P1",
+      "traceability": ["FR-04"],
+      "title": "FRM-06 enrollment CSV import shows pre-validation, submitting disable, and row-level result feedback",
+      "preconditions": [
+        "AcademicAdmin is logged in on PG-10 at /admin/class-sections/{id}/enrollments.",
+        "FRM-06 file-drop zone is visible with CSV upload affordance."
+      ],
+      "steps": [
+        "Attempt submit without selecting a file and observe inline validation or disabled submit until a file is chosen.",
+        "Upload a CSV missing required student identifier column and observe client pre-validation error before POST /v1/enrollments/import.",
+        "Upload a valid mixed CSV, submit, and observe submitting state disables the import control with loading indicator.",
+        "On HTTP 200 response observe acceptedRows success summary plus row-level error table columns (row number, error code, message) for rejected rows per FR-VAL-04.",
+        "Correct the source file and re-import to confirm partial-success UX: accepted rows remain applied while new rejection table reflects only remaining invalid rows."
+      ],
+      "expected": "FRM-06 enforces pre-validation of required columns, disabled submitting state during import, explicit acceptedRows success feedback, and a row-level rejection table that never silently skips invalid rows; re-import after correction is supported without ambiguous intermediate state.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-04-012",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["FR-04"],
+      "title": "PG-10 enrollment listing renders distinct loading, empty, no-results, error, and list states",
+      "preconditions": [
+        "AcademicAdmin is logged in on desktop AdminLayout shell.",
+        "Fixtures can produce empty enrollment list, slow enrollment fetch, fetch error, filtered zero-match, and populated enrollment list for a class section."
+      ],
+      "steps": [
+        "Navigate to PG-10 for a section with no enrollments and observe empty state with import CTA.",
+        "Reload with throttled enrollment list fetch and confirm loading skeleton or table shimmer before rows render.",
+        "Apply search or enrollment-status filter yielding zero matches and observe no-results state with clear-filters affordance.",
+        "Simulate enrollment list API failure and observe error state with FeedbackAlert and retry control.",
+        "Restore successful fetch and confirm list state shows DataTable with student code, name, enrollment status, TableToolbar filters, and server pagination per 09-page-list §8."
+      ],
+      "expected": "PG-10 displays visually distinct loading, empty, no-results, error, and list states per NFR-UI-07; populated enrollment list includes expected columns with search, filter, sort, and pagination controls scoped to the class section.",
       "edgeCase": false
     }
   ]
