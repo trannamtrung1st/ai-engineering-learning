@@ -61,7 +61,6 @@ cat > "${REPO_ROOT}/package.json" <<EOF
     "aih:preview:full": "./ai-harness/scripts/preview-stack.sh --mode full",
     "aih:preview:down": "./ai-harness/scripts/preview-stack.sh --down",
     "aih:preview:verify": "./ai-harness/scripts/verify-stack.sh",
-    "aih:preview:scenarios": "./ai-harness/scripts/verify-scenarios.sh",
     "aih:preview:logs": "./ai-harness/scripts/preview-logs.sh",
     "aih:playwright-mcp:clean": "./ai-harness/scripts/cleanup-playwright-mcp.sh",
     "aih:generated:clean": "./ai-harness/scripts/cleanup-generated.sh",

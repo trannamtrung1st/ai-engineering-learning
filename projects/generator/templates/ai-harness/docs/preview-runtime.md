@@ -275,12 +275,11 @@ echo "  Stop: npm run aih:preview:down"
 
 ## Harness gate integration
 
-`run-checks.sh` invokes `verify-stack.sh` and `verify-scenarios.sh` when `apps/api` and `apps/web` exist:
+`run-checks.sh` invokes `verify-stack.sh` when `apps/api` and `apps/web` exist:
 
 - **Default (`npm run aih:check`):** `--quick` — skips when services are not listening; fails if up but unhealthy.
 - **Full poll:** set `AIH_VERIFY_STACK=1` before `aih:check` (expects preview stack running).
 - **Slice-scoped web probe:** backend/infra slices use `verify-stack.sh --api-only` (API health only). Frontend and test slices also require web `GET /` HTTP 200.
-- **Scenario probe:** `verify-scenarios.sh` runs independently of web health when `ai-harness/config/scenario-probe.json` exists; otherwise SKIP.
 - **After build:** when preview is **not** running, full workspace build includes web and api. When preview **is** running, `run-checks.sh` skips `apps/web` and `apps/api` build to preserve dev `.next` and API `dist/` runtime (typecheck still covers both).
 - **Preview seed (optional):** set `AIH_PREVIEW_SEED_ENABLED=1` to export `SEED_ENABLED=true` when the API supervisor starts (enable when your API supports preview fixtures).
 
@@ -360,9 +359,6 @@ npm run aih:preview:full
 
 # Verify already-running stack (API + web)
 npm run aih:preview:verify
-
-# API scenario probe (independent of web; requires scenario-probe.json)
-npm run aih:preview:scenarios
 
 # View / follow logs (combined or per-service)
 npm run aih:preview:logs

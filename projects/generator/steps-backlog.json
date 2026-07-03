@@ -498,11 +498,10 @@
       "phase": 4,
       "kind": "agent",
       "agent": "harness-planner",
-      "description": "Generate context-map, testgen-docs-map, test-case-index, scenario-probe, manuals config",
+      "description": "Generate context-map, testgen-docs-map, test-case-index, manuals config",
       "outputs": [
         "ai-harness/config/context-map.json",
         "ai-harness/config/testgen-docs-map.json",
-        "ai-harness/config/scenario-probe.json",
         "ai-harness/config/manualsgen-docs-map.json",
         "ai-harness/test-case-index.json",
         "ai-harness/manuals-backlog.json",

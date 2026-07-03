@@ -560,11 +560,10 @@ check_stack_startup() {
     return 0
   fi
 
-  local verify_script scenario_script
+  local verify_script
   local verify_args=()
-  local stack_out scenario_out stack_label scenario_label
+  local stack_out stack_label
   verify_script="$(dirname "$0")/verify-stack.sh"
-  scenario_script="$(dirname "$0")/verify-scenarios.sh"
   if [[ ! -x "$verify_script" ]]; then
     aih_check_skip "stack startup probe (verify-stack.sh missing)"
     return 0
@@ -608,40 +607,6 @@ check_stack_startup() {
     PASS=false
   else
     aih_check_ok "$stack_label"
-  fi
-
-  if [[ ! -x "$scenario_script" ]]; then
-    aih_check_skip "scenario probe (verify-scenarios.sh missing)"
-    return 0
-  fi
-
-  local scenario_args=()
-  if [[ "${AIH_VERIFY_STACK:-}" != "1" ]]; then
-    scenario_args=(--quick)
-    scenario_label="./ai-harness/scripts/verify-scenarios.sh --quick"
-  else
-    scenario_label="./ai-harness/scripts/verify-scenarios.sh"
-  fi
-
-  aih_check_begin "$scenario_label"
-  set +e
-  if [[ ${#scenario_args[@]} -gt 0 ]]; then
-    scenario_out="$("$scenario_script" "${scenario_args[@]}" 2>&1)"
-  else
-    scenario_out="$("$scenario_script" 2>&1)"
-  fi
-  local scenario_status=$?
-  set -e
-  if [[ -n "$scenario_out" ]]; then
-    echo "$scenario_out"
-  fi
-
-  if [[ "$scenario_status" -ne 0 ]]; then
-    aih_check_fail "$scenario_label (exit ${scenario_status})"
-    FAILURES+=("{\"type\":\"runtime\",\"message\":\"scenario probe failed\"}")
-    PASS=false
-  else
-    aih_check_ok "$scenario_label"
   fi
 }
 
