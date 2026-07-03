@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-37",
   "version": 1,
-  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
-  "generatedAt": "2026-07-02T11:47:34Z",
+  "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
+  "generatedAt": "2026-07-03T05:09:05Z",
   "cases": [
     {
       "id": "TC-FR-37-001",
@@ -323,6 +323,29 @@
         "Verify no institution-wide row counts or other students' identifiers appear on either route."
       ],
       "expected": "Student is denied institution report UI without restricted data leakage; personal history at /me/attendance remains the authorized self-service path (AC-16, BR-19, AC-UI-09).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-37-016",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["FR-37", "PRM-03"],
+      "title": "PG-03 AttendanceHistoryList renders distinct loading, empty, no-results, and error states",
+      "preconditions": [
+        "Student is logged in on mobile-web Chromium viewport (StudentLayout shell).",
+        "Fixtures can produce slow self-scoped report fetch, zero personal attendance records, status filter with zero matches, API failure, and populated history rows on PG-03 /me/attendance.",
+        "AttendanceHistoryList (DC-10) is mounted per 09-page-list.md PG-03 key states."
+      ],
+      "steps": [
+        "Navigate to /me/attendance while throttling GET /v1/reports/attendance; observe loading skeleton or list shimmer before rows render.",
+        "Load PG-03 for a student enrolled in sections with no attendance records yet; observe empty state with localized guidance and no create CTA (student cannot author records).",
+        "Apply status or section filter that matches zero rows within self-scope; observe no-results state with clear-filters affordance per FR-LST-05.",
+        "Trigger report API error (5xx or simulated network failure) on PG-03 load; observe FeedbackAlert with retry affordance.",
+        "Restore successful fetch and confirm populated AttendanceHistoryList with section grouping, status badges, and method labels is visually distinct from loading, empty, no-results, and error states."
+      ],
+      "expected": "PG-03 satisfies NFR-UI-07 listing state coverage per 12-ui-states.md §6: loading, empty, no-results, error, and list states are visually distinct on mobile-first layout; no state exposes other students' identifiers, cross-scope totals, or export affordances (PRM-03, FR-37).",
       "edgeCase": false
     }
   ]
