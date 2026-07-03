@@ -1056,7 +1056,7 @@
     },
     {
       "id": "module-realtime-delivery",
-      "passes": false,
+      "passes": true,
       "priority": 15,
       "phase": 1,
       "agent": "backend",

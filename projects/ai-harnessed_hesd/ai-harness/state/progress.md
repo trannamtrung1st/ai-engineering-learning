@@ -311,3 +311,5 @@
 - 2026-07-03T09:30:24Z | module-check-in-and-qr-orchestrator | review_failed
 - 2026-07-03T09:33:28Z | module-check-in-and-qr-orchestrator | implementer: fixed AI review blocker — write path now calls evaluateCheckInFailure (session→token→enrollment→duplicate→GPS payload) before evaluateGpsDistance; DuplicateCheckIn short-circuits before GpsRequired/OutOfRadius per VR §2.2 — added TC-BR-07-009 integration test — checks: full profile pass (unit 222/222, integration 214/214, e2e 21/21)
 - 2026-07-03T09:36:13Z | module-check-in-and-qr-orchestrator | passed
+- 2026-07-03T09:37:42Z | module-realtime-delivery | implementer: re-verified after TestGen doc drift (FR-19 FR-14 AC-02 NFR-01 NFR-16) — M09 SSE roster events (`GET /class-sessions/{id}/attendance/events`), polling-compatible roster projection from M04/M05 commits, QrTokenIssued/CheckInAttemptRecorded/SessionOpened|Closed operational telemetry, dedicated M09 faculty/term hierarchy fixtures — checks: full profile pass (unit 222/222, integration 214/214, e2e 21/21, generated test case coverage pass)
+- 2026-07-03T09:41:32Z | module-realtime-delivery | passed
