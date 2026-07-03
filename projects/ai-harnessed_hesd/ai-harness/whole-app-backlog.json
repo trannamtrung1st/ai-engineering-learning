@@ -785,6 +785,12 @@
           "kind": "gate_failed",
           "reason": "Browser test failed — see 20260702T172530Z-browser-test.json",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-03T03:47:33Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-06 — reverify after TestGen",
+          "source": "harness"
         }
       ]
     },
@@ -951,6 +957,12 @@
           "at": "2026-07-03T03:42:41Z",
           "kind": "drift",
           "reason": "Doc drift for AC-02 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T03:47:33Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-06 — reverify after TestGen",
           "source": "harness"
         }
       ]
@@ -1567,7 +1579,15 @@
           "FR-15",
           "NFR-14"
         ]
-      }
+      },
+      "history": [
+        {
+          "at": "2026-07-03T03:47:33Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-06 — reverify after TestGen",
+          "source": "harness"
+        }
+      ]
     },
     {
       "id": "web-access-denied-breadcrumb-polish",

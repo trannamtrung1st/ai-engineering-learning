@@ -2,7 +2,7 @@
   "productItemId": "AC-06",
   "version": 1,
   "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
-  "generatedAt": "2026-07-02T09:48:42Z",
+  "generatedAt": "2026-07-03T03:48:00Z",
   "cases": [
     {
       "id": "TC-AC-06-001",
@@ -13,7 +13,7 @@
       "traceability": ["AC-06", "FR-15", "FR-36", "BR-05"],
       "title": "Scenario matrix row for student login gate before check-in submission",
       "preconditions": [
-        "Testing-plan §3 Student check-in validation block applies (FR-15, FR-16, FR-17, FR-18, BR-05 to BR-07).",
+        "Testing-plan §12 Student check-in validation row applies (FR-15, FR-36, BR-05; AC-06).",
         "An Open class session exists with a valid QR token and enrolled student fixture available."
       ],
       "steps": [
@@ -163,30 +163,29 @@
         "Submit check-in command with valid qrToken through the module integration boundary without Authorization.",
         "Capture afterState for session roster rows and any persisted attempt records."
       ],
-      "expected": "SM-04 evaluation short-circuits at Unauthenticated as the first guard per validation order; afterState shows no Present/Late AttendanceRecord mutation and the API layer returns 401 with error.code Unauthenticated.",
+      "expected": "Validation order short-circuits at Unauthenticated as the first guard per API design §5.1; afterState shows no Present/Late AttendanceRecord mutation and the API layer returns 401 with error.code Unauthenticated.",
       "edgeCase": true
     },
     {
-      "id": "TC-AC-06-009",
-      "category": "functional",
+      "id": "TC-AC-06-010",
+      "category": "ui-ux",
       "layer": "browser",
-      "technique": "browser-journey",
+      "technique": "ui-visual-state",
       "priority": "P1",
-      "traceability": ["AC-06", "FR-15", "NFR-14"],
-      "title": "Lecturer navigating to /login without returnUrl lands on lecturer home after authentication",
+      "traceability": ["AC-06", "FR-15", "FR-36", "BR-05"],
+      "title": "Student check-in authenticating state and login gate visuals block premature submission",
       "preconditions": [
-        "Lecturer user account exists with valid credentials.",
-        "Browser profile has no active Attendly session.",
-        "Login URL is opened directly without a returnUrl query parameter."
+        "Open class session with valid QR token exists; check-in deep link /check-in?token=... is available.",
+        "Browser profile has no active Attendly session cookie.",
+        "Student mobile shell (SUR-01) viewport at 375px width per NFR-14."
       ],
       "steps": [
-        "Navigate to /login with no returnUrl query parameter.",
-        "Verify login page heading does not mention any role name (e.g. must not read 'Đăng nhập Giáo viên').",
-        "Enter valid Lecturer credentials and submit the login form.",
-        "Observe the URL the browser navigates to after successful authentication.",
-        "Inspect the nav chrome on the landing page."
+        "Navigate to PG-02 check-in URL with token query parameter while unauthenticated.",
+        "Observe transient authenticating visual state per ui-states §4 (Unauthenticated → authenticating) before redirect to PG-01.",
+        "On PG-01, confirm generic login heading (e.g. 'Đăng nhập') without role-specific copy and FRM-01 form-level guidance intent 'Đăng nhập để tiếp tục.'",
+        "Verify check-in submit CTA is not reachable and no success-present or success-late visual state appears without completing login."
       ],
-      "expected": "Login page heading is a generic label such as 'Đăng nhập' with no role-specific copy. After successful authentication, browser navigates to /lecturer/sessions (Lecturer default home), not /check-in or any other student-scoped route. Nav chrome on the landing page shows only Lecturer-permitted items; no Student-only or Admin-only links are visible.",
+      "expected": "PG-02 shows distinct authenticating/redirect state (not idle ready-to-submit or success outcome); PG-01 presents FRM-01 without role leakage; unauthenticated user cannot reach check-in submission UI until auth gate clears per AC-06.",
       "edgeCase": false
     }
   ]
