@@ -25,6 +25,10 @@
   .projection .qrRegion {
     padding: var(--space-2);
   }
+
+  .projection .actions {
+    display: none;
+  }
 }
 
 .header {

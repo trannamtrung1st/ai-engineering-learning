@@ -15,7 +15,7 @@ export function DesignSystemPage() {
   return (
     <MobileFlowContainer
       title="Attendly Design System"
-      subtitle="Tokenized Neobrutalism shell — FR-14 · NFR-14 · NFR-15 foundations"
+      subtitle="Thành phần giao diện dùng chung và lối tắt xem trước"
     >
       <ContentSection title="Primitives">
         <Card>
@@ -36,19 +36,19 @@ export function DesignSystemPage() {
       <ContentSection title="Route shells">
         <div className={styles.links}>
           <Link className={styles.routeLink} to="/check-in?outcome=expired-qr">
-            PG-02 · Mobile check-in outcomes
+            Kết quả điểm danh trên mobile
           </Link>
           <Link className={styles.routeLink} to="/login?returnUrl=%2Fcheck-in%3Ftoken%3Ddemo">
-            PG-01 · Login gate với return URL
+            Đăng nhập với return URL
           </Link>
           <Link className={styles.routeLink} to={`/lecturer/sessions/${SEED_SESSION_OPEN_ID}`}>
             PG-05 · QrDisplayPanel (Open)
           </Link>
           <Link className={styles.routeLink} to="/lecturer/sessions">
-            PG-04 · Lecturer session list
+            Danh sách buổi học
           </Link>
           <Link className={styles.routeLink} to={`/lecturer/sessions/${SEED_SESSION_SCHEDULED_ID}`}>
-            PG-05 · Session control (Scheduled)
+            Điều khiển buổi học (đã lên lịch)
           </Link>
         </div>
       </ContentSection>

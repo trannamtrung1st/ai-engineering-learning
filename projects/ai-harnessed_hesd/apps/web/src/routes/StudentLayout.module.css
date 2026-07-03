@@ -1,0 +1,39 @@
+.shell {
+  min-height: 100vh;
+  background: var(--page-bg);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: var(--border-default);
+  background: var(--color-neutral-primary-soft);
+  box-shadow: var(--shadow-xs);
+}
+
+.homeLink {
+  color: var(--color-text-heading);
+  font-weight: var(--font-weight-semibold);
+  text-decoration: none;
+  min-height: 2.75rem;
+  display: inline-flex;
+  align-items: center;
+  padding-inline: var(--space-2);
+}
+
+.homeLink:hover {
+  color: var(--color-fg-brand-strong);
+}
+
+.homeLink:focus-visible {
+  outline: 2px solid var(--color-border-default);
+  outline-offset: 2px;
+}
+
+.logout {
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+}

@@ -1200,7 +1200,8 @@
       "testRequirements": {
         "unit": [
           "apps/web/src/lib/i18n/check-in-outcomes.test.ts",
-          "apps/web/src/lib/auth/auth-gate.test.ts"
+          "apps/web/src/lib/auth/auth-gate.test.ts",
+          "apps/web/src/lib/auth/logout.test.ts"
         ],
         "component": [
           "apps/web/src/components/ui/Button.test.tsx",
@@ -1209,7 +1210,10 @@
           "apps/web/src/components/domain/QrDisplayPanel.test.tsx",
           "apps/web/src/components/domain/QrCountdownRing.test.tsx",
           "apps/web/src/components/domain/CheckInResultScreen.test.tsx",
-          "apps/web/src/components/layout/AppShell.test.tsx"
+          "apps/web/src/components/layout/AppShell.test.tsx",
+          "apps/web/src/components/layout/SidebarNav.test.tsx",
+          "apps/web/src/routes/StudentLayout.test.tsx",
+          "apps/web/src/routes/pages/LecturerSessionProjectionDemo.test.tsx"
         ],
         "playwright": [
           "tests/playwright-ui/scenarios/web-design-system-shell.spec.ts"
@@ -1257,6 +1261,30 @@
           "at": "2026-07-03T06:37:42Z",
           "kind": "drift",
           "reason": "Doc drift for FR-38 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T07:06:11Z",
+          "kind": "gate_failed",
+          "reason": "Computational checks failed — see 20260703T065247Z-checks.json",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T07:34:02Z",
+          "kind": "gate_failed",
+          "reason": "Browser test failed — see 20260703T070611Z-browser-test.json",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T07:59:58Z",
+          "kind": "gate_failed",
+          "reason": "Browser test failed — see 20260703T073402Z-browser-test.json",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T08:16:31Z",
+          "kind": "gate_failed",
+          "reason": "Computational checks failed — see 20260703T075958Z-checks.json",
           "source": "harness"
         }
       ]

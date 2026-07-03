@@ -8,28 +8,28 @@ import {
   canAccessAuditLogs,
   canAccessInstitutionReport,
   canAccessSessionControl,
+  resolveStaffHomeNav,
 } from "../lib/auth/role-guard";
 
-const baseStaffNav: SidebarNavItem[] = [
-  { to: "/showcase", label: "Design system" },
-  { to: "/lecturer/sessions", label: "Buổi học (PG-04)" },
-  { to: "/reports/attendance", label: "Báo cáo (PG-13)" },
-  { to: "/audit/logs", label: "Audit (PG-15)" },
-];
-
 function resolveStaffNavItems(roles: string[]): SidebarNavItem[] {
-  return baseStaffNav.filter((item) => {
-    if (item.to === "/lecturer/sessions") {
-      return canAccessSessionControl(roles);
-    }
-    if (item.to === "/reports/attendance") {
-      return canAccessInstitutionReport(roles);
-    }
-    if (item.to === "/audit/logs") {
-      return canAccessAuditLogs(roles);
-    }
-    return true;
-  });
+  const home = resolveStaffHomeNav(roles);
+  const items: SidebarNavItem[] = [home];
+
+  if (home.to !== "/lecturer/sessions" && canAccessSessionControl(roles)) {
+    items.push({ to: "/lecturer/sessions", label: "Buổi học" });
+  }
+
+  if (canAccessInstitutionReport(roles)) {
+    items.push({ to: "/reports/attendance", label: "Báo cáo điểm danh" });
+  }
+
+  if (home.to !== "/audit/logs" && canAccessAuditLogs(roles)) {
+    items.push({ to: "/audit/logs", label: "Nhật ký kiểm toán" });
+  }
+
+  items.push({ to: "/showcase", label: "Design system" });
+
+  return items;
 }
 
 export function StaffLayout() {
@@ -67,7 +67,6 @@ export function StaffLayout() {
         <TopContextHeader
           eyebrow={headerEyebrow}
           title={headerTitle}
-          meta="LAY-02 · AppShell + SidebarNav + TopContextHeader"
         />
       }
     >

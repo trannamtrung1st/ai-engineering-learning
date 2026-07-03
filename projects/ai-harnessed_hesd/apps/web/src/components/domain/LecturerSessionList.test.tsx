@@ -7,13 +7,17 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { LecturerSessionList } from "./LecturerSessionList";
 
-vi.mock("../../lib/api/session-api", () => ({
-  fetchClassSessions: vi.fn(),
-  formatRoomLabel: (session: { roomCode: string | null; roomName: string | null }) =>
-    session.roomCode ?? "—",
-  formatScheduledAt: () => "08:00",
-  formatSessionLabel: (session: { courseName: string }) => session.courseName,
-}));
+vi.mock("../../lib/api/session-api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../lib/api/session-api")>();
+  return {
+    ...actual,
+    fetchClassSessions: vi.fn(),
+    formatRoomLabel: (session: { roomCode: string | null; roomName: string | null }) =>
+      session.roomCode ?? "—",
+    formatScheduledAt: () => "08:00",
+    formatSessionLabel: (session: { courseName: string }) => session.courseName,
+  };
+});
 
 import { fetchClassSessions } from "../../lib/api/session-api";
 
@@ -49,7 +53,9 @@ describe("LecturerSessionList (FR-06 FR-07 FR-10 AC-01)", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByText("SE101-01")).toBeInTheDocument();
+      expect(screen.getByRole("table", { name: "Danh sách buổi học được phân công" })).toHaveTextContent(
+        "SE101-01",
+      );
     });
 
     expect(screen.getByRole("link", { name: "Mở điểm danh" })).toHaveAttribute(

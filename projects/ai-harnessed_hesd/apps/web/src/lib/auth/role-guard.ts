@@ -58,3 +58,21 @@ export function isSystemAuditor(roles: string[]): boolean {
 export function isReadOnlyStaffRole(roles: string[]): boolean {
   return isSystemAuditor(roles);
 }
+
+export interface StaffNavLink {
+  to: string;
+  label: string;
+}
+
+/** Role home link — always first in SidebarNav per design-system/sidebars.md */
+export function resolveStaffHomeNav(roles: string[]): StaffNavLink {
+  if (
+    !canAccessSessionControl(roles) &&
+    canAccessAuditLogs(roles) &&
+    roles.some((role) => role === "ITAdmin" || role === "SystemAuditor")
+  ) {
+    return { to: "/audit/logs", label: "Nhật ký kiểm toán" };
+  }
+
+  return { to: "/lecturer/sessions", label: "Phiên học" };
+}

@@ -8,6 +8,7 @@ import {
   isReadOnlyStaffRole,
   isStudentOnly,
   isSystemAuditor,
+  resolveStaffHomeNav,
 } from "./role-guard.js";
 
 /** Traceability: BR-19 AC-16 FR-32 FR-37 */
@@ -52,5 +53,16 @@ describe("role-guard — BR-19 AC-16 FR-32", () => {
     expect(canAccessSessionControl(["AcademicAdmin"])).toBe(true);
     expect(canAccessSessionControl(["Student"])).toBe(false);
     expect(canAccessSessionControl(["SystemAuditor"])).toBe(false);
+  });
+
+  it("resolveStaffHomeNav puts audit home first for auditor-only staff — FR-14", () => {
+    expect(resolveStaffHomeNav(["SystemAuditor"])).toEqual({
+      to: "/audit/logs",
+      label: "Nhật ký kiểm toán",
+    });
+    expect(resolveStaffHomeNav(["Lecturer"])).toEqual({
+      to: "/lecturer/sessions",
+      label: "Phiên học",
+    });
   });
 });

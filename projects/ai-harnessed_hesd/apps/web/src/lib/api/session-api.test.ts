@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ErrorCode } from "@attendly/domain";
 import {
+  buildSessionSectionFilterOptions,
   closeClassSession,
   fetchClassSessions,
   fetchCurrentQr,
@@ -163,5 +164,34 @@ describe("session-api (FR-07 FR-14 AC-01 AC-02)", () => {
       scheduledStartAt: "2026-07-03T08:00:00Z",
     });
     expect(label).toContain("Nhập môn phần mềm");
+  });
+
+  it("TC-UX-COMMON-006: session section filter labels use section codes not UUID fragments", () => {
+    const options = buildSessionSectionFilterOptions(
+      [
+        "50000000-0000-4000-8000-000000000001",
+        "93947384-0000-4000-8000-000000000099",
+      ],
+      [
+        {
+          classSessionId: "sess-1",
+          classSectionId: "93947384-0000-4000-8000-000000000099",
+          sectionCode: "SE102-01",
+          courseName: "Web",
+          roomCode: null,
+          roomName: null,
+          scheduledStartAt: "2026-07-03T08:00:00Z",
+          scheduledEndAt: "2026-07-03T09:30:00Z",
+          state: "Scheduled",
+          openedAt: null,
+          closedAt: null,
+        },
+      ],
+      "50000000-0000-4000-8000-000000000001",
+      "SE101-01",
+    );
+
+    expect(options.map((option) => option.label)).toEqual(["SE101-01", "SE102-01"]);
+    expect(options.every((option) => !option.label.match(/^50000000/))).toBe(true);
   });
 });

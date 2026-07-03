@@ -7,7 +7,7 @@ import { MobileFlowContainer } from "../../components/layout/MobileFlowContainer
 import { loginStudent } from "../../lib/api/auth-api";
 import {
   markStudentAuthenticated,
-  resolveReturnUrl,
+  resolvePostLoginPath,
 } from "../../lib/auth/auth-gate";
 import { setAccessToken } from "../../lib/auth/session";
 import { resolveStudentEmail } from "../../lib/auth/student-login";
@@ -16,7 +16,7 @@ import styles from "./LoginPage.module.css";
 export function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const returnUrl = resolveReturnUrl(searchParams, "/check-in");
+  const hasReturnUrl = searchParams.has("returnUrl");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -37,14 +37,14 @@ export function LoginPage() {
         if (result.roles.includes("Student")) {
           markStudentAuthenticated();
         }
-        navigate(returnUrl);
+        navigate(resolvePostLoginPath(result.roles, searchParams));
         return;
       }
 
       // Design-system preview journeys use mock credentials without API backing.
       if (password === "test") {
         markStudentAuthenticated();
-        navigate(returnUrl);
+        navigate(resolvePostLoginPath(["Student"], searchParams));
         return;
       }
 
@@ -52,7 +52,7 @@ export function LoginPage() {
     } catch {
       if (password === "test") {
         markStudentAuthenticated();
-        navigate(returnUrl);
+        navigate(resolvePostLoginPath(["Student"], searchParams));
         return;
       }
       setError("Không thể kết nối máy chủ. Vui lòng thử lại.");
@@ -62,10 +62,11 @@ export function LoginPage() {
   }
 
   return (
-    <MobileFlowContainer title="Đăng nhập" subtitle="PG-01 · Xác thực sinh viên">
+    <MobileFlowContainer title="Đăng nhập" subtitle="Xác thực tài khoản Attendly">
       <FeedbackAlert variant="brand" title="Đăng nhập để tiếp tục">
-        Vui lòng đăng nhập để tiếp tục điểm danh. Sau khi đăng nhập, bạn sẽ được chuyển về{" "}
-        <code>{returnUrl}</code>.
+        {hasReturnUrl
+          ? `Sau khi đăng nhập, bạn sẽ được chuyển về trang đã yêu cầu.`
+          : "Đăng nhập để truy cập không gian làm việc theo vai trò của bạn."}
       </FeedbackAlert>
 
       {error ? (

@@ -68,3 +68,11 @@ tests/playwright-ui/scenarios/web-design-system-shell.spec.ts
 - [FR-38] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:18ec16d67172eb500b60adac82431bb479061eda90fc6ac1640887f5e0d05624)
 - [AC-26] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:eb6e11490d7ebd3f3bf617fba3d1e2eb4391068feb30a373adf2b547934b7f71)
 - [BR-24] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:ed67f1d5160207929de1a4e84d3cdc8bd59bac9d0a83c8209051fb39f3112f68)
+- [web-design-system-shell] Computational checks failed — see 20260703T065247Z-checks.json
+- [web-design-system-shell] Browser test failed — see 20260703T070611Z-browser-test.json
+- [web-design-system-shell] LoginPage must use resolvePostLoginPath — default returnUrl=/check-in breaks TC-UX-COMMON-005 staff/admin role homes after voluntary logout
+- [web-design-system-shell] Staff SidebarNav labels and TopContextHeader meta must not expose PG-XX / LAY-XX codes in user-facing chrome (TC-UX-COMMON-006)
+- [web-design-system-shell] Browser test failed — see 20260703T073402Z-browser-test.json
+- [web-design-system-shell] AdminLayout must RBAC-gate sidebar nav — students deep-linking /admin/* must not see Thiết lập học kỳ / Lớp học phần / Chính sách links (TC-UX-COMMON-003 UX-001)
+- [web-design-system-shell] PG-04 session list section filter must use buildSessionSectionFilterOptions with sectionCode from loaded sessions — never id.slice(0,8) UUID fragments (TC-UX-COMMON-006)
+- [web-design-system-shell] Computational checks failed — see 20260703T075958Z-checks.json

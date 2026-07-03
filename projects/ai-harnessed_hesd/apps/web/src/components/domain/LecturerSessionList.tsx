@@ -7,12 +7,17 @@ import {
   sessionListQueryToSearchParams,
 } from "../../lib/listing/session-list-query";
 import {
+  buildSessionSectionFilterOptions,
   fetchClassSessions,
   formatRoomLabel,
   formatScheduledAt,
   formatSessionLabel,
   type ClassSessionSummary,
 } from "../../lib/api/session-api";
+import {
+  DEFAULT_SECTION_LABEL,
+  SEED_SECTION_ID,
+} from "../../lib/api/seed-fixtures";
 import { Button } from "../ui/Button";
 import { DataTable } from "../ui/DataTable";
 import { FeedbackAlert } from "../ui/FeedbackAlert";
@@ -143,6 +148,21 @@ export function LecturerSessionList({ sectionOptions = [] }: LecturerSessionList
   const pageStart = totalItems === 0 ? 0 : (query.page - 1) * query.pageSize + 1;
   const pageEnd = Math.min(query.page * query.pageSize, totalItems);
 
+  const resolvedSectionOptions = useMemo(() => {
+    const ids = sectionOptions.map((option) => option.value);
+    for (const row of items) {
+      if (!ids.includes(row.classSectionId)) {
+        ids.push(row.classSectionId);
+      }
+    }
+    return buildSessionSectionFilterOptions(
+      ids,
+      items,
+      SEED_SECTION_ID,
+      DEFAULT_SECTION_LABEL,
+    );
+  }, [items, sectionOptions]);
+
   return (
     <div className={styles.list} data-testid="lecturer-session-list">
       <div className={styles.listBody}>
@@ -206,7 +226,7 @@ export function LecturerSessionList({ sectionOptions = [] }: LecturerSessionList
       <div className={styles.listToolbar}>
         <TableToolbar
           classSectionId={query.classSectionId}
-          sectionOptions={sectionOptions}
+          sectionOptions={resolvedSectionOptions}
           status={query.state}
           statusOptions={STATE_OPTIONS}
           search={searchDraft}

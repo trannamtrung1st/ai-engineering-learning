@@ -18,6 +18,10 @@ export interface LoginFailure {
   message: string;
 }
 
+export interface LogoutResult {
+  ok: boolean;
+}
+
 export async function loginStudent(
   email: string,
   password: string,
@@ -41,4 +45,13 @@ export async function loginStudent(
     accessToken: envelope.data.accessToken,
     roles: envelope.data.roles,
   };
+}
+
+/** TC-FR-38-001 TC-AC-26-001 — POST /v1/auth/logout */
+export async function logout(): Promise<LogoutResult> {
+  const envelope = await apiRequest<{ loggedOut: boolean }>("/auth/logout", {
+    method: "POST",
+  });
+
+  return { ok: envelope.data?.loggedOut === true };
 }

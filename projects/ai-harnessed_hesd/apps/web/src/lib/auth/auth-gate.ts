@@ -1,3 +1,8 @@
+import {
+  canAccessAuditLogs,
+  canAccessInstitutionReport,
+  canAccessSessionControl,
+} from "./role-guard.js";
 import { getAccessToken } from "./session.js";
 
 export const STUDENT_AUTH_STORAGE_KEY = "attendly:student-auth";
@@ -59,4 +64,44 @@ export function resolveReturnUrl(searchParams: URLSearchParams, fallback = "/"):
 
 export function preserveCheckInDeepLink(pathname: string, search: string): string {
   return `${pathname}${search}`;
+}
+
+/** Role home when PG-01 has no returnUrl — voluntary logout and neutral entry (TC-UX-COMMON-005). */
+export function resolveRoleHomePath(roles: string[]): string {
+  if (roles.includes("AcademicAdmin")) {
+    return "/admin/terms";
+  }
+
+  if (roles.includes("SystemAuditor") && canAccessAuditLogs(roles)) {
+    return "/audit/logs";
+  }
+
+  if (canAccessSessionControl(roles)) {
+    return "/lecturer/sessions";
+  }
+
+  if (canAccessInstitutionReport(roles)) {
+    return "/reports/attendance";
+  }
+
+  if (canAccessAuditLogs(roles)) {
+    return "/audit/logs";
+  }
+
+  if (roles.includes("Student")) {
+    return "/check-in";
+  }
+
+  return "/check-in";
+}
+
+export function resolvePostLoginPath(
+  roles: string[],
+  searchParams: URLSearchParams,
+): string {
+  if (searchParams.get("returnUrl")) {
+    return resolveReturnUrl(searchParams, resolveRoleHomePath(roles));
+  }
+
+  return resolveRoleHomePath(roles);
 }

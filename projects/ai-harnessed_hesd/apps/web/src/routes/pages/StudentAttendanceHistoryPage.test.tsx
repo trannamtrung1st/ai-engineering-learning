@@ -17,6 +17,30 @@ vi.mock("../../lib/api/me-api.js", () => ({
   })),
 }));
 
+vi.mock("../../lib/api/attendance-history-api.js", () => ({
+  fetchAttendanceHistory: vi.fn(async () => ({
+    ok: true,
+    rows: [
+      {
+        attendanceRecordId: "1",
+        studentUserId: "s1",
+        studentCode: "SV001",
+        classSessionId: "sess-1",
+        classSectionId: "50000000-0000-4000-8000-000000000001",
+        sectionCode: "SE101-01",
+        attendanceStatus: "Present",
+        checkInAt: "2026-02-01T08:05:00Z",
+        checkInMethod: "QR",
+        sessionDate: "2026-02-01",
+      },
+    ],
+    pagination: { page: 1, pageSize: 100, totalItems: 1, totalPages: 1 },
+  })),
+  buildSectionFilterOptions: vi.fn(() => [
+    { value: "50000000-0000-4000-8000-000000000001", label: "SE101-01" },
+  ]),
+}));
+
 vi.mock("../../components/domain/AttendanceHistoryList.js", () => ({
   AttendanceHistoryList: () => <div data-testid="history-list-stub">History</div>,
 }));

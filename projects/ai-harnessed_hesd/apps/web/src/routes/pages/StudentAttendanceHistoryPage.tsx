@@ -3,6 +3,10 @@ import { Navigate } from "react-router-dom";
 import { AttendanceHistoryList } from "../../components/domain/AttendanceHistoryList";
 import { MobileFlowContainer } from "../../components/layout/MobileFlowContainer";
 import { FeedbackAlert } from "../../components/ui/FeedbackAlert";
+import {
+  buildSectionFilterOptions,
+  fetchAttendanceHistory,
+} from "../../lib/api/attendance-history-api";
 import { fetchCurrentUser } from "../../lib/api/me-api";
 import {
   DEFAULT_SECTION_LABEL,
@@ -14,25 +18,28 @@ import {
   buildLoginRedirect,
   isStudentAuthenticated,
 } from "../../lib/auth/auth-gate";
+import { DEFAULT_LISTING_QUERY } from "../../lib/listing/query-state";
 import styles from "./StudentAttendanceHistoryPage.module.css";
 
 export function StudentAttendanceHistoryPage() {
   const [ready, setReady] = useState(false);
   const [sectionOptions, setSectionOptions] = useState<
     { value: string; label: string }[]
-  >([{ value: SEED_SECTION_ID, label: DEFAULT_SECTION_LABEL }]);
+  >([]);
 
   useEffect(() => {
     void (async () => {
       const me = await fetchCurrentUser();
-      if (me.ok && me.classSectionIds.length > 0) {
-        setSectionOptions(
-          me.classSectionIds.map((id) => ({
-            value: id,
-            label: id === SEED_SECTION_ID ? DEFAULT_SECTION_LABEL : id.slice(0, 8),
-          })),
-        );
-      }
+      const sectionIds = me.ok ? me.classSectionIds : [];
+      const history = await fetchAttendanceHistory({
+        ...DEFAULT_LISTING_QUERY,
+        termId: SEED_TERM_ID,
+        pageSize: 100,
+      });
+      const rows = history.ok ? history.rows : [];
+      setSectionOptions(
+        buildSectionFilterOptions(sectionIds, rows, SEED_SECTION_ID, DEFAULT_SECTION_LABEL),
+      );
       setReady(true);
     })();
   }, []);
@@ -45,7 +52,7 @@ export function StudentAttendanceHistoryPage() {
   return (
     <MobileFlowContainer
       title="Lịch sử điểm danh"
-      subtitle="PG-03 · Chỉ hiển thị bản ghi của bạn"
+      subtitle="Chỉ hiển thị bản ghi của bạn"
     >
       <FeedbackAlert variant="brand" title="Phạm vi cá nhân">
         Dữ liệu được giới hạn trong các lớp bạn đã ghi danh. Không có chức năng xuất báo cáo

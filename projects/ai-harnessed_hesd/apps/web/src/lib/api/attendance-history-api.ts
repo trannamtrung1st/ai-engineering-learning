@@ -89,3 +89,34 @@ export function groupRowsBySection(
   }
   return groups;
 }
+
+export interface SectionFilterOption {
+  value: string;
+  label: string;
+}
+
+/** Map enrolled section IDs to human section codes — never expose raw UUID fragments (TC-UX-COMMON-006). */
+export function buildSectionFilterOptions(
+  sectionIds: string[],
+  rows: AttendanceHistoryRow[],
+  seedSectionId?: string,
+  seedSectionLabel?: string,
+): SectionFilterOption[] {
+  const codeBySectionId = new Map<string, string>();
+  for (const row of rows) {
+    if (row.sectionCode) {
+      codeBySectionId.set(row.classSectionId, row.sectionCode);
+    }
+  }
+
+  const uniqueIds = sectionIds.length > 0 ? sectionIds : [...codeBySectionId.keys()];
+
+  return uniqueIds.map((id) => ({
+    value: id,
+    label:
+      codeBySectionId.get(id) ??
+      (seedSectionId && id === seedSectionId && seedSectionLabel
+        ? seedSectionLabel
+        : "Lớp đã ghi danh"),
+  }));
+}

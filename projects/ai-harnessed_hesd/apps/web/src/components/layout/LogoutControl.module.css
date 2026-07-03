@@ -1,0 +1,8 @@
+.control {
+  color: var(--color-text-body);
+  font-weight: var(--font-weight-semibold);
+}
+
+.control:hover:not(:disabled) {
+  color: var(--color-text-heading);
+}

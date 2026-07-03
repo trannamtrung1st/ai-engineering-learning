@@ -1,4 +1,5 @@
 import { NavLink } from "react-router-dom";
+import { LogoutControl } from "./LogoutControl";
 import styles from "./SidebarNav.module.css";
 
 export interface SidebarNavItem {
@@ -9,11 +10,12 @@ export interface SidebarNavItem {
 export interface SidebarNavProps {
   items: SidebarNavItem[];
   brand?: string;
+  showLogout?: boolean;
 }
 
-export function SidebarNav({ items, brand = "Attendly" }: SidebarNavProps) {
+export function SidebarNav({ items, brand = "Attendly", showLogout = true }: SidebarNavProps) {
   return (
-    <nav className={styles.nav}>
+    <nav className={styles.nav} aria-label="Điều hướng vai trò">
       <p className={styles.brand}>{brand}</p>
       <ul className={styles.list}>
         {items.map((item) => (
@@ -29,6 +31,12 @@ export function SidebarNav({ items, brand = "Attendly" }: SidebarNavProps) {
           </li>
         ))}
       </ul>
+      {showLogout ? (
+        <div className={styles.footer}>
+          <div className={styles.separator} role="separator" />
+          <LogoutControl className={styles.logout} />
+        </div>
+      ) : null}
     </nav>
   );
 }

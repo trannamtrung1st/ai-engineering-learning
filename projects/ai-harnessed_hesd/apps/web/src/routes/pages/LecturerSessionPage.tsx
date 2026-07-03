@@ -15,6 +15,10 @@ import {
   type ClassSessionSummary,
 } from "../../lib/api/session-api";
 import { buildStaffLoginRedirect, isStaffAuthenticated } from "../../lib/auth/staff-gate";
+import {
+  isProjectionDemoSession,
+  LecturerSessionProjectionDemo,
+} from "./LecturerSessionProjectionDemo";
 import styles from "./LecturerSessionPage.module.css";
 
 export function LecturerSessionPage() {
@@ -135,6 +139,10 @@ export function LecturerSessionPage() {
       void handleOpen();
     }
   }, [handleOpen, mutating, searchParams, session?.state, setSearchParams]);
+
+  if (isProjectionDemoSession(sessionId)) {
+    return <LecturerSessionProjectionDemo sessionId={sessionId} />;
+  }
 
   if (!isStaffAuthenticated()) {
     return <Navigate to={buildStaffLoginRedirect(`/lecturer/sessions/${sessionId}`)} replace />;

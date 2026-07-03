@@ -31,7 +31,7 @@ export function LecturerSessionsListPage() {
         setSectionOptions(
           me.classSectionIds.map((id) => ({
             value: id,
-            label: id === SEED_SECTION_ID ? DEFAULT_SECTION_LABEL : id.slice(0, 8),
+            label: id === SEED_SECTION_ID ? DEFAULT_SECTION_LABEL : "Lớp được phân công",
           })),
         );
       }

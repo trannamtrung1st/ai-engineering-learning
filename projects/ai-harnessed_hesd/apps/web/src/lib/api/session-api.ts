@@ -209,3 +209,34 @@ export function formatScheduledAt(iso: string): string {
     minute: "2-digit",
   }).format(new Date(iso));
 }
+
+export interface SessionSectionFilterOption {
+  value: string;
+  label: string;
+}
+
+/** Map section IDs to human section codes — never expose raw UUID fragments (TC-UX-COMMON-006). */
+export function buildSessionSectionFilterOptions(
+  sectionIds: string[],
+  sessions: ClassSessionSummary[],
+  seedSectionId?: string,
+  seedSectionLabel?: string,
+): SessionSectionFilterOption[] {
+  const codeBySectionId = new Map<string, string>();
+  for (const session of sessions) {
+    if (session.sectionCode) {
+      codeBySectionId.set(session.classSectionId, session.sectionCode);
+    }
+  }
+
+  const uniqueIds = sectionIds.length > 0 ? sectionIds : [...codeBySectionId.keys()];
+
+  return uniqueIds.map((id) => ({
+    value: id,
+    label:
+      codeBySectionId.get(id) ??
+      (seedSectionId && id === seedSectionId && seedSectionLabel
+        ? seedSectionLabel
+        : "Lớp được phân công"),
+  }));
+}
