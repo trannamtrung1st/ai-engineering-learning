@@ -2,7 +2,7 @@
   "productItemId": "FR-21",
   "version": 1,
   "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
-  "generatedAt": "2026-07-02T11:07:41Z",
+  "generatedAt": "2026-07-03T04:43:34Z",
   "cases": [
     {
       "id": "TC-FR-21-001",
@@ -19,7 +19,7 @@
         "AcademicAdmin bearer token has institution scope covering the class section."
       ],
       "steps": [
-        "Confirm assigned Lecturer PATCH correction returns EditWindowExpired per BR-15.",
+        "Confirm assigned Lecturer PATCH correction returns HTTP 409 with error.code EditWindowExpired per BR-15 and API §4.5.",
         "Authenticate as AcademicAdmin with institution scope covering the session class section.",
         "Submit PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Manual Present, documented reason, and Idempotency-Key.",
         "Query AttendanceRecord and AuditLog for the student-session pair.",
@@ -68,7 +68,7 @@
       ],
       "steps": [
         "Capture beforeState: AttendanceRecord status Absent; session state Closed.",
-        "Execute lecturer manual correction command and confirm rejection without state change.",
+        "Execute lecturer PATCH correction and confirm HTTP 409 EditWindowExpired with no state change.",
         "Execute AcademicAdmin override correction with status Manual Present and required reason.",
         "Capture afterState for AttendanceRecord and verify checkInMethod Admin Correction.",
         "Verify AttendanceCorrected event is emitted with old and new status."
@@ -222,11 +222,11 @@
       "preconditions": [
         "Closed session in assigned faculty with Absent student exists; manualEditWindow has elapsed.",
         "DepartmentAdmin bearer token has faculty scope covering the class section per PRM-02.",
-        "Lecturer PATCH attempt returns EditWindowExpired as control.",
+        "Lecturer PATCH attempt returns HTTP 409 EditWindowExpired as control.",
         "Institution policy permits DepartmentAdmin correction per BR-16."
       ],
       "steps": [
-        "Confirm lecturer PATCH correction is rejected with EditWindowExpired.",
+        "Confirm lecturer PATCH correction is rejected with HTTP 409 EditWindowExpired.",
         "DepartmentAdmin calls PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Excused, documented reason, and Idempotency-Key.",
         "Inspect HTTP 200 response envelope and roster via GET /v1/class-sessions/{sessionId}/attendance.",
         "Query GET /v1/audit-logs for DepartmentAdmin correction event."
@@ -321,7 +321,7 @@
         "AcademicAdmin calls the same PATCH as control with valid reason.",
         "Verify AttendanceRecord state after denied attempts."
       ],
-      "expected": "Student, expired-window Lecturer, SystemAuditor, and ITAdmin receive HTTP 403 Forbidden or EditWindowExpired as applicable per permission matrix; no attendance mutation or audit write occurs from denied roles; AcademicAdmin control succeeds and updates status with checkInMethod Admin Correction per FR-21.",
+      "expected": "Student, SystemAuditor, and ITAdmin receive HTTP 403 Forbidden per permission matrix; expired-window Lecturer receives HTTP 409 EditWindowExpired (in scope but window elapsed per PRM-06); no attendance mutation or audit write occurs from denied roles; AcademicAdmin control succeeds and updates status with checkInMethod Admin Correction per FR-21 and BR-16.",
       "edgeCase": true
     },
     {
@@ -344,7 +344,54 @@
         "Observe AttendanceStatusCell updates to Manual Present success variant with Admin Correction method indicator.",
         "Verify dialog closes and report row reflects corrected status without full page reload."
       ],
-      "expected": "Browser admin correction journey completes per FR-21: form gating enforces required reason before submit; post-save report row shows Manual Present badge with admin correction method; UI state matches API override and audit write with old and new values.",
+      "expected": "Browser WF-08 admin correction journey completes per FR-21: form gating enforces required reason before submit; post-save PG-13 report row shows Manual Present badge with Admin Correction method indicator; UI state matches API override and audit write with old and new values.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-21-016",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-form-ux",
+      "priority": "P1",
+      "traceability": ["FR-21", "BR-16"],
+      "title": "ManualCorrectionDialog FRM-08 enforces inline reason validation and submit feedback on PG-13 admin override",
+      "preconditions": [
+        "AcademicAdmin is authenticated on PG-13 /reports/attendance with institution scope covering the target class section.",
+        "Closed session student row displays Absent status badge; lecturer manualEditWindow has elapsed per BR-15.",
+        "Policy mandates reason for admin corrections (FRM-08, VR-MC-04, BR-16)."
+      ],
+      "steps": [
+        "Filter PG-13 to target class section and session; locate Absent student row with admin correction row action.",
+        "Open ManualCorrectionDialog (DC-08) from row action; select Manual Present in status dropdown.",
+        "Leave Lý do reason textarea empty and attempt submit.",
+        "Observe inline validation on reason field with aria-invalid and aria-describedby error message per FR-VAL-02.",
+        "Verify submit control remains disabled or blocked until reason is valid; confirm focus moves to first invalid field on submit.",
+        "Enter valid dispute-resolution reason; observe submit shows submitting/disabled state during PATCH request.",
+        "On success, verify dialog closes, post-action feedback appears, and report row updates to Manual Present with Admin Correction method indicator without stale inline errors."
+      ],
+      "expected": "FRM-08 form UX gates admin override submission when reason is missing; inline ReasonRequired-style validation is visible and recoverable; submit feedback shows disabled/submitting states during request; successful post-window admin correction updates PG-13 row per FR-21 and BR-16 without silent failure.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-21-017",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["FR-21", "BR-16", "BR-22"],
+      "title": "PG-13 attendance report surfaces distinct status badges and Admin Correction method indicator after override",
+      "preconditions": [
+        "AcademicAdmin is authenticated on desktop Chromium StaffLayout at PG-13 /reports/attendance.",
+        "Fixtures include a closed session with elapsed manualEditWindow and at least one Absent student row in institution-scoped report listing."
+      ],
+      "steps": [
+        "Navigate to PG-13; apply TableToolbar filters for term, class section, and session; locate Absent student row.",
+        "Verify Absent rows render danger badge variant via AttendanceStatusCell per 12-ui-states.md.",
+        "Open ManualCorrectionDialog from row action; submit admin override to Manual Present with documented dispute-resolution reason.",
+        "Observe AttendanceStatusCell transitions to Manual Present success variant with Admin Correction method label distinct from QR and Manual methods.",
+        "Confirm row update without full page reload and no false success or ambiguous intermediate state after PATCH completes."
+      ],
+      "expected": "PG-13 admin correction UX per 09-page-list and 12-ui-states: Absent and admin-corrected Manual Present rows are visually distinct; Admin Correction method indicator confirms FR-21 override path and aligns with audit write per BR-16 and BR-22.",
       "edgeCase": false
     }
   ]
