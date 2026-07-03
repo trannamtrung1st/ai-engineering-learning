@@ -2,7 +2,7 @@
   "productItemId": "NFR-10",
   "version": 1,
   "docFingerprint": "sha256:0091ebfac485b5b90c7a94c982196a35adddc3e7535aba555ed532f8d1599fd9",
-  "generatedAt": "2026-07-02T17:45:00Z",
+  "generatedAt": "2026-07-03T05:38:00Z",
   "cases": [
     {
       "id": "TC-NFR-10-001",
@@ -333,6 +333,29 @@
         "Verify access-denied state, redirect, or read-only presentation without mutation affordances."
       ],
       "expected": "Student cannot access manual attendance correction UI or trigger protected mutation path from browser; attendance status is read-only for Student role per permissions matrix §5.1 (NFR-10, AttendanceRecord.update Deny).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-10-016",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-form-ux",
+      "priority": "P1",
+      "traceability": ["NFR-10", "FR-20", "FR-29", "BR-14", "BR-15", "AC-13"],
+      "title": "ManualCorrectionDialog FRM-08 gates protected mutation — required reason, submit feedback, and edit-window escalation",
+      "preconditions": [
+        "Lecturer is authenticated on PG-06 live roster (/lecturer/sessions/{sessionId}/roster) for assigned closed session within active manual edit window.",
+        "Policy mandates reason for manual corrections per FRM-08 and BR-14.",
+        "Separate fixture session exists with elapsed manualEditWindow for escalation scenario per BR-15."
+      ],
+      "steps": [
+        "Open ManualCorrectionDialog (DC-08) for Absent student row within edit window; select Manual Present; leave Lý do reason empty and attempt submit.",
+        "Observe inline ReasonRequired validation with aria-invalid and aria-describedby on reason field per FR-VAL-02; verify submit control is disabled or blocked.",
+        "Enter valid reason text; observe submit shows submitting/disabled state during PATCH request; on success confirm dialog closes and roster AttendanceStatusCell updates without stale inline errors.",
+        "Navigate to elapsed-window session roster; open ManualCorrectionDialog for Absent student and attempt correction.",
+        "Observe EditWindowExpired maps to form-level escalation guidance per FRM-08 §4.5 with no successful submit, roster mutation, or client-side bypass of protected path."
+      ],
+      "expected": "FRM-08 enforces protected mutation path at UI: reason-required gating and in-flight submit feedback prevent client-side bypass before server audit write; elapsed edit window shows escalation guidance without committing attendance mutation or audit row (NFR-10, BR-14, BR-15).",
       "edgeCase": false
     }
   ]
