@@ -2,7 +2,7 @@
   "productItemId": "NFR-01",
   "version": 1,
   "docFingerprint": "sha256:0091ebfac485b5b90c7a94c982196a35adddc3e7535aba555ed532f8d1599fd9",
-  "generatedAt": "2026-07-02T12:00:00Z",
+  "generatedAt": "2026-07-03T05:31:00Z",
   "cases": [
     {
       "id": "TC-NFR-01-001",
@@ -196,6 +196,29 @@
       "expected": "Physical pilot median check-in time is below 30 seconds under real campus network conditions, providing production-like evidence for NFR-01 beyond emulated harness runs.",
       "edgeCase": false,
       "harnessSkip": "physical-device"
+    },
+    {
+      "id": "TC-NFR-01-010",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["NFR-01", "NFR-14", "FR-16", "AC-20"],
+      "title": "PG-02 submission lifecycle states provide unambiguous success completion signal for latency measurement",
+      "preconditions": [
+        "Student mobile shell (SUR-01) at PG-02 /check-in with valid token and open session fixture.",
+        "12-ui-states §5.2 defines loading → (gps-prompt?) → submitting → outcome progression without ambiguous intermediate blank screens.",
+        "Browser harness can observe visual state transitions and aria-live announcements on CheckInResultScreen."
+      ],
+      "steps": [
+        "Navigate to /check-in?token=... and observe loading state while token/session context resolves.",
+        "Trigger check-in submission and verify submitting state shows disabled CTA and in-progress indicator distinct from idle and outcome states.",
+        "On HTTP 200 success, verify CheckInResultScreen renders success-present or success-late state with icon+text badge and timestamp.",
+        "Confirm outcome is announced via polite live region per 13-accessibility §4.1 so completion is perceivable without lecturer page reload.",
+        "Record wall-clock from submission tap to success outcome render; include in median latency sample for NFR-01."
+      ],
+      "expected": "PG-02 renders visually distinct loading, submitting, and success outcome states per 12-ui-states §5.2; success completion is unambiguous and promptly visible so end-to-end median check-in time measurement has a reliable UI terminal signal below 30 seconds per NFR-01 and AC-20.",
+      "edgeCase": false
     }
   ]
 }
