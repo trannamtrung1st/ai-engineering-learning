@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-17",
   "version": 1,
-  "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
-  "generatedAt": "2026-07-02T16:00:00Z",
+  "docFingerprint": "sha256:a297e0ef15d9279cea05e3e0486a1edbcbff0f8ff12f9ba243a6f6c60b73f5f1",
+  "generatedAt": "2026-07-03T04:13:00Z",
   "cases": [
     {
       "id": "TC-AC-17-001",
@@ -215,6 +215,30 @@
       ],
       "expected": "No audit log entry with successful export semantics (completed scope, format csv) is persisted for a job that did not complete successfully; AC-17 requires audit only when export completes successfully.",
       "edgeCase": true
+    },
+    {
+      "id": "TC-AC-17-011",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["AC-17", "FR-30", "BR-18", "BR-22"],
+      "title": "PG-15 audit log listing renders export entry with actor, scope, format, and timestamp",
+      "preconditions": [
+        "AcademicAdmin is authenticated with access to PG-15 /audit/logs.",
+        "A successful CSV export was completed by a known lecturer within the test window.",
+        "Fixture supports audit log query returning Export action type entries via GET /v1/audit-logs."
+      ],
+      "steps": [
+        "Complete a scoped CSV export via PG-14 export dialog on PG-13 as the exporting lecturer.",
+        "Navigate to PG-15 /audit/logs as AcademicAdmin.",
+        "Filter by action type Export and actor matching the exporting lecturer within the export time window.",
+        "Observe AuditEntryRow (DC-12) for the new export entry in DataTable.",
+        "Expand or inspect row details and verify visible fields: actor, occurredAt timestamp, scope filter summary, and csv format.",
+        "Compare loading skeleton, empty filtered result, and API error states to confirm export row presentation is visually distinct per NFR-UI-07."
+      ],
+      "expected": "After successful export (FLOW-12 step 4), PG-15 displays a queryable export audit entry; AuditEntryRow shows actor, timestamp, scope summary, and csv format per permissions §7.1 and AC-17; loading, empty, and error listing states remain visually distinct and do not expose partial export metadata on failure.",
+      "edgeCase": false
     }
   ]
 }
