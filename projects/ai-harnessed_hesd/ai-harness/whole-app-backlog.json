@@ -852,6 +852,12 @@
           "kind": "drift",
           "reason": "Doc drift for FR-28 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-03T05:23:01Z",
+          "kind": "drift",
+          "reason": "Doc drift for BR-18 — reverify after TestGen",
+          "source": "harness"
         }
       ]
     },
@@ -1855,6 +1861,12 @@
           "at": "2026-07-03T04:55:50Z",
           "kind": "drift",
           "reason": "Doc drift for FR-28 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T05:23:01Z",
+          "kind": "drift",
+          "reason": "Doc drift for BR-18 — reverify after TestGen",
           "source": "harness"
         }
       ]

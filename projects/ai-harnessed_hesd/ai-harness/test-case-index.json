@@ -298,9 +298,9 @@
       "generatedAt": "2026-07-03T05:21:42Z"
     },
     "BR-18": {
-      "current": false,
+      "current": true,
       "docFingerprint": "sha256:0421ca4affe3aa70584e3b352a860d11de519a5a2aaff8c4d8e0f12d14d1a70a",
-      "generatedAt": null
+      "generatedAt": "2026-07-03T05:23:01Z"
     },
     "BR-19": {
       "current": false,
