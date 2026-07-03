@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-27",
   "version": 1,
-  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
-  "generatedAt": "2026-07-02T16:45:00Z",
+  "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
+  "generatedAt": "2026-07-03T04:53:00Z",
   "cases": [
     {
       "id": "TC-FR-27-001",
@@ -337,6 +337,28 @@
         "Observe user-facing denial message and network response."
       ],
       "expected": "Student cannot execute institution CSV export; export action is hidden, disabled, or fails with access-denied feedback without displaying other students' attendance data or partial export download.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-27-017",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["FR-27", "FR-28", "FR-30", "BR-18", "BR-19"],
+      "title": "Reporting export dialog shows scoped visual states without data leakage",
+      "preconditions": [
+        "Lecturer is logged in on desktop browser with assigned sections and access to PG-13 attendance reports.",
+        "Attendance report data can be exercised in loading, empty/no-result, error, and scoped-result states.",
+        "PG-14 export dialog is launched from PG-13 and renders ExportScopeSummary before execution."
+      ],
+      "steps": [
+        "Navigate to /reports/attendance and observe the loading state before report data resolves.",
+        "Apply filters that produce no rows within the lecturer's assigned scope and open the export dialog.",
+        "Trigger an API error for the scoped report/export request and inspect the user-facing error state.",
+        "Restore a valid scoped-result filter, open the export dialog, and verify the ExportScopeSummary and CSV action state before submission."
+      ],
+      "expected": "PG-13/PG-14 render distinct loading, empty/no-result, error, and scoped-result states; ExportScopeSummary communicates the role-limited section/filter scope before CSV export; no visual state reveals cross-scope row counts, student identifiers, or disabled forbidden exports.",
       "edgeCase": false
     }
   ]
