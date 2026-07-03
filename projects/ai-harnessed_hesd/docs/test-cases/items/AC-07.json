@@ -2,7 +2,7 @@
   "productItemId": "AC-07",
   "version": 1,
   "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
-  "generatedAt": "2026-07-03T03:47:00Z",
+  "generatedAt": "2026-07-03T04:07:00Z",
   "cases": [
     {
       "id": "TC-AC-07-001",
@@ -10,7 +10,7 @@
       "layer": "integration",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["AC-07", "FR-17", "FR-18", "BR-06", "BR-07"],
+      "traceability": ["AC-07", "FR-17", "FR-18", "FR-22", "BR-06", "BR-07", "BR-23", "AC-18"],
       "title": "Scenario matrix row for check-in eligibility rejects not-enrolled student",
       "preconditions": [
         "Testing-plan §3 Check-in eligibility and duplicate block applies (FR-17, FR-18, BR-06, BR-07, AC-07, AC-08).",
@@ -30,7 +30,7 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["AC-07", "FR-17", "FR-22", "BR-06", "BR-23"],
+      "traceability": ["AC-07", "FR-17", "FR-22", "BR-06", "BR-23", "AC-18"],
       "title": "Enrollment module boundary rejects check-in without attendance success write",
       "preconditions": [
         "Real database transaction is enabled for enrollment and check-in modules.",
@@ -50,7 +50,7 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["AC-07", "FR-17", "FR-22", "BR-06", "BR-23"],
+      "traceability": ["AC-07", "FR-17", "FR-22", "BR-06", "BR-23", "AC-18"],
       "title": "CheckInAttempt SM-04 terminates at NotEnrolled without attendance mutation",
       "preconditions": [
         "Open class session with valid qrToken exists in integration test database.",
@@ -70,7 +70,7 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["AC-07", "FR-17", "FR-22", "BR-06", "BR-23"],
+      "traceability": ["AC-07", "FR-17", "FR-22", "BR-06", "BR-23", "AC-18"],
       "title": "POST /v1/check-ins returns 422 envelope with NotEnrolled for unenrolled student",
       "preconditions": [
         "Open class session with valid qrToken exists in test environment.",
@@ -112,7 +112,7 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["AC-07", "FR-17", "FR-04", "BR-06", "BR-23"],
+      "traceability": ["AC-07", "FR-17", "FR-04", "BR-06", "BR-23", "AC-18"],
       "title": "Boundary error for Dropped enrollment and cross-section roster mismatch",
       "preconditions": [
         "Student A has Active enrollment only in section X.",
@@ -133,7 +133,7 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["AC-07", "FR-17", "BR-06", "BR-19"],
+      "traceability": ["AC-07", "FR-17", "BR-06", "BR-19", "AC-18"],
       "title": "Enrollment scope denial prevents cross-section check-in despite valid student role",
       "preconditions": [
         "Student role is authenticated with valid bearer token per permission matrix.",
@@ -154,8 +154,8 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["AC-07", "FR-17", "FR-22", "BR-06", "BR-23"],
-      "title": "UI journey surfaces NotEnrolled danger alert with no retry and admin guidance",
+      "traceability": ["AC-07", "FR-17", "FR-22", "BR-06", "BR-23", "AC-18"],
+      "title": "UI journey surfaces NotEnrolled danger alert with academic-office guidance and no retry",
       "preconditions": [
         "Student is logged in on mobile-web browser (PG-02 check-in page).",
         "Open session QR token is valid; student is not actively enrolled in the target section."
@@ -164,9 +164,9 @@
         "Navigate to check-in URL with valid token query parameter.",
         "Submit check-in from the student check-in form.",
         "Observe CheckInResultScreen failure state and alert component styling.",
-        "Verify absence of retry CTA and presence of contact-admin guidance per FLOW-02."
+        "Verify absence of retry CTA and presence of contact academic office guidance per FLOW-02 and BR-06 outcome."
       ],
-      "expected": "UI renders failure-not-enrolled danger alert with localized message (e.g. 'Bạn không thuộc lớp học phần này.'); no retry button is shown; student cannot reach success-present or success-late state.",
+      "expected": "UI renders failure-not-enrolled danger alert with localized Vietnamese message (e.g. 'Bạn không thuộc lớp học phần này.'); no retry button is shown; student cannot reach success-present or success-late state; message instructs student to contact academic office if roster is incorrect.",
       "edgeCase": false
     },
     {
@@ -185,11 +185,35 @@
       "steps": [
         "Submit check-in from PG-02 and observe CheckInResultScreen transition from submitting to outcome state.",
         "Verify page state ID failure-not-enrolled, danger alert variant, and Vietnamese copy intent per ui-states §5.1.",
-        "Confirm no retry CTA is rendered and contact-admin recovery guidance is present per FLOW-02.",
+        "Confirm no retry CTA is rendered and contact academic office recovery guidance is present per FLOW-02.",
         "Compare against success-present and failure-expired-qr states to confirm visual distinction per AC-UI-02."
       ],
       "expected": "PG-02 outcome state failure-not-enrolled is visually distinct from success and other failure states (danger alert, no retry, enrollment-specific copy); submission lifecycle completes without ambiguous intermediate states per ui-states §5.2.",
       "edgeCase": false
+    },
+    {
+      "id": "TC-AC-07-010",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["AC-07", "FR-17", "FR-22", "BR-06", "BR-07", "BR-08", "AC-18"],
+      "title": "Validation order short-circuit: NotEnrolled returned before duplicate and GPS checks",
+      "preconditions": [
+        "Open session exists with valid QR token.",
+        "Unenrolled student is authenticated with no Active enrollment in the target section.",
+        "Same student has prior successful attendance in a different session OR GPS would fail if enrolled—conditions that would fail BR-07 or BR-08 to BR-10 if enrollment passed."
+      ],
+      "steps": [
+        "Submit POST /v1/check-ins as unenrolled student who already has success record in another session.",
+        "Assert error.code is NotEnrolled, not DuplicateCheckIn.",
+        "Submit as unenrolled student with GPS payload outside radius on GPS-required policy session.",
+        "Assert error.code is NotEnrolled, not OutOfRadius or GpsDisabled.",
+        "Submit duplicate-prone replay with same Idempotency-Key for unenrolled student.",
+        "Assert error.code remains NotEnrolled, not DuplicateCheckIn."
+      ],
+      "expected": "Validation order per API design §5.1 step 4: enrollment check (NotEnrolled) short-circuits before BR-07 duplicate and BR-08 to BR-10 GPS evaluations when student lacks Active enrollment; each attempt logs a failed CheckInAttempt per AC-07 and AC-18.",
+      "edgeCase": true
     }
   ]
 }
