@@ -2,7 +2,7 @@
   "productItemId": "FR-18",
   "version": 1,
   "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
-  "generatedAt": "2026-07-02T11:01:15Z",
+  "generatedAt": "2026-07-03T04:37:00Z",
   "cases": [
     {
       "id": "TC-FR-18-001",
@@ -89,18 +89,19 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-18", "FR-22", "BR-07", "BR-23"],
+      "traceability": ["FR-18", "FR-22", "BR-07", "BR-23", "AC-18"],
       "title": "POST /v1/check-ins returns 409 envelope with DuplicateCheckIn for repeat submission",
       "preconditions": [
         "Open class session with valid qrToken exists in test environment.",
-        "Authenticated student bearer token belongs to a user with an existing successful attendance result for the session."
+        "Authenticated student bearer token belongs to a user with an existing successful attendance result (Present or Late) for the session."
       ],
       "steps": [
         "Call POST /v1/check-ins with Authorization Bearer token, valid qrToken, clientTimestamp, and a new Idempotency-Key.",
         "Inspect HTTP status, response envelope (data/meta/error), and error.code.",
+        "Query persisted CheckInAttempt for the duplicate request.",
         "Verify no new success attendance payload is returned."
       ],
-      "expected": "API returns 409 with standard envelope where data is null and error.code is DuplicateCheckIn; response includes classSessionId in details where applicable and does not mutate the original success record.",
+      "expected": "API returns 409 with standard envelope where data is null and error.code is DuplicateCheckIn; response includes classSessionId in details where applicable; failed CheckInAttempt with DuplicateCheckIn outcome is persisted per AC-18 and error-handling §4.1; original success AttendanceRecord is unchanged.",
       "edgeCase": false
     },
     {
@@ -129,7 +130,7 @@
       "layer": "e2e",
       "technique": "flow-b",
       "priority": "P0",
-      "traceability": ["FR-18", "FR-15", "FR-22", "BR-07", "BR-23", "AC-08"],
+      "traceability": ["FR-18", "FR-15", "FR-22", "BR-07", "BR-23", "AC-08", "AC-18"],
       "title": "E2E-03 alternate workflow branch rejects student duplicate submission after first success",
       "preconditions": [
         "Lecturer has opened session and session is Open with rotating QR.",
@@ -142,7 +143,7 @@
         "Student calls POST /v1/check-ins again with a new valid qrToken and different Idempotency-Key.",
         "Lecturer queries GET /v1/class-sessions/{sessionId}/attendance for the student row and rejectedAttempts count."
       ],
-      "expected": "Second submission fails with DuplicateCheckIn (409); roster shows unchanged single Present/Late row for the student with original checkInAt; rejectedAttempts increments and failed attempt is auditable per FR-22.",
+      "expected": "Second submission fails with DuplicateCheckIn (409); roster shows unchanged single Present/Late row for the student with original checkInAt; rejectedAttempts increments and failed attempt is auditable per AC-18.",
       "edgeCase": false
     },
     {
@@ -206,7 +207,29 @@
         "Observe CheckInResultScreen failure-duplicate info alert styling and copy.",
         "Verify absence of retry CTA and display of existing check-in status per FLOW-02."
       ],
-      "expected": "UI renders failure-duplicate info alert with localized message (e.g. 'Bạn đã điểm danh buổi học này rồi.'); no retry button is shown; student sees existing success status and timestamp without roster mutation.",
+      "expected": "UI renders failure-duplicate info alert with localized message per 08-forms-validation-ux.md (e.g. 'Bạn đã điểm danh buổi học này rồi.'); no retry button is shown per 12-ui-states §5.1; student sees existing success status and timestamp without roster mutation.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-18-011",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["FR-18", "FR-22", "BR-07", "BR-23", "AC-18"],
+      "title": "DuplicateCheckIn outcome renders distinct failure-duplicate visual state on PG-02",
+      "preconditions": [
+        "Student is logged in on mobile student shell at PG-02 check-in route.",
+        "Student has an existing successful attendance result (Present or Late) for the target Open session.",
+        "Fresh valid QR token is available via scan or deep link."
+      ],
+      "steps": [
+        "Submit check-in from PG-02 and observe CheckInResultScreen transition from submitting to outcome state.",
+        "Verify page state ID failure-duplicate, info alert variant, and Vietnamese copy intent per ui-states §5.1.",
+        "Confirm no retry CTA is rendered and existing success status with timestamp is displayed per FLOW-02 DuplicateCheckIn branch.",
+        "Compare against success-present and failure-not-enrolled states to confirm visual distinction per AC-UI-02."
+      ],
+      "expected": "PG-02 outcome state failure-duplicate is visually distinct from success and other failure states (info alert, no retry, duplicate-specific copy with prior attendance status); submission lifecycle completes without ambiguous intermediate states per ui-states §5.2.",
       "edgeCase": false
     }
   ]
