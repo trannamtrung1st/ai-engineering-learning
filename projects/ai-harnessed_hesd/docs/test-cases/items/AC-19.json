@@ -2,7 +2,7 @@
   "productItemId": "AC-19",
   "version": 1,
   "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
-  "generatedAt": "2026-07-02T18:00:00Z",
+  "generatedAt": "2026-07-03T04:15:00Z",
   "cases": [
     {
       "id": "TC-AC-19-001",
@@ -13,7 +13,7 @@
       "traceability": ["AC-19", "FR-29", "BR-22"],
       "title": "Scenario matrix row for attempt and audit coverage requires queryable mutation audit",
       "preconditions": [
-        "Testing-plan §3 Attempt/audit coverage block applies (FR-22, FR-29, FR-30, BR-22, BR-23, AC-18, AC-19).",
+        "Testing-plan §3.1 Attempt/audit coverage block applies (FR-22, FR-29, FR-30, BR-22, BR-23, AC-18, AC-19).",
         "dispute-trail fixture provides at least one committed attendance status mutation by lecturer, admin, or system process.",
         "Audit repository and attendance ledger modules use real database persistence."
       ],
@@ -289,6 +289,30 @@
         "As AcademicAdmin, navigate to audit log view filtered by session or student and locate the new mutation entry with old/new status columns."
       ],
       "expected": "Browser correction journey commits mutation reflected in roster UI; authorized admin audit view displays queryable entry with actor, timestamp, old status Absent, new status Manual Present, and reason per AC-19 and CMP-01.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-19-014",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["AC-19", "FR-29", "FR-32", "BR-22"],
+      "title": "PG-15 audit log listing renders attendance mutation entries with distinct page states and CMP-01 fields",
+      "preconditions": [
+        "AcademicAdmin or SystemAuditor is authenticated with access to PG-15 /audit/logs per FLOW-13.",
+        "dispute-trail fixture includes committed lecturer manual_update, admin_override, and close-time status_finalization mutation audit rows.",
+        "AuditEntryRow (DC-12) and TableToolbar filters for targetType, actionType, from, and to are available per PG-15 listing spec."
+      ],
+      "steps": [
+        "Navigate to /audit/logs and observe initial loading skeleton or table shimmer while GET /v1/audit-logs resolves.",
+        "Apply TableToolbar filters: targetType AttendanceRecord, actionType manual_update, and date range covering a known lecturer correction.",
+        "Locate AuditEntryRow and verify visible actor, occurredAt timestamp, old status, new status, reason, and target student/session identifiers.",
+        "Clear filters or apply a date range with no matches; confirm no-results state shows Không tìm thấy kết quả with clear-filters affordance per NFR-UI-07.",
+        "Simulate or trigger API error on audit query; confirm error FeedbackAlert with retry action without partial mutation field leakage.",
+        "Filter by actionType status_finalization for a closed session and verify each auto-absent mutation row displays oldStatus Pending and newStatus Absent."
+      ],
+      "expected": "PG-15 listing states (loading, no-results, error, list) are visually distinct; committed attendance status mutations are queryable in the audit table with full permissions §7.1 minimum fields (actor, role context, target, old/new status, reason, timestamp) per AC-19 and CMP-01; error and empty states do not expose restricted mutation metadata.",
       "edgeCase": false
     }
   ]
