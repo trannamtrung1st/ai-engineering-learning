@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-25",
   "version": 1,
-  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
-  "generatedAt": "2026-07-02T11:20:12Z",
+  "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
+  "generatedAt": "2026-07-03T04:48:00Z",
   "cases": [
     {
       "id": "TC-FR-25-001",
@@ -15,15 +15,17 @@
       "preconditions": [
         "Testing-plan §3.1 coverage blocks for GPS validation, Attendance status assignment, and Close-time absent finalization apply.",
         "Hierarchy fixtures exist: institution default, faculty, course, and class-section policies with distinct field values at each level.",
-        "Open class session exists for the target section with enrolled students and valid QR token."
+        "Open class session exists for the target section with enrolled students and valid QR token.",
+        "Session room has GPS coordinates configured when exercising AC-10 out-of-radius."
       ],
       "steps": [
         "Invoke M06 resolveEffectivePolicy(classSectionId, sessionScheduledStart) and record resolved presentWindowMinutes, lateWindowMinutes, gpsRequired, and gpsRadiusMeters with per-field source levels.",
         "Submit student check-in within present window and verify Present assignment uses resolved presentWindowMinutes (AC-11 row).",
         "Submit check-in with gpsRequired true and missing GPS payload; verify rejection uses resolved gpsRequired from effective policy (AC-09 row).",
+        "Submit check-in with gpsRequired true and coordinates outside resolved gpsRadiusMeters; verify OutOfRadius rejection per AC-10 using effective-policy radius not institution default.",
         "Close session without successful check-in for a pending student; verify Absent finalization applies per resolved effective policy at close (AC-12 row)."
       ],
-      "expected": "Scenario-matrix cross-walk confirms FR-25 resolution feeds all three testing-plan policy-dependent rows: check-in status windows, GPS requirement enforcement, and close-time absent processing each consume the same single effective policy resolved via BR-20 precedence.",
+      "expected": "Scenario-matrix cross-walk confirms FR-25 resolution feeds all four testing-plan policy-dependent rows: check-in status windows, GPS requirement enforcement, out-of-radius validation, and close-time absent processing each consume the same single effective policy resolved via BR-20 precedence.",
       "edgeCase": false
     },
     {
@@ -370,6 +372,51 @@
         "Observe roster counts update without full page reload when a new student checks in within policy window."
       ],
       "expected": "Lecturer UI reflects FR-25 effective policy at runtime: Present/Late badges and roster counts match policy-resolved windows; live updates align with GET /v1/class-sessions/{sessionId}/attendance data per FR-19.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-25-017",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-form-ux",
+      "priority": "P1",
+      "traceability": ["FR-25", "FR-24", "BR-20"],
+      "title": "FRM-07 PolicyResolutionSummary live preview updates effective values and per-field source badges when section override fields change",
+      "preconditions": [
+        "AcademicAdmin is logged in on /admin/policies create or edit route (PG-12, FRM-07).",
+        "Institution, course, and class-section policies exist with different presentWindowMinutes and lateWindowMinutes values.",
+        "PolicyResolutionSummary (DC-09) accordion is visible below the policy form fields."
+      ],
+      "steps": [
+        "Open FRM-07 for a class section with partial override (present window only defined at section level).",
+        "Expand PolicyResolutionSummary and verify present window shows section-sourced value with source-level badge while late window and GPS fields show inherited course or institution source badges per BR-20 precedence.",
+        "Change section present window duration and observe summary preview updates the resolved effective present window immediately without save.",
+        "Toggle GPS required on and enter GPS radius; confirm summary reflects section-sourced GPS fields and precedence chain section → course → faculty → institution.",
+        "Save valid configuration and confirm post-save summary matches persisted effective resolution for the target section."
+      ],
+      "expected": "DC-09 on FRM-07 satisfies FR-25 explainability: admins see single effective policy with per-field BR-20 source provenance that updates interactively as override fields change; saved policy resolves identically at check-in time.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-25-018",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["FR-25", "FR-24"],
+      "title": "PolicyResolutionSummary renders distinct loading and error visual states during effective-policy hierarchy resolution",
+      "preconditions": [
+        "AcademicAdmin is logged in on /admin/policies create or edit route (PG-12).",
+        "FRM-07 is open for a class section with institution and course parent policies seeded.",
+        "Harness can throttle or fail the effective-policy preview fetch backing DC-09."
+      ],
+      "steps": [
+        "Select class-section scope on FRM-07 and observe PolicyResolutionSummary loading skeleton or shimmer while hierarchy resolution fetch is in flight.",
+        "After successful fetch, confirm populated accordion sections (present window, late window, GPS required, manual-edit window) are visually distinct from the loading state.",
+        "Simulate preview fetch failure (5xx or network error) and observe error treatment with FeedbackAlert and retry affordance per NFR-UI-07.",
+        "Retry successfully and verify resolved effective values and source badges render in the populated summary state."
+      ],
+      "expected": "PolicyResolutionSummary implements NFR-UI-07 async state coverage for FR-25 resolution preview: loading, error, and populated effective-policy states are visually distinct; retry restores BR-20 precedence display without requiring a full page reload.",
       "edgeCase": false
     }
   ]
