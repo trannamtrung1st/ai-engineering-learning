@@ -582,7 +582,7 @@
     },
     {
       "id": "module-reporting-and-export",
-      "passes": true,
+      "passes": false,
       "priority": 13,
       "phase": 1,
       "agent": "backend",
@@ -622,7 +622,15 @@
           "FR-27",
           "FR-28"
         ]
-      }
+      },
+      "history": [
+        {
+          "at": "2026-07-03T04:12:42Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-15 — reverify after TestGen",
+          "source": "harness"
+        }
+      ]
     },
     {
       "id": "module-audit-and-compliance",
@@ -1437,7 +1445,15 @@
         "playwright": [
           "tests/playwright-ui/scenarios/web-academic-admin-reporting-export.spec.ts"
         ]
-      }
+      },
+      "history": [
+        {
+          "at": "2026-07-03T04:12:42Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-15 — reverify after TestGen",
+          "source": "harness"
+        }
+      ]
     },
     {
       "id": "web-system-auditor-audit-review",
@@ -1605,7 +1621,7 @@
     },
     {
       "id": "test-e2e-role-scope-and-export",
-      "passes": true,
+      "passes": false,
       "priority": 27,
       "phase": 3,
       "agent": "test",
@@ -1677,6 +1693,12 @@
           "at": "2026-07-02T23:16:33Z",
           "kind": "gate_failed",
           "reason": "Computational checks failed — see 20260702T230840Z-checks.json",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T04:12:42Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-15 — reverify after TestGen",
           "source": "harness"
         }
       ]

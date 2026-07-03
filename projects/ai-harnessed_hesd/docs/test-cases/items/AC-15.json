@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-15",
   "version": 1,
-  "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
-  "generatedAt": "2026-07-02T12:00:00Z",
+  "docFingerprint": "sha256:a297e0ef15d9279cea05e3e0486a1edbcbff0f8ff12f9ba243a6f6c60b73f5f1",
+  "generatedAt": "2026-07-03T04:12:00Z",
   "cases": [
     {
       "id": "TC-AC-15-001",
@@ -123,7 +123,7 @@
         "Call GET /v1/reports/attendance?classSectionId={sectionBId} as lecturer.",
         "Call POST /v1/exports/attendance with filters { classSectionId: sectionBId } as lecturer."
       ],
-      "expected": "Both requests are denied with 403 Forbidden or OutOfScope semantics; responses contain no partial section B rows, counts, or export job identifiers.",
+      "expected": "Both requests return 403 with error.code OutOfScope or Forbidden per API §6.2; responses contain no partial section B rows, counts, export job identifiers, or other restricted data leakage (PRM-10 / BR-19).",
       "edgeCase": true
     },
     {
@@ -161,9 +161,9 @@
       "steps": [
         "Submit POST /v1/exports/attendance with filters { termId } only (no classSectionId).",
         "Complete export and inspect output rows.",
-        "Attempt to include unassigned section via filter manipulation in request body."
+        "Submit POST /v1/exports/attendance with filters { termId, classSectionId: unassignedSectionId }."
       ],
-      "expected": "Default term-wide export for lecturer includes only assigned-section rows; explicit unassigned classSectionId in filters is rejected or ignored without leaking foreign section data.",
+      "expected": "Default term-wide export for lecturer includes only assigned-section rows; explicit unassigned classSectionId in filters is rejected with 403 OutOfScope without leaking foreign section data.",
       "edgeCase": true
     },
     {
@@ -176,16 +176,60 @@
       "title": "Lecturer browser journey exports attendance from assigned sections only",
       "preconditions": [
         "Lecturer is logged in on desktop browser.",
-        "Reporting UI shows term filter and section selector populated from lecturer scope.",
+        "PG-13 (/reports/attendance) section filter is populated from lecturer scope only.",
         "Attendance data exists in assigned and unassigned sections."
       ],
       "steps": [
-        "Navigate to attendance report or export page.",
+        "Navigate to PG-13 /reports/attendance via staff nav Báo cáo điểm danh.",
         "Open section filter dropdown and observe available options.",
-        "Select an assigned section, set export format CSV, and trigger export.",
+        "Open PG-14 export dialog, select an assigned section, set format CSV, and trigger export.",
         "Confirm download or job status UI and verify exported file section scope."
       ],
       "expected": "UI section selector lists only assigned class sections; export action produces CSV scoped to selected assigned section with no unassigned section rows visible in filter or export output.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-15-010",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-form-ux",
+      "priority": "P1",
+      "traceability": ["AC-15", "FR-27", "BR-18"],
+      "title": "Export dialog ExportScopeSummary reflects lecturer assigned sections only",
+      "preconditions": [
+        "Lecturer is logged in on PG-13 /reports/attendance.",
+        "Lecturer is assigned to section A only; section B has attendance data in same term.",
+        "Export dialog (PG-14) is reachable from PG-13 primary action."
+      ],
+      "steps": [
+        "Open PG-14 export dialog from PG-13.",
+        "Observe ExportScopeSummary (DC-11) before submitting export.",
+        "Verify section filter control options within the dialog.",
+        "Attempt to proceed with default term filter without selecting an out-of-scope section."
+      ],
+      "expected": "ExportScopeSummary and section selector enumerate only assigned class sections (section A); unassigned section B is absent from selectable options; submit control remains disabled until required fields are valid; success feedback appears after scoped export completes without exposing foreign section identifiers.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-15-011",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["AC-15", "FR-28", "BR-18", "BR-19"],
+      "title": "PG-13 report listing visual states remain scope-safe for lecturer",
+      "preconditions": [
+        "Lecturer is assigned to at least one section.",
+        "Fixture supports scoped empty (no rows in assigned sections), loading, and API error scenarios.",
+        "Unassigned sections contain attendance data not visible to this lecturer."
+      ],
+      "steps": [
+        "Navigate to PG-13 /reports/attendance and observe loading skeleton or spinner while report query is in flight.",
+        "With zero rows in assigned scope, verify empty state messaging and absence of unassigned section names or counts.",
+        "Simulate report API failure and verify error state with retry affordance.",
+        "On successful load, confirm table rows reference assigned sections only."
+      ],
+      "expected": "Loading, empty, and error states on PG-13 are visually distinct per NFR-UI-07; empty and error states disclose no unassigned section data or institution-wide totals; successful list renders only scoped attendance rows.",
       "edgeCase": false
     }
   ]
