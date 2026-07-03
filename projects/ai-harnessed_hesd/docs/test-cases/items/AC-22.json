@@ -2,7 +2,7 @@
   "productItemId": "AC-22",
   "version": 1,
   "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
-  "generatedAt": "2026-07-02T14:00:00Z",
+  "generatedAt": "2026-07-03T04:18:00Z",
   "cases": [
     {
       "id": "TC-AC-22-001",
@@ -21,7 +21,7 @@
         "Execute a representative campus load run where enrolled students submit rule-pass check-in requests (open session, valid token, authenticated, enrolled, policy satisfied).",
         "For each rule-pass request, record terminal outcome: HTTP 200 with data.outcome Success and persisted AttendanceRecord, or processing failure (5xx, timeout, or Success not persisted).",
         "Compute success rate as successful rule-pass requests divided by total rule-pass requests in the run.",
-        "Exclude intentional rule-fail attempts (ExpiredQr, NotEnrolled, DuplicateCheckIn, etc.) from the valid-request denominator per NFR-03 definition."
+        "Exclude intentional rule-fail attempts (ExpiredQr, NotEnrolled, DuplicateCheckIn, SessionClosed, etc.) from the valid-request denominator per NFR-03 definition."
       ],
       "expected": "Valid check-in processing success rate is >= 99% across the pilot load run, satisfying AC-22 and NFR-03 per testing-plan §7.1 and §11 evidence requirements.",
       "edgeCase": false
@@ -78,19 +78,20 @@
       "technique": "concurrency",
       "priority": "P0",
       "traceability": ["AC-22", "NFR-03", "NFR-04", "NFR-07", "AC-08", "FR-18", "BR-07"],
-      "title": "Concurrent valid check-in burst and idempotent retries maintain >= 99% processing success",
+      "title": "Class-start concurrent burst on POST /v1/check-ins maintains >= 99% valid processing success",
       "preconditions": [
-        "Multiple open class sessions each have 20+ enrolled students with valid QR tokens.",
-        "Test harness fires parallel POST /v1/check-ins from distinct student actors with unique Idempotency-Key values.",
+        "Multiple open class sessions each have 20+ enrolled students per representative pilot profile (performance-smoke: 2 sessions × 20 students).",
+        "Test harness can fire parallel POST /v1/check-ins requests across sessions with distinct students, valid QR tokens, and unique Idempotency-Key values.",
+        "All requests satisfy session-open, token, enrollment, authentication, and policy preconditions per NFR-03 valid-request subset.",
         "Retry storm subset replays same Idempotency-Key for already-accepted commands per testing-plan §7.2."
       ],
       "steps": [
-        "Trigger simultaneous rule-pass check-in submissions across concurrent open sessions mimicking class-start peak (NFR-04).",
+        "Trigger simultaneous rule-pass check-in submissions across concurrent open sessions mimicking class-start burst (performance-smoke profile).",
         "Include idempotent replays: resubmit with same Idempotency-Key after Success; verify idempotent success response.",
         "Include duplicate distinct submissions after Success (AC-08); verify 409 DuplicateCheckIn classified as rule-fail, not processing failure.",
         "Compute success rate for rule-pass first-attempt and idempotent-replay requests only."
       ],
-      "expected": "Under concurrent burst and retry storms, valid check-in processing success rate is >= 99%; idempotent replays return Success without duplicate attendance rows; intentional DuplicateCheckIn rejections are excluded from the valid-request denominator.",
+      "expected": "Under class-start concurrency and retry storms, valid check-in processing success rate is >= 99% (AC-22); idempotent replays return Success without duplicate attendance rows; intentional DuplicateCheckIn rejections are excluded from the valid-request denominator.",
       "edgeCase": true
     },
     {
@@ -169,7 +170,7 @@
       "title": "Non-Student roles denied POST /v1/check-ins and excluded from valid success-rate denominator",
       "preconditions": [
         "Open class session with valid qrToken exists in test environment.",
-        "Lecturer and ITAdmin bearer tokens are available per permission matrix.",
+        "Lecturer and ITAdmin bearer tokens are available per permission matrix (Submit QR check-in Deny).",
         "Enrolled Student bearer token is available as authorized control for success-rate baseline."
       ],
       "steps": [
@@ -225,6 +226,28 @@
       "expected": "Physical pilot demonstrates >= 99% processing success for rule-pass check-in requests under real campus load, providing production-like evidence for AC-22 beyond emulated harness runs.",
       "edgeCase": false,
       "harnessSkip": "physical-device"
+    },
+    {
+      "id": "TC-AC-22-011",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["AC-22", "NFR-03", "FR-16", "AC-11"],
+      "title": "PG-02 CheckInResultScreen success and failure outcome states are visually distinct for reliable success-rate aggregation",
+      "preconditions": [
+        "Multiple open sessions with enrolled students are configured for parallel mobile-web journeys at PG-02 /check-in.",
+        "Browser harness classifies terminal UI state by page state ID per ui-states §5.1 (success-present, success-late vs failure-* and lifecycle states).",
+        "Fixtures support present-window and late-window rule-pass scenarios plus representative rule-fail paths; GPS policy disabled or satisfied."
+      ],
+      "steps": [
+        "Run parallel rule-pass check-in journeys; for each, observe lifecycle loading → submitting → outcome per ui-states §5.2.",
+        "Verify successful processing renders exactly one of success-present or success-late with role=status aria-live announcement — not stuck in loading or submitting.",
+        "Verify representative rule-fail outcomes (ExpiredQr, DuplicateCheckIn, SessionClosed) render distinct failure-* state IDs without being misclassified as processing success.",
+        "Aggregate UI processing success rate for journeys reaching success-present or success-late versus total rule-pass journeys."
+      ],
+      "expected": "Rule-pass journeys that complete processing render decisive success-present or success-late CheckInResultScreen states without ambiguous intermediate states; failure and lifecycle states are visually distinct so harness can accurately measure >= 99% UI processing success rate for AC-22 gate evidence per AC-UI-02 and ui-states §5.1.",
+      "edgeCase": false
     }
   ]
 }
