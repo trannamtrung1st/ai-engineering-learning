@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-16",
   "version": 1,
-  "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
-  "generatedAt": "2026-07-02T14:30:00Z",
+  "docFingerprint": "sha256:a297e0ef15d9279cea05e3e0486a1edbcbff0f8ff12f9ba243a6f6c60b73f5f1",
+  "generatedAt": "2026-07-03T04:12:00Z",
   "cases": [
     {
       "id": "TC-AC-16-001",
@@ -17,7 +17,7 @@
         "Attendance data exists across multiple class sections including sections outside each actor's authorized scope."
       ],
       "steps": [
-        "As Student, call GET /v1/reports/attendance and POST /v1/exports/attendance with institution-wide filters.",
+        "As Student, call GET /v1/reports/attendance with institution-wide filters (e.g. termId without self scope) and POST /v1/exports/attendance with institution-wide filters.",
         "As ITAdmin without explicit academic grant, call GET /v1/reports/attendance and POST /v1/exports/attendance.",
         "As Lecturer assigned to section A only, call both endpoints targeting unassigned section B.",
         "Inspect each denial response body and headers for restricted data leakage."
@@ -53,13 +53,13 @@
       "technique": "http-contract",
       "priority": "P0",
       "traceability": ["AC-16", "FR-28", "BR-19"],
-      "title": "HTTP contract for Student denied on GET /v1/reports/attendance",
+      "title": "HTTP contract for Student denied on GET /v1/reports/attendance with out-of-scope filters",
       "preconditions": [
         "Student user is authenticated with valid Bearer token.",
         "Institution-wide attendance report data exists in the database."
       ],
       "steps": [
-        "Send GET /v1/reports/attendance?termId={termId}&page=1&pageSize=25 with Student Authorization header.",
+        "Send GET /v1/reports/attendance?termId={termId}&page=1&pageSize=25 with Student Authorization header (no self-only studentUserId filter).",
         "Validate HTTP status code and JSON response envelope.",
         "Inspect data and meta.pagination fields for any restricted attendance rows or totals."
       ],
@@ -230,19 +230,19 @@
       "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["AC-16", "FR-27", "FR-28", "BR-19"],
-      "title": "Student browser journey blocked from report and export surfaces",
+      "title": "Student browser journey blocked from staff report and export surfaces",
       "preconditions": [
         "Student is logged in on mobile or desktop browser.",
-        "Attendance report and export navigation entries exist in application shell.",
-        "Institution attendance data exists but Student role lacks ReportView.read and ExportJob.execute."
+        "Student nav shell lists only /check-in and /me/attendance per PG-03; staff PG-13 route is absent from nav.",
+        "Institution attendance data exists but Student role lacks ExportJob.execute and institution-wide ReportView.read."
       ],
       "steps": [
-        "Attempt to navigate directly to attendance report URL.",
-        "Observe navigation menu for report or export links.",
-        "If a report page is reachable, attempt to trigger CSV export action.",
-        "Verify error or redirect messaging shown to the user."
+        "Attempt to navigate directly to staff report URL /reports/attendance.",
+        "Observe StudentLayout nav menu — confirm no 'Báo cáo điểm danh' entry for PG-13.",
+        "If export dialog URL /reports/attendance/export is reachable, attempt to trigger CSV export action.",
+        "Verify access-denied or redirect messaging; confirm /me/attendance self-history remains accessible separately."
       ],
-      "expected": "Student cannot access report listing or export UI; direct URL navigation shows access-denied state or redirect without displaying other students' or sections' attendance data; export action is unavailable or fails with user-safe denial message.",
+      "expected": "Student cannot access PG-13 report listing or PG-14 export UI; direct URL to /reports/attendance shows access-denied state or redirect without displaying other students' or sections' attendance data; export action is unavailable or fails with user-safe denial message. Self-scoped /me/attendance remains reachable.",
       "edgeCase": false
     },
     {
@@ -255,14 +255,14 @@
       "title": "Lecturer browser journey shows denial when selecting out-of-scope section for export",
       "preconditions": [
         "Lecturer is logged in on desktop browser.",
-        "Reporting UI section filter is populated from lecturer scope only.",
+        "Reporting UI section filter on PG-13 is populated from lecturer scope only.",
         "Deep-link or manual filter tamper to foreign classSectionId is possible via UI or URL."
       ],
       "steps": [
-        "Navigate to attendance report or export page.",
+        "Navigate to PG-13 /reports/attendance.",
         "Confirm section selector lists only assigned sections.",
-        "Attempt export with URL or form parameter set to unassigned classSectionId.",
-        "Observe UI error state and network response for export request."
+        "Attempt export via PG-14 dialog with URL or form parameter set to unassigned classSectionId.",
+        "Observe UI error state and network response for POST /v1/exports/attendance."
       ],
       "expected": "UI does not list unassigned sections; tampered export request shows access-denied feedback without previewing foreign-section attendance rows or partial export download.",
       "edgeCase": false
@@ -273,12 +273,12 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["AC-16", "FR-27", "BR-19"],
+      "traceability": ["AC-16", "FR-27", "FR-28", "BR-19"],
       "title": "Student direct URL to /reports/attendance shows styled access-denied surface with home link",
       "preconditions": [
         "Student user is logged in with a valid session.",
         "Attendance report data exists in the database.",
-        "Student role lacks ReportView.read permission per permissions matrix."
+        "Student role lacks staff PG-13 ReportView.read scope per permissions matrix."
       ],
       "steps": [
         "As authenticated Student, navigate directly to /reports/attendance by typing the URL.",
@@ -286,7 +286,29 @@
         "Check for a visible link or button that returns to Student home.",
         "Verify no attendance report data, pagination, or student records from other users are displayed."
       ],
-      "expected": "Page renders a styled access-denied surface (FeedbackAlert variant danger with Neobrutalism 2px border and hard shadow) containing a human-readable Vietnamese message such as 'Bạn không có quyền truy cập trang này'. A clearly visible 'Về trang chủ' link or button is present and navigates to /check-in or /me/history. No report rows, pagination totals, or other attendance data are rendered.",
+      "expected": "Page renders a styled access-denied surface (FeedbackAlert variant danger with Neobrutalism 2px border and hard shadow) containing a human-readable Vietnamese message such as 'Bạn không có quyền truy cập trang này'. A clearly visible 'Về trang chủ' link or button is present and navigates to /check-in or /me/attendance. No report rows, pagination totals, or other attendance data are rendered.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-16-015",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["AC-16", "FR-28", "BR-19"],
+      "title": "PG-13 access-denied visual state for unauthorized actor shows no data leakage",
+      "preconditions": [
+        "ITAdmin without academic grant or Student actor is authenticated.",
+        "PG-13 /reports/attendance route is requested without authorized scope.",
+        "Institution attendance data exists in backend but actor lacks ReportView.read for staff report surface."
+      ],
+      "steps": [
+        "Navigate to PG-13 /reports/attendance as unauthorized actor.",
+        "Observe rendered state — confirm access-denied FeedbackAlert is visually distinct from loading skeleton, empty list, and error-with-retry states per NFR-UI-07.",
+        "Verify no DataTable rows, filter chips with foreign section names, pagination controls, or ExportScopeSummary preview render.",
+        "Confirm denial message is localized (vi-VN) and no partial report metadata appears in page source or network preview."
+      ],
+      "expected": "PG-13 renders a scope-safe access-denied visual state only: no loading spinner transitioning to partial data, no empty-state table shell implying zero rows in foreign scope, and no error state exposing API response payloads with restricted identifiers. User sees explicit permission feedback without restricted attendance content (AC-UI-09, BR-19).",
       "edgeCase": false
     }
   ]

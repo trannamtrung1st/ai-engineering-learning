@@ -210,6 +210,12 @@
           "kind": "drift",
           "reason": "Doc drift for AC-11 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-03T04:13:32Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-16 — reverify after TestGen",
+          "source": "harness"
         }
       ]
     },
@@ -616,6 +622,7 @@
         ],
         "acceptanceTags": [
           "AC-15",
+          "AC-16",
           "AC-17",
           "BR-18",
           "BR-19",
@@ -628,6 +635,12 @@
           "at": "2026-07-03T04:12:42Z",
           "kind": "drift",
           "reason": "Doc drift for AC-15 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T04:13:32Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-16 — reverify after TestGen",
           "source": "harness"
         }
       ]
@@ -979,9 +992,9 @@
           "apps/web/src/routes/pages/StudentAttendanceHistoryPage.test.tsx"
         ],
         "acceptanceTags": [
+          "AC-16",
           "BR-19",
-          "FR-37",
-          "AC-16"
+          "FR-37"
         ],
         "playwright": [
           "tests/playwright-ui/scenarios/web-student-attendance-history.spec.ts"
@@ -992,6 +1005,12 @@
           "at": "2026-07-02T18:12:36Z",
           "kind": "gate_failed",
           "reason": "Browser test failed — see 20260702T175527Z-browser-test.json",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T04:13:32Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-16 — reverify after TestGen",
           "source": "harness"
         }
       ]
@@ -1452,6 +1471,12 @@
           "kind": "drift",
           "reason": "Doc drift for AC-15 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-03T04:13:32Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-16 — reverify after TestGen",
+          "source": "harness"
         }
       ]
     },
@@ -1524,6 +1549,12 @@
           "at": "2026-07-02T21:56:55Z",
           "kind": "gate_failed",
           "reason": "Browser test failed — see 20260702T213529Z-browser-test.json",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T04:13:32Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-16 — reverify after TestGen",
           "source": "harness"
         }
       ]
@@ -1700,6 +1731,12 @@
           "kind": "drift",
           "reason": "Doc drift for AC-15 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-03T04:13:32Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-16 — reverify after TestGen",
+          "source": "harness"
         }
       ]
     },
@@ -1867,7 +1904,15 @@
           "FR-15",
           "FR-33"
         ]
-      }
+      },
+      "history": [
+        {
+          "at": "2026-07-03T04:13:32Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-16 — reverify after TestGen",
+          "source": "harness"
+        }
+      ]
     }
   ]
 }
