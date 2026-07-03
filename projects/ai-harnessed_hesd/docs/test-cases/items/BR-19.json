@@ -2,7 +2,7 @@
   "productItemId": "BR-19",
   "version": 1,
   "docFingerprint": "sha256:0421ca4affe3aa70584e3b352a860d11de519a5a2aaff8c4d8e0f12d14d1a70a",
-  "generatedAt": "2026-07-02T12:08:25Z",
+  "generatedAt": "2026-07-03T05:24:00Z",
   "cases": [
     {
       "id": "TC-BR-19-001",
@@ -18,7 +18,7 @@
         "Attendance data exists in assigned section A, unassigned section B, faculty Y, and across institution scope."
       ],
       "steps": [
-        "As Student, call GET /v1/reports/attendance and POST /v1/exports/attendance with institution-wide filters.",
+        "As Student, call GET /v1/reports/attendance with studentUserId override targeting another student and POST /v1/exports/attendance with institution-wide filters.",
         "As Lecturer assigned to section A, call GET /v1/reports/attendance and POST /v1/exports/attendance targeting section B.",
         "As DepartmentAdmin scoped to faculty X, call GET /v1/reports/attendance with faculty Y classSectionId filter.",
         "As SystemAuditor, call POST /v1/exports/attendance without explicit export grant.",
@@ -78,19 +78,19 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["BR-19", "FR-28", "AC-16"],
-      "title": "HTTP contract for Student GET /v1/reports/attendance returns 403 denial envelope",
+      "traceability": ["BR-19", "FR-28", "AC-16", "PRM-03"],
+      "title": "HTTP contract for Student cross-student report query returns 403 denial envelope",
       "preconditions": [
-        "Student user is authenticated with valid Bearer token.",
-        "Institution-wide attendance report data exists across multiple sections."
+        "Two Student accounts exist: studentA (authenticated) and studentB with attendance records in the same section.",
+        "studentB attendance data exists and is known to the test harness."
       ],
       "steps": [
-        "Send GET /v1/reports/attendance?termId={termId}&page=1&pageSize=25 with Student Authorization header.",
+        "Send GET /v1/reports/attendance?termId={termId}&studentUserId={studentBUserId}&page=1&pageSize=25 with studentA Authorization header.",
         "Validate HTTP status code is 403.",
         "Assert standard { data, meta, error } envelope with data null.",
-        "Verify error.code is Forbidden or OutOfScope and meta.pagination is absent or contains no institution-wide totals."
+        "Verify error.code is Forbidden or OutOfScope and meta.pagination is absent or contains no studentB scoped totals."
       ],
-      "expected": "Response is HTTP 403 with error.code Forbidden or OutOfScope; data is null; no partial attendance rows or cross-scope pagination metadata are disclosed (BR-19, AC-16).",
+      "expected": "Response is HTTP 403 with error.code Forbidden or OutOfScope; data is null; no studentB attendance rows, identifiers, or cross-student pagination metadata are disclosed (BR-19, PRM-03, AC-16).",
       "edgeCase": false
     },
     {
@@ -120,19 +120,19 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["BR-19", "FR-28", "AC-16"],
-      "title": "Student denied institution-wide attendance report without data leakage",
+      "traceability": ["BR-19", "FR-28", "AC-16", "PRM-03"],
+      "title": "Student denied cross-student report access without data leakage",
       "preconditions": [
         "Student user is authenticated with valid Bearer token.",
-        "Attendance records exist for multiple sections including sections the student is not enrolled in."
+        "Attendance records exist for the acting student and peer students in multiple sections."
       ],
       "steps": [
-        "Send GET /v1/reports/attendance?termId={termId}&page=1&pageSize=25 as Student.",
-        "Inspect response body for any attendance rows, student identifiers, or pagination totals.",
-        "Attempt GET /v1/reports/attendance with studentUserId override targeting another student.",
+        "Send GET /v1/reports/attendance?termId={termId}&studentUserId={peerStudentUserId}&page=1&pageSize=25 as Student.",
+        "Inspect response body for any peer attendance rows, student identifiers, or pagination totals.",
+        "Attempt GET /v1/class-sessions/{sessionId}/attendance for a session with peer roster data.",
         "Verify no restricted peer attendance data appears in any response field."
       ],
-      "expected": "All institution report requests return HTTP 403 Forbidden or OutOfScope; data is null; no partial attendance rows, peer student identifiers, or cross-scope totals are disclosed per PRM-03 and BR-19.",
+      "expected": "Cross-student report and live roster requests return HTTP 403 Forbidden or OutOfScope; data is null; no partial attendance rows, peer student identifiers, or cross-scope totals are disclosed per PRM-03 and BR-19.",
       "edgeCase": true
     },
     {
@@ -344,7 +344,7 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P1",
-      "traceability": ["BR-19", "FR-30", "BR-22"],
+      "traceability": ["BR-19"],
       "title": "Privileged denial audit entry written when institution policy requires",
       "preconditions": [
         "Institution policy flag privilegedDenialAuditEnabled is true.",
@@ -357,7 +357,7 @@
         "Query AuditLog repository for new entry matching actor, target resource, and denial outcome.",
         "Verify audit entry contains actorUserId, timestamp, and denied action scope without leaking restricted data in oldValue or newValue fields."
       ],
-      "expected": "When institution policy requires, privileged denial produces AuditLog entry with actor, timestamp, and denied action context; no foreign-scope attendance data is embedded in audit payload (BR-19 outcome, FR-30).",
+      "expected": "When institution policy requires, privileged denial produces AuditLog entry with actor, timestamp, and denied action context; no foreign-scope attendance data is embedded in audit payload (BR-19 outcome).",
       "edgeCase": false
     },
     {
@@ -367,19 +367,19 @@
       "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["BR-19", "FR-27", "FR-28", "AC-16"],
-      "title": "Student browser journey blocked from institution report and export surfaces",
+      "title": "Student browser journey blocked from staff report and export surfaces",
       "preconditions": [
         "Student is logged in on mobile or desktop browser.",
-        "Application shell may expose or deep-link to reporting and export routes.",
-        "Student role lacks ReportView.read institution scope and ExportJob.execute per permissions matrix."
+        "PG-03 /me/attendance is the authorized self-service path; PG-13 /reports/attendance and PG-14 export dialog are staff reporting surfaces per 09-page-list.md.",
+        "Student role lacks ExportJob.execute and staff ReportView scope per permissions matrix §3.2."
       ],
       "steps": [
-        "Attempt to navigate directly to attendance report URL and export URL.",
-        "Inspect navigation menu for report or export affordances visible to Student.",
-        "If report or export UI is reachable, attempt to load institution-wide data or trigger CSV export.",
+        "Attempt to navigate directly to PG-13 /reports/attendance and PG-14 export dialog URL.",
+        "Inspect student shell navigation for report or export affordances visible to Student.",
+        "If staff report or export UI is reachable, attempt to load institution-wide data or trigger CSV export.",
         "Observe user-facing denial message and network API responses."
       ],
-      "expected": "Student cannot view institution attendance report or execute CSV export; UI shows access-denied feedback or hides affordances without displaying other students' attendance data, partial rows, or cross-scope counts (AC-16, BR-19).",
+      "expected": "Student cannot view staff attendance report or execute CSV export; UI shows access-denied feedback or hides affordances without displaying other students' attendance data, partial rows, or cross-scope counts (AC-16, BR-19).",
       "edgeCase": true
     },
     {
@@ -389,19 +389,42 @@
       "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["BR-19", "FR-28", "AC-16"],
-      "title": "Lecturer browser journey denied when selecting unassigned section filter",
+      "title": "Lecturer browser journey denied when selecting unassigned section filter on PG-13",
       "preconditions": [
-        "Lecturer is logged in on desktop browser.",
-        "Reporting UI section selector or filter may accept manual section identifiers.",
+        "Lecturer is logged in on desktop browser at PG-13 /reports/attendance (SUR-05).",
+        "TableToolbar section filter or URL query may accept manual classSectionId values per 14-listing-pages-search-filter-sort.md.",
         "Lecturer is assigned to section A only; section B has attendance data."
       ],
       "steps": [
-        "Navigate to attendance report page as Lecturer.",
-        "Attempt to filter or navigate to unassigned section B via URL parameter, selector, or search.",
+        "Navigate to PG-13 /reports/attendance as Lecturer.",
+        "Attempt to filter or navigate to unassigned section B via URL parameter, TableToolbar selector, or search.",
         "Observe UI error state and underlying GET /v1/reports/attendance network response.",
-        "Verify no section B student names, attendance statuses, or row counts appear in the page."
+        "Verify no section B student names, AttendanceStatusCell values, or row counts appear in the page."
       ],
       "expected": "UI displays access-denied or empty scoped state for unassigned section; network response is HTTP 403 OutOfScope; no section B roster or report rows are rendered (BR-19 cross-scope Lecturer denial, AC-16).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-19-020",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["BR-19", "FR-28", "AC-16"],
+      "title": "PG-13 out-of-scope report denial states disclose no cross-section student or count metadata",
+      "preconditions": [
+        "Lecturer scoped to section A is logged in on desktop StaffLayout at PG-13 /reports/attendance.",
+        "Fixtures can produce out-of-scope filter rejection and report API 403 for section B.",
+        "Section B attendance data exists that must not appear in any UI listing state."
+      ],
+      "steps": [
+        "Navigate to PG-13 /reports/attendance and apply classSectionId filter or URL parameter targeting unassigned section B.",
+        "Observe access-denied FeedbackAlert or scoped error state per 12-ui-states.md §6.",
+        "Trigger subsequent report API retry failure and confirm error state with retry affordance.",
+        "Inspect DOM and network GET /v1/reports/attendance response for section B student names, AttendanceStatusCell values, or pagination totals.",
+        "Verify loading, denial, and error states remain visually distinct per NFR-UI-07 without embedding foreign section identifiers."
+      ],
+      "expected": "PG-13 out-of-scope denial and error states are visually distinct per NFR-UI-07; no listing state reveals section B student identifiers, attendance statuses, or cross-scope row counts; underlying API returns HTTP 403 OutOfScope without partial data per AC-16 and BR-19.",
       "edgeCase": true
     }
   ]
