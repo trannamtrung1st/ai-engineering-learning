@@ -287,3 +287,5 @@
 - 2026-07-03T06:36:11Z | AC-26 | testgen_passed
 - 2026-07-03T06:37:42Z | FR-38 | testgen_passed
 - 2026-07-03T06:39:34Z | BR-24 | testgen_passed
+- 2026-07-03T06:49:04Z | module-identity-and-access | implementer: POST /v1/auth/logout (FR-38 BR-24) — authenticated logout returns loggedOut:true, UserLoggedOut audit, 401 on missing token; db-seed extends audit_logs CHECK; integration tests TC-FR-38-* TC-BR-24-* — checks: full profile pass (unit 205/205, integration 211/211, e2e 21/21)
+- 2026-07-03T06:52:47Z | module-identity-and-access | passed

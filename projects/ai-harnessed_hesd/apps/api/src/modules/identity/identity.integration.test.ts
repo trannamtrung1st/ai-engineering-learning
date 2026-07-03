@@ -49,40 +49,56 @@ describe("M01 identity module integration — FR-31 FR-32 BR-19 NFR-09", () => {
     pool = new pg.Pool({ connectionString: databaseUrl });
     repo = createIdentityRepository(pool);
 
-    const deptAdminId = randomUUID();
-    await pool.query(
-      `INSERT INTO users (id, email, display_name, is_active) VALUES ($1, $2, $3, true) ON CONFLICT DO NOTHING`,
-      [deptAdminId, "dept-admin@attendly.local", "Dept Admin"],
-    );
-    await pool.query(
-      `
-      INSERT INTO user_role_assignments (id, user_id, role, scope_type, scope_id)
-      VALUES ($1, $2, 'DepartmentAdmin', 'Faculty', $3)
-      ON CONFLICT DO NOTHING
-      `,
-      [randomUUID(), deptAdminId, SEED.faculty],
-    );
-    await pool.query(
-      `
-      INSERT INTO user_credentials (user_id, password_hash)
-      VALUES ($1, '$2b$10$1yMZjG/gIlHk/2kkZvMvt..ZRMavzIRAD9Rz9ipO7EHz87QF79Qpq')
-      ON CONFLICT (user_id) DO NOTHING
-      `,
-      [deptAdminId],
-    );
+    async function ensureFixtureUser(
+      email: string,
+      displayName: string,
+      role: string,
+      scopeType: string,
+      scopeId: string | null,
+    ): Promise<string> {
+      const existing = await pool.query<{ id: string }>(
+        `SELECT id FROM users WHERE lower(email) = lower($1)`,
+        [email],
+      );
+      const userId = existing.rows[0]?.id ?? randomUUID();
+      if (!existing.rows[0]) {
+        await pool.query(
+          `INSERT INTO users (id, email, display_name, is_active) VALUES ($1, $2, $3, true)`,
+          [userId, email, displayName],
+        );
+      }
+      await pool.query(
+        `
+        INSERT INTO user_role_assignments (id, user_id, role, scope_type, scope_id)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT DO NOTHING
+        `,
+        [randomUUID(), userId, role, scopeType, scopeId],
+      );
+      await pool.query(
+        `
+        INSERT INTO user_credentials (user_id, password_hash)
+        VALUES ($1, '$2b$10$1yMZjG/gIlHk/2kkZvMvt..ZRMavzIRAD9Rz9ipO7EHz87QF79Qpq')
+        ON CONFLICT (user_id) DO NOTHING
+        `,
+        [userId],
+      );
+      return userId;
+    }
 
-    const auditorId = randomUUID();
-    await pool.query(
-      `INSERT INTO users (id, email, display_name, is_active) VALUES ($1, $2, $3, true) ON CONFLICT DO NOTHING`,
-      [auditorId, "auditor@attendly.local", "Auditor"],
+    await ensureFixtureUser(
+      "dept-admin@attendly.local",
+      "Dept Admin",
+      "DepartmentAdmin",
+      "Faculty",
+      SEED.faculty,
     );
-    await pool.query(
-      `
-      INSERT INTO user_role_assignments (id, user_id, role, scope_type, scope_id)
-      VALUES ($1, $2, 'SystemAuditor', 'Faculty', $3)
-      ON CONFLICT DO NOTHING
-      `,
-      [randomUUID(), auditorId, SEED.faculty],
+    await ensureFixtureUser(
+      "auditor@attendly.local",
+      "Auditor",
+      "SystemAuditor",
+      "Faculty",
+      SEED.faculty,
     );
   });
 

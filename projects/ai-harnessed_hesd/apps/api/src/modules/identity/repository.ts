@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import type {
   ActorContext,
@@ -151,6 +152,31 @@ export function createIdentityRepository(pool: pg.Pool) {
         [userId],
       );
       return result.rows.map((r) => r.class_section_id);
+    },
+
+    /** FR-38 / BR-24 — append-only UserLoggedOut audit (no attendance mutations). */
+    async recordUserLogout(
+      actorUserId: string,
+      correlationId?: string | null,
+    ): Promise<string> {
+      const id = randomUUID();
+      const occurredAt = new Date().toISOString();
+      await pool.query(
+        `
+        INSERT INTO audit_logs (
+          id, actor_user_id, action_type, target_type, target_id, new_value, correlation_id
+        )
+        VALUES ($1, $2, 'UserLoggedOut', 'User', $3, $4::jsonb, $5)
+        `,
+        [
+          id,
+          actorUserId,
+          actorUserId,
+          JSON.stringify({ actorUserId, occurredAt }),
+          correlationId ?? null,
+        ],
+      );
+      return id;
     },
 
   };

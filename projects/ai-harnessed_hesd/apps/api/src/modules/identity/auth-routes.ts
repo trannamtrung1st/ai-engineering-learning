@@ -2,7 +2,7 @@ import bcrypt from "bcryptjs";
 import type { FastifyInstance } from "fastify";
 import { ErrorCode } from "@attendly/domain";
 import { accessTokenExpirySeconds, signAccessToken } from "./jwt.js";
-import { sendApiError, sendApiSuccess, unauthenticated } from "./http.js";
+import { sendApiError, sendApiSuccess, unauthenticated, resolveRequestId } from "./http.js";
 import {
   createAuthenticate,
   type IdentityServices,
@@ -57,6 +57,25 @@ export async function registerAuthRoutes(
       roles,
     });
   });
+
+  app.post(
+    "/auth/logout",
+    {
+      preHandler: authenticate,
+    },
+    async (request, reply) => {
+      if (!request.actor) {
+        unauthenticated(reply, request);
+        return;
+      }
+
+      await deps.repository.recordUserLogout(
+        request.actor.userId,
+        resolveRequestId(request),
+      );
+      sendApiSuccess(reply, request, 200, { loggedOut: true });
+    },
+  );
 
   app.get(
     "/me",

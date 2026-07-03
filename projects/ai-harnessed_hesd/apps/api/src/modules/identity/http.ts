@@ -17,6 +17,9 @@ export function resolveRequestId(request: FastifyRequest): string {
   if (typeof header === "string" && header.length > 0) {
     return header;
   }
+  if (typeof request.requestId === "string" && request.requestId.length > 0) {
+    return request.requestId;
+  }
   return randomUUID();
 }
 

@@ -49,6 +49,26 @@ async function ensureSeedBookkeeping() {
   `);
 }
 
+/** FR-38 — extend audit_logs CHECK after later migrations (0005) omit UserLoggedOut. */
+async function ensureUserLoggedOutAuditAction() {
+  await client.query(`
+    ALTER TABLE audit_logs DROP CONSTRAINT IF EXISTS audit_logs_action_type_check;
+    ALTER TABLE audit_logs ADD CONSTRAINT audit_logs_action_type_check CHECK (
+      action_type IN (
+        'AttendanceUpdate',
+        'Export',
+        'SessionOpen',
+        'SessionClose',
+        'PolicyChange',
+        'EnrollmentImport',
+        'CheckInAttempt',
+        'AbsenceThresholdAlert',
+        'UserLoggedOut'
+      )
+    );
+  `);
+}
+
 async function isSeedApplied() {
   const result = await client.query(
     "SELECT 1 FROM _attendly_seed_runs WHERE id = $1",
@@ -408,6 +428,7 @@ async function seedFixtures() {
 try {
   await client.connect();
   await ensureSeedBookkeeping();
+  await ensureUserLoggedOutAuditAction();
 
   if (await isSeedApplied()) {
     if (shouldRefreshPreviewFixtures()) {
