@@ -5,13 +5,16 @@ import { describe, expect, it } from "vitest";
  * Playwright UI workspace registers browser-regression prerequisites; domain
  * behavior tests land in downstream frontend/backend slices.
  */
+/** Slice acceptance + downstream browser prerequisites after TestGen (AC-01 AC-11 AC-16 NFR-14). */
 const PLAYWRIGHT_UI_TRACEABILITY_TAGS = [
+  "AC-01",
   "AC-04",
   "AC-06",
   "AC-08",
   "AC-09",
   "AC-10",
   "AC-11",
+  "AC-16",
   "AC-18",
   "BR-03",
   "BR-05",

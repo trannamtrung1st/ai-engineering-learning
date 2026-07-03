@@ -23,6 +23,9 @@ export const LECTURER_PERSONA: SmokePersona = {
   viewport: { width: 1280, height: 720 },
 };
 
+/** Minimum mobile width — TC-NFR-14-008 / testing-plan §6.2 device variance (C-02). */
+export const NARROW_MOBILE_VIEWPORT = { width: 320, height: 568 } as const;
+
 /** Mobile student check-in profile — NFR-14 mobile-first PG-02 flows. */
 export const STUDENT_PERSONA: SmokePersona = {
   role: "student",

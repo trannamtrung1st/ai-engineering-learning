@@ -223,7 +223,7 @@
     },
     {
       "id": "playwright-ui-workspace",
-      "passes": false,
+      "passes": true,
       "priority": 6,
       "phase": 0,
       "agent": "infra",

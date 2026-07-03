@@ -1,15 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { LECTURER_PERSONA, SEED_FIXTURE_IDS, STUDENT_PERSONA } from "./fixtures.js";
+import {
+  LECTURER_PERSONA,
+  NARROW_MOBILE_VIEWPORT,
+  SEED_FIXTURE_IDS,
+  STUDENT_PERSONA,
+} from "./fixtures.js";
 import { DEFAULT_PASSWORD } from "./constants.js";
 
 /**
  * AC-01, AC-11, AC-16, NFR-14 — seed-aligned smoke persona fixtures for Playwright UI regression.
  */
 describe("playwright-ui smoke personas", () => {
-  it("AC-01 lecturer persona matches seed lecturer email", () => {
+  it("AC-01 lecturer persona matches seed lecturer email and desktop matrix viewport", () => {
     expect(LECTURER_PERSONA.role).toBe("lecturer");
     expect(LECTURER_PERSONA.email).toBe("lecturer@attendly.local");
-    expect(LECTURER_PERSONA.viewport.width).toBeGreaterThanOrEqual(1280);
+    expect(LECTURER_PERSONA.viewport).toEqual({ width: 1280, height: 720 });
+    expect(LECTURER_PERSONA.homePath).toBe("/lecturer/sessions");
   });
 
   it("AC-11 NFR-14 student persona uses mobile viewport and seed student email", () => {
@@ -24,10 +30,18 @@ describe("playwright-ui smoke personas", () => {
     expect(STUDENT_PERSONA.password).toBe(DEFAULT_PASSWORD);
   });
 
+  it("NFR-14 narrow mobile viewport matches TC-NFR-14-008 minimum width", () => {
+    expect(NARROW_MOBILE_VIEWPORT.width).toBe(320);
+    expect(NARROW_MOBILE_VIEWPORT.height).toBe(568);
+  });
+
   it("NFR-14 seed fixture IDs stay stable for preview stack smoke data", () => {
     expect(SEED_FIXTURE_IDS.lecturerUser).toMatch(
       /^60000000-0000-4000-8000-/,
     );
     expect(SEED_FIXTURE_IDS.openSession).not.toBe(SEED_FIXTURE_IDS.scheduledSession);
+    expect(SEED_FIXTURE_IDS.scheduledSession).toBe(
+      "70000000-0000-4000-8000-000000000001",
+    );
   });
 });
