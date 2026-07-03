@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-30",
   "version": 1,
-  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
-  "generatedAt": "2026-07-02T11:34:20Z",
+  "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
+  "generatedAt": "2026-07-03T04:57:00Z",
   "cases": [
     {
       "id": "TC-FR-30-001",
@@ -418,6 +418,30 @@
         "Confirm pagination controls and default sort timestamp desc per PG-15 listing spec."
       ],
       "expected": "Browser FLOW-13 audit review journey displays queryable export audit with all FR-30 required fields visible in AuditEntryRow per CMP-02; authorized SystemAuditor can investigate export trail without export privileges.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-30-020",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["FR-30", "FR-32", "BR-18", "BR-22", "AC-17"],
+      "title": "PG-15 audit log listing renders export audit rows with distinct loading, empty, error, and list states",
+      "preconditions": [
+        "AcademicAdmin or SystemAuditor is authenticated with access to PG-15 /audit/logs per FLOW-13.",
+        "dispute-trail fixture includes completed CSV export audit entries from Lecturer, DepartmentAdmin, and AcademicAdmin actors within institution scope.",
+        "AuditEntryRow (DC-12) and TableToolbar filters for actionType, actor, targetType, from, and to are available per PG-15 listing matrix in 09-page-list.md §8."
+      ],
+      "steps": [
+        "Navigate to /audit/logs and observe initial loading skeleton or table shimmer while GET /v1/audit-logs resolves.",
+        "Apply TableToolbar filters: actionType Export and date range covering a known lecturer CSV export.",
+        "Locate AuditEntryRow and verify visible actor, occurredAt timestamp, scope filter summary, format csv, and export correlation identifier per DC-12.",
+        "Clear filters or apply a date range with no export matches; confirm no-results state shows Không tìm thấy kết quả with clear-filters affordance per NFR-UI-07.",
+        "Simulate or trigger API error on audit query; confirm error FeedbackAlert with retry action without partial export scope or actor metadata leakage.",
+        "Filter by actionType Export for AcademicAdmin institution-wide export and verify scope filter summary reflects institution-level filter context."
+      ],
+      "expected": "PG-15 listing states (loading, no-results, error, list) are visually distinct per NFR-UI-07; completed export actions are queryable in the audit table with actor, timestamp, scope filter summary, and csv format per FR-30, CMP-02, and permissions §7.1 PRM-11; error and empty states do not expose restricted export metadata or cross-scope row counts.",
       "edgeCase": false
     }
   ]

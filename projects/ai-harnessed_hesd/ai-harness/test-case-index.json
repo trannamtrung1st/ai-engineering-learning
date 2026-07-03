@@ -228,9 +228,9 @@
       "generatedAt": "2026-07-03T04:57:23Z"
     },
     "FR-30": {
-      "current": false,
+      "current": true,
       "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
-      "generatedAt": null
+      "generatedAt": "2026-07-03T04:58:59Z"
     },
     "FR-31": {
       "current": false,
