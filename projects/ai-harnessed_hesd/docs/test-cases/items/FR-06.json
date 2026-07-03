@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-06",
   "version": 1,
-  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
-  "generatedAt": "2026-07-02T11:15:00Z",
+  "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
+  "generatedAt": "2026-07-03T04:25:00Z",
   "cases": [
     {
       "id": "TC-FR-06-001",
@@ -122,12 +122,12 @@
       "title": "Cancel command transitions Scheduled session to Cancelled",
       "preconditions": [
         "A class session exists in Scheduled state with known sessionId.",
-        "AcademicAdmin (or authorized Lecturer per policy) auth context is available.",
+        "AcademicAdmin auth context is available per FR-06 actor boundary.",
         "Session has never been opened (no openedAt)."
       ],
       "steps": [
         "Record beforeState state Scheduled for the target session.",
-        "Invoke POST /v1/class-sessions/{sessionId}/cancel with Authorization and Idempotency-Key.",
+        "Invoke POST /v1/class-sessions/{sessionId}/cancel with AcademicAdmin Authorization and Idempotency-Key.",
         "Query persistence and record afterState.",
         "Call GET /v1/class-sessions?classSectionId={sectionId}&state=Cancelled and verify the session appears with Cancelled badge semantics."
       ],
@@ -169,7 +169,7 @@
       ],
       "steps": [
         "Call POST /v1/class-sessions as Student, Lecturer, and ITAdmin.",
-        "Call POST /v1/class-sessions/{sessionId}/cancel as Student and ITAdmin.",
+        "Call POST /v1/class-sessions/{sessionId}/cancel as Student, Lecturer, and ITAdmin.",
         "Read HTTP status and error.code for each denied request.",
         "Query class_sessions table to confirm no new or cancelled rows were created by unauthorized actors."
       ],
@@ -205,12 +205,12 @@
       "traceability": ["FR-06", "FR-07"],
       "title": "Open and cancel rejected on terminal or invalid session states",
       "preconditions": [
-        "A Cancelled session and a Closed session exist with known sessionIds.",
+        "A Cancelled session and an Open session exist with known sessionIds.",
         "Assigned Lecturer and AcademicAdmin tokens are available."
       ],
       "steps": [
         "Call POST /v1/class-sessions/{cancelledSessionId}/open as assigned Lecturer.",
-        "Call POST /v1/class-sessions/{openSessionId}/cancel for a session already in Open state.",
+        "Call POST /v1/class-sessions/{openSessionId}/cancel as AcademicAdmin.",
         "Read HTTP status and error.code (expect 409 InvalidSessionTransition) for each.",
         "Verify session states remain unchanged in persistence."
       ],
@@ -270,7 +270,7 @@
       "title": "Academic Admin FRM-04 section create with schedule template generates sessions",
       "preconditions": [
         "AcademicAdmin is logged in on desktop Chromium.",
-        "Admin navigation exposes class sections at /admin/class-sections.",
+        "Admin navigation exposes class sections at /admin/class-sections (PG-09).",
         "Active term, course, lecturer, and room fixtures are available."
       ],
       "steps": [
@@ -280,6 +280,50 @@
         "Open the section detail or sessions sub-view and confirm Scheduled sessions appear with correct start times without full page reload where SPA routing applies."
       ],
       "expected": "FRM-04 create flow with schedule template persists the section and generates Scheduled sessions visible in admin UI; session rows reflect scheduled start, duration, and room per FR-06.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-06-014",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["FR-06", "FR-10"],
+      "title": "PG-04 lecturer session list renders distinct loading, empty, no-results, error, and list states",
+      "preconditions": [
+        "Lecturer is logged in on desktop StaffLayout shell at /lecturer/sessions.",
+        "Fixtures can produce empty session list, slow GET /v1/class-sessions response, fetch error, filtered zero-match, and populated session list with Scheduled/Open/Closed/Cancelled rows."
+      ],
+      "steps": [
+        "Navigate to /lecturer/sessions (PG-04) with no assigned sessions and observe empty state with contextual guidance.",
+        "Reload with throttled GET /v1/class-sessions and confirm loading skeleton or table shimmer is visible before rows render.",
+        "Apply date or state filter yielding zero matches and observe no-results state with clear-filters affordance per TableToolbar.",
+        "Simulate session list API failure and observe error state with FeedbackAlert and retry control.",
+        "Restore successful fetch and confirm list state shows DataTable with state badges (Scheduled/Open/Closed/Cancelled), enrolled count, and server pagination per 09-page-list §8."
+      ],
+      "expected": "PG-04 displays visually distinct loading, empty, no-results, error, and list states per NFR-UI-07; populated list includes section code, start time, state badge, enrolled count, and pagination without cross-scope data leakage.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-06-015",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-form-ux",
+      "priority": "P1",
+      "traceability": ["FR-06", "FR-03"],
+      "title": "FRM-04 section create form shows inline validation, submitting disable, and success feedback for session generation",
+      "preconditions": [
+        "AcademicAdmin is logged in on /admin/class-sections (PG-09).",
+        "Create section modal or form (FRM-04) is open."
+      ],
+      "steps": [
+        "Submit FRM-04 with empty required fields and observe inline errors on blur or submit with focus moved to the first invalid field.",
+        "Enter schedule template with invalid durationMinutes (zero or negative) and observe field-level validation error before submit.",
+        "Fill valid section code, term, course, lecturer, default room, and schedule template; submit and observe submitting state disables the submit control with inline spinner.",
+        "On successful POST /v1/class-sections observe success toast or inline success feedback including generated Scheduled session count when applicable.",
+        "Reopen create with duplicate section code in the same term and observe server conflict mapped to the section code field or a form-level alert per FR-VAL-03."
+      ],
+      "expected": "FRM-04 enforces inline validation with explicit labels, disabled submitting state during save, and clear success feedback including session generation summary; server validation errors map to offending fields without silent failure.",
       "edgeCase": false
     }
   ]
