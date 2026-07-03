@@ -2,7 +2,7 @@
   "productItemId": "BR-13",
   "version": 1,
   "docFingerprint": "sha256:0421ca4affe3aa70584e3b352a860d11de519a5a2aaff8c4d8e0f12d14d1a70a",
-  "generatedAt": "2026-07-02T11:59:31Z",
+  "generatedAt": "2026-07-03T05:16:00Z",
   "cases": [
     {
       "id": "TC-BR-13-001",
@@ -78,19 +78,19 @@
       "layer": "integration",
       "technique": "concurrency",
       "priority": "P1",
-      "traceability": ["BR-13", "FR-09", "BR-21"],
+      "traceability": ["BR-13", "FR-09", "NFR-07"],
       "title": "Idempotent close applies BR-13 absent finalization exactly once per student",
       "preconditions": [
         "Open session with enrolled student in Pending state and no success record.",
-        "Idempotency-Key header support is enabled for POST /v1/class-sessions/{sessionId}/close.",
-        "Real database with unique constraint on (classSessionId, studentUserId) attendance records."
+        "Idempotency-Key header support is enabled for POST /v1/class-sessions/{sessionId}/close (VR-SS-04 close finalization idempotent).",
+        "Real database with unique constraint on (classSessionId, studentUserId) attendance records per DI-V-01."
       ],
       "steps": [
         "Issue two parallel or sequential POST /v1/class-sessions/{sessionId}/close requests with the same Idempotency-Key.",
         "Query AttendanceRecord count and status for the Pending student.",
         "Verify audit and close summary counts are not duplicated."
       ],
-      "expected": "Student receives exactly one Absent AttendanceRecord; repeated close calls return current Closed state without duplicate absent rows or inflated summary.absent count per INV-06 idempotency.",
+      "expected": "Student receives exactly one Absent AttendanceRecord; repeated close calls return current Closed state without duplicate absent rows or inflated summary.absent count per DI-V-01 unique key and NFR-07 idempotent replay.",
       "edgeCase": true
     },
     {
@@ -339,6 +339,28 @@
         "Verify summary chips reflect updated present, late, and absent counts matching close API summary."
       ],
       "expected": "Browser flow reflects Closed state per UI transition rules; unresolved enrolled students display Absent AttendanceStatusCell with danger variant per BR-13; roster summary updates match close API summary; Excused/Manual Present rows if present are not overwritten.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-13-016",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["BR-13", "FR-09", "AC-12"],
+      "title": "Close roster visual states: loading, empty, error, and Absent success are distinct",
+      "preconditions": [
+        "Lecturer authenticated on PG-06 attendance roster page for a session eligible to close.",
+        "Roster page renders AttendanceStatusCell badges and summary chips for present, late, and absent counts.",
+        "Session has enrolled students including at least one that will become Absent on close."
+      ],
+      "steps": [
+        "Open the roster while close processing is in flight and observe the loading/pending state (skeleton or progress indicator, no premature Absent badges).",
+        "Simulate a close-summary fetch error and confirm a visually distinct error state with a retry affordance, not a blank or success screen.",
+        "Complete close and confirm the success state renders Absent danger badges distinctly from Present/Late variants.",
+        "For a session with no enrolled students, confirm the empty state is shown rather than a zero-row table with no messaging."
+      ],
+      "expected": "Loading, empty, error, and success states of the close roster are visually distinct per listing-state guidance; Absent rows use a danger variant clearly separable from Present/Late; error state offers recovery and never masquerades as a successful close.",
       "edgeCase": false
     }
   ]
