@@ -81,7 +81,7 @@ User-visible text — headings, labels, table column headers, button copy, toast
 - Acceptance / requirement codes: `AC-01`, `FR-03`, `NFR-18`, `BR-07`
 - Schema or database field names: `item_id`, `created_at`, `slice_id`, `user_uuid`
 - Internal slice or agent names: `web-auth-session-pages`, `domain-package`
-- JSON keys or enum literals used verbatim: `status: "PENDING_REVIEW"`, `role: "admin"`
+- JSON keys or enum literals used verbatim: `status: "PENDING_REVIEW"`, `role: "ROLE_A"`
 - Error codes without human context: `ERR_403`, `ECONNREFUSED`
 
 **Use instead:** domain nouns and verbs from `docs/brds/` and `docs/ui-ux/`. Map status enums to readable labels in the presentation layer. Expose descriptive error messages, not raw codes.
