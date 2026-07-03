@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-16",
   "version": 1,
-  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
-  "generatedAt": "2026-07-02T12:30:00Z",
+  "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
+  "generatedAt": "2026-07-03T04:35:00Z",
   "cases": [
     {
       "id": "TC-FR-16-001",
@@ -13,7 +13,8 @@
       "traceability": ["FR-16", "AC-06", "AC-11", "BR-03"],
       "title": "Scenario matrix row for mobile web QR scan entry in student check-in validation block",
       "preconditions": [
-        "Testing-plan §3 Student check-in validation block applies (FR-15, FR-16, FR-17, FR-18, BR-05 to BR-07).",
+        "Testing-plan §12 Student check-in validation row applies (FR-15, FR-16, FR-17, FR-18, FR-22, FR-23; BR-05, BR-06, BR-07, BR-11, BR-12, BR-23; AC-06, AC-07, AC-08, AC-11, AC-18).",
+        "Main-workflows §5 WF-03 Student check-in happy path applies for mobile-web QR entry.",
         "An Open class session exists with a rotating valid QR token and enrolled student fixture available.",
         "Mobile-web client context is simulated (no native app install)."
       ],
@@ -23,7 +24,7 @@
         "Authenticate enrolled student if login gate applies, then submit check-in with qrToken extracted from the scanned URL.",
         "Verify terminal outcome and attendance method reflect QR-based mobile entry."
       ],
-      "expected": "Scenario-matrix maps to testing-plan §3 student check-in validation row: mobile browser QR/deep-link entry resolves server-side to the correct Open session, passes auth gate when required, and completes check-in with QR method per FR-16 and AC-11.",
+      "expected": "Scenario-matrix maps to testing-plan §12 student check-in validation row: mobile browser QR/deep-link entry resolves server-side to the correct Open session, passes auth gate when required, and completes check-in with QR method per FR-16 and AC-11.",
       "edgeCase": false
     },
     {
@@ -119,7 +120,7 @@
       "layer": "e2e",
       "technique": "flow-b",
       "priority": "P0",
-      "traceability": ["FR-16", "FR-11", "BR-03", "AC-04"],
+      "traceability": ["FR-16", "FR-11", "FR-13", "BR-03", "AC-04"],
       "title": "Alternate workflow expired QR from mobile scan then rescan with fresh token",
       "preconditions": [
         "Open session with 30-second QR TTL rotation is active.",
@@ -131,7 +132,7 @@
         "Rescan current rotating QR to obtain fresh qrToken T2 within TTL.",
         "Submit POST /v1/check-ins with T2 before expiry."
       ],
-      "expected": "First mobile submission with stale token fails with 422 ExpiredQr per E2E-04; rescan obtains fresh valid token and second submission succeeds without native app reinstall.",
+      "expected": "First mobile submission with stale token fails with 422 ExpiredQr per E2E-04 and AC-04; rescan obtains fresh valid token and second submission succeeds without native app reinstall.",
       "edgeCase": false
     },
     {
@@ -255,7 +256,7 @@
         "On Android Chrome, repeat camera scan and check-in submission.",
         "Verify both devices reach success or documented failure screen without app store install prompt."
       ],
-      "expected": "Native mobile browsers resolve camera-scanned QR to the web check-in flow and complete submission without native app install per FR-16 CAP-06.",
+      "expected": "Native mobile browsers resolve camera-scanned QR to the web check-in flow and complete submission without native app install per FR-16 CAP-06 and testing-plan §6.2 browser matrix.",
       "edgeCase": true,
       "harnessSkip": "physical-device"
     },
@@ -278,6 +279,50 @@
       ],
       "expected": "Exactly one success attendance outcome is persisted; parallel retries return consistent idempotent response without duplicate Present/Late rows per NFR-07, modeling flaky mobile network retries after QR scan.",
       "edgeCase": true
+    },
+    {
+      "id": "TC-FR-16-014",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-form-ux",
+      "priority": "P1",
+      "traceability": ["FR-16", "FR-34", "AC-11"],
+      "title": "FRM-11 check-in submission shows submitting disabled state and success feedback on CheckInResultScreen",
+      "preconditions": [
+        "Enrolled student is authenticated on mobile viewport at PG-02 /check-in?token={validToken}.",
+        "Open session with valid QR token exists; GPS policy is satisfied or not required.",
+        "08-forms-validation-ux §4.6 FRM-11 near-zero-field submission rules apply."
+      ],
+      "steps": [
+        "Trigger FRM-11 check-in submission from PG-02 and observe primary action enters disabled submitting state with loading indicator during POST /v1/check-ins.",
+        "Verify no duplicate submission is possible while submitting state is active.",
+        "On HTTP 200 success, confirm CheckInResultScreen renders Present or Late badge with timestamp and decisive Vietnamese outcome copy per FR-UI-03.",
+        "If GpsPermissionPrompt appears before submission, confirm allow/deny actions are reachable and submission resumes only after consent resolution per FRM-11 GPS optional input."
+      ],
+      "expected": "FRM-11 enforces disabled submitting feedback during the latency-critical check-in POST, prevents double-submit, and maps success to CheckInResultScreen with status badge and timestamp per 08-forms-validation-ux §4.6 and FR-16 mobile-web entry.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-16-015",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["FR-16", "FR-22", "AC-04", "AC-18"],
+      "title": "PG-02 submitting, success, and ExpiredQr error visual states are visually distinct on mobile",
+      "preconditions": [
+        "Student mobile shell (SUR-01) viewport at 375px width per NFR-14.",
+        "Fixtures exist for valid-token success path and expired-token failure path on PG-02.",
+        "09-page-list §3 PG-02 key states include submitting and result."
+      ],
+      "steps": [
+        "Navigate to PG-02 with valid token; trigger submission and capture submitting visual state (loading indicator, disabled CTA) distinct from idle ready state.",
+        "Complete successful check-in and verify success result state shows Present or Late badge with icon+text (not color alone) per NFR-UI-09.",
+        "Repeat with expired token fixture and verify ExpiredQr result state shows danger alert variant with rescan retry CTA and Vietnamese copy per 08-forms-validation-ux §5.",
+        "Confirm submitting, success, and error result states are mutually distinguishable without ambiguous intermediate blank screens."
+      ],
+      "expected": "PG-02 renders visually distinct submitting, success-present/late, and ExpiredQr error result states on mobile viewport per 09-page-list §3 key states and forms-validation UX §5 error-code mapping; failure state exposes recoverable rescan next-action per AC-04 and AC-18.",
+      "edgeCase": false
     }
   ]
 }
