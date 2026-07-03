@@ -2,7 +2,7 @@
   "productItemId": "FR-22",
   "version": 1,
   "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
-  "generatedAt": "2026-07-02T14:15:00Z",
+  "generatedAt": "2026-07-03T04:45:00Z",
   "cases": [
     {
       "id": "TC-FR-22-001",
@@ -39,10 +39,10 @@
       ],
       "steps": [
         "Submit check-in command with valid qrToken, clientTimestamp, gps payload, and known User-Agent within present window.",
-        "Query check_in_attempts for outcome, qr_session_token_id, submitted_at, client_timestamp, gps fields, device_user_agent, and correlation_id.",
+        "Query check_in_attempts for outcome, qr_session_token_id, submitted_at, client_timestamp, gps fields, device_user_agent, ip_address, and correlation_id.",
         "Query attendance_records for the student-session pair and inspect source_attempt_id, check_in_method, and check_in_at."
       ],
-      "expected": "Success path inserts one CheckInAttempt with outcome Success, non-null qr_session_token_id, ISO-8601 submitted_at, persisted GPS coordinates and gps_validation_result when supplied, device_user_agent, and correlation_id; AttendanceRecord.source_attempt_id references the attempt id with check_in_method QR per FR-22.",
+      "expected": "Success path inserts one CheckInAttempt with outcome Success, non-null qr_session_token_id, ISO-8601 submitted_at, persisted GPS coordinates and gps_validation_result when supplied, minimal device metadata (device_user_agent and ip_address when captured), and correlation_id; AttendanceRecord.source_attempt_id references the attempt id with check_in_method QR per FR-22.",
       "edgeCase": false
     },
     {
@@ -125,7 +125,7 @@
         "Inspect HTTP 200 response envelope data.outcome Success, data.attendanceStatus, and meta.requestId.",
         "Query persisted CheckInAttempt by correlation_id or requestId and compare outcome, submitted_at, and qr_session_token_id."
       ],
-      "expected": "API returns HTTP 200 with standard envelope where data.outcome is Success and error is null; persisted CheckInAttempt.outcome equals Success with matching correlation_id and non-null submitted_at per API §4.4 transaction boundary step 4.",
+      "expected": "API returns HTTP 200 with standard envelope where data.outcome is Success and error is null; persisted CheckInAttempt.outcome equals Success with matching correlation_id and non-null submitted_at per API §5.3 transaction boundary step 4.",
       "edgeCase": false
     },
     {
@@ -203,8 +203,9 @@
       "traceability": ["FR-22", "BR-23", "AC-18", "NFR-13"],
       "title": "Documented failure outcome matrix achieves 100% CheckInAttempt persistence with structured reason codes",
       "preconditions": [
-        "Test matrix covers canonical outcomes: ExpiredQr, SessionNotOpen, SessionClosed, NotEnrolled, DuplicateCheckIn, GpsRequired, GpsDisabled, OutOfRadius, LowAccuracy.",
-        "Each row has a deterministic fixture to reach that terminal outcome without bypassing validation order."
+        "Test matrix covers API §3.2 outcome codes: ExpiredQr, SessionNotOpen, SessionClosed, NotEnrolled, DuplicateCheckIn, GpsRequired, GpsDisabled, OutOfRadius, LowAccuracy, Suspicious.",
+        "Each row has a deterministic fixture to reach that terminal outcome without bypassing SM-04 evaluation order.",
+        "Unauthenticated (401) row is optional: SM-04 §5.6 persists only when student actor resolves safely; otherwise API rejects without attempt row."
       ],
       "steps": [
         "For each documented failure outcome code, trigger POST /v1/check-ins and capture HTTP status (422/409/401 as applicable) and error.code.",
@@ -225,7 +226,7 @@
       "preconditions": [
         "Student A has a failed ExpiredQr CheckInAttempt on session SA in section assigned to Lecturer L1.",
         "Student B is enrolled in a different section; Lecturer L2 is assigned only to Student B section.",
-        "ITAdmin identity exists per permission matrix with Deny by default on CheckInAttempt.read."
+        "ITAdmin identity exists per permission matrix with Deny by default on AttendanceRecord.read and CheckInAttempt.read."
       ],
       "steps": [
         "Student B calls GET /v1/class-sessions/{sessionIdA}/attendance and inspects response for Student A attempt metadata.",
@@ -256,6 +257,29 @@
         "Lecturer refreshes PG-06 roster and inspects rejectedAttempts count and student row latestAttemptOutcome badge."
       ],
       "expected": "Student UI maps API ExpiredQr to failure-expired-qr state with recoverable retry CTA; visible failure corresponds to one persisted CheckInAttempt with matching structured outcome; lecturer roster shows incremented rejectedAttempts and latestAttemptOutcome ExpiredQr per FR-22 feedback semantics.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-22-013",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P0",
+      "traceability": ["FR-22", "BR-23", "AC-18", "AC-UI-02", "FR-UI-03"],
+      "title": "Check-in outcome states render visually distinct CheckInResultScreen variants on PG-02",
+      "preconditions": [
+        "Student is logged in on mobile student shell at PG-02 check-in route.",
+        "Harness can drive representative failure paths: ExpiredQr, SessionClosed, NotEnrolled, DuplicateCheckIn, GpsDisabled, OutOfRadius.",
+        "12-ui-states §5.1 outcome catalog defines page state IDs, alert variants, and retry-allowed flags per outcome code."
+      ],
+      "steps": [
+        "For each representative failure outcome, submit check-in from PG-02 and observe CheckInResultScreen transition from submitting to terminal outcome state.",
+        "Verify page state ID matches 12-ui-states §5.1 mapping (e.g. failure-expired-qr danger, failure-duplicate info, failure-not-enrolled danger).",
+        "Confirm retry CTA presence or absence aligns with retry-allowed flag per outcome.",
+        "Verify each visible failure corresponds to a persisted CheckInAttempt with matching structured outcome code and non-null submitted_at.",
+        "Compare alert variants across outcomes to confirm visual distinction from success-present and success-late states."
+      ],
+      "expected": "PG-02 renders visually distinct failure outcome states per 12-ui-states §5.1 catalog; each visible failure maps to a persisted CheckInAttempt with matching structured outcome code and non-null submitted_at per FR-22; submission lifecycle completes submitting → outcome without ambiguous intermediate states.",
       "edgeCase": false
     }
   ]
