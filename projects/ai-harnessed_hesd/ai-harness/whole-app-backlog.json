@@ -194,6 +194,12 @@
           "kind": "drift",
           "reason": "Doc drift for BR-07 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-03T05:36:08Z",
+          "kind": "drift",
+          "reason": "Doc drift for NFR-07 — reverify after TestGen",
+          "source": "harness"
         }
       ]
     },
@@ -2115,6 +2121,12 @@
           "at": "2026-07-03T04:15:45Z",
           "kind": "drift",
           "reason": "Doc drift for AC-18 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T05:36:08Z",
+          "kind": "drift",
+          "reason": "Doc drift for NFR-07 — reverify after TestGen",
           "source": "harness"
         }
       ]

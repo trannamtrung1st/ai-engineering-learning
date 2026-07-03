@@ -2,7 +2,7 @@
   "productItemId": "NFR-07",
   "version": 1,
   "docFingerprint": "sha256:0091ebfac485b5b90c7a94c982196a35adddc3e7535aba555ed532f8d1599fd9",
-  "generatedAt": "2026-07-02T16:00:00Z",
+  "generatedAt": "2026-07-03T05:36:00Z",
   "cases": [
     {
       "id": "TC-NFR-07-001",
@@ -13,7 +13,7 @@
       "traceability": ["NFR-07", "AC-08", "FR-18", "BR-07"],
       "title": "Testing-plan §11 NFR-07 verification row — one success per student/session under retries",
       "preconditions": [
-        "Testing-plan §7.2 reliability tests and §11 NFR verification matrix row for NFR-07 apply.",
+        "Testing-plan §7.2 reliability tests, §11 NFR verification matrix row for NFR-07, and REG-03 one-success-per-student suite apply.",
         "Representative fixture: open class sessions with enrolled students, valid rotating QR tokens, and satisfied authentication and policy preconditions.",
         "Test harness can submit retries (same Idempotency-Key replays and distinct-key duplicate attempts) and count AttendanceRecord rows per (studentUserId, classSessionId)."
       ],
@@ -36,7 +36,7 @@
       "title": "Attendance ledger DB unique key enforces one success record per student-session pair",
       "preconditions": [
         "Integration harness uses real DB transaction boundaries for attendance_records and check_in_attempts tables.",
-        "Domain model DI-04 unique constraint on (class_session_id, student_user_id) is active.",
+        "Domain model unique constraint on (class_session_id, student_user_id) is active per AttendanceRecord uniqueness.",
         "Open session with valid QR token exists; authenticated enrolled student has no prior success for the session."
       ],
       "steps": [
@@ -119,7 +119,7 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["NFR-07", "FR-18", "FR-22", "BR-07", "BR-23"],
+      "traceability": ["NFR-07", "FR-18", "FR-22", "BR-07", "BR-23", "AC-18"],
       "title": "POST /v1/check-ins idempotent replay returns HTTP 200; new-key duplicate returns HTTP 409 DuplicateCheckIn",
       "preconditions": [
         "Open class session with valid qrToken exists in test environment.",
@@ -130,9 +130,9 @@
         "Call POST /v1/check-ins with Authorization Bearer token, valid qrToken, clientTimestamp, and Idempotency-Key K1; verify HTTP 200, data.outcome Success, and data.attendanceStatus Present or Late.",
         "Replay POST /v1/check-ins with identical K1, same actor, and same qrToken; inspect HTTP status and response body.",
         "Call POST /v1/check-ins with new Idempotency-Key K2 and fresh valid qrToken for the same student-session.",
-        "Verify AttendanceRecord row count for (student, session) remains exactly one."
+        "Query persisted CheckInAttempt for the K2 duplicate request and verify AttendanceRecord row count for (student, session) remains exactly one."
       ],
-      "expected": "Idempotency replay of K1 returns HTTP 200 with prior success summary without second AttendanceRecord; new-key duplicate returns HTTP 409 with error.code DuplicateCheckIn and data null; API contract enforces NFR-07 one-success-per-session invariant per API design §5.1 and §7.1.",
+      "expected": "Idempotency replay of K1 returns HTTP 200 with prior success summary without second AttendanceRecord; new-key duplicate returns HTTP 409 with error.code DuplicateCheckIn and data null; failed CheckInAttempt with DuplicateCheckIn outcome is persisted per AC-18; API contract enforces NFR-07 one-success-per-session invariant per API design §5.1 and §7.1.",
       "edgeCase": false
     },
     {
@@ -141,7 +141,7 @@
       "layer": "e2e",
       "technique": "flow-b",
       "priority": "P0",
-      "traceability": ["NFR-07", "AC-08", "FR-18", "BR-07", "BR-23"],
+      "traceability": ["NFR-07", "AC-08", "FR-18", "BR-07", "BR-23", "AC-18"],
       "title": "E2E-03 alternate workflow branch — student duplicate submission preserves original success record",
       "preconditions": [
         "Lecturer has opened session (AC-01) and session is Open with rotating QR.",
@@ -149,12 +149,13 @@
         "Fresh valid QR token is available for a second submission attempt."
       ],
       "steps": [
+        "Student calls POST /v1/auth/login and receives Student role accessToken.",
         "Student calls POST /v1/check-ins with valid qrToken and Idempotency-Key K1; record first success outcome and checkInAt timestamp T1.",
         "Student calls POST /v1/check-ins again with a new valid qrToken and Idempotency-Key K2.",
-        "Lecturer queries GET /v1/class-sessions/{sessionId}/attendance for the student row.",
+        "Lecturer queries GET /v1/class-sessions/{sessionId}/attendance for the student row and rejectedAttempts count.",
         "Replay first submission with Idempotency-Key K1 and original qrToken."
       ],
-      "expected": "Second submission fails with DuplicateCheckIn (409); roster shows unchanged single Present/Late row with original checkInAt T1; K1 replay returns HTTP 200 prior success summary; no extra success AttendanceRecord is created, satisfying NFR-07 and testing-plan E2E-03.",
+      "expected": "Second submission fails with DuplicateCheckIn (409); roster shows unchanged single Present/Late row with original checkInAt T1; rejectedAttempts increments and failed attempt is auditable per AC-18; K1 replay returns HTTP 200 prior success summary; no extra success AttendanceRecord is created, satisfying NFR-07 and testing-plan E2E-03.",
       "edgeCase": false
     },
     {
@@ -195,11 +196,11 @@
       "steps": [
         "Navigate to /check-in?token=... with valid token for the already-checked-in session.",
         "Submit check-in from the student check-in form.",
-        "Observe CheckInResultScreen failure-duplicate info alert styling and Vietnamese localized copy per NFR-14.",
-        "Verify absence of retry CTA and display of existing check-in status and timestamp.",
+        "Observe CheckInResultScreen failure-duplicate info alert styling and Vietnamese localized copy per 12-ui-states §5.1.",
+        "Verify absence of retry CTA and display of existing check-in status and timestamp per FLOW-02.",
         "Refresh page and resubmit; confirm UI still shows duplicate guidance without creating a second success state in roster API."
       ],
-      "expected": "UI renders failure-duplicate info alert with localized Vietnamese message (e.g. 'Bạn đã điểm danh buổi học này rồi.'); no retry button is shown; student sees existing success status and timestamp; backend retains exactly one success AttendanceRecord per NFR-07.",
+      "expected": "UI renders failure-duplicate info alert with localized Vietnamese message (e.g. 'Đã điểm danh buổi này' per 12-ui-states §5.1); no retry button is shown; student sees existing success status and timestamp; backend retains exactly one success AttendanceRecord per NFR-07.",
       "edgeCase": false
     },
     {
@@ -208,7 +209,7 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["NFR-07", "NFR-14", "FR-18"],
+      "traceability": ["NFR-07", "NFR-14", "FR-18", "BR-07"],
       "title": "Physical mobile retry behavior under campus network instability preserves one success per session",
       "preconditions": [
         "Staging pilot uses real iOS Safari or Android Chrome on campus Wi-Fi per testing-plan §6.2 browser matrix.",
@@ -224,6 +225,29 @@
       "expected": "Despite network retries on physical device, at most one successful attendance record exists per student-session; duplicate UI surfaces correctly on second intentional attempt; provides production-like NFR-07 evidence beyond emulated harness runs.",
       "edgeCase": true,
       "harnessSkip": "physical-device"
+    },
+    {
+      "id": "TC-NFR-07-011",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["NFR-07", "FR-18", "FR-22", "BR-07", "BR-23", "AC-08", "AC-18"],
+      "title": "DuplicateCheckIn outcome renders distinct failure-duplicate visual state preserving idempotency UX",
+      "preconditions": [
+        "Student is logged in on mobile student shell at PG-02 check-in route.",
+        "Student has an existing successful attendance result (Present or Late) for the target Open session.",
+        "Fresh valid QR token is available via scan or deep link."
+      ],
+      "steps": [
+        "Submit check-in from PG-02 and observe CheckInResultScreen transition from submitting to outcome state.",
+        "Verify page state ID failure-duplicate, info alert variant, and Vietnamese copy intent per 12-ui-states §5.1.",
+        "Confirm no retry CTA is rendered and existing success status with timestamp is displayed per FLOW-02 DuplicateCheckIn branch.",
+        "Compare against success-present and failure-not-enrolled states to confirm visual distinction per AC-UI-02.",
+        "Verify roster API still reports exactly one success AttendanceRecord for the student-session pair."
+      ],
+      "expected": "PG-02 outcome state failure-duplicate is visually distinct from success and other failure states (info alert, no retry, duplicate-specific copy with prior attendance status); submission lifecycle completes without ambiguous intermediate states per 12-ui-states §5.2; backend idempotency invariant holds with one success row per NFR-07.",
+      "edgeCase": false
     }
   ]
 }
