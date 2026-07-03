@@ -172,7 +172,7 @@
 | Field | Value |
 | --- | --- |
 | **Actor** | Student, System |
-| **Behavior** | Require authenticated student session before check-in submission. Unauthenticated users opening check-in URL are redirected to login and returned to check-in after success. MVP supports local credentials or imported accounts; SSO is future. |
+| **Behavior** | Require authenticated student session before check-in submission. Unauthenticated users opening the check-in page (PG-02) are redirected to login and returned to check-in after success. MVP supports local credentials or imported accounts; SSO is future. |
 | **Priority** | Must |
 | **Trace** | CAP-07, BR-05 |
 
@@ -181,7 +181,7 @@
 | Field | Value |
 | --- | --- |
 | **Actor** | Student |
-| **Behavior** | Support check-in flow in mobile browser (iOS Safari, Android Chrome). Student scans QR via camera; no native app install. Deep link or URL carries session token for server validation. |
+| **Behavior** | Support check-in flow in mobile browser (iOS Safari, Android Chrome). Student opens PG-02 and scans the classroom QR using the **in-browser camera** (`getUserMedia` via `QrScannerPanel`); no native app install. The app decodes `qrPayload` (opaque token or URL containing `token`) client-side and submits it for server validation. OS-native camera app scanning that opens a deep link is **not** a supported student entry path. A `?token=` query parameter may exist for automated test harnesses only and is not documented for end users. |
 | **Priority** | Must |
 | **Trace** | CAP-06 |
 

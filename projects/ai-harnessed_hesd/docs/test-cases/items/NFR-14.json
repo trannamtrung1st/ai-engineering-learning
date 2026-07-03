@@ -1,7 +1,7 @@
 {
   "productItemId": "NFR-14",
   "version": 1,
-  "docFingerprint": "sha256:0091ebfac485b5b90c7a94c982196a35adddc3e7535aba555ed532f8d1599fd9",
+  "docFingerprint": "sha256:477032953ece5fdb72af213d6ab030aded8af1b6090e4cb1f96e16d5130fc252",
   "generatedAt": "2026-07-03T05:42:44Z",
   "cases": [
     {
@@ -10,7 +10,17 @@
       "layer": "integration",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["NFR-14", "AC-06", "AC-04", "AC-08", "AC-09", "AC-10", "AC-11", "FR-16", "FR-22"],
+      "traceability": [
+        "NFR-14",
+        "AC-06",
+        "AC-04",
+        "AC-08",
+        "AC-09",
+        "AC-10",
+        "AC-11",
+        "FR-16",
+        "FR-22"
+      ],
       "title": "Testing-plan §6.2 browser matrix and §4.1 localization gate cover NFR-14 student check-in UX scenarios",
       "preconditions": [
         "Testing-plan §6.2 browser matrix (iOS Safari, Android Chrome, Chromium mobile emulation) and release readiness §4.1 localized rejection reason gate apply.",
@@ -32,7 +42,12 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["NFR-14", "FR-22", "BR-23", "AC-18"],
+      "traceability": [
+        "NFR-14",
+        "FR-22",
+        "BR-23",
+        "AC-18"
+      ],
       "title": "Check-in outcome i18n mapper resolves API error codes to Vietnamese copy at module boundary",
       "preconditions": [
         "Integration environment loads vi-VN locale bundle for student-facing check-in messages per 08-forms-validation-ux.md §5.",
@@ -54,7 +69,12 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["NFR-14", "FR-15", "AC-06", "BR-05"],
+      "traceability": [
+        "NFR-14",
+        "FR-15",
+        "AC-06",
+        "BR-05"
+      ],
       "title": "Auth gate module preserves check-in deep-link return URL through login redirect chain",
       "preconditions": [
         "Integration auth module enforces FR-15 login gate with returnUrl preservation per FLOW-01 step 2.",
@@ -76,7 +96,12 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["NFR-14", "AC-04", "FR-22", "BR-03"],
+      "traceability": [
+        "NFR-14",
+        "AC-04",
+        "FR-22",
+        "BR-03"
+      ],
       "title": "HTTP contract POST /v1/check-ins returns 422 ExpiredQr envelope driving failure-expired-qr UI",
       "preconditions": [
         "Open class session exists; enrolled student is authenticated.",
@@ -98,7 +123,12 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["NFR-14", "AC-06", "FR-15", "BR-05"],
+      "traceability": [
+        "NFR-14",
+        "AC-06",
+        "FR-15",
+        "BR-05"
+      ],
       "title": "HTTP contract unauthenticated POST /v1/check-ins returns 401 login-required envelope",
       "preconditions": [
         "Open class session with valid qrToken exists.",
@@ -120,7 +150,13 @@
       "layer": "e2e",
       "technique": "flow-a",
       "priority": "P0",
-      "traceability": ["NFR-14", "FR-16", "AC-06", "AC-11", "NFR-01"],
+      "traceability": [
+        "NFR-14",
+        "FR-16",
+        "AC-06",
+        "AC-11",
+        "NFR-01"
+      ],
       "title": "FLOW-01 mobile-web primary check-in journey uses single-column PG-02 layout to success-present",
       "preconditions": [
         "Student actor uses mobile-web profile per testing-plan §6.2.",
@@ -143,7 +179,15 @@
       "layer": "e2e",
       "technique": "flow-b",
       "priority": "P0",
-      "traceability": ["NFR-14", "FR-22", "AC-18", "AC-04", "AC-08", "AC-09", "AC-10"],
+      "traceability": [
+        "NFR-14",
+        "FR-22",
+        "AC-18",
+        "AC-04",
+        "AC-08",
+        "AC-09",
+        "AC-10"
+      ],
       "title": "FLOW-02 rejection branches surface concise Vietnamese guidance and recoverable next actions",
       "preconditions": [
         "Mobile-web E2E harness can drive each FLOW-02 rejection branch per 10-user-flows §2.2.",
@@ -166,7 +210,12 @@
       "layer": "browser",
       "technique": "ui-responsive",
       "priority": "P0",
-      "traceability": ["NFR-14", "FR-22", "AC-04", "AC-08"],
+      "traceability": [
+        "NFR-14",
+        "FR-22",
+        "AC-04",
+        "AC-08"
+      ],
       "title": "Narrow mobile viewport 320px preserves readable Vietnamese error copy without horizontal overflow",
       "preconditions": [
         "Student check-in PG-02 is rendered at minimum supported mobile width (320px) per C-02 device variance constraint.",
@@ -189,7 +238,12 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["NFR-14", "AC-04", "FR-22", "BR-03"],
+      "traceability": [
+        "NFR-14",
+        "AC-04",
+        "FR-22",
+        "BR-03"
+      ],
       "title": "Mobile PG-02 ExpiredQr journey shows Vietnamese rescan guidance with retry CTA",
       "preconditions": [
         "Student is on mobile-web viewport (Chromium mobile emulation, 375px) at PG-02 /check-in.",
@@ -212,7 +266,12 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["NFR-14", "AC-06", "FR-15", "BR-05"],
+      "traceability": [
+        "NFR-14",
+        "AC-06",
+        "FR-15",
+        "BR-05"
+      ],
       "title": "Unauthenticated mobile check-in redirects to PG-01 login with Vietnamese guidance and return URL",
       "preconditions": [
         "Student has no active session cookie on mobile-web viewport.",
@@ -235,7 +294,14 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["NFR-14", "AC-09", "AC-25", "FR-34", "FR-35", "BR-08"],
+      "traceability": [
+        "NFR-14",
+        "AC-09",
+        "AC-25",
+        "FR-34",
+        "FR-35",
+        "BR-08"
+      ],
       "title": "Mobile PG-02 GpsDisabled journey shows Vietnamese location-permission guidance",
       "preconditions": [
         "gps-required-session fixture is active with open session.",
@@ -258,7 +324,14 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["NFR-14", "AC-10", "AC-25", "FR-35", "BR-09", "BR-10"],
+      "traceability": [
+        "NFR-14",
+        "AC-10",
+        "AC-25",
+        "FR-35",
+        "BR-09",
+        "BR-10"
+      ],
       "title": "Mobile PG-02 OutOfRadius journey shows Vietnamese out-of-radius guidance",
       "preconditions": [
         "gps-required-session fixture has room coordinates and configured radius.",
@@ -281,7 +354,13 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["NFR-14", "AC-08", "FR-18", "FR-22", "BR-07"],
+      "traceability": [
+        "NFR-14",
+        "AC-08",
+        "FR-18",
+        "FR-22",
+        "BR-07"
+      ],
       "title": "Mobile PG-02 DuplicateCheckIn journey shows Vietnamese info alert with prior status from API details",
       "preconditions": [
         "Student is logged in on mobile-web viewport.",
@@ -305,7 +384,11 @@
       "layer": "browser",
       "technique": "ui-accessibility",
       "priority": "P0",
-      "traceability": ["NFR-14", "FR-16", "NFR-UI-11"],
+      "traceability": [
+        "NFR-14",
+        "FR-16",
+        "NFR-UI-11"
+      ],
       "title": "Mobile PG-02 check-in controls meet 44px minimum touch targets on 375px viewport",
       "preconditions": [
         "Student is on mobile-web viewport width 375px at PG-02 check-in page.",
@@ -328,20 +411,23 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["NFR-14", "FR-16"],
-      "title": "Physical iOS Safari and Android Chrome pilot verify NFR-14 mobile check-in UX on campus devices",
+      "traceability": [
+        "NFR-14",
+        "FR-16"
+      ],
+      "title": "Physical iOS Safari and Android Chrome pilot verify in-app camera NFR-14 mobile check-in UX on campus devices",
       "preconditions": [
         "Staging pilot uses real iOS Safari and Android Chrome per testing-plan §6.2 browser matrix.",
         "Open session with valid QR; enrolled student physical devices available on campus network.",
-        "Physical device matrix and native browser permission dialogs are not reproducible in Playwright MCP harness."
+        "Physical device matrix and in-browser getUserMedia permission dialogs are not reproducible in Playwright MCP harness."
       ],
       "steps": [
-        "Student scans classroom QR on iOS Safari; complete login, GPS, and check-in or failure recovery flow.",
+        "Student opens PG-02 on iOS Safari, grants camera permission, scans classroom QR via QrScannerPanel; complete login, GPS, and check-in or failure recovery flow.",
         "Repeat on Android Chrome with at least one NFR-14 failure scenario (expired QR or GPS denied).",
         "Verify Vietnamese copy renders correctly on physical device screens without layout breakage.",
         "Confirm touch interactions work without mis-taps on primary CTAs."
       ],
-      "expected": "Physical mobile browsers deliver NFR-14 mobile-first check-in UX with readable Vietnamese guidance on real devices; provides production-like evidence beyond Chromium emulation.",
+      "expected": "Physical mobile browsers deliver NFR-14 mobile-first in-app camera check-in UX with readable Vietnamese guidance on real devices; provides production-like evidence beyond Chromium emulation.",
       "edgeCase": true,
       "harnessSkip": "physical-device"
     },
@@ -351,7 +437,13 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["NFR-14", "AC-08", "FR-18", "FR-22", "BR-07"],
+      "traceability": [
+        "NFR-14",
+        "AC-08",
+        "FR-18",
+        "FR-22",
+        "BR-07"
+      ],
       "title": "HTTP contract POST /v1/check-ins returns 409 DuplicateCheckIn envelope with prior attendance details",
       "preconditions": [
         "Open class session exists; enrolled student is authenticated.",
@@ -374,7 +466,15 @@
       "layer": "browser",
       "technique": "ui-visual-state",
       "priority": "P1",
-      "traceability": ["NFR-14", "AC-04", "AC-06", "AC-08", "AC-09", "AC-10", "FR-22"],
+      "traceability": [
+        "NFR-14",
+        "AC-04",
+        "AC-06",
+        "AC-08",
+        "AC-09",
+        "AC-10",
+        "FR-22"
+      ],
       "title": "PG-02 NFR-14 failure outcomes render visually distinct alert variants per 12-ui-states §5.1",
       "preconditions": [
         "Student mobile shell (SUR-01) at PG-02 with fixtures or preview stack for each mandated NFR-14 failure outcome.",

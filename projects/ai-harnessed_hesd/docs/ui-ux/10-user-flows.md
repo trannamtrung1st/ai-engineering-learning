@@ -47,31 +47,34 @@ This document defines **end-to-end user flows** for Attendly MVP: actor intent, 
 
 **Goal:** Enrolled student completes check-in and receives `Present` or `Late` status.  
 **Layout:** `LAY-01` ([06-app-layout-components.md](./06-app-layout-components.md))  
-**Components:** `GpsPermissionPrompt` (optional), `CheckInResultScreen` (DC-04)
+**Components:** `QrScannerPanel` (DC-13), `GpsPermissionPrompt` (optional), `CheckInResultScreen` (DC-04)
 
 ```mermaid
 flowchart TD
-  A[Scan QR with phone camera] --> B{Authenticated?}
+  A[Open PG-02 check-in page] --> B{Authenticated?}
   B -->|No| C[PG-01 Login]
-  C --> D[Return to PG-02 with token]
+  C --> D[Return to PG-02]
   B -->|Yes| D
-  D --> E{GPS required?}
-  E -->|Yes| F[GpsPermissionPrompt]
-  F --> G[POST /v1/check-ins]
-  E -->|No| G
-  G --> H{Validation pass?}
-  H -->|Yes| I[Success: Present or Late]
-  H -->|No| J[See FLOW-02]
+  D --> E[QrScannerPanel in-app camera scan]
+  E --> F[Decode qrPayload token]
+  F --> G{GPS required?}
+  G -->|Yes| H[GpsPermissionPrompt]
+  H --> I[POST /v1/check-ins]
+  G -->|No| I
+  I --> J{Validation pass?}
+  J -->|Yes| K[Success: Present or Late]
+  J -->|No| L[See FLOW-02]
 ```
 
 | Step | Actor action | System behavior | UI state |
 | --- | --- | --- | --- |
-| 1 | Scan classroom QR | Browser opens `/check-in?token=...` (PG-02) | `loading` |
-| 2 | — | If no session cookie, redirect to PG-01; preserve return URL (`AC-06`) | `authenticating` |
-| 3 | Enter credentials on PG-01 | `POST /v1/auth/login`; on success return to PG-02 | `submitting` → `default` |
-| 4 | Grant GPS if prompted | Capture coordinates once (`FR-34`) | `gps-prompt` |
-| 5 | — | Validate session `Open`, token `Valid`, enrollment, no duplicate (`AC-07`, `AC-08`) | `submitting` |
-| 6 | View result | Render `CheckInResultScreen` with status + timestamp (`AC-11`, `AC-UI-03`) | `success-present` or `success-late` |
+| 1 | Open PG-02 on mobile browser | Load check-in page with in-app scanner | `loading` → `camera-prompt` or `scanning` |
+| 2 | — | If no session cookie, redirect to PG-01; preserve return to PG-02 (`AC-06`) | `authenticating` |
+| 3 | Enter credentials on PG-01 | `POST /v1/auth/login`; on success return to PG-02 | `default` → `scanning` |
+| 4 | Grant camera permission; scan classroom QR | Decode `qrPayload` client-side | `scanning` → `token-captured` |
+| 5 | Grant GPS if prompted | Capture coordinates once (`FR-34`) | `gps-prompt` |
+| 6 | Confirm check-in | Validate session `Open`, token `Valid`, enrollment, no duplicate (`AC-07`, `AC-08`) | `submitting` |
+| 7 | View result | Render `CheckInResultScreen` with status + timestamp (`AC-11`, `AC-UI-03`) | `success-present` or `success-late` |
 
 **Timing target:** Median completion under 30 seconds (`AC-20`, `NFR-01`).
 
@@ -81,10 +84,10 @@ flowchart TD
 
 | Condition | Outcome code | UI treatment | Recovery action |
 | --- | --- | --- | --- |
-| Token past 30 s TTL | `ExpiredQr` | Danger alert + retry CTA | Re-scan current QR on projector (`AC-04`) |
+| Token past 30 s TTL | `ExpiredQr` | Danger alert + retry CTA | Re-scan current QR using in-app camera (`AC-04`) |
 | Session not yet open | `SessionNotOpen` | Danger alert | Wait for lecturer to open (`AC-01`) |
 | Session already closed | `SessionClosed` | Danger alert | Request manual fallback (`AC-05`) |
-| Wrong session token | `Invalid` / malformed | Danger alert | Scan correct session QR (`AC-04`) |
+| Wrong session token | `Invalid` / malformed | Danger alert | Re-scan correct session QR in-app (`AC-04`) |
 | Not enrolled | `NotEnrolled` | Danger alert, no retry | Contact admin (`AC-07`) |
 | Already checked in | `DuplicateCheckIn` | Info alert | No further action (`AC-08`) |
 | Not logged in | `Unauthenticated` | Redirect to PG-01 | Login and return (`AC-06`) |

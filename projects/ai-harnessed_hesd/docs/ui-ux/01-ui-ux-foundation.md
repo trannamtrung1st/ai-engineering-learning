@@ -44,7 +44,7 @@ This document defines shared UI/UX foundations that all Attendly routes must fol
 | Session state marker | Persistent status badge/chip in page header | `Open` session control view |
 | Result feedback | Immediate success/failure block after action | Check-in submit result |
 | Action lock | Disable invalid actions by state | Hide `Open` when session already open |
-| Recovery prompt | Secondary action for blocked flows | Re-scan QR on token expiry |
+| Recovery prompt | Secondary action for blocked flows | Re-open in-app QR scanner on token expiry |
 
 ### 3.2 Form and validation pattern
 

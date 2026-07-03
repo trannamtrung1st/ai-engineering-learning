@@ -6,7 +6,7 @@ You are the {{PRODUCT_NAME}} implementer. Work **one backlog slice** per session
 
 1. Read `ai-harness/whole-app-backlog.json` — find the slice marked in this prompt.
 2. Read `ai-harness/state/guardrails.md` and `ai-harness/state/progress.md`.
-3. If this prompt includes **Prior gate failures**, fix those scope gate, computational check, browser test (including `TC-*` and `UX-*` P0/P1 blockers), and/or AI review issues before new work.
+3. If this prompt includes **Prior gate failures**, fix **every** listed scope gate, computational check, browser test (`TC-*` and `UX-*` P0/P1 blockers), Playwright regression, and/or AI review issue in one iteration when feasible — enumerate fixes in `progress.md` before new work.
 4. Read only the doc paths listed below (do not load the entire `docs/` tree).
 
 ## Rules
@@ -45,10 +45,11 @@ Before ad-hoc integration/e2e runs: `npm run aih:run-check -- test:integration` 
 Computational gates enforce wall-clock timeouts. **Apply the same discipline when you run checks yourself** — unbounded `npm run test:*` / `typecheck` / `lint` / `build` can deadlock and waste the iteration.
 
 1. **Scope (required, fast):** `npm run aih:scope -- {{SLICE_ID}}` — mechanical allowlist gate; must pass before expensive checks.
-2. **Final verification (preferred):** `npm run aih:check -- {{SLICE_ID}}` — same script, slice scope, timeouts, and per-script logs as the harness gate (full profile). For faster self-check: `npm run aih:check -- {{SLICE_ID}} --profile fast` — skips build/integration/e2e; runs slice-scoped Playwright when configured.
-3. **Ad-hoc single script (especially `test:integration`):** `npm run aih:run-check -- test:integration` — live output, 30s heartbeats, log under `ai-harness/generated/runs/`; or prefix env var e.g. `AIH_CHECK_TIMEOUT_test_integration_MS=900000 npm run test:integration`
-4. **If a command exceeds its budget or hangs with no output:** stop the process tree, read the log file path printed by `aih:run-check` / `aih:check` (tail last lines), fix deadlock/hang before `SLICE_DONE`; use `SLICE_BLOCKED` if you cannot resolve, or `SLICE_DEFER <owner-slice-id> <reason>` when failures belong to another slice (see cross-slice rules above)
-5. Do **not** wait on hung tests hoping they finish — the gate will timeout and fail the slice anyway
+2. **Final verification (preferred):** `npm run aih:check -- {{SLICE_ID}}` — same script, slice scope, timeouts, and per-script logs as the harness pre-browser gate (full profile). Does **not** run Playwright UI regression — that gate runs after the browser tester updates specs. For faster self-check: `npm run aih:check -- {{SLICE_ID}} --profile fast` — skips build/integration/e2e.
+3. **Playwright UI regression (frontend/test slices):** after browser test pass locally, run `npm run aih:playwright-check -- {{SLICE_ID}}` — headless regression on the slice spec.
+4. **Ad-hoc single script (especially `test:integration`):** `npm run aih:run-check -- test:integration` — live output, 30s heartbeats, log under `ai-harness/generated/runs/`; or prefix env var e.g. `AIH_CHECK_TIMEOUT_test_integration_MS=900000 npm run test:integration`
+5. **If a command exceeds its budget or hangs with no output:** stop the process tree, read the log file path printed by `aih:run-check` / `aih:check` (tail last lines), fix deadlock/hang before `SLICE_DONE`; use `SLICE_BLOCKED` if you cannot resolve, or `SLICE_DEFER <owner-slice-id> <reason>` when failures belong to another slice (see cross-slice rules above)
+6. Do **not** wait on hung tests hoping they finish — the gate will timeout and fail the slice anyway
 
 {{CHECK_TIMEOUT_BUDGETS}}
 
@@ -109,9 +110,9 @@ After each capture, verify in the screenshot (not snapshot-only) per `ai-harness
 | 13 | Whitespace rhythm | Cramped sections, cards, or toolbars |
 | 14 | Listing toolbar alignment | Search, filters, sort, pagination misaligned |
 | 15 | Focus / active nav | Wrong sidebar highlight; missing focus on interactive elements |
-| 16 | Navigation surface + home link | Authenticated page missing persistent nav or home link |
+| 16 | Navigation surface + home link | Authenticated page missing persistent nav, home link, or **clickable app logo** linking to role home |
 | 17 | Login page neutrality | Login heading/copy contains role name; post-login lands on wrong page |
-| 18 | Back-to-home | Any page has no clickable path back to home (no nav logo, breadcrumb, or home item) |
+| 18 | Back-to-home / logo shortcut | Any page has no clickable path back to home — app logo in nav must navigate to role home; breadcrumb first segment or explicit home item also acceptable |
 | 19 | No forbidden nav items | Nav renders links to routes the current role cannot access; forbidden items are disabled rather than absent |
 | 20 | Copy hygiene | User-visible text contains technical IDs, schema field names, requirement codes, or internal slugs |
 
@@ -129,7 +130,7 @@ Any FAIL → fix code → re-screenshot before `SLICE_DONE`.
 <timestamp> | <slice-id> | browser_verified: <flows> — ui_checklist: <N screens/states> — screenshots: <comma-separated paths> (320w + desktop where applicable)
 ```
 
-See `ai-harness/docs/browser-mcp.md` for the full runbook. The harness will **re-verify** your work via a dedicated browser test agent gate after computational checks.
+See `ai-harness/docs/browser-mcp.md` for the full runbook. The harness will **re-verify** your work via a dedicated browser test agent gate after pre-browser computational checks, then run headless Playwright regression after the tester updates specs.
 
 ### Preview stack shell commands (strict)
 

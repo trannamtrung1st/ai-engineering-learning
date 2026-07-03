@@ -1,7 +1,7 @@
 {
   "productItemId": "AC-06",
   "version": 1,
-  "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+  "docFingerprint": "sha256:9d4df0941c95e63c8a2310daad26a72e1e6181d59f2571e6f0571f0cfb6378a3",
   "generatedAt": "2026-07-03T04:06:00Z",
   "cases": [
     {
@@ -10,7 +10,12 @@
       "layer": "integration",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["AC-06", "FR-15", "FR-36", "BR-05"],
+      "traceability": [
+        "AC-06",
+        "FR-15",
+        "FR-36",
+        "BR-05"
+      ],
       "title": "Scenario matrix row for student login gate before check-in submission",
       "preconditions": [
         "Testing-plan §12 Student check-in validation row applies (FR-15, FR-16, FR-17, FR-18, FR-22, FR-23; BR-05, BR-06, BR-07, BR-11, BR-12, BR-23; AC-06, AC-07, AC-08, AC-11, AC-18).",
@@ -31,7 +36,11 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["AC-06", "FR-15", "BR-05"],
+      "traceability": [
+        "AC-06",
+        "FR-15",
+        "BR-05"
+      ],
       "title": "Check-in command short-circuits at auth boundary without attendance write",
       "preconditions": [
         "Real database transaction is enabled for identity and check-in modules.",
@@ -51,7 +60,12 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["AC-06", "FR-15", "FR-36", "BR-05"],
+      "traceability": [
+        "AC-06",
+        "FR-15",
+        "FR-36",
+        "BR-05"
+      ],
       "title": "HTTP contract for unauthenticated POST /v1/check-ins rejection",
       "preconditions": [
         "Open class session with valid qrToken exists in test environment.",
@@ -71,14 +85,20 @@
       "layer": "e2e",
       "technique": "flow-a",
       "priority": "P0",
-      "traceability": ["AC-06", "FR-15", "FR-36", "BR-05", "AC-11"],
+      "traceability": [
+        "AC-06",
+        "FR-15",
+        "FR-36",
+        "BR-05",
+        "AC-11"
+      ],
       "title": "Primary workflow login gate then successful student check-in",
       "preconditions": [
         "Open session with rotating valid QR token and enrolled student account exist.",
         "Student begins FLOW-01 without an active auth session."
       ],
       "steps": [
-        "Student obtains check-in URL or token from QR scan while unauthenticated.",
+        "Student opens PG-02 while unauthenticated and proceeds toward in-app QR scan.",
         "Student completes POST /v1/auth/login and receives accessToken with Student role.",
         "Student calls POST /v1/check-ins with Authorization Bearer token, valid qrToken, clientTimestamp, and Idempotency-Key within present window."
       ],
@@ -91,7 +111,12 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["AC-06", "FR-15", "BR-05", "BR-19"],
+      "traceability": [
+        "AC-06",
+        "FR-15",
+        "BR-05",
+        "BR-19"
+      ],
       "title": "RBAC denial when non-student roles attempt QR check-in submission",
       "preconditions": [
         "Open session with valid qrToken exists.",
@@ -112,7 +137,12 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["AC-06", "FR-15", "FR-36", "BR-05"],
+      "traceability": [
+        "AC-06",
+        "FR-15",
+        "FR-36",
+        "BR-05"
+      ],
       "title": "Boundary error for invalid or expired bearer token on check-in",
       "preconditions": [
         "Open session with valid qrToken exists.",
@@ -132,14 +162,19 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["AC-06", "FR-15", "FR-36", "BR-05"],
+      "traceability": [
+        "AC-06",
+        "FR-15",
+        "FR-36",
+        "BR-05"
+      ],
       "title": "UI journey redirects unauthenticated student to login and returns to check-in",
       "preconditions": [
-        "Student check-in deep link or QR-resolved URL is available for an Open session.",
+        "Open class session exists; student can reach PG-02 on mobile viewport.",
         "Browser profile has no active Attendly session cookie."
       ],
       "steps": [
-        "Navigate directly to PG-02 check-in URL (/check-in?token=...) without logging in per FLOW-01 step 1.",
+        "Navigate directly to PG-02 (/check-in) without logging in per FLOW-01 step 1.",
         "Verify redirect to PG-01 login with returnUrl preserved where supported (FLOW-01 step 2).",
         "Submit valid student credentials on FRM-01 login form.",
         "Confirm browser returns to PG-02 check-in page with prior token context retained.",
@@ -154,7 +189,11 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["AC-06", "FR-15", "BR-05"],
+      "traceability": [
+        "AC-06",
+        "FR-15",
+        "BR-05"
+      ],
       "title": "Check-in attempt terminates at Unauthenticated without attendance mutation",
       "preconditions": [
         "Open class session with valid qrToken exists in integration test database.",
@@ -174,15 +213,20 @@
       "layer": "browser",
       "technique": "ui-visual-state",
       "priority": "P1",
-      "traceability": ["AC-06", "FR-15", "FR-36", "BR-05"],
+      "traceability": [
+        "AC-06",
+        "FR-15",
+        "FR-36",
+        "BR-05"
+      ],
       "title": "Student check-in authenticating state and login gate visuals block premature submission",
       "preconditions": [
-        "Open class session with valid QR token exists; check-in deep link /check-in?token=... is available.",
+        "Open class session with valid QR token exists; PG-02 is reachable on mobile viewport.",
         "Browser profile has no active Attendly session cookie.",
         "Student mobile shell (SUR-01) viewport at 375px width per NFR-14."
       ],
       "steps": [
-        "Navigate to PG-02 check-in URL with token query parameter while unauthenticated.",
+        "Navigate to PG-02 while unauthenticated.",
         "Observe transient authenticating visual state per 12-ui-states §5.1 (Unauthenticated → authenticating) before redirect to PG-01.",
         "On PG-01, confirm generic login heading (e.g. 'Đăng nhập') without role-specific copy and FRM-01 form-level guidance intent 'Đăng nhập để tiếp tục.'",
         "Verify check-in submit CTA is not reachable and no success-present or success-late visual state appears without completing login."

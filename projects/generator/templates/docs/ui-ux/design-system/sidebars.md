@@ -18,7 +18,8 @@ Hidden on mobile, visible at small breakpoint. Needs a toggle/trigger for mobile
 - Padding: 12px horizontal, 16px vertical
 
 ### Navigation List
-- First item **must** be a home/dashboard link (linked product name or a "Home" label with a home icon) — always visible, always functional, never conditional on role
+- First item **must** be a home/dashboard link — the **app logo / product mark** wrapped in a link (`<Link>`) to the role's default home route, or a "Home" label with a home icon. The logo is the primary home shortcut: clicking it always returns to home.
+- Always visible, functional, never conditional on role
 - Vertical spacing: 8px between items
 - Font weight: semibold
 
@@ -51,7 +52,7 @@ Hidden on mobile, visible at small breakpoint. Needs a toggle/trigger for mobile
 
 ## Rules
 
-- **Home link first:** the top nav item is always a home/dashboard link reachable by every authenticated role — never omit it, never move it below the fold.
+- **Home link first:** the top nav item is always a home/dashboard link reachable by every authenticated role — the **app logo is a link to home** and must never be decorative-only. Never omit it, never move it below the fold.
 - **RBAC gating:** render only the nav items that the current user's role is permitted to access, as defined in `docs/technical/01-roles-permissions.md`. Do **not** render forbidden items as disabled anchor tags — omit them from the DOM entirely. CSS `display:none` or `pointer-events:none` is also forbidden; the item must not be present in the rendered output.
 - **No dead ends:** every item in the nav list must link to a real, implemented route. Never add a nav item as a placeholder.
 - Responsive: hidden on mobile with a trigger mechanism

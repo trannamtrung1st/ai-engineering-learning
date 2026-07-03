@@ -1857,6 +1857,11 @@ browser_test_owned_paths() {
     printf '%s\n' "ai-harness/generated/runs/ux-bugs/${slice_id}/${run_id}.json"
   fi
   printf '%s\n' "ai-harness/generated/runs/screenshots/${slice_id}/browser-test"
+  local ref
+  while IFS= read -r ref; do
+    [[ -z "$ref" ]] && continue
+    printf '%s\n' "$(test_case_artifact_path "$ref")"
+  done < <(slice_product_item_refs "$slice_id" 2>/dev/null || true)
 }
 
 path_is_browser_test_owned() {
@@ -2267,6 +2272,21 @@ slice_requires_browser_test() {
   jq -e --arg agent "$agent" '.browserTest.activeWhenAgent[]? | select(. == $agent)' "$LOOP_CONFIG" >/dev/null 2>&1
 }
 
+playwright_regression_gate_enabled() {
+  jq -r '.playwrightRegressionGate.enabled // true' "$LOOP_CONFIG"
+}
+
+slice_requires_playwright_regression_gate() {
+  local slice_id="${1:-}"
+  [[ -n "$slice_id" ]] || return 1
+  [[ "$(playwright_regression_gate_enabled)" == "true" ]] || return 1
+  slice_requires_browser_test "$slice_id"
+}
+
+browser_test_collect_all_failures() {
+  jq -r '.browserTest.collectAllFailures // true' "$LOOP_CONFIG"
+}
+
 playwright_mcp_artifact_dirs() {
   printf '%s\n' "$PLAYWRIGHT_MCP_LEGACY_DIR" "$PLAYWRIGHT_MCP_OUTPUT_DIR"
 }
@@ -2560,6 +2580,28 @@ git_commit_browser_test_pass() {
     paths+=("ai-harness/whole-app-backlog.json")
   fi
   git_commit_allowlisted_paths "aih: browser test regression for ${slice_id}" "${paths[@]}"
+}
+
+finalize_browser_test_pass() {
+  local slice_id="$1"
+  local run_id="$2"
+  local spec_path="${3:-}"
+  local ref validate_out
+  while IFS= read -r ref; do
+    [[ -z "$ref" ]] && continue
+    if git_path_has_changes "$(test_case_artifact_path "$ref")"; then
+      set +e
+      validate_out="$(./ai-harness/scripts/validate-test-cases.sh "$ref" 2>&1)"
+      local validate_status=$?
+      set -e
+      if [[ "$validate_status" -ne 0 ]]; then
+        echo "$validate_out" >&2
+        return 1
+      fi
+      ./ai-harness/scripts/sync-test-cases-to-backlog.sh "$ref"
+    fi
+  done < <(slice_product_item_refs "$slice_id" 2>/dev/null || true)
+  git_commit_browser_test_pass "$slice_id" "$run_id" "$spec_path"
 }
 
 find_checks_report_for_slice() {

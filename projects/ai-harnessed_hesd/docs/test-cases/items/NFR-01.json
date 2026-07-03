@@ -1,7 +1,7 @@
 {
   "productItemId": "NFR-01",
   "version": 1,
-  "docFingerprint": "sha256:0091ebfac485b5b90c7a94c982196a35adddc3e7535aba555ed532f8d1599fd9",
+  "docFingerprint": "sha256:477032953ece5fdb72af213d6ab030aded8af1b6090e4cb1f96e16d5130fc252",
   "generatedAt": "2026-07-03T05:31:00Z",
   "cases": [
     {
@@ -10,7 +10,12 @@
       "layer": "integration",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["NFR-01", "AC-20", "FR-16", "FR-23"],
+      "traceability": [
+        "NFR-01",
+        "AC-20",
+        "FR-16",
+        "FR-23"
+      ],
       "title": "Testing-plan §11 NFR-01 verification row — median check-in latency under representative load",
       "preconditions": [
         "Testing-plan §7.1 performance tests and §11 NFR verification matrix row for NFR-01 apply.",
@@ -31,7 +36,14 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["NFR-01", "FR-16", "FR-22", "FR-23", "BR-01", "BR-11"],
+      "traceability": [
+        "NFR-01",
+        "FR-16",
+        "FR-22",
+        "FR-23",
+        "BR-01",
+        "BR-11"
+      ],
       "title": "Check-in service DB transaction completes within server-side latency budget",
       "preconditions": [
         "Real database transaction boundary is enabled for check-in service and attendance ledger modules.",
@@ -52,7 +64,14 @@
       "layer": "integration",
       "technique": "concurrency",
       "priority": "P0",
-      "traceability": ["NFR-01", "NFR-03", "NFR-04", "FR-16", "FR-22", "AC-22"],
+      "traceability": [
+        "NFR-01",
+        "NFR-03",
+        "NFR-04",
+        "FR-16",
+        "FR-22",
+        "AC-22"
+      ],
       "title": "Class-start concurrent burst on POST /v1/check-ins preserves median latency below 30 seconds",
       "preconditions": [
         "Multiple open class sessions each have 20+ enrolled students per representative pilot profile.",
@@ -73,7 +92,12 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["NFR-01", "FR-16", "FR-23", "AC-20"],
+      "traceability": [
+        "NFR-01",
+        "FR-16",
+        "FR-23",
+        "AC-20"
+      ],
       "title": "POST /v1/check-ins returns HTTP 200 success envelope within latency budget",
       "preconditions": [
         "Open class session with valid qrToken exists in test environment.",
@@ -94,20 +118,27 @@
       "layer": "e2e",
       "technique": "flow-a",
       "priority": "P0",
-      "traceability": ["NFR-01", "FR-15", "FR-16", "FR-23", "AC-06", "AC-11"],
+      "traceability": [
+        "NFR-01",
+        "FR-15",
+        "FR-16",
+        "FR-23",
+        "AC-06",
+        "AC-11"
+      ],
       "title": "WF-03 primary student check-in happy path completes within 30-second median target",
       "preconditions": [
         "Lecturer has opened session; session is Open with rotating valid QR.",
         "Student actor is enrolled; GPS policy is default or satisfied for the session.",
-        "E2E harness measures wall-clock time from QR scan/deep-link open through success confirmation."
+        "E2E harness measures wall-clock time from in-app QR scan start through success confirmation."
       ],
       "steps": [
-        "Student opens check-in URL with valid token (WF-03 step 1); complete login gate if unauthenticated.",
+        "Student opens PG-02 and completes in-app QR scan (WF-03 step 2); complete login gate if unauthenticated.",
         "Grant GPS when prompted if policy requires; submit check-in via POST /v1/check-ins.",
         "Record elapsed time until success response and Present or Late attendance is queryable on roster.",
         "Repeat across representative sample of students and sessions; compute median elapsed time."
       ],
-      "expected": "Primary WF-03 happy-path median end-to-end time from QR scan to success result is below 30 seconds, matching NFR-01 measurable objective for student check-in latency.",
+      "expected": "Primary WF-03 happy-path median end-to-end time from in-app QR scan to success result is below 30 seconds, matching NFR-01 measurable objective for student check-in latency.",
       "edgeCase": false
     },
     {
@@ -116,7 +147,11 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["NFR-01", "FR-16", "AC-20"],
+      "traceability": [
+        "NFR-01",
+        "FR-16",
+        "AC-20"
+      ],
       "title": "Median check-in time threshold boundary fails gate when at or above 30 seconds",
       "preconditions": [
         "Performance test environment can simulate degraded conditions (elevated latency or reduced capacity) for threshold validation.",
@@ -137,7 +172,12 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["NFR-01", "NFR-09", "FR-16", "BR-19"],
+      "traceability": [
+        "NFR-01",
+        "NFR-09",
+        "FR-16",
+        "BR-19"
+      ],
       "title": "Non-Student roles denied POST /v1/check-ins per permission matrix",
       "preconditions": [
         "Open class session with valid qrToken exists in test environment.",
@@ -159,7 +199,13 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["NFR-01", "FR-16", "NFR-14", "AC-06", "AC-11"],
+      "traceability": [
+        "NFR-01",
+        "FR-16",
+        "NFR-14",
+        "AC-06",
+        "AC-11"
+      ],
       "title": "FLOW-01 mobile-web journey from QR open to CheckInResultScreen success under 30 seconds",
       "preconditions": [
         "Student is on mobile-web viewport (Chromium mobile emulation) with open session and valid check-in deep link.",
@@ -181,7 +227,11 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P1",
-      "traceability": ["NFR-01", "FR-16", "NFR-14"],
+      "traceability": [
+        "NFR-01",
+        "FR-16",
+        "NFR-14"
+      ],
       "title": "Pilot campus network timing on physical mobile browsers under normal conditions",
       "preconditions": [
         "Staging pilot uses real iOS Safari or Android Chrome on campus Wi-Fi or cellular per testing-plan §6.2 browser matrix.",
@@ -203,7 +253,12 @@
       "layer": "browser",
       "technique": "ui-visual-state",
       "priority": "P1",
-      "traceability": ["NFR-01", "NFR-14", "FR-16", "AC-20"],
+      "traceability": [
+        "NFR-01",
+        "NFR-14",
+        "FR-16",
+        "AC-20"
+      ],
       "title": "PG-02 submission lifecycle states provide unambiguous success completion signal for latency measurement",
       "preconditions": [
         "Student mobile shell (SUR-01) at PG-02 /check-in with valid token and open session fixture.",

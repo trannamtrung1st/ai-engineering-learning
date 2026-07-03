@@ -95,7 +95,7 @@ The tester must flag any visible technical identifier as a **P1** defect — it 
 Every authenticated page must be discoverable and escapable via a persistent navigation surface. Implement all four rules before `SLICE_DONE`:
 
 1. **Persistent nav surface** — every authenticated route is reachable from a sidebar, top navigation bar, or contextual breadcrumb chain. No page is a dead end reachable only via the browser back button.
-2. **Home link always visible** — the navigation surface must include a home/dashboard link (or a linked product logo) that is present on every authenticated page. The home link navigates to the role's default hub page.
+2. **Home link always visible** — the navigation surface must include a home/dashboard link on every authenticated page. The **app logo in the nav header or sidebar is the primary home shortcut** — it must be a clickable link to the role's default hub, not decorative-only. An explicit "Home" nav item or breadcrumb first segment also satisfies this rule.
 3. **Orientation on deep pages** — any page more than one level from home must display a breadcrumb trail or a section heading that makes clear where the user is. The first breadcrumb segment must link back to home.
 4. **No dead-end pages** — modal confirmations, detail views, and outcome pages must each provide a clear next action or an explicit path back (close, cancel, back link, or breadcrumb).
 

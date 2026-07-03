@@ -45,7 +45,7 @@
     {
       "id": "module-check-in",
       "type": "module",
-      "title": "Student check-in and QR scan",
+      "title": "Student check-in and in-app QR scan",
       "priority": 13,
       "passes": false,
       "outputPath": "docs/user-manuals/modules/check-in.md",

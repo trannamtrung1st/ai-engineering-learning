@@ -56,7 +56,7 @@
     },
     {
       "id": "infra-local-runtime-compose",
-      "passes": true,
+      "passes": false,
       "priority": 2,
       "phase": 0,
       "agent": "infra",
@@ -140,6 +140,12 @@
           "kind": "drift",
           "reason": "Doc drift for NFR-16 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-03T08:54:46Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-16 — reverify after TestGen",
+          "source": "harness"
         }
       ]
     },
@@ -217,7 +223,7 @@
     },
     {
       "id": "playwright-ui-workspace",
-      "passes": true,
+      "passes": false,
       "priority": 6,
       "phase": 0,
       "agent": "infra",
@@ -286,12 +292,18 @@
           "kind": "drift",
           "reason": "Doc drift for NFR-14 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-03T08:54:46Z",
+          "kind": "drift",
+          "reason": "Doc drift for NFR-14 — reverify after TestGen",
+          "source": "harness"
         }
       ]
     },
     {
       "id": "module-identity-and-access",
-      "passes": true,
+      "passes": false,
       "priority": 7,
       "phase": 1,
       "agent": "backend",
@@ -384,6 +396,12 @@
           "at": "2026-07-03T06:39:34Z",
           "kind": "drift",
           "reason": "Doc drift for BR-24 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T08:54:46Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-15 — reverify after TestGen",
           "source": "harness"
         }
       ]
@@ -561,7 +579,7 @@
     },
     {
       "id": "module-check-in-and-qr-orchestrator",
-      "passes": true,
+      "passes": false,
       "priority": 10,
       "phase": 1,
       "agent": "backend",
@@ -656,6 +674,12 @@
           "at": "2026-07-03T05:16:13Z",
           "kind": "drift",
           "reason": "Doc drift for BR-07 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T08:54:46Z",
+          "kind": "drift",
+          "reason": "Doc drift for BR-03 — reverify after TestGen",
           "source": "harness"
         }
       ]
@@ -1026,7 +1050,7 @@
     },
     {
       "id": "module-realtime-delivery",
-      "passes": true,
+      "passes": false,
       "priority": 15,
       "phase": 1,
       "agent": "backend",
@@ -1102,6 +1126,12 @@
           "at": "2026-07-03T05:48:34Z",
           "kind": "drift",
           "reason": "Doc drift for NFR-16 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T08:54:46Z",
+          "kind": "drift",
+          "reason": "Doc drift for NFR-01 — reverify after TestGen",
           "source": "harness"
         }
       ]
@@ -1183,7 +1213,7 @@
         "docs/ui-ux/design-system/sidebars.md",
         "docs/technical/01-roles-permissions.md"
       ],
-      "description": "Implement app shell primitives, token wiring, and shared component foundations aligned with Attendly design-system precedence. Layout shells (StaffLayout, AdminLayout, StudentLayout) must provide a persistent nav surface on every authenticated page. SidebarNav must include the role's primary home link at the top of the list per docs/ui-ux/design-system/sidebars.md and a **Đăng xuất** logout control in the sidebar footer (staff) or student shell header per FR-38 and FLOW-15. RBAC nav gating: render only items the current role is permitted to access per role-guard.ts — omit forbidden items entirely from the DOM, never render them as disabled.",
+      "description": "Implement app shell primitives, token wiring, and shared component foundations aligned with Attendly design-system precedence. Includes DC-13 QrScannerPanel for student PG-02 in-browser camera QR capture. Layout shells (StaffLayout, AdminLayout, StudentLayout) must provide a persistent nav surface on every authenticated page. SidebarNav must include the role's primary home link at the top of the list per docs/ui-ux/design-system/sidebars.md and a **Đăng xuất** logout control in the sidebar footer (staff) or student shell header per FR-38 and FLOW-15. RBAC nav gating: render only items the current role is permitted to access per role-guard.ts — omit forbidden items entirely from the DOM, never render them as disabled.",
       "completionArtifacts": [
         "apps/web/package.json",
         "apps/web/vite.config.ts",
@@ -1209,6 +1239,7 @@
           "apps/web/src/components/ui/FeedbackAlert.test.tsx",
           "apps/web/src/components/domain/QrDisplayPanel.test.tsx",
           "apps/web/src/components/domain/QrCountdownRing.test.tsx",
+          "apps/web/src/components/domain/QrScannerPanel.test.tsx",
           "apps/web/src/components/domain/CheckInResultScreen.test.tsx",
           "apps/web/src/components/layout/AppShell.test.tsx",
           "apps/web/src/components/layout/SidebarNav.test.tsx",
@@ -1286,6 +1317,18 @@
           "kind": "gate_failed",
           "reason": "Computational checks failed — see 20260703T075958Z-checks.json",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-03T08:54:46Z",
+          "kind": "drift",
+          "reason": "Doc drift for NFR-14 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T08:55:06Z",
+          "kind": "manual",
+          "reason": "DC-13 QrScannerPanel for in-browser camera scan on PG-02",
+          "source": "human"
         }
       ]
     },
@@ -1309,7 +1352,7 @@
         "docs/brds/08-acceptance-mvp-future.md",
         "docs/technical/01-roles-permissions.md"
       ],
-      "description": "Build mobile-first student scan-to-check-in flow with login gate, outcome display, and concise recovery guidance. LoginPage heading must be generic ('Đăng nhập') with no role-specific copy. After successful auth, redirect to the role's default route per docs/technical/01-roles-permissions.md when no returnUrl is present: Student → /check-in, Lecturer/DepartmentAdmin → /lecturer/sessions, AcademicAdmin → /admin/terms, ITAdmin/SystemAuditor → /audit/logs.",
+      "description": "Build mobile-first student check-in on PG-02 with in-browser QrScannerPanel (getUserMedia), login gate, GPS prompt, outcome display, and concise recovery guidance. OS camera deep-link entry is not supported; ?token= query param is harness-only. LoginPage heading must be generic ('Đăng nhập') with no role-specific copy. After successful auth, redirect to the role's default route per docs/technical/01-roles-permissions.md when no returnUrl is present: Student → /check-in, Lecturer/DepartmentAdmin → /lecturer/sessions, AcademicAdmin → /admin/terms, ITAdmin/SystemAuditor → /audit/logs.",
       "completionArtifacts": [
         "apps/web/vite.config.ts",
         "apps/web/src/routes/pages/StudentCheckInPage.tsx",
@@ -1319,6 +1362,7 @@
         "apps/web/src/lib/auth",
         "apps/web/src/lib/check-in",
         "apps/web/src/lib/geolocation",
+        "apps/web/src/components/domain/QrScannerPanel.tsx",
         "apps/web/src/components/domain/CheckInResultScreen.tsx",
         "apps/api/src/modules/check-in-and-qr-orchestrator/repository.ts"
       ],
@@ -1395,6 +1439,36 @@
           "kind": "drift",
           "reason": "Doc drift for NFR-14 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-03T08:54:46Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-16 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T08:54:46Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-15 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T08:54:46Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-06 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T08:54:46Z",
+          "kind": "drift",
+          "reason": "Doc drift for NFR-14 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T08:55:06Z",
+          "kind": "manual",
+          "reason": "FR-16: in-browser camera QR scan replaces OS camera deep link",
+          "source": "human"
         }
       ]
     },
@@ -1615,6 +1689,12 @@
           "at": "2026-07-03T04:33:29Z",
           "kind": "drift",
           "reason": "Doc drift for FR-14 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T08:54:46Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-06 — reverify after TestGen",
           "source": "harness"
         }
       ]
@@ -2390,7 +2470,7 @@
         "docs/brds/07-non-functional-risk.md",
         "docs/technical/13-docker-compose-local-runtime.md"
       ],
-      "description": "Add performance and reliability smoke tests for class-start burst behavior, check-in latency, and success-rate telemetry baselines.",
+      "description": "Add performance and reliability smoke tests for class-start burst behavior, in-app QR scan to check-in latency (AC-20), and success-rate telemetry baselines.",
       "completionArtifacts": [
         "apps/api/src/integration/performance",
         "apps/api/src/integration/fixtures/performance-smoke-fixtures.ts",
@@ -2478,6 +2558,24 @@
           "kind": "drift",
           "reason": "Doc drift for NFR-16 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-03T08:54:46Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-20 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T08:54:46Z",
+          "kind": "drift",
+          "reason": "Doc drift for NFR-01 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T08:55:06Z",
+          "kind": "manual",
+          "reason": "AC-20 entry path uses in-app scanner",
+          "source": "human"
         }
       ]
     },
@@ -2564,6 +2662,24 @@
           "kind": "drift",
           "reason": "Doc drift for FR-38 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-03T08:54:46Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-15 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T08:54:46Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-06 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T08:54:46Z",
+          "kind": "drift",
+          "reason": "Doc drift for NFR-14 — reverify after TestGen",
+          "source": "harness"
         }
       ]
     },
@@ -2629,6 +2745,12 @@
           "at": "2026-07-03T05:05:46Z",
           "kind": "drift",
           "reason": "Doc drift for FR-33 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T08:54:46Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-15 — reverify after TestGen",
           "source": "harness"
         }
       ]

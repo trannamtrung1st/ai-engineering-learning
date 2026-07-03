@@ -141,13 +141,16 @@ sequenceDiagram
   participant B as Mobile browser
   participant A as Attendly
 
-  S->>B: Scan session QR
-  B->>A: Resolve check-in URL with token
+  S->>B: Open PG-02 check-in page
   alt Not authenticated
     A->>B: Redirect to login
     S->>B: Enter credentials
     B->>A: Authenticate
+    B->>A: Return to PG-02
   end
+  S->>B: Grant camera permission
+  S->>B: Scan session QR in-app
+  B->>A: Decode qrPayload token
   opt GPS required by policy
     A->>B: Request location permission
     S->>B: Grant GPS
@@ -160,11 +163,12 @@ sequenceDiagram
 
 | Step | Actor | Action | System validation | Outcome |
 | --- | --- | --- | --- | --- |
-| 1 | Student | Arrive at class; scan QR with phone camera | Token parses to session check-in URL | Browser opens check-in flow |
-| 2 | Student | Authenticate if not logged in | Valid student session required (`BR-05`) | Proceed to check-in or login error |
-| 3 | Student | Grant GPS permission when policy requires | Coordinates and accuracy captured at check-in moment only | GPS result attached to attempt |
-| 4 | System | Validate check-in request | Session `Open`; token valid and matches session; student enrolled; no prior successful check-in; within attendance window; GPS pass if required | `Present` or `Late` attendance record |
-| 5 | Student | View success screen | — | Confirmation with status and timestamp (Vietnamese UI copy) |
+| 1 | Student | Arrive at class; open PG-02 on mobile browser | Check-in page loads | In-app QR scanner ready |
+| 2 | Student | Grant camera permission; scan projected QR in-app | Client decodes `qrPayload` token | Token captured for submission |
+| 3 | Student | Authenticate if not logged in | Valid student session required (`BR-05`) | Proceed to scanner or login error |
+| 4 | Student | Grant GPS permission when policy requires | Coordinates and accuracy captured at check-in moment only | GPS result attached to attempt |
+| 5 | System | Validate check-in request | Session `Open`; token valid and matches session; student enrolled; no prior successful check-in; within attendance window; GPS pass if required | `Present` or `Late` attendance record |
+| 6 | Student | View success screen | — | Confirmation with status and timestamp (Vietnamese UI copy) |
 
 **Timing targets:** Median check-in **< 30 seconds**; majority of class checked in within **5 minutes** per session ([00-project-overview.md](./00-project-overview.md) §3).
 
@@ -173,7 +177,7 @@ sequenceDiagram
 | Condition | User experience | Recovery |
 | --- | --- | --- |
 | Session not `Open` | Clear message: attendance not open or already closed | Wait for lecturer; request manual fallback if legitimate |
-| QR token expired | Message: scan the current QR on screen | Re-scan refreshed QR (`BR-03`) |
+| QR token expired | Message: scan the current QR on screen | Re-scan refreshed QR using in-app camera (`BR-03`) |
 | Wrong session token | Rejection with reason; attempt logged | Scan correct session QR |
 | Not enrolled | Rejection; attempt logged (`BR-06`) | Contact admin if enrollment data is wrong |
 | Duplicate check-in | Message: already checked in for this session (`BR-07`) | No further action needed |

@@ -232,10 +232,11 @@ Prior failed run: \`${prior_run_id}\`
 
 **Retry-only pass.** Execute **only** the browser cases listed below (failed in the prior run). Ignore all other cases in the artifact for this invocation.
 
-- On the **first** \`FAIL\` among these cases: report it, emit \`BROWSER_TEST_FAIL\`, and **stop** — do not run remaining retry cases (\`SKIP\` cases do not count as failures; continue past them)
-- When **all** listed runnable cases PASS (or SKIP): emit \`BROWSER_TEST_PASS\` (the harness will run a separate full verification phase next)
+- Run **every** listed case — do not stop after the first failure. Collect **all** FAIL results and P0/P1 UX bugs before emitting the final signal.
+- When **all** listed runnable cases PASS (or SKIP): emit \`BROWSER_TEST_PASS\` (the harness runs a separate full verification phase next)
+- When **any** runnable case FAILs or P0/P1 UX bugs remain: emit \`BROWSER_TEST_FAIL\` with the **complete** blocker list at the end
 
-Per-action 30s timeouts still apply; fail-fast means stop the **case list**, not abandon a stuck step before its timeout."
+Per-action 30s timeouts still apply. Complete the full case list within the pass budget."
   else
     cases_block="$generated_browser_cases"
     local codegen_block
@@ -389,7 +390,27 @@ if [[ "$FINAL_PASS" == true ]]; then
     sync_playwright_spec_to_backlog "$SLICE_ID" "$spec_path"
     update_playwright_regression_index "$SLICE_ID" "$spec_path" "$RID" "$test_count" "$tc_ids_json"
   fi
-  git_commit_browser_test_pass "$SLICE_ID" "$RID" "$spec_path"
+  if [[ "${AIH_DEFER_BROWSER_TEST_COMMIT:-}" == "1" ]]; then
+    aih_ok "Browser test passed — Playwright regression commit deferred until headless gate"
+    exit 0
+  fi
+  if slice_requires_playwright_regression_gate "$SLICE_ID"; then
+    aih_step "Running Playwright UI regression check (post browser test)"
+    set +e
+    ./ai-harness/scripts/run-checks.sh "$SLICE_ID" --playwright-only
+    playwright_status=$?
+    set -e
+    if [[ "$playwright_status" -ne 0 ]]; then
+      browser_test_exit_failure "$combined_outfile"
+    fi
+  fi
+  set +e
+  finalize_browser_test_pass "$SLICE_ID" "$RID" "$spec_path"
+  finalize_status=$?
+  set -e
+  if [[ "$finalize_status" -ne 0 ]]; then
+    browser_test_exit_failure "$combined_outfile"
+  fi
   exit 0
 fi
 browser_test_exit_failure "$combined_outfile"

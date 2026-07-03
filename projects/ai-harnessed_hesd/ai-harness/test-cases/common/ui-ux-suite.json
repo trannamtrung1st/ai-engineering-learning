@@ -16,9 +16,10 @@
       "steps": [
         "Load each distinct authenticated staff screen exercised in this run",
         "Confirm the persistent app shell (sidebar/topnav per 06-app-layout-components.md) is present",
-        "Confirm a visible, functional home/dashboard link"
+        "Confirm a visible, functional home/dashboard link or clickable Attendly logo in the shell header",
+        "Click the Attendly logo when present and confirm navigation to the role's home route"
       ],
-      "expected": "Every authenticated staff screen shows the persistent app shell and a working home/dashboard link. Student routes may use the minimal mobile-first shell, but must still expose a way home."
+      "expected": "Every authenticated staff screen shows the persistent app shell; the Attendly logo (when present) links to role home and navigates correctly. Student routes may use the minimal mobile-first shell, but must still expose a way home."
     },
     {
       "id": "TC-UX-COMMON-002",
@@ -32,9 +33,10 @@
       "preconditions": ["Authenticated as any role"],
       "steps": [
         "From each screen (including /lecturer/sessions/{id}, /lecturer/sessions/{id}/roster, and the check-in result screen), locate a clickable path back to home",
-        "Confirm it is a nav logo, breadcrumb first segment, or explicit home nav item"
+        "Prefer the Attendly logo in nav — click it and confirm arrival at role home",
+        "Alternatively confirm breadcrumb first segment or explicit home nav item works"
       ],
-      "expected": "Every screen offers at least one in-app path back to home — no browser-back-only dead ends"
+      "expected": "Every screen offers at least one in-app path back to home via Attendly logo, breadcrumb, or home nav item — no browser-back-only dead ends"
     },
     {
       "id": "TC-UX-COMMON-003",

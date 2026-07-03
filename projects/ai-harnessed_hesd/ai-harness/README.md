@@ -101,7 +101,8 @@ Defaults live in `ai-harness/config/models.json`.
 | `npm run aih:slice:reopen -- <id> --reason "..."` | Reopen slice (`passes: false`) and append `history` |
 | `npm run aih:slice:focus -- <id> --reason "..."` | One-shot next-iteration slice override (`--reopen` also sets `passes: false`) |
 | `npm run aih:scope` | Mechanical slice scope gate only (changed files vs allowlist) |
-| `npm run aih:check` | Computational gates only (no agent); add `--profile fast` for slice self-check |
+| `npm run aih:check` | Pre-browser computational gates (no Playwright UI); add `--profile fast` for slice self-check |
+| `npm run aih:playwright-check` | Headless Playwright UI regression for a slice — runs after browser tester codegen in Ralph |
 | `npm run aih:run-check -- <script>` | One npm script with timeout, heartbeat, and log file (for agent ad-hoc runs) |
 | `npm run aih:browser-test` | Playwright MCP functional + UX test for next/current slice; emits Playwright regression spec |
 | `npm run aih:review` | AI review for next pending slice |
@@ -158,9 +159,11 @@ npm run aih:testgen:drift && npm run aih:testgen:loop && npm run aih:loop
 # Safe loop — refuses to start if any tag is stale
 npm run aih:loop:safe
 
-# Fast implementer self-check — scope first, then slice-scoped Playwright (skips build/integration/e2e)
+# Fast implementer self-check — scope first, then pre-browser checks (skips build/integration/e2e; no Playwright UI)
 npm run aih:scope -- <sliceId>
 npm run aih:check -- <sliceId> --profile fast
+# After browser test pass locally:
+npm run aih:playwright-check -- <sliceId>
 
 # Loop health
 npm run aih:status
@@ -245,6 +248,24 @@ npm run aih:testgen:enhance -- FR-08 --no-commit --context docs/ui-ux/14-listing
 
 The script reuses the TestGen agent and validation pipeline; it attaches docs, related backlog slices, and existing artifact summary automatically. Set `AIH_TESTGEN_NO_COMMIT=1` to skip commit (same as `--no-commit`).
 
+### ManualsGen (user manuals + demo flows)
+
+Independent lifecycle — run after harness planner emits `manuals-backlog.json`:
+
+```bash
+npm run aih:preview                 # optional — verify demo steps live
+npm run aih:manualsgen:drift && npm run aih:manualsgen:loop
+```
+
+1. Pick next item from `ai-harness/manuals-backlog.json` where `manuals-index.json` is not current
+2. `check-manuals-drift.sh` compares doc fingerprint per item
+3. `build-prompt.sh manualsgen <itemId>` injects into `manualsgen.prompt.md`
+4. Agent writes `docs/user-manuals/{modules,flows}/<id>.md` or `demo-runbook.md` + updates README index
+5. `validate-user-manuals.sh` — required headings, min lines, no forbidden placeholders
+6. Item marked current in `manuals-index.json`; optional git commit
+
+Canonical guide: [`docs/user-manuals-guide.md`](docs/user-manuals-guide.md).
+
 ### Implementation
 
 1. `pick-next-slice.sh` selects lowest-priority slice with `passes: false`
@@ -252,11 +273,13 @@ The script reuses the TestGen agent and validation pipeline; it attaches docs, r
 3. Test case gate — **optional by default** (`testCaseGate.mode` in `ralph-loop.json`); warns and continues when tags are missing; hard-fails only in `required` mode
 4. `build-prompt.sh` injects slice into `implementer.prompt.md` (plus prior scope / checks / browser-test / AI-review failures when the slice failed those gates last time)
 5. `agent -p --force` implements one slice
-6. `check-slice-scope.sh` — mechanical allowlist gate (fail-fast before expensive checks)
-7. `run-checks.sh` — computational gates (see below)
-8. `run-browser-test.sh` — Playwright MCP gate: `TC-*` checklist, UX audit, Playwright regression codegen; must end with `BROWSER_TEST_PASS`
-9. `run-ai-review.sh` — static code review; must end with `REVIEW_PASS`
-10. Backlog updated (`passes: true`), progress logged, optional git commit
+6. `check-slice-scope.sh` — mechanical allowlist gate (before expensive checks)
+7. `run-checks.sh` — pre-browser computational gates (typecheck, lint, build, unit, integration, e2e — **no** `test:playwright-ui`)
+8. `run-browser-test.sh` — Playwright MCP gate: `TC-*` checklist, UX audit, test-case maintenance, Playwright regression codegen; must end with `BROWSER_TEST_PASS` (commit deferred)
+9. `run-checks.sh --playwright-only` — headless Playwright UI regression on freshly codegen'd spec (`playwrightRegressionGate` in `ralph-loop.json`)
+10. `finalize_browser_test_pass` — validate test-case JSON, sync backlog, commit browser-test-owned paths
+11. `run-ai-review.sh` — static code review; must end with `REVIEW_PASS`
+12. Backlog updated (`passes: true`), progress logged, optional git commit
 
 ## Computational checks (`npm run aih:check`)
 
@@ -270,7 +293,7 @@ Gates run after every implementer iteration and can be run standalone:
 | `test:unit` | `apps/api` exists (and `apps/web` when it defines `test:unit`) | Yes |
 | `test:integration` | `apps/api` exists | Yes — logs to `ai-harness/generated/runs/<run-id>-check-test-integration.log`; `--test-reporter=spec` per test file |
 | `test:e2e` | `tests/e2e` exists | Yes |
-| `test:playwright-ui` | `tests/playwright-ui` exists | Optional until `playwright-ui-workspace` slice passes |
+| Playwright UI regression | `tests/playwright-ui` exists, frontend/test slice | Yes — **after** browser tester codegen via `run-checks.sh --playwright-only` or `npm run aih:playwright-check` |
 | Slice `testRequirements` | Ralph iteration with slice id | Yes when field present |
 | Generated test case coverage | all slice `acceptance` product items current | Yes — integration/e2e case tags must appear in test files (unit is implementer-owned via `testRequirements`) |
 | DB health (test stack) | `docker-compose.test.yml` exists | Yes when full profile includes `test:integration` or `test:e2e` — harness runs `aih:test:stack:reset` |
@@ -308,6 +331,12 @@ Full decision tree, flake patterns, and `SLICE_DEFER` policy: [`docs/test-failur
 - `ai-harness/workflows/testgen-loop.json` — TestGen loop policy
 - `ai-harness/config/testgen-docs-map.json` — doc resolution rules per requirement tag
 - `ai-harness/test-case-index.json` — slim generation state (current, fingerprint)
+- `ai-harness/manuals-backlog.json` — ManualsGen item queue (modules, flows, runbook)
+- `ai-harness/workflows/manualsgen-loop.json` — ManualsGen loop policy
+- `ai-harness/config/manualsgen-docs-map.json` — doc resolution rules per manual item type
+- `ai-harness/manuals-index.json` — ManualsGen generation state (current, fingerprint)
+- `docs/user-manuals/` — generated end-user manuals and demo scripts
+- `ai-harness/docs/user-manuals-guide.md` — ManualsGen runbook for humans
 - `ai-harness/playwright-regression-index.json` — browser-tester Playwright spec tracking per slice
 - `docs/test-cases/items/` — generated test case artifacts per tag
 - `ai-harness/config/context-map.json` — which docs to read per slice

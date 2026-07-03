@@ -50,6 +50,41 @@ Trace: FRM-01, `FR-15`, `FR-36`.
 
 ### 2.2 PG-02 — Check-in entry (`LAY-01`)
 
+**State: scanner idle / scanning**
+
+```
+┌─────────────────────────────────────┐
+│  Attendly                           │
+├─────────────────────────────────────┤
+│  Quét mã QR trên màn chiếu          │
+│                                     │
+│  ┌─────────────────────────────┐    │
+│  │                             │    │
+│  │   (live camera viewport)    │    │
+│  │      ┌───────────┐          │    │
+│  │      │ scan frame│          │    │
+│  │      └───────────┘          │    │
+│  │                             │    │
+│  └─────────────────────────────┘    │
+│                                     │
+│  [ * Xác nhận điểm danh ]           │
+│  (enabled after token captured)     │
+└─────────────────────────────────────┘
+```
+
+**State: camera permission denied**
+
+```
+┌─────────────────────────────────────┐
+│  [!] Không thể truy cập camera      │
+│  Vui lòng bật quyền camera trong    │
+│  cài đặt trình duyệt, sau đó thử    │
+│  lại.                               │
+│                                     │
+│  [ * Thử lại ]                      │
+└─────────────────────────────────────┘
+```
+
 **State: submitting / awaiting result**
 
 ```

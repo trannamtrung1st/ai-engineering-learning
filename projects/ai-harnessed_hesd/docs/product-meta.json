@@ -27,7 +27,7 @@
     "Student enrollment import",
     "Class session scheduling and open/close attendance",
     "Rotating dynamic QR check-in (30-second token)",
-    "Mobile web QR scan with student login",
+    "In-browser mobile web QR scan with student login",
     "Enrollment and duplicate check-in validation",
     "Optional GPS location verification",
     "Realtime lecturer attendance dashboard",

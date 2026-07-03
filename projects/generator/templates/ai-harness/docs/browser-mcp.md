@@ -3,14 +3,16 @@
 Interactive UI verification for frontend and test slices. The harness uses Playwright MCP in two places:
 
 1. **Implementer smoke test** — `frontend`/`test` slices get `--approve-mcps` during implementation
-2. **Browser test agent gate** — `run-browser-test.sh` runs after the slice scope gate and computational checks, before AI code review (hard gate for `frontend`/`test` slices). When a prior browser test failed for the slice and `browserTest.retryFailedCasesFirst` is true (default), the harness runs a **retry phase** (failed case IDs only, fail-fast) then a **full phase** (all `layer: browser` cases) before accepting `BROWSER_TEST_PASS`.
+2. **Browser test agent gate** — `run-browser-test.sh` runs after pre-browser computational checks, before the headless Playwright regression gate and AI code review (hard gate for `frontend`/`test` slices). When a prior browser test failed for the slice and `browserTest.retryFailedCasesFirst` is true (default), the harness runs a **retry phase** (failed case IDs only) then a **full phase** (all `layer: browser` cases) before accepting `BROWSER_TEST_PASS`. Both phases use **collect-all failures** (`browserTest.collectAllFailures`, default true) — the tester reports every FAIL in one pass.
+
+3. **Playwright UI regression gate** — `run-checks.sh --playwright-only` runs headless Playwright on the freshly codegen'd spec **after** browser test pass. Commit of browser-test-owned paths is deferred until this gate passes.
 
 ## Phased browser test gate
 
 When the latest failed `*-browser-test.txt` for the slice contains parseable `TC-*: FAIL` lines:
 
-1. **Retry phase** — tester agent runs only those case IDs; exits on first failure without running the full suite
-2. **Full phase** — tester agent runs every mandatory browser case to confirm no regressions
+1. **Retry phase** — tester agent runs only those case IDs; collects **all** failures before emitting `BROWSER_TEST_FAIL`
+2. **Full phase** — tester agent runs every mandatory browser case, maintains test-case JSON, and codegen Playwright specs
 
 Artifacts: `*-browser-test-retry.txt`, `*-browser-test-full.txt`, combined `*-browser-test.txt`, and `*-browser-test.json` with a `phases` array. Set `browserTest.retryFailedCasesFirst` to `false` in `ralph-loop.json` to disable and always run full phase only.
 
@@ -118,8 +120,8 @@ Use dev auth tokens or the app's dev login flow as documented in `docs/technical
 | API scenario tests | `npm run test:e2e` — in-process Fastify flows |
 | HTTP stack probe | `verify-stack.sh` — health + web HTTP 200 |
 | **Browser UI (implementer)** | Playwright MCP smoke test during implementation |
-| **Browser UI (gate)** | `run-browser-test.sh` — dedicated test agent; `TC-*` checklist + UX audit + Playwright regression codegen |
-| **Playwright UI regression** | `tests/playwright-ui/scenarios/` — committed specs; `npm run test:playwright-ui` (optional gate) |
+| **Browser UI (gate)** | `run-browser-test.sh` — dedicated test agent; `TC-*` checklist + UX audit + test-case maintenance + Playwright regression codegen |
+| **Playwright UI regression** | `run-checks.sh --playwright-only` — headless gate after browser tester updates specs; also `npm run aih:playwright-check` |
 
 ### Post-verification (full phase)
 
@@ -127,9 +129,10 @@ After the `TC-*` checklist, the browser test agent:
 
 1. **UX audit** — screenshot review per `skills/ui-ux-testing/SKILL.md`; logs `UX-<slice>-NNN` bugs (P0/P1 block pass)
 2. **UX bugs JSON** — `ai-harness/generated/runs/ux-bugs/<slice-id>/<run-id>.json`
-3. **Playwright codegen** — updates `tests/playwright-ui/scenarios/<slice-id>.spec.ts` per [`playwright-regression.md`](playwright-regression.md)
+3. **Test case maintenance** — add/update/remove obsolete `layer: browser` cases in `docs/test-cases/items/<tag>.json`
+4. **Playwright codegen** — updates `tests/playwright-ui/scenarios/<slice-id>.spec.ts` per [`playwright-regression.md`](playwright-regression.md)
 
-On `BROWSER_TEST_PASS`, the harness syncs the spec path into `testRequirements.playwright`, commits spec + `src/support/` helpers + regression index, and records the run. On `BROWSER_TEST_FAIL`, uncommitted browser-test-owned files are reverted so the next implementer scope gate stays clean.
+On `BROWSER_TEST_PASS`, the harness syncs the spec path into `testRequirements.playwright` and updates the regression index — **commit is deferred** until the headless Playwright regression gate passes. Then `finalize_browser_test_pass` validates test-case JSON, syncs backlog, and commits owned paths. On `BROWSER_TEST_FAIL` or Playwright regression failure, uncommitted browser-test-owned files are reverted so the next implementer scope gate stays clean.
 
 See [`ux-bug-logging.md`](ux-bug-logging.md) for bug schema and severity rules.
 

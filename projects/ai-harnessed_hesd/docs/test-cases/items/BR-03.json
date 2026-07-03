@@ -1,7 +1,7 @@
 {
   "productItemId": "BR-03",
   "version": 1,
-  "docFingerprint": "sha256:0421ca4affe3aa70584e3b352a860d11de519a5a2aaff8c4d8e0f12d14d1a70a",
+  "docFingerprint": "sha256:19e64ffe6167dd31f8fc3c3024d5165bbbea784beccb9aa10268b44c95b50891",
   "generatedAt": "2026-07-03T05:12:00Z",
   "cases": [
     {
@@ -10,7 +10,15 @@
       "layer": "integration",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["BR-03", "FR-11", "FR-12", "FR-13", "AC-02", "AC-03", "AC-04"],
+      "traceability": [
+        "BR-03",
+        "FR-11",
+        "FR-12",
+        "FR-13",
+        "AC-02",
+        "AC-03",
+        "AC-04"
+      ],
       "title": "Testing-plan QR token behavior row: expired token rejected and logged",
       "preconditions": [
         "Class session is Open with a QRSessionToken issued for that session.",
@@ -33,7 +41,13 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["BR-03", "BR-23", "FR-22", "AC-04", "AC-18"],
+      "traceability": [
+        "BR-03",
+        "BR-23",
+        "FR-22",
+        "AC-04",
+        "AC-18"
+      ],
       "title": "Check-in service persists ExpiredQr attempt without attendance mutation",
       "preconditions": [
         "Integration harness uses real DB transaction boundaries for qr_session_tokens, check_in_attempts, and attendance_records.",
@@ -56,7 +70,13 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["BR-03", "FR-12", "FR-23", "AC-03", "AC-11"],
+      "traceability": [
+        "BR-03",
+        "FR-12",
+        "FR-23",
+        "AC-03",
+        "AC-11"
+      ],
       "title": "One valid QR token can be used by multiple enrolled students within TTL",
       "preconditions": [
         "Class session is Open with one QRSessionToken in Valid state and expiresAt in the future.",
@@ -80,7 +100,13 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["BR-03", "FR-13", "FR-16", "FR-22", "AC-04"],
+      "traceability": [
+        "BR-03",
+        "FR-13",
+        "FR-16",
+        "FR-22",
+        "AC-04"
+      ],
       "title": "POST /v1/check-ins with expired QR returns 422 ExpiredQr envelope",
       "preconditions": [
         "Class session is Open.",
@@ -105,7 +131,13 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["BR-03", "FR-11", "FR-13", "AC-02", "AC-04"],
+      "traceability": [
+        "BR-03",
+        "FR-11",
+        "FR-13",
+        "AC-02",
+        "AC-04"
+      ],
       "title": "QR TTL boundary uses server-side 30-second expiry",
       "preconditions": [
         "Open session has a QR token with deterministic issuedAt timestamp.",
@@ -128,7 +160,12 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["BR-03", "BR-01", "BR-02", "FR-13"],
+      "traceability": [
+        "BR-03",
+        "BR-01",
+        "BR-02",
+        "FR-13"
+      ],
       "title": "Rule-order short-circuit: session state failures precede expired QR evaluation",
       "preconditions": [
         "Student actor is authenticated.",
@@ -151,7 +188,15 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["BR-03", "BR-06", "BR-07", "BR-08", "BR-09", "BR-10", "FR-22"],
+      "traceability": [
+        "BR-03",
+        "BR-06",
+        "BR-07",
+        "BR-08",
+        "BR-09",
+        "BR-10",
+        "FR-22"
+      ],
       "title": "Rule-order short-circuit: ExpiredQr precedes enrollment, duplicate, and GPS checks",
       "preconditions": [
         "Class session is Open.",
@@ -176,7 +221,13 @@
       "layer": "integration",
       "technique": "concurrency",
       "priority": "P0",
-      "traceability": ["BR-03", "BR-07", "FR-18", "NFR-07", "AC-08"],
+      "traceability": [
+        "BR-03",
+        "BR-07",
+        "FR-18",
+        "NFR-07",
+        "AC-08"
+      ],
       "title": "Duplicate replay with valid BR-03 token preserves one success per student-session",
       "preconditions": [
         "Open session has a Valid multi-use QR token within TTL.",
@@ -199,7 +250,12 @@
       "layer": "integration",
       "technique": "concurrency",
       "priority": "P1",
-      "traceability": ["BR-03", "BR-23", "FR-22", "NFR-07"],
+      "traceability": [
+        "BR-03",
+        "BR-23",
+        "FR-22",
+        "NFR-07"
+      ],
       "title": "Expired QR retry storm returns deterministic ExpiredQr without success writes",
       "preconditions": [
         "Open session has an expired QR token.",
@@ -221,7 +277,12 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P0",
-      "traceability": ["BR-03", "BR-19", "FR-11", "FR-14"],
+      "traceability": [
+        "BR-03",
+        "BR-19",
+        "FR-11",
+        "FR-14"
+      ],
       "title": "Student and cross-scope Lecturer cannot fetch current QR metadata",
       "preconditions": [
         "Open session exists in section A assigned to Lecturer A with a current Valid QR token.",
@@ -245,7 +306,14 @@
       "layer": "e2e",
       "technique": "rbac-negative",
       "priority": "P1",
-      "traceability": ["BR-03", "BR-18", "BR-19", "FR-27", "FR-28", "AC-16"],
+      "traceability": [
+        "BR-03",
+        "BR-18",
+        "BR-19",
+        "FR-27",
+        "FR-28",
+        "AC-16"
+      ],
       "title": "Student export and cross-scope Lecturer report deny access to sessions with ExpiredQr attempts",
       "preconditions": [
         "Section A contains an Open session with at least one logged ExpiredQr CheckInAttempt.",
@@ -269,19 +337,26 @@
       "layer": "browser",
       "technique": "browser-journey",
       "priority": "P0",
-      "traceability": ["BR-03", "FR-11", "FR-13", "FR-16", "AC-02", "AC-04"],
+      "traceability": [
+        "BR-03",
+        "FR-11",
+        "FR-13",
+        "FR-16",
+        "AC-02",
+        "AC-04"
+      ],
       "title": "Student UI shows expired QR guidance and allows rescan of current lecturer QR",
       "preconditions": [
         "Lecturer has opened a session and the lecturer screen displays a rotating QR code with visible validity timing or refresh behavior.",
         "Student is logged in on a supported mobile browser profile.",
-        "Student has scanned or opened a check-in deep link containing a QR token that has passed its 30-second TTL."
+        "Student has scanned an expired QR token in-app on PG-02 that has passed its 30-second TTL."
       ],
       "steps": [
         "Student submits the check-in form using the expired QR token.",
         "Observe the error banner, inline alert, or modal shown on the student check-in page.",
         "Verify Vietnamese copy instructs the student to scan the current QR on the lecturer screen.",
         "On the lecturer view, wait for QR refresh and confirm a new/current QR is displayed without page reload.",
-        "Student scans the current QR and submits again while still within TTL and otherwise eligible.",
+        "Student re-scans the current QR in-app and submits again while still within TTL and otherwise eligible.",
         "Verify the success or next-step UI is shown only for the current QR submission."
       ],
       "expected": "The browser journey surfaces ExpiredQr as localized current-QR guidance, lecturer QR rotation remains visible, and a fresh within-TTL QR can proceed without treating the old expired token as valid.",
@@ -293,7 +368,12 @@
       "layer": "browser",
       "technique": "ui-visual-state",
       "priority": "P1",
-      "traceability": ["BR-03", "FR-16", "FR-22", "AC-04"],
+      "traceability": [
+        "BR-03",
+        "FR-16",
+        "FR-22",
+        "AC-04"
+      ],
       "title": "CheckInResultScreen renders distinct failure-expired-qr visual state with retry CTA",
       "preconditions": [
         "Class session is Open with a QR token that has passed its 30-second TTL.",

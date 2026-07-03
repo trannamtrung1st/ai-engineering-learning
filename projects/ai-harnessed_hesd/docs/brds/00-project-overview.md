@@ -76,7 +76,7 @@ Canonical state names and transitions are defined in [05-state-machine.md](./05-
 
 | Metric | Target | Notes |
 | --- | --- | --- |
-| Median check-in time per student | **< 30 seconds** | From QR scan to success confirmation |
+| Median check-in time per student | **< 30 seconds** | From in-app QR scan to success confirmation |
 | 95th percentile check-in time | **< 90 seconds** | Includes login and optional GPS grant |
 | Valid check-in processing success rate | **≥ 99%** | Server-side processing of eligible attempts |
 | Manual fallback rate | **< 5%** of students per session | Legitimate device/network/GPS failures |
@@ -93,7 +93,7 @@ MVP aligns with **Phase 1 — Core Attendance** (see [08-acceptance-mvp-future.m
 - Student enrollment import (CSV acceptable)
 - Class session scheduling and open/close attendance window
 - Rotating dynamic QR (30-second TTL, multi-use per session)
-- Mobile web QR scan with student login
+- In-browser mobile web QR scan with student login
 - Enrollment validation and one successful check-in per student per session
 - Core attendance statuses: `Present`, `Late`, `Absent`, `Manual Present`
 - Lecturer manual fallback with audit logging

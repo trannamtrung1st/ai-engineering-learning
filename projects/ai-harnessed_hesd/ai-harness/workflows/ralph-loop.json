@@ -27,8 +27,8 @@
     "playwrightScope": "slice",
     "playwrightFullEveryN": 0,
     "profiles": {
-      "fast": ["typecheck", "lint", "test:unit", "test:playwright-ui"],
-      "full": ["typecheck", "lint", "build", "test:unit", "test:integration", "test:e2e", "test:playwright-ui"]
+      "fast": ["typecheck", "lint", "test:unit"],
+      "full": ["typecheck", "lint", "build", "test:unit", "test:integration", "test:e2e"]
     },
     "gateProfile": "full",
     "scopeAllowlist": [],
@@ -122,11 +122,17 @@
       }
     }
   },
+  "playwrightRegressionGate": {
+    "enabled": true,
+    "activeWhenAgent": ["frontend", "test"],
+    "scope": "slice"
+  },
   "browserTest": {
     "required": true,
     "playwrightMaxCasesPerSlice": 30,
     "modelKey": "tester",
     "retryFailedCasesFirst": true,
+    "collectAllFailures": true,
     "activeWhenAgent": ["frontend", "test"],
     "requirePreviewStack": true,
     "previewVerifyGateTimeoutMs": 10000,

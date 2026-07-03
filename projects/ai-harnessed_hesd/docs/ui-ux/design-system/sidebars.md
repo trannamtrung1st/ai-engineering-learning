@@ -23,6 +23,7 @@ Hidden on mobile, visible at small breakpoint. Needs a toggle/trigger for mobile
   - AcademicAdmin: "Thiết lập học kỳ" → `/admin/terms`
   - ITAdmin / SystemAuditor: "Nhật ký kiểm toán" → `/audit/logs`
   - Student (via StudentLayout, not sidebar): "Trang chủ" link → `/check-in`
+- The **Attendly logo / product mark** in the sidebar header (or mobile header on `StudentLayout`) must be a `<Link>` to the **current role's home route** from the list above — the primary home shortcut on every authenticated shell. Logo must not be decorative-only.
 - Vertical spacing: 8px between items
 - Font weight: semibold
 
@@ -62,7 +63,7 @@ Hidden on mobile, visible at small breakpoint. Needs a toggle/trigger for mobile
 
 ## Rules
 
-- **Home link first:** the top nav item is always the role's primary dashboard link (see Navigation List above) — never omit it, never move it below the fold, never make it conditional.
+- **Home link first:** the top nav item is always the role's primary dashboard link (see Navigation List above) — the **Attendly logo is a link to home** and must never be decorative-only. Never omit the home link, never move it below the fold, never make it conditional.
 - **RBAC gating:** render only the nav items that the current user's role is permitted to access, as determined by `role-guard.ts` functions and `docs/technical/01-roles-permissions.md`. Do **not** render forbidden items as disabled anchor tags — omit them from the DOM entirely. CSS `display:none` or `pointer-events:none` on forbidden items is also forbidden; the item must not be present in the rendered output.
 - **No dead ends:** every item in the nav list must link to a real, implemented route. Never add a nav item as a placeholder.
 - Responsive: hidden on mobile with a trigger mechanism

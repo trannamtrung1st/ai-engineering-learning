@@ -16,7 +16,7 @@ Attendly business rules govern:
 | --- | --- | --- |
 | Session attendance window | BR-01, BR-02 | Check-in API; session open/close actions |
 | QR session tokens | BR-03, BR-04 | Token validation at check-in submission |
-| Student authentication | BR-05 | Check-in URL gate before submission |
+| Student authentication | BR-05 | Check-in page (PG-02) gate before submission |
 | Enrollment eligibility | BR-06 | Roster lookup at check-in |
 | Duplicate check-in prevention | BR-07 | Attendance record uniqueness per student per session |
 | GPS validation | BR-08, BR-09, BR-10 | Optional policy-driven location check |
@@ -95,8 +95,8 @@ Attendly business rules govern:
 | Field | Value |
 | --- | --- |
 | **Condition** | No authenticated student session exists |
-| **Trigger** | Student opens check-in URL (from QR scan or deep link) |
-| **Outcome** | Redirect to login; after successful authentication, return student to check-in flow with token preserved where technically feasible; reject submission with `Unauthenticated` if login not completed |
+| **Trigger** | Student opens check-in page (PG-02) without authenticated session |
+| **Outcome** | Redirect to login; after successful authentication, return student to PG-02 check-in flow; reject submission with `Unauthenticated` if login not completed |
 | **Exception** | None for self-service check-in |
 | **Trace** | FR-15, FR-36 |
 

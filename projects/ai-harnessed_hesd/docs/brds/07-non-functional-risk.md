@@ -29,7 +29,7 @@ Quality expectations are calibrated for campus attendance operations where peak 
 
 #### NFR-01 — Student check-in latency
 
-The system shall support a **median end-to-end student check-in time < 30 seconds** from QR scan to success result under normal campus network conditions.  
+The system shall support a **median end-to-end student check-in time < 30 seconds** from in-app QR scan to success result under normal campus network conditions.  
 Trace: [00-project-overview.md](./00-project-overview.md) (`OBJ-01`) · [03-functional-requirements.md](./03-functional-requirements.md) (`FR-16`, `FR-23`).
 
 #### NFR-02 — Classroom completion time

@@ -46,6 +46,7 @@ cat > "${REPO_ROOT}/package.json" <<EOF
     "aih:validate:backlog": "./ai-harness/scripts/validate-backlog.sh",
     "aih:scope": "./ai-harness/scripts/check-slice-scope.sh",
     "aih:check": "./ai-harness/scripts/run-checks.sh",
+    "aih:playwright-check": "./ai-harness/scripts/run-playwright-check.sh",
     "aih:run-check": "./ai-harness/scripts/run-logged-check.sh",
     "aih:browser-test": "./ai-harness/scripts/run-browser-test.sh",
     "aih:review": "./ai-harness/scripts/run-ai-review.sh",

@@ -169,7 +169,7 @@ Trace: `FR-20`, `FR-21`, `BR-14`, `BR-15`, `BR-16`. Rendered inside `ManualCorre
 
 Trace: `FR-16`, `FR-34`. This is a latency-critical, near-zero-field "form".
 
-- The only optional user-provided input is GPS consent via `GpsPermissionPrompt`; the QR token is carried by the scanned URL.
+- The QR token is captured by `QrScannerPanel` via in-browser camera decode; GPS consent via `GpsPermissionPrompt` is the only other optional user-provided input.
 - Client-side validation is minimal by design to keep the flow fast (`NFR-UI-05`); the server owns all rule evaluation.
 - All outcomes render through `CheckInResultScreen` (see [07-domain-specific-components.md](./07-domain-specific-components.md) §3.1) with reason + next action (`FR-UI-03`).
 

@@ -59,3 +59,10 @@ Each section has:
 - Section headers: 48px or 64px bottom margin
 - Consistent vertical rhythm, no crowded sections
 - Layouts readable and properly spaced on both desktop and mobile
+
+## App shell / top navigation
+
+When the product uses a top navigation bar (instead of or in addition to a sidebar):
+
+- The **app logo / product mark** in the header must be a link to the role's default home route — the primary home shortcut on every authenticated page.
+- Logo must not be decorative-only; clicking it always navigates to home.

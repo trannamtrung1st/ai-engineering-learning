@@ -65,8 +65,8 @@ MVP does not support `Closed` → `Open` reopening; manual corrections handle ex
 | Token state | UI on student (PG-02) | Lecturer display |
 | --- | --- | --- |
 | `Valid` | Proceed to validation / success path | QR rendered; countdown active |
-| `Expired` | `CheckInResultScreen` → `ExpiredQr` + retry CTA | Auto-refresh to new token |
-| `Invalid` | Danger alert; scan correct QR | Error alert if fetch fails |
+| `Expired` | `CheckInResultScreen` → `ExpiredQr` + retry CTA (returns to scanner) | Auto-refresh to new token |
+| `Invalid` | Danger alert; re-scan correct QR in-app | Error alert if fetch fails |
 
 Trace: `FR-11`–`FR-13`, `BR-03`, `BR-04`, `AC-03`, `AC-04`.
 
@@ -126,16 +126,21 @@ Trace: `FR-23`, `FR-09`, `BR-11`–`BR-13`, `AC-11`, `AC-12`.
 
 Trace: `FR-22`, `BR-23`, `AC-18`, `AC-UI-02`, `FR-UI-03`.
 
-### 5.2 Submission lifecycle (PG-02)
+### 5.2 Scanner and submission lifecycle (PG-02)
 
 ```
-loading → (gps-prompt?) → submitting → [outcome state]
+loading → (authenticating?) → camera-prompt → scanning → token-captured → (gps-prompt?) → submitting → [outcome state]
 ```
 
-- `loading`: resolve token and session context.
+- `loading`: resolve session context; initialize scanner.
+- `camera-prompt`: request `getUserMedia` permission before live preview.
+- `scanning`: live camera preview with scan-frame overlay; decode on successful read.
+- `token-captured`: QR token decoded client-side; enable submit action.
 - `gps-prompt`: only when policy requires and permission not yet granted.
 - `submitting`: disable duplicate submit; show spinner.
-- Outcome: full-screen `CheckInResultScreen`; no ambiguous intermediate states.
+- Outcome: full-screen `CheckInResultScreen`; retry CTAs return to `scanning`.
+
+Token source for end users is in-app scanner decode only. A `?token=` query param may exist for automated test harnesses and is not part of the documented student flow.
 
 ---
 

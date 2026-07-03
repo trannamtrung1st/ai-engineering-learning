@@ -100,8 +100,9 @@ Use `NULL` or valid FK references for optional foreign keys in negative-path tes
 | `npm run aih:test:stack:reset` | Tear down and recreate ephemeral test DB |
 | `npm run aih:run-check -- test:integration` | Single check with timeout, heartbeat, log file |
 | `npm run aih:run-check -- test:integration -- <pattern>` | Isolated suite or file |
-| `npm run aih:check -- <sliceId>` | Full computational profile for slice |
-| `npm run aih:check -- <sliceId> --profile fast` | Scope + slice-scoped Playwright only |
+| `npm run aih:check -- <sliceId>` | Pre-browser computational profile (no Playwright UI) |
+| `npm run aih:check -- <sliceId> --profile fast` | Scope + typecheck/lint/unit only |
+| `npm run aih:playwright-check -- <sliceId>` | Headless Playwright UI regression for slice spec |
 | `npm run aih:slice:focus -- <id> --reason "..."` | One-shot next-iteration override |
 | `npm run aih:slice:reopen -- <id> --reason "..."` | Set `passes: false` + append history |
 | `npm run aih:status` | Pending slices, loop override, recent failures |

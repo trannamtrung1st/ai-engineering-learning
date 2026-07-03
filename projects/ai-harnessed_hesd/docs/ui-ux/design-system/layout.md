@@ -59,3 +59,10 @@ Each section has:
 - Section headers: 48px or 64px bottom margin
 - Consistent vertical rhythm, no crowded sections
 - Layouts readable and properly spaced on both desktop and mobile
+
+## App shell / top navigation
+
+When the product uses a top navigation bar (e.g. `StudentLayout` mobile header, or `TopContextHeader` chrome):
+
+- The **Attendly logo / product mark** must be a link to the **current role's home route** (`/lecturer/sessions`, `/admin/terms`, `/check-in`, `/audit/logs` per role) — the primary home shortcut on every authenticated page.
+- Logo must not be decorative-only; clicking it always navigates to home.

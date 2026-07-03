@@ -39,7 +39,7 @@ Post-login redirect targets align with [01-roles-permissions.md](../technical/01
 
 | Role | Home route | Page | Layout | Minimum hub content | Primary flows |
 | --- | --- | --- | --- | --- | --- |
-| Student | `/check-in` | PG-02 | `LAY-01` / `StudentLayout` | QR scan prompt; recent attendance summary | [FLOW-01](./10-user-flows.md#21-flow-01--student-qr-check-in-happy-path), [FLOW-04](./10-user-flows.md#24-flow-04--student-attendance-history) |
+| Student | `/check-in` | PG-02 | `LAY-01` / `StudentLayout` | In-app QR scanner; recent attendance summary | [FLOW-01](./10-user-flows.md#21-flow-01--student-qr-check-in-happy-path), [FLOW-04](./10-user-flows.md#24-flow-04--student-attendance-history) |
 | Lecturer | `/lecturer/sessions` | PG-04 | `LAY-02` / `StaffLayout` | Today's and upcoming scheduled sessions list | [FLOW-05](./10-user-flows.md#31-flow-05--open-session-and-display-qr), [FLOW-06](./10-user-flows.md#32-flow-06--monitor-live-roster) |
 | DepartmentAdmin | `/lecturer/sessions` | PG-04 | `LAY-02` / `StaffLayout` | Scoped session list (department) | FLOW-05, [FLOW-12](./10-user-flows.md#44-flow-12--attendance-report-and-export) |
 | AcademicAdmin | `/admin/terms` | PG-07 | `LAY-03` / `AdminLayout` | Active term overview; quick links to sections and policies | [FLOW-09](./10-user-flows.md#41-flow-09--academic-structure-setup), [FLOW-11](./10-user-flows.md#43-flow-11--attendance-policy-configuration) |
@@ -112,15 +112,15 @@ Navigation rules:
 
 Voluntary logout from any authenticated surface follows FLOW-15 (`FR-38`); user returns here without `returnUrl`.
 
-### PG-02 — Check-in entry (scan landing)
+### PG-02 — Check-in entry (in-app scanner)
 
 | Field | Value |
 | --- | --- |
-| Route | `/check-in?token=...` |
+| Route | `/check-in` (`?token=` query param is harness/test-only; not a documented student entry path) |
 | Actor | Student |
-| Primary action | Submit check-in |
-| Key states | authenticating (redirect to `/login`), GPS prompt, submitting, result |
-| Components | `GpsPermissionPrompt`, `CheckInResultScreen` (DC-04/DC-05) |
+| Primary action | Scan QR (in-app camera), then submit check-in |
+| Key states | authenticating (redirect to `/login`), `camera-prompt`, `scanning`, `token-captured`, GPS prompt, submitting, result |
+| Components | `QrScannerPanel` (DC-13), `GpsPermissionPrompt`, `CheckInResultScreen` (DC-04/DC-05) |
 | API | `POST /v1/check-ins` |
 | Trace | `FR-16`, `FR-17`, `FR-18`, `FR-34`; `BR-05` to `BR-12` |
 

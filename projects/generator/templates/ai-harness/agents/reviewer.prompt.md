@@ -65,6 +65,6 @@ The prompt includes git diff, changed-files list, computational checks summary, 
 Brief markdown findings (bullets). End with **exactly one** signal line:
 
 - `REVIEW_PASS` — merge-ready for this slice
-- `REVIEW_FAIL` — list blockers above; harness will retry
+- `REVIEW_FAIL` — list **all** blocking findings above in one pass; harness will retry
 
 Finish in **one pass**. Review only — no fixes.

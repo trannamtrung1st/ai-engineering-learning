@@ -37,6 +37,7 @@ Every component below is Neobrutalist by default: `2px` black borders, `0px` rad
 | DC-10 | `AttendanceHistoryList` | Student self-service (SUR-01) | `FR-37` |
 | DC-11 | `ExportScopeSummary` | Reporting/export (SUR-05) | `FR-27`, `FR-30`, `AC-UI-08` |
 | DC-12 | `AuditEntryRow` | Audit review (SUR-05) | `FR-29`, `FR-30`, `FR-32` |
+| DC-13 | `QrScannerPanel` | Student check-in (SUR-01) | `FR-16`, `NFR-14` |
 
 ---
 
@@ -125,6 +126,20 @@ Requests browser geolocation only at the check-in moment. Trace: `FR-34`, `FR-35
 | `LowAccuracy` | Prompt to retry outdoors or wait for a better fix |
 
 - Location is captured **once per attempt**, not tracked continuously.
+
+### 3.3 `QrScannerPanel` (DC-13)
+
+In-browser QR capture for student check-in on PG-02. Trace: `FR-16`, `NFR-14`.
+
+| Aspect | Specification |
+| --- | --- |
+| Camera | Uses `getUserMedia` to render a live `<video>` preview with a scan-frame overlay |
+| Decode | Reads `qrPayload` from the lecturer QR (opaque token or URL containing `token` query param) |
+| States | `camera-prompt` (permission request), `scanning` (live preview), `permission-denied`, `token-captured` (brief confirmation before GPS/submit) |
+| Recovery | `ExpiredQr` and malformed-token failures return student to scanner view via retry CTA ("Quét lại") |
+| Exclusions | OS-native camera app deep-link entry is not supported; `?token=` query param is harness/test-only |
+
+Accessibility: permission-denied state includes text instructions for enabling camera in browser settings; scan frame has an aria-label describing purpose.
 
 ---
 
@@ -228,6 +243,7 @@ Student-facing copy is concise Vietnamese (`vi-VN`); technical identifiers stay 
 | --- | --- | --- | --- |
 | QR rotation and projection clarity | `FR-11`, `FR-14` | `BR-03`, `BR-04` | `AC-02`, `AC-UI-06` |
 | Check-in outcome recoverability | `FR-16`, `FR-22`, `FR-23` | `BR-05` to `BR-12` | `AC-UI-02`, `AC-UI-03` |
+| In-browser QR scanner | `FR-16` | `BR-03`, `BR-04` | `AC-04`, `NFR-14` |
 | GPS risk-reduction UX | `FR-34`, `FR-35` | `BR-08`, `BR-09`, `BR-10` | `AC-11` |
 | Manual fallback governance | `FR-20`, `FR-21` | `BR-14` to `BR-16` | `AC-13`, `AC-14` |
 | Export/audit scope safety | `FR-27`, `FR-30`, `FR-32` | `BR-18`, `BR-19` | `AC-UI-08`, `AC-UI-09` |
@@ -236,6 +252,6 @@ Student-facing copy is concise Vietnamese (`vi-VN`); technical identifiers stay 
 
 ## 7. Future consideration
 
-- Per-student challenge-token confirmation UI after QR scan (post-MVP anti-fraud).
+- Per-student challenge-token confirmation UI after in-app QR scan (post-MVP anti-fraud).
 - Rich cross-term analytics widgets for attendance trends.
 - Dispute-investigation workbench composing `AuditEntryRow` with linked attempt evidence.

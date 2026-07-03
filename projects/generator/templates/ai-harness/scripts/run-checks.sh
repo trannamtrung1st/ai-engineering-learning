@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Computational validation gates
-# Usage: run-checks.sh [sliceId] [--profile fast|full]
+# Usage: run-checks.sh [sliceId] [--profile fast|full] [--playwright-only]
 set -euo pipefail
 source "$(dirname "$0")/lib/common.sh"
 
@@ -10,8 +10,13 @@ ensure_runs_dir
 # Omit slice id for global checks only (docs-only repo). Ralph passes slice id explicitly.
 SLICE_ID=""
 CHECK_PROFILE=""
+PLAYWRIGHT_ONLY=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --playwright-only)
+      PLAYWRIGHT_ONLY=true
+      shift
+      ;;
     --profile)
       CHECK_PROFILE="${2:?profile required after --profile}"
       shift 2
@@ -640,27 +645,51 @@ check_stack_startup() {
   fi
 }
 
-if [[ -n "$SLICE_ID" ]]; then
-  aih_info "Computational checks for slice: ${SLICE_ID} (profile: ${CHECK_PROFILE})"
+if [[ "$PLAYWRIGHT_ONLY" == true ]]; then
+  if [[ -n "$SLICE_ID" ]]; then
+    aih_info "Playwright UI regression check for slice: ${SLICE_ID}"
+  else
+    aih_info "Playwright UI regression check (global — no slice id)"
+  fi
+  aih_blank
+  set +e
+  run_slice_scoped_playwright
+  pw_status=$?
+  set -e
+  if [[ "$pw_status" -ne 0 ]]; then
+    PASS=false
+  fi
 else
-  aih_info "Computational checks (global — no slice id, profile: ${CHECK_PROFILE})"
-fi
-aih_blank
+  if [[ -n "$SLICE_ID" ]]; then
+    aih_info "Computational checks for slice: ${SLICE_ID} (profile: ${CHECK_PROFILE})"
+  else
+    aih_info "Computational checks (global — no slice id, profile: ${CHECK_PROFILE})"
+  fi
+  aih_blank
 
-check_forbidden_patterns
-check_artifacts
-check_slice_test_requirements
-check_generated_test_case_coverage
-check_db_runtime
-check_npm_commands
-refresh_preview_web_after_build_logged
-check_stack_startup
+  check_forbidden_patterns
+  check_artifacts
+  check_slice_test_requirements
+  check_generated_test_case_coverage
+  check_db_runtime
+  check_npm_commands
+  refresh_preview_web_after_build_logged
+  check_stack_startup
+fi
 
 aih_blank
 if [[ "$PASS" == true ]]; then
-  aih_ok "All computational checks passed"
+  if [[ "$PLAYWRIGHT_ONLY" == true ]]; then
+    aih_ok "Playwright UI regression check passed"
+  else
+    aih_ok "All computational checks passed"
+  fi
 else
-  aih_err "Computational checks failed (${#FAILURES[@]} failure(s))"
+  if [[ "$PLAYWRIGHT_ONLY" == true ]]; then
+    aih_err "Playwright UI regression check failed (${#FAILURES[@]} failure(s))"
+  else
+    aih_err "Computational checks failed (${#FAILURES[@]} failure(s))"
+  fi
 fi
 
 # Build JSON report

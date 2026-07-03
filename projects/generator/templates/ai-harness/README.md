@@ -101,7 +101,8 @@ Defaults live in `ai-harness/config/models.json`.
 | `npm run aih:slice:reopen -- <id> --reason "..."` | Reopen slice (`passes: false`) and append `history` |
 | `npm run aih:slice:focus -- <id> --reason "..."` | One-shot next-iteration slice override (`--reopen` also sets `passes: false`) |
 | `npm run aih:scope` | Mechanical slice scope gate only (changed files vs allowlist) |
-| `npm run aih:check` | Computational gates only (no agent); add `--profile fast` for slice self-check |
+| `npm run aih:check` | Pre-browser computational gates (no Playwright UI); add `--profile fast` for slice self-check |
+| `npm run aih:playwright-check` | Headless Playwright UI regression for a slice — runs after browser tester codegen in Ralph |
 | `npm run aih:run-check -- <script>` | One npm script with timeout, heartbeat, and log file (for agent ad-hoc runs) |
 | `npm run aih:browser-test` | Playwright MCP functional + UX test for next/current slice; emits Playwright regression spec |
 | `npm run aih:review` | AI review for next pending slice |
@@ -158,9 +159,11 @@ npm run aih:testgen:drift && npm run aih:testgen:loop && npm run aih:loop
 # Safe loop — refuses to start if any tag is stale
 npm run aih:loop:safe
 
-# Fast implementer self-check — scope first, then slice-scoped Playwright (skips build/integration/e2e)
+# Fast implementer self-check — scope first, then pre-browser checks (skips build/integration/e2e; no Playwright UI)
 npm run aih:scope -- <sliceId>
 npm run aih:check -- <sliceId> --profile fast
+# After browser test pass locally:
+npm run aih:playwright-check -- <sliceId>
 
 # Loop health
 npm run aih:status
@@ -270,11 +273,13 @@ Canonical guide: [`docs/user-manuals-guide.md`](docs/user-manuals-guide.md).
 3. Test case gate — **optional by default** (`testCaseGate.mode` in `ralph-loop.json`); warns and continues when tags are missing; hard-fails only in `required` mode
 4. `build-prompt.sh` injects slice into `implementer.prompt.md` (plus prior scope / checks / browser-test / AI-review failures when the slice failed those gates last time)
 5. `agent -p --force` implements one slice
-6. `check-slice-scope.sh` — mechanical allowlist gate (fail-fast before expensive checks)
-7. `run-checks.sh` — computational gates (see below)
-8. `run-browser-test.sh` — Playwright MCP gate: `TC-*` checklist, UX audit, Playwright regression codegen; must end with `BROWSER_TEST_PASS`
-9. `run-ai-review.sh` — static code review; must end with `REVIEW_PASS`
-10. Backlog updated (`passes: true`), progress logged, optional git commit
+6. `check-slice-scope.sh` — mechanical allowlist gate (before expensive checks)
+7. `run-checks.sh` — pre-browser computational gates (typecheck, lint, build, unit, integration, e2e — **no** `test:playwright-ui`)
+8. `run-browser-test.sh` — Playwright MCP gate: `TC-*` checklist, UX audit, test-case maintenance, Playwright regression codegen; must end with `BROWSER_TEST_PASS` (commit deferred)
+9. `run-checks.sh --playwright-only` — headless Playwright UI regression on freshly codegen'd spec (`playwrightRegressionGate` in `ralph-loop.json`)
+10. `finalize_browser_test_pass` — validate test-case JSON, sync backlog, commit browser-test-owned paths
+11. `run-ai-review.sh` — static code review; must end with `REVIEW_PASS`
+12. Backlog updated (`passes: true`), progress logged, optional git commit
 
 ## Computational checks (`npm run aih:check`)
 
@@ -288,7 +293,7 @@ Gates run after every implementer iteration and can be run standalone:
 | `test:unit` | `apps/api` exists (and `apps/web` when it defines `test:unit`) | Yes |
 | `test:integration` | `apps/api` exists | Yes — logs to `ai-harness/generated/runs/<run-id>-check-test-integration.log`; `--test-reporter=spec` per test file |
 | `test:e2e` | `tests/e2e` exists | Yes |
-| `test:playwright-ui` | `tests/playwright-ui` exists | Optional until `playwright-ui-workspace` slice passes |
+| Playwright UI regression | `tests/playwright-ui` exists, frontend/test slice | Yes — **after** browser tester codegen via `run-checks.sh --playwright-only` or `npm run aih:playwright-check` |
 | Slice `testRequirements` | Ralph iteration with slice id | Yes when field present |
 | Generated test case coverage | all slice `acceptance` product items current | Yes — integration/e2e case tags must appear in test files (unit is implementer-owned via `testRequirements`) |
 | DB health (test stack) | `docker-compose.test.yml` exists | Yes when full profile includes `test:integration` or `test:e2e` — harness runs `aih:test:stack:reset` |

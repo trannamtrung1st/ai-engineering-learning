@@ -162,14 +162,26 @@ sequenceDiagram
   participant CI as Check-in Service
   participant AL as Attendance Ledger
 
-  ST->>MB: Scan QR
-  MB->>API: POST /check-ins
+  ST->>MB: Open PG-02 check-in page
+  alt Not authenticated
+    MB->>API: Redirect to login
+    ST->>MB: Authenticate
+    MB->>MB: Return to PG-02
+  end
+  ST->>MB: Grant camera; scan QR in-app
+  MB->>MB: Decode qrPayload token
+  opt GPS required
+    MB->>MB: Capture geolocation once
+  end
+  MB->>API: POST /check-ins { qrToken, gps?, clientTimestamp }
   API->>CI: Validate auth/session/token/enrollment/duplicate/GPS
   CI->>AL: Upsert attendance status (Present/Late)
   CI->>CI: Write CheckInAttempt outcome=Success
   API-->>MB: Success response
   MB-->>ST: Check-in confirmation
 ```
+
+**Harness note:** Automated tests may inject `?token=` on `/check-in` to bypass the in-app scanner. This shortcut is not a documented student entry path.
 
 ### 5.3 Determination logic
 
@@ -193,7 +205,7 @@ On success:
 
 | Checkpoint | Expected behavior | Trace |
 | --- | --- | --- |
-| Login gate | Unauthenticated QR scan redirects to login and returns to check-in | AC-06 |
+| Login gate | Unauthenticated access to PG-02 redirects to login and returns to check-in | AC-06 |
 | Logout | Voluntary logout clears credentials and blocks protected access until re-login | AC-26 |
 | Token sharing | Multiple students can use the same valid displayed QR within TTL | AC-03 |
 | Eligibility | Student must have active enrollment in the session section | AC-07 |
@@ -252,10 +264,10 @@ Trace: FR-22, BR-23, AC-18.
 
 | Failure code | Student guidance | Lecturer/admin visibility |
 | --- | --- | --- |
-| `Unauthenticated` | sign in and continue from preserved check-in link | not shown as roster rejection unless submission reached API |
+| `Unauthenticated` | sign in and continue on PG-02 | not shown as roster rejection unless submission reached API |
 | `SessionNotOpen` | wait for lecturer to open attendance | visible as failed attempt if submitted |
 | `SessionClosed` | contact lecturer for legitimate exception | visible on roster/audit with timestamp |
-| `ExpiredQr` | scan the currently displayed QR | count toward QR health metrics |
+| `ExpiredQr` | re-scan the currently displayed QR using in-app camera | count toward QR health metrics |
 | `NotEnrolled` | contact academic office if roster is incorrect | flagged for enrollment reconciliation |
 | `DuplicateCheckIn` | show existing success status and timestamp | no roster change |
 | `GpsDisabled` / `GpsRequired` | enable location or ask lecturer for manual fallback | visible for manual review |
@@ -457,5 +469,5 @@ SystemAuditor remains read-only. AcademicAdmin performs any correction through W
 - scheduled/bulk workflow automation for multi-section operations;
 - dispute-case workflow with explicit `UnderReview` and `Resolved` lifecycle;
 - webhook integration when exports complete;
-- optional per-student challenge workflow after QR scan;
+- optional per-student challenge workflow after in-app QR scan;
 - richer notification workflow for absence-threshold breaches.

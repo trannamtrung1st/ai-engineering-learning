@@ -69,7 +69,7 @@ MVP aligns with **Phase 1 — Core Attendance**. Items marked **Must** are non-n
 | Timetable and class sessions | Define scheduled sessions per class section; support manual session creation when timetable changes | CAP-03 |
 | Open/close attendance window | Lecturer opens and closes check-in for a specific class session; reject check-in when session not open | CAP-04 |
 | Rotating dynamic QR (30 s) | Server issues **short-lived multi-use** session tokens bound to one class session; QR display refreshes every **30 seconds**; expired tokens rejected with clear message | CAP-05 |
-| Mobile web QR scan | Student uses phone browser camera; no native app | CAP-06 |
+| Mobile web QR scan | Student scans classroom QR via in-browser camera on PG-02; no native app | CAP-06 |
 | Student authentication | Valid login required before check-in; unauthenticated users redirected to login; explicit logout clears client session and requires re-authentication | CAP-07 |
 | Enrollment validation | Only students enrolled in the class section may check in; failures logged as rejected attempts | CAP-08 |
 | One check-in per student per session | Each student may have at most one **successful** attendance record per class session; duplicate attempts rejected with explicit message | CAP-09 |
@@ -107,6 +107,7 @@ The following are explicitly **out of scope** for MVP launch:
 | Continuous student location tracking outside check-in | Privacy minimization; GPS collected only at check-in moment when required |
 | Deep two-way integration with legacy student information systems | MVP uses import/CSV; API integration is future |
 | Offline check-in queue with deferred sync | MVP supports retry on poor network only |
+| OS camera app QR deep-link entry | Student entry is in-browser scanner only; OS camera opening `/check-in?token=...` is not supported |
 | Per-student one-time QR challenge tokens | Future hardening option after core flow is stable |
 | Grading and academic assessment | Separate academic domain |
 

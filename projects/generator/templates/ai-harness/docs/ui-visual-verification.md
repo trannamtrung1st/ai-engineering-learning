@@ -57,9 +57,9 @@ Open each screenshot and verify. Any **FAIL** → fix code → re-screenshot bef
 | 13 | **Whitespace rhythm** | Sections, cards, and toolbars have token-aligned gaps; content is not cramped |
 | 14 | **Listing toolbar** | Search, filters, sort, pagination, and CTA are aligned with documented chrome |
 | 15 | **Focus / active nav** | Correct sidebar highlight and visible focus on interactive elements |
-| 16 | **Navigation surface + home link** | Every authenticated page shows a persistent nav surface (sidebar or topnav); a home/dashboard link is visible and functional on every route |
+| 16 | **Navigation surface + home link** | Every authenticated page shows a persistent nav surface (sidebar or topnav); a home/dashboard link is visible and functional; the **app logo is a clickable link to role home** |
 | 17 | **Login page neutrality + redirect** | Login page heading and copy contain no role-specific text; after login, user lands on the correct role's home page (not a generic `/` shell or wrong dashboard) |
-| 18 | **Back-to-home reachable** | Every page (including detail views, modals, outcome pages) provides at least one clickable path back to home: nav logo, breadcrumb first segment, or explicit home nav item — no browser-back-only dead ends |
+| 18 | **Back-to-home / logo shortcut** | Every page provides at least one clickable path back to home — **app logo in nav must navigate to role home**; breadcrumb first segment or explicit home nav item also acceptable — no browser-back-only dead ends |
 | 19 | **No forbidden nav items** | Nav chrome (sidebar, topnav, breadcrumbs, inline links) contains zero links to routes the current role cannot access; no forbidden items rendered as disabled — they must be absent entirely |
 | 20 | **Access-denied page** | Navigating directly to a forbidden route renders a styled access-denied page (not a crash, blank, or login redirect); the page uses the product's alert/outcome surface, explains the restriction in plain language, and includes a home link |
 

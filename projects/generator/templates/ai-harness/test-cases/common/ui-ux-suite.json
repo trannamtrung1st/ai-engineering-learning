@@ -16,9 +16,10 @@
       "steps": [
         "Load each distinct authenticated screen exercised in this run",
         "Look for a persistent nav surface (sidebar or topnav)",
-        "Look for a visible, functional home/dashboard link"
+        "Look for a visible, functional home/dashboard link or clickable app logo / product mark",
+        "Click the app logo and confirm navigation to the role's home route"
       ],
-      "expected": "Every authenticated screen shows a persistent nav surface and a working home/dashboard link"
+      "expected": "Every authenticated screen shows a persistent nav surface; the app logo (when present) is a link to home and navigates correctly"
     },
     {
       "id": "TC-UX-COMMON-002",
@@ -32,9 +33,10 @@
       "preconditions": ["Authenticated as any role"],
       "steps": [
         "From each screen (including detail views and outcome pages), locate a clickable path back to home",
-        "Confirm it is a nav logo, breadcrumb first segment, or explicit home nav item"
+        "Prefer the app logo in nav — click it and confirm arrival at role home",
+        "Alternatively confirm breadcrumb first segment or explicit home nav item works"
       ],
-      "expected": "Every screen offers at least one in-app path back to home — no browser-back-only dead ends"
+      "expected": "Every screen offers at least one in-app path back to home via app logo, breadcrumb, or home nav item — no browser-back-only dead ends"
     },
     {
       "id": "TC-UX-COMMON-003",

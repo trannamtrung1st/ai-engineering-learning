@@ -40,7 +40,7 @@ MVP aligns with **Phase 1 — Core Attendance** from the source BRD. Capabilitie
 | Timetable and class sessions | Define scheduled sessions per class section; support manual session creation when timetable changes |
 | Open/close attendance window | Lecturer opens and closes check-in for a specific class session; reject check-in when session not open |
 | Rotating dynamic QR (30 s) | Server issues **short-lived multi-use** session tokens bound to one class session; QR display refreshes every **30 seconds**; expired tokens rejected with clear message |
-| Mobile web QR scan | Student uses phone browser camera; no native app |
+| Mobile web QR scan | Student scans QR via in-browser camera on PG-02; no native app |
 | Student authentication | Valid login required before check-in; unauthenticated users redirected to login |
 | Enrollment validation | Only students enrolled in the class section may check in; failures logged as rejected attempts |
 | One check-in per student per session | Each student may have at most one **successful** attendance record per class session; duplicate attempts rejected with explicit message |
@@ -196,7 +196,7 @@ UI specs under `docs/ui-ux/` must map pages and flows to `FR-xx` and `AC-xx`. Au
 
 Prioritize:
 
-- Mobile-first student QR scan → login gate → optional GPS → result screen with clear success/failure copy in Vietnamese
+- Mobile-first student check-in: open PG-02 → in-app QR scan → login gate when needed → optional GPS → result screen with clear success/failure copy in Vietnamese
 - Lecturer session control: open/close, large rotating QR, realtime roster with Present/Late/Absent/Pending and rejected attempts
 - Academic admin listing pages with search, filter, sort, and pagination per route matrix
 - `TableToolbar` on privileged and listing routes

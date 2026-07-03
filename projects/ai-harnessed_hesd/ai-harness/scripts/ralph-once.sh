@@ -171,15 +171,57 @@ set +e
 set -e
 
 # --- Browser functional test (Playwright MCP) ---
+BROWSER_TEST_RAN=false
 if [[ "${AIH_SKIP_BROWSER_TEST:-}" != "1" ]]; then
-  aih_step "Running browser functional test (Playwright MCP)"
+  if slice_requires_browser_test "$SLICE_ID"; then
+    BROWSER_TEST_RAN=true
+    aih_step "Running browser functional test (Playwright MCP)"
+    set +e
+    AIH_DEFER_BROWSER_TEST_COMMIT=1 AIH_RUN_ID="$RID" ./ai-harness/scripts/run-browser-test.sh "$SLICE_ID" "$RID"
+    browser_test_status=$?
+    set -e
+    if [[ "$browser_test_status" -ne 0 ]]; then
+      record_iteration_failure "$SLICE_ID" "gate_failed" "browser_test_failed" \
+        "Browser test failed — see ${RID}-browser-test.json"
+      exit 1
+    fi
+  fi
+fi
+
+# --- Playwright UI regression (headless, after browser tester codegen) ---
+if [[ "$BROWSER_TEST_RAN" == true ]] && slice_requires_playwright_regression_gate "$SLICE_ID"; then
+  aih_step "Running Playwright UI regression check (post browser test)"
   set +e
-  AIH_RUN_ID="$RID" ./ai-harness/scripts/run-browser-test.sh "$SLICE_ID" "$RID"
-  browser_test_status=$?
+  ./ai-harness/scripts/run-checks.sh "$SLICE_ID" --playwright-only
+  playwright_status=$?
   set -e
-  if [[ "$browser_test_status" -ne 0 ]]; then
-    record_iteration_failure "$SLICE_ID" "gate_failed" "browser_test_failed" \
-      "Browser test failed — see ${RID}-browser-test.json"
+  if [[ "$playwright_status" -ne 0 ]]; then
+    spec_path=""
+    if [[ -f "${RUNS_DIR}/${RID}-browser-test.json" ]]; then
+      spec_path="$(jq -r '.playwrightSpec // empty' "${RUNS_DIR}/${RID}-browser-test.json" 2>/dev/null || true)"
+    fi
+    revert_browser_test_workspace_changes "$SLICE_ID" "$RID" "$spec_path"
+    guardrail_line="$(summarize_checks_guardrail_line "$RID" 2>/dev/null || true)"
+    if [[ -n "$guardrail_line" ]]; then
+      pw_guardrail="Playwright UI regression failed — ${guardrail_line} (full report: ${RID}-checks.json)"
+    else
+      pw_guardrail="Playwright UI regression failed — see ${RID}-checks.json"
+    fi
+    record_iteration_failure "$SLICE_ID" "gate_failed" "playwright_regression_failed" "$pw_guardrail"
+    exit 1
+  fi
+  spec_path=""
+  if [[ -f "${RUNS_DIR}/${RID}-browser-test.json" ]]; then
+    spec_path="$(jq -r '.playwrightSpec // empty' "${RUNS_DIR}/${RID}-browser-test.json" 2>/dev/null || true)"
+  fi
+  set +e
+  finalize_browser_test_pass "$SLICE_ID" "$RID" "$spec_path"
+  finalize_status=$?
+  set -e
+  if [[ "$finalize_status" -ne 0 ]]; then
+    revert_browser_test_workspace_changes "$SLICE_ID" "$RID" "$spec_path"
+    record_iteration_failure "$SLICE_ID" "gate_failed" "browser_test_commit_failed" \
+      "Browser test artifact commit failed — validate test cases and retry"
     exit 1
   fi
 fi

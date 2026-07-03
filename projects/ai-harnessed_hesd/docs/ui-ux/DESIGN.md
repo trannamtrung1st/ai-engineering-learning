@@ -14,7 +14,7 @@ Attendly uses a **Neobrutalism** visual language: hard offset shadows, 2px to 3p
 
 | Goal | UX requirement | Trace |
 | --- | --- | --- |
-| Fast student check-in | Student can scan QR, resolve validation feedback, and complete check-in quickly on mobile web | `FR-16`, `FR-23`, `AC-11`, `NFR-01` |
+| Fast student check-in | Student can scan QR in-app, resolve validation feedback, and complete check-in quickly on mobile web | `FR-16`, `FR-23`, `AC-11`, `NFR-01` |
 | Clear lecturer control | Lecturer can open/close attendance, monitor live roster state, and apply manual fallback confidently | `FR-07`, `FR-19`, `FR-20`, `AC-01`, `AC-13` |
 | Trustworthy admin governance | Admin and auditor views communicate role scope, export actions, and audit context clearly | `FR-27`, `FR-30`, `FR-32`, `AC-16`, `AC-17` |
 
@@ -46,7 +46,7 @@ Attendly uses a **Neobrutalism** visual language: hard offset shadows, 2px to 3p
 
 | Surface ID | Route or view intent | Primary actors | Key states | Requirement trace |
 | --- | --- | --- | --- | --- |
-| SUR-01 | Student QR entry and check-in result | Student | loading, success, failure reason, retry | `FR-15`, `FR-16`, `FR-22`, `AC-06`, `AC-18` |
+| SUR-01 | Student QR scanner, check-in submission, and result | Student | camera-prompt, scanning, token-captured, loading, success, failure reason, retry | `FR-15`, `FR-16`, `FR-22`, `AC-06`, `AC-18` |
 | SUR-02 | Lecturer session control (open/close + rotating QR) | Lecturer | scheduled, open, closed, token refresh | `FR-07`, `FR-11`, `FR-14`, `AC-01`, `AC-02` |
 | SUR-03 | Lecturer live roster and manual fallback | Lecturer | present/late/pending/rejected/manual | `FR-19`, `FR-20`, `BR-14`, `AC-13` |
 | SUR-04 | Academic admin structure and policy management | AcademicAdmin | list/filter/edit forms/validation | `FR-01` to `FR-06`, `FR-24` |

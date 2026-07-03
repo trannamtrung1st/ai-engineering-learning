@@ -64,7 +64,7 @@ Trace: `FR-08` · `BR-02`.
 
 #### AC-06 — Login gate enforced
 
-**Given** a student opens check-in URL without authenticated session,  
+**Given** a student opens PG-02 check-in page without authenticated session,  
 **When** they attempt to proceed,  
 **Then** the system redirects to login and only allows submission after successful authentication.  
 Trace: `FR-15`, `FR-36` · `BR-05`.

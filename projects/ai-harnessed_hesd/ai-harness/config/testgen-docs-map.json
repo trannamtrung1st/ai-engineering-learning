@@ -4,7 +4,7 @@
     "docs/technical/11-testing-plan.md"
   ],
   "generationNotes": [
-    "TestGen emits integration, e2e (API), and browser (MCP checklist) layers only. Executable Playwright UI specs in tests/playwright-ui/scenarios/ are owned by the browser test agent codegen step \u2014 do not duplicate Playwright UI automation as layer:e2e cases in TestGen artifacts.",
+    "TestGen emits integration, e2e (API), and browser (MCP checklist) layers only. Executable Playwright UI specs in tests/playwright-ui/scenarios/ are owned by the browser test agent codegen step — do not duplicate Playwright UI automation as layer:e2e cases in TestGen artifacts. The browser tester maintains browser-layer cases in docs/test-cases/items/ (add, update, remove obsolete) after implementation.",
     "Harness planner regenerates rules[] from actual AC/FR/NFR tags in generated BRDs. coverageHints must reference routes and roles from product specs, not template literals."
   ],
   "rules": [
@@ -68,7 +68,7 @@
       ],
       "coverageHints": [
         "ui-ux: UI-facing tag (renders a page in 09-page-list.md) must ship >=1 category:ui-ux case (ui-accessibility / ui-responsive / ui-visual-state / ui-form-ux / ui-navigation) on the browser layer",
-        "ui-form-ux: check-in and admin setup/policy forms (FR-04/FR-15/FR-16/FR-24/FR-25) validate inline errors, disabled/submitting states, and success feedback",
+        "ui-form-ux: check-in and admin setup/policy forms (FR-04/FR-15/FR-16/FR-24/FR-25) validate inline errors, disabled/submitting states, success feedback, and in-browser QR scanner states (camera-prompt, scanning, token-captured, permission-denied)",
         "ui-visual-state: live roster and listings (AC-13/FR-19/FR-27..30) render loading, empty, and error states, not just the happy path",
         "ui-navigation: FLOW-15 logout from staff SidebarNav and student shell returns to PG-01 and blocks protected routes (FR-38, AC-26)"
       ]
