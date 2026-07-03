@@ -2,7 +2,7 @@
   "productItemId": "AC-09",
   "version": 1,
   "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
-  "generatedAt": "2026-07-02T09:53:57Z",
+  "generatedAt": "2026-07-03T03:49:00Z",
   "cases": [
     {
       "id": "TC-AC-09-001",
@@ -215,6 +215,30 @@
       ],
       "expected": "Roster displays student as Pending with GPS rejection visible in attempt summary; ManualCorrectionDialog opens and accepts correction; post-save row updates to Manual Present confirming lecturer fallback path remains operable per AC-09 and BR-14.",
       "edgeCase": true
+    },
+    {
+      "id": "TC-AC-09-011",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["AC-09", "FR-34", "FR-35", "BR-08", "AC-18"],
+      "title": "GpsDisabled outcome renders distinct failure-gps-denied visual state on PG-02",
+      "preconditions": [
+        "Student is logged in on mobile student shell at PG-02 check-in route.",
+        "Target session has gpsRequired=true in effective policy and is Open with valid QR token.",
+        "Browser geolocation permission is denied or blocked for the test profile."
+      ],
+      "steps": [
+        "Navigate to PG-02 check-in URL with token query parameter for gps-required session.",
+        "Observe GpsPermissionPrompt risk-reduction copy before permission prompt per FLOW-03 step 1.",
+        "Deny browser location permission and submit check-in.",
+        "Verify CheckInResultScreen page state ID failure-gps-denied, warning alert variant, and Vietnamese copy intent per ui-states §5.1.",
+        "Confirm recovery CTA and lecturer fallback guidance (báo giảng viên) are present per DC-05.",
+        "Compare against success-present and failure-not-enrolled states to confirm visual distinction per AC-UI-02."
+      ],
+      "expected": "PG-02 outcome state failure-gps-denied is visually distinct from success and other failure states (warning alert, recovery copy 'Cần quyền vị trí', retry-after-enable CTA and báo giảng viên fallback path); submission lifecycle completes without ambiguous intermediate states per ui-states §5.2.",
+      "edgeCase": false
     }
   ]
 }

@@ -448,7 +448,7 @@
     },
     {
       "id": "module-policy-engine",
-      "passes": true,
+      "passes": false,
       "priority": 12,
       "phase": 1,
       "agent": "backend",
@@ -490,7 +490,15 @@
           "FR-25",
           "FR-35"
         ]
-      }
+      },
+      "history": [
+        {
+          "at": "2026-07-03T03:50:06Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-09 — reverify after TestGen",
+          "source": "harness"
+        }
+      ]
     },
     {
       "id": "module-reporting-and-export",
@@ -1214,6 +1222,12 @@
           "at": "2026-07-02T20:42:16Z",
           "kind": "gate_failed",
           "reason": "Browser test failed — see 20260702T201809Z-browser-test.json",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T03:50:06Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-09 — reverify after TestGen",
           "source": "harness"
         }
       ]
