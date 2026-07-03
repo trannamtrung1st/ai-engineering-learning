@@ -2,7 +2,7 @@
   "productItemId": "AC-11",
   "version": 1,
   "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
-  "generatedAt": "2026-07-02T09:58:53Z",
+  "generatedAt": "2026-07-03T04:10:00Z",
   "cases": [
     {
       "id": "TC-AC-11-001",
@@ -227,6 +227,29 @@
         "Verify CheckInResultScreen renders success-late warning variant with Late label and displayed check-in time."
       ],
       "expected": "Present path shows success-present UI state (Điểm danh thành công — Có mặt) with timestamp; Late path shows success-late UI state (Điểm danh thành công — Đi trễ) with timestamp; both outcomes use role=status aria-live region per UI states doc.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-11-011",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["AC-11", "FR-23", "BR-11", "BR-12"],
+      "title": "Present and Late success outcomes render distinct success-present and success-late visual states on PG-02",
+      "preconditions": [
+        "Student is logged in on mobile student shell at PG-02 check-in route.",
+        "Fixtures support present-window and late-window scenarios for an Open session with valid QR token.",
+        "Student has no prior successful attendance for the session; GPS policy is disabled or satisfied."
+      ],
+      "steps": [
+        "Submit check-in within present window and observe CheckInResultScreen transition from submitting to outcome state.",
+        "Verify page state ID success-present, success card variant, Present label, displayed check-in timestamp, and Vietnamese copy intent 'Điểm danh thành công — Có mặt' per ui-states §5.1 and AC-UI-03.",
+        "Repeat check-in flow in late-window scenario with a second enrolled student or reset fixture.",
+        "Verify page state ID success-late, warning card variant, Late label, displayed timestamp, and Vietnamese copy intent 'Điểm danh thành công — Đi trễ'.",
+        "Compare success-present and success-late against failure-outcome states to confirm visual distinction per AC-UI-02."
+      ],
+      "expected": "PG-02 renders visually distinct success-present (success card, Present) and success-late (warning card, Late) outcome states each with decisive timestamp display per AC-UI-03; neither shows retry CTA; submission lifecycle completes without ambiguous intermediate states per ui-states §5.2.",
       "edgeCase": false
     }
   ]
