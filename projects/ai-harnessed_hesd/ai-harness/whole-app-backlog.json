@@ -683,6 +683,12 @@
           "kind": "drift",
           "reason": "Doc drift for AC-10 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-03T04:48:37Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-24 — reverify after TestGen",
+          "source": "harness"
         }
       ]
     },
@@ -1610,6 +1616,12 @@
           "at": "2026-07-03T04:08:43Z",
           "kind": "drift",
           "reason": "Doc drift for AC-10 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T04:48:37Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-24 — reverify after TestGen",
           "source": "harness"
         }
       ]

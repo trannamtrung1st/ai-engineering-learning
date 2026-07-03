@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-24",
   "version": 1,
-  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
-  "generatedAt": "2026-07-02T11:17:25Z",
+  "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
+  "generatedAt": "2026-07-03T04:47:00Z",
   "cases": [
     {
       "id": "TC-FR-24-001",
@@ -338,6 +338,51 @@
         "Submit valid form and observe success feedback; confirm new or updated policy appears in PG-12 list."
       ],
       "expected": "FRM-07 enforces cross-field GPS gating per FR-24; PolicyResolutionSummary previews BR-20 precedence resolution with per-field source level; save succeeds and PG-12 reflects the configured policy without silent field drops.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-24-016",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-form-ux",
+      "priority": "P1",
+      "traceability": ["FR-24"],
+      "title": "FRM-07 policy form shows inline validation, disabled submitting state, and success feedback",
+      "preconditions": [
+        "AcademicAdmin is logged in on /admin/policies create route.",
+        "FRM-07 policy configuration form is visible with scope level, window durations, absence threshold, GPS toggle, and save action."
+      ],
+      "steps": [
+        "Select class-section scope and enter contradictory present window (30 min) and late window (10 min) values; observe inline field-level or form-level validation before submit per FRM-07 cross-field rules.",
+        "Enter absence threshold 150 (outside 0–100) and confirm inline error binds to the threshold field with submit disabled or blocked.",
+        "Correct all fields to valid FR-24 values, toggle GPS required on, enter GPS radius, and submit.",
+        "During POST /v1/policies observe submitting state disables save control with loading indicator.",
+        "On HTTP 200 success observe FeedbackAlert or toast confirming policy saved and form returns to idle state.",
+        "Navigate to PG-12 list and confirm the new policy row appears with configured scope level and updated timestamp."
+      ],
+      "expected": "FRM-07 surfaces inline validation for contradictory windows and out-of-range absence threshold per 08-forms-validation-ux §4.4; submit is disabled during in-flight save; success feedback is explicit and the saved policy is visible on PG-12 without silent field drops.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-24-017",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["FR-24"],
+      "title": "PG-12 policies listing renders distinct loading, empty, no-results, error, and list states",
+      "preconditions": [
+        "AcademicAdmin is logged in on desktop AdminLayout shell.",
+        "Fixtures can produce empty policy list, slow policy fetch, fetch error, filtered zero-match, and populated policy list across scope levels."
+      ],
+      "steps": [
+        "Navigate to /admin/policies with no policies seeded and observe empty state with configure-policy CTA.",
+        "Reload with throttled GET /v1/policies fetch and confirm loading skeleton or table shimmer before rows render.",
+        "Apply scopeLevel filter yielding zero matches and observe no-results state with clear-filters affordance per FR-TTB-02.",
+        "Simulate policies list API failure and observe error state with FeedbackAlert and retry control.",
+        "Restore successful fetch and confirm list state shows DataTable with scope name, scope level, updated timestamp, search by scope name, scopeLevel filter, sort, and server pagination per 09-page-list §8 PG-12 matrix."
+      ],
+      "expected": "PG-12 displays visually distinct loading, empty, no-results, error, and list states per NFR-UI-07; populated policy list includes expected columns with search, filter, sort, and pagination controls scoped to AcademicAdmin authorized policies.",
       "edgeCase": false
     }
   ]
