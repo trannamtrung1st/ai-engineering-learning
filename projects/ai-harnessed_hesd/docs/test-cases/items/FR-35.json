@@ -2,7 +2,7 @@
   "productItemId": "FR-35",
   "version": 1,
   "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
-  "generatedAt": "2026-07-02T15:30:00Z",
+  "generatedAt": "2026-07-03T05:05:00Z",
   "cases": [
     {
       "id": "TC-FR-35-001",
@@ -349,6 +349,30 @@
       ],
       "expected": "Roster displays student as Pending with OutOfRadius rejection visible in attempt summary including review metadata per FR-19; ManualCorrectionDialog accepts correction; post-save row updates to Manual Present confirming lecturer fallback path remains operable.",
       "edgeCase": true
+    },
+    {
+      "id": "TC-FR-35-017",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["FR-35", "BR-10", "AC-10"],
+      "title": "LowAccuracy outcome renders distinct failure-low-accuracy visual state with retry guidance on PG-02",
+      "preconditions": [
+        "Student is logged in on mobile student shell at PG-02 check-in route.",
+        "Target session has gpsRequired=true, room coordinates configured, accuracy threshold set, and is Open with valid QR token.",
+        "Browser geolocation is granted but test profile supplies within-radius coordinates with accuracyMeters above configured threshold."
+      ],
+      "steps": [
+        "Navigate to PG-02 check-in URL with token query parameter for gps-required session.",
+        "Grant browser location permission when prompted per FLOW-03.",
+        "Submit check-in with low-accuracy GPS payload (within radius, accuracyMeters exceeds threshold).",
+        "Verify CheckInResultScreen page state ID failure-low-accuracy, warning alert variant, and Vietnamese copy intent per 12-ui-states §5.1.",
+        "Confirm retry CTA is present per BR-10 retry-once UX and recovery guidance (retry outdoors / wait for better fix) per DC-05.",
+        "Compare against success-present and failure-out-of-radius states to confirm visual distinction per AC-UI-02."
+      ],
+      "expected": "PG-02 outcome state failure-low-accuracy is visually distinct from success and other GPS failure states (warning alert, recovery copy 'Độ chính xác GPS thấp', retry CTA per BR-10); submission lifecycle completes without ambiguous intermediate states per 12-ui-states §5.2.",
+      "edgeCase": false
     }
   ]
 }
