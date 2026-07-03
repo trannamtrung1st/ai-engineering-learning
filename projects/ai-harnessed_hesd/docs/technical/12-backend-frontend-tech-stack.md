@@ -88,8 +88,8 @@ Student scan and lecturer display both run in the browser. The web client uses t
 | QR decode (student) | [`jsqr`](https://www.npmjs.com/package/jsqr) | `^1.4.0` | `QrScannerPanel` (DC-13) | Decode QR payload from a live camera frame (`ImageData`) |
 | QR encode (lecturer) | [`qrcode.react`](https://www.npmjs.com/package/qrcode.react) | `^4.2.0` | `QrDisplayPanel` (DC-01) | Render rotating session `qrPayload` as `QRCodeSVG` for dashboard and projection |
 | Camera capture | `navigator.mediaDevices.getUserMedia` | Browser API | `QrScannerPanel` | Rear/environment camera stream (`facingMode: { ideal: "environment" }`) |
-| Preview orientation | `camera-preview-orientation` (`apps/web/src/lib/qr/camera-preview-orientation.ts`) | Internal | `QrScannerPanel` | Detect active `facingMode`; keep rear preview unmirrored; mirror user/unknown cameras consistently in preview and decode |
-| Payload normalization | `extractQrToken` (`apps/web/src/lib/qr/extract-qr-token.ts`) | Internal | `QrScannerPanel` | Map decoded string to opaque `qrToken` for `POST /v1/check-ins` |
+| Preview orientation | Browser `facingMode` + paired preview/decode flip | Internal policy | `QrScannerPanel` | Rear camera unmirrored; user/unknown cameras flipped consistently in preview and decode (see §4.4.1a) |
+| Payload normalization | Internal helper | Internal | `QrScannerPanel` | Map decoded string to opaque `qrToken` for `POST /v1/check-ins` |
 
 #### 4.4.1 Student decode pipeline (PG-02)
 
@@ -98,32 +98,85 @@ Trace: `FR-16`, `NFR-14`, DC-13 in [../ui-ux/07-domain-specific-components.md](.
 **Camera stream**
 
 1. Request `getUserMedia` with `facingMode: { ideal: "environment" }` (rear camera when available).
-2. Store the `MediaStream` in a ref — not on a conditionally mounted `<video>` element.
-3. Transition UI to the scanning state first; attach `stream` to the visible `<video>` in a post-mount effect (`playsInline`, `muted`).
-4. This prevents losing the stream when React unmounts the permission-prompt branch and mounts the live preview.
+2. Retain the `MediaStream` across UI transitions from permission prompt to live preview — do not tie stream lifetime to a view that unmounts.
+3. Attach the stream to the visible preview only after the scanning view is shown (`playsInline`, `muted`).
 
 **Frame decode**
 
-1. Run a `requestAnimationFrame` loop while the stream is active.
-2. Sample the current video frame into an off-screen `<canvas>`.
-3. `jsQR(imageData.data, width, height)` returns the raw `qrPayload` string (or `null` while scanning).
-4. `extractQrToken(payload)` accepts opaque tokens, URLs with a `token` query param, or `attendly:check-in/{token}` — see [05-api-design.md](./05-api-design.md) §5.3.
-5. Captured token flows to GPS prompt (if required) and `POST /v1/check-ins`; server validates TTL and session binding (M04).
+1. Sample frames from the live preview on a steady loop (e.g. `requestAnimationFrame`).
+2. Decode each frame client-side into a raw payload string.
+3. Normalize the payload to an opaque `qrToken` — see [05-api-design.md](./05-api-design.md) §5.3.
+4. Submit token via `POST /v1/check-ins`; server validates TTL and session binding (M04).
 
 **Preview orientation (NFR-14)**
 
 Goal: the live preview matches real-world left/right alignment to a projected QR — not selfie-style mirroring.
 
 1. Read `facingMode` from the active video track after the stream starts.
-2. `environment` (rear): render preview and canvas frames without horizontal transform.
-3. `user` or unknown (typical laptop webcam fallback): apply the same horizontal flip to both the `<video>` preview and the canvas `drawImage` path so decode matches what the student sees.
+2. `environment` (rear): no horizontal transform on preview or decode.
+3. `user` or omitted/`unknown` (typical laptop webcam fallback): apply the same horizontal flip to preview and decode together.
 4. Never flip preview without flipping decode (or vice versa).
+
+See [§4.4.1a](#441a-preview-orientation-policy-nfr-14) for device matrix and laptop behavior.
 
 **Cleanup**
 
-On stop or unmount: cancel the animation frame, stop all media tracks, clear `video.srcObject`, and reset orientation state.
+On stop or unmount: stop the decode loop, release all media tracks, and detach the stream from the preview.
 
-Unit tests may inject a `scanDecoder` callback on `QrScannerPanel` to bypass `jsQR` and `getUserMedia`.
+#### 4.4.1a Preview orientation policy (NFR-14)
+
+Portable design policy for in-browser QR scanning. Trace: `NFR-14`, `FR-16`.
+
+##### Problem
+
+The user aims a device at a displayed QR code (e.g. classroom projection). If the live preview is horizontally inverted (selfie-style), left/right movement feels reversed and alignment is harder. If the preview is flipped but the decode pipeline reads the raw camera frame, the decoder sees a different image than the user — a common cause of “QR visible on screen but never scans.”
+
+**Design goal:** **natural world orientation** — moving the device left shifts the on-screen image left, matching alignment to a physical screen.
+
+##### Decision rules
+
+| `facingMode` (from active video track) | Preview | Decode pipeline |
+| --- | --- | --- |
+| `environment` (rear camera) | no horizontal flip | no horizontal flip |
+| `user` (front / built-in webcam) | horizontal flip | same horizontal flip |
+| omitted / unknown | treat as `user` | same horizontal flip |
+
+Read `facingMode` once when the stream starts. Apply one mirror flag to **both** preview and decode for the whole session.
+
+**Core invariant:** preview and decode must use the same orientation transform. Never flip one without the other.
+
+##### Device matrix
+
+| Device / camera | `getUserMedia` constraint | Typical `facingMode` | Policy |
+| --- | --- | --- | --- |
+| Phone rear camera (primary) | `ideal: "environment"` | `environment` | unmirrored |
+| Phone front camera (fallback) | same; browser may pick front | `user` | mirrored |
+| Laptop / desktop webcam | same; no rear camera | `user` or omitted | mirrored |
+| External USB camera | same | often omitted | mirrored |
+
+**Laptop note:** Desktop browsers accept the stream but often omit `facingMode` on built-in webcams. Treat omitted as `user` and mirror — built-in cameras usually need correction to match real-world left/right.
+
+**Mobile note:** Product UX targets the rear-camera path (unmirrored). The `user` / unknown branch supports laptop dev, QA, and rare front-camera fallback without breaking decode.
+
+##### Preview vs decode (conceptual)
+
+```
+Camera frames ──► [optional horizontal flip] ──► live preview (what user sees)
+              └──► [same flip] ──► frame buffer ──► QR decoder
+```
+
+##### Verification (any stack)
+
+- Rear / `environment` camera: preview not mirrored; moving device left moves image left.
+- User / unknown / laptop webcam: preview mirrored; decode still succeeds on a valid QR.
+- Mismatch symptom: preview looks correct but decode never succeeds — check that both paths share one mirror flag.
+
+##### Known limitations
+
+- Facing is evaluated once per stream; mid-session camera switches are not re-handled.
+- `ideal: "environment"` does not fail on laptops — it silently falls back to the webcam.
+- Portrait/landscape rotation is not separately corrected; moderate skew is tolerated, extreme angles may need reframing.
+- Primary UX is mobile rear camera; laptop scanning is a supported dev/edge path, not the main product flow.
 
 #### 4.4.2 Lecturer display pipeline (PG-05 / projection)
 
