@@ -2,7 +2,7 @@
   "productItemId": "FR-31",
   "version": 1,
   "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
-  "generatedAt": "2026-07-02T12:00:00Z",
+  "generatedAt": "2026-07-03T05:00:00Z",
   "cases": [
     {
       "id": "TC-FR-31-001",
@@ -90,7 +90,7 @@
         "Send GET /v1/class-sessions/{sessionId}/attendance with DepartmentAdmin Authorization header.",
         "Validate HTTP 200 and standard response envelope.",
         "Assert data.classSessionId, data.state, data.counts (present, late, pending, rejectedAttempts), and data.rows[] are present.",
-        "Inspect each roster row for studentCode, attendanceStatus, checkInMethod, checkInAt, and latestAttemptOutcome per API §4.5.",
+        "Inspect each roster row for studentUserId, studentCode, displayName, attendanceStatus, checkInMethod, checkInAt, and latestAttemptOutcome per API §4.5.",
         "Send GET /v1/class-sessions/{sessionIdFacultyY}/attendance for faculty Y session and validate denial."
       ],
       "expected": "Faculty X roster returns HTTP 200 with documented live roster payload shape per FR-19; faculty Y roster request returns HTTP 403 OutOfScope with no partial roster rows disclosed.",
@@ -111,12 +111,12 @@
       ],
       "steps": [
         "Send POST /v1/enrollments/import for faculty X classSectionId with mixed valid and invalid rows.",
-        "Assert HTTP 200 or 207 with per-row acceptance and rejection details in response envelope.",
+        "Assert HTTP 200 with data.acceptedRows count and data.rejectedRows[] entries containing rowNumber and code per API §4.2.",
         "Verify rejected rows are not enrolled and valid rows are persisted.",
         "Send POST /v1/enrollments/import targeting classSectionId in faculty Y.",
         "Validate HTTP 403 OutOfScope with no enrollment mutations for faculty Y."
       ],
-      "expected": "Faculty X import returns row-level rejection assertions for invalid rows per FR-04; valid rows persist; faculty Y import is denied before row processing with no cross-faculty enrollment writes.",
+      "expected": "Faculty X import returns HTTP 200 with acceptedRows and rejectedRows[] (rowNumber, code, message) for invalid rows per FR-04 and API §4.2; valid rows persist; faculty Y import is denied before row processing with no cross-faculty enrollment writes.",
       "edgeCase": false
     },
     {
@@ -319,6 +319,52 @@
         "Attempt direct URL navigation to a faculty Y section detail and observe access-denied state."
       ],
       "expected": "PG-09 listing shows faculty-scoped sections only; filters and pagination respect department boundary; policy configuration pages show read-only or hidden write controls; faculty Y direct navigation shows access denial without partial section data.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-31-015",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-navigation",
+      "priority": "P1",
+      "traceability": ["FR-31", "BR-19", "AC-23"],
+      "title": "DepartmentAdmin StaffLayout sidebar exposes faculty-scoped routes and denies institution-wide admin destinations",
+      "preconditions": [
+        "DepartmentAdmin scoped to faculty X is logged in on desktop StaffLayout (1280×720).",
+        "Institution data includes faculty X and faculty Y sections, reports, and policy configuration.",
+        "SidebarNav follows permissions matrix §3.1 and page-list §2 for DepartmentAdmin actor."
+      ],
+      "steps": [
+        "Inspect SidebarNav and enumerate visible top-level destinations after login.",
+        "Confirm Phiên học (/lecturer/sessions), Báo cáo điểm danh (/reports/attendance), and Lớp học phần (/admin/class-sections) are present for department oversight.",
+        "Verify institution-wide setup links (terms, courses master, rooms, policy write) are hidden or read-only per NFR-UI-03 and permissions §3.2.",
+        "Direct-navigate to /admin/policies and /admin/terms as DepartmentAdmin; observe access-denied or read-only state without policy mutation controls.",
+        "Direct-navigate to /admin/class-sections/{facultyYSectionId} and confirm scoped access-denied surface with visible home recovery link without faculty Y section metadata."
+      ],
+      "expected": "DepartmentAdmin navigation chrome exposes only faculty-scoped staff routes per PRM-02; institution-wide admin write destinations are hidden or gated; unauthorized deep-links render scoped access-denied with home recovery and no cross-faculty data in nav or page chrome (AC-23, BR-19).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-31-016",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["FR-31", "FR-28", "BR-19"],
+      "title": "PG-13 DepartmentAdmin report listing states remain faculty-scoped without cross-faculty leakage",
+      "preconditions": [
+        "DepartmentAdmin scoped to faculty X is logged in on desktop StaffLayout.",
+        "Fixtures can produce slow report fetch, zero in-scope records for faculty X, filtered zero-match, API failure, and populated faculty X report rows on PG-13.",
+        "Faculty Y sections have attendance data that must not appear in any listing state."
+      ],
+      "steps": [
+        "Navigate to /reports/attendance while throttling GET /v1/reports/attendance; observe loading skeleton or spinner with toolbar remaining interactive per NFR-UI-07.",
+        "Load PG-13 when faculty X has no attendance records; observe empty state with setup guidance (not a blank table shell) and no faculty Y section names or counts.",
+        "Apply filters matching zero rows within faculty X scope; observe no-results state with localized message and clear-filters affordance.",
+        "Trigger report API error (5xx or simulated network failure); observe FeedbackAlert with retry affordance and no cross-scope row hints in error copy.",
+        "Restore successful fetch and confirm populated DataTable shows only faculty X rows; filter dropdowns exclude faculty Y offerings."
+      ],
+      "expected": "PG-13 listing states for DepartmentAdmin satisfy NFR-UI-07 per 12-ui-states.md §6: loading, empty, no-results, error, and list states are visually distinct; no state reveals faculty Y section identifiers, student rows, or cross-scope totals (FR-31 faculty scope, BR-19).",
       "edgeCase": false
     }
   ]
