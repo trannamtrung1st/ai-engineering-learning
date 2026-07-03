@@ -2,7 +2,7 @@
   "productItemId": "AC-23",
   "version": 1,
   "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
-  "generatedAt": "2026-07-02T15:00:00Z",
+  "generatedAt": "2026-07-03T04:21:53Z",
   "cases": [
     {
       "id": "TC-AC-23-001",
@@ -357,6 +357,50 @@
         "Follow the recovery link and confirm it navigates to Student home."
       ],
       "expected": "Nav chrome (StaffLayout sidebar or any persistent navigation surface) contains no links to session control, attendance reports, admin setup, or any other route the Student role cannot access. Direct URL navigation to /lecturer/sessions renders a styled access-denied surface (FeedbackAlert variant danger with Neobrutalism 2px border and hard shadow) with a human-readable Vietnamese message such as 'Bạn không có quyền truy cập trang này'. A clearly visible 'Về trang chủ' link is present and navigates to /check-in. No session list data, lecturer names, or class section identifiers are rendered.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-23-018",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["AC-23", "AC-08", "NFR-09", "FR-18", "BR-07"],
+      "title": "Student authorized check-in path rejects duplicate POST /v1/check-ins with DuplicateCheckIn",
+      "preconditions": [
+        "Open class session with valid qrToken exists; enrolled Student has prior successful check-in for the session.",
+        "Integration environment uses real attendance unique-key enforcement and CheckInAttempt persistence per API §5.3."
+      ],
+      "steps": [
+        "POST /v1/check-ins with valid qrToken as enrolled Student; verify first attempt returned 200 Success.",
+        "POST /v1/check-ins again with fresh valid qrToken and new Idempotency-Key as same Student for the same session.",
+        "Inspect HTTP status, error.code, and AttendanceRecord row count for the student-session pair.",
+        "Submit POST /v1/check-ins with same valid qrToken as Lecturer and confirm 403 Forbidden before duplicate evaluation."
+      ],
+      "expected": "Authorized Student duplicate submission returns 409 with error.code DuplicateCheckIn per API §2.4 and AC-08; original AttendanceRecord is unchanged with exactly one success row and failed CheckInAttempt is logged. Non-Student roles remain denied with 403 Forbidden, confirming Student-only positive path within the six-role security matrix.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-23-019",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-navigation",
+      "priority": "P1",
+      "traceability": ["AC-23", "NFR-09", "FR-07", "FR-27", "BR-19"],
+      "title": "Role-scoped navigation chrome exposes only authorized routes per six-role permission matrix",
+      "preconditions": [
+        "Role-matrix fixtures for Student (mobile viewport 375×667) and Lecturer (desktop viewport 1280×720) are available.",
+        "Institution data includes sessions, reports, and exports visible to staff roles but outside Student scope.",
+        "StaffLayout sidebar and Student mobile shell follow permissions matrix §3.1 capability-level entries."
+      ],
+      "steps": [
+        "As Student on mobile shell, inspect persistent nav chrome and enumerate all visible navigation links.",
+        "Confirm no links to /lecturer/sessions, /reports/attendance, /admin setup routes, or export actions appear.",
+        "As Lecturer on desktop StaffLayout, confirm sidebar lists session control, roster, and scoped report/export destinations for assigned sections only.",
+        "Verify Lecturer sidebar omits admin-only destinations (terms/courses setup, policy config) reserved for AcademicAdmin per §3.1.",
+        "Direct-navigate Student to /lecturer/sessions and confirm scoped access-denied surface with visible 'Về trang chủ' recovery link to /check-in."
+      ],
+      "expected": "Navigation chrome matches RBAC per role: Student mobile shell exposes check-in and self-attendance surfaces only; Lecturer staff shell shows assigned-scope session and report entries without admin setup links; unauthorized deep-links render scoped access-denied with home recovery and no forbidden destinations remain in nav chrome (AC-23 six-role scope gate UI complement per permissions §3.1 and BR-19).",
       "edgeCase": false
     }
   ]
