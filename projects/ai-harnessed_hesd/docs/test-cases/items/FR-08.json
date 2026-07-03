@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-08",
   "version": 1,
-  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
-  "generatedAt": "2026-07-02T11:15:00Z",
+  "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
+  "generatedAt": "2026-07-03T04:30:00Z",
   "cases": [
     {
       "id": "TC-FR-08-001",
@@ -249,7 +249,7 @@
         "Call POST /v1/class-sessions/{sessionId}/close and capture closedAt and summary from response.",
         "Call GET /v1/class-sessions/{sessionId}/attendance with Lecturer Authorization.",
         "Validate HTTP 200 and envelope shape.",
-        "Assert data.state is Closed, counts object includes present/late/pending/rejectedAttempts keys consistent with close summary, and rows array reflects final roster shape per API design §4.5."
+        "Assert data.state is Closed, counts reflect finalized roster (present/late/absent aligned with close summary), and rows array shows Absent status for previously pending enrolled students per API design §4.5."
       ],
       "expected": "Attendance roster endpoint returns HTTP 200 with data.state Closed and finalized roster payload immediately after FR-08 close; live dashboard transitions to closed roster view per FR-19.",
       "edgeCase": false
@@ -261,7 +261,7 @@
       "technique": "browser-journey",
       "priority": "P0",
       "traceability": ["FR-08", "FR-10", "BR-02"],
-      "title": "Lecturer PG-04/PG-05 journey closes Open session and shows Closed badge with QR disabled",
+      "title": "Lecturer PG-04/PG-05 FLOW-07 journey closes Open session and shows Closed badge with QR disabled",
       "preconditions": [
         "Lecturer is logged in on desktop Chromium.",
         "Assigned section has at least one Open session visible on PG-04 session list.",
@@ -270,12 +270,58 @@
       "steps": [
         "Navigate to /lecturer/sessions (PG-04) and locate an Open session row with Open status badge.",
         "Select the session and navigate to session detail / QR display (PG-05).",
-        "Tap or click Close Attendance and observe loading then success feedback with close summary.",
+        "Tap Close attendance, confirm action in ConfirmActionModal, and observe loading then success feedback with close summary.",
         "Verify session badge transitions to Closed, closedAt indicator appears, and QR panel is hidden or shows closed-state messaging.",
-        "Confirm Close CTA is disabled and view-roster or export actions reflect closed session per UI states §2.",
+        "Confirm Close CTA is disabled and view-roster or export actions reflect closed session per ui-states §2.",
         "Optionally verify student check-in page shows SessionClosed-equivalent error if navigated after closure."
       ],
-      "expected": "Browser journey completes WF-06 UI path: session transitions Open to Closed with closedAt metadata, QR display stops, and state-appropriate control gating prevents further self-service check-in.",
+      "expected": "Browser journey completes FLOW-07 UI path: session transitions Open to Closed with closedAt metadata, QR display stops, and state-appropriate control gating prevents further self-service check-in.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-08-013",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["FR-08", "FR-10", "FR-14"],
+      "title": "PG-05 close flow renders distinct confirming, loading, success-summary, Closed, and close-error states",
+      "preconditions": [
+        "Lecturer is logged in on desktop StaffLayout shell at PG-05 with an Open session.",
+        "Fixtures can simulate slow POST /v1/class-sessions/{sessionId}/close and failing close responses.",
+        "Enrolled students with mixed Present/Late/Pending outcomes exist for summary display."
+      ],
+      "steps": [
+        "On PG-05 Open state, tap Close attendance and observe ConfirmActionModal open state with auto-absent warning copy per FLOW-07 step 1.",
+        "Confirm close and observe confirming/loading sub-state: Close control and modal confirm button disabled with loading indicator per ui-states §7.2.",
+        "On HTTP 200 success, observe modal closes, Closed StatusBadge, hidden QrDisplayPanel, closedAt indicator, and close summary strip showing present/late/absent counts per 09-page-list §5.",
+        "Navigate to PG-04 and verify the same session row shows Closed badge distinct from Open/Scheduled list states.",
+        "On a separate Open session fixture, simulate POST /close failure (403 or 500) and observe FeedbackAlert error state while session badge remains Open and QR panel stays active."
+      ],
+      "expected": "PG-05 close path visually distinguishes modal confirmation, in-flight close, success summary, terminal Closed state, and recoverable close-error per NFR-UI-07; terminal Closed suppresses QR and open actions without ambiguous intermediate visuals.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-08-014",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-form-ux",
+      "priority": "P1",
+      "traceability": ["FR-08", "FR-09"],
+      "title": "ConfirmActionModal close attendance shows warning copy, confirming disable, cancel recovery, and server error feedback",
+      "preconditions": [
+        "Lecturer is logged in on PG-05 for an Open session with Close attendance action visible.",
+        "ConfirmActionModal auto-absent warning copy is present per FLOW-07 and 07-domain-specific-components §SessionControlBar.",
+        "Fixture can produce idempotent Closed response or 403 OutOfScope on close attempt."
+      ],
+      "steps": [
+        "Tap Close attendance and verify ConfirmActionModal traps focus with destructive confirm label and auto-absent warning visible before confirm.",
+        "Click Cancel and verify modal closes with no state change: session remains Open, QR panel active, and Close CTA still available.",
+        "Re-open modal, confirm close, and observe confirming sub-state disables both confirm and cancel controls until POST /v1/class-sessions/{sessionId}/close completes.",
+        "On success, verify modal closes, focus returns to Close trigger, and page shows success feedback without requiring manual reload.",
+        "On a session already Closed by auto-close, attempt manual close and observe idempotent success or InvalidSessionTransition mapped to FeedbackAlert without silent failure."
+      ],
+      "expected": "ConfirmActionModal follows modal UX rules: focus trap and cancel recovery, disabled confirming state during close command, success dismisses modal with page state update, and server errors surface as recoverable alerts per ui-states §7.2 and 08-forms-validation-ux §5.",
       "edgeCase": false
     }
   ]
