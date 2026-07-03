@@ -134,7 +134,7 @@ loading → (authenticating?) → camera-prompt → scanning → token-captured 
 
 - `loading`: resolve session context; initialize scanner.
 - `camera-prompt`: request `getUserMedia` permission before live preview.
-- `scanning`: live camera preview with scan-frame overlay; decode on successful read.
+- `scanning`: live rear-camera preview with scan-frame overlay in natural (non-mirrored) orientation; decode on successful read using the same unmirrored frame.
 - `token-captured`: QR token decoded client-side; enable submit action.
 - `gps-prompt`: only when policy requires and permission not yet granted.
 - `submitting`: disable duplicate submit; show spinner.

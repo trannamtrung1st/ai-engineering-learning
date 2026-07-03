@@ -60,7 +60,7 @@ Trace: FRM-01, `FR-15`, `FR-36`.
 │                                     │
 │  ┌─────────────────────────────┐    │
 │  │                             │    │
-│  │   (live camera viewport)    │    │
+│  │ (live camera, natural view) │    │
 │  │      ┌───────────┐          │    │
 │  │      │ scan frame│          │    │
 │  │      └───────────┘          │    │

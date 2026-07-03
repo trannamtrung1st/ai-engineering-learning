@@ -164,6 +164,11 @@ flowchart LR
 - `issueToken(sessionId)` and token validation.
 - Emit attendance decision event to M05 and update stream to M09.
 
+**Client boundary (web, not M04)**
+
+- QR **display** and **decode** run in the web client. M04 owns token issuance, TTL, and server-side validation only.
+- See [12-backend-frontend-tech-stack.md](./12-backend-frontend-tech-stack.md) §4.4.
+
 **Requirement trace**
 
 - FR-11 to FR-14, FR-16, FR-18, FR-22, FR-23, FR-34, FR-35.

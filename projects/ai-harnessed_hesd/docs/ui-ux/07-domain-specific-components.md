@@ -133,8 +133,9 @@ In-browser QR capture for student check-in on PG-02. Trace: `FR-16`, `NFR-14`.
 
 | Aspect | Specification |
 | --- | --- |
-| Camera | Uses `getUserMedia` to render a live `<video>` preview with a scan-frame overlay |
-| Decode | Reads `qrPayload` from the lecturer QR (opaque token or URL containing `token` query param) |
+| Camera | Uses `getUserMedia` with `facingMode: { ideal: "environment" }` (rear camera) to render a live `<video>` preview with a scan-frame overlay |
+| Preview orientation | Live preview shows the scene in **natural orientation** — the same left/right sense as the physical world and as the lecturer QR appears on the projection screen. The viewport **must not** be horizontally mirrored (no CSS `scaleX(-1)` or equivalent transform on the `<video>` element or its container). Do not apply selfie-style mirroring; students align the phone to an external display, not to their own face. |
+| Decode | Reads `qrPayload` from the lecturer QR (opaque token or URL containing `token` query param). The decode frame **must** use the same unmirrored orientation as the preview — draw the video frame to canvas without a horizontal flip so decode matches what the student sees. |
 | States | `camera-prompt` (permission request), `scanning` (live preview), `permission-denied`, `token-captured` (brief confirmation before GPS/submit) |
 | Recovery | `ExpiredQr` and malformed-token failures return student to scanner view via retry CTA ("Quét lại") |
 | Exclusions | OS-native camera app deep-link entry is not supported; `?token=` query param is harness/test-only |

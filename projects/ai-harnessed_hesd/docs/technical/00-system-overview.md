@@ -48,6 +48,16 @@ Role details: [01-roles-permissions.md](./01-roles-permissions.md).
 | Campus network and internet | Browser API and backend access | High latency or fallback usage increase |
 | Browser platform (iOS Safari, Android Chrome) | Mobile camera + geolocation runtime | Check-in UX degradation on unsupported environments |
 
+### 2.3 Client QR runtime
+
+| Concern | Decision |
+| --- | --- |
+| Student scan | In-browser camera capture and frame decode; no native QR SDK or OS camera deep links (`FR-16`) |
+| Lecturer display | Client renders server-issued rotating `qrPayload` for dashboard and projection (`FR-14`) |
+| Token authority | Signing, TTL, rotation, and validation remain server-side in Check-in & QR Orchestrator (M04) |
+
+Library choices and implementation pipelines: [12-backend-frontend-tech-stack.md](./12-backend-frontend-tech-stack.md) §4.4.
+
 ## 3. Architecture overview
 
 ### 3.1 Logical architecture
@@ -217,6 +227,7 @@ Controls map to [../brds/07-non-functional-risk.md](../brds/07-non-functional-ri
 | Technical area | FR/BR anchors | Supporting docs |
 | --- | --- | --- |
 | Session and token orchestration | FR-07 to FR-14, BR-01 to BR-04 | [../brds/03-functional-requirements.md](../brds/03-functional-requirements.md), [../brds/05-state-machine.md](../brds/05-state-machine.md) |
+| Client QR decode/display | FR-14, FR-16 | [12-backend-frontend-tech-stack.md](./12-backend-frontend-tech-stack.md) §4.4, [06-main-workflows.md](./06-main-workflows.md) §5.6 |
 | Eligibility and anti-duplicate checks | FR-17, FR-18, BR-06, BR-07 | [../brds/04-business-rules.md](../brds/04-business-rules.md) |
 | GPS policy validation | FR-34, FR-35, BR-08 to BR-10 | [../brds/07-non-functional-risk.md](../brds/07-non-functional-risk.md) |
 | Manual correction and governance | FR-20, FR-21, BR-14 to BR-16 | [01-roles-permissions.md](./01-roles-permissions.md) |

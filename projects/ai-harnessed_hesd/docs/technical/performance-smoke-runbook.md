@@ -81,11 +81,11 @@ Use uploaded JSON to compare regressions across PRs without re-running load loca
 
 TC-AC-20-008, TC-AC-21-010, and TC-NFR-16-016 require physical campus devices — skip in CI; document pilot evidence separately.
 
-## Preview ITAdmin (PG-15 / TC-NFR-16-015)
+## Preview ITAdmin (TC-NFR-16-015)
 
 Browser smoke uses `e2e-itadmin@attendly.local` (Institution-scoped ITAdmin). The performance smoke fixture `ensureItAdminPreviewActor` seeds this actor on the test stack; preview stacks that lack the user can run integration smoke once or apply the same fixture against the preview database before browser gates.
 
-ITAdmin audit list queries require institution-wide technical scope resolution (`apps/api/src/modules/audit-and-compliance/scope.ts`) — empty section scope previously returned `OutOfScope` before PG-15 could load.
+ITAdmin audit list queries require institution-wide technical scope resolution — empty section scope previously returned `OutOfScope` before the ITAdmin audit view could load.
 
 When preview exhausts Scheduled seed sessions, run `npm run db:seed:preview-sessions` (or rely on Playwright support auto-refresh via `apps/api/scripts/preview-session-refresh.mjs`).
 

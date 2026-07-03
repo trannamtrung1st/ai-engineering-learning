@@ -79,6 +79,48 @@ This document defines the recommended MVP technology stack for Attendly backend 
 | i18n | Vietnamese-first copy with key-based localization |
 | Realtime updates | WebSocket or SSE for open-session roster |
 
+### 4.4 Client-side QR libraries (`apps/web`)
+
+Student scan and lecturer display both run in the browser. The web client uses two npm packages plus browser APIs — no native QR SDK or OS camera deep links.
+
+| Concern | Package / API | Version | Primary component | Role |
+| --- | --- | --- | --- | --- |
+| QR decode (student) | [`jsqr`](https://www.npmjs.com/package/jsqr) | `^1.4.0` | `QrScannerPanel` (DC-13) | Decode QR payload from a live camera frame (`ImageData`) |
+| QR encode (lecturer) | [`qrcode.react`](https://www.npmjs.com/package/qrcode.react) | `^4.2.0` | `QrDisplayPanel` (DC-01) | Render rotating session `qrPayload` as `QRCodeSVG` for dashboard and projection |
+| Camera capture | `navigator.mediaDevices.getUserMedia` | Browser API | `QrScannerPanel` | Rear/environment camera stream (`facingMode: { ideal: "environment" }`) |
+| Payload normalization | `extractQrToken` (`apps/web/src/lib/qr/extract-qr-token.ts`) | Internal | `QrScannerPanel` | Map decoded string to opaque `qrToken` for `POST /v1/check-ins` |
+
+#### 4.4.1 Student decode pipeline (PG-02)
+
+Trace: `FR-16`, `NFR-14`, DC-13 in [../ui-ux/07-domain-specific-components.md](../ui-ux/07-domain-specific-components.md).
+
+1. User grants camera permission; `getUserMedia` attaches stream to a `<video>` element (`playsInline`, natural orientation — no horizontal mirror).
+2. `requestAnimationFrame` loop samples the current video frame into an off-screen `<canvas>`.
+3. `jsQR(imageData.data, width, height)` returns the raw `qrPayload` string (or `null` while scanning).
+4. `extractQrToken(payload)` accepts opaque tokens, URLs with a `token` query param, or `attendly:check-in/{token}` — see [05-api-design.md](./05-api-design.md) §5.3.
+5. Captured token flows to GPS prompt (if required) and `POST /v1/check-ins`; server validates TTL and session binding (M04).
+
+Unit tests may inject a `scanDecoder` callback on `QrScannerPanel` to bypass `jsQR` and `getUserMedia`.
+
+#### 4.4.2 Lecturer display pipeline (PG-05 / projection)
+
+Trace: `FR-14`, `NFR-15`, DC-01.
+
+1. `GET /v1/class-sessions/{id}/qr/current` returns `qrPayload`, `expiresAt`, and `tokenState`.
+2. `QrDisplayPanel` renders `QRCodeSVG` with `level="M"`, white background, black modules.
+3. Canvas size: `280px` in dashboard mode; `PROJECTION_QR_SIZE` (`432px`) in projection mode for 1280×720 legibility (`AC-UI-06`).
+4. `QrCountdownRing` drives refresh before TTL expiry; manual **Làm mới mã QR** calls `onRefresh`.
+
+Token signing, rotation, and validation remain server-side (M04). Client libraries only render or read the opaque `qrPayload` string.
+
+#### 4.4.3 Library selection rationale
+
+| Decision | Rationale |
+| --- | --- |
+| `jsqr` over WASM/native bridges | Pure JavaScript; works in mobile Safari/Chrome without extra binaries; frame-by-frame decode fits `getUserMedia` preview |
+| `qrcode.react` over server-rendered images | SVG scales cleanly for projection; no round-trip per 30s rotation; React-friendly component API |
+| No unified encode/decode package | Encode and decode run on different surfaces with different performance profiles; split keeps bundle lean on PG-02 |
+
 ## 5. Shared and cross-cutting stack
 
 ### 5.1 Shared libraries
@@ -159,6 +201,7 @@ This document defines the recommended MVP technology stack for Attendly backend 
 | Centralized auth + RBAC guards | FR-15, FR-27, FR-28, FR-32; BR-18, BR-19 | NFR-09 |
 | Optional cache/pubsub for realtime and burst handling | FR-19, FR-14 | NFR-01, NFR-16 |
 | Mobile-web-first frontend stack | FR-16, FR-34, FR-35, FR-37 | NFR-14, NFR-11 |
+| Client QR libraries (`jsqr`, `qrcode.react`) | FR-14, FR-16 | NFR-14, NFR-15 |
 | Async export/job capabilities | FR-27, FR-30 | NFR-16, NFR-17 |
 
 ## 11. Technology decision records (MVP)
@@ -170,6 +213,7 @@ This document defines the recommended MVP technology stack for Attendly backend 
 | TDR-03 | Use React + Vite for web clients | heavier SSR-first runtime | Approved |
 | TDR-04 | Keep Redis optional for MVP baseline, recommended for realtime | mandatory cache cluster | Approved |
 | TDR-05 | Keep API contract versioned at `/v1` with stable error codes | unversioned endpoints | Approved |
+| TDR-06 | Use `jsqr` + `qrcode.react` for client QR decode/display | native scanner SDK, server-rendered QR images | Approved |
 
 ## 12. Future consideration
 

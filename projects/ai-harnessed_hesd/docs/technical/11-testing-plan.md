@@ -97,16 +97,17 @@ Coverage is guidance; release decisions prioritize risk-based scenarios and acce
 
 ### 6.2 Browser matrix
 
-- iOS Safari (mobile student flow — in-browser `getUserMedia` QR scanner on PG-02)
-- Android Chrome (mobile student flow — in-browser `getUserMedia` QR scanner on PG-02)
+- iOS Safari (mobile student flow — in-browser QR scan)
+- Android Chrome (mobile student flow — in-browser QR scan)
 - Chromium desktop (lecturer/admin flow)
 
 ### 6.3 Playwright and harness shortcuts
 
 | Strategy | Purpose |
 | --- | --- |
-| In-app scanner mock | Stub `getUserMedia` and inject a synthetic video frame or direct decode callback for browser-journey cases (TC-FR-16-010, TC-FR-16-014) |
-| Harness `?token=` deep link | Non-user shortcut to PG-02 with pre-captured token for API/integration and legacy Playwright paths; not documented as student entry |
+| In-app scanner mock | Stub camera capture and inject a synthetic frame or decode result for browser-journey cases (TC-FR-16-010, TC-FR-16-014, TC-FR-16-016) |
+| QR client runtime | In-browser decode and display per [12-backend-frontend-tech-stack.md](./12-backend-frontend-tech-stack.md) §4.4 |
+| Harness `?token=` deep link | Non-user shortcut to check-in with pre-captured token for API/integration and legacy Playwright paths; not documented as student entry |
 | Physical-device cases | TC-FR-16-012, TC-NFR-14-015 verify real in-browser camera permission and scan UX on iOS Safari and Android Chrome (`harnessSkip: physical-device`) |
 
 OS-native camera app scanning that opens `/check-in?token=...` is out of scope for MVP and must not appear in student-facing test steps.

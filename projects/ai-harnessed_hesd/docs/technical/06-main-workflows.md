@@ -162,11 +162,11 @@ sequenceDiagram
   participant CI as Check-in Service
   participant AL as Attendance Ledger
 
-  ST->>MB: Open PG-02 check-in page
+  ST->>MB: Open student check-in flow
   alt Not authenticated
     MB->>API: Redirect to login
     ST->>MB: Authenticate
-    MB->>MB: Return to PG-02
+    MB->>MB: Return to check-in flow
   end
   ST->>MB: Grant camera; scan QR in-app
   MB->>MB: Decode qrPayload token
@@ -205,13 +205,26 @@ On success:
 
 | Checkpoint | Expected behavior | Trace |
 | --- | --- | --- |
-| Login gate | Unauthenticated access to PG-02 redirects to login and returns to check-in | AC-06 |
+| Login gate | Unauthenticated access to check-in redirects to login and returns to check-in | AC-06 |
 | Logout | Voluntary logout clears credentials and blocks protected access until re-login | AC-26 |
 | Token sharing | Multiple students can use the same valid displayed QR within TTL | AC-03 |
 | Eligibility | Student must have active enrollment in the session section | AC-07 |
 | Duplicate prevention | Second successful attempt for same session is rejected | AC-08 |
 | Status assignment | `Present` or `Late` is derived from effective policy windows | AC-11 |
 | UX latency | Confirmation returns within target mobile check-in time | NFR-01, AC-20 |
+
+### 5.6 Client-side QR runtime
+
+The mobile browser performs QR capture and decode before calling the API. Implementation detail: [12-backend-frontend-tech-stack.md](./12-backend-frontend-tech-stack.md) §4.4.
+
+| Concern | Decision |
+| --- | --- |
+| Camera capture | In-browser rear/environment camera stream (`getUserMedia`) |
+| Frame decode | Client-side decode from live video frames |
+| Token extraction | Normalize decoded payload to opaque `qrToken` for API submission |
+| API submission | `POST /v1/check-ins` with M04 validation of token, session, and policy |
+
+Preview uses natural (non-mirrored) orientation per NFR-14. Lecturer display renders server-issued `qrPayload` only; token minting stays server-side.
 
 ## 6. WF-04 Student check-in failure paths
 
@@ -264,7 +277,7 @@ Trace: FR-22, BR-23, AC-18.
 
 | Failure code | Student guidance | Lecturer/admin visibility |
 | --- | --- | --- |
-| `Unauthenticated` | sign in and continue on PG-02 | not shown as roster rejection unless submission reached API |
+| `Unauthenticated` | sign in and continue check-in | not shown as roster rejection unless submission reached API |
 | `SessionNotOpen` | wait for lecturer to open attendance | visible as failed attempt if submitted |
 | `SessionClosed` | contact lecturer for legitimate exception | visible on roster/audit with timestamp |
 | `ExpiredQr` | re-scan the currently displayed QR using in-app camera | count toward QR health metrics |

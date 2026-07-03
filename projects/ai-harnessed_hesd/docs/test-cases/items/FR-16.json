@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-16",
   "version": 1,
-  "docFingerprint": "sha256:fb8ba111d1bd58a9bf16ee46968ee732ed424acc4a63d654d432a4ec9e0c8901",
-  "generatedAt": "2026-07-03T08:52:00Z",
+  "docFingerprint": "sha256:88bab59c3afd19a72a41d8118b076ea326943910f5f26a5604354fa0d301ae5c",
+  "generatedAt": "2026-07-03T09:59:23Z",
   "cases": [
     {
       "id": "TC-FR-16-001",
@@ -19,7 +19,7 @@
       "title": "Scenario matrix row for in-browser mobile web QR scan entry in student check-in validation block",
       "preconditions": [
         "Testing-plan §12 Student check-in validation row applies (FR-15, FR-16, FR-17, FR-18, FR-22, FR-23; BR-05, BR-06, BR-07, BR-11, BR-12, BR-23; AC-06, AC-07, AC-08, AC-11, AC-18).",
-        "Main-workflows §5 WF-03 Student check-in happy path applies for in-app QR scanner entry on PG-02.",
+        "Main-workflows §5.6 client QR stack (`jsqr` decode via `QrScannerPanel`) applies for in-app scanner entry on PG-02.",
         "An Open class session exists with a rotating valid QR token and enrolled student fixture available.",
         "Mobile-web client context is simulated (no native app install)."
       ],
@@ -257,7 +257,7 @@
         "No native app is installed; flow is mobile web only."
       ],
       "steps": [
-        "Navigate to PG-02 on mobile viewport; mock getUserMedia and inject valid qrPayload decode (or use harness ?token= shortcut per testing-plan §6.3).",
+        "Navigate to PG-02 on mobile viewport; mock getUserMedia and inject valid qrPayload decode via `jsqr` frame loop or harness ?token= shortcut per testing-plan §6.3.",
         "Complete login gate if redirected, returning to PG-02 scanner.",
         "Confirm token-captured state enables FRM-11 check-in submission.",
         "Verify CheckInResultScreen displays success state with Present or Late badge, timestamp, and decisive outcome copy."
@@ -308,7 +308,7 @@
         "Pilot student account is enrolled in the session section."
       ],
       "steps": [
-        "On iOS Safari, open PG-02, grant getUserMedia camera permission, scan displayed QR via QrScannerPanel, and complete mobile web check-in.",
+        "On iOS Safari, open PG-02, grant getUserMedia camera permission, scan displayed QR via QrScannerPanel (`jsqr` decode per 12-backend-frontend-tech-stack §4.4), and complete mobile web check-in.",
         "On Android Chrome, repeat in-app camera scan and check-in submission.",
         "Verify both devices reach success or documented failure screen without app store install prompt."
       ],
@@ -393,6 +393,31 @@
         "Confirm scanning, submitting, success, and error result states are mutually distinguishable without ambiguous intermediate blank screens."
       ],
       "expected": "PG-02 renders visually distinct scanner, submitting, success-present/late, and ExpiredQr error result states on mobile viewport per 09-page-list §3 key states and forms-validation UX §5 error-code mapping; failure state exposes recoverable in-app rescan next-action per AC-04 and AC-18.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-16-016",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": [
+        "FR-16",
+        "NFR-14"
+      ],
+      "title": "QrScannerPanel live preview is natural orientation without horizontal mirror",
+      "preconditions": [
+        "PG-02 QrScannerPanel is in scanning state with mocked getUserMedia stream.",
+        "DC-13 and 12-backend-frontend-tech-stack §4.4.1 specify `jsqr` ^1.4.0 decode with natural (non-mirrored) rear-camera preview."
+      ],
+      "steps": [
+        "Start in-app scanner on mobile viewport and enter scanning state.",
+        "Inspect the live <video> element and its viewport container computed styles.",
+        "Assert neither element applies horizontal mirroring (e.g. transform: scaleX(-1) or equivalent).",
+        "Verify getUserMedia constraint requests environment/rear camera (facingMode ideal environment).",
+        "Confirm `jsqr` decode path draws the video frame to canvas without a horizontal flip relative to the preview."
+      ],
+      "expected": "QrScannerPanel renders rear-camera preview in natural left/right orientation per DC-13 and NFR-14; `jsqr` preview and decode stay orientation-consistent with no selfie-style horizontal mirror.",
       "edgeCase": false
     }
   ]

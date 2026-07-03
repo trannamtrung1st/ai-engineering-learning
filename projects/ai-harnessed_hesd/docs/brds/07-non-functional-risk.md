@@ -102,8 +102,8 @@ Trace: [00-project-overview.md](./00-project-overview.md) §3.2 · [04-business-
 
 #### NFR-14 — Mobile-first check-in UX
 
-Student check-in interfaces shall be optimized for mobile web (iOS Safari, Android Chrome) with concise Vietnamese guidance for expired QR, login required, GPS denied, out-of-radius, and duplicate attempts.  
-Trace: [prompt.md](./prompt.md) §5.3 · [03-functional-requirements.md](./03-functional-requirements.md) §12.
+Student check-in interfaces shall be optimized for mobile web (iOS Safari, Android Chrome) with concise Vietnamese guidance for expired QR, login required, GPS denied, out-of-radius, and duplicate attempts. The in-app QR scanner (`QrScannerPanel`) shall render the rear-camera live preview in **natural orientation** — not horizontally mirrored — so students can align the phone to the projected classroom QR the same way they would with a native camera app pointed at a screen. Preview and decode pipelines must stay orientation-consistent (no preview flip without a matching decode flip).  
+Trace: [prompt.md](./prompt.md) §5.3 · [03-functional-requirements.md](./03-functional-requirements.md) §12 · [07-domain-specific-components.md](../ui-ux/07-domain-specific-components.md) (DC-13).
 
 #### NFR-15 — Projection-friendly lecturer QR view
 

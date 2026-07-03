@@ -158,9 +158,9 @@
       "generatedAt": "2026-07-03T08:57:05Z"
     },
     "FR-14": {
-      "current": true,
-      "docFingerprint": "sha256:fb8ba111d1bd58a9bf16ee46968ee732ed424acc4a63d654d432a4ec9e0c8901",
-      "generatedAt": "2026-07-03T08:57:05Z"
+      "current": false,
+      "docFingerprint": "sha256:3b90f39c1c6e584e3184ff3546e8ea6bbce6ebf3870a1e37b4e26df37c913137",
+      "generatedAt": null
     },
     "FR-15": {
       "current": true,
@@ -263,9 +263,9 @@
       "generatedAt": "2026-07-03T08:57:05Z"
     },
     "FR-38": {
-      "current": true,
-      "docFingerprint": "sha256:fb8ba111d1bd58a9bf16ee46968ee732ed424acc4a63d654d432a4ec9e0c8901",
-      "generatedAt": "2026-07-03T08:57:05Z"
+      "current": false,
+      "docFingerprint": "sha256:3b90f39c1c6e584e3184ff3546e8ea6bbce6ebf3870a1e37b4e26df37c913137",
+      "generatedAt": null
     },
     "BR-01": {
       "current": true,
@@ -368,14 +368,14 @@
       "generatedAt": "2026-07-03T08:57:05Z"
     },
     "NFR-14": {
-      "current": true,
-      "docFingerprint": "sha256:477032953ece5fdb72af213d6ab030aded8af1b6090e4cb1f96e16d5130fc252",
-      "generatedAt": "2026-07-03T08:54:46Z"
+      "current": false,
+      "docFingerprint": "sha256:0ecbc1010268f8adb855aa5eb62c6afa1bd83181f579f1605fab550c49e374ab",
+      "generatedAt": null
     },
     "NFR-15": {
-      "current": true,
-      "docFingerprint": "sha256:477032953ece5fdb72af213d6ab030aded8af1b6090e4cb1f96e16d5130fc252",
-      "generatedAt": "2026-07-03T08:57:05Z"
+      "current": false,
+      "docFingerprint": "sha256:0ecbc1010268f8adb855aa5eb62c6afa1bd83181f579f1605fab550c49e374ab",
+      "generatedAt": null
     },
     "NFR-16": {
       "current": true,

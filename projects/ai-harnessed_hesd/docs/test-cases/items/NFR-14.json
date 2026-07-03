@@ -1,8 +1,8 @@
 {
   "productItemId": "NFR-14",
   "version": 1,
-  "docFingerprint": "sha256:477032953ece5fdb72af213d6ab030aded8af1b6090e4cb1f96e16d5130fc252",
-  "generatedAt": "2026-07-03T05:42:44Z",
+  "docFingerprint": "sha256:de79c82eb51309762075479d670d6d164ad3273119c01634c11eeb0835848a55",
+  "generatedAt": "2026-07-03T09:59:23Z",
   "cases": [
     {
       "id": "TC-NFR-14-001",
@@ -25,7 +25,7 @@
       "preconditions": [
         "Testing-plan §6.2 browser matrix (iOS Safari, Android Chrome, Chromium mobile emulation) and release readiness §4.1 localized rejection reason gate apply.",
         "Fixture matrix seeds open session, enrolled student, gps-required session, expired token, and prior-success duplicate state.",
-        "NFR-14 requires concise Vietnamese guidance for expired QR, login required, GPS denied, out-of-radius, and duplicate attempts per 07-non-functional-risk §2.5."
+        "NFR-14 requires concise Vietnamese guidance for expired QR, login required, GPS denied, out-of-radius, and duplicate attempts per 07-non-functional-risk §2.5, plus natural (non-mirrored) rear-camera scanner preview per DC-13 and 12-backend-frontend-tech-stack §4.4."
       ],
       "steps": [
         "Map each NFR-14 failure scenario to testing-plan §12 Student check-in validation row (AC-06 to AC-11) and 12-ui-states §5.1 outcome catalog.",
@@ -489,6 +489,30 @@
         "Confirm submission lifecycle per 12-ui-states §5.2 reaches exactly one terminal outcome state without stuck submitting spinner."
       ],
       "expected": "Each NFR-14 mandated failure scenario renders a visually distinct CheckInResultScreen state (danger, warning, or info alert variant with correct page state ID) per 12-ui-states §5.1; login-required path redirects cleanly; no ambiguous intermediate states block student comprehension.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-14-018",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": [
+        "NFR-14",
+        "FR-16"
+      ],
+      "title": "Mobile scanner preview uses natural orientation for projected-QR alignment",
+      "preconditions": [
+        "Student mobile viewport at PG-02 with QrScannerPanel in scanning state.",
+        "NFR-14 requires natural (non-mirrored) rear-camera preview; client stack uses `jsqr` + `getUserMedia` per 12-backend-frontend-tech-stack §4.4 and 06-main-workflows §5.6."
+      ],
+      "steps": [
+        "Activate in-app scanner and confirm live preview is visible with scan-frame overlay.",
+        "Verify preview is not horizontally mirrored — movement of the phone left shifts the on-screen image left, matching alignment to a physical projection screen.",
+        "Inspect DOM/CSS to confirm no mirror transform on video or viewport wrapper.",
+        "Confirm decode uses the same unmirrored frame orientation as the visible preview."
+      ],
+      "expected": "NFR-14 mobile-first scanner UX presents a natural rear-camera preview so students can aim at the lecturer QR without confusing horizontal inversion; preview and decode orientation remain consistent per DC-13.",
       "edgeCase": false
     }
   ]
