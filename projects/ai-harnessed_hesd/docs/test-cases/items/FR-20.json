@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-20",
   "version": 1,
-  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
-  "generatedAt": "2026-07-02T11:05:11Z",
+  "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
+  "generatedAt": "2026-07-03T04:39:00Z",
   "cases": [
     {
       "id": "TC-FR-20-001",
@@ -126,20 +126,20 @@
       "technique": "http-contract",
       "priority": "P0",
       "traceability": ["FR-20", "FR-04", "BR-14", "BR-06"],
-      "title": "POST /v1/enrollments/import seeds roster then lecturer PATCH corrects imported student attendance",
+      "title": "POST /v1/enrollments/import with row-level rejections seeds roster then lecturer PATCH corrects imported student attendance",
       "preconditions": [
         "AcademicAdmin has created class section with closed session.",
-        "POST /v1/enrollments/import accepts enrolled student row for the section.",
+        "POST /v1/enrollments/import accepts enrolled student rows for the section.",
         "Session close assigned Absent to imported student without check-in.",
         "Assigned Lecturer is within manualEditWindow."
       ],
       "steps": [
-        "AcademicAdmin calls POST /v1/enrollments/import with classSectionId and valid studentCode rows; assert HTTP 200 with acceptedRows count and no silent row skips.",
+        "AcademicAdmin calls POST /v1/enrollments/import with classSectionId, one valid studentCode row, and one invalid row (unknown studentCode); assert HTTP 200 with data.acceptedRows, data.rejectedRows containing rowNumber/code/message for the invalid row, and no silent skip.",
         "Verify imported student appears in GET /v1/class-sessions/{sessionId}/attendance with Absent status.",
         "Assigned Lecturer calls PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Manual Present and reason.",
         "Re-fetch GET /v1/class-sessions/{sessionId}/attendance for the imported student row."
       ],
-      "expected": "Enrollment import establishes eligible roster per FR-04; lecturer manual correction on imported enrolled student succeeds with HTTP 200 PATCH and roster reflects Manual Present per FR-20 and BR-14.",
+      "expected": "Enrollment import reports row-level rejections per FR-04 API contract; valid imported enrolled student is eligible for lecturer manual correction with HTTP 200 PATCH and roster reflects Manual Present per FR-20 and BR-14.",
       "edgeCase": false
     },
     {
@@ -331,16 +331,62 @@
       "preconditions": [
         "Lecturer is authenticated on desktop browser (PG-06 live roster view) for assigned section.",
         "Closed session displays student row with Absent danger badge.",
-        "Manual edit window is active per effective policy; reason field is required."
+        "Manual edit window is active per effective policy; reason field is required (FRM-08)."
       ],
       "steps": [
         "Navigate to /lecturer/sessions/{id}/roster and locate Absent student row.",
         "Open ManualCorrectionDialog from row action; select Manual Present in status dropdown.",
         "Enter reason in labeled Lý do textarea and confirm via dialog submit.",
         "Observe AttendanceStatusCell updates to Manual Present success variant and summary chips refresh.",
-        "Verify dialog closes and roster row reflects corrected status without full page reload."
+        "Verify dialog closes and focus returns to trigger per accessibility rules."
       ],
       "expected": "Browser FLOW-08 completes per FR-20: form gating enforces required reason before submit; post-save roster row shows Manual Present badge; UI state matches API correction and audit write.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-20-016",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-form-ux",
+      "priority": "P1",
+      "traceability": ["FR-20", "BR-14"],
+      "title": "ManualCorrectionDialog FRM-08 enforces inline reason validation and submit feedback on PG-06",
+      "preconditions": [
+        "Lecturer is authenticated on PG-06 live roster (/lecturer/sessions/{sessionId}/roster) for assigned closed session.",
+        "Student row displays Absent status badge; manual edit window is active per effective policy.",
+        "Policy mandates reason for manual corrections (FRM-08, VR-MC-04)."
+      ],
+      "steps": [
+        "Open ManualCorrectionDialog (DC-08) from Absent student row action.",
+        "Select Manual Present in status dropdown; leave Lý do reason textarea empty and attempt submit.",
+        "Observe inline validation on reason field with aria-invalid and aria-describedby error message per FR-VAL-02.",
+        "Verify submit control remains disabled or blocked until reason is valid; confirm focus moves to first invalid field on submit.",
+        "Enter valid reason text; observe submit shows submitting/disabled state during PATCH request.",
+        "On success, verify dialog closes, post-action feedback appears, and roster row updates to Manual Present badge without stale inline errors."
+      ],
+      "expected": "FRM-08 form UX gates submission when reason is missing; inline ReasonRequired-style validation is visible and recoverable; submit feedback shows disabled/submitting states during request; successful in-window correction updates roster per FR-20 without silent failure.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-20-017",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["FR-20", "BR-14", "BR-15"],
+      "title": "PG-06 manual correction surfaces distinct row badges and EditWindowExpired escalation visual state",
+      "preconditions": [
+        "Lecturer is authenticated on desktop Chromium StaffLayout at PG-06.",
+        "Fixtures include a closed session within manualEditWindow with Absent and Pending student rows, and a closed session with elapsed manualEditWindow."
+      ],
+      "steps": [
+        "Navigate to PG-06 for in-window closed session; verify Absent rows show danger badge variant and Pending rows show warning variant with manual correction row action visible.",
+        "Apply in-window correction on Absent row; observe AttendanceStatusCell transitions to Manual Present success variant distinct from prior Absent danger state.",
+        "Navigate to PG-06 for expired-window closed session; open ManualCorrectionDialog on Absent row, enter valid reason, and submit.",
+        "Observe form-level FeedbackAlert with escalation guidance to request Academic Admin action per FRM-08 EditWindowExpired mapping — not raw API error text.",
+        "Confirm roster row retains Absent danger badge and no false success state appears after rejection."
+      ],
+      "expected": "PG-06 correction UX per 09-page-list.md key states: Absent, Pending, and Manual Present badges are visually distinct; EditWindowExpired maps to staff-facing escalation guidance per 08-forms-validation-ux §5 without silent success or ambiguous intermediate state.",
       "edgeCase": false
     }
   ]
