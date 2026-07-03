@@ -327,7 +327,7 @@
     },
     {
       "id": "module-check-in-and-qr-orchestrator",
-      "passes": true,
+      "passes": false,
       "priority": 10,
       "phase": 1,
       "agent": "backend",
@@ -368,7 +368,15 @@
           "FR-18",
           "FR-22"
         ]
-      }
+      },
+      "history": [
+        {
+          "at": "2026-07-03T03:42:41Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-02 — reverify after TestGen",
+          "source": "harness"
+        }
+      ]
     },
     {
       "id": "module-attendance-ledger",
@@ -558,7 +566,7 @@
     },
     {
       "id": "module-realtime-delivery",
-      "passes": true,
+      "passes": false,
       "priority": 15,
       "phase": 1,
       "agent": "backend",
@@ -598,7 +606,15 @@
           "NFR-01",
           "NFR-16"
         ]
-      }
+      },
+      "history": [
+        {
+          "at": "2026-07-03T03:42:41Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-02 — reverify after TestGen",
+          "source": "harness"
+        }
+      ]
     },
     {
       "id": "module-notification",
@@ -923,6 +939,12 @@
           "at": "2026-07-03T03:40:47Z",
           "kind": "drift",
           "reason": "Doc drift for AC-01 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T03:42:41Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-02 — reverify after TestGen",
           "source": "harness"
         }
       ]

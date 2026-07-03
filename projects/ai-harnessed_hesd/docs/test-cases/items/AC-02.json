@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-02",
   "version": 1,
-  "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
-  "generatedAt": "2026-07-02T09:42:46Z",
+  "docFingerprint": "sha256:9ba57023d6454a237bfa8bfdee6f7fe0224827f1bfbb80b8ab5fb692431c9b66",
+  "generatedAt": "2026-07-03T03:40:00Z",
   "cases": [
     {
       "id": "TC-AC-02-001",
@@ -21,7 +21,7 @@
         "Wait until after first expiresAt and call GET /v1/class-sessions/{sessionId}/qr/current again.",
         "Compare token metadata between the two responses."
       ],
-      "expected": "QR token metadata aligns with testing-plan QR row: each token is valid for a 30-second window and next retrieval after expiry returns a new valid token for the same open session.",
+      "expected": "QR token metadata aligns with testing-plan §3 QR token behavior row: each token is valid for a 30-second window and next retrieval after expiry returns a new valid token for the same open session.",
       "edgeCase": false
     },
     {
@@ -63,7 +63,7 @@
         "Execute POST /v1/class-sessions/{sessionId}/close.",
         "Attempt to use previously issued token in check-in flow after close."
       ],
-      "expected": "Legal Scheduled->Open transition enables QR issuance; after Open->Closed transition, prior token is no longer accepted for successful check-in and no illegal token-valid state persists.",
+      "expected": "Legal Scheduled->Open transition enables QR issuance; after Open->Closed transition, active QR tokens are invalidated and prior token is no longer accepted for successful check-in and no illegal token-valid state persists.",
       "edgeCase": true
     },
     {
@@ -84,7 +84,7 @@
         "For one of those students, immediately send a second concurrent retry for the same session.",
         "Inspect attendance records and check-in-attempt rows."
       ],
-      "expected": "Token is multi-use within TTL across different students, while duplicate success is prevented per student-session: each student has at most one success and duplicate attempts return DuplicateCheckIn.",
+      "expected": "Token is multi-use within TTL across different students (AC-03), while duplicate success is prevented per student-session: each student has at most one success and duplicate attempts return DuplicateCheckIn.",
       "edgeCase": true
     },
     {
@@ -101,11 +101,11 @@
       ],
       "steps": [
         "Send GET /v1/class-sessions/{sessionId}/qr/current with Authorization header.",
-        "Validate HTTP status and response envelope keys data/meta/error.",
+        "Validate HTTP status is 200 and response envelope keys data/meta/error.",
         "Validate data includes classSessionId, tokenState=Valid, expiresAt, and qrPayload.",
         "Re-call endpoint after TTL rollover and confirm response remains contract-compliant with refreshed token metadata."
       ],
-      "expected": "Endpoint returns 200 and stable envelope schema; qr/current data remains contract-valid across token rollover with updated expiry metadata.",
+      "expected": "Endpoint returns 200 and stable envelope schema (data/meta/error); qr/current data remains contract-valid across token rollover with updated expiry metadata.",
       "edgeCase": false
     },
     {
@@ -145,7 +145,7 @@
         "Submit POST /v1/check-ins with the expired token.",
         "Fetch current token from active QR display endpoint and submit POST /v1/check-ins again within TTL."
       ],
-      "expected": "First attempt fails due to expiry, while follow-up attempt with newly rotated valid token can succeed in the same open session.",
+      "expected": "First attempt fails due to expiry (ExpiredQr), while follow-up attempt with newly rotated valid token can succeed in the same open session.",
       "edgeCase": true
     },
     {
@@ -165,7 +165,7 @@
         "Call POST /v1/exports/attendance using filters outside each actor scope.",
         "Inspect responses for authorization behavior and data leakage."
       ],
-      "expected": "Denied actors receive authorization denial semantics and cannot retrieve restricted report rows, pagination counts, or export jobs outside permitted scope.",
+      "expected": "Denied actors receive 403 authorization denial (Forbidden/OutOfScope) and cannot retrieve restricted report rows, pagination counts, or export jobs outside permitted scope.",
       "edgeCase": true
     },
     {
@@ -182,10 +182,10 @@
       ],
       "steps": [
         "Submit POST /v1/check-ins just after token expiresAt.",
-        "Record HTTP status and error.code payload.",
+        "Record HTTP status (422) and error.code payload.",
         "Verify failed attempt is queryable in check-in attempt logs."
       ],
-      "expected": "API rejects out-of-window token with documented structured error behavior (ExpiredQr), and failure is persisted for audit/attempt coverage without creating successful attendance.",
+      "expected": "API rejects out-of-window token with documented structured error (422 ExpiredQr), and failure is persisted as a CheckInAttempt for audit/attempt coverage without creating successful attendance.",
       "edgeCase": true
     },
     {
@@ -197,7 +197,7 @@
       "traceability": ["AC-02", "FR-11", "FR-14", "BR-03"],
       "title": "Lecturer UI journey shows auto-rotating QR without manual page reload",
       "preconditions": [
-        "Lecturer is logged in on desktop browser and has access to an Open session page with QR panel.",
+        "Lecturer is logged in on desktop browser and has access to an Open session page (PG-05 /lecturer/sessions/{sessionId}) with QR panel.",
         "Session row and QR panel are visible in UI."
       ],
       "steps": [
@@ -207,6 +207,48 @@
         "Verify session state indicator remains Open during token rotations."
       ],
       "expected": "Browser flow demonstrates UI auto-refresh of QR token every TTL cycle without lecturer reload, with consistent open-state indicators and usable next-token continuity.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-02-011",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["AC-02", "FR-11", "FR-14", "BR-03"],
+      "title": "Session control QR panel renders loading, valid, and token-fetch error states distinctly",
+      "preconditions": [
+        "Lecturer is authenticated on the staff desktop shell and can reach PG-05 (/lecturer/sessions/{sessionId}).",
+        "Session is in Open state so the QrDisplayPanel and QrCountdownRing are mounted."
+      ],
+      "steps": [
+        "Load PG-05 and observe the QR panel while the current token is being fetched (loading/skeleton state).",
+        "After a valid token loads, confirm the QR image and countdown ring render as the active/valid state with an expiry indicator.",
+        "Simulate a token-fetch failure for GET /qr/current and confirm the panel shows a visually distinct error state with retry affordance rather than a stale QR.",
+        "Compare the three states visually to ensure loading, valid, and error are unambiguous."
+      ],
+      "expected": "Per page-list PG-05 key states and NFR-UI-07, the QR panel presents loading, valid (rotating QR + countdown), and token-fetch error as visually distinct states — the happy path is not the only rendered state and errors never leave a stale token displayed.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-02-012",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-accessibility",
+      "priority": "P2",
+      "traceability": ["AC-02", "FR-11", "FR-14"],
+      "title": "QR display panel and countdown are accessible and keyboard operable on session control page",
+      "preconditions": [
+        "Lecturer is authenticated on the staff desktop shell.",
+        "PG-05 (/lecturer/sessions/{sessionId}) is open with an Open session showing the rotating QR panel and countdown ring."
+      ],
+      "steps": [
+        "Navigate the session control page using keyboard only (Tab/Shift+Tab) and confirm interactive controls (Open/Close, QR panel actions) receive a visible focus ring in a logical order.",
+        "Confirm the QR image/panel has an accessible name/label and the countdown ring exposes remaining-time information to assistive tech (e.g. aria-label or live region) rather than color/animation alone.",
+        "Wait through one token rotation and confirm the refresh does not steal focus or break keyboard position.",
+        "Confirm the token expiry/rotation status is announced without requiring a visual-only cue."
+      ],
+      "expected": "The session control QR surface is keyboard operable with visible focus and accessible labels; token rotation preserves focus and conveys expiry/rotation state to assistive technology, satisfying item-scoped accessibility for the screens AC-02 renders.",
       "edgeCase": false
     }
   ]
