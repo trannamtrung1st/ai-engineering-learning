@@ -19,7 +19,7 @@ Manual paths are resolved from `ai-harness/config/manualsgen-docs-map.json` and 
 
 - Edit application source (`apps/`, `packages/`, `tests/`)
 - Edit engineering specs under `docs/brds/`, `docs/technical/`, or `docs/ui-ux/` (except `docs/user-manuals/`)
-- Reference `generator/` paths
+- Mention or link to repository bootstrap scaffolding paths
 - Use placeholder demo data (Lorem ipsum, demo-item, fake product names)
 
 ## Manual item
