@@ -373,6 +373,12 @@
           "kind": "drift",
           "reason": "Logout scope added (FR-38, BR-24) — implement POST /v1/auth/logout; reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-03T06:37:42Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-38 — reverify after TestGen",
+          "source": "harness"
         }
       ]
     },
@@ -1239,6 +1245,12 @@
           "at": "2026-07-03T06:36:11Z",
           "kind": "drift",
           "reason": "Doc drift for AC-26 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T06:37:42Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-38 — reverify after TestGen",
           "source": "harness"
         }
       ]
@@ -2511,6 +2523,12 @@
           "at": "2026-07-03T06:36:11Z",
           "kind": "drift",
           "reason": "Doc drift for AC-26 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T06:37:42Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-38 — reverify after TestGen",
           "source": "harness"
         }
       ]

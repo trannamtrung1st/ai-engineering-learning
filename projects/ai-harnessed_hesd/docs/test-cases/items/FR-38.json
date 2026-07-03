@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-38",
   "version": 1,
-  "docFingerprint": "sha256:pending-testgen",
-  "generatedAt": "2026-07-03T06:14:00Z",
+  "docFingerprint": "sha256:18ec16d67172eb500b60adac82431bb479061eda90fc6ac1640887f5e0d05624",
+  "generatedAt": "2026-07-03T06:36:00Z",
   "cases": [
     {
       "id": "TC-FR-38-001",
@@ -14,12 +14,12 @@
       "title": "Scenario matrix row for voluntary logout across authenticated roles",
       "preconditions": [
         "Testing-plan §12 Authentication lifecycle row applies (FR-36, FR-38; BR-05, BR-24; AC-06, AC-26).",
-        "Role-matrix fixture provides Student, Lecturer, and AcademicAdmin accounts with valid credentials."
+        "Role-matrix fixture provides Student, Lecturer, AcademicAdmin, DepartmentAdmin, ITAdmin, and SystemAuditor accounts with valid credentials per FR-38 actor list."
       ],
       "steps": [
         "Authenticate each role via POST /v1/auth/login and confirm GET /v1/me returns HTTP 200.",
         "Invoke POST /v1/auth/logout with the issued bearer token.",
-        "Discard client-held credentials per BR-24.",
+        "Discard client-held credentials (access token and role-specific auth flags) per BR-24.",
         "Call GET /v1/me without Authorization and attempt one role-appropriate protected endpoint per role."
       ],
       "expected": "Logout returns HTTP 200 with data.loggedOut true per API §4.1; subsequent requests without a new login return 401 Unauthenticated and protected routes require re-authentication per AC-26.",
@@ -40,10 +40,11 @@
       "steps": [
         "Resolve authenticated actor via M01 middleware with valid bearer token.",
         "Invoke POST /v1/auth/logout through the auth route handler.",
+        "Verify UserLoggedOut event or equivalent audit record with actorUserId and occurredAt per API §8.1.",
         "Query attendance_records and audit_logs for unexpected writes tied to logout.",
         "Repeat GET /v1/me through authenticate middleware after client token discard simulation."
       ],
-      "expected": "Logout handler returns success envelope only; no attendance or roster mutations occur; authenticate middleware rejects cleared session with Unauthenticated per BR-24.",
+      "expected": "Logout handler returns success envelope only; UserLoggedOut audit emitted; no attendance or roster mutations occur; authenticate middleware rejects cleared session with Unauthenticated per BR-24.",
       "edgeCase": false
     },
     {
@@ -68,10 +69,10 @@
     },
     {
       "id": "TC-FR-38-004",
-      "category": "functional",
+      "category": "edge",
       "layer": "e2e",
-      "technique": "http-contract",
-      "priority": "P0",
+      "technique": "boundary-error",
+      "priority": "P1",
       "traceability": ["FR-38", "BR-24"],
       "title": "HTTP contract for unauthenticated POST /v1/auth/logout rejection",
       "preconditions": [
@@ -81,8 +82,8 @@
         "Send POST /v1/auth/logout without Authorization header.",
         "Inspect HTTP status and response envelope error.code."
       ],
-      "expected": "API returns HTTP 401 with error.code Unauthenticated; no loggedOut success payload is returned without authentication.",
-      "edgeCase": false
+      "expected": "API returns HTTP 401 with error.code Unauthenticated per API §4.1; no loggedOut success payload is returned without authentication.",
+      "edgeCase": true
     },
     {
       "id": "TC-FR-38-005",
@@ -98,6 +99,7 @@
       ],
       "steps": [
         "Execute FLOW-15 logout: POST /v1/auth/logout, clear client credentials, redirect target is PG-01.",
+        "Confirm landing on PG-01 with no returnUrl query parameter per FLOW-15 step 4.",
         "Attempt GET /v1/class-sessions/{sessionId}/attendance without re-login.",
         "Re-authenticate Lecturer and confirm roster access restores."
       ],
@@ -114,15 +116,15 @@
       "title": "Staff SidebarNav Đăng xuất control ends session and returns to PG-01",
       "preconditions": [
         "Lecturer is logged in on desktop Chromium at PG-04 /lecturer/sessions.",
-        "SidebarNav renders per design-system/sidebars.md with logout footer control."
+        "Open session fixture with known sessionId; SidebarNav footer exposes Đăng xuất per 09-page-list.md §2.2 and design-system/sidebars.md."
       ],
       "steps": [
         "Locate Đăng xuất control in sidebar footer separated from primary nav items.",
         "Activate logout control and observe navigation to PG-01 without returnUrl query param.",
-        "Attempt direct navigation to /lecturer/sessions and observe login redirect.",
+        "Manually navigate to /lecturer/sessions/{sessionId}/roster and observe login redirect.",
         "Verify no privileged roster or session data remains visible in DOM after logout."
       ],
-      "expected": "FLOW-15 staff logout is reachable from every authenticated staff page; PG-01 loads after logout; protected lecturer routes redirect to login per FR-38 and AC-26.",
+      "expected": "FLOW-15 staff logout is reachable from every authenticated staff page; PG-01 loads after logout; protected lecturer routes including PG-06 redirect to login per FR-38 and AC-26.",
       "edgeCase": false
     },
     {
@@ -135,16 +137,59 @@
       "title": "Student mobile shell logout clears check-in gate and blocks protected history route",
       "preconditions": [
         "Student is authenticated at PG-02 or PG-03 on mobile viewport (375px).",
-        "Student shell exposes logout in header or account menu per LAY-01."
+        "Student shell exposes logout in header or account menu per LAY-01 and 09-page-list.md §2.2."
       ],
       "steps": [
         "Activate student logout control.",
-        "Confirm navigation to PG-01 and cleared access token / student auth flag.",
+        "Confirm navigation to PG-01 without returnUrl and cleared access token / student auth flag.",
         "Navigate to /me/attendance and observe login redirect.",
         "Re-login and confirm attendance history restores for self scope only."
       ],
       "expected": "Student logout follows FLOW-15; FR-15 auth gate re-applies after logout; /me/attendance requires fresh login without exposing prior session data per AC-26.",
       "edgeCase": false
+    },
+    {
+      "id": "TC-FR-38-008",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-38", "AC-26", "BR-24", "FLOW-15"],
+      "title": "Browser journey: lecturer logout from PG-04 clears storage and gates session list until re-login",
+      "preconditions": [
+        "Lecturer authenticated at PG-04 with visible session rows.",
+        "Browser storage holds accessToken prior to logout."
+      ],
+      "steps": [
+        "Activate Đăng xuất from staff shell and observe PG-01 load.",
+        "Verify accessToken and role-specific auth flags cleared from browser storage per FLOW-15 step 3.",
+        "Navigate to /lecturer/sessions and confirm login redirect.",
+        "Complete FRM-01 sign-in and confirm PG-04 session list renders again."
+      ],
+      "expected": "End-to-end browser logout journey clears credentials, blocks protected lecturer routes, and restores access only after re-authentication per FR-38 and AC-26.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-38-009",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-38", "BR-24", "BR-19"],
+      "title": "Post-logout denial on role-scoped APIs until re-authentication",
+      "preconditions": [
+        "Student and Lecturer each completed FLOW-15 logout with client credentials cleared.",
+        "Open session with valid qrToken and sessionId exists for denial probes.",
+        "Permission matrix §3.1 defines distinct capabilities per role when authenticated."
+      ],
+      "steps": [
+        "Without Authorization, Student calls POST /v1/check-ins with valid qrToken and Idempotency-Key.",
+        "Without Authorization, Lecturer calls GET /v1/class-sessions/{sessionId}/attendance.",
+        "Without Authorization, Student calls GET /v1/reports/attendance.",
+        "Re-authenticate Student and confirm self-scoped GET /v1/reports/attendance returns HTTP 200."
+      ],
+      "expected": "Request evaluation pipeline rejects post-logout calls at authentication step with HTTP 401 Unauthenticated per roles §6.1; no role-scoped attendance or report data is returned until re-login per FR-38.",
+      "edgeCase": true
     }
   ]
 }
