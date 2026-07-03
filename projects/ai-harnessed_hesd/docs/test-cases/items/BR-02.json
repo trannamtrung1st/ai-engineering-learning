@@ -2,7 +2,7 @@
   "productItemId": "BR-02",
   "version": 1,
   "docFingerprint": "sha256:0421ca4affe3aa70584e3b352a860d11de519a5a2aaff8c4d8e0f12d14d1a70a",
-  "generatedAt": "2026-07-02T11:51:46Z",
+  "generatedAt": "2026-07-03T05:10:00Z",
   "cases": [
     {
       "id": "TC-BR-02-001",
@@ -89,7 +89,7 @@
         "Send POST /v1/check-ins with qrToken, Authorization, and Idempotency-Key headers.",
         "Validate HTTP status code and JSON envelope shape {data, meta, error}.",
         "Assert data is null and error.code is SessionClosed.",
-        "Assert error.message is localized Vietnamese text instructing student that attendance has ended and to contact lecturer for manual fallback.",
+        "Assert error.message is localized Vietnamese text matching API design §2.3 SessionClosed example (e.g. Buoi hoc da dong diem danh) with lecturer-contact guidance per BR-02 outcome where UI renders supplementary copy.",
         "Assert meta includes requestId and timestamp fields.",
         "Query GET /v1/class-sessions/{sessionId}/attendance and confirm no new success row for this attempt."
       ],
@@ -281,6 +281,29 @@
         "Confirm success confirmation UI is not shown and no Present/Late badge appears for the student."
       ],
       "expected": "Browser journey surfaces BR-02 rejection with localized Vietnamese SessionClosed copy and lecturer-contact guidance; no false success state; Closed badge visible on lecturer view.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-02-013",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["BR-02", "FR-16", "AC-05"],
+      "title": "Student check-in renders distinct failure-closed visual state when session is closed",
+      "preconditions": [
+        "Class session was Open and is now Closed with closedAt recorded.",
+        "Student is authenticated on mobile viewport at 320px minimum width.",
+        "Student navigates to check-in page via QR deep link with token preserved."
+      ],
+      "steps": [
+        "Load student check-in page after session has transitioned to Closed.",
+        "Submit check-in and observe SessionClosed rejection on CheckInResultScreen.",
+        "Verify failure-closed state uses danger alert variant visually distinct from success-present, success-late, loading, and submitting states.",
+        "Confirm Vietnamese SessionClosed copy (Buổi học đã đóng điểm danh per UI states §5.1) is readable without clipping or overflow at 320px.",
+        "Verify retry is not offered (Retry allowed: No) and no success confirmation badge or green checkmark appears alongside the error state."
+      ],
+      "expected": "BR-02 rejection displays dedicated failure-closed visual state per CheckInResultScreen outcome catalog; localized SessionClosed copy remains visible without layout overflow on mobile; no false success UI.",
       "edgeCase": false
     }
   ]
