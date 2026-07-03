@@ -951,6 +951,12 @@
           "kind": "drift",
           "reason": "Doc drift for FR-30 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-03T05:29:10Z",
+          "kind": "drift",
+          "reason": "Doc drift for BR-22 — reverify after TestGen",
+          "source": "harness"
         }
       ]
     },
@@ -1994,6 +2000,12 @@
           "at": "2026-07-03T05:03:08Z",
           "kind": "drift",
           "reason": "Doc drift for FR-32 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T05:29:10Z",
+          "kind": "drift",
+          "reason": "Doc drift for BR-22 — reverify after TestGen",
           "source": "harness"
         }
       ]
