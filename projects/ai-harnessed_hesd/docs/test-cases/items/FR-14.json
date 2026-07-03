@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-14",
   "version": 1,
-  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
-  "generatedAt": "2026-07-02T11:15:00Z",
+  "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
+  "generatedAt": "2026-07-03T04:32:00Z",
   "cases": [
     {
       "id": "TC-FR-14-001",
@@ -34,7 +34,7 @@
       "technique": "module-integration",
       "priority": "P0",
       "traceability": ["FR-14", "FR-11"],
-      "title": "M04 QR Orchestrator issues projection-ready token payload bound to session with session metadata for display",
+      "title": "M04 Check-in and QR Orchestrator issues projection-ready token payload bound to session with session metadata for display",
       "preconditions": [
         "Integration harness uses real DB transaction boundaries for qr_session_tokens and class_sessions tables.",
         "An Open class session row exists with known sessionId, section code, and session name.",
@@ -320,6 +320,29 @@
       ],
       "expected": "Concurrent reads during a rotation window return consistent current token metadata for projection display; post-TTL parallel reads converge on the next Valid token without duplicate-active Valid rows violating display invariants.",
       "edgeCase": true
+    },
+    {
+      "id": "TC-FR-14-015",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["FR-14", "AC-UI-06"],
+      "title": "PG-05 QrDisplayPanel renders distinct Scheduled, Open projection, Closed/Cancelled locked, and token-fetch error states",
+      "preconditions": [
+        "Lecturer is logged in on desktop StaffLayout at PG-05.",
+        "Session fixtures exist in Scheduled, Open, Closed, and Cancelled states.",
+        "Harness can simulate slow or failed GET /v1/class-sessions/{sessionId}/qr/current responses."
+      ],
+      "steps": [
+        "Navigate to /lecturer/sessions/{scheduledSessionId} (PG-05) and verify Scheduled state: no scannable QR canvas; section code and session name visible with Scheduled StatusBadge.",
+        "Open the session and observe loading or skeleton state on QrDisplayPanel while qr/current is in flight.",
+        "On successful fetch, verify Open projection state: high-contrast black-on-white QR occupying substantial viewport area, QrCountdownRing with numeric seconds remaining, and Open StatusBadge per DC-01 spec.",
+        "Simulate qr/current failure on an Open session and observe token-fetch error FeedbackAlert with retry affordance while Open badge and session identity remain visible.",
+        "Navigate to Closed and Cancelled session fixtures and confirm QrDisplayPanel shows locked state message instead of scannable QR with matching Closed or Cancelled StatusBadge."
+      ],
+      "expected": "PG-05 QrDisplayPanel visually distinguishes all documented display states per 09-page-list §5 and 07-domain-specific-components §2.1: Scheduled suppresses QR; Open shows projection-ready rotating QR with countdown; Closed/Cancelled show locked messages; token-fetch errors never leave a stale QR visible.",
+      "edgeCase": false
     }
   ]
 }
