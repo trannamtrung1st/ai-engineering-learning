@@ -2,7 +2,7 @@
   "productItemId": "BR-03",
   "version": 1,
   "docFingerprint": "sha256:0421ca4affe3aa70584e3b352a860d11de519a5a2aaff8c4d8e0f12d14d1a70a",
-  "generatedAt": "2026-07-02T11:53:23Z",
+  "generatedAt": "2026-07-03T05:12:00Z",
   "cases": [
     {
       "id": "TC-BR-03-001",
@@ -14,7 +14,7 @@
       "title": "Testing-plan QR token behavior row: expired token rejected and logged",
       "preconditions": [
         "Class session is Open with a QRSessionToken issued for that session.",
-        "Token expiresAt is more than 30 seconds after issuedAt per MVP default TTL.",
+        "Token expiresAt is 30 seconds after issuedAt per MVP default TTL.",
         "Student is authenticated and actively enrolled in the session class section.",
         "Student has no prior successful AttendanceRecord for this session."
       ],
@@ -285,6 +285,29 @@
         "Verify the success or next-step UI is shown only for the current QR submission."
       ],
       "expected": "The browser journey surfaces ExpiredQr as localized current-QR guidance, lecturer QR rotation remains visible, and a fresh within-TTL QR can proceed without treating the old expired token as valid.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-03-013",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["BR-03", "FR-16", "FR-22", "AC-04"],
+      "title": "CheckInResultScreen renders distinct failure-expired-qr visual state with retry CTA",
+      "preconditions": [
+        "Class session is Open with a QR token that has passed its 30-second TTL.",
+        "Student is authenticated on mobile viewport at 320px minimum width on PG-02 /check-in.",
+        "Student submits check-in with the expired qrToken via the check-in flow."
+      ],
+      "steps": [
+        "Trigger POST /v1/check-ins with expired token and observe CheckInResultScreen outcome state.",
+        "Verify the page state ID failure-expired-qr uses danger alert styling distinct from success-present, success-late, and other failure states.",
+        "Confirm Vietnamese copy matches ExpiredQr intent (e.g. Mã QR đã hết hạn) and instructs re-scan of current lecturer QR.",
+        "Verify a retry/re-scan primary CTA is visible and is the first focusable element on the failure screen.",
+        "Confirm no success badge or green confirmation appears alongside the expired-QR error state."
+      ],
+      "expected": "BR-03 ExpiredQr rejection renders a dedicated failure-expired-qr visual state with danger alert, localized re-scan guidance, and actionable retry CTA; visually distinct from loading, success, and other documented failure outcomes.",
       "edgeCase": false
     }
   ]
