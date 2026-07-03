@@ -173,6 +173,21 @@
         "TC-NFR-10-015"
       ],
       "updatedAt": "2026-07-02T23:34:02Z"
+    },
+    "test-nfr-performance-reliability-smoke": {
+      "specPath": "/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/tests/playwright-ui/scenarios/test-nfr-performance-reliability-smoke.spec.ts",
+      "lastRunId": "20260703T001036Z",
+      "testCount": 5,
+      "sourceTcIds": [
+        "TC-AC-20-007",
+        "TC-AC-21-009",
+        "TC-AC-22-009",
+        "TC-NFR-01-008",
+        "TC-NFR-03-009",
+        "TC-NFR-16-014",
+        "TC-NFR-16-015"
+      ],
+      "updatedAt": "2026-07-03T00:28:22Z"
     }
   }
 }

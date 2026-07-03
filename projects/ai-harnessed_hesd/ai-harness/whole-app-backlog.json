@@ -1395,13 +1395,57 @@
       ],
       "description": "Add performance and reliability smoke tests for class-start burst behavior, check-in latency, and success-rate telemetry baselines.",
       "completionArtifacts": [
-        "Load/smoke scripts for concurrent check-in scenarios",
-        "Result threshold checks for latency and success targets",
-        "Runbook notes for interpreting performance regressions"
+        "apps/api/src/integration/performance",
+        "apps/api/src/integration/fixtures/performance-smoke-fixtures.ts",
+        "apps/api/src/integration/performance-smoke.integration.test.ts",
+        "apps/api/src/modules/audit-and-compliance/scope.ts",
+        "apps/api/scripts/preview-session-refresh.mjs",
+        "apps/web/src/routes/pages/AuditLogPage.tsx",
+        "apps/web/src/components/domain/AuditLogList.tsx",
+        "apps/web/src/components/ui/TableToolbar.tsx",
+        "tests/playwright-ui/src/support/performance-smoke.ts",
+        "tests/e2e/src/scenarios/performance-smoke.e2e.test.ts",
+        "docs/technical/performance-smoke-runbook.md",
+        "apps/api/package.json",
+        "package.json",
+        ".github/workflows/ci.yml"
       ],
-      "testRequirements": [
-        "Execute against compose-based test stack profile",
-        "Publish test artifacts and metric snapshots in CI"
+      "testRequirements": {
+        "unit": [
+          "apps/api/src/integration/performance/thresholds.test.ts",
+          "apps/api/src/integration/fixtures/performance-smoke-fixtures.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/integration/performance-smoke.integration.test.ts"
+        ],
+        "e2e": [
+          "tests/e2e/src/scenarios/performance-smoke.e2e.test.ts"
+        ],
+        "acceptanceTags": [
+          "AC-20",
+          "AC-21",
+          "AC-22",
+          "NFR-01",
+          "NFR-03",
+          "NFR-16"
+        ],
+        "playwright": [
+          "tests/playwright-ui/scenarios/test-nfr-performance-reliability-smoke.spec.ts"
+        ]
+      },
+      "history": [
+        {
+          "at": "2026-07-02T23:57:09Z",
+          "kind": "gate_failed",
+          "reason": "Computational checks failed — see 20260702T233513Z-checks.json",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T00:10:35Z",
+          "kind": "gate_failed",
+          "reason": "Browser test failed — see 20260702T235709Z-browser-test.json",
+          "source": "harness"
+        }
       ]
     }
   ]
