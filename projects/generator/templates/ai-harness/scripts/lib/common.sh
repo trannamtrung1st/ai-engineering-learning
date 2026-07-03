@@ -35,6 +35,7 @@ LOOP_STATE="${STATE_DIR}/loop-state.json"
 RUNS_DIR="${HARNESS_ROOT}/generated/runs"
 SCREENSHOTS_ROOT="${RUNS_DIR}/screenshots"
 TEST_CASES_DIR="${REPO_ROOT}/docs/test-cases"
+COMMON_UI_UX_SUITE_DEFAULT="${HARNESS_ROOT}/test-cases/common/ui-ux-suite.json"
 PREVIEW_PID_FILE="${RUNS_DIR}/preview-stack.pids"
 PREVIEW_AUX_PID_FILE="${RUNS_DIR}/preview-aux.pids"
 PREVIEW_WEB_LOG="${RUNS_DIR}/preview-web.log"
@@ -2527,6 +2528,46 @@ summarize_browser_test_failures() {
 
 browser_test_retry_failed_cases_first() {
   jq -r '.browserTest.retryFailedCasesFirst // true' "$LOOP_CONFIG"
+}
+
+common_ui_ux_suite_enabled() {
+  jq -r '.browserTest.commonUiUxSuite.enabled // true' "$LOOP_CONFIG"
+}
+
+common_ui_ux_suite_path() {
+  local rel
+  rel="$(jq -r '.browserTest.commonUiUxSuite.path // empty' "$LOOP_CONFIG" 2>/dev/null || true)"
+  if [[ -n "$rel" ]]; then
+    echo "${REPO_ROOT}/${rel}"
+  else
+    echo "$COMMON_UI_UX_SUITE_DEFAULT"
+  fi
+}
+
+common_ui_ux_suite_blocking_priorities_json() {
+  jq -c '.browserTest.commonUiUxSuite.blockingPriorities // ["P0","P1"]' "$LOOP_CONFIG" 2>/dev/null || echo '["P0","P1"]'
+}
+
+load_common_ui_ux_suite() {
+  local suite
+  [[ "$(common_ui_ux_suite_enabled)" == "true" ]] || return 1
+  suite="$(common_ui_ux_suite_path)"
+  [[ -f "$suite" ]] || return 1
+  jq empty "$suite" 2>/dev/null || return 1
+  cat "$suite"
+}
+
+format_common_ui_ux_suite_block() {
+  local suite
+  suite="$(common_ui_ux_suite_path)"
+  [[ -f "$suite" ]] || return 1
+  jq -r '
+    .cases[]?
+    | "- **\(.id)** [\(.priority)/\(.technique)]: \(.title)"
+      + (if .appliesTo then "\n  Applies to: \(.appliesTo)" else "" end)
+      + (if (.preconditions // []) | length > 0 then "\n  Preconditions: \(.preconditions | join("; "))" else "" end)
+      + "\n  Steps: \(.steps | join(" → "))\n  Expected: \(.expected)"
+  ' "$suite" 2>/dev/null
 }
 
 extract_failed_browser_case_ids() {

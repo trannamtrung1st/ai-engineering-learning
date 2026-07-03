@@ -45,9 +45,18 @@ Also read when relevant:
 
 ## Generated test cases (mandatory checklist)
 
-When bundled below, execute **every** `layer: browser` case from the generated test case artifact. Report PASS, FAIL, or SKIP per case `id`.
+When bundled below, execute **every** `layer: browser` case from the generated test case artifact — this includes both functional `browser-journey` cases and item-scoped `category: ui-ux` cases (accessibility, responsive, visual-state, form-ux, navigation). Report PASS, FAIL, or SKIP per case `id`.
 
 If no generated cases are bundled, derive scenarios from acceptance tags and slice docs.
+
+## Common UI/UX suite (always executed)
+
+The harness appends a `## Common UI/UX suite (always executed)` block (from `ai-harness/test-cases/common/ui-ux-suite.json`) to the **full** verification phase. These are generic, product-wide UI/UX checks (`TC-UX-COMMON-NNN`) that apply to **every** distinct screen/state — not tied to a requirement tag.
+
+- Run each common case against every screen you exercise, alongside the slice's own browser cases.
+- Report each as `TC-UX-COMMON-NNN: PASS|FAIL|SKIP` with evidence and a screenshot path.
+- Mark `SKIP` only when the case genuinely does not apply to any in-scope screen (e.g. no forms, or a student-only slice with no staff shell) — never to avoid a defect.
+- **Gating:** a `FAIL` on a P0/P1 common case blocks `BROWSER_TEST_PASS`. Lower-priority (P2/P3) common FAILs are advisory — log each as a `UX-<slice-id>-NNN` defect instead of blocking on it alone.
 
 ### Out-of-scope cases (mark SKIP — excluded from pass/fail)
 

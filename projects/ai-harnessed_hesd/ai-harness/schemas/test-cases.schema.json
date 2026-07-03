@@ -31,7 +31,12 @@
         "state-transition",
         "browser-journey",
         "concurrency",
-        "boundary-error"
+        "boundary-error",
+        "ui-accessibility",
+        "ui-responsive",
+        "ui-visual-state",
+        "ui-form-ux",
+        "ui-navigation"
       ]
     },
     "testCase": {
@@ -54,7 +59,7 @@
         "id": { "type": "string", "pattern": "^TC-" },
         "category": {
           "type": "string",
-          "enum": ["functional", "non-functional", "edge"]
+          "enum": ["functional", "non-functional", "edge", "ui-ux"]
         },
         "layer": {
           "type": "string",

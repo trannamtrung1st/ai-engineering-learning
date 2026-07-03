@@ -134,6 +134,11 @@
     "uxBugLogging": true,
     "playwrightOutputDir": "tests/playwright-ui/scenarios",
     "uxBugsDir": "ai-harness/generated/runs/ux-bugs",
+    "commonUiUxSuite": {
+      "enabled": true,
+      "path": "ai-harness/test-cases/common/ui-ux-suite.json",
+      "blockingPriorities": ["P0", "P1"]
+    },
     "inputs": [
       "slice-docs",
       "acceptance-tags",

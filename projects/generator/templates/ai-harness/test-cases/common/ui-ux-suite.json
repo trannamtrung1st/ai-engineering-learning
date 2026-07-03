@@ -1,0 +1,232 @@
+{
+  "suiteId": "ui-ux-common",
+  "version": 1,
+  "description": "Generic, product-wide UI/UX suite run by the browser tester on every full verification pass against every distinct screen. Derived from docs/ui-visual-verification.md and skills/ui-ux-testing/SKILL.md. P0/P1 cases block BROWSER_TEST_PASS; P2/P3 cases are advisory and logged as UX-* defects.",
+  "cases": [
+    {
+      "id": "TC-UX-COMMON-001",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-navigation",
+      "priority": "P1",
+      "checklistRef": [16],
+      "title": "Persistent navigation surface and home link on authenticated screens",
+      "appliesTo": "every authenticated screen",
+      "preconditions": ["Authenticated as any role"],
+      "steps": [
+        "Load each distinct authenticated screen exercised in this run",
+        "Look for a persistent nav surface (sidebar or topnav)",
+        "Look for a visible, functional home/dashboard link"
+      ],
+      "expected": "Every authenticated screen shows a persistent nav surface and a working home/dashboard link"
+    },
+    {
+      "id": "TC-UX-COMMON-002",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-navigation",
+      "priority": "P1",
+      "checklistRef": [18],
+      "title": "Back-to-home reachable without browser back button",
+      "appliesTo": "every screen including detail, modal, and outcome pages",
+      "preconditions": ["Authenticated as any role"],
+      "steps": [
+        "From each screen (including detail views and outcome pages), locate a clickable path back to home",
+        "Confirm it is a nav logo, breadcrumb first segment, or explicit home nav item"
+      ],
+      "expected": "Every screen offers at least one in-app path back to home — no browser-back-only dead ends"
+    },
+    {
+      "id": "TC-UX-COMMON-003",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-navigation",
+      "priority": "P1",
+      "checklistRef": [19],
+      "title": "No forbidden nav items visible to the current role",
+      "appliesTo": "every authenticated screen for each role",
+      "preconditions": ["Authenticated as a non-privileged role"],
+      "steps": [
+        "Inspect nav chrome (sidebar, topnav, breadcrumbs, inline links)",
+        "Confirm there are no links to routes the current role cannot access",
+        "Confirm forbidden items are absent, not merely disabled"
+      ],
+      "expected": "Nav chrome contains zero links to forbidden routes; none are rendered as disabled"
+    },
+    {
+      "id": "TC-UX-COMMON-004",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-navigation",
+      "priority": "P1",
+      "checklistRef": [20],
+      "title": "Forbidden route renders a styled access-denied page",
+      "appliesTo": "every route restricted by role",
+      "preconditions": ["Authenticated as a role lacking access to a known privileged route"],
+      "steps": [
+        "Navigate directly to a forbidden route via URL",
+        "Observe the rendered result"
+      ],
+      "expected": "A styled access-denied page renders (not a crash, blank screen, or login redirect), explains the restriction in plain language, and includes a home link"
+    },
+    {
+      "id": "TC-UX-COMMON-005",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-navigation",
+      "priority": "P1",
+      "checklistRef": [17],
+      "title": "Login page neutrality and correct post-login redirect",
+      "appliesTo": "login/entry flow",
+      "preconditions": ["Logged out"],
+      "steps": [
+        "Open the login page and read its heading and copy",
+        "Authenticate as each available role",
+        "Observe the post-login landing route"
+      ],
+      "expected": "Login page has no role-specific copy; after login each role lands on its correct home page, not a generic shell or the wrong dashboard"
+    },
+    {
+      "id": "TC-UX-COMMON-006",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "title": "No internal identifiers or codes in user-facing text",
+      "appliesTo": "every screen",
+      "preconditions": ["Authenticated as any role"],
+      "steps": [
+        "Scan visible UI text on each screen — headings, labels, table columns, toasts, empty states",
+        "Look for technical IDs, schema field names, requirement codes, or internal slugs"
+      ],
+      "expected": "No internal identifiers (e.g. item_id, AC-01, slice slugs) appear in user-facing text"
+    },
+    {
+      "id": "TC-UX-COMMON-007",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "checklistRef": [1, 3, 7, 8],
+      "title": "Primary, danger, and disabled controls meet contrast and legibility",
+      "appliesTo": "every screen with actions",
+      "preconditions": ["Authenticated as any role"],
+      "steps": [
+        "Screenshot each screen with primary, danger, and disabled controls",
+        "Verify primary CTA foreground on primary background is legible (not washed out)",
+        "Verify danger actions use inverse text; disabled labels remain legible (>= 3:1)"
+      ],
+      "expected": "Primary and danger controls meet the documented contrast pair; disabled controls read as disabled while staying legible"
+    },
+    {
+      "id": "TC-UX-COMMON-008",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-responsive",
+      "priority": "P2",
+      "title": "Responsive layout at 320px width has no overflow or clipping",
+      "appliesTo": "every screen when the product serves mobile form factors",
+      "preconditions": ["Viewport set to 320x568"],
+      "steps": [
+        "Load each distinct screen at 320px width",
+        "Check for horizontal scroll, clipped content, or off-screen controls"
+      ],
+      "expected": "Content reflows within 320px width — no horizontal scroll, clipping, or below-fold primary actions"
+    },
+    {
+      "id": "TC-UX-COMMON-009",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-accessibility",
+      "priority": "P2",
+      "checklistRef": [15],
+      "title": "Visible focus states and keyboard operability",
+      "appliesTo": "every interactive screen",
+      "preconditions": ["Authenticated as any role"],
+      "steps": [
+        "Tab through interactive elements on each screen",
+        "Confirm a visible focus indicator on each focusable control",
+        "Confirm primary actions are reachable and operable via keyboard"
+      ],
+      "expected": "Interactive elements show a visible focus ring and are keyboard operable"
+    },
+    {
+      "id": "TC-UX-COMMON-010",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P2",
+      "title": "Loading honesty — no infinite spinner or premature success",
+      "appliesTo": "every screen with async data or submissions",
+      "preconditions": ["Authenticated as any role"],
+      "steps": [
+        "Trigger data loads and form submissions on each relevant screen",
+        "Observe spinner, layout stability, and success timing"
+      ],
+      "expected": "Loading states resolve without infinite spinners or layout shift; success is shown only after the server confirms"
+    },
+    {
+      "id": "TC-UX-COMMON-011",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P2",
+      "checklistRef": [12],
+      "title": "Outcome states are visually differentiated",
+      "appliesTo": "every screen with success/warning/error/empty states",
+      "preconditions": ["Authenticated as any role"],
+      "steps": [
+        "Exercise success, warning, error, and empty states where reachable",
+        "Compare their alert/badge styling"
+      ],
+      "expected": "Success, warning, error, empty, and forbidden states use visually distinct surfaces — not identical styling"
+    },
+    {
+      "id": "TC-UX-COMMON-012",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-form-ux",
+      "priority": "P2",
+      "title": "Form fields have labels and inline validation feedback",
+      "appliesTo": "every form",
+      "preconditions": ["Authenticated as any role with access to a form"],
+      "steps": [
+        "Open each form and confirm every field has a visible label",
+        "Submit invalid input and observe where errors surface",
+        "Confirm submit/disabled feedback is visible in the UI"
+      ],
+      "expected": "Every field is labeled; validation errors surface inline in the UI (not only console/toast); submit state is clear"
+    },
+    {
+      "id": "TC-UX-COMMON-013",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-responsive",
+      "priority": "P3",
+      "title": "Touch targets are large enough on mobile",
+      "appliesTo": "every interactive control on mobile viewports",
+      "preconditions": ["Viewport set to 320x568"],
+      "steps": [
+        "Measure interactive controls (buttons, icon nav, links) on mobile",
+        "Confirm hit area is at least 44x44px"
+      ],
+      "expected": "Interactive controls meet a 44x44px minimum touch target on mobile"
+    },
+    {
+      "id": "TC-UX-COMMON-014",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P3",
+      "checklistRef": [4, 6, 9, 13],
+      "title": "Spacing rhythm and typography hierarchy are not cramped",
+      "appliesTo": "every screen",
+      "preconditions": ["Authenticated as any role"],
+      "steps": [
+        "Screenshot each screen and review padding on cards, tables, and buttons",
+        "Review title/body/metadata hierarchy and heading clipping"
+      ],
+      "expected": "Content has comfortable, token-aligned spacing; typography hierarchy is clear with no clipped headings"
+    }
+  ]
+}

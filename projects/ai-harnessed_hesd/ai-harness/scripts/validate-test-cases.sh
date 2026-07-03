@@ -9,7 +9,7 @@ require_harness_deps
 PRODUCT_ITEM_ID="${1:?product item id required}"
 ARTIFACT="$(test_case_artifact_abs "$PRODUCT_ITEM_ID")"
 
-VALID_TECHNIQUES="scenario-matrix flow-a flow-b flow-c module-integration http-contract rbac-negative pagination state-transition browser-journey concurrency boundary-error"
+VALID_TECHNIQUES="scenario-matrix flow-a flow-b flow-c module-integration http-contract rbac-negative pagination state-transition browser-journey concurrency boundary-error ui-accessibility ui-responsive ui-visual-state ui-form-ux ui-navigation"
 
 if [[ ! -f "$ARTIFACT" ]]; then
   echo "ERROR: test case artifact not found: $ARTIFACT" >&2
@@ -94,7 +94,7 @@ validate_structure() {
       (req(.; "title")),
       (req(.; "steps")),
       (req(.; "expected")),
-      (if (.category | IN("functional","non-functional","edge")) | not then "invalid category: \(.id)" else empty end),
+      (if (.category | IN("functional","non-functional","edge","ui-ux")) | not then "invalid category: \(.id)" else empty end),
       (if (.layer | IN($allowed[])) | not then "invalid layer: \(.id) (allowed: \($allowed | join(", ")))" else empty end),
       (if (.traceability | length) < 1 then "traceability empty: \(.id)" else empty end)
     )
@@ -222,6 +222,21 @@ validate_browser_required() {
   done < <(jq -r '.validation.browserRequiredWhen.tagMatches[]?' "$TESTGEN_CONFIG")
 }
 
+validate_ui_ux_required() {
+  local docs_include min_uiux count docs_list
+  docs_include="$(jq -r '.validation.uiUxRequiredWhen.docsInclude // empty' "$TESTGEN_CONFIG")"
+  [[ -z "$docs_include" ]] && return 0
+  min_uiux="$(jq -r '.validation.uiUxRequiredWhen.minUiUxCases // 1' "$TESTGEN_CONFIG")"
+  docs_list="$(resolved_docs_for_tag | tr '\n' ' ')"
+  if [[ "$docs_list" == *"$docs_include"* ]]; then
+    count="$(jq -r '[.cases[] | select(.category == "ui-ux")] | length' "$ARTIFACT")"
+    if [[ "$count" -lt "$min_uiux" ]]; then
+      FAILURES+=("uiUxRequiredWhen: ${PRODUCT_ITEM_ID} docs include ${docs_include} — requires ${min_uiux} ui-ux case(s), found ${count}")
+      PASS=false
+    fi
+  fi
+}
+
 validate_technique_policy() {
   local require_technique
   require_technique="$(jq -r '.validation.requireTechniqueField // true' "$TESTGEN_CONFIG")"
@@ -269,6 +284,7 @@ validate_traceability_match
 validate_allowed_layers
 validate_layer_policy
 validate_browser_required
+validate_ui_ux_required
 validate_technique_policy
 
 if [[ "$PASS" == true ]]; then

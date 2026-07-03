@@ -93,12 +93,24 @@ format_layer_policy_block() {
   fi
 
   if jq -e --arg tag "$tag" '
-    (.validation.browserRequiredWhen.tagMatches // [])[]
-    | select($tag | test(.))
+    (.validation.browserRequiredWhen.tagMatches // [])[] as $p
+    | select($tag | test($p))
   ' "$TESTGEN_CONFIG" >/dev/null 2>&1; then
     local min_browser
     min_browser="$(jq -r '.validation.browserRequiredWhen.minBrowserCases // 1' "$TESTGEN_CONFIG")"
     echo "- At least ${min_browser} browser case(s) (UI-facing tag)"
+  fi
+
+  local uiux_docs_include
+  uiux_docs_include="$(jq -r '.validation.uiUxRequiredWhen.docsInclude // empty' "$TESTGEN_CONFIG" 2>/dev/null || true)"
+  if [[ -n "$uiux_docs_include" ]]; then
+    local resolved_uiux
+    resolved_uiux="$(resolve_docs_for_requirement_tag "$tag" | tr '\n' ' ')"
+    if [[ "$resolved_uiux" == *"$uiux_docs_include"* ]]; then
+      local min_uiux
+      min_uiux="$(jq -r '.validation.uiUxRequiredWhen.minUiUxCases // 1' "$TESTGEN_CONFIG")"
+      echo "- At least ${min_uiux} ui-ux case(s) (category \`ui-ux\`, a \`ui-*\` technique — UI-facing tag per ${uiux_docs_include})"
+    fi
   fi
 
   local allowed_layers

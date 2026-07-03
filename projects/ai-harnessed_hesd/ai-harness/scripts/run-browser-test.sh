@@ -146,6 +146,13 @@ if slice_test_cases_current "$SLICE_ID"; then
   ' 2>/dev/null || true)"
 fi
 
+common_ui_ux_cases=""
+common_ui_ux_blocking=""
+if [[ "$(common_ui_ux_suite_enabled)" == "true" ]]; then
+  common_ui_ux_cases="$(format_common_ui_ux_suite_block 2>/dev/null || true)"
+  common_ui_ux_blocking="$(common_ui_ux_suite_blocking_priorities_json | jq -r 'join("/")' 2>/dev/null || echo "P0/P1")"
+fi
+
 WEB_PORT="$(aih_web_port)"
 API_PORT="${AIH_PREVIEW_API_PORT:-3001}"
 MODEL="$(get_model tester)"
@@ -155,7 +162,20 @@ build_phase_prompt() {
   local cases_block="$2"
   local phase_instruction="$3"
 
-  printf '%s\n\n%s\n\n%s\n\n%s\n\n%s\n\n%s\n\n%s\n\n%s\n\n%s\n\n%s\n\n%s\n\n%s\n\n%s\n' \
+  local common_suite_section=""
+  if [[ "$phase" != "retry" && -n "$common_ui_ux_cases" ]]; then
+    common_suite_section="## Common UI/UX suite (always executed — generic, product-wide)
+
+Run **every** case below against **every distinct screen/state** exercised in this pass, in addition to the slice's own browser cases. These are generic UI/UX checks — not tied to any requirement tag.
+
+- Report each as \`TC-UX-COMMON-NNN: PASS|FAIL|SKIP\` with brief evidence and a screenshot path.
+- Mark \`SKIP\` only when the case genuinely does not apply to any screen in this slice (e.g. no forms in scope) — never to avoid a defect.
+- **Gating:** a \`FAIL\` on a **${common_ui_ux_blocking:-P0/P1}** case blocks \`BROWSER_TEST_PASS\`. Lower-priority FAILs do not block on their own — log each as a \`UX-<slice-id>-NNN\` defect (advisory) per \`ai-harness/docs/ux-bug-logging.md\`.
+
+${common_ui_ux_cases}"
+  fi
+
+  printf '%s\n\n%s\n\n%s\n\n%s\n\n%s\n\n%s\n\n%s\n\n%s\n\n%s\n\n%s\n\n%s\n\n%s\n\n%s\n\n%s\n' \
     "$base_prompt" \
     "## Harness reminder
 
@@ -178,6 +198,7 @@ ${acceptance_tags:-_(none listed)_}" \
     "## Generated browser test cases (${phase} phase — mandatory checklist)
 
 ${cases_block:-_(no browser-layer cases in current artifacts for this slice — derive scenarios from acceptance tags, slice description, and docs above)_}" \
+    "${common_suite_section}" \
     "## Full test case artifact (reference)
 
 \`\`\`json

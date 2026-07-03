@@ -22,7 +22,8 @@
     "minCasesPerCategory": {
       "functional": 1,
       "non-functional": 0,
-      "edge": 0
+      "edge": 0,
+      "ui-ux": 0
     },
     "requireTraceabilityMatch": true,
     "requireTechniqueField": true,
@@ -95,6 +96,10 @@
         "^FR-3[0-6]$"
       ],
       "minBrowserCases": 1
+    },
+    "uiUxRequiredWhen": {
+      "docsInclude": "docs/ui-ux/09-page-list.md",
+      "minUiUxCases": 1
     }
   }
 }

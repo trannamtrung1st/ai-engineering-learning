@@ -15,6 +15,16 @@ Process guidance for the **browser test agent** when auditing rendered UI beyond
 
 After executing `layer: browser` cases (or during execution when a screenshot reveals an issue), run this checklist on **every distinct page/state** captured. Log defects that are **not** already covered by a failing `TC-*` line.
 
+### Two layers of UI/UX coverage
+
+| Source | Scope | How it runs |
+| --- | --- | --- |
+| **Common UI/UX suite** (`ai-harness/test-cases/common/ui-ux-suite.json`, `TC-UX-COMMON-*`) | Generic, product-wide checks (nav, home link, access-denied, login neutrality, contrast, responsive, focus, loading, outcome states) | Harness always appends it to the **full** browser phase; run against every screen. P0/P1 FAIL blocks; P2/P3 → advisory `UX-*` |
+| **Item-scoped `ui-ux` cases** (TestGen `category: ui-ux`, `ui-*` technique) | UI/UX quality for the specific screens a requirement renders | Bundled per-slice like other `layer: browser` cases |
+| **This skill's audit** | Anything neither suite nor item case already caught | Discretionary `UX-*` logging on every captured screen |
+
+Do not duplicate a defect across all three — report it once (prefer the most specific `TC-*` line; otherwise a `UX-*` log).
+
 ---
 
 ## Defect taxonomy

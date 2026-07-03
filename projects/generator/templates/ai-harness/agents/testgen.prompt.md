@@ -68,6 +68,13 @@ Use these techniques to decide **what** to cover — not just how many cases to 
 | UI journey | `browser-journey` | `browser` | Paginate, badge, form gating, table columns |
 | Concurrency / race | `concurrency` | `integration` | Parallel requests — capacity, dedupe |
 | Boundary / error code | `boundary-error` | `e2e` or `edge` category | Documented error codes, out-of-window |
+| Accessibility / keyboard | `ui-accessibility` | `browser` (`ui-ux`) | Focus order, visible focus ring, labels, keyboard operability |
+| Responsive layout | `ui-responsive` | `browser` (`ui-ux`) | 320px mobile + desktop — no overflow, clipping, or horizontal scroll |
+| Visual state coverage | `ui-visual-state` | `browser` (`ui-ux`) | Empty / loading / error / success states visually distinct |
+| Form UX | `ui-form-ux` | `browser` (`ui-ux`) | Inline validation, labels, disabled/submit feedback for this item's forms |
+| Navigation / entry | `ui-navigation` | `browser` (`ui-ux`) | Persistent nav, home link, back-to-home, access-denied for this item's routes |
+
+`ui-*` techniques produce `category: ui-ux` cases on the `browser` layer — they **complement** functional `browser-journey` cases (which stay `category: functional`), and are item-scoped to the screens this requirement renders. Generic, product-wide UI/UX checks (contrast, global nav, login neutrality) are covered by the always-run common suite (`ai-harness/test-cases/common/ui-ux-suite.json`) — do **not** duplicate those here.
 
 ## Output artifact schema
 
@@ -104,6 +111,7 @@ Write valid JSON matching `ai-harness/schemas/test-cases.schema.json`:
 | `functional` | Happy-path behavior for this product item |
 | `non-functional` | NFR constraints tied to this item |
 | `edge` | Boundary values, duplicate actions, out-of-window, concurrency, invalid input |
+| `ui-ux` | Item-scoped UI/UX quality for the screens this item renders — accessibility, responsive layout, visual states, form UX, navigation (always `layer: browser` with a `ui-*` technique) |
 
 For `NFR-*` tags, use `non-functional` and `edge` categories only — no synthetic `functional` case is required (harness `categoryPolicy` sets functional minimum to 0).
 
@@ -138,6 +146,7 @@ Confirm all that apply to this tag:
 - [ ] ≥1 `module-integration` case exercising DB/module boundary
 - [ ] ≥1 `http-contract` case with HTTP method, path, and status code
 - [ ] ≥1 `browser-journey` case when UI surfaces this behavior (lists, forms, badges)
+- [ ] ≥1 `ui-ux` case (category `ui-ux`, a `ui-*` technique) when this item renders UI — accessibility, responsive, visual-state, form-ux, or navigation as the screens warrant
 - [ ] ≥1 `rbac-negative` case when permissions doc restricts access
 - [ ] ≥1 `boundary-error` or `edge` category case for documented error/boundary
 - [ ] Tag-specific hints above satisfied when present

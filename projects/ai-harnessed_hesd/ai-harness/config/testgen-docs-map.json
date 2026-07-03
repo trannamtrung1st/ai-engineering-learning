@@ -59,6 +59,17 @@
         "rbac-negative: NFR-09 deny Student on GET /v1/audit-logs and out-of-scope Lecturer exports",
         "audit-completeness: NFR-13 verifies failed check-ins and manual corrections are queryable via GET /v1/audit-logs"
       ]
+    },
+    {
+      "match": "^(AC-(0[12]|1[3-7])|FR-(0[1-8]|10|11|14|15|16|19|20|24|25|27|28|29|30|32|36|37))$",
+      "docs": [
+        "docs/ui-ux/09-page-list.md"
+      ],
+      "coverageHints": [
+        "ui-ux: UI-facing tag (renders a page in 09-page-list.md) must ship >=1 category:ui-ux case (ui-accessibility / ui-responsive / ui-visual-state / ui-form-ux / ui-navigation) on the browser layer",
+        "ui-form-ux: check-in and admin setup/policy forms (FR-04/FR-15/FR-16/FR-24/FR-25) validate inline errors, disabled/submitting states, and success feedback",
+        "ui-visual-state: live roster and listings (AC-13/FR-19/FR-27..30) render loading, empty, and error states, not just the happy path"
+      ]
     }
   ],
   "prefixDefaults": {

@@ -47,6 +47,8 @@ check_json "$DOC_OUTLINES"
 check_json "${GEN_ROOT}/config/product-meta.schema.json"
 check_json "${GEN_ROOT}/schemas/step-backlog.schema.json"
 check_json "${GEN_ROOT}/schemas/docs-inventory.schema.json"
+check_json "${TEMPLATES_DIR}/ai-harness/test-cases/common/ui-ux-suite.json"
+check_json "${TEMPLATES_DIR}/ai-harness/schemas/ui-ux-suite.schema.json"
 
 gen_step "Self-check: backlog sanity"
 if [[ -f "$STEPS_BACKLOG" ]]; then

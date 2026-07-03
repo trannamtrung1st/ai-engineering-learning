@@ -2,6 +2,8 @@
 
 Structured visual QA for **frontend** and **test** slices. Run before `SLICE_DONE`. Screenshots are the **primary** evidence for contrast, padding, layout, hierarchy, and aesthetic craft; accessibility snapshots are for interaction debugging only.
 
+> This checklist is the **source** for the generic, always-run UI/UX suite at [`ai-harness/test-cases/common/ui-ux-suite.json`](../test-cases/common/ui-ux-suite.json). The browser tester executes that suite (`TC-UX-COMMON-*`) against every screen on each full verification pass; each case's `checklistRef` points back to the numbered items below. Item-scoped UI/UX cases (TestGen `category: ui-ux`) cover the specific screens a requirement renders.
+
 Agents must pass both **functional** and **aesthetic** verification. UI that works but looks generic, cramped, or unfinished should be fixed before completion or logged as a `UX-*` craft defect by the browser tester.
 
 **Authoritative specs:** [DESIGN.md](../../docs/ui-ux/DESIGN.md) · [design-system/](../../docs/ui-ux/design-system/) · [04-design-tokens.md](../../docs/ui-ux/04-design-tokens.md) · [05-common-ui-components.md](../../docs/ui-ux/05-common-ui-components.md) · [00-production-ui-quality-bar.md](../../docs/ui-ux/00-production-ui-quality-bar.md)
