@@ -165,6 +165,29 @@
       ],
       "expected": "SM-04 evaluation short-circuits at Unauthenticated as the first guard per validation order; afterState shows no Present/Late AttendanceRecord mutation and the API layer returns 401 with error.code Unauthenticated.",
       "edgeCase": true
+    },
+    {
+      "id": "TC-AC-06-009",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["AC-06", "FR-15", "NFR-14"],
+      "title": "Lecturer navigating to /login without returnUrl lands on lecturer home after authentication",
+      "preconditions": [
+        "Lecturer user account exists with valid credentials.",
+        "Browser profile has no active Attendly session.",
+        "Login URL is opened directly without a returnUrl query parameter."
+      ],
+      "steps": [
+        "Navigate to /login with no returnUrl query parameter.",
+        "Verify login page heading does not mention any role name (e.g. must not read 'Đăng nhập Giáo viên').",
+        "Enter valid Lecturer credentials and submit the login form.",
+        "Observe the URL the browser navigates to after successful authentication.",
+        "Inspect the nav chrome on the landing page."
+      ],
+      "expected": "Login page heading is a generic label such as 'Đăng nhập' with no role-specific copy. After successful authentication, browser navigates to /lecturer/sessions (Lecturer default home), not /check-in or any other student-scoped route. Nav chrome on the landing page shows only Lecturer-permitted items; no Student-only or Admin-only links are visible.",
+      "edgeCase": false
     }
   ]
 }

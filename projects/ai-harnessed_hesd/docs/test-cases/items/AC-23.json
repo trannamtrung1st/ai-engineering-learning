@@ -335,6 +335,29 @@
       ],
       "expected": "UI surfaces session open/close and export only for assigned scope; tampered foreign-section requests show access-denied feedback without previewing foreign-section attendance rows or partial export download.",
       "edgeCase": false
+    },
+    {
+      "id": "TC-AC-23-017",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["AC-23", "NFR-09", "FR-15"],
+      "title": "Student accessing /lecturer/sessions directly sees access-denied surface with home link; nav chrome shows no forbidden items",
+      "preconditions": [
+        "Student user is logged in with a valid session.",
+        "Lecturer session data exists in the database.",
+        "Student role lacks SessionControl.execute permission per permissions matrix."
+      ],
+      "steps": [
+        "As authenticated Student, observe the nav chrome — note all visible navigation links.",
+        "Navigate directly to /lecturer/sessions by typing the URL.",
+        "Inspect the rendered page for content and the presence of an access-denied surface.",
+        "Verify a recovery link is present on the rendered page.",
+        "Follow the recovery link and confirm it navigates to Student home."
+      ],
+      "expected": "Nav chrome (StaffLayout sidebar or any persistent navigation surface) contains no links to session control, attendance reports, admin setup, or any other route the Student role cannot access. Direct URL navigation to /lecturer/sessions renders a styled access-denied surface (FeedbackAlert variant danger with Neobrutalism 2px border and hard shadow) with a human-readable Vietnamese message such as 'Bạn không có quyền truy cập trang này'. A clearly visible 'Về trang chủ' link is present and navigates to /check-in. No session list data, lecturer names, or class section identifiers are rendered.",
+      "edgeCase": false
     }
   ]
 }

@@ -266,6 +266,28 @@
       ],
       "expected": "UI does not list unassigned sections; tampered export request shows access-denied feedback without previewing foreign-section attendance rows or partial export download.",
       "edgeCase": false
+    },
+    {
+      "id": "TC-AC-16-014",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["AC-16", "FR-27", "BR-19"],
+      "title": "Student direct URL to /reports/attendance shows styled access-denied surface with home link",
+      "preconditions": [
+        "Student user is logged in with a valid session.",
+        "Attendance report data exists in the database.",
+        "Student role lacks ReportView.read permission per permissions matrix."
+      ],
+      "steps": [
+        "As authenticated Student, navigate directly to /reports/attendance by typing the URL.",
+        "Inspect the rendered page — do not rely on nav chrome alone.",
+        "Check for a visible link or button that returns to Student home.",
+        "Verify no attendance report data, pagination, or student records from other users are displayed."
+      ],
+      "expected": "Page renders a styled access-denied surface (FeedbackAlert variant danger with Neobrutalism 2px border and hard shadow) containing a human-readable Vietnamese message such as 'Bạn không có quyền truy cập trang này'. A clearly visible 'Về trang chủ' link or button is present and navigates to /check-in or /me/history. No report rows, pagination totals, or other attendance data are rendered.",
+      "edgeCase": false
     }
   ]
 }

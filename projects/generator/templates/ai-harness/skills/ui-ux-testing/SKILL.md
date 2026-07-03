@@ -19,17 +19,21 @@ After executing `layer: browser` cases (or during execution when a screenshot re
 
 ## Defect taxonomy
 
-| Category | Look for | Example UX bug |
-| --- | --- | --- |
-| **Layout / responsive** | Overflow, clipped content, horizontal scroll on 320px viewport | Submit button below fold on narrow mobile width |
-| **Touch / interaction** | Targets &lt; 44×44 px, dead clicks, missing focus ring on desktop | Icon-only nav item 32px wide |
-| **Visual hierarchy** | Low contrast (&lt; 4.5:1), identical error/success styling, missing headings | All outcome states use same alert styling |
-| **Copy / i18n** | Wrong locale on user paths, raw API text, missing recovery CTA | Generic "Submit" on localized route |
-| **Forms** | Missing labels, toast vs inline misuse, validation on blur vs submit | Email error only in console, not UI |
-| **Navigation** | Forbidden links in chrome, dead-end pages, broken back | Wrong role sees privileged route in sidebar |
-| **Loading honesty** | Infinite spinner, layout shift, optimistic success before server | Success copy with spinner still visible |
-| **Craft** | Generic template UI, flat gray SaaS, undifferentiated cards | Interchangeable white cards, no signature moment |
-| **Aesthetic / style craft** | Token drift vs DESIGN.md, missing borders/elevation per design-system, wrong fonts | Flat borderless cards, default framework buttons, no outcome differentiation |
+| Category | Look for | Example UX bug | Min severity |
+| --- | --- | --- | --- |
+| **Layout / responsive** | Overflow, clipped content, horizontal scroll on 320px viewport | Submit button below fold on narrow mobile width | P2 |
+| **Touch / interaction** | Targets &lt; 44×44 px, dead clicks, missing focus ring on desktop | Icon-only nav item 32px wide | P1 |
+| **Visual hierarchy** | Low contrast (&lt; 4.5:1), identical error/success styling, missing headings | All outcome states use same alert styling | P2 |
+| **Copy / jargon** | Technical IDs, schema field names, requirement codes, internal slugs in visible UI text | Column header reads `item_id`; toast shows `AC-01 passed`; heading says `web-auth-session-pages` | **P1** — leaking internal state into the UI is always a blocking defect |
+| **Copy / i18n** | Wrong locale on user paths, raw API text, missing recovery CTA | Generic "Submit" on localized route | P2 |
+| **Forms** | Missing labels, toast vs inline misuse, validation on blur vs submit | Email error only in console, not UI | P2 |
+| **Entry flow** | Missing or empty home/landing page; login page with role-specific copy or heading; post-login redirect goes to wrong role's home | Login heading reads "Admin Login"; redirect after auth lands on wrong dashboard; home page is blank or loops | **P1** — the entry path is the first thing every user sees |
+| **Navigation** | No persistent nav surface on authenticated pages; home link absent; dead-end pages with no escape path; back-to-home unreachable without browser button; forbidden nav item visible to wrong role; forbidden nav item rendered as disabled rather than omitted | Role B sees "Admin Settings" link in sidebar; detail page has no breadcrumb or nav; home link missing from logged-in shell | **P1** for missing home link or forbidden link visible; **P2** for disabled-instead-of-hidden |
+| **RBAC — access denied** | Forbidden route renders crash, blank screen, or redirect to login instead of styled access-denied page; access-denied page has no home link | Navigating to `/admin` as a non-admin shows blank page or bounces to login with no explanation | **P1** — users must always know why they can't proceed and how to recover |
+| **Loading honesty** | Infinite spinner, layout shift, optimistic success before server | Success copy with spinner still visible | P2 |
+| **Craft — primary flow** | Generic template UI on a primary flow page that makes it hard to understand what to do; flat gray SaaS with zero visual differentiation; no intentional visual moment on the home page or core action screen | Home page is empty except a heading; primary action button is unstyled default | **P1** when the primary flow is visually indistinguishable or unclear; P2 for secondary views |
+| **Craft — secondary** | Undifferentiated cards, identical state styling, missing signature moment on non-critical views | Interchangeable white cards, no elevation difference | P2 |
+| **Aesthetic / style craft** | Token drift vs DESIGN.md, missing borders/elevation per design-system, wrong fonts | Flat borderless cards, default framework buttons, no outcome differentiation | P2 |
 
 Cross-reference [visual-design](../visual-design/SKILL.md) and the [ui-visual-verification checklist](../../docs/ui-visual-verification.md) for craft-specific FAIL criteria.
 
@@ -48,8 +52,8 @@ Cross-reference [visual-design](../visual-design/SKILL.md) and the [ui-visual-ve
 | Severity | UX examples |
 | --- | --- |
 | **P0** | Auth bypass via UI; data loss on form submit; success shown before server confirms |
-| **P1** | Core flow blocked (cannot submit, cannot navigate to required screen); forbidden link visible to wrong role; visual hierarchy so poor that the primary flow is hard to understand |
-| **P2** | Should-capability degraded; confusing but recoverable messaging; slow perceived load (&gt; 2s spinner); ugly but usable UI such as generic templates, flat gray tables, or missing signature moments |
+| **P1** | Core flow blocked (cannot submit, cannot navigate to required screen); forbidden nav link visible to wrong role; forbidden route shows no access-denied page; technical identifier (ID, code, field name) visible in user-facing text; login page has role-specific copy; post-login redirect goes to wrong role's home; authenticated page has no nav surface or no home link; home/landing page is empty or missing; primary flow page so visually generic the intended action is unclear |
+| **P2** | Should-capability degraded; confusing but recoverable messaging; slow perceived load (&gt; 2s spinner); forbidden nav item rendered as disabled instead of hidden; secondary views with generic template styling or missing signature moments; non-critical dead-end pages |
 | **P3** | Cosmetic misalignment; minor copy typo; non-blocking spacing issue |
 
 ---
@@ -86,4 +90,4 @@ Write structured bugs to the path specified in the browser test agent prompt (`u
 ## Related
 
 - [visual-design](../visual-design/SKILL.md) — design-system module obligations and style profile
-- [ui-visual-verification.md](../../docs/ui-visual-verification.md) — 15-point screenshot checklist
+- [ui-visual-verification.md](../../docs/ui-visual-verification.md) — 20-point screenshot checklist

@@ -1447,6 +1447,84 @@
           "source": "harness"
         }
       ]
+    },
+    {
+      "id": "web-auth-role-redirect",
+      "passes": false,
+      "priority": 29,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": [
+        "AC-06",
+        "FR-15",
+        "NFR-14"
+      ],
+      "docs": [
+        "docs/technical/01-roles-permissions.md",
+        "docs/ui-ux/10-user-flows.md",
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/00-production-ui-quality-bar.md",
+        "ai-harness/skills/visual-design/SKILL.md"
+      ],
+      "description": "Update LoginPage.tsx to perform role-based default redirects when no returnUrl is present. After successful authentication, read the resolved role from the JWT/session and navigate to the role's configured default route: Student → /check-in, Lecturer/DepartmentAdmin → /lecturer/sessions, AcademicAdmin → /admin/terms, ITAdmin/SystemAuditor → /audit/logs. Update the router index route from /showcase to a role-aware redirect: authenticated users go to their role home, unauthenticated users go to /login. Login page heading must be a generic 'Đăng nhập' — no role-specific copy.",
+      "completionArtifacts": [
+        "apps/web/src/routes/pages/LoginPage.tsx",
+        "apps/web/src/lib/auth/auth-gate.ts",
+        "apps/web/src/routes/router.tsx"
+      ],
+      "testRequirements": {
+        "unit": [
+          "apps/web/src/lib/auth/auth-gate.test.ts"
+        ],
+        "component": [
+          "apps/web/src/routes/pages/LoginPage.test.tsx"
+        ],
+        "acceptanceTags": [
+          "AC-06",
+          "FR-15",
+          "NFR-14"
+        ]
+      }
+    },
+    {
+      "id": "web-access-denied-breadcrumb-polish",
+      "passes": false,
+      "priority": 30,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": [
+        "AC-16",
+        "AC-23",
+        "FR-15",
+        "FR-33"
+      ],
+      "docs": [
+        "docs/ui-ux/06-app-layout-components.md",
+        "docs/technical/01-roles-permissions.md",
+        "docs/ui-ux/00-production-ui-quality-bar.md",
+        "docs/ui-ux/design-system/alerts.md",
+        "ai-harness/skills/visual-design/SKILL.md"
+      ],
+      "description": "Three deliverables: (1) Create a reusable AccessDeniedSection component styled with Neobrutalism FeedbackAlert variant=danger (2px black border, hard-offset shadow, #FFDB33 CTA) containing a human-readable Vietnamese message and a 'Về trang chủ' link back to the current role's home. Replace all inline access-denied FeedbackAlert blocks in AttendanceReportPage, AuditLogPage, LecturerSessionsListPage, and any other pages that use canAccess* guards, with this component. (2) Implement breadcrumb rows in TopContextHeader for all deep routes (/lecturer/sessions/{id}, /admin/terms/{id}, /me/history) per spec in docs/ui-ux/06-app-layout-components.md; first breadcrumb segment links to section home. (3) Verify every deep page has a functional back path via breadcrumb first segment or sidebar home link — no browser-back-only dead ends.",
+      "completionArtifacts": [
+        "apps/web/src/components/ui/AccessDeniedSection.tsx",
+        "apps/web/src/components/layout/TopContextHeader.tsx",
+        "apps/web/src/routes/pages/AttendanceReportPage.tsx",
+        "apps/web/src/routes/pages/AuditLogPage.tsx",
+        "apps/web/src/routes/pages/LecturerSessionsListPage.tsx"
+      ],
+      "testRequirements": {
+        "component": [
+          "apps/web/src/components/ui/AccessDeniedSection.test.tsx",
+          "apps/web/src/components/layout/TopContextHeader.test.tsx"
+        ],
+        "acceptanceTags": [
+          "AC-16",
+          "AC-23",
+          "FR-15",
+          "FR-33"
+        ]
+      }
     }
   ]
 }

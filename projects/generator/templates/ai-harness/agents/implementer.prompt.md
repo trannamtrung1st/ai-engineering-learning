@@ -109,6 +109,11 @@ After each capture, verify in the screenshot (not snapshot-only) per `ai-harness
 | 13 | Whitespace rhythm | Cramped sections, cards, or toolbars |
 | 14 | Listing toolbar alignment | Search, filters, sort, pagination misaligned |
 | 15 | Focus / active nav | Wrong sidebar highlight; missing focus on interactive elements |
+| 16 | Navigation surface + home link | Authenticated page missing persistent nav or home link |
+| 17 | Login page neutrality | Login heading/copy contains role name; post-login lands on wrong page |
+| 18 | Back-to-home | Any page has no clickable path back to home (no nav logo, breadcrumb, or home item) |
+| 19 | No forbidden nav items | Nav renders links to routes the current role cannot access; forbidden items are disabled rather than absent |
+| 20 | Copy hygiene | User-visible text contains technical IDs, schema field names, requirement codes, or internal slugs |
 
 Any FAIL → fix code → re-screenshot before `SLICE_DONE`.
 
