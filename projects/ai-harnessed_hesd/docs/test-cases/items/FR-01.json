@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-01",
   "version": 1,
-  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
-  "generatedAt": "2026-07-02T10:37:34Z",
+  "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
+  "generatedAt": "2026-07-03T04:23:00Z",
   "cases": [
     {
       "id": "TC-FR-01-001",
@@ -215,7 +215,7 @@
       "title": "Academic Admin browser journey on PG-07 terms list and FRM-02 create form",
       "preconditions": [
         "AcademicAdmin is logged in on desktop Chromium.",
-        "Admin setup navigation exposes Terms page at /admin/terms."
+        "Admin setup navigation exposes Terms page at /admin/terms (AcademicAdmin home hub)."
       ],
       "steps": [
         "Navigate to /admin/terms and verify TableToolbar and DataTable render with term columns (code, name, start date, end date, active status).",
@@ -224,6 +224,50 @@
         "Confirm the new term row appears in the list without full page reload if SPA routing applies."
       ],
       "expected": "PG-07 displays paginated term list with expected columns; FRM-02 create flow succeeds and the new term is visible in the table with correct active badge/state.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-01-012",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["FR-01"],
+      "title": "PG-07 terms listing renders distinct loading, empty, no-results, error, and list states",
+      "preconditions": [
+        "AcademicAdmin is logged in on desktop AdminLayout shell.",
+        "Fixtures can produce empty term list, slow GET /v1/terms response, fetch error, filtered zero-match, and populated term list."
+      ],
+      "steps": [
+        "Navigate to /admin/terms (PG-07) with no terms in institution scope and observe empty state with create CTA.",
+        "Reload with throttled GET /v1/terms and confirm loading skeleton or table shimmer is visible before rows render.",
+        "Apply search or active filter yielding zero matches and observe no-results state with clear-filters affordance.",
+        "Simulate terms list API failure and observe error state with FeedbackAlert and retry control.",
+        "Restore successful fetch and confirm list state shows DataTable with pagination, active badge, and TableToolbar filters per 09-page-list §8."
+      ],
+      "expected": "PG-07 displays visually distinct loading, empty, no-results, error, and list states per NFR-UI-07 and 12-ui-states §6.1; populated list includes code, name, dates, and active status with server pagination.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-01-013",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-form-ux",
+      "priority": "P1",
+      "traceability": ["FR-01"],
+      "title": "FRM-02 term create form shows inline validation, submitting disable, and success feedback",
+      "preconditions": [
+        "AcademicAdmin is logged in on /admin/terms (PG-07).",
+        "Create term modal or side form (FRM-02) is open."
+      ],
+      "steps": [
+        "Submit FRM-02 with empty required fields and observe inline errors on blur or submit with focus moved to the first invalid field.",
+        "Enter endDate before startDate and observe field-level validation error before submit.",
+        "Fill valid code, name, startDate, endDate, and isActive; submit and observe submitting state disables the submit control with inline spinner.",
+        "On successful POST /v1/terms observe success toast or inline success feedback and form close without ambiguous intermediate state.",
+        "Reopen create with duplicate term code and observe server conflict mapped to the code field or a form-level alert per FR-VAL-03."
+      ],
+      "expected": "FRM-02 enforces inline validation with explicit labels, disabled submitting state during save, and clear success feedback; server validation errors map to offending fields without silent failure.",
       "edgeCase": false
     }
   ]
