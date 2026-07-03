@@ -3,11 +3,11 @@
 **Product:** Attendly (*Smart Campus Attendance*)  
 **Domain:** Digital campus attendance and class-session check-in for universities and schools  
 **Authoritative visual spec:** [DESIGN.md](./DESIGN.md)  
-**Related docs:** [01-design-overview.md](./01-design-overview.md) · [05-common-ui-components.md](./05-common-ui-components.md) · [06-app-layout-components.md](./06-app-layout-components.md) · [07-domain-specific-components.md](./07-domain-specific-components.md) · [08-forms-validation-ux.md](./08-forms-validation-ux.md) · [../brds/03-functional-requirements.md](../brds/03-functional-requirements.md) · [../technical/01-roles-permissions.md](../technical/01-roles-permissions.md) · [../technical/05-api-design.md](../technical/05-api-design.md)
+**Related docs:** [01-design-overview.md](./01-design-overview.md) · [05-common-ui-components.md](./05-common-ui-components.md) · [06-app-layout-components.md](./06-app-layout-components.md) · [07-domain-specific-components.md](./07-domain-specific-components.md) · [08-forms-validation-ux.md](./08-forms-validation-ux.md) · [10-user-flows.md](./10-user-flows.md) · [../brds/03-functional-requirements.md](../brds/03-functional-requirements.md) · [../technical/01-roles-permissions.md](../technical/01-roles-permissions.md) · [../technical/05-api-design.md](../technical/05-api-design.md)
 
 ## 1. Purpose and scope
 
-This document is the **canonical page/route inventory** for Attendly MVP. Each entry defines route intent, primary actor(s), role scope, primary action, key states, backing API, and domain components. The per-route **search / filter / sort / pagination matrix** in §5 is the source that [14-listing-pages-search-filter-sort.md](./14-listing-pages-search-filter-sort.md) §0 derives from.
+This document is the **canonical page/route inventory** for Attendly MVP. Each entry defines route intent, primary actor(s), role scope, primary action, key states, backing API, and domain components. §2 documents each role's **home / landing hub** and the **navigation entry points** that start user flows. The per-route **search / filter / sort / pagination matrix** in §8 is the source that [14-listing-pages-search-filter-sort.md](./14-listing-pages-search-filter-sort.md) §0 derives from.
 
 ### 1.1 Conventions
 
@@ -15,20 +15,87 @@ This document is the **canonical page/route inventory** for Attendly MVP. Each e
 - Every page has one unambiguous primary action (`FR-UI-01`) and required empty/loading/error states for listings (`NFR-UI-07`).
 - Access is gated by RBAC from [01-roles-permissions.md](../technical/01-roles-permissions.md); unauthorized routes present explicit permission feedback without data leakage (`AC-UI-09`).
 - Student routes use a minimal mobile-first shell; staff routes use the persistent app shell from [06-app-layout-components.md](./06-app-layout-components.md).
+- Each role has a **home hub** (default post-login landing) reachable from the persistent nav surface on every authenticated page.
 
 ### 1.2 Route group overview
 
-| Group | Route prefix | Primary actors | Surface |
-| --- | --- | --- | --- |
-| Auth & entry | `/login`, `/check-in` entry | All / Student | — |
-| Student | `/me/*` | Student | SUR-01 |
-| Lecturer | `/lecturer/*` | Lecturer | SUR-02, SUR-03 |
-| Admin setup | `/admin/*` | AcademicAdmin, DepartmentAdmin | SUR-04 |
-| Reporting & audit | `/reports/*`, `/audit/*` | Lecturer/Admin/Auditor | SUR-05 |
+| Group | Route prefix | Primary actors | Surface | Home hub |
+| --- | --- | --- | --- | --- |
+| Auth & entry | `/login`, `/check-in` entry | All / Student | — | — |
+| Student | `/check-in`, `/me/*` | Student | SUR-01 | `/check-in` (PG-02) |
+| Lecturer | `/lecturer/*` | Lecturer | SUR-02, SUR-03 | `/lecturer/sessions` (PG-04) |
+| Admin setup | `/admin/*` | AcademicAdmin, DepartmentAdmin | SUR-04 | `/admin/terms` (PG-07) |
+| Reporting & audit | `/reports/*`, `/audit/*` | Lecturer/Admin/Auditor | SUR-05 | `/reports/attendance` (PG-13) or `/audit/logs` (PG-15) by role |
 
 ---
 
-## 2. Auth and entry pages
+## 2. Home and navigation
+
+Each authenticated role lands on a **home hub** after login (or after `returnUrl` handling). The home hub is the navigation anchor for that role's experience — reachable from every other page via the persistent nav surface (`SidebarNav` or `StudentLayout` mobile shell) per [06-app-layout-components.md](./06-app-layout-components.md).
+
+### 2.1 Home / landing hubs per role
+
+Post-login redirect targets align with [01-roles-permissions.md](../technical/01-roles-permissions.md) and [10-user-flows.md](./10-user-flows.md) FLOW-14. When `returnUrl` is present, prefer it over the defaults below.
+
+| Role | Home route | Page | Layout | Minimum hub content | Primary flows |
+| --- | --- | --- | --- | --- | --- |
+| Student | `/check-in` | PG-02 | `LAY-01` / `StudentLayout` | QR scan prompt; recent attendance summary | [FLOW-01](./10-user-flows.md#21-flow-01--student-qr-check-in-happy-path), [FLOW-04](./10-user-flows.md#24-flow-04--student-attendance-history) |
+| Lecturer | `/lecturer/sessions` | PG-04 | `LAY-02` / `StaffLayout` | Today's and upcoming scheduled sessions list | [FLOW-05](./10-user-flows.md#31-flow-05--open-session-and-display-qr), [FLOW-06](./10-user-flows.md#32-flow-06--monitor-live-roster) |
+| DepartmentAdmin | `/lecturer/sessions` | PG-04 | `LAY-02` / `StaffLayout` | Scoped session list (department) | FLOW-05, [FLOW-12](./10-user-flows.md#44-flow-12--attendance-report-and-export) |
+| AcademicAdmin | `/admin/terms` | PG-07 | `LAY-03` / `AdminLayout` | Active term overview; quick links to sections and policies | [FLOW-09](./10-user-flows.md#41-flow-09--academic-structure-setup), [FLOW-11](./10-user-flows.md#43-flow-11--attendance-policy-configuration) |
+| ITAdmin | `/audit/logs` | PG-15 | `LAY-04` / `StaffLayout` | Recent audit log entries with status indicators | [FLOW-13](./10-user-flows.md#45-flow-13--audit-log-review) |
+| SystemAuditor | `/audit/logs` | PG-15 | `LAY-04` / `StaffLayout` | Recent audit log entries (read-only) | FLOW-13 |
+
+Home hubs are **not** listing-matrix routes unless they also appear in §8 (e.g. PG-04, PG-07, PG-15). They must still expose at least one live data surface (summary count, recent list, or status overview) — not an empty shell or redirect loop.
+
+### 2.2 Navigation entry points
+
+The persistent nav surface lists only routes the current role may access (`AC-UI-09`). Each item is an entry point into one or more user flows from [10-user-flows.md](./10-user-flows.md). The **home item** is always the first nav entry for that role.
+
+#### Student — `StudentLayout` mobile shell
+
+| Nav label (vi-VN) | Route | Page | Starts flow(s) |
+| --- | --- | --- | --- |
+| Trang chủ | `/check-in` | PG-02 | FLOW-01, FLOW-02, FLOW-03 |
+| Lịch sử điểm danh | `/me/attendance` | PG-03 | FLOW-04 |
+
+#### Lecturer / DepartmentAdmin — `StaffLayout` `SidebarNav`
+
+| Nav label (vi-VN) | Route | Page | Starts flow(s) | Role gate |
+| --- | --- | --- | --- | --- |
+| Phiên học *(home)* | `/lecturer/sessions` | PG-04 | FLOW-05 → PG-05, PG-06 | Lecturer, DepartmentAdmin |
+| Báo cáo điểm danh | `/reports/attendance` | PG-13 | FLOW-12 → PG-14 export dialog | Lecturer (scoped), DepartmentAdmin, AcademicAdmin, SystemAuditor |
+| Nhật ký kiểm toán | `/audit/logs` | PG-15 | FLOW-13 | AcademicAdmin, ITAdmin, SystemAuditor |
+
+Session detail routes (`PG-05`, `PG-06`) are reached from PG-04 row actions, not as top-level nav items. Deep routes require breadcrumb orientation via `TopContextHeader` (`FR-LAY-05`).
+
+#### AcademicAdmin — `AdminLayout` `SidebarNav`
+
+| Nav label (vi-VN) | Route | Page | Starts flow(s) |
+| --- | --- | --- | --- |
+| Học kỳ *(home)* | `/admin/terms` | PG-07 | FLOW-09 |
+| Khóa học | `/admin/courses` | PG-08 | FLOW-09 |
+| Lớp học phần | `/admin/class-sections` | PG-09 | FLOW-09 → PG-10 enrollment |
+| Phòng học | `/admin/rooms` | PG-11 | FLOW-09 |
+| Chính sách điểm danh | `/admin/policies` | PG-12 | FLOW-11 |
+
+Enrollment import (PG-10) is a secondary route from PG-09 row actions, not a top-level nav item.
+
+#### ITAdmin / SystemAuditor — `StaffLayout` `SidebarNav`
+
+| Nav label (vi-VN) | Route | Page | Starts flow(s) |
+| --- | --- | --- | --- |
+| Nhật ký kiểm toán *(home)* | `/audit/logs` | PG-15 | FLOW-13 |
+
+Navigation rules:
+
+- **Home link always visible** — first nav item or linked product logo on every authenticated page.
+- **RBAC omission** — nav items for forbidden routes are absent from rendered output, not disabled (`AC-UI-09`).
+- **No dead ends** — detail, modal, and outcome pages provide breadcrumb, close, or home recovery per [06-app-layout-components.md](./06-app-layout-components.md) §6.
+
+---
+
+## 3. Auth and entry pages
 
 ### PG-01 — Login
 
@@ -58,7 +125,7 @@ Unauthenticated access redirects to PG-01 and returns here after login (`FR-15`)
 
 ---
 
-## 3. Student pages
+## 4. Student pages
 
 ### PG-03 — My attendance history
 
@@ -76,7 +143,7 @@ Strictly self-scoped; no export affordance, no other students' data.
 
 ---
 
-## 4. Lecturer pages
+## 5. Lecturer pages
 
 ### PG-04 — Lecturer session list
 
@@ -120,7 +187,7 @@ Realtime updates preserve scroll/selection (`NFR-UI-06`).
 
 ---
 
-## 5. Admin setup pages
+## 6. Admin setup pages
 
 Admin management pages are the primary listing surfaces and all use `TableToolbar` + `DataTable` per [05-common-ui-components.md](./05-common-ui-components.md).
 
@@ -192,7 +259,7 @@ Admin management pages are the primary listing surfaces and all use `TableToolba
 
 ---
 
-## 6. Reporting and audit pages
+## 7. Reporting and audit pages
 
 ### PG-13 — Attendance reports
 
@@ -229,7 +296,7 @@ Admin management pages are the primary listing surfaces and all use `TableToolba
 
 ---
 
-## 7. Listing search / filter / sort / pagination matrix
+## 8. Listing search / filter / sort / pagination matrix
 
 This matrix is the **source of truth** for listing behavior; [14-listing-pages-search-filter-sort.md](./14-listing-pages-search-filter-sort.md) §0 derives its per-route matrix from this table. Query parameters align with [05-api-design.md](../technical/05-api-design.md) §2.5 (`page`, `pageSize`, `sortBy`, `sortOrder`, `search`, `from`, `to`). All filters resolve **after** role-scope authorization (`BR-18`, `BR-19`).
 
@@ -257,10 +324,11 @@ Matrix rules:
 
 ---
 
-## 8. Page-to-requirement traceability
+## 9. Page-to-requirement traceability
 
 | Page group | FR | BR | AC / NFR |
 | --- | --- | --- | --- |
+| Home & navigation | `FR-15`, `FR-36` | `BR-19` | `AC-UI-01`, `AC-UI-09`, `NFR-LAY-01` to `NFR-LAY-06` |
 | Auth & check-in | `FR-15`, `FR-16`, `FR-36` | `BR-05` to `BR-12` | `AC-UI-01` to `AC-UI-03` |
 | Lecturer session/roster | `FR-07`, `FR-08`, `FR-11`, `FR-14`, `FR-19`, `FR-20` | `BR-01` to `BR-04`, `BR-14` | `AC-01`, `AC-02`, `AC-13`, `AC-UI-04` to `AC-UI-06` |
 | Admin setup | `FR-01` to `FR-06`, `FR-24`, `FR-25` | `BR-06`, `BR-19` | `AC-UI-07` |
@@ -269,7 +337,7 @@ Matrix rules:
 
 ---
 
-## 9. Future consideration
+## 10. Future consideration
 
 - Cross-term analytics dashboard route for academic leadership.
 - Department-admin exception queue route for pending disputes.

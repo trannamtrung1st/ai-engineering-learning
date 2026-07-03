@@ -19,6 +19,8 @@ Harness skill for **Neobrutalism** visual implementation. Product specs live in 
 | Visual direction | [docs/ui-ux/01-design-overview.md](../../../docs/ui-ux/01-design-overview.md) |
 | Quality gate | [docs/ui-ux/00-production-ui-quality-bar.md](../../../docs/ui-ux/00-production-ui-quality-bar.md) |
 | Component contracts | [docs/ui-ux/05-common-ui-components.md](../../../docs/ui-ux/05-common-ui-components.md), [06-app-layout-components.md](../../../docs/ui-ux/06-app-layout-components.md) |
+| Page inventory, home hubs, nav entry points | [docs/ui-ux/09-page-list.md](../../../docs/ui-ux/09-page-list.md) |
+| User flows | [docs/ui-ux/10-user-flows.md](../../../docs/ui-ux/10-user-flows.md) |
 | Listing page matrix | [docs/ui-ux/14-listing-pages-search-filter-sort.md](../../../docs/ui-ux/14-listing-pages-search-filter-sort.md) |
 
 Never bypass tokens, accessibility, or business rules for aesthetics.

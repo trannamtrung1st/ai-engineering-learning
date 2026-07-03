@@ -38,6 +38,7 @@ When writing UI/UX outputs:
 - **[14-listing-pages-search-filter-sort.md](../../docs/ui-ux/14-listing-pages-search-filter-sort.md)** §0: per-route matrix for search, filter, sort, and pagination derived from [09-page-list.md](../../docs/ui-ux/09-page-list.md)
 - **[05-common-ui-components.md](../../docs/ui-ux/05-common-ui-components.md):** document `TableToolbar` for privileged and listing routes
 - **[03-design-system-basics.md](../../docs/ui-ux/03-design-system-basics.md):** include the precedence chain and link to DESIGN.md when present
+- **[09-page-list.md](../../docs/ui-ux/09-page-list.md):** include a **Home / landing** subsection documenting each role's home hub (default post-login route from [01-roles-permissions.md](../../docs/technical/01-roles-permissions.md)) and a **Navigation** subsection mapping persistent nav-surface entry points (from [06-app-layout-components.md](../../docs/ui-ux/06-app-layout-components.md)) to the user flows they start (cross-link [10-user-flows.md](../../docs/ui-ux/10-user-flows.md))
 
 ## Step
 

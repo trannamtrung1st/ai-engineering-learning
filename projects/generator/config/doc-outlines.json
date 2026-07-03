@@ -184,7 +184,8 @@
   },
   "docs/ui-ux/09-page-list.md": {
     "requiredHeadings": ["Page"],
-    "minLines": 25
+    "requiredSubstrings": ["Home", "Navigation"],
+    "minLines": 40
   },
   "docs/ui-ux/10-user-flows.md": {
     "requiredHeadings": ["Flow"],

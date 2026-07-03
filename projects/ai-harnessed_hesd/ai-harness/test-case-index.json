@@ -3,44 +3,44 @@
   "docFingerprint": null,
   "tags": {
     "AC-01": {
-      "current": true,
-      "docFingerprint": "sha256:9ba57023d6454a237bfa8bfdee6f7fe0224827f1bfbb80b8ab5fb692431c9b66",
-      "generatedAt": "2026-07-03T03:40:47Z"
+      "current": false,
+      "docFingerprint": "sha256:a297e0ef15d9279cea05e3e0486a1edbcbff0f8ff12f9ba243a6f6c60b73f5f1",
+      "generatedAt": null
     },
     "AC-02": {
-      "current": true,
-      "docFingerprint": "sha256:9ba57023d6454a237bfa8bfdee6f7fe0224827f1bfbb80b8ab5fb692431c9b66",
-      "generatedAt": "2026-07-03T03:42:41Z"
+      "current": false,
+      "docFingerprint": "sha256:a297e0ef15d9279cea05e3e0486a1edbcbff0f8ff12f9ba243a6f6c60b73f5f1",
+      "generatedAt": null
     },
     "AC-04": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
-      "generatedAt": "2026-07-03T03:45:55Z"
+      "generatedAt": null
     },
     "AC-05": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
-      "generatedAt": "2026-07-03T03:46:37Z"
+      "generatedAt": null
     },
     "AC-06": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
-      "generatedAt": "2026-07-03T03:47:33Z"
+      "generatedAt": null
     },
     "AC-07": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
-      "generatedAt": "2026-07-03T03:48:19Z"
+      "generatedAt": null
     },
     "AC-08": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
-      "generatedAt": "2026-07-03T03:49:02Z"
+      "generatedAt": null
     },
     "AC-09": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
-      "generatedAt": "2026-07-03T03:50:06Z"
+      "generatedAt": null
     },
     "AC-10": {
       "current": false,
@@ -59,27 +59,27 @@
     },
     "AC-13": {
       "current": false,
-      "docFingerprint": "sha256:9ba57023d6454a237bfa8bfdee6f7fe0224827f1bfbb80b8ab5fb692431c9b66",
+      "docFingerprint": "sha256:a297e0ef15d9279cea05e3e0486a1edbcbff0f8ff12f9ba243a6f6c60b73f5f1",
       "generatedAt": null
     },
     "AC-14": {
       "current": false,
-      "docFingerprint": "sha256:9ba57023d6454a237bfa8bfdee6f7fe0224827f1bfbb80b8ab5fb692431c9b66",
+      "docFingerprint": "sha256:a297e0ef15d9279cea05e3e0486a1edbcbff0f8ff12f9ba243a6f6c60b73f5f1",
       "generatedAt": null
     },
     "AC-15": {
       "current": false,
-      "docFingerprint": "sha256:9ba57023d6454a237bfa8bfdee6f7fe0224827f1bfbb80b8ab5fb692431c9b66",
+      "docFingerprint": "sha256:a297e0ef15d9279cea05e3e0486a1edbcbff0f8ff12f9ba243a6f6c60b73f5f1",
       "generatedAt": null
     },
     "AC-16": {
       "current": false,
-      "docFingerprint": "sha256:9ba57023d6454a237bfa8bfdee6f7fe0224827f1bfbb80b8ab5fb692431c9b66",
+      "docFingerprint": "sha256:a297e0ef15d9279cea05e3e0486a1edbcbff0f8ff12f9ba243a6f6c60b73f5f1",
       "generatedAt": null
     },
     "AC-17": {
       "current": false,
-      "docFingerprint": "sha256:9ba57023d6454a237bfa8bfdee6f7fe0224827f1bfbb80b8ab5fb692431c9b66",
+      "docFingerprint": "sha256:a297e0ef15d9279cea05e3e0486a1edbcbff0f8ff12f9ba243a6f6c60b73f5f1",
       "generatedAt": null
     },
     "AC-18": {
@@ -119,27 +119,27 @@
     },
     "FR-01": {
       "current": false,
-      "docFingerprint": "sha256:44d0d7a039fe779825b3210c195fc818bbc884c36bec3b27800f2297d7b42ad4",
+      "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
       "generatedAt": null
     },
     "FR-04": {
       "current": false,
-      "docFingerprint": "sha256:44d0d7a039fe779825b3210c195fc818bbc884c36bec3b27800f2297d7b42ad4",
+      "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
       "generatedAt": null
     },
     "FR-06": {
       "current": false,
-      "docFingerprint": "sha256:44d0d7a039fe779825b3210c195fc818bbc884c36bec3b27800f2297d7b42ad4",
+      "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
       "generatedAt": null
     },
     "FR-07": {
       "current": false,
-      "docFingerprint": "sha256:44d0d7a039fe779825b3210c195fc818bbc884c36bec3b27800f2297d7b42ad4",
+      "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
       "generatedAt": null
     },
     "FR-08": {
       "current": false,
-      "docFingerprint": "sha256:44d0d7a039fe779825b3210c195fc818bbc884c36bec3b27800f2297d7b42ad4",
+      "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
       "generatedAt": null
     },
     "FR-09": {
@@ -149,22 +149,22 @@
     },
     "FR-11": {
       "current": false,
-      "docFingerprint": "sha256:44d0d7a039fe779825b3210c195fc818bbc884c36bec3b27800f2297d7b42ad4",
+      "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
       "generatedAt": null
     },
     "FR-14": {
       "current": false,
-      "docFingerprint": "sha256:44d0d7a039fe779825b3210c195fc818bbc884c36bec3b27800f2297d7b42ad4",
+      "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
       "generatedAt": null
     },
     "FR-15": {
       "current": false,
-      "docFingerprint": "sha256:44d0d7a039fe779825b3210c195fc818bbc884c36bec3b27800f2297d7b42ad4",
+      "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
       "generatedAt": null
     },
     "FR-16": {
       "current": false,
-      "docFingerprint": "sha256:44d0d7a039fe779825b3210c195fc818bbc884c36bec3b27800f2297d7b42ad4",
+      "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
       "generatedAt": null
     },
     "FR-18": {
@@ -174,12 +174,12 @@
     },
     "FR-19": {
       "current": false,
-      "docFingerprint": "sha256:44d0d7a039fe779825b3210c195fc818bbc884c36bec3b27800f2297d7b42ad4",
+      "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
       "generatedAt": null
     },
     "FR-20": {
       "current": false,
-      "docFingerprint": "sha256:44d0d7a039fe779825b3210c195fc818bbc884c36bec3b27800f2297d7b42ad4",
+      "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
       "generatedAt": null
     },
     "FR-21": {
@@ -199,12 +199,12 @@
     },
     "FR-24": {
       "current": false,
-      "docFingerprint": "sha256:44d0d7a039fe779825b3210c195fc818bbc884c36bec3b27800f2297d7b42ad4",
+      "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
       "generatedAt": null
     },
     "FR-25": {
       "current": false,
-      "docFingerprint": "sha256:44d0d7a039fe779825b3210c195fc818bbc884c36bec3b27800f2297d7b42ad4",
+      "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
       "generatedAt": null
     },
     "FR-26": {
@@ -214,22 +214,22 @@
     },
     "FR-27": {
       "current": false,
-      "docFingerprint": "sha256:44d0d7a039fe779825b3210c195fc818bbc884c36bec3b27800f2297d7b42ad4",
+      "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
       "generatedAt": null
     },
     "FR-28": {
       "current": false,
-      "docFingerprint": "sha256:44d0d7a039fe779825b3210c195fc818bbc884c36bec3b27800f2297d7b42ad4",
+      "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
       "generatedAt": null
     },
     "FR-29": {
       "current": false,
-      "docFingerprint": "sha256:44d0d7a039fe779825b3210c195fc818bbc884c36bec3b27800f2297d7b42ad4",
+      "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
       "generatedAt": null
     },
     "FR-30": {
       "current": false,
-      "docFingerprint": "sha256:44d0d7a039fe779825b3210c195fc818bbc884c36bec3b27800f2297d7b42ad4",
+      "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
       "generatedAt": null
     },
     "FR-31": {
@@ -239,7 +239,7 @@
     },
     "FR-32": {
       "current": false,
-      "docFingerprint": "sha256:44d0d7a039fe779825b3210c195fc818bbc884c36bec3b27800f2297d7b42ad4",
+      "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
       "generatedAt": null
     },
     "FR-33": {
@@ -254,7 +254,7 @@
     },
     "FR-37": {
       "current": false,
-      "docFingerprint": "sha256:44d0d7a039fe779825b3210c195fc818bbc884c36bec3b27800f2297d7b42ad4",
+      "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
       "generatedAt": null
     },
     "BR-01": {
