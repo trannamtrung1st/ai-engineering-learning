@@ -2,7 +2,7 @@
   "productItemId": "AC-07",
   "version": 1,
   "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
-  "generatedAt": "2026-07-02T10:15:00Z",
+  "generatedAt": "2026-07-03T03:47:00Z",
   "cases": [
     {
       "id": "TC-AC-07-001",
@@ -167,6 +167,28 @@
         "Verify absence of retry CTA and presence of contact-admin guidance per FLOW-02."
       ],
       "expected": "UI renders failure-not-enrolled danger alert with localized message (e.g. 'Bạn không thuộc lớp học phần này.'); no retry button is shown; student cannot reach success-present or success-late state.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-07-009",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["AC-07", "FR-17", "FR-22", "BR-06", "BR-23", "AC-18"],
+      "title": "NotEnrolled outcome renders distinct failure-not-enrolled visual state on PG-02",
+      "preconditions": [
+        "Student is logged in on mobile student shell at PG-02 check-in route.",
+        "Open session with valid QR token exists; student lacks Active enrollment in the target class section.",
+        "GPS policy is disabled or satisfied so enrollment failure is the terminal outcome."
+      ],
+      "steps": [
+        "Submit check-in from PG-02 and observe CheckInResultScreen transition from submitting to outcome state.",
+        "Verify page state ID failure-not-enrolled, danger alert variant, and Vietnamese copy intent per ui-states §5.1.",
+        "Confirm no retry CTA is rendered and contact-admin recovery guidance is present per FLOW-02.",
+        "Compare against success-present and failure-expired-qr states to confirm visual distinction per AC-UI-02."
+      ],
+      "expected": "PG-02 outcome state failure-not-enrolled is visually distinct from success and other failure states (danger alert, no retry, enrollment-specific copy); submission lifecycle completes without ambiguous intermediate states per ui-states §5.2.",
       "edgeCase": false
     }
   ]

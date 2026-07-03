@@ -236,7 +236,7 @@
     },
     {
       "id": "module-academic-structure",
-      "passes": true,
+      "passes": false,
       "priority": 8,
       "phase": 1,
       "agent": "backend",
@@ -273,7 +273,15 @@
           "FR-04",
           "FR-06"
         ]
-      }
+      },
+      "history": [
+        {
+          "at": "2026-07-03T03:48:19Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-07 — reverify after TestGen",
+          "source": "harness"
+        }
+      ]
     },
     {
       "id": "module-session-lifecycle",
@@ -1110,6 +1118,12 @@
           "at": "2026-07-02T19:42:07Z",
           "kind": "gate_failed",
           "reason": "Browser test failed — see 20260702T192214Z-browser-test.json",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T03:48:19Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-07 — reverify after TestGen",
           "source": "harness"
         }
       ]
