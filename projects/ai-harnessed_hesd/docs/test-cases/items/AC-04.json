@@ -2,7 +2,7 @@
   "productItemId": "AC-04",
   "version": 1,
   "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
-  "generatedAt": "2026-07-03T03:45:00Z",
+  "generatedAt": "2026-07-03T04:06:00Z",
   "cases": [
     {
       "id": "TC-AC-04-001",
@@ -10,7 +10,7 @@
       "layer": "integration",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["AC-04", "FR-13", "FR-22", "BR-03", "BR-04", "BR-23"],
+      "traceability": ["AC-04", "AC-18", "FR-13", "FR-22", "BR-03", "BR-04", "BR-23"],
       "title": "Scenario-matrix row for QR token behavior rejects expired token",
       "preconditions": [
         "Testing-plan §3 QR token behavior block applies (FR-11, FR-12, BR-03, BR-04, AC-02, AC-03, AC-04).",
@@ -22,7 +22,7 @@
         "Submit POST /v1/check-ins with expired qrToken and idempotency key",
         "Read persisted CheckInAttempt for the request correlation id"
       ],
-      "expected": "Attempt is rejected and persisted with structured outcome code ExpiredQr under AC-04 coverage row.",
+      "expected": "Attempt is rejected and persisted with structured outcome code ExpiredQr under AC-04 coverage row; no successful AttendanceRecord is created.",
       "edgeCase": false
     },
     {
@@ -31,7 +31,7 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["AC-04", "FR-13", "FR-22", "BR-03", "BR-04", "BR-23"],
+      "traceability": ["AC-04", "AC-18", "FR-13", "FR-22", "BR-03", "BR-04", "BR-23"],
       "title": "Check-in transaction writes failed attempt for expired or wrong-session token",
       "preconditions": [
         "Database has one Open session A and one Open session B with distinct token bindings",
@@ -43,7 +43,7 @@
         "Submit check-in with an expired token bound to session A",
         "Query CheckInAttempt table and AttendanceRecord table in the same transaction boundary"
       ],
-      "expected": "Each invalid request creates one failed CheckInAttempt with reason code (ExpiredQr or invalid-session equivalent per BR-04) and creates no successful AttendanceRecord.",
+      "expected": "Each invalid request creates one failed CheckInAttempt with reason code (ExpiredQr at 422 or invalid-session equivalent such as MalformedQrToken at 400 per BR-04) and creates no successful AttendanceRecord.",
       "edgeCase": false
     },
     {
@@ -52,7 +52,7 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P1",
-      "traceability": ["AC-04", "AC-01", "AC-05", "FR-07", "FR-08", "BR-01", "BR-02"],
+      "traceability": ["AC-04", "AC-01", "AC-05", "AC-18", "FR-07", "FR-08", "BR-01", "BR-02"],
       "title": "Lecturer open-close lifecycle gates token validity window",
       "preconditions": [
         "Lecturer is assigned to the class section",
@@ -63,7 +63,7 @@
         "Call POST /v1/class-sessions/{sessionId}/close as Lecturer",
         "Attempt POST /v1/check-ins using the previously issued token after close"
       ],
-      "expected": "Session transitions Scheduled->Open->Closed are accepted, and post-close check-in using stale token is rejected with structured failure (SessionClosed or invalidated token) without new success record.",
+      "expected": "Session transitions Scheduled->Open->Closed are accepted, and post-close check-in using stale token is rejected with structured failure (SessionClosed or invalidated token per BR-02) without new success record; failed attempt is logged.",
       "edgeCase": false
     },
     {
@@ -82,7 +82,7 @@
         "Send two concurrent POST /v1/check-ins requests for same student and same token with different idempotency keys",
         "Collect both API outcomes and inspect persisted attendance records"
       ],
-      "expected": "At most one request succeeds and any duplicate path returns DuplicateCheckIn conflict, preserving one success per student-session.",
+      "expected": "At most one request succeeds and any duplicate path returns DuplicateCheckIn conflict (409), preserving one success per student-session.",
       "edgeCase": true
     },
     {
@@ -91,7 +91,7 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["AC-04", "FR-13", "FR-22", "BR-03", "BR-23"],
+      "traceability": ["AC-04", "AC-18", "FR-13", "FR-22", "BR-03", "BR-23"],
       "title": "POST /v1/check-ins returns 422 envelope with ExpiredQr for expired token",
       "preconditions": [
         "Student is authenticated and enrolled",
@@ -100,9 +100,10 @@
       "steps": [
         "Let issued QR token exceed 30-second TTL",
         "Call POST /v1/check-ins with expired qrToken and required headers",
-        "Validate HTTP status, envelope shape (data/meta/error), and error.code"
+        "Validate HTTP status, envelope shape (data/meta/error), and error.code",
+        "Verify failed CheckInAttempt is persisted for the request"
       ],
-      "expected": "API returns 422 with error.code ExpiredQr and no restricted or inconsistent payload leakage.",
+      "expected": "API returns 422 with error.code ExpiredQr, stable envelope schema (data/meta/error), no restricted or inconsistent payload leakage, and a failed attempt row is written per AC-18.",
       "edgeCase": false
     },
     {
@@ -111,17 +112,18 @@
       "layer": "e2e",
       "technique": "boundary-error",
       "priority": "P0",
-      "traceability": ["AC-04", "FR-13", "BR-04", "BR-23"],
-      "title": "Wrong-session token is rejected with invalid-session equivalent reason",
+      "traceability": ["AC-04", "AC-18", "FR-13", "BR-04", "BR-23"],
+      "title": "Wrong-session or malformed token is rejected with documented error code",
       "preconditions": [
         "Two active sessions exist in different sections with distinct QR tokens",
         "Student is authenticated in a check-in flow for session A"
       ],
       "steps": [
         "Submit POST /v1/check-ins using session B token while attempting session A attendance",
-        "Read response error payload and check-in attempt record from audit trail"
+        "Record HTTP status and error.code from response envelope",
+        "Read check-in attempt record from audit trail"
       ],
-      "expected": "Request is rejected with structured invalid-session reason (InvalidQr or MalformedQrToken equivalent per BR-04) and logged as failed attempt; no successful attendance mutation is created.",
+      "expected": "Request is rejected with structured invalid-session reason (MalformedQrToken at 400 or documented equivalent per API §2.4 and BR-04), logged as failed CheckInAttempt, and no successful attendance mutation is created.",
       "edgeCase": true
     },
     {
@@ -133,15 +135,16 @@
       "traceability": ["AC-04", "AC-16", "FR-27", "FR-28", "BR-19"],
       "title": "Out-of-scope roles are denied report and export APIs without data leakage",
       "preconditions": [
-        "Student and ITAdmin identities are available without explicit academic export grants",
+        "Student account and out-of-scope Lecturer account exist without cross-section grants",
+        "ITAdmin identity is available without explicit academic export grant",
         "Attendance data exists in multiple sections"
       ],
       "steps": [
-        "Call GET /v1/reports/attendance as Student for non-self scope",
-        "Call POST /v1/exports/attendance as Student and ITAdmin for academic dataset",
-        "Verify status and body contain denial code and no partial restricted data"
+        "Call GET /v1/reports/attendance as Student and as out-of-scope Lecturer",
+        "Call POST /v1/exports/attendance with filters outside actor scope for Student, out-of-scope Lecturer, and ITAdmin",
+        "Verify status and body contain denial code (403 Forbidden/OutOfScope) and no partial restricted data"
       ],
-      "expected": "Unauthorized role/scope calls are denied (403 Forbidden/OutOfScope) and return no cross-scope report or export content.",
+      "expected": "Unauthorized role/scope calls are denied with authorization errors and return no cross-scope report rows, pagination counts, or export artifacts.",
       "edgeCase": true
     },
     {
@@ -157,8 +160,8 @@
         "Lecturer opened session and QR is displayed with rotating TTL"
       ],
       "steps": [
-        "Student scans token after TTL expiry and submits check-in form",
-        "Observe inline error reason displayed for expired token",
+        "Student scans token after TTL expiry and submits check-in on PG-02 (/check-in?token=...)",
+        "Observe inline error reason displayed for expired token on CheckInResultScreen",
         "Student rescans fresh QR token and re-submits"
       ],
       "expected": "UI surfaces structured expired-token failure feedback for first attempt and permits retry with fresh token without breaking session flow (testing-plan E2E-04).",
@@ -171,18 +174,18 @@
       "technique": "ui-form-ux",
       "priority": "P1",
       "traceability": ["AC-04", "FR-13", "FR-22", "BR-03", "BR-04", "BR-23"],
-      "title": "Check-in result screen maps ExpiredQr and wrong-session errors per FRM-11",
+      "title": "Check-in result screen maps ExpiredQr and MalformedQrToken errors per FRM-11",
       "preconditions": [
-        "Student is authenticated on mobile-web check-in route (/check-in?token=...)",
+        "Student is authenticated on mobile-web check-in route (PG-02 /check-in?token=...)",
         "Open session exists with rotating QR; harness can deterministically expire token or substitute wrong-session token"
       ],
       "steps": [
         "Submit check-in after QR token TTL expiry and observe CheckInResultScreen (FRM-11)",
         "Confirm result displays ExpiredQr copy intent \"Mã QR đã hết hạn. Vui lòng quét mã mới.\" with visible rescan next-action",
-        "Repeat with a token bound to a different session and confirm distinct invalid/wrong-session messaging with rescan guidance per forms-validation §5",
+        "Repeat with a token bound to a different session and confirm MalformedQrToken copy intent \"Mã QR không hợp lệ. Vui lòng quét lại.\" with rescan guidance per forms-validation §5",
         "Verify failure is announced via aria-live and uses icon plus text, not color alone"
       ],
-      "expected": "Per FRM-11 and error-code UX mapping, expired and wrong-session rejections render on CheckInResultScreen with correct localized reason, actionable retry guidance, and accessible failure feedback without exposing restricted session data.",
+      "expected": "Per FRM-11 and error-code UX mapping §5, expired (422 ExpiredQr) and wrong-session/malformed (400 MalformedQrToken) rejections render on CheckInResultScreen with correct localized reason, actionable retry guidance, and accessible failure feedback without exposing restricted session data.",
       "edgeCase": false
     }
   ]
