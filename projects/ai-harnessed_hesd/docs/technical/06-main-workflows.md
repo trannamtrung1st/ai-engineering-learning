@@ -224,7 +224,7 @@ The mobile browser performs QR capture and decode before calling the API. Implem
 | Token extraction | Normalize decoded payload to opaque `qrToken` for API submission |
 | API submission | `POST /v1/check-ins` with M04 validation of token, session, and policy |
 
-Preview uses natural (non-mirrored) orientation per NFR-14. Lecturer display renders server-issued `qrPayload` only; token minting stays server-side.
+Preview uses natural world orientation per NFR-14 (rear camera unmirrored; user/unknown cameras corrected consistently in preview and decode — see [12-backend-frontend-tech-stack.md](./12-backend-frontend-tech-stack.md) §4.4.1). Lecturer display renders server-issued `qrPayload` only; token minting stays server-side.
 
 ## 6. WF-04 Student check-in failure paths
 

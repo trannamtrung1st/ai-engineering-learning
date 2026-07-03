@@ -88,17 +88,40 @@ Student scan and lecturer display both run in the browser. The web client uses t
 | QR decode (student) | [`jsqr`](https://www.npmjs.com/package/jsqr) | `^1.4.0` | `QrScannerPanel` (DC-13) | Decode QR payload from a live camera frame (`ImageData`) |
 | QR encode (lecturer) | [`qrcode.react`](https://www.npmjs.com/package/qrcode.react) | `^4.2.0` | `QrDisplayPanel` (DC-01) | Render rotating session `qrPayload` as `QRCodeSVG` for dashboard and projection |
 | Camera capture | `navigator.mediaDevices.getUserMedia` | Browser API | `QrScannerPanel` | Rear/environment camera stream (`facingMode: { ideal: "environment" }`) |
+| Preview orientation | `camera-preview-orientation` (`apps/web/src/lib/qr/camera-preview-orientation.ts`) | Internal | `QrScannerPanel` | Detect active `facingMode`; keep rear preview unmirrored; mirror user/unknown cameras consistently in preview and decode |
 | Payload normalization | `extractQrToken` (`apps/web/src/lib/qr/extract-qr-token.ts`) | Internal | `QrScannerPanel` | Map decoded string to opaque `qrToken` for `POST /v1/check-ins` |
 
 #### 4.4.1 Student decode pipeline (PG-02)
 
 Trace: `FR-16`, `NFR-14`, DC-13 in [../ui-ux/07-domain-specific-components.md](../ui-ux/07-domain-specific-components.md).
 
-1. User grants camera permission; `getUserMedia` attaches stream to a `<video>` element (`playsInline`, natural orientation — no horizontal mirror).
-2. `requestAnimationFrame` loop samples the current video frame into an off-screen `<canvas>`.
+**Camera stream**
+
+1. Request `getUserMedia` with `facingMode: { ideal: "environment" }` (rear camera when available).
+2. Store the `MediaStream` in a ref — not on a conditionally mounted `<video>` element.
+3. Transition UI to the scanning state first; attach `stream` to the visible `<video>` in a post-mount effect (`playsInline`, `muted`).
+4. This prevents losing the stream when React unmounts the permission-prompt branch and mounts the live preview.
+
+**Frame decode**
+
+1. Run a `requestAnimationFrame` loop while the stream is active.
+2. Sample the current video frame into an off-screen `<canvas>`.
 3. `jsQR(imageData.data, width, height)` returns the raw `qrPayload` string (or `null` while scanning).
 4. `extractQrToken(payload)` accepts opaque tokens, URLs with a `token` query param, or `attendly:check-in/{token}` — see [05-api-design.md](./05-api-design.md) §5.3.
 5. Captured token flows to GPS prompt (if required) and `POST /v1/check-ins`; server validates TTL and session binding (M04).
+
+**Preview orientation (NFR-14)**
+
+Goal: the live preview matches real-world left/right alignment to a projected QR — not selfie-style mirroring.
+
+1. Read `facingMode` from the active video track after the stream starts.
+2. `environment` (rear): render preview and canvas frames without horizontal transform.
+3. `user` or unknown (typical laptop webcam fallback): apply the same horizontal flip to both the `<video>` preview and the canvas `drawImage` path so decode matches what the student sees.
+4. Never flip preview without flipping decode (or vice versa).
+
+**Cleanup**
+
+On stop or unmount: cancel the animation frame, stop all media tracks, clear `video.srcObject`, and reset orientation state.
 
 Unit tests may inject a `scanDecoder` callback on `QrScannerPanel` to bypass `jsQR` and `getUserMedia`.
 
