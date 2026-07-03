@@ -2,7 +2,7 @@
   "productItemId": "AC-21",
   "version": 1,
   "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
-  "generatedAt": "2026-07-02T12:00:00Z",
+  "generatedAt": "2026-07-03T04:17:44Z",
   "cases": [
     {
       "id": "TC-AC-21-001",
@@ -14,16 +14,16 @@
       "title": "Scenario matrix row for majority class completion within 5 minutes of session open",
       "preconditions": [
         "Testing-plan §7.1 performance tests and §11 NFR verification matrix rows for NFR-02 and AC-21 apply.",
-        "Representative enrolled class sections are seeded with pilot-scale enrollment counts per product-meta mvpScale.",
+        "Representative pilot load fixture per performance-smoke-runbook: 2 open sessions × 20 enrolled students, GPS-off policies, PERF-* fixture hierarchy.",
         "Class sessions are in Scheduled state with active enrollments and lecturer assigned to each section."
       ],
       "steps": [
-        "Open attendance for each representative section via POST /v1/class-sessions/{sessionId}/open (AC-01).",
-        "Record openedAt as T=0 for the 5-minute completion window.",
-        "Simulate enrolled students submitting valid POST /v1/check-ins until T+5 minutes.",
-        "For each section, compute completion rate: count of students with successful Present or Late attendance divided by total enrolled students."
+        "Open attendance for each representative section via POST /v1/class-sessions/{sessionId}/open (AC-01); record openedAt as T=0.",
+        "Simulate enrolled students submitting valid POST /v1/check-ins until T+5 minutes with concurrency aligned to runbook profile.",
+        "For each section, compute completion rate: count of students with Present or Late within openedAt + 5 minutes divided by total enrolled students.",
+        "Evaluate completion rate against evaluateMajorityCompletionGate (strictly > 0.5) per performance-smoke-runbook PASS criteria."
       ],
-      "expected": "For each representative enrolled class section, more than 50% of enrolled students complete successful check-in within 5 minutes of openedAt, satisfying AC-21 and NFR-02 per testing-plan §7.1 class-start burst target.",
+      "expected": "For each representative enrolled class section, majorityCompletionRate strictly exceeds 50% within 5 minutes of openedAt, satisfying AC-21 and NFR-02 per testing-plan §7.1, §11, and performance-smoke-runbook verdicts.",
       "edgeCase": false
     },
     {
@@ -108,7 +108,7 @@
       "steps": [
         "At T+4 minutes after open, GET /v1/class-sessions/{sessionId}/attendance as assigned Lecturer.",
         "Verify HTTP 200, standard envelope, data.counts.present + data.counts.late divided by enrolled total exceeds 50%.",
-        "At T+5 minutes, repeat GET and confirm counts.data.rows reflect Present or Late for majority of enrolled students.",
+        "At T+5 minutes, repeat GET and confirm data.rows reflect Present or Late for majority of enrolled students.",
         "Verify data.state is Open and pagination metadata does not leak cross-scope counts."
       ],
       "expected": "HTTP 200 roster response shows majority of enrolled students with Present or Late status within 5 minutes of session open; counts align with AC-21 completion gate and FR-19 live roster contract.",
@@ -152,10 +152,10 @@
       "steps": [
         "Open session and allow only a minority subset (e.g. 40%) of enrolled students to complete check-in before openedAt + 5 minutes.",
         "At T+5 minutes, query GET /v1/class-sessions/{sessionId}/attendance and compute completion rate.",
-        "Compare rate against AC-21 majority (>50%) threshold and document gate verdict.",
+        "Evaluate rate against evaluateMajorityCompletionGate (must be > 0.5 for PASS) per performance-smoke-runbook.",
         "Optionally run control scenario where >50% complete to confirm PASS boundary."
       ],
-      "expected": "When computed completion rate is <= 50% at the 5-minute mark, AC-21 gate is marked FAIL with documented metric evidence; when rate > 50% under normal pilot profile, gate is PASS. Boundary validates measurability of the 5-minute majority threshold per NFR-02.",
+      "expected": "When majorityCompletionRate is <= 0.5 at the 5-minute mark, evaluateMajorityCompletionGate returns FAIL with documented metric evidence; when rate > 0.5 under normal pilot profile, gate is PASS. Boundary validates measurability of the 5-minute majority threshold per NFR-02.",
       "edgeCase": true
     },
     {
@@ -224,6 +224,28 @@
       "expected": "Physical pilot demonstrates majority of enrolled students complete check-in within 5 minutes under real campus conditions, providing production-like evidence for AC-21 beyond emulated harness runs.",
       "edgeCase": false,
       "harnessSkip": "physical-device"
+    },
+    {
+      "id": "TC-AC-21-011",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["AC-21", "NFR-02", "FR-19", "AC-01"],
+      "title": "PG-06 live roster realtime states show distinct connected, syncing, and majority-progress summary during class-start window",
+      "preconditions": [
+        "Lecturer is authenticated on desktop viewport (1280×720) at PG-06 /lecturer/sessions/{sessionId}/roster with session in Open state.",
+        "Enrolled student cohort will complete mobile-web check-in journeys within the 5-minute AC-21 measurement window.",
+        "Browser harness can observe LiveRosterPanel summary chips and realtime connection indicators per ui-states §7.1."
+      ],
+      "steps": [
+        "Lecturer opens attendance from PG-05 or navigates to PG-06 roster; confirm Open state badge and connected live indicator in header.",
+        "As students check in, observe syncing row highlights and in-place count updates for Present, Late, and Pending chips without full page reload.",
+        "Verify stale or disconnected states show timestamp banner or warning with manual refresh affordance when websocket lag exceeds threshold.",
+        "At T+5 minutes, confirm summary chips visually indicate majority (>50%) Present+Late versus enrolled total per wireframe PG-06 count strip."
+      ],
+      "expected": "PG-06 renders visually distinct connected, syncing, stale/disconnected, and settled majority-progress states during the 5-minute class-start window; present/late summary updates in place align with AC-21 majority completion gate and realtime roster behavior per ui-states §7.1 without ambiguous intermediate states.",
+      "edgeCase": false
     }
   ]
 }
