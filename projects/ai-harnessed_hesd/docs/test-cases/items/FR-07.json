@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-07",
   "version": 1,
-  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
-  "generatedAt": "2026-07-02T10:44:55Z",
+  "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
+  "generatedAt": "2026-07-03T04:26:00Z",
   "cases": [
     {
       "id": "TC-FR-07-001",
@@ -101,19 +101,19 @@
       "technique": "state-transition",
       "priority": "P0",
       "traceability": ["FR-07", "BR-01"],
-      "title": "Only Scheduled pre-state transitions to Open; Open Closed and Cancelled are rejected",
+      "title": "Scheduled transitions to Open; repeat open is idempotent; Closed and Cancelled reject",
       "preconditions": [
         "Session fixtures exist in Scheduled, Open, Closed, and Cancelled states.",
         "Assigned Lecturer auth context is available for all attempts."
       ],
       "steps": [
         "Record beforeState Scheduled and invoke open for Scheduled session; record afterState Open.",
-        "Attempt open on session already in Open state.",
+        "Attempt open on session already in Open state with same Idempotency-Key and assert HTTP 200 with current Open summary per API design §7.1.",
         "Attempt open on Closed session.",
         "Attempt open on Cancelled session.",
-        "Query persistence after each rejected attempt and confirm state unchanged."
+        "Query persistence after Closed and Cancelled attempts and confirm state unchanged with no openedAt set."
       ],
-      "expected": "beforeState Scheduled transitions to afterState Open; Open, Closed, and Cancelled pre-states reject with invalid-transition behavior (409 InvalidSessionTransition) and no illegal state persistence per SM-01.",
+      "expected": "beforeState Scheduled transitions to afterState Open; repeat open on Open returns idempotent HTTP 200 with unchanged Open state; Closed and Cancelled pre-states reject with 409 InvalidSessionTransition and no illegal state persistence per SM-01 and API §7.1.",
       "edgeCase": true
     },
     {
@@ -269,6 +269,51 @@
         "Confirm Open CTA is disabled or hidden and close/view-roster actions become available per UI states §2."
       ],
       "expected": "Browser journey completes FLOW-05: UI transitions Scheduled to Open with openedAt metadata, active QR display, and state-appropriate control gating without full page reload.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-07-013",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["FR-07", "FR-10", "FR-11", "FR-14"],
+      "title": "PG-05 session control renders distinct Scheduled, Open, Closed, Cancelled, and token-fetch error states",
+      "preconditions": [
+        "Lecturer is logged in on desktop StaffLayout shell.",
+        "Fixtures can produce Scheduled, Open, Closed, and Cancelled sessions on PG-05, plus throttled or failing GET /v1/class-sessions/{sessionId}/qr/current responses."
+      ],
+      "steps": [
+        "Navigate to /lecturer/sessions/{sessionId} (PG-05) for a Scheduled session and observe Scheduled badge, Open Attendance CTA enabled, and no active QR panel.",
+        "Open the session and observe Open state: Open badge, openedAt indicator, QrDisplayPanel with countdown or refresh indicator, and Close/view-roster actions available per 09-page-list §5.",
+        "Navigate to a Closed session PG-05 and observe Closed badge, closedAt indicator, QR panel hidden or showing closed-state messaging, and Open CTA disabled.",
+        "Navigate to a Cancelled session PG-05 and observe Cancelled badge with no open affordance and explanatory empty/control state.",
+        "On an Open session, simulate GET /qr/current failure and observe token-fetch error state with FeedbackAlert and retry control without losing session Open badge."
+      ],
+      "expected": "PG-05 visually distinguishes all documented session states and token-fetch error per NFR-UI-07; Open state shows rotating QR affordances; terminal Closed/Cancelled states suppress open actions.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-07-014",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-form-ux",
+      "priority": "P1",
+      "traceability": ["FR-07", "FR-05"],
+      "title": "FRM-09 session open shows optional room override validation, submitting disable, and success or error feedback",
+      "preconditions": [
+        "Lecturer is logged in on PG-05 for a Scheduled session.",
+        "FRM-09 open-attendance control with optional room override dropdown is visible.",
+        "Alternate valid room fixture exists for override scenario."
+      ],
+      "steps": [
+        "Confirm Open Attendance control is disabled or hidden when session is not Scheduled per state gating.",
+        "Select an invalid or out-of-scope roomId in the optional override field and submit; observe inline field error or form-level alert before or after POST /v1/class-sessions/{sessionId}/open.",
+        "Submit open without room override and observe submitting state disables the Open control with loading indicator.",
+        "On HTTP 200 success observe success feedback, session badge transitions to Open, and QR panel renders without ambiguous intermediate state.",
+        "Navigate to a Cancelled session and attempt open; observe 409 InvalidSessionTransition mapped to session control FeedbackAlert per 08-forms-validation-ux §5 without silent failure."
+      ],
+      "expected": "FRM-09 follows FR-VAL timing: inline validation for room override, disabled submitting state during open command, success feedback on Open transition, and server error codes surfaced as recoverable alerts.",
       "edgeCase": false
     }
   ]
