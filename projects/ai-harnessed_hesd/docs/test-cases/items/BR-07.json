@@ -2,7 +2,7 @@
   "productItemId": "BR-07",
   "version": 1,
   "docFingerprint": "sha256:0421ca4affe3aa70584e3b352a860d11de519a5a2aaff8c4d8e0f12d14d1a70a",
-  "generatedAt": "2026-07-02T12:30:00Z",
+  "generatedAt": "2026-07-03T05:14:00Z",
   "cases": [
     {
       "id": "TC-BR-07-001",
@@ -278,7 +278,29 @@
         "Observe CheckInResultScreen failure-duplicate info alert styling and localized copy.",
         "Verify absence of retry CTA and display of existing check-in status per FLOW-02 and BR-07 outcome."
       ],
-      "expected": "UI renders failure-duplicate info alert with localized Vietnamese message (e.g. 'Bạn đã điểm danh buổi học này rồi.'); no retry button is shown; student sees existing success status and timestamp without roster mutation.",
+      "expected": "UI renders failure-duplicate info alert with localized Vietnamese message per ui-states §5.1 (e.g. 'Đã điểm danh buổi này'); no retry button is shown; student sees existing success status and timestamp without roster mutation.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-07-014",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["BR-07", "FR-18", "FR-22", "BR-23", "AC-08"],
+      "title": "DuplicateCheckIn outcome renders distinct failure-duplicate visual state on PG-02",
+      "preconditions": [
+        "Student is logged in on mobile student shell at PG-02 check-in route.",
+        "Student has an existing successful attendance result (Present or Late) for the target Open session.",
+        "Fresh valid QR token is available via scan or deep link."
+      ],
+      "steps": [
+        "Submit check-in from PG-02 and observe CheckInResultScreen transition from submitting to outcome state.",
+        "Verify page state ID failure-duplicate, info alert variant, and Vietnamese copy intent per ui-states §5.1.",
+        "Confirm no retry CTA is rendered and existing success status with timestamp is displayed per FLOW-02 DuplicateCheckIn branch.",
+        "Compare against success-present and failure-not-enrolled states to confirm visual distinction per AC-UI-02."
+      ],
+      "expected": "PG-02 outcome state failure-duplicate is visually distinct from success and other failure states (info alert, no retry, duplicate-specific copy with prior attendance status); submission lifecycle completes without ambiguous intermediate states per ui-states §5.2.",
       "edgeCase": false
     }
   ]
