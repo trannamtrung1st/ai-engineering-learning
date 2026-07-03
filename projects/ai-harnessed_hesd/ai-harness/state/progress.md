@@ -307,3 +307,7 @@
 - 2026-07-03T09:17:13Z | playwright-ui-workspace | passed
 - 2026-07-03T09:20:47Z | module-identity-and-access | implementer: re-verified after TestGen doc drift (FR-15 FR-31 FR-32 FR-38 BR-19 BR-24 NFR-09) — M01 JWT auth context, RBAC authorize middleware, GET /me, POST /v1/auth/logout with UserLoggedOut audit (FR-38 BR-24), deny-by-default scope guards — checks: full profile pass (unit 222/222, integration 213/213, e2e 21/21, generated test case coverage pass)
 - 2026-07-03T09:24:51Z | module-identity-and-access | passed
+- 2026-07-03T09:26:23Z | module-check-in-and-qr-orchestrator | implementer: re-verified after TestGen doc drift (FR-11 FR-18 FR-22 BR-03 BR-07 AC-02 AC-08) — M04 QR issuance (30s TTL rotation), POST /v1/check-ins validation order (session→token→enrollment→duplicate→GPS), one-success constraint with advisory lock, CheckInAttempt persistence + attendance source_attempt_id link — checks: full profile pass (unit 222/222, integration 213/213, e2e 21/21, generated test case coverage pass)
+- 2026-07-03T09:30:24Z | module-check-in-and-qr-orchestrator | review_failed
+- 2026-07-03T09:33:28Z | module-check-in-and-qr-orchestrator | implementer: fixed AI review blocker — write path now calls evaluateCheckInFailure (session→token→enrollment→duplicate→GPS payload) before evaluateGpsDistance; DuplicateCheckIn short-circuits before GpsRequired/OutOfRadius per VR §2.2 — added TC-BR-07-009 integration test — checks: full profile pass (unit 222/222, integration 214/214, e2e 21/21)
+- 2026-07-03T09:36:13Z | module-check-in-and-qr-orchestrator | passed

@@ -1,7 +1,7 @@
 /**
  * Traceability: FR-11 FR-12 FR-18 FR-22 FR-34 BR-03 BR-07 AC-02 AC-03 AC-08
  * TC-FR-11-002 TC-FR-11-004 TC-FR-11-008 TC-FR-11-012 TC-FR-18-001 TC-FR-18-002 TC-FR-22-001 TC-FR-22-002 TC-FR-22-004
- * TC-BR-03-001 TC-BR-03-002 TC-BR-03-003 TC-BR-07-001 TC-BR-07-002 TC-AC-02-002 TC-AC-02-004 TC-AC-08-001
+ * TC-BR-03-001 TC-BR-03-002 TC-BR-03-003 TC-BR-07-001 TC-BR-07-002 TC-BR-07-009 TC-AC-02-002 TC-AC-02-004 TC-AC-08-001
  */
 import { createHash, randomUUID } from "node:crypto";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
@@ -365,6 +365,82 @@ describe("M04 check-in and QR orchestrator — FR-11 FR-18 FR-22 BR-03 BR-07 AC-
     );
     expect(attendance.rows[0]?.source_attempt_id).toBe(attempt.rows[0]?.id);
     expect(attendance.rows[0]?.check_in_method).toBe("QR");
+  });
+
+  it("TC-BR-07-009: DuplicateCheckIn short-circuits before GPS checks on write path", async () => {
+    const policyId = randomUUID();
+    await pool.query(
+      `
+      INSERT INTO attendance_policies (
+        id, scope_type, scope_id, present_window_minutes, late_window_minutes,
+        manual_edit_window_hours, gps_required, gps_radius_meters, is_active, field_overrides
+      )
+      VALUES ($1, 'ClassSection', $2, 15, 15, 24, true, 100, true, $3::jsonb)
+      `,
+      [
+        policyId,
+        SEED.section,
+        JSON.stringify({ gpsRequired: true, gpsRadiusMeters: true }),
+      ],
+    );
+
+    const sessionId = track(await insertSession(pool, "Scheduled"));
+    const lecturerToken = await login(app, "lecturer@attendly.local");
+    const qr = await openSession(app, sessionId, lecturerToken);
+    const studentToken = await login(app, "student1@attendly.local");
+    const roomGps = { latitude: 10.762622, longitude: 106.660172, accuracyMeters: 10 };
+
+    const first = await app.inject({
+      method: "POST",
+      url: "/api/v1/check-ins",
+      headers: {
+        authorization: `Bearer ${studentToken}`,
+        "idempotency-key": randomUUID(),
+      },
+      payload: {
+        qrToken: qr.qrPayload,
+        clientTimestamp: new Date().toISOString(),
+        gps: roomGps,
+      },
+    });
+    expect(first.statusCode).toBe(200);
+
+    const currentQr = await app.inject({
+      method: "GET",
+      url: `/api/v1/class-sessions/${sessionId}/qr/current`,
+      headers: { authorization: `Bearer ${lecturerToken}` },
+    });
+    const freshToken = (currentQr.json() as { data: { qrPayload: string } }).data.qrPayload;
+
+    const outOfRadius = await app.inject({
+      method: "POST",
+      url: "/api/v1/check-ins",
+      headers: {
+        authorization: `Bearer ${studentToken}`,
+        "idempotency-key": randomUUID(),
+      },
+      payload: {
+        qrToken: freshToken,
+        clientTimestamp: new Date().toISOString(),
+        gps: { latitude: 10.76408, longitude: 106.660172, accuracyMeters: 24.5 },
+      },
+    });
+    expect(outOfRadius.statusCode).toBe(409);
+    expect((outOfRadius.json() as { error: { code: string } }).error.code).toBe("DuplicateCheckIn");
+
+    const omitGps = await app.inject({
+      method: "POST",
+      url: "/api/v1/check-ins",
+      headers: {
+        authorization: `Bearer ${studentToken}`,
+        "idempotency-key": randomUUID(),
+      },
+      payload: { qrToken: freshToken, clientTimestamp: new Date().toISOString() },
+    });
+    expect(omitGps.statusCode).toBe(409);
+    expect((omitGps.json() as { error: { code: string } }).error.code).toBe("DuplicateCheckIn");
+
+    await pool.query(`DELETE FROM attendance_policies WHERE id = $1`, [policyId]);
   });
 
   it("TC-BR-03-006: Scheduled session yields SessionNotOpen before ExpiredQr", async () => {

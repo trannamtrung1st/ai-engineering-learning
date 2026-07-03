@@ -5,10 +5,7 @@ import { writeCheckInAttemptAuditEvent } from "../audit-and-compliance/service.j
 import { isStudentEnrolled } from "../academic-structure/validation.js";
 import { createPolicyEngineRepository } from "../policy-engine/repository.js";
 import { INSTITUTION_POLICY_DEFAULTS } from "../policy-engine/defaults.js";
-import {
-  evaluateGpsDistance,
-  evaluateGpsPayload,
-} from "../policy-engine/validation.js";
+import { evaluateGpsDistance } from "../policy-engine/validation.js";
 import {
   createRealtimeDeliveryRepository,
   recordCheckInAttemptTelemetry,
@@ -285,36 +282,11 @@ export function createCheckInRepository(pool: pg.Pool) {
             ? await loadEffectivePolicy(client, classSectionId)
             : DEFAULT_POLICY;
 
-        let gpsFailure: Exclude<CheckInOutcome, "Success"> | null = null;
         let distanceFromRoom: number | null = null;
         let gpsValidationResult: string | null = null;
 
-        if (session?.state === "Open" && resolved && !tokenExpired && enrolled) {
-          if (policy.gpsRequired) {
-            const payloadFailure = evaluateGpsPayload(params.gps, policy);
-            if (payloadFailure) {
-              gpsFailure = payloadFailure;
-            } else if (params.gps) {
-              const room = await loadRoomCoordinates(client, session.id);
-              if (room && policy.gpsRadiusMeters !== null) {
-                const distanceCheck = evaluateGpsDistance(params.gps, room, policy.gpsRadiusMeters);
-                distanceFromRoom = distanceCheck.distanceMeters;
-                if (distanceCheck.outcome) {
-                  gpsFailure = distanceCheck.outcome;
-                  gpsValidationResult = "Fail";
-                } else {
-                  gpsValidationResult = "Pass";
-                }
-              }
-            } else {
-              gpsFailure = "GpsRequired";
-            }
-          }
-        }
-
-        const failureOutcome =
-          gpsFailure ??
-          (resolved === null
+        let failureOutcome: Exclude<CheckInOutcome, "Success"> | null =
+          resolved === null
             ? "InvalidQr"
             : evaluateCheckInFailure({
                 sessionState: session!.state,
@@ -324,7 +296,28 @@ export function createCheckInRepository(pool: pg.Pool) {
                 existingAttendanceStatus: existingAttendance?.status ?? null,
                 policy,
                 gps: params.gps,
-              }));
+              });
+
+        // VR §2.2 step 6 — distance guard runs only after session/token/enrollment/duplicate/payload checks pass.
+        if (
+          !failureOutcome &&
+          policy.gpsRequired &&
+          params.gps &&
+          session?.state === "Open" &&
+          sessionId
+        ) {
+          const room = await loadRoomCoordinates(client, session.id);
+          if (room && policy.gpsRadiusMeters !== null) {
+            const distanceCheck = evaluateGpsDistance(params.gps, room, policy.gpsRadiusMeters);
+            distanceFromRoom = distanceCheck.distanceMeters;
+            if (distanceCheck.outcome) {
+              failureOutcome = distanceCheck.outcome;
+              gpsValidationResult = "Fail";
+            } else {
+              gpsValidationResult = "Pass";
+            }
+          }
+        }
 
         const attemptId = randomUUID();
 

@@ -579,7 +579,7 @@
     },
     {
       "id": "module-check-in-and-qr-orchestrator",
-      "passes": false,
+      "passes": true,
       "priority": 10,
       "phase": 1,
       "agent": "backend",
@@ -680,6 +680,12 @@
           "at": "2026-07-03T08:54:46Z",
           "kind": "drift",
           "reason": "Doc drift for BR-03 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T09:30:24Z",
+          "kind": "gate_failed",
+          "reason": "AI review failed — see 20260703T092451Z-review.json",
           "source": "harness"
         }
       ]

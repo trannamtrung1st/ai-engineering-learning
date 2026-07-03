@@ -147,3 +147,5 @@ tests/playwright-ui/scenarios/web-design-system-shell.spec.ts
 - [NFR-13] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:477032953ece5fdb72af213d6ab030aded8af1b6090e4cb1f96e16d5130fc252)
 - [NFR-15] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:477032953ece5fdb72af213d6ab030aded8af1b6090e4cb1f96e16d5130fc252)
 - [NFR-16] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:477032953ece5fdb72af213d6ab030aded8af1b6090e4cb1f96e16d5130fc252)
+- [module-check-in-and-qr-orchestrator] AI review failed — see 20260703T092451Z-review.json
+- [module-check-in-and-qr-orchestrator] submitCheckIn write path must not pre-run GPS distance/payload checks before evaluateCheckInFailure — duplicate+missing-GPS must return DuplicateCheckIn not GpsRequired (VR §2.2 / TC-BR-07-009)
