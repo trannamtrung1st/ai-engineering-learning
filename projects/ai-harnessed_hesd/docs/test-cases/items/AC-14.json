@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-14",
   "version": 1,
-  "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
-  "generatedAt": "2026-07-02T12:15:00Z",
+  "docFingerprint": "sha256:a297e0ef15d9279cea05e3e0486a1edbcbff0f8ff12f9ba243a6f6c60b73f5f1",
+  "generatedAt": "2026-07-03T04:11:00Z",
   "cases": [
     {
       "id": "TC-AC-14-001",
@@ -259,6 +259,30 @@
         "Verify page 2 returns distinct IDs with no overlap against page 1."
       ],
       "expected": "Paginated audit query honors page and pageSize invariants; admin override audit rows from post-window escalation path are queryable across pages with full CMP-01 fields; totalItems reflects only authorized-scope events without cross-scope count leakage.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-14-012",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-form-ux",
+      "priority": "P1",
+      "traceability": ["AC-14", "FR-20", "FR-21", "BR-15", "BR-16"],
+      "title": "ManualCorrectionDialog FRM-08 maps EditWindowExpired to escalation guidance with form-level feedback on PG-06",
+      "preconditions": [
+        "Lecturer is authenticated on PG-06 live roster (/lecturer/sessions/{sessionId}/roster) for assigned closed session.",
+        "Student row displays Absent status badge; manualEditWindow from effective policy has elapsed since session closedAt.",
+        "ManualCorrectionDialog window guard (DC-08) is enabled per domain component spec."
+      ],
+      "steps": [
+        "Open ManualCorrectionDialog (DC-08) from Absent student row action; observe window guard or pre-submit escalation hint if shown before fields.",
+        "Select Manual Present in status dropdown; enter valid reason in labeled Lý do textarea.",
+        "Attempt submit and observe API 409 EditWindowExpired response mapping per FRM-08 error-code table.",
+        "Verify form-level FeedbackAlert shows escalation guidance to request Academic Admin action — not raw API error text.",
+        "Confirm submit control returns to enabled/recoverable state; dialog does not close with false success and roster row remains Absent badge.",
+        "Verify alert uses role=alert or aria-live for screen-reader announcement; focus remains trapped in modal per NFR-LAY-06."
+      ],
+      "expected": "FRM-08 maps EditWindowExpired to staff-facing escalation guidance per 08-forms-validation-ux §5; form-level danger alert replaces raw error; no silent success or stale inline field errors; roster row unchanged; UI aligns with BR-15 rejection and admin override path per AC-14 and FLOW-08 step 6.",
       "edgeCase": false
     }
   ]
