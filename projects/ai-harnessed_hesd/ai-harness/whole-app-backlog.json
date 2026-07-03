@@ -975,6 +975,12 @@
           "kind": "drift",
           "reason": "Doc drift for BR-23 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-03T05:41:17Z",
+          "kind": "drift",
+          "reason": "Doc drift for NFR-13 — reverify after TestGen",
+          "source": "harness"
         }
       ]
     },

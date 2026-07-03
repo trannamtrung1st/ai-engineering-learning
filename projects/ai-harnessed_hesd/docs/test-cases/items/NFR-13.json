@@ -2,7 +2,7 @@
   "productItemId": "NFR-13",
   "version": 1,
   "docFingerprint": "sha256:0091ebfac485b5b90c7a94c982196a35adddc3e7535aba555ed532f8d1599fd9",
-  "generatedAt": "2026-07-02T19:15:00Z",
+  "generatedAt": "2026-07-03T05:40:49Z",
   "cases": [
     {
       "id": "TC-NFR-13-001",
@@ -41,11 +41,11 @@
       ],
       "steps": [
         "Submit check-in command that fails at token validation with correlationId captured.",
-        "Query check_in_attempts for studentUserId, classSessionId, outcome ExpiredQr, attemptedAt, token reference, and correlationId.",
+        "Query check_in_attempts for studentUserId, classSessionId, outcome ExpiredQr, submittedAt, token reference, and correlationId.",
         "Query audit_logs for actionType CheckInAttemptRecorded or equivalent tied to the same correlationId.",
         "Query attendance_records to confirm no success row was inserted."
       ],
-      "expected": "Failed check-in inserts one CheckInAttempt with structured outcome code, ISO-8601 attemptedAt, and correlation metadata; corresponding audit_logs row is written with outcome, sessionId, studentUserId, and context fields per NFR-13 and BR-23.",
+      "expected": "Failed check-in inserts one CheckInAttempt with structured outcome code, ISO-8601 submittedAt, and correlation metadata; corresponding audit_logs row is written with outcome, sessionId, studentUserId, and context fields per NFR-13 and BR-23.",
       "edgeCase": false
     },
     {
@@ -85,7 +85,7 @@
       ],
       "steps": [
         "Drive check-in to ExpiredQr, SessionClosed, NotEnrolled, and DuplicateCheckIn terminal states.",
-        "For each path, query check_in_attempts for outcome code and attemptedAt.",
+        "For each path, query check_in_attempts for outcome code and submittedAt.",
         "For each path, query audit_logs for CheckInAttemptRecorded event with matching outcome and correlationId.",
         "Verify AttendanceRecord remains unchanged on all failure paths."
       ],
@@ -315,6 +315,30 @@
         "Confirm student check-in failure UI on PG-02 shows localized reason without exposing institution-wide audit trails."
       ],
       "expected": "Student cannot browse audit log listing or detail UI; no failure audit evidence, export metadata, or cross-student dispute trails are disclosed in browser surfaces (AuditLog.read Deny, NFR-09, BR-19).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-13-015",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["NFR-13", "AC-18", "AC-19", "AC-17", "FR-22", "FR-29", "FR-30", "BR-22", "BR-23", "BR-18"],
+      "title": "PG-15 audit log listing renders distinct states and structured context for failures, manual edits, and exports",
+      "preconditions": [
+        "AcademicAdmin or SystemAuditor is authenticated with access to PG-15 /audit/logs per FLOW-13.",
+        "dispute-trail fixture includes failed CheckInAttemptRecorded rows, committed manual_update corrections, and completed Export audit entries.",
+        "AuditEntryRow (DC-12) and TableToolbar filters for actor, target type, action type, and date range (from/to) are available per PG-15 listing matrix in 09-page-list.md §8."
+      ],
+      "steps": [
+        "Navigate to /audit/logs and observe initial loading skeleton or table shimmer while GET /v1/audit-logs resolves.",
+        "Filter by actionType CheckInAttemptRecorded and locate a failed attempt row; verify visible outcome code, student/session identifiers, and occurredAt timestamp per DC-12.",
+        "Filter by actionType manual_update and verify AuditEntryRow shows actor, old status → new status transition, reason, and target student/session fields per permissions §7.1.",
+        "Filter by actionType Export and verify actor, scope filter summary, csv format, and occurredAt columns are visible.",
+        "Apply a date range with no matches; confirm no-results state shows Không tìm thấy kết quả with clear-filters affordance per NFR-UI-07.",
+        "Simulate or trigger API error on audit query; confirm error FeedbackAlert with retry action without partial failure outcome, edit trail, or export scope leakage."
+      ],
+      "expected": "PG-15 listing states (loading, no-results, error, list) are visually distinct per NFR-UI-07; all three NFR-13 event classes (failed attempts, manual edits, exports) are queryable in the audit table with structured reason/context columns; error and empty states do not expose restricted dispute-trail metadata (NFR-13, CMP-01, CMP-02, CMP-03).",
       "edgeCase": false
     }
   ]
