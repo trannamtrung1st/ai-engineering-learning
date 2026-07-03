@@ -2,7 +2,7 @@
   "productItemId": "NFR-15",
   "version": 1,
   "docFingerprint": "sha256:0091ebfac485b5b90c7a94c982196a35adddc3e7535aba555ed532f8d1599fd9",
-  "generatedAt": "2026-07-02T12:31:41Z",
+  "generatedAt": "2026-07-03T05:45:17Z",
   "cases": [
     {
       "id": "TC-NFR-15-001",
@@ -306,9 +306,9 @@
     },
     {
       "id": "TC-NFR-15-014",
-      "category": "edge",
+      "category": "ui-ux",
       "layer": "browser",
-      "technique": "browser-journey",
+      "technique": "ui-responsive",
       "priority": "P0",
       "traceability": ["NFR-15", "FR-14", "AC-UI-06"],
       "title": "Typical projector viewport 1280x720 preserves QR legibility and state indicators without clipping",
@@ -350,6 +350,52 @@
       "expected": "Physical classroom projection delivers NFR-15 legibility with clear refresh indication and open/closed state feedback under real ambient lighting; provides production-like evidence beyond Chromium desktop emulation.",
       "edgeCase": true,
       "harnessSkip": "physical-device"
+    },
+    {
+      "id": "TC-NFR-15-016",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["NFR-15", "FR-14", "AC-02", "AC-UI-06"],
+      "title": "PG-05 QrDisplayPanel visually distinguishes Open projection, Closed/Cancelled locked, loading, and token-fetch error states",
+      "preconditions": [
+        "Lecturer is logged in on desktop StaffLayout at PG-05.",
+        "Session fixtures exist in Scheduled, Open, Closed, and Cancelled states.",
+        "Harness can simulate slow or failed GET /v1/class-sessions/{sessionId}/qr/current responses."
+      ],
+      "steps": [
+        "Navigate to /lecturer/sessions/{scheduledSessionId} (PG-05) and verify Scheduled state: no scannable QR canvas; section code and session name visible with Scheduled StatusBadge.",
+        "Open the session and observe loading or skeleton state on QrDisplayPanel while qr/current is in flight.",
+        "On successful fetch, verify Open projection state: high-contrast black-on-white QR occupying substantial viewport area, QrCountdownRing with numeric seconds remaining, and Open StatusBadge per DC-01 spec.",
+        "Simulate qr/current failure on an Open session and observe token-fetch error FeedbackAlert with retry affordance while Open badge and session identity remain visible.",
+        "Navigate to Closed and Cancelled session fixtures and confirm QrDisplayPanel shows locked state message instead of scannable QR with matching Closed or Cancelled StatusBadge."
+      ],
+      "expected": "PG-05 QrDisplayPanel visually distinguishes all documented display states per 09-page-list §5 and 07-domain-specific-components §2.1: Scheduled suppresses QR; Open shows projection-ready rotating QR with countdown refresh indication; Closed/Cancelled show locked messages with clear state feedback; token-fetch errors never leave a stale QR visible per NFR-15.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-15-017",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-accessibility",
+      "priority": "P1",
+      "traceability": ["NFR-15", "FR-14", "AC-UI-06"],
+      "title": "PG-05 QrDisplayPanel exposes session-state text alternative, manual refresh control, and aria-live countdown for projection accessibility",
+      "preconditions": [
+        "Lecturer is logged in on desktop Chromium at PG-05 with an Open session.",
+        "QrDisplayPanel (DC-01) and QrCountdownRing (DC-02) are mounted per 07-domain-specific-components §2.1 accessibility notes.",
+        "13-accessibility-basics.md projection legibility guidance applies alongside AC-UI-06."
+      ],
+      "steps": [
+        "Navigate to /lecturer/sessions/{sessionId} (PG-05) and inspect QrDisplayPanel for a text alternative or aria-label describing current session state (Open with active QR).",
+        "Locate manual 'refresh QR' control exposed for lecturers and verify it is keyboard-focusable with visible focus ring.",
+        "Activate refresh control via keyboard and confirm QR payload updates without full page reload.",
+        "Observe QrCountdownRing numeric seconds-remaining label with aria-live region (e.g. 'Còn 4 giây' per 13-accessibility-basics.md) during final ~5 seconds before rotation.",
+        "Close session and verify text alternative or visible locked-state message reflects Closed state without relying solely on QR canvas."
+      ],
+      "expected": "Projection panel meets DC-01 accessibility requirements: session state is available to assistive tech, manual refresh QR is keyboard-operable, and countdown refresh indication uses aria-live numeric labeling; Closed state feedback remains comprehensible without scannable QR per NFR-15 legibility and state-feedback goals.",
+      "edgeCase": false
     }
   ]
 }

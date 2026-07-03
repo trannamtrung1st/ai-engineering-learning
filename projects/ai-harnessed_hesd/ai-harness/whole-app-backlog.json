@@ -1190,6 +1190,12 @@
           "kind": "drift",
           "reason": "Doc drift for NFR-14 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-03T05:46:05Z",
+          "kind": "drift",
+          "reason": "Doc drift for NFR-15 — reverify after TestGen",
+          "source": "harness"
         }
       ]
     },
