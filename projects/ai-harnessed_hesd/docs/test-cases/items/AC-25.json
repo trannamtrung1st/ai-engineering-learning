@@ -2,7 +2,7 @@
   "productItemId": "AC-25",
   "version": 1,
   "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
-  "generatedAt": "2026-07-02T16:00:00Z",
+  "generatedAt": "2026-07-03T04:22:00Z",
   "cases": [
     {
       "id": "TC-AC-25-001",
@@ -294,6 +294,29 @@
       "expected": "Operational drill confirms manual fallback procedures are rehearsed and attendance can be resolved in real classroom conditions without bypassing audit requirements or broadening unauthorized access; evidence satisfies AC-25 release readiness checklist §4.2.",
       "edgeCase": false,
       "harnessSkip": "physical-device"
+    },
+    {
+      "id": "TC-AC-25-014",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["AC-25", "NFR-17", "FR-20", "BR-14", "AC-09"],
+      "title": "PG-06 roster rejected-attempt row state is visually distinct and exposes manual correction affordance under GPS degradation",
+      "preconditions": [
+        "Lecturer is authenticated on desktop staff shell (PG-06) at /lecturer/sessions/{sessionId}/roster for assigned gps-required open session.",
+        "At least one enrolled student has Pending status with latest failed CheckInAttempt outcome GpsDisabled persisted (AC-09).",
+        "Manual edit window is active; row action for ManualCorrectionDialog is policy-enabled."
+      ],
+      "steps": [
+        "Load PG-06 live roster and locate Pending student row in rejected-attempts grouping per 12-ui-states §4.2.",
+        "Verify row shows danger/warning badge with latestAttemptOutcome GpsDisabled and reason tooltip distinct from Present/Late success rows.",
+        "Confirm Pending muted row styling differs from checked-in and post-close Absent danger badge states.",
+        "Verify row action exposes ManualCorrectionDialog trigger without requiring navigation away from roster.",
+        "Compare against a Present success row on the same roster to confirm visual distinction per AC-UI-02."
+      ],
+      "expected": "PG-06 degradation roster state makes GPS-failed Pending students scannable: rejected-attempt badge and tooltip are visually distinct from success and Absent states; manual correction affordance is discoverable on-row enabling lecturer operability under device/GPS failure without bypassing governance per AC-25 and NFR-17.",
+      "edgeCase": false
     }
   ]
 }
