@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-01",
   "version": 1,
-  "docFingerprint": "sha256:9ba57023d6454a237bfa8bfdee6f7fe0224827f1bfbb80b8ab5fb692431c9b66",
-  "generatedAt": "2026-07-03T03:39:00Z",
+  "docFingerprint": "sha256:a297e0ef15d9279cea05e3e0486a1edbcbff0f8ff12f9ba243a6f6c60b73f5f1",
+  "generatedAt": "2026-07-03T04:02:00Z",
   "cases": [
     {
       "id": "TC-AC-01-001",
@@ -21,7 +21,7 @@
         "Read the open response payload and metadata.",
         "Call GET /v1/class-sessions/{sessionId}/qr/current immediately after opening."
       ],
-      "expected": "Open call succeeds and maps to testing-plan session open/close row: session is Open, openedAt and actor context are recorded, and QR endpoint returns Valid token metadata with expiry so QR display can start rotating.",
+      "expected": "Open call succeeds and maps to testing-plan session open/close row: session is Open, openedAt and actor context are recorded, and QR endpoint returns tokenState Valid with expiresAt metadata so QR display can start rotating.",
       "edgeCase": false
     },
     {
@@ -182,6 +182,26 @@
       ],
       "expected": "PG-04 shows visually distinct empty, loading, and error states per NFR-UI-07; PG-05 Open state displays rotating QR countdown and active QR panel distinct from Scheduled/Closed visuals.",
       "edgeCase": false
+    },
+    {
+      "id": "TC-AC-01-010",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["AC-01", "FR-07", "BR-01", "BR-19"],
+      "title": "Student and out-of-scope lecturer denied SessionControl open execution",
+      "preconditions": [
+        "Student account and out-of-scope Lecturer account exist.",
+        "A Scheduled session exists that the out-of-scope Lecturer is not assigned to."
+      ],
+      "steps": [
+        "Call POST /v1/class-sessions/{sessionId}/open as Student with valid Idempotency-Key.",
+        "Call POST /v1/class-sessions/{sessionId}/open as out-of-scope Lecturer for the same session.",
+        "Query persisted session state and openedAt for the target session."
+      ],
+      "expected": "Both requests return 403 Forbidden or OutOfScope per SessionControl.execute matrix; session remains Scheduled with no openedAt recorded and no QR rotation started.",
+      "edgeCase": true
     }
   ]
 }

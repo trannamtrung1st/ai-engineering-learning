@@ -3,9 +3,9 @@
   "docFingerprint": null,
   "tags": {
     "AC-01": {
-      "current": false,
+      "current": true,
       "docFingerprint": "sha256:a297e0ef15d9279cea05e3e0486a1edbcbff0f8ff12f9ba243a6f6c60b73f5f1",
-      "generatedAt": null
+      "generatedAt": "2026-07-03T04:00:09Z"
     },
     "AC-02": {
       "current": false,
