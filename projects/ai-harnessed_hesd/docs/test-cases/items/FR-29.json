@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-29",
   "version": 1,
-  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
-  "generatedAt": "2026-07-02T11:32:20Z",
+  "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
+  "generatedAt": "2026-07-03T04:56:00Z",
   "cases": [
     {
       "id": "TC-FR-29-001",
@@ -175,7 +175,8 @@
         "Assigned Lecturer is within manualEditWindow."
       ],
       "steps": [
-        "AcademicAdmin calls POST /v1/enrollments/import with classSectionId and valid studentCode rows; assert HTTP 200 with acceptedRows count and row-level rejection summary when applicable.",
+        "AcademicAdmin calls POST /v1/enrollments/import with classSectionId, one valid studentCode row, and one invalid row (unknown studentCode); assert HTTP 200 with data.acceptedRows, data.rejectedRows containing rowNumber/code/message for the invalid row, and no silent skip.",
+        "Verify imported student appears in GET /v1/class-sessions/{sessionId}/attendance with Absent status after session close.",
         "Lecturer calls PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Manual Present and reason.",
         "Query GET /v1/audit-logs filtered by target studentUserId and classSessionId.",
         "Verify audit row references imported student with oldStatus Absent and newStatus Manual Present."
@@ -359,6 +360,30 @@
         "Confirm pagination controls and default sort timestamp desc per PG-15 listing spec."
       ],
       "expected": "Browser FLOW-13 audit review journey displays queryable attendance mutation audit with all FR-29 required fields visible in AuditEntryRow per CMP-01; authorized SystemAuditor can investigate dispute trail without mutation privileges.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-29-017",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["FR-29", "BR-22", "AC-19"],
+      "title": "PG-15 audit log listing renders attendance mutation rows with distinct loading, empty, error, and list states",
+      "preconditions": [
+        "AcademicAdmin or SystemAuditor is authenticated with access to PG-15 /audit/logs per FLOW-13.",
+        "dispute-trail fixture includes committed lecturer manual_update, admin_override, and close-time status_finalization attendance mutation audit rows.",
+        "AuditEntryRow (DC-12) and TableToolbar filters for targetType, actionType, actor, from, and to are available per PG-15 listing matrix in 09-page-list.md §8."
+      ],
+      "steps": [
+        "Navigate to /audit/logs and observe initial loading skeleton or table shimmer while GET /v1/audit-logs resolves.",
+        "Apply TableToolbar filters: targetType AttendanceRecord, actionType manual_update, and date range covering a known lecturer correction.",
+        "Locate AuditEntryRow and verify visible actor, occurredAt timestamp, old status → new status transition, reason, and target student/session identifiers per DC-12.",
+        "Clear filters or apply a date range with no matches; confirm no-results state shows Không tìm thấy kết quả with clear-filters affordance per NFR-UI-07.",
+        "Simulate or trigger API error on audit query; confirm error FeedbackAlert with retry action without partial mutation field leakage.",
+        "Filter by actionType status_finalization for a closed session and verify each auto-absent mutation row displays oldStatus Pending and newStatus Absent."
+      ],
+      "expected": "PG-15 listing states (loading, no-results, error, list) are visually distinct per NFR-UI-07; committed attendance status mutations are queryable in the audit table with full permissions §7.1 minimum fields (actor, role context, target, old/new status, reason, timestamp) per FR-29 and CMP-01; error and empty states do not expose restricted mutation metadata.",
       "edgeCase": false
     }
   ]

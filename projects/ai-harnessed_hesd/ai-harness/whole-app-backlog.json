@@ -835,6 +835,12 @@
           "kind": "drift",
           "reason": "Doc drift for AC-19 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-03T04:57:23Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-29 — reverify after TestGen",
+          "source": "harness"
         }
       ]
     },
