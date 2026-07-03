@@ -2,7 +2,7 @@
   "productItemId": "BR-20",
   "version": 1,
   "docFingerprint": "sha256:0421ca4affe3aa70584e3b352a860d11de519a5a2aaff8c4d8e0f12d14d1a70a",
-  "generatedAt": "2026-07-02T12:10:24Z",
+  "generatedAt": "2026-07-03T05:25:00Z",
   "cases": [
     {
       "id": "TC-BR-20-001",
@@ -375,6 +375,29 @@
         "Observe roster counts update without full page reload when a new student checks in within policy window."
       ],
       "expected": "Lecturer UI reflects BR-20 effective policy at runtime: Present/Late badges and roster counts match policy-resolved windows; live updates align with GET /v1/class-sessions/{sessionId}/attendance data per FR-19.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-20-017",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-form-ux",
+      "priority": "P1",
+      "traceability": ["BR-20", "FR-24", "FR-25"],
+      "title": "FRM-07 PolicyResolutionSummary live preview updates BR-20 effective values and per-field source badges on override changes",
+      "preconditions": [
+        "AcademicAdmin is logged in on /admin/policies create or edit route (PG-12, FRM-07).",
+        "Institution, course, and class-section policies exist with different presentWindowMinutes and lateWindowMinutes values.",
+        "PolicyResolutionSummary (DC-09) accordion is visible below the policy form fields."
+      ],
+      "steps": [
+        "Open FRM-07 for a class section with partial override (present window only defined at section level).",
+        "Expand PolicyResolutionSummary and verify present window shows section-sourced value with source-level badge while late window and GPS fields show inherited course or institution source badges per BR-20 precedence.",
+        "Change section present window duration and observe summary preview updates the resolved effective present window immediately without save.",
+        "Toggle GPS required on and enter GPS radius; confirm summary reflects section-sourced GPS fields and precedence chain section → course → faculty → institution.",
+        "Save valid configuration and confirm post-save summary matches persisted effective resolution for the target section."
+      ],
+      "expected": "DC-09 on FRM-07 satisfies BR-20 explainability: admins see single effective policy with per-field source provenance that updates interactively as override fields change; saved policy resolves identically at check-in, close, and edit authorization time.",
       "edgeCase": false
     }
   ]
