@@ -2,7 +2,7 @@
   "productItemId": "AC-08",
   "version": 1,
   "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
-  "generatedAt": "2026-07-03T03:48:49Z",
+  "generatedAt": "2026-07-03T04:10:00Z",
   "cases": [
     {
       "id": "TC-AC-08-001",
@@ -89,18 +89,19 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["AC-08", "FR-18", "FR-22", "BR-07", "BR-23"],
+      "traceability": ["AC-08", "FR-18", "FR-22", "BR-07", "BR-23", "AC-18"],
       "title": "POST /v1/check-ins returns 409 envelope with DuplicateCheckIn for repeat submission",
       "preconditions": [
         "Open class session with valid qrToken exists in test environment.",
-        "Authenticated student bearer token belongs to a user with an existing successful attendance result for the session."
+        "Authenticated student bearer token belongs to a user with an existing successful attendance result (Present or Late) for the session."
       ],
       "steps": [
         "Call POST /v1/check-ins with Authorization Bearer token, valid qrToken, clientTimestamp, and a new Idempotency-Key.",
         "Inspect HTTP status, response envelope (data/meta/error), and error.code.",
+        "Query persisted CheckInAttempt for the duplicate request.",
         "Verify no new success attendance payload is returned."
       ],
-      "expected": "API returns 409 with standard envelope where data is null and error.code is DuplicateCheckIn; response includes classSessionId in details where applicable and does not mutate the original success record.",
+      "expected": "API returns 409 with standard envelope where data is null and error.code is DuplicateCheckIn; response includes classSessionId in details where applicable; failed CheckInAttempt with DuplicateCheckIn outcome is persisted per AC-18 and error-handling §4.1; original success AttendanceRecord is unchanged.",
       "edgeCase": false
     },
     {
@@ -186,7 +187,7 @@
         "Observe CheckInResultScreen failure-duplicate info alert styling and copy.",
         "Verify absence of retry CTA and display of existing check-in status per FLOW-02."
       ],
-      "expected": "UI renders failure-duplicate info alert with localized message (e.g. 'Bạn đã điểm danh buổi học này rồi.'); no retry button is shown; student sees existing success status and timestamp without roster mutation.",
+      "expected": "UI renders failure-duplicate info alert with localized message per 08-forms-validation-ux.md (e.g. 'Bạn đã điểm danh buổi học này rồi.'); no retry button is shown per 12-ui-states §5.1; student sees existing success status and timestamp without roster mutation.",
       "edgeCase": false
     },
     {
