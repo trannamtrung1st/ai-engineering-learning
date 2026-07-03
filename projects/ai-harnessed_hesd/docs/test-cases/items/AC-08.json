@@ -2,7 +2,7 @@
   "productItemId": "AC-08",
   "version": 1,
   "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
-  "generatedAt": "2026-07-02T09:51:51Z",
+  "generatedAt": "2026-07-03T03:48:49Z",
   "cases": [
     {
       "id": "TC-AC-08-001",
@@ -187,6 +187,28 @@
         "Verify absence of retry CTA and display of existing check-in status per FLOW-02."
       ],
       "expected": "UI renders failure-duplicate info alert with localized message (e.g. 'Bạn đã điểm danh buổi học này rồi.'); no retry button is shown; student sees existing success status and timestamp without roster mutation.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-08-010",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["AC-08", "FR-18", "FR-22", "BR-07", "BR-23", "AC-18"],
+      "title": "DuplicateCheckIn outcome renders distinct failure-duplicate visual state on PG-02",
+      "preconditions": [
+        "Student is logged in on mobile student shell at PG-02 check-in route.",
+        "Student has an existing successful attendance result (Present or Late) for the target Open session.",
+        "Fresh valid QR token is available via scan or deep link."
+      ],
+      "steps": [
+        "Submit check-in from PG-02 and observe CheckInResultScreen transition from submitting to outcome state.",
+        "Verify page state ID failure-duplicate, info alert variant, and Vietnamese copy intent per ui-states §5.1.",
+        "Confirm no retry CTA is rendered and existing success status with timestamp is displayed per FLOW-02 DuplicateCheckIn branch.",
+        "Compare against success-present and failure-not-enrolled states to confirm visual distinction per AC-UI-02."
+      ],
+      "expected": "PG-02 outcome state failure-duplicate is visually distinct from success and other failure states (info alert, no retry, duplicate-specific copy with prior attendance status); submission lifecycle completes without ambiguous intermediate states per ui-states §5.2.",
       "edgeCase": false
     }
   ]
