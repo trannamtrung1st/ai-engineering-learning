@@ -1,8 +1,8 @@
 {
   "productItemId": "AC-02",
   "version": 1,
-  "docFingerprint": "sha256:9ba57023d6454a237bfa8bfdee6f7fe0224827f1bfbb80b8ab5fb692431c9b66",
-  "generatedAt": "2026-07-03T03:40:00Z",
+  "docFingerprint": "sha256:a297e0ef15d9279cea05e3e0486a1edbcbff0f8ff12f9ba243a6f6c60b73f5f1",
+  "generatedAt": "2026-07-03T04:15:00Z",
   "cases": [
     {
       "id": "TC-AC-02-001",
@@ -17,7 +17,7 @@
         "Class session is in Open state."
       ],
       "steps": [
-        "Call GET /v1/class-sessions/{sessionId}/qr/current and capture qrPayload and expiresAt.",
+        "Call GET /v1/class-sessions/{sessionId}/qr/current and capture qrPayload, tokenState, and expiresAt.",
         "Wait until after first expiresAt and call GET /v1/class-sessions/{sessionId}/qr/current again.",
         "Compare token metadata between the two responses."
       ],
@@ -51,19 +51,18 @@
       "layer": "integration",
       "technique": "state-transition",
       "priority": "P0",
-      "traceability": ["AC-02", "AC-01", "AC-05", "FR-07", "FR-08", "FR-11", "BR-01", "BR-02", "BR-03"],
-      "title": "Token validity follows session state transitions open and close",
+      "traceability": ["AC-02", "AC-05", "FR-08", "FR-11", "FR-14", "BR-02", "BR-03"],
+      "title": "QR tokens invalidate when session transitions from Open to Closed",
       "preconditions": [
-        "Scheduled session exists for assigned lecturer.",
+        "Open session exists with an active valid QR token for assigned lecturer.",
         "Session control and QR services are wired to same database."
       ],
       "steps": [
-        "Execute POST /v1/class-sessions/{sessionId}/open as assigned Lecturer.",
-        "Verify QR token can be issued while state is Open.",
-        "Execute POST /v1/class-sessions/{sessionId}/close.",
-        "Attempt to use previously issued token in check-in flow after close."
+        "Verify QR token can be issued while state is Open via GET /v1/class-sessions/{sessionId}/qr/current.",
+        "Execute POST /v1/class-sessions/{sessionId}/close as assigned Lecturer.",
+        "Attempt POST /v1/check-ins with the previously issued token after close."
       ],
-      "expected": "Legal Scheduled->Open transition enables QR issuance; after Open->Closed transition, active QR tokens are invalidated and prior token is no longer accepted for successful check-in and no illegal token-valid state persists.",
+      "expected": "While Open, QR issuance remains valid; after Open->Closed transition active QR tokens are invalidated, prior token is no longer accepted for successful check-in, and close side effects per API contract apply.",
       "edgeCase": true
     },
     {
@@ -115,7 +114,7 @@
       "technique": "flow-a",
       "priority": "P0",
       "traceability": ["AC-02", "AC-01", "FR-07", "FR-11", "FR-16", "BR-01", "BR-03"],
-      "title": "Primary lifecycle flow open session then student checks in with active token",
+      "title": "Primary lifecycle flow keeps rotating QR active while students check in",
       "preconditions": [
         "Lecturer account and enrolled student account are available.",
         "Session starts in Scheduled state."
@@ -123,9 +122,10 @@
       "steps": [
         "Lecturer opens attendance via POST /v1/class-sessions/{sessionId}/open.",
         "Student submits POST /v1/check-ins with qrToken from active display before expiry.",
-        "Lecturer requests current QR metadata while session remains open."
+        "Wait past one TTL cycle and call GET /v1/class-sessions/{sessionId}/qr/current while session remains open.",
+        "Submit a second student check-in with the newly rotated token."
       ],
-      "expected": "Main flow succeeds end-to-end: session opens, student check-in accepts within TTL window, and QR remains actively refreshed for continued use without requiring session reopen.",
+      "expected": "Main flow succeeds end-to-end: session opens, QR rotates every 30 seconds without reopen, students can check in with tokens from the active window, and refreshed tokens remain valid for continued use.",
       "edgeCase": false
     },
     {
@@ -143,7 +143,7 @@
       "steps": [
         "Capture a QR token and wait until after its expiresAt boundary.",
         "Submit POST /v1/check-ins with the expired token.",
-        "Fetch current token from active QR display endpoint and submit POST /v1/check-ins again within TTL."
+        "Fetch current token from GET /v1/class-sessions/{sessionId}/qr/current and submit POST /v1/check-ins again within TTL."
       ],
       "expected": "First attempt fails due to expiry (ExpiredQr), while follow-up attempt with newly rotated valid token can succeed in the same open session.",
       "edgeCase": true
@@ -153,19 +153,19 @@
       "category": "edge",
       "layer": "e2e",
       "technique": "rbac-negative",
-      "priority": "P1",
+      "priority": "P0",
       "traceability": ["AC-02", "AC-16", "FR-27", "FR-28", "BR-19"],
-      "title": "Unauthorized and out-of-scope actors are denied report and export APIs",
+      "title": "Unauthorized roles are denied scoped report and export access",
       "preconditions": [
-        "Student account and Lecturer account outside target section scope exist.",
-        "Attendance data exists in restricted section scope."
+        "Student account and out-of-scope Lecturer account exist.",
+        "Attendance data exists outside each actor's authorized scope."
       ],
       "steps": [
-        "Call GET /v1/reports/attendance as Student and out-of-scope Lecturer.",
-        "Call POST /v1/exports/attendance using filters outside each actor scope.",
+        "Call GET /v1/reports/attendance as Student and as out-of-scope Lecturer.",
+        "Call POST /v1/exports/attendance with filters outside actor scope for same accounts.",
         "Inspect responses for authorization behavior and data leakage."
       ],
-      "expected": "Denied actors receive 403 authorization denial (Forbidden/OutOfScope) and cannot retrieve restricted report rows, pagination counts, or export jobs outside permitted scope.",
+      "expected": "Requests are denied with authorization errors (403 Forbidden/OutOfScope semantics), and responses do not leak restricted rows, pagination counts, or export artifacts.",
       "edgeCase": true
     },
     {
