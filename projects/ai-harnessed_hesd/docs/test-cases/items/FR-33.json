@@ -2,7 +2,7 @@
   "productItemId": "FR-33",
   "version": 1,
   "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
-  "generatedAt": "2026-07-02T21:30:00Z",
+  "generatedAt": "2026-07-03T05:05:00Z",
   "cases": [
     {
       "id": "TC-FR-33-001",
@@ -15,16 +15,16 @@
       "preconditions": [
         "Testing-plan §7.3 security and authorization tests and AC-23 security/scope gate apply.",
         "Role-matrix fixture provides ITAdmin without explicit academic access grant and AcademicAdmin as control.",
-        "Platform health endpoint, technical audit logs, and academic resources (session roster, report, enrollment import) exist in test environment."
+        "Technical audit logs and academic resources (session roster, report, enrollment import) exist in test environment."
       ],
       "steps": [
-        "As ITAdmin, call GET /v1/health and GET /v1/me to verify platform operations identity context.",
+        "As ITAdmin, call GET /v1/me to verify platform operations identity context and technical-only scope claims.",
         "As ITAdmin, call GET /v1/audit-logs filtered to technical action types (login_lock, system_config, infrastructure).",
         "As ITAdmin, attempt academic routes: GET /v1/reports/attendance, POST /v1/enrollments/import, GET /v1/class-sessions/{sessionId}/attendance, PATCH attendance correction.",
         "As ITAdmin, attempt POST /v1/class-sessions/{sessionId}/open and POST /v1/check-ins.",
         "As AcademicAdmin control, verify allowed academic routes succeed within institution scope."
       ],
-      "expected": "Maps to testing-plan §7.3 and AC-23 six-role matrix: ITAdmin succeeds on platform operations (health, technical audit, SystemOps) and is denied on academic mutations and bulk attendance reads without explicit grant per permissions matrix §3.1–3.2 and §5.5.",
+      "expected": "Maps to testing-plan §7.3 and AC-23 six-role matrix: ITAdmin succeeds on platform operations (identity context, technical audit, SystemOps) and is denied on academic mutations and bulk attendance reads without explicit grant per API §6.1 ITAdmin scope resolution and permissions matrix.",
       "edgeCase": false
     },
     {
@@ -78,20 +78,20 @@
       "layer": "e2e",
       "technique": "http-contract",
       "priority": "P0",
-      "traceability": ["FR-33", "NFR-16"],
-      "title": "HTTP contract for ITAdmin GET /v1/health returns system health status envelope",
+      "traceability": ["FR-33", "FR-31", "FR-32"],
+      "title": "HTTP contract for ITAdmin GET /v1/me returns actor identity, roles, and technical-only effective scopes",
       "preconditions": [
-        "API service is running with postgres and redis dependencies healthy.",
-        "ITAdmin is authenticated with valid bearer token."
+        "ITAdmin is authenticated with a valid bearer token.",
+        "ITAdmin actor holds no explicit academic scope grant (technical resources only)."
       ],
       "steps": [
-        "Send GET /v1/health with ITAdmin Authorization header.",
-        "Assert HTTP 200 and standard response envelope.",
-        "Assert data.status is ok and dependency indicators (db, cache) report connected or healthy state.",
-        "Verify meta.requestId and meta.timestamp are present.",
-        "Send GET /v1/health without Authorization and confirm health remains accessible for operational monitoring per platform reliability requirements."
+        "Send GET /v1/me with ITAdmin Authorization header.",
+        "Assert HTTP 200 and standard response envelope { data, meta, error } with error null.",
+        "Assert data reports actor identity and role assignments containing ITAdmin per API §4.1 (trace FR-31 to FR-33).",
+        "Assert effective scopes indicate technical resources only and do not include academic facultyId or classSectionId grants.",
+        "Verify meta.requestId and meta.timestamp are present; send GET /v1/me without Authorization and confirm HTTP 401 Unauthenticated."
       ],
-      "expected": "GET /v1/health returns HTTP 200 with documented health payload including service and dependency status per FR-33 system health views and NFR-16 operational telemetry alignment.",
+      "expected": "GET /v1/me returns HTTP 200 with ITAdmin identity, role assignments, and technical-only effective scopes per API §4.1 and §6.1 ITAdmin scope resolution; unauthenticated request returns HTTP 401 per FR-33 platform operations identity context.",
       "edgeCase": false
     },
     {
@@ -173,17 +173,17 @@
       "title": "Primary IT Admin platform operations workflow: authenticate, verify health, review technical audit logs",
       "preconditions": [
         "ITAdmin is provisioned with institution-issued credentials.",
-        "Platform is running with healthy dependencies and recent technical audit events (login throttles, config changes).",
+        "Platform has recent technical audit events (login throttles, config changes) queryable via GET /v1/audit-logs.",
         "No explicit academic access grant is assigned to ITAdmin actor."
       ],
       "steps": [
-        "ITAdmin completes POST /v1/auth/login and GET /v1/me to establish authenticated session.",
-        "ITAdmin calls GET /v1/health and records service status and dependency health indicators.",
-        "ITAdmin queries GET /v1/audit-logs with technical actionType and date range filters for operational triage.",
-        "ITAdmin attempts GET /v1/reports/attendance and PATCH attendance correction to confirm academic boundary.",
+        "ITAdmin completes POST /v1/auth/login and GET /v1/me to establish authenticated session and confirm technical-only scope.",
+        "ITAdmin queries GET /v1/audit-logs with technical actionType and from/to date range filters for operational triage.",
+        "ITAdmin reviews returned technical audit entries (login_lock, system_config) and confirms academic mutation payloads are excluded.",
+        "ITAdmin attempts GET /v1/reports/attendance and PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} to confirm academic boundary.",
         "Verify all platform operations succeed and all academic mutations are denied without data leakage."
       ],
-      "expected": "End-to-end IT Admin happy path per FR-33: technical configuration visibility (health), operational log review, and identity context succeed; academic attendance edits and reports remain denied per permissions matrix §5.5 and AC-23.",
+      "expected": "End-to-end IT Admin happy path per FR-33: identity context and technical operational log review succeed; academic attendance edits and reports remain denied per API §6.1, §4.7 ITAdmin technical-only scope, and AC-23.",
       "edgeCase": false
     },
     {
@@ -366,6 +366,50 @@
         "Confirm PG-01 locked/throttled state messaging is available for failed login attempts per FR-36 security policy."
       ],
       "expected": "FLOW-14 staff authentication succeeds for ITAdmin; academic listing and import routes show access denial or hidden write controls without cross-scope data per FR-33, FR-36, and AC-23; login form displays neutral throttle messaging on repeated failures.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-33-017",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["FR-33", "FR-30"],
+      "title": "PG-15 audit log listing renders visually distinct loading, empty, error, and populated states for ITAdmin home hub",
+      "preconditions": [
+        "ITAdmin is logged in and lands on the PG-15 /audit/logs home hub in StaffLayout (LAY-04).",
+        "Harness can drive fixtures for loading (delayed response), empty (no matching entries), error (backend failure), and populated technical audit datasets."
+      ],
+      "steps": [
+        "Load /audit/logs with a delayed backend response and confirm a loading state (skeleton/spinner) renders in the DataTable region, not a blank shell.",
+        "Apply an actor/actionType filter combination that yields no rows and confirm a distinct empty/no-result state with clear-all affordance, not a silent blank table.",
+        "Force a backend error for the audit query and confirm a distinct error state with retry affordance, visually separate from empty and loading.",
+        "Load the populated technical audit dataset and confirm rows render via AuditEntryRow with timestamp desc default sort and TableToolbar filter chips.",
+        "Verify each of the four states (loading, empty, error, populated) is visually distinguishable per NFR-UI-07 listing state requirements for PG-15."
+      ],
+      "expected": "PG-15 /audit/logs presents visually distinct loading, empty/no-result, error, and populated states per NFR-UI-07 and 09-page-list.md §8 listing rules; the ITAdmin home hub never renders an empty shell or an ambiguous state, satisfying FR-33 operational log review UX.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-33-018",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-navigation",
+      "priority": "P1",
+      "traceability": ["FR-33", "AC-23"],
+      "title": "ITAdmin StaffLayout nav exposes only PG-15 home hub and omits academic routes without data leakage",
+      "preconditions": [
+        "ITAdmin is authenticated and rendered in StaffLayout (LAY-04) with SidebarNav.",
+        "Academic setup and reporting routes (/admin/*, /reports/attendance) exist for other roles."
+      ],
+      "steps": [
+        "Confirm the persistent SidebarNav lists Nhật ký kiểm toán (/audit/logs) as the first/home nav item and that the home link is reachable from the page.",
+        "Confirm academic-only nav items (terms, courses, class sections, policies, enrollment import) are absent from rendered output, not merely disabled, per AC-UI-09.",
+        "Navigate directly to /admin/class-sections/{id}/enrollments and confirm a scoped access-denied state without any cross-scope data or restricted rows.",
+        "Navigate directly to /reports/attendance and confirm access denial or an empty scoped state without institution-wide attendance rows.",
+        "From the denied route, confirm a recovery path (home link / back-to-home) returns ITAdmin to the PG-15 home hub without a dead end."
+      ],
+      "expected": "ITAdmin StaffLayout navigation exposes only the PG-15 audit home hub with a persistent home link; forbidden academic routes are omitted from nav and gated on direct navigation with scoped access-denied and no data leakage per FR-33, AC-23, and AC-UI-09.",
       "edgeCase": false
     }
   ]

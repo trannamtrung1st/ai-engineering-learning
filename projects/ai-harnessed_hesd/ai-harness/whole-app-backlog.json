@@ -3,7 +3,7 @@
   "slices": [
     {
       "id": "infra-monorepo-foundation",
-      "passes": true,
+      "passes": false,
       "priority": 1,
       "phase": 0,
       "agent": "infra",
@@ -38,7 +38,15 @@
           "FR-33",
           "NFR-16"
         ]
-      }
+      },
+      "history": [
+        {
+          "at": "2026-07-03T05:05:46Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-33 — reverify after TestGen",
+          "source": "harness"
+        }
+      ]
     },
     {
       "id": "infra-local-runtime-compose",
@@ -2275,6 +2283,12 @@
           "at": "2026-07-03T04:35:31Z",
           "kind": "drift",
           "reason": "Doc drift for FR-15 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T05:05:46Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-33 — reverify after TestGen",
           "source": "harness"
         }
       ]
