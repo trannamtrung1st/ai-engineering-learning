@@ -2,7 +2,7 @@
   "productItemId": "NFR-16",
   "version": 1,
   "docFingerprint": "sha256:0091ebfac485b5b90c7a94c982196a35adddc3e7535aba555ed532f8d1599fd9",
-  "generatedAt": "2026-07-02T22:00:00Z",
+  "generatedAt": "2026-07-03T05:48:00Z",
   "cases": [
     {
       "id": "TC-NFR-16-001",
@@ -362,6 +362,53 @@
       "expected": "Physical operational drill confirms NFR-16 telemetry and alerting enable class-time issue triage with rehearsed manual fallback per AC-25 and launch gate peak load rehearsal control #1.",
       "edgeCase": false,
       "harnessSkip": "physical-device"
+    },
+    {
+      "id": "TC-NFR-16-017",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["NFR-16", "FR-19", "FR-22", "AC-18"],
+      "title": "PG-06 live roster summary strip and rejected-attempt rows render distinct operational telemetry states for class-time triage",
+      "preconditions": [
+        "Lecturer is logged in on desktop Chromium at PG-06 /lecturer/sessions/{sessionId}/roster.",
+        "attendance-open-session fixture provides Open session with mixed Present, Late, Pending, and failed CheckInAttempt rows (ExpiredQr, DuplicateCheckIn).",
+        "LiveRosterPanel summary strip exposes present, late, pending, and rejectedAttempts counts per FR-19 and 09-page-list.md §5 PG-06 key states."
+      ],
+      "steps": [
+        "Navigate to PG-06 and observe loading skeleton or shimmer in roster region while GET /v1/class-sessions/{sessionId}/attendance resolves.",
+        "On populated load, verify summary strip displays present, late, pending, and rejectedAttempts counts matching API data.counts with visually distinct numeric badges.",
+        "Locate a student row with latest ExpiredQr failure; confirm AttendanceStatusCell shows a localized rejected-attempt outcome badge distinct from Present/Late/Pending styling.",
+        "Apply status or attempt-outcome filter to yield zero matching rows; confirm no-results state (Không tìm thấy kết quả) with clear-filters affordance per NFR-UI-07, not a blank table.",
+        "Trigger a realtime check-in success from harness; verify summary present count increments and rejectedAttempts does not inflate without a new failure.",
+        "Simulate attendance API error; confirm error FeedbackAlert with retry affordance while summary strip does not show stale or partial throughput counts."
+      ],
+      "expected": "PG-06 listing states (loading, populated, no-results, error) are visually distinct per NFR-UI-07; operational telemetry surfaces (rejectedAttempts volume, per-row failure outcome badges, present/late/pending throughput counts) enable lecturer class-time triage without audit-log queries per NFR-16 and 09-page-list.md §5 PG-06.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-16-018",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["NFR-16", "NFR-09", "FR-27", "FR-32", "BR-18", "BR-19", "AC-15", "AC-16"],
+      "title": "Lecturer denied out-of-scope attendance export without operational throughput or failure distribution leakage",
+      "preconditions": [
+        "Lecturer A is assigned only to section S1; section S2 belongs to Lecturer B with elevated rejectedAttempts and mixed failure outcomes in a recent Open session.",
+        "Lecturer A bearer token is authenticated.",
+        "Export and report endpoints enforce PRM-09 scope filtering and PRM-10 deny-without-leakage per 01-roles-permissions.md §4.3."
+      ],
+      "steps": [
+        "Lecturer A calls POST /v1/reports/attendance/export (or equivalent ExportJob.execute) with classSectionId or filters targeting out-of-scope section S2.",
+        "Assert HTTP 403 Forbidden with standard error envelope; response must not include S2 row counts, rejectedAttempts totals, failure histograms, or student attempt metadata.",
+        "Lecturer A calls GET /v1/reports/attendance?classSectionId={S2} as a secondary out-of-scope report read.",
+        "Assert HTTP 403 without partial S2 operational metrics in body or headers.",
+        "Lecturer B calls the same S2 export as authorized control and receives HTTP 200 with scoped CSV containing only S2 rows."
+      ],
+      "expected": "Out-of-scope Lecturer export and report requests are denied without disclosing cross-section throughput, failure distribution, or attempt outcome metadata per NFR-09, BR-19, and AC-16; authorized Lecturer control receives scoped operational data only within assigned sections.",
+      "edgeCase": true
     }
   ]
 }
