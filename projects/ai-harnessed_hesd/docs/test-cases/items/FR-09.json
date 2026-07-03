@@ -2,7 +2,7 @@
   "productItemId": "FR-09",
   "version": 1,
   "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
-  "generatedAt": "2026-07-02T10:49:11Z",
+  "generatedAt": "2026-07-03T04:28:00Z",
   "cases": [
     {
       "id": "TC-FR-09-001",
@@ -268,12 +268,36 @@
       ],
       "steps": [
         "Navigate to lecturer session detail page and verify Open status badge and active QR panel.",
-        "Tap Close attendance and confirm action in ConfirmActionModal warning about auto-absent.",
+        "Tap Close attendance and confirm action in ConfirmActionModal warning about auto-absent per FLOW-07.",
         "Observe session status badge changes to Closed and QR panel is hidden.",
-        "Review PG-06 roster: Pending students show Absent danger badge; Present/Late rows unchanged.",
+        "Navigate to /lecturer/sessions/{sessionId}/roster (PG-06) and review LiveRosterPanel.",
+        "Verify Pending students show Absent danger badge; Present/Late rows unchanged.",
         "Verify summary chips reflect updated present, late, and absent counts matching close API summary."
       ],
       "expected": "Browser flow reflects FR-09 outcome: unresolved enrolled students display Absent AttendanceStatusCell with danger variant; Excused/Manual Present rows if present are not overwritten; roster summary matches API close summary.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-09-013",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["FR-09", "BR-13", "AC-12", "FR-19"],
+      "title": "PG-06 roster renders distinct Absent (post-close) danger badges for auto-absent students",
+      "preconditions": [
+        "Lecturer is logged in on desktop staff shell at PG-05 with an Open session.",
+        "PG-06 LiveRosterPanel shows enrolled students: at least one Present/Late, at least two Pending without successful check-in.",
+        "ConfirmActionModal auto-absent warning copy is visible per FLOW-07 step 1 and 09-page-list §5."
+      ],
+      "steps": [
+        "Before close, verify Pending students render neutral Pending badge in Pending group per ui-states §4.2.",
+        "Confirm close via ConfirmActionModal on PG-05 and observe Closed StatusBadge and hidden QrDisplayPanel per ui-states §2.3.",
+        "Navigate to PG-06 and verify previously Pending rows transition to Absent (post-close) group with danger variant AttendanceStatusCell per ui-states §4.1.",
+        "Verify Present/Late rows retain success/warning badge variants and remain in Checked-in group.",
+        "Confirm roster summary chips update absent count to match API data.summary.absent from close response."
+      ],
+      "expected": "Post-close PG-06 visually distinguishes auto-absent students (danger Absent badge in Absent post-close group) from checked-in students (success/warning badges) and from pre-close Pending state (neutral badge); summary chips reflect finalized absent count per FR-09, AC-12, and ui-states §4.",
       "edgeCase": false
     }
   ]
