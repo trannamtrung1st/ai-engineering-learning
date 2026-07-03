@@ -2,7 +2,7 @@
   "productItemId": "BR-01",
   "version": 1,
   "docFingerprint": "sha256:0421ca4affe3aa70584e3b352a860d11de519a5a2aaff8c4d8e0f12d14d1a70a",
-  "generatedAt": "2026-07-02T11:50:08Z",
+  "generatedAt": "2026-07-03T05:09:00Z",
   "cases": [
     {
       "id": "TC-BR-01-001",
@@ -277,6 +277,29 @@
         "After lecturer opens session in separate browser context, refresh or rescan and confirm not-open error no longer appears on valid submission path."
       ],
       "expected": "Browser journey surfaces BR-01 rejection with localized Vietnamese copy (SessionNotOpen equivalent); no false success state; after session opens, not-open gating is removed.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-01-013",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["BR-01", "FR-16", "AC-01"],
+      "title": "Student check-in page renders distinct error visual state when session is not open",
+      "preconditions": [
+        "Class session is in Scheduled state; lecturer has not opened attendance.",
+        "Student is authenticated on mobile viewport at 320px minimum width.",
+        "Student navigates to the check-in page via QR deep link with token preserved."
+      ],
+      "steps": [
+        "Load the student check-in page while session remains Scheduled.",
+        "Trigger or observe the SessionNotOpen rejection path (submit or session-state gate).",
+        "Verify the error state uses visually distinct alert/banner styling separate from loading and success states.",
+        "Confirm Vietnamese not-open message is readable and not clipped or overflowing at 320px.",
+        "Verify no success confirmation badge or green checkmark appears alongside the error state."
+      ],
+      "expected": "BR-01 rejection displays a dedicated error visual state distinguishable from empty, loading, and success UI; localized SessionNotOpen copy remains visible without layout overflow on mobile.",
       "edgeCase": false
     }
   ]
