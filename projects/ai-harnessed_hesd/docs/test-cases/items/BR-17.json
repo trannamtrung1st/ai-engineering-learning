@@ -2,7 +2,7 @@
   "productItemId": "BR-17",
   "version": 1,
   "docFingerprint": "sha256:0421ca4affe3aa70584e3b352a860d11de519a5a2aaff8c4d8e0f12d14d1a70a",
-  "generatedAt": "2026-07-02T12:45:00Z",
+  "generatedAt": "2026-07-03T05:20:00Z",
   "cases": [
     {
       "id": "TC-BR-17-001",
@@ -327,20 +327,20 @@
       "technique": "browser-journey",
       "priority": "P0",
       "traceability": ["BR-17", "FR-26", "FR-37"],
-      "title": "Student attendance history page shows warning when unexcused absence rate exceeds BR-17 threshold",
+      "title": "PG-03 student attendance history shows warning when unexcused absence rate exceeds BR-17 threshold",
       "preconditions": [
-        "Student logged in on mobile-web Chromium at personal attendance history route.",
+        "Student logged in on mobile-web Chromium at PG-03 route /me/attendance.",
         "Student enrolled in section where unexcused absence rate exceeds absenceThresholdPercent 20.",
         "BR-17 absence-threshold alert has been generated for the student-section pair."
       ],
       "steps": [
-        "Navigate to student attendance history for the at-risk section.",
+        "Navigate to PG-03 /me/attendance and filter to the at-risk section.",
         "Verify section summary card displays unexcused absence rate percentage and configured threshold.",
-        "Observe warning alert component with localized copy explaining threshold breach per BR-17 outcome.",
+        "Observe warning FeedbackAlert component (semantic warning styling per alerts.md) with localized copy explaining threshold breach per BR-17 outcome.",
         "Confirm alert is informational only: no attendance status rows are editable by the student.",
         "Verify other students' data is not visible on the page."
       ],
-      "expected": "Student UI journey surfaces BR-17 threshold breach as a warning alert on personal attendance history; rate and threshold values match backend calculation; alert is informational and does not expose other students' records.",
+      "expected": "Student UI journey on PG-03 surfaces BR-17 threshold breach as a warning alert on personal attendance history; rate and threshold values match backend calculation; alert is informational and does not expose other students' records.",
       "edgeCase": false
     },
     {
@@ -350,20 +350,43 @@
       "technique": "browser-journey",
       "priority": "P0",
       "traceability": ["BR-17", "FR-26", "FR-10", "FR-19"],
-      "title": "Lecturer section dashboard highlights at-risk students with BR-17 absence-threshold badge",
+      "title": "PG-06 live roster highlights at-risk students with BR-17 absence-threshold badge",
       "preconditions": [
-        "Lecturer logged in on desktop Chromium at assigned section dashboard.",
+        "Lecturer logged in on desktop Chromium at PG-06 route /lecturer/sessions/{sessionId}/roster for an Open session.",
         "At least one enrolled student exceeds absenceThresholdPercent 20; others remain below threshold.",
-        "Section has upcoming and past sessions listed per FR-10."
+        "LiveRosterPanel (DC-06) subscribed to GET /v1/class-sessions/{sessionId}/attendance per FR-19."
       ],
       "steps": [
-        "Navigate to class section detail or session list for the assigned section.",
-        "Locate student roster or section summary showing per-student absence rate.",
-        "Verify at-risk student row displays threshold-exceeded badge with rate and threshold tooltip.",
+        "Navigate to PG-06 live roster for the assigned Open session.",
+        "Locate at-risk student row in LiveRosterPanel showing per-student absence rate summary.",
+        "Verify at-risk student row displays threshold-exceeded badge (warning variant per badges.md) with rate and threshold tooltip.",
         "Verify below-threshold students show no threshold badge.",
-        "Click at-risk student row and confirm detail panel shows alert timestamp and informational message without edit controls."
+        "Open at-risk student detail or tooltip and confirm alert timestamp and informational message without attendance edit controls beyond BR-14 manual correction."
       ],
-      "expected": "Lecturer browser journey satisfies BR-17 visibility: at-risk students are visually distinguished on section dashboard; badge reflects threshold breach; non-at-risk students remain unbadged; data scoped to lecturer-assigned section only.",
+      "expected": "Lecturer browser journey on PG-06 satisfies BR-17 visibility: at-risk students are visually distinguished on live roster; badge reflects threshold breach; non-at-risk students remain unbadged; data scoped to lecturer-assigned section only.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-17-017",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["BR-17", "FR-26", "FR-37"],
+      "title": "PG-03 absence-threshold warning uses distinct warning visual state per alerts.md without masking attendance list states",
+      "preconditions": [
+        "Student logged in on PG-03 /me/attendance (AttendanceHistoryList, DC-10).",
+        "Student enrolled in section where unexcused absence rate exceeds absenceThresholdPercent 20; BR-17 alert generated.",
+        "Section has both threshold-warning and normal attendance rows loaded."
+      ],
+      "steps": [
+        "Load PG-03 and observe loading skeleton or shimmer per NFR-UI-07 while attendance history fetch is in flight.",
+        "After data loads, verify threshold-breach FeedbackAlert renders with warning-soft background, border-warning-subtle border, and fg-warning text per alerts.md.",
+        "Confirm attendance history list rows retain distinct status badges (Present success, Late warning, Absent danger) below the alert banner.",
+        "Simulate history fetch failure and verify error FeedbackAlert is visually distinct from the threshold-warning state.",
+        "Retry successfully and confirm threshold warning reappears alongside populated attendance rows without layout overflow at 320px viewport."
+      ],
+      "expected": "PG-03 implements NFR-UI-07 visual state coverage for BR-17: loading, error, threshold-warning, and populated list states are visually distinct; warning alert uses semantic warning tokens and does not obscure or conflate attendance status badge semantics.",
       "edgeCase": false
     }
   ]
