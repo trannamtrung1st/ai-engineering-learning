@@ -1,0 +1,229 @@
+{
+  "productItemId": "AC-21",
+  "version": 1,
+  "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+  "generatedAt": "2026-07-02T12:00:00Z",
+  "cases": [
+    {
+      "id": "TC-AC-21-001",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["AC-21", "NFR-02", "FR-07", "FR-16", "FR-23"],
+      "title": "Scenario matrix row for majority class completion within 5 minutes of session open",
+      "preconditions": [
+        "Testing-plan §7.1 performance tests and §11 NFR verification matrix rows for NFR-02 and AC-21 apply.",
+        "Representative enrolled class sections are seeded with pilot-scale enrollment counts per product-meta mvpScale.",
+        "Class sessions are in Scheduled state with active enrollments and lecturer assigned to each section."
+      ],
+      "steps": [
+        "Open attendance for each representative section via POST /v1/class-sessions/{sessionId}/open (AC-01).",
+        "Record openedAt as T=0 for the 5-minute completion window.",
+        "Simulate enrolled students submitting valid POST /v1/check-ins until T+5 minutes.",
+        "For each section, compute completion rate: count of students with successful Present or Late attendance divided by total enrolled students."
+      ],
+      "expected": "For each representative enrolled class section, more than 50% of enrolled students complete successful check-in within 5 minutes of openedAt, satisfying AC-21 and NFR-02 per testing-plan §7.1 class-start burst target.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-21-002",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["AC-21", "NFR-02", "FR-07", "FR-09", "FR-23", "BR-01"],
+      "title": "Attendance ledger and enrollment modules compute section completion rate within 5-minute window",
+      "preconditions": [
+        "Real database transaction boundary is enabled for attendance ledger, enrollment, and class-session modules.",
+        "Class section has known enrollment count (e.g. 40 students) with no prior attendance for the target session.",
+        "Session openedAt timestamp is persisted and queryable from ClassSession record."
+      ],
+      "steps": [
+        "Lecturer opens session via POST /v1/class-sessions/{sessionId}/open; capture openedAt.",
+        "Submit successful check-ins for a majority subset of enrolled students (e.g. 25 of 40) with checkInAt timestamps before openedAt + 5 minutes.",
+        "Query attendance ledger and enrollment tables to compute completedCount / enrolledCount within the window.",
+        "Verify checkInAt for each success record falls between openedAt and openedAt + 5 minutes."
+      ],
+      "expected": "Module integration correctly persists AttendanceRecord rows with Present or Late status; computed completion rate exceeds 50% within the 5-minute window from openedAt, matching AC-21 majority gate and NFR-02 classroom completion time.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-21-003",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["AC-21", "NFR-02", "AC-01", "FR-07", "BR-01"],
+      "title": "Session open transition starts 5-minute completion clock at openedAt",
+      "preconditions": [
+        "Class session is in Scheduled state with enrolled students and assigned lecturer.",
+        "Lecturer bearer token is available for POST /v1/class-sessions/{sessionId}/open.",
+        "No attendance records exist for the session before open."
+      ],
+      "steps": [
+        "POST /v1/class-sessions/{sessionId}/open as assigned Lecturer with Idempotency-Key.",
+        "Verify response HTTP 200 with data.state Open and data.openedAt ISO-8601 timestamp.",
+        "Confirm session state in database transitions Scheduled to Open with openedAt and actor recorded.",
+        "Use openedAt as T=0 baseline for subsequent completion-rate measurement in the 5-minute window."
+      ],
+      "expected": "Session transitions to Open with openedAt recorded (AC-01); the 5-minute majority-completion measurement window begins at openedAt per AC-21 Given/When/Then and WF-03 SLO alignment (NFR-02).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-21-004",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P0",
+      "traceability": ["AC-21", "NFR-02", "NFR-04", "AC-08", "FR-18", "BR-07"],
+      "title": "Concurrent class-start burst achieves majority completion with duplicate prevention intact",
+      "preconditions": [
+        "Open class session with 30+ enrolled students and valid rotating QR tokens.",
+        "Test harness fires parallel POST /v1/check-ins from distinct student actors with unique Idempotency-Key values.",
+        "Each student has no prior successful attendance for the session."
+      ],
+      "steps": [
+        "At T+0 to T+3 minutes after session open, trigger parallel check-in submissions across the enrolled cohort.",
+        "Include replay attempts: same student resubmits with same Idempotency-Key and a second distinct submission after success (AC-08).",
+        "After burst completes, query attendance records and compute completion rate within openedAt + 5 minutes.",
+        "Verify duplicate submissions return 409 DuplicateCheckIn without inflating completion count."
+      ],
+      "expected": "Majority of enrolled students achieve successful check-in within 5 minutes under concurrent burst (NFR-04); duplicate prevention rejects second success per student (AC-08, BR-07) so completion rate reflects unique successful records only.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-21-005",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["AC-21", "NFR-02", "FR-19", "FR-28"],
+      "title": "GET /v1/class-sessions/{sessionId}/attendance reflects majority completion within 5 minutes",
+      "preconditions": [
+        "Lecturer has opened session; majority of enrolled students have completed POST /v1/check-ins within 5 minutes of openedAt.",
+        "Authenticated Lecturer bearer token is available for roster query.",
+        "E2E harness can poll attendance endpoint at T+4 minutes and T+5 minutes."
+      ],
+      "steps": [
+        "At T+4 minutes after open, GET /v1/class-sessions/{sessionId}/attendance as assigned Lecturer.",
+        "Verify HTTP 200, standard envelope, data.counts.present + data.counts.late divided by enrolled total exceeds 50%.",
+        "At T+5 minutes, repeat GET and confirm counts.data.rows reflect Present or Late for majority of enrolled students.",
+        "Verify data.state is Open and pagination metadata does not leak cross-scope counts."
+      ],
+      "expected": "HTTP 200 roster response shows majority of enrolled students with Present or Late status within 5 minutes of session open; counts align with AC-21 completion gate and FR-19 live roster contract.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-21-006",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["AC-21", "NFR-02", "AC-01", "AC-11", "FR-07", "FR-16", "FR-23"],
+      "title": "WF-03 class-start flow achieves majority student completion within 5-minute SLO",
+      "preconditions": [
+        "Representative enrolled class section with pilot-scale student count is configured.",
+        "Lecturer actor can open session and display rotating QR (WF-02, AC-01).",
+        "Student actors are enrolled, authenticated, and eligible for check-in (AC-06, AC-07)."
+      ],
+      "steps": [
+        "Lecturer opens attendance session (POST /open); record openedAt as T=0.",
+        "Enrolled students execute WF-03 happy path: scan QR, authenticate if needed, submit POST /v1/check-ins.",
+        "Stagger submissions realistically across T+0 to T+4 minutes mimicking class-start adoption curve.",
+        "At T+5 minutes, query roster and compute (present + late) / enrolled."
+      ],
+      "expected": "Primary WF-03 flow yields majority (>50%) of enrolled students with successful Present or Late attendance within 5 minutes of open, matching AC-21, NFR-02, and workflow observability target in 06-main-workflows.md §11.1.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-21-007",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["AC-21", "NFR-02", "FR-19"],
+      "title": "Majority completion gate fails when fewer than 50% check in within 5 minutes",
+      "preconditions": [
+        "Performance test environment can throttle check-in throughput or limit student participation for threshold validation.",
+        "Class section has known enrollment count; session is open with openedAt recorded.",
+        "Release gate documentation requires explicit pass/fail evidence for AC-21."
+      ],
+      "steps": [
+        "Open session and allow only a minority subset (e.g. 40%) of enrolled students to complete check-in before openedAt + 5 minutes.",
+        "At T+5 minutes, query GET /v1/class-sessions/{sessionId}/attendance and compute completion rate.",
+        "Compare rate against AC-21 majority (>50%) threshold and document gate verdict.",
+        "Optionally run control scenario where >50% complete to confirm PASS boundary."
+      ],
+      "expected": "When computed completion rate is <= 50% at the 5-minute mark, AC-21 gate is marked FAIL with documented metric evidence; when rate > 50% under normal pilot profile, gate is PASS. Boundary validates measurability of the 5-minute majority threshold per NFR-02.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-21-008",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["AC-21", "NFR-02", "NFR-09", "FR-16", "BR-19"],
+      "title": "Non-Student roles denied POST /v1/check-ins so only enrolled students count toward completion",
+      "preconditions": [
+        "Open class session with valid qrToken and known enrolled student count.",
+        "Lecturer and DepartmentAdmin bearer tokens are available per permission matrix.",
+        "Completion metric baseline is enrolled student count only."
+      ],
+      "steps": [
+        "Lecturer calls POST /v1/check-ins with valid qrToken and Authorization header.",
+        "DepartmentAdmin calls POST /v1/check-ins with the same qrToken context.",
+        "Verify both receive HTTP 403 Forbidden per permission matrix (Submit QR check-in Deny).",
+        "Confirm enrolled students can still complete check-ins and majority completion metric excludes non-student attempts."
+      ],
+      "expected": "Lecturer and DepartmentAdmin receive 403 Forbidden; no CheckInAttempt or AttendanceRecord is created for non-student actors. Only authenticated enrolled Student submissions contribute to the AC-21 majority completion rate within 5 minutes.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-21-009",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["AC-21", "NFR-02", "FR-19", "AC-01", "AC-11"],
+      "title": "Lecturer realtime roster UI shows majority checked-in badge within 5 minutes of open",
+      "preconditions": [
+        "Lecturer is authenticated on desktop Chromium viewport with assigned open session.",
+        "Enrolled student cohort will complete mobile-web check-in journeys within the 5-minute window.",
+        "Browser harness records wall-clock from session open UI action through majority roster indicator."
+      ],
+      "steps": [
+        "Lecturer navigates to session control and opens attendance (AC-01); confirm Open state and QR display.",
+        "Multiple enrolled students complete FLOW-01 mobile-web check-in journeys in parallel (emulated mobile viewports).",
+        "Observe lecturer realtime roster dashboard: present + late counts and progress indicator update without page reload.",
+        "At T+5 minutes, verify UI shows majority (>50%) of enrolled students as checked in (Present or Late)."
+      ],
+      "expected": "Lecturer dashboard reflects majority completion within 5 minutes of session open without manual refresh; present/late counts and visual progress align with AC-21 gate and NFR-02 classroom completion SLO.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-21-010",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["AC-21", "NFR-02", "FR-16"],
+      "title": "Pilot campus class-start completion timing on physical mobile browsers",
+      "preconditions": [
+        "Staging pilot uses real iOS Safari or Android Chrome on campus Wi-Fi per testing-plan §6.2 browser matrix.",
+        "Representative class section with enrolled students; lecturer displays classroom QR.",
+        "Physical devices and campus network are not reproducible in Playwright MCP harness."
+      ],
+      "steps": [
+        "Lecturer opens session in classroom; record open time as T=0.",
+        "Enrolled students scan QR and complete check-in on physical mobile devices under normal campus network.",
+        "At T+5 minutes, lecturer verifies roster shows majority checked in via mobile or desktop view.",
+        "Aggregate completion rate across pilot sessions for release evidence."
+      ],
+      "expected": "Physical pilot demonstrates majority of enrolled students complete check-in within 5 minutes under real campus conditions, providing production-like evidence for AC-21 beyond emulated harness runs.",
+      "edgeCase": false,
+      "harnessSkip": "physical-device"
+    }
+  ]
+}

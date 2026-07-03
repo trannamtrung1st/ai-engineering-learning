@@ -1,9 +1,0 @@
-{
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "required": ["agents", "slices"],
-  "properties": {
-    "agents": { "type": "object" },
-    "slices": { "type": "object" }
-  }
-}

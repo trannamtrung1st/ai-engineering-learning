@@ -1,0 +1,390 @@
+{
+  "productItemId": "FR-28",
+  "version": 1,
+  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+  "generatedAt": "2026-07-02T11:30:06Z",
+  "cases": [
+    {
+      "id": "TC-FR-28-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["FR-28", "FR-27", "BR-18", "BR-19", "AC-15", "AC-16"],
+      "title": "Scenario-matrix coverage for reporting/export and scope block",
+      "preconditions": [
+        "Testing-plan §3.1 reporting/export and scope row applies (FR-27, FR-28, BR-18, BR-19, AC-15, AC-16, AC-17).",
+        "Role-matrix fixture provides Lecturer assigned to section A, DepartmentAdmin scoped to faculty X, AcademicAdmin with institution scope, and Student account.",
+        "Attendance records exist in assigned section A, faculty Y outside department scope, and across institution."
+      ],
+      "steps": [
+        "As Lecturer, call GET /v1/reports/attendance with termId and default pagination.",
+        "As DepartmentAdmin, call GET /v1/reports/attendance with faculty-scoped filters.",
+        "As AcademicAdmin, call GET /v1/reports/attendance with institution-wide term filter.",
+        "As Student, call GET /v1/reports/attendance with institution-wide filters.",
+        "Inspect each response for scope compliance and denial behavior on unauthorized actors."
+      ],
+      "expected": "Maps to testing-plan §3.1 reporting/export and scope row: Lecturer report rows limited to assigned sections; DepartmentAdmin limited to assigned faculty; AcademicAdmin within institution grant; Student receives denial without restricted data disclosure (BR-18, BR-19).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-28-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-28", "BR-18", "BR-19"],
+      "title": "M07 report query applies multi-filter predicates within real DB transaction",
+      "preconditions": [
+        "Integration database seeded with attendance_records, class_sessions, enrollments, courses, and lecturer assignments.",
+        "M07 Reporting module uses real repository and DB transaction boundaries.",
+        "Attendance rows span multiple terms, sections, courses, lecturers, and statuses within actor scope."
+      ],
+      "steps": [
+        "Invoke M07 getAttendanceReport use-case for Lecturer actor with filters { termId, classSectionId, status: Absent, from, to }.",
+        "Assert repository query applies allow-listed filter predicates before row materialization.",
+        "Verify returned row set contains only rows matching all filters and lecturer assigned classSectionId set.",
+        "Confirm zero rows from unassigned sections appear in committed query result."
+      ],
+      "expected": "Module integration returns scoped report rows matching term, section, status, and date-range filters; mandatory scope filters enforced at M07 boundary with no cross-section leakage (BR-18, VR-RP-02).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-28-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-28"],
+      "title": "M07 report repository enforces allow-listed sortBy and typed filter validation",
+      "preconditions": [
+        "M07 report query service configured with server allow-list for sortBy fields (date, status, classSectionId).",
+        "Integration harness can invoke repository layer directly with filter and sort parameters."
+      ],
+      "steps": [
+        "Invoke report query with sortBy=date and sortOrder=desc against seeded attendance data.",
+        "Verify SQL or repository ordering matches descending date sequence within scope.",
+        "Invoke report query with an unsupported sortBy value and observe validation rejection at module boundary.",
+        "Invoke report query with malformed filter type (non-UUID classSectionId) and observe InvalidFilter."
+      ],
+      "expected": "Allow-listed sort fields produce deterministic ordering; unsupported sortBy and malformed filter types are rejected at module boundary with InvalidFilter per VR-RP-01 before unrestricted query execution.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-28-004",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-28", "BR-19"],
+      "title": "HTTP contract for GET /v1/reports/attendance returns 200 paginated envelope",
+      "preconditions": [
+        "Lecturer is authenticated with valid Bearer token and assigned to a section with attendance data.",
+        "Active termId and classSectionId within lecturer scope are known."
+      ],
+      "steps": [
+        "Send GET /v1/reports/attendance?termId={termId}&classSectionId={classSectionId}&page=1&pageSize=25 with Lecturer Authorization header.",
+        "Validate HTTP 200 and standard { data, meta, error } response envelope.",
+        "Assert meta.pagination contains page, pageSize, totalItems, and totalPages per API §2.5.",
+        "Inspect data rows for student identifier, session reference, attendance status, and classSectionId fields."
+      ],
+      "expected": "Response is HTTP 200 with standard envelope; meta.pagination reflects scoped totalItems; data array contains attendance report rows within lecturer assignment; error is null.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-28-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-28", "FR-15", "FR-36", "BR-18"],
+      "title": "HTTP contract for Lecturer POST /v1/auth/login then GET /v1/me before report query",
+      "preconditions": [
+        "Provisioned Lecturer account with institution-issued credentials exists.",
+        "No active bearer token is held by the test client.",
+        "Attendance report data exists for lecturer assigned sections."
+      ],
+      "steps": [
+        "Send POST /v1/auth/login with lecturer email and password.",
+        "Assert HTTP 200 with data.accessToken, data.expiresInSeconds, and data.roles containing Lecturer.",
+        "Send GET /v1/me with Authorization Bearer accessToken from login response.",
+        "Assert HTTP 200 with lecturer identity and section scope claims required for report authorization.",
+        "Send GET /v1/reports/attendance?termId={termId}&page=1&pageSize=25 using the accessToken."
+      ],
+      "expected": "Login returns HTTP 200 with accessToken and Lecturer role; GET /v1/me returns HTTP 200 with actor identity and scope claims; subsequent GET /v1/reports/attendance returns HTTP 200 with scoped rows only.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-28-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-28", "FR-19", "BR-18"],
+      "title": "HTTP contract for live roster payload aligns with scoped report rows",
+      "preconditions": [
+        "Assigned Lecturer is authenticated.",
+        "Closed class session with mixed attendance outcomes exists in lecturer assigned section."
+      ],
+      "steps": [
+        "Send GET /v1/class-sessions/{sessionId}/attendance with Lecturer Authorization header.",
+        "Validate HTTP 200 and roster envelope with data.classSessionId, data.counts, and data.rows[].",
+        "Assert each roster row includes studentCode, attendanceStatus, checkInMethod, and checkInAt per API §4.5.",
+        "Send GET /v1/reports/attendance?classSectionId={sectionId}&from={sessionDate}&to={sessionDate} and compare report rows to roster entries for the same session."
+      ],
+      "expected": "Roster response is HTTP 200 with documented payload shape; report query for the same session returns matching student identifier, status, method, and timestamp values without additional cross-scope rows.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-28-007",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-28", "FR-04", "BR-18"],
+      "title": "HTTP contract for enrollment import establishes reportable rows with row-level rejection",
+      "preconditions": [
+        "AcademicAdmin is authenticated with enrollment import permission.",
+        "Class section SE101-01 exists with lecturer assignment and closed sessions.",
+        "Import payload contains valid student rows and at least one invalid row (duplicate or malformed identifier)."
+      ],
+      "steps": [
+        "Send POST /v1/enrollments/import for SE101-01 with mixed valid and invalid rows.",
+        "Assert HTTP 200 or 207 with per-row acceptance and rejection details in response envelope.",
+        "Verify rejected rows are not enrolled and valid rows are persisted.",
+        "As assigned Lecturer, call GET /v1/reports/attendance?classSectionId=SE101-01 and confirm only successfully enrolled students appear."
+      ],
+      "expected": "Enrollment import returns row-level rejection assertions for invalid rows; report query lists attendance rows only for successfully enrolled students in SE101-01 with no phantom entries from rejected import rows.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-28-008",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["FR-28", "BR-18", "AC-15"],
+      "title": "Primary WF-07 workflow: lecturer filters and views paginated attendance report",
+      "preconditions": [
+        "Lecturer is assigned to section SE101-01 with closed sessions containing Present, Late, and Absent outcomes.",
+        "Another section SE101-02 in the same term has attendance data outside lecturer assignment.",
+        "Active term with known termId exists."
+      ],
+      "steps": [
+        "Authenticate as Lecturer assigned to SE101-01.",
+        "Call GET /v1/reports/attendance?termId={termId}&classSectionId=SE101-01&sortBy=date&sortOrder=desc&page=1&pageSize=25.",
+        "Apply status filter Absent on page 1 and verify row contents.",
+        "Navigate to page 2 if totalPages > 1 and verify pagination continuity."
+      ],
+      "expected": "End-to-end WF-07 report happy path succeeds: paginated in-app report returns only SE101-01 rows matching term, section, and status filters with correct sort order; no SE101-02 data appears (testing-plan E2E-08 report branch).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-28-009",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P0",
+      "traceability": ["FR-28", "BR-18"],
+      "title": "Alternate path: DepartmentAdmin report filtered by course and lecturer within faculty scope",
+      "preconditions": [
+        "DepartmentAdmin is authenticated and scoped to faculty X.",
+        "Faculty X contains multiple courses and lecturers with attendance data; faculty Y has separate data.",
+        "courseId and lecturerUserId values within faculty X are known."
+      ],
+      "steps": [
+        "Call GET /v1/reports/attendance?termId={termId}&courseId={courseId}&lecturerUserId={lecturerId}&page=1&pageSize=25 as DepartmentAdmin.",
+        "Verify all returned rows belong to faculty X and match course and lecturer filters.",
+        "Call GET /v1/reports/attendance with classSectionId from faculty Y.",
+        "Inspect denial or empty scoped response for out-of-faculty filter."
+      ],
+      "expected": "DepartmentAdmin report succeeds with course and lecturer filters within assigned faculty; out-of-faculty classSectionId filter is denied or returns zero rows without faculty Y data leakage (BR-18 DepartmentAdmin branch).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-28-010",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "pagination",
+      "priority": "P0",
+      "traceability": ["FR-28"],
+      "title": "Report pagination invariants hold at module boundary across page boundaries",
+      "preconditions": [
+        "Integration database seeded with more than 50 attendance report rows within a single lecturer scope.",
+        "M07 report query supports page and pageSize parameters with default pageSize 25."
+      ],
+      "steps": [
+        "Query page 1 with pageSize=25 and record totalItems, totalPages, and row identifiers.",
+        "Query page 2 with same filters and pageSize=25.",
+        "Query last page using totalPages from first response.",
+        "Verify no duplicate row identifiers across pages and union of all pages equals totalItems within scope."
+      ],
+      "expected": "Pagination metadata is consistent: page >= 1, pageSize <= 100, totalPages = ceil(totalItems / pageSize); pages are non-overlapping and collectively cover all scoped rows; totalItems reflects scope-limited count only.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-28-011",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "pagination",
+      "priority": "P1",
+      "traceability": ["FR-28", "BR-19"],
+      "title": "E2E pagination metadata never exposes cross-scope totals",
+      "preconditions": [
+        "Lecturer assigned to section A only; section B has substantially more attendance rows.",
+        "Both sections share the same term."
+      ],
+      "steps": [
+        "Call GET /v1/reports/attendance?termId={termId}&page=1&pageSize=25 as Lecturer.",
+        "Record meta.pagination.totalItems and inspect data row classSectionId values.",
+        "Compare totalItems to known section A row count; verify it does not include section B volume."
+      ],
+      "expected": "meta.pagination.totalItems reflects only section A scoped count; no cross-scope row counts or section B identifiers appear in pagination metadata or data rows (API §2.5, BR-19).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-28-012",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-28", "BR-19", "AC-16"],
+      "title": "Student denied institution-wide attendance report",
+      "preconditions": [
+        "Student user is authenticated with valid Bearer token.",
+        "Institution-wide attendance report data exists across multiple sections."
+      ],
+      "steps": [
+        "Send GET /v1/reports/attendance?termId={termId}&page=1&pageSize=25 as Student.",
+        "Validate HTTP status code and error envelope.",
+        "Inspect data and meta.pagination for any restricted attendance rows, student identifiers, or cross-scope totals."
+      ],
+      "expected": "Response is HTTP 403 with error.code Forbidden or OutOfScope; data is null; meta.pagination is absent or contains no institution-wide totals; no partial attendance rows from other students are disclosed (BR-19, AC-16).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-28-013",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-28", "BR-19", "AC-15", "AC-16"],
+      "title": "Lecturer denied report query for unassigned classSectionId",
+      "preconditions": [
+        "Lecturer is authenticated and assigned only to section A.",
+        "Section B has attendance data and is not in lecturer assignment set."
+      ],
+      "steps": [
+        "Call GET /v1/reports/attendance?classSectionId={sectionBId}&page=1&pageSize=25 as lecturer.",
+        "Inspect HTTP status, error.code, and response body for restricted data leakage.",
+        "Verify response contains no section B student identifiers or attendance statuses."
+      ],
+      "expected": "Request returns HTTP 403 OutOfScope or Forbidden; response contains no section B student identifiers, attendance statuses, or scoped pagination totals (PRM-10, BR-19).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-28-014",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-28"],
+      "title": "Unknown report filter parameter rejected with InvalidFilter error",
+      "preconditions": [
+        "Lecturer or AcademicAdmin is authenticated with valid report permission.",
+        "VR-RP-01 requires allow-listed and typed query filters."
+      ],
+      "steps": [
+        "Send GET /v1/reports/attendance?termId={termId}&unknownFilter=foo&page=1&pageSize=25.",
+        "Validate HTTP status and error envelope.",
+        "Confirm no report rows are returned in data array."
+      ],
+      "expected": "Response is HTTP 400 or 422 with error.code InvalidFilter; error details identify the unsupported filter key; data is null with no partial report rows.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-28-015",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["FR-28"],
+      "title": "Report pageSize above maximum 100 rejected",
+      "preconditions": [
+        "AcademicAdmin is authenticated with institution report access.",
+        "Pagination constraint: 1 <= pageSize <= 100 per validation rules §4.1."
+      ],
+      "steps": [
+        "Send GET /v1/reports/attendance?termId={termId}&page=1&pageSize=101.",
+        "Validate HTTP status and error envelope.",
+        "Retry with page=0 and observe rejection."
+      ],
+      "expected": "pageSize=101 returns HTTP 400 with InvalidPayload or validation error; page=0 is rejected; no report data returned for invalid pagination parameters.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-28-016",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["FR-28", "BR-19"],
+      "title": "Out-of-scope classSectionId filter rejected before report query executes",
+      "preconditions": [
+        "DepartmentAdmin scoped to faculty X is authenticated.",
+        "Attendance data exists in faculty Y section outside department scope."
+      ],
+      "steps": [
+        "Submit GET /v1/reports/attendance with classSectionId targeting faculty Y.",
+        "Parse 403 response and any error.details field.",
+        "Verify no attendance rows from faculty Y appear in data or pagination metadata."
+      ],
+      "expected": "Scope validation short-circuits with HTTP 403 OutOfScope before unrestricted query; error.details contain no faculty Y attendance samples, student identifiers, or row counts (VR-RP-02, BR-19).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-28-017",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-28", "BR-18", "AC-15"],
+      "title": "Lecturer browser journey filters, sorts, searches, and paginates PG-13 attendance report",
+      "preconditions": [
+        "Lecturer is logged in on desktop browser.",
+        "PG-13 /reports/attendance is reachable with TableToolbar and DataTable components.",
+        "Attendance data exists in assigned and unassigned sections for the active term."
+      ],
+      "steps": [
+        "Navigate to /reports/attendance and confirm term and section filter options list only assigned sections.",
+        "Apply status filter Absent and date range from/to; verify table updates.",
+        "Enter student name or code in search field and confirm filtered results.",
+        "Click date column header to toggle sortOrder; navigate to page 2 via pagination controls.",
+        "Verify URL query params sync with toolbar state (termId, classSectionId, status, from, to, sortBy, sortOrder, page, pageSize, search)."
+      ],
+      "expected": "PG-13 listing implements search, filter, sort, and server pagination per §0 matrix; toolbar state syncs with URL; displayed rows remain within lecturer assigned scope with AttendanceStatusCell badges; no unassigned section data appears.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-28-018",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["FR-28", "BR-19", "AC-16"],
+      "title": "Browser journey shows empty, no-results, and access-denied states on report listing",
+      "preconditions": [
+        "Lecturer and Student test accounts available in browser harness.",
+        "Lecturer has assigned section with attendance data; Student lacks institution report permission."
+      ],
+      "steps": [
+        "As Lecturer, apply filters that match zero rows and observe no-results state with clear-filters affordance.",
+        "As Lecturer, select a section with no attendance records and observe empty state.",
+        "As Student, attempt direct navigation to /reports/attendance.",
+        "Observe permission empty or access-denied state without partial attendance table data."
+      ],
+      "expected": "Listing page states per NFR-UI-07: no-results shows localized message and clear-filters action; empty state shows setup guidance; Student sees access denial without restricted attendance rows or cross-scope counts (AC-UI-09, BR-19).",
+      "edgeCase": false
+    }
+  ]
+}

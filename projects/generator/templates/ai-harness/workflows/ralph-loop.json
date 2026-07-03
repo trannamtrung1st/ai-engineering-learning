@@ -105,19 +105,14 @@
       },
       "testStack": {
         "composeFile": "docker-compose.test.yml",
-        "projectName": "hesd-test",
-        "services": ["db", "redis", "minio"],
+        "projectName": "{{PRODUCT_SLUG}}-test",
+        "services": ["db"],
         "resetBeforeIntegration": true,
         "activeWhen": "docker-compose.test.yml",
         "healthTimeoutMs": 60000,
         "env": {
-          "DATABASE_URL": "postgresql://hesd:hesd@localhost:5433/hesd_test",
-          "TEST_DATABASE_URL": "postgresql://hesd:hesd@localhost:5433/hesd_test",
-          "REDIS_URL": "redis://localhost:6380",
-          "TEST_REDIS_URL": "redis://localhost:6380",
-          "S3_ENDPOINT": "http://localhost:9002",
-          "TEST_S3_ENDPOINT": "http://localhost:9002",
-          "S3_BUCKET": "hesd-exports"
+          "DATABASE_URL": "postgresql://postgres:postgres@localhost:5433/app_test",
+          "TEST_DATABASE_URL": "postgresql://postgres:postgres@localhost:5433/app_test"
         }
       }
     }

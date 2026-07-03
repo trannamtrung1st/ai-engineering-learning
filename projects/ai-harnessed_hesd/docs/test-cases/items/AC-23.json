@@ -1,0 +1,340 @@
+{
+  "productItemId": "AC-23",
+  "version": 1,
+  "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+  "generatedAt": "2026-07-02T15:00:00Z",
+  "cases": [
+    {
+      "id": "TC-AC-23-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["AC-23", "NFR-09", "NFR-10", "FR-27", "FR-32", "BR-19"],
+      "title": "Scenario-matrix coverage for six-role security and scope gate on protected routes",
+      "preconditions": [
+        "Role-matrix fixture provides authenticated users for Student, Lecturer, DepartmentAdmin, AcademicAdmin, ITAdmin, and SystemAuditor with known scope boundaries.",
+        "Protected resources exist: open/close session control, check-in, attendance roster, report query, export job, audit log query, and academic setup endpoints.",
+        "Attendance and session data span multiple class sections and faculties to exercise scope isolation."
+      ],
+      "steps": [
+        "For each role, exercise allowed protected routes per permissions matrix §3.1–3.2 and API catalog §4.",
+        "For each role, attempt denied actions: Student on session open/close and exports; Lecturer on unassigned section control and cross-section reports; ITAdmin on academic exports without grant; SystemAuditor on mutations and exports.",
+        "Verify GET /v1/reports/attendance and POST /v1/exports/attendance enforce role scope per AC-15/AC-16 patterns.",
+        "Verify POST /v1/class-sessions/{sessionId}/open and /close succeed only for Lecturer on assigned sections and AcademicAdmin override.",
+        "Verify POST /v1/check-ins is limited to Student role with enrollment scope."
+      ],
+      "expected": "Maps to testing-plan §7.3 security and authorization tests and §11 NFR-09 row: only authorized scope is accessible for each of the six roles; every unauthorized protected route or export operation is denied without cross-scope data leakage (AC-23, NFR-09).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-23-002",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["AC-23", "NFR-09", "FR-27", "FR-32", "BR-19"],
+      "title": "Authorization scope guard enforces deny-by-default at module boundary before data access",
+      "preconditions": [
+        "Integration database seeded with role-to-scope assignments and attendance rows across multiple sections and faculties.",
+        "Scope-resolution and permission-guard modules use real DB lookups for actor role and target entity scope."
+      ],
+      "steps": [
+        "Invoke report query use-case for Lecturer actor with classSectionId outside assigned set.",
+        "Invoke export job creation use-case for ITAdmin actor without academic grant.",
+        "Invoke session open use-case for Student actor on a valid scheduled session.",
+        "Verify scope guard short-circuits each call before unrestricted repository queries execute.",
+        "Assert zero rows from foreign scope are read, persisted, or returned."
+      ],
+      "expected": "Module integration rejects all three operations at authorization boundary with deny-by-default semantics (RBAC-01, RBAC-02, PRM-10); no cross-scope attendance or session data is accessed.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-23-003",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["AC-23", "NFR-09", "FR-15", "BR-05"],
+      "title": "HTTP contract for unauthenticated access to protected route returns 401",
+      "preconditions": [
+        "Valid class session and attendance data exist in the database.",
+        "No Authorization header is supplied on the request."
+      ],
+      "steps": [
+        "Send GET /v1/reports/attendance without Bearer token.",
+        "Validate HTTP status code and JSON response envelope per API §2.3.",
+        "Inspect data field and error.code value."
+      ],
+      "expected": "Response is 401 with standard { data: null, meta, error } envelope; error.code is Unauthenticated; data is null and no attendance rows or scope metadata are disclosed.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-23-004",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["AC-23", "NFR-09", "AC-01", "FR-07", "BR-01"],
+      "title": "HTTP contract for assigned Lecturer authorized on POST /v1/class-sessions/{sessionId}/open",
+      "preconditions": [
+        "Scheduled class session exists in a section assigned to the authenticated Lecturer.",
+        "Lecturer bearer token is valid."
+      ],
+      "steps": [
+        "Send POST /v1/class-sessions/{sessionId}/open with Lecturer Authorization header and required Idempotency-Key.",
+        "Validate HTTP status code and JSON response envelope.",
+        "Verify data.state is Open and data.openedAt is present per API §4.3."
+      ],
+      "expected": "Response is 200 with standard envelope; data contains classSessionId, state Open, openedAt timestamp, and qr preview metadata; authorized Lecturer scope is confirmed (positive security path).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-23-005",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["AC-23", "NFR-09", "AC-01", "AC-05", "FR-07", "FR-08", "BR-01", "BR-02"],
+      "title": "Lecturer session open and close on assigned section; Student denied session control",
+      "preconditions": [
+        "Class session exists in Scheduled state for a section assigned to Lecturer L.",
+        "Student S is enrolled in the section; Student bearer token is available.",
+        "Integration environment uses real session state machine persistence."
+      ],
+      "steps": [
+        "POST /v1/class-sessions/{sessionId}/open as Lecturer L; verify state transitions Scheduled to Open.",
+        "POST /v1/class-sessions/{sessionId}/close as Lecturer L; verify state transitions Open to Closed.",
+        "POST /v1/class-sessions/{sessionId}/open as Student S on a different scheduled session.",
+        "POST /v1/class-sessions/{sessionId}/close as Student S."
+      ],
+      "expected": "Lecturer open and close succeed with persisted state transitions (AC-01, AC-05); Student session control attempts are rejected with 403 Forbidden and session state remains unchanged.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-23-006",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["AC-23", "NFR-09", "FR-07", "FR-08", "BR-19"],
+      "title": "Student denied SessionControl.execute on open and close endpoints",
+      "preconditions": [
+        "Student is authenticated with valid Bearer token.",
+        "Scheduled and Open class sessions exist with enrollment for the student."
+      ],
+      "steps": [
+        "Call POST /v1/class-sessions/{scheduledSessionId}/open as Student.",
+        "Call POST /v1/class-sessions/{openSessionId}/close as Student."
+      ],
+      "expected": "Both requests return 403 with Forbidden or OutOfScope error.code; no session state mutation occurs and responses disclose no foreign-section session metadata (permissions matrix SessionControl.execute Deny for Student).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-23-007",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["AC-23", "NFR-09", "AC-16", "FR-27", "FR-28", "BR-19"],
+      "title": "Student denied institution-wide report query and export execution",
+      "preconditions": [
+        "Student is authenticated.",
+        "Institution-wide attendance data exists across multiple sections."
+      ],
+      "steps": [
+        "Call GET /v1/reports/attendance?termId={termId} as Student.",
+        "Call POST /v1/exports/attendance with format csv and term-wide filters as Student."
+      ],
+      "expected": "Both requests return 403 Forbidden; responses contain no attendance rows, pagination totals, exportJobId, or other restricted academic data (ReportView.read and ExportJob.execute Deny for Student).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-23-008",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["AC-23", "NFR-09", "AC-16", "FR-27", "FR-30", "BR-19"],
+      "title": "ITAdmin denied academic report and export without explicit elevated grant",
+      "preconditions": [
+        "ITAdmin is authenticated without explicit academic access grant.",
+        "Attendance data exists across institution scope."
+      ],
+      "steps": [
+        "Call GET /v1/reports/attendance?termId={termId} as ITAdmin.",
+        "Call POST /v1/exports/attendance with term-wide csv filters as ITAdmin.",
+        "Call PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} as ITAdmin."
+      ],
+      "expected": "All three requests return 403 Forbidden; no attendance rows, export jobs, or attendance mutations are produced (permissions matrix §5.5 deny-by-default for academic mutations).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-23-009",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["AC-23", "NFR-09", "NFR-10", "FR-32", "BR-19"],
+      "title": "SystemAuditor denied attendance mutations and export while read-only scope applies",
+      "preconditions": [
+        "SystemAuditor is authenticated with scoped read-only attendance access.",
+        "Open session with attendance records exists within auditor read scope."
+      ],
+      "steps": [
+        "Call GET /v1/reports/attendance within auditor read scope and confirm allowed read behavior.",
+        "Call POST /v1/exports/attendance with filters matching auditor read scope.",
+        "Call PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Manual Present as SystemAuditor."
+      ],
+      "expected": "Scoped report read may succeed per role policy, but export and attendance PATCH return 403 Forbidden with no exportJobId and no attendance mutation persisted (PRM-05, SystemAuditor read-only).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-23-010",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["AC-23", "NFR-09", "AC-15", "AC-16", "FR-27", "FR-28", "BR-19"],
+      "title": "Lecturer denied cross-section session control, report, and export for unassigned classSectionId",
+      "preconditions": [
+        "Lecturer is authenticated and assigned only to section A.",
+        "Section B has a Scheduled session and attendance data; section B is not in lecturer assignment set."
+      ],
+      "steps": [
+        "Call POST /v1/class-sessions/{sectionBSessionId}/open as lecturer assigned to section A only.",
+        "Call GET /v1/reports/attendance?classSectionId={sectionBId} as lecturer.",
+        "Call POST /v1/exports/attendance with filters { classSectionId: sectionBId } as lecturer."
+      ],
+      "expected": "All three requests return 403 with OutOfScope or Forbidden semantics; responses contain no partial section B rows, session state changes, attendance statuses, or export job identifiers (PRM-01, PRM-10).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-23-011",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["AC-23", "NFR-09", "FR-16", "FR-18", "BR-07"],
+      "title": "Non-Student roles denied POST /v1/check-ins while Student role is authorized",
+      "preconditions": [
+        "Open class session with valid QR token exists; enrolled Student has no prior success.",
+        "Lecturer and AcademicAdmin bearer tokens are available."
+      ],
+      "steps": [
+        "Submit POST /v1/check-ins with valid qrToken as enrolled Student; verify 200 Success.",
+        "Submit POST /v1/check-ins with same valid qrToken as Lecturer.",
+        "Submit POST /v1/check-ins with same valid qrToken as AcademicAdmin."
+      ],
+      "expected": "Student check-in succeeds with outcome Success; Lecturer and AcademicAdmin attempts return 403 Forbidden with no attendance record created for non-student actors (CheckInAttempt role restriction, positive Student-only path).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-23-012",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["AC-23", "NFR-09", "FR-28", "BR-19"],
+      "title": "Denied authorization responses do not leak cross-scope pagination or entity metadata",
+      "preconditions": [
+        "Institution has 500+ attendance rows across sections; unauthorized actor lacks scope for requested filters.",
+        "Unauthorized Student or cross-scope Lecturer is authenticated."
+      ],
+      "steps": [
+        "Send GET /v1/reports/attendance?termId={termId}&page=1&pageSize=25 as unauthorized actor.",
+        "Inspect error response body, meta.pagination fields, and error.details if present.",
+        "Send POST /v1/exports/attendance with foreign classSectionId filter as scoped lecturer.",
+        "Compare institution-wide totals against any values returned in denial responses."
+      ],
+      "expected": "All denials return 403 without meta.pagination.totalItems or totalPages reflecting institution-wide or foreign-scope counts; error.details contains no student names, attendance statuses, or section row samples (API §2.5, CMP-04).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-23-013",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "flow-c",
+      "priority": "P0",
+      "traceability": ["AC-23", "NFR-10", "AC-17", "FR-30", "BR-22"],
+      "title": "Authorized export mutation produces immutable audit record per protected mutation path",
+      "preconditions": [
+        "Lecturer is authenticated and assigned to target class section with attendance data.",
+        "Audit log query is available to AcademicAdmin or SystemAuditor."
+      ],
+      "steps": [
+        "Submit POST /v1/exports/attendance with scoped csv filters as authorized Lecturer.",
+        "Verify export job is created with 202 response.",
+        "Query GET /v1/audit-logs filtered by actorUserId and export action type.",
+        "Verify audit entry fields: actor, role, scope filter, file format, timestamp."
+      ],
+      "expected": "Successful scoped export writes immutable audit log entry with required fields per NFR-10 and permissions §7.1; unauthorized actors cannot trigger equivalent audit-covered mutations.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-23-014",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P1",
+      "traceability": ["AC-23", "NFR-09", "AC-01", "AC-15", "FR-07", "FR-27", "BR-18"],
+      "title": "Primary authorized Lecturer workflow: open session, view scoped roster, export in scope",
+      "preconditions": [
+        "Lecturer is assigned to section SE101-01 with scheduled session and enrolled students.",
+        "Attendance data exists in SE101-01 and unassigned section SE101-02."
+      ],
+      "steps": [
+        "Authenticate as lecturer; POST /v1/class-sessions/{sessionId}/open.",
+        "GET /v1/class-sessions/{sessionId}/attendance and verify roster rows are section-scoped.",
+        "POST /v1/exports/attendance with csv format and term filters covering assigned section only.",
+        "Verify export output contains only SE101-01 rows."
+      ],
+      "expected": "End-to-end authorized workflow completes without denial; all data accessed and exported remains within lecturer assigned scope with no SE101-02 leakage (positive security gate per AC-23).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-23-015",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["AC-23", "NFR-09", "FR-27", "FR-28", "BR-19"],
+      "title": "Student browser journey blocked from session control, report, and export surfaces",
+      "preconditions": [
+        "Student is logged in on mobile or desktop browser.",
+        "Application shell exposes navigation for lecturer and admin features.",
+        "Institution attendance data exists but Student role lacks SessionControl, ReportView, and ExportJob permissions."
+      ],
+      "steps": [
+        "Observe main navigation menu for session open/close, report, and export links.",
+        "Attempt direct URL navigation to lecturer session control and attendance report pages.",
+        "If any admin surface is reachable, attempt to trigger export or session open action.",
+        "Verify user-facing denial or redirect messaging."
+      ],
+      "expected": "Student UI does not expose session control, institution report listing, or export actions; direct URL navigation shows access-denied state or redirect without displaying other students' or sections' attendance data.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-23-016",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["AC-23", "NFR-09", "AC-15", "FR-07", "FR-27", "BR-18"],
+      "title": "Lecturer browser journey shows scoped session control and export; denies foreign section tamper",
+      "preconditions": [
+        "Lecturer is logged in on desktop browser.",
+        "Dashboard lists only assigned class sections and sessions.",
+        "Deep-link or URL tamper to foreign classSectionId is possible."
+      ],
+      "steps": [
+        "Navigate to session list and confirm only assigned sections and sessions appear.",
+        "Open attendance for assigned session and trigger Open Attendance action.",
+        "Navigate to report/export page; confirm section filter lists assigned sections only.",
+        "Attempt export or roster view with URL parameter set to unassigned classSectionId."
+      ],
+      "expected": "UI surfaces session open/close and export only for assigned scope; tampered foreign-section requests show access-denied feedback without previewing foreign-section attendance rows or partial export download.",
+      "edgeCase": false
+    }
+  ]
+}

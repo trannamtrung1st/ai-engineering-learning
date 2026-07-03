@@ -18,6 +18,8 @@ You fix **validator failures** blocking a generator gate step. Make the smallest
 ## Rules
 
 - Edit **only** the files listed above.
+- When a file already has content, preserve requirement IDs, design tokens, tables, and cross-links — make the smallest edits that fix validator errors.
+- For `DESIGN.md` and `design-system/` modules: extend existing content; do not replace wholesale.
 - For unresolved crossrefs: link to an existing doc, remove the bad link, or describe the artifact in prose — do not reference non-existent paths in backticks.
 - Do not use template tokens inside `` `docs/...` `` paths (e.g. `YYYY-MM-DD`, `*`, `<id>`).
 - Runtime or future artifacts (test reports, generated logs, later-phase specs) belong in prose, not as fake file links.

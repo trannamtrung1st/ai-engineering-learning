@@ -1,0 +1,265 @@
+{
+  "productItemId": "AC-14",
+  "version": 1,
+  "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+  "generatedAt": "2026-07-02T12:15:00Z",
+  "cases": [
+    {
+      "id": "TC-AC-14-001",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["AC-14", "FR-20", "FR-21", "BR-15", "BR-16"],
+      "title": "Scenario matrix row for manual correction governance after edit window expiration",
+      "preconditions": [
+        "Testing-plan §3 Manual correction governance block applies (FR-20, FR-21, BR-14/15/16, AC-13, AC-14).",
+        "Closed session exists with enrolled student AttendanceRecord status Absent from close-time finalization.",
+        "Effective policy manualEditWindow has elapsed since session closedAt timestamp.",
+        "Assigned Lecturer and AcademicAdmin bearer tokens are available for the class section."
+      ],
+      "steps": [
+        "Authenticate as assigned Lecturer for the session class section.",
+        "Submit PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Manual Present and documented reason after window expiry.",
+        "Verify AttendanceRecord and audit_logs remain unchanged for the lecturer attempt.",
+        "Authenticate as AcademicAdmin with institution scope covering the section.",
+        "Submit PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Manual Present, reason, and Idempotency-Key as admin override path per BR-16.",
+        "Query AttendanceRecord and AuditLog for the student-session pair."
+      ],
+      "expected": "Lecturer correction after window is rejected or escalated per AC-14 coverage row and BR-15; no lecturer-side attendance mutation or audit write occurs; AcademicAdmin override succeeds when policy permits, updating AttendanceRecord with checkInMethod Admin Correction and full audit entry per BR-16.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-14-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["AC-14", "FR-20", "FR-21", "BR-15", "BR-22"],
+      "title": "Attendance ledger service rejects lecturer correction when edit window expired at DB boundary",
+      "preconditions": [
+        "Real database transaction is enabled for attendance ledger and policy resolution modules.",
+        "Closed session exists with enrolled student AttendanceRecord status Absent.",
+        "Effective policy manualEditWindowHours is configured; fixture clock or closedAt places current time beyond window end.",
+        "Assigned Lecturer is in scope for the class section per PRM-01."
+      ],
+      "steps": [
+        "Capture beforeState: AttendanceRecord status Absent, checkInMethod system-assigned, audit_logs count for target mutation.",
+        "Invoke PATCH attendance correction through application service as Lecturer with status Manual Present and reason.",
+        "Query attendance_records and audit_logs tables for target studentUserId and classSessionId.",
+        "Verify policy resolution module evaluated manualEditWindow against session closedAt."
+      ],
+      "expected": "Service layer rejects correction with EditWindowExpired domain error; single transaction rolls back or short-circuits without AttendanceRecord mutation; no new audit_logs row is written for the rejected lecturer attempt; beforeState Absent is preserved per BR-15.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-14-003",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["AC-14", "FR-20", "BR-15", "BR-16"],
+      "title": "SM-03 AttendanceRecord remains Absent when lecturer correction attempted after edit window",
+      "preconditions": [
+        "Closed class session exists in integration test database with SM-01 state Closed.",
+        "Enrolled student has AttendanceRecord in Absent state from close-time finalization (BR-13).",
+        "manualEditWindow from effective policy has elapsed; assigned Lecturer is in scope."
+      ],
+      "steps": [
+        "Capture beforeState: AttendanceRecord status Absent; session state Closed.",
+        "Execute lecturer manual correction command with allowed status Manual Present and required reason.",
+        "Capture afterState for AttendanceRecord and verify no AttendanceCorrected event is emitted.",
+        "Execute AcademicAdmin override correction for same student-session as alternate path.",
+        "Capture afterState following admin command."
+      ],
+      "expected": "beforeState Absent is unchanged after expired-window lecturer attempt per BR-15; session remains Closed with no illegal SM-01 transitions; admin override path transitions afterState to Manual Present with checkInMethod Admin Correction per BR-16 when institution policy allows.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-14-004",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["AC-14", "FR-20", "BR-15"],
+      "title": "PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} returns 409 EditWindowExpired after manual edit window",
+      "preconditions": [
+        "Assigned Lecturer is authenticated with bearer token.",
+        "Closed session exists with student AttendanceRecord status Absent.",
+        "manualEditWindow from effective policy has elapsed since session closedAt.",
+        "Lecturer is assigned to the session class section."
+      ],
+      "steps": [
+        "Lecturer calls PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with body {\"status\": \"Manual Present\", \"reason\": \"Sinh vien co mat nhung loi camera tren thiet bi.\"} and Idempotency-Key header.",
+        "Inspect HTTP status 409, response envelope error.code EditWindowExpired, and data is null.",
+        "Call GET /v1/class-sessions/{sessionId}/attendance and locate the student row.",
+        "Query GET /v1/audit-logs filtered by targetId for manual attendance update from this lecturer attempt."
+      ],
+      "expected": "PATCH returns 409 with standard envelope and error.code EditWindowExpired per API design; roster row remains attendanceStatus Absent; no audit entry is written for the rejected lecturer correction attempt.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-14-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["AC-14", "FR-20", "BR-15", "AC-12"],
+      "title": "Primary workflow lecturer manual correction blocked after edit window expiration",
+      "preconditions": [
+        "Lecturer opens and closes session for assigned section (AC-01, AC-05).",
+        "Session close assigns Absent to enrolled student without successful check-in (AC-12).",
+        "Fixture advances clock or seeds closedAt so manualEditWindow from effective policy is expired.",
+        "Lecturer bearer token is available."
+      ],
+      "steps": [
+        "Lecturer reviews GET /v1/class-sessions/{sessionId}/attendance showing student Absent.",
+        "Lecturer submits PATCH correction to Manual Present with documented reason after in-person verification.",
+        "Inspect API response for EditWindowExpired rejection.",
+        "Lecturer refreshes roster via GET /v1/class-sessions/{sessionId}/attendance.",
+        "Query GET /v1/audit-logs for any manual correction event from this lecturer attempt."
+      ],
+      "expected": "End-to-end AC-14 primary path completes: lecturer correction after window expiration is rejected with EditWindowExpired; student status remains Absent; no audit record is created for the failed lecturer mutation per BR-15.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-14-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P0",
+      "traceability": ["AC-14", "FR-21", "BR-16", "BR-22", "AC-13"],
+      "title": "Alternate branch AcademicAdmin override succeeds after lecturer edit window expired",
+      "preconditions": [
+        "Closed session with Absent student exists; manualEditWindow has elapsed.",
+        "Assigned Lecturer PATCH attempt returns 409 EditWindowExpired (control).",
+        "AcademicAdmin bearer token has institution scope covering the class section.",
+        "Institution policy allows admin override of lecturer time limits per BR-16."
+      ],
+      "steps": [
+        "Confirm lecturer PATCH correction is rejected with EditWindowExpired.",
+        "AcademicAdmin calls PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Manual Present, documented reason, and Idempotency-Key.",
+        "Inspect HTTP 200 response envelope and roster via GET /v1/class-sessions/{sessionId}/attendance.",
+        "Query GET /v1/audit-logs for admin correction event with oldStatus Absent and newStatus Manual Present."
+      ],
+      "expected": "Admin override path succeeds after lecturer window expiry: AttendanceRecord updates to Manual Present with checkInMethod Admin Correction; audit entry records actor AcademicAdmin, reason, old/new status, and timestamp per BR-16 and BR-22.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-14-007",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-c",
+      "priority": "P0",
+      "traceability": ["AC-14", "FR-21", "FR-29", "BR-16", "BR-22", "AC-19"],
+      "title": "Flow C audit verification after admin override following expired lecturer window",
+      "preconditions": [
+        "Closed session with Absent student exists; manualEditWindow elapsed.",
+        "Lecturer correction attempt rejected with EditWindowExpired.",
+        "AcademicAdmin performs override correction changing status to Excused with documented reason.",
+        "Audit query endpoint is available to SystemAuditor read scope."
+      ],
+      "steps": [
+        "Record roster status before admin correction via GET /v1/class-sessions/{sessionId}/attendance.",
+        "AcademicAdmin applies PATCH correction with status Excused and reason documenting post-window dispute resolution.",
+        "Query GET /v1/audit-logs with filters targetType AttendanceRecord, targetId, and time range covering correction.",
+        "Verify audit payload includes escalated admin override context per CMP-01 minimum fields."
+      ],
+      "expected": "Committed admin override has corresponding audit record with actor, role AcademicAdmin, target student/session, old status Absent, new status Excused, reason, and timestamp; audit captures admin bypass of BR-15 window limit per BR-16 and AC-19 alignment.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-14-008",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["AC-14", "FR-20", "BR-15"],
+      "title": "Lecturer PATCH at exact edit-window boundary returns EditWindowExpired and preserves Absent record",
+      "preconditions": [
+        "Closed session with Absent student exists; assigned Lecturer is in scope.",
+        "Effective policy manualEditWindowHours is known; fixture positions current time at first instant after window expiry.",
+        "Lecturer bearer token is authenticated."
+      ],
+      "steps": [
+        "Verify control: at one instant before boundary, PATCH with reason succeeds (AC-13 alignment) or fixture confirms window was active.",
+        "Advance clock to first instant after manualEditWindow end relative to session closedAt.",
+        "Call PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Manual Present and valid reason.",
+        "Inspect HTTP status and error.code; query AttendanceRecord state."
+      ],
+      "expected": "Request at first instant after window expiry is rejected with 409 EditWindowExpired per VR-MC-03; AttendanceRecord remains Absent; boundary enforces BR-15 without off-by-one acceptance past policy limit.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-14-009",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["AC-14", "FR-20", "BR-15", "BR-19"],
+      "title": "Student and SystemAuditor denied PATCH correction; expired-window Lecturer receives EditWindowExpired not success",
+      "preconditions": [
+        "Closed session in section A with Absent student; manualEditWindow has elapsed.",
+        "Student and SystemAuditor bearer tokens and assigned Lecturer token for section A are available.",
+        "AcademicAdmin token is available as authorized override control."
+      ],
+      "steps": [
+        "Student calls PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Manual Present and reason.",
+        "SystemAuditor calls the same PATCH for the section A session.",
+        "Assigned Lecturer (section A, window expired) calls the same PATCH with status Manual Present and reason.",
+        "Verify AttendanceRecord state after denied and expired-window attempts.",
+        "AcademicAdmin calls PATCH override as control."
+      ],
+      "expected": "Student and SystemAuditor receive 403 Forbidden per permission matrix without attendance mutation; expired-window Lecturer receives 409 EditWindowExpired (not 403 OutOfScope) because actor is in scope but window elapsed per PRM-06; no audit write from denied roles; AcademicAdmin control succeeds per BR-16.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-14-010",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["AC-14", "FR-20", "FR-21", "BR-15", "BR-16"],
+      "title": "Lecturer ManualCorrectionDialog shows escalation guidance when edit window expired on PG-06",
+      "preconditions": [
+        "Lecturer is authenticated on desktop browser (PG-06 live roster view) for assigned section.",
+        "Closed session displays student row with Absent danger badge.",
+        "manualEditWindow from effective policy has elapsed since session close.",
+        "ManualCorrectionDialog window guard is enabled per domain component spec."
+      ],
+      "steps": [
+        "Navigate to /lecturer/sessions/{id}/roster and locate Absent student row.",
+        "Open ManualCorrectionDialog from row action; observe window guard or pre-submit state.",
+        "Select Manual Present in status dropdown and enter reason in labeled Lý do textarea.",
+        "Attempt dialog submit and observe API error mapping.",
+        "Verify escalation guidance directs lecturer to request Academic Admin action per FLOW-08 step 6.",
+        "Confirm roster row remains Absent badge and dialog does not falsely show success."
+      ],
+      "expected": "Browser FLOW-08 expired-window branch completes: submit surfaces EditWindowExpired mapped to escalation guidance to admin rather than raw error; roster row remains Absent; no false success badge; UI aligns with API rejection per AC-14 and FRM-08.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-14-011",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "pagination",
+      "priority": "P1",
+      "traceability": ["AC-14", "FR-29", "BR-16", "BR-22", "AC-19"],
+      "title": "GET /v1/audit-logs pagination returns admin override entries after expired lecturer window across page boundaries",
+      "preconditions": [
+        "dispute-trail fixture includes at least 30 admin override correction audit entries where lecturer window had expired.",
+        "AcademicAdmin bearer token is authenticated within institution scope.",
+        "Each admin correction records actor, old status, new status, reason, and occurredAt after lecturer EditWindowExpired rejection."
+      ],
+      "steps": [
+        "Query GET /v1/audit-logs?targetType=AttendanceRecord&actionType=admin_override&classSectionId={sectionId}&page=1&pageSize=25.",
+        "Verify HTTP 200, meta.pagination page=1, pageSize=25, totalItems >= 30, and totalPages >= 2.",
+        "Record audit entry IDs from page 1 and verify each row includes actor, oldStatus, newStatus, reason, and occurredAt.",
+        "Query GET /v1/audit-logs with same filters and page=2.",
+        "Verify page 2 returns distinct IDs with no overlap against page 1."
+      ],
+      "expected": "Paginated audit query honors page and pageSize invariants; admin override audit rows from post-window escalation path are queryable across pages with full CMP-01 fields; totalItems reflects only authorized-scope events without cross-scope count leakage.",
+      "edgeCase": false
+    }
+  ]
+}

@@ -1,0 +1,213 @@
+{
+  "productItemId": "FR-18",
+  "version": 1,
+  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+  "generatedAt": "2026-07-02T11:01:15Z",
+  "cases": [
+    {
+      "id": "TC-FR-18-001",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["FR-18", "AC-08", "BR-07"],
+      "title": "Scenario matrix row for one successful check-in per student per session",
+      "preconditions": [
+        "Testing-plan §3 Check-in eligibility and duplicate block applies (FR-17, FR-18, BR-06, BR-07, AC-07, AC-08).",
+        "Open class session exists with valid QR token; authenticated student has an existing Present or Late AttendanceRecord for the session."
+      ],
+      "steps": [
+        "Authenticate as enrolled student who already has a successful attendance result for the open session.",
+        "Submit a second POST /v1/check-ins with a valid qrToken for the same session.",
+        "Query persisted CheckInAttempt and AttendanceRecord for the student-session pair."
+      ],
+      "expected": "Second check-in is rejected with outcome DuplicateCheckIn per FR-18; original successful AttendanceRecord is unchanged and a failed CheckInAttempt is logged with structured reason code.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-18-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-18", "BR-07", "BR-23"],
+      "title": "M04/M05 attendance ledger enforces one-record-per-student-session invariant",
+      "preconditions": [
+        "Real database transaction is enabled for M04 Check-in and M05 Attendance Ledger modules.",
+        "Open session with valid QR token exists; student actor has exactly one Present AttendanceRecord for (classSessionId, studentUserId) per DBR-01 unique constraint."
+      ],
+      "steps": [
+        "Capture beforeState: AttendanceRecord status, checkInAt, and checkInMethod for the student-session pair.",
+        "Invoke check-in command with valid qrToken for the same session and a new Idempotency-Key.",
+        "Query attendance_records and check_in_attempts within the transaction boundary; verify unique key (class_session_id, student_user_id) row count."
+      ],
+      "expected": "Duplicate invocation persists one failed CheckInAttempt with outcome DuplicateCheckIn; exactly one AttendanceRecord row remains with beforeState status and timestamps unchanged; no overwrite or second success row is created.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-18-003",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P0",
+      "traceability": ["FR-18", "BR-07", "NFR-07"],
+      "title": "Concurrent duplicate submissions after first success keep one attendance record",
+      "preconditions": [
+        "Student has already completed one successful check-in for an Open session.",
+        "Test harness can fire parallel POST /v1/check-ins requests with different Idempotency-Key values and valid rotating QR tokens."
+      ],
+      "steps": [
+        "Submit two or more concurrent POST /v1/check-ins requests for the same enrolled student and same classSessionId after initial success exists.",
+        "Collect all API outcomes and query attendance_records and check_in_attempts tables."
+      ],
+      "expected": "All concurrent duplicate paths return DuplicateCheckIn conflict; exactly one successful AttendanceRecord persists for the student-session pair and each rejected request logs a structured failed attempt.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-18-004",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["FR-18", "FR-22", "BR-07", "BR-23"],
+      "title": "CheckInAttempt SM-04 terminates at DuplicateCheckIn without attendance mutation",
+      "preconditions": [
+        "Open class session with valid qrToken exists in integration test database.",
+        "Authenticated enrolled student has an existing Present or Late AttendanceRecord for the session."
+      ],
+      "steps": [
+        "Capture beforeState: AttendanceRecord status and checkInAt for the student-session pair.",
+        "Submit check-in command that passes authentication, session Open, token Valid, and enrollment guards (validation order step 5).",
+        "Capture afterState for CheckInAttempt outcome and AttendanceRecord rows."
+      ],
+      "expected": "SM-04 evaluation reaches DuplicateCheckIn terminal state at duplicate-success guard per validation order §5.1 step 5; afterState shows persisted failed attempt with DuplicateCheckIn and AttendanceRecord identical to beforeState.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-18-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-18", "FR-22", "BR-07", "BR-23"],
+      "title": "POST /v1/check-ins returns 409 envelope with DuplicateCheckIn for repeat submission",
+      "preconditions": [
+        "Open class session with valid qrToken exists in test environment.",
+        "Authenticated student bearer token belongs to a user with an existing successful attendance result for the session."
+      ],
+      "steps": [
+        "Call POST /v1/check-ins with Authorization Bearer token, valid qrToken, clientTimestamp, and a new Idempotency-Key.",
+        "Inspect HTTP status, response envelope (data/meta/error), and error.code.",
+        "Verify no new success attendance payload is returned."
+      ],
+      "expected": "API returns 409 with standard envelope where data is null and error.code is DuplicateCheckIn; response includes classSessionId in details where applicable and does not mutate the original success record.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-18-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-18", "FR-19", "BR-07", "BR-23"],
+      "title": "GET /v1/class-sessions/{sessionId}/attendance roster reflects unchanged success after duplicate",
+      "preconditions": [
+        "Lecturer bearer token is available for the assigned section.",
+        "Open session has at least one student with Present attendance and a subsequent DuplicateCheckIn failed attempt logged."
+      ],
+      "steps": [
+        "Student submits duplicate POST /v1/check-ins and receives 409 DuplicateCheckIn.",
+        "Lecturer calls GET /v1/class-sessions/{sessionId}/attendance with Authorization Bearer token.",
+        "Inspect data.counts.rejectedAttempts, data.rows for the student, and attendanceStatus/checkInAt fields."
+      ],
+      "expected": "Roster payload returns HTTP 200 with data.state Open; student row shows unchanged Present or Late attendanceStatus with original checkInAt and latestAttemptOutcome Success; rejectedAttempts count reflects the duplicate failure without a second success row.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-18-007",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P0",
+      "traceability": ["FR-18", "FR-15", "FR-22", "BR-07", "BR-23", "AC-08"],
+      "title": "E2E-03 alternate workflow branch rejects student duplicate submission after first success",
+      "preconditions": [
+        "Lecturer has opened session and session is Open with rotating QR.",
+        "Student completes POST /v1/auth/login (FR-15/FR-36), enrollment validation, and first successful check-in yielding Present or Late.",
+        "Fresh valid QR token is available for a second submission attempt."
+      ],
+      "steps": [
+        "Student calls POST /v1/auth/login and receives Student role accessToken.",
+        "Student calls POST /v1/check-ins with valid qrToken and records first success outcome.",
+        "Student calls POST /v1/check-ins again with a new valid qrToken and different Idempotency-Key.",
+        "Lecturer queries GET /v1/class-sessions/{sessionId}/attendance for the student row and rejectedAttempts count."
+      ],
+      "expected": "Second submission fails with DuplicateCheckIn (409); roster shows unchanged single Present/Late row for the student with original checkInAt; rejectedAttempts increments and failed attempt is auditable per FR-22.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-18-008",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-18", "BR-07", "BR-23"],
+      "title": "Boundary error for duplicate with fresh QR token and idempotency replay semantics",
+      "preconditions": [
+        "Student has successful Present attendance for session S with checkInAt T1.",
+        "Session S remains Open with a newly rotated valid QR token distinct from the first check-in token.",
+        "Idempotency store retains the accepted command for the original successful submission key K1."
+      ],
+      "steps": [
+        "Submit POST /v1/check-ins with fresh token and new Idempotency-Key K2; inspect status and error.code.",
+        "Replay POST /v1/check-ins with original Idempotency-Key K1 and same qrToken as first success; inspect response.",
+        "Verify AttendanceRecord row count and field values for (student, session S)."
+      ],
+      "expected": "Fresh-token duplicate returns 409 DuplicateCheckIn without altering T1 record; idempotency replay of K1 returns the prior accepted success summary rather than a conflict; only one success AttendanceRecord exists.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-18-009",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-18", "BR-07", "BR-19"],
+      "title": "Non-Student roles denied POST /v1/check-ins per permission matrix",
+      "preconditions": [
+        "Lecturer and ITAdmin identities are available with valid bearer tokens per permission matrix.",
+        "Open session with valid QR token exists; a Student has already checked in successfully."
+      ],
+      "steps": [
+        "Call POST /v1/check-ins as Lecturer with valid qrToken for the open session.",
+        "Call POST /v1/check-ins as ITAdmin with the same qrToken.",
+        "Call POST /v1/check-ins as Student (control) who already has success for the session.",
+        "Verify denial responses contain no partial attendance mutation from privileged roles."
+      ],
+      "expected": "Lecturer and ITAdmin receive 403 Forbidden before duplicate logic executes; Student control receives 409 DuplicateCheckIn; no AttendanceRecord is created or modified by denied roles.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-18-010",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-18", "FR-22", "BR-07", "BR-23"],
+      "title": "UI journey surfaces DuplicateCheckIn info alert with no retry and existing status",
+      "preconditions": [
+        "Student is logged in on mobile-web browser (PG-02 check-in page).",
+        "Student has already completed successful check-in for the target Open session (Present or Late).",
+        "Fresh valid QR token is available via scan or deep link."
+      ],
+      "steps": [
+        "Navigate to check-in URL with valid token query parameter for the already-checked-in session.",
+        "Submit check-in from the student check-in form.",
+        "Observe CheckInResultScreen failure-duplicate info alert styling and copy.",
+        "Verify absence of retry CTA and display of existing check-in status per FLOW-02."
+      ],
+      "expected": "UI renders failure-duplicate info alert with localized message (e.g. 'Bạn đã điểm danh buổi học này rồi.'); no retry button is shown; student sees existing success status and timestamp without roster mutation.",
+      "edgeCase": false
+    }
+  ]
+}

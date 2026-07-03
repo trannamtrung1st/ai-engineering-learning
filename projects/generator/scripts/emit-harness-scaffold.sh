@@ -40,6 +40,10 @@ if [[ "$VERIFY_ONLY" == true ]]; then
     gen_err "harness console must define aih_step() — found generator console (gen_*)?"
     exit 1
   fi
+  if [[ ! -f "${REPO_ROOT}/docker-compose.test.yml" ]]; then
+    gen_err "missing docker-compose.test.yml"
+    exit 1
+  fi
   gen_ok "harness-scaffold verified"
   exit 0
 fi
@@ -104,6 +108,12 @@ if [[ -d "$pw_src" ]]; then
   while IFS= read -r f; do
     substitute_file "$f"
   done < <(find "$pw_dest" -type f \( -name '*.json' -o -name '*.ts' \) 2>/dev/null)
+fi
+
+test_compose_tpl="${TEMPLATES_DIR}/docker-compose.test.yml.tpl"
+if [[ -f "$test_compose_tpl" ]]; then
+  cp "$test_compose_tpl" "${REPO_ROOT}/docker-compose.test.yml"
+  substitute_file "${REPO_ROOT}/docker-compose.test.yml"
 fi
 
 gen_ok "harness scaffold emitted to ai-harness/"

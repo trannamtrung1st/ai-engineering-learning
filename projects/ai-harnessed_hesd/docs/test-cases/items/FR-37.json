@@ -1,0 +1,329 @@
+{
+  "productItemId": "FR-37",
+  "version": 1,
+  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+  "generatedAt": "2026-07-02T11:47:34Z",
+  "cases": [
+    {
+      "id": "TC-FR-37-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["FR-37", "BR-19", "AC-16", "PRM-03"],
+      "title": "Scenario-matrix coverage for student self-scoped attendance history versus institution report denial",
+      "preconditions": [
+        "Testing-plan §3.1 reporting/export and scope row applies from student self-service perspective (FR-37, BR-19, AC-16).",
+        "Role-matrix fixture provides Student enrolled in section A with attendance records across QR, Manual, and Admin Correction methods.",
+        "Attendance data exists for other students in the same and different sections."
+      ],
+      "steps": [
+        "As authenticated Student, call GET /v1/reports/attendance with termId and classSectionId filters for an enrolled section.",
+        "Verify returned rows contain only the acting student's attendance records with status, checkInAt, and checkInMethod.",
+        "Attempt GET /v1/reports/attendance with studentUserId query targeting a different enrolled student.",
+        "Attempt POST /v1/exports/attendance with institution-wide filters as Student.",
+        "Inspect each denial response for restricted data leakage."
+      ],
+      "expected": "Maps to testing-plan §3.1 reporting/export and scope row: Student receives self-scoped attendance history for enrolled sections only (PRM-03); cross-student studentUserId override and institution export are denied without partial rows, export job identifiers, or other students' data disclosure (BR-19, AC-16).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-37-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-37", "BR-19", "PRM-03"],
+      "title": "M07 report query enforces studentUserId self-scope at module and DB boundary",
+      "preconditions": [
+        "Integration database seeded with attendance_records, class_sessions, enrollments, and class_sections across multiple students.",
+        "M07 Reporting module uses real repository and DB transaction boundaries with M01 scope resolution.",
+        "Student actor is enrolled in section A; foreign attendance rows exist for other students in section A and section B."
+      ],
+      "steps": [
+        "Invoke M07 getAttendanceReport use-case for Student actor with filters { termId, classSectionId: sectionA }.",
+        "Assert repository query applies mandatory studentUserId = actorUserId predicate before row materialization.",
+        "Verify returned row set contains only the acting student's attendance records for enrolled section A sessions.",
+        "Confirm zero rows for other students appear even when sharing the same classSectionId."
+      ],
+      "expected": "Module integration returns only self-scoped attendance rows for enrolled sections; mandatory studentUserId filter enforced at M07 boundary with no cross-student leakage (PRM-03, BR-19).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-37-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-37", "FR-04", "BR-06"],
+      "title": "M07 student history excludes sessions for sections without active enrollment",
+      "preconditions": [
+        "Integration database seeded with attendance records in section A (student enrolled) and section B (student not enrolled).",
+        "M02 enrollment boundary and M07 report query use real DB transactions.",
+        "Student actor has active enrollment only in section A per FR-04 roster."
+      ],
+      "steps": [
+        "Invoke M07 getAttendanceReport for Student actor with termId spanning both sections.",
+        "Query M02 isStudentEnrolled for section B and confirm false.",
+        "Assert report result includes section A session rows only.",
+        "Verify no section B session identifiers or attendance statuses appear in committed query result."
+      ],
+      "expected": "Student personal history is limited to enrolled sections; unenrolled section sessions are excluded at M02/M07 boundary per BR-06 enrollment eligibility.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-37-004",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["FR-37", "FR-36", "FR-15"],
+      "title": "Primary workflow FLOW-04 student login then views personal attendance history",
+      "preconditions": [
+        "Student account with institution-issued credentials exists and is enrolled in at least one section.",
+        "Attendance records exist with Present status from QR check-in in a closed session.",
+        "No active bearer token is held by the test client."
+      ],
+      "steps": [
+        "Send POST /v1/auth/login with student email and password.",
+        "Send GET /v1/me with Authorization Bearer accessToken and confirm Student role and actor identity.",
+        "Send GET /v1/reports/attendance?termId={termId}&sortBy=date&sortOrder=desc&page=1&pageSize=25 with the student token.",
+        "Inspect data rows for session reference, attendanceStatus, checkInAt, and checkInMethod fields."
+      ],
+      "expected": "FLOW-04 primary path completes: authenticated student retrieves self-scoped attendance history sorted by date desc with observable status, timestamp, and method per enrolled session (FR-37).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-37-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-37", "FR-15", "FR-36"],
+      "title": "HTTP contract for Student POST /v1/auth/login then GET /v1/me then self-scoped attendance report",
+      "preconditions": [
+        "Provisioned Student account with institution-issued credentials exists.",
+        "No active bearer token is held by the test client.",
+        "Student has attendance records in at least one enrolled section for the active term."
+      ],
+      "steps": [
+        "Send POST /v1/auth/login with student email and password.",
+        "Assert HTTP 200 with data.accessToken, data.expiresInSeconds, and data.roles containing Student.",
+        "Send GET /v1/me with Authorization Bearer accessToken from login response.",
+        "Assert HTTP 200 with student actor identity and Student role scope claims.",
+        "Send GET /v1/reports/attendance?termId={termId}&page=1&pageSize=25 using the accessToken."
+      ],
+      "expected": "Login returns HTTP 200 with accessToken and Student role; GET /v1/me returns HTTP 200 with authenticated student identity; subsequent self-scoped GET /v1/reports/attendance returns HTTP 200 with standard envelope and only the acting student's attendance rows.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-37-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-37"],
+      "title": "HTTP contract for self-scoped GET /v1/reports/attendance returns status, timestamp, and check-in method",
+      "preconditions": [
+        "Student is authenticated with valid Bearer token.",
+        "Fixture attendance rows exist for the student with checkInMethod values QR, Manual, and Admin Correction across enrolled section sessions."
+      ],
+      "steps": [
+        "Send GET /v1/reports/attendance?termId={termId}&classSectionId={sectionId}&page=1&pageSize=25 with Student Authorization header.",
+        "Validate HTTP 200 and standard { data, meta, error } response envelope.",
+        "Assert each data row includes attendanceStatus, checkInAt, checkInMethod, classSessionId, and classSectionId.",
+        "Verify checkInMethod values are drawn from allowed enum { QR, Manual, Admin Correction } per API §3.1."
+      ],
+      "expected": "Response is HTTP 200 with standard envelope; data rows expose attendanceStatus, checkInAt, and checkInMethod for each enrolled session; error is null; methods match persisted ledger values.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-37-007",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P1",
+      "traceability": ["FR-37"],
+      "title": "Alternate workflow branch filters personal history by section and status",
+      "preconditions": [
+        "Student is authenticated and enrolled in sections A and B.",
+        "Section A has Present records; section B has Absent records for the same student in the active term."
+      ],
+      "steps": [
+        "Call GET /v1/reports/attendance?termId={termId}&classSectionId={sectionAId}&page=1&pageSize=25 as Student.",
+        "Record returned row count and section identifiers.",
+        "Call GET /v1/reports/attendance?termId={termId}&status=Absent&page=1&pageSize=25 as Student.",
+        "Assert filtered results contain only Absent rows for the acting student within enrolled scope."
+      ],
+      "expected": "Alternate filter branch returns section-scoped and status-scoped subsets of the student's own records only; no rows from unfiltered institution scope or other students appear.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-37-008",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "pagination",
+      "priority": "P0",
+      "traceability": ["FR-37"],
+      "title": "Student personal history pagination returns scoped totalItems and page boundaries",
+      "preconditions": [
+        "Student actor is authenticated in integration harness.",
+        "More than 25 attendance records exist for the student in one enrolled section (exceeding default pageSize)."
+      ],
+      "steps": [
+        "Call GET /v1/reports/attendance?termId={termId}&classSectionId={sectionId}&page=1&pageSize=25 as Student.",
+        "Assert meta.pagination contains page=1, pageSize=25, totalItems, and totalPages reflecting only the student's scoped count.",
+        "Request page=2 with same filters and verify non-overlapping row identifiers.",
+        "Confirm totalItems does not include other students' record counts (NFR-LST-01)."
+      ],
+      "expected": "meta.pagination reflects self-scoped totalItems only; page 1 and page 2 return disjoint row sets; scoped count never exposes cross-student or institution-wide totals.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-37-009",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-37", "BR-19", "PRM-03", "AC-16"],
+      "title": "Student denied when querying another student's attendance via studentUserId override",
+      "preconditions": [
+        "Two Student accounts exist: studentA (authenticated) and studentB with attendance records in the same section.",
+        "studentB attendance data exists and is known to the test harness."
+      ],
+      "steps": [
+        "Authenticate as studentA and obtain Bearer token.",
+        "Send GET /v1/reports/attendance?termId={termId}&studentUserId={studentBUserId}&page=1&pageSize=25.",
+        "Validate HTTP status code and error envelope.",
+        "Inspect data and meta.pagination for any studentB attendance rows, identifiers, or scoped totals."
+      ],
+      "expected": "Request returns HTTP 403 with error.code Forbidden or OutOfScope; data is null; no studentB attendance statuses, timestamps, methods, or pagination totals are disclosed (PRM-03, BR-19).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-37-010",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-37", "FR-27", "BR-19", "AC-16"],
+      "title": "Student denied institution-wide CSV export",
+      "preconditions": [
+        "Student user is authenticated with valid Bearer token.",
+        "Attendance export data exists across multiple sections and students."
+      ],
+      "steps": [
+        "Send POST /v1/exports/attendance with body { format: csv, filters: { termId } } and required Idempotency-Key as Student.",
+        "Validate HTTP status code and JSON response envelope.",
+        "Verify no exportJobId is returned and no export job is created in persistence."
+      ],
+      "expected": "Response is HTTP 403 with standard envelope; error.code is Forbidden; data is null with no exportJobId or queued job metadata disclosed (FR-37 export denial, AC-16).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-37-011",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-37", "FR-19", "BR-19"],
+      "title": "Student denied live session roster endpoint exposing other students",
+      "preconditions": [
+        "Student is authenticated with valid Bearer token.",
+        "Open class session exists where the student is enrolled with peer students checked in."
+      ],
+      "steps": [
+        "Send GET /v1/class-sessions/{sessionId}/attendance as Student.",
+        "Validate HTTP status code and error envelope.",
+        "Inspect response for peer student identifiers, attendance statuses, or roster counts."
+      ],
+      "expected": "Request returns HTTP 403 with error.code Forbidden or OutOfScope; data is null; no peer student roster rows or live attendance counts are disclosed — personal history remains on self-scoped report path only (FR-19 boundary, BR-19).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-37-012",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["FR-37"],
+      "title": "Student history pageSize above maximum 100 rejected",
+      "preconditions": [
+        "Student is authenticated with valid Bearer token.",
+        "Pagination constraint: 1 <= pageSize <= 100 per API §2.5 and validation rules."
+      ],
+      "steps": [
+        "Send GET /v1/reports/attendance?termId={termId}&page=1&pageSize=101 as Student.",
+        "Validate HTTP status and error envelope.",
+        "Confirm no attendance rows are returned in data array for invalid pageSize."
+      ],
+      "expected": "pageSize=101 returns HTTP 400 with InvalidPayload or validation error; data is null with no partial attendance history rows.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-37-013",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["FR-37", "BR-19"],
+      "title": "Unauthenticated personal attendance history request rejected",
+      "preconditions": [
+        "Student attendance records exist in the database.",
+        "Request is sent without Authorization header."
+      ],
+      "steps": [
+        "Send GET /v1/reports/attendance?termId={termId}&page=1&pageSize=25 without Authorization header.",
+        "Inspect HTTP status, response envelope data/meta/error fields.",
+        "Verify no attendance rows or pagination metadata are returned."
+      ],
+      "expected": "API returns HTTP 401 with standard envelope where data is null and error.code is Unauthenticated; no attendance history rows or scoped totals are disclosed.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-37-014",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-37", "PRM-03"],
+      "title": "Student browser journey views PG-03 attendance history with filters, badges, and no export",
+      "preconditions": [
+        "Student is logged in on mobile-web Chromium viewport.",
+        "PG-03 /me/attendance route is reachable with AttendanceHistoryList (DC-10) component.",
+        "Student has attendance records across multiple enrolled sections with Present, Late, and Absent statuses."
+      ],
+      "steps": [
+        "Navigate to /me/attendance and confirm history list loads with section grouping and AttendanceStatusCell badges.",
+        "Apply termId and classSectionId filters via toolbar or bottom sheet; verify table updates to scoped rows only.",
+        "Confirm each row displays check-in timestamp and method badge (QR, Manual, or Admin Correction).",
+        "Verify no export button or ExportScopeSummary affordance is present on the page.",
+        "Navigate to page 2 via pagination controls and confirm URL query params sync (termId, classSectionId, status, sortBy, sortOrder, page, pageSize)."
+      ],
+      "expected": "PG-03 listing implements mobile-first self-scoped history per §0 matrix: filters, date desc sort, server pagination, status and method columns visible; no export affordance; displayed rows remain strictly the acting student's records (PRM-03, FR-37).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-37-015",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["FR-37", "BR-19", "AC-16"],
+      "title": "Browser journey blocks student from institution report route and shows empty or access-denied state",
+      "preconditions": [
+        "Student test account is logged in on browser harness.",
+        "PG-13 /reports/attendance route exists for lecturer and admin roles.",
+        "Institution-wide attendance data exists outside student self-scope."
+      ],
+      "steps": [
+        "As Student, attempt direct URL navigation to /reports/attendance.",
+        "Observe permission empty, redirect, or access-denied state without partial attendance table data.",
+        "Confirm /me/attendance remains reachable and shows only self-scoped records.",
+        "Verify no institution-wide row counts or other students' identifiers appear on either route."
+      ],
+      "expected": "Student is denied institution report UI without restricted data leakage; personal history at /me/attendance remains the authorized self-service path (AC-16, BR-19, AC-UI-09).",
+      "edgeCase": false
+    }
+  ]
+}

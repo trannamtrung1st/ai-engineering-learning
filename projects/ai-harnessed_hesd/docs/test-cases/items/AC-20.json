@@ -1,0 +1,201 @@
+{
+  "productItemId": "AC-20",
+  "version": 1,
+  "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+  "generatedAt": "2026-07-02T10:30:00Z",
+  "cases": [
+    {
+      "id": "TC-AC-20-001",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["AC-20", "NFR-01", "FR-16", "FR-23"],
+      "title": "Scenario matrix row for check-in latency median under 30 seconds",
+      "preconditions": [
+        "Testing-plan §7.1 performance tests and §11 NFR verification matrix rows for NFR-01 and AC-20 apply.",
+        "Representative pilot load fixture is seeded: multiple open class sessions with enrolled students and valid rotating QR tokens.",
+        "Telemetry or test harness can record per-attempt elapsed time from check-in command start to terminal outcome persistence."
+      ],
+      "steps": [
+        "Execute a representative pilot load run across multiple class sessions with enrolled students submitting valid check-ins.",
+        "For each attempt, record end-to-end elapsed time from QR/token resolution through POST /v1/check-ins to persisted Success outcome.",
+        "Aggregate elapsed times and compute median across all successful check-in attempts in the run."
+      ],
+      "expected": "Median student check-in time across the pilot load run is strictly below 30 seconds, satisfying AC-20 and NFR-01 per testing-plan §7.1 and §11 evidence requirements.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-20-002",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["AC-20", "NFR-01", "FR-16", "FR-22", "FR-23"],
+      "title": "Check-in service DB transaction completes within server-side latency budget",
+      "preconditions": [
+        "Real database transaction boundary is enabled for check-in service and attendance ledger modules.",
+        "Open class session with valid QR token exists; authenticated enrolled student has no prior success for the session.",
+        "Server-side timing instrumentation captures request receipt through CheckInAttempt and AttendanceRecord commit."
+      ],
+      "steps": [
+        "Submit POST /v1/check-ins with valid qrToken, clientTimestamp, Idempotency-Key, and student bearer token.",
+        "Measure server-side elapsed time from API handler entry to DB commit of CheckInAttempt outcome=Success and AttendanceRecord Present or Late.",
+        "Repeat for a statistically meaningful sample under normal (non-degraded) integration test conditions."
+      ],
+      "expected": "Server-side check-in command processing (validation through attendance ledger write) completes well within the 30-second end-to-end budget; sample median server processing time is a small fraction of the AC-20 gate so client and network overhead remain within overall median target.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-20-003",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P0",
+      "traceability": ["AC-20", "NFR-01", "NFR-04", "FR-16", "FR-22"],
+      "title": "Concurrent class-start burst preserves median check-in time below 30 seconds",
+      "preconditions": [
+        "Multiple open class sessions each have 20+ enrolled students per representative pilot profile.",
+        "Test harness can fire parallel POST /v1/check-ins requests across sessions with distinct students and valid QR tokens.",
+        "Normal campus network simulation profile is active (no artificial throttling beyond pilot realism)."
+      ],
+      "steps": [
+        "Trigger simultaneous check-in submissions across concurrent open sessions mimicking class-start burst.",
+        "Record per-student elapsed time from submission start to Success response and persisted attendance row.",
+        "Compute median elapsed time across all successful attempts in the burst run."
+      ],
+      "expected": "Under concurrent class-start peak load, median check-in time remains below 30 seconds and valid requests maintain processing success without violating NFR-04 concurrent handling expectations tied to AC-20.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-20-004",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["AC-20", "NFR-01", "FR-16", "FR-23"],
+      "title": "POST /v1/check-ins returns 200 success envelope within latency budget",
+      "preconditions": [
+        "Open class session with valid qrToken exists in test environment.",
+        "Authenticated student bearer token belongs to an actively enrolled user without prior success for the session.",
+        "E2E harness records HTTP round-trip time and response envelope fields."
+      ],
+      "steps": [
+        "Start timer at POST /v1/check-ins request dispatch with Authorization, valid qrToken, clientTimestamp, and Idempotency-Key.",
+        "Await HTTP response and stop timer on full response body receipt.",
+        "Verify HTTP status 200, standard envelope (data/meta/error), data.outcome Success, and data.attendanceStatus Present or Late."
+      ],
+      "expected": "API returns HTTP 200 with valid success envelope; measured round-trip time for each attempt in the sample contributes to a median below 30 seconds per AC-20 and API-G05 mobile-first low-latency check-in goal.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-20-005",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["AC-20", "NFR-01", "FR-15", "FR-16", "FR-23", "AC-06", "AC-11"],
+      "title": "WF-03 primary student check-in happy path completes within 30-second median target",
+      "preconditions": [
+        "Lecturer has opened session (AC-01); session is Open with rotating valid QR.",
+        "Student actor is enrolled; GPS policy is default or satisfied for the session.",
+        "E2E harness measures wall-clock time from QR scan/deep-link open through success confirmation."
+      ],
+      "steps": [
+        "Student opens check-in URL with valid token (FLOW-01 step 1); complete login gate if unauthenticated (AC-06).",
+        "Grant GPS when prompted if policy requires; submit check-in via POST /v1/check-ins.",
+        "Record elapsed time until success response and Present or Late attendance is queryable on roster.",
+        "Repeat across representative sample of students and sessions; compute median elapsed time."
+      ],
+      "expected": "Primary WF-03 happy-path median end-to-end time from QR scan to success result is below 30 seconds, matching AC-20 Given/When/Then and WF-03 UX latency checkpoint (NFR-01).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-20-006",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["AC-20", "NFR-01", "FR-16"],
+      "title": "Median check-in time threshold boundary fails gate when at or above 30 seconds",
+      "preconditions": [
+        "Performance test environment can simulate degraded conditions (elevated latency or reduced capacity) for threshold validation.",
+        "Representative pilot load script records per-attempt timings and computes median.",
+        "Release gate documentation requires explicit failure evidence when AC-20 is not met."
+      ],
+      "steps": [
+        "Run pilot load scenario under controlled degradation until observed median approaches or exceeds 30 seconds.",
+        "Capture metric snapshot: per-attempt times, computed median, session count, and success rate.",
+        "Compare median against AC-20 threshold and document gate pass/fail verdict."
+      ],
+      "expected": "When computed median is >= 30 seconds, AC-20 gate is marked FAIL with documented metric evidence; when median < 30 seconds under normal pilot profile, gate is PASS. Boundary validates measurability of the 30-second acceptance threshold per NFR-01.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-20-007",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["AC-20", "NFR-01", "FR-16", "AC-06", "AC-11"],
+      "title": "FLOW-01 mobile-web journey from QR open to CheckInResultScreen success under 30 seconds",
+      "preconditions": [
+        "Student is on mobile-web viewport (Chromium mobile emulation) with open session and valid check-in deep link.",
+        "Student is pre-authenticated or will complete PG-01 login during the timed journey.",
+        "Browser harness records wall-clock from navigation to /check-in?token=... through success-present or success-late UI state."
+      ],
+      "steps": [
+        "Navigate to check-in URL with valid token query parameter (FLOW-01 step 1).",
+        "Complete login redirect if required (AC-06); grant GPS prompt if policy requires.",
+        "Submit check-in and wait for CheckInResultScreen to render success status and timestamp (AC-11, AC-UI-03).",
+        "Record elapsed time; repeat for sample runs and compute median."
+      ],
+      "expected": "UI journey median completion from QR/deep-link open to success result screen is below 30 seconds per FLOW-01 timing target (AC-20, NFR-01); confirmation is visible without lecturer page reload.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-20-008",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["AC-20", "NFR-01", "FR-16"],
+      "title": "Pilot campus network timing on physical mobile browsers",
+      "preconditions": [
+        "Staging pilot uses real iOS Safari or Android Chrome on campus Wi-Fi or cellular per testing-plan §6.2 browser matrix.",
+        "Open session with valid QR displayed; enrolled student device available for timed FLOW-01 run.",
+        "Physical device and campus network are not reproducible in Playwright MCP harness."
+      ],
+      "steps": [
+        "Student scans classroom QR on physical mobile device under normal campus network conditions.",
+        "Complete authentication and check-in through mobile browser to success confirmation.",
+        "Record elapsed time; aggregate median across pilot cohort check-ins during class sessions."
+      ],
+      "expected": "Physical pilot median check-in time is below 30 seconds under real campus network conditions, providing production-like evidence for AC-20 beyond emulated harness runs.",
+      "edgeCase": false,
+      "harnessSkip": "physical-device"
+    },
+    {
+      "id": "TC-AC-20-009",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["AC-20", "NFR-01", "FR-16", "BR-19"],
+      "title": "Non-Student roles denied POST /v1/check-ins per permission matrix",
+      "preconditions": [
+        "Open class session with valid qrToken exists in test environment.",
+        "Lecturer and DepartmentAdmin users have valid bearer tokens per permission matrix.",
+        "Enrolled Student bearer token is available as authorized control for latency baseline."
+      ],
+      "steps": [
+        "Lecturer calls POST /v1/check-ins with valid qrToken and Authorization header.",
+        "DepartmentAdmin calls POST /v1/check-ins with the same qrToken context.",
+        "Enrolled Student calls POST /v1/check-ins as authorized control and record round-trip time.",
+        "Verify denied responses return before attendance ledger mutation and Student control succeeds within latency budget."
+      ],
+      "expected": "Lecturer and DepartmentAdmin receive 403 Forbidden per permission matrix (Submit QR check-in Deny); no CheckInAttempt or AttendanceRecord is created for non-student actors; Student control receives HTTP 200 Success within the AC-20 median latency target so unauthorized traffic does not pollute valid check-in timing evidence.",
+      "edgeCase": true
+    }
+  ]
+}

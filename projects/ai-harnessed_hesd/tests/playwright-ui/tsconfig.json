@@ -1,0 +1,10 @@
+{
+  "extends": "@attendly/config/tsconfig/base.json",
+  "include": ["src", "scenarios", "playwright.config.ts"],
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM"],
+    "noEmit": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
+  }
+}

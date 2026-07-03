@@ -1,0 +1,344 @@
+{
+  "productItemId": "BR-18",
+  "version": 1,
+  "docFingerprint": "sha256:0421ca4affe3aa70584e3b352a860d11de519a5a2aaff8c4d8e0f12d14d1a70a",
+  "generatedAt": "2026-07-02T12:06:07Z",
+  "cases": [
+    {
+      "id": "TC-BR-18-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["BR-18", "FR-27", "FR-28", "BR-19", "AC-15", "AC-16"],
+      "title": "Scenario-matrix coverage for role-scoped attendance export",
+      "preconditions": [
+        "Testing-plan §3.1 reporting/export and scope row applies (FR-27, FR-28, BR-18, BR-19, AC-15, AC-16, AC-17).",
+        "Role-matrix fixture provides Lecturer assigned to section A, DepartmentAdmin scoped to faculty X, AcademicAdmin with institution scope, and Student account.",
+        "Attendance records exist in assigned section A, unassigned section B, faculty Y, and across institution scope."
+      ],
+      "steps": [
+        "As Lecturer, call POST /v1/exports/attendance with format csv and term-wide filters.",
+        "As DepartmentAdmin, call POST /v1/exports/attendance with faculty-scoped filters.",
+        "As AcademicAdmin, call POST /v1/exports/attendance with institution-authorized filters.",
+        "As Student, call POST /v1/exports/attendance with the same filters.",
+        "Complete and inspect each permitted export artifact; inspect denial responses for unauthorized actors."
+      ],
+      "expected": "Maps to testing-plan §3.1 reporting/export and scope row and E2E-08: Lecturer export includes only assigned sections; DepartmentAdmin export limited to assigned faculty; AcademicAdmin export respects institution scope; Student institution-wide export denied without restricted data disclosure (BR-18, BR-19).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-18-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-18", "FR-27"],
+      "title": "M07 export service scopes Lecturer CSV rows to assigned sections at DB boundary",
+      "preconditions": [
+        "Integration database seeded with attendance_records, class_sessions, enrollments, and lecturer-to-section assignments.",
+        "M07 Reporting and Export module uses real repository and DB transaction boundaries.",
+        "Attendance rows exist in assigned and unassigned sections for the same term."
+      ],
+      "steps": [
+        "Invoke M07 createExportJob use-case for Lecturer actor with termId filter and no explicit classSectionId.",
+        "Execute export generation pipeline and read persisted export job metadata and generated CSV row set.",
+        "Assert repository query predicates restrict classSectionId to lecturer assigned set before row materialization.",
+        "Verify zero rows from unassigned sections appear in committed export artifact."
+      ],
+      "expected": "Module integration commits export job and CSV rows scoped to lecturer assigned sections only; PRM-09 scope-aware filters enforced at M07 boundary with no cross-section leakage (BR-18 Lecturer branch).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-18-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-18", "FR-27", "FR-30"],
+      "title": "Successful export persists AuditLog with actor, timestamp, scope, and format",
+      "preconditions": [
+        "Integration database seeded with lecturer assignment and exportable attendance rows.",
+        "M07 export pipeline and audit persistence use real DB transactions.",
+        "AuditLog table is queryable in integration harness."
+      ],
+      "steps": [
+        "Record audit log count for ExportCreated or equivalent action type before export.",
+        "Invoke M07 createExportJob and complete CSV generation for Lecturer actor with scoped filters.",
+        "Query AuditLog repository for new entry matching exportJobId correlation.",
+        "Inspect audit row for actorUserId, timestamp, scope filter summary, and format csv."
+      ],
+      "expected": "Every successful export produces immutable AuditLog entry with actor, timestamp, scope, and format per BR-18 outcome; audit row correlates to exportJobId without exposing foreign-scope data.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-18-004",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-18", "FR-27", "AC-15"],
+      "title": "HTTP contract for POST /v1/exports/attendance returns 202 export job envelope",
+      "preconditions": [
+        "Assigned Lecturer is authenticated with valid Bearer token.",
+        "Target classSectionId belongs to lecturer assignment set and has attendance data."
+      ],
+      "steps": [
+        "Send POST /v1/exports/attendance with body { format: csv, filters: { termId, classSectionId } } and required Idempotency-Key header.",
+        "Validate HTTP status code and standard { data, meta, error } response envelope.",
+        "Assert data.exportJobId, data.status, and data.format fields per API design §4.6.",
+        "Verify meta.requestId and meta.timestamp are present."
+      ],
+      "expected": "Response is HTTP 202 with standard envelope; data contains exportJobId, status Queued (or equivalent async state), and format csv; error is null.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-18-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-18", "FR-27"],
+      "title": "HTTP contract for AcademicAdmin institution-scoped export job creation",
+      "preconditions": [
+        "AcademicAdmin is authenticated with authorized institution scope.",
+        "Attendance data exists across multiple faculties within institution grant."
+      ],
+      "steps": [
+        "Send POST /v1/exports/attendance with body { format: csv, filters: { termId, status: Absent } } and Idempotency-Key as AcademicAdmin.",
+        "Validate HTTP 202 and response envelope fields.",
+        "Complete export and verify CSV rows are within institution authorized scope only."
+      ],
+      "expected": "Response is HTTP 202 with exportJobId and format csv; completed export contains institution-scoped rows only per BR-18 AcademicAdmin branch.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-18-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["BR-18", "FR-27", "AC-15"],
+      "title": "Primary WF-07 workflow: lecturer CSV export limited to assigned sections",
+      "preconditions": [
+        "Lecturer is assigned to section SE101-01 with closed sessions containing attendance outcomes.",
+        "Another section SE101-02 in same term has attendance data outside lecturer assignment.",
+        "Lecturer has no assignment to SE101-02."
+      ],
+      "steps": [
+        "Authenticate as lecturer assigned to SE101-01.",
+        "Call POST /v1/exports/attendance with format csv and filters { termId } covering the term.",
+        "Wait for export completion and download the CSV artifact.",
+        "Verify each CSV row section identifier matches SE101-01 only."
+      ],
+      "expected": "End-to-end export happy path succeeds and CSV contains only SE101-01 attendance rows with no SE101-02 or other cross-section leakage (testing-plan E2E-08, BR-18 Lecturer branch).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-18-007",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P0",
+      "traceability": ["BR-18", "FR-27"],
+      "title": "Alternate path: DepartmentAdmin faculty-scoped export with status filter",
+      "preconditions": [
+        "DepartmentAdmin is authenticated and scoped to faculty X.",
+        "Attendance data exists in faculty X and faculty Y sections."
+      ],
+      "steps": [
+        "Submit POST /v1/exports/attendance with format csv and filters { termId, status: Absent } as DepartmentAdmin.",
+        "Complete export job and parse CSV output.",
+        "Verify all rows have classSectionId values within faculty X authorized scope.",
+        "Confirm no rows from faculty Y sections appear."
+      ],
+      "expected": "DepartmentAdmin export succeeds with faculty-scoped Absent-only rows; scope filters applied before query execution and output excludes sections outside assigned faculty (BR-18 DepartmentAdmin branch).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-18-008",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-c",
+      "priority": "P0",
+      "traceability": ["BR-18", "FR-30", "BR-22", "AC-17"],
+      "title": "Successful CSV export writes audit log entry with actor, scope, and format",
+      "preconditions": [
+        "Lecturer is authenticated and assigned to a section with exportable attendance data.",
+        "Audit log query access is available for verification actor."
+      ],
+      "steps": [
+        "Record audit log count for ExportCreated or equivalent action type before export.",
+        "Submit POST /v1/exports/attendance with csv format and scoped filters; wait for job completion.",
+        "Query GET /v1/audit-logs filtered by actorUserId, actionType, and exportJobId correlation.",
+        "Inspect audit entry for actor, timestamp, scope summary, and format csv."
+      ],
+      "expected": "Every successful export produces immutable AuditLog entry with actor, timestamp, scope, and format per BR-18 and AC-17; audit row correlates to exportJobId without exposing foreign-scope data.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-18-009",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-18", "BR-19", "FR-27", "AC-16"],
+      "title": "Student denied institution-wide CSV export",
+      "preconditions": [
+        "Student user is authenticated with valid Bearer token.",
+        "Institution-wide attendance export data exists across multiple sections."
+      ],
+      "steps": [
+        "Send POST /v1/exports/attendance with body { format: csv, filters: { termId } } as Student.",
+        "Validate HTTP status code and error envelope.",
+        "Query export job persistence for any job created by the denied request."
+      ],
+      "expected": "Response is HTTP 403 with error.code Forbidden or OutOfScope; data is null with no exportJobId; no export job row or CSV artifact is created (BR-18 Student denied, BR-19).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-18-010",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-18", "BR-19", "FR-27", "AC-15", "AC-16"],
+      "title": "Lecturer denied export for unassigned classSectionId",
+      "preconditions": [
+        "Lecturer is authenticated and assigned only to section A.",
+        "Section B has attendance data and is not in lecturer assignment set."
+      ],
+      "steps": [
+        "Call POST /v1/exports/attendance with filters { classSectionId: sectionBId, format: csv } as lecturer.",
+        "Inspect HTTP status, error.code, and response body for restricted data leakage.",
+        "Verify no export job or partial CSV artifact is produced."
+      ],
+      "expected": "Request returns HTTP 403 OutOfScope or Forbidden; response contains no section B student identifiers, attendance statuses, or exportJobId (BR-18 cross-scope Lecturer denial, BR-19).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-18-011",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-18", "BR-19", "FR-27"],
+      "title": "Out-of-scope export filter rejected before query executes",
+      "preconditions": [
+        "DepartmentAdmin scoped to faculty X is authenticated.",
+        "Attendance data exists in faculty Y section outside department scope."
+      ],
+      "steps": [
+        "Submit POST /v1/exports/attendance with filters targeting faculty Y classSectionId.",
+        "Parse 403 response and any error.details field.",
+        "Verify export job table has no new row and no CSV rows were materialized."
+      ],
+      "expected": "Scope validation short-circuits with HTTP 403 OutOfScope before unrestricted query; error.details contain no faculty Y attendance samples or row counts (VR-RP-02, BR-18, BR-19).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-18-012",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["BR-18", "FR-27"],
+      "title": "Unsupported export format rejected with UnsupportedFormat error",
+      "preconditions": [
+        "Lecturer or AcademicAdmin is authenticated with valid export permission.",
+        "MVP supports csv format only per VR-RP-03."
+      ],
+      "steps": [
+        "Send POST /v1/exports/attendance with body { format: xlsx, filters: { termId } }.",
+        "Validate HTTP status and error envelope.",
+        "Confirm no export job is queued."
+      ],
+      "expected": "Response is HTTP 400 or 422 with error.code UnsupportedFormat; error message or details list csv as allowed format; no exportJobId is returned.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-18-013",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "pagination",
+      "priority": "P1",
+      "traceability": ["BR-18", "FR-28", "BR-19"],
+      "title": "Report pagination totals reflect actor scope not institution-wide counts",
+      "preconditions": [
+        "Institution has 120 attendance rows across multiple sections; lecturer scope covers 25 rows in one assigned section.",
+        "Integration environment uses real report query with pagination."
+      ],
+      "steps": [
+        "Query GET /v1/reports/attendance with page=1 and pageSize=25 as scoped lecturer.",
+        "Read meta.pagination.totalItems and totalPages.",
+        "Advance to final page and verify row classSectionId values."
+      ],
+      "expected": "Pagination metadata totalItems and totalPages are computed from scoped dataset (25) only; no cross-scope counts appear in meta.pagination per API §2.5 and BR-18 scope filtering.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-18-014",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P1",
+      "traceability": ["BR-18", "FR-27"],
+      "title": "Duplicate export request with same Idempotency-Key returns existing job",
+      "preconditions": [
+        "Lecturer is authenticated with export permission for a section.",
+        "Idempotency-Key header support is enabled on POST /v1/exports/attendance per API §7.1."
+      ],
+      "steps": [
+        "Submit POST /v1/exports/attendance with a fixed Idempotency-Key and scoped csv filters.",
+        "Immediately submit an identical request with the same Idempotency-Key in parallel.",
+        "Compare exportJobId values and count persisted export job rows for the key."
+      ],
+      "expected": "Both responses return the same exportJobId; only one export job row is persisted; no duplicate CSV artifacts are generated for the same idempotency key.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-18-015",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["BR-18", "FR-27", "FR-30", "AC-15"],
+      "title": "Lecturer browser journey triggers scoped CSV export with ExportScopeSummary",
+      "preconditions": [
+        "Lecturer is logged in on desktop browser.",
+        "Reporting/export UI (SUR-05) shows term filter and section selector populated from lecturer scope.",
+        "Attendance data exists in assigned and unassigned sections."
+      ],
+      "steps": [
+        "Navigate to attendance report or export page.",
+        "Select an assigned section and confirm ExportScopeSummary displays section and row scope before export.",
+        "Choose CSV format and trigger export action.",
+        "Confirm job status or download UI and verify exported file contains only assigned-section rows with required columns."
+      ],
+      "expected": "UI section selector lists only assigned class sections; ExportScopeSummary confirms scope before execution; CSV download succeeds with lecturer-scoped attendance data and no unassigned section rows.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-18-016",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["BR-18", "BR-19", "FR-27", "AC-16"],
+      "title": "Student browser journey blocked from CSV export action",
+      "preconditions": [
+        "Student is logged in on mobile or desktop browser.",
+        "Application shell may expose or deep-link to reporting surfaces.",
+        "Student role lacks ExportJob.execute per permissions matrix."
+      ],
+      "steps": [
+        "Attempt to navigate directly to attendance export URL.",
+        "Inspect navigation menu for export affordances.",
+        "If export UI is reachable, attempt to trigger CSV export.",
+        "Observe user-facing denial message and network response."
+      ],
+      "expected": "Student cannot execute institution CSV export; export action is hidden, disabled, or fails with access-denied feedback without displaying other students' attendance data or partial export download (BR-18 Student denied).",
+      "edgeCase": true
+    }
+  ]
+}

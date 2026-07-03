@@ -1,0 +1,283 @@
+{
+  "productItemId": "FR-16",
+  "version": 1,
+  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+  "generatedAt": "2026-07-02T12:30:00Z",
+  "cases": [
+    {
+      "id": "TC-FR-16-001",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["FR-16", "AC-06", "AC-11", "BR-03"],
+      "title": "Scenario matrix row for mobile web QR scan entry in student check-in validation block",
+      "preconditions": [
+        "Testing-plan §3 Student check-in validation block applies (FR-15, FR-16, FR-17, FR-18, BR-05 to BR-07).",
+        "An Open class session exists with a rotating valid QR token and enrolled student fixture available.",
+        "Mobile-web client context is simulated (no native app install)."
+      ],
+      "steps": [
+        "Resolve qrPayload from GET /v1/class-sessions/{sessionId}/qr/current into a check-in deep link carrying the opaque token.",
+        "Open the student check-in entry path via the deep link URL without trusting client-supplied session IDs.",
+        "Authenticate enrolled student if login gate applies, then submit check-in with qrToken extracted from the scanned URL.",
+        "Verify terminal outcome and attendance method reflect QR-based mobile entry."
+      ],
+      "expected": "Scenario-matrix maps to testing-plan §3 student check-in validation row: mobile browser QR/deep-link entry resolves server-side to the correct Open session, passes auth gate when required, and completes check-in with QR method per FR-16 and AC-11.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-16-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-16", "FR-11", "BR-03", "BR-04"],
+      "title": "M04 check-in resolves qrToken from scanned URL to classSessionId without client session ID",
+      "preconditions": [
+        "Real database transaction is enabled for M04 Check-in and QR orchestrator modules.",
+        "Open session with Valid QRSessionToken row and known qrPayload exists.",
+        "Request body omits any client-provided classSessionId field."
+      ],
+      "steps": [
+        "Invoke submitCheckIn through M04 integration boundary with qrToken decoded from qrPayload only.",
+        "Query token resolution path and assert classSessionId is derived exclusively from qrToken lookup.",
+        "Assert CheckInAttempt row records checkInMethod QR and binds to the resolved session.",
+        "Submit with qrToken from a different session as negative control and assert rejection without cross-session write."
+      ],
+      "expected": "M04 module + repository integration resolves qrToken to exactly one classSessionId per API §5.3 without trusting client session IDs; successful mobile entry persists CheckInAttempt with QR method bound to the token's session.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-16-003",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-16", "FR-23", "AC-11"],
+      "title": "HTTP contract for POST /v1/check-ins with qrToken from mobile QR scan",
+      "preconditions": [
+        "Open class session with valid rotating qrToken exists.",
+        "Enrolled student is authenticated with Authorization Bearer token.",
+        "qrToken is obtained from lecturer QR metadata (opaque token from qrPayload), not a client session ID."
+      ],
+      "steps": [
+        "Send POST /v1/check-ins with body { qrToken, clientTimestamp } and Authorization header.",
+        "Assert HTTP 200 and standard envelope with error null.",
+        "Assert data.outcome is Success, data.attendanceStatus is Present or Late, data.classSessionId matches token-bound session, and data.checkInAt is ISO-8601 UTC.",
+        "Assert meta includes requestId and timestamp."
+      ],
+      "expected": "Mobile-first check-in endpoint returns HTTP 200 success envelope per API design §4.4 with compact payload (qrToken + clientTimestamp) suitable for low-latency mobile web submission per FR-16 and API-G05.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-16-004",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-16", "FR-19", "AC-11"],
+      "title": "HTTP contract for GET /v1/class-sessions/{sessionId}/attendance after QR mobile check-in",
+      "preconditions": [
+        "Enrolled student completed successful POST /v1/check-ins with qrToken from mobile QR entry.",
+        "Assigned Lecturer is authenticated for the target session."
+      ],
+      "steps": [
+        "Send GET /v1/class-sessions/{sessionId}/attendance with Lecturer Authorization header.",
+        "Assert HTTP 200 and envelope shape { data, meta, error } with error null.",
+        "Locate the checked-in student row in data.rows.",
+        "Assert row fields include attendanceStatus Present or Late, checkInMethod QR, checkInAt timestamp, and latestAttemptOutcome Success.",
+        "Assert data.counts reflects incremented present or late count."
+      ],
+      "expected": "Live roster payload after mobile QR check-in exposes checkInMethod QR, attendance status, and attempt outcome per API §4.5 roster shape, confirming FR-16 entry is reflected on lecturer attendance view.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-16-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["FR-16", "FR-15", "FR-36", "AC-06", "AC-11"],
+      "title": "Primary workflow WF-03 mobile browser QR scan to successful check-in",
+      "preconditions": [
+        "Open session with rotating valid QR token and enrolled student account exist.",
+        "Student begins on mobile-web viewport without native app; QR resolves to check-in deep link."
+      ],
+      "steps": [
+        "Student scans displayed QR (or navigates to equivalent /check-in?token=... deep link) on mobile browser.",
+        "If unauthenticated, complete POST /v1/auth/login then GET /v1/me to establish Student session.",
+        "Submit POST /v1/check-ins with qrToken from scanned URL and clientTimestamp within present window.",
+        "Confirm mobile UI or API response shows Success with Present or Late and timestamp."
+      ],
+      "expected": "WF-03 happy path completes via mobile web QR entry: deep link carries token, login gate satisfied when needed per AC-06, check-in returns Success with QR method and Present/Late assignment per AC-11.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-16-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P0",
+      "traceability": ["FR-16", "FR-11", "BR-03", "AC-04"],
+      "title": "Alternate workflow expired QR from mobile scan then rescan with fresh token",
+      "preconditions": [
+        "Open session with 30-second QR TTL rotation is active.",
+        "Enrolled student is authenticated on mobile browser."
+      ],
+      "steps": [
+        "Capture qrToken T1 from initial QR scan and wait until after T1 expires.",
+        "Submit POST /v1/check-ins with expired T1 and record ExpiredQr rejection on mobile result screen.",
+        "Rescan current rotating QR to obtain fresh qrToken T2 within TTL.",
+        "Submit POST /v1/check-ins with T2 before expiry."
+      ],
+      "expected": "First mobile submission with stale token fails with 422 ExpiredQr per E2E-04; rescan obtains fresh valid token and second submission succeeds without native app reinstall.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-16-007",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-16", "FR-15", "BR-05", "BR-19"],
+      "title": "RBAC denial when non-student roles submit mobile QR check-in",
+      "preconditions": [
+        "Open session with valid qrToken from QR metadata exists.",
+        "Lecturer and ITAdmin users are authenticated with valid bearer tokens."
+      ],
+      "steps": [
+        "Lecturer calls POST /v1/check-ins with valid qrToken obtained from displayed QR.",
+        "ITAdmin calls POST /v1/check-ins with the same qrToken context.",
+        "Enrolled Student calls POST /v1/check-ins with the same token as authorized control."
+      ],
+      "expected": "Lecturer and ITAdmin receive authorization denial (403 Forbidden) per permission matrix §8.1; enrolled Student passes role gate and proceeds to business validation, confirming mobile QR entry is Student-only.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-16-008",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-16", "BR-03"],
+      "title": "Boundary error for missing or empty qrToken on mobile check-in submission",
+      "preconditions": [
+        "Enrolled student is authenticated with valid bearer token.",
+        "Open session exists; mobile client attempts submission without resolved token."
+      ],
+      "steps": [
+        "Call POST /v1/check-ins with body omitting qrToken field entirely.",
+        "Call POST /v1/check-ins with body { qrToken: \"\" }.",
+        "Inspect HTTP status and error.code for both requests."
+      ],
+      "expected": "Both requests fail with 400 InvalidPayload per VR-CI-01; standard envelope has data null and no successful attendance outcome is created.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-16-009",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-16", "FR-11", "BR-03", "BR-04"],
+      "title": "Boundary error for malformed qrToken from invalid deep link",
+      "preconditions": [
+        "Enrolled student is authenticated on mobile browser.",
+        "Deep link or manual entry supplies non-opaque malformed token string."
+      ],
+      "steps": [
+        "Navigate to check-in path with token query parameter set to malformed or tampered value.",
+        "Submit POST /v1/check-ins with the malformed qrToken and valid Authorization header.",
+        "Inspect HTTP status, error.code, and CheckInAttempt persistence."
+      ],
+      "expected": "API returns 400 MalformedQrToken or 422 InvalidQr per validation matrix; no Present/Late AttendanceRecord is created and mobile UI shows rescan guidance.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-16-010",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-16", "FR-23", "AC-11", "NFR-14"],
+      "title": "UI journey mobile viewport deep link check-in to CheckInResultScreen success",
+      "preconditions": [
+        "Open session QR check-in deep link with valid token query parameter is available.",
+        "Enrolled student credentials exist; browser profile uses mobile viewport (Chromium mobile emulation).",
+        "No native app is installed; flow is mobile web only."
+      ],
+      "steps": [
+        "Navigate to /check-in?token=<valid> on mobile viewport.",
+        "Complete login gate if redirected, preserving token context in URL.",
+        "Trigger check-in submission from near-zero-field FRM-11 surface.",
+        "Verify CheckInResultScreen displays success state with Present or Late badge, timestamp, and decisive outcome copy."
+      ],
+      "expected": "Mobile-web check-in journey completes without native app: deep link token is retained through login, submission renders CheckInResultScreen success with readable typography per NFR-14 and attendance status per AC-11.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-16-011",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-16", "FR-22", "BR-03", "AC-18"],
+      "title": "UI journey expired QR deep link shows rescan recovery on CheckInResultScreen",
+      "preconditions": [
+        "Open session exists; test can supply an expired QR token via deep link query parameter.",
+        "Enrolled student is authenticated on mobile viewport."
+      ],
+      "steps": [
+        "Navigate to /check-in?token=<expired> on mobile viewport.",
+        "Submit check-in from the mobile check-in surface.",
+        "Observe CheckInResultScreen failure state and recovery guidance.",
+        "Rescan or navigate to fresh token deep link and confirm retry path is offered."
+      ],
+      "expected": "Expired mobile QR entry renders localized ExpiredQr messaging on CheckInResultScreen with rescan next-action per forms-validation UX §5; no success attendance state is shown.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-16-012",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["FR-16", "NFR-14"],
+      "title": "Physical device camera QR scan on iOS Safari and Android Chrome",
+      "preconditions": [
+        "Real iOS Safari and Android Chrome devices with camera access are available.",
+        "Lecturer display shows live rotating QR for an Open session.",
+        "Pilot student account is enrolled in the session section."
+      ],
+      "steps": [
+        "On iOS Safari, use device camera to scan displayed QR and complete mobile web check-in.",
+        "On Android Chrome, repeat camera scan and check-in submission.",
+        "Verify both devices reach success or documented failure screen without app store install prompt."
+      ],
+      "expected": "Native mobile browsers resolve camera-scanned QR to the web check-in flow and complete submission without native app install per FR-16 CAP-06.",
+      "edgeCase": true,
+      "harnessSkip": "physical-device"
+    },
+    {
+      "id": "TC-FR-16-013",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P0",
+      "traceability": ["FR-16", "BR-07", "NFR-07"],
+      "title": "Concurrent mobile retry submissions with same Idempotency-Key dedupe safely",
+      "preconditions": [
+        "Open session with valid qrToken and enrolled student actor exist.",
+        "Mobile client simulator can fire parallel POST /v1/check-ins with identical Idempotency-Key."
+      ],
+      "steps": [
+        "Dispatch two or more parallel POST /v1/check-ins requests with same qrToken, Authorization, and Idempotency-Key.",
+        "Query AttendanceRecord and CheckInAttempt tables for the student/session pair.",
+        "Compare API responses across parallel requests."
+      ],
+      "expected": "Exactly one success attendance outcome is persisted; parallel retries return consistent idempotent response without duplicate Present/Late rows per NFR-07, modeling flaky mobile network retries after QR scan.",
+      "edgeCase": true
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+.title {
+  margin-bottom: var(--space-4);
+}
+
+.loading {
+  min-height: 200px;
+  border: var(--border-default);
+  box-shadow: var(--shadow-sm);
+  background: var(--color-neutral-secondary);
+}

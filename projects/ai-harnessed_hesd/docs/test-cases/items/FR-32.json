@@ -1,0 +1,349 @@
+{
+  "productItemId": "FR-32",
+  "version": 1,
+  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+  "generatedAt": "2026-07-02T20:15:00Z",
+  "cases": [
+    {
+      "id": "TC-FR-32-001",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["FR-32", "FR-27", "FR-28", "FR-30", "BR-18", "BR-19", "AC-16"],
+      "title": "Testing-plan §3 Reporting/export and permissions row covers SystemAuditor read-only scope",
+      "preconditions": [
+        "Testing-plan §3.1 Reporting/export and scope block applies (FR-27, FR-28, BR-18, BR-19, AC-15, AC-16, AC-17).",
+        "Testing-plan §12 Reporting/export and permissions row includes FR-32.",
+        "role-matrix fixture provides SystemAuditor with granted institution audit scope and attendance read scope.",
+        "dispute-trail fixture includes attendance mutations, export audit entries, and check-in attempts across in-scope and out-of-scope sections."
+      ],
+      "steps": [
+        "Enumerate protected read routes available to SystemAuditor: GET /v1/audit-logs, GET /v1/reports/attendance, GET /v1/class-sessions/{sessionId}/attendance.",
+        "As SystemAuditor, exercise each read route within granted scope and verify successful scoped responses.",
+        "Attempt mutation routes (PATCH attendance, POST export, POST session open/close) and record denials.",
+        "Attempt read routes targeting resources outside granted scope and record denials.",
+        "Verify no partial restricted data appears in any denial response."
+      ],
+      "expected": "Scenario-matrix maps to testing-plan §3.1 Reporting/export and scope and §12 permissions row: SystemAuditor read-only access succeeds within granted scope; all mutations and out-of-scope reads are denied without data leakage per FR-32, PRM-05, and BR-19.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-32-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-32", "BR-19", "BR-22"],
+      "title": "M01 scope guard and M08 queryAuditLogs enforce read-only auditor boundary at DB layer",
+      "preconditions": [
+        "Integration database seeded with audit_logs rows spanning in-scope and out-of-scope classSectionId values.",
+        "M01 Identity and Access authorize(action, resource, scopeContext) and M08 Audit and Compliance queryAuditLogs use real DB transactions.",
+        "SystemAuditor actor has read-only scope claims for a defined institution or faculty boundary."
+      ],
+      "steps": [
+        "Invoke M01 authorize for SystemAuditor with AuditLog.read targeting in-scope filters; assert Allow.",
+        "Invoke M08 queryAuditLogs(filters, scope) for in-scope actorUserId and actionType range; capture result set.",
+        "Invoke M01 authorize for SystemAuditor with AttendanceRecord.update; assert Deny.",
+        "Attempt M05 correctAttendance or equivalent attendance mutation service call as SystemAuditor and confirm no DB write.",
+        "Invoke M08 queryAuditLogs with filters targeting out-of-scope classSectionId and confirm empty or denied result without cross-scope rows."
+      ],
+      "expected": "M01 module boundary permits AuditLog.read and attendance read queries only within granted scope; AttendanceRecord.update is denied at authorize; no attendance_records or audit_logs mutations occur for SystemAuditor per PRM-05 and FR-32.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-32-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-32", "FR-29", "FR-30", "BR-22"],
+      "title": "M08 queryAuditLogs returns immutable mutation and export evidence for dispute-trail fixture",
+      "preconditions": [
+        "dispute-trail fixture persisted in integration database with CheckInAttempt failures, manual corrections, and export audit entries.",
+        "M08 queryAuditLogs supports actorUserId, targetType, targetId, actionType, from, to filters with scope enforcement.",
+        "SystemAuditor scope includes the fixture institution boundary."
+      ],
+      "steps": [
+        "Query audit_logs for actionType attendance_status_mutation by target student-session pair from dispute case.",
+        "Query audit_logs for actionType Export by exportJobId from fixture export completion.",
+        "Verify each returned row includes actorUserId, occurredAt, targetType, targetId, and action-specific payload fields per CMP-01 and CMP-02.",
+        "Confirm audit_logs rows are append-only: attempt UPDATE or DELETE on returned row IDs fails or is rejected by repository policy."
+      ],
+      "expected": "M08 returns queryable immutable audit evidence for mutations and exports within auditor scope; rows contain actor, timestamp, target correlation, and action context required for WF-08 dispute reconstruction per FR-32 and BR-22.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-32-004",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-32", "FR-15", "FR-36"],
+      "title": "HTTP contract for SystemAuditor POST /v1/auth/login then GET /v1/me returns read-only scope claims",
+      "preconditions": [
+        "Provisioned SystemAuditor account with institution-issued credentials and granted audit scope exists.",
+        "No active bearer token is held by the test client."
+      ],
+      "steps": [
+        "Send POST /v1/auth/login with SystemAuditor email and password.",
+        "Assert HTTP 200 with data.accessToken, data.expiresInSeconds, and data.roles containing SystemAuditor.",
+        "Send GET /v1/me with Authorization Bearer accessToken from login response.",
+        "Assert HTTP 200 with actor identity, SystemAuditor role, and read-only scope claims (institutionId or facultyId boundary).",
+        "Verify response envelope matches standard { data, meta, error } shape with error null."
+      ],
+      "expected": "Login returns HTTP 200 with accessToken and SystemAuditor role per FR-36; GET /v1/me returns HTTP 200 with read-only scope claims required for PRM-05 enforcement per FR-32 and API §4.1.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-32-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-32", "FR-30", "BR-22", "AC-19"],
+      "title": "HTTP contract for SystemAuditor GET /v1/audit-logs returns 200 scoped audit envelope",
+      "preconditions": [
+        "SystemAuditor is authenticated with bearer token and granted audit scope.",
+        "dispute-trail fixture includes attendance mutation and export audit entries within auditor scope.",
+        "Known actorUserId and actionType values exist in fixture for filter validation."
+      ],
+      "steps": [
+        "Send GET /v1/audit-logs?actionType=Export&from={start}&to={end}&page=1&pageSize=25 with SystemAuditor Authorization header.",
+        "Assert HTTP 200 and standard response envelope with data.items array and meta.pagination.",
+        "Validate each item includes actorUserId, occurredAt, actionType, targetType, and targetId.",
+        "Send GET /v1/audit-logs?actionType=attendance_status_mutation&targetId={studentSessionTarget} and verify mutation audit row with old/new status context.",
+        "Confirm error is null and no write side effects occur on subsequent identical GET."
+      ],
+      "expected": "GET /v1/audit-logs returns HTTP 200 with paginated scoped audit entries per API §4.7; mutation and export evidence is queryable for dispute review per FR-32, FR-30, and AC-19.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-32-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-32", "FR-19", "FR-28"],
+      "title": "HTTP contract for SystemAuditor GET /v1/class-sessions/{sessionId}/attendance returns read-only live roster payload",
+      "preconditions": [
+        "SystemAuditor is authenticated with scope covering the target session section.",
+        "Closed class session exists with mixed Present, Late, Pending, and rejected attempt outcomes.",
+        "sessionId for in-scope session and sessionId for out-of-scope session are known."
+      ],
+      "steps": [
+        "Send GET /v1/class-sessions/{sessionId}/attendance with SystemAuditor Authorization header.",
+        "Validate HTTP 200 and standard response envelope.",
+        "Assert data.classSessionId, data.state, data.counts (present, late, pending, rejectedAttempts), and data.rows[] are present per API §4.5.",
+        "Inspect each roster row for studentCode, attendanceStatus, checkInMethod, checkInAt, and latestAttemptOutcome.",
+        "Send GET /v1/class-sessions/{outOfScopeSessionId}/attendance and validate HTTP 403 OutOfScope with no partial roster rows."
+      ],
+      "expected": "In-scope roster returns HTTP 200 with documented live roster payload shape per FR-19; out-of-scope session returns HTTP 403 with no partial data disclosed per FR-32 and BR-19.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-32-007",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["FR-32", "FR-29", "FR-30", "BR-22", "AC-19"],
+      "title": "WF-08 primary dispute investigation: SystemAuditor reconstructs evidence bundle read-only",
+      "preconditions": [
+        "dispute-trail fixture provides disputed student attendance outcome with failed check-in attempts, manual correction, and export audit.",
+        "SystemAuditor is authenticated with scope covering the disputed session section.",
+        "AcademicAdmin previously applied a correction with documented reason in fixture."
+      ],
+      "steps": [
+        "Locate disputed case via GET /v1/reports/attendance?studentUserId={id}&classSectionId={sectionId} as SystemAuditor.",
+        "Retrieve session roster via GET /v1/class-sessions/{sessionId}/attendance and capture final AttendanceRecord status and attempt summary.",
+        "Query GET /v1/audit-logs?targetType=AttendanceRecord&targetId={studentSessionTarget} for mutation trail.",
+        "Query GET /v1/audit-logs?actionType=Export for related export events in the dispute window.",
+        "Attempt PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} as SystemAuditor and confirm denial."
+      ],
+      "expected": "WF-08 steps 1–3 complete read-only: auditor reconstructs session lifecycle, attempt outcomes, final attendance, and mutation trail from attendance and audit endpoints; step 5 correction is denied per FR-32 and 06-main-workflows §10.3.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-32-008",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P1",
+      "traceability": ["FR-32", "FR-28", "BR-19"],
+      "title": "Alternate WF-08 path: cross-filter attendance report and audit logs by actor and date range",
+      "preconditions": [
+        "SystemAuditor is authenticated with institution-scoped read access.",
+        "dispute-trail fixture includes multiple actors (Lecturer, AcademicAdmin) with corrections and exports in a known date window.",
+        "Attendance report rows exist for the same students referenced in audit entries."
+      ],
+      "steps": [
+        "Call GET /v1/reports/attendance?from={disputeStart}&to={disputeEnd}&page=1&pageSize=25 as SystemAuditor.",
+        "Select a student row with non-success attendance status from report results.",
+        "Call GET /v1/audit-logs?actorUserId={lecturerId}&from={disputeStart}&to={disputeEnd}&page=1&pageSize=25.",
+        "Cross-reference audit mutation entries with report row status and session metadata.",
+        "Call GET /v1/reports/attendance with classSectionId outside granted scope and confirm denial."
+      ],
+      "expected": "Alternate dispute review path correlates scoped attendance report rows with filtered audit history; out-of-scope report filter is denied without partial rows per FR-32 and WOP-05.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-32-009",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-c",
+      "priority": "P1",
+      "traceability": ["FR-32", "FR-29", "FR-30", "BR-22", "AC-19"],
+      "title": "Flow C audit verification: SystemAuditor observes post-correction audit trail without mutating records",
+      "preconditions": [
+        "AcademicAdmin applied attendance correction with reason in dispute-trail fixture after lecturer edit window expired.",
+        "Correction audit row exists with oldStatus, newStatus, actorUserId, reason, and occurredAt.",
+        "SystemAuditor is authenticated with read scope covering the corrected session."
+      ],
+      "steps": [
+        "SystemAuditor queries GET /v1/audit-logs?actionType=attendance_status_mutation&targetId={studentSessionTarget}.",
+        "Verify audit entry records AcademicAdmin actor, old/new status, reason, and timestamp per CMP-01.",
+        "SystemAuditor queries GET /v1/class-sessions/{sessionId}/attendance and confirms roster reflects corrected afterState.",
+        "SystemAuditor attempts PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} to revert status.",
+        "Re-query audit_logs count and attendance_records status to confirm no auditor-initiated mutation."
+      ],
+      "expected": "Post-correction audit trail is visible and matches roster afterState; SystemAuditor cannot mutate attendance or append auditor-initiated audit mutations per FR-32, PRM-05, and AC-19.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-32-010",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "pagination",
+      "priority": "P1",
+      "traceability": ["FR-32", "FR-30", "BR-22"],
+      "title": "SystemAuditor audit log pagination invariants respect scope at module boundary",
+      "preconditions": [
+        "Integration database contains more than 50 audit_logs rows within SystemAuditor scope and additional rows outside scope.",
+        "M08 queryAuditLogs supports page and pageSize with mandatory scope filter injection."
+      ],
+      "steps": [
+        "Query page 1 with pageSize=25 as SystemAuditor and record meta.pagination.totalItems, totalPages, and item IDs.",
+        "Query page 2 with same filters and pageSize=25.",
+        "Query last page using totalPages from first response.",
+        "Verify no audit item references out-of-scope classSectionId or institution boundary.",
+        "Confirm union of all page item IDs is disjoint across pages and totalItems excludes out-of-scope volume."
+      ],
+      "expected": "Pagination metadata is consistent within auditor scope only: totalItems reflects scoped audit count; pages are non-overlapping; no out-of-scope audit entries appear on any page per FR-32 and API §2.4.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-32-011",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-32", "BR-19", "AC-16", "AC-23"],
+      "title": "SystemAuditor denied attendance mutations, exports, and session control actions",
+      "preconditions": [
+        "SystemAuditor is authenticated with valid bearer token.",
+        "Closed session with enrolled student and Absent AttendanceRecord exists in auditor read scope.",
+        "Scheduled session exists in auditor read scope."
+      ],
+      "steps": [
+        "Call PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Excused and reason as SystemAuditor.",
+        "Call POST /v1/exports/attendance with format csv and scoped filters as SystemAuditor.",
+        "Call POST /v1/class-sessions/{scheduledSessionId}/open as SystemAuditor.",
+        "Call POST /v1/class-sessions/{sessionId}/close as SystemAuditor.",
+        "Inspect each response for HTTP 403 Forbidden and verify AttendanceRecord, session state, and export jobs are unchanged."
+      ],
+      "expected": "All mutation endpoints return HTTP 403 Forbidden per permission matrix §3.2 and PRM-05; attendance status, session state, and export queue remain unchanged; no partial export artifact is returned per BR-19 exception (auditor read-only, no export unless explicitly permitted).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-32-012",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-32", "BR-19", "AC-16"],
+      "title": "SystemAuditor denied out-of-scope attendance report and roster reads without data leakage",
+      "preconditions": [
+        "SystemAuditor is authenticated with scope limited to faculty X.",
+        "Attendance data and closed session exist in faculty Y outside auditor scope."
+      ],
+      "steps": [
+        "Call GET /v1/reports/attendance?classSectionId={facultyYSectionId}&page=1&pageSize=25 as SystemAuditor.",
+        "Call GET /v1/class-sessions/{facultyYSessionId}/attendance as SystemAuditor.",
+        "Call GET /v1/audit-logs?targetId={facultyYTargetId} as SystemAuditor.",
+        "Inspect HTTP status, error.code, and response body for restricted data leakage.",
+        "Verify response contains no faculty Y student identifiers, attendance statuses, audit payloads, or scoped pagination totals."
+      ],
+      "expected": "All out-of-scope read requests return HTTP 403 OutOfScope or Forbidden; data is null; no partial faculty Y rows, student identifiers, or cross-scope totals are disclosed per AC-16 and BR-19.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-32-013",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-32", "BR-19"],
+      "title": "SystemAuditor POST /v1/exports/attendance rejected with Forbidden before job creation",
+      "preconditions": [
+        "SystemAuditor is authenticated with read scope covering attendance data.",
+        "Attendance records exist in scope that would otherwise be exportable by Lecturer or AcademicAdmin."
+      ],
+      "steps": [
+        "Submit POST /v1/exports/attendance with format csv and in-scope filters { termId, classSectionId } as SystemAuditor.",
+        "Parse HTTP 403 response with error.code Forbidden or OutOfScope.",
+        "Query export_jobs table or export job API for new job created by auditor actor.",
+        "Verify no CSV artifact metadata or download URL is returned.",
+        "Confirm GET /v1/reports/attendance for same scope still succeeds read-only."
+      ],
+      "expected": "Export request short-circuits with HTTP 403 Forbidden before export job creation per BR-19 exception; no export_jobs row or artifact is produced; read-only report access remains available per FR-32.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-32-014",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-32", "FR-30", "BR-22"],
+      "title": "SystemAuditor browser journey reviews PG-15 audit logs with filter, sort, and pagination",
+      "preconditions": [
+        "SystemAuditor is logged in on desktop browser.",
+        "PG-15 /audit/logs is reachable with TableToolbar, DataTable, and AuditEntryRow components.",
+        "dispute-trail fixture provides audit entries for Export and attendance_status_mutation within auditor scope."
+      ],
+      "steps": [
+        "Navigate to /audit/logs and confirm audit log table loads with default timestamp desc sort.",
+        "Apply actorUserId filter and actionType filter; verify table updates with scoped results only.",
+        "Set from/to date range filters matching dispute window; confirm URL query params sync with toolbar state.",
+        "Navigate to page 2 via pagination controls if totalPages > 1.",
+        "Open an AuditEntryRow detail and verify actor, target, action type, and timestamp fields render read-only with no edit or delete controls."
+      ],
+      "expected": "PG-15 listing per FLOW-13 supports scoped audit search with filter, sort, and pagination; AuditEntryRow displays immutable evidence read-only per FR-32, FR-30, and §14-listing-pages PG-15 matrix.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-32-015",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["FR-32", "FR-28", "FR-19"],
+      "title": "SystemAuditor browser journey views dispute evidence on PG-13 report and session roster without mutation affordances",
+      "preconditions": [
+        "SystemAuditor is logged in on desktop browser.",
+        "PG-13 /reports/attendance and session roster detail route are reachable.",
+        "dispute-trail fixture provides student with disputed Absent status and linked session in auditor scope."
+      ],
+      "steps": [
+        "Navigate to /reports/attendance, filter by student identifier from dispute case, and locate disputed row.",
+        "Open linked session roster view and verify AttendanceStatusCell badge and attempt outcome summary render.",
+        "Confirm manual correction, export, and session open/close action buttons are hidden or disabled for SystemAuditor per NFR-UI-03.",
+        "Navigate to /audit/logs with pre-filled target filter from roster context and verify related mutation audit rows appear.",
+        "Attempt direct URL navigation to attendance correction form route and observe access-denied or read-only state."
+      ],
+      "expected": "WF-08 dispute evidence is reconstructible across PG-13 and roster views read-only; mutation and export controls are absent or disabled for SystemAuditor; audit cross-navigation works without write affordances per FR-32 and 06-main-workflows §10.3.",
+      "edgeCase": false
+    }
+  ]
+}

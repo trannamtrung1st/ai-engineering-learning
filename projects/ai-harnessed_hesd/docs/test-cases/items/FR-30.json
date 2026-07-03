@@ -1,0 +1,424 @@
+{
+  "productItemId": "FR-30",
+  "version": 1,
+  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+  "generatedAt": "2026-07-02T11:34:20Z",
+  "cases": [
+    {
+      "id": "TC-FR-30-001",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["FR-30", "BR-18", "BR-22", "AC-17"],
+      "title": "Testing-plan §3 Attempt/audit coverage row requires export and sensitive-read audit completeness",
+      "preconditions": [
+        "Testing-plan §3.1 Attempt/audit coverage block applies (FR-22, FR-29, FR-30, BR-22, BR-23, AC-18, AC-19).",
+        "dispute-trail fixture provides completed exports, bulk attendance report queries, and audit log views across Lecturer, AcademicAdmin, and SystemAuditor roles.",
+        "M08 Audit and Compliance module persists audit_logs with real database."
+      ],
+      "steps": [
+        "Enumerate all successful export completions and policy-mandated privileged bulk reads in the fixture.",
+        "Query audit_logs for each export by actionType Export and exportJobId correlation.",
+        "Query audit_logs for privileged bulk attendance or audit view reads where institution policy requires logging.",
+        "Verify each export audit row includes actorUserId, occurredAt, scope filter summary, and format csv.",
+        "Compare export completion count to export audit row count for the same correlation scope."
+      ],
+      "expected": "Scenario-matrix maps to testing-plan §3.1 Attempt/audit coverage: every successful export and policy-required privileged read has exactly one queryable audit record with CMP-02 minimum fields per FR-30 and BR-22; zero export-audit gaps.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-30-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-30", "FR-27", "BR-18", "BR-22"],
+      "title": "M07 export completion emits immutable audit row to M08 at DB transaction boundary",
+      "preconditions": [
+        "Integration database seeded with attendance_records in a lecturer-assigned section.",
+        "M07 Reporting and Export and M08 Audit and Compliance modules use real DB transactions.",
+        "Export job processor can be driven to Completed state in test harness."
+      ],
+      "steps": [
+        "Invoke M07 createExportJob use-case for Lecturer actor with filters { termId, classSectionId } and format csv.",
+        "Drive export job to Completed and capture exportJobId and correlationId.",
+        "Query audit_logs table directly for rows tied to exportJobId or correlationId.",
+        "Assert persisted fields: actorUserId, actor role Lecturer, scope filter summary matching request, format csv, and occurredAt timestamp.",
+        "Verify audit_logs row is append-only and cannot be updated after commit."
+      ],
+      "expected": "M07→M08 module boundary commits exactly one immutable audit_logs row on export completion with actor, timestamp, scope, and format per FR-30, PRM-11, and CMP-02.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-30-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-30", "FR-28", "BR-22"],
+      "title": "M08 writeAuditEvent records privileged bulk attendance report read when institution policy requires",
+      "preconditions": [
+        "Institution policy flag privilegedReadAuditEnabled is true in test configuration.",
+        "Integration database has bulk attendance data spanning multiple students in AcademicAdmin institution scope.",
+        "M07 report query returns paginated attendance listing exceeding privileged-read threshold."
+      ],
+      "steps": [
+        "Invoke M07 getAttendanceReport use-case for AcademicAdmin with term-wide filters returning bulk result set.",
+        "Query audit_logs for actionType privileged_read or bulk_attendance_view tied to the request correlationId.",
+        "Verify audit row includes actorUserId, actor role AcademicAdmin, scope filter summary, targetType AttendanceReport, and occurredAt.",
+        "Confirm no attendance_records were mutated by the read operation."
+      ],
+      "expected": "When institution policy requires, privileged bulk attendance read writes one queryable audit_logs row with actor, timestamp, and scope per FR-30 without mutating attendance data.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-30-004",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": ["FR-30", "BR-22"],
+      "title": "audit_logs retention policy preserves export and privileged-read entries beyond short-term purge windows",
+      "preconditions": [
+        "Integration database contains audit_logs rows for exports and privileged reads older than GPS raw-coordinate retention window.",
+        "Retention job or purge script is configured per database-design §9.1 compliance-defined long retention for audit_logs.",
+        "Synthetic audit entries have known IDs and occurredAt timestamps beyond 90-day GPS purge threshold."
+      ],
+      "steps": [
+        "Record baseline count and IDs of audit_logs rows for export and privileged_read action types older than purge threshold.",
+        "Execute retention or purge job configured for the test environment.",
+        "Re-query audit_logs for the recorded IDs and action types.",
+        "Verify audit rows remain present and immutable; confirm only short-retention data classes (e.g. raw GPS) were purged."
+      ],
+      "expected": "audit_logs rows for exports and sensitive reads are retained per compliance-defined long retention policy per FR-30 and database-design §9.1; purge jobs do not delete immutable audit evidence.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-30-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-30", "FR-27", "BR-18", "BR-22", "AC-17"],
+      "title": "POST /v1/exports/attendance returns 202 and GET /v1/audit-logs returns 200 export audit envelope",
+      "preconditions": [
+        "Assigned Lecturer is authenticated with valid Bearer token.",
+        "Attendance data exists for lecturer-scoped classSectionId.",
+        "AcademicAdmin bearer token can query GET /v1/audit-logs per role policy."
+      ],
+      "steps": [
+        "Send POST /v1/exports/attendance with body { format: csv, filters: { termId, classSectionId } } and Idempotency-Key; assert HTTP 202 with exportJobId and format csv.",
+        "Poll export job until status Completed.",
+        "Send GET /v1/audit-logs?actorUserId={lecturerId}&actionType=Export&from={exportStart}&to={exportEnd}&page=1&pageSize=25.",
+        "Validate HTTP 200 response envelope, meta.pagination, and matching audit entry with actorUserId, occurredAt, scope filter summary, and format csv."
+      ],
+      "expected": "Export returns HTTP 202; after completion GET /v1/audit-logs returns HTTP 200 with standard envelope containing export audit entry with actor, timestamp, scope, and format per FR-30 and API §4.6–4.7.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-30-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-30", "FR-15", "FR-36", "BR-18", "BR-22"],
+      "title": "POST /v1/auth/login and GET /v1/me establish actor context recorded in export audit",
+      "preconditions": [
+        "Lecturer account exists with institution-issued credentials and assigned class section scope.",
+        "Attendance data exists for the assigned section.",
+        "AcademicAdmin can query GET /v1/audit-logs after export."
+      ],
+      "steps": [
+        "Call POST /v1/auth/login with lecturer email and password; assert HTTP 200 with accessToken and roles including Lecturer.",
+        "Call GET /v1/me with Authorization bearer token; assert HTTP 200 with actor userId and assigned section scope claims.",
+        "Call POST /v1/exports/attendance with csv format, scoped filters, and Idempotency-Key using the same bearer token; wait for job completion.",
+        "Query GET /v1/audit-logs for the export action and verify actorUserId matches GET /v1/me identity with scope and format fields."
+      ],
+      "expected": "Authenticated actor from FR-15 and FR-36 is persisted as actorUserId in export audit_logs row with role Lecturer, scope filter summary, format csv, and timestamp per FR-30.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-30-007",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-30", "FR-19", "FR-27", "BR-22"],
+      "title": "GET /v1/class-sessions/{sessionId}/attendance roster context precedes scoped export audit correlation",
+      "preconditions": [
+        "Open session exists with mixed Present, Late, Pending, and rejected attempt counts on roster.",
+        "Assigned Lecturer is authenticated; institution policy may log privileged bulk reads.",
+        "Baseline GET /v1/class-sessions/{sessionId}/attendance captured with counts and row payload shape."
+      ],
+      "steps": [
+        "Lecturer calls GET /v1/class-sessions/{sessionId}/attendance; assert HTTP 200 with classSessionId, state, counts (present, late, pending, rejectedAttempts), and rows array per API §4.5.",
+        "Lecturer calls POST /v1/exports/attendance with csv format and filters scoped to the session section; wait for completion.",
+        "Query GET /v1/audit-logs for export action and verify scope filter summary references the same classSectionId and term context as the roster.",
+        "Confirm export audit scope aligns with roster-visible enrollment boundary per FR-19 and BR-18."
+      ],
+      "expected": "Live roster GET per FR-19 returns documented payload shape; subsequent export audit entry records actor, timestamp, scope matching roster section context, and format csv per FR-30.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-30-008",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-30", "FR-04", "FR-27", "BR-18", "BR-22"],
+      "title": "POST /v1/enrollments/import seeds roster then export audit covers imported section scope",
+      "preconditions": [
+        "AcademicAdmin has created class section with closed session and attendance outcomes.",
+        "POST /v1/enrollments/import accepts valid student rows and reports row-level rejections for invalid rows.",
+        "Assigned Lecturer can export the section."
+      ],
+      "steps": [
+        "AcademicAdmin calls POST /v1/enrollments/import with classSectionId and mixed valid/invalid studentCode rows; assert HTTP 200 with acceptedRows count and rejectedRows array with rowNumber and code per invalid row.",
+        "Lecturer calls POST /v1/exports/attendance with csv format and classSectionId filter; wait for job completion.",
+        "Query GET /v1/audit-logs for export action by lecturer.",
+        "Verify audit scope filter summary includes classSectionId for the section where enrollments were imported."
+      ],
+      "expected": "Enrollment import per FR-04 establishes roster scope; export audit is written with actor, timestamp, scope covering imported section, and format csv without audit gap per FR-30.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-30-009",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["FR-30", "FR-27", "BR-18", "BR-22", "AC-17"],
+      "title": "WF-07 primary lecturer export workflow writes export audit entry on completion",
+      "preconditions": [
+        "Lecturer is assigned to section SE101-01 with closed sessions containing attendance outcomes.",
+        "WF-07 reporting/export flow is exercisable end-to-end via API.",
+        "No prior export audit exists for the target filter set in the test window."
+      ],
+      "steps": [
+        "Authenticate as lecturer assigned to SE101-01.",
+        "Request POST /v1/exports/attendance with csv format and filters covering the section.",
+        "Poll export job until Completed and retrieve CSV artifact metadata.",
+        "Query GET /v1/audit-logs for export action by the lecturer within the request correlation window."
+      ],
+      "expected": "WF-07 steps G–H complete: export artifact is generated and AuditLog records actor, scope filter summary for SE101-01, format csv, and timestamp aligned with export completion per FR-30 and 06-main-workflows §9.4.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-30-010",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P1",
+      "traceability": ["FR-30", "FR-27", "BR-18", "BR-22"],
+      "title": "AcademicAdmin institution-scoped export audit records broad scope summary",
+      "preconditions": [
+        "AcademicAdmin is authenticated with institution-wide export authority.",
+        "Attendance data spans multiple faculties and sections within institution scope.",
+        "Audit query access is available to AcademicAdmin."
+      ],
+      "steps": [
+        "Submit POST /v1/exports/attendance with csv format and term-wide filters as AcademicAdmin.",
+        "Wait for export job completion.",
+        "Query GET /v1/audit-logs for the AcademicAdmin export action.",
+        "Compare audit scope filter summary against request filters and role-resolved institution scope."
+      ],
+      "expected": "Successful institution-scoped export produces audit entry with AcademicAdmin as actor, format csv, timestamp, and scope summary reflecting institution-level filter context per FR-30.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-30-011",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-c",
+      "priority": "P0",
+      "traceability": ["FR-30", "FR-32", "BR-22", "AC-17"],
+      "title": "Flow C audit verification after SystemAuditor privileged audit log bulk query",
+      "preconditions": [
+        "dispute-trail fixture includes export audit entries and attendance mutation audit entries.",
+        "SystemAuditor is authenticated with read-only audit scope.",
+        "Institution policy requires audit logging for privileged bulk audit view access."
+      ],
+      "steps": [
+        "SystemAuditor calls GET /v1/audit-logs with broad time-range filters returning bulk audit result set.",
+        "Query audit_logs for privileged_read action tied to the SystemAuditor request correlationId.",
+        "Verify privileged-read audit row includes actor SystemAuditor, scope filter summary, targetType AuditLog, and occurredAt.",
+        "Confirm SystemAuditor cannot mutate any returned audit or attendance records."
+      ],
+      "expected": "Privileged bulk audit view access writes queryable audit record with actor, timestamp, and scope when policy requires; WF-08 dispute review evidence remains read-only per FR-30 and FR-32.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-30-012",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "pagination",
+      "priority": "P1",
+      "traceability": ["FR-30", "FR-32", "BR-22"],
+      "title": "GET /v1/audit-logs pagination returns scoped export audit entries across page boundaries",
+      "preconditions": [
+        "dispute-trail fixture includes at least 30 completed export audit entries for one institution scope.",
+        "AcademicAdmin bearer token is authenticated within institution scope.",
+        "Export audits span Lecturer, DepartmentAdmin, and AcademicAdmin actors with full CMP-02 fields."
+      ],
+      "steps": [
+        "Query GET /v1/audit-logs?actionType=Export&from={rangeStart}&to={rangeEnd}&page=1&pageSize=25.",
+        "Verify HTTP 200, meta.pagination page=1, pageSize=25, totalItems >= 30, and totalPages >= 2.",
+        "Record export audit entry IDs from page 1 and verify each row includes actor, scope filter summary, format csv, and occurredAt.",
+        "Query GET /v1/audit-logs with same filters and page=2; verify distinct IDs with no overlap."
+      ],
+      "expected": "Paginated audit query honors page and pageSize invariants; all FR-30 export audit entries remain queryable across pages with complete actor, timestamp, scope, and format fields.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-30-013",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-30", "FR-27", "BR-19", "BR-22", "AC-16"],
+      "title": "Student denied export does not produce successful export audit entry",
+      "preconditions": [
+        "Student user is authenticated; ExportJob.execute is denied per permissions matrix.",
+        "Attendance export data exists in the institution.",
+        "Audit log baseline count for export-completed actions is captured before test."
+      ],
+      "steps": [
+        "Send POST /v1/exports/attendance with csv filters as Student; confirm HTTP 403 Forbidden.",
+        "Query GET /v1/audit-logs for export-completed actions tied to the Student actor and request correlation ID.",
+        "Verify no export job reached Completed state.",
+        "Confirm response contains no partial export data or scope leakage."
+      ],
+      "expected": "HTTP 403 denial returns with no completed export job; no audit log entry exists with successful export semantics (actor Student, format csv, completed scope) for the denied request per FR-30 and BR-19.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-30-014",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-30", "BR-19", "BR-22"],
+      "title": "Out-of-scope export rejection leaves no completed-export audit row",
+      "preconditions": [
+        "Lecturer assigned to section A only is authenticated.",
+        "Section B attendance data exists outside lecturer scope.",
+        "Audit store is queryable before and after the denied request."
+      ],
+      "steps": [
+        "Submit POST /v1/exports/attendance with filters { classSectionId: sectionBId } as lecturer.",
+        "Confirm HTTP 403 OutOfScope or Forbidden response with no exportJobId.",
+        "Query GET /v1/audit-logs and export job persistence for any new completed-export audit tied to section B."
+      ],
+      "expected": "Denied out-of-scope export returns HTTP 403; no ExportCompleted audit row is written with section B scope or format csv for a job that never successfully completed per FR-30.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-30-015",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P1",
+      "traceability": ["FR-30", "BR-22"],
+      "title": "Idempotent export replay does not duplicate audit entries for one successful export",
+      "preconditions": [
+        "Lecturer actor and scoped attendance data exist in integration DB.",
+        "POST /v1/exports/attendance idempotency returns existing exportJobId for duplicate Idempotency-Key per API §7.1."
+      ],
+      "steps": [
+        "Submit POST /v1/exports/attendance with a fixed Idempotency-Key and wait for job completion.",
+        "Count audit_logs export rows for the exportJobId.",
+        "Replay the same POST with identical Idempotency-Key and body in parallel or sequence.",
+        "Re-count audit_logs export rows for the same exportJobId."
+      ],
+      "expected": "Exactly one audit log entry exists per successfully completed export job; idempotent replay returns the same exportJobId without creating duplicate completed-export audit rows per FR-30.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-30-016",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-30", "BR-22", "AC-17"],
+      "title": "Failed export job processing does not write success audit before completion",
+      "preconditions": [
+        "Integration environment can simulate export job failure after queueing.",
+        "Lecturer-scoped export request is valid for authorization but fails during generation."
+      ],
+      "steps": [
+        "Create export job via module use-case that transitions to Failed terminal state.",
+        "Query audit_logs for completed-export action type tied to the failed job ID.",
+        "Verify export job status remains Failed, not Completed."
+      ],
+      "expected": "No audit log entry with successful export semantics (completed scope, format csv) is persisted for a job that did not complete successfully; FR-30 applies only when export completes.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-30-017",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-30", "FR-32", "BR-19", "BR-22"],
+      "title": "Student and out-of-scope roles denied audit log read without leaking export scope details",
+      "preconditions": [
+        "Completed export audit exists for section A with known actor and scope filter summary.",
+        "Student bearer token and Lecturer token for unassigned section B are available.",
+        "AcademicAdmin token is available as authorized control for audit query."
+      ],
+      "steps": [
+        "Student calls GET /v1/audit-logs?actionType=Export&classSectionId={sectionAId}.",
+        "Out-of-scope Lecturer (section B) calls GET /v1/audit-logs filtered to section A export events.",
+        "Inspect responses for partial leakage of scope filter summary, format, or actor identity.",
+        "AcademicAdmin calls the same audit query as control."
+      ],
+      "expected": "Student receives HTTP 403 Forbidden; out-of-scope Lecturer receives HTTP 403 OutOfScope without export scope payload; AcademicAdmin control returns HTTP 200 with full FR-30 export audit fields per BR-19.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-30-018",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-30", "FR-27", "BR-18", "BR-22", "AC-17"],
+      "title": "Lecturer browser export journey creates queryable audit trail with scope and format columns",
+      "preconditions": [
+        "Lecturer is logged in on desktop browser.",
+        "Reporting/export UI is available with scoped section filter and CSV export action.",
+        "AcademicAdmin or authorized auditor can access audit log UI."
+      ],
+      "steps": [
+        "Navigate to attendance report or export page.",
+        "Select an assigned section, choose CSV format, and trigger export.",
+        "Confirm download or job-completed status in UI.",
+        "Open audit log view filtered to export actions and verify new entry displays actor name, timestamp, scope filter summary, and csv format."
+      ],
+      "expected": "UI export completion is followed by a visible or queryable audit log entry showing actor, timestamp, scope filter summary, and csv format per FR-30, FLOW-12, and CMP-02.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-30-019",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-30", "FR-32", "BR-22", "AC-17"],
+      "title": "System Auditor PG-15 audit log review displays export audit entry with scope and format columns",
+      "preconditions": [
+        "Completed lecturer export audit exists with known scope and format.",
+        "SystemAuditor is authenticated on desktop browser with read-only audit scope.",
+        "PG-15 Audit log review route /audit/logs is available per FLOW-13."
+      ],
+      "steps": [
+        "Navigate to /audit/logs and apply TableToolbar filters: actionType Export and date range covering the export.",
+        "Locate AuditEntryRow for the completed export in the paginated results table.",
+        "Verify row displays actor name, timestamp, scope filter summary, format csv, and export correlation identifier.",
+        "Confirm pagination controls and default sort timestamp desc per PG-15 listing spec."
+      ],
+      "expected": "Browser FLOW-13 audit review journey displays queryable export audit with all FR-30 required fields visible in AuditEntryRow per CMP-02; authorized SystemAuditor can investigate export trail without export privileges.",
+      "edgeCase": false
+    }
+  ]
+}

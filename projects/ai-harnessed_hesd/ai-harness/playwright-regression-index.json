@@ -1,0 +1,193 @@
+{
+  "slices": {
+    "web-design-system-shell": {
+      "specPath": "/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/tests/playwright-ui/scenarios/web-design-system-shell.spec.ts",
+      "lastRunId": "20260702T170743Z",
+      "testCount": 6,
+      "sourceTcIds": [
+        "TC-NFR-14-010",
+        "TC-NFR-15-014"
+      ],
+      "updatedAt": "2026-07-02T17:23:34Z"
+    },
+    "web-student-check-in-flow": {
+      "specPath": "/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/tests/playwright-ui/scenarios/web-student-check-in-flow.spec.ts",
+      "lastRunId": "20260702T173745Z",
+      "testCount": 8,
+      "sourceTcIds": [
+        "TC-AC-06-007",
+        "TC-AC-11-010",
+        "TC-FR-15-008",
+        "TC-FR-16-010",
+        "TC-FR-16-011",
+        "TC-FR-23-012",
+        "TC-NFR-14-009",
+        "TC-NFR-14-010",
+        "TC-NFR-14-011",
+        "TC-NFR-14-012",
+        "TC-NFR-14-013",
+        "TC-NFR-14-014"
+      ],
+      "updatedAt": "2026-07-02T17:53:24Z"
+    },
+    "web-student-attendance-history": {
+      "specPath": "/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/tests/playwright-ui/scenarios/web-student-attendance-history.spec.ts",
+      "lastRunId": "20260702T181236Z",
+      "testCount": 5,
+      "sourceTcIds": [
+        "TC-AC-16-012",
+        "TC-AC-16-013",
+        "TC-BR-19-018",
+        "TC-BR-19-019",
+        "TC-FR-37-014",
+        "TC-FR-37-015"
+      ],
+      "updatedAt": "2026-07-02T18:20:26Z"
+    },
+    "web-lecturer-session-control": {
+      "specPath": "/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/tests/playwright-ui/scenarios/web-lecturer-session-control.spec.ts",
+      "lastRunId": "20260702T185331Z",
+      "testCount": 4,
+      "sourceTcIds": [
+        "TC-AC-01-008",
+        "TC-AC-02-010",
+        "TC-AC-06-007",
+        "TC-FR-07-012",
+        "TC-FR-14-011",
+        "TC-FR-14-012",
+        "TC-FR-14-013"
+      ],
+      "updatedAt": "2026-07-02T19:05:40Z"
+    },
+    "web-lecturer-live-roster-fallback": {
+      "specPath": "/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/tests/playwright-ui/scenarios/web-lecturer-live-roster-fallback.spec.ts",
+      "lastRunId": "20260702T190853Z",
+      "testCount": 7,
+      "sourceTcIds": [
+        "TC-AC-13-011",
+        "TC-AC-14-010",
+        "TC-AC-25-011",
+        "TC-AC-25-012",
+        "TC-BR-14-009",
+        "TC-BR-14-010",
+        "TC-FR-19-012",
+        "TC-FR-19-013",
+        "TC-FR-19-014",
+        "TC-FR-20-015"
+      ],
+      "updatedAt": "2026-07-02T19:20:17Z"
+    },
+    "web-academic-admin-academic-setup": {
+      "specPath": "/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/tests/playwright-ui/scenarios/web-academic-admin-academic-setup.spec.ts",
+      "lastRunId": "20260702T194207Z",
+      "testCount": 5,
+      "sourceTcIds": [
+        "TC-AC-07-008",
+        "TC-FR-01-011",
+        "TC-FR-04-010",
+        "TC-FR-06-012",
+        "TC-FR-06-013"
+      ],
+      "updatedAt": "2026-07-02T20:01:20Z"
+    },
+    "web-academic-admin-policy-management": {
+      "specPath": "/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/tests/playwright-ui/scenarios/web-academic-admin-policy-management.spec.ts",
+      "lastRunId": "20260702T204216Z",
+      "testCount": 6,
+      "sourceTcIds": [
+        "TC-AC-09-009",
+        "TC-AC-09-010",
+        "TC-AC-10-009",
+        "TC-AC-10-010",
+        "TC-BR-20-015",
+        "TC-BR-20-016",
+        "TC-FR-24-014",
+        "TC-FR-24-015",
+        "TC-FR-25-015",
+        "TC-FR-25-016"
+      ],
+      "updatedAt": "2026-07-02T21:07:35Z"
+    },
+    "web-academic-admin-reporting-export": {
+      "specPath": "/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/tests/playwright-ui/scenarios/web-academic-admin-reporting-export.spec.ts",
+      "lastRunId": "20260702T211149Z",
+      "testCount": 6,
+      "sourceTcIds": [
+        "TC-AC-15-009",
+        "TC-AC-16-012",
+        "TC-AC-16-013",
+        "TC-AC-17-009",
+        "TC-BR-18-015",
+        "TC-BR-18-016",
+        "TC-FR-27-015",
+        "TC-FR-27-016",
+        "TC-FR-28-017",
+        "TC-FR-28-018"
+      ],
+      "updatedAt": "2026-07-02T21:32:52Z"
+    },
+    "web-system-auditor-audit-review": {
+      "specPath": "/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/tests/playwright-ui/scenarios/web-system-auditor-audit-review.spec.ts",
+      "lastRunId": "20260702T215655Z",
+      "testCount": 7,
+      "sourceTcIds": [
+        "TC-AC-16-012",
+        "TC-AC-16-013",
+        "TC-AC-19-013",
+        "TC-BR-22-016",
+        "TC-FR-30-018",
+        "TC-FR-30-019",
+        "TC-FR-32-014",
+        "TC-FR-32-015"
+      ],
+      "updatedAt": "2026-07-02T22:09:08Z"
+    },
+    "test-backend-integration-critical-path": {
+      "specPath": "/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/tests/playwright-ui/scenarios/test-backend-integration-critical-path.spec.ts",
+      "lastRunId": "20260702T221039Z",
+      "testCount": 5,
+      "sourceTcIds": [
+        "TC-AC-01-008",
+        "TC-AC-04-008",
+        "TC-AC-08-009",
+        "TC-AC-12-010",
+        "TC-AC-18-010",
+        "TC-NFR-07-009"
+      ],
+      "updatedAt": "2026-07-02T22:34:35Z"
+    },
+    "test-e2e-role-scope-and-export": {
+      "specPath": "/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/tests/playwright-ui/scenarios/test-e2e-role-scope-and-export.spec.ts",
+      "lastRunId": "20260702T231633Z",
+      "testCount": 10,
+      "sourceTcIds": [
+        "TC-AC-15-009",
+        "TC-AC-16-012",
+        "TC-AC-16-013",
+        "TC-AC-17-009",
+        "TC-AC-23-015",
+        "TC-AC-23-016",
+        "TC-NFR-09-014",
+        "TC-NFR-09-015",
+        "TC-NFR-10-014",
+        "TC-NFR-10-015"
+      ],
+      "updatedAt": "2026-07-02T23:34:02Z"
+    },
+    "test-nfr-performance-reliability-smoke": {
+      "specPath": "/Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/ai-harnessed_hesd/tests/playwright-ui/scenarios/test-nfr-performance-reliability-smoke.spec.ts",
+      "lastRunId": "20260703T001036Z",
+      "testCount": 5,
+      "sourceTcIds": [
+        "TC-AC-20-007",
+        "TC-AC-21-009",
+        "TC-AC-22-009",
+        "TC-NFR-01-008",
+        "TC-NFR-03-009",
+        "TC-NFR-16-014",
+        "TC-NFR-16-015"
+      ],
+      "updatedAt": "2026-07-03T00:28:22Z"
+    }
+  }
+}

@@ -1,0 +1,351 @@
+{
+  "productItemId": "FR-21",
+  "version": 1,
+  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+  "generatedAt": "2026-07-02T11:07:41Z",
+  "cases": [
+    {
+      "id": "TC-FR-21-001",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["FR-21", "FR-20", "BR-15", "BR-16", "AC-14"],
+      "title": "Testing-plan §3 Manual correction governance row covers AcademicAdmin override after lecturer window expiry",
+      "preconditions": [
+        "Testing-plan §3 Manual correction governance block applies (FR-20, FR-21, BR-14/15/16, AC-13, AC-14).",
+        "Closed session exists with enrolled student AttendanceRecord status Absent from close-time finalization.",
+        "Effective policy manualEditWindow has elapsed since session closedAt.",
+        "AcademicAdmin bearer token has institution scope covering the class section."
+      ],
+      "steps": [
+        "Confirm assigned Lecturer PATCH correction returns EditWindowExpired per BR-15.",
+        "Authenticate as AcademicAdmin with institution scope covering the session class section.",
+        "Submit PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Manual Present, documented reason, and Idempotency-Key.",
+        "Query AttendanceRecord and AuditLog for the student-session pair.",
+        "Verify checkInMethod is Admin Correction and audit captures old and new values."
+      ],
+      "expected": "Scenario-matrix maps to testing-plan Manual correction governance: AcademicAdmin override succeeds after lecturer window expiry per FR-21 and BR-16; AttendanceRecord updates with checkInMethod Admin Correction; full audit entry records actor, oldStatus Absent, newStatus Manual Present, and reason.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-21-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-21", "FR-29", "BR-16", "BR-22"],
+      "title": "M05 Attendance Ledger correctAttendance persists admin override and audit row in DB transaction",
+      "preconditions": [
+        "Real database transaction is enabled for M05 Attendance Ledger and M08 Audit and Compliance modules.",
+        "Closed session exists with enrolled student AttendanceRecord status Absent.",
+        "manualEditWindow from effective policy has elapsed; lecturer correction is blocked.",
+        "AcademicAdmin actor has institution scope covering the class section."
+      ],
+      "steps": [
+        "Capture beforeState: AttendanceRecord status Absent, checkInMethod system-assigned or null.",
+        "Invoke M05 correctAttendance through application service as AcademicAdmin with status Excused, reason, and Idempotency-Key.",
+        "Query attendance_records and audit_logs tables for target studentUserId and classSessionId.",
+        "Verify M06 policy resolution permits admin override bypassing lecturer edit window per PRM-07.",
+        "Assert correlation ID links mutation to audit entry."
+      ],
+      "expected": "M05 module boundary commits AttendanceRecord with afterState Excused and checkInMethod Admin Correction; exactly one audit_logs row records actorUserId AcademicAdmin, oldStatus Absent, newStatus Excused, reason, and occurredAt per FR-29 and BR-22.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-21-003",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["FR-21", "BR-16", "BR-15"],
+      "title": "SM-03 AttendanceRecord transitions Absent to Manual Present via admin override when lecturer window expired",
+      "preconditions": [
+        "Closed class session exists in integration test database with SM-01 state Closed.",
+        "Enrolled student has AttendanceRecord in Absent state from close-time finalization (BR-13).",
+        "manualEditWindow has elapsed; lecturer correction attempt is rejected with EditWindowExpired.",
+        "AcademicAdmin is in authorized scope for the class section."
+      ],
+      "steps": [
+        "Capture beforeState: AttendanceRecord status Absent; session state Closed.",
+        "Execute lecturer manual correction command and confirm rejection without state change.",
+        "Execute AcademicAdmin override correction with status Manual Present and required reason.",
+        "Capture afterState for AttendanceRecord and verify checkInMethod Admin Correction.",
+        "Verify AttendanceCorrected event is emitted with old and new status."
+      ],
+      "expected": "beforeState Absent is unchanged after expired-window lecturer attempt per BR-15; admin override transitions afterState to Manual Present with checkInMethod Admin Correction per BR-16; session remains Closed with no illegal SM-01 transitions.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-21-004",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P1",
+      "traceability": ["FR-21", "FR-29", "BR-16", "BR-22"],
+      "title": "Idempotent admin PATCH attendance correction returns prior applied mutation without duplicate audit rows",
+      "preconditions": [
+        "Closed session with Absent student exists; manualEditWindow has elapsed.",
+        "AcademicAdmin bearer token has institution scope.",
+        "Idempotency-Key header support is enabled for PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId}.",
+        "Real database with audit_logs immutability constraints."
+      ],
+      "steps": [
+        "Issue admin PATCH correction with status Manual Present, reason, and Idempotency-Key K1; record response.",
+        "Replay identical PATCH with same Idempotency-Key K1, same body, and same AcademicAdmin actor.",
+        "Query AttendanceRecord and audit_logs count for the student-session pair.",
+        "Compare second response to first accepted mutation summary."
+      ],
+      "expected": "First admin request applies correction with checkInMethod Admin Correction and writes one audit row; replay returns already-applied mutation summary without second AttendanceRecord change or duplicate audit_logs entry per API idempotency rules.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-21-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-21", "FR-29", "BR-16", "BR-22"],
+      "title": "PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} returns 200 for AcademicAdmin override after edit window",
+      "preconditions": [
+        "AcademicAdmin is authenticated with bearer token and institution scope.",
+        "Closed session exists with student AttendanceRecord status Absent.",
+        "manualEditWindow from effective policy has elapsed since session closedAt.",
+        "Policy requires reason for admin corrections."
+      ],
+      "steps": [
+        "AcademicAdmin calls PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with body {\"status\": \"Manual Present\", \"reason\": \"Giai quyet khieu nai sau khi het han chinh sua cua giang vien.\"} and Idempotency-Key header.",
+        "Inspect HTTP status 200, response envelope data fields, and error is null.",
+        "Call GET /v1/class-sessions/{sessionId}/attendance and locate the corrected student row.",
+        "Query GET /v1/audit-logs filtered by targetId and actionType for admin attendance update."
+      ],
+      "expected": "PATCH returns HTTP 200 with standard envelope; roster row shows attendanceStatus Manual Present and checkInMethod Admin Correction; audit query returns entry with oldStatus Absent, newStatus Manual Present, AcademicAdmin actor, reason, and timestamp.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-21-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-21", "FR-04", "BR-16", "BR-06"],
+      "title": "POST /v1/enrollments/import seeds roster then AcademicAdmin PATCH corrects imported student attendance",
+      "preconditions": [
+        "AcademicAdmin has created class section with closed session.",
+        "POST /v1/enrollments/import accepts enrolled student row for the section.",
+        "Session close assigned Absent to imported student without check-in.",
+        "manualEditWindow has elapsed; lecturer correction is blocked."
+      ],
+      "steps": [
+        "AcademicAdmin calls POST /v1/enrollments/import with classSectionId and valid studentCode rows; assert HTTP 200 with acceptedRows count and rejectedRows array for invalid rows without silent skips.",
+        "Verify imported student appears in GET /v1/class-sessions/{sessionId}/attendance with Absent status.",
+        "AcademicAdmin calls PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Manual Present and dispute-resolution reason.",
+        "Re-fetch GET /v1/class-sessions/{sessionId}/attendance for the imported student row."
+      ],
+      "expected": "Enrollment import establishes eligible roster per FR-04 with row-level rejection visibility; admin attendance correction on imported enrolled student succeeds with HTTP 200 PATCH and roster reflects Manual Present with checkInMethod Admin Correction per FR-21 and BR-16.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-21-007",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-21", "FR-15", "FR-36", "BR-16"],
+      "title": "POST /v1/auth/login and GET /v1/me establish AcademicAdmin context before PATCH attendance override",
+      "preconditions": [
+        "AcademicAdmin account exists with institution-issued credentials and institution scope claims.",
+        "Closed session with Absent student exists; manualEditWindow has elapsed."
+      ],
+      "steps": [
+        "Call POST /v1/auth/login with AcademicAdmin email and password; assert HTTP 200 with accessToken and roles including AcademicAdmin.",
+        "Call GET /v1/me with Authorization bearer token; assert HTTP 200 with actor identity and institution scope claims.",
+        "Call PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with Manual Present status, reason, and Idempotency-Key using the same bearer token.",
+        "Inspect PATCH HTTP 200 response envelope and error is null."
+      ],
+      "expected": "Authenticated AcademicAdmin session per FR-15 and FR-36 gates admin attendance override; GET /v1/me confirms AcademicAdmin role and scope before FR-21 correction succeeds with HTTP 200 and checkInMethod Admin Correction.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-21-008",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-21", "FR-19", "BR-16"],
+      "title": "GET /v1/class-sessions/{sessionId}/attendance live roster reflects admin correction payload shape",
+      "preconditions": [
+        "Closed session exists with enrolled student showing Absent on roster.",
+        "AcademicAdmin is authenticated with institution scope; manualEditWindow has elapsed.",
+        "Baseline GET /v1/class-sessions/{sessionId}/attendance captured before admin correction."
+      ],
+      "steps": [
+        "AcademicAdmin calls PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Late and documented dispute reason.",
+        "Call GET /v1/class-sessions/{sessionId}/attendance immediately after PATCH.",
+        "Assert HTTP 200 envelope with data.classSessionId, data.state, data.counts, and data.rows array.",
+        "Locate corrected student row and assert attendanceStatus Late, checkInMethod Admin Correction, and counts reflect status change from baseline."
+      ],
+      "expected": "Live roster GET per FR-19 contract returns HTTP 200 with updated row showing attendanceStatus Late, checkInMethod Admin Correction, and adjusted counts after FR-21 admin override.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-21-009",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["FR-21", "FR-29", "BR-16", "BR-22", "AC-14"],
+      "title": "WF-08 primary workflow AcademicAdmin dispute resolution applies attendance override with audit",
+      "preconditions": [
+        "Closed session with Absent student exists after lecturer edit window expired.",
+        "CheckInAttempt history shows failed QR or GPS rejection for the student.",
+        "AcademicAdmin bearer token is available with institution scope.",
+        "Audit query endpoint is available."
+      ],
+      "steps": [
+        "AcademicAdmin reviews GET /v1/class-sessions/{sessionId}/attendance and GET /v1/audit-logs for dispute evidence bundle.",
+        "AcademicAdmin submits PATCH correction to Manual Present with documented dispute-resolution reason.",
+        "AcademicAdmin refreshes roster via GET /v1/class-sessions/{sessionId}/attendance.",
+        "Query GET /v1/audit-logs for the admin correction event with old and new status fields."
+      ],
+      "expected": "End-to-end WF-08 dispute path completes per FR-21: student status changes from Absent to Manual Present via admin override; roster reflects update with checkInMethod Admin Correction; audit record is queryable with full actor/time/old/new/reason fields.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-21-010",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P0",
+      "traceability": ["FR-21", "FR-31", "BR-16"],
+      "title": "Alternate branch DepartmentAdmin scoped correction succeeds within assigned faculty after lecturer window expired",
+      "preconditions": [
+        "Closed session in assigned faculty with Absent student exists; manualEditWindow has elapsed.",
+        "DepartmentAdmin bearer token has faculty scope covering the class section per PRM-02.",
+        "Lecturer PATCH attempt returns EditWindowExpired as control.",
+        "Institution policy permits DepartmentAdmin correction per BR-16."
+      ],
+      "steps": [
+        "Confirm lecturer PATCH correction is rejected with EditWindowExpired.",
+        "DepartmentAdmin calls PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Excused, documented reason, and Idempotency-Key.",
+        "Inspect HTTP 200 response envelope and roster via GET /v1/class-sessions/{sessionId}/attendance.",
+        "Query GET /v1/audit-logs for DepartmentAdmin correction event."
+      ],
+      "expected": "DepartmentAdmin alternate path succeeds within faculty scope after lecturer window expiry: AttendanceRecord updates to Excused with checkInMethod Admin Correction; audit entry records DepartmentAdmin actor, reason, old/new status, and timestamp per BR-16.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-21-011",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-c",
+      "priority": "P0",
+      "traceability": ["FR-21", "FR-29", "BR-16", "BR-22", "AC-19"],
+      "title": "Flow C audit verification after AcademicAdmin attendance override mutation",
+      "preconditions": [
+        "Closed session with Absent student exists; manualEditWindow elapsed.",
+        "AcademicAdmin performs override correction changing status to Excused with documented reason.",
+        "Audit query endpoint is available to SystemAuditor read scope."
+      ],
+      "steps": [
+        "Record roster status before admin correction via GET /v1/class-sessions/{sessionId}/attendance.",
+        "AcademicAdmin applies PATCH correction with status Excused and reason documenting post-window dispute resolution.",
+        "Query GET /v1/audit-logs with filters targetType AttendanceRecord, targetId, and time range covering correction.",
+        "Verify audit payload fields against CMP-01 minimum audit fields from roles-permissions doc."
+      ],
+      "expected": "Committed FR-21 admin mutation has corresponding audit record with actor, role AcademicAdmin, target student/session, old status Absent, new status Excused, reason, and timestamp; no mutation audit gap per BR-22 and AC-19.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-21-012",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-21", "BR-16"],
+      "title": "AcademicAdmin PATCH correction without required reason returns ReasonRequired and preserves prior status",
+      "preconditions": [
+        "Closed session with Absent student exists; manualEditWindow has elapsed.",
+        "Effective policy mandates reason for all admin corrections.",
+        "AcademicAdmin bearer token is authenticated with institution scope."
+      ],
+      "steps": [
+        "Call PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Manual Present and empty or omitted reason field.",
+        "Inspect HTTP status and error.code in response envelope.",
+        "Query AttendanceRecord and audit_logs for the student-session pair.",
+        "Retry with valid reason as control to confirm admin override path still available."
+      ],
+      "expected": "Request is rejected with validation error ReasonRequired (400 class); AttendanceRecord remains Absent; no audit_logs mutation entry is written; control request with reason succeeds with checkInMethod Admin Correction.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-21-013",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-21", "BR-16", "BR-19"],
+      "title": "AcademicAdmin PATCH for section outside institution scope returns 403 OutOfScope",
+      "preconditions": [
+        "Closed session in class section outside AcademicAdmin configured institution scope exists.",
+        "Student AttendanceRecord status is Absent.",
+        "AcademicAdmin bearer token is authenticated but lacks scope for target section."
+      ],
+      "steps": [
+        "Call PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Manual Present and valid reason.",
+        "Inspect HTTP status 403 and error.code OutOfScope in response envelope.",
+        "Query AttendanceRecord via GET /v1/class-sessions/{sessionId}/attendance if readable, or direct DB assertion.",
+        "Query GET /v1/audit-logs for manual correction from this admin attempt."
+      ],
+      "expected": "Request is rejected with HTTP 403 OutOfScope per BR-16 exception and BR-19; AttendanceRecord remains Absent; no audit_logs mutation entry is written for the out-of-scope admin attempt.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-21-014",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-21", "BR-16", "BR-19"],
+      "title": "Student, Lecturer after window, SystemAuditor, and ITAdmin denied admin-level attendance override",
+      "preconditions": [
+        "Closed session with Absent student exists; manualEditWindow has elapsed.",
+        "Student, SystemAuditor, ITAdmin bearer tokens and Lecturer token for assigned section are available.",
+        "AcademicAdmin token with institution scope is available as authorized control."
+      ],
+      "steps": [
+        "Student calls PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Manual Present and reason.",
+        "Assigned Lecturer calls the same PATCH after edit window expiry.",
+        "SystemAuditor calls the same PATCH for the session.",
+        "ITAdmin calls the same PATCH without explicit academic grant.",
+        "AcademicAdmin calls the same PATCH as control with valid reason.",
+        "Verify AttendanceRecord state after denied attempts."
+      ],
+      "expected": "Student, expired-window Lecturer, SystemAuditor, and ITAdmin receive HTTP 403 Forbidden or EditWindowExpired as applicable per permission matrix; no attendance mutation or audit write occurs from denied roles; AcademicAdmin control succeeds and updates status with checkInMethod Admin Correction per FR-21.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-21-015",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-21", "BR-16", "BR-22"],
+      "title": "AcademicAdmin ManualCorrectionDialog on PG-13 reports submits override with reason and updates status badge",
+      "preconditions": [
+        "AcademicAdmin is authenticated on desktop browser at PG-13 attendance reports.",
+        "Closed session student row displays Absent danger badge; lecturer edit window has expired.",
+        "ManualCorrectionDialog supports admin override path with required reason field."
+      ],
+      "steps": [
+        "Navigate to /reports/attendance, filter to target class section and session, and locate Absent student row.",
+        "Open ManualCorrectionDialog from row action; select Manual Present in status dropdown.",
+        "Enter dispute-resolution reason in labeled Lý do textarea and confirm via dialog submit.",
+        "Observe AttendanceStatusCell updates to Manual Present success variant with Admin Correction method indicator.",
+        "Verify dialog closes and report row reflects corrected status without full page reload."
+      ],
+      "expected": "Browser admin correction journey completes per FR-21: form gating enforces required reason before submit; post-save report row shows Manual Present badge with admin correction method; UI state matches API override and audit write with old and new values.",
+      "edgeCase": false
+    }
+  ]
+}

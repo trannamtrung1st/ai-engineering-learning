@@ -1,0 +1,339 @@
+{
+  "productItemId": "NFR-10",
+  "version": 1,
+  "docFingerprint": "sha256:0091ebfac485b5b90c7a94c982196a35adddc3e7535aba555ed532f8d1599fd9",
+  "generatedAt": "2026-07-02T17:45:00Z",
+  "cases": [
+    {
+      "id": "TC-NFR-10-001",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["NFR-10", "AC-19", "AC-23", "FR-29", "FR-30", "BR-22"],
+      "title": "Testing-plan §11 NFR-10 verification row — 100% committed attendance mutation audit completeness",
+      "preconditions": [
+        "Testing-plan §5.1 audit persistence suite and §11 NFR verification matrix row for NFR-10 apply.",
+        "dispute-trail fixture provides lecturer manual correction, admin override, and close-time system absent assignments.",
+        "M08 Audit and Compliance module persists audit_logs with real database append-only constraints."
+      ],
+      "steps": [
+        "Enumerate all committed AttendanceRecord create/update mutations in the fixture (manual correction, admin override, bulk correction, and system close assignments per BR-22).",
+        "For each mutation, query audit_logs by targetType AttendanceRecord, targetId, and occurredAt window.",
+        "Verify each audit row includes actorUserId (or system actor for BR-13 close), timestamp, target student and session, oldStatus, newStatus, reason where mandated, and correlationId.",
+        "Compare committed mutation count to audit row count for the same correlation scope."
+      ],
+      "expected": "Maps to testing-plan §11 NFR-10 minimum evidence: 100% mutation audit rows present for every committed attendance mutation with actor, timestamp, old/new values, and reason where required; zero mutation-audit gaps (NFR-10, CMP-01).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-10-002",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-10", "FR-29", "BR-22", "BR-14", "AC-13"],
+      "title": "Protected mutation path — M01 authorize gate and M08 audit write atomically with M05 ledger update",
+      "preconditions": [
+        "Real database transaction spans M01 Identity and Access, M05 Attendance Ledger, and M08 Audit and Compliance modules.",
+        "Closed session exists with enrolled student AttendanceRecord status Absent.",
+        "Assigned Lecturer is authenticated, within manualEditWindow, and authorized for AttendanceRecord.update per M06 policy resolution.",
+        "Policy mandates reason for manual corrections."
+      ],
+      "steps": [
+        "Capture beforeState: AttendanceRecord status Absent; count audit_logs rows for target studentUserId and classSessionId.",
+        "Invoke M05 correctAttendance through application service only after M01 authorize(AttendanceRecord.update) passes for Lecturer scope.",
+        "Query attendance_records and audit_logs tables within the same test transaction scope.",
+        "Verify M08 writeAuditEvent payload includes actorUserId, timestamp, target student/session, oldStatus Absent, newStatus Manual Present, reason, and correlationId.",
+        "Assert audit_logs row is append-only and immutable after commit."
+      ],
+      "expected": "Protected mutation path enforces authenticated authorized actor before ledger write; M08 writes exactly one immutable audit_logs row atomically with attendance mutation containing actor, timestamp, old/new status, reason, and correlation ID per NFR-10 and BR-22.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-10-003",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-10", "FR-29", "BR-22", "NFR-09"],
+      "title": "M01 authorize rejects unauthorized mutation before attendance_records or audit_logs are written",
+      "preconditions": [
+        "Integration database seeded with closed session and student AttendanceRecord status Absent.",
+        "Student actor is authenticated but AttendanceRecord.update is Deny per permissions matrix §3.2.",
+        "Application service invokes M01 authorize before any repository mutation."
+      ],
+      "steps": [
+        "Invoke attendance correction use-case as Student with status Manual Present and reason.",
+        "Assert M01 authorize returns Deny before M05 repository update executes.",
+        "Query attendance_records for target student-session pair and confirm status unchanged.",
+        "Query audit_logs for new manual_update rows tied to the rejected request."
+      ],
+      "expected": "Unauthorized actor is blocked at M01 module boundary; zero attendance_records mutations and zero audit_logs rows are persisted for the denied request, preserving protected mutation path integrity (NFR-10, RBAC-01).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-10-004",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["NFR-10", "FR-29", "BR-22", "BR-14", "BR-16"],
+      "title": "SM-03 attendance status transitions via authorized correction produce auditable beforeState and afterState",
+      "preconditions": [
+        "Integration database seeded with students in Absent, Present, and Late states on a Closed session.",
+        "Assigned Lecturer and AcademicAdmin actors are authenticated and within policy windows.",
+        "Audit query module can filter by targetId and actionType."
+      ],
+      "steps": [
+        "Lecturer corrects Absent student to Manual Present with reason; capture beforeState, afterState, and audit row.",
+        "AcademicAdmin overrides Late student to Excused with reason; capture audit row.",
+        "Query audit_logs for both mutations and verify oldStatus/newStatus pairs match captured states.",
+        "Confirm audit rows include actor, timestamp, reason, and correlationId for each transition."
+      ],
+      "expected": "Each legal SM-03 AttendanceRecord transition via authorized roster edit or admin override commits with a queryable immutable audit record documenting beforeState, afterState, actor, reason, and timestamp per NFR-10.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-10-005",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-10", "FR-20", "FR-29", "BR-22", "AC-13"],
+      "title": "HTTP contract — authorized PATCH attendance correction returns 200 and writes queryable audit entry",
+      "preconditions": [
+        "Lecturer is authenticated with valid Bearer token and assigned to target session section.",
+        "Closed session exists with student AttendanceRecord status Absent within manual edit window.",
+        "Policy requires reason for manual corrections."
+      ],
+      "steps": [
+        "Send PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with body { status: Manual Present, reason } and Idempotency-Key as Lecturer.",
+        "Validate HTTP status code 200 and JSON response envelope per API §2.3.",
+        "Query GET /v1/audit-logs?targetType=AttendanceRecord&targetId={studentUserId}&actionType=manual_update&from={mutationStart}&to={mutationEnd} as AcademicAdmin.",
+        "Verify audit entry includes actorUserId, timestamp, oldStatus, newStatus, reason, and correlationId."
+      ],
+      "expected": "PATCH returns HTTP 200 with standard { data, meta, error } envelope; committed mutation is queryable via GET /v1/audit-logs with immutable audit fields per NFR-10, FR-29, and BR-22.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-10-006",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-10", "FR-29", "BR-22"],
+      "title": "HTTP contract — unauthenticated PATCH attendance mutation returns 401 without ledger or audit writes",
+      "preconditions": [
+        "Closed session exists with student AttendanceRecord status Absent.",
+        "No Authorization header is supplied on the request."
+      ],
+      "steps": [
+        "Send PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with body { status: Manual Present, reason } without Bearer token.",
+        "Validate HTTP status code and JSON response envelope per API §6.1 pipeline step 1.",
+        "Inspect data field and error.code value.",
+        "Query attendance_records and audit_logs to confirm no mutation or audit row was created."
+      ],
+      "expected": "Response is 401 with standard { data: null, meta, error } envelope; error.code is Unauthenticated; no attendance mutation or audit_logs row is persisted before authentication passes (NFR-10 protected path).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-10-007",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["NFR-10", "NFR-09", "FR-29", "BR-22"],
+      "title": "Student denied PATCH attendance mutation — no attendance or audit side effects",
+      "preconditions": [
+        "Student is authenticated with valid Bearer token.",
+        "Closed session exists with student AttendanceRecord status Absent for a session the student is enrolled in."
+      ],
+      "steps": [
+        "Call PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Manual Present and reason as Student.",
+        "Inspect HTTP 403 response, error.code, and absence of mutation summary in data.",
+        "Query attendance_records confirming status unchanged.",
+        "Query audit_logs for new manual_update rows tied to the denied request."
+      ],
+      "expected": "PATCH returns 403 Forbidden with Forbidden or OutOfScope error.code; AttendanceRecord.update is Deny for Student per permissions matrix §3.2; zero attendance mutation and zero audit_logs rows are written (NFR-10, RBAC-01).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-10-008",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["NFR-10", "FR-32", "BR-22", "PRM-05"],
+      "title": "SystemAuditor denied attendance mutation — read-only role cannot trigger protected write path",
+      "preconditions": [
+        "SystemAuditor is authenticated with read-only audit and attendance scope.",
+        "Closed session exists with student AttendanceRecord status Absent within a scoped section."
+      ],
+      "steps": [
+        "Call PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Manual Present and reason as SystemAuditor.",
+        "Inspect HTTP 403 response and error.code.",
+        "Query attendance_records and audit_logs confirming no mutation or audit side effects.",
+        "Verify SystemAuditor can still read audit logs via GET /v1/audit-logs within scoped read-only access."
+      ],
+      "expected": "Attendance mutation returns 403 Forbidden; SystemAuditor cannot mutate attendance records per PRM-05; no audit_logs row is created for the denied mutation attempt; read-only audit access remains available within scope.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-10-009",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["NFR-10", "NFR-09", "FR-20", "BR-19"],
+      "title": "Lecturer denied out-of-scope PATCH attendance mutation without audit trail for rejected request",
+      "preconditions": [
+        "Lecturer is authenticated and assigned only to section A.",
+        "Section B closed session exists with student AttendanceRecord status Absent; section B is not in lecturer assignment set."
+      ],
+      "steps": [
+        "Call PATCH /v1/class-sessions/{sectionBSessionId}/attendance/{studentUserId} with status Manual Present and reason as Lecturer.",
+        "Inspect HTTP 403 response with OutOfScope or Forbidden semantics.",
+        "Query attendance_records for section B student confirming status unchanged.",
+        "Query audit_logs for manual_update rows tied to the rejected out-of-scope request."
+      ],
+      "expected": "Out-of-scope mutation is denied with 403; no attendance_records update and no audit_logs row for the rejected request; protected mutation path blocks unauthorized scope before ledger write (PRM-01, NFR-10).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-10-010",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["NFR-10", "FR-20", "BR-15", "BR-22"],
+      "title": "Rejected PATCH correction outside edit window writes no attendance mutation audit row",
+      "preconditions": [
+        "Closed session exists with lecturer edit window expired per BR-15.",
+        "Assigned Lecturer is authenticated for the section.",
+        "Student AttendanceRecord status is Absent."
+      ],
+      "steps": [
+        "Call PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Manual Present and reason as Lecturer.",
+        "Validate HTTP 409 EditWindowExpired or policy escalation response per API §4.5.",
+        "Query attendance_records confirming status unchanged.",
+        "Query audit_logs and audit_logs table for new manual_update rows tied to the rejected request."
+      ],
+      "expected": "Rejected mutation returns 409 or escalation response without committing attendance change; zero audit_logs rows are written for the failed mutation attempt because no attendance mutation was committed (NFR-10 protected path, BR-22 applies to committed mutations only).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-10-011",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["NFR-10", "FR-20", "BR-14", "BR-22"],
+      "title": "PATCH attendance correction without required reason is rejected before mutation and audit write",
+      "preconditions": [
+        "Lecturer is authenticated and within edit window for assigned section.",
+        "Policy mandates reason for manual corrections per BR-14.",
+        "Student AttendanceRecord status is Absent on a closed session."
+      ],
+      "steps": [
+        "Call PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Manual Present and empty or omitted reason field.",
+        "Validate HTTP 400 or 422 validation error with stable error.code per validation rules.",
+        "Query attendance_records confirming status unchanged.",
+        "Query audit_logs for new rows tied to the rejected request."
+      ],
+      "expected": "Validation failure returns 400/422 before protected mutation path commits; no attendance_records update and no audit_logs row; reason-required policy is enforced prior to ledger and audit writes (BR-14, NFR-10).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-10-012",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "flow-c",
+      "priority": "P0",
+      "traceability": ["NFR-10", "AC-13", "AC-19", "FR-29", "BR-22"],
+      "title": "Flow C — authorized manual correction mutation followed by audit verification via GET /v1/audit-logs",
+      "preconditions": [
+        "Lecturer is authenticated and assigned to section with closed session.",
+        "Student AttendanceRecord status is Absent; lecturer is within edit window.",
+        "AcademicAdmin can query GET /v1/audit-logs."
+      ],
+      "steps": [
+        "Lecturer executes PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} changing Absent to Manual Present with documented reason.",
+        "AcademicAdmin queries GET /v1/audit-logs filtered by classSessionId, targetId, and actionType manual_update.",
+        "Verify audit entry actorUserId matches lecturer, timestamp is near mutation time, oldStatus is Absent, newStatus is Manual Present, and reason matches request.",
+        "Attempt to identify any UPDATE or DELETE path on the returned audit entry and confirm immutability."
+      ],
+      "expected": "Critical attendance mutation produces immutable queryable audit record with actor, timestamp, old/new values, and reason; audit entry cannot be modified after commit, satisfying NFR-10 and AC-19 forensic review requirements.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-10-013",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P1",
+      "traceability": ["NFR-10", "AC-13", "AC-25", "FR-20", "FR-29", "BR-14", "BR-22"],
+      "title": "E2E-06 primary workflow — lecturer manual correction on protected path with auth, reason, and audit trail",
+      "preconditions": [
+        "E2E-06 scenario from testing-plan §6.1 applies: lecturer assigned, session closed, student unresolved as Absent.",
+        "Lecturer is within manual edit window; policy requires reason.",
+        "Authorized role can query GET /v1/audit-logs."
+      ],
+      "steps": [
+        "Authenticate as lecturer; navigate protected correction path via PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId}.",
+        "Submit status Manual Present with required reason and Idempotency-Key.",
+        "Verify attendance_records reflects new status and checkInMethod Manual.",
+        "Query GET /v1/audit-logs filtered by classSessionId and studentUserId for manual_update action.",
+        "Confirm audit trail includes actor, timestamp, old/new status, and reason without bypassing authorization."
+      ],
+      "expected": "End-to-end E2E-06 manual fallback resolves attendance on protected mutation path: authenticated authorized lecturer commits correction with mandatory reason and full immutable audit trail per NFR-10 and AC-25.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-10-014",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-10", "FR-20", "FR-29", "BR-14", "AC-13"],
+      "title": "Lecturer browser journey — manual correction form gates reason field and confirms protected mutation with audit evidence",
+      "preconditions": [
+        "Lecturer is logged in on desktop browser.",
+        "Closed session roster page displays student with Absent status within edit window.",
+        "Manual correction UI requires reason input per BR-14.",
+        "Audit log detail or correction confirmation surface is reachable for authorized lecturer."
+      ],
+      "steps": [
+        "Navigate to session roster for assigned closed session.",
+        "Open manual correction dialog for Absent student; attempt submit without reason and observe validation gating.",
+        "Enter required reason and select Manual Present status; submit correction.",
+        "Observe success confirmation and updated roster badge or status column.",
+        "If audit or history panel is available, verify mutation shows actor, timestamp, old/new status, and reason."
+      ],
+      "expected": "UI enforces reason-required gating before submission; successful correction updates roster and surfaces audit evidence (actor, timestamp, old/new values, reason) without allowing unauthenticated or out-of-window mutation (NFR-10, AC-13).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-10-015",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["NFR-10", "NFR-09", "FR-20", "BR-14"],
+      "title": "Student browser journey — manual correction and roster edit controls are inaccessible on protected mutation surfaces",
+      "preconditions": [
+        "Student is logged in on mobile or desktop browser.",
+        "Student has attendance history including Absent status for a closed session.",
+        "Application shell may expose roster or attendance detail routes."
+      ],
+      "steps": [
+        "Navigate to personal attendance history or session detail view.",
+        "Observe absence of manual correction buttons, status edit dropdowns, or reason forms.",
+        "Attempt direct URL navigation to lecturer roster edit or PATCH-equivalent UI route if exposed.",
+        "Verify access-denied state, redirect, or read-only presentation without mutation affordances."
+      ],
+      "expected": "Student cannot access manual attendance correction UI or trigger protected mutation path from browser; attendance status is read-only for Student role per permissions matrix §5.1 (NFR-10, AttendanceRecord.update Deny).",
+      "edgeCase": false
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 {
+  "inputMode": "flexible",
   "loop": {
     "maxIterations": 40,
     "commitOnPass": true
@@ -13,6 +14,7 @@
     "complete": "GEN_COMPLETE",
     "stepDone": "STEP_DONE",
     "stepBlocked": "STEP_BLOCKED",
+    "gateRepairDone": "GATE_REPAIR_DONE",
     "reviewPass": "REVIEW_PASS",
     "reviewFail": "REVIEW_FAIL"
   },

@@ -1,0 +1,287 @@
+{
+  "productItemId": "BR-02",
+  "version": 1,
+  "docFingerprint": "sha256:0421ca4affe3aa70584e3b352a860d11de519a5a2aaff8c4d8e0f12d14d1a70a",
+  "generatedAt": "2026-07-02T11:51:46Z",
+  "cases": [
+    {
+      "id": "TC-BR-02-001",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["BR-02", "FR-08", "FR-09", "AC-05"],
+      "title": "Testing-plan session open/close row: post-close check-in rejected with SessionClosed",
+      "preconditions": [
+        "Class session exists and was transitioned Scheduled to Open by assigned Lecturer per testing-plan §3.1 Session open/close coverage block.",
+        "At least one student is actively enrolled in the session class section.",
+        "Session is subsequently closed via lecturer close or policy auto-close path."
+      ],
+      "steps": [
+        "Transition session to Closed and record closedAt timestamp.",
+        "Submit POST /v1/check-ins as enrolled student with qrToken bound to the closed session.",
+        "Query CheckInAttempt and AttendanceRecord rows for the student-session pair.",
+        "Verify no new Present or Late success row is created."
+      ],
+      "expected": "Check-in is rejected with SessionClosed outcome; failed CheckInAttempt is persisted with structured reason; no new successful AttendanceRecord is created per AC-05 and BR-02.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-02-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-02", "FR-22", "BR-23"],
+      "title": "Check-in service persists failed CheckInAttempt with SessionClosed after session closure",
+      "preconditions": [
+        "Integration harness uses real DB transaction boundaries for class_sessions, check_in_attempts, and attendance_records tables.",
+        "Open session row exists with closedAt null; enrolled student has no success attendance yet.",
+        "Close command transitions session to Closed within same test transaction scope."
+      ],
+      "steps": [
+        "Execute session close through application service boundary.",
+        "Invoke check-in command (POST /v1/check-ins path) against the Closed session with valid token binding.",
+        "Query check_in_attempts table for student and session.",
+        "Query attendance_records table for the same student-session pair.",
+        "Assert session row state remains Closed with closedAt unchanged."
+      ],
+      "expected": "Exactly one CheckInAttempt row is inserted with outcome SessionClosed and submittedAt after closedAt; no AttendanceRecord success row is created; session state remains Closed.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-02-003",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["BR-02", "FR-08", "FR-09", "BR-13"],
+      "title": "Closed session state unchanged after rejected post-close check-in attempt",
+      "preconditions": [
+        "Session fixture in Open state with known sessionId and enrolled students.",
+        "Lecturer or policy scheduler can invoke Open to Closed transition.",
+        "BR-13 absent finalization may run as close side effect."
+      ],
+      "steps": [
+        "Capture beforeState as Closed after invoking close transition.",
+        "Invoke check-in command for enrolled student without prior success record.",
+        "Capture afterState and rejection code SessionClosed.",
+        "Query persistence and confirm session state and closedAt are unchanged.",
+        "Verify unresolved students receive Absent per BR-13 close side effect independently of rejected check-in."
+      ],
+      "expected": "beforeState equals afterState (Closed); check-in returns SessionClosed; no illegal session state mutation; close finalization side effects remain consistent.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-02-004",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-02", "FR-08", "FR-16", "FR-22", "AC-05"],
+      "title": "POST /v1/check-ins on Closed session returns 422 SessionClosed envelope",
+      "preconditions": [
+        "Class session was Open and is now Closed with closedAt recorded.",
+        "Enrolled Student is authenticated with Bearer token and Idempotency-Key header.",
+        "qrToken is non-empty and bound to the closed session."
+      ],
+      "steps": [
+        "Send POST /v1/check-ins with qrToken, Authorization, and Idempotency-Key headers.",
+        "Validate HTTP status code and JSON envelope shape {data, meta, error}.",
+        "Assert data is null and error.code is SessionClosed.",
+        "Assert error.message is localized Vietnamese text instructing student that attendance has ended and to contact lecturer for manual fallback.",
+        "Assert meta includes requestId and timestamp fields.",
+        "Query GET /v1/class-sessions/{sessionId}/attendance and confirm no new success row for this attempt."
+      ],
+      "expected": "HTTP 422 rule-failure response with standard envelope; error.code SessionClosed; localized Vietnamese message per API design §2.3 and BR-02 outcome; no successful attendance outcome returned.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-02-005",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-02", "BR-03", "BR-06", "BR-07", "FR-22"],
+      "title": "Rule-order short-circuit: SessionClosed returned before token, enrollment, and duplicate checks",
+      "preconditions": [
+        "Closed session exists with closedAt recorded.",
+        "Student is not enrolled OR has prior successful attendance OR token is expired—conditions that would fail BR-06, BR-07, or BR-03 if session were Open.",
+        "Student actor is authenticated."
+      ],
+      "steps": [
+        "Submit POST /v1/check-ins with expired qrToken against Closed session.",
+        "Assert error.code is SessionClosed, not ExpiredQr.",
+        "Submit with unenrolled student token against Closed session.",
+        "Assert error.code is SessionClosed, not NotEnrolled.",
+        "Submit duplicate-prone payload for student with existing success record against Closed session.",
+        "Assert error.code is SessionClosed, not DuplicateCheckIn."
+      ],
+      "expected": "Validation order per API design §5.1 and validation rules §2.2: session state check (BR-02) short-circuits before BR-03, BR-06, and BR-07 evaluations when session is Closed.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-02-006",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-02", "BR-07", "AC-08"],
+      "title": "Post-close duplicate submission resolves to SessionClosed not DuplicateCheckIn",
+      "preconditions": [
+        "Student already has one successful check-in while session was Open.",
+        "Session is then closed by assigned Lecturer.",
+        "Student attempts another check-in after closure."
+      ],
+      "steps": [
+        "Student re-submits POST /v1/check-ins after session is Closed.",
+        "Capture returned HTTP status, error.code, and error.message.",
+        "Verify successful attendance row count for student-session remains exactly one.",
+        "Query CheckInAttempt rows and confirm latest attempt has SessionClosed outcome."
+      ],
+      "expected": "API returns SessionClosed for post-close attempts even when student has prior success; BR-07 DuplicateCheckIn is not evaluated because BR-02 short-circuits first; no additional successful attendance record is created.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-02-007",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-02", "BR-19", "FR-08"],
+      "title": "Non-lecturer roles denied session close; Student cannot bypass Closed gate via close",
+      "preconditions": [
+        "One Open session exists in lecturer-owned section.",
+        "Student and ITAdmin users are authenticated.",
+        "Permission matrix: only assigned Lecturer or AcademicAdmin may close sessions."
+      ],
+      "steps": [
+        "Student calls POST /v1/class-sessions/{sessionId}/close.",
+        "Assert HTTP 403 Forbidden or OutOfScope.",
+        "ITAdmin calls POST /v1/class-sessions/{sessionId}/close without academic grant.",
+        "Assert HTTP 403 Forbidden or OutOfScope.",
+        "Assigned Lecturer closes session as positive control.",
+        "Student submits POST /v1/check-ins and receives SessionClosed."
+      ],
+      "expected": "Unauthorized close attempts denied per BR-19 without altering session state; only authorized close transitions session to Closed; subsequent student check-in is rejected with SessionClosed.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-02-008",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P1",
+      "traceability": ["BR-02", "BR-18", "BR-19", "FR-27", "AC-16"],
+      "title": "Student export denied and cross-scope Lecturer cannot access closed session roster",
+      "preconditions": [
+        "Closed session exists in section A assigned to Lecturer-A.",
+        "Lecturer-B is authenticated but not assigned to section A.",
+        "Student account is authenticated.",
+        "BR-18 scopes export to actor role; BR-19 denies unauthorized report access."
+      ],
+      "steps": [
+        "Student calls POST /v1/exports/attendance with filters targeting section A closed session.",
+        "Assert HTTP 403 Forbidden without partial export data leakage.",
+        "Lecturer-B calls GET /v1/class-sessions/{sessionId}/attendance for section A closed session.",
+        "Assert HTTP 403 OutOfScope or Forbidden.",
+        "Lecturer-A calls the same attendance endpoint as scoped positive control and receives roster with Closed state."
+      ],
+      "expected": "Student institution-wide export denied per BR-18; cross-scope Lecturer denied roster read per BR-19 without data leakage; assigned Lecturer succeeds and sees Closed session state.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-02-009",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P1",
+      "traceability": ["BR-02", "BR-07", "FR-22"],
+      "title": "Idempotent replay on Closed session returns consistent SessionClosed not DuplicateCheckIn",
+      "preconditions": [
+        "Closed session exists with enrolled student.",
+        "Test harness can replay POST /v1/check-ins with identical Idempotency-Key, actor, and token.",
+        "Student has no successful AttendanceRecord for this session."
+      ],
+      "steps": [
+        "Submit first POST /v1/check-ins against Closed session; record SessionClosed outcome.",
+        "Replay identical request with same Idempotency-Key immediately.",
+        "Submit parallel duplicate requests with same key from harness.",
+        "Query check_in_attempts and attendance_records for student-session.",
+        "Confirm no Present/Late success row exists."
+      ],
+      "expected": "All replays return deterministic SessionClosed per idempotency rules §7.1; BR-07 DuplicateCheckIn is not evaluated because BR-02 short-circuits first; no success attendance record created under retry storm.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-02-010",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P1",
+      "traceability": ["BR-02", "BR-07", "NFR-07"],
+      "title": "In-flight check-in at close boundary: one success per session under overlap",
+      "preconditions": [
+        "Open session with enrolled student; harness can issue parallel POST /v1/check-ins and POST close.",
+        "Student has no prior successful AttendanceRecord.",
+        "Idempotency-Key headers are unique per distinct command but replayable for same command."
+      ],
+      "steps": [
+        "Launch parallel student check-in submission and lecturer close command against same session.",
+        "Collect outcomes for check-in attempts and session final state.",
+        "Replay successful check-in Idempotency-Key after session is Closed.",
+        "Query attendance_records and confirm at most one success row per student-session.",
+        "Verify any post-close attempts return SessionClosed."
+      ],
+      "expected": "Under close/check-in race, at most one successful attendance record per student-session (BR-07); replays after closure return SessionClosed; idempotency preserves deterministic outcomes per NFR-07.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-02-011",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P1",
+      "traceability": ["BR-02", "BR-21", "FR-08", "FR-09", "AC-12"],
+      "title": "Alternate path: policy auto-close blocks late student check-in after window ends",
+      "preconditions": [
+        "Open session with effective policy auto-close offset configured.",
+        "Enrolled student has not checked in before auto-close trigger.",
+        "System scheduler or policy evaluation can transition Open to Closed per BR-21."
+      ],
+      "steps": [
+        "Allow session to auto-close when current time exceeds scheduled start plus late window end.",
+        "Verify session state is Closed and active QR tokens are invalidated.",
+        "Student submits POST /v1/check-ins with previously scanned token.",
+        "Observe SessionClosed rejection and absent finalization for unresolved student per BR-13.",
+        "Confirm lecturer manual correction path remains available within edit window per BR-02 exception."
+      ],
+      "expected": "Auto-close branch transitions session to Closed; subsequent student self check-in rejected with SessionClosed; unresolved students assigned Absent; manual fallback via BR-14/BR-16 remains available.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-02-012",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-02", "FR-08", "FR-16", "AC-05"],
+      "title": "Student mobile UI shows Vietnamese SessionClosed error and lecturer-contact guidance after session closes",
+      "preconditions": [
+        "Lecturer UI can open and close a session for an assigned section.",
+        "Student is logged in on mobile browser profile (iOS Safari or Android Chrome).",
+        "Student navigates to check-in page via QR scan or deep link with token preserved."
+      ],
+      "steps": [
+        "Lecturer opens session and confirms Open badge/indicator is visible on lecturer session view.",
+        "Lecturer closes the same session and verifies session status badge changes to Closed.",
+        "Student attempts to submit check-in from check-in form after closure.",
+        "Observe error banner or inline message in Vietnamese explaining attendance has ended.",
+        "Verify message instructs student to contact lecturer for manual fallback if check-in was legitimate.",
+        "Confirm success confirmation UI is not shown and no Present/Late badge appears for the student."
+      ],
+      "expected": "Browser journey surfaces BR-02 rejection with localized Vietnamese SessionClosed copy and lecturer-contact guidance; no false success state; Closed badge visible on lecturer view.",
+      "edgeCase": false
+    }
+  ]
+}

@@ -1,0 +1,59 @@
+{
+  "productName": "Attendly",
+  "tagline": "Smart Campus Attendance",
+  "domain": "Digital campus attendance and class-session check-in for universities and schools",
+  "slug": "attendly",
+  "branchPrefix": "aih/attendly-mvp",
+  "actors": [
+    "Student",
+    "Lecturer",
+    "Academic Admin",
+    "Department Admin",
+    "IT Admin",
+    "System Auditor"
+  ],
+  "description": "Web and mobile-web attendance system that replaces manual roll call with short-lived rotating QR codes, student login, enrollment validation, optional GPS checks, realtime lecturer dashboards, manual fallback, and attendance reporting for class sections across terms and semesters.",
+  "locale": "vi-VN",
+  "organizationContext": "University and campus training offices managing class sections, timetables, attendance policies, and academic compliance reporting",
+  "mvpScale": {
+    "checkInCompletionTargetMinutes": 5,
+    "medianCheckInTimeTargetSeconds": 30,
+    "validAttendanceRecordTargetPercent": 98,
+    "reportGenerationTimeTargetMinutes": 10,
+    "manualFallbackRateTargetPercent": 5
+  },
+  "primaryCapabilities": [
+    "Class section management",
+    "Student enrollment import",
+    "Class session scheduling and open/close attendance",
+    "Rotating dynamic QR check-in (30-second token)",
+    "Mobile web QR scan with student login",
+    "Enrollment and duplicate check-in validation",
+    "Optional GPS location verification",
+    "Realtime lecturer attendance dashboard",
+    "Manual attendance fallback and corrections",
+    "Basic attendance CSV export",
+    "Audit logging for check-in attempts and edits"
+  ],
+  "outOfScopeMvp": [
+    "Facial recognition",
+    "Native mobile app",
+    "Tuition payment",
+    "Exam schedule management",
+    "Full learning management system",
+    "Absolute GPS spoofing detection",
+    "Continuous student location tracking"
+  ],
+  "sourceDocument": "docs/initial-idea.md",
+  "designSystem": {
+    "framework": "default",
+    "sourceUrl": null,
+    "styleName": "Neobrutalism",
+    "primaryColor": "#FFDB33",
+    "borderStyle": "2px solid #000000",
+    "radiusDefault": "0px",
+    "shadowStyle": "hard offset shadows with no blur (shadow-xs through shadow-2xl)",
+    "headingFont": "Archivo Black, sans-serif",
+    "bodyFont": "Space Grotesk, sans-serif"
+  }
+}

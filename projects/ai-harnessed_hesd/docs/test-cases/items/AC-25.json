@@ -1,0 +1,299 @@
+{
+  "productItemId": "AC-25",
+  "version": 1,
+  "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+  "generatedAt": "2026-07-02T16:00:00Z",
+  "cases": [
+    {
+      "id": "TC-AC-25-001",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["AC-25", "NFR-17", "FR-20", "BR-14", "BR-22"],
+      "title": "Scenario matrix row for manual fallback operability under degradation scenarios",
+      "preconditions": [
+        "Testing-plan §12 Manual correction and governance block and §11 NFR-16/NFR-17 verification rows apply (FR-20, FR-21, FR-29, BR-14/15/16, AC-13, AC-14, AC-19, AC-25).",
+        "attendance-open-session fixture exists with enrolled students and assigned Lecturer.",
+        "Degradation profiles are seeded: GpsDisabled failed attempt, network-unavailable student (no successful check-in), and session close with Absent finalization."
+      ],
+      "steps": [
+        "For each degradation profile, confirm student has no successful QR check-in and failed CheckInAttempt or Pending/Absent roster state is persisted.",
+        "Assigned Lecturer within manualEditWindow invokes manual correction to Manual Present with documented reason per BR-14.",
+        "Query AttendanceRecord, AuditLog, and CheckInAttempt history for each resolved student.",
+        "Verify no correction bypasses reason capture or scope checks per WOP-04."
+      ],
+      "expected": "Manual fallback operability gate coverage row passes: lecturer resolves attendance for device/network/GPS failure scenarios without bypassing audit requirements (actor, old/new status, reason, timestamp per BR-22) and without cross-section scope expansion per BR-14 and NFR-17.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-25-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["AC-25", "NFR-17", "FR-20", "FR-29", "BR-14", "BR-22"],
+      "title": "Manual fallback after GPS failure commits attendance update and audit row atomically",
+      "preconditions": [
+        "Real database transaction boundary spans attendance ledger, policy service, and audit modules.",
+        "Open gps-required session exists; enrolled student has failed GpsDisabled CheckInAttempt and Pending AttendanceRecord.",
+        "Assigned Lecturer is within manualEditWindow; policy mandates reason for corrections (VR-MC-04)."
+      ],
+      "steps": [
+        "Capture beforeState: AttendanceRecord status Pending, checkInMethod null, one failed CheckInAttempt with outcome GpsDisabled.",
+        "Invoke PATCH attendance correction through application service with status Manual Present, reason, sourceAttemptId linking failed attempt, and Idempotency-Key.",
+        "Query attendance_records, audit_logs, and check_in_attempts within same transaction scope.",
+        "Verify correlationId ties API response, audit entry, and realtime event."
+      ],
+      "expected": "Single transaction commits AttendanceRecord afterState Manual Present with checkInMethod Manual; exactly one audit_logs row records actorUserId, role Lecturer, oldStatus Pending, newStatus Manual Present, reason, and occurredAt; prior GpsDisabled attempt is preserved and not deleted per WOP-04 and AC-25 operability gate.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-25-003",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["AC-25", "NFR-17", "FR-20", "BR-14", "BR-13"],
+      "title": "SM-03 Absent to Manual Present transition after close when student could not self check-in",
+      "preconditions": [
+        "Lecturer opened session via POST /v1/class-sessions/{sessionId}/open (AC-01) then closed via /close (AC-05).",
+        "Enrolled student had no successful check-in due to device/network failure; close finalization assigned Absent (AC-12, BR-13).",
+        "Assigned Lecturer is within manualEditWindow per effective policy."
+      ],
+      "steps": [
+        "Capture beforeState: session state Closed, AttendanceRecord status Absent, checkInMethod system-assigned.",
+        "Lecturer executes manual correction command with status Manual Present and reason documenting in-person verification after network failure.",
+        "Capture afterState for AttendanceRecord and verify session remains Closed.",
+        "Query audit_logs for mutation entry with old Absent and new Manual Present."
+      ],
+      "expected": "beforeState Absent transitions to afterState Manual Present via lecturer manual fallback; session stays Closed (no illegal SM-01 reopen); transition is fully auditable per BR-14 and satisfies AC-25 without bypassing audit trail.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-25-004",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P1",
+      "traceability": ["AC-25", "NFR-17", "FR-20", "FR-29", "BR-14", "BR-22"],
+      "title": "Parallel manual fallback corrections for multiple GPS-failed students each write independent audit rows",
+      "preconditions": [
+        "Open session has three enrolled students each with distinct failed GpsDisabled or OutOfRadius CheckInAttempt and Pending roster state.",
+        "Assigned Lecturer is within edit window with valid bearer token.",
+        "Real database with audit_logs immutability constraints."
+      ],
+      "steps": [
+        "Issue three concurrent PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} requests with distinct Idempotency-Key values, status Manual Present, and per-student reasons.",
+        "Await all responses and query AttendanceRecord and audit_logs for each student-session pair.",
+        "Verify each correction links to the correct student without cross-row mutation.",
+        "Confirm failed CheckInAttempt rows remain intact for all three students."
+      ],
+      "expected": "All three parallel corrections succeed independently; each student receives Manual Present status with exactly one audit row; no audit gap or merged mutation under concurrent lecturer fallback operations per NFR-17 supportability under classroom peak conditions.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-25-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["AC-25", "NFR-17", "FR-20", "FR-29", "BR-14", "BR-22"],
+      "title": "PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} returns 200 after GPS failure scenario",
+      "preconditions": [
+        "Open gps-required session exists; student POST /v1/check-ins returned 422 GpsDisabled (AC-09).",
+        "Assigned Lecturer bearer token is authenticated; manual edit window is active.",
+        "Student AttendanceRecord is Pending on roster with rejectedAttempts count incremented."
+      ],
+      "steps": [
+        "Lecturer calls PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with body {\"status\": \"Manual Present\", \"reason\": \"Sinh vien co mat, thiet bi khong cap GPS.\"} and Idempotency-Key header.",
+        "Inspect HTTP status 200, standard response envelope (data/meta/error), and error is null.",
+        "Call GET /v1/class-sessions/{sessionId}/attendance and locate corrected student row.",
+        "Query GET /v1/audit-logs filtered by targetId and actionType for manual attendance update."
+      ],
+      "expected": "PATCH returns HTTP 200 with envelope showing updated attendanceStatus Manual Present and checkInMethod Manual; audit query returns entry with oldStatus Pending, newStatus Manual Present, actor, reason, and timestamp confirming operability without audit bypass.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-25-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["AC-25", "NFR-17", "FR-20", "FR-29", "BR-14", "BR-22", "AC-09"],
+      "title": "WF-05 primary workflow resolves GPS-failed student via lecturer manual fallback with full audit",
+      "preconditions": [
+        "Lecturer opened gps-required session (AC-01); session is Open with rotating QR.",
+        "Student completes login (AC-06) but check-in fails with GpsDisabled due to device permission denial (AC-09, E2E-05).",
+        "Manual edit window is active; assigned Lecturer bearer token is available."
+      ],
+      "steps": [
+        "Student calls POST /v1/check-ins without usable GPS; verify 422 GpsDisabled and Pending roster state.",
+        "Lecturer reviews GET /v1/class-sessions/{sessionId}/attendance showing student Pending with latestAttemptOutcome GpsDisabled.",
+        "Lecturer submits PATCH correction to Manual Present with documented reason after in-person verification.",
+        "AcademicAdmin queries GET /v1/audit-logs for the correction event."
+      ],
+      "expected": "WF-05 primary happy path completes under GPS degradation: attendance resolves to Manual Present; failed attempt history preserved; audit record is queryable with actor/time/old/new/reason per AC-25 Given/When/Then and NFR-17.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-25-007",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P0",
+      "traceability": ["AC-25", "NFR-17", "FR-20", "BR-14", "BR-02", "AC-05", "AC-12"],
+      "title": "Alternate branch network failure leaves student Absent at close then lecturer manual fallback resolves",
+      "preconditions": [
+        "Open session exists; enrolled student cannot reach API (simulated network outage) and has no CheckInAttempt or success record.",
+        "Lecturer closes session via POST /v1/class-sessions/{sessionId}/close (AC-05); close assigns Absent (AC-12).",
+        "Manual edit window from session close is active per BR-14."
+      ],
+      "steps": [
+        "Verify GET /v1/class-sessions/{sessionId}/attendance shows student Absent after close with zero successful check-in attempts.",
+        "Lecturer verifies student was physically present and submits PATCH correction to Manual Present with reason citing network failure.",
+        "Refresh roster via GET /v1/class-sessions/{sessionId}/attendance.",
+        "Query audit trail for committed mutation."
+      ],
+      "expected": "Manual fallback resolves network-degraded scenario post-close: status changes Absent to Manual Present within edit window; SessionClosed blocks further self check-in (BR-02) but lecturer correction path remains operable with full audit per RSK-02 mitigation and AC-25.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-25-008",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "flow-c",
+      "priority": "P0",
+      "traceability": ["AC-25", "NFR-17", "FR-29", "BR-22", "AC-19"],
+      "title": "Flow C audit verification after manual fallback in multi-failure classroom drill",
+      "preconditions": [
+        "Closed session with mixed failure trail: one GpsDisabled student, one ExpiredQr student (Pending), one network-absent student (Absent at close).",
+        "Assigned Lecturer applies in-window corrections for all three with distinct reasons.",
+        "Audit query endpoint available to AcademicAdmin or SystemAuditor read scope."
+      ],
+      "steps": [
+        "Record roster statuses before corrections via GET /v1/class-sessions/{sessionId}/attendance.",
+        "Lecturer applies three PATCH corrections resolving each failure profile to Manual Present with documented reasons.",
+        "Query GET /v1/audit-logs with filters targetType AttendanceRecord, classSessionId, and time range covering corrections.",
+        "Verify each audit payload against CMP-01 minimum fields from roles-permissions doc §7.1."
+      ],
+      "expected": "Each committed manual fallback mutation has corresponding audit record with actor, role, target student/session, old status, new status Manual Present, reason, and timestamp; zero audit gaps across degradation scenarios per BR-22, AC-19, and AC-25 audit non-bypass requirement.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-25-009",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["AC-25", "NFR-17", "FR-20", "BR-14", "BR-22"],
+      "title": "Manual fallback without required reason returns ReasonRequired and preserves unresolved attendance",
+      "preconditions": [
+        "Open session with student Pending after GpsDisabled failure; assigned Lecturer is within edit window.",
+        "Effective policy mandates reason for all manual corrections (VR-MC-04).",
+        "Lecturer bearer token is authenticated."
+      ],
+      "steps": [
+        "Call PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Manual Present and empty or omitted reason field.",
+        "Inspect HTTP status and error.code in response envelope.",
+        "Query AttendanceRecord and audit_logs for the student-session pair.",
+        "Retry with valid reason as control confirming fallback path still operable."
+      ],
+      "expected": "Request is rejected with validation error ReasonRequired (400 class); AttendanceRecord remains Pending; no audit_logs mutation entry for failed attempt proving audit requirements cannot be bypassed; control request with reason succeeds resolving attendance per AC-25.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-25-010",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["AC-25", "NFR-17", "FR-20", "BR-14", "BR-19", "NFR-09"],
+      "title": "Student, SystemAuditor, ITAdmin, and out-of-scope Lecturer denied manual fallback mutation",
+      "preconditions": [
+        "Open or closed session in section A with student Pending after GpsDisabled failure; manual edit window is active.",
+        "Student, SystemAuditor, ITAdmin bearer tokens and Lecturer token for unassigned section B are available.",
+        "Assigned Lecturer token for section A is available as authorized control."
+      ],
+      "steps": [
+        "Student calls PATCH /v1/class-sessions/{sessionId}/attendance/{studentUserId} with status Manual Present and reason.",
+        "SystemAuditor calls the same PATCH for section A session.",
+        "ITAdmin calls the same PATCH without explicit academic grant.",
+        "Out-of-scope Lecturer (section B) calls the same PATCH for section A session.",
+        "Assigned Lecturer calls the same PATCH as control.",
+        "Verify AttendanceRecord state after all denied attempts."
+      ],
+      "expected": "Student, SystemAuditor, and ITAdmin receive 403 Forbidden per permission matrix; out-of-scope Lecturer receives 403 OutOfScope per PRM-01; no attendance mutation or audit write from denied roles; assigned Lecturer control succeeds resolving Pending to Manual Present without broadening unauthorized access per AC-25.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-25-011",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["AC-25", "NFR-17", "FR-20", "BR-14", "BR-22", "AC-09"],
+      "title": "Lecturer live roster resolves GPS-failed student via ManualCorrectionDialog after degradation",
+      "preconditions": [
+        "Lecturer is authenticated on desktop browser (PG-06 live roster) for assigned section.",
+        "Open gps-required session displays student row Pending with latestAttemptOutcome GpsDisabled badge.",
+        "Manual edit window is active; reason field is required (FRM-08)."
+      ],
+      "steps": [
+        "Navigate to /lecturer/sessions/{id}/roster and locate Pending student with GPS rejection summary.",
+        "Open ManualCorrectionDialog from row action; select Manual Present in status dropdown.",
+        "Enter reason in labeled Lý do textarea documenting device/GPS failure verification.",
+        "Confirm via dialog submit and observe AttendanceStatusCell updates to Manual Present success variant.",
+        "Verify summary chips refresh and dialog closes with focus return to trigger."
+      ],
+      "expected": "Browser FLOW-08 completes under degradation: form gating enforces required reason before submit; post-save roster shows Manual Present badge; UI state matches API correction and audit write; manual fallback is operable without bypassing governance controls per AC-25.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-25-012",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["AC-25", "NFR-17", "FR-20", "BR-14", "AC-09"],
+      "title": "Student check-in failure UI surfaces manual fallback guidance linking to lecturer resolution path",
+      "preconditions": [
+        "Student is logged in on mobile-web browser (PG-02) for gps-required open session.",
+        "Browser geolocation permission is denied simulating device GPS failure.",
+        "Lecturer roster session is open on separate browser context for post-fallback verification."
+      ],
+      "steps": [
+        "Navigate to check-in URL with valid token for gps-required session.",
+        "Deny browser location permission when GpsPermissionPrompt appears.",
+        "Submit check-in and observe CheckInResultScreen failure-gps-denied alert with recovery steps.",
+        "Verify copy includes lecturer manual fallback guidance (e.g. báo giảng viên).",
+        "Switch to lecturer roster context and confirm student appears Pending with correction affordance."
+      ],
+      "expected": "Student-facing degradation UX communicates recovery path including lecturer manual fallback; student remains Pending without success state; lecturer roster shows same student ready for ManualCorrectionDialog confirming end-to-end operability chain per AC-25 and NFR-17.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-25-013",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["AC-25", "NFR-17", "NFR-16", "FR-20", "BR-14"],
+      "title": "Campus support manual fallback operational drill with physical devices and runbook",
+      "preconditions": [
+        "Incident response playbook for check-in degradation (network instability, token service errors, GPS anomalies) is documented per NFR-17.",
+        "Staging pilot uses real classroom with iOS Safari or Android Chrome on campus Wi-Fi per testing-plan §6.2.",
+        "Lecturer and enrolled students have physical devices; Playwright MCP harness cannot reproduce full operational drill."
+      ],
+      "steps": [
+        "Simulate classroom degradation scenario (GPS denied or network outage) on physical student devices.",
+        "Lecturer follows runbook steps: verify failed attempts on roster, apply manual fallback with reason for affected students.",
+        "Support operator verifies audit entries are queryable for dispute resolution walkthrough.",
+        "Document drill completion evidence per testing-plan §11 NFR-16/NFR-17 minimum evidence."
+      ],
+      "expected": "Operational drill confirms manual fallback procedures are rehearsed and attendance can be resolved in real classroom conditions without bypassing audit requirements or broadening unauthorized access; evidence satisfies AC-25 release readiness checklist §4.2.",
+      "edgeCase": false,
+      "harnessSkip": "physical-device"
+    }
+  ]
+}

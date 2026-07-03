@@ -7,14 +7,16 @@
       "phase": 0,
       "kind": "agent",
       "agent": "doc-writer",
-      "description": "Extract product metadata from initial idea into product-meta.json",
+      "description": "Infer or enrich product-meta.json from docs/ seed material",
       "outputs": [
         "docs/product-meta.json"
       ],
       "contextDocs": [
-        "docs/initial-idea.md"
+        "docs/initial-idea.md",
+        "docs/product-meta.json"
       ],
       "validators": [
+        "seed-present",
         "input-meta",
         "product-meta-schema",
         "actors-valid",

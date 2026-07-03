@@ -1,0 +1,408 @@
+{
+  "productItemId": "BR-19",
+  "version": 1,
+  "docFingerprint": "sha256:0421ca4affe3aa70584e3b352a860d11de519a5a2aaff8c4d8e0f12d14d1a70a",
+  "generatedAt": "2026-07-02T12:08:25Z",
+  "cases": [
+    {
+      "id": "TC-BR-19-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["BR-19", "FR-27", "FR-28", "FR-32", "AC-16"],
+      "title": "Scenario-matrix coverage for unauthorized report and export access denial",
+      "preconditions": [
+        "Testing-plan §3.1 reporting/export and scope row applies (FR-27, FR-28, BR-18, BR-19, AC-15, AC-16, AC-17).",
+        "Role-matrix fixture provides Student, Lecturer assigned to section A, DepartmentAdmin scoped to faculty X, SystemAuditor with read-only grant, and ITAdmin accounts.",
+        "Attendance data exists in assigned section A, unassigned section B, faculty Y, and across institution scope."
+      ],
+      "steps": [
+        "As Student, call GET /v1/reports/attendance and POST /v1/exports/attendance with institution-wide filters.",
+        "As Lecturer assigned to section A, call GET /v1/reports/attendance and POST /v1/exports/attendance targeting section B.",
+        "As DepartmentAdmin scoped to faculty X, call GET /v1/reports/attendance with faculty Y classSectionId filter.",
+        "As SystemAuditor, call POST /v1/exports/attendance without explicit export grant.",
+        "As ITAdmin, call GET /v1/reports/attendance with academic attendance filters.",
+        "Inspect each denial response for absence of partial restricted data."
+      ],
+      "expected": "Maps to testing-plan §3.1 reporting/export scope row and AC-16: every unauthorized report or export request is denied with HTTP 403 Forbidden or OutOfScope; data is null; no partial attendance rows, student identifiers, exportJobId, or cross-scope pagination totals are disclosed (BR-19, PRM-10).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-19-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-19", "FR-28"],
+      "title": "M07 report scope guard short-circuits before DB query for out-of-scope actor",
+      "preconditions": [
+        "Integration database seeded with attendance_records across multiple class sections and lecturer assignments.",
+        "M07 Reporting module uses real repository and authorization scope resolver at module boundary.",
+        "Lecturer actor is assigned only to section A; section B contains attendance rows."
+      ],
+      "steps": [
+        "Invoke M07 getAttendanceReport use-case for Lecturer actor with classSectionId filter targeting section B.",
+        "Assert authorization scope guard rejects request before unrestricted repository query executes.",
+        "Verify zero attendance rows are materialized or returned from section B.",
+        "Confirm no export or report job metadata is persisted for the denied request."
+      ],
+      "expected": "Module integration enforces scope validation at M07 boundary per VR-RP-02; out-of-scope report query is denied without cross-section row materialization or partial data leakage (BR-19, PRM-10).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-19-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["BR-19", "FR-27"],
+      "title": "M07 export service denies Student actor before export job persistence",
+      "preconditions": [
+        "Integration database seeded with exportable attendance rows across institution scope.",
+        "M07 createExportJob use-case wired to real authorization guard and export_jobs persistence.",
+        "Student actor lacks ExportJob.execute per permissions matrix §3.2."
+      ],
+      "steps": [
+        "Record export_jobs row count before invocation.",
+        "Invoke M07 createExportJob for Student actor with termId filter and format csv.",
+        "Assert authorization guard returns denial without invoking unrestricted export query.",
+        "Verify export_jobs table has no new row and no CSV artifact path is created."
+      ],
+      "expected": "Module integration denies Student export at authorization boundary before DB write; no export job row or CSV artifact is created; no foreign-scope attendance samples are exposed (BR-19, PRM-10).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-19-004",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-19", "FR-28", "AC-16"],
+      "title": "HTTP contract for Student GET /v1/reports/attendance returns 403 denial envelope",
+      "preconditions": [
+        "Student user is authenticated with valid Bearer token.",
+        "Institution-wide attendance report data exists across multiple sections."
+      ],
+      "steps": [
+        "Send GET /v1/reports/attendance?termId={termId}&page=1&pageSize=25 with Student Authorization header.",
+        "Validate HTTP status code is 403.",
+        "Assert standard { data, meta, error } envelope with data null.",
+        "Verify error.code is Forbidden or OutOfScope and meta.pagination is absent or contains no institution-wide totals."
+      ],
+      "expected": "Response is HTTP 403 with error.code Forbidden or OutOfScope; data is null; no partial attendance rows or cross-scope pagination metadata are disclosed (BR-19, AC-16).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-19-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-19", "FR-27", "AC-16"],
+      "title": "HTTP contract for Student POST /v1/exports/attendance returns 403 denial envelope",
+      "preconditions": [
+        "Student user is authenticated with valid Bearer token.",
+        "Institution-wide attendance export data exists across multiple sections."
+      ],
+      "steps": [
+        "Send POST /v1/exports/attendance with body { format: csv, filters: { termId } } and Idempotency-Key as Student.",
+        "Validate HTTP status code is 403.",
+        "Assert standard envelope with data null and error.code Forbidden or OutOfScope.",
+        "Query export job persistence and confirm no exportJobId was created."
+      ],
+      "expected": "Response is HTTP 403 with error.code Forbidden or OutOfScope; data is null with no exportJobId; no export job row or CSV artifact is created (BR-19, AC-16).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-19-006",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-19", "FR-28", "AC-16"],
+      "title": "Student denied institution-wide attendance report without data leakage",
+      "preconditions": [
+        "Student user is authenticated with valid Bearer token.",
+        "Attendance records exist for multiple sections including sections the student is not enrolled in."
+      ],
+      "steps": [
+        "Send GET /v1/reports/attendance?termId={termId}&page=1&pageSize=25 as Student.",
+        "Inspect response body for any attendance rows, student identifiers, or pagination totals.",
+        "Attempt GET /v1/reports/attendance with studentUserId override targeting another student.",
+        "Verify no restricted peer attendance data appears in any response field."
+      ],
+      "expected": "All institution report requests return HTTP 403 Forbidden or OutOfScope; data is null; no partial attendance rows, peer student identifiers, or cross-scope totals are disclosed per PRM-03 and BR-19.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-19-007",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-19", "FR-27", "AC-16"],
+      "title": "Student denied institution-wide CSV export",
+      "preconditions": [
+        "Student user is authenticated with valid Bearer token.",
+        "Institution-wide attendance export data exists across multiple sections."
+      ],
+      "steps": [
+        "Send POST /v1/exports/attendance with body { format: csv, filters: { termId } } as Student.",
+        "Validate HTTP status code and error envelope.",
+        "Query export job persistence for any job created by the denied request."
+      ],
+      "expected": "Response is HTTP 403 with error.code Forbidden or OutOfScope; data is null with no exportJobId; no export job row or CSV artifact is created (BR-19, AC-16).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-19-008",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-19", "FR-28", "AC-16"],
+      "title": "Lecturer denied report query for unassigned classSectionId",
+      "preconditions": [
+        "Lecturer is authenticated and assigned only to section A.",
+        "Section B has attendance data and is not in lecturer assignment set."
+      ],
+      "steps": [
+        "Call GET /v1/reports/attendance?classSectionId={sectionBId}&page=1&pageSize=25 as Lecturer.",
+        "Inspect HTTP status, error.code, and response body for restricted data leakage.",
+        "Verify response contains no section B student identifiers, attendance statuses, or scoped pagination totals."
+      ],
+      "expected": "Request returns HTTP 403 OutOfScope or Forbidden; response contains no section B student identifiers, attendance statuses, or pagination totals (PRM-01, PRM-10, BR-19).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-19-009",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-19", "FR-27", "AC-15", "AC-16"],
+      "title": "Lecturer denied export for unassigned classSectionId",
+      "preconditions": [
+        "Lecturer is authenticated and assigned only to section A.",
+        "Section B has attendance data and is not in lecturer assignment set."
+      ],
+      "steps": [
+        "Call POST /v1/exports/attendance with filters { classSectionId: sectionBId, format: csv } as Lecturer.",
+        "Inspect HTTP status, error.code, and response body for restricted data leakage.",
+        "Verify no export job or partial CSV artifact is produced."
+      ],
+      "expected": "Request returns HTTP 403 OutOfScope or Forbidden; response contains no section B student identifiers, attendance statuses, or exportJobId (BR-19 cross-scope Lecturer denial).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-19-010",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-19", "FR-28", "FR-31", "AC-16"],
+      "title": "DepartmentAdmin denied cross-faculty attendance report",
+      "preconditions": [
+        "DepartmentAdmin is authenticated and scoped to faculty X.",
+        "Attendance data exists in faculty Y section outside department scope."
+      ],
+      "steps": [
+        "Call GET /v1/reports/attendance?classSectionId={facultyYSectionId}&page=1&pageSize=25 as DepartmentAdmin.",
+        "Parse 403 response and any error.details field.",
+        "Verify no faculty Y attendance rows, student identifiers, or row counts appear in response."
+      ],
+      "expected": "Scope validation short-circuits with HTTP 403 OutOfScope; error.details contain no faculty Y attendance samples or cross-scope totals (PRM-02, VR-RP-02, BR-19).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-19-011",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-19", "FR-32", "AC-16"],
+      "title": "SystemAuditor denied CSV export unless explicitly granted",
+      "preconditions": [
+        "SystemAuditor is authenticated with read-only scoped report access per FR-32.",
+        "SystemAuditor lacks explicit ExportJob.execute grant per permissions matrix §3.2.",
+        "Exportable attendance data exists within auditor read scope."
+      ],
+      "steps": [
+        "Confirm SystemAuditor can read GET /v1/reports/attendance within granted scope.",
+        "Send POST /v1/exports/attendance with format csv and in-scope filters as SystemAuditor.",
+        "Validate HTTP 403 denial and absence of exportJobId.",
+        "Verify no export job row or CSV artifact is created."
+      ],
+      "expected": "SystemAuditor read-only report access succeeds within granted scope; export request returns HTTP 403 Forbidden per BR-19 exception; no export job or artifact is produced without explicit export grant.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-19-012",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-19", "FR-28", "AC-23"],
+      "title": "ITAdmin denied academic attendance report view",
+      "preconditions": [
+        "ITAdmin is authenticated with technical operations scope only.",
+        "Academic attendance report data exists across institution sections.",
+        "ITAdmin lacks explicit academic grant for ReportView.read."
+      ],
+      "steps": [
+        "Send GET /v1/reports/attendance?termId={termId}&page=1&pageSize=25 as ITAdmin.",
+        "Validate HTTP 403 Forbidden denial envelope.",
+        "Inspect response for any attendance rows, student identifiers, or pagination totals."
+      ],
+      "expected": "ITAdmin academic report request returns HTTP 403 Forbidden; data is null; no partial attendance rows or cross-scope totals are disclosed per RBAC-03 separation of duties and BR-19.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-19-013",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-19", "FR-19", "FR-28"],
+      "title": "Lecturer denied live roster read for unassigned session",
+      "preconditions": [
+        "Lecturer is authenticated and assigned only to section A.",
+        "Class session in section B is Open with live roster data."
+      ],
+      "steps": [
+        "Call GET /v1/class-sessions/{sectionBSessionId}/attendance as Lecturer assigned to section A only.",
+        "Validate HTTP 403 OutOfScope or Forbidden response.",
+        "Verify response contains no section B student roster rows, attendance statuses, or live counts."
+      ],
+      "expected": "Cross-scope live roster request returns HTTP 403 without partial roster data, student identifiers, or attendance counts from unassigned section (PRM-01, BR-19).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-19-014",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-19", "FR-28"],
+      "title": "Unauthenticated report request returns 401 without partial data",
+      "preconditions": [
+        "No Authorization Bearer token is provided.",
+        "Attendance report data exists in the system."
+      ],
+      "steps": [
+        "Send GET /v1/reports/attendance?termId={termId}&page=1&pageSize=25 without Authorization header.",
+        "Validate HTTP 401 status and error.code Unauthenticated.",
+        "Confirm data is null and no attendance rows or pagination metadata are returned."
+      ],
+      "expected": "Response is HTTP 401 with error.code Unauthenticated; data is null; no partial report rows or scope hints are disclosed (API §2.4, BR-19).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-19-015",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["BR-19", "FR-27"],
+      "title": "Out-of-scope export filter rejected before query with no leakage in error.details",
+      "preconditions": [
+        "DepartmentAdmin scoped to faculty X is authenticated.",
+        "Attendance data exists in faculty Y section outside department scope."
+      ],
+      "steps": [
+        "Submit POST /v1/exports/attendance with filters targeting faculty Y classSectionId.",
+        "Parse 403 response and any error.details field.",
+        "Verify export job table has no new row and no CSV rows were materialized."
+      ],
+      "expected": "Scope validation short-circuits with HTTP 403 OutOfScope before unrestricted query; error.details contain no faculty Y attendance samples, student identifiers, or row counts (VR-RP-02, BR-19).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-19-016",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "pagination",
+      "priority": "P1",
+      "traceability": ["BR-19", "FR-28"],
+      "title": "Denied report response does not expose cross-scope pagination totals",
+      "preconditions": [
+        "Institution has 120 attendance rows across multiple sections; lecturer scope covers 25 rows in section A only.",
+        "Integration environment uses real report authorization guard with pagination metadata builder."
+      ],
+      "steps": [
+        "Submit GET /v1/reports/attendance with out-of-scope classSectionId filter as scoped Lecturer.",
+        "Inspect denial response meta.pagination if present.",
+        "Compare any returned totals against institution-wide row count of 120."
+      ],
+      "expected": "Denied report response contains no meta.pagination with institution-wide totalItems; error envelope does not leak cross-scope row counts per API §2.5 and BR-19.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-19-017",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": ["BR-19", "FR-30", "BR-22"],
+      "title": "Privileged denial audit entry written when institution policy requires",
+      "preconditions": [
+        "Institution policy flag privilegedDenialAuditEnabled is true.",
+        "Integration database includes audit_logs table with queryable action types.",
+        "Student actor attempts unauthorized export against institution scope."
+      ],
+      "steps": [
+        "Record audit log count for PrivilegedAccessDenied or equivalent action type before request.",
+        "Invoke M07 createExportJob or authorization middleware denial path for Student export attempt.",
+        "Query AuditLog repository for new entry matching actor, target resource, and denial outcome.",
+        "Verify audit entry contains actorUserId, timestamp, and denied action scope without leaking restricted data in oldValue or newValue fields."
+      ],
+      "expected": "When institution policy requires, privileged denial produces AuditLog entry with actor, timestamp, and denied action context; no foreign-scope attendance data is embedded in audit payload (BR-19 outcome, FR-30).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-19-018",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["BR-19", "FR-27", "FR-28", "AC-16"],
+      "title": "Student browser journey blocked from institution report and export surfaces",
+      "preconditions": [
+        "Student is logged in on mobile or desktop browser.",
+        "Application shell may expose or deep-link to reporting and export routes.",
+        "Student role lacks ReportView.read institution scope and ExportJob.execute per permissions matrix."
+      ],
+      "steps": [
+        "Attempt to navigate directly to attendance report URL and export URL.",
+        "Inspect navigation menu for report or export affordances visible to Student.",
+        "If report or export UI is reachable, attempt to load institution-wide data or trigger CSV export.",
+        "Observe user-facing denial message and network API responses."
+      ],
+      "expected": "Student cannot view institution attendance report or execute CSV export; UI shows access-denied feedback or hides affordances without displaying other students' attendance data, partial rows, or cross-scope counts (AC-16, BR-19).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-19-019",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["BR-19", "FR-28", "AC-16"],
+      "title": "Lecturer browser journey denied when selecting unassigned section filter",
+      "preconditions": [
+        "Lecturer is logged in on desktop browser.",
+        "Reporting UI section selector or filter may accept manual section identifiers.",
+        "Lecturer is assigned to section A only; section B has attendance data."
+      ],
+      "steps": [
+        "Navigate to attendance report page as Lecturer.",
+        "Attempt to filter or navigate to unassigned section B via URL parameter, selector, or search.",
+        "Observe UI error state and underlying GET /v1/reports/attendance network response.",
+        "Verify no section B student names, attendance statuses, or row counts appear in the page."
+      ],
+      "expected": "UI displays access-denied or empty scoped state for unassigned section; network response is HTTP 403 OutOfScope; no section B roster or report rows are rendered (BR-19 cross-scope Lecturer denial, AC-16).",
+      "edgeCase": true
+    }
+  ]
+}

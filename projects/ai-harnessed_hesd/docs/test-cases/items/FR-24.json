@@ -1,0 +1,344 @@
+{
+  "productItemId": "FR-24",
+  "version": 1,
+  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+  "generatedAt": "2026-07-02T11:17:25Z",
+  "cases": [
+    {
+      "id": "TC-FR-24-001",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["FR-24", "AC-09", "AC-10", "BR-08", "BR-09"],
+      "title": "Testing-plan GPS validation block enabled when FR-24 configures gpsRequired and gpsRadiusMeters at section scope",
+      "preconditions": [
+        "Testing-plan §3.1 GPS validation coverage block applies (FR-34, FR-35, BR-08/09/10, AC-09, AC-10).",
+        "Class section exists with room coordinates configured for radius checks.",
+        "No prior section-scoped policy overrides gpsRequired for the target section.",
+        "AcademicAdmin auth context is available to M06 Policy Engine."
+      ],
+      "steps": [
+        "Create section-scoped AttendancePolicy via M06 with gpsRequired true and gpsRadiusMeters 100 per FR-24 field set.",
+        "Invoke resolveEffectivePolicy(classSectionId, sessionTimestamp) for an upcoming session in that section.",
+        "Assert resolved effective policy exposes gpsRequired true and gpsRadiusMeters 100.",
+        "Verify policy snapshot fields required by AC-09 (GPS-required rejection path) and AC-10 (out-of-radius handling) are present in the resolved policy."
+      ],
+      "expected": "Scenario-matrix maps FR-24 policy configuration to the testing-plan GPS validation row: section-scoped gpsRequired and gpsRadiusMeters persist and surface in effective policy resolution, enabling downstream AC-09 and AC-10 validation paths at check-in time.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-24-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-24", "BR-20"],
+      "title": "M06 Policy Engine persists class-section scoped policy with all FR-24 fields in attendance_policies",
+      "preconditions": [
+        "Integration harness uses real DB transaction boundaries for attendance_policies table.",
+        "Class section fixture exists with known classSectionId.",
+        "AcademicAdmin actor context is wired to M06 policy configuration service."
+      ],
+      "steps": [
+        "Submit policy configuration payload with scopeType ClassSection, scopeId classSectionId, checkInOpeningOffsetMinutes 5, presentWindowMinutes 15, lateWindowMinutes 15, autoCloseEnabled true, absenceThresholdPercent 20, excusedCountsTowardThreshold false, manualEditWindowHours 48, adminApprovalRequired false, gpsRequired true, gpsRadiusMeters 100.",
+        "Query attendance_policies row by scope_type and scope_id within the same transaction.",
+        "Verify numeric CHECK constraints (present_window_minutes > 0, absence_threshold_percent 0–100, gps_radius_meters > 0) are satisfied.",
+        "Call resolveEffectivePolicy(classSectionId, now) and assert returned values match persisted configuration."
+      ],
+      "expected": "M06 commits a single active AttendancePolicy row at ClassSection scope with all FR-24 behavioral fields persisted per database design §4.5; resolveEffectivePolicy returns the configured values for the section without requiring a separate read path.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-24-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["FR-24", "BR-20"],
+      "title": "M06 persists institution default policy and faculty/course/section overrides at each PolicyScopeType",
+      "preconditions": [
+        "Institution, faculty, course, and class section fixtures exist in hierarchy order.",
+        "No conflicting active policies exist at target scopes before test.",
+        "AcademicAdmin auth context is available."
+      ],
+      "steps": [
+        "Create institution-scoped policy with scopeType Institution and scopeId null; record institution presentWindowMinutes 10.",
+        "Create faculty-scoped policy with presentWindowMinutes 12 for the parent faculty.",
+        "Create course-scoped policy with presentWindowMinutes 14 for the parent course.",
+        "Create class-section-scoped policy with presentWindowMinutes 20 for the target section.",
+        "Query attendance_policies for all four scope_type values and verify distinct rows committed.",
+        "Invoke resolveEffectivePolicy for the class section and assert presentWindowMinutes 20 (most specific wins per BR-20)."
+      ],
+      "expected": "FR-24 supports all four scope levels (institution, faculty, course, class section); each scope persists independently in attendance_policies; BR-20 precedence resolves section override over course, faculty, and institution defaults.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-24-004",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "pagination",
+      "priority": "P1",
+      "traceability": ["FR-24"],
+      "title": "GET /v1/policies list pagination honors page and pageSize boundaries within admin scope",
+      "preconditions": [
+        "Database seed contains more than 25 attendance policy rows across scope levels.",
+        "AcademicAdmin auth context is established."
+      ],
+      "steps": [
+        "Call GET /v1/policies?page=1&pageSize=25 and record totalItems and row count.",
+        "Call GET /v1/policies?page=2&pageSize=25 and assert disjoint result set from page 1.",
+        "Request a page beyond totalPages and assert empty data array with stable totalItems.",
+        "Apply scopeLevel filter (e.g. ClassSection) and verify pagination totalItems reflects filtered scoped count only."
+      ],
+      "expected": "Policy listing returns correct page boundaries per API conventions §2.5; totalItems remains stable across pages; filtered queries paginate within authorized scope without cross-scope count leakage.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-24-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-24", "BR-20"],
+      "title": "POST /v1/policies returns 200 with standard envelope and persisted policy fields",
+      "preconditions": [
+        "AcademicAdmin is authenticated with bearer token and Idempotency-Key header.",
+        "Target class section exists in institution scope.",
+        "Request body includes scopeType ClassSection, scopeId, presentWindowMinutes, lateWindowMinutes, manualEditWindowHours, gpsRequired, and absenceThresholdPercent per FR-24."
+      ],
+      "steps": [
+        "Send POST /v1/policies with Authorization and Idempotency-Key headers.",
+        "Validate HTTP status 200 and JSON envelope shape {data, meta, error} with error null.",
+        "Assert data contains id, scopeType, scopeId, presentWindowMinutes, lateWindowMinutes, gpsRequired, gpsRadiusMeters (when gpsRequired true), manualEditWindowHours, absenceThresholdPercent, and isActive fields consistent with request.",
+        "Call GET /v1/policies/{policyId} or filter GET /v1/policies by scope to confirm persistence."
+      ],
+      "expected": "Create returns HTTP 200 with standard envelope; data reflects all submitted FR-24 policy attributes; meta includes requestId and timestamp; persisted policy is retrievable by id or scope filter.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-24-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-24", "FR-15", "FR-36"],
+      "title": "POST /v1/auth/login as AcademicAdmin then GET /v1/me before policy configuration",
+      "preconditions": [
+        "AcademicAdmin test account exists with known credentials.",
+        "No active bearer token is cached in the test client."
+      ],
+      "steps": [
+        "Call POST /v1/auth/login with AcademicAdmin identifier and password.",
+        "Inspect HTTP 200 response for accessToken and role AcademicAdmin in data envelope.",
+        "Call GET /v1/me with Authorization Bearer token from login response.",
+        "Assert data exposes actor userId, role AcademicAdmin, and institution scope required for POST /v1/policies.",
+        "Proceed to POST /v1/policies using the same token and confirm HTTP 200 (authorized actor gate)."
+      ],
+      "expected": "Auth gate per FR-15 and FR-36 succeeds: login returns AcademicAdmin token; GET /v1/me confirms privileged actor identity and scope; subsequent POST /v1/policies is authorized for FR-24 configuration.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-24-007",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["FR-24", "FR-25", "BR-20"],
+      "title": "WF-01 academic setup optional step 4 configures section policy override via POST /v1/policies",
+      "preconditions": [
+        "AcademicAdmin completes WF-01 steps 1–3: class section created, enrollments imported, sessions generated in Scheduled state.",
+        "Institution default policy exists with presentWindowMinutes 10.",
+        "No section-scoped override exists yet for the target class section."
+      ],
+      "steps": [
+        "AcademicAdmin calls POST /v1/policies with scopeType ClassSection and presentWindowMinutes 25 plus other FR-24 fields.",
+        "Open a Scheduled session for the section and resolve effective policy at session scheduled start.",
+        "Verify WF-01 completion criterion: effective policy can be resolved at check-in time with section override values.",
+        "Confirm institution default fields not overridden still fall back from parent levels per BR-20."
+      ],
+      "expected": "WF-01 step 4 optional policy configuration succeeds; effective policy resolves with section-specific presentWindowMinutes 25; WF-01 completion criterion 'Optional policy configured — effective policy can be resolved at check-in time' is satisfied per FR-24, FR-25, BR-20.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-24-008",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P0",
+      "traceability": ["FR-24", "BR-20"],
+      "title": "Academic Admin updates existing section policy via PATCH to change manual-edit window and GPS settings",
+      "preconditions": [
+        "Active class-section policy exists with manualEditWindowHours 24 and gpsRequired false.",
+        "AcademicAdmin is authenticated.",
+        "Open or upcoming session exists for the section to observe downstream policy effect."
+      ],
+      "steps": [
+        "Record beforeState: GET /v1/policies/{policyId} manualEditWindowHours and gpsRequired values.",
+        "Call PATCH /v1/policies/{policyId} setting manualEditWindowHours 72 and gpsRequired true with gpsRadiusMeters 150.",
+        "Record afterState via GET /v1/policies/{policyId}.",
+        "Resolve effective policy for the section and assert manualEditWindowHours 72 and gpsRequired true.",
+        "Verify unchanged fields (e.g. presentWindowMinutes) retain prior values."
+      ],
+      "expected": "Alternate configuration path updates persisted policy without re-creating scope row; afterState reflects new manual-edit window and GPS requirement; effective policy resolution immediately uses updated FR-24 fields per BR-20.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-24-009",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-c",
+      "priority": "P0",
+      "traceability": ["FR-24", "FR-29", "BR-22"],
+      "title": "Flow C audit verification after critical attendance policy configuration change",
+      "preconditions": [
+        "Active section-scoped policy exists with gpsRequired false and known policyId.",
+        "AcademicAdmin is authenticated.",
+        "Audit query endpoint GET /v1/audit-logs is available to AcademicAdmin read scope."
+      ],
+      "steps": [
+        "Record beforeState policy fields via GET /v1/policies/{policyId}.",
+        "AcademicAdmin calls PATCH /v1/policies/{policyId} changing absenceThresholdPercent from 20 to 25 and adminApprovalRequired from false to true.",
+        "Query GET /v1/audit-logs with filters targetType AttendancePolicy, targetId policyId, and time range covering the mutation.",
+        "Verify audit payload includes actor, action type, old_value JSON with prior threshold and approval rule, new_value JSON with updated values, and timestamp."
+      ],
+      "expected": "Critical FR-24 policy mutation produces immutable audit record per BR-22 with actor AcademicAdmin, target policy id, old and new configuration snapshots; no mutation audit gap for privileged policy configuration changes.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-24-010",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["FR-24", "AC-09", "FR-34"],
+      "title": "Configured gpsRequired policy drives GpsRequired rejection on POST /v1/check-ins",
+      "preconditions": [
+        "Section-scoped policy configured with gpsRequired true via POST /v1/policies.",
+        "Open class session exists for the section with valid qrToken.",
+        "Authenticated enrolled student has no prior successful attendance.",
+        "Check-in request omits GPS location payload intentionally."
+      ],
+      "steps": [
+        "AcademicAdmin confirms effective policy gpsRequired true for the session section.",
+        "Student calls POST /v1/check-ins with valid qrToken and Authorization but without GPS coordinates.",
+        "Inspect HTTP 422 (or documented validation status) and error.code GpsRequired in response envelope.",
+        "Query GET /v1/class-sessions/{sessionId}/attendance and assert student remains Pending with failed attempt logged."
+      ],
+      "expected": "FR-24 gpsRequired configuration flows to runtime check-in validation per AC-09: missing GPS payload is rejected with GpsRequired reason code; no Present/Late AttendanceRecord is created; policy configuration directly governs check-in behavior.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-24-011",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["FR-24", "BR-19"],
+      "title": "Non-AcademicAdmin roles denied POST and PATCH /v1/policies",
+      "preconditions": [
+        "Student, Lecturer, DepartmentAdmin, and ITAdmin test accounts exist with valid authentication tokens.",
+        "At least one attendance policy exists in the system.",
+        "AcademicAdmin control token is available to verify policy unchanged after denied attempts."
+      ],
+      "steps": [
+        "Call POST /v1/policies with valid policy payload as Student, Lecturer, DepartmentAdmin, and ITAdmin.",
+        "Call PATCH /v1/policies/{policyId} as Lecturer and DepartmentAdmin.",
+        "Call GET /v1/policies as Student (AttendancePolicy.read Deny).",
+        "Query attendance_policies table or GET as AcademicAdmin to confirm no unauthorized mutations occurred."
+      ],
+      "expected": "All unauthorized role requests return HTTP 403 Forbidden per permission matrix (AttendancePolicy.update Deny for non-AcademicAdmin); Student denied policy list read; no policy rows created or modified by denied actors; no partial restricted policy datasets leaked.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-24-012",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["FR-24"],
+      "title": "POST /v1/policies rejects contradictory present and late window configuration with 400 InvalidPayload",
+      "preconditions": [
+        "AcademicAdmin is authenticated.",
+        "Target class section exists.",
+        "FRM-07 cross-field validation rules apply: present window must precede late window end without invalid overlap."
+      ],
+      "steps": [
+        "Send POST /v1/policies with presentWindowMinutes 30 and lateWindowMinutes 10 such that late window ends before present window end (contradictory configuration).",
+        "Read HTTP status and error.code from response envelope.",
+        "Query attendance_policies for the target scope and confirm no row was created.",
+        "Repeat with absenceThresholdPercent 150 (outside 0–100 range) and confirm rejection."
+      ],
+      "expected": "API returns HTTP 400 with InvalidPayload or equivalent validation error for contradictory windows and out-of-range absence threshold; no attendance_policies row is persisted for invalid payloads per FRM-07 validation rules.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-24-013",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["FR-24"],
+      "title": "Policy create rejects gpsRadiusMeters when gpsRequired is false",
+      "preconditions": [
+        "AcademicAdmin auth context is available.",
+        "Class section fixture exists.",
+        "Database CHECK constraint requires gps_radius_meters > 0 when present."
+      ],
+      "steps": [
+        "Submit policy configuration with gpsRequired false and gpsRadiusMeters 100.",
+        "Observe API or service-layer validation response.",
+        "Submit policy with gpsRequired true and gpsRadiusMeters 0 or negative.",
+        "Confirm neither invalid payload persists a row in attendance_policies."
+      ],
+      "expected": "gpsRadiusMeters is only accepted when gpsRequired is true per FRM-07 field gating; zero or negative radius is rejected; gpsRequired false with radius payload returns validation error without persistence.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-FR-24-014",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-24"],
+      "title": "Academic Admin browser journey on PG-12 policies list with scopeLevel filter and pagination",
+      "preconditions": [
+        "AcademicAdmin is logged in on desktop Chromium.",
+        "Admin navigation exposes Policies page at /admin/policies.",
+        "Multiple policies exist across institution, course, and class-section scope levels."
+      ],
+      "steps": [
+        "Navigate to /admin/policies and verify TableToolbar, DataTable, and policy columns (scope level, scope name, updated timestamp).",
+        "Apply scopeLevel filter to ClassSection and verify active filter chip renders per FR-TTB-02.",
+        "Verify pagination controls show 'Showing X–Y of Z' with scoped count only.",
+        "Sort by updatedAt descending and confirm table order updates without full page reload."
+      ],
+      "expected": "PG-12 displays paginated policy list with scopeLevel filter, sort, and search per listing matrix §PG-12; filtered results remain within AcademicAdmin authorized scope; table state syncs with route query params.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-24-015",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["FR-24", "FR-25"],
+      "title": "FRM-07 policy form gates GPS radius field and PolicyResolutionSummary previews effective precedence",
+      "preconditions": [
+        "AcademicAdmin is logged in on /admin/policies create or edit route.",
+        "Institution default policy and course-level override exist for a target class section hierarchy.",
+        "PolicyResolutionSummary (DC-09) component is rendered on the form."
+      ],
+      "steps": [
+        "Open FRM-07 create/edit form and set scope level radio to class section.",
+        "Enter present window, late window, absence threshold, manual-edit window, and excused-absence toggle values.",
+        "Toggle GPS required off and verify GPS radius (m) field is disabled or hidden.",
+        "Toggle GPS required on and verify GPS radius field becomes editable with default 100.",
+        "Inspect PolicyResolutionSummary accordion showing precedence chain (section → course → faculty → institution) and resolved effective values before save.",
+        "Submit valid form and observe success feedback; confirm new or updated policy appears in PG-12 list."
+      ],
+      "expected": "FRM-07 enforces cross-field GPS gating per FR-24; PolicyResolutionSummary previews BR-20 precedence resolution with per-field source level; save succeeds and PG-12 reflects the configured policy without silent field drops.",
+      "edgeCase": false
+    }
+  ]
+}

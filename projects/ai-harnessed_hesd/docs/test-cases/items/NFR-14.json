@@ -1,0 +1,348 @@
+{
+  "productItemId": "NFR-14",
+  "version": 1,
+  "docFingerprint": "sha256:0091ebfac485b5b90c7a94c982196a35adddc3e7535aba555ed532f8d1599fd9",
+  "generatedAt": "2026-07-02T18:00:00Z",
+  "cases": [
+    {
+      "id": "TC-NFR-14-001",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["NFR-14", "AC-06", "AC-04", "AC-08", "AC-09", "AC-10", "FR-16", "FR-22"],
+      "title": "Testing-plan §6.2 browser matrix and §4.1 localization gate cover NFR-14 student check-in UX scenarios",
+      "preconditions": [
+        "Testing-plan §6.2 browser matrix (iOS Safari, Android Chrome, Chromium mobile emulation) and release readiness §4.1 localized rejection reason gate apply.",
+        "Fixture matrix seeds open session, enrolled student, gps-required session, expired token, and prior-success duplicate state.",
+        "NFR-14 requires concise Vietnamese guidance for expired QR, login required, GPS denied, out-of-radius, and duplicate attempts per 07-non-functional-risk §2.5."
+      ],
+      "steps": [
+        "Map each NFR-14 failure scenario to testing-plan §3 student validation row (AC-06 to AC-10) and 12-ui-states §5.1 outcome catalog.",
+        "For ExpiredQr, Unauthenticated, GpsDisabled, OutOfRadius, and DuplicateCheckIn, verify integration harness can drive API outcome and resolve expected vi-VN copy key.",
+        "Confirm mobile-web viewport profile (375px width) is the default harness context for student PG-02 flows.",
+        "Record pass/fail per scenario against NFR-14 mobile-first UX and localization requirements."
+      ],
+      "expected": "All five NFR-14 mandated failure scenarios are represented in the verification matrix with mapped outcome codes, Vietnamese copy intent from 12-ui-states §5.1, and mobile browser targets per testing-plan §6.2; release readiness §4.1 localized student-facing errors gate is satisfiable.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-14-002",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-14", "FR-22", "BR-23", "AC-18"],
+      "title": "Check-in outcome i18n mapper resolves API error codes to Vietnamese copy at module boundary",
+      "preconditions": [
+        "Integration environment loads vi-VN locale bundle for student-facing check-in messages per 08-forms-validation-ux.md §5.",
+        "Error mapper module maps API §3.2 outcome codes to 12-ui-states §5.1 page state IDs and copy templates.",
+        "Real database persists CheckInAttempt rows for failed outcomes used in mapping verification."
+      ],
+      "steps": [
+        "Drive check-in service to persist failed attempts with outcomes ExpiredQr, GpsDisabled, OutOfRadius, DuplicateCheckIn, and NotEnrolled.",
+        "Invoke i18n/error-mapper module for each outcome code with locale vi-VN.",
+        "Assert returned message matches authoritative copy intent (e.g. 'Mã QR đã hết hạn', 'Cần quyền vị trí', 'Ngoài phạm vi lớp', 'Bạn đã điểm danh buổi học này rồi.').",
+        "Verify mapper also returns correct page state ID (failure-expired-qr, failure-gps-denied, failure-out-of-radius, failure-duplicate) and retry-allowed flag per 12-ui-states §5.1."
+      ],
+      "expected": "Module boundary consistently maps each NFR-14 failure outcome to concise Vietnamese student copy and correct UI state metadata without requiring UI layer for resolution; persisted CheckInAttempt outcome codes align with mapper inputs per FR-22 and BR-23.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-14-003",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-14", "FR-15", "AC-06", "BR-05"],
+      "title": "Auth gate module preserves check-in deep-link return URL through login redirect chain",
+      "preconditions": [
+        "Integration auth module enforces FR-15 login gate with returnUrl preservation per FLOW-01 step 2.",
+        "Unauthenticated request targets PG-02 /check-in?token={validToken} for an open session.",
+        "vi-VN locale bundle includes Unauthenticated copy 'Đăng nhập để tiếp tục' per 12-ui-states §5.1."
+      ],
+      "steps": [
+        "Invoke auth middleware for unauthenticated GET /check-in?token={validToken}.",
+        "Assert redirect target is /login with encoded returnUrl containing original token query parameter.",
+        "Simulate successful POST /v1/auth/login and verify redirect returns to /check-in?token={validToken} unchanged.",
+        "Resolve localized login-required message for authenticating state."
+      ],
+      "expected": "Auth gate module preserves deep-link token through login redirect chain; localized Vietnamese login-required guidance is available for the authenticating state per NFR-14 login-required scenario and AC-06.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-14-004",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-14", "AC-04", "FR-22", "BR-03"],
+      "title": "HTTP contract POST /v1/check-ins returns 422 ExpiredQr envelope driving failure-expired-qr UI",
+      "preconditions": [
+        "Open class session exists; enrolled student is authenticated.",
+        "Expired qrToken is supplied on check-in submission.",
+        "E2E harness validates standard { data, meta, error } response envelope per API §2.3."
+      ],
+      "steps": [
+        "Send POST /v1/check-ins with expired qrToken, clientTimestamp, Idempotency-Key, and student Authorization header.",
+        "Validate HTTP 422 status and error.code ExpiredQr.",
+        "Inspect error.message or localized message field for Vietnamese expired-QR guidance intent.",
+        "Verify data is null and no successful attendance outcome is returned."
+      ],
+      "expected": "API returns HTTP 422 with error.code ExpiredQr and student-facing Vietnamese message intent ('Mã QR đã hết hạn. Vui lòng quét mã mới.' per 08-forms-validation-ux.md §5); response envelope is consumable by mobile PG-02 CheckInResultScreen failure-expired-qr state per NFR-14.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-14-005",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-14", "AC-06", "FR-15", "BR-05"],
+      "title": "HTTP contract unauthenticated POST /v1/check-ins returns 401 login-required envelope",
+      "preconditions": [
+        "Open class session with valid qrToken exists.",
+        "No Authorization header is supplied on check-in request.",
+        "Auth contract per API §6.1 pipeline step 1 applies."
+      ],
+      "steps": [
+        "Send POST /v1/check-ins with valid qrToken and required body fields but without Bearer token.",
+        "Validate HTTP 401 status and error.code Unauthenticated.",
+        "Inspect error message for Vietnamese login-required copy intent ('Vui lòng đăng nhập để tiếp tục.').",
+        "Verify no CheckInAttempt success or attendance mutation occurs."
+      ],
+      "expected": "Unauthenticated check-in returns HTTP 401 with standard envelope and Unauthenticated error code; message supports NFR-14 login-required UX and AC-06 gate without disclosing attendance data.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-14-006",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["NFR-14", "FR-16", "AC-06", "AC-11", "NFR-01"],
+      "title": "FLOW-01 mobile-web primary check-in journey uses single-column PG-02 layout to success-present",
+      "preconditions": [
+        "Student actor uses mobile-web profile per testing-plan §6.2.",
+        "Open session with valid rotating QR; student is enrolled and not yet checked in.",
+        "FLOW-01 steps 1–6 apply with GPS policy satisfied or not required."
+      ],
+      "steps": [
+        "Student opens /check-in?token={validToken} on mobile viewport (375px width).",
+        "Complete login redirect if unauthenticated; grant GPS if policy requires.",
+        "Submit check-in and await terminal outcome.",
+        "Verify CheckInResultScreen renders success-present or success-late with Vietnamese status copy and timestamp.",
+        "Confirm PG-02 uses full-width single-column layout with readable mobile typography per 11-wireframes §LAY-01."
+      ],
+      "expected": "Primary FLOW-01 mobile-web journey completes on PG-02 with mobile-first single-column layout, decisive Vietnamese success copy, and CheckInResultScreen outcome per NFR-14 and AC-11 without desktop-only affordances.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-14-007",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P0",
+      "traceability": ["NFR-14", "FR-22", "AC-18", "AC-04", "AC-08", "AC-09", "AC-10"],
+      "title": "FLOW-02 rejection branches surface concise Vietnamese guidance and recoverable next actions",
+      "preconditions": [
+        "Mobile-web E2E harness can drive each FLOW-02 rejection branch per 10-user-flows §2.2.",
+        "Fixtures exist for ExpiredQr, GpsDisabled, OutOfRadius, DuplicateCheckIn, and Unauthenticated paths.",
+        "12-ui-states §5.1 defines alert variant and retry-allowed flag per outcome."
+      ],
+      "steps": [
+        "ExpiredQr branch: submit expired token; verify danger alert with retry CTA and Vietnamese rescan guidance.",
+        "GpsDisabled branch: deny GPS on gps-required session; verify warning alert with enable-location guidance.",
+        "OutOfRadius branch: submit out-of-radius coordinates; verify warning alert with move-closer or manual-fallback guidance.",
+        "DuplicateCheckIn branch: resubmit after success; verify info alert without retry CTA and existing status display.",
+        "Unauthenticated branch: open check-in without session; verify redirect to PG-01 with return URL preservation."
+      ],
+      "expected": "Each FLOW-02 rejection branch renders concise Vietnamese copy and correct recovery affordance (retry CTA, redirect login, or no-retry info) per NFR-14 mandated scenarios and 12-ui-states §5.1; no ambiguous intermediate states on PG-02.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-14-008",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["NFR-14", "FR-22", "AC-04"],
+      "title": "Narrow mobile viewport 320px preserves readable Vietnamese error copy without horizontal overflow",
+      "preconditions": [
+        "Student check-in PG-02 is rendered at minimum supported mobile width (320px) per C-02 device variance constraint.",
+        "Expired qrToken triggers ExpiredQr failure path.",
+        "Harness can measure layout overflow and text truncation."
+      ],
+      "steps": [
+        "Set viewport to 320px width mobile profile.",
+        "Navigate to /check-in?token={expired} and submit check-in.",
+        "Observe CheckInResultScreen failure-expired-qr alert at narrow width.",
+        "Measure for horizontal scroll, clipped text, or unreadable truncated Vietnamese message.",
+        "Repeat with DuplicateCheckIn info alert at 320px width."
+      ],
+      "expected": "At 320px mobile boundary, Vietnamese error guidance remains fully readable without horizontal overflow or clipped copy; alert and CTA controls remain usable per NFR-14 mobile-first resilience under device variance (C-02).",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-14-009",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-14", "AC-04", "FR-22", "BR-03"],
+      "title": "Mobile PG-02 ExpiredQr journey shows Vietnamese rescan guidance with retry CTA",
+      "preconditions": [
+        "Student is on mobile-web viewport (Chromium mobile emulation, 375px) at PG-02 /check-in.",
+        "Open session exists; deep link supplies expired qrToken query parameter.",
+        "Lecturer QR display is refreshing on PG-05 for recovery context."
+      ],
+      "steps": [
+        "Navigate to /check-in?token={expired} as enrolled student.",
+        "Submit check-in from mobile check-in form.",
+        "Observe CheckInResultScreen failure-expired-qr danger alert with Vietnamese copy (e.g. 'Mã QR đã hết hạn').",
+        "Verify retry/rescan CTA is visible and actionable on mobile touch target.",
+        "Rescan with fresh valid token and confirm success path is reachable."
+      ],
+      "expected": "Mobile browser renders ExpiredQr failure with concise Vietnamese rescan guidance and recoverable retry CTA per NFR-14 and 12-ui-states §5.1; student can recover without desktop-only controls.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-14-010",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-14", "AC-06", "FR-15", "BR-05"],
+      "title": "Unauthenticated mobile check-in redirects to PG-01 login with Vietnamese guidance and return URL",
+      "preconditions": [
+        "Student has no active session cookie on mobile-web viewport.",
+        "Valid check-in deep link /check-in?token={validToken} targets an open session.",
+        "PG-01 login page is reachable."
+      ],
+      "steps": [
+        "Navigate to /check-in?token={validToken} without authentication.",
+        "Observe redirect to /login with returnUrl preserving token query parameter.",
+        "Verify login page or interim state shows Vietnamese login-required messaging ('Đăng nhập để tiếp tục' or 'Vui lòng đăng nhập để tiếp tục.').",
+        "Complete login with valid student credentials.",
+        "Confirm browser returns to /check-in?token={validToken} and check-in form is ready."
+      ],
+      "expected": "Mobile login-required flow preserves deep-link token, surfaces concise Vietnamese authentication guidance, and returns student to PG-02 after successful login per NFR-14 and AC-06.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-14-011",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-14", "AC-09", "FR-34", "FR-35", "BR-08"],
+      "title": "Mobile PG-02 GpsDisabled journey shows Vietnamese location-permission guidance",
+      "preconditions": [
+        "gps-required-session fixture is active with open session.",
+        "Student is logged in on mobile-web viewport at PG-02.",
+        "Browser geolocation permission is denied or blocked for the origin."
+      ],
+      "steps": [
+        "Navigate to /check-in?token={validToken} for gps-required session.",
+        "Deny or block GPS permission when GpsPermissionPrompt appears.",
+        "Submit check-in attempt.",
+        "Observe CheckInResultScreen failure-gps-denied warning alert with Vietnamese copy (e.g. 'Cần quyền vị trí').",
+        "Verify recovery guidance explains enabling location or contacting lecturer for manual fallback per FLOW-03 step 5."
+      ],
+      "expected": "GPS-denied mobile journey renders concise Vietnamese location-permission guidance with recoverable next action per NFR-14; no false success state; manual fallback path is referenced per AC-09.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-14-012",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-14", "AC-10", "FR-35", "BR-09", "BR-10"],
+      "title": "Mobile PG-02 OutOfRadius journey shows Vietnamese out-of-radius guidance",
+      "preconditions": [
+        "gps-required-session fixture has room coordinates and configured radius.",
+        "Student is logged in on mobile-web viewport with GPS permission granted.",
+        "Harness can supply coordinates outside configured radius."
+      ],
+      "steps": [
+        "Navigate to /check-in?token={validToken} on mobile viewport.",
+        "Grant GPS permission and supply out-of-radius coordinates via harness geolocation mock.",
+        "Submit check-in.",
+        "Observe CheckInResultScreen failure-out-of-radius warning alert with Vietnamese copy (e.g. 'Ngoài phạm vi lớp').",
+        "Verify recovery guidance suggests moving closer or lecturer manual fallback without retry spam."
+      ],
+      "expected": "Out-of-radius mobile failure surfaces concise Vietnamese guidance with appropriate warning styling and recovery steps per NFR-14 and AC-10; student understands next action without desktop-only affordances.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-14-013",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-14", "AC-08", "FR-18", "BR-07"],
+      "title": "Mobile PG-02 DuplicateCheckIn journey shows Vietnamese info alert without retry CTA",
+      "preconditions": [
+        "Student is logged in on mobile-web viewport.",
+        "Student has already completed successful check-in (Present or Late) for the target open session.",
+        "Fresh valid qrToken is available via deep link for second submission."
+      ],
+      "steps": [
+        "Navigate to /check-in?token={validToken} for already-checked-in session.",
+        "Submit check-in from mobile form.",
+        "Observe CheckInResultScreen failure-duplicate info alert with Vietnamese copy (e.g. 'Bạn đã điểm danh buổi học này rồi.').",
+        "Verify no retry/submit CTA is shown.",
+        "Confirm existing success status and timestamp are displayed on result screen."
+      ],
+      "expected": "Duplicate attempt mobile UI renders info alert with concise Vietnamese duplicate guidance, no retry CTA, and visible prior success status per NFR-14 and FLOW-02 DuplicateCheckIn branch.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-14-014",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-14", "FR-16", "NFR-UI-11"],
+      "title": "Mobile PG-02 check-in controls meet 44px minimum touch targets on 375px viewport",
+      "preconditions": [
+        "Student is on mobile-web viewport width 375px at PG-02 check-in page.",
+        "Open session with valid token; student is authenticated.",
+        "Accessibility checklist CHK-A11Y-05 and 13-accessibility-basics.md touch target rules apply."
+      ],
+      "steps": [
+        "Navigate to /check-in?token={validToken} on 375px mobile viewport.",
+        "Measure bounding box height and width of primary submit CTA and any visible retry/recovery buttons.",
+        "If GpsPermissionPrompt is shown, measure allow/deny action touch targets.",
+        "Verify single-column full-width CTA layout per 11-wireframes §LAY-01.",
+        "Confirm no controls require pinch-zoom or horizontal scroll to activate."
+      ],
+      "expected": "Primary student check-in CTAs and recovery actions meet 44px minimum touch target on 375px viewport per NFR-UI-11; mobile-first layout uses full-width controls suitable for classroom check-in pressure per NFR-14.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-14-015",
+      "category": "edge",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["NFR-14", "FR-16"],
+      "title": "Physical iOS Safari and Android Chrome pilot verify NFR-14 mobile check-in UX on campus devices",
+      "preconditions": [
+        "Staging pilot uses real iOS Safari and Android Chrome per testing-plan §6.2 browser matrix.",
+        "Open session with valid QR; enrolled student physical devices available on campus network.",
+        "Physical device matrix and native browser permission dialogs are not reproducible in Playwright MCP harness."
+      ],
+      "steps": [
+        "Student scans classroom QR on iOS Safari; complete login, GPS, and check-in or failure recovery flow.",
+        "Repeat on Android Chrome with at least one NFR-14 failure scenario (expired QR or GPS denied).",
+        "Verify Vietnamese copy renders correctly on physical device screens without layout breakage.",
+        "Confirm touch interactions work without mis-taps on primary CTAs."
+      ],
+      "expected": "Physical mobile browsers deliver NFR-14 mobile-first check-in UX with readable Vietnamese guidance on real devices; provides production-like evidence beyond Chromium emulation.",
+      "edgeCase": true,
+      "harnessSkip": "physical-device"
+    }
+  ]
+}

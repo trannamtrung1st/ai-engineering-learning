@@ -1,0 +1,371 @@
+{
+  "current": [],
+  "docFingerprint": null,
+  "tags": {
+    "AC-01": {
+      "current": true,
+      "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+      "generatedAt": "2026-07-02T09:42:15Z"
+    },
+    "AC-02": {
+      "current": true,
+      "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+      "generatedAt": "2026-07-02T09:43:41Z"
+    },
+    "AC-04": {
+      "current": true,
+      "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+      "generatedAt": "2026-07-02T09:45:04Z"
+    },
+    "AC-05": {
+      "current": true,
+      "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+      "generatedAt": "2026-07-02T09:45:59Z"
+    },
+    "AC-06": {
+      "current": true,
+      "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+      "generatedAt": "2026-07-02T09:49:06Z"
+    },
+    "AC-07": {
+      "current": true,
+      "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+      "generatedAt": "2026-07-02T09:50:57Z"
+    },
+    "AC-08": {
+      "current": true,
+      "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+      "generatedAt": "2026-07-02T09:53:24Z"
+    },
+    "AC-09": {
+      "current": true,
+      "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+      "generatedAt": "2026-07-02T09:55:22Z"
+    },
+    "AC-10": {
+      "current": true,
+      "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+      "generatedAt": "2026-07-02T09:57:32Z"
+    },
+    "AC-11": {
+      "current": true,
+      "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+      "generatedAt": "2026-07-02T09:59:55Z"
+    },
+    "AC-12": {
+      "current": true,
+      "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+      "generatedAt": "2026-07-02T10:01:56Z"
+    },
+    "AC-13": {
+      "current": true,
+      "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+      "generatedAt": "2026-07-02T10:07:28Z"
+    },
+    "AC-14": {
+      "current": true,
+      "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+      "generatedAt": "2026-07-02T10:09:55Z"
+    },
+    "AC-15": {
+      "current": true,
+      "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+      "generatedAt": "2026-07-02T10:11:21Z"
+    },
+    "AC-16": {
+      "current": true,
+      "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+      "generatedAt": "2026-07-02T10:12:42Z"
+    },
+    "AC-17": {
+      "current": true,
+      "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+      "generatedAt": "2026-07-02T10:14:49Z"
+    },
+    "AC-18": {
+      "current": true,
+      "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+      "generatedAt": "2026-07-02T10:18:15Z"
+    },
+    "AC-19": {
+      "current": true,
+      "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+      "generatedAt": "2026-07-02T10:19:57Z"
+    },
+    "AC-20": {
+      "current": true,
+      "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+      "generatedAt": "2026-07-02T10:24:59Z"
+    },
+    "AC-21": {
+      "current": true,
+      "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+      "generatedAt": "2026-07-02T10:27:34Z"
+    },
+    "AC-22": {
+      "current": true,
+      "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+      "generatedAt": "2026-07-02T10:29:34Z"
+    },
+    "AC-23": {
+      "current": true,
+      "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+      "generatedAt": "2026-07-02T10:33:24Z"
+    },
+    "AC-25": {
+      "current": true,
+      "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+      "generatedAt": "2026-07-02T10:36:11Z"
+    },
+    "FR-01": {
+      "current": true,
+      "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+      "generatedAt": "2026-07-02T10:38:42Z"
+    },
+    "FR-04": {
+      "current": true,
+      "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+      "generatedAt": "2026-07-02T10:40:29Z"
+    },
+    "FR-06": {
+      "current": true,
+      "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+      "generatedAt": "2026-07-02T10:43:27Z"
+    },
+    "FR-07": {
+      "current": true,
+      "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+      "generatedAt": "2026-07-02T10:46:26Z"
+    },
+    "FR-08": {
+      "current": true,
+      "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+      "generatedAt": "2026-07-02T10:48:18Z"
+    },
+    "FR-09": {
+      "current": true,
+      "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+      "generatedAt": "2026-07-02T10:50:13Z"
+    },
+    "FR-11": {
+      "current": true,
+      "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+      "generatedAt": "2026-07-02T10:53:04Z"
+    },
+    "FR-14": {
+      "current": true,
+      "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+      "generatedAt": "2026-07-02T10:56:13Z"
+    },
+    "FR-15": {
+      "current": true,
+      "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+      "generatedAt": "2026-07-02T10:57:45Z"
+    },
+    "FR-16": {
+      "current": true,
+      "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+      "generatedAt": "2026-07-02T11:00:37Z"
+    },
+    "FR-18": {
+      "current": true,
+      "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+      "generatedAt": "2026-07-02T11:02:15Z"
+    },
+    "FR-19": {
+      "current": true,
+      "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+      "generatedAt": "2026-07-02T11:04:23Z"
+    },
+    "FR-20": {
+      "current": true,
+      "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+      "generatedAt": "2026-07-02T11:06:40Z"
+    },
+    "FR-21": {
+      "current": true,
+      "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+      "generatedAt": "2026-07-02T11:09:26Z"
+    },
+    "FR-22": {
+      "current": true,
+      "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+      "generatedAt": "2026-07-02T11:12:39Z"
+    },
+    "FR-23": {
+      "current": true,
+      "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+      "generatedAt": "2026-07-02T11:15:17Z"
+    },
+    "FR-24": {
+      "current": true,
+      "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+      "generatedAt": "2026-07-02T11:18:32Z"
+    },
+    "FR-25": {
+      "current": true,
+      "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+      "generatedAt": "2026-07-02T11:21:46Z"
+    },
+    "FR-26": {
+      "current": true,
+      "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+      "generatedAt": "2026-07-02T11:25:58Z"
+    },
+    "FR-27": {
+      "current": true,
+      "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+      "generatedAt": "2026-07-02T11:28:45Z"
+    },
+    "FR-28": {
+      "current": true,
+      "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+      "generatedAt": "2026-07-02T11:31:36Z"
+    },
+    "FR-29": {
+      "current": true,
+      "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+      "generatedAt": "2026-07-02T11:33:41Z"
+    },
+    "FR-30": {
+      "current": true,
+      "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+      "generatedAt": "2026-07-02T11:35:37Z"
+    },
+    "FR-31": {
+      "current": true,
+      "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+      "generatedAt": "2026-07-02T11:37:57Z"
+    },
+    "FR-32": {
+      "current": true,
+      "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+      "generatedAt": "2026-07-02T11:40:36Z"
+    },
+    "FR-33": {
+      "current": true,
+      "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+      "generatedAt": "2026-07-02T11:43:53Z"
+    },
+    "FR-35": {
+      "current": true,
+      "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+      "generatedAt": "2026-07-02T11:46:00Z"
+    },
+    "FR-37": {
+      "current": true,
+      "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
+      "generatedAt": "2026-07-02T11:49:17Z"
+    },
+    "BR-01": {
+      "current": true,
+      "docFingerprint": "sha256:0421ca4affe3aa70584e3b352a860d11de519a5a2aaff8c4d8e0f12d14d1a70a",
+      "generatedAt": "2026-07-02T11:51:09Z"
+    },
+    "BR-02": {
+      "current": true,
+      "docFingerprint": "sha256:0421ca4affe3aa70584e3b352a860d11de519a5a2aaff8c4d8e0f12d14d1a70a",
+      "generatedAt": "2026-07-02T11:52:54Z"
+    },
+    "BR-03": {
+      "current": true,
+      "docFingerprint": "sha256:0421ca4affe3aa70584e3b352a860d11de519a5a2aaff8c4d8e0f12d14d1a70a",
+      "generatedAt": "2026-07-02T11:54:49Z"
+    },
+    "BR-06": {
+      "current": true,
+      "docFingerprint": "sha256:0421ca4affe3aa70584e3b352a860d11de519a5a2aaff8c4d8e0f12d14d1a70a",
+      "generatedAt": "2026-07-02T11:56:27Z"
+    },
+    "BR-07": {
+      "current": true,
+      "docFingerprint": "sha256:0421ca4affe3aa70584e3b352a860d11de519a5a2aaff8c4d8e0f12d14d1a70a",
+      "generatedAt": "2026-07-02T11:58:16Z"
+    },
+    "BR-13": {
+      "current": true,
+      "docFingerprint": "sha256:0421ca4affe3aa70584e3b352a860d11de519a5a2aaff8c4d8e0f12d14d1a70a",
+      "generatedAt": "2026-07-02T12:00:41Z"
+    },
+    "BR-14": {
+      "current": true,
+      "docFingerprint": "sha256:0421ca4affe3aa70584e3b352a860d11de519a5a2aaff8c4d8e0f12d14d1a70a",
+      "generatedAt": "2026-07-02T12:03:13Z"
+    },
+    "BR-17": {
+      "current": true,
+      "docFingerprint": "sha256:0421ca4affe3aa70584e3b352a860d11de519a5a2aaff8c4d8e0f12d14d1a70a",
+      "generatedAt": "2026-07-02T12:05:23Z"
+    },
+    "BR-18": {
+      "current": true,
+      "docFingerprint": "sha256:0421ca4affe3aa70584e3b352a860d11de519a5a2aaff8c4d8e0f12d14d1a70a",
+      "generatedAt": "2026-07-02T12:07:02Z"
+    },
+    "BR-19": {
+      "current": true,
+      "docFingerprint": "sha256:0421ca4affe3aa70584e3b352a860d11de519a5a2aaff8c4d8e0f12d14d1a70a",
+      "generatedAt": "2026-07-02T12:09:42Z"
+    },
+    "BR-20": {
+      "current": true,
+      "docFingerprint": "sha256:0421ca4affe3aa70584e3b352a860d11de519a5a2aaff8c4d8e0f12d14d1a70a",
+      "generatedAt": "2026-07-02T12:11:45Z"
+    },
+    "BR-22": {
+      "current": true,
+      "docFingerprint": "sha256:0421ca4affe3aa70584e3b352a860d11de519a5a2aaff8c4d8e0f12d14d1a70a",
+      "generatedAt": "2026-07-02T12:14:08Z"
+    },
+    "BR-23": {
+      "current": true,
+      "docFingerprint": "sha256:0421ca4affe3aa70584e3b352a860d11de519a5a2aaff8c4d8e0f12d14d1a70a",
+      "generatedAt": "2026-07-02T12:16:02Z"
+    },
+    "NFR-01": {
+      "current": true,
+      "docFingerprint": "sha256:0091ebfac485b5b90c7a94c982196a35adddc3e7535aba555ed532f8d1599fd9",
+      "generatedAt": "2026-07-02T12:17:56Z"
+    },
+    "NFR-03": {
+      "current": true,
+      "docFingerprint": "sha256:0091ebfac485b5b90c7a94c982196a35adddc3e7535aba555ed532f8d1599fd9",
+      "generatedAt": "2026-07-02T12:19:24Z"
+    },
+    "NFR-07": {
+      "current": true,
+      "docFingerprint": "sha256:0091ebfac485b5b90c7a94c982196a35adddc3e7535aba555ed532f8d1599fd9",
+      "generatedAt": "2026-07-02T12:21:26Z"
+    },
+    "NFR-09": {
+      "current": true,
+      "docFingerprint": "sha256:0091ebfac485b5b90c7a94c982196a35adddc3e7535aba555ed532f8d1599fd9",
+      "generatedAt": "2026-07-02T12:23:46Z"
+    },
+    "NFR-10": {
+      "current": true,
+      "docFingerprint": "sha256:0091ebfac485b5b90c7a94c982196a35adddc3e7535aba555ed532f8d1599fd9",
+      "generatedAt": "2026-07-02T12:25:42Z"
+    },
+    "NFR-13": {
+      "current": true,
+      "docFingerprint": "sha256:0091ebfac485b5b90c7a94c982196a35adddc3e7535aba555ed532f8d1599fd9",
+      "generatedAt": "2026-07-02T12:28:07Z"
+    },
+    "NFR-14": {
+      "current": true,
+      "docFingerprint": "sha256:0091ebfac485b5b90c7a94c982196a35adddc3e7535aba555ed532f8d1599fd9",
+      "generatedAt": "2026-07-02T12:30:43Z"
+    },
+    "NFR-15": {
+      "current": true,
+      "docFingerprint": "sha256:0091ebfac485b5b90c7a94c982196a35adddc3e7535aba555ed532f8d1599fd9",
+      "generatedAt": "2026-07-02T12:33:01Z"
+    },
+    "NFR-16": {
+      "current": true,
+      "docFingerprint": "sha256:0091ebfac485b5b90c7a94c982196a35adddc3e7535aba555ed532f8d1599fd9",
+      "generatedAt": "2026-07-02T12:36:46Z"
+    }
+  }
+}

@@ -1,0 +1,231 @@
+{
+  "productItemId": "NFR-03",
+  "version": 1,
+  "docFingerprint": "sha256:0091ebfac485b5b90c7a94c982196a35adddc3e7535aba555ed532f8d1599fd9",
+  "generatedAt": "2026-07-02T15:00:00Z",
+  "cases": [
+    {
+      "id": "TC-NFR-03-001",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["NFR-03", "AC-22", "FR-16", "FR-22", "FR-23", "BR-01"],
+      "title": "Testing-plan §11 NFR-03 verification row — valid check-in processing success rate at or above 99%",
+      "preconditions": [
+        "Testing-plan §7.1 performance tests and §11 NFR verification matrix row for NFR-03 apply.",
+        "Representative pilot load fixture is seeded: multiple open class sessions with enrolled students, valid rotating QR tokens, and satisfied authentication and policy preconditions.",
+        "Test harness can classify each POST /v1/check-ins attempt as rule-pass (valid) or rule-fail (intentional rejection) and aggregate success rate for the valid subset only."
+      ],
+      "steps": [
+        "Execute a representative campus load run where enrolled students submit rule-pass check-in requests (open session, valid token, authenticated, enrolled, policy satisfied).",
+        "For each rule-pass request, record terminal outcome: HTTP 200 with data.outcome Success and persisted AttendanceRecord, or processing failure (5xx, timeout, or Success not persisted).",
+        "Compute success rate as successful rule-pass requests divided by total rule-pass requests in the run.",
+        "Exclude intentional rule-fail attempts (ExpiredQr, NotEnrolled, DuplicateCheckIn, SessionClosed, etc.) from the valid-request denominator per NFR-03 definition."
+      ],
+      "expected": "Valid check-in processing success rate is >= 99% across the pilot load run, satisfying NFR-03 and linked AC-22 gate per testing-plan §7.1 and §11 minimum evidence.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-03-002",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-03", "FR-16", "FR-22", "FR-23", "BR-07", "BR-23"],
+      "title": "Check-in service atomically persists Success outcome and attendance record for valid requests",
+      "preconditions": [
+        "Real database transaction boundary is enabled for check-in service, CheckInAttempt, and AttendanceRecord modules.",
+        "Open class session with valid QR token exists; authenticated enrolled student has no prior success for the session.",
+        "Effective policy preconditions (GPS if required) are satisfied for the test student."
+      ],
+      "steps": [
+        "Submit POST /v1/check-ins with valid qrToken, clientTimestamp, Idempotency-Key, and student bearer token.",
+        "Verify CheckInAttempt row is inserted with outcome Success and correlation ID.",
+        "Verify AttendanceRecord row is created or updated to Present or Late in the same transaction boundary.",
+        "Repeat for a statistically meaningful sample of distinct valid requests under normal integration conditions."
+      ],
+      "expected": "Each rule-pass check-in command atomically persists Success attempt and attendance ledger row; sample success rate across valid integration requests is 100%, contributing to the >= 99% NFR-03 gate under aggregated load.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-03-003",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["NFR-03", "NFR-06", "AC-01", "AC-05", "FR-07", "FR-08", "BR-01", "BR-02"],
+      "title": "Valid check-ins succeed only when session is Open; closed-session rejections excluded from success-rate denominator",
+      "preconditions": [
+        "Class session exists in Scheduled state with enrolled students and assigned lecturer.",
+        "Lecturer bearer token is available for POST /v1/class-sessions/{sessionId}/open and /close.",
+        "Valid QR tokens are obtainable while session is Open."
+      ],
+      "steps": [
+        "POST /v1/class-sessions/{sessionId}/open as assigned Lecturer; verify state Open.",
+        "Submit rule-pass POST /v1/check-ins from enrolled students with valid tokens; record Success outcomes.",
+        "POST /v1/class-sessions/{sessionId}/close; verify state Closed.",
+        "Submit additional check-in with previously valid token after close; verify 422 SessionClosed rejection.",
+        "Aggregate success rate using only rule-pass requests submitted while session was Open."
+      ],
+      "expected": "All rule-pass requests during Open state achieve Success; post-close attempts are classified as rule-fail (SessionClosed) and excluded from valid-request denominator. Open-window valid success rate remains >= 99% per NFR-03.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-03-004",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P0",
+      "traceability": ["NFR-03", "NFR-01", "NFR-04", "NFR-07", "AC-08", "FR-18", "BR-07"],
+      "title": "Class-start concurrent burst on POST /v1/check-ins maintains >= 99% valid processing success",
+      "preconditions": [
+        "Multiple open class sessions each have 20+ enrolled students per representative pilot profile.",
+        "Test harness can fire parallel POST /v1/check-ins requests across sessions with distinct students, valid QR tokens, and unique Idempotency-Key values.",
+        "All requests satisfy session-open, token, enrollment, authentication, and policy preconditions per NFR-03 valid-request subset.",
+        "Retry storm subset replays same Idempotency-Key for already-accepted commands per testing-plan §7.2."
+      ],
+      "steps": [
+        "Trigger simultaneous rule-pass check-in submissions across concurrent open sessions mimicking class-start burst (performance-smoke profile).",
+        "Include idempotent replays: resubmit with same Idempotency-Key after Success; verify idempotent success response.",
+        "Include duplicate distinct submissions after Success; verify 409 DuplicateCheckIn classified as rule-fail, not processing failure.",
+        "Compute success rate for rule-pass first-attempt and idempotent-replay requests only."
+      ],
+      "expected": "Under class-start concurrency and retry storms, valid check-in processing success rate is >= 99% (NFR-03); idempotent replays return Success without duplicate attendance rows; intentional DuplicateCheckIn rejections are excluded from the valid-request denominator.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-03-005",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-03", "FR-16", "FR-22", "FR-23", "AC-22"],
+      "title": "POST /v1/check-ins returns HTTP 200 Success envelope for >= 99% of rule-pass requests under load",
+      "preconditions": [
+        "Open class sessions with valid qrTokens and enrolled students are seeded at pilot scale.",
+        "E2E harness can dispatch bulk rule-pass POST /v1/check-ins with Authorization, Idempotency-Key, and valid payloads.",
+        "Harness records HTTP status, envelope shape (data/meta/error), and data.outcome per request."
+      ],
+      "steps": [
+        "Dispatch N rule-pass POST /v1/check-ins requests (N >= 1000 for statistical confidence) across representative open sessions.",
+        "For each response, classify as processing success (HTTP 200, data.outcome Success, data.attendanceStatus Present or Late) or processing failure (5xx, timeout, or 200 without persisted success).",
+        "Compute success rate = processing successes / N.",
+        "Verify failed rule-pass responses use structured error envelope when applicable, not silent drops."
+      ],
+      "expected": "HTTP 200 success envelope with data.outcome Success is returned for >= 99% of rule-pass requests; success rate meets NFR-03 gate and API-G01 deterministic check-in under peak load target.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-03-006",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["NFR-03", "AC-22", "AC-01", "AC-06", "AC-11", "FR-07", "FR-16", "FR-23"],
+      "title": "WF-03 primary student check-in happy path achieves >= 99% processing success under expected load",
+      "preconditions": [
+        "Representative enrolled class sections with pilot-scale student counts are configured.",
+        "Lecturer has opened sessions with rotating valid QR tokens.",
+        "Student actors are enrolled, can authenticate, and satisfy policy preconditions for check-in."
+      ],
+      "steps": [
+        "For each representative section, enrolled students execute WF-03 happy path: obtain valid token, authenticate if needed, submit POST /v1/check-ins.",
+        "Classify each submission as rule-pass (eligible valid request) or rule-fail (intentional rejection scenario).",
+        "For rule-pass submissions only, record whether processing completed with Success and queryable Present or Late attendance.",
+        "Aggregate success rate across all rule-pass WF-03 attempts in the load run."
+      ],
+      "expected": "Primary WF-03 happy-path processing success rate for rule-pass requests is >= 99%, matching NFR-03 measurable objective and AC-22 acceptance gate.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-03-007",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["NFR-03", "AC-22", "FR-22"],
+      "title": "Processing success gate fails when valid request success rate falls below 99%",
+      "preconditions": [
+        "Performance test environment can simulate degraded conditions (service errors, DB contention, or capacity limits) affecting rule-pass request processing.",
+        "Load script records per-request classification (rule-pass vs rule-fail) and terminal processing outcome.",
+        "Release gate documentation requires explicit pass/fail evidence when NFR-03 is not met."
+      ],
+      "steps": [
+        "Run pilot load with rule-pass requests under controlled degradation until observed success rate approaches or falls below 99%.",
+        "Capture metric snapshot: total rule-pass requests, processing successes, processing failures (5xx/timeout/unpersisted), and computed rate.",
+        "Compare rate against NFR-03 >= 99% threshold and document gate pass/fail verdict.",
+        "Run control scenario under normal pilot profile to confirm PASS boundary when rate >= 99%."
+      ],
+      "expected": "When computed valid-request success rate is < 99%, NFR-03 gate is marked FAIL with documented metric evidence; when rate >= 99% under normal pilot profile, gate is PASS. Boundary validates measurability of the 99% non-functional threshold.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-03-008",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["NFR-03", "NFR-09", "FR-16", "BR-19"],
+      "title": "Non-Student roles denied POST /v1/check-ins and excluded from valid success-rate denominator",
+      "preconditions": [
+        "Open class session with valid qrToken exists in test environment.",
+        "Lecturer and ITAdmin bearer tokens are available per permission matrix (Submit QR check-in Deny).",
+        "Enrolled Student bearer token is available as authorized control for success-rate baseline."
+      ],
+      "steps": [
+        "Lecturer calls POST /v1/check-ins with valid qrToken and Authorization header.",
+        "ITAdmin calls POST /v1/check-ins with the same qrToken context.",
+        "Verify both receive HTTP 403 Forbidden per permission matrix.",
+        "Run parallel rule-pass Student submissions; compute success rate using only authenticated enrolled Student rule-pass requests."
+      ],
+      "expected": "Lecturer and ITAdmin receive 403 Forbidden; no CheckInAttempt or AttendanceRecord is created for non-student actors. Unauthorized attempts are excluded from NFR-03 valid-request denominator; Student rule-pass success rate remains >= 99%.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-03-009",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-03", "FR-16", "AC-06", "AC-11", "NFR-14"],
+      "title": "FLOW-01 mobile-web check-in journeys achieve >= 99% UI success confirmation under pilot load",
+      "preconditions": [
+        "Multiple open sessions with enrolled students are configured for parallel browser journeys.",
+        "Student actors use mobile-web viewport (Chromium mobile emulation) with valid check-in deep links.",
+        "Browser harness classifies each journey as rule-pass (eligible) and records terminal UI state (success-present, success-late, or processing failure)."
+      ],
+      "steps": [
+        "Navigate enrolled students in parallel to /check-in?token=... with valid tokens.",
+        "Complete login redirect if required; grant GPS prompt when policy requires.",
+        "Submit check-in and wait for CheckInResultScreen success status or error state.",
+        "Aggregate UI processing success rate for rule-pass journeys only across the pilot cohort."
+      ],
+      "expected": ">= 99% of rule-pass mobile-web check-in journeys reach CheckInResultScreen with success-present or success-late confirmation, satisfying NFR-03 processing success gate for UI-facing student flow.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-03-010",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["NFR-03", "FR-16", "AC-22"],
+      "title": "Pilot campus valid check-in success rate on physical mobile browsers under class-start load",
+      "preconditions": [
+        "Staging pilot uses real iOS Safari or Android Chrome on campus Wi-Fi per testing-plan §6.2 browser matrix.",
+        "Multiple open class sessions with enrolled students; lecturer displays classroom QR.",
+        "Physical devices and campus network peak load are not reproducible in Playwright MCP harness."
+      ],
+      "steps": [
+        "During representative class-start window, enrolled students scan QR and complete check-in on physical mobile devices.",
+        "Classify each attempt as rule-pass or rule-fail; record whether processing completed with success confirmation.",
+        "Aggregate valid-request success rate across pilot sessions.",
+        "Compare against NFR-03 >= 99% threshold for release evidence."
+      ],
+      "expected": "Physical pilot demonstrates >= 99% processing success for rule-pass check-in requests under real campus load, providing production-like evidence for NFR-03 beyond emulated harness runs.",
+      "edgeCase": false,
+      "harnessSkip": "physical-device"
+    }
+  ]
+}

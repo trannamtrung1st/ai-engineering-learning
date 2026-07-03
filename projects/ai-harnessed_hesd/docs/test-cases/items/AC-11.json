@@ -1,0 +1,233 @@
+{
+  "productItemId": "AC-11",
+  "version": 1,
+  "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+  "generatedAt": "2026-07-02T09:58:53Z",
+  "cases": [
+    {
+      "id": "TC-AC-11-001",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["AC-11", "FR-23", "BR-11", "BR-12"],
+      "title": "Scenario matrix row for attendance status assignment Present vs Late per policy windows",
+      "preconditions": [
+        "Testing-plan §3 Attendance status assignment block applies (FR-23, BR-11, BR-12, AC-11).",
+        "attendance-open-session fixture: Lecturer has opened a Scheduled session via POST /v1/class-sessions/{sessionId}/open (AC-01); session is Open with rotating valid QR token.",
+        "Effective policy defines presentWindowMinutes and lateWindowMinutes relative to session scheduled start.",
+        "Two authenticated enrolled students exist with no successful attendance record for the session."
+      ],
+      "steps": [
+        "Resolve effective attendance policy for the open session and record present window end timestamp.",
+        "Student A submits check-in with valid qrToken while server check-in timestamp falls within present window.",
+        "Student B submits check-in with valid qrToken while server check-in timestamp falls after present window end but before session Closed.",
+        "Query AttendanceRecord and CheckInAttempt rows for both students."
+      ],
+      "expected": "Student A receives status Present with checkInMethod QR and recorded checkInAt; Student B receives status Late with checkInMethod QR and recorded checkInAt; both have CheckInAttempt outcome Success per AC-11 coverage row.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-11-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["AC-11", "FR-23", "BR-11", "BR-23"],
+      "title": "Attendance ledger persists Present with QR method and timestamp within present window",
+      "preconditions": [
+        "Real database transaction is enabled for policy resolution, check-in, and attendance ledger modules.",
+        "Open class session exists with valid qrToken; effective policy presentWindowMinutes=15 from scheduled start.",
+        "Authenticated enrolled student has no existing AttendanceRecord for (classSessionId, studentUserId).",
+        "Check-in timestamp is configured to fall within present window (e.g. scheduledStart + 5 minutes)."
+      ],
+      "steps": [
+        "Capture beforeState: student roster row is Pending with no success AttendanceRecord.",
+        "Invoke check-in command passing validation order steps 1–6 with valid qrToken and check-in time within present window.",
+        "Query attendance_records and check_in_attempts within the same transaction boundary.",
+        "Verify GET /v1/class-sessions/{sessionId}/attendance roster row for the student."
+      ],
+      "expected": "BR-11 creates AttendanceRecord with attendanceStatus Present, checkInMethod QR, and non-null checkInAt; CheckInAttempt persists outcome Success; roster row reflects Present with latestAttemptOutcome Success.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-11-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["AC-11", "FR-23", "BR-12", "BR-23"],
+      "title": "Attendance ledger persists Late with QR method when check-in occurs after present window",
+      "preconditions": [
+        "Real database transaction is enabled for policy resolution, check-in, and attendance ledger modules.",
+        "Open class session exists with valid qrToken; effective policy presentWindowMinutes=15 and lateWindowMinutes=15 from scheduled start.",
+        "Authenticated enrolled student has no existing success AttendanceRecord for the session.",
+        "Check-in timestamp is configured after present window end but before session Closed (e.g. scheduledStart + 20 minutes)."
+      ],
+      "steps": [
+        "Capture beforeState: student roster row is Pending with no success AttendanceRecord.",
+        "Invoke check-in command passing all prior validation guards with check-in time in late window per BR-12.",
+        "Query attendance_records and check_in_attempts for status, checkInMethod, and checkInAt.",
+        "Verify roster counts increment late count via session attendance query."
+      ],
+      "expected": "BR-12 sets AttendanceRecord status Late with checkInMethod QR and stored checkInAt; CheckInAttempt outcome is Success; no Present status is assigned for this late-window submission.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-11-004",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["AC-11", "FR-23", "BR-11", "BR-12"],
+      "title": "SM-03 AttendanceRecord transitions Pending to Present or Late on successful QR check-in",
+      "preconditions": [
+        "Open class session with valid qrToken exists in integration test database.",
+        "Authenticated enrolled student has AttendanceRecord in Pending state with no prior success.",
+        "Session state is Open per SM-02; effective policy windows are resolved for the session."
+      ],
+      "steps": [
+        "Capture beforeState: AttendanceRecord status is Pending for the student-session pair.",
+        "Submit check-in within present window and record afterState (status, checkInMethod, checkInAt).",
+        "Reset fixture or use second student; capture beforeState Pending again.",
+        "Submit check-in after present window end within late window and record afterState."
+      ],
+      "expected": "Present-window path: beforeState Pending transitions to afterState Present with checkInMethod QR. Late-window path: beforeState Pending transitions to afterState Late with checkInMethod QR; illegal transitions to Absent or Manual Present do not occur on success path.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-11-005",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["AC-11", "FR-23", "BR-11", "BR-12"],
+      "title": "POST /v1/check-ins returns 200 with attendanceStatus Present or Late in success envelope",
+      "preconditions": [
+        "Lecturer has opened session (AC-01); session is Open with valid qrToken.",
+        "Authenticated student bearer token belongs to actively enrolled user with no prior success for the session.",
+        "Test harness can control or observe check-in timing relative to policy present and late windows."
+      ],
+      "steps": [
+        "Call POST /v1/check-ins with Authorization Bearer token, valid qrToken, and clientTimestamp within present window.",
+        "Inspect HTTP status 200, response envelope data.outcome, data.attendanceStatus, data.checkInAt, and meta fields.",
+        "Repeat with second enrolled student and clientTimestamp after present window end within late window.",
+        "Inspect second response for attendanceStatus Late."
+      ],
+      "expected": "Present-window call returns 200 with data.outcome Success, data.attendanceStatus Present, and ISO-8601 data.checkInAt. Late-window call returns 200 with data.outcome Success and data.attendanceStatus Late; error is null in both envelopes per API design §4.4.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-11-006",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["AC-11", "FR-23", "BR-11", "AC-01", "AC-06", "AC-07", "AC-08"],
+      "title": "E2E-02 primary workflow student check-in within present window records Present",
+      "preconditions": [
+        "Lecturer opens Scheduled session via POST /v1/class-sessions/{sessionId}/open (AC-01).",
+        "Enrolled student completes login gate (AC-06) and passes enrollment validation (AC-07).",
+        "Student has no existing successful attendance for the session (AC-08 prerequisite satisfied).",
+        "Check-in occurs within present window while session remains Open."
+      ],
+      "steps": [
+        "Lecturer calls POST /v1/class-sessions/{sessionId}/open and obtains rotating qrPayload.",
+        "Student calls POST /v1/auth/login and receives Student role accessToken.",
+        "Student calls POST /v1/check-ins with valid qrToken within present window.",
+        "Lecturer queries GET /v1/class-sessions/{sessionId}/attendance for the student row."
+      ],
+      "expected": "End-to-end happy path assigns Present with checkInMethod QR and checkInAt timestamp; roster shows student with attendanceStatus Present and latestAttemptOutcome Success; duplicate second submission remains out of scope for this case (AC-08).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-11-007",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-b",
+      "priority": "P0",
+      "traceability": ["AC-11", "FR-23", "BR-12", "AC-01", "AC-05"],
+      "title": "Alternate branch assigns Late when student checks in after present window before close",
+      "preconditions": [
+        "Lecturer has opened session (AC-01); present window has elapsed but session is still Open.",
+        "Authenticated enrolled student has no successful attendance record.",
+        "Session has not been closed (AC-05 close would block new check-ins)."
+      ],
+      "steps": [
+        "Advance test clock or use fixture with scheduled start such that current time is after presentWindowMinutes but before late window end.",
+        "Student calls POST /v1/check-ins with valid qrToken and Authorization header.",
+        "Student queries personal attendance or lecturer queries session roster.",
+        "Confirm session remains Open and student was not rejected with SessionClosed."
+      ],
+      "expected": "Check-in succeeds with attendanceStatus Late, checkInMethod QR, and checkInAt recorded; session state remains Open until lecturer close; student is not assigned Present for late-window timestamp.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-11-008",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["AC-11", "FR-23", "BR-11", "BR-12"],
+      "title": "Present window boundary assigns Present at end inclusive and Late immediately after",
+      "preconditions": [
+        "Open session with deterministic scheduled start and effective policy presentWindowMinutes=15 exists.",
+        "Two enrolled students (or sequential attempts with reset) have no prior success for the session.",
+        "Test harness supplies check-in timestamps at scheduledStart+15min (last instant of present window) and scheduledStart+15min+1s (first instant of late window)."
+      ],
+      "steps": [
+        "Submit POST /v1/check-ins for student A with check-in timestamp at present window end boundary.",
+        "Submit POST /v1/check-ins for student B with check-in timestamp one second after present window end.",
+        "Query AttendanceRecord status and checkInMethod for both students.",
+        "Verify CheckInAttempt outcomes are Success for both accepted submissions."
+      ],
+      "expected": "Boundary-at-end submission receives attendanceStatus Present per BR-11; immediately-after-boundary submission receives attendanceStatus Late per BR-12; both persist checkInMethod QR and timestamps without validation-order regression.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-11-009",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["AC-11", "FR-23", "BR-11", "BR-19"],
+      "title": "Non-Student roles denied POST /v1/check-ins and cannot receive Present or Late assignment",
+      "preconditions": [
+        "Open session with valid qrToken exists.",
+        "Lecturer and AcademicAdmin users are authenticated with valid bearer tokens.",
+        "Enrolled Student bearer token is available as authorized control."
+      ],
+      "steps": [
+        "Lecturer calls POST /v1/check-ins with valid qrToken and Authorization header.",
+        "AcademicAdmin calls POST /v1/check-ins with the same token context.",
+        "Enrolled Student calls POST /v1/check-ins within present window as control.",
+        "Query attendance_records for any Present/Late rows created for lecturer or admin user IDs."
+      ],
+      "expected": "Lecturer and AcademicAdmin receive 403 Forbidden per permission matrix (Submit QR check-in Deny); no Present/Late AttendanceRecord is created for non-student actors; Student control proceeds to status assignment per AC-11.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-11-010",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["AC-11", "FR-23", "BR-11", "BR-12"],
+      "title": "CheckInResultScreen displays success-present or success-late with timestamp after QR check-in",
+      "preconditions": [
+        "Student is authenticated on mobile web browser.",
+        "Open session QR check-in URL is available; fixtures support present-window and late-window scenarios.",
+        "Student has no prior successful attendance for the session."
+      ],
+      "steps": [
+        "Navigate to student check-in flow and scan or open valid QR link for an open session.",
+        "Complete check-in submission within present window.",
+        "Verify CheckInResultScreen renders success-present variant with Present label and displayed check-in time.",
+        "Repeat flow in late-window scenario after present window elapses.",
+        "Verify CheckInResultScreen renders success-late warning variant with Late label and displayed check-in time."
+      ],
+      "expected": "Present path shows success-present UI state (Điểm danh thành công — Có mặt) with timestamp; Late path shows success-late UI state (Điểm danh thành công — Đi trễ) with timestamp; both outcomes use role=status aria-live region per UI states doc.",
+      "edgeCase": false
+    }
+  ]
+}

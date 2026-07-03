@@ -1,0 +1,170 @@
+{
+  "productItemId": "AC-06",
+  "version": 1,
+  "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
+  "generatedAt": "2026-07-02T09:48:42Z",
+  "cases": [
+    {
+      "id": "TC-AC-06-001",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["AC-06", "FR-15", "FR-36", "BR-05"],
+      "title": "Scenario matrix row for student login gate before check-in submission",
+      "preconditions": [
+        "Testing-plan §3 Student check-in validation block applies (FR-15, FR-16, FR-17, FR-18, BR-05 to BR-07).",
+        "An Open class session exists with a valid QR token and enrolled student fixture available."
+      ],
+      "steps": [
+        "Open the student check-in entry path without establishing an authenticated session.",
+        "Attempt to proceed to check-in submission.",
+        "After successful student login, retry submission with the same check-in context."
+      ],
+      "expected": "Unauthenticated access is blocked with login redirect or Unauthenticated rejection; after successful authentication the student can proceed to submit check-in.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-06-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["AC-06", "FR-15", "BR-05"],
+      "title": "Check-in command short-circuits at auth boundary without attendance write",
+      "preconditions": [
+        "Real database transaction is enabled for identity and check-in modules.",
+        "Open session with valid QR token exists; no authenticated student actor is bound to the request context."
+      ],
+      "steps": [
+        "Invoke the check-in service command path with a valid qrToken but no resolved student actor.",
+        "Query CheckInAttempt and AttendanceRecord tables for the target session and student placeholder context.",
+        "Repeat with authenticated enrolled student actor as control."
+      ],
+      "expected": "Unauthenticated invocation records terminal outcome Unauthenticated (or rejects before success write) and creates no Present/Late AttendanceRecord; authenticated control can proceed past the auth gate.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-06-003",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["AC-06", "FR-15", "FR-36", "BR-05"],
+      "title": "HTTP contract for unauthenticated POST /v1/check-ins rejection",
+      "preconditions": [
+        "Open class session with valid qrToken exists in test environment.",
+        "Request is sent without Authorization header."
+      ],
+      "steps": [
+        "Call POST /v1/check-ins with body containing qrToken and clientTimestamp.",
+        "Omit Authorization header entirely.",
+        "Inspect HTTP status, response envelope data/meta/error fields."
+      ],
+      "expected": "API returns 401 with standard envelope where data is null and error.code is Unauthenticated; no successful attendance outcome is returned.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-06-004",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["AC-06", "FR-15", "FR-36", "BR-05", "AC-11"],
+      "title": "Primary workflow login gate then successful student check-in",
+      "preconditions": [
+        "Open session with rotating valid QR token and enrolled student account exist.",
+        "Student begins flow without an active auth session."
+      ],
+      "steps": [
+        "Student obtains check-in URL or token from QR scan while unauthenticated.",
+        "Student completes POST /v1/auth/login and receives accessToken with Student role.",
+        "Student calls POST /v1/check-ins with Authorization Bearer token and valid qrToken within present window."
+      ],
+      "expected": "Login gate is satisfied first; subsequent check-in returns 200 with data.outcome Success and attendance status Present or Late per policy.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-06-005",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["AC-06", "FR-15", "BR-05", "BR-19"],
+      "title": "RBAC denial when non-student roles attempt QR check-in submission",
+      "preconditions": [
+        "Open session with valid qrToken exists.",
+        "Lecturer and ITAdmin users are authenticated with valid bearer tokens."
+      ],
+      "steps": [
+        "Lecturer calls POST /v1/check-ins with valid qrToken and Authorization header.",
+        "ITAdmin calls POST /v1/check-ins with the same token context.",
+        "Enrolled Student calls the same endpoint as authorized control."
+      ],
+      "expected": "Lecturer and ITAdmin receive authorization denial (403 Forbidden) per permission matrix; enrolled Student passes auth gate and proceeds to business validation.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-06-006",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["AC-06", "FR-15", "FR-36", "BR-05"],
+      "title": "Boundary error for invalid or expired bearer token on check-in",
+      "preconditions": [
+        "Open session with valid qrToken exists.",
+        "Test client holds an expired or malformed JWT bearer token."
+      ],
+      "steps": [
+        "Call POST /v1/check-ins with Authorization Bearer set to expired token.",
+        "Call POST /v1/check-ins with Authorization Bearer set to malformed token.",
+        "Inspect HTTP status and error.code for both requests."
+      ],
+      "expected": "Both requests fail authentication with 401 and error.code Unauthenticated in the standard envelope; no attendance success row is created.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-AC-06-007",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["AC-06", "FR-15", "FR-36", "BR-05"],
+      "title": "UI journey redirects unauthenticated student to login and returns to check-in",
+      "preconditions": [
+        "Student check-in deep link or QR-resolved URL is available for an Open session.",
+        "Browser profile has no active Attendly session cookie."
+      ],
+      "steps": [
+        "Navigate directly to the student check-in URL without logging in.",
+        "Verify redirect to login page (PG-01) with return URL preserved where supported.",
+        "Submit valid student credentials on login form.",
+        "Confirm browser returns to check-in page with prior token context retained.",
+        "Complete check-in submission from the restored check-in UI."
+      ],
+      "expected": "Unauthenticated visit cannot submit check-in; login form accepts credentials; post-login navigation returns student to check-in flow and enables submission.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-AC-06-008",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["AC-06", "FR-15", "BR-05"],
+      "title": "Check-in attempt terminates at Unauthenticated without attendance mutation",
+      "preconditions": [
+        "Open class session with valid qrToken exists in integration test database.",
+        "Request context has no resolved Student actor (missing or invalid Authorization)."
+      ],
+      "steps": [
+        "Capture beforeState: no Present/Late AttendanceRecord for the target session and no authenticated student actor bound.",
+        "Submit check-in command with valid qrToken through the module integration boundary without Authorization.",
+        "Capture afterState for session roster rows and any persisted attempt records."
+      ],
+      "expected": "SM-04 evaluation short-circuits at Unauthenticated as the first guard per validation order; afterState shows no Present/Late AttendanceRecord mutation and the API layer returns 401 with error.code Unauthenticated.",
+      "edgeCase": true
+    }
+  ]
+}

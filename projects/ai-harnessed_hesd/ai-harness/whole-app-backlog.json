@@ -1,0 +1,1452 @@
+{
+  "branchName": "aih/attendly-mvp",
+  "slices": [
+    {
+      "id": "infra-monorepo-foundation",
+      "passes": true,
+      "priority": 1,
+      "phase": 0,
+      "agent": "infra",
+      "acceptance": [
+        "FR-33",
+        "NFR-16"
+      ],
+      "docs": [
+        "docs/technical/00-system-overview.md",
+        "docs/technical/10-local-development-setup.md",
+        "docs/technical/12-backend-frontend-tech-stack.md"
+      ],
+      "description": "Bootstrap repository structure, shared TypeScript configs, package scripts, and baseline quality gates for backend/frontend/test workstreams.",
+      "completionArtifacts": [
+        "package.json",
+        "apps/api",
+        "apps/web",
+        "packages/domain",
+        "packages/config",
+        ".github/workflows/ci.yml"
+      ],
+      "testRequirements": {
+        "unit": [
+          "packages/domain/src/error-codes.test.ts",
+          "packages/domain/src/monorepo.foundation.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/health.integration.test.ts",
+          "apps/api/src/traceability.tags.integration.test.ts"
+        ],
+        "acceptanceTags": [
+          "FR-33",
+          "NFR-16"
+        ]
+      }
+    },
+    {
+      "id": "infra-local-runtime-compose",
+      "passes": true,
+      "priority": 2,
+      "phase": 0,
+      "agent": "infra",
+      "acceptance": [
+        "FR-07",
+        "FR-16",
+        "AC-01",
+        "AC-11",
+        "NFR-16"
+      ],
+      "docs": [
+        "docs/technical/10-local-development-setup.md",
+        "docs/technical/13-docker-compose-local-runtime.md",
+        "docs/technical/04-database-design.md"
+      ],
+      "description": "Provision local Docker runtime with postgres, redis, api, and web services, including health checks and migration/seed hooks.",
+      "completionArtifacts": [
+        "docker-compose.yml",
+        "docker-compose.test.yml",
+        "apps/api/Dockerfile",
+        "apps/api/package.json",
+        "apps/api/src/app.ts",
+        "apps/api/src/infra",
+        "apps/web/Dockerfile",
+        "scripts/db-migrate.mjs",
+        "scripts/db-seed.mjs",
+        "scripts/local-runtime-reset.sh",
+        "docs/technical/local-runtime-reset.md",
+        "package.json",
+        ".env.example"
+      ],
+      "testRequirements": {
+        "unit": [
+          "apps/api/src/infra/compose-config.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/infra/compose-runtime.integration.test.ts",
+          "apps/api/src/infra/compose-traceability.integration.test.ts"
+        ],
+        "acceptanceTags": [
+          "FR-07",
+          "FR-16",
+          "AC-01",
+          "AC-11",
+          "NFR-16"
+        ]
+      }
+    },
+    {
+      "id": "infra-database-migrations",
+      "passes": true,
+      "priority": 3,
+      "phase": 0,
+      "agent": "infra",
+      "acceptance": [
+        "FR-04",
+        "FR-18",
+        "BR-06",
+        "BR-07",
+        "NFR-07"
+      ],
+      "docs": [
+        "docs/technical/03-domain-model.md",
+        "docs/technical/04-database-design.md",
+        "docs/brds/06-domain-model.md"
+      ],
+      "description": "Implement baseline schema, constraints, and migrations for identity, academic structure, session, attendance, policy, and audit entities.",
+      "completionArtifacts": [
+        "apps/api/db/migrations",
+        "scripts/db-migrate.mjs",
+        "scripts/db-seed.mjs"
+      ],
+      "testRequirements": {
+        "unit": [
+          "apps/api/src/infra/schema-migrations.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/infra/database-migrations.integration.test.ts"
+        ],
+        "acceptanceTags": [
+          "BR-06",
+          "BR-07",
+          "FR-04",
+          "FR-18",
+          "NFR-07"
+        ]
+      }
+    },
+    {
+      "id": "playwright-ui-workspace",
+      "passes": true,
+      "priority": 6,
+      "phase": 0,
+      "agent": "infra",
+      "acceptance": [
+        "AC-01",
+        "AC-11",
+        "AC-16",
+        "NFR-14"
+      ],
+      "docs": [
+        "docs/technical/11-testing-plan.md",
+        "docs/ui-ux/00-production-ui-quality-bar.md",
+        "docs/ui-ux/02-ui-framework-tech-stack.md"
+      ],
+      "description": "Set up dedicated Playwright UI regression workspace and wiring for browser-driven visual and interaction verification on key user flows.",
+      "completionArtifacts": [
+        "tests/playwright-ui",
+        "apps/api/src/infra/playwright-ui-traceability.integration.test.ts",
+        ".github/workflows/ci.yml",
+        "package.json"
+      ],
+      "testRequirements": {
+        "unit": [
+          "tests/playwright-ui/src/support/fixtures.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/infra/playwright-ui-traceability.integration.test.ts"
+        ],
+        "playwright": [
+          "tests/playwright-ui/scenarios/playwright-ui-workspace.spec.ts"
+        ],
+        "acceptanceTags": [
+          "AC-01",
+          "AC-11",
+          "AC-16",
+          "NFR-14"
+        ]
+      }
+    },
+    {
+      "id": "module-identity-and-access",
+      "passes": true,
+      "priority": 7,
+      "phase": 1,
+      "agent": "backend",
+      "acceptance": [
+        "FR-15",
+        "FR-31",
+        "FR-32",
+        "BR-19",
+        "NFR-09"
+      ],
+      "docs": [
+        "docs/technical/01-roles-permissions.md",
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/05-api-design.md"
+      ],
+      "description": "Build authentication context resolution and role/scope authorization middleware for all protected API endpoints.",
+      "completionArtifacts": [
+        "apps/api/src/modules/identity",
+        "apps/api/db/migrations/0002_user_credentials.sql",
+        "apps/api/src/app.ts",
+        "apps/api/package.json",
+        "scripts/db-seed.mjs"
+      ],
+      "testRequirements": {
+        "unit": [
+          "apps/api/src/modules/identity/authorize.test.ts",
+          "apps/api/src/modules/identity/permissions.test.ts",
+          "apps/api/src/modules/identity/jwt.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/modules/identity/identity.integration.test.ts",
+          "apps/api/src/modules/identity/auth-routes.integration.test.ts"
+        ],
+        "acceptanceTags": [
+          "BR-19",
+          "FR-15",
+          "FR-31",
+          "FR-32",
+          "NFR-09"
+        ]
+      }
+    },
+    {
+      "id": "module-academic-structure",
+      "passes": true,
+      "priority": 8,
+      "phase": 1,
+      "agent": "backend",
+      "acceptance": [
+        "FR-01",
+        "FR-04",
+        "FR-06",
+        "BR-06",
+        "AC-07"
+      ],
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/04-database-design.md"
+      ],
+      "description": "Implement term/course/section/room/enrollment APIs including CSV import with row-level validation and section ownership data.",
+      "completionArtifacts": [
+        "apps/api/src/modules/academic-structure",
+        "apps/api/src/app.ts",
+        "apps/api/src/modules/identity/protected-stubs.ts",
+        "packages/domain/src/error-codes.ts"
+      ],
+      "testRequirements": {
+        "unit": [
+          "apps/api/src/modules/academic-structure/validation.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/modules/academic-structure/academic-structure.integration.test.ts"
+        ],
+        "acceptanceTags": [
+          "AC-07",
+          "BR-06",
+          "FR-01",
+          "FR-04",
+          "FR-06"
+        ]
+      }
+    },
+    {
+      "id": "module-session-lifecycle",
+      "passes": true,
+      "priority": 9,
+      "phase": 1,
+      "agent": "backend",
+      "acceptance": [
+        "FR-07",
+        "FR-08",
+        "BR-01",
+        "BR-02",
+        "AC-01",
+        "AC-05"
+      ],
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/07-state-machines.md",
+        "docs/technical/06-main-workflows.md"
+      ],
+      "description": "Implement class session open/close lifecycle with valid transition guards and idempotent command semantics.",
+      "completionArtifacts": [
+        "apps/api/src/modules/session-lifecycle",
+        "apps/api/src/app.ts",
+        "apps/api/src/modules/identity/protected-stubs.ts"
+      ],
+      "testRequirements": {
+        "unit": [
+          "apps/api/src/modules/session-lifecycle/validation.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/modules/session-lifecycle/session-lifecycle.integration.test.ts"
+        ],
+        "acceptanceTags": [
+          "AC-01",
+          "AC-05",
+          "BR-01",
+          "BR-02",
+          "FR-07",
+          "FR-08"
+        ]
+      }
+    },
+    {
+      "id": "module-check-in-and-qr-orchestrator",
+      "passes": true,
+      "priority": 10,
+      "phase": 1,
+      "agent": "backend",
+      "acceptance": [
+        "FR-11",
+        "FR-18",
+        "FR-22",
+        "BR-03",
+        "BR-07",
+        "AC-02",
+        "AC-08"
+      ],
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/08-validation-rules.md"
+      ],
+      "description": "Deliver QR issuance and check-in decision pipeline with strict validation order, one-success constraint, and attempt outcome persistence.",
+      "completionArtifacts": [
+        "apps/api/src/modules/check-in-and-qr-orchestrator",
+        "apps/api/src/app.ts",
+        "apps/api/src/modules/identity/protected-stubs.ts",
+        "apps/api/src/modules/identity/http.ts"
+      ],
+      "testRequirements": {
+        "unit": [
+          "apps/api/src/modules/check-in-and-qr-orchestrator/validation.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/modules/check-in-and-qr-orchestrator/check-in-and-qr-orchestrator.integration.test.ts"
+        ],
+        "acceptanceTags": [
+          "AC-02",
+          "AC-08",
+          "BR-03",
+          "BR-07",
+          "FR-11",
+          "FR-18",
+          "FR-22"
+        ]
+      }
+    },
+    {
+      "id": "module-attendance-ledger",
+      "passes": true,
+      "priority": 11,
+      "phase": 1,
+      "agent": "backend",
+      "acceptance": [
+        "FR-09",
+        "FR-20",
+        "FR-21",
+        "BR-13",
+        "BR-14",
+        "AC-12",
+        "AC-13"
+      ],
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/07-state-machines.md",
+        "docs/technical/06-main-workflows.md"
+      ],
+      "description": "Implement attendance record write paths for success, close-time absent finalization, and lecturer/admin manual corrections.",
+      "completionArtifacts": [
+        "apps/api/src/modules/attendance-ledger",
+        "apps/api/src/modules/attendance-ledger/routes.ts",
+        "apps/api/src/modules/attendance-ledger/validation.ts",
+        "apps/api/src/modules/session-lifecycle/repository.ts",
+        "apps/api/src/modules/check-in-and-qr-orchestrator/repository.ts",
+        "apps/api/src/modules/identity/protected-stubs.ts",
+        "apps/api/src/app.ts"
+      ],
+      "testRequirements": {
+        "unit": [
+          "apps/api/src/modules/attendance-ledger/validation.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/modules/attendance-ledger/attendance-ledger.integration.test.ts"
+        ],
+        "acceptanceTags": [
+          "AC-12",
+          "AC-13",
+          "BR-13",
+          "BR-14",
+          "FR-09",
+          "FR-20",
+          "FR-21"
+        ]
+      }
+    },
+    {
+      "id": "module-policy-engine",
+      "passes": true,
+      "priority": 12,
+      "phase": 1,
+      "agent": "backend",
+      "acceptance": [
+        "FR-24",
+        "FR-25",
+        "FR-35",
+        "BR-20",
+        "AC-09",
+        "AC-10"
+      ],
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/08-validation-rules.md",
+        "docs/brds/04-business-rules.md"
+      ],
+      "description": "Implement effective policy resolution and policy-aware validation inputs for check-in windows, GPS requirements, and manual edit constraints.",
+      "completionArtifacts": [
+        "apps/api/src/modules/policy-engine",
+        "apps/api/db/migrations/0003_policy_field_overrides.sql",
+        "apps/api/src/app.ts",
+        "apps/api/src/modules/check-in-and-qr-orchestrator/repository.ts",
+        "apps/api/src/modules/check-in-and-qr-orchestrator/validation.ts",
+        "apps/api/src/modules/attendance-ledger/repository.ts",
+        "scripts/db-seed.mjs"
+      ],
+      "testRequirements": {
+        "unit": [
+          "apps/api/src/modules/policy-engine/validation.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/modules/policy-engine/policy-engine.integration.test.ts"
+        ],
+        "acceptanceTags": [
+          "AC-09",
+          "AC-10",
+          "BR-20",
+          "FR-24",
+          "FR-25",
+          "FR-35"
+        ]
+      }
+    },
+    {
+      "id": "module-reporting-and-export",
+      "passes": true,
+      "priority": 13,
+      "phase": 1,
+      "agent": "backend",
+      "acceptance": [
+        "FR-27",
+        "FR-28",
+        "BR-18",
+        "BR-19",
+        "AC-15",
+        "AC-16",
+        "AC-17"
+      ],
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/06-main-workflows.md"
+      ],
+      "description": "Build role-scoped attendance report and CSV export endpoints with strict filter validation and no cross-scope data leakage.",
+      "completionArtifacts": [
+        "apps/api/src/modules/reporting-and-export",
+        "apps/api/db/migrations/0004_export_jobs.sql",
+        "apps/api/src/app.ts",
+        "apps/api/src/modules/identity/protected-stubs.ts"
+      ],
+      "testRequirements": {
+        "unit": [
+          "apps/api/src/modules/reporting-and-export/validation.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/modules/reporting-and-export/reporting-and-export.integration.test.ts"
+        ],
+        "acceptanceTags": [
+          "AC-15",
+          "AC-17",
+          "BR-18",
+          "BR-19",
+          "FR-27",
+          "FR-28"
+        ]
+      }
+    },
+    {
+      "id": "module-audit-and-compliance",
+      "passes": true,
+      "priority": 14,
+      "phase": 1,
+      "agent": "backend",
+      "acceptance": [
+        "FR-29",
+        "FR-30",
+        "BR-22",
+        "BR-23",
+        "AC-18",
+        "AC-19",
+        "NFR-13"
+      ],
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/09-error-handling.md",
+        "docs/technical/04-database-design.md"
+      ],
+      "description": "Implement immutable audit recording and query APIs for attendance mutations, failed attempts, and export activity.",
+      "completionArtifacts": [
+        "apps/api/src/modules/audit-and-compliance",
+        "apps/api/src/app.ts",
+        "apps/api/src/modules/identity/protected-stubs.ts",
+        "apps/api/src/modules/attendance-ledger/repository.ts",
+        "apps/api/src/modules/check-in-and-qr-orchestrator/repository.ts",
+        "apps/api/src/modules/session-lifecycle/repository.ts",
+        "apps/api/src/modules/session-lifecycle/routes.ts",
+        "apps/api/src/modules/reporting-and-export/repository.ts"
+      ],
+      "testRequirements": {
+        "unit": [
+          "apps/api/src/modules/audit-and-compliance/validation.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/modules/audit-and-compliance/audit-and-compliance.integration.test.ts"
+        ],
+        "acceptanceTags": [
+          "AC-19",
+          "BR-22",
+          "BR-23",
+          "FR-29",
+          "FR-30",
+          "NFR-13"
+        ]
+      }
+    },
+    {
+      "id": "module-realtime-delivery",
+      "passes": true,
+      "priority": 15,
+      "phase": 1,
+      "agent": "backend",
+      "acceptance": [
+        "FR-19",
+        "FR-14",
+        "AC-02",
+        "NFR-01",
+        "NFR-16"
+      ],
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/06-main-workflows.md",
+        "docs/technical/12-backend-frontend-tech-stack.md"
+      ],
+      "description": "Implement low-latency roster update delivery for open sessions and token refresh metadata for lecturer QR display.",
+      "completionArtifacts": [
+        "apps/api/src/modules/realtime-delivery",
+        "apps/api/src/modules/check-in-and-qr-orchestrator/repository.ts",
+        "apps/api/src/modules/check-in-and-qr-orchestrator/qr-service.ts",
+        "apps/api/src/modules/session-lifecycle/repository.ts",
+        "apps/api/src/modules/session-lifecycle/routes.ts",
+        "apps/api/src/modules/attendance-ledger/repository.ts",
+        "apps/api/src/app.ts"
+      ],
+      "testRequirements": {
+        "unit": [
+          "apps/api/src/modules/realtime-delivery/event-gateway.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/modules/realtime-delivery/realtime-delivery.integration.test.ts"
+        ],
+        "acceptanceTags": [
+          "AC-02",
+          "FR-14",
+          "FR-19",
+          "NFR-01",
+          "NFR-16"
+        ]
+      }
+    },
+    {
+      "id": "module-notification",
+      "passes": true,
+      "priority": 16,
+      "phase": 1,
+      "agent": "backend",
+      "acceptance": [
+        "FR-26",
+        "BR-17"
+      ],
+      "docs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/brds/03-functional-requirements.md",
+        "docs/brds/04-business-rules.md"
+      ],
+      "description": "Add policy-threshold notification hooks for absence-rate alerts as a Should-scope backend capability.",
+      "completionArtifacts": [
+        "apps/api/src/modules/notification",
+        "apps/api/db/migrations/0005_notification_alerts.sql",
+        "apps/api/src/modules/session-lifecycle/repository.ts",
+        "apps/api/src/modules/attendance-ledger/repository.ts",
+        "apps/api/src/modules/attendance-ledger/types.ts",
+        "apps/api/src/modules/audit-and-compliance/types.ts",
+        "apps/api/src/modules/audit-and-compliance/validation.ts",
+        "apps/api/src/modules/identity/types.ts",
+        "apps/api/src/modules/identity/permissions.ts",
+        "apps/api/src/modules/policy-engine/repository.ts",
+        "apps/api/src/app.ts"
+      ],
+      "testRequirements": {
+        "unit": [
+          "apps/api/src/modules/notification/evaluator.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/modules/notification/notification.integration.test.ts"
+        ],
+        "acceptanceTags": [
+          "BR-17",
+          "FR-26"
+        ]
+      }
+    },
+    {
+      "id": "web-design-system-shell",
+      "passes": true,
+      "priority": 17,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": [
+        "FR-14",
+        "NFR-14",
+        "NFR-15"
+      ],
+      "docs": [
+        "docs/ui-ux/DESIGN.md",
+        "docs/ui-ux/01-design-overview.md",
+        "docs/ui-ux/03-design-system-basics.md"
+      ],
+      "description": "Implement app shell primitives, token wiring, and shared component foundations aligned with Attendly design-system precedence.",
+      "completionArtifacts": [
+        "apps/web/package.json",
+        "apps/web/vite.config.ts",
+        "apps/web/vitest.config.ts",
+        "apps/web/src/test/setup.ts",
+        "apps/web/src/styles",
+        "apps/web/src/components",
+        "apps/web/src/lib",
+        "apps/web/src/routes",
+        "apps/web/src/App.tsx",
+        "apps/web/src/main.tsx",
+        "apps/web/src/styles.css"
+      ],
+      "testRequirements": {
+        "unit": [
+          "apps/web/src/lib/i18n/check-in-outcomes.test.ts",
+          "apps/web/src/lib/auth/auth-gate.test.ts"
+        ],
+        "component": [
+          "apps/web/src/components/ui/Button.test.tsx",
+          "apps/web/src/components/ui/StatusBadge.test.tsx",
+          "apps/web/src/components/ui/FeedbackAlert.test.tsx",
+          "apps/web/src/components/domain/QrDisplayPanel.test.tsx",
+          "apps/web/src/components/domain/QrCountdownRing.test.tsx",
+          "apps/web/src/components/domain/CheckInResultScreen.test.tsx",
+          "apps/web/src/components/layout/AppShell.test.tsx"
+        ],
+        "playwright": [
+          "tests/playwright-ui/scenarios/web-design-system-shell.spec.ts"
+        ],
+        "acceptanceTags": [
+          "FR-14",
+          "NFR-14",
+          "NFR-15"
+        ]
+      }
+    },
+    {
+      "id": "web-student-check-in-flow",
+      "passes": true,
+      "priority": 18,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": [
+        "FR-15",
+        "FR-16",
+        "FR-23",
+        "AC-06",
+        "AC-11",
+        "NFR-14"
+      ],
+      "docs": [
+        "docs/ui-ux/01-ui-ux-foundation.md",
+        "docs/technical/05-api-design.md",
+        "docs/brds/08-acceptance-mvp-future.md"
+      ],
+      "description": "Build mobile-first student scan-to-check-in flow with login gate, outcome display, and concise recovery guidance.",
+      "completionArtifacts": [
+        "apps/web/vite.config.ts",
+        "apps/web/src/routes/pages/StudentCheckInPage.tsx",
+        "apps/web/src/routes/pages/StudentCheckInPage.module.css",
+        "apps/web/src/routes/pages/LoginPage.tsx",
+        "apps/web/src/lib/api",
+        "apps/web/src/lib/auth",
+        "apps/web/src/lib/check-in",
+        "apps/web/src/lib/geolocation",
+        "apps/web/src/components/domain/CheckInResultScreen.tsx",
+        "apps/api/src/modules/check-in-and-qr-orchestrator/repository.ts"
+      ],
+      "testRequirements": {
+        "unit": [
+          "apps/web/src/lib/api/config.test.ts",
+          "apps/web/src/lib/api/check-in-api.test.ts",
+          "apps/web/src/lib/auth/session.test.ts",
+          "apps/web/src/lib/auth/student-login.test.ts",
+          "apps/web/src/lib/check-in/format-timestamp.test.ts",
+          "apps/web/src/lib/check-in/success-copy.test.ts",
+          "apps/web/src/lib/check-in/duplicate-prior-status.test.ts"
+        ],
+        "component": [
+          "apps/web/src/routes/pages/StudentCheckInPage.test.tsx"
+        ],
+        "acceptanceTags": [
+          "AC-06",
+          "AC-11",
+          "FR-15",
+          "FR-16",
+          "FR-23",
+          "NFR-14"
+        ],
+        "playwright": [
+          "tests/playwright-ui/scenarios/web-student-check-in-flow.spec.ts"
+        ]
+      },
+      "history": [
+        {
+          "at": "2026-07-02T17:37:45Z",
+          "kind": "gate_failed",
+          "reason": "Browser test failed — see 20260702T172530Z-browser-test.json",
+          "source": "harness"
+        }
+      ]
+    },
+    {
+      "id": "web-student-attendance-history",
+      "passes": true,
+      "priority": 19,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": [
+        "FR-37",
+        "BR-19",
+        "AC-16"
+      ],
+      "docs": [
+        "docs/ui-ux/01-design-overview.md",
+        "docs/technical/05-api-design.md",
+        "docs/brds/03-functional-requirements.md"
+      ],
+      "description": "Deliver student personal attendance history view with scoped data-only visibility and clear session/status timeline.",
+      "completionArtifacts": [
+        "apps/web/src/routes/router.tsx",
+        "apps/web/src/routes/pages/StudentAttendanceHistoryPage.tsx",
+        "apps/web/src/routes/pages/StudentAttendanceHistoryPage.module.css",
+        "apps/web/src/routes/pages/AttendanceReportPage.tsx",
+        "apps/web/src/routes/pages/AttendanceReportPage.module.css",
+        "apps/web/src/components/domain/AttendanceHistoryList.tsx",
+        "apps/web/src/components/domain/AttendanceHistoryList.module.css",
+        "apps/web/src/components/domain/AttendanceStatusCell.tsx",
+        "apps/web/src/components/domain/AttendanceStatusCell.module.css",
+        "apps/web/src/components/ui/TableToolbar.tsx",
+        "apps/web/src/components/ui/TableToolbar.module.css",
+        "apps/web/src/components/ui/DataTable.tsx",
+        "apps/web/src/components/ui/DataTable.module.css",
+        "apps/web/src/lib/api/attendance-history-api.ts",
+        "apps/web/src/lib/api/me-api.ts",
+        "apps/web/src/lib/api/seed-fixtures.ts",
+        "apps/web/src/lib/auth/role-guard.ts",
+        "apps/web/src/lib/listing/query-state.ts",
+        "apps/api/src/modules/reporting-and-export/scope.ts",
+        "apps/api/src/modules/reporting-and-export/routes.ts",
+        "apps/api/src/modules/reporting-and-export/types.ts",
+        "apps/api/src/modules/identity/repository.ts",
+        "apps/api/src/modules/identity/auth-routes.ts",
+        "apps/api/src/modules/identity/auth-routes.integration.test.ts"
+      ],
+      "testRequirements": {
+        "unit": [
+          "apps/web/src/lib/listing/query-state.test.ts",
+          "apps/web/src/lib/auth/role-guard.test.ts",
+          "apps/web/src/lib/api/attendance-history-api.test.ts",
+          "apps/api/src/modules/reporting-and-export/scope.test.ts"
+        ],
+        "component": [
+          "apps/web/src/components/domain/AttendanceStatusCell.test.tsx",
+          "apps/web/src/components/domain/AttendanceHistoryList.test.tsx",
+          "apps/web/src/routes/pages/StudentAttendanceHistoryPage.test.tsx"
+        ],
+        "acceptanceTags": [
+          "BR-19",
+          "FR-37",
+          "AC-16"
+        ],
+        "playwright": [
+          "tests/playwright-ui/scenarios/web-student-attendance-history.spec.ts"
+        ]
+      },
+      "history": [
+        {
+          "at": "2026-07-02T18:12:36Z",
+          "kind": "gate_failed",
+          "reason": "Browser test failed — see 20260702T175527Z-browser-test.json",
+          "source": "harness"
+        }
+      ]
+    },
+    {
+      "id": "web-lecturer-session-control",
+      "passes": true,
+      "priority": 20,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": [
+        "FR-07",
+        "FR-14",
+        "AC-01",
+        "AC-02",
+        "AC-06"
+      ],
+      "docs": [
+        "docs/ui-ux/00-production-ui-quality-bar.md",
+        "docs/ui-ux/01-ui-ux-foundation.md",
+        "docs/technical/06-main-workflows.md"
+      ],
+      "description": "Implement lecturer session operations page with open/close controls, rotating QR display, and visible session-state feedback.",
+      "completionArtifacts": [
+        "apps/web/src/routes/router.tsx",
+        "apps/web/src/routes/StaffLayout.tsx",
+        "apps/web/src/routes/pages/LecturerSessionsListPage.tsx",
+        "apps/web/src/routes/pages/LecturerSessionsListPage.module.css",
+        "apps/web/src/routes/pages/LecturerSessionPage.tsx",
+        "apps/web/src/routes/pages/LecturerSessionPage.module.css",
+        "apps/web/src/routes/pages/LoginPage.tsx",
+        "apps/web/src/routes/pages/DesignSystemPage.tsx",
+        "apps/web/src/components/domain/LecturerSessionList.tsx",
+        "apps/web/src/components/domain/LecturerSessionList.module.css",
+        "apps/web/src/components/domain/SessionControlBar.tsx",
+        "apps/web/src/components/domain/SessionControlBar.module.css",
+        "apps/web/src/components/ui/TableToolbar.tsx",
+        "apps/web/src/components/ui/TableToolbar.module.css",
+        "apps/web/src/lib/api/session-api.ts",
+        "apps/web/src/lib/api/seed-fixtures.ts",
+        "apps/web/src/lib/auth/staff-gate.ts",
+        "apps/web/src/lib/listing/session-list-query.ts",
+        "apps/api/src/modules/session-lifecycle/routes.ts",
+        "apps/api/src/modules/session-lifecycle/repository.ts",
+        "apps/api/src/modules/session-lifecycle/types.ts"
+      ],
+      "testRequirements": {
+        "acceptanceTags": [
+          "AC-01",
+          "AC-02",
+          "AC-06",
+          "FR-07",
+          "FR-14"
+        ],
+        "unit": [
+          "apps/web/src/lib/api/session-api.test.ts",
+          "apps/web/src/lib/listing/session-list-query.test.ts"
+        ],
+        "component": [
+          "apps/web/src/components/domain/LecturerSessionList.test.tsx",
+          "apps/web/src/components/domain/SessionControlBar.test.tsx"
+        ],
+        "integration": [
+          "apps/api/src/modules/session-lifecycle/session-lifecycle.integration.test.ts"
+        ],
+        "playwright": [
+          "tests/playwright-ui/scenarios/web-lecturer-session-control.spec.ts"
+        ]
+      },
+      "history": [
+        {
+          "at": "2026-07-02T18:47:17Z",
+          "kind": "gate_failed",
+          "reason": "Browser test failed — see 20260702T182222Z-browser-test.json",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T18:53:31Z",
+          "kind": "gate_failed",
+          "reason": "Computational checks failed — see 20260702T184717Z-checks.json",
+          "source": "harness"
+        }
+      ]
+    },
+    {
+      "id": "web-lecturer-live-roster-fallback",
+      "passes": true,
+      "priority": 21,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": [
+        "FR-19",
+        "FR-20",
+        "BR-14",
+        "AC-13",
+        "AC-14",
+        "AC-25"
+      ],
+      "docs": [
+        "docs/ui-ux/00-production-ui-quality-bar.md",
+        "docs/technical/06-main-workflows.md",
+        "docs/technical/09-error-handling.md"
+      ],
+      "description": "Deliver live roster with rejected-attempt visibility and in-context manual correction workflow for legitimate classroom exceptions.",
+      "completionArtifacts": [
+        "apps/web/src/routes/router.tsx",
+        "apps/web/src/routes/StaffLayout.tsx",
+        "apps/web/src/routes/pages/LecturerRosterPage.tsx",
+        "apps/web/src/routes/pages/LecturerRosterPage.module.css",
+        "apps/web/src/components/domain/LiveRosterPanel.tsx",
+        "apps/web/src/components/domain/LiveRosterPanel.module.css",
+        "apps/web/src/components/domain/ManualCorrectionDialog.tsx",
+        "apps/web/src/components/domain/ManualCorrectionDialog.module.css",
+        "apps/web/src/components/domain/AttemptOutcomeCell.tsx",
+        "apps/web/src/components/domain/AttemptOutcomeCell.module.css",
+        "apps/web/src/lib/api/roster-api.ts",
+        "apps/web/src/lib/listing/roster-list-query.ts",
+        "apps/web/src/lib/i18n/attempt-outcomes.ts"
+      ],
+      "testRequirements": {
+        "acceptanceTags": [
+          "AC-13",
+          "AC-14",
+          "AC-25",
+          "BR-14",
+          "FR-19",
+          "FR-20"
+        ],
+        "unit": [
+          "apps/web/src/lib/api/roster-api.test.ts",
+          "apps/web/src/lib/listing/roster-list-query.test.ts",
+          "apps/web/src/lib/i18n/attempt-outcomes.test.ts"
+        ],
+        "component": [
+          "apps/web/src/components/domain/LiveRosterPanel.test.tsx",
+          "apps/web/src/components/domain/ManualCorrectionDialog.test.tsx",
+          "apps/web/src/components/domain/AttemptOutcomeCell.test.tsx",
+          "apps/web/src/routes/pages/LecturerRosterPage.test.tsx"
+        ],
+        "playwright": [
+          "tests/playwright-ui/scenarios/web-lecturer-live-roster-fallback.spec.ts"
+        ]
+      }
+    },
+    {
+      "id": "web-academic-admin-academic-setup",
+      "passes": true,
+      "priority": 22,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": [
+        "FR-01",
+        "FR-04",
+        "FR-06",
+        "AC-07"
+      ],
+      "docs": [
+        "docs/ui-ux/01-design-overview.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/10-local-development-setup.md"
+      ],
+      "description": "Build academic admin setup pages for terms/courses/sections and enrollment import workflow needed for session eligibility.",
+      "completionArtifacts": [
+        "apps/web/src/routes/AdminLayout.tsx",
+        "apps/web/src/routes/router.tsx",
+        "apps/web/src/routes/pages/AdminTermsPage.tsx",
+        "apps/web/src/routes/pages/AdminTermsPage.module.css",
+        "apps/web/src/routes/pages/AdminClassSectionsPage.tsx",
+        "apps/web/src/routes/pages/AdminClassSectionsPage.module.css",
+        "apps/web/src/routes/pages/AdminEnrollmentsPage.tsx",
+        "apps/web/src/routes/pages/AdminEnrollmentsPage.module.css",
+        "apps/web/src/components/domain/TermList.tsx",
+        "apps/web/src/components/domain/TermList.module.css",
+        "apps/web/src/components/domain/TermCreateForm.tsx",
+        "apps/web/src/components/domain/ClassSectionList.tsx",
+        "apps/web/src/components/domain/ClassSectionList.module.css",
+        "apps/web/src/components/domain/ClassSectionCreateForm.tsx",
+        "apps/web/src/components/domain/EnrollmentImportPanel.tsx",
+        "apps/web/src/components/domain/EnrollmentImportPanel.module.css",
+        "apps/web/src/components/domain/AcademicForm.module.css",
+        "apps/web/src/lib/api/academic-api.ts",
+        "apps/web/src/lib/api/seed-fixtures.ts",
+        "apps/web/src/lib/listing/terms-list-query.ts",
+        "apps/web/src/lib/listing/class-sections-list-query.ts",
+        "apps/web/src/lib/auth/role-guard.ts",
+        "apps/web/src/lib/i18n/check-in-outcomes.ts",
+        "apps/web/src/routes/pages/StudentCheckInPage.tsx",
+        "apps/web/src/components/domain/LecturerSessionList.tsx",
+        "apps/web/src/components/domain/LecturerSessionList.module.css",
+        "apps/web/src/lib/api/session-api.ts",
+        "apps/api/src/modules/session-lifecycle/types.ts",
+        "apps/api/src/modules/session-lifecycle/repository.ts",
+        "apps/api/src/modules/academic-structure/repository.ts",
+        "scripts/db-seed.mjs"
+      ],
+      "testRequirements": {
+        "unit": [
+          "apps/web/src/lib/api/academic-api.test.ts",
+          "apps/web/src/lib/listing/terms-list-query.test.ts",
+          "apps/web/src/lib/i18n/check-in-outcomes.test.ts",
+          "apps/web/src/lib/auth/role-guard.test.ts"
+        ],
+        "component": [
+          "apps/web/src/components/domain/TermList.test.tsx",
+          "apps/web/src/components/domain/TermCreateForm.test.tsx",
+          "apps/web/src/components/domain/ClassSectionList.test.tsx",
+          "apps/web/src/components/domain/ClassSectionCreateForm.test.tsx",
+          "apps/web/src/components/domain/EnrollmentImportPanel.test.tsx",
+          "apps/web/src/components/domain/LecturerSessionList.test.tsx"
+        ],
+        "acceptanceTags": [
+          "AC-07",
+          "FR-01",
+          "FR-04",
+          "FR-06"
+        ],
+        "playwright": [
+          "tests/playwright-ui/scenarios/web-academic-admin-academic-setup.spec.ts"
+        ]
+      },
+      "history": [
+        {
+          "at": "2026-07-02T19:42:07Z",
+          "kind": "gate_failed",
+          "reason": "Browser test failed — see 20260702T192214Z-browser-test.json",
+          "source": "harness"
+        }
+      ]
+    },
+    {
+      "id": "web-academic-admin-policy-management",
+      "passes": true,
+      "priority": 23,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": [
+        "FR-24",
+        "FR-25",
+        "BR-20",
+        "AC-09",
+        "AC-10"
+      ],
+      "docs": [
+        "docs/ui-ux/01-ui-ux-foundation.md",
+        "docs/technical/08-validation-rules.md",
+        "docs/brds/03-functional-requirements.md"
+      ],
+      "description": "Implement policy configuration interface for attendance windows, GPS constraints, and edit-window settings with precedence-aware inputs.",
+      "completionArtifacts": [
+        "apps/web/src/routes/AdminLayout.tsx",
+        "apps/web/src/routes/router.tsx",
+        "apps/web/src/routes/pages/AdminPoliciesPage.tsx",
+        "apps/web/src/routes/pages/AdminPoliciesPage.module.css",
+        "apps/web/src/components/domain/PolicyList.tsx",
+        "apps/web/src/components/domain/PolicyList.module.css",
+        "apps/web/src/components/domain/PolicyForm.tsx",
+        "apps/web/src/components/domain/PolicyForm.module.css",
+        "apps/web/src/components/domain/PolicyResolutionSummary.tsx",
+        "apps/web/src/components/domain/PolicyResolutionSummary.module.css",
+        "apps/web/src/lib/api/policy-api.ts",
+        "apps/web/src/lib/api/seed-fixtures.ts",
+        "apps/web/src/lib/listing/policies-list-query.ts",
+        "apps/web/src/lib/policy/resolve-preview.ts",
+        "apps/web/src/lib/i18n/policy-fields.ts",
+        "apps/web/src/components/domain/AttemptOutcomeCell.tsx",
+        "apps/web/src/components/domain/AttemptOutcomeCell.module.css",
+        "apps/web/src/components/domain/LiveRosterPanel.tsx",
+        "apps/web/src/lib/api/roster-api.ts",
+        "apps/web/src/lib/i18n/attempt-outcomes.ts",
+        "apps/api/src/modules/attendance-ledger/types.ts",
+        "apps/api/src/modules/attendance-ledger/repository.ts",
+        "apps/api/src/modules/realtime-delivery/repository.ts"
+      ],
+      "testRequirements": {
+        "acceptanceTags": [
+          "AC-09",
+          "AC-10",
+          "BR-20",
+          "FR-24",
+          "FR-25"
+        ],
+        "unit": [
+          "apps/web/src/lib/api/policy-api.test.ts",
+          "apps/web/src/lib/listing/policies-list-query.test.ts",
+          "apps/web/src/lib/policy/resolve-preview.test.ts",
+          "apps/web/src/lib/i18n/attempt-outcomes.test.ts"
+        ],
+        "component": [
+          "apps/web/src/components/domain/PolicyList.test.tsx",
+          "apps/web/src/components/domain/PolicyForm.test.tsx",
+          "apps/web/src/components/domain/PolicyResolutionSummary.test.tsx",
+          "apps/web/src/components/domain/AttemptOutcomeCell.test.tsx"
+        ],
+        "playwright": [
+          "tests/playwright-ui/scenarios/web-academic-admin-policy-management.spec.ts"
+        ]
+      },
+      "history": [
+        {
+          "at": "2026-07-02T20:18:09Z",
+          "kind": "gate_failed",
+          "reason": "AI review failed — see 20260702T200305Z-review.json",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T20:42:16Z",
+          "kind": "gate_failed",
+          "reason": "Browser test failed — see 20260702T201809Z-browser-test.json",
+          "source": "harness"
+        }
+      ]
+    },
+    {
+      "id": "web-academic-admin-reporting-export",
+      "passes": true,
+      "priority": 24,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": [
+        "FR-27",
+        "FR-28",
+        "BR-18",
+        "AC-15",
+        "AC-16",
+        "AC-17"
+      ],
+      "docs": [
+        "docs/ui-ux/00-production-ui-quality-bar.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/06-main-workflows.md"
+      ],
+      "description": "Build report listing and CSV export UX with explicit scope context, filters, and pagination for academic admin workflows.",
+      "completionArtifacts": [
+        "apps/web/src/routes/StaffLayout.tsx",
+        "apps/web/src/routes/pages/AttendanceReportPage.tsx",
+        "apps/web/src/routes/pages/AttendanceReportPage.module.css",
+        "apps/web/src/components/domain/AttendanceReportList.tsx",
+        "apps/web/src/components/domain/AttendanceReportList.module.css",
+        "apps/web/src/components/domain/ExportScopeSummary.tsx",
+        "apps/web/src/components/domain/ExportScopeSummary.module.css",
+        "apps/web/src/components/ui/TableToolbar.tsx",
+        "apps/web/src/lib/api/reporting-api.ts",
+        "apps/web/src/lib/listing/query-state.ts",
+        "apps/api/src/modules/reporting-and-export/routes.ts",
+        "apps/api/src/modules/reporting-and-export/repository.ts"
+      ],
+      "testRequirements": {
+        "unit": [
+          "apps/web/src/lib/api/reporting-api.test.ts"
+        ],
+        "component": [
+          "apps/web/src/components/domain/AttendanceReportList.test.tsx",
+          "apps/web/src/components/domain/ExportScopeSummary.test.tsx"
+        ],
+        "integration": [
+          "apps/api/src/modules/reporting-and-export/reporting-and-export.integration.test.ts"
+        ],
+        "acceptanceTags": [
+          "AC-15",
+          "AC-16",
+          "AC-17",
+          "BR-18",
+          "FR-27",
+          "FR-28"
+        ],
+        "playwright": [
+          "tests/playwright-ui/scenarios/web-academic-admin-reporting-export.spec.ts"
+        ]
+      }
+    },
+    {
+      "id": "web-system-auditor-audit-review",
+      "passes": true,
+      "priority": 25,
+      "phase": 2,
+      "agent": "frontend",
+      "acceptance": [
+        "FR-32",
+        "FR-30",
+        "BR-22",
+        "AC-19",
+        "AC-16"
+      ],
+      "docs": [
+        "docs/ui-ux/01-design-overview.md",
+        "docs/technical/05-api-design.md",
+        "docs/technical/06-main-workflows.md"
+      ],
+      "description": "Deliver read-only audit review interface for system auditor with searchable evidence trails for attendance disputes.",
+      "completionArtifacts": [
+        "apps/web/src/routes/router.tsx",
+        "apps/web/src/routes/StaffLayout.tsx",
+        "apps/web/src/routes/pages/AuditLogPage.tsx",
+        "apps/web/src/routes/pages/AuditLogPage.module.css",
+        "apps/web/src/routes/pages/AuditorSessionRosterPage.tsx",
+        "apps/web/src/routes/pages/AuditorSessionRosterPage.module.css",
+        "apps/web/src/routes/pages/AttendanceReportPage.tsx",
+        "apps/web/src/components/domain/AuditLogList.tsx",
+        "apps/web/src/components/domain/AuditLogList.module.css",
+        "apps/web/src/components/domain/AuditEntryRow.tsx",
+        "apps/web/src/components/domain/AuditEntryRow.module.css",
+        "apps/web/src/components/domain/AttendanceReportList.tsx",
+        "apps/web/src/components/domain/AttendanceReportList.module.css",
+        "apps/web/src/components/domain/LiveRosterPanel.tsx",
+        "apps/web/src/lib/api/audit-api.ts",
+        "apps/web/src/lib/api/seed-fixtures.ts",
+        "apps/web/src/lib/listing/audit-logs-list-query.ts",
+        "apps/web/src/lib/i18n/audit-action-types.ts",
+        "apps/web/src/lib/auth/role-guard.ts",
+        "scripts/db-seed.mjs",
+        "apps/api/src/modules/audit-and-compliance/routes.ts"
+      ],
+      "testRequirements": {
+        "unit": [
+          "apps/web/src/lib/api/audit-api.test.ts",
+          "apps/web/src/lib/listing/audit-logs-list-query.test.ts",
+          "apps/web/src/lib/auth/role-guard.test.ts"
+        ],
+        "component": [
+          "apps/web/src/components/domain/AuditLogList.test.tsx",
+          "apps/web/src/components/domain/AuditEntryRow.test.tsx"
+        ],
+        "acceptanceTags": [
+          "AC-16",
+          "AC-19",
+          "BR-22",
+          "FR-30",
+          "FR-32"
+        ],
+        "playwright": [
+          "tests/playwright-ui/scenarios/web-system-auditor-audit-review.spec.ts"
+        ]
+      },
+      "history": [
+        {
+          "at": "2026-07-02T21:56:55Z",
+          "kind": "gate_failed",
+          "reason": "Browser test failed — see 20260702T213529Z-browser-test.json",
+          "source": "harness"
+        }
+      ]
+    },
+    {
+      "id": "test-backend-integration-critical-path",
+      "passes": true,
+      "priority": 26,
+      "phase": 3,
+      "agent": "test",
+      "acceptance": [
+        "AC-01",
+        "AC-04",
+        "AC-08",
+        "AC-12",
+        "AC-18",
+        "NFR-07"
+      ],
+      "docs": [
+        "docs/technical/11-testing-plan.md",
+        "docs/technical/08-validation-rules.md",
+        "docs/technical/07-state-machines.md"
+      ],
+      "description": "Create integration tests for session transitions, check-in validation ordering, duplicate prevention, and close-time absent finalization.",
+      "completionArtifacts": [
+        "apps/api/src/integration/critical-path.integration.test.ts",
+        "apps/api/src/integration/fixtures/critical-path-fixtures.ts",
+        "apps/api/package.json",
+        "package.json",
+        ".github/workflows/ci.yml"
+      ],
+      "testRequirements": {
+        "unit": [
+          "apps/api/src/integration/fixtures/critical-path-fixtures.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/integration/critical-path.integration.test.ts"
+        ],
+        "acceptanceTags": [
+          "AC-01",
+          "AC-04",
+          "AC-08",
+          "AC-12",
+          "AC-18",
+          "NFR-07"
+        ],
+        "playwright": [
+          "tests/playwright-ui/scenarios/test-backend-integration-critical-path.spec.ts"
+        ]
+      }
+    },
+    {
+      "id": "test-e2e-role-scope-and-export",
+      "passes": true,
+      "priority": 27,
+      "phase": 3,
+      "agent": "test",
+      "acceptance": [
+        "AC-15",
+        "AC-16",
+        "AC-17",
+        "AC-23",
+        "NFR-09",
+        "NFR-10"
+      ],
+      "docs": [
+        "docs/technical/11-testing-plan.md",
+        "docs/technical/06-main-workflows.md",
+        "docs/technical/09-error-handling.md"
+      ],
+      "description": "Implement end-to-end regression cases for role-scoped report/export permissions and audit side effects across lecturer/admin/auditor roles.",
+      "completionArtifacts": [
+        "tests/e2e",
+        "package.json",
+        "apps/web/src/routes/StaffLayout.tsx",
+        "apps/web/src/lib/auth/role-guard.ts",
+        "apps/web/src/routes/pages/LecturerSessionsListPage.tsx",
+        "apps/web/src/routes/pages/LecturerRosterPage.tsx",
+        "apps/web/src/routes/pages/AttendanceReportPage.tsx",
+        "apps/web/src/components/domain/LecturerSessionList.tsx",
+        "apps/web/src/components/domain/LecturerSessionList.module.css",
+        "apps/web/src/components/domain/AttendanceReportList.tsx",
+        "apps/web/src/components/domain/AuditLogList.tsx",
+        "scripts/db-seed.mjs"
+      ],
+      "testRequirements": {
+        "unit": [
+          "tests/e2e/src/fixtures/role-matrix-fixtures.test.ts",
+          "apps/web/src/lib/auth/role-guard.test.ts"
+        ],
+        "acceptanceTags": [
+          "AC-15",
+          "AC-16",
+          "AC-17",
+          "AC-23",
+          "NFR-09",
+          "NFR-10"
+        ],
+        "playwright": [
+          "tests/playwright-ui/scenarios/test-e2e-role-scope-and-export.spec.ts"
+        ]
+      },
+      "history": [
+        {
+          "at": "2026-07-02T22:48:15Z",
+          "kind": "gate_failed",
+          "reason": "Browser test failed — see 20260702T223549Z-browser-test.json",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T22:58:58Z",
+          "kind": "gate_failed",
+          "reason": "Computational checks failed — see 20260702T224815Z-checks.json",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T23:08:40Z",
+          "kind": "gate_failed",
+          "reason": "Scope gate failed — out-of-scope files: apps/web/src/components/domain/AttendanceReportList.tsx\napps/web/src/routes/pages/AttendanceReportPage.tsx",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-02T23:16:33Z",
+          "kind": "gate_failed",
+          "reason": "Computational checks failed — see 20260702T230840Z-checks.json",
+          "source": "harness"
+        }
+      ]
+    },
+    {
+      "id": "test-nfr-performance-reliability-smoke",
+      "passes": true,
+      "priority": 28,
+      "phase": 3,
+      "agent": "test",
+      "acceptance": [
+        "AC-20",
+        "AC-21",
+        "AC-22",
+        "NFR-01",
+        "NFR-03",
+        "NFR-16"
+      ],
+      "docs": [
+        "docs/technical/11-testing-plan.md",
+        "docs/brds/07-non-functional-risk.md",
+        "docs/technical/13-docker-compose-local-runtime.md"
+      ],
+      "description": "Add performance and reliability smoke tests for class-start burst behavior, check-in latency, and success-rate telemetry baselines.",
+      "completionArtifacts": [
+        "apps/api/src/integration/performance",
+        "apps/api/src/integration/fixtures/performance-smoke-fixtures.ts",
+        "apps/api/src/integration/performance-smoke.integration.test.ts",
+        "apps/api/src/modules/audit-and-compliance/scope.ts",
+        "apps/api/scripts/preview-session-refresh.mjs",
+        "apps/web/src/routes/pages/AuditLogPage.tsx",
+        "apps/web/src/components/domain/AuditLogList.tsx",
+        "apps/web/src/components/ui/TableToolbar.tsx",
+        "tests/playwright-ui/src/support/performance-smoke.ts",
+        "tests/e2e/src/scenarios/performance-smoke.e2e.test.ts",
+        "docs/technical/performance-smoke-runbook.md",
+        "apps/api/package.json",
+        "package.json",
+        ".github/workflows/ci.yml"
+      ],
+      "testRequirements": {
+        "unit": [
+          "apps/api/src/integration/performance/thresholds.test.ts",
+          "apps/api/src/integration/fixtures/performance-smoke-fixtures.test.ts"
+        ],
+        "integration": [
+          "apps/api/src/integration/performance-smoke.integration.test.ts"
+        ],
+        "e2e": [
+          "tests/e2e/src/scenarios/performance-smoke.e2e.test.ts"
+        ],
+        "acceptanceTags": [
+          "AC-20",
+          "AC-21",
+          "AC-22",
+          "NFR-01",
+          "NFR-03",
+          "NFR-16"
+        ],
+        "playwright": [
+          "tests/playwright-ui/scenarios/test-nfr-performance-reliability-smoke.spec.ts"
+        ]
+      },
+      "history": [
+        {
+          "at": "2026-07-02T23:57:09Z",
+          "kind": "gate_failed",
+          "reason": "Computational checks failed — see 20260702T233513Z-checks.json",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T00:10:35Z",
+          "kind": "gate_failed",
+          "reason": "Browser test failed — see 20260702T235709Z-browser-test.json",
+          "source": "harness"
+        }
+      ]
+    }
+  ]
+}

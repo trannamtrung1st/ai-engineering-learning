@@ -1,0 +1,86 @@
+@import url("https://fonts.googleapis.com/css2?family=Archivo+Black&family=Space+Grotesk:wght@400;500;600;700&display=swap");
+
+body {
+  margin: 0;
+  font-family: var(--font-body-family);
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-regular);
+  line-height: 1.7;
+  color: var(--color-text-body);
+  background: var(--page-bg);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  margin: 0 0 var(--space-4);
+  font-family: var(--font-heading-family);
+  font-weight: var(--font-weight-black);
+  color: var(--color-text-heading);
+  line-height: 1.15;
+}
+
+h1 {
+  font-size: 2.25rem;
+  letter-spacing: -0.5px;
+}
+
+h2 {
+  font-size: 1.875rem;
+}
+
+h3 {
+  font-size: 1.5rem;
+}
+
+h4 {
+  font-size: 1.375rem;
+}
+
+h5 {
+  font-size: 1.25rem;
+}
+
+h6 {
+  font-size: 1.125rem;
+}
+
+@media (min-width: 768px) {
+  h1 {
+    font-size: 3rem;
+  }
+
+  h2 {
+    font-size: 2.375rem;
+  }
+
+  h3 {
+    font-size: 1.875rem;
+  }
+}
+
+p {
+  margin: 0 0 var(--space-4);
+}
+
+.lede {
+  font-size: var(--font-size-lg);
+  max-width: 42rem;
+}
+
+.meta {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.eyebrow {
+  margin: 0 0 var(--space-2);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-brand-strong);
+}

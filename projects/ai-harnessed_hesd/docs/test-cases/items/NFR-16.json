@@ -1,0 +1,367 @@
+{
+  "productItemId": "NFR-16",
+  "version": 1,
+  "docFingerprint": "sha256:0091ebfac485b5b90c7a94c982196a35adddc3e7535aba555ed532f8d1599fd9",
+  "generatedAt": "2026-07-02T22:00:00Z",
+  "cases": [
+    {
+      "id": "TC-NFR-16-001",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["NFR-16", "AC-25", "FR-19", "FR-14"],
+      "title": "Testing-plan §11 NFR-16 row — operational telemetry covers throughput, failure distribution, QR health, and session events",
+      "preconditions": [
+        "Testing-plan §11 NFR verification matrix row for NFR-16 and §7 non-functional tests apply.",
+        "attendance-open-session fixture provides Open session with rotating QR, enrolled students, and mixed success/failure check-in attempts.",
+        "Harness can query structured application logs and operational aggregates (metrics sink or log-derived counters) for the test window."
+      ],
+      "steps": [
+        "Map NFR-16 telemetry dimensions to testing-plan §11 minimum evidence: check-in throughput, failure reason distribution, QR rotation health, session open/close events.",
+        "Execute representative class-start window: lecturer opens session, students submit success and ExpiredQr failures, lecturer closes session.",
+        "Collect telemetry for each dimension: successful check-ins per minute, outcome code histogram, QrTokenIssued success/failure counts, SessionOpened/SessionClosed event logs.",
+        "Verify each dimension is observable with correlation identifiers suitable for class-time peak triage per 06-main-workflows §11.2 operational alerts."
+      ],
+      "expected": "Maps to testing-plan §11 NFR-16 minimum evidence: platform exposes metrics and logs for all four telemetry dimensions enabling issue triage during class-time peaks; operational drill artifacts document alerting and triage readiness per NFR-16 and AC-25 release checklist §4.2.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-16-002",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-16", "FR-07", "FR-08", "AC-01", "AC-05"],
+      "title": "Session service emits SessionOpened and SessionClosed operational logs with actor and timing at DB boundary",
+      "preconditions": [
+        "Integration database spans M03 Session Lifecycle and structured logging/telemetry sink with real transaction commits.",
+        "Scheduled class session exists with assigned Lecturer; session state is Scheduled.",
+        "Harness captures domain event or structured log output for session lifecycle commands."
+      ],
+      "steps": [
+        "Lecturer invokes POST /v1/class-sessions/{sessionId}/open; capture correlationId and command latency.",
+        "Query structured logs or event bus for SessionOpened with classSessionId, actorUserId, openedAt, and initial roster count per 06-main-workflows §4.3 open-session telemetry.",
+        "Lecturer invokes POST /v1/class-sessions/{sessionId}/close; capture correlationId.",
+        "Query structured logs for SessionClosed with classSessionId, actorUserId, closedAt, and close-processing metadata.",
+        "Verify class_sessions row state transitions match logged before/after states."
+      ],
+      "expected": "Session open and close commands each emit structured operational telemetry (SessionOpened, SessionClosed) with actor, ISO-8601 timestamps, session identity, and roster context per domain model §8.1 and NFR-16 session event visibility requirement.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-16-003",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-16", "FR-11", "FR-14", "AC-02"],
+      "title": "QR orchestrator QrTokenIssued telemetry records rotation health with TTL and issuance success",
+      "preconditions": [
+        "Integration harness uses real qr_session_tokens persistence and M04 QR orchestrator with telemetry instrumentation.",
+        "Open class session exists with active token rotation scheduler (30-second TTL per BR-03).",
+        "Harness can read structured logs or metrics for qr_token_issued_total and token issuance latency."
+      ],
+      "steps": [
+        "Invoke GET /v1/class-sessions/{sessionId}/qr/current and record token issuance success with expiresAt within TTL window.",
+        "Advance harness clock past TTL and re-invoke qr/current; verify new QrTokenIssued event with refreshed qrPayload.",
+        "Query telemetry for consecutive issuance success count, rotation interval, and any issuance error signals.",
+        "Simulate one ExpiredQr check-in attempt and verify failure increments outcome-specific counter toward QR health metrics per 06-main-workflows §6.5."
+      ],
+      "expected": "QrTokenIssued events and derived QR rotation health metrics report issuance success, TTL adherence, and ExpiredQr contribution to health signals; rotation remains observable for class-time triage without lecturer page reload per NFR-16 and AC-02.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-16-004",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P0",
+      "traceability": ["NFR-16", "FR-22", "AC-18", "NFR-13"],
+      "title": "CheckInAttemptRecorded events feed failure reason distribution aggregates from persisted attempts",
+      "preconditions": [
+        "Integration database contains check_in_attempts rows across multiple outcome codes (Success, ExpiredQr, NotEnrolled, DuplicateCheckIn).",
+        "M04 Check-in Processing and M08 analytics projection use real DB reads for outcome aggregation.",
+        "Known classSessionId anchors the aggregation window."
+      ],
+      "steps": [
+        "Seed or trigger check-in attempts with distinct structured outcome codes for one Open session.",
+        "Query check_in_attempts grouped by outcome for the session time window.",
+        "Compare aggregate histogram to telemetry failure-reason distribution metric or structured log summary.",
+        "Verify Success outcomes are excluded from failure distribution while contributing to throughput counters separately."
+      ],
+      "expected": "Failure reason distribution telemetry matches persisted CheckInAttempt outcome histogram with 100% coverage of failed paths per AC-18; throughput and failure metrics are independently queryable for peak triage per NFR-16 and 09-error-handling §6.1 structured fields.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-16-005",
+      "category": "edge",
+      "layer": "integration",
+      "technique": "concurrency",
+      "priority": "P0",
+      "traceability": ["NFR-16", "NFR-01", "NFR-03", "NFR-04", "FR-16", "AC-20", "AC-22"],
+      "title": "Class-start concurrent burst on POST /v1/check-ins emits continuous check-in throughput metrics",
+      "preconditions": [
+        "Multiple open class sessions each have 20+ enrolled students per performance-smoke profile.",
+        "Test harness fires parallel POST /v1/check-ins with distinct students, valid QR tokens, and unique Idempotency-Key values.",
+        "Metrics or structured logs capture check_in_success_total and request latency histogram during the burst window."
+      ],
+      "steps": [
+        "Trigger simultaneous check-in submissions across concurrent open sessions mimicking class-start peak.",
+        "Record per-minute successful check-in count and median latency from telemetry sink for the burst duration.",
+        "Verify no gaps in throughput sampling during the peak window (every committed success is counted).",
+        "Correlate throughput metric with persisted Success CheckInAttempt row count for the same window."
+      ],
+      "expected": "Under class-start concurrency, check-in throughput metrics remain continuous and correlate with persisted success attempts; median latency telemetry supports NFR-01 triage without metric dropouts during peak load per NFR-16 and RSK-01 mitigation.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-16-006",
+      "category": "non-functional",
+      "layer": "integration",
+      "technique": "state-transition",
+      "priority": "P0",
+      "traceability": ["NFR-16", "NFR-06", "FR-07", "FR-08", "AC-01", "AC-05"],
+      "title": "Session state transition telemetry records beforeState and afterState for open and close commands",
+      "preconditions": [
+        "Integration harness tracks session state machine per 07-state-machines.md.",
+        "Scheduled session exists; telemetry captures state transition events with beforeState/afterState fields.",
+        "Assigned Lecturer can execute open and close commands."
+      ],
+      "steps": [
+        "Capture beforeState Scheduled; execute open command; verify afterState Open in telemetry and DB.",
+        "Record open command latency and token issuance success flag in same telemetry envelope.",
+        "Capture beforeState Open; execute close command; verify afterState Closed in telemetry and DB.",
+        "Query telemetry for illegal transition attempts (e.g., open on Closed) and confirm conflict events are logged without silent drops."
+      ],
+      "expected": "Each legal session transition emits operational telemetry with beforeState, afterState, actorUserId, and occurredAt; illegal transitions log conflict signals for triage per NFR-06 consistency and NFR-16 session event observability.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-16-007",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-16", "FR-33", "AC-25"],
+      "title": "HTTP contract — GET /v1/health returns operational status envelope for platform triage",
+      "preconditions": [
+        "API service is running with postgres and redis dependencies healthy per docker-compose runtime checks.",
+        "ITAdmin or unauthenticated monitoring client can call GET /v1/health."
+      ],
+      "steps": [
+        "Send GET /v1/health and assert HTTP 200 with standard response envelope.",
+        "Assert data.status is ok and dependency indicators (db, cache) report connected or healthy state.",
+        "Verify meta.requestId and meta.timestamp are present for log correlation.",
+        "Induce transient dependency degradation in test environment and re-query health; verify status reflects degraded state."
+      ],
+      "expected": "GET /v1/health returns HTTP 200 with documented health payload including service and dependency status per FR-33; health transitions are observable for class-time incident triage aligning with NFR-16 operational telemetry and 09-error-handling §7.1 Sev-1 detection.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-16-008",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-16", "FR-22", "AC-18"],
+      "title": "HTTP contract — POST /v1/check-ins emits structured log fields for correlation and failure triage",
+      "preconditions": [
+        "Open class session with valid qrToken exists; enrolled student bearer token is available.",
+        "Log capture sink is enabled for API request handling (requestId, correlationId, endpoint, method, errorCode, httpStatus).",
+        "Test can trigger both Success and ExpiredQr terminal outcomes."
+      ],
+      "steps": [
+        "Submit successful POST /v1/check-ins; capture response meta.requestId and response correlationId.",
+        "Query structured logs for the success path; verify requestId, correlationId, actorUserId, endpoint POST /v1/check-ins, httpStatus 200.",
+        "Submit failed POST /v1/check-ins with expired qrToken; capture error.code ExpiredQr.",
+        "Query structured logs for failure path; verify errorCode ExpiredQr, httpStatus 422, and scopeContext fields per 09-error-handling §6.1."
+      ],
+      "expected": "Every check-in command path produces structured operational logs with mandatory triage fields (requestId, correlationId, endpoint, method, errorCode, httpStatus); failure logs include stable outcome codes for distribution metrics per NFR-16 and AC-18.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-16-009",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["NFR-16", "FR-19", "FR-22", "AC-18"],
+      "title": "HTTP contract — GET /v1/class-sessions/{sessionId}/attendance exposes failure distribution via counts.rejectedAttempts",
+      "preconditions": [
+        "Open session with enrolled students; at least two ExpiredQr and one Success check-in attempts are persisted.",
+        "Assigned Lecturer bearer token is authenticated.",
+        "Roster projection reflects latest CheckInAttempt outcomes per FR-19."
+      ],
+      "steps": [
+        "Lecturer calls GET /v1/class-sessions/{sessionId}/attendance.",
+        "Assert HTTP 200 with data.counts.rejectedAttempts matching persisted failed attempt count.",
+        "Inspect data.rows[].latestAttemptOutcome for students with failures; verify outcome codes match CheckInAttempt records.",
+        "Trigger additional DuplicateCheckIn failure; re-query roster and assert rejectedAttempts increments."
+      ],
+      "expected": "Live roster HTTP contract exposes operational failure visibility through counts.rejectedAttempts and per-row latestAttemptOutcome aligned with persisted attempts; lecturers can triage class-time rejection spikes without audit-log queries per NFR-16 failure distribution and 06-main-workflows §6.5.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-16-010",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "flow-a",
+      "priority": "P0",
+      "traceability": ["NFR-16", "FR-07", "FR-11", "FR-14", "AC-01", "AC-02"],
+      "title": "WF-02 session open primary flow records open-session telemetry for QR rotation and roster baseline",
+      "preconditions": [
+        "Scheduled session exists with assigned Lecturer per WF-02.",
+        "Telemetry sink captures open command latency, token issuance success, and initial enrolled roster count per 06-main-workflows §4.3.",
+        "Enrolled student count is known before open."
+      ],
+      "steps": [
+        "Lecturer executes POST /v1/class-sessions/{sessionId}/open with Idempotency-Key.",
+        "Verify HTTP 200, session state Open, and GET /v1/class-sessions/{sessionId}/qr/current returns Valid token.",
+        "Collect open-session telemetry: command latency, token issuance success=true, initial roster count equals enrollment count.",
+        "Confirm QrTokenIssued telemetry begins rotation cycle with 30-second TTL metadata."
+      ],
+      "expected": "Primary WF-02 open flow emits complete open-session telemetry bundle (latency, token issuance success, roster count) enabling class-start monitoring per NFR-16 and open-session telemetry note in 06-main-workflows §4.3.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-16-011",
+      "category": "non-functional",
+      "layer": "e2e",
+      "technique": "flow-c",
+      "priority": "P0",
+      "traceability": ["NFR-16", "FR-22", "FR-11", "AC-04", "AC-25"],
+      "title": "Flow C operational triage — ExpiredQr spike correlates with QR rotation health metrics after session open",
+      "preconditions": [
+        "Open session with active QR rotation; multiple enrolled students available.",
+        "Incident playbook step 1 (detect via metrics/log alert) from 09-error-handling §7.2 is exercisable in test harness.",
+        "Harness can advance clock to force ExpiredQr without stopping rotation scheduler."
+      ],
+      "steps": [
+        "Lecturer opens session; baseline QR health metrics show normal issuance success rate.",
+        "Students submit check-ins with deliberately stale qrToken tokens to generate ExpiredQr burst in first 2 minutes after open.",
+        "Query failure reason distribution for ExpiredQr spike and QR health degradation signal per 06-main-workflows §11.2 operational alerts.",
+        "ITAdmin or support operator traces correlationIds from structured logs to identify token staleness versus rotation failure.",
+        "Students rescan current QR; verify success rate recovery in throughput metrics."
+      ],
+      "expected": "Operational triage flow detects sudden ExpiredQr spike via NFR-16 telemetry, distinguishes QR display staleness from rotation service failure, and confirms recovery after fresh token scan per RSK-09 mitigation and AC-25 operability gate.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-16-012",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["NFR-16", "NFR-09", "FR-32", "BR-19"],
+      "title": "Student denied operational telemetry surfaces — audit logs and cross-session roster metrics without leakage",
+      "preconditions": [
+        "Open session with mixed success/failure attempts and elevated rejectedAttempts count.",
+        "Student bearer token is authenticated; AcademicAdmin token available as control.",
+        "Student lacks AuditLog.read and live roster scope beyond self."
+      ],
+      "steps": [
+        "Student calls GET /v1/audit-logs?actionType=CheckInAttemptRecorded&classSessionId={sessionId}.",
+        "Student calls GET /v1/class-sessions/{sessionId}/attendance for session they are not rostered to view as lecturer.",
+        "Student calls GET /v1/reports/attendance with institution-wide filters.",
+        "Inspect denial responses for partial throughput counts, failure histograms, or other students' outcome metadata.",
+        "AcademicAdmin calls same queries as authorized control."
+      ],
+      "expected": "Student receives HTTP 403 Forbidden on operational triage endpoints without disclosing session throughput, failure distribution, or cross-student attempt metadata; AcademicAdmin control returns scoped operational data per NFR-09 deny-by-default and NFR-16 RBAC boundary.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-16-013",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P0",
+      "traceability": ["NFR-16", "FR-11", "FR-07", "AC-04"],
+      "title": "QR token issuance failure surfaces degraded rotation health telemetry without silent open success",
+      "preconditions": [
+        "Test harness can simulate QR issuance service error per 06-main-workflows §4.4 failure table.",
+        "Scheduled session exists; Lecturer is assigned.",
+        "Telemetry captures qr_token_issuance_error_total and session open command outcome."
+      ],
+      "steps": [
+        "Induce QR issuance service failure during POST /v1/class-sessions/{sessionId}/open or subsequent qr/current refresh.",
+        "Assert open command fails before committing Open or records explicit degraded-state alert per workflow failure table.",
+        "Query telemetry for issuance error counter increment and absence of false-positive healthy rotation signal.",
+        "Recover service; retry open and verify QrTokenIssued success restores healthy rotation health metric."
+      ],
+      "expected": "QR issuance boundary failure emits degraded QR rotation health telemetry and does not report false healthy rotation; recovery restores normal QrTokenIssued success metrics enabling operators to triage token service errors per NFR-16, RSK-09, and 06-main-workflows §4.4.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-NFR-16-014",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-16", "FR-19", "FR-22", "AC-18"],
+      "title": "Lecturer PG-06 live roster displays rejectedAttempts count and failure outcome badges for class-time triage",
+      "preconditions": [
+        "Lecturer is logged in on desktop Chromium at PG-06 /lecturer/sessions/{sessionId}/roster.",
+        "Open session has persisted Success and ExpiredQr CheckInAttempt rows for enrolled students.",
+        "Roster summary strip exposes present, late, pending, and rejectedAttempts counts per FR-19."
+      ],
+      "steps": [
+        "Navigate to PG-06 live roster for the Open session.",
+        "Verify summary strip displays rejectedAttempts count matching API data.counts.rejectedAttempts.",
+        "Locate student row with latest ExpiredQr failure; confirm latestAttemptOutcome badge renders with localized failure indicator.",
+        "Trigger additional student ExpiredQr attempt from harness; refresh roster and verify rejectedAttempts increments without full page reload.",
+        "Confirm successful check-in rows show Present/Late badges without inflating rejectedAttempts."
+      ],
+      "expected": "PG-06 browser surface exposes operational failure distribution and rejection volume for lecturer class-time triage aligned with NFR-16 failure reason visibility and 06-main-workflows §6.5 lecturer/admin visibility table.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-16-015",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["NFR-16", "FR-33", "AC-25"],
+      "title": "ITAdmin browser journey reviews platform health and PG-15 technical operational logs for incident triage",
+      "preconditions": [
+        "ITAdmin is logged in on desktop browser.",
+        "Platform health view or GET /v1/health consumer page is reachable for ITAdmin role.",
+        "PG-15 /audit/logs contains recent technical audit entries (system_config, login_lock, infrastructure) per FLOW-13.",
+        "Recent session open and check-in activity generated operational log volume in test window."
+      ],
+      "steps": [
+        "Navigate to ITAdmin platform health or system status view; verify service status and dependency health indicators render.",
+        "Navigate to PG-15 /audit/logs; apply technical actionType filters (system_config, infrastructure).",
+        "Set from/to date range for class-session window; verify technical operational entries list with actor, occurredAt, and actionType columns.",
+        "Confirm academic attendance mutation write controls are hidden and ITAdmin cannot trigger manual corrections from PG-15.",
+        "Verify filter and pagination toolbar state syncs with URL query params per PG-15 listing spec."
+      ],
+      "expected": "ITAdmin browser journey supports NFR-16 class-time incident triage via health status visibility and PG-15 technical operational log review with filter, sort, and pagination; role boundary prevents academic mutations per FR-33 and permissions matrix §5.5.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-NFR-16-016",
+      "category": "non-functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P1",
+      "traceability": ["NFR-16", "NFR-17", "AC-25"],
+      "title": "Campus support operational drill verifies alerting and manual fallback telemetry during physical class session",
+      "preconditions": [
+        "Incident response playbook for check-in degradation is documented per NFR-17.",
+        "Staging pilot uses real classroom with campus network and physical mobile devices per testing-plan §6.2.",
+        "External metrics/alerting stack (e.g., Grafana dashboards) is configured for production-like ops review.",
+        "Playwright MCP harness cannot reproduce full external alerting stack or physical peak-load telemetry."
+      ],
+      "steps": [
+        "Run class-start session with physical student devices; monitor throughput and failure distribution dashboards during first 5 minutes.",
+        "Simulate network or GPS degradation; verify alert fires per 06-main-workflows §11.2 operational alert rules.",
+        "Lecturer applies manual fallback; support operator correlates telemetry spike with structured log correlationIds.",
+        "Document drill evidence per testing-plan §11 NFR-16/NFR-17 minimum evidence for release readiness §4.2."
+      ],
+      "expected": "Physical operational drill confirms NFR-16 telemetry and alerting enable class-time issue triage with rehearsed manual fallback per AC-25 and launch gate peak load rehearsal control #1.",
+      "edgeCase": false,
+      "harnessSkip": "physical-device"
+    }
+  ]
+}
