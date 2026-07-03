@@ -118,9 +118,9 @@
       "generatedAt": "2026-07-03T04:22:00Z"
     },
     "AC-26": {
-      "current": false,
+      "current": true,
       "docFingerprint": "sha256:eb6e11490d7ebd3f3bf617fba3d1e2eb4391068feb30a373adf2b547934b7f71",
-      "generatedAt": null
+      "generatedAt": "2026-07-03T06:36:11Z"
     },
     "FR-01": {
       "current": true,

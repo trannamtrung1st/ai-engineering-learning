@@ -1234,6 +1234,12 @@
           "kind": "drift",
           "reason": "Logout scope added (FR-38, AC-26) — SidebarNav/student shell Đăng xuất per FLOW-15; reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-03T06:36:11Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-26 — reverify after TestGen",
+          "source": "harness"
         }
       ]
     },
@@ -2499,6 +2505,12 @@
           "at": "2026-07-03T06:32:47Z",
           "kind": "drift",
           "reason": "Logout scope added (FR-38, AC-26) — voluntary logout clears credentials and redirects to /login; reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T06:36:11Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-26 — reverify after TestGen",
           "source": "harness"
         }
       ]
