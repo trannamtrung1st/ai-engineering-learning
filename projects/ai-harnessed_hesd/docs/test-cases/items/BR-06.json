@@ -2,7 +2,7 @@
   "productItemId": "BR-06",
   "version": 1,
   "docFingerprint": "sha256:0421ca4affe3aa70584e3b352a860d11de519a5a2aaff8c4d8e0f12d14d1a70a",
-  "generatedAt": "2026-07-02T12:05:00Z",
+  "generatedAt": "2026-07-03T05:13:00Z",
   "cases": [
     {
       "id": "TC-BR-06-001",
@@ -90,7 +90,7 @@
       "layer": "e2e",
       "technique": "flow-b",
       "priority": "P0",
-      "traceability": ["BR-06", "FR-04", "FR-17", "BR-16"],
+      "traceability": ["BR-06", "FR-04", "FR-17", "AC-07"],
       "title": "Alternate path: admin enrollment correction enables subsequent check-in while session Open",
       "preconditions": [
         "Open class session exists with valid QR token.",
@@ -113,19 +113,20 @@
       "technique": "boundary-error",
       "priority": "P0",
       "traceability": ["BR-06", "FR-04", "FR-17", "BR-23"],
-      "title": "Boundary error for Dropped enrollment, absent row, and cross-section roster mismatch",
+      "title": "Boundary error for non-Active enrollment statuses and cross-section roster mismatch",
       "preconditions": [
         "Student A has Active enrollment only in section X.",
         "Open session exists in section Y with valid QR token.",
-        "Student B has Dropped enrollment row in section Y; Student C has no enrollment row in section Y."
+        "Student B has Dropped enrollment row in section Y; Student C has no enrollment row in section Y; Student D has Completed enrollment in section Y."
       ],
       "steps": [
         "Student A (enrolled in X only) submits POST /v1/check-ins with section Y session token.",
         "Student B (Dropped in Y) submits POST /v1/check-ins with the same section Y token.",
         "Student C (no enrollment row in Y) submits POST /v1/check-ins with the same section Y token.",
+        "Student D (Completed in Y) submits POST /v1/check-ins with the same section Y token.",
         "Inspect HTTP status and error.code for all requests and persisted attempt records."
       ],
-      "expected": "All three requests return 422 with error.code NotEnrolled; each creates a failed CheckInAttempt with structured reason and no success AttendanceRecord regardless of Dropped vs absent enrollment row.",
+      "expected": "All four requests return 422 with error.code NotEnrolled; each creates a failed CheckInAttempt with structured reason and no success AttendanceRecord. Only Active enrollment satisfies DI-03; Dropped, Completed, absent row, and cross-section Active enrollment are all rejected.",
       "edgeCase": true
     },
     {
@@ -218,7 +219,29 @@
         "Observe CheckInResultScreen failure state and alert component styling.",
         "Verify absence of retry CTA and presence of contact academic office guidance per FLOW-02 and BR-06 outcome."
       ],
-      "expected": "UI renders failure-not-enrolled danger alert with localized Vietnamese message (e.g. 'Bạn không thuộc lớp học phần này.'); no retry button is shown; student cannot reach success-present or success-late state; message instructs student to contact academic office if roster is incorrect.",
+      "expected": "UI renders failure-not-enrolled danger alert with localized Vietnamese message per forms-validation-ux §5 (e.g. 'Bạn không thuộc lớp học phần này.'); no retry button is shown; student cannot reach success-present or success-late state; message instructs student to contact academic office if roster is incorrect per BR-06 and FLOW-02.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-06-011",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["BR-06", "FR-17", "FR-22", "AC-07", "AC-18"],
+      "title": "NotEnrolled outcome renders distinct failure-not-enrolled visual state on PG-02",
+      "preconditions": [
+        "Student is logged in on mobile student shell at PG-02 check-in route.",
+        "Open session with valid QR token exists; student lacks Active enrollment in the target class section.",
+        "GPS policy is disabled or satisfied so enrollment failure is the terminal outcome."
+      ],
+      "steps": [
+        "Submit check-in from PG-02 and observe CheckInResultScreen transition from submitting to outcome state.",
+        "Verify page state ID failure-not-enrolled, danger alert variant, and Vietnamese copy intent per ui-states §5.1.",
+        "Confirm no retry CTA is rendered and contact academic office recovery guidance is present per FLOW-02.",
+        "Compare against success-present and failure-expired-qr states to confirm visual distinction per AC-UI-02."
+      ],
+      "expected": "PG-02 outcome state failure-not-enrolled is visually distinct from success and other failure states (danger alert, no retry, enrollment-specific copy); submission lifecycle completes without ambiguous intermediate states per ui-states §5.2.",
       "edgeCase": false
     }
   ]
