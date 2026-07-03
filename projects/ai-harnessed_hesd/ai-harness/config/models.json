@@ -2,5 +2,6 @@
   "default": "auto",
   "reviewer": "auto",
   "tester": "auto",
-  "testgen": "auto"
+  "testgen": "auto",
+  "manualsgen": "auto"
 }

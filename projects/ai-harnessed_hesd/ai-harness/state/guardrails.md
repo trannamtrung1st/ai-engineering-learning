@@ -116,3 +116,4 @@ tests/playwright-ui/scenarios/web-design-system-shell.spec.ts
 - [FR-30] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29)
 - [FR-32] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29)
 - [FR-37] Docs changed — run TestGen before Ralph (index current=false; fingerprint=sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29)
+- [module-identity-access] Manual validation failed — see 20260703T044239Z-manualsgen.txt

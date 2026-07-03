@@ -100,6 +100,7 @@ Next: run the implementation harness from the repo root:
 ```bash
 npm run aih:testgen:loop
 npm run aih:loop
+npm run aih:manualsgen:loop   # user manuals + demo flows (independent lifecycle)
 ```
 
 ## Safety in existing repos

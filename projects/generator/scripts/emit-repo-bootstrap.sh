@@ -69,7 +69,11 @@ cat > "${REPO_ROOT}/package.json" <<EOF
     "aih:testgen:enhance": "./ai-harness/scripts/testgen-enhance.sh",
     "aih:testgen:drift": "./ai-harness/scripts/check-test-case-drift.sh",
     "aih:testgen:validate": "./ai-harness/scripts/validate-test-cases.sh",
-    "aih:testgen:audit": "./ai-harness/scripts/audit-test-coverage.sh"
+    "aih:testgen:audit": "./ai-harness/scripts/audit-test-coverage.sh",
+    "aih:manualsgen:once": "./ai-harness/scripts/manualsgen-once.sh",
+    "aih:manualsgen:loop": "./ai-harness/scripts/manualsgen-loop.sh",
+    "aih:manualsgen:drift": "./ai-harness/scripts/check-manuals-drift.sh",
+    "aih:manualsgen:validate": "./ai-harness/scripts/validate-user-manuals.sh"
   }
 }
 EOF

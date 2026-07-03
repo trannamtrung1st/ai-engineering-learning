@@ -18,6 +18,7 @@ for f in \
   "${REPO_ROOT}/ai-harness/agents/reviewer.prompt.md" \
   "${REPO_ROOT}/ai-harness/agents/tester.prompt.md" \
   "${REPO_ROOT}/ai-harness/agents/testgen.prompt.md" \
+  "${REPO_ROOT}/ai-harness/agents/manualsgen.prompt.md" \
   "${REPO_ROOT}/ai-harness/README.md" \
   "${REPO_ROOT}/ai-harness/docs/requirements-index.md" \
   "${REPO_ROOT}/ai-harness/docs/browser-mcp.md" \

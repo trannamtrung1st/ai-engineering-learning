@@ -7,19 +7,21 @@ Concise index for the 12 harness components. Referenced by `docs/technical/13-do
 | Component | Location |
 |---|---|
 | Model | `config/models.json`, env `AIH_MODEL` |
-| Prompt | `agents/implementer.prompt.md`, `agents/tester.prompt.md`, `agents/reviewer.prompt.md`, `agents/testgen.prompt.md` |
+| Prompt | `agents/implementer.prompt.md`, `agents/tester.prompt.md`, `agents/reviewer.prompt.md`, `agents/testgen.prompt.md`, `agents/manualsgen.prompt.md` |
 | Context | `config/context-map.json` — doc pointers per slice/agent |
 | Skills | `skills/*/SKILL.md` — agent craft guidance (`visual-design`, `ui-ux-testing`); wired via `context-map.json` `alwaysRead`, injected into prompts by `build-prompt.sh` |
 | Tools | Cursor CLI (`agent -p --force`) + Playwright MCP on frontend/test slices |
-| Workflow | `workflows/ralph-loop.json`, `workflows/testgen-loop.json` |
+| Workflow | `workflows/ralph-loop.json`, `workflows/testgen-loop.json`, `workflows/manualsgen-loop.json` |
 | Memory/State | `state/progress.md`, `state/guardrails.md`, `state/loop-state.json` (one-shot next slice override), `whole-app-backlog.json` (slice `history` for reopen/failure context) |
 | Test cases | `config/testgen-docs-map.json`, `test-case-index.json`, `docs/test-cases/items/<tag>.json` (per-requirement, incl. item-scoped `category: ui-ux` browser cases) |
+| User manuals | `config/manualsgen-docs-map.json`, `manuals-backlog.json`, `manuals-index.json`, `docs/user-manuals/` (modules, flows, demo-runbook) |
 | Common UI/UX suite | `test-cases/common/ui-ux-suite.json` (generic `TC-UX-COMMON-*`, `schemas/ui-ux-suite.schema.json`) — always appended to the browser test full phase; config in `ralph-loop.json` → `browserTest.commonUiUxSuite` |
 | Playwright regression | `playwright-regression-index.json`, `tests/playwright-ui/scenarios/`, `docs/playwright-regression.md` |
 | UX bugs | `generated/runs/ux-bugs/<slice>/<run>.json`, `docs/ux-bug-logging.md`, `skills/ui-ux-testing/SKILL.md` |
 | Test failure triage | `docs/test-failure-triage.md` — integration/e2e flake decision tree, cross-slice deferral |
 | Validation | `scripts/run-checks.sh` — layered tests; `scripts/run-browser-test.sh` — Playwright MCP gate |
 | TestGen | `scripts/testgen-loop.sh`, `scripts/check-test-case-drift.sh` — docs-driven catalog per requirement tag |
+| ManualsGen | `scripts/manualsgen-loop.sh`, `scripts/check-manuals-drift.sh` — end-user manuals and demo scripts per backlog item |
 | Guardrails | `state/guardrails.md` + forbidden patterns in `ralph-loop.json` |
 | Observability | `generated/runs/<timestamp>-*.json` — TTL-pruned each Ralph iteration (`loop.generatedRetentionMinutes`, default 60m; preview/loop runtime files excluded) |
 | Feedback loops | Failed scope/check/browser-test/review → guardrails append → retry; prior scope, checks (JSON + **log excerpts** with scope hints), browser-test, and review output injected into next implementer prompt; browser tester retries failed cases first (fail-fast) then full suite (`browserTest.retryFailedCasesFirst`); on browser test pass syncs `testRequirements.playwright` and commits owned paths; on browser test fail reverts uncommitted Playwright/support/index changes |
@@ -28,7 +30,7 @@ Concise index for the 12 harness components. Referenced by `docs/technical/13-do
 | Browser MCP | `.cursor/mcp.json`, `docs/browser-mcp.md` |
 | Startup verification | `scripts/verify-stack.sh` |
 | Runtime | `ralph-loop.json` → `runtimeValidation` (db, api, web) |
-| Agent timeout | `ralph-loop.json` / `testgen-loop.json` → `agent.idleTimeoutMs` (default 5m stream idle), `agent.timeoutMs` (default 1h max wall), `agent.signalGraceMs` / `agent.resultGraceMs` (early exit after completion signals / result event); override `AIH_AGENT_IDLE_TIMEOUT_MS` / `AIH_AGENT_TIMEOUT_MS` / `AIH_AGENT_SIGNAL_GRACE_MS` / `AIH_AGENT_RESULT_GRACE_MS` |
+| Agent timeout | `ralph-loop.json` / `testgen-loop.json` / `manualsgen-loop.json` → `agent.idleTimeoutMs` (default 5m stream idle), `agent.timeoutMs` (default 1h max wall), `agent.signalGraceMs` / `agent.resultGraceMs` (early exit after completion signals / result event); override `AIH_AGENT_IDLE_TIMEOUT_MS` / `AIH_AGENT_TIMEOUT_MS` / `AIH_AGENT_SIGNAL_GRACE_MS` / `AIH_AGENT_RESULT_GRACE_MS` |
 | Computational check timeout | `ralph-loop.json` → `computationalChecks.commandTimeoutMs` (default 10m) and `commandTimeouts` per npm script; override `AIH_CHECK_TIMEOUT_MS` or `AIH_CHECK_TIMEOUT_<script>_MS`; on timeout the harness kills the process tree and records `timedOut: true` in the checks report |
 | Check logs + heartbeats | `run-checks.sh` / `run-logged-check.sh` write per-script logs to `ai-harness/generated/runs/<run-id>-check-<script>.log` and print `still running` every 30s; agent stream idle timeout is suspended while a shell tool runs |
 | UI screenshots | `ai-harness/generated/runs/screenshots/<slice-id>/implementer/` or `.../browser-test/` — agents must save all captures here (injected into prompts via `build-prompt.sh`); contrast/padding checklist in `docs/ui-visual-verification.md` |
@@ -77,6 +79,32 @@ TestGen also emits item-scoped UI/UX cases (`category: ui-ux`, `browser` layer, 
 Doc drift (`check-test-case-drift.sh`) resets tag state in `test-case-index.json` and `passes` on all slices whose `acceptance` references that tag.
 
 Ralph and TestGen can run independently. Set `testCaseGate.mode` to `required` in `ralph-loop.json` to restore the strict TestGen-first workflow.
+
+## ManualsGen loop
+
+Separate loop that generates end-user documentation from product specs (independent lifecycle — run anytime):
+
+```
+pick manual item (from manuals-backlog.json) → doc fingerprint → manualsgen agent → validate markdown → mark item in manuals-index → commit
+```
+
+Scripts: `manualsgen-loop.sh` (autonomous), `manualsgen-once.sh` (single step).
+
+Output under `docs/user-manuals/`:
+
+| Type | Purpose |
+|---|---|
+| `module` | Per-module user guide (navigation, tasks, troubleshooting) |
+| `flow` | Demo script derived from `docs/ui-ux/10-user-flows.md` FLOW-xx |
+| `runbook` | Ordered stakeholder demo agenda (~15–30 min) |
+
+`manualsgen-loop.json` → `validation.requiredHeadings` and `minLines` per type. Runbook items are picked last (after all flow items are current).
+
+Doc drift (`check-manuals-drift.sh`) resets item state in `manuals-index.json` when source docs change.
+
+Optional `implementationGate.mode: required` blocks ManualsGen until all Ralph slices pass.
+
+See [`docs/user-manuals-guide.md`](docs/user-manuals-guide.md).
 
 ## Backlog
 

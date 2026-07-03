@@ -38,6 +38,7 @@ Environment:
 
 After GEN_COMPLETE:
   npm run aih:testgen:loop && npm run aih:loop
+  npm run aih:manualsgen:loop   # user manuals + demo flows (independent lifecycle)
 EOF
       exit 0
       ;;
@@ -97,5 +98,6 @@ if [[ "$status" -eq 0 ]]; then
   gen_ok "Generator finished. Next:"
   gen_info "  npm run aih:testgen:loop"
   gen_info "  npm run aih:loop"
+  gen_info "  npm run aih:manualsgen:loop"
 fi
 exit "$status"

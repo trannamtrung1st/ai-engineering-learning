@@ -28,6 +28,11 @@ TEST_CASE_INDEX="${HARNESS_ROOT}/test-case-index.json"
 TESTGEN_DOCS_MAP="${HARNESS_ROOT}/config/testgen-docs-map.json"
 LOOP_CONFIG="${HARNESS_ROOT}/workflows/ralph-loop.json"
 TESTGEN_CONFIG="${HARNESS_ROOT}/workflows/testgen-loop.json"
+MANUALS_BACKLOG="${HARNESS_ROOT}/manuals-backlog.json"
+MANUALS_INDEX="${HARNESS_ROOT}/manuals-index.json"
+MANUALSGEN_DOCS_MAP="${HARNESS_ROOT}/config/manualsgen-docs-map.json"
+MANUALSGEN_CONFIG="${HARNESS_ROOT}/workflows/manualsgen-loop.json"
+USER_MANUALS_DIR="${REPO_ROOT}/docs/user-manuals"
 MODELS_CONFIG="${HARNESS_ROOT}/config/models.json"
 CONTEXT_MAP="${HARNESS_ROOT}/config/context-map.json"
 STATE_DIR="${HARNESS_ROOT}/state"
@@ -227,6 +232,10 @@ get_model() {
     echo "$AIH_TESTGEN_MODEL"
     return
   fi
+  if [[ "$key" == "manualsgen" && -n "${AIH_MANUALSGEN_MODEL:-}" ]]; then
+    echo "$AIH_MANUALSGEN_MODEL"
+    return
+  fi
   jq -r --arg k "$key" '.[$k] // .default' "$MODELS_CONFIG"
 }
 
@@ -250,6 +259,7 @@ print_harness_env() {
     aih_kv "Reviewer" "$(get_model reviewer)"
     aih_kv "Tester" "$(get_model tester)"
     aih_kv "TestGen" "$(get_model testgen)"
+    aih_kv "ManualsGen" "$(get_model manualsgen)"
   else
     aih_kv "Agent" "not installed (curl https://cursor.com/install -fsS | bash)"
   fi
@@ -1426,6 +1436,168 @@ pick_next_testgen_requirement_tag() {
   echo ""
 }
 
+# --- ManualsGen ---
+
+get_manual_item_json() {
+  local item_id="$1"
+  jq -c --arg id "$item_id" '.items[] | select(.id == $id)' "$MANUALS_BACKLOG" 2>/dev/null | head -1
+}
+
+manual_item_field() {
+  local item_id="$1"
+  local field="$2"
+  get_manual_item_json "$item_id" | jq -r --arg f "$field" '.[$f] // empty'
+}
+
+manual_artifact_path() {
+  local item_id="$1"
+  manual_item_field "$item_id" outputPath
+}
+
+manual_artifact_abs() {
+  echo "${REPO_ROOT}/$(manual_artifact_path "$1")"
+}
+
+all_manual_item_ids_sorted() {
+  jq -r '.items[] | "\(.priority)\t\(.id)"' "$MANUALS_BACKLOG" 2>/dev/null | sort -n | cut -f2-
+}
+
+manual_item_type() {
+  manual_item_field "$1" type
+}
+
+manual_item_current() {
+  local item_id="$1"
+  local current
+  current="$(jq -r --arg id "$item_id" '.tags[$id].current // false' "$MANUALS_INDEX")"
+  [[ "$current" == "true" ]]
+}
+
+all_flow_manuals_current() {
+  local item_id item_type
+  while IFS= read -r item_id; do
+    [[ -z "$item_id" ]] && continue
+    item_type="$(manual_item_type "$item_id")"
+    [[ "$item_type" == "flow" ]] || continue
+    if ! manual_item_current "$item_id"; then
+      return 1
+    fi
+  done < <(all_manual_item_ids_sorted)
+  return 0
+}
+
+implementation_gate_blocks_manualsgen() {
+  local mode require_all
+  mode="$(jq -r '.implementationGate.mode // "optional"' "$MANUALSGEN_CONFIG" 2>/dev/null || echo optional)"
+  require_all="$(jq -r '.implementationGate.requireAllSlicesPass // false' "$MANUALSGEN_CONFIG" 2>/dev/null || echo false)"
+  [[ "$mode" == "required" || "$require_all" == "true" ]] || return 1
+  ! all_slices_pass
+}
+
+all_manuals_current() {
+  local item_id
+  while IFS= read -r item_id; do
+    [[ -z "$item_id" ]] && continue
+    if ! manual_item_current "$item_id"; then
+      return 1
+    fi
+  done < <(all_manual_item_ids_sorted)
+  return 0
+}
+
+pick_next_manualsgen_item() {
+  local item_id item_type
+  if implementation_gate_blocks_manualsgen; then
+    echo ""
+    return 0
+  fi
+  while IFS= read -r item_id; do
+    [[ -z "$item_id" ]] && continue
+    if manual_item_current "$item_id"; then
+      continue
+    fi
+    item_type="$(manual_item_type "$item_id")"
+    if [[ "$item_type" == "runbook" ]] && ! all_flow_manuals_current; then
+      continue
+    fi
+    echo "$item_id"
+    return 0
+  done < <(all_manual_item_ids_sorted)
+  echo ""
+}
+
+mark_manual_current() {
+  local item_id="$1"
+  local fingerprint="$2"
+  local generated_at="${3:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}"
+  local tmp
+  tmp="$(mktemp)"
+  jq --arg id "$item_id" --arg fp "$fingerprint" --arg ts "$generated_at" '
+    .tags[$id] = {
+      current: true,
+      docFingerprint: $fp,
+      generatedAt: $ts
+    }
+  ' "$MANUALS_INDEX" > "$tmp" && mv "$tmp" "$MANUALS_INDEX"
+}
+
+reset_manual_item_on_doc_drift() {
+  local item_id="$1"
+  local live_fp="$2"
+  local tmp
+  tmp="$(mktemp)"
+  jq --arg id "$item_id" --arg fp "$live_fp" '
+    .tags[$id] = {
+      current: false,
+      docFingerprint: $fp,
+      generatedAt: null
+    }
+  ' "$MANUALS_INDEX" > "$tmp" && mv "$tmp" "$MANUALS_INDEX"
+  append_guardrail "$item_id" "Manual source docs changed — run ManualsGen (index current=false; fingerprint=${live_fp})"
+}
+
+manualsgen_regeneration_mode() {
+  jq -r '.regeneration.mode // "incremental"' "$MANUALSGEN_CONFIG" 2>/dev/null || echo "incremental"
+}
+
+format_existing_manual_review_block() {
+  local item_id="$1"
+  local artifact_path artifact_abs mode stored_fp line_count
+  artifact_path="$(manual_artifact_path "$item_id")"
+  artifact_abs="$(manual_artifact_abs "$item_id")"
+  mode="$(manualsgen_regeneration_mode)"
+
+  if [[ ! -f "$artifact_abs" ]]; then
+    return 0
+  fi
+
+  if [[ "$mode" == "full" ]]; then
+    cat <<EOF
+## Existing manual (reference)
+
+A manual already exists at \`${artifact_path}\`. Regeneration mode is **full** — rewrite from current docs.
+
+EOF
+    return 0
+  fi
+
+  line_count="$(wc -l < "$artifact_abs" | tr -d ' ')"
+  stored_fp="$(jq -r --arg id "$item_id" '.tags[$id].docFingerprint // ""' "$MANUALS_INDEX")"
+
+  cat <<EOF
+## Review and update existing manual
+
+The manual at \`${artifact_path}\` is **out of date** (\`manuals-index.json\` marks this item \`current: false\`).
+
+**Read the existing file first.** Update only what current docs require.
+
+- **Path:** \`${artifact_path}\`
+- **Line count:** ${line_count}
+$( [[ -n "$stored_fp" && "$stored_fp" != "null" ]] && printf '- **Index fingerprint:** `%s`\n' "$stored_fp" )
+
+EOF
+}
+
 mark_test_cases_current() {
   local requirement_tag="$1"
   local fingerprint="$2"
@@ -2028,6 +2200,22 @@ agent_invoke_testgen() {
   AIH_HARNESS_CONFIG="$idle_config" run_agent_with_timeout_ms "$timeout_ms" "$outfile" "$AGENT_BIN" "${args[@]}" "$prompt"
 }
 
+# ManualsGen agent: writes user manual markdown only (no Playwright MCP).
+agent_invoke_manualsgen() {
+  local model="$1"
+  local prompt="$2"
+  local outfile="${3:-}"
+  require_agent
+  local -a args fmt
+  args=(-p --force --trust --model "$model")
+  read -ra fmt <<< "$(agent_output_format_args)"
+  args+=("${fmt[@]}")
+  local timeout_ms idle_config
+  idle_config="$MANUALSGEN_CONFIG"
+  timeout_ms="$(get_agent_timeout_ms "$idle_config")"
+  AIH_HARNESS_CONFIG="$idle_config" run_agent_with_timeout_ms "$timeout_ms" "$outfile" "$AGENT_BIN" "${args[@]}" "$prompt"
+}
+
 append_guardrail() {
   local slice_id="$1"
   local message="$2"
@@ -2334,6 +2522,29 @@ git_commit_testgen_pass() {
     paths+=("$path")
   done < <(testgen_owned_paths "$requirement_tag")
   git_commit_allowlisted_paths "aih: generate test cases for ${requirement_tag}" "${paths[@]}"
+}
+
+manualsgen_owned_paths() {
+  local item_id="$1"
+  local output_path readme_path
+  output_path="$(manual_artifact_path "$item_id")"
+  readme_path="docs/user-manuals/README.md"
+  printf '%s\n' \
+    "$output_path" \
+    "$readme_path" \
+    "ai-harness/manuals-index.json" \
+    "ai-harness/state/progress.md"
+}
+
+git_commit_manualsgen_pass() {
+  local item_id="$1"
+  local -a paths=()
+  local path
+  while IFS= read -r path; do
+    [[ -z "$path" ]] && continue
+    paths+=("$path")
+  done < <(manualsgen_owned_paths "$item_id")
+  git_commit_allowlisted_paths "aih: generate user manual for ${item_id}" "${paths[@]}"
 }
 
 git_commit_browser_test_pass() {

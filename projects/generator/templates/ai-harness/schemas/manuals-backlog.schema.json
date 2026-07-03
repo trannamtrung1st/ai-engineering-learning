@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["items"],
+  "properties": {
+    "items": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "type", "title", "priority", "passes", "outputPath"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "type": { "type": "string", "enum": ["module", "flow", "runbook"] },
+          "title": { "type": "string", "minLength": 1 },
+          "priority": { "type": "integer" },
+          "passes": { "type": "boolean" },
+          "outputPath": { "type": "string", "pattern": "^docs/user-manuals/" },
+          "sourceDocs": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "traceability": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "dependsOn": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    }
+  }
+}

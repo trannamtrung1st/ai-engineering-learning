@@ -55,6 +55,15 @@
         "docs/technical/11-testing-plan.md",
         "docs/brds/08-acceptance-mvp-future.md"
       ]
+    },
+    "manualsgen": {
+      "alwaysRead": [
+        "ai-harness/docs/preview-runtime.md",
+        "ai-harness/docs/user-manuals-guide.md",
+        "docs/ui-ux/10-user-flows.md",
+        "docs/technical/01-roles-permissions.md",
+        "docs/ui-ux/09-page-list.md"
+      ]
     }
   },
   "slices": {

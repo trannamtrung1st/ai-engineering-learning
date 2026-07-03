@@ -58,6 +58,7 @@ npm run aih:loop -- 50                     # max 50 iterations
 | `AIH_REVIEWER_MODEL` | `auto` | Reviewer model |
 | `AIH_TESTER_MODEL` | `auto` | Browser test agent model |
 | `AIH_TESTGEN_MODEL` | `auto` | Test case generator model |
+| `AIH_MANUALSGEN_MODEL` | `auto` | User manual generator model |
 | `AIH_AGENT_TIMEOUT_MS` | `3600000` | Max wall time per agent invocation (1 hour); applies to streamed and buffered runs |
 | `AIH_AGENT_IDLE_TIMEOUT_MS` | `300000` | Stream idle timeout — no stream-json activity for this long ends the run (5 minutes) |
 | `AIH_AGENT_SIGNAL_GRACE_MS` | `15000` | After a completion signal (`SLICE_DONE`, `REVIEW_PASS`, etc.) in agent output, wait this long then terminate the agent process tree |
@@ -78,6 +79,7 @@ npm run aih:loop -- 50                     # max 50 iterations
 | `AIH_SKIP_BROWSER_TEST` | — | Skip browser test gate (`1`) |
 | `AIH_SKIP_TESTGEN_GATE` | — | Force optional test-case gate (`1`; redundant when `testCaseGate.mode` is `optional`) |
 | `AIH_SKIP_TESTGEN_AGENT` | — | Skip testgen agent (`1`) |
+| `AIH_SKIP_MANUALSGEN_AGENT` | — | Skip manualsgen agent (`1`) |
 | `AIH_BROWSER_MCP` | — | Enable Playwright MCP on any slice (`1`) |
 | `AIH_PLAYWRIGHT_MCP_KEEP` | `0` | Newest Playwright MCP files to keep per dir (`0` = wipe before browser slices) |
 | `AIH_SKIP_PLAYWRIGHT_MCP_CLEANUP` | — | Skip Playwright MCP artifact cleanup (`1`) |
@@ -116,6 +118,10 @@ Defaults live in `ai-harness/config/models.json`.
 | `npm run aih:testgen:enhance` | Ad-hoc improve test cases for one tag with free-text instructions |
 | `npm run aih:testgen:drift` | Detect doc drift; mark tags stale (`current: false`) — slices reopen after TestGen |
 | `npm run aih:testgen:validate` | Validate generated test case JSON for a slice |
+| `npm run aih:manualsgen:once` | Generate one user manual item from docs |
+| `npm run aih:manualsgen:loop` | Autonomous ManualsGen loop until all backlog items are current |
+| `npm run aih:manualsgen:drift` | Detect doc drift; mark manual items stale (`current: false`) |
+| `npm run aih:manualsgen:validate` | Validate generated user manual markdown for one item |
 
 ### Preview (API + web)
 
@@ -239,6 +245,24 @@ npm run aih:testgen:enhance -- FR-08 --no-commit --context docs/ui-ux/14-listing
 
 The script reuses the TestGen agent and validation pipeline; it attaches docs, related backlog slices, and existing artifact summary automatically. Set `AIH_TESTGEN_NO_COMMIT=1` to skip commit (same as `--no-commit`).
 
+### ManualsGen (user manuals + demo flows)
+
+Independent lifecycle — run after harness planner emits `manuals-backlog.json`:
+
+```bash
+npm run aih:preview                 # optional — verify demo steps live
+npm run aih:manualsgen:drift && npm run aih:manualsgen:loop
+```
+
+1. Pick next item from `ai-harness/manuals-backlog.json` where `manuals-index.json` is not current
+2. `check-manuals-drift.sh` compares doc fingerprint per item
+3. `build-prompt.sh manualsgen <itemId>` injects into `manualsgen.prompt.md`
+4. Agent writes `docs/user-manuals/{modules,flows}/<id>.md` or `demo-runbook.md` + updates README index
+5. `validate-user-manuals.sh` — required headings, min lines, no forbidden placeholders
+6. Item marked current in `manuals-index.json`; optional git commit
+
+Canonical guide: [`docs/user-manuals-guide.md`](docs/user-manuals-guide.md).
+
 ### Implementation
 
 1. `pick-next-slice.sh` selects lowest-priority slice with `passes: false`
@@ -302,6 +326,12 @@ Full decision tree, flake patterns, and `SLICE_DEFER` policy: [`docs/test-failur
 - `ai-harness/workflows/testgen-loop.json` — TestGen loop policy
 - `ai-harness/config/testgen-docs-map.json` — doc resolution rules per requirement tag
 - `ai-harness/test-case-index.json` — slim generation state (current, fingerprint)
+- `ai-harness/manuals-backlog.json` — ManualsGen item queue (modules, flows, runbook)
+- `ai-harness/workflows/manualsgen-loop.json` — ManualsGen loop policy
+- `ai-harness/config/manualsgen-docs-map.json` — doc resolution rules per manual item type
+- `ai-harness/manuals-index.json` — ManualsGen generation state (current, fingerprint)
+- `docs/user-manuals/` — generated end-user manuals and demo scripts
+- `ai-harness/docs/user-manuals-guide.md` — ManualsGen runbook for humans
 - `ai-harness/playwright-regression-index.json` — browser-tester Playwright spec tracking per slice
 - `docs/test-cases/items/` — generated test case artifacts per tag
 - `ai-harness/config/context-map.json` — which docs to read per slice
@@ -321,6 +351,8 @@ Full decision tree, flake patterns, and `SLICE_DEFER` policy: [`docs/test-failur
 | `BROWSER_TEST_PASS` / `BROWSER_TEST_FAIL` | Browser functional test outcome |
 | `TESTGEN_DONE <id>` / `TESTGEN_BLOCKED <reason>` | Test case generation outcome |
 | `TESTGEN_COMPLETE` | All slices have current test cases |
+| `MANUALSGEN_DONE <id>` / `MANUALSGEN_BLOCKED <reason>` | User manual generation outcome |
+| `MANUALSGEN_COMPLETE` | All manual backlog items are current |
 | `COMPLETE` | All slices pass |
 | `HUMAN_REVIEW_PASS <id>` | Manual sign-off (merge-ready slices) |
 

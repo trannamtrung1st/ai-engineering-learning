@@ -1,0 +1,316 @@
+{
+  "items": [
+    {
+      "id": "module-identity-access",
+      "type": "module",
+      "title": "Staff sign-in and access",
+      "priority": 10,
+      "passes": false,
+      "outputPath": "docs/user-manuals/modules/identity-access.md",
+      "sourceDocs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/01-roles-permissions.md",
+        "docs/ui-ux/09-page-list.md"
+      ],
+      "traceability": ["FR-15", "FR-36", "AC-06"]
+    },
+    {
+      "id": "module-academic-structure",
+      "type": "module",
+      "title": "Academic structure (terms, courses, sections, enrollment)",
+      "priority": 11,
+      "passes": false,
+      "outputPath": "docs/user-manuals/modules/academic-structure.md",
+      "sourceDocs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/06-app-layout-components.md"
+      ],
+      "traceability": ["FR-01", "FR-02", "FR-03", "FR-04", "BR-06"]
+    },
+    {
+      "id": "module-session-lifecycle",
+      "type": "module",
+      "title": "Class sessions and QR display",
+      "priority": 12,
+      "passes": false,
+      "outputPath": "docs/user-manuals/modules/session-lifecycle.md",
+      "sourceDocs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/ui-ux/09-page-list.md",
+        "docs/technical/07-state-machines.md"
+      ],
+      "traceability": ["FR-07", "FR-08", "FR-09", "FR-11", "FR-14", "AC-01", "AC-02", "AC-03"]
+    },
+    {
+      "id": "module-check-in",
+      "type": "module",
+      "title": "Student check-in and QR scan",
+      "priority": 13,
+      "passes": false,
+      "outputPath": "docs/user-manuals/modules/check-in.md",
+      "sourceDocs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/ui-ux/09-page-list.md",
+        "docs/technical/06-main-workflows.md"
+      ],
+      "traceability": ["FR-13", "FR-15", "FR-16", "FR-17", "FR-18", "FR-22", "FR-23", "FR-34", "FR-35", "AC-04", "AC-05", "AC-06", "AC-07", "AC-08", "AC-09", "AC-10", "AC-11"]
+    },
+    {
+      "id": "module-attendance-ledger",
+      "type": "module",
+      "title": "Attendance records and live roster",
+      "priority": 14,
+      "passes": false,
+      "outputPath": "docs/user-manuals/modules/attendance-ledger.md",
+      "sourceDocs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/14-listing-pages-search-filter-sort.md"
+      ],
+      "traceability": ["FR-19", "FR-20", "FR-37", "BR-14", "AC-12", "AC-13", "AC-14"]
+    },
+    {
+      "id": "module-policy-engine",
+      "type": "module",
+      "title": "Attendance policy configuration",
+      "priority": 15,
+      "passes": false,
+      "outputPath": "docs/user-manuals/modules/policy-engine.md",
+      "sourceDocs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/ui-ux/09-page-list.md",
+        "docs/technical/08-validation-rules.md"
+      ],
+      "traceability": ["FR-24", "FR-25"]
+    },
+    {
+      "id": "module-reporting-export",
+      "type": "module",
+      "title": "Attendance reports and export",
+      "priority": 16,
+      "passes": false,
+      "outputPath": "docs/user-manuals/modules/reporting-export.md",
+      "sourceDocs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/14-listing-pages-search-filter-sort.md"
+      ],
+      "traceability": ["FR-27", "FR-28", "AC-15", "AC-16", "AC-17"]
+    },
+    {
+      "id": "module-audit-compliance",
+      "type": "module",
+      "title": "Audit log review",
+      "priority": 17,
+      "passes": false,
+      "outputPath": "docs/user-manuals/modules/audit-compliance.md",
+      "sourceDocs": [
+        "docs/technical/02-module-breakdown.md",
+        "docs/ui-ux/09-page-list.md",
+        "docs/technical/01-roles-permissions.md"
+      ],
+      "traceability": ["FR-29", "FR-30", "FR-32"]
+    },
+    {
+      "id": "FLOW-01",
+      "type": "flow",
+      "title": "Student QR check-in (happy path) demo",
+      "priority": 20,
+      "passes": false,
+      "outputPath": "docs/user-manuals/flows/FLOW-01.md",
+      "sourceDocs": [
+        "docs/ui-ux/10-user-flows.md",
+        "docs/technical/01-roles-permissions.md",
+        "docs/ui-ux/09-page-list.md"
+      ],
+      "traceability": ["FR-15", "FR-16", "FR-17", "FR-18", "FR-23", "AC-06", "AC-07", "AC-08", "AC-11"]
+    },
+    {
+      "id": "FLOW-02",
+      "type": "flow",
+      "title": "Student check-in rejection and recovery demo",
+      "priority": 21,
+      "passes": false,
+      "outputPath": "docs/user-manuals/flows/FLOW-02.md",
+      "sourceDocs": [
+        "docs/ui-ux/10-user-flows.md",
+        "docs/ui-ux/09-page-list.md"
+      ],
+      "traceability": ["FR-13", "FR-22", "AC-04", "AC-05", "AC-18"]
+    },
+    {
+      "id": "FLOW-03",
+      "type": "flow",
+      "title": "Student GPS-gated check-in demo",
+      "priority": 22,
+      "passes": false,
+      "outputPath": "docs/user-manuals/flows/FLOW-03.md",
+      "sourceDocs": [
+        "docs/ui-ux/10-user-flows.md",
+        "docs/ui-ux/09-page-list.md"
+      ],
+      "traceability": ["FR-34", "FR-35", "AC-09", "AC-10"]
+    },
+    {
+      "id": "FLOW-04",
+      "type": "flow",
+      "title": "Student attendance history demo",
+      "priority": 23,
+      "passes": false,
+      "outputPath": "docs/user-manuals/flows/FLOW-04.md",
+      "sourceDocs": [
+        "docs/ui-ux/10-user-flows.md",
+        "docs/ui-ux/09-page-list.md"
+      ],
+      "traceability": ["FR-37"]
+    },
+    {
+      "id": "FLOW-05",
+      "type": "flow",
+      "title": "Lecturer open session and display QR demo",
+      "priority": 24,
+      "passes": false,
+      "outputPath": "docs/user-manuals/flows/FLOW-05.md",
+      "sourceDocs": [
+        "docs/ui-ux/10-user-flows.md",
+        "docs/technical/01-roles-permissions.md",
+        "docs/ui-ux/09-page-list.md"
+      ],
+      "traceability": ["FR-07", "FR-11", "FR-14", "AC-01", "AC-02", "AC-03"]
+    },
+    {
+      "id": "FLOW-06",
+      "type": "flow",
+      "title": "Lecturer monitor live roster demo",
+      "priority": 25,
+      "passes": false,
+      "outputPath": "docs/user-manuals/flows/FLOW-06.md",
+      "sourceDocs": [
+        "docs/ui-ux/10-user-flows.md",
+        "docs/ui-ux/09-page-list.md"
+      ],
+      "traceability": ["FR-19"]
+    },
+    {
+      "id": "FLOW-07",
+      "type": "flow",
+      "title": "Lecturer close session demo",
+      "priority": 26,
+      "passes": false,
+      "outputPath": "docs/user-manuals/flows/FLOW-07.md",
+      "sourceDocs": [
+        "docs/ui-ux/10-user-flows.md",
+        "docs/ui-ux/09-page-list.md"
+      ],
+      "traceability": ["FR-08", "FR-09", "AC-05", "AC-12"]
+    },
+    {
+      "id": "FLOW-08",
+      "type": "flow",
+      "title": "Lecturer manual correction demo",
+      "priority": 27,
+      "passes": false,
+      "outputPath": "docs/user-manuals/flows/FLOW-08.md",
+      "sourceDocs": [
+        "docs/ui-ux/10-user-flows.md",
+        "docs/ui-ux/09-page-list.md"
+      ],
+      "traceability": ["FR-20", "BR-14", "AC-13", "AC-14"]
+    },
+    {
+      "id": "FLOW-09",
+      "type": "flow",
+      "title": "Academic admin term/course/section setup demo",
+      "priority": 28,
+      "passes": false,
+      "outputPath": "docs/user-manuals/flows/FLOW-09.md",
+      "sourceDocs": [
+        "docs/ui-ux/10-user-flows.md",
+        "docs/technical/01-roles-permissions.md",
+        "docs/ui-ux/09-page-list.md"
+      ],
+      "traceability": ["FR-01", "FR-02", "FR-03"]
+    },
+    {
+      "id": "FLOW-10",
+      "type": "flow",
+      "title": "Enrollment CSV import demo",
+      "priority": 29,
+      "passes": false,
+      "outputPath": "docs/user-manuals/flows/FLOW-10.md",
+      "sourceDocs": [
+        "docs/ui-ux/10-user-flows.md",
+        "docs/ui-ux/09-page-list.md"
+      ],
+      "traceability": ["FR-04", "BR-06"]
+    },
+    {
+      "id": "FLOW-11",
+      "type": "flow",
+      "title": "Attendance policy configuration demo",
+      "priority": 30,
+      "passes": false,
+      "outputPath": "docs/user-manuals/flows/FLOW-11.md",
+      "sourceDocs": [
+        "docs/ui-ux/10-user-flows.md",
+        "docs/ui-ux/09-page-list.md"
+      ],
+      "traceability": ["FR-24", "FR-25"]
+    },
+    {
+      "id": "FLOW-12",
+      "type": "flow",
+      "title": "Attendance report and export demo",
+      "priority": 31,
+      "passes": false,
+      "outputPath": "docs/user-manuals/flows/FLOW-12.md",
+      "sourceDocs": [
+        "docs/ui-ux/10-user-flows.md",
+        "docs/ui-ux/09-page-list.md"
+      ],
+      "traceability": ["FR-27", "FR-28", "AC-15", "AC-16", "AC-17"]
+    },
+    {
+      "id": "FLOW-13",
+      "type": "flow",
+      "title": "Audit log review demo",
+      "priority": 32,
+      "passes": false,
+      "outputPath": "docs/user-manuals/flows/FLOW-13.md",
+      "sourceDocs": [
+        "docs/ui-ux/10-user-flows.md",
+        "docs/technical/01-roles-permissions.md",
+        "docs/ui-ux/09-page-list.md"
+      ],
+      "traceability": ["FR-29", "FR-30", "FR-32"]
+    },
+    {
+      "id": "FLOW-14",
+      "type": "flow",
+      "title": "Staff authentication demo",
+      "priority": 33,
+      "passes": false,
+      "outputPath": "docs/user-manuals/flows/FLOW-14.md",
+      "sourceDocs": [
+        "docs/ui-ux/10-user-flows.md",
+        "docs/technical/01-roles-permissions.md",
+        "docs/ui-ux/09-page-list.md"
+      ],
+      "traceability": ["FR-15", "FR-36"]
+    },
+    {
+      "id": "demo-runbook",
+      "type": "runbook",
+      "title": "Attendly stakeholder demo runbook",
+      "priority": 99,
+      "passes": false,
+      "outputPath": "docs/user-manuals/demo-runbook.md",
+      "sourceDocs": [
+        "docs/ui-ux/10-user-flows.md",
+        "docs/technical/01-roles-permissions.md"
+      ],
+      "dependsOn": ["FLOW-*"]
+    }
+  ]
+}

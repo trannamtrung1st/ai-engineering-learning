@@ -26,6 +26,14 @@ You are the **AI harness planner**. Generate harness configuration JSON from com
   - **UI-facing tags:** add a `rules[]` entry whose `match` covers the AC/FR tags that render UI (derive from the page-to-requirement traceability in `docs/ui-ux/09-page-list.md`) and include `docs/ui-ux/09-page-list.md` in that rule's `docs[]`. This is what drives `testgen-loop.json` → `validation.uiUxRequiredWhen.docsInclude` (a UI-facing tag must ship ≥1 `category: ui-ux` case). Do **not** attach the page-list doc to purely backend/rule tags (most `BR-*`, performance `NFR-*`)
 - `scenario-probe.json` (when listed as output): live-stack API smoke config for `verify-scenarios.sh`. Schema: `ai-harness/config/scenario-probe.schema.json`. Emit at minimum a health probe; when `05-api-design.md` documents dev auth, add token + one authenticated GET using product routes and roles
 - `test-case-index.json`: `{ "current": [], "docFingerprint": null }`
+- `manuals-backlog.json`: queue of user-manual items for ManualsGen loop. Schema: `ai-harness/schemas/manuals-backlog.schema.json`
+  - **Modules:** one item per MVP module in `docs/technical/02-module-breakdown.md` that has user-facing UI (cross-walk `docs/ui-ux/09-page-list.md`). `type: "module"`, `id: "module-<slug>"`, `outputPath: "docs/user-manuals/modules/<slug>.md"`, `priority` 10–19
+  - **Flows:** one item per `FLOW-xx` in the inventory table of `docs/ui-ux/10-user-flows.md`. `type: "flow"`, `id: "FLOW-xx"`, `outputPath: "docs/user-manuals/flows/FLOW-xx.md"`, `priority` 20–89
+  - **Runbook:** single final item `id: "demo-runbook"`, `type: "runbook"`, `outputPath: "docs/user-manuals/demo-runbook.md"`, highest `priority` (e.g. 99), `dependsOn: ["FLOW-*"]`
+  - Each item: `passes: false`, `title`, `sourceDocs[]`, optional `traceability[]` (FR/AC tags from flow/module specs)
+- `manualsgen-docs-map.json`: `alwaysRead` plus `typeRules[]` with `type` (`module`|`flow`|`runbook`) and `docs[]`; preserve template `generationNotes`. Derive doc lists from product specs — not template literals
+- `manuals-index.json`: `{ "current": [], "docFingerprint": null, "tags": {} }` (same shape as test-case-index)
+- Preserve `agents.manualsgen.alwaysRead` in `context-map.json` from the template skeleton
 - All doc paths must exist on disk under `docs/`.
 - All acceptance tags must exist in BRD docs.
 - Valid JSON only — no comments, no trailing commas.

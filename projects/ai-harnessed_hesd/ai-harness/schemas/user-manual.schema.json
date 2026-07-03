@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://attendly.local/ai-harness/schemas/user-manual.schema.json",
+  "title": "UserManualArtifact",
+  "description": "Optional frontmatter contract for ManualsGen markdown artifacts (validated by validate-user-manuals.sh)",
+  "type": "object",
+  "required": ["manualItemId", "type", "title", "docFingerprint", "generatedAt"],
+  "additionalProperties": false,
+  "properties": {
+    "manualItemId": { "type": "string", "minLength": 1 },
+    "type": { "type": "string", "enum": ["module", "flow", "runbook"] },
+    "title": { "type": "string", "minLength": 1 },
+    "docFingerprint": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
+    "generatedAt": { "type": "string", "format": "date-time" },
+    "traceability": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

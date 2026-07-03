@@ -71,12 +71,23 @@ compute_slice_doc_fingerprint() {
   _fingerprint_from_paths "$doc_lines"
 }
 
+compute_manual_item_doc_fingerprint() {
+  local item_id="$1"
+  # shellcheck source=resolve-manualsgen-docs.sh
+  source "${_LIB_DIR}/resolve-manualsgen-docs.sh"
+  local doc_lines
+  doc_lines="$(resolve_docs_list_for_manual_item "$item_id")"
+  _fingerprint_from_paths "$doc_lines"
+}
+
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   set -euo pipefail
   require_harness_deps
   ID="${1:?id required}"
   if [[ "${2:-}" == "--requirement-tag" || "${2:-}" == "--product-item" ]]; then
     compute_requirement_tag_doc_fingerprint "$ID"
+  elif [[ "${2:-}" == "--manual-item" ]]; then
+    compute_manual_item_doc_fingerprint "$ID"
   else
     compute_slice_doc_fingerprint "$ID"
   fi

@@ -498,17 +498,23 @@
       "phase": 4,
       "kind": "agent",
       "agent": "harness-planner",
-      "description": "Generate context-map, testgen-docs-map, test-case-index, scenario-probe",
+      "description": "Generate context-map, testgen-docs-map, test-case-index, scenario-probe, manuals config",
       "outputs": [
         "ai-harness/config/context-map.json",
         "ai-harness/config/testgen-docs-map.json",
         "ai-harness/config/scenario-probe.json",
-        "ai-harness/test-case-index.json"
+        "ai-harness/config/manualsgen-docs-map.json",
+        "ai-harness/test-case-index.json",
+        "ai-harness/manuals-backlog.json",
+        "ai-harness/manuals-index.json"
       ],
       "contextDocs": [
         "ai-harness/whole-app-backlog.json",
         "docs/brds/03-functional-requirements.md",
-        "docs/brds/08-acceptance-mvp-future.md"
+        "docs/brds/08-acceptance-mvp-future.md",
+        "docs/technical/02-module-breakdown.md",
+        "docs/ui-ux/09-page-list.md",
+        "docs/ui-ux/10-user-flows.md"
       ],
       "validators": [
         "outputs-exist",
@@ -529,6 +535,7 @@
         "ai-harness/agents/reviewer.prompt.md",
         "ai-harness/agents/tester.prompt.md",
         "ai-harness/agents/testgen.prompt.md",
+        "ai-harness/agents/manualsgen.prompt.md",
         "ai-harness/README.md",
         "ai-harness/docs/browser-mcp.md",
         "ai-harness/skills/ui-ux-testing/SKILL.md",
