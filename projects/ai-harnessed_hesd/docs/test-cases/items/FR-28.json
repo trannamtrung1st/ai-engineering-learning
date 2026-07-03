@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-28",
   "version": 1,
-  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
-  "generatedAt": "2026-07-02T11:30:06Z",
+  "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
+  "generatedAt": "2026-07-03T04:54:00Z",
   "cases": [
     {
       "id": "TC-FR-28-001",
@@ -129,7 +129,7 @@
       "steps": [
         "Send GET /v1/class-sessions/{sessionId}/attendance with Lecturer Authorization header.",
         "Validate HTTP 200 and roster envelope with data.classSessionId, data.counts, and data.rows[].",
-        "Assert each roster row includes studentCode, attendanceStatus, checkInMethod, and checkInAt per API §4.5.",
+        "Assert each roster row includes studentCode, attendanceStatus, checkInMethod, checkInAt, and latestAttemptOutcome per API §4.5.",
         "Send GET /v1/reports/attendance?classSectionId={sectionId}&from={sessionDate}&to={sessionDate} and compare report rows to roster entries for the same session."
       ],
       "expected": "Roster response is HTTP 200 with documented payload shape; report query for the same session returns matching student identifier, status, method, and timestamp values without additional cross-scope rows.",
@@ -360,7 +360,7 @@
         "Apply status filter Absent and date range from/to; verify table updates.",
         "Enter student name or code in search field and confirm filtered results.",
         "Click date column header to toggle sortOrder; navigate to page 2 via pagination controls.",
-        "Verify URL query params sync with toolbar state (termId, classSectionId, status, from, to, sortBy, sortOrder, page, pageSize, search)."
+        "Verify URL query params sync with toolbar state (termId, classSectionId, courseId, lecturerUserId, status, from, to, sortBy, sortOrder, page, pageSize, search)."
       ],
       "expected": "PG-13 listing implements search, filter, sort, and server pagination per §0 matrix; toolbar state syncs with URL; displayed rows remain within lecturer assigned scope with AttendanceStatusCell badges; no unassigned section data appears.",
       "edgeCase": false
@@ -372,18 +372,64 @@
       "technique": "browser-journey",
       "priority": "P1",
       "traceability": ["FR-28", "BR-19", "AC-16"],
-      "title": "Browser journey shows empty, no-results, and access-denied states on report listing",
+      "title": "Student browser journey denied access to PG-13 attendance report",
       "preconditions": [
-        "Lecturer and Student test accounts available in browser harness.",
-        "Lecturer has assigned section with attendance data; Student lacks institution report permission."
+        "Student test account is available in browser harness.",
+        "Student lacks institution report permission per BR-19.",
+        "Institution-wide attendance report data exists in the system."
       ],
       "steps": [
-        "As Lecturer, apply filters that match zero rows and observe no-results state with clear-filters affordance.",
-        "As Lecturer, select a section with no attendance records and observe empty state.",
         "As Student, attempt direct navigation to /reports/attendance.",
-        "Observe permission empty or access-denied state without partial attendance table data."
+        "Inspect shell navigation for report listing affordances.",
+        "Observe permission empty or access-denied state without partial attendance table data.",
+        "Verify no cross-scope row counts, student identifiers, or filter options for out-of-scope sections are disclosed."
       ],
-      "expected": "Listing page states per NFR-UI-07: no-results shows localized message and clear-filters action; empty state shows setup guidance; Student sees access denial without restricted attendance rows or cross-scope counts (AC-UI-09, BR-19).",
+      "expected": "Student sees scoped access-denied or permission-empty state on PG-13 without restricted attendance rows, cross-scope totals, or actionable report filters for unauthorized entities (AC-UI-09, BR-19, AC-16).",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-28-019",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["FR-28", "BR-19"],
+      "title": "PG-13 attendance report listing renders distinct loading, empty, no-results, and error states",
+      "preconditions": [
+        "Lecturer is logged in on desktop StaffLayout shell.",
+        "Fixtures can produce slow report fetch, zero in-scope records, filtered zero-match, API failure, and populated scoped report rows on PG-13."
+      ],
+      "steps": [
+        "Navigate to /reports/attendance while throttling GET /v1/reports/attendance; observe loading skeleton or spinner with toolbar remaining interactive per NFR-UI-07.",
+        "Load PG-13 for a lecturer assigned section with no attendance records; observe empty state with setup guidance (not a blank table shell).",
+        "Apply filters that match zero rows within assigned scope; observe no-results state with localized message and clear-filters affordance.",
+        "Trigger report API error (5xx or simulated network failure); observe FeedbackAlert with retry affordance.",
+        "Restore successful fetch and confirm populated DataTable is visually distinct from loading, empty, no-results, and error states."
+      ],
+      "expected": "PG-13 satisfies NFR-UI-07 listing state coverage per 12-ui-states.md §6: loading, empty, no-results, error, and list states are visually distinct; no state reveals cross-scope row counts or student identifiers from unauthorized sections.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-28-020",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-form-ux",
+      "priority": "P1",
+      "traceability": ["FR-28", "BR-18", "BR-19"],
+      "title": "FRM-10 report filter toolbar shows inline validation, filter chips, and apply feedback",
+      "preconditions": [
+        "Lecturer or DepartmentAdmin is logged in on PG-13 /reports/attendance.",
+        "FRM-10 TableToolbar exposes term, section, course, lecturer, status, and date-range controls per 14-listing-pages §4.5.",
+        "Attendance data exists within actor scope for valid filter combinations."
+      ],
+      "steps": [
+        "Set date range with from after to and attempt to apply filters; observe inline field-level validation on the offending date control before table refresh.",
+        "Select term and section filters; confirm active filter chips appear with per-chip clear and clear-all affordance (FR-TTB-02).",
+        "Apply valid filters and observe table loading/submitting state on the toolbar apply action while GET /v1/reports/attendance is in flight.",
+        "On successful response confirm chips, URL query params, and table rows reflect applied scope-limited filters.",
+        "As DepartmentAdmin, verify course and lecturer filter option lists exclude entities outside assigned faculty."
+      ],
+      "expected": "FRM-10 surfaces inline validation for invalid date ranges; active filter chips sync with toolbar and URL (FR-TTB-05); apply action shows in-flight feedback; filter option lists respect role scope with no out-of-faculty entities selectable (BR-18, BR-19).",
       "edgeCase": false
     }
   ]
