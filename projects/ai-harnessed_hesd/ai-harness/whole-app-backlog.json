@@ -539,6 +539,12 @@
           "kind": "drift",
           "reason": "Doc drift for AC-09 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-03T04:07:52Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-09 — reverify after TestGen",
+          "source": "harness"
         }
       ]
     },
@@ -1304,6 +1310,12 @@
         },
         {
           "at": "2026-07-03T03:50:06Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-09 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T04:07:52Z",
           "kind": "drift",
           "reason": "Doc drift for AC-09 — reverify after TestGen",
           "source": "harness"

@@ -2,7 +2,7 @@
   "productItemId": "AC-09",
   "version": 1,
   "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
-  "generatedAt": "2026-07-03T03:49:00Z",
+  "generatedAt": "2026-07-03T04:07:00Z",
   "cases": [
     {
       "id": "TC-AC-09-001",
@@ -10,10 +10,10 @@
       "layer": "integration",
       "technique": "scenario-matrix",
       "priority": "P0",
-      "traceability": ["AC-09", "FR-34", "FR-35", "BR-08", "BR-14"],
+      "traceability": ["AC-09", "FR-34", "FR-35", "FR-20", "BR-08", "BR-14"],
       "title": "Scenario matrix row for GPS-required policy rejection when location unavailable",
       "preconditions": [
-        "Testing-plan §3 GPS validation block applies (FR-34, FR-35, BR-08/09/10, AC-09, AC-10).",
+        "Testing-plan §3.1 GPS validation block applies (FR-34, FR-35, BR-08/09/10, AC-09, AC-10).",
         "gps-required-session fixture: Open class session with effective policy gpsRequired=true and valid QR token.",
         "Authenticated enrolled student has no successful attendance record for the session."
       ],
@@ -22,7 +22,7 @@
         "Submit check-in command with valid qrToken but without usable GPS coordinates (permission denied or gps payload omitted).",
         "Query persisted CheckInAttempt and AttendanceRecord for the student-session pair."
       ],
-      "expected": "Self check-in is rejected with outcome GpsDisabled or GpsRequired per AC-09 coverage row; no Present/Late AttendanceRecord is created and a failed CheckInAttempt is logged with structured reason code.",
+      "expected": "Self check-in is rejected with outcome GpsDisabled or GpsRequired per AC-09 coverage row; no Present/Late AttendanceRecord is created and a failed CheckInAttempt is logged with structured reason code; lecturer manual fallback remains available per BR-14.",
       "edgeCase": false
     },
     {
@@ -72,7 +72,7 @@
       "layer": "integration",
       "technique": "module-integration",
       "priority": "P0",
-      "traceability": ["AC-09", "FR-20", "FR-29", "BR-08", "BR-14", "BR-22"],
+      "traceability": ["AC-09", "FR-20", "FR-29", "BR-08", "BR-14", "BR-22", "AC-13"],
       "title": "Lecturer manual fallback remains available after GPS rejection",
       "preconditions": [
         "Open gps-required session with enrolled student who has a failed GpsDisabled or GpsRequired CheckInAttempt and no success AttendanceRecord.",
@@ -100,7 +100,7 @@
         "Authenticated student bearer token belongs to actively enrolled user with no prior success for the session."
       ],
       "steps": [
-        "Call POST /v1/check-ins with Authorization Bearer token, valid qrToken, clientTimestamp, and no gps field in body.",
+        "Call POST /v1/check-ins with Authorization Bearer token, Idempotency-Key header, valid qrToken, clientTimestamp, and no gps field in body.",
         "Inspect HTTP status, response envelope (data/meta/error), and error.code.",
         "Verify no success attendance payload is returned."
       ],
@@ -122,7 +122,7 @@
       ],
       "steps": [
         "Student calls POST /v1/auth/login and receives Student role accessToken.",
-        "Student calls POST /v1/check-ins with valid qrToken but without usable GPS coordinates (permission denied scenario).",
+        "Student calls POST /v1/check-ins with Idempotency-Key header, valid qrToken but without usable GPS coordinates (permission denied scenario).",
         "Lecturer queries GET /v1/class-sessions/{sessionId}/attendance for the student row and rejectedAttempts count.",
         "Lecturer applies PATCH manual correction for the same student with Manual Present and documented reason."
       ],
@@ -143,8 +143,8 @@
         "Test harness can simulate both omitted gps field and explicit permission-denied client context."
       ],
       "steps": [
-        "Submit POST /v1/check-ins with valid token but gps field entirely omitted; record status and error.code.",
-        "Submit POST /v1/check-ins with valid token where client signals geolocation permission denied or unavailable; record status and error.code.",
+        "Submit POST /v1/check-ins with Idempotency-Key header, valid token but gps field entirely omitted; record status and error.code.",
+        "Submit POST /v1/check-ins with Idempotency-Key header, valid token where client signals geolocation permission denied or unavailable; record status and error.code.",
         "Verify AttendanceRecord row count and CheckInAttempt outcomes for both requests."
       ],
       "expected": "Omitted gps payload returns 422 with error.code GpsRequired; permission-denied scenario returns 422 with error.code GpsDisabled; neither path creates a success AttendanceRecord and both log structured failed attempts.",
@@ -163,12 +163,12 @@
         "Lecturer and ITAdmin identities are available with valid bearer tokens per permission matrix."
       ],
       "steps": [
-        "Call POST /v1/check-ins as Lecturer with valid qrToken and gps payload for the open session.",
-        "Call POST /v1/check-ins as ITAdmin with the same token context.",
+        "Call POST /v1/check-ins as Lecturer with Idempotency-Key header, valid qrToken and gps payload for the open session.",
+        "Call POST /v1/check-ins as ITAdmin with Idempotency-Key header and the same token context.",
         "Call POST /v1/check-ins as enrolled Student (control) omitting gps under GPS-required policy.",
         "Verify denial responses contain no partial attendance mutation from privileged roles."
       ],
-      "expected": "Lecturer and ITAdmin receive 403 Forbidden before GPS policy evaluation; Student control reaches business validation and receives 422 GpsRequired or GpsDisabled; no AttendanceRecord is created by denied roles.",
+      "expected": "Lecturer and ITAdmin receive 403 with error.code Forbidden before GPS policy evaluation; Student control reaches business validation and receives 422 GpsRequired or GpsDisabled; no AttendanceRecord is created by denied roles.",
       "edgeCase": true
     },
     {
@@ -233,11 +233,11 @@
         "Navigate to PG-02 check-in URL with token query parameter for gps-required session.",
         "Observe GpsPermissionPrompt risk-reduction copy before permission prompt per FLOW-03 step 1.",
         "Deny browser location permission and submit check-in.",
-        "Verify CheckInResultScreen page state ID failure-gps-denied, warning alert variant, and Vietnamese copy intent per ui-states §5.1.",
+        "Verify CheckInResultScreen page state ID failure-gps-denied, warning alert variant, and Vietnamese copy intent per 12-ui-states §5.1.",
         "Confirm recovery CTA and lecturer fallback guidance (báo giảng viên) are present per DC-05.",
         "Compare against success-present and failure-not-enrolled states to confirm visual distinction per AC-UI-02."
       ],
-      "expected": "PG-02 outcome state failure-gps-denied is visually distinct from success and other failure states (warning alert, recovery copy 'Cần quyền vị trí', retry-after-enable CTA and báo giảng viên fallback path); submission lifecycle completes without ambiguous intermediate states per ui-states §5.2.",
+      "expected": "PG-02 outcome state failure-gps-denied is visually distinct from success and other failure states (warning alert, recovery copy 'Cần quyền vị trí', retry-after-enable CTA and báo giảng viên fallback path); submission lifecycle completes without ambiguous intermediate states per 12-ui-states §5.2.",
       "edgeCase": false
     }
   ]
