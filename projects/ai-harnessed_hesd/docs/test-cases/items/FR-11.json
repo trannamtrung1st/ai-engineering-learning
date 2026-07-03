@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-11",
   "version": 1,
-  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
-  "generatedAt": "2026-07-02T10:51:24Z",
+  "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
+  "generatedAt": "2026-07-03T04:30:00Z",
   "cases": [
     {
       "id": "TC-FR-11-001",
@@ -295,6 +295,29 @@
         "Confirm refreshed QR remains scannable for student check-in flow."
       ],
       "expected": "Browser journey demonstrates FR-11 and FR-14 projection-friendly display: QR refreshes automatically before 30-second TTL expires via QrDisplayPanel/QrCountdownRing without lecturer manual reload, maintaining Open-state indicators throughout rotation.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-11-014",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["FR-11", "FR-14"],
+      "title": "PG-05 QrDisplayPanel and QrCountdownRing render distinct loading, active rotation, and token-fetch error states",
+      "preconditions": [
+        "Lecturer is logged in on desktop StaffLayout at PG-05.",
+        "Open session fixture exists with QrDisplayPanel wired to GET /v1/class-sessions/{sessionId}/qr/current.",
+        "Harness can simulate slow qr/current responses and qr/current HTTP failures."
+      ],
+      "steps": [
+        "Navigate to /lecturer/sessions/{sessionId} (PG-05) for an Open session and observe loading or skeleton state on QrDisplayPanel while qr/current is in flight.",
+        "On successful fetch, verify high-contrast QR canvas renders with QrCountdownRing showing numeric seconds remaining aligned to approximately 30-second TTL.",
+        "Wait until countdown approaches zero and observe pre-expiry refresh animation (crossfade or swap) to the next QR token without full-page reload.",
+        "Simulate GET /v1/class-sessions/{sessionId}/qr/current failure on an Open session and observe token-fetch error FeedbackAlert with retry affordance while Open status badge persists.",
+        "Trigger retry after simulated recovery and confirm QR panel returns to active countdown state with a Valid scannable token."
+      ],
+      "expected": "PG-05 visually distinguishes QR token loading, active 30-second rotation countdown, and token-fetch error per 09-page-list §5 key states; FR-11 auto-refresh is perceptible before TTL expiry without lecturer manual reload.",
       "edgeCase": false
     }
   ]
