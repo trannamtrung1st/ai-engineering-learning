@@ -303,7 +303,7 @@
     },
     {
       "id": "module-identity-and-access",
-      "passes": false,
+      "passes": true,
       "priority": 7,
       "phase": 1,
       "agent": "backend",

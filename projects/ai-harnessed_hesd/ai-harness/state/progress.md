@@ -305,3 +305,5 @@
 - 2026-07-03T09:05:07Z | infra-local-runtime-compose | passed
 - 2026-07-03T09:12:00Z | playwright-ui-workspace | implementer: re-verified after TestGen doc drift (AC-01 AC-11 AC-16 NFR-14) — added AC-01/AC-16 traceability tags, NARROW_MOBILE_VIEWPORT fixture (TC-NFR-14-008), updated workspace smoke selectors for /showcase landing — checks: full profile pass (unit 227/227, integration 213/213, e2e 21/21), Playwright 8/8
 - 2026-07-03T09:17:13Z | playwright-ui-workspace | passed
+- 2026-07-03T09:20:47Z | module-identity-and-access | implementer: re-verified after TestGen doc drift (FR-15 FR-31 FR-32 FR-38 BR-19 BR-24 NFR-09) — M01 JWT auth context, RBAC authorize middleware, GET /me, POST /v1/auth/logout with UserLoggedOut audit (FR-38 BR-24), deny-by-default scope guards — checks: full profile pass (unit 222/222, integration 213/213, e2e 21/21, generated test case coverage pass)
+- 2026-07-03T09:24:51Z | module-identity-and-access | passed
