@@ -2,7 +2,7 @@
   "productItemId": "NFR-03",
   "version": 1,
   "docFingerprint": "sha256:0091ebfac485b5b90c7a94c982196a35adddc3e7535aba555ed532f8d1599fd9",
-  "generatedAt": "2026-07-02T15:00:00Z",
+  "generatedAt": "2026-07-03T05:32:00Z",
   "cases": [
     {
       "id": "TC-NFR-03-001",
@@ -80,7 +80,7 @@
       "traceability": ["NFR-03", "NFR-01", "NFR-04", "NFR-07", "AC-08", "FR-18", "BR-07"],
       "title": "Class-start concurrent burst on POST /v1/check-ins maintains >= 99% valid processing success",
       "preconditions": [
-        "Multiple open class sessions each have 20+ enrolled students per representative pilot profile.",
+        "Multiple open class sessions each have 20+ enrolled students per representative pilot profile (performance-smoke: 2 sessions × 20 students).",
         "Test harness can fire parallel POST /v1/check-ins requests across sessions with distinct students, valid QR tokens, and unique Idempotency-Key values.",
         "All requests satisfy session-open, token, enrollment, authentication, and policy preconditions per NFR-03 valid-request subset.",
         "Retry storm subset replays same Idempotency-Key for already-accepted commands per testing-plan §7.2."
@@ -176,7 +176,7 @@
       "steps": [
         "Lecturer calls POST /v1/check-ins with valid qrToken and Authorization header.",
         "ITAdmin calls POST /v1/check-ins with the same qrToken context.",
-        "Verify both receive HTTP 403 Forbidden per permission matrix.",
+        "Verify both receive HTTP 403 Forbidden per permission matrix (Submit QR check-in Deny).",
         "Run parallel rule-pass Student submissions; compute success rate using only authenticated enrolled Student rule-pass requests."
       ],
       "expected": "Lecturer and ITAdmin receive 403 Forbidden; no CheckInAttempt or AttendanceRecord is created for non-student actors. Unauthorized attempts are excluded from NFR-03 valid-request denominator; Student rule-pass success rate remains >= 99%.",
@@ -226,6 +226,28 @@
       "expected": "Physical pilot demonstrates >= 99% processing success for rule-pass check-in requests under real campus load, providing production-like evidence for NFR-03 beyond emulated harness runs.",
       "edgeCase": false,
       "harnessSkip": "physical-device"
+    },
+    {
+      "id": "TC-NFR-03-011",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["NFR-03", "AC-22", "FR-16", "AC-11", "NFR-14"],
+      "title": "PG-02 CheckInResultScreen success and failure outcome states are visually distinct for reliable success-rate aggregation",
+      "preconditions": [
+        "Multiple open sessions with enrolled students are configured for parallel mobile-web journeys at PG-02 /check-in.",
+        "Browser harness classifies terminal UI state by page state ID per ui-states §5.1 (success-present, success-late vs failure-* and lifecycle states).",
+        "Fixtures support present-window and late-window rule-pass scenarios plus representative rule-fail paths; GPS policy disabled or satisfied."
+      ],
+      "steps": [
+        "Run parallel rule-pass check-in journeys; for each, observe lifecycle loading → submitting → outcome per ui-states §5.2.",
+        "Verify successful processing renders exactly one of success-present or success-late with role=status aria-live announcement — not stuck in loading or submitting.",
+        "Verify representative rule-fail outcomes (ExpiredQr, DuplicateCheckIn, SessionClosed) render distinct failure-* state IDs without being misclassified as processing success.",
+        "Aggregate UI processing success rate for journeys reaching success-present or success-late versus total rule-pass journeys."
+      ],
+      "expected": "Rule-pass journeys that complete processing render decisive success-present or success-late CheckInResultScreen states without ambiguous intermediate states; failure and lifecycle states are visually distinct so harness can accurately measure >= 99% UI processing success rate for NFR-03 gate evidence per ui-states §5.1.",
+      "edgeCase": false
     }
   ]
 }
