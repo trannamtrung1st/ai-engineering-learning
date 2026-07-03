@@ -100,6 +100,16 @@ Attendly business rules govern:
 | **Exception** | None for self-service check-in |
 | **Trace** | FR-15, FR-36 |
 
+### BR-24 — End authenticated session on logout
+
+| Field | Value |
+| --- | --- |
+| **Condition** | User initiates logout while authenticated |
+| **Trigger** | Logout control in UI or `POST /v1/auth/logout` |
+| **Outcome** | Client discards access token and role-specific auth flags; user is redirected to PG-01; protected routes and API endpoints reject requests without a valid token (`401 Unauthenticated`); no privileged data from the prior session remains visible on protected pages after navigation |
+| **Exception** | MVP does not revoke already-issued JWTs server-side (stateless tokens expire per `expiresInSeconds`); campus SSO global sign-out is future (`FR-F01`) |
+| **Trace** | FR-38 |
+
 ### BR-06 — Reject check-in when student not enrolled
 
 | Field | Value |
@@ -351,6 +361,7 @@ flowchart TD
 | BR-01 – BR-02 | FR-07, FR-08, FR-13 | CAP-04 |
 | BR-03 – BR-04 | FR-11, FR-12, FR-13 | CAP-05 |
 | BR-05 | FR-15, FR-36 | CAP-07 |
+| BR-24 | FR-38 | CAP-07 |
 | BR-06 | FR-04, FR-17 | CAP-02, CAP-08 |
 | BR-07 | FR-18 | CAP-09 |
 | BR-08 – BR-10 | FR-34, FR-35 | CAP-10 |

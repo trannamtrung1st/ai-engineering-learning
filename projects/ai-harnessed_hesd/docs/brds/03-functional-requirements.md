@@ -23,7 +23,7 @@
 | FR-29 – FR-30 | Audit logging | Must |
 | FR-31 – FR-33 | Department admin and system auditor | Should |
 | FR-34 – FR-35 | GPS validation | Should |
-| FR-36 – FR-37 | Authentication and student self-service | Must |
+| FR-36 – FR-38 | Authentication, logout, and student self-service | Must |
 
 ---
 
@@ -220,6 +220,15 @@
 | **Behavior** | View own attendance records per enrolled section and session: status, check-in timestamp, method (`QR`, `Manual`, `Admin Correction`). Deny access to other students' records and institution-wide export. |
 | **Priority** | Must |
 | **Trace** | CAP-14 |
+
+### FR-38 — User logout
+
+| Field | Value |
+| --- | --- |
+| **Actor** | All authenticated roles (`Student`, `Lecturer`, `AcademicAdmin`, `DepartmentAdmin`, `ITAdmin`, `SystemAuditor`) |
+| **Behavior** | Provide an explicit logout affordance on every authenticated surface (staff sidebar footer; student mobile shell header or account menu). On logout: call `POST /v1/auth/logout` when a bearer token is present; clear all client-held session credentials (access token and role-specific auth flags); redirect to PG-01 login. After logout, protected routes redirect to login and API calls without a valid token return `401 Unauthenticated`. MVP uses stateless JWT — server does not maintain a token blacklist; issued tokens expire naturally until `expiresInSeconds` elapses. |
+| **Priority** | Must |
+| **Trace** | CAP-07 |
 
 ---
 
@@ -431,7 +440,7 @@ The system must support the following canonical attempt outcomes (align with [pr
 | CAP-04 Open/close attendance | FR-07, FR-08 |
 | CAP-05 Dynamic QR | FR-11, FR-12, FR-13, FR-14 |
 | CAP-06 Mobile web check-in | FR-16 |
-| CAP-07 Student auth | FR-15, FR-36 |
+| CAP-07 Student auth | FR-15, FR-36, FR-38 |
 | CAP-08 Enrollment validation | FR-17 |
 | CAP-09 Duplicate prevention | FR-18 |
 | CAP-10 GPS validation | FR-05, FR-34, FR-35 |

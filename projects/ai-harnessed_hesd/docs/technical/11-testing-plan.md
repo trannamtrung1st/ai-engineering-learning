@@ -122,6 +122,7 @@ Coverage is guidance; release decisions prioritize risk-based scenarios and acce
 - Role-based route access matrix for all six roles.
 - Scope isolation tests for report/export.
 - Negative tests for privilege escalation attempts.
+- Logout clears client session and blocks protected API access until re-login (`FR-38`, `AC-26`).
 
 ### 7.4 Privacy checks
 
@@ -214,6 +215,7 @@ Release is blocked by:
 | --- | --- | --- | --- |
 | Session lifecycle and QR | FR-07, FR-08, FR-09, FR-11, FR-12, FR-13, FR-14 | BR-01, BR-02, BR-03, BR-04, BR-13, BR-21 | AC-01, AC-02, AC-03, AC-04, AC-05, AC-12 |
 | Student check-in validation | FR-15, FR-16, FR-17, FR-18, FR-22, FR-23 | BR-05, BR-06, BR-07, BR-11, BR-12, BR-23 | AC-06, AC-07, AC-08, AC-11, AC-18 |
+| Authentication lifecycle | FR-36, FR-38 | BR-05, BR-24 | AC-06, AC-26 |
 | GPS policy validation | FR-34, FR-35 | BR-08, BR-09, BR-10 | AC-09, AC-10 |
 | Manual correction and governance | FR-20, FR-21, FR-29 | BR-14, BR-15, BR-16, BR-22 | AC-13, AC-14, AC-19, AC-25 |
 | Reporting/export and permissions | FR-27, FR-28, FR-30, FR-32 | BR-18, BR-19, BR-22 | AC-15, AC-16, AC-17 |
@@ -226,7 +228,7 @@ Release is blocked by:
 
 ## 14. MVP boundary note
 
-- MVP release blocking coverage is `AC-01` through `AC-25` only, aligned with [../brds/08-acceptance-mvp-future.md](../brds/08-acceptance-mvp-future.md).
+- MVP release blocking coverage is `AC-01` through `AC-25` and `AC-26`, aligned with [../brds/08-acceptance-mvp-future.md](../brds/08-acceptance-mvp-future.md).
 - Future-phase tests should be tracked separately and must not delay MVP sign-off unless they expose regression in MVP requirements.
 
 ## 15. Minimum regression suite

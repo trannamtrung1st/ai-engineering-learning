@@ -197,6 +197,12 @@ flowchart TD
 - Effective attendance policy (for time-window and override rules).
 - Session state for attendance control operations.
 
+### 6.3 Logout and session termination
+
+- Voluntary logout (`FR-38`, `BR-24`) clears client-held credentials and redirects to PG-01.
+- `POST /v1/auth/logout` acknowledges session end for authenticated actors; MVP does not revoke stateless JWTs server-side.
+- After logout, the request evaluation pipeline in §6.1 rejects protected requests at the authentication step (`401`).
+
 ## 7. Audit and compliance requirements
 
 ### 7.1 Audit events by role action

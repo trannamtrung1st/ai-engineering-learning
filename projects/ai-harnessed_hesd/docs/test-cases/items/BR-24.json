@@ -1,0 +1,46 @@
+{
+  "productItemId": "BR-24",
+  "version": 1,
+  "docFingerprint": "sha256:pending-testgen",
+  "generatedAt": "2026-07-03T06:14:00Z",
+  "cases": [
+    {
+      "id": "TC-BR-24-001",
+      "category": "functional",
+      "layer": "e2e",
+      "technique": "http-contract",
+      "priority": "P0",
+      "traceability": ["BR-24", "FR-38", "AC-26"],
+      "title": "Logout outcome clears client session and rejects subsequent authenticated API calls",
+      "preconditions": [
+        "Student bearer token available from POST /v1/auth/login."
+      ],
+      "steps": [
+        "POST /v1/auth/logout with Authorization header.",
+        "Omit Authorization on GET /v1/me and POST /v1/check-ins probe.",
+        "Inspect 401 Unauthenticated responses."
+      ],
+      "expected": "BR-24 outcome: client session ended; API rejects requests without valid token; no privileged data returned after logout.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-24-002",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "module-integration",
+      "priority": "P1",
+      "traceability": ["BR-24", "FR-38"],
+      "title": "M01 authenticate middleware rejects requests after logout credential discard",
+      "preconditions": [
+        "Integration harness can invoke createAuthenticate middleware with and without bearer context."
+      ],
+      "steps": [
+        "Bind valid actor to request via bearer token.",
+        "Simulate logout by removing Authorization on subsequent request to protected route preHandler.",
+        "Assert unauthenticated short-circuit before business logic."
+      ],
+      "expected": "Authentication guard enforces BR-24: cleared credentials yield 401 at middleware boundary without partial handler execution.",
+      "edgeCase": false
+    }
+  ]
+}

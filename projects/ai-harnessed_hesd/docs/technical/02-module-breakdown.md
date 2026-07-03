@@ -84,8 +84,8 @@ flowchart LR
 
 **Requirement trace**
 
-- FR-15, FR-36, FR-31, FR-32, FR-33.
-- BR-05, BR-18, BR-19.
+- FR-15, FR-36, FR-38, FR-31, FR-32, FR-33.
+- BR-05, BR-24, BR-18, BR-19.
 
 ### 3.2 M02 — Academic Structure
 
@@ -404,7 +404,7 @@ M09 can be introduced incrementally as polling fallback exists for early testing
 
 | Module | FR IDs |
 | --- | --- |
-| M01 | FR-15, FR-31, FR-32, FR-33, FR-36 |
+| M01 | FR-15, FR-31, FR-32, FR-33, FR-36, FR-38 |
 | M02 | FR-01, FR-02, FR-03, FR-04, FR-05, FR-06, FR-17 |
 | M03 | FR-07, FR-08, FR-09, FR-10 |
 | M04 | FR-11, FR-12, FR-13, FR-14, FR-16, FR-18, FR-22, FR-23, FR-34, FR-35 |

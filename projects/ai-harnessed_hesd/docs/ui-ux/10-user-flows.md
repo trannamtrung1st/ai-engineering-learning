@@ -37,6 +37,7 @@ This document defines **end-to-end user flows** for Attendly MVP: actor intent, 
 | FLOW-12 | Attendance report and export | Lecturer / Admin | PG-13 → PG-14 | `FR-27`, `FR-28`, `AC-15`, `AC-16`, `AC-17` |
 | FLOW-13 | Audit log review | System Auditor / IT Admin | PG-15 | `FR-29`, `FR-30`, `FR-32` |
 | FLOW-14 | Staff authentication | All staff roles | PG-01 | `FR-15`, `FR-36` |
+| FLOW-15 | User logout | All roles | PG-01 (post-logout) | `FR-38` |
 
 ---
 
@@ -250,6 +251,20 @@ Each list page uses `TableToolbar` + `DataTable` per [05-common-ui-components.md
 | 3 | Failure | Throttle message; no account enumeration |
 | 4 | Success | Redirect to role-appropriate landing (PG-04 for Lecturer, PG-07 for Academic Admin) |
 
+### 4.7 FLOW-15 — User logout
+
+**Goal:** Any authenticated user can end their session safely (`FR-38`, `BR-24`).
+
+| Step | Route / surface | Behavior |
+| --- | --- | --- |
+| 1 | Authenticated shell | User selects **Đăng xuất** from sidebar footer (staff) or account/header control (student mobile shell) |
+| 2 | Client | `POST /v1/auth/logout` with current bearer token when present |
+| 3 | Client | Clear access token and role-specific auth flags from browser storage |
+| 4 | Redirect | Navigate to PG-01 login; no `returnUrl` on voluntary logout |
+| 5 | Guard | Protected route or API call without new login returns login redirect or `401 Unauthenticated` |
+
+Staff and student shells share the same logout contract; only placement differs per layout family (`LAY-01` vs `LAY-02`–`LAY-04`).
+
 ---
 
 ## 5. Cross-flow dependencies
@@ -271,6 +286,7 @@ Each list page uses `TableToolbar` + `DataTable` per [05-common-ui-components.md
 | Student check-in (FLOW-01–03) | `AC-01` through `AC-11`, `AC-18`, `AC-20` |
 | Lecturer operations (FLOW-05–08) | `AC-01`, `AC-02`, `AC-05`, `AC-12`–`AC-14`, `AC-25` |
 | Reporting/governance (FLOW-12–13) | `AC-15`–`AC-19`, `AC-23` |
+| Authentication (FLOW-14–15) | `AC-06`, `AC-26` |
 | UI-specific gates | `AC-UI-01` through `AC-UI-09` ([00-production-ui-quality-bar.md](./00-production-ui-quality-bar.md)) |
 
 ---

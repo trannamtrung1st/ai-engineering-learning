@@ -70,7 +70,7 @@ MVP aligns with **Phase 1 — Core Attendance**. Items marked **Must** are non-n
 | Open/close attendance window | Lecturer opens and closes check-in for a specific class session; reject check-in when session not open | CAP-04 |
 | Rotating dynamic QR (30 s) | Server issues **short-lived multi-use** session tokens bound to one class session; QR display refreshes every **30 seconds**; expired tokens rejected with clear message | CAP-05 |
 | Mobile web QR scan | Student uses phone browser camera; no native app | CAP-06 |
-| Student authentication | Valid login required before check-in; unauthenticated users redirected to login | CAP-07 |
+| Student authentication | Valid login required before check-in; unauthenticated users redirected to login; explicit logout clears client session and requires re-authentication | CAP-07 |
 | Enrollment validation | Only students enrolled in the class section may check in; failures logged as rejected attempts | CAP-08 |
 | One check-in per student per session | Each student may have at most one **successful** attendance record per class session; duplicate attempts rejected with explicit message | CAP-09 |
 | Attendance statuses (core) | Record `Present`, `Late`, `Absent`, and `Manual Present` where policy applies; store rejected attempts separately | — |

@@ -194,6 +194,7 @@ On success:
 | Checkpoint | Expected behavior | Trace |
 | --- | --- | --- |
 | Login gate | Unauthenticated QR scan redirects to login and returns to check-in | AC-06 |
+| Logout | Voluntary logout clears credentials and blocks protected access until re-login | AC-26 |
 | Token sharing | Multiple students can use the same valid displayed QR within TTL | AC-03 |
 | Eligibility | Student must have active enrollment in the session section | AC-07 |
 | Duplicate prevention | Second successful attempt for same session is rejected | AC-08 |

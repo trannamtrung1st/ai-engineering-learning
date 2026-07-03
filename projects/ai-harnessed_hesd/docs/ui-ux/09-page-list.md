@@ -90,6 +90,7 @@ Enrollment import (PG-10) is a secondary route from PG-09 row actions, not a top
 Navigation rules:
 
 - **Home link always visible** — first nav item or linked product logo on every authenticated page.
+- **Logout always visible** — **Đăng xuất** control in sidebar footer (staff layouts) or student shell header/account menu on every authenticated page (`FR-38`).
 - **RBAC omission** — nav items for forbidden routes are absent from rendered output, not disabled (`AC-UI-09`).
 - **No dead ends** — detail, modal, and outcome pages provide breadcrumb, close, or home recovery per [06-app-layout-components.md](./06-app-layout-components.md) §6.
 
@@ -108,6 +109,8 @@ Navigation rules:
 | Form | FRM-01 ([08-forms-validation-ux.md](./08-forms-validation-ux.md) §4.1) |
 | API | `POST /v1/auth/login` |
 | Trace | `FR-15`, `FR-36` |
+
+Voluntary logout from any authenticated surface follows FLOW-15 (`FR-38`); user returns here without `returnUrl`.
 
 ### PG-02 — Check-in entry (scan landing)
 
@@ -328,8 +331,8 @@ Matrix rules:
 
 | Page group | FR | BR | AC / NFR |
 | --- | --- | --- | --- |
-| Home & navigation | `FR-15`, `FR-36` | `BR-19` | `AC-UI-01`, `AC-UI-09`, `NFR-LAY-01` to `NFR-LAY-06` |
-| Auth & check-in | `FR-15`, `FR-16`, `FR-36` | `BR-05` to `BR-12` | `AC-UI-01` to `AC-UI-03` |
+| Home & navigation | `FR-15`, `FR-36`, `FR-38` | `BR-19`, `BR-24` | `AC-UI-01`, `AC-UI-09`, `AC-26`, `NFR-LAY-01` to `NFR-LAY-06` |
+| Auth & check-in | `FR-15`, `FR-16`, `FR-36`, `FR-38` | `BR-05` to `BR-12`, `BR-24` | `AC-UI-01` to `AC-UI-03`, `AC-06`, `AC-26` |
 | Lecturer session/roster | `FR-07`, `FR-08`, `FR-11`, `FR-14`, `FR-19`, `FR-20` | `BR-01` to `BR-04`, `BR-14` | `AC-01`, `AC-02`, `AC-13`, `AC-UI-04` to `AC-UI-06` |
 | Admin setup | `FR-01` to `FR-06`, `FR-24`, `FR-25` | `BR-06`, `BR-19` | `AC-UI-07` |
 | Reporting/export | `FR-27`, `FR-28`, `FR-30` | `BR-18`, `BR-19` | `AC-UI-08`, `AC-UI-09` |

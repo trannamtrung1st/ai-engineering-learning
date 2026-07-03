@@ -69,6 +69,13 @@ Trace: `FR-08` · `BR-02`.
 **Then** the system redirects to login and only allows submission after successful authentication.  
 Trace: `FR-15`, `FR-36` · `BR-05`.
 
+#### AC-26 — Logout clears session and protects routes
+
+**Given** an authenticated user of any role,  
+**When** they choose logout,  
+**Then** client session credentials are cleared, the user is redirected to login, and subsequent access to protected routes or APIs requires re-authentication.  
+Trace: `FR-38` · `BR-24`.
+
 #### AC-07 — Enrollment validation enforced
 
 **Given** a student account is not actively enrolled in the target class section,  
@@ -221,7 +228,7 @@ Trace: `NFR-17`, `FR-20`, `BR-14`.
 | Scope area | Commitment |
 | --- | --- |
 | Core session flow | Session open/close with rotating 30s QR and state-safe behavior |
-| Student check-in | Mobile-web scan, login gate, enrollment check, duplicate prevention |
+| Student check-in | Mobile-web scan, login gate, logout, enrollment check, duplicate prevention |
 | Attendance outcomes | `Present`, `Late`, `Absent`, `Manual Present` with policy-aware close behavior |
 | Lecturer operations | Realtime roster and manual correction within policy window |
 | Compliance baseline | CSV export with strict role scope and full audit logging |
@@ -255,7 +262,7 @@ Source alignment: [01-stakeholders-scope.md](./01-stakeholders-scope.md) §2.3 �
 
 ### 4.1 Functional readiness
 
-- `AC-01` through `AC-19` pass in staging with production-like data.
+- `AC-01` through `AC-19` and `AC-26` pass in staging with production-like data.
 - Key role personas complete end-to-end UAT without unresolved blockers.
 - Rejection reason codes are visible and localized for student-facing errors.
 

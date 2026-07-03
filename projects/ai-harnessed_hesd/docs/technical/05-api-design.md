@@ -196,6 +196,35 @@ Response (`200`):
 }
 ```
 
+#### `POST /v1/auth/logout`
+
+- **Purpose:** acknowledge end of authenticated session; client must discard bearer token after success.
+- **Roles:** any authenticated role.
+- **Trace:** FR-38, BR-24.
+
+Request: no body. Requires `Authorization: Bearer <token>`.
+
+Response (`200`):
+
+```json
+{
+  "data": {
+    "loggedOut": true
+  },
+  "meta": {
+    "requestId": "uuid",
+    "timestamp": "2026-07-02T08:32:00Z"
+  },
+  "error": null
+}
+```
+
+Behavior:
+
+- Idempotent for the same valid token within the JWT lifetime.
+- Returns `401 Unauthenticated` when the bearer token is missing or invalid.
+- MVP does not maintain a server-side token revocation list; logout security relies on client credential discard plus natural JWT expiry.
+
 #### `GET /v1/me`
 
 - **Purpose:** fetch actor identity, role assignments, and effective scopes.
@@ -662,6 +691,7 @@ If the success write conflicts with an existing record, the API returns `409 Dup
 | --- | --- | --- |
 | Check-in submit | high burst per IP + per student controls | class-start peak protection |
 | Login | strict per account/IP | brute-force mitigation |
+| Logout | moderate per account | session hygiene; abuse protection |
 | Export creation | low frequency | heavy resource usage |
 | Audit/report queries | moderate | protect DB read capacity |
 
@@ -677,6 +707,7 @@ If the success write conflicts with an existing record, the API returns `409 Dup
 | `AttendanceRecorded` | `/check-ins` success path | `attendanceRecordId`, `status`, `sessionId` |
 | `AttendanceCorrected` | attendance patch | `oldStatus`, `newStatus`, `reason` |
 | `ExportCreated` | export endpoint | `exportJobId`, `scope`, `actorUserId` |
+| `UserLoggedOut` | `/auth/logout` | `actorUserId`, `occurredAt` |
 
 ### 8.2 Event guarantees
 

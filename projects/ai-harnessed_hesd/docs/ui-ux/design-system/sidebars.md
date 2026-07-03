@@ -53,6 +53,13 @@ Hidden on mobile, visible at small breakpoint. Needs a toggle/trigger for mobile
 - Border: 2px solid border-brand-subtle
 - Can also use any alert variant from `alerts.md`
 
+### Logout control
+- Label: **Đăng xuất**
+- Placement: below the navigation list, separated by a `Separator` (staff `SidebarNav`); student mobile shell uses header or account menu per `LAY-01`
+- Style: text button or low-emphasis secondary button — not primary brand CTA
+- Action: FLOW-15 (`FR-38`) — `POST /v1/auth/logout`, clear client credentials, redirect to `/login`
+- Always visible on authenticated pages for the active role
+
 ## Rules
 
 - **Home link first:** the top nav item is always the role's primary dashboard link (see Navigation List above) — never omit it, never move it below the fold, never make it conditional.

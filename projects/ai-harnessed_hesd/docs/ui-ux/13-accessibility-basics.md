@@ -98,6 +98,7 @@ Semantic palettes: [DESIGN.md](./DESIGN.md) §4.3, [colors.md](./design-system/c
 | `CheckInResultScreen` | Outcome announced via live region; success icon has `aria-hidden` with text equivalent |
 | `GpsPermissionPrompt` | Explain purpose before system permission; buttons have descriptive labels ("Cho phép truy cập vị trí") |
 | Login form (FRM-01) | Fields labeled; errors associated via `aria-describedby` |
+| Logout control (`FR-38`) | Descriptive label **Đăng xuất**; keyboard reachable in tab order after primary nav |
 | Retry after `ExpiredQr` | Primary button is first focusable element on failure screen |
 
 Student copy is Vietnamese (`vi-VN`); `lang="vi"` on document root.

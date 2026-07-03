@@ -291,7 +291,7 @@
     },
     {
       "id": "module-identity-and-access",
-      "passes": true,
+      "passes": false,
       "priority": 7,
       "phase": 1,
       "agent": "backend",
@@ -299,7 +299,9 @@
         "FR-15",
         "FR-31",
         "FR-32",
+        "FR-38",
         "BR-19",
+        "BR-24",
         "NFR-09"
       ],
       "docs": [
@@ -307,7 +309,7 @@
         "docs/technical/02-module-breakdown.md",
         "docs/technical/05-api-design.md"
       ],
-      "description": "Build authentication context resolution and role/scope authorization middleware for all protected API endpoints.",
+      "description": "Build authentication context resolution and role/scope authorization middleware for all protected API endpoints. Include POST /v1/auth/logout session termination per FR-38 and BR-24.",
       "completionArtifacts": [
         "apps/api/src/modules/identity",
         "apps/api/db/migrations/0002_user_credentials.sql",
@@ -327,9 +329,11 @@
         ],
         "acceptanceTags": [
           "BR-19",
+          "BR-24",
           "FR-15",
           "FR-31",
           "FR-32",
+          "FR-38",
           "NFR-09"
         ]
       },
@@ -362,6 +366,12 @@
           "at": "2026-07-03T05:37:40Z",
           "kind": "drift",
           "reason": "Doc drift for NFR-09 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T06:32:47Z",
+          "kind": "drift",
+          "reason": "Logout scope added (FR-38, BR-24) — implement POST /v1/auth/logout; reverify after TestGen",
           "source": "harness"
         }
       ]
@@ -1148,6 +1158,8 @@
       "agent": "frontend",
       "acceptance": [
         "FR-14",
+        "FR-38",
+        "AC-26",
         "NFR-14",
         "NFR-15"
       ],
@@ -1159,7 +1171,7 @@
         "docs/ui-ux/design-system/sidebars.md",
         "docs/technical/01-roles-permissions.md"
       ],
-      "description": "Implement app shell primitives, token wiring, and shared component foundations aligned with Attendly design-system precedence. Layout shells (StaffLayout, AdminLayout, StudentLayout) must provide a persistent nav surface on every authenticated page. SidebarNav must include the role's primary home link at the top of the list per docs/ui-ux/design-system/sidebars.md. RBAC nav gating: render only items the current role is permitted to access per role-guard.ts — omit forbidden items entirely from the DOM, never render them as disabled.",
+      "description": "Implement app shell primitives, token wiring, and shared component foundations aligned with Attendly design-system precedence. Layout shells (StaffLayout, AdminLayout, StudentLayout) must provide a persistent nav surface on every authenticated page. SidebarNav must include the role's primary home link at the top of the list per docs/ui-ux/design-system/sidebars.md and a **Đăng xuất** logout control in the sidebar footer (staff) or student shell header per FR-38 and FLOW-15. RBAC nav gating: render only items the current role is permitted to access per role-guard.ts — omit forbidden items entirely from the DOM, never render them as disabled.",
       "completionArtifacts": [
         "apps/web/package.json",
         "apps/web/vite.config.ts",
@@ -1191,7 +1203,9 @@
           "tests/playwright-ui/scenarios/web-design-system-shell.spec.ts"
         ],
         "acceptanceTags": [
+          "AC-26",
           "FR-14",
+          "FR-38",
           "NFR-14",
           "NFR-15"
         ]
@@ -1213,6 +1227,12 @@
           "at": "2026-07-03T05:46:05Z",
           "kind": "drift",
           "reason": "Doc drift for NFR-15 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T06:32:47Z",
+          "kind": "drift",
+          "reason": "Logout scope added (FR-38, AC-26) — SidebarNav/student shell Đăng xuất per FLOW-15; reverify after TestGen",
           "source": "harness"
         }
       ]
@@ -2417,7 +2437,9 @@
       "agent": "frontend",
       "acceptance": [
         "AC-06",
+        "AC-26",
         "FR-15",
+        "FR-38",
         "NFR-14"
       ],
       "docs": [
@@ -2427,7 +2449,7 @@
         "docs/ui-ux/00-production-ui-quality-bar.md",
         "ai-harness/skills/visual-design/SKILL.md"
       ],
-      "description": "Update LoginPage.tsx to perform role-based default redirects when no returnUrl is present. After successful authentication, read the resolved role from the JWT/session and navigate to the role's configured default route: Student → /check-in, Lecturer/DepartmentAdmin → /lecturer/sessions, AcademicAdmin → /admin/terms, ITAdmin/SystemAuditor → /audit/logs. Update the router index route from /showcase to a role-aware redirect: authenticated users go to their role home, unauthenticated users go to /login. Login page heading must be a generic 'Đăng nhập' — no role-specific copy.",
+      "description": "Update LoginPage.tsx to perform role-based default redirects when no returnUrl is present. After successful authentication, read the resolved role from the JWT/session and navigate to the role's configured default route: Student → /check-in, Lecturer/DepartmentAdmin → /lecturer/sessions, AcademicAdmin → /admin/terms, ITAdmin/SystemAuditor → /audit/logs. Implement voluntary logout (FLOW-15): POST /v1/auth/logout, clear client credentials, redirect to /login without returnUrl per AC-26 and FR-38. Update the router index route from /showcase to a role-aware redirect: authenticated users go to their role home, unauthenticated users go to /login. Login page heading must be a generic 'Đăng nhập' — no role-specific copy.",
       "completionArtifacts": [
         "apps/web/src/routes/pages/LoginPage.tsx",
         "apps/web/src/lib/auth/auth-gate.ts",
@@ -2442,7 +2464,9 @@
         ],
         "acceptanceTags": [
           "AC-06",
+          "AC-26",
           "FR-15",
+          "FR-38",
           "NFR-14"
         ]
       },
@@ -2469,6 +2493,12 @@
           "at": "2026-07-03T05:44:13Z",
           "kind": "drift",
           "reason": "Doc drift for NFR-14 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T06:32:47Z",
+          "kind": "drift",
+          "reason": "Logout scope added (FR-38, AC-26) — voluntary logout clears credentials and redirects to /login; reverify after TestGen",
           "source": "harness"
         }
       ]

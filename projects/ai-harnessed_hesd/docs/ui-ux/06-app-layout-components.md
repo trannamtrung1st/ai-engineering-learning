@@ -69,6 +69,7 @@ Define app-level layout components and composition rules for student and staff r
 - `FR-LAY-05`: Session state and permission context must stay visible in staff headers.
 - `FR-LAY-06`: Route-level loading/error/empty states are mandatory.
 - `FR-LAY-07`: High-risk actions use confirm patterns and post-action feedback.
+- `FR-LAY-08`: Logout affordance is reachable from every authenticated shell without opening a hidden menu on desktop staff layouts (`FR-38`).
 
 ### 6.2 Permission-aware rendering
 
@@ -89,6 +90,7 @@ Define app-level layout components and composition rules for student and staff r
 | Session operation speed | `FR-07`, `FR-19`, `NFR-01` |
 | Student check-in clarity | `FR-16`, `FR-23`, `NFR-14` |
 | Permission-safe admin surfaces | `FR-27`, `FR-32`, `BR-19` |
+| Session termination | `FR-38`, `BR-24`, `AC-26` |
 | Manual fallback support | `FR-20`, `BR-14`, `AC-13` |
 
 ## 9. Future consideration
