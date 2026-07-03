@@ -140,6 +140,20 @@ export async function resolveAuditReadScope(
     };
   }
 
+  if (
+    technicalOnly &&
+    actor.assignments.some((a) => a.role === "ITAdmin" && a.scopeType === "Institution")
+  ) {
+    return {
+      allowed: true,
+      scope: {
+        institutionWide: true,
+        classSectionIds: null,
+        technicalOnly: true,
+      },
+    };
+  }
+
   const allowedSectionIds = await collectScopedSectionIds(actor, repository);
   if (allowedSectionIds !== null && allowedSectionIds.length === 0) {
     return { allowed: false, code: "OutOfScope" };

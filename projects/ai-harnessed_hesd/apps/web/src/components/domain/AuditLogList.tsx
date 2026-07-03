@@ -231,6 +231,7 @@ export function AuditLogList({ readOnly = true }: AuditLogListProps) {
           setSearchDraft("");
           syncQuery(DEFAULT_AUDIT_LOGS_QUERY);
         }}
+        clearFiltersLabel="Đặt lại bộ lọc"
       >
         <div className={styles.extraFilters}>
           <label className={styles.filterField}>
@@ -340,7 +341,7 @@ export function AuditLogList({ readOnly = true }: AuditLogListProps) {
                   syncQuery(DEFAULT_AUDIT_LOGS_QUERY);
                 }}
               >
-                Xóa bộ lọc
+                Đặt lại bộ lọc
               </Button>
             </div>
           ) : null}

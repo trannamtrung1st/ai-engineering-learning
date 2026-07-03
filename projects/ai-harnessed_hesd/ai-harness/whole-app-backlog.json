@@ -1376,7 +1376,7 @@
     },
     {
       "id": "test-nfr-performance-reliability-smoke",
-      "passes": false,
+      "passes": true,
       "priority": 28,
       "phase": 3,
       "agent": "test",

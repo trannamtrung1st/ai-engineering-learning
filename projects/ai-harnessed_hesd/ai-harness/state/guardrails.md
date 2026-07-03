@@ -57,3 +57,10 @@ tests/playwright-ui/scenarios/web-design-system-shell.spec.ts
 - [test-e2e-role-scope-and-export] AttendanceReportPage authPending shell + AttendanceReportList defer fetch until roles resolve — required for TC-AC-23-016 mobile navigation race; add both paths to completionArtifacts when scope gate blocks
 - [test-e2e-role-scope-and-export] Computational checks failed — see 20260702T230840Z-checks.json
 - [test-e2e-role-scope-and-export] db:seed refreshSeedRoleAssignments on skip path must be preview-only (not attendly_test/:5433) — parallel test-stack db:seed calls delete dynamic M09 lecturer ClassSection roles mid-suite
+- [test-nfr-performance-reliability-smoke] Performance smoke fixtures must insert student_profiles for synthetic perf students — GET /attendance roster JOIN excludes students without profiles, breaking NFR-16 rejectedAttempts/count assertions
+- [test-nfr-performance-reliability-smoke] Class-start burst integration must use bounded check-in concurrency (PERF_BURST_CONCURRENCY=5) — unbounded parallel POST /v1/check-ins exhausts pg pool and hangs until vitest timeout
+- [test-nfr-performance-reliability-smoke] Computational checks failed — see 20260702T233513Z-checks.json
+- [test-nfr-performance-reliability-smoke] Browser test failed — see 20260702T235709Z-browser-test.json
+- [test-nfr-performance-reliability-smoke] ITAdmin Institution-scoped audit list requires institutionWide scope in resolveAuditReadScope — empty collectScopedSectionIds yields OutOfScope on PG-15
+- [test-nfr-performance-reliability-smoke] Playwright performance smoke needs preview-session-refresh when seed Scheduled session is exhausted — openFreshScheduledSession auto-resets via apps/api/scripts/preview-session-refresh.mjs
+- [test-nfr-performance-reliability-smoke] PG-15 audit TableToolbar clear label must avoid "Xóa" substring — Playwright TC-NFR-16-015 asserts zero /Sửa|Xóa/i mutation buttons; use "Đặt lại bộ lọc"

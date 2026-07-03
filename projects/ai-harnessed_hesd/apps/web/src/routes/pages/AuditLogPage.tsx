@@ -38,7 +38,7 @@ export function AuditLogPage() {
 
   if (accessDenied || !canAccessAuditLogs(roles)) {
     return (
-      <ContentSection title="Nhật ký audit" titleClassName={styles.title}>
+      <ContentSection>
         <FeedbackAlert variant="danger" title="Không có quyền truy cập">
           Bạn không có quyền xem nhật ký audit. Sinh viên vui lòng sử dụng{" "}
           <a href="/me/attendance">lịch sử điểm danh cá nhân</a>.
@@ -50,7 +50,7 @@ export function AuditLogPage() {
   const readOnly = isReadOnlyStaffRole(roles);
 
   return (
-    <ContentSection title="Nhật ký audit" titleClassName={styles.title}>
+    <ContentSection>
       {readOnly ? (
         <div className={styles.badge}>
           <StatusBadge label="Chế độ chỉ đọc · SystemAuditor" variant="brand" pill />

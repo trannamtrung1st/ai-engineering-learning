@@ -30,6 +30,7 @@ export interface TableToolbarProps {
   onSortByChange?: (value: string) => void;
   onSortToggle?: () => void;
   onClearFilters?: () => void;
+  clearFiltersLabel?: string;
   showExport?: boolean;
   onExport?: () => void;
   exportDisabled?: boolean;
@@ -59,6 +60,7 @@ export function TableToolbar({
   onSortByChange,
   onSortToggle,
   onClearFilters,
+  clearFiltersLabel = "Xóa bộ lọc",
   showExport = false,
   onExport,
   exportDisabled = false,
@@ -189,7 +191,7 @@ export function TableToolbar({
 
         {hasActiveFilters ? (
           <Button variant="ghost" size="sm" type="button" onClick={onClearFilters}>
-            Xóa bộ lọc
+            {clearFiltersLabel}
           </Button>
         ) : null}
       </div>

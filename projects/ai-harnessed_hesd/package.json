@@ -21,6 +21,7 @@
     "test:unit": "npm run test:unit -ws --if-present",
     "test:integration": "npm run test:integration -ws --if-present",
     "test:integration:critical": "npm run test:integration:critical -w @attendly/api --if-present",
+    "test:integration:performance-smoke": "npm run test:integration:performance-smoke -w @attendly/api --if-present",
     "test:e2e": "npm run test:e2e -w @attendly/e2e --if-present",
     "test:playwright-ui": "npm run test:playwright-ui -w @attendly/playwright-ui --if-present",
     "test": "npm run test:unit && npm run test:integration && npm run test:e2e",
@@ -63,6 +64,7 @@
     "aih:testgen:audit": "./ai-harness/scripts/audit-test-coverage.sh",
     "db:migrate": "node scripts/db-migrate.mjs",
     "db:seed": "node scripts/db-seed.mjs",
+    "db:seed:preview-sessions": "node apps/api/scripts/preview-session-refresh.mjs",
     "db:reset": "./scripts/local-runtime-reset.sh",
     "db:reset:hard": "./scripts/local-runtime-reset.sh --hard"
   }
