@@ -6,6 +6,7 @@ const port = Number(process.env.PORT ?? process.env.WEB_PORT ?? 3007);
 export default defineConfig({
   plugins: [react()],
   server: {
+    host: true,
     port,
     strictPort: true,
     proxy: {
