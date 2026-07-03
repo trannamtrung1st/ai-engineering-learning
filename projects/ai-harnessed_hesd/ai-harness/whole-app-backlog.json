@@ -235,7 +235,7 @@
     },
     {
       "id": "module-identity-and-access",
-      "passes": true,
+      "passes": false,
       "priority": 7,
       "phase": 1,
       "agent": "backend",
@@ -276,7 +276,15 @@
           "FR-32",
           "NFR-09"
         ]
-      }
+      },
+      "history": [
+        {
+          "at": "2026-07-03T04:35:31Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-15 — reverify after TestGen",
+          "source": "harness"
+        }
+      ]
     },
     {
       "id": "module-academic-structure",
@@ -1022,6 +1030,12 @@
           "at": "2026-07-03T04:09:40Z",
           "kind": "drift",
           "reason": "Doc drift for AC-11 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T04:35:31Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-15 — reverify after TestGen",
           "source": "harness"
         }
       ]
@@ -2038,6 +2052,12 @@
           "kind": "drift",
           "reason": "Doc drift for AC-06 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-03T04:35:31Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-15 — reverify after TestGen",
+          "source": "harness"
         }
       ]
     },
@@ -2091,6 +2111,12 @@
           "at": "2026-07-03T04:22:16Z",
           "kind": "drift",
           "reason": "Doc drift for AC-23 — reverify after TestGen",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T04:35:31Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-15 — reverify after TestGen",
           "source": "harness"
         }
       ]
