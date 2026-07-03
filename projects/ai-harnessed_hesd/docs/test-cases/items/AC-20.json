@@ -2,7 +2,7 @@
   "productItemId": "AC-20",
   "version": 1,
   "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
-  "generatedAt": "2026-07-02T10:30:00Z",
+  "generatedAt": "2026-07-03T04:16:33Z",
   "cases": [
     {
       "id": "TC-AC-20-001",
@@ -14,13 +14,14 @@
       "title": "Scenario matrix row for check-in latency median under 30 seconds",
       "preconditions": [
         "Testing-plan §7.1 performance tests and §11 NFR verification matrix rows for NFR-01 and AC-20 apply.",
-        "Representative pilot load fixture is seeded: multiple open class sessions with enrolled students and valid rotating QR tokens.",
+        "Representative pilot load fixture per performance-smoke-runbook: 2 open sessions × 20 enrolled students, GPS-off policies, PERF-* fixture hierarchy.",
         "Telemetry or test harness can record per-attempt elapsed time from check-in command start to terminal outcome persistence."
       ],
       "steps": [
         "Execute a representative pilot load run across multiple class sessions with enrolled students submitting valid check-ins.",
         "For each attempt, record end-to-end elapsed time from QR/token resolution through POST /v1/check-ins to persisted Success outcome.",
-        "Aggregate elapsed times and compute median across all successful check-in attempts in the run."
+        "Aggregate elapsed times and compute median across all successful check-in attempts in the run.",
+        "Evaluate median against evaluateMedianLatencyGate (strictly below 30000 ms) per performance-smoke-runbook PASS criteria."
       ],
       "expected": "Median student check-in time across the pilot load run is strictly below 30 seconds, satisfying AC-20 and NFR-01 per testing-plan §7.1 and §11 evidence requirements.",
       "edgeCase": false
@@ -34,7 +35,7 @@
       "traceability": ["AC-20", "NFR-01", "FR-16", "FR-22", "FR-23"],
       "title": "Check-in service DB transaction completes within server-side latency budget",
       "preconditions": [
-        "Real database transaction boundary is enabled for check-in service and attendance ledger modules.",
+        "Real database transaction boundary is enabled for check-in service and attendance ledger modules per API §5.3.",
         "Open class session with valid QR token exists; authenticated enrolled student has no prior success for the session.",
         "Server-side timing instrumentation captures request receipt through CheckInAttempt and AttendanceRecord commit."
       ],
@@ -55,8 +56,8 @@
       "traceability": ["AC-20", "NFR-01", "NFR-04", "FR-16", "FR-22"],
       "title": "Concurrent class-start burst preserves median check-in time below 30 seconds",
       "preconditions": [
-        "Multiple open class sessions each have 20+ enrolled students per representative pilot profile.",
-        "Test harness can fire parallel POST /v1/check-ins requests across sessions with distinct students and valid QR tokens.",
+        "Performance-smoke-runbook representative load: 2 open sessions each with 20 enrolled students (40 rule-pass check-ins).",
+        "Test harness fires parallel POST /v1/check-ins requests with concurrency 5 across sessions with distinct students and valid QR tokens.",
         "Normal campus network simulation profile is active (no artificial throttling beyond pilot realism)."
       ],
       "steps": [
@@ -120,13 +121,13 @@
       "title": "Median check-in time threshold boundary fails gate when at or above 30 seconds",
       "preconditions": [
         "Performance test environment can simulate degraded conditions (elevated latency or reduced capacity) for threshold validation.",
-        "Representative pilot load script records per-attempt timings and computes median.",
+        "Representative pilot load script records per-attempt timings and computes median via evaluateMedianLatencyGate.",
         "Release gate documentation requires explicit failure evidence when AC-20 is not met."
       ],
       "steps": [
         "Run pilot load scenario under controlled degradation until observed median approaches or exceeds 30 seconds.",
-        "Capture metric snapshot: per-attempt times, computed median, session count, and success rate.",
-        "Compare median against AC-20 threshold and document gate pass/fail verdict."
+        "Capture metric snapshot: per-attempt times, computed medianCheckInMs.actual, session count, and success rate.",
+        "Compare median against AC-20 threshold (strictly below 30000 ms) and document gate pass/fail verdict."
       ],
       "expected": "When computed median is >= 30 seconds, AC-20 gate is marked FAIL with documented metric evidence; when median < 30 seconds under normal pilot profile, gate is PASS. Boundary validates measurability of the 30-second acceptance threshold per NFR-01.",
       "edgeCase": true
@@ -148,7 +149,7 @@
         "Navigate to check-in URL with valid token query parameter (FLOW-01 step 1).",
         "Complete login redirect if required (AC-06); grant GPS prompt if policy requires.",
         "Submit check-in and wait for CheckInResultScreen to render success status and timestamp (AC-11, AC-UI-03).",
-        "Record elapsed time; repeat for sample runs and compute median."
+        "Record elapsed time; repeat for sample runs and compute median against FLOW-01 timing target."
       ],
       "expected": "UI journey median completion from QR/deep-link open to success result screen is below 30 seconds per FLOW-01 timing target (AC-20, NFR-01); confirmation is visible without lecturer page reload.",
       "edgeCase": false
@@ -196,6 +197,28 @@
       ],
       "expected": "Lecturer and DepartmentAdmin receive 403 Forbidden per permission matrix (Submit QR check-in Deny); no CheckInAttempt or AttendanceRecord is created for non-student actors; Student control receives HTTP 200 Success within the AC-20 median latency target so unauthorized traffic does not pollute valid check-in timing evidence.",
       "edgeCase": true
+    },
+    {
+      "id": "TC-AC-20-010",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["AC-20", "NFR-01", "FR-16", "AC-11"],
+      "title": "PG-02 check-in submission lifecycle shows distinct loading and submitting states during timed journey",
+      "preconditions": [
+        "Student is authenticated on mobile-web viewport (375px) at PG-02 /check-in?token=... with valid open-session token.",
+        "GPS policy is disabled or permission already granted so journey focuses on submit latency path.",
+        "Browser harness can observe state transitions loading → submitting → success-present or success-late per ui-states §5.2."
+      ],
+      "steps": [
+        "Navigate to check-in deep link and observe loading state while token and session context resolve.",
+        "Trigger check-in submit and verify submitting state: spinner visible, duplicate submit disabled per ui-states §5.2.",
+        "Await CheckInResultScreen success-present or success-late outcome with role=status aria-live announcement per accessibility §4.1.",
+        "Record wall-clock from navigation start through outcome render; repeat sample runs and compute median."
+      ],
+      "expected": "PG-02 renders visually distinct loading, submitting, and outcome states without ambiguous intermediate states; submitting state prevents duplicate submit during server round-trip; median end-to-end journey including lifecycle transitions completes below 30 seconds per AC-20, FLOW-01 timing target, and design-overview performance-sensitive student flow.",
+      "edgeCase": false
     }
   ]
 }

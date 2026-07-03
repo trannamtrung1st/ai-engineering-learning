@@ -1787,7 +1787,7 @@
     },
     {
       "id": "test-nfr-performance-reliability-smoke",
-      "passes": true,
+      "passes": false,
       "priority": 28,
       "phase": 3,
       "agent": "test",
@@ -1855,6 +1855,12 @@
           "at": "2026-07-03T00:10:35Z",
           "kind": "gate_failed",
           "reason": "Browser test failed — see 20260702T235709Z-browser-test.json",
+          "source": "harness"
+        },
+        {
+          "at": "2026-07-03T04:17:44Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-20 — reverify after TestGen",
           "source": "harness"
         }
       ]
