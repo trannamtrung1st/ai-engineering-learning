@@ -1085,6 +1085,12 @@
           "kind": "drift",
           "reason": "Doc drift for FR-16 — reverify after TestGen",
           "source": "harness"
+        },
+        {
+          "at": "2026-07-03T04:47:09Z",
+          "kind": "drift",
+          "reason": "Doc drift for FR-23 — reverify after TestGen",
+          "source": "harness"
         }
       ]
     },
