@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-32",
   "version": 1,
-  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
-  "generatedAt": "2026-07-02T20:15:00Z",
+  "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
+  "generatedAt": "2026-07-03T05:01:00Z",
   "cases": [
     {
       "id": "TC-FR-32-001",
@@ -343,6 +343,54 @@
         "Attempt direct URL navigation to attendance correction form route and observe access-denied or read-only state."
       ],
       "expected": "WF-08 dispute evidence is reconstructible across PG-13 and roster views read-only; mutation and export controls are absent or disabled for SystemAuditor; audit cross-navigation works without write affordances per FR-32 and 06-main-workflows §10.3.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-32-016",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["FR-32", "FR-28", "FR-30", "BR-19", "AC-16"],
+      "title": "PG-13 and PG-15 SystemAuditor listings render scope-safe loading, empty, error, and populated states without export or mutation affordances",
+      "preconditions": [
+        "SystemAuditor is authenticated on desktop StaffLayout with institution-scoped read access per PRM-05.",
+        "Fixtures can produce slow fetch, zero in-scope matches, filtered zero-match, API failure, and populated report and audit rows within auditor scope.",
+        "Out-of-scope faculty data exists that must not appear in any listing state.",
+        "PG-13 /reports/attendance and PG-15 /audit/logs listing matrices per 09-page-list.md §8 are available."
+      ],
+      "steps": [
+        "Navigate to /reports/attendance and observe loading skeleton or table shimmer while GET /v1/reports/attendance resolves.",
+        "Confirm populated report table shows AttendanceStatusCell badges and no Export dialog trigger or PG-14 export affordance for SystemAuditor per NFR-UI-03.",
+        "Apply filters yielding zero in-scope matches; confirm no-results state shows Không tìm thấy kết quả with clear-filters affordance per NFR-UI-07 without cross-scope row counts.",
+        "Simulate or trigger API error on report query; confirm error FeedbackAlert with retry and no partial student identifiers or attendance statuses from out-of-scope data.",
+        "Navigate to /audit/logs and repeat loading, populated AuditEntryRow (DC-12), filtered empty, and error states.",
+        "Open an AuditEntryRow detail and verify actor, target, action type, and timestamp render read-only with no edit, delete, or export controls."
+      ],
+      "expected": "PG-13 and PG-15 listing states (loading, no-results, error, list) are visually distinct per NFR-UI-07 and permission-scope rules in 12-ui-states §10; SystemAuditor sees scoped evidence read-only with export and mutation controls absent; error and empty states do not disclose restricted faculty data, cross-scope totals, or export metadata per FR-32, BR-19, and AC-16.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-32-017",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-navigation",
+      "priority": "P1",
+      "traceability": ["FR-32", "BR-19", "AC-16", "AC-UI-09"],
+      "title": "SystemAuditor StaffLayout home hub and sidebar expose read-only audit entry with RBAC omission for write routes",
+      "preconditions": [
+        "SystemAuditor is authenticated on desktop StaffLayout (1280×720).",
+        "Post-login redirect and SidebarNav follow 09-page-list.md §2.1 and §2.2 ITAdmin/SystemAuditor entries.",
+        "Institution fixtures include admin setup routes and export dialog routes that SystemAuditor must not access."
+      ],
+      "steps": [
+        "Complete login and confirm redirect lands on /audit/logs (PG-15) with recent audit entries or loading state — not an empty shell.",
+        "Inspect SidebarNav and verify Nhật ký kiểm toán is the home-first nav item; confirm admin setup links (terms, courses, policies, rooms) are absent per AC-UI-09 RBAC omission.",
+        "Direct-navigate to /admin/terms and /admin/policies; observe scoped access-denied with home recovery link and no institution setup metadata.",
+        "Direct-navigate to /reports/attendance/export or attempt export dialog from PG-13; confirm export surface is unreachable or access-denied without CSV preview.",
+        "Direct-navigate to attendance correction or session open/close routes; confirm read-only or access-denied state without mutation form controls."
+      ],
+      "expected": "SystemAuditor post-login home is PG-15 audit log review per FLOW-13; sidebar renders only authorized read-only destinations with forbidden write routes omitted; unauthorized deep-links show scoped access-denied with home recovery and no academic write affordances per FR-32, PRM-05, and BR-19.",
       "edgeCase": false
     }
   ]
