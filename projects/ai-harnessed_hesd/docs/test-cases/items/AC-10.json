@@ -2,7 +2,7 @@
   "productItemId": "AC-10",
   "version": 1,
   "docFingerprint": "sha256:bdc856399b2199b8e5840840377f9e395ab5a3e7a8f0ee2cdd8bfaa5b7e083df",
-  "generatedAt": "2026-07-02T10:15:00Z",
+  "generatedAt": "2026-07-03T04:08:00Z",
   "cases": [
     {
       "id": "TC-AC-10-001",
@@ -13,7 +13,7 @@
       "traceability": ["AC-10", "FR-35", "FR-22", "BR-09", "BR-10", "BR-23"],
       "title": "Scenario matrix row for out-of-radius handling when GPS policy and room coordinates are configured",
       "preconditions": [
-        "Testing-plan §3 GPS validation block applies (FR-34, FR-35, BR-08/09/10, AC-09, AC-10).",
+        "Testing-plan §3.1 GPS validation block applies (FR-34, FR-35, BR-08/09/10, AC-09, AC-10).",
         "gps-required-session fixture: Open class session with effective policy gpsRequired=true, gpsRadiusMeters=100, and Room latitude/longitude configured.",
         "Authenticated enrolled student has no successful attendance record for the session."
       ],
@@ -102,7 +102,7 @@
         "Valid qrToken is available for the open session."
       ],
       "steps": [
-        "Call POST /v1/check-ins with Authorization Bearer token, valid qrToken, clientTimestamp, and gps payload with coordinates outside allowed radius (e.g. distanceMeters > 100).",
+        "Call POST /v1/check-ins with Authorization Bearer token, Idempotency-Key header, valid qrToken, clientTimestamp, and gps payload with coordinates outside allowed radius (e.g. distanceMeters > 100).",
         "Inspect HTTP status, response envelope (data/meta/error), error.code, and error.details.",
         "Verify no success attendance payload is returned."
       ],
@@ -124,7 +124,7 @@
       ],
       "steps": [
         "Student calls POST /v1/auth/login and receives Student role accessToken.",
-        "Student calls POST /v1/check-ins with valid qrToken and out-of-radius gps payload.",
+        "Student calls POST /v1/check-ins with Idempotency-Key header, valid qrToken and out-of-radius gps payload.",
         "Lecturer queries GET /v1/class-sessions/{sessionId}/attendance for the student row and rejectedAttempts count.",
         "Lecturer applies PATCH manual correction for the same student with Manual Present and documented reason after in-person verification."
       ],
@@ -145,9 +145,9 @@
         "Test harness can supply deterministic GPS coordinates at 99 m (pass) and 101 m (fail) from room anchor."
       ],
       "steps": [
-        "Submit POST /v1/check-ins with valid token and gps coordinates approximately 99 m from room anchor; record status and outcome.",
+        "Submit POST /v1/check-ins with Idempotency-Key header, valid token and gps coordinates approximately 99 m from room anchor; record status and outcome.",
         "Reset student attempt state or use a second enrolled student for the fail case.",
-        "Submit POST /v1/check-ins with valid token and gps coordinates approximately 101 m from room anchor; record status and error.code.",
+        "Submit POST /v1/check-ins with Idempotency-Key header, valid token and gps coordinates approximately 101 m from room anchor; record status and error.code.",
         "Verify CheckInAttempt metadata and AttendanceRecord outcomes for both submissions."
       ],
       "expected": "Within-radius submission (99 m) proceeds past GPS distance guard to Present/Late assignment; just-beyond-radius submission (101 m) returns 422 with error.code OutOfRadius and logs distanceMeters/allowedRadiusMeters; boundary enforces effective gpsRadiusMeters per BR-09.",
@@ -166,12 +166,12 @@
         "Lecturer and ITAdmin identities are available with valid bearer tokens per permission matrix."
       ],
       "steps": [
-        "Call POST /v1/check-ins as Lecturer with valid qrToken and out-of-radius gps payload for the open session.",
-        "Call POST /v1/check-ins as ITAdmin with the same token context.",
+        "Call POST /v1/check-ins as Lecturer with Idempotency-Key header, valid qrToken and out-of-radius gps payload for the open session.",
+        "Call POST /v1/check-ins as ITAdmin with Idempotency-Key header and the same token context.",
         "Call POST /v1/check-ins as enrolled Student (control) with out-of-radius gps coordinates.",
         "Verify denial responses contain no partial attendance mutation from privileged roles."
       ],
-      "expected": "Lecturer and ITAdmin receive 403 Forbidden before GPS radius evaluation; Student control reaches business validation and receives 422 OutOfRadius; no AttendanceRecord is created by denied roles.",
+      "expected": "Lecturer and ITAdmin receive 403 with error.code Forbidden before GPS radius evaluation; Student control reaches business validation and receives 422 OutOfRadius; no AttendanceRecord is created by denied roles.",
       "edgeCase": true
     },
     {
@@ -217,6 +217,30 @@
       ],
       "expected": "Roster displays student as Pending with OutOfRadius rejection visible in attempt summary including review metadata; ManualCorrectionDialog accepts correction; post-save row updates to Manual Present confirming lecturer fallback path remains operable per AC-10 and BR-14.",
       "edgeCase": true
+    },
+    {
+      "id": "TC-AC-10-011",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["AC-10", "FR-35", "FR-22", "BR-09", "BR-10", "AC-18"],
+      "title": "OutOfRadius outcome renders distinct failure-out-of-radius visual state on PG-02",
+      "preconditions": [
+        "Student is logged in on mobile student shell at PG-02 check-in route.",
+        "Target session has gpsRequired=true, room coordinates configured, and is Open with valid QR token.",
+        "Browser geolocation is granted but test profile supplies coordinates outside configured radius."
+      ],
+      "steps": [
+        "Navigate to PG-02 check-in URL with token query parameter for gps-required session.",
+        "Grant browser location permission when prompted per FLOW-03 step 2.",
+        "Submit check-in with out-of-radius coordinates.",
+        "Verify CheckInResultScreen page state ID failure-out-of-radius, warning alert variant, and Vietnamese copy intent per 12-ui-states §5.1.",
+        "Confirm recovery CTA (move closer / retry) and lecturer fallback guidance (báo giảng viên) are present per DC-05.",
+        "Compare against success-present and failure-gps-denied states to confirm visual distinction per AC-UI-02."
+      ],
+      "expected": "PG-02 outcome state failure-out-of-radius is visually distinct from success and other failure states (warning alert, recovery copy 'Ngoài phạm vi lớp', retry/move-closer CTA and báo giảng viên fallback path); submission lifecycle completes without ambiguous intermediate states per 12-ui-states §5.2.",
+      "edgeCase": false
     }
   ]
 }
