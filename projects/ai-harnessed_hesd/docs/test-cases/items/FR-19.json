@@ -1,8 +1,8 @@
 {
   "productItemId": "FR-19",
   "version": 1,
-  "docFingerprint": "sha256:0378a3c850192b81517ad83e8e623043461d6303ea593d055bd96d6c1dd18443",
-  "generatedAt": "2026-07-02T12:30:00Z",
+  "docFingerprint": "sha256:b3e0f4b9b2b1a07e494269ea16c8ecd80d6fb48c9cb71200bde14c6ef02dee29",
+  "generatedAt": "2026-07-03T04:38:00Z",
   "cases": [
     {
       "id": "TC-FR-19-001",
@@ -316,9 +316,31 @@
         "Verify StatusBadge or session header shows Closed state.",
         "Assert LiveRosterPanel displays finalized Absent rows for students without successful check-in.",
         "Confirm no live-update spinner or websocket reconnect banner implies active Open-session polling.",
-        "Verify summary chips reflect finalized present, late, pending (zero), and absent counts."
+        "Verify summary chips reflect finalized present, late, and rejectedAttempts with pending count at zero per API §4.5 counts shape.",
+        "Assert table rows show attendanceStatus Absent for students without successful check-in after close finalization."
       ],
-      "expected": "PG-06 Closed state shows static finalized roster per FLOW-07 step 5; Absent rows visible after close processing; UI does not behave as an active live dashboard for non-Open sessions.",
+      "expected": "PG-06 Closed state shows static finalized roster per FLOW-07 step 5; Absent rows visible in the table after FR-09 close processing; pending summary chip reads zero; UI does not behave as an active live dashboard for non-Open sessions.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-FR-19-015",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-visual-state",
+      "priority": "P1",
+      "traceability": ["FR-19"],
+      "title": "PG-06 LiveRosterPanel renders distinct loading, empty-enrollment, and error visual states",
+      "preconditions": [
+        "Lecturer is logged in on desktop Chromium with StaffLayout shell.",
+        "Fixtures include an Open session with enrolled students, an Open session with zero enrollments, and a harness hook to force GET /v1/class-sessions/{sessionId}/attendance failure."
+      ],
+      "steps": [
+        "Navigate to /lecturer/sessions/{sessionId}/roster (PG-06) for an Open session with enrollments while throttling the attendance fetch; observe loading skeleton or spinner before rows render.",
+        "Navigate to PG-06 for an Open session with no enrolled students; observe empty state messaging (not a blank table shell) per PG-06 empty/pending key state.",
+        "Trigger attendance API error (5xx or simulated network failure) on PG-06 load; observe error banner or inline alert with retry affordance per NFR-UI-07.",
+        "Restore successful fetch and confirm populated live roster is visually distinct from loading, empty, and error states."
+      ],
+      "expected": "PG-06 satisfies NFR-UI-07 listing state coverage: loading, empty-enrollment, error, and live-updating populated roster each render visually distinct, non-ambiguous UI per 09-page-list.md PG-06 key states.",
       "edgeCase": false
     }
   ]
