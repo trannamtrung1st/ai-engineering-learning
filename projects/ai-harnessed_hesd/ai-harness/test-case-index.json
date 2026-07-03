@@ -333,9 +333,9 @@
       "generatedAt": "2026-07-03T05:30:34Z"
     },
     "BR-24": {
-      "current": false,
+      "current": true,
       "docFingerprint": "sha256:ed67f1d5160207929de1a4e84d3cdc8bd59bac9d0a83c8209051fb39f3112f68",
-      "generatedAt": null
+      "generatedAt": "2026-07-03T06:39:34Z"
     },
     "NFR-01": {
       "current": true,

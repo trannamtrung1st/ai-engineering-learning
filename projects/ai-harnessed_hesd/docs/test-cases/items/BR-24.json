@@ -1,8 +1,8 @@
 {
   "productItemId": "BR-24",
   "version": 1,
-  "docFingerprint": "sha256:pending-testgen",
-  "generatedAt": "2026-07-03T06:14:00Z",
+  "docFingerprint": "sha256:ed67f1d5160207929de1a4e84d3cdc8bd59bac9d0a83c8209051fb39f3112f68",
+  "generatedAt": "2026-07-03T06:40:00Z",
   "cases": [
     {
       "id": "TC-BR-24-001",
@@ -11,16 +11,17 @@
       "technique": "http-contract",
       "priority": "P0",
       "traceability": ["BR-24", "FR-38", "AC-26"],
-      "title": "Logout outcome clears client session and rejects subsequent authenticated API calls",
+      "title": "HTTP contract: POST /v1/auth/logout then protected API returns 401 Unauthenticated",
       "preconditions": [
-        "Student bearer token available from POST /v1/auth/login."
+        "Authenticated user of any role holds valid accessToken from POST /v1/auth/login per AC-26."
       ],
       "steps": [
-        "POST /v1/auth/logout with Authorization header.",
-        "Omit Authorization on GET /v1/me and POST /v1/check-ins probe.",
-        "Inspect 401 Unauthenticated responses."
+        "POST /v1/auth/logout with Authorization Bearer accessToken; assert HTTP 200 and data.loggedOut true per API §4.1.",
+        "Discard Authorization header to simulate BR-24 client credential discard.",
+        "GET /v1/me without Authorization; assert HTTP 401 with error.code Unauthenticated.",
+        "POST /v1/check-ins without Authorization with probe payload; assert HTTP 401 Unauthenticated."
       ],
-      "expected": "BR-24 outcome: client session ended; API rejects requests without valid token; no privileged data returned after logout.",
+      "expected": "BR-24 outcome at API boundary: logout acknowledges session end; subsequent protected requests without valid token return 401 Unauthenticated and no privileged data is returned.",
       "edgeCase": false
     },
     {
@@ -28,19 +29,126 @@
       "category": "functional",
       "layer": "integration",
       "technique": "module-integration",
-      "priority": "P1",
+      "priority": "P0",
       "traceability": ["BR-24", "FR-38"],
-      "title": "M01 authenticate middleware rejects requests after logout credential discard",
+      "title": "M01 authenticate middleware short-circuits protected requests after logout credential discard",
       "preconditions": [
-        "Integration harness can invoke createAuthenticate middleware with and without bearer context."
+        "Integration harness wires M01 createAuthenticate middleware with real request context.",
+        "Authenticated actor resolved from valid bearer token in fixture."
       ],
       "steps": [
-        "Bind valid actor to request via bearer token.",
-        "Simulate logout by removing Authorization on subsequent request to protected route preHandler.",
-        "Assert unauthenticated short-circuit before business logic."
+        "Bind valid actor to request via bearer token and confirm handler would proceed.",
+        "Invoke POST /v1/auth/logout through auth route handler.",
+        "Simulate client credential discard by omitting Authorization on subsequent protected route preHandler.",
+        "Assert middleware returns 401 Unauthenticated before business logic executes.",
+        "Verify UserLoggedOut event emitted with actorUserId per API §8.1 without attendance mutations."
       ],
-      "expected": "Authentication guard enforces BR-24: cleared credentials yield 401 at middleware boundary without partial handler execution.",
+      "expected": "Authentication guard enforces BR-24: cleared credentials yield 401 at middleware boundary without partial handler execution; logout emits UserLoggedOut only.",
       "edgeCase": false
+    },
+    {
+      "id": "TC-BR-24-003",
+      "category": "functional",
+      "layer": "integration",
+      "technique": "scenario-matrix",
+      "priority": "P0",
+      "traceability": ["BR-24", "FR-38", "AC-26"],
+      "title": "Scenario matrix row for BR-24 end authenticated session on logout",
+      "preconditions": [
+        "Testing-plan §12 Authentication lifecycle row applies (FR-36, FR-38; BR-05, BR-24; AC-06, AC-26).",
+        "Role-matrix fixture provides Student and Lecturer authenticated sessions."
+      ],
+      "steps": [
+        "Establish authenticated session for each role via POST /v1/auth/login.",
+        "Execute voluntary logout per FLOW-15: POST /v1/auth/logout and client credential discard.",
+        "Attempt protected API read for each role without re-login (GET /v1/me).",
+        "Attempt protected frontend route deep link without re-login and confirm redirect to PG-01."
+      ],
+      "expected": "BR-24 enforced across roles: client credentials cleared, PG-01 login redirect on protected routes, API returns 401 Unauthenticated until re-authentication; no privileged data from prior session remains accessible.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-24-004",
+      "category": "functional",
+      "layer": "browser",
+      "technique": "browser-journey",
+      "priority": "P0",
+      "traceability": ["BR-24", "FR-38", "AC-26", "FLOW-15"],
+      "title": "Browser journey: lecturer logout from PG-04 clears storage and gates session list until re-login",
+      "preconditions": [
+        "Lecturer authenticated at PG-04 with visible session rows.",
+        "Browser storage holds accessToken and role-specific auth flags prior to logout."
+      ],
+      "steps": [
+        "Activate Đăng xuất from staff shell and observe PG-01 load without returnUrl.",
+        "Verify accessToken and role-specific auth flags cleared from browser storage per FLOW-15 step 3.",
+        "Navigate to /lecturer/sessions and confirm login redirect.",
+        "Verify no privileged session or roster data remains visible in DOM.",
+        "Complete FRM-01 sign-in and confirm PG-04 session list renders again."
+      ],
+      "expected": "BR-24 browser outcome: voluntary logout clears client session, redirects to PG-01, blocks protected lecturer routes, and restores access only after re-authentication.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-24-005",
+      "category": "ui-ux",
+      "layer": "browser",
+      "technique": "ui-navigation",
+      "priority": "P1",
+      "traceability": ["BR-24", "FR-38", "AC-26", "FLOW-15"],
+      "title": "Staff SidebarNav logout returns to PG-01 and blocks protected deep link until re-login",
+      "preconditions": [
+        "Lecturer logged in on desktop Chromium at PG-04 /lecturer/sessions.",
+        "Open session fixture with known sessionId; SidebarNav footer exposes Đăng xuất per 09-page-list.md §2.2."
+      ],
+      "steps": [
+        "Locate Đăng xuất control in sidebar footer separated from primary nav items.",
+        "Activate logout control and observe navigation to PG-01 without returnUrl query parameter.",
+        "Manually navigate to /lecturer/sessions/{sessionId}/roster.",
+        "Observe redirect to PG-01 login without roster data from prior session visible in DOM.",
+        "Re-authenticate and confirm PG-06 loads."
+      ],
+      "expected": "BR-24 UI gate: staff voluntary logout is reachable from authenticated shell, returns to PG-01, and protected deep links redirect to login without exposing prior session data.",
+      "edgeCase": false
+    },
+    {
+      "id": "TC-BR-24-006",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "boundary-error",
+      "priority": "P1",
+      "traceability": ["BR-24", "FR-38"],
+      "title": "POST /v1/auth/logout without bearer token returns Unauthenticated",
+      "preconditions": [
+        "Test client holds no Authorization header or bearer token."
+      ],
+      "steps": [
+        "Send POST /v1/auth/logout without Authorization header.",
+        "Inspect HTTP status and response envelope error.code."
+      ],
+      "expected": "API returns HTTP 401 with error.code Unauthenticated per API §4.1; no loggedOut success payload without authentication.",
+      "edgeCase": true
+    },
+    {
+      "id": "TC-BR-24-007",
+      "category": "edge",
+      "layer": "e2e",
+      "technique": "rbac-negative",
+      "priority": "P0",
+      "traceability": ["BR-24", "FR-38", "AC-26", "BR-05"],
+      "title": "Post-logout denial on role-scoped APIs until re-authentication",
+      "preconditions": [
+        "Student and Lecturer each completed FLOW-15 logout with client credentials cleared.",
+        "Open session with valid qrToken and sessionId exists for denial probes."
+      ],
+      "steps": [
+        "Without Authorization, Student calls POST /v1/check-ins with valid qrToken and Idempotency-Key.",
+        "Without Authorization, Lecturer calls GET /v1/class-sessions/{sessionId}/attendance.",
+        "Inspect each response for HTTP 401 and error.code Unauthenticated with no attendance or roster data.",
+        "Re-authenticate Student and confirm POST /v1/check-ins or GET /v1/me succeeds with valid token."
+      ],
+      "expected": "BR-24 request evaluation pipeline rejects post-logout calls at authentication step with HTTP 401 Unauthenticated; no role-scoped attendance or session data is returned until re-login.",
+      "edgeCase": true
     }
   ]
 }
