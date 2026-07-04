@@ -169,7 +169,7 @@
     },
     {
       "id": "module-registration",
-      "passes": true,
+      "passes": false,
       "priority": 21,
       "phase": 2,
       "agent": "backend",
@@ -208,7 +208,15 @@
           "FR-10"
         ]
       },
-      "description": "Registration module: capacity, waitlist FIFO, dedupe; paginated registrations and waitlist lists."
+      "description": "Registration module: capacity, waitlist FIFO, dedupe; paginated registrations and waitlist lists.",
+      "history": [
+        {
+          "at": "2026-07-04T06:45:23Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-01 — reverify after TestGen",
+          "source": "harness"
+        }
+      ]
     },
     {
       "id": "module-checkin",
@@ -486,7 +494,7 @@
     },
     {
       "id": "web-participant-registration",
-      "passes": true,
+      "passes": false,
       "priority": 32,
       "phase": 3,
       "agent": "frontend",
@@ -534,7 +542,15 @@
           "FR-29"
         ]
       },
-      "description": "Register/waitlist/reject outcomes, cancellation with promotion visibility, paginated My Registrations with status timeline and quick-action gating."
+      "description": "Register/waitlist/reject outcomes, cancellation with promotion visibility, paginated My Registrations with status timeline and quick-action gating.",
+      "history": [
+        {
+          "at": "2026-07-04T06:45:23Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-01 — reverify after TestGen",
+          "source": "harness"
+        }
+      ]
     },
     {
       "id": "web-participant-checkin",
@@ -980,7 +996,15 @@
           "AC-16",
           "AC-17"
         ]
-      }
+      },
+      "history": [
+        {
+          "at": "2026-07-04T06:45:23Z",
+          "kind": "drift",
+          "reason": "Doc drift for AC-01 — reverify after TestGen",
+          "source": "harness"
+        }
+      ]
     }
   ]
 }
