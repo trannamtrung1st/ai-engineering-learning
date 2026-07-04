@@ -2940,11 +2940,11 @@ get_integration_check_log_path() {
 
 run_isolated_integration_file() {
   local test_path="$1"
-  local vitest_rel="$test_path"
-  if [[ "$vitest_rel" == apps/api/* ]]; then
-    vitest_rel="${vitest_rel#apps/api/}"
+  local test_rel="$test_path"
+  if [[ "$test_rel" == apps/api/* ]]; then
+    test_rel="${test_rel#apps/api/}"
   fi
-  [[ -n "$vitest_rel" ]] || return 1
+  [[ -n "$test_rel" ]] || return 1
 
   if ! prepare_test_stack_for_script "test:integration"; then
     return 1
@@ -2957,7 +2957,7 @@ run_isolated_integration_file() {
   set +e
   (
     cd "$api_dir"
-    npm run build -w {{WORKSPACE_NAME}}domain && npx vitest run --config vitest.integration.config.ts "$vitest_rel"
+    node --import tsx --test --test-concurrency=1 --test-reporter=spec "$test_rel"
   )
   local status=$?
   set -e
@@ -3622,19 +3622,32 @@ script_needs_test_stack() {
   esac
 }
 
-# Tear down and recreate the ephemeral test stack, then export connection env vars.
-# Called immediately before each integration/e2e npm script so suites do not share DB state.
+test_stack_reset_between_scripts() {
+  jq -r '.computationalChecks.runtimeValidation.testStack.resetBetweenScripts // false' "$LOOP_CONFIG"
+}
+
+# Tear down/reuse the ephemeral test stack, then export connection env vars.
+# With resetBetweenScripts=false, one check run can reuse the primed stack for e2e after integration.
 prepare_test_stack_for_script() {
   local script="${1:-}"
   script_needs_test_stack "$script" || return 0
   if ! test_stack_configured; then
     return 0
   fi
+  if [[ "$(test_stack_reset_between_scripts)" == "false" && "${AIH_TEST_STACK_PRIMED:-0}" == "1" ]]; then
+    if wait_test_stack_healthy; then
+      aih_info "    reusing primed test stack before ${script} (resetBetweenScripts=false)"
+      export_test_stack_env
+      return 0
+    fi
+    aih_info "    primed test stack unhealthy; resetting before ${script}"
+  fi
   aih_info "    resetting test stack before ${script} (via $(test_stack_script) reset, AIH_TEST_STACK_RESET=${AIH_TEST_STACK_RESET:-1})"
   if ! reset_test_stack_if_needed; then
     aih_err "test stack reset failed before ${script}"
     return 1
   fi
+  export AIH_TEST_STACK_PRIMED=1
   export_test_stack_env
   return 0
 }

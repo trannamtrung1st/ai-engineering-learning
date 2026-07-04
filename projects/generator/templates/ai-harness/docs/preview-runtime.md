@@ -379,12 +379,14 @@ curl -sf -o /dev/null -w '%{http_code}\n' http://localhost:3007/
 
 Integration and API e2e tests use a **separate ephemeral Compose stack** (`docker-compose.test.yml`, project `*-test`, offset ports). Preview and Playwright use the **dev stack** (`docker-compose.yml`, `aih:preview`, `aih:dev:db:up`). They do not share Postgres volumes.
 
-| Stack | Compose file | Started by | Used by |
-| --- | --- | --- | --- |
-| Preview / dev | `docker-compose.yml` | `aih:dev:db:up`, `aih:preview` | Manual dev, Playwright UI, browser MCP |
-| Test | `docker-compose.test.yml` | `aih:test:stack:reset` (harness resets before integration/e2e) | `test:integration`, `test:e2e` |
+| Stack | Compose file | Started by | Used by | DB access |
+| --- | --- | --- | --- | --- |
+| Preview / dev | `docker-compose.yml` | `aih:dev:db:up`, `aih:preview` | Manual dev, Playwright UI, browser MCP | `pg` TCP to `localhost:5432` |
+| Test | `docker-compose.test.yml` | `aih:test:stack:reset` (harness resets before integration/e2e) | `test:integration`, `test:e2e` | `pg` TCP to `localhost:5433` |
 
-Harness `run-checks.sh` resets the test stack (`test-stack.sh reset`) once per full-profile `aih:check` when `docker-compose.test.yml` exists. Use `npm run aih:test:stack:wait` or `./ai-harness/scripts/test-stack.sh status` to probe readiness without a full reset.
+Compose manages container lifecycle and health only; application and integration tests connect via the native `pg` driver, not `docker compose exec psql`.
+
+Harness `run-checks.sh` resets the test stack once per full-profile `aih:check` when `resetBetweenScripts` is false (default in `ralph-loop.json`); the primed stack is reused for `test:e2e` if healthy. Use `npm run aih:test:stack:wait` or `./ai-harness/scripts/test-stack.sh status` to probe readiness without a full reset.
 
 Manual integration run:
 

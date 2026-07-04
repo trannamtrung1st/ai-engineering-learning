@@ -145,10 +145,21 @@ After reset, always run migrations and seeds before workflow testing.
 
 ### 10.1 Integration test execution model
 
-1. Start test profile containers.
-2. Run migrations and test seeds.
-3. Run integration suite.
-4. Tear down containers and clear ephemeral test volume.
+1. Start test profile containers (`docker-compose.test.yml`, port 5433).
+2. Export `TEST_DATABASE_URL` / `DATABASE_URL` for TCP Postgres access.
+3. Run integration suite via `node --test` (`apps/api`); the API uses the `pg` driver — queries do **not** go through `docker compose exec`.
+4. Harness resets the test stack once per `aih:check` run when `resetBetweenScripts` is false (default); full volume teardown remains available via `AIH_TEST_STACK_RESET=1`.
+
+### 10.1.1 Integration test performance runbook
+
+| Scenario | Command / setting |
+| --- | --- |
+| Full gate (reset once) | `npm run aih:check` — stack reset before `test:integration`; reused for `test:e2e` when healthy |
+| Fast local iteration | `AIH_TEST_STACK_RESET=0 npm run aih:run-check -- test:integration` — skip volume teardown |
+| Isolated suite | `npm run aih:run-check -- test:integration -w @attendly/api -- src/modules/auth/auth.integration.test.ts` |
+| When to hard-reset | Schema drift, cross-suite flake, or after changing DDL in repository `ensure*Schema` helpers |
+
+Expected local runtime after the `pg` adapter and suite-level seed model: full integration suite (~96 tests) completes in under ~10 seconds on a warm stack.
 
 ### 10.2 Performance smoke test setup
 

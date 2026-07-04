@@ -488,7 +488,7 @@ check_test_stack_runtime() {
   label="test stack prerequisites (compose: $(test_compose_file), project: $(test_compose_project))"
   aih_check_begin "$label"
 
-  aih_info "    clean reset (down -v + up) runs before each integration/e2e script (AIH_TEST_STACK_RESET=${AIH_TEST_STACK_RESET:-1})"
+  aih_info "    test stack reset before first integration/e2e script; reuse when resetBetweenScripts=false (AIH_TEST_STACK_RESET=${AIH_TEST_STACK_RESET:-1})"
   if ! docker compose \
     -f "$REPO_ROOT/$(test_compose_file)" \
     -p "$(test_compose_project)" \

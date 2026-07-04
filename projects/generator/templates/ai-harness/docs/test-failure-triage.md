@@ -42,7 +42,7 @@ Test failure in aih:check
 When `computationalChecks.integrationFailurePolicy.investigateOnFailure` is enabled (default in `ralph-loop.json`), Ralph runs mechanical triage after `test:integration` fails:
 
 1. Parse failing test file(s) and `TC-*` case id(s) from `{run-id}-check-test-integration.log`
-2. Run the failing file in isolation (single vitest file)
+2. Run the failing file in isolation (single `node --test` file via harness triage)
 3. Write `{run-id}-integration-triage.json` and merge into `{run-id}-checks.json` under `triage`
 
 | `triage.classification` | Meaning | Required action |
@@ -78,7 +78,22 @@ When production code uses `setInterval` or async ticks (e.g. token rotation, pol
 **Pattern:** Export a test helper that resets schedulers in `afterEach`:
 
 ```typescript
-// apps/api/src/infra/integration-test-harness.ts
+// apps/api/src/modules/<module>/<module>.integration.test.ts
+import {
+  runIntegrationBeforeSuite,
+  runIntegrationBeforeEach,
+  type SuiteProfile,
+} from "../../infra/integration-test-harness.js";
+
+// before:  await runIntegrationBeforeSuite("module", pool, server);
+// beforeEach: await runIntegrationBeforeEach("module", pool);
+```
+
+Suite profiles control scoped per-test resets. JWT/session tokens should be cached at suite level — do not re-login in `beforeEach`.
+
+For background schedulers, export a helper that resets timers in `afterEach`:
+
+```typescript
 export function installSchedulerTestIsolation(resetFn: () => void): void {
   afterEach(() => { resetFn(); });
 }
@@ -132,6 +147,8 @@ Use `NULL` or valid FK references for optional foreign keys in negative-path tes
 **Log paths:** `ai-harness/generated/runs/<run-id>-check-<script>.log`, `*-checks.json`, and `*-integration-triage.json` (when integration triage runs)
 
 Set `AIH_TEST_STACK_RESET=0` to skip volume teardown on reset (faster local debugging; may retain cross-suite state).
+
+With `resetBetweenScripts: false` in `ralph-loop.json` (default), the harness reuses a primed test stack between `test:integration` and `test:e2e` within one `aih:check` run. Force a full reset when investigating cross-suite pollution.
 
 ---
 

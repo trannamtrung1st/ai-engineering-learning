@@ -114,6 +114,7 @@
         "projectName": "{{PRODUCT_SLUG}}-test",
         "services": ["db"],
         "resetBeforeIntegration": true,
+        "resetBetweenScripts": false,
         "activeWhen": "docker-compose.test.yml",
         "healthTimeoutMs": 60000,
         "env": {

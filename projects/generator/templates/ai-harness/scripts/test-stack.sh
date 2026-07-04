@@ -47,6 +47,7 @@ test_stack_wait_service() {
   local timeout_ms="${2:-$(test_stack_health_timeout_ms)}"
   local deadline=$(( $(date +%s) * 1000 + timeout_ms ))
   local status
+  local attempt=0
   while true; do
     status="$(test_stack_service_status "$service")"
     if test_stack_service_is_ready "$status"; then
@@ -56,7 +57,12 @@ test_stack_wait_service() {
       echo "ERROR: test stack service '${service}' not ready (status: ${status:-not running})" >&2
       return 1
     fi
-    sleep 2
+    attempt=$((attempt + 1))
+    if (( attempt > 1 )); then
+      sleep 0.5
+    else
+      sleep 2
+    fi
   done
 }
 

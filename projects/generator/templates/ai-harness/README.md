@@ -291,12 +291,12 @@ Gates run after every implementer iteration and can be run standalone:
 | Slice completion artifacts | Ralph iteration with slice id | Yes |
 | `typecheck`, `lint`, `build` | `apps/` exists | Yes — root scripts must exist and pass; each has a wall-clock timeout (default 10m, integration/e2e 15m) |
 | `test:unit` | `apps/api` exists (and `apps/web` when it defines `test:unit`) | Yes |
-| `test:integration` | `apps/api` exists | Yes — logs to `ai-harness/generated/runs/<run-id>-check-test-integration.log`; `--test-reporter=spec` per test file |
+| `test:integration` | `apps/api` exists | Yes — logs to `ai-harness/generated/runs/<run-id>-check-test-integration.log`; `--test-reporter=spec` per test file; prefer native `pg` + suite-level seed for fast DB-backed suites |
 | `test:e2e` | `tests/e2e` exists | Yes |
 | Playwright UI regression | `tests/playwright-ui` exists, frontend/test slice | Yes — **after** browser tester codegen via `run-checks.sh --playwright-only` or `npm run aih:playwright-check` |
 | Slice `testRequirements` | Ralph iteration with slice id | Yes when field present |
 | Generated test case coverage | all slice `acceptance` product items current | Yes — integration/e2e case tags must appear in test files (unit is implementer-owned via `testRequirements`) |
-| DB health (test stack) | `docker-compose.test.yml` exists | Yes when full profile includes `test:integration` or `test:e2e` — harness runs `aih:test:stack:reset` |
+| DB health (test stack) | `docker-compose.test.yml` exists | Yes when full profile includes `test:integration` or `test:e2e` — harness resets test stack once per check run (`resetBetweenScripts: false`); set `AIH_TEST_STACK_RESET=0` for faster local iteration |
 | DB health (dev fallback) | `docker-compose.test.yml` absent, `docker-compose.yml` exists | Yes when full profile includes integration/e2e |
 | Stack startup (API health + web HTTP 200) | `apps/api` and `apps/web` exist | Yes — `verify-stack.sh --quick` via `run-checks.sh`; full poll with `AIH_VERIFY_STACK=1` |
 
@@ -325,7 +325,7 @@ npm run aih:slice:focus -- <owner-slice-id> --reason "integration flakes"
 npm run aih:status
 ```
 
-Ralph runs **integration failure triage** automatically when `test:integration` fails: isolated vitest on the failing file, classification (`crossSuiteFlake` / `reproducible` / `infrastructure`), optional auto-reopen/focus of the owner slice, and a mandatory investigation block in the next implementer prompt. **Do not resolve flakes by bare re-run of `aih:check`.**
+Ralph runs **integration failure triage** automatically when `test:integration` fails: isolated `node --test` on the failing file, classification (`crossSuiteFlake` / `reproducible` / `infrastructure`), optional auto-reopen/focus of the owner slice, and a mandatory investigation block in the next implementer prompt. **Do not resolve flakes by bare re-run of `aih:check`.**
 
 Full decision tree, flake patterns, and `SLICE_DEFER` policy: [`docs/test-failure-triage.md`](docs/test-failure-triage.md).
 

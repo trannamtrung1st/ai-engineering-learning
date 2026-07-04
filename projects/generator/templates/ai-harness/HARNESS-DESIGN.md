@@ -24,7 +24,7 @@ Concise index for the 12 harness components. Referenced by `docs/technical/13-do
 | ManualsGen | `scripts/manualsgen-loop.sh`, `scripts/check-manuals-drift.sh` — end-user manuals and demo scripts per backlog item |
 | Guardrails | `state/guardrails.md` + forbidden patterns in `ralph-loop.json` |
 | Observability | `generated/runs/<timestamp>-*.json` — TTL-pruned each Ralph iteration (`loop.generatedRetentionMinutes`, default 60m; preview/loop runtime files excluded) |
-| Feedback loops | Failed scope/check/browser-test/playwright-regression/review → guardrails append → retry; prior scope, checks (JSON + **log excerpts** with scope hints), browser-test, and review output injected into next implementer prompt with **full blocker lists** — implementer batch-fixes all listed issues when feasible; **integration failure triage** (`integrationFailurePolicy`) runs isolated vitest on gate fail, writes `{run-id}-integration-triage.json`, reopens/focuses owner slice on `crossSuiteFlake` — bare full-suite re-run is not an acceptable fix; browser tester retries failed cases first then full suite (`browserTest.retryFailedCasesFirst`); **collect-all failures** (`browserTest.collectAllFailures`, default true) — report every FAIL in one pass; on full pass syncs `testRequirements.playwright`, validates browser test-case JSON, and commits owned paths **after** headless Playwright regression; on browser/playwright fail reverts uncommitted owned changes |
+| Feedback loops | Failed scope/check/browser-test/playwright-regression/review → guardrails append → retry; prior scope, checks (JSON + **log excerpts** with scope hints), browser-test, and review output injected into next implementer prompt with **full blocker lists** — implementer batch-fixes all listed issues when feasible; **integration failure triage** (`integrationFailurePolicy`) runs isolated `node --test` on gate fail, writes `{run-id}-integration-triage.json`, reopens/focuses owner slice on `crossSuiteFlake` — bare full-suite re-run is not an acceptable fix; browser tester retries failed cases first then full suite (`browserTest.retryFailedCasesFirst`); **collect-all failures** (`browserTest.collectAllFailures`, default true) — report every FAIL in one pass; on full pass syncs `testRequirements.playwright`, validates browser test-case JSON, and commits owned paths **after** headless Playwright regression; on browser/playwright fail reverts uncommitted owned changes |
 | Human review | `workflows/human-review-checklist.md` |
 | Preview runtime | `scripts/preview-stack.sh`, `docs/preview-runtime.md` |
 | Browser MCP | `.cursor/mcp.json`, `docs/browser-mcp.md` |
@@ -47,7 +47,7 @@ pick slice (priority, or one-shot override from loop-state.json) → drift check
 
 **Slice history:** each backlog slice may have a `history` array (`at`, `kind`, `reason`, `source`, optional `relatedSlice`). Harness appends on gate failures; humans use `npm run aih:slice:reopen`; implementer `SLICE_DEFER` reopens the owner slice and redirects the next iteration.
 
-**Cross-slice deferral:** implementer signals `SLICE_DEFER <owner-slice-id> <reason>` after reverting in-scope changes. Harness reopens the owner, records history, sets loop override, and exits the iteration. When `test:integration` fails, `integrationFailurePolicy` may also reopen/focus the owner slice automatically after mechanical triage (isolated vitest + `{run-id}-integration-triage.json`).
+**Cross-slice deferral:** implementer signals `SLICE_DEFER <owner-slice-id> <reason>` after reverting in-scope changes. Harness reopens the owner, records history, sets loop override, and exits the iteration. When `test:integration` fails, `integrationFailurePolicy` may also reopen/focus the owner slice automatically after mechanical triage (isolated `node --test` + `{run-id}-integration-triage.json`).
 
 Test case gate policy (`ralph-loop.json` → `testCaseGate.mode`):
 
@@ -154,6 +154,7 @@ Harness hard-fails: in-memory repos, SQLite, mock page data, lorem ipsum. See `r
     "composeFile": "docker-compose.test.yml",
     "projectName": "<slug>-test",
     "services": ["db"],
+    "resetBetweenScripts": false,
     "activeWhen": "docker-compose.test.yml",
     "env": {
       "DATABASE_URL": "postgresql://postgres:postgres@localhost:5433/app_test"
@@ -162,7 +163,9 @@ Harness hard-fails: in-memory repos, SQLite, mock page data, lorem ipsum. See `r
 }
 ```
 
-`run-checks.sh` resets the **test stack** before integration/e2e when `docker-compose.test.yml` exists; preview dev DB (`docker-compose.yml`) is not auto-started for those gates. Scripts: `aih:test:stack:up`, `aih:test:stack:reset`, `aih:test:stack:down` (`test-stack.sh`).
+`run-checks.sh` resets the **test stack** before the first integration/e2e script in a check run when `docker-compose.test.yml` exists; with `resetBetweenScripts: false`, subsequent scripts reuse the primed stack if healthy. Preview dev DB (`docker-compose.yml`) is not auto-started for those gates. Scripts: `aih:test:stack:up`, `aih:test:stack:reset`, `aih:test:stack:down` (`test-stack.sh`).
+
+**Integration DB access:** `apps/api` should use the native `pg` driver over TCP (`localhost:5433` test, `5432` dev). Prefer suite-level seed, scoped per-test reset, and cached auth/session tokens in `apps/api/src/infra/integration-test-harness.ts` when integration suites grow.
 
 **Test isolation:** Integration suites that start background schedulers must clean up in `afterEach` (see `docs/test-failure-triage.md`). Full-suite-only failures often indicate leaked in-process timers, not DB state alone.
 

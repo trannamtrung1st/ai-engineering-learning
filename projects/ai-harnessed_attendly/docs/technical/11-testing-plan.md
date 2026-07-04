@@ -159,6 +159,25 @@ OS-native camera app scanning that opens `/check-in?token=...` is out of scope f
 - Keep PII-like fields synthetic.
 - Reset DB state between suites to avoid cross-test contamination.
 
+### 8.3 Integration harness fixtures and lifecycle
+
+Module integration suites use [`apps/api/src/infra/integration-test-harness.ts`](../../apps/api/src/infra/integration-test-harness.ts):
+
+| Helper | Purpose |
+| --- | --- |
+| `seedIntegrationBaseFixture` | Composes `role-matrix` + `base-academic` baseline (users, faculty, terms, section) |
+| `runIntegrationBeforeSuite` | Full truncate + seed once per `.integration.test.ts` file; caches JWT tokens for admin/lecturer/student |
+| `runIntegrationBeforeEach` | Scoped table reset only (no full re-seed, no re-login) |
+
+| Suite profile | Per-test reset scope |
+| --- | --- |
+| `auth` | `login_failure_counters`, `audit_logs` |
+| `academic` | Mutable academic tables (terms, courses, rooms, sections, enrollments, sessions) then baseline re-seed |
+| `session` | QR tokens, attendance, session rows; restores pinned session fixture IDs |
+| `policy` | `attendance_policies`, `alert_events` |
+
+The harness test stack (`docker-compose.test.yml`, port 5433) provides Postgres lifecycle only; the API connects via native `pg` TCP, not `docker compose exec`.
+
 ## 9. CI test gates
 
 ### 9.1 Pull request gates (minimum)
@@ -184,8 +203,9 @@ To keep release confidence stable, CI and local pipelines must explicitly manage
 | flaky test detection | Any intermittently failing test is tagged and triaged within the same sprint; repeat offenders block release promotion until stabilized |
 | flake budget | Release branches target zero unresolved high-impact flake in check-in, session lifecycle, export, and audit suites |
 | test isolation | Every test must run with isolated data/setup so execution order does not change outcomes |
-| environment reset | Integration/E2E suites reset database and cache state between scenarios to preserve test isolation guarantees |
+| environment reset | Harness resets the test stack once per check run; suites truncate mutable tables per test via the integration harness |
 | deterministic fixtures | Shared fixtures use deterministic IDs/timestamps where feasible to reduce flake from timing variance |
+| serial execution | Integration tests run with `--test-concurrency=1`; cross-file isolation relies on suite-level full reset in `runIntegrationBeforeSuite` |
 
 ## 10. Defect triage policy
 
