@@ -3,15 +3,15 @@
     "AC-01": {
       "current": true,
       "docFingerprint": "sha256:04bfa0de11a3f891ff5c5300286b94aa9559fde233726603791b240ffaa83cd1",
-      "generatedAt": "2026-07-04T06:45:23Z"
+      "generatedAt": "2026-07-04T06:45:40Z"
     },
     "AC-02": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:04bfa0de11a3f891ff5c5300286b94aa9559fde233726603791b240ffaa83cd1",
       "generatedAt": "2026-06-26T16:10:24Z"
     },
     "AC-03": {
-      "current": true,
+      "current": false,
       "docFingerprint": "sha256:04bfa0de11a3f891ff5c5300286b94aa9559fde233726603791b240ffaa83cd1",
       "generatedAt": "2026-06-26T16:11:47Z"
     },

@@ -454,3 +454,4 @@ Append-only log of completed iterations.
 - 2026-06-27T13:10:29Z | web-organizer-registration-checkin | browser_test_failed
 - 2026-06-27T13:18:00Z | web-organizer-registration-checkin | browser: TC-FR-12-010/018 participant-2 (seat holder) cancel → participant-1 promoted to Registered on event detail + My Registrations; waitlist fixture self-heals when seat holder is anonymous UUID — HTTP 200
 - 2026-07-04T06:45:23Z | AC-01 | testgen_passed
+- 2026-07-04T06:45:40Z | AC-01 | testgen_passed
