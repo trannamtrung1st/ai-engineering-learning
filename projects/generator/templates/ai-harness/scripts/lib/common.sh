@@ -265,6 +265,11 @@ print_harness_env() {
   fi
   aih_kv "Auth" "agent login (OAuth, one-time per machine)"
   aih_kv "Timeout" "idle $(get_agent_idle_timeout_ms)ms / max $(get_agent_timeout_ms)ms (AIH_AGENT_IDLE_TIMEOUT_MS / AIH_AGENT_TIMEOUT_MS)"
+  local testgen_workers
+  testgen_workers="$(get_testgen_workers)"
+  if [[ "$testgen_workers" -gt 1 ]]; then
+    aih_kv "TestGen workers" "$testgen_workers"
+  fi
   aih_kv "Overrides" "AIH_MODEL=... AIH_SKIP_AGENT=1 AIH_SKIP_REVIEW=1"
 }
 
@@ -740,6 +745,15 @@ run_agent_with_timeout_ms() {
 
 run_id() {
   date -u +"%Y%m%dT%H%M%SZ"
+}
+
+# Unique per testgen-once invocation (parallel workers share second-granularity run_id()).
+testgen_run_id() {
+  local requirement_tag="${1:?requirement tag required}"
+  local base="${AIH_RUN_ID:-$(run_id)}"
+  local worker="${AIH_TESTGEN_WORKER_ID:-0}"
+  local tag_safe="${requirement_tag//[^A-Za-z0-9._-]/_}"
+  echo "${base}-${tag_safe}-w${worker}-$$"
 }
 
 ensure_runs_dir() {
@@ -1438,6 +1452,143 @@ pick_next_testgen_requirement_tag() {
   echo ""
 }
 
+TESTGEN_STATE_LOCK="${STATE_DIR}/.testgen.lock.d"
+
+get_testgen_workers() {
+  local workers="${AIH_TESTGEN_WORKERS:-}"
+  if [[ -z "$workers" ]]; then
+    workers="$(jq -r '.parallelism.workers // 1' "$TESTGEN_CONFIG" 2>/dev/null || echo 1)"
+  fi
+  if [[ ! "$workers" =~ ^[0-9]+$ ]] || [[ "$workers" -lt 1 ]]; then
+    workers=1
+  fi
+  echo "$workers"
+}
+
+list_pending_requirement_tags() {
+  local tag
+  while IFS= read -r tag; do
+    [[ -z "$tag" ]] && continue
+    if ! requirement_tag_test_cases_current "$tag"; then
+      echo "$tag"
+    fi
+  done < <(all_requirement_tags_sorted)
+}
+
+testgen_worker_tags_file() {
+  local run_id="$1"
+  local worker_id="$2"
+  echo "${RUNS_DIR}/${run_id}-testgen-worker-${worker_id}.tags"
+}
+
+write_testgen_worker_tags_file() {
+  local run_id="$1"
+  local worker_id="$2"
+  shift 2
+  local outfile tag
+  outfile="$(testgen_worker_tags_file "$run_id" "$worker_id")"
+  ensure_runs_dir
+  : > "$outfile"
+  while [[ "$#" -gt 0 ]]; do
+    tag="$1"
+    shift
+    [[ -z "$tag" ]] && continue
+    echo "$tag" >> "$outfile"
+  done
+  echo "$outfile"
+}
+
+assign_testgen_worker_tag_files() {
+  local run_id="$1"
+  local workers="$2"
+  shift 2
+  local -a tags=("$@")
+  local total="${#tags[@]}"
+  local base remainder offset chunk w outfile
+
+  if [[ "$total" -eq 0 ]]; then
+    local w_empty
+    for ((w_empty=1; w_empty<=workers; w_empty++)); do
+      write_testgen_worker_tags_file "$run_id" "$w_empty"
+    done
+    return 0
+  fi
+
+  base=$((total / workers))
+  remainder=$((total % workers))
+  offset=0
+  for ((w=1; w<=workers; w++)); do
+    if [[ "$base" -eq 0 && "$remainder" -gt 0 ]]; then
+      if [[ "$w" -le "$remainder" ]]; then
+        chunk=1
+      else
+        chunk=0
+      fi
+    elif [[ "$w" -lt "$workers" ]]; then
+      chunk=$base
+    else
+      chunk=$((base + remainder))
+    fi
+    if [[ "$chunk" -gt 0 ]]; then
+      outfile="$(write_testgen_worker_tags_file "$run_id" "$w" "${tags[@]:$offset:$chunk}")"
+    else
+      outfile="$(write_testgen_worker_tags_file "$run_id" "$w")"
+    fi
+    printf '%s\n' "$outfile"
+    offset=$((offset + chunk))
+  done
+}
+
+with_testgen_state_lock() {
+  local lock_dir="$TESTGEN_STATE_LOCK"
+  local waited=0
+  until mkdir "$lock_dir" 2>/dev/null; do
+    if [[ "$waited" -ge 300 ]]; then
+      echo "ERROR: testgen state lock timeout (${lock_dir})" >&2
+      return 1
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+
+  local status=0
+  "$@" || status=$?
+  rmdir "$lock_dir" 2>/dev/null || true
+  return "$status"
+}
+
+finalize_testgen_pass() {
+  local requirement_tag="$1"
+  local doc_fp="$2"
+  "${HARNESS_ROOT}/scripts/sync-test-cases-to-backlog.sh" "$requirement_tag"
+  mark_test_cases_current "$requirement_tag" "$doc_fp"
+  append_progress "$requirement_tag" "testgen_passed"
+  local commit_on_pass
+  commit_on_pass="$(jq -r '.loop.commitOnPass // true' "$TESTGEN_CONFIG")"
+  if [[ "$commit_on_pass" == "true" ]]; then
+    "${HARNESS_ROOT}/scripts/git-commit-testgen.sh" "$requirement_tag"
+  fi
+}
+
+prefix_testgen_worker_output() {
+  local worker_id="$1"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    printf '[worker-%s] %s\n' "$worker_id" "$line"
+  done
+}
+
+count_pending_requirement_tags() {
+  local pending=0 remaining=0 tag
+  while IFS= read -r tag; do
+    [[ -z "$tag" ]] && continue
+    remaining=$((remaining + 1))
+    if ! requirement_tag_test_cases_current "$tag"; then
+      pending=$((pending + 1))
+    fi
+  done < <(all_requirement_tags_sorted)
+  echo "${pending} ${remaining}"
+}
+
 # --- ManualsGen ---
 
 get_manual_item_json() {
@@ -1616,7 +1767,7 @@ mark_test_cases_current() {
   mark_slices_stale_for_tag "$requirement_tag"
 }
 
-reset_requirement_tag_on_doc_drift() {
+_reset_requirement_tag_on_doc_drift_body() {
   local requirement_tag="$1"
   local live_fp="$2"
   ensure_test_case_artifact_restored "$requirement_tag"
@@ -1629,7 +1780,12 @@ reset_requirement_tag_on_doc_drift() {
       generatedAt: null
     }
   ' "$TEST_CASE_INDEX" > "$tmp" && mv "$tmp" "$TEST_CASE_INDEX"
+  mark_slices_stale_for_tag "$requirement_tag"
   append_guardrail "$requirement_tag" "Docs changed — run TestGen before Ralph (index current=false; fingerprint=${live_fp})"
+}
+
+reset_requirement_tag_on_doc_drift() {
+  with_testgen_state_lock _reset_requirement_tag_on_doc_drift_body "$@"
 }
 
 mark_slices_stale_for_tag() {

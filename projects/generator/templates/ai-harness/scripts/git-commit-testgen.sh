@@ -27,7 +27,6 @@ if ! git rev-parse --git-dir >/dev/null 2>&1; then
 fi
 
 to_add=()
-rel
 for rel in "${paths[@]}"; do
   [[ -n "$rel" ]] || continue
   [[ -e "$REPO_ROOT/$rel" ]] || continue

@@ -3,6 +3,9 @@
     "maxIterations": 80,
     "commitOnPass": true
   },
+  "parallelism": {
+    "workers": 5
+  },
   "agent": {
     "timeoutMs": 3600000,
     "idleTimeoutMs": 300000,

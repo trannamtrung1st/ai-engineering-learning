@@ -21,7 +21,7 @@ fi
 
 aih_step "TestGen iteration: requirementTag=${REQUIREMENT_TAG}"
 
-RID="$(run_id)"
+RID="$(testgen_run_id "$REQUIREMENT_TAG")"
 ensure_runs_dir
 mkdir -p "${TEST_CASES_DIR}/items"
 
@@ -112,15 +112,7 @@ if [[ "$validate_status" -ne 0 ]]; then
   exit 1
 fi
 
-./ai-harness/scripts/sync-test-cases-to-backlog.sh "$REQUIREMENT_TAG"
-
-mark_test_cases_current "$REQUIREMENT_TAG" "$DOC_FP"
-append_progress "$REQUIREMENT_TAG" "testgen_passed"
-
-commit_on_pass="$(jq -r '.loop.commitOnPass // true' "$TESTGEN_CONFIG")"
-if [[ "$commit_on_pass" == "true" ]]; then
-  "$(dirname "$0")/git-commit-testgen.sh" "$REQUIREMENT_TAG"
-fi
+with_testgen_state_lock finalize_testgen_pass "$REQUIREMENT_TAG" "$DOC_FP"
 
 if all_test_cases_current; then
   echo "TESTGEN_COMPLETE"

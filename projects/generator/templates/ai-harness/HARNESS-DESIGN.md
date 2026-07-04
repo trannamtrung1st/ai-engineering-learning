@@ -65,10 +65,14 @@ Scripts: `ralph-loop.sh` (autonomous), `ralph-once.sh` (single step).
 Separate loop that generates structured test cases from slice docs (can run in parallel with Ralph):
 
 ```
-pick requirement tag (from backlog acceptance union) → doc fingerprint → testgen agent → validate JSON → sync slice metadata → mark tag in test-case-index → commit
+orchestrator (testgen-loop.sh) → split pending tags across N workers →
+  each worker: requirement tag → doc fingerprint → testgen agent → validate JSON →
+  sync slice metadata → mark tag in test-case-index → commit (lock-protected)
 ```
 
-Scripts: `testgen-loop.sh` (autonomous), `testgen-once.sh` (single step).
+When `parallelism.workers` > 1 (default `5`), `testgen-loop.sh` spawns `testgen-worker.sh` processes in waves (up to `loop.maxIterations`). Each worker receives a pre-assigned tag list; logs are prefixed `[worker-N]` on orchestrator stdout and concatenated to `generated/runs/<run-id>-testgen-orchestrator.log`. Override with `AIH_TESTGEN_WORKERS`; set to `1` for legacy sequential mode.
+
+Scripts: `testgen-loop.sh` (orchestrator / autonomous), `testgen-worker.sh` (assigned tag batch), `testgen-once.sh` (single tag).
 
 `testgen-loop.json` → `validation.categoryPolicy` allows per-tag overrides of `minCasesPerCategory` (e.g. `NFR-*` relaxes the functional minimum to 0).
 

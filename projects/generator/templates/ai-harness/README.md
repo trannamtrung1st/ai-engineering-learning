@@ -58,6 +58,7 @@ npm run aih:loop -- 50                     # max 50 iterations
 | `AIH_REVIEWER_MODEL` | `auto` | Reviewer model |
 | `AIH_TESTER_MODEL` | `auto` | Browser test agent model |
 | `AIH_TESTGEN_MODEL` | `auto` | Test case generator model |
+| `AIH_TESTGEN_WORKERS` | `5` (`testgen-loop.json` → `parallelism.workers`) | Parallel TestGen worker count; `1` = legacy sequential loop |
 | `AIH_MANUALSGEN_MODEL` | `auto` | User manual generator model |
 | `AIH_AGENT_TIMEOUT_MS` | `3600000` | Max wall time per agent invocation (1 hour); applies to streamed and buffered runs |
 | `AIH_AGENT_IDLE_TIMEOUT_MS` | `300000` | Stream idle timeout — no stream-json activity for this long ends the run (5 minutes) |
@@ -115,7 +116,7 @@ Defaults live in `ai-harness/config/models.json`.
 | `npm run aih:generated:clean` | TTL cleanup for `ai-harness/generated/` run artifacts, screenshots, and evidence |
 | `npm run test:playwright-ui` | Run committed Playwright UI regression specs (`tests/playwright-ui`) |
 | `npm run aih:testgen:once` | Generate test cases for one slice from docs |
-| `npm run aih:testgen:loop` | Autonomous TestGen loop until all slices have current test cases |
+| `npm run aih:testgen:loop` | Autonomous TestGen loop until all slices have current test cases (orchestrates parallel workers when `parallelism.workers` > 1) |
 | `npm run aih:testgen:enhance` | Ad-hoc improve test cases for one tag with free-text instructions |
 | `npm run aih:testgen:drift` | Detect doc drift; mark tags stale (`current: false`) — slices reopen after TestGen |
 | `npm run aih:testgen:validate` | Validate generated test case JSON for a slice |
@@ -232,6 +233,16 @@ AIH_SKIP_AGENT=1 AIH_SKIP_REVIEW=1 npm run aih:once
 5. `validate-test-cases.sh` — schema + traceability
 6. `sync-test-cases-to-backlog.sh` — updates slices whose `acceptance` includes the tag
 7. Tag marked current in `test-case-index.json`; optional git commit (TestGen-owned paths only — test case artifact, index, backlog sync, progress)
+
+**Parallel loop** (`parallelism.workers` in `testgen-loop.json`, default `5`): `testgen-loop.sh` acts as an orchestrator that splits pending requirement tags evenly across workers (remainder goes to the last worker), spawns independent `testgen-worker.sh` processes, and multiplexes their logs to stdout with `[worker-N]` prefixes. Per-worker raw logs and a combined log are written under `ai-harness/generated/runs/<run-id>-testgen-*.log`. Set `AIH_TESTGEN_WORKERS=1` to force the legacy sequential loop (one tag per iteration).
+
+```bash
+# Default: 5 parallel workers (from testgen-loop.json)
+npm run aih:testgen:loop
+
+# Override worker count
+AIH_TESTGEN_WORKERS=3 npm run aih:testgen:loop
+```
 
 **Ad-hoc enhance** (`npm run aih:testgen:enhance`) — improve cases for one tag without waiting for doc drift:
 
