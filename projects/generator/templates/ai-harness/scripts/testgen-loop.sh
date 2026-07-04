@@ -26,8 +26,14 @@ if [[ "$workers" -le 1 ]]; then
     iter=$((iter + 1))
     aih_section "TestGen iteration ${iter}/${max}" iteration
 
+    tag="$(pick_next_testgen_requirement_tag)"
+    if [[ -z "$tag" ]]; then
+      echo "TESTGEN_COMPLETE"
+      exit 0
+    fi
+
     set +e
-    ./ai-harness/scripts/testgen-once.sh
+    run_testgen_tag_until_current "$tag" 1
     status=$?
     set -e
 

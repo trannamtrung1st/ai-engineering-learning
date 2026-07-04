@@ -17,7 +17,8 @@ TestGen emits `layer: browser` **JSON specs** only (`docs/test-cases/items/`). T
 ```
 pre-browser run-checks (no Playwright UI)
   → browser test agent (MCP verification + codegen + test-case sync)
-  → run-checks --playwright-only (headless regression on fresh spec)
+  → harness: validate-playwright-ui-config + npx playwright test (slice spec) — before browser test phase closes
+  → run-checks --playwright-only (headless regression confirmation when not deferred)
   → finalize_browser_test_pass (validate JSON, commit owned paths)
   → AI review
 ```
@@ -48,6 +49,7 @@ The browser test agent:
 1. Finishes `TC-*` checklist + UX audit
 2. Writes/updates `tests/playwright-ui/scenarios/<slice-id>.spec.ts`
 3. Emits `playwright-regression: tests/playwright-ui/scenarios/<slice-id>.spec.ts (N tests)` in output
+4. Before the full phase closes, the harness runs `validate-playwright-ui-config.sh` and `npx playwright test` on that spec — fix owned spec/support files until both pass
 
 ## Spec template
 

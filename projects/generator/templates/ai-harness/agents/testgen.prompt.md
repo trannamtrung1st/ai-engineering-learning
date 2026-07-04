@@ -45,6 +45,10 @@ Implementation slices reference this tag via `acceptance` in `whole-app-backlog.
 
 {{LAYER_POLICY}}
 
+{{TECHNIQUE_REQUIREMENTS}}
+
+{{VALIDATION_FEEDBACK_BLOCK}}
+
 Also read:
 
 - `docs/brds/08-acceptance-mvp-future.md` — acceptance criteria definitions

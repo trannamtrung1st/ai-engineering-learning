@@ -86,6 +86,7 @@ fi
 agent_text="$(cat "$agent_out")"
 if echo "$agent_text" | grep -q "TESTGEN_BLOCKED"; then
   reason="$(echo "$agent_text" | grep "TESTGEN_BLOCKED" | tail -1)"
+  clear_testgen_validation_feedback "$REQUIREMENT_TAG"
   append_guardrail "$REQUIREMENT_TAG" "$reason"
   append_progress "$REQUIREMENT_TAG" "testgen_blocked"
   aih_err "TestGen blocked. See guardrails.md"
@@ -93,6 +94,7 @@ if echo "$agent_text" | grep -q "TESTGEN_BLOCKED"; then
 fi
 
 if ! echo "$agent_text" | grep -q "TESTGEN_DONE"; then
+  write_testgen_validation_feedback "$REQUIREMENT_TAG" "Agent did not emit TESTGEN_DONE — write the artifact and end with: TESTGEN_DONE ${REQUIREMENT_TAG}"
   append_guardrail "$REQUIREMENT_TAG" "TestGen agent did not emit TESTGEN_DONE"
   append_progress "$REQUIREMENT_TAG" "testgen_failed"
   aih_err "TestGen agent did not signal TESTGEN_DONE"
@@ -107,6 +109,11 @@ set -e
 echo "$validate_out"
 
 if [[ "$validate_status" -ne 0 ]]; then
+  feedback="$(echo "$validate_out" | sed -n 's/^  - //p')"
+  if [[ -z "$feedback" ]]; then
+    feedback="$validate_out"
+  fi
+  write_testgen_validation_feedback "$REQUIREMENT_TAG" "$feedback"
   append_guardrail "$REQUIREMENT_TAG" "Test case validation failed — see ${RID}-testgen.txt"
   append_progress "$REQUIREMENT_TAG" "testgen_validation_failed"
   exit 1

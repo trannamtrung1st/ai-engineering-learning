@@ -28,7 +28,8 @@ run_api() {
   if [[ "${AIH_PREVIEW_SEED_ENABLED:-}" == "1" || "${AIH_PREVIEW_SEED_ENABLED:-}" == "true" ]]; then
     export SEED_ENABLED=true
   fi
-  PORT="$(aih_api_port)" node "$REPO_ROOT/apps/api/dist/index.js"
+  # API build is typecheck-only (no dist/); use the workspace start script (tsx).
+  PORT="$(aih_api_port)" npm run start --workspace {{WORKSPACE_NAME}}api
 }
 
 run_web() {

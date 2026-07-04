@@ -16,7 +16,9 @@ if [[ -f "$REPO_ROOT/.env" ]]; then
 fi
 
 aih_web_port() {
-  echo "${AIH_PREVIEW_WEB_PORT:-${WEB_PORT:-3007}}"
+  # Preview stack always uses 3007 by default (see README); do not inherit WEB_PORT from .env
+  # (often 3000 for manual dev) or verification probes the wrong port.
+  echo "${AIH_PREVIEW_WEB_PORT:-3007}"
 }
 
 aih_api_port() {
@@ -818,9 +820,10 @@ ensure_playwright_regression_dirs() {
 format_playwright_codegen_block() {
   local slice_id="$1"
   local run_id="$2"
-  local spec_path ux_path
+  local spec_path ux_path web_port
   spec_path="$(playwright_spec_rel_path_for_slice "$slice_id")"
   ux_path="$(ux_bugs_path_for_slice_run "$slice_id" "$run_id")"
+  web_port="$(aih_web_port)"
   cat <<EOF
 ## Post-verification — UX audit and Playwright regression (full phase only)
 
@@ -829,9 +832,124 @@ After all \`TC-*\` cases complete:
 1. **UX audit** — review each screenshot per \`ai-harness/skills/ui-ux-testing/SKILL.md\`; log \`UX-${slice_id}-NNN\` bugs not already \`TC-*: FAIL\`
 2. **Write UX bugs JSON:** \`${ux_path}\` (schema: \`ai-harness/schemas/ux-bugs.schema.json\`)
 3. **Playwright codegen** — create or update \`${spec_path}\` per \`ai-harness/docs/playwright-regression.md\`
-4. Emit a plain line (no markdown/backticks): \`playwright-regression: ${spec_path} (N tests)\` before the signal line
-5. P0/P1 UX bugs block \`BROWSER_TEST_PASS\` even when all \`TC-*\` cases pass
+4. **Playwright config sanity** — read \`tests/playwright-ui/playwright.config.ts\` and \`src/support/constants.ts\`; \`baseURL\` / \`WEB_BASE_URL\` must target preview web (\`http://localhost:${web_port}\` or \`PLAYWRIGHT_BASE_URL\`). Fix imports/paths in owned spec/support files only.
+5. **Harness regression gate** — before this phase closes, the harness runs \`validate-playwright-ui-config.sh\` and \`npx playwright test\` on your spec. Ensure the spec compiles, imports resolve, and selectors match MCP-verified UI.
+6. Emit a plain line (no markdown/backticks): \`playwright-regression: ${spec_path} (N tests)\` before the signal line
+7. Emit \`playwright-regression-run: PASS\` only after you believe the headless spec will pass (harness re-runs it before accepting \`BROWSER_TEST_PASS\`)
+8. P0/P1 UX bugs block \`BROWSER_TEST_PASS\` even when all \`TC-*\` cases pass
 EOF
+}
+
+resolve_playwright_spec_from_browser_output() {
+  local slice_id="$1"
+  local text_file="$2"
+  local parse_line spec_path test_count
+
+  if [[ -f "$text_file" ]] && parse_line="$(parse_playwright_regression_from_output "$text_file" 2>/dev/null)"; then
+    spec_path="$(echo "$parse_line" | cut -f1)"
+    test_count="$(jq_number_or_default "$(echo "$parse_line" | cut -f2)")"
+    spec_path="$(normalize_repo_rel_path "$spec_path")"
+    printf '%s\t%s\n' "$spec_path" "$test_count"
+    return 0
+  fi
+
+  spec_path="$(resolve_playwright_spec_for_slice "$slice_id" 2>/dev/null || true)"
+  spec_path="$(normalize_repo_rel_path "$spec_path")"
+  [[ -n "$spec_path" ]] || return 1
+  printf '%s\t0\n' "$spec_path"
+}
+
+run_playwright_ui_spec_rel() {
+  local spec_rel="$1"
+  local log_file="${2:-}"
+  local pw_dir rel_spec label timeout_ms timeout_sec status
+
+  spec_rel="$(normalize_repo_rel_path "$spec_rel")"
+  [[ -n "$spec_rel" ]] || return 1
+  [[ -f "${REPO_ROOT}/${spec_rel}" ]] || return 1
+
+  pw_dir="${REPO_ROOT}/tests/playwright-ui"
+  rel_spec="${spec_rel#tests/playwright-ui/}"
+  if [[ "$rel_spec" == "$spec_rel" ]]; then
+    if [[ "$spec_rel" == */scenarios/* ]]; then
+      rel_spec="scenarios/$(basename "$spec_rel")"
+    else
+      rel_spec="$(basename "$spec_rel")"
+    fi
+  fi
+
+  label="playwright slice spec (${rel_spec})"
+  timeout_ms="$(get_check_command_timeout_ms "test:playwright-ui")"
+  timeout_sec=$((timeout_ms / 1000))
+
+  if [[ -n "$log_file" ]]; then
+    aih_info "    log: ${log_file}"
+    set +e
+    run_check_with_timeout_ms "$timeout_ms" --log "$log_file" --label "$label" \
+      bash -c "cd \"${pw_dir}\" && npx playwright test \"${rel_spec}\""
+    status=$?
+    set -e
+  else
+    set +e
+    run_check_with_timeout_ms "$timeout_ms" --label "$label" \
+      bash -c "cd \"${pw_dir}\" && npx playwright test \"${rel_spec}\""
+    status=$?
+    set -e
+  fi
+
+  if [[ "$status" -eq "$AGENT_TIMEOUT_EXIT" ]]; then
+    aih_check_fail "${label} (timed out after ${timeout_sec}s)"
+    return "$status"
+  fi
+  if [[ "$status" -ne 0 ]]; then
+    [[ -n "$log_file" ]] && emit_check_log_tail "$log_file" 40
+    aih_check_fail "${label} (exit ${status})"
+    return "$status"
+  fi
+  aih_check_ok "$label"
+  return 0
+}
+
+# Config validate + headless slice regression before browser-test phase closes (full phase).
+verify_playwright_ui_for_browser_test_close() {
+  local slice_id="$1"
+  local text_file="$2"
+  local log_file="$3"
+  local resolved spec_path test_count
+
+  if ! slice_requires_playwright_regression_gate "$slice_id"; then
+    aih_info "Playwright UI verification skipped (regression gate not required for ${slice_id})"
+    return 0
+  fi
+
+  if ! resolved="$(resolve_playwright_spec_from_browser_output "$slice_id" "$text_file")"; then
+    aih_err "Playwright UI verification failed: no spec path for ${slice_id}"
+    return 1
+  fi
+  spec_path="$(echo "$resolved" | cut -f1)"
+  test_count="$(echo "$resolved" | cut -f2)"
+
+  if [[ "$test_count" -eq 0 ]]; then
+    aih_warn "Playwright spec reports 0 tests — skipping headless regression run"
+    return 0
+  fi
+
+  : >"$log_file"
+  {
+    echo "==> Validating Playwright UI workspace config"
+    "${HARNESS_ROOT}/scripts/validate-playwright-ui-config.sh" "$slice_id" "$spec_path"
+    echo ""
+    echo "==> Running headless Playwright regression on ${spec_path}"
+  } >>"$log_file" 2>&1 || {
+    cat "$log_file" >&2
+    return 1
+  }
+
+  set +e
+  run_playwright_ui_spec_rel "$spec_path" "$log_file"
+  local status=$?
+  set -e
+  return "$status"
 }
 
 browser_output_has_ux_blockers() {
@@ -1205,9 +1323,48 @@ testgen_regeneration_mode() {
   jq -r '.regeneration.mode // "incremental"' "$TESTGEN_CONFIG" 2>/dev/null || echo "incremental"
 }
 
+TESTGEN_VALIDATION_FEEDBACK_DIR="${STATE_DIR}/testgen-validation-feedback"
+
+testgen_validation_feedback_path() {
+  local requirement_tag="$1"
+  echo "${TESTGEN_VALIDATION_FEEDBACK_DIR}/${requirement_tag}.txt"
+}
+
+write_testgen_validation_feedback() {
+  local requirement_tag="$1"
+  local feedback="$2"
+  mkdir -p "$TESTGEN_VALIDATION_FEEDBACK_DIR"
+  printf '%s\n' "$feedback" > "$(testgen_validation_feedback_path "$requirement_tag")"
+}
+
+clear_testgen_validation_feedback() {
+  local path
+  path="$(testgen_validation_feedback_path "$1")"
+  [[ -f "$path" ]] && rm -f "$path"
+}
+
+format_testgen_validation_feedback_block() {
+  local requirement_tag="$1"
+  local path line
+  path="$(testgen_validation_feedback_path "$requirement_tag")"
+  [[ -f "$path" ]] || return 0
+
+  cat <<EOF
+## Previous validation failure (fix before TESTGEN_DONE)
+
+The last harness run for this tag **failed validation**. Update the artifact at \`$(test_case_artifact_path "$requirement_tag")\` so \`validate-test-cases.sh\` passes — address **every** item below:
+
+EOF
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" ]] && continue
+    echo "- ${line}"
+  done < "$path"
+  echo ""
+}
+
 format_existing_artifact_review_block() {
   local requirement_tag="$1"
-  local artifact_path artifact_abs mode case_count id_list stored_fp
+  local artifact_path artifact_abs mode case_count id_list stored_fp feedback_path status_line
   artifact_path="$(test_case_artifact_path "$requirement_tag")"
   artifact_abs="$(test_case_artifact_abs "$requirement_tag")"
   mode="$(testgen_regeneration_mode)"
@@ -1229,18 +1386,26 @@ EOF
   case_count="$(jq '.cases | length' "$artifact_abs")"
   id_list="$(jq -r '.cases[].id' "$artifact_abs" | paste -sd ', ' -)"
   stored_fp="$(jq -r --arg id "$requirement_tag" '.tags[$id].docFingerprint // ""' "$TEST_CASE_INDEX")"
+  feedback_path="$(testgen_validation_feedback_path "$requirement_tag")"
+  if [[ -f "$feedback_path" ]]; then
+    status_line="**failed harness validation** — fix errors listed under **Previous validation failure** below"
+  elif [[ -n "$stored_fp" && "$stored_fp" != "null" ]]; then
+    status_line="**out of date** (\`test-case-index.json\` marks this tag \`current: false\` — docs changed since last generation)"
+  else
+    status_line="**present but not yet accepted** — update until harness validation passes"
+  fi
 
   cat <<EOF
 ## Review and update existing artifact
 
-The test case artifact at \`${artifact_path}\` is **out of date** (\`test-case-index.json\` marks this tag \`current: false\` — docs changed since last generation).
+The test case artifact at \`${artifact_path}\` is ${status_line}.
 
-**Read the existing file first.** Update only what current docs require — do not rewrite from scratch.
+**Read the existing file first.** Update only what current docs and harness validation require — do not rewrite from scratch unless necessary.
 
 ### Review rules
 
-1. **Keep** cases that still match current docs; edit only affected fields (\`traceability\`, \`title\`, \`preconditions\`, \`steps\`, \`expected\`, \`edgeCase\`, \`priority\`).
-2. **Add** cases for new doc requirements or coverage gaps (self-check below). Append new IDs; do not renumber existing ones.
+1. **Keep** cases that still match current docs; edit only affected fields (\`traceability\`, \`title\`, \`preconditions\`, \`steps\`, \`expected\`, \`edgeCase\`, \`priority\`, \`technique\`, \`layer\`, \`category\`).
+2. **Add** cases for new doc requirements, coverage gaps, or missing required techniques (self-check below). Append new IDs; do not renumber existing ones.
 3. **Remove** cases only when docs explicitly drop that scenario.
 4. Set \`docFingerprint\` to the value in this prompt and refresh \`generatedAt\`.
 $( [[ -n "$stored_fp" && "$stored_fp" != "null" ]] && printf '5. Index stored fingerprint: `%s` (artifact may still carry an older `docFingerprint`).\n' "$stored_fp" )
@@ -1261,6 +1426,10 @@ format_regeneration_finish_hint() {
   mode="$(testgen_regeneration_mode)"
 
   if [[ -f "$artifact_abs" && "$mode" == "incremental" ]]; then
+    if [[ -f "$(testgen_validation_feedback_path "$requirement_tag")" ]]; then
+      echo "Finish in **one pass** — fix every validation error listed above, then re-run self-check. Generate specs only — no implementation."
+      return 0
+    fi
     echo "Finish in **one pass** — review the existing artifact against docs; update only what changed. Generate specs only — no implementation."
     return 0
   fi
@@ -1475,6 +1644,39 @@ list_pending_requirement_tags() {
   done < <(all_requirement_tags_sorted)
 }
 
+# Run testgen-once for one tag until current or non-retryable failure (TESTGEN_BLOCKED).
+run_testgen_tag_until_current() {
+  local tag="$1"
+  local worker_id="${2:-${AIH_TESTGEN_WORKER_ID:-0}}"
+  local attempt=0
+  local status=0
+  local tag_safe agent_out
+
+  while ! requirement_tag_test_cases_current "$tag"; do
+    attempt=$((attempt + 1))
+    if [[ "$attempt" -gt 1 ]]; then
+      aih_warn "TestGen retry attempt ${attempt} for ${tag}"
+    fi
+
+    set +e
+    "${HARNESS_ROOT}/scripts/testgen-once.sh" "$tag"
+    status=$?
+    set -e
+
+    if requirement_tag_test_cases_current "$tag"; then
+      return 0
+    fi
+
+    tag_safe="${tag//[^A-Za-z0-9._-]/_}"
+    agent_out="$(ls -t "${RUNS_DIR}/${AIH_RUN_ID:-*}-${tag_safe}-w${worker_id}-"*-testgen.txt 2>/dev/null | head -1 || true)"
+    if [[ -n "$agent_out" && -f "$agent_out" ]] && grep -q "TESTGEN_BLOCKED" "$agent_out"; then
+      aih_warn "${tag} blocked — stopping retries"
+      return 1
+    fi
+  done
+  return 0
+}
+
 testgen_worker_tags_file() {
   local run_id="$1"
   local worker_id="$2"
@@ -1560,6 +1762,7 @@ with_testgen_state_lock() {
 finalize_testgen_pass() {
   local requirement_tag="$1"
   local doc_fp="$2"
+  clear_testgen_validation_feedback "$requirement_tag"
   "${HARNESS_ROOT}/scripts/sync-test-cases-to-backlog.sh" "$requirement_tag"
   mark_test_cases_current "$requirement_tag" "$doc_fp"
   append_progress "$requirement_tag" "testgen_passed"

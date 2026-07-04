@@ -3,9 +3,9 @@
 Interactive UI verification for frontend and test slices. The harness uses Playwright MCP in two places:
 
 1. **Implementer smoke test** — `frontend`/`test` slices get `--approve-mcps` during implementation
-2. **Browser test agent gate** — `run-browser-test.sh` runs after pre-browser computational checks, before the headless Playwright regression gate and AI code review (hard gate for `frontend`/`test` slices). When a prior browser test failed for the slice and `browserTest.retryFailedCasesFirst` is true (default), the harness runs a **retry phase** (failed case IDs only) then a **full phase** (all `layer: browser` cases) before accepting `BROWSER_TEST_PASS`. Both phases use **collect-all failures** (`browserTest.collectAllFailures`, default true) — the tester reports every FAIL in one pass.
+2. **Browser test agent gate** — `run-browser-test.sh` runs after pre-browser computational checks, before AI code review (hard gate for `frontend`/`test` slices). On the **full** phase, the harness validates `tests/playwright-ui` config (`validate-playwright-ui-config.sh`) and runs `npx playwright test` on the slice spec **before** accepting `BROWSER_TEST_PASS`. When a prior browser test failed for the slice and `browserTest.retryFailedCasesFirst` is true (default), the harness runs a **retry phase** (failed case IDs only) then a **full phase** (all `layer: browser` cases). Both phases use **collect-all failures** (`browserTest.collectAllFailures`, default true) — the tester reports every FAIL in one pass.
 
-3. **Playwright UI regression gate** — `run-checks.sh --playwright-only` runs headless Playwright on the freshly codegen'd spec **after** browser test pass. Commit of browser-test-owned paths is deferred until this gate passes.
+3. **Playwright UI regression gate** — `run-checks.sh --playwright-only` runs headless Playwright again on the codegen'd spec **after** browser test pass (confirmation before commit). Commit of browser-test-owned paths is deferred until this gate passes.
 
 ## Phased browser test gate
 

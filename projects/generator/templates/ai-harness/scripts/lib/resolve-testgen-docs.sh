@@ -119,6 +119,58 @@ format_layer_policy_block() {
   echo "Allowed layers for this artifact: ${allowed_layers}. Do **not** emit unit-layer cases — unit tests are the implementer's responsibility."
 }
 
+testgen_tag_matches_pattern() {
+  local tag="$1"
+  local pattern="$2"
+  [[ "$tag" =~ $pattern ]]
+}
+
+format_technique_requirements_block() {
+  local tag="$1"
+  local docs_list technique tag_pattern docs_include rule
+  local -a lines=()
+
+  docs_list="$(resolve_docs_for_requirement_tag "$tag" | tr '\n' ' ')"
+
+  while IFS= read -r technique; do
+    [[ -z "$technique" ]] && continue
+    lines+=("- \`${technique}\` (required by \`techniquePolicy\`)")
+  done < <(jq -r --arg tag "$tag" '
+    reduce ((.validation.techniquePolicy // {}) | to_entries[]) as $e (
+      [];
+      if ($tag | test("^" + ($e.key | gsub("\\*"; ".*")) + "$")) then . + $e.value else . end
+    ) | unique | .[]
+  ' "$TESTGEN_CONFIG" 2>/dev/null)
+
+  while IFS= read -r rule; do
+    [[ -z "$rule" ]] && continue
+    tag_pattern="$(echo "$rule" | jq -r '.tagMatches')"
+    docs_include="$(echo "$rule" | jq -r '.docsInclude // empty')"
+    if ! testgen_tag_matches_pattern "$tag" "$tag_pattern"; then
+      continue
+    fi
+    if [[ -n "$docs_include" && "$docs_list" != *"$docs_include"* ]]; then
+      continue
+    fi
+    while IFS= read -r technique; do
+      [[ -z "$technique" ]] && continue
+      lines+=("- \`${technique}\` (required by \`techniqueWhen\` rule: \`${tag_pattern}\`)")
+    done < <(echo "$rule" | jq -r '.require[]?')
+  done < <(jq -c '.validation.techniqueWhen[]?' "$TESTGEN_CONFIG" 2>/dev/null)
+
+  if [[ "${#lines[@]}" -eq 0 ]]; then
+    echo ""
+    return 0
+  fi
+
+  echo "## Harness technique requirements for this tag"
+  echo ""
+  echo "Validation fails unless the artifact includes **at least one case** per technique below (set \`technique\` on each case):"
+  echo ""
+  printf '%s\n' "${lines[@]}"
+  echo ""
+}
+
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
   set -euo pipefail
   require_harness_deps

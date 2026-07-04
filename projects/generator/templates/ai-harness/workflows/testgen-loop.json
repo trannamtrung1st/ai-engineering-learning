@@ -4,7 +4,7 @@
     "commitOnPass": true
   },
   "parallelism": {
-    "workers": 5
+    "workers": 7
   },
   "agent": {
     "timeoutMs": 3600000,

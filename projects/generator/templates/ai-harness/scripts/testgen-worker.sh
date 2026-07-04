@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # TestGen worker — process an assigned list of requirement tags sequentially.
+# Retries each tag until it passes validation before moving to the next.
 # Usage: testgen-worker.sh <worker-id> <tags-file>
 set -euo pipefail
 source "$(dirname "$0")/lib/common.sh"
@@ -35,11 +36,11 @@ while IFS= read -r tag || [[ -n "$tag" ]]; do
 
   aih_step "Worker ${WORKER_ID}: generating test cases for ${tag}"
   set +e
-  ./ai-harness/scripts/testgen-once.sh "$tag"
+  run_testgen_tag_until_current "$tag" "$WORKER_ID"
   status=$?
   set -e
 
-  if [[ "$status" -ne 0 ]]; then
+  if [[ "$status" -ne 0 ]] || ! requirement_tag_test_cases_current "$tag"; then
     failed=$((failed + 1))
     aih_warn "Worker ${WORKER_ID}: ${tag} did not pass (status=${status})"
   fi

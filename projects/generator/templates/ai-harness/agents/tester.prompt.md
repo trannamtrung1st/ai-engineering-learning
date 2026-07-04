@@ -111,8 +111,10 @@ The harness may run browser verification in one or two phases. Follow the **phas
 4. Write `{{UX_BUGS_PATH}}` per schema before final signal
 5. **Test case maintenance** — reconcile browser-layer cases in `docs/test-cases/items/<tag>.json` (add / update / remove obsolete)
 6. **Playwright regression codegen** — update `{{PLAYWRIGHT_OUTPUT_PATH}}` from exercised flows; remove obsolete `test()` blocks when flows were deleted (see `ai-harness/docs/playwright-regression.md`)
-7. Emit `playwright-regression: {{PLAYWRIGHT_OUTPUT_PATH}} (N tests)` where N = count of `test()` blocks written
-8. Emit `BROWSER_TEST_PASS` only when all runnable cases pass **and** no P0/P1 UX bugs remain
+7. **Playwright config sanity** — read `tests/playwright-ui/playwright.config.ts` and `src/support/constants.ts`; ensure `baseURL` / `WEB_BASE_URL` target preview web (`http://localhost:3007` or `PLAYWRIGHT_BASE_URL`). Fix owned spec/support imports only.
+8. Emit `playwright-regression: {{PLAYWRIGHT_OUTPUT_PATH}} (N tests)` where N = count of `test()` blocks written
+9. Emit `playwright-regression-run: PASS` when the spec should pass headless `npx playwright test` (harness validates config and runs the spec before accepting this phase)
+10. Emit `BROWSER_TEST_PASS` only when all runnable cases pass, no P0/P1 UX bugs remain, **and** Playwright config/spec are ready for the harness regression check
 
 Retry phase: skip UX audit, test-case maintenance, and codegen.
 
@@ -161,6 +163,7 @@ Brief markdown findings (bullets).
 **Playwright regression:**
 
 - `playwright-regression: {{PLAYWRIGHT_OUTPUT_PATH}} (N tests)`
+- `playwright-regression-run: PASS` — emit only when config + spec are ready for headless `npx playwright test` (harness re-runs before phase close)
 
 **Per acceptance tag (when no case id):** `AC-XX: PASS`, `AC-XX: FAIL — reason`, or `AC-XX: SKIP — <tag> — reason`
 

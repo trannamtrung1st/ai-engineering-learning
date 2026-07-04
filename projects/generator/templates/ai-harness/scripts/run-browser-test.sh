@@ -300,6 +300,32 @@ Emit \`BROWSER_TEST_PASS\` only when all runnable cases pass **and** no P0/P1 UX
     PHASE_PASS=false
   fi
 
+  if [[ "$phase" == "full" && "$PHASE_PASS" == true ]]; then
+    aih_step "Verifying Playwright UI config and running slice regression"
+    pw_log="${RUNS_DIR}/${RID}-browser-test-playwright.log"
+    set +e
+    verify_playwright_ui_for_browser_test_close "$SLICE_ID" "$outfile" "$pw_log"
+    pw_verify_status=$?
+    set -e
+    if [[ "$pw_verify_status" -ne 0 ]]; then
+      PHASE_PASS=false
+      echo "==> Phase validation failed: Playwright UI config or regression run failed — see ${pw_log}" >&2
+      {
+        echo ""
+        echo "## Playwright UI verification (harness — required before phase close)"
+        echo ""
+        cat "$pw_log" 2>/dev/null || echo "(no log)"
+      } >>"$outfile"
+    elif [[ -f "$pw_log" ]]; then
+      {
+        echo ""
+        echo "## Playwright UI verification (harness — passed)"
+        echo ""
+        cat "$pw_log"
+      } >>"$outfile"
+    fi
+  fi
+
   if [[ "$PHASE_PASS" == true && "$PHASE_AGENT_STATUS" -eq 0 ]]; then
     return 0
   fi
