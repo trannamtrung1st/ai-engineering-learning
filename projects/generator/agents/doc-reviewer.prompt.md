@@ -10,7 +10,7 @@ Review step **{{STEP_ID}}** outputs for:
 - Correct cross-references and traceability
 - No forbidden placeholders (`TODO`, `TBD`, `lorem ipsum`, `{{`)
 
-Read only the listed output files and their referenced context docs. Do not run commands or edit files.
+Read only the listed output files and their referenced context docs. Do not run commands, edit files, or create a plan/`createPlan` artifact — emit your verdict as plain assistant text only.
 
 ## Step
 
@@ -21,6 +21,8 @@ Read only the listed output files and their referenced context docs. Do not run 
 
 {{STEP_OUTPUTS}}
 
-End with exactly one line:
+Emit findings and your verdict as **plain assistant text** (not a plan). End with exactly one line as the very last line:
 
 `REVIEW_PASS` or `REVIEW_FAIL <reason>`
+
+A review with no `REVIEW_PASS`/`REVIEW_FAIL` in text output is treated as failed.

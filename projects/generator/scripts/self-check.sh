@@ -51,6 +51,28 @@ check_json "${TEMPLATES_DIR}/ai-harness/test-cases/common/ui-ux-suite.json"
 check_json "${TEMPLATES_DIR}/ai-harness/schemas/ui-ux-suite.schema.json"
 check_json "${TEMPLATES_DIR}/ai-harness/workflows/ralph-loop.json"
 check_file_exists "${TEMPLATES_DIR}/ai-harness/scripts/run-playwright-check.sh"
+check_file_exists "${TEMPLATES_DIR}/ai-harness/scripts/lib/integration-failure-triage.js"
+check_file_exists "${TEMPLATES_DIR}/ai-harness/scripts/lib/integration-failure-triage.test.js"
+
+gen_step "Self-check: harness integration triage policy"
+if [[ -f "${TEMPLATES_DIR}/ai-harness/workflows/ralph-loop.json" ]]; then
+  if [[ "$(jq -r '.computationalChecks.integrationFailurePolicy.investigateOnFailure // false' "${TEMPLATES_DIR}/ai-harness/workflows/ralph-loop.json")" != "true" ]]; then
+    gen_err "ralph-loop.json missing integrationFailurePolicy.investigateOnFailure"
+    fail=1
+  fi
+fi
+
+gen_step "Self-check: integration failure triage unit tests"
+if ! node --test "${TEMPLATES_DIR}/ai-harness/scripts/lib/integration-failure-triage.test.js" >/dev/null 2>&1; then
+  gen_err "integration-failure-triage.test.js failed"
+  fail=1
+fi
+
+gen_step "Self-check: playwright spec resolution unit tests"
+if ! node --test "${TEMPLATES_DIR}/ai-harness/scripts/lib/playwright-scope-sync.test.js" >/dev/null 2>&1; then
+  gen_err "playwright-scope-sync.test.js failed"
+  fail=1
+fi
 
 gen_step "Self-check: backlog sanity"
 if [[ -f "$STEPS_BACKLOG" ]]; then

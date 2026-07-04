@@ -147,6 +147,16 @@ if [[ "$agent_status" -eq "$AGENT_TIMEOUT_EXIT" ]]; then
   timeout_reason="Agent timed out after ${timeout_ms}ms"
 fi
 
+# Distinguish a genuine REVIEW_FAIL from a review that produced no verdict at all
+# (agent succeeded but emitted neither REVIEW_PASS nor REVIEW_FAIL on stdout —
+# e.g. it routed findings into a plan artifact the harness cannot read). Surface
+# this explicitly so the loop does not silently burn iterations on false fails.
+if [[ "$review_pass" != true && "$timed_out" != true && "$agent_status" -eq 0 ]] \
+  && ! echo "$review_text" | grep -q 'REVIEW_FAIL'; then
+  timeout_reason="Review produced no REVIEW_PASS/REVIEW_FAIL verdict on stdout (missing verdict marker); treating as fail"
+  aih_warn "$timeout_reason"
+fi
+
 report="$(jq -n \
   --arg slice "$SLICE_ID" \
   --arg ts "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \

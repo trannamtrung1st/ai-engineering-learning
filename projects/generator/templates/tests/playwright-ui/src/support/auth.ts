@@ -17,5 +17,23 @@ export async function loginViaApi(
   if (!response.ok()) {
     throw new Error(`Login failed for ${email}: ${response.status()}`);
   }
+
+  const body = (await response.json()) as {
+    data: { accessToken: string; roles: string[] };
+  };
+
+  // localStorage is origin-scoped — seed session on the web app origin before routing
+  await page.goto(`${WEB_BASE_URL}/login`);
+  await page.evaluate(
+    ({ token, roles }) => {
+      localStorage.setItem("accessToken", token);
+      localStorage.setItem("roles", JSON.stringify(roles));
+    },
+    {
+      token: body.data.accessToken,
+      roles: body.data.roles,
+    },
+  );
+
   await page.goto(WEB_BASE_URL + afterLoginPath);
 }

@@ -310,17 +310,22 @@ When `test:integration`, `test:e2e`, or cross-slice failures block a slice:
 
 ```bash
 # Isolated suite run (with log file)
-npm run aih:run-check -- test:integration -- <suite-file>
+npm run aih:run-check -- test:integration -w {{WORKSPACE_NAME}}api -- <suite-file>
 
 # Reset ephemeral test DB
 npm run aih:test:stack:reset
 
-# Redirect next loop iteration to owning slice
+# Inspect harness triage after a gate failure (when integrationFailurePolicy enabled)
+cat ai-harness/generated/runs/<run-id>-integration-triage.json
+
+# Redirect next loop iteration to owning slice (manual override)
 npm run aih:slice:focus -- <owner-slice-id> --reason "integration flakes"
 
 # Loop health dashboard
 npm run aih:status
 ```
+
+Ralph runs **integration failure triage** automatically when `test:integration` fails: isolated vitest on the failing file, classification (`crossSuiteFlake` / `reproducible` / `infrastructure`), optional auto-reopen/focus of the owner slice, and a mandatory investigation block in the next implementer prompt. **Do not resolve flakes by bare re-run of `aih:check`.**
 
 Full decision tree, flake patterns, and `SLICE_DEFER` policy: [`docs/test-failure-triage.md`](docs/test-failure-triage.md).
 

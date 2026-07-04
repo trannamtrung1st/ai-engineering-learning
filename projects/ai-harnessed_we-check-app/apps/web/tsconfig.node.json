@@ -1,9 +1,0 @@
-{
-  "extends": "@wecheck/config/tsconfig/base.json",
-  "include": ["vite.config.ts"],
-  "compilerOptions": {
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "noEmit": true
-  }
-}

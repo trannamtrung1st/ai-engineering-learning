@@ -160,3 +160,135 @@ test("revert_browser_test_workspace_changes removes dirty owned files", () => {
     fs.rmSync(repoRoot, { recursive: true, force: true });
   }
 });
+
+test("resolve_playwright_spec_for_slice skips playwright.config.ts and picks scenarios spec", () => {
+  const { repoRoot, harnessRoot } = setupHarnessFixture();
+  const specRel = "tests/playwright-ui/scenarios/slice-a.spec.ts";
+  const specAbs = path.join(repoRoot, specRel);
+  const backlogPath = path.join(harnessRoot, "whole-app-backlog.json");
+
+  fs.mkdirSync(path.dirname(specAbs), { recursive: true });
+  fs.writeFileSync(specAbs, "import { test } from '@playwright/test';\n");
+  fs.writeFileSync(
+    backlogPath,
+    JSON.stringify(
+      {
+        branchName: "aih/test",
+        slices: [
+          {
+            id: "slice-a",
+            passes: false,
+            acceptance: ["AC-01"],
+            testRequirements: {
+              playwright: [
+                "tests/playwright-ui/playwright.config.ts",
+                specRel,
+                "tests/playwright-ui/src/support/auth.ts",
+              ],
+            },
+          },
+        ],
+      },
+      null,
+      2,
+    ) + "\n",
+  );
+
+  try {
+    const resolved = bashHarness(
+      repoRoot,
+      harnessRoot,
+      `resolve_playwright_spec_for_slice slice-a`,
+    );
+    assert.equal(resolved.trim(), specRel);
+  } finally {
+    fs.rmSync(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test("resolve_playwright_spec_for_slice returns repo-relative path for absolute backlog entry", () => {
+  const { repoRoot, harnessRoot } = setupHarnessFixture();
+  const specRel = "tests/playwright-ui/scenarios/slice-a.spec.ts";
+  const specAbs = path.join(repoRoot, specRel);
+  const backlogPath = path.join(harnessRoot, "whole-app-backlog.json");
+
+  fs.mkdirSync(path.dirname(specAbs), { recursive: true });
+  fs.writeFileSync(specAbs, "import { test } from '@playwright/test';\n");
+  fs.writeFileSync(
+    backlogPath,
+    JSON.stringify(
+      {
+        branchName: "aih/test",
+        slices: [
+          {
+            id: "slice-a",
+            passes: false,
+            acceptance: ["AC-01"],
+            testRequirements: {
+              playwright: [specAbs],
+            },
+          },
+        ],
+      },
+      null,
+      2,
+    ) + "\n",
+  );
+
+  try {
+    const resolved = bashHarness(
+      repoRoot,
+      harnessRoot,
+      `resolve_playwright_spec_for_slice slice-a`,
+    );
+    assert.equal(resolved.trim(), specRel);
+  } finally {
+    fs.rmSync(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test("sync_playwright_spec_to_backlog keeps spec at playwright[0] when other entries exist", () => {
+  const { repoRoot, harnessRoot } = setupHarnessFixture();
+  const spec = "tests/playwright-ui/scenarios/slice-a.spec.ts";
+  const backlogPath = path.join(harnessRoot, "whole-app-backlog.json");
+
+  fs.writeFileSync(
+    backlogPath,
+    JSON.stringify(
+      {
+        branchName: "aih/test",
+        slices: [
+          {
+            id: "slice-a",
+            passes: false,
+            acceptance: ["AC-01"],
+            testRequirements: {
+              playwright: [
+                "tests/playwright-ui/playwright.config.ts",
+                "tests/playwright-ui/src/support/auth.ts",
+              ],
+            },
+          },
+        ],
+      },
+      null,
+      2,
+    ) + "\n",
+  );
+
+  try {
+    bashHarness(
+      repoRoot,
+      harnessRoot,
+      `sync_playwright_spec_to_backlog slice-a "${spec}"`,
+    );
+
+    const backlog = JSON.parse(fs.readFileSync(backlogPath, "utf8"));
+    const playwright = backlog.slices.find((s) => s.id === "slice-a").testRequirements.playwright;
+    assert.equal(playwright[0], spec);
+    assert.ok(playwright.includes("tests/playwright-ui/playwright.config.ts"));
+    assert.ok(playwright.includes("tests/playwright-ui/src/support/auth.ts"));
+  } finally {
+    fs.rmSync(repoRoot, { recursive: true, force: true });
+  }
+});

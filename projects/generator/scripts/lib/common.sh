@@ -239,6 +239,8 @@ agent_invoke() {
   run_agent_with_timeout_ms "$timeout_ms" "$outfile" "$AGENT_BIN" "${args[@]}" "$prompt"
 }
 
+# Read-only reviewer: NOT --mode plan — plan mode routes verdict into a
+# createPlan artifact the stream adapter never captures to the outfile.
 agent_invoke_review() {
   local model="$1"
   local prompt="$2"
@@ -246,7 +248,7 @@ agent_invoke_review() {
   require_agent
   local timeout_ms
   local -a args fmt
-  args=(-p --force --trust --model "$model" --mode plan)
+  args=(-p --force --trust --model "$model")
   read -ra fmt <<< "$(agent_output_format_args)"
   args+=("${fmt[@]}")
   timeout_ms="$(get_agent_timeout_ms)"

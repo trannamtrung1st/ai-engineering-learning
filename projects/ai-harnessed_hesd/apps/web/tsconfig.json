@@ -1,8 +1,0 @@
-{
-  "extends": "@attendly/config/tsconfig/react.json",
-  "compilerOptions": {
-    "rootDir": ".",
-    "baseUrl": "."
-  },
-  "include": ["src", "vite.config.ts"]
-}

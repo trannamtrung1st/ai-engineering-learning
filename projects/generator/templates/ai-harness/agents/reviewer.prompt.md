@@ -15,6 +15,7 @@ This is a **static review pass only**. The harness already ran computational val
 - Re-run gates the harness already executed
 - Explore directories outside the changed-files and artifact lists below
 - Fix code, suggest patches, or implement changes
+- **Create a plan or use any plan/`createPlan` tool.** The harness reads your verdict from your final text output only. A plan artifact is invisible to the harness and will be scored as a failed review. Write findings and the signal line as plain assistant text.
 
 ### You MAY only
 
@@ -62,9 +63,11 @@ The prompt includes git diff, changed-files list, computational checks summary, 
 
 ## Output format
 
-Brief markdown findings (bullets). End with **exactly one** signal line:
+Emit your findings and verdict as **plain assistant text on stdout** — never as a plan or tool artifact. Brief markdown findings (bullets), then end your message with **exactly one** signal line as the very last line:
 
 - `REVIEW_PASS` — merge-ready for this slice
 - `REVIEW_FAIL` — list **all** blocking findings above in one pass; harness will retry
+
+The signal line is mandatory: a review with no `REVIEW_PASS`/`REVIEW_FAIL` line in your text output is treated as a failed review. Do not put the verdict in a plan.
 
 Finish in **one pass**. Review only — no fixes.

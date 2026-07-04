@@ -34,6 +34,7 @@ cat > "${REPO_ROOT}/package.json" <<EOF
     "test:unit": "npm run test:unit -ws --if-present",
     "test:integration": "npm run test:integration -ws --if-present",
     "test:e2e": "npm run test:e2e -w @${slug}/e2e --if-present",
+    "test:playwright-ui": "npm run test:playwright-ui -w @${slug}/playwright-ui --if-present",
     "test": "npm run test:unit && npm run test:integration && npm run test:e2e",
     "aih:once": "./ai-harness/scripts/ralph-once.sh",
     "aih:loop": "./ai-harness/scripts/ralph-loop.sh",

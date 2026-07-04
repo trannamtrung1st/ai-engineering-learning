@@ -12,3 +12,6 @@
 - [2026-07-02T08:30:57Z] **harness-backlog** — auto-skipped (outputs valid)
 - [2026-07-02T08:30:58Z] **repo-bootstrap** — auto-skipped (outputs valid)
 - [2026-07-02T08:31:25Z] **uiux-design-system** — auto-skipped (outputs valid)
+- [2026-07-04T00:35:00Z] **harness-template-backport** — reviewer phase fixes from ai-harnessed_attendly: drop `--mode plan` from `agent_invoke_review` (plan artifact hid REVIEW_PASS/FAIL), reviewer prompt forbids createPlan, run-ai-review.sh surfaces missing-verdict fails; same agent_invoke_review fix in generator scripts/lib/common.sh + doc-reviewer prompt
+- [2026-07-04T05:07:00Z] **harness-template-backport** — backported integration failure triage from ai-harnessed_attendly (commit 25bd2311) to templates/ai-harness/; added generator guardrails for future backports
+- [2026-07-04T00:34:00Z] **harness-template-backport** — Playwright spec resolution + playwright-ui template fixes from ai-harnessed_attendly (common.sh, run-checks.sh, playwright-scope-sync tests, auth localStorage seeding, Pixel 5 mobile project, vitest fixtures, emit-repo-bootstrap test:playwright-ui)

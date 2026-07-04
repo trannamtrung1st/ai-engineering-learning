@@ -20,6 +20,18 @@ function extractCheckLogFailureExcerpt(logText, maxChars = 8000) {
     return logText.slice(failingTestsIdx, failingTestsIdx + limit).trimEnd();
   }
 
+  const vitestFailedIdx = logText.search(/⎯+\s*Failed Tests\s*\d+/);
+  if (vitestFailedIdx !== -1) {
+    return logText.slice(vitestFailedIdx, vitestFailedIdx + limit).trimEnd();
+  }
+
+  const failBlockIdx = logText.search(
+    /\n FAIL\s+[^\n]+\.integration\.test\.ts[^\n]*\n/,
+  );
+  if (failBlockIdx !== -1) {
+    return logText.slice(failBlockIdx + 1, failBlockIdx + 1 + limit).trimEnd();
+  }
+
   const playwrightFailed = logText.match(/\n\s*\d+\)\s+.+\n[\s\S]*$/);
   if (playwrightFailed && /failed|Error:|expect\(/.test(playwrightFailed[0])) {
     return playwrightFailed[0].slice(0, limit).trimEnd();
@@ -60,6 +72,10 @@ function extractFailingTestPaths(excerpt) {
     /test at ([^\s:]+\.test\.tsx?)/g,
     /at [^(]+\(([^)]+\.integration\.test\.ts):\d+:\d+\)/g,
     /at [^(]+\(([^)]+\.test\.tsx?):\d+:\d+\)/g,
+    /❯\s+([^\s:]+\.integration\.test\.ts):\d+:\d+/g,
+    /❯\s+([^\s:]+\.test\.tsx?):\d+:\d+/g,
+    /FAIL\s+([^\s>]+\.integration\.test\.ts)/g,
+    /FAIL\s+([^\s>]+\.test\.tsx?)/g,
     /(apps\/api\/src\/[^\s:]+\.integration\.test\.ts)/g,
     /(tests\/e2e\/[^\s:]+\.test\.ts)/g,
   ];
@@ -89,10 +105,14 @@ function extractFailingCaseIds(excerpt) {
     return [];
   }
   const ids = new Set();
-  const re = /\(TC-[A-Z0-9][A-Z0-9-]*\)/g;
+  const parenRe = /\(TC-[A-Z0-9][A-Z0-9-]*\)/g;
   let match;
-  while ((match = re.exec(excerpt)) !== null) {
+  while ((match = parenRe.exec(excerpt)) !== null) {
     ids.add(match[0].slice(1, -1));
+  }
+  const titleRe = />\s*(TC-[A-Z0-9][A-Z0-9-]*)\s*[—\-–]/g;
+  while ((match = titleRe.exec(excerpt)) !== null) {
+    ids.add(match[1]);
   }
   return [...ids];
 }

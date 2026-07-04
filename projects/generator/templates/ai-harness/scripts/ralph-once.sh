@@ -148,6 +148,25 @@ set -e
 
 if [[ "$check_status" -ne 0 ]]; then
   guardrail_line="$(summarize_checks_guardrail_line "$RID" 2>/dev/null || true)"
+  triage_file=""
+  if checks_run_has_integration_failure "$RID" 2>/dev/null \
+    && [[ "$(integration_failure_policy_investigate)" == "true" ]]; then
+    aih_step "Running integration failure triage"
+    set +e
+    triage_file="$(run_integration_failure_triage "$SLICE_ID" "$RID" 2>/dev/null || true)"
+    triage_status=$?
+    set -e
+    if [[ -n "$triage_file" && -f "$triage_file" ]]; then
+      merge_triage_into_checks_report "$RID" "$triage_file" 2>/dev/null || true
+      apply_integration_failure_routing "$SLICE_ID" "$triage_file" 2>/dev/null || true
+      triage_guardrail="$(format_integration_failure_guardrail_line "$triage_file" 2>/dev/null || true)"
+      if [[ -n "$triage_guardrail" ]]; then
+        guardrail_line="$triage_guardrail"
+      fi
+    elif [[ "$triage_status" -ne 0 ]]; then
+      aih_warn "Integration failure triage did not complete — see ${RID}-check-test-integration.log"
+    fi
+  fi
   if [[ -n "$guardrail_line" ]]; then
     checks_guardrail="Computational checks failed — ${guardrail_line} (full report: ${RID}-checks.json)"
   else

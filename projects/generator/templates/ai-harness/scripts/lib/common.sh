@@ -299,6 +299,7 @@ emit_check_log_tail() {
 }
 
 CHECK_LOG_EXCERPT_JS="${HARNESS_ROOT}/scripts/lib/check-log-excerpt.js"
+INTEGRATION_FAILURE_TRIAGE_JS="${HARNESS_ROOT}/scripts/lib/integration-failure-triage.js"
 
 # Actionable failure text from a per-script check log (Node test runner, tsc, eslint, etc.).
 extract_check_log_failure_excerpt() {
@@ -360,7 +361,7 @@ format_out_of_slice_test_hint() {
         continue
       fi
       seen_owners="${seen_owners}|${owner}|"
-      hints+="- Failure in \`${path}\` is owned by slice \`${owner}\`, not \`${current_slice}\`. Fix only if in scope; otherwise revert your changes and signal \`SLICE_DEFER ${owner} <reason>\`."$'\n'
+      hints+="- Failure in \`${path}\` is owned by slice \`${owner}\`, not \`${current_slice}\`. Owner slice must fix parallel test isolation (afterEach restore, dedicated section fixtures); signal \`SLICE_DEFER ${owner} <reason>\` or wait for harness auto-focus — **do not** resolve by bare re-run of \`aih:check\`."$'\n'
     elif [[ -z "$owner" ]]; then
       hints+="- Failure in \`${path}\` is not listed in any slice \`testRequirements\` — verify scope before editing."$'\n'
     fi
@@ -804,7 +805,7 @@ format_playwright_codegen_block() {
   local slice_id="$1"
   local run_id="$2"
   local spec_path ux_path
-  spec_path="$(playwright_output_path_for_slice "$slice_id")"
+  spec_path="$(playwright_spec_rel_path_for_slice "$slice_id")"
   ux_path="$(ux_bugs_path_for_slice_run "$slice_id" "$run_id")"
   cat <<EOF
 ## Post-verification — UX audit and Playwright regression (full phase only)
@@ -892,6 +893,7 @@ update_playwright_regression_index() {
   local slice_id="$1"
   local spec_path="$2"
   local run_id="$3"
+  spec_path="$(normalize_repo_rel_path "$spec_path")"
   local test_count
   test_count="$(jq_number_or_default "${4:-0}")"
   local tc_ids_json
@@ -1677,19 +1679,29 @@ profile_includes_script() {
   ' "$LOOP_CONFIG" >/dev/null 2>&1
 }
 
+playwright_is_slice_spec_path() {
+  local path
+  path="$(normalize_repo_rel_path "$1")"
+  [[ -n "$path" ]] || return 1
+  [[ "$path" =~ ^tests/playwright-ui/scenarios/.+\.spec\.ts$ ]]
+}
+
 resolve_playwright_spec_for_slice() {
   local slice_id="$1"
-  local slice_json spec
+  local slice_json spec candidate normalized
   slice_json="$(get_slice_json "$slice_id")"
   [[ -z "$slice_json" || "$slice_json" == "null" ]] && return 1
 
-  spec="$(echo "$slice_json" | jq -r '.testRequirements.playwright[0] // empty')"
-  if [[ -n "$spec" && -e "$REPO_ROOT/$spec" ]]; then
-    echo "$spec"
-    return 0
-  fi
+  while IFS= read -r candidate; do
+    [[ -z "$candidate" ]] && continue
+    normalized="$(normalize_repo_rel_path "$candidate")"
+    if playwright_is_slice_spec_path "$normalized" && [[ -e "$REPO_ROOT/$normalized" ]]; then
+      echo "$normalized"
+      return 0
+    fi
+  done < <(echo "$slice_json" | jq -r '.testRequirements.playwright[]? // empty')
 
-  spec="$(playwright_output_path_for_slice "$slice_id")"
+  spec="$(playwright_spec_rel_path_for_slice "$slice_id")"
   if [[ -e "$REPO_ROOT/$spec" ]]; then
     echo "$spec"
     return 0
@@ -1697,7 +1709,8 @@ resolve_playwright_spec_for_slice() {
 
   if [[ -f "$PLAYWRIGHT_REGRESSION_INDEX" ]]; then
     spec="$(jq -r --arg id "$slice_id" '.slices[$id].specPath // empty' "$PLAYWRIGHT_REGRESSION_INDEX")"
-    if [[ -n "$spec" && -e "$REPO_ROOT/$spec" ]]; then
+    spec="$(normalize_repo_rel_path "$spec")"
+    if playwright_is_slice_spec_path "$spec" && [[ -e "$REPO_ROOT/$spec" ]]; then
       echo "$spec"
       return 0
     fi
@@ -1831,8 +1844,9 @@ sync_playwright_spec_to_backlog() {
     .slices |= map(
       if .id == $id then
         .testRequirements = (.testRequirements // {})
+        | (.testRequirements.playwright // []) as $rest
         | .testRequirements.playwright = (
-            ((.testRequirements.playwright // []) + [$spec]) | unique
+            reduce ([$spec] + $rest)[] as $item ([]; if (index($item) != null) then . else . + [$item] end)
           )
       else . end
     )
@@ -2417,14 +2431,17 @@ agent_invoke() {
   AIH_HARNESS_CONFIG="$idle_config" run_agent_with_timeout_ms "$timeout_ms" "$outfile" "$AGENT_BIN" "${args[@]}" "$prompt"
 }
 
-# Read-only reviewer: plan mode blocks edits; prompt forbids shell/tests.
+# Read-only reviewer: prompt forbids edits/shell/tests. NOT --mode plan —
+# plan mode routes the agent's verdict into a createPlan artifact, which the
+# stream adapter never captures to the outfile, so the REVIEW_PASS/REVIEW_FAIL
+# marker is lost and the harness records a false failure.
 agent_invoke_review() {
   local model="$1"
   local prompt="$2"
   local outfile="${3:-}"
   require_agent
   local -a args fmt
-  args=(-p --force --trust --model "$model" --mode plan)
+  args=(-p --force --trust --model "$model")
   read -ra fmt <<< "$(agent_output_format_args)"
   args+=("${fmt[@]}")
   local timeout_ms idle_config
@@ -2897,6 +2914,191 @@ summarize_scope_failures() {
     "$json_file" 2>/dev/null | head -c "$max_chars"
 }
 
+integration_failure_policy_investigate() {
+  jq -r '.computationalChecks.integrationFailurePolicy.investigateOnFailure // false' "$LOOP_CONFIG"
+}
+
+integration_failure_auto_reopen_owner() {
+  jq -r '.computationalChecks.integrationFailurePolicy.autoReopenOwnerSlice // false' "$LOOP_CONFIG"
+}
+
+integration_failure_auto_focus_owner() {
+  jq -r '.computationalChecks.integrationFailurePolicy.autoFocusOwnerSlice // false' "$LOOP_CONFIG"
+}
+
+checks_run_has_integration_failure() {
+  local run_id="$1"
+  local json_file="${RUNS_DIR}/${run_id}-checks.json"
+  [[ -f "$json_file" ]] || return 1
+  jq -e '.failures[]? | select(.script == "test:integration")' "$json_file" >/dev/null 2>&1
+}
+
+get_integration_check_log_path() {
+  local run_id="$1"
+  printf '%s/%s-check-test-integration.log' "$RUNS_DIR" "$run_id"
+}
+
+run_isolated_integration_file() {
+  local test_path="$1"
+  local vitest_rel="$test_path"
+  if [[ "$vitest_rel" == apps/api/* ]]; then
+    vitest_rel="${vitest_rel#apps/api/}"
+  fi
+  [[ -n "$vitest_rel" ]] || return 1
+
+  if ! prepare_test_stack_for_script "test:integration"; then
+    return 1
+  fi
+  export_test_stack_env
+
+  local api_dir="${REPO_ROOT}/apps/api"
+  [[ -d "$api_dir" ]] || return 1
+
+  set +e
+  (
+    cd "$api_dir"
+    npm run build -w {{WORKSPACE_NAME}}domain && npx vitest run --config vitest.integration.config.ts "$vitest_rel"
+  )
+  local status=$?
+  set -e
+  return "$status"
+}
+
+run_integration_failure_triage() {
+  local current_slice="$1"
+  local run_id="$2"
+  local log_file triage_file failing_path isolated_status=1 isolated_attempted="false"
+
+  [[ "$(integration_failure_policy_investigate)" == "true" ]] || return 1
+  checks_run_has_integration_failure "$run_id" || return 1
+
+  log_file="$(get_integration_check_log_path "$run_id")"
+  [[ -f "$log_file" ]] || return 1
+  [[ -f "$INTEGRATION_FAILURE_TRIAGE_JS" ]] || return 1
+
+  failing_path="$(node -e "
+    const fs = require('node:fs');
+    const m = require('${CHECK_LOG_EXCERPT_JS}');
+    const text = fs.readFileSync(process.argv[1], 'utf8');
+    const excerpt = m.extractCheckLogFailureExcerpt(text, 12000);
+    const paths = m.extractFailingTestPaths(excerpt);
+    console.log(paths[0] || '');
+  " "$log_file" 2>/dev/null || true)"
+
+  if [[ -n "$failing_path" ]]; then
+    isolated_attempted="true"
+    aih_info "integration triage: running isolated suite for ${failing_path}"
+    set +e
+    run_isolated_integration_file "$failing_path"
+    isolated_status=$?
+    set -e
+  fi
+
+  triage_file="${RUNS_DIR}/${run_id}-integration-triage.json"
+  if ! node "$INTEGRATION_FAILURE_TRIAGE_JS" triage \
+    --current-slice "$current_slice" \
+    --log "$log_file" \
+    --backlog "$BACKLOG" \
+    --isolated-exit-code "$isolated_status" \
+    --isolated-run-attempted "$isolated_attempted" \
+    --output "$triage_file" 2>/dev/null; then
+    return 1
+  fi
+  [[ -f "$triage_file" ]] || return 1
+  printf '%s' "$triage_file"
+}
+
+merge_triage_into_checks_report() {
+  local run_id="$1"
+  local triage_file="$2"
+  local checks_file="${RUNS_DIR}/${run_id}-checks.json"
+  local tmp
+  [[ -f "$checks_file" && -f "$triage_file" ]] || return 1
+  tmp="$(mktemp)"
+  jq --slurpfile triage "$triage_file" '. + {triage: $triage[0]}' "$checks_file" > "$tmp" && mv "$tmp" "$checks_file"
+}
+
+format_integration_failure_guardrail_line() {
+  local triage_file="$1"
+  local classification owner cases
+  [[ -f "$triage_file" ]] || return 1
+  classification="$(jq -r '.classification // empty' "$triage_file")"
+  owner="$(jq -r '.ownerSlice // empty' "$triage_file")"
+  cases="$(jq -r '(.failingCaseIds // []) | join(", ")' "$triage_file")"
+
+  if [[ "$classification" == "crossSuiteFlake" && -n "$owner" ]]; then
+    printf '%s' "${cases} cross-suite flake — owner ${owner} reopened; fix shared fixture pollution (afterEach restore / dedicated section); bare re-run is not a fix"
+    return 0
+  fi
+  if [[ "$classification" == "reproducible" && -n "$owner" ]]; then
+    printf '%s' "${cases} reproducible integration failure — owner ${owner} must fix; bare re-run is not a fix"
+    return 0
+  fi
+  if [[ "$classification" == "infrastructure" ]]; then
+    printf '%s' "integration infrastructure failure — reset test stack (npm run aih:test:stack:reset) before retry"
+    return 0
+  fi
+  return 1
+}
+
+apply_integration_failure_routing() {
+  local current_slice="$1"
+  local triage_file="$2"
+  local classification owner cases reason
+
+  [[ -f "$triage_file" ]] || return 0
+  classification="$(jq -r '.classification // empty' "$triage_file")"
+  owner="$(jq -r '.ownerSlice // empty' "$triage_file")"
+  cases="$(jq -r '(.failingCaseIds // []) | join(", ")' "$triage_file")"
+
+  [[ -n "$owner" && "$owner" != "$current_slice" ]] || return 0
+  [[ "$classification" == "crossSuiteFlake" || "$classification" == "reproducible" ]] || return 0
+
+  reason="integration ${classification}: ${cases:-unknown failure} — fix parallel test isolation / root cause in owning tests"
+
+  if [[ "$(integration_failure_auto_reopen_owner)" == "true" ]]; then
+    mark_slice_reopened "$owner" "$reason" "harness" "integration_triage" "$current_slice"
+    aih_warn "Integration triage reopened owner slice: ${owner}"
+  fi
+
+  if [[ "$(integration_failure_auto_focus_owner)" == "true" ]]; then
+    set_loop_slice_override "$owner" "integration flake investigation: ${cases:-see triage}" "ralph-once"
+    aih_warn "Next iteration focused on owner slice: ${owner}"
+  fi
+}
+
+format_integration_triage_investigation_block() {
+  local run_id="$1"
+  local triage_file="${RUNS_DIR}/${run_id}-integration-triage.json"
+  local classification owner cases paths isolated_pass current focus_note=""
+  [[ -f "$triage_file" ]] || return 0
+
+  classification="$(jq -r '.classification // empty' "$triage_file")"
+  owner="$(jq -r '.ownerSlice // empty' "$triage_file")"
+  cases="$(jq -r '(.failingCaseIds // []) | join(", ")' "$triage_file")"
+  paths="$(jq -r '(.failingTestPaths // []) | join(", ")' "$triage_file")"
+  isolated_pass="$(jq -r '.isolatedRunPass // false' "$triage_file")"
+  current="$(jq -r '.currentSlice // empty' "$triage_file")"
+
+  if [[ -n "$owner" && "$owner" != "$current" ]]; then
+    focus_note=" (harness has focused \`${owner}\` for the next iteration when auto-routing fired)"
+  fi
+
+  cat <<EOF
+### Integration failure investigation (mandatory)
+
+Do **not** resolve this by re-running \`npm run aih:check\` until you apply a code fix.
+
+1. Read \`${run_id}-integration-triage.json\` and log excerpts below.
+2. Run isolated suite: \`npm run aih:run-check -- test:integration -w {{WORKSPACE_NAME}}api -- <failing-file>\`
+3. Classification: **${classification}**$([[ "$isolated_pass" == "true" ]] && echo " (isolated run passed)") — failing case(s): ${cases:-unknown}; file(s): ${paths:-see log}
+4. If cross-suite pollution → fix isolation in **owner slice** \`${owner:-unknown}\` (see test-failure-triage.md § Integration flake patterns).
+5. If out of scope for \`${current}\` → signal \`SLICE_DEFER ${owner} <reason>\`${focus_note}.
+6. Document the **root-cause fix** in progress.md — "passes on re-run" alone is not acceptable.
+
+EOF
+}
+
 build_implementer_prior_gate_feedback() {
   local slice_id="$1"
   local block sections="" excerpt_block=""
@@ -2934,6 +3136,16 @@ ${block}
         sections="${sections}${excerpt_block}"
       else
         sections="${sections}_(No log excerpts found — open \`ai-harness/generated/runs/${checks_run}-check-*.log\` from \`failures[].logFile\`.)_
+
+"
+      fi
+      triage_block="$(format_integration_triage_investigation_block "$checks_run" 2>/dev/null || true)"
+      if [[ -n "$triage_block" ]]; then
+        sections="${sections}${triage_block}"
+      elif checks_run_has_integration_failure "$checks_run" 2>/dev/null; then
+        sections="${sections}### Integration failure investigation (mandatory)
+
+Do **not** resolve integration gate failures by bare re-run of \`npm run aih:check\`. Fix root cause or signal \`SLICE_DEFER <owner-slice-id> <reason>\` per test-failure-triage.md.
 
 "
       fi

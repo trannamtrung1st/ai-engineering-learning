@@ -295,9 +295,17 @@ run_slice_scoped_playwright() {
   fi
 
   PLAYWRIGHT_SCOPE_USED="slice"
+  spec_path="$(normalize_repo_rel_path "$spec_path")"
   PLAYWRIGHT_SPEC_USED="$spec_path"
   pw_dir="${REPO_ROOT}/tests/playwright-ui"
   rel_spec="${spec_path#tests/playwright-ui/}"
+  if [[ "$rel_spec" == "$spec_path" ]]; then
+    if [[ "$spec_path" == */scenarios/* ]]; then
+      rel_spec="scenarios/$(basename "$spec_path")"
+    else
+      rel_spec="$(basename "$spec_path")"
+    fi
+  fi
   label="playwright slice spec (${rel_spec})"
   timeout_ms="$(get_check_command_timeout_ms "test:playwright-ui")"
   timeout_sec=$(( timeout_ms / 1000 ))

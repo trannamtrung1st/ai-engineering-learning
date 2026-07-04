@@ -166,8 +166,9 @@ When `npm run aih:check` or prior gate feedback shows failures in tests owned by
 1. **In your slice scope** — path is under this slice's `completionArtifacts` or `testRequirements` → fix it.
 2. **Owned by another slice** — do **not** edit their application code or tests.
 3. **Before deferring** — run the failing suite in isolation (`npm run aih:run-check -- test:integration -- <pattern>`), reset test stack once (`npm run aih:test:stack:reset`), re-run isolated. Read `ai-harness/docs/test-failure-triage.md` for the full decision tree.
-4. **Still failing and out of scope** — revert your slice's in-scope uncommitted changes only (`git restore` for paths under this slice's allowlist; remove untracked files you added under those paths). Do not touch gate-owned files (`playwright-regression-index.json`, browser-test artifacts).
-5. Signal `SLICE_DEFER <owner-slice-id> <reason>` on its own line at the end.
+4. **Never resolve integration failures by bare re-run** — a passing `npm run aih:check` on retry without a code change is not a fix. When the harness reports `crossSuiteFlake` in `{run-id}-integration-triage.json`, fix parallel test isolation in the **owner slice** (afterEach restore, dedicated section fixtures) or signal `SLICE_DEFER`.
+5. **Still failing and out of scope** — revert your slice's in-scope uncommitted changes only (`git restore` for paths under this slice's allowlist; remove untracked files you added under those paths). Do not touch gate-owned files (`playwright-regression-index.json`, browser-test artifacts).
+6. Signal `SLICE_DEFER <owner-slice-id> <reason>` on its own line at the end.
 
 **Never add `setTimeout` sleeps** for scheduler or async-job races — use documented fixture-pinning and `afterEach` cleanup patterns in test-failure-triage.md.
 
