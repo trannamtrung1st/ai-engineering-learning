@@ -2,7 +2,7 @@
 
 **Product:** Attendly (*Smart Campus Attendance*)  
 **Domain:** Digital campus attendance and class-session check-in for universities and schools  
-**Related docs:** [00-system-overview.md](./00-system-overview.md) · [05-api-design.md](./05-api-design.md) · [11-testing-plan.md](./11-testing-plan.md) · [12-backend-frontend-tech-stack.md](./12-backend-frontend-tech-stack.md) · [13-docker-compose-local-runtime.md](./13-docker-compose-local-runtime.md)
+**Related docs:** [00-system-overview.md](./00-system-overview.md) · [05-api-design.md](./05-api-design.md) · [11-testing-plan.md](./11-testing-plan.md) · [12-backend-frontend-tech-stack.md](./12-backend-frontend-tech-stack.md) · [13-docker-compose-local-runtime.md](./13-docker-compose-local-runtime.md) · [local-runtime-reset.md](./local-runtime-reset.md) · [14-integration-debt.md](./14-integration-debt.md)
 
 ## 1. Purpose
 
@@ -47,6 +47,18 @@ At minimum:
 
 No secrets should be committed; use `.env.example` templates.
 
+### 3.3 Workspace layout
+
+| Path | Purpose |
+| --- | --- |
+| `apps/api` | NestJS backend — modules, integration tests, `ensureSchema()` repositories |
+| `apps/web` | React + Vite frontend — student check-in, lecturer/admin dashboards |
+| `tests/playwright-ui` | Browser regression and acceptance scenarios |
+| `ai-harness/` | Harness scripts, backlog, integration checks, preview supervisor |
+| `docs/` | Product and technical specifications (this document set) |
+
+Package scripts are defined at the repository root `package.json`. Workspace packages use the `@attendly/*` scope where applicable.
+
 ## 4. Local service topology
 
 ### 4.1 Core services for development
@@ -67,7 +79,7 @@ No secrets should be committed; use `.env.example` templates.
 
 ## 5. Database setup
 
-> **Implementation status (2026-07-05):** Schema is created at API startup via repository `ensureSchema()`. **`db:migrate` and `db:seed` scripts are not yet implemented** — tracked in harness slice `db-migrate-seed-preview`. See [14-mvp-integration-debt.md](./14-mvp-integration-debt.md).
+> **Implementation status (2026-07-05):** Schema is created at API startup via repository `ensureSchema()`. **`db:migrate` and `db:seed` scripts are not yet implemented** — tracked in harness slice `db-migrate-seed-preview`. See [14-integration-debt.md](./14-integration-debt.md).
 
 ### 5.1 Local database tasks
 
@@ -109,11 +121,24 @@ The local seed should include:
 | `VITE_API_BASE_URL` (or equivalent) | backend base URL |
 | `VITE_APP_NAME` | `Attendly` |
 | `VITE_LOCALE_DEFAULT` | `vi-VN` |
-| `VITE_PREVIEW_FIXTURE_MODE` | `false` for live API demo; `true` only when API unwired (phase 3 fallback — see [14-mvp-integration-debt.md](./14-mvp-integration-debt.md)) |
+| `VITE_PREVIEW_FIXTURE_MODE` | `false` for live API demo; `true` only when API unwired (phase 3 fallback — see [14-integration-debt.md](./14-integration-debt.md)) |
 
 ## 7. Local workflow commands
 
-### 7.1 Common commands (example convention)
+### 7.1 Preview supervisor
+
+The harness preview supervisor starts local API and web dev servers against Docker-backed Postgres:
+
+| Command | Purpose |
+| --- | --- |
+| `npm run aih:preview` | Start preview stack (db + api + web processes) |
+| `npm run aih:preview:down` | Stop preview supervisors |
+| `npm run aih:preview:verify` | Health-check preview API and web |
+| `npm run aih:dev:db:up` | Start dev Postgres/Redis containers only |
+
+Preview API default: `http://localhost:3001/api/v1`. Frontend default: `http://localhost:5173` (Vite) or `3000` when containerized.
+
+### 7.2 Common commands (example convention)
 
 | Command intent | Example |
 | --- | --- |
@@ -122,7 +147,7 @@ The local seed should include:
 | run frontend dev server | `pnpm dev:web` |
 | run migrations | `pnpm db:migrate` *(phase 4 — not yet wired)* |
 | run seeds | `pnpm db:seed` *(phase 4 — not yet wired)* |
-| verify MVP integration | `npm run aih:verify:mvp-integration` |
+| verify integration readiness | `npm run aih:verify:integration` |
 | run lint | `pnpm lint` |
 | run tests | `pnpm test` |
 
@@ -153,11 +178,32 @@ Trace: AC-01 to AC-19 plus AC-20 to AC-25 smoke subset.
 
 ### 9.2 Reset workflow
 
-When local state is corrupted:
+When local state is corrupted, use [local-runtime-reset.md](./local-runtime-reset.md):
+
+| Reset type | Command | When |
+| --- | --- | --- |
+| Soft (reseed) | `npm run db:reset` or `./scripts/local-runtime-reset.sh` | Stale fixtures, seed drift |
+| Hard (drop volumes) | `npm run db:reset:hard` or `./scripts/local-runtime-reset.sh --hard` | Schema drift, migration failure |
+| Test stack | `npm run aih:test:stack:reset` | Integration/e2e isolation issues |
+
+Steps for manual reset:
+
 1. Stop services.
-2. Recreate DB containers/volumes.
+2. Recreate DB containers/volumes (hard reset) or preserve volumes (soft reset).
 3. Run migration + seed.
 4. Restart API/UI.
+
+### 9.3 Demo accounts (target post phase 4)
+
+After `db-migrate-seed-preview` completes, preview seed should expose:
+
+| Role | Email pattern | Password |
+| --- | --- | --- |
+| Student | `student@attendly.local` | `Password123!` |
+| Lecturer | `lecturer@attendly.local` | `Password123!` |
+| AcademicAdmin | `admin@attendly.local` | `Password123!` |
+
+Until seed scripts land, use integration harness fixtures or manual user creation.
 
 ## 10. Cross-link to local runtime container setup
 

@@ -133,7 +133,7 @@
   "browserTest": {
     "required": true,
     "maxCasesPerBatch": 10,
-    "acceptanceSliceIds": ["e2e-acceptance-suite"],
+    "acceptanceSliceIds": ["mvp-completion-ready"],
     "acceptanceSliceTimeoutMinutes": 25,
     "modelKey": "tester",
     "retryFailedCasesFirst": true,
@@ -189,8 +189,8 @@
   },
   "integrationGate": {
     "enabled": true,
-    "blockBrowserTestForSlices": ["e2e-acceptance-suite"],
+    "blockBrowserTestForSlices": ["mvp-completion-ready"],
     "requireVerifyIntegrationPass": true,
-    "autoFocusNextPhase4Slice": true
+    "autoFocusNextPhase4Slice": false
   }
 }

@@ -9,5 +9,8 @@
   "composeProfiles": [],
   "composeServices": [],
   "jwtEnvVars": [],
-  "jwtServicePath": ""
+  "jwtServicePath": "",
+  "bootstrapAdminEnvVars": [],
+  "bootstrapAdminScriptPath": "",
+  "bootstrapAdminNpmScript": ""
 }

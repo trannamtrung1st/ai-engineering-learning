@@ -6,7 +6,7 @@ You are the {{PRODUCT_NAME}} implementer. Work **one backlog slice** per session
 
 1. Read `ai-harness/whole-app-backlog.json` — find the slice marked in this prompt.
 2. Read `ai-harness/state/guardrails.md` and `ai-harness/state/progress.md`.
-3. If slice is **phase 4** or closes MVP acceptance (`e2e-acceptance-suite`), read `ai-harness/docs/integration-debt-register.md` and `ai-harness/docs/integration-checklist.md` first.
+3. If slice is **`mvp-completion-ready`** (phase 4 finale), read `ai-harness/docs/integration-debt-register.md` and `ai-harness/docs/integration-checklist.md` first.
 4. If this prompt includes **Prior gate failures**, fix **every** listed scope gate, computational check, browser test (`TC-*` and `UX-*` P0/P1 blockers), Playwright regression, and/or AI review issue in one iteration when feasible — enumerate fixes in `progress.md` before new work.
 5. Read only the doc paths listed below (do not load the entire `docs/` tree).
 
@@ -15,8 +15,13 @@ You are the {{PRODUCT_NAME}} implementer. Work **one backlog slice** per session
 - Stay inside MVP scope in `docs/brds/08-acceptance-mvp-future.md`.
 - Backend is authoritative for domain state; no business-rule bypass in UI.
 - Persistence: Postgres via Docker Compose only — no in-memory repos, SQLite, or page-level mock data.
-- **Preview integration:** Do not add silent API-404→harness-fixture fallbacks. Gate fixture data on `VITE_PREVIEW_FIXTURE_MODE` (see `web-harness-fixture-gating` slice). Phase 4 requires live `/api/v1` data in default preview.
-- **Root app wiring:** Every new backend module must be imported in the root application module (`apps/api/src/app.module.ts` or equivalent) in the same slice (or `api-app-module-wiring`) — test-only wiring in E2E harness alone is insufficient.
+- **Preview integration:** Do not add silent API-404→harness-fixture fallbacks. Gate fixture data on `VITE_PREVIEW_FIXTURE_MODE`. Default preview requires live `/api/v1` data (verified in `mvp-completion-ready`).
+- **Root app wiring:** Every new backend module must be imported in the root application module (`apps/api/src/app.module.ts` or equivalent) in the **same slice** — test-only wiring in E2E harness alone is insufficient. The finale slice verifies and fixes gaps; do not defer all wiring to it.
+- **Production admin bootstrap:** When `docs/technical/01-roles-permissions.md` § Account provisioning requires privileged roles beyond public signup, implement in identity module or `mvp-completion-ready`:
+  - `bootstrapAdminOnStartup()` — env-gated (`NODE_ENV=production` or `ADMIN_BOOTSTRAP_ENABLED=true`); reads `INITIAL_ADMIN_EMAIL`, `INITIAL_ADMIN_PASSWORD`, optional `INITIAL_ADMIN_ROLE`; creates bootstrap-target admin only when admin-class user count is zero; bcrypt hash; never log password; fail startup if env set but password fails policy.
+  - `npm run admin:bootstrap` CLI reuses the same service — idempotent, exit 0 on no-op, exit 1 on misconfiguration.
+  - Never create demo `*@*.local` users via bootstrap — those belong in `db:seed` (dev/preview only).
+  - Populate `integration-checks.json` → `bootstrapAdminEnvVars`, `bootstrapAdminScriptPath`, `bootstrapAdminNpmScript` when bootstrap is required.
 - Frontend: meet `docs/ui-ux/00-production-ui-quality-bar.md` and apply visual craft from `ai-harness/skills/visual-design/SKILL.md` — authoritative spec `docs/ui-ux/DESIGN.md`, modules in `docs/ui-ux/design-system/`, tokens in `docs/ui-ux/04-design-tokens.md`, direction in `docs/ui-ux/01-design-overview.md`. UI must be intentional and token-aligned — not just functional.
 - Match canonical states and error codes in `docs/technical/08-validation-rules.md`.
 - Audit critical config/state changes (actor, reason, timestamp).

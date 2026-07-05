@@ -13,15 +13,16 @@ Complete before merging a `mergeReady` slice or closing an `aih/*` branch.
 - [ ] Postgres via Docker Compose — no in-memory repos, SQLite, or page mock stores
 - [ ] `DATABASE_URL` targets Compose Postgres in dev
 - [ ] Migrations run against Postgres before API startup
-- [ ] **`npm run aih:verify:integration` passes** (phase 4 complete)
+- [ ] **`npm run aih:verify:integration` passes**
 - [ ] Preview demo works with `VITE_PREVIEW_FIXTURE_MODE=false` on seeded DB
 
-## MVP integration (phase 4 — required before MVP merge)
+## MVP completion (`mvp-completion-ready` — required before MVP merge)
 
-- [ ] `api-app-module-wiring` — all modules in root application module; feature `/api/v1` routes not 404
-- [ ] `db-migrate-seed-preview` — demo accounts and minimum dataset seeded
-- [ ] `web-harness-fixture-gating` — no silent fixture fallback in default preview
-- [ ] `e2e-acceptance-suite` — `passes: true` including browser gate on live data
+- [ ] All modules in root application module; feature `/api/v1` routes not 404
+- [ ] Demo accounts and minimum dataset seeded (`db:migrate` + `db:seed`)
+- [ ] No silent fixture fallback in default preview
+- [ ] HTTP E2E harness passes on live preview data
+- [ ] Browser acceptance gate passes (`tests/playwright-ui/scenarios/mvp-completion-ready.spec.ts`)
 - [ ] See [integration-checklist.md](../docs/integration-checklist.md)
 
 ## Business rules
@@ -53,5 +54,5 @@ Complete before merging a `mergeReady` slice or closing an `aih/*` branch.
 When all items pass, record:
 
 ```
-HUMAN_REVIEW_PASS <slice-id>
+HUMAN_REVIEW_PASS mvp-completion-ready
 ```

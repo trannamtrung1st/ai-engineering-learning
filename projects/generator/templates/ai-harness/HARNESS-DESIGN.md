@@ -14,7 +14,7 @@ Concise index for the 12 harness components. Referenced by `docs/technical/13-do
 | Workflow | `workflows/ralph-loop.json`, `workflows/testgen-loop.json`, `workflows/manualsgen-loop.json` |
 | Memory/State | `state/progress.md`, `state/guardrails.md`, `state/loop-state.json` (one-shot next slice override), `whole-app-backlog.json` (slice `history` for reopen/failure context) |
 | Test cases | `config/testgen-docs-map.json`, `test-case-index.json`, `docs/test-cases/items/<tag>.json` — TestGen seeds; browser tester maintains `layer: browser` cases post-implementation |
-| User manuals | `config/manualsgen-docs-map.json`, `manuals-backlog.json`, `manuals-index.json`, `docs/user-manuals/` (modules, flows, demo-runbook) |
+| User manuals | `config/manualsgen-docs-map.json`, `manuals-backlog.json`, `manuals-index.json`, `docs/user-manuals/` (demo-accounts, modules, flows, demo-runbook) |
 | Common UI/UX suite | `test-cases/common/ui-ux-suite.json` (generic `TC-UX-COMMON-*`, `schemas/ui-ux-suite.schema.json`) — always appended to the browser test finalize phase; config in `ralph-loop.json` → `browserTest.commonUiUxSuite` |
 | Playwright regression | `playwright-regression-index.json`, `tests/playwright-ui/scenarios/`, `docs/playwright-regression.md` |
 | UX bugs | `generated/runs/ux-bugs/<slice>/<run>.json`, `docs/ux-bug-logging.md`, `skills/ui-ux-testing/SKILL.md` |
@@ -115,7 +115,9 @@ See [`docs/user-manuals-guide.md`](docs/user-manuals-guide.md).
 
 ## Backlog
 
-`ai-harness/whole-app-backlog.json` — phased slices with `passes`, `priority`, `acceptance`, `completionArtifacts`, optional `scopeExtensions` (supportive out-of-scope paths with reasons). Set `passes: false` to re-queue a slice, or use `npm run aih:slice:reopen`. Optional per-slice `history` records why a slice was reopened or failed (injected into implementer prompts).
+`ai-harness/whole-app-backlog.json` — phased slices with `passes`, `priority`, `acceptance`, `completionArtifacts`, optional `scopeExtensions` (supportive out-of-scope paths with reasons), optional `mergeReady` (set on `mvp-completion-ready` finale only). Set `passes: false` to re-queue a slice, or use `npm run aih:slice:reopen`. Optional per-slice `history` records why a slice was reopened or failed (injected into implementer prompts).
+
+**Phase model:** phase 0 infra → phase 1 backend (`module-<slug>`) → phase 2 frontend (`web-module-<slug>` + shell slices) → phase 4 finale (`mvp-completion-ready`, `mergeReady: true`). No separate phase 3 acceptance slice. Feature backend slices wire their module in root `AppModule` in the same slice; the finale verifies integration, runs HTTP E2E + browser acceptance on live preview, and triggers human merge review.
 
 `ai-harness/state/loop-state.json` — optional one-shot `nextSliceId` override for the next Ralph iteration (`npm run aih:slice:focus`).
 

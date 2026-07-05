@@ -25,7 +25,7 @@ Manual paths are resolved from `ai-harness/config/manualsgen-docs-map.json` and 
 ## Manual item
 
 - **ID:** `{{MANUAL_ITEM_ID}}`
-- **Type:** `{{MANUAL_ITEM_TYPE}}` (`module` | `flow` | `runbook`)
+- **Type:** `{{MANUAL_ITEM_TYPE}}` (`module` | `flow` | `runbook` | `accounts`)
 - **Title:** {{MANUAL_ITEM_TITLE}}
 - **Traceability:** {{MANUAL_ITEM_TRACEABILITY}}
 - **Artifact path:** `{{MANUAL_ARTIFACT_PATH}}`
@@ -44,6 +44,16 @@ Also read:
 
 ## Output by type
 
+### Type: `accounts`
+
+Write a quick-reference login guide (first artifact to use before demos):
+
+1. **Preview stack** — copy-paste commands to start the app (`npm run aih:preview`, and `npm run db:migrate && npm run db:seed` when required by specs)
+2. **Login accounts** — copy the **full** demo account table from `docs/technical/10-local-development-setup.md` (`Role | Email | Password | Scope/notes`). Never invent credentials.
+3. **Production first admin** — summarize production bootstrap from specs: `INITIAL_ADMIN_EMAIL` / `INITIAL_ADMIN_PASSWORD` env vars, `npm run admin:bootstrap` CLI, bootstrap target role. Omit demo passwords here. When specs say no privileged roles, state "N/A — all roles available via public signup."
+
+After writing, update `docs/user-manuals/README.md` — add link under **`## Demo accounts`** at the **top** of the TOC (before Module guides).
+
 ### Type: `module`
 
 Write a module guide for end users covering:
@@ -59,7 +69,7 @@ Write a module guide for end users covering:
 Write a **demo script** (not an engineering flowchart). Include:
 
 1. **Goal** — what the demo proves
-2. **Prerequisites** — preview stack (`npm run aih:preview`), test accounts, seed data if documented
+2. **Prerequisites** — preview stack (`npm run aih:preview`), migrate/seed if required. Include a **mini credential table** (Role | Email | Password) for **only the roles used in this flow** — copy from `docs/technical/10-local-development-setup.md` or `docs/user-manuals/demo-accounts.md` if it exists. Never invent secrets.
 3. **Demo steps** — numbered steps with route/URL, action, and what to say/show
 4. **Expected results** — what the audience should see after each major step
 5. **Recovery** — what to do if a step fails during a live demo
@@ -73,7 +83,7 @@ Write a stakeholder demo agenda:
 1. **Audience** — who this demo is for
 2. **Duration** — estimated minutes (15–30 typical)
 3. **Ordered demo agenda** — which flows to run, in order, with role switches
-4. **Role/account cheat sheet** — login credentials or dev-token notes from specs (never invent secrets)
+4. **Role/account cheat sheet** — duplicate the **full** demo account table from `docs/technical/10-local-development-setup.md` (same content as `docs/user-manuals/demo-accounts.md` when generated). Never invent secrets.
 
 Ensure every `FLOW-xx` flow manual under `docs/user-manuals/flows/` is referenced.
 
@@ -94,7 +104,8 @@ traceability: []
 
 After writing the artifact, update `docs/user-manuals/README.md`:
 
-- Add or update a link to this artifact in the appropriate section (Modules / Demo flows / Demo runbook)
+- Add or update a link to this artifact in the appropriate section (Demo accounts / Modules / Demo flows / Demo runbook)
+- For `accounts` type: place link under **`## Demo accounts`** at the top of the README, before Module guides
 - Keep the README as the table of contents for all user manuals
 
 ## Completion signal

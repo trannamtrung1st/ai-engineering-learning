@@ -2,14 +2,23 @@
   "alwaysRead": [
     "docs/product-meta.json",
     "docs/technical/01-roles-permissions.md",
+    "docs/technical/10-local-development-setup.md",
     "ai-harness/docs/preview-runtime.md"
   ],
   "generationNotes": [
     "ManualsGen produces end-user documentation under docs/user-manuals/ — not engineering specs in docs/ui-ux/10-user-flows.md.",
     "Harness planner regenerates items[] from 02-module-breakdown.md, 09-page-list.md, and FLOW-xx inventory in 10-user-flows.md.",
-    "Demo scripts must reference real routes and roles from product specs, not placeholder names."
+    "Demo scripts must reference real routes and roles from product specs, not placeholder names.",
+    "demo-accounts item (type accounts, priority 5) runs first — copy credentials from 10-local-development-setup.md; never invent secrets."
   ],
   "typeRules": [
+    {
+      "type": "accounts",
+      "docs": [
+        "docs/technical/10-local-development-setup.md",
+        "docs/technical/01-roles-permissions.md"
+      ]
+    },
     {
       "type": "module",
       "docs": [

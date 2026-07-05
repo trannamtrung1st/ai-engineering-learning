@@ -2,7 +2,7 @@
 
 **Product:** Attendly (*Smart Campus Attendance*)  
 **Domain:** Digital campus attendance and class-session check-in for universities and schools  
-**Related docs:** [05-api-design.md](./05-api-design.md) · [06-main-workflows.md](./06-main-workflows.md) · [07-state-machines.md](./07-state-machines.md) · [../brds/03-functional-requirements.md](../brds/03-functional-requirements.md) · [../brds/04-business-rules.md](../brds/04-business-rules.md) · [../brds/08-acceptance-mvp-future.md](../brds/08-acceptance-mvp-future.md)
+**Related docs:** [05-api-design.md](./05-api-design.md) · [06-main-workflows.md](./06-main-workflows.md) · [07-state-machines.md](./07-state-machines.md) · [../brds/03-functional-requirements.md](../brds/03-functional-requirements.md) · [../brds/04-business-rules.md](../brds/04-business-rules.md) · [../brds/08-acceptance-mvp-future.md](../brds/08-acceptance-mvp-future.md) · [09-error-handling.md](./09-error-handling.md)
 
 ## 1. Purpose and validation scope
 
@@ -83,6 +83,35 @@ This document defines server-side validation rules for Attendly MVP, including r
 | VR-RP-03 | export format must be supported (`csv`) | `UnsupportedFormat` | FR-27 |
 | VR-RP-04 | successful export emits audit event | n/a | FR-30, BR-22 |
 
+### 3.5 Authentication endpoints
+
+| Rule ID | Rule | Failure code | Trace |
+| --- | --- | --- | --- |
+| VR-AU-01 | `email` and `password` required on login | `InvalidPayload` | FR-36 |
+| VR-AU-02 | credentials must match active user record | `Unauthenticated` | FR-36, BR-05 |
+| VR-AU-03 | inactive or locked accounts rejected | `AccountLocked` | FR-36 |
+| VR-AU-04 | logout requires valid bearer token | `Unauthenticated` | FR-38 |
+| VR-AU-05 | `GET /v1/me` requires authenticated actor | `Unauthenticated` | FR-31 |
+
+### 3.6 Academic structure endpoints
+
+| Rule ID | Rule | Failure code | Trace |
+| --- | --- | --- | --- |
+| VR-AC-01 | term date range: `startDate` <= `endDate` | `InvalidPayload` | FR-01 |
+| VR-AC-02 | only one active term per institution policy when `isActive=true` | `BusinessRuleConflict` | FR-01 |
+| VR-AC-03 | class section references valid `termId`, `courseId`, `lecturerUserId` | `InvalidReference` | FR-03 |
+| VR-AC-04 | section code unique within term | `DuplicateSectionCode` | FR-03 |
+| VR-AC-05 | room coordinates required when GPS policy will apply to section sessions | `MissingRoomCoordinates` | FR-05, FR-34 |
+
+### 3.7 Enrollment import endpoint
+
+| Rule ID | Rule | Failure code | Trace |
+| --- | --- | --- | --- |
+| VR-EN-01 | `classSectionId` must exist and be in actor scope | `OutOfScope`/`SessionNotFound` | FR-04, BR-19 |
+| VR-EN-02 | each row must include resolvable `studentCode` | `StudentNotFound` (row-level) | FR-04, BR-06 |
+| VR-EN-03 | duplicate active enrollment for same student/section rejected | `DuplicateEnrollment` (row-level) | FR-04 |
+| VR-EN-04 | import response includes accepted and rejected row counts | n/a | FR-04 |
+
 ## 4. Field-level validation rules
 
 ### 4.1 Common field constraints
@@ -144,6 +173,19 @@ This document defines server-side validation rules for Attendly MVP, including r
 | Eligibility and duplicate | `NotEnrolled`, `DuplicateCheckIn` |
 | GPS | `GpsRequired`, `GpsDisabled`, `OutOfRadius`, `LowAccuracy`, `InvalidGpsPayload` |
 | Validation | `InvalidPayload`, `InvalidFilter`, `UnsupportedFormat` |
+
+### 6.3 HTTP status mapping for validation outcomes
+
+| Outcome type | HTTP | Example codes |
+| --- | --- | --- |
+| Payload/schema failure | `400` | `InvalidPayload`, `InvalidGpsPayload`, `MalformedQrToken` |
+| Authentication failure | `401` | `Unauthenticated`, `AccountLocked` |
+| Authorization/scope failure | `403` | `Forbidden`, `OutOfScope` |
+| Missing resource | `404` | `SessionNotFound` |
+| Business conflict | `409` | `DuplicateCheckIn`, `InvalidSessionTransition`, `DuplicateSectionCode` |
+| Rule evaluation failure | `422` | `ExpiredQr`, `NotEnrolled`, `OutOfRadius`, `SessionNotOpen`, `EditWindowExpired` |
+
+Server-side validation is authoritative. Client-side form validation (React Hook Form + Zod) mirrors these constraints for UX but must not replace API enforcement.
 
 ## 7. Test and acceptance mapping
 

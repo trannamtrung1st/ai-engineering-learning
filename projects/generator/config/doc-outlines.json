@@ -53,6 +53,7 @@
   },
   "docs/technical/01-roles-permissions.md": {
     "requiredHeadings": ["Roles", "Permissions"],
+    "requiredSubstrings": ["Account provisioning"],
     "minLines": 25
   },
   "docs/technical/02-module-breakdown.md": {
@@ -91,6 +92,7 @@
   },
   "docs/technical/10-local-development-setup.md": {
     "requiredHeadings": ["Local Development"],
+    "requiredSubstrings": ["Demo accounts", "Role", "Email", "Password"],
     "minLines": 20
   },
   "docs/technical/11-testing-plan.md": {

@@ -1,10 +1,10 @@
 # {{PRODUCT_NAME}} — Integration Debt Register
 
-**Purpose:** Canonical record of known gaps between **implemented feature slices** (modules + UI) and **production-integratable runtime**. Harness agents must read this before marking MVP release-ready or closing phase 4 / acceptance slices.
+**Purpose:** Canonical record of known gaps between **implemented feature slices** (modules + UI) and **production-integratable runtime**. Harness agents must read this before marking MVP release-ready or closing `mvp-completion-ready`.
 
-**Related:** [integration-checklist.md](./integration-checklist.md) · [preview-runtime.md](./preview-runtime.md) · [../whole-app-backlog.json](../whole-app-backlog.json) (phase 4 slices) · [../../docs/technical/14-integration-debt.md](../../docs/technical/14-integration-debt.md) (product doc)
+**Related:** [integration-checklist.md](./integration-checklist.md) · [preview-runtime.md](./preview-runtime.md) · [../whole-app-backlog.json](../whole-app-backlog.json) (`mvp-completion-ready`) · [../../docs/technical/14-integration-debt.md](../../docs/technical/14-integration-debt.md) (product doc)
 
-**Last reviewed:** _(update when phase 4 work begins)_
+**Last reviewed:** _(update when finale slice work begins)_
 
 ---
 
@@ -12,7 +12,7 @@
 
 Early-phase slices often build NestJS modules, React pages, and test harnesses in isolation. Web pages may **silently fall back to harness fixtures** when preview API routes return `NotFound` because the root application module is not fully wired.
 
-**Do not treat `passes: true` on feature slices as MVP release readiness.** Run `npm run aih:verify:integration` and complete phase 4 backlog slices first.
+**Do not treat `passes: true` on feature slices as MVP release readiness.** Run `npm run aih:verify:integration` and complete `mvp-completion-ready` first.
 
 ---
 
@@ -20,29 +20,30 @@ Early-phase slices often build NestJS modules, React pages, and test harnesses i
 
 | ID | Severity | Gap | Owner slice | Blocks |
 | --- | --- | --- | --- | --- |
-| GAP-01 | **Critical** | Root API module missing feature imports | `api-app-module-wiring` | Real preview API, demo runbook, acceptance on live data |
-| GAP-02 | **Critical** | No `db:migrate` / `db:seed` scripts or preview seed dataset | `db-migrate-seed-preview` | Demo accounts, local-dev docs |
-| GAP-03 | **High** | Web harness fixture fallbacks active by default on API 404 | `web-harness-fixture-gating` | Honest staging validation |
-| GAP-04 | **High** | Compose stack incomplete vs technical spec | `compose-full-preview` | `aih:preview:full`, containerized demo |
-| GAP-05 | **High** | Acceptance browser gate not wired (`playwrightSpec: null`) | `e2e-acceptance-suite` | Final slice closure, browser AC sign-off |
+| GAP-01 | **Critical** | Root API module missing feature imports | `mvp-completion-ready` | Real preview API, demo runbook, acceptance on live data |
+| GAP-02 | **Critical** | No `db:migrate` / `db:seed` scripts or preview seed dataset | `mvp-completion-ready` | Demo accounts, local-dev docs |
+| GAP-03 | **High** | Web harness fixture fallbacks active by default on API 404 | `mvp-completion-ready` | Honest staging validation |
+| GAP-04 | **High** | Compose stack incomplete vs technical spec | `mvp-completion-ready` | `aih:preview:full`, containerized demo |
+| GAP-05 | **High** | Acceptance browser gate not wired (`playwrightSpec: null`) | `mvp-completion-ready` | Final slice closure, browser AC sign-off |
+| GAP-06 | **Critical** | No production admin bootstrap when privileged roles require it | `mvp-completion-ready` | First deploy login, production ops |
 
 _Add product-specific gaps below as Ralph discovers them (patterns, not literals):_
 
 | Pattern | Example owner slice | When to add |
 | --- | --- | --- |
-| JWT env naming mismatch | `config-jwt-env-alignment` | Multiple env var names for same secret in docs vs code |
-| Extra compose services (Redis, message bus) | `compose-full-preview` | Technical spec requires services beyond db/api/web |
+| JWT env naming mismatch | `mvp-completion-ready` | Multiple env var names for same secret in docs vs code |
+| Extra compose services (Redis, message bus) | `mvp-completion-ready` | Technical spec requires services beyond db/api/web |
 | Parallel integration test flakes | owner module slice | Cross-suite pollution; fix in owning slice |
-| CORS / idempotency header gaps | API or web harness slice | Preview export/retry paths blocked |
+| CORS / idempotency header gaps | API or web module slice | Preview export/retry paths blocked |
 | Performance gates not rehearsed | future perf slice | NFR load tests documented but not automated |
 
-Populate `ai-harness/config/integration-checks.json` with concrete module names, paths, and optional `jwtEnvVars`.
+Populate `ai-harness/config/integration-checks.json` with concrete module names, paths, optional `jwtEnvVars`, and `bootstrapAdmin*` fields when account provisioning requires production bootstrap.
 
 ---
 
 ## GAP-01 — Production API not wired
 
-**Expected:** Root application module (see `integration-checks.json` → `appModulePath`) imports all MVP backend modules listed in `requiredModules`.
+**Expected:** Root application module (see `integration-checks.json` → `appModulePath`) imports all MVP backend modules listed in `requiredModules`. Feature backend slices should wire their module in the same slice; the finale verifies and fixes gaps.
 
 **Verification:**
 
@@ -50,7 +51,7 @@ Populate `ai-harness/config/integration-checks.json` with concrete module names,
 npm run aih:verify:integration -- --check app-module
 ```
 
-**Do not** mark `api-app-module-wiring` done if modules exist only under `apps/api/src/modules/` but are absent from the root module.
+**Do not** mark `mvp-completion-ready` done if modules exist only under `apps/api/src/modules/` but are absent from the root module.
 
 ---
 
@@ -93,7 +94,7 @@ npm run aih:verify:integration -- --check compose
 
 ## GAP-05 — Acceptance browser gate
 
-**Expected:** `tests/playwright-ui/scenarios/e2e-acceptance-suite.spec.ts` exists; browser test produces non-zero `playwrightTestCount`.
+**Expected:** `tests/playwright-ui/scenarios/mvp-completion-ready.spec.ts` exists; browser test produces non-zero `playwrightTestCount`.
 
 **Prerequisite:** GAP-01 + GAP-02 fixed so browser journeys hit live API where spec expects it.
 
@@ -101,27 +102,50 @@ npm run aih:verify:integration -- --check compose
 
 ```bash
 npm run aih:preview
-npm run aih:browser-test -- e2e-acceptance-suite
-npm run aih:playwright-check -- e2e-acceptance-suite
+npm run aih:browser-test -- mvp-completion-ready
+npm run aih:playwright-check -- mvp-completion-ready
 ```
 
 ---
 
-## Slice dependency order
+## GAP-06 — Production admin bootstrap
+
+**Expected:** When privileged roles cannot be created via public signup, the API provides env-gated startup bootstrap and `npm run admin:bootstrap` CLI (see `integration-checks.json` → `bootstrapAdminNpmScript`, `bootstrapAdminScriptPath`, `bootstrapAdminEnvVars`). Idempotent: no-op when admin-class user already exists. Never creates demo `*@*.local` users in production.
+
+**Verification:**
+
+```bash
+npm run aih:verify:integration -- --check bootstrap-admin
+npm run admin:bootstrap
+```
+
+Skip when `bootstrapAdminNpmScript` is empty (all roles via signup).
+
+---
+
+## Finale slice workflow
 
 ```mermaid
 flowchart TD
-  wiring[api-app-module-wiring]
-  seed[db-migrate-seed-preview]
-  fixtures[web-harness-fixture-gating]
-  compose[compose-full-preview]
-  e2e[e2e-acceptance-suite closure]
+  features[Phase0-2 feature slices]
+  finale[mvp-completion-ready]
+  wiring[AppModule wiring]
+  seed[migrate and seed]
+  bootstrap["admin bootstrap"]
+  fixtures[fixture gating]
+  compose[compose full preview]
+  browser[HTTP E2E + browser acceptance]
 
-  wiring --> seed
-  wiring --> fixtures
-  seed --> e2e
-  fixtures --> e2e
-  compose --> e2e
+  features --> finale
+  finale --> wiring
+  finale --> seed
+  finale --> bootstrap
+  finale --> fixtures
+  wiring --> browser
+  seed --> browser
+  bootstrap --> browser
+  fixtures --> browser
+  compose --> browser
 ```
 
-Recommended backlog priority: wiring → seed → fixtures → compose → re-close e2e acceptance.
+All integration gaps are closed within the single `mvp-completion-ready` slice (priority 99, `mergeReady: true`).

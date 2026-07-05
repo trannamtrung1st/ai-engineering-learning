@@ -129,7 +129,7 @@ if [[ "$(browser_test_required)" != "true" ]]; then
 fi
 
 if integration_gate_blocks_browser_test "$SLICE_ID"; then
-  echo "==> Browser test blocked — phase 4 integration debt pending"
+  echo "==> Browser test blocked — integration debt pending (complete wiring/seed/fixtures in mvp-completion-ready)"
   handle_integration_gate_browser_block "$SLICE_ID" "$RID"
   exit 1
 fi
@@ -463,6 +463,32 @@ run_case_id_batches() {
   local batch_json batch_index=0 batch_total=0
   local -a batch_arrays=()
 
+  register_batch_phase_artifact() {
+    local phase_name="$1"
+    local phase_prefix="$2"
+    local prior_run_id="$3"
+    local batch_index="$4"
+    local batch_total="$5"
+    shift 5
+    local -a batch_ids=("$@")
+
+    local outfile="${RUNS_DIR}/${RID}-browser-test-${phase_name}.txt"
+    batch_outfiles+=("$outfile")
+    BROWSER_TEST_COMBINED_SECTIONS+=("${phase_name}|${outfile}")
+
+    local batch_case_ids_json
+    batch_case_ids_json="$(printf '%s\n' "${batch_ids[@]}" | jq -R . | jq -s .)"
+    if [[ "$phase_prefix" == "retry" ]]; then
+      if [[ "$batch_total" -gt 1 ]]; then
+        PHASES_JSON="$(append_batch_phase_result "$PHASES_JSON" "$phase_name" "$PHASE_PASS" "$batch_index" "$batch_total" "$prior_run_id" "$batch_case_ids_json")"
+      else
+        PHASES_JSON="$(append_phase_result "$PHASES_JSON" retry "$PHASE_PASS" "$prior_run_id" "$batch_case_ids_json")"
+      fi
+    else
+      PHASES_JSON="$(append_batch_phase_result "$PHASES_JSON" "$phase_name" "$PHASE_PASS" "$batch_index" "$batch_total" "" "$batch_case_ids_json")"
+    fi
+  }
+
   if ((${#all_case_ids[@]} == 0)); then
     return 0
   fi
@@ -504,24 +530,11 @@ run_case_id_batches() {
       FINAL_TIMED_OUT="$PHASE_TIMED_OUT"
       FINAL_TIMEOUT_REASON="$PHASE_TIMEOUT_REASON"
       FINAL_AGENT_STATUS="$PHASE_AGENT_STATUS"
+      register_batch_phase_artifact "$phase_name" "$phase_prefix" "$prior_run_id" "$batch_index" "$batch_total" "${batch_ids[@]}"
       return 1
     fi
 
-    local outfile="${RUNS_DIR}/${RID}-browser-test-${phase_name}.txt"
-    batch_outfiles+=("$outfile")
-    BROWSER_TEST_COMBINED_SECTIONS+=("${phase_name}|${outfile}")
-
-    local batch_case_ids_json
-    batch_case_ids_json="$(printf '%s\n' "${batch_ids[@]}" | jq -R . | jq -s .)"
-    if [[ "$phase_prefix" == "retry" ]]; then
-      if [[ "$batch_total" -gt 1 ]]; then
-        PHASES_JSON="$(append_batch_phase_result "$PHASES_JSON" "$phase_name" "$PHASE_PASS" "$batch_index" "$batch_total" "$prior_run_id" "$batch_case_ids_json")"
-      else
-        PHASES_JSON="$(append_phase_result "$PHASES_JSON" retry "$PHASE_PASS" "$prior_run_id" "$batch_case_ids_json")"
-      fi
-    else
-      PHASES_JSON="$(append_batch_phase_result "$PHASES_JSON" "$phase_name" "$PHASE_PASS" "$batch_index" "$batch_total" "" "$batch_case_ids_json")"
-    fi
+    register_batch_phase_artifact "$phase_name" "$phase_prefix" "$prior_run_id" "$batch_index" "$batch_total" "${batch_ids[@]}"
   done
 
   PRIOR_BATCH_OUTFILES+=("${batch_outfiles[@]}")

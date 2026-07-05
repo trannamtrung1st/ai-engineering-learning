@@ -2,7 +2,7 @@
 
 **Product:** Attendly (*Smart Campus Attendance*)  
 **Domain:** Digital campus attendance and class-session check-in for universities and schools  
-**Related docs:** [05-api-design.md](./05-api-design.md) · [06-main-workflows.md](./06-main-workflows.md) · [08-validation-rules.md](./08-validation-rules.md) · [11-testing-plan.md](./11-testing-plan.md) · [../brds/04-business-rules.md](../brds/04-business-rules.md) · [../brds/07-non-functional-risk.md](../brds/07-non-functional-risk.md)
+**Related docs:** [05-api-design.md](./05-api-design.md) · [06-main-workflows.md](./06-main-workflows.md) · [08-validation-rules.md](./08-validation-rules.md) · [11-testing-plan.md](./11-testing-plan.md) · [14-integration-debt.md](./14-integration-debt.md) · [../brds/04-business-rules.md](../brds/04-business-rules.md) · [../brds/07-non-functional-risk.md](../brds/07-non-functional-risk.md)
 
 ## 1. Purpose and principles
 
@@ -66,6 +66,22 @@ Every error response must include:
 | Staff-facing messages | actionable and scoped; no stack traces |
 | Logs-only details | stack traces and low-level diagnostics remain server-side only |
 
+### 3.3 HTTP status catalog
+
+| HTTP | Category | Retry | Example codes |
+| --- | --- | --- | --- |
+| `400` | Validation | No | `InvalidPayload`, `ReasonRequired`, `InvalidGpsPayload` |
+| `401` | Authentication | No (re-login) | `Unauthenticated`, `AccountLocked` |
+| `403` | Authorization | No | `Forbidden`, `OutOfScope` |
+| `404` | Not found | No | `SessionNotFound` |
+| `409` | Conflict | No | `DuplicateCheckIn`, `InvalidSessionTransition` |
+| `422` | Rule failure | No (user action) | `ExpiredQr`, `NotEnrolled`, `SessionNotOpen`, `OutOfRadius` |
+| `429` | Rate limit | Yes (backoff) | `TooManyRequests` |
+| `503` | Dependency | Yes (bounded) | `ExportServiceUnavailable` |
+| `500` | Internal | Idempotent only | `InternalError` |
+
+Aligns with [05-api-design.md](./05-api-design.md) §2.4.
+
 ## 4. Workflow-specific handling
 
 ### 4.1 Check-in flow errors
@@ -102,6 +118,17 @@ Every error response must include:
 | out-of-scope filter | `OutOfScope` | reject before query execution |
 | unsupported export format | `UnsupportedFormat` | reject with allowed format list |
 | export job backend unavailable | `ExportServiceUnavailable` | return retryable 503 and log incident |
+
+### 4.5 Frontend error rendering policy
+
+| Surface | Behavior | Trace |
+| --- | --- | --- |
+| Student check-in (PG-02) | Map `error.code` to Vietnamese alert copy; `ExpiredQr` prompts re-scan; GPS codes show retry or manual-fallback guidance | FR-16, NFR-14 |
+| Lecturer session dashboard | Inline toast for session transition conflicts; preserve current roster state on `InvalidSessionTransition` | FR-07, FR-08 |
+| Admin listing pages | Scope denials show non-leaking message; no partial data from failed queries | BR-19, NFR-09 |
+| Export actions | Distinguish `OutOfScope` (403) from `ExportServiceUnavailable` (503 retry) | FR-27, FR-30 |
+
+Global error boundary catches unexpected render faults; API business errors render inline and never expose stack traces.
 
 ## 5. Retry and idempotency policy
 
@@ -143,6 +170,17 @@ Trace: FR-18, FR-20, FR-21, NFR-07.
 | failed check-in attempts | persisted with reason code (100%) |
 | denied privileged report/export attempts | log by policy for security visibility |
 | failed manual correction | error logged; no mutation audit entry unless write happened |
+
+### 6.3 Integration test failure triage
+
+When integration tests fail intermittently:
+
+1. Reproduce with isolated `node --test` on the failing file — do not re-run the full suite as the first triage step.
+2. Write `{run-id}-integration-triage.json` capturing failure signature, suite profile, and reset scope.
+3. Fix parallel test isolation in the owning module slice (`afterEach` restore, dedicated fixtures per suite profile).
+4. Prohibit masking business-logic failures as infrastructure flake.
+
+See [11-testing-plan.md](./11-testing-plan.md) §9.3 and [14-integration-debt.md](./14-integration-debt.md) for release gate context.
 
 ## 7. Operational incident handling
 

@@ -6,6 +6,7 @@ How the **ManualsGen** loop produces end-user documentation under `docs/user-man
 
 ManualsGen is a third harness loop (alongside Ralph and TestGen) with its **own lifecycle**. It turns product specs into:
 
+- **Demo accounts** — `docs/user-manuals/demo-accounts.md` (login credentials and preview startup — **generate/use this first**)
 - **Module guides** — `docs/user-manuals/modules/<slug>.md` (one per user-facing MVP module)
 - **Demo flow scripts** — `docs/user-manuals/flows/FLOW-xx.md` (step-by-step walkthroughs for live demos)
 - **Demo runbook** — `docs/user-manuals/demo-runbook.md` (ordered stakeholder demo agenda)
@@ -55,6 +56,7 @@ Planner generates `ai-harness/manuals-backlog.json`:
 
 | Type | ID pattern | Output |
 |---|---|---|
+| `accounts` | `demo-accounts` | `docs/user-manuals/demo-accounts.md` |
 | `module` | `module-<slug>` | `docs/user-manuals/modules/<slug>.md` |
 | `flow` | `FLOW-xx` | `docs/user-manuals/flows/FLOW-xx.md` |
 | `runbook` | `demo-runbook` | `docs/user-manuals/demo-runbook.md` |
@@ -63,10 +65,11 @@ Index: [`docs/user-manuals/README.md`](../../docs/user-manuals/README.md).
 
 ## Running a demo
 
-1. Start preview: `npm run aih:preview`
-2. Open [`docs/user-manuals/demo-runbook.md`](../../docs/user-manuals/demo-runbook.md) (after ManualsGen completes)
-3. Follow flow scripts in the order listed in the runbook
-4. Use role/account notes from the runbook cheat sheet
+1. Start preview: `npm run aih:preview` (and `npm run db:migrate && npm run db:seed` when required)
+2. Open [`docs/user-manuals/demo-accounts.md`](../../docs/user-manuals/demo-accounts.md) for login credentials
+3. Open [`docs/user-manuals/demo-runbook.md`](../../docs/user-manuals/demo-runbook.md) (after ManualsGen completes)
+4. Follow flow scripts in the order listed in the runbook
+5. Flow prerequisites also include role-specific credentials inline when you open individual flow scripts
 
 ## Related docs
 

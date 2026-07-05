@@ -151,9 +151,9 @@ Retry and batch phases: skip UX audit, test-case maintenance, and codegen.
 
 **Collect-all failures:** run the complete case list in each phase. Per-action 30s timeouts still apply (do not abandon a stuck step before its timeout). Report every blocker in one pass — do not stop after the first FAIL.
 
-### Acceptance slice (`e2e-acceptance-suite`) rules
+### Finale slice (`mvp-completion-ready`) rules
 
-When slice id is `e2e-acceptance-suite` (or harness injects acceptance-slice phase block):
+When slice id is `mvp-completion-ready` (or harness injects acceptance-slice phase block):
 
 - **Codegen is mandatory** even when many cases are `SKIP` — emit `playwright-regression: {{PLAYWRIGHT_OUTPUT_PATH}} (N tests)` before the signal line
 - If the **15 min** whole-pass budget is exceeded, FAIL remaining cases as `timeout — pass incomplete` but **still complete Playwright codegen** for every flow you exercised

@@ -108,6 +108,13 @@ TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5433/app_test
 
 # Preview fixture mode — set true only when API is unwired (phase 3 fallback).
 VITE_PREVIEW_FIXTURE_MODE=false
+
+# Production first-admin bootstrap (when privileged roles cannot be created via signup).
+# Set on first deploy only; idempotent — no-op when admin already exists.
+# INITIAL_ADMIN_EMAIL=
+# INITIAL_ADMIN_PASSWORD=
+# INITIAL_ADMIN_ROLE=
+# ADMIN_BOOTSTRAP_ENABLED=true
 EOF
 fi
 

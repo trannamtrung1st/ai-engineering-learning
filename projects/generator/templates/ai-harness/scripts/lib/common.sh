@@ -2747,7 +2747,7 @@ handle_integration_gate_browser_block() {
   local run_id="$2"
   local next_slice reason report
   next_slice="$(next_pending_phase4_slice_id)"
-  reason="integration_debt_pending — complete phase 4 slices before browser test on ${slice_id}"
+  reason="integration_debt_pending — complete integration wiring (AppModule, migrate/seed, fixtures) before browser test on ${slice_id}"
   report="$(jq -n \
     --arg slice "$slice_id" \
     --arg ts "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
@@ -2764,7 +2764,7 @@ handle_integration_gate_browser_block() {
     }')"
   write_run_report "${run_id}-browser-test.json" "$report"
   if [[ -n "$next_slice" ]]; then
-    if [[ "$(jq -r '.integrationGate.autoFocusNextPhase4Slice // true' "$LOOP_CONFIG")" == "true" ]]; then
+    if [[ "$(jq -r '.integrationGate.autoFocusNextPhase4Slice // false' "$LOOP_CONFIG")" == "true" ]]; then
       set_loop_slice_override "$next_slice" "$reason" "integration-gate"
       aih_warn "Integration gate blocked browser test — next iteration focused on ${next_slice}"
     fi

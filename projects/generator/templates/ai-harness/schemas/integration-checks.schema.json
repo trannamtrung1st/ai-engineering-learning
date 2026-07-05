@@ -54,6 +54,19 @@
     "jwtServicePath": {
       "type": "string",
       "description": "Path to JWT service implementation for env-var alignment checks"
+    },
+    "bootstrapAdminEnvVars": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "Env var names for production first-admin bootstrap (e.g. INITIAL_ADMIN_EMAIL, INITIAL_ADMIN_PASSWORD). Empty when all roles via signup."
+    },
+    "bootstrapAdminScriptPath": {
+      "type": "string",
+      "description": "Path to bootstrap CLI script implementation. Empty when bootstrap not required."
+    },
+    "bootstrapAdminNpmScript": {
+      "type": "string",
+      "description": "Root package.json script name for admin bootstrap (e.g. admin:bootstrap). Empty when bootstrap not required."
     }
   },
   "additionalProperties": false

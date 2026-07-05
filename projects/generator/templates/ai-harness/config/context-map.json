@@ -63,6 +63,7 @@
         "ai-harness/docs/user-manuals-guide.md",
         "docs/ui-ux/10-user-flows.md",
         "docs/technical/01-roles-permissions.md",
+        "docs/technical/10-local-development-setup.md",
         "docs/ui-ux/09-page-list.md"
       ]
     }
@@ -126,9 +127,11 @@
         "docs/ui-ux/02-ui-framework-tech-stack.md"
       ]
     },
-    "e2e-acceptance-suite": {
+    "mvp-completion-ready": {
       "agent": "test",
       "docs": [
+        "ai-harness/docs/integration-debt-register.md",
+        "ai-harness/docs/integration-checklist.md",
         "docs/technical/11-testing-plan.md",
         "docs/brds/08-acceptance-mvp-future.md"
       ]

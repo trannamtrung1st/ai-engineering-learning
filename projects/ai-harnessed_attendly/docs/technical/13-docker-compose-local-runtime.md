@@ -2,13 +2,23 @@
 
 **Product:** Attendly (*Smart Campus Attendance*)  
 **Domain:** Digital campus attendance and class-session check-in for universities and schools  
-**Related docs:** [10-local-development-setup.md](./10-local-development-setup.md) · [11-testing-plan.md](./11-testing-plan.md) · [12-backend-frontend-tech-stack.md](./12-backend-frontend-tech-stack.md) · [04-database-design.md](./04-database-design.md)
+**Related docs:** [10-local-development-setup.md](./10-local-development-setup.md) · [11-testing-plan.md](./11-testing-plan.md) · [12-backend-frontend-tech-stack.md](./12-backend-frontend-tech-stack.md) · [04-database-design.md](./04-database-design.md) · [local-runtime-reset.md](./local-runtime-reset.md) · [14-integration-debt.md](./14-integration-debt.md)
 
 ## 1. Purpose
 
 This document specifies the local Docker Compose runtime topology for Attendly MVP development and testing.
 
-> **Implementation status (2026-07-05):** Repository `docker-compose.yml` currently provides **`db` (Postgres) only**. Target topology below (Redis, api, web containers, `full-preview` profile) is tracked in harness slice `compose-full-preview-redis`. Dev preview uses local API/web processes via `npm run aih:preview` — see [14-mvp-integration-debt.md](./14-mvp-integration-debt.md).
+> **Implementation status (2026-07-05):** Repository `docker-compose.yml` currently provides **`db` (Postgres) only**. Target topology below (Redis, api, web containers, `full-preview` profile) is tracked in harness slice `compose-full-preview-redis`. Dev preview uses local API/web processes via `npm run aih:preview` — see [14-integration-debt.md](./14-integration-debt.md).
+
+### 1.1 Current vs target snapshot
+
+| Component | Current (2026-07-05) | Target |
+| --- | --- | --- |
+| `docker-compose.yml` | `db` (Postgres) service only | `db`, `redis`, `api`, `web` with profiles |
+| `docker-compose.test.yml` | Isolated Postgres on port 5433 | Same — used by integration harness |
+| API/web runtime | Host processes via `aih:preview` | Optional containerized `full-preview` profile |
+| Migrate/seed | `ensureSchema()` at API boot | One-off `migrate` and `seed` compose services |
+| Redis | Not in dev compose | Recommended for realtime pubsub (M09) |
 
 ## 2. Local container runtime goals
 
@@ -108,6 +118,21 @@ After reset, always run migrations and seeds before workflow testing.
 
 - `postgres`, `api`
 - for backend-only debugging where realtime cache is not needed
+
+### 7.4 Full-preview profile
+
+All services in Docker for demo and CI parity:
+
+```bash
+docker compose --profile full-preview up -d --build
+docker compose --profile full-preview run --rm migrate
+docker compose --profile full-preview run --rm seed
+npm run aih:preview:verify
+```
+
+Startup order: `db` + `redis` healthy → `migrate` → `seed` → `api` healthy → `web`.
+
+Reset procedures: [local-runtime-reset.md](./local-runtime-reset.md).
 
 ## 8. Compose operations guidance
 

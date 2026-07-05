@@ -8,7 +8,7 @@
   "additionalProperties": false,
   "properties": {
     "manualItemId": { "type": "string", "minLength": 1 },
-    "type": { "type": "string", "enum": ["module", "flow", "runbook"] },
+    "type": { "type": "string", "enum": ["module", "flow", "runbook", "accounts"] },
     "title": { "type": "string", "minLength": 1 },
     "docFingerprint": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
     "generatedAt": { "type": "string", "format": "date-time" },

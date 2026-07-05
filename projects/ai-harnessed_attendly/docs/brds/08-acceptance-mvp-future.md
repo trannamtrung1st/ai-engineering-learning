@@ -2,7 +2,7 @@
 
 **Product:** Attendly (*Smart Campus Attendance*)  
 **Domain:** Digital campus attendance and class-session check-in for universities and schools  
-**Related docs:** [01-stakeholders-scope.md](./01-stakeholders-scope.md) · [02-business-workflow.md](./02-business-workflow.md) · [03-functional-requirements.md](./03-functional-requirements.md) · [04-business-rules.md](./04-business-rules.md) · [05-state-machine.md](./05-state-machine.md) · [07-non-functional-risk.md](./07-non-functional-risk.md)
+**Related docs:** [01-stakeholders-scope.md](./01-stakeholders-scope.md) · [02-business-workflow.md](./02-business-workflow.md) · [03-functional-requirements.md](./03-functional-requirements.md) · [04-business-rules.md](./04-business-rules.md) · [05-state-machine.md](./05-state-machine.md) · [07-non-functional-risk.md](./07-non-functional-risk.md) · [../technical/14-integration-debt.md](../technical/14-integration-debt.md)
 
 ---
 
@@ -260,7 +260,7 @@ Source alignment: [01-stakeholders-scope.md](./01-stakeholders-scope.md) §2.3 �
 
 ## 4. Release readiness checklist
 
-> **Harness note (2026-07-05):** Phase 0–3 feature slices may pass while preview still runs on harness fixtures (API feature routes unwired). Release sign-off requires phase 4 integration per [docs/technical/14-mvp-integration-debt.md](../technical/14-mvp-integration-debt.md) and `npm run aih:verify:mvp-integration`.
+> **Harness note (2026-07-05):** Phase 0–3 feature slices may pass while preview still runs on harness fixtures (API feature routes unwired). Release sign-off requires phase 4 integration per [docs/technical/14-integration-debt.md](../technical/14-integration-debt.md) and `npm run aih:verify:integration`.
 
 ### 4.1 Functional readiness
 

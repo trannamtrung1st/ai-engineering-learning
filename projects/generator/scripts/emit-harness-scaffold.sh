@@ -83,9 +83,9 @@ Verification failures and remediation notes for harness agents.
 
 ## Signs
 
-- **Phase 4 integration debt:** Read [integration-debt-register.md](../docs/integration-debt-register.md) and [integration-checklist.md](../docs/integration-checklist.md) before closing acceptance or phase 4 slices. Run `npm run aih:verify:integration` — must pass before `e2e-acceptance-suite` can close on **live** preview data.
-- **No silent fixture fallback:** Do not add API-404→harness-fixture fallbacks without gating on `VITE_PREVIEW_FIXTURE_MODE` (see `web-harness-fixture-gating` slice).
-- **Root app wiring:** Every new backend module must be imported in the root application module in the same slice (or `api-app-module-wiring`) — test-only wiring in E2E harness alone is insufficient.
+- **MVP completion:** Read [integration-debt-register.md](../docs/integration-debt-register.md) and [integration-checklist.md](../docs/integration-checklist.md) before closing `mvp-completion-ready`. Run `npm run aih:verify:integration` — must pass before browser acceptance on **live** preview data.
+- **No silent fixture fallback:** Do not add API-404→harness-fixture fallbacks without gating on `VITE_PREVIEW_FIXTURE_MODE`.
+- **Root app wiring:** Every new backend module must be imported in the root application module in the same slice — test-only wiring in E2E harness alone is insufficient.
 - **Playwright artifact hygiene:** Implementer browser screenshots must not mutate `tests/playwright-ui/test-results/` or `playwright-report/` — MCP and `npx playwright` runs update `.last-run.json`; save captures only under `ai-harness/generated/runs/screenshots/<slice-id>/implementer/`.
 
 EOF
@@ -122,6 +122,10 @@ npm run aih:manualsgen:loop  # generate all module guides and demo flows
 \`\`\`
 
 See [ai-harness/docs/user-manuals-guide.md](../ai-harness/docs/user-manuals-guide.md) for details.
+
+## Demo accounts
+
+<!-- ManualsGen adds link to demo-accounts.md when generated -->
 
 ## Module guides
 

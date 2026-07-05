@@ -34,6 +34,7 @@
             }
           },
           "notes": { "type": "string" },
+          "mergeReady": { "type": "boolean" },
           "reverifyOnDrift": { "type": "boolean" },
           "history": {
             "type": "array",

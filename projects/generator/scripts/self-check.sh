@@ -114,6 +114,14 @@ if ! jq -e '.properties.jwtEnvVars' "${TEMPLATES_DIR}/ai-harness/schemas/integra
   gen_err "integration-checks.schema.json missing jwtEnvVars"
   fail=1
 fi
+if ! jq -e '.properties.bootstrapAdminEnvVars' "${TEMPLATES_DIR}/ai-harness/schemas/integration-checks.schema.json" >/dev/null 2>&1; then
+  gen_err "integration-checks.schema.json missing bootstrapAdminEnvVars"
+  fail=1
+fi
+if ! grep -q 'bootstrap-admin' "${TEMPLATES_DIR}/ai-harness/scripts/verify-integration.sh" 2>/dev/null; then
+  gen_err "verify-integration.sh missing bootstrap-admin check"
+  fail=1
+fi
 if ! grep -q 'jwt-env' "${TEMPLATES_DIR}/ai-harness/scripts/verify-integration.sh" 2>/dev/null; then
   gen_err "verify-integration.sh missing jwt-env check"
   fail=1

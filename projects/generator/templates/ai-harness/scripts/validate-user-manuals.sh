@@ -70,6 +70,28 @@ while IFS= read -r heading; do
   fi
 done < <(jq -r --arg t "$ITEM_TYPE" '.validation.requiredHeadings[$t][]?' "$MANUALSGEN_CONFIG" 2>/dev/null)
 
+if [[ "$ITEM_TYPE" == "accounts" ]]; then
+  if ! grep -qE '\|[[:space:]]*Role[[:space:]]*\|' "$ARTIFACT"; then
+    FAILURES+=("accounts artifact must include markdown table with Role column")
+    PASS=false
+  fi
+  if ! grep -qE '\|[[:space:]]*Email[[:space:]]*\|' "$ARTIFACT"; then
+    FAILURES+=("accounts artifact must include markdown table with Email column")
+    PASS=false
+  fi
+  if ! grep -qE '\|[[:space:]]*Password[[:space:]]*\|' "$ARTIFACT"; then
+    FAILURES+=("accounts artifact must include markdown table with Password column")
+    PASS=false
+  fi
+fi
+
+if [[ "$ITEM_TYPE" == "flow" ]]; then
+  if grep -qiE 'login|sign in|log in' "$ARTIFACT" && ! grep -qE '@[^[:space:]|]+' "$ARTIFACT"; then
+    FAILURES+=("flow mentions login but no email-like credential found in artifact")
+    PASS=false
+  fi
+fi
+
 if [[ "$ITEM_TYPE" == "runbook" ]]; then
   while IFS= read -r flow_id; do
     [[ -z "$flow_id" ]] && continue

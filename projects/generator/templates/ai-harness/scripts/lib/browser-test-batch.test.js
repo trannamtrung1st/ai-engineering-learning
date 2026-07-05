@@ -184,3 +184,60 @@ test("validate_batch_case_results rejects missing and FAIL case lines", () => {
     fs.rmSync(repoRoot, { recursive: true, force: true });
   }
 });
+
+function writePartialFailureCombinedTxt(harnessRoot, runId) {
+  const runsDir = path.join(harnessRoot, "generated", "runs");
+  const batch1 = path.join(runsDir, `${runId}-browser-test-batch-1.txt`);
+  const batch2 = path.join(runsDir, `${runId}-browser-test-batch-2.txt`);
+  fs.writeFileSync(batch1, "TC-A-P0: PASS\nTC-A-P1: PASS\nBROWSER_TEST_BATCH_PASS\n");
+  fs.writeFileSync(batch2, "TC-A-P2: FAIL — button missing\nBROWSER_TEST_FAIL\n");
+
+  const combined = [
+    "# Browser test — batch-1",
+    "",
+    fs.readFileSync(batch1, "utf8").trimEnd(),
+    "",
+    "---",
+    "",
+    "# Browser test — batch-2",
+    "",
+    fs.readFileSync(batch2, "utf8").trimEnd(),
+    "",
+  ].join("\n");
+  fs.writeFileSync(path.join(runsDir, `${runId}-browser-test.txt`), combined);
+  return runId;
+}
+
+test("extract_failed_browser_case_ids reads FAIL from combined partial-run txt", () => {
+  const { repoRoot, harnessRoot } = setupHarnessFixture();
+  const runId = "run-partial-001";
+  try {
+    writePartialFailureCombinedTxt(harnessRoot, runId);
+    const output = bashHarness(
+      repoRoot,
+      harnessRoot,
+      `extract_failed_browser_case_ids "${runId}"`,
+    );
+    assert.equal(output, "TC-A-P2");
+  } finally {
+    fs.rmSync(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test("summarize_browser_test_failures includes FAIL lines from failed batch section", () => {
+  const { repoRoot, harnessRoot } = setupHarnessFixture();
+  const runId = "run-partial-002";
+  try {
+    writePartialFailureCombinedTxt(harnessRoot, runId);
+    const output = bashHarness(
+      repoRoot,
+      harnessRoot,
+      `summarize_browser_test_failures "${runId}"`,
+    );
+    assert.match(output, /TC-A-P2: FAIL/);
+    assert.match(output, /BROWSER_TEST_FAIL/);
+    assert.doesNotMatch(output, /TC-A-P0: PASS/);
+  } finally {
+    fs.rmSync(repoRoot, { recursive: true, force: true });
+  }
+});

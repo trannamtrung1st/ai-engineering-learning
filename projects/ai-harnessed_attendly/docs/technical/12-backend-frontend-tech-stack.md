@@ -217,6 +217,17 @@ Token signing, rotation, and validation remain server-side (M04). Client librari
 | Commit quality | conventional commit linting optional |
 | CI | GitHub Actions (or equivalent) for lint/test/build gates |
 
+### 5.3 Monorepo layout
+
+| Package | Role |
+| --- | --- |
+| `apps/api` | Backend API — NestJS modules, domain services, integration test harness |
+| `apps/web` | Frontend SPA — React routes, TanStack Query, QR components |
+| `tests/playwright-ui` | Playwright browser tests — acceptance and regression scenarios |
+| Shared types (optional) | `@attendly/contracts` or equivalent for DTOs and error codes |
+
+Local and CI commands run from repository root via npm/pnpm workspace scripts (`dev:api`, `dev:web`, `test:integration`, `aih:check`).
+
 ## 6. Mapping stack to module architecture
 
 | Module | Primary stack component |

@@ -93,13 +93,15 @@ live ai-harness/  →  classify delta  →  port generic files  →  gen:self-ch
 | Verify | `npm run gen:self-check` + `node --test templates/ai-harness/scripts/lib/*.test.js` |
 | Record | Append entry to `state/progress.md` |
 
-**Integration debt framework** (generic phase 4): `docs/integration-debt-register.md`, `docs/integration-checklist.md`, `config/integration-checks.json`, `scripts/verify-integration.sh`. Harness-planner populates `integration-checks.json` and phase 4 backlog slices; static templates ship the skeleton.
+**Integration debt framework** (phase 4 finale): `docs/integration-debt-register.md`, `docs/integration-checklist.md`, `config/integration-checks.json`, `scripts/verify-integration.sh`. Harness-planner emits a single `mvp-completion-ready` slice (`mergeReady: true`) instead of multiple integration + acceptance slices; static templates ship the skeleton.
+
+**ManualsGen demo accounts:** harness-planner emits `demo-accounts` manual item (type `accounts`, priority 5) → `docs/user-manuals/demo-accounts.md` with login table copied from `10-local-development-setup.md`. Doc-writer must emit `## Demo accounts` and `## Production bootstrap` in local-dev setup; `01-roles-permissions.md` must include account provisioning.
 
 **Failure classes to backport** (from live harness stress-tests):
 
 | Class | Symptom | Generic fix in templates |
 | --- | --- | --- |
-| Integration debt | Acceptance slice runs before API wiring/seed | `integrationGate` in `ralph-loop.json`; phase 4 slices priority &gt; `e2e-acceptance-suite` |
+| Integration debt | Browser test on finale before wiring/seed complete | `integrationGate` in `ralph-loop.json`; `mvp-completion-ready` blocked until `aih:verify:integration` passes |
 | Browser codegen signal | `playwrightSpec: null` despite spec on disk | Require `playwright-regression:` line; on-disk fallback in `common.sh` |
 | Scope artifacts | Scope gate fails on `test-results/.last-run.json` | Gitignore + `restore_playwright_scope_artifacts` before scope gate |
 

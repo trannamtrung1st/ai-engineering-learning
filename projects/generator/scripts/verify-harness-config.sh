@@ -122,14 +122,22 @@ if [[ -f "$manuals_backlog" ]]; then
 
   flow_count=0
   runbook_count=0
+  accounts_count=0
   while IFS= read -r item_type; do
     [[ -z "$item_type" ]] && continue
     if [[ "$item_type" == "flow" ]]; then
       flow_count=$((flow_count + 1))
     elif [[ "$item_type" == "runbook" ]]; then
       runbook_count=$((runbook_count + 1))
+    elif [[ "$item_type" == "accounts" ]]; then
+      accounts_count=$((accounts_count + 1))
     fi
   done < <(jq -r '.items[].type' "$manuals_backlog" 2>/dev/null)
+
+  if [[ "$accounts_count" -ne 1 ]]; then
+    gen_err "manuals-backlog must include exactly one accounts item (demo-accounts)"
+    fail=1
+  fi
 
   if [[ "$flow_count" -lt 1 ]]; then
     gen_err "manuals-backlog must include at least one flow item"

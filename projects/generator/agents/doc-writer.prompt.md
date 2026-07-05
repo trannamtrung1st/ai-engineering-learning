@@ -40,6 +40,25 @@ When writing UI/UX outputs:
 - **[03-design-system-basics.md](../../docs/ui-ux/03-design-system-basics.md):** include the precedence chain and link to DESIGN.md when present
 - **[09-page-list.md](../../docs/ui-ux/09-page-list.md):** include a **Home / landing** subsection documenting each role's home hub (default post-login route from [01-roles-permissions.md](../../docs/technical/01-roles-permissions.md)) and a **Navigation** subsection mapping persistent nav-surface entry points (from [06-app-layout-components.md](../../docs/ui-ux/06-app-layout-components.md)) to the user flows they start (cross-link [10-user-flows.md](../../docs/ui-ux/10-user-flows.md)). State that the **app logo in nav is a link to home** on every authenticated page.
 
+## Local development and account conventions
+
+When writing **`docs/technical/01-roles-permissions.md`**:
+
+- Include **`## Account provisioning`** (or `### Account provisioning` under Roles) covering how each role class is created: public signup, `db:seed` demo accounts, or production bootstrap — cross-link [10-local-development-setup.md](./10-local-development-setup.md).
+
+When writing **`docs/technical/10-local-development-setup.md`**:
+
+- Include **`## Demo accounts`** — markdown table with columns `Role | Email | Password | Scope/notes`.
+  - One row per demo persona needed for preview and demo runbook (derive from [01-roles-permissions.md](./01-roles-permissions.md) and `docs/product-meta.json` `actors[]`).
+  - Use stable local domains (`*@<product-slug>.local`) and a single shared dev password unless specs say otherwise.
+  - If `db:seed` is not implemented yet, still emit the **target** table and note status (e.g. "available after `db:seed`"; interim: integration fixtures).
+- Include **`## Production bootstrap`** when any privileged role cannot be created via public signup (per account provisioning in roles doc):
+  - Document env vars: `INITIAL_ADMIN_EMAIL`, `INITIAL_ADMIN_PASSWORD`; optional `INITIAL_ADMIN_ROLE` when multiple admin-class roles exist.
+  - Document CLI: `npm run admin:bootstrap` (idempotent; no-op when an admin-class user already exists).
+  - State explicitly: **`db:seed` demo accounts are dev/preview only** — never for production.
+  - Name the **bootstrap target role** when the product has multiple admin-class roles.
+- When no privileged roles exist (all roles creatable via signup), write **`## Production bootstrap`** with "N/A — all roles available via public signup."
+
 ## Step
 
 - **ID:** {{STEP_ID}}

@@ -11,7 +11,7 @@
         "required": ["id", "type", "title", "priority", "passes", "outputPath"],
         "properties": {
           "id": { "type": "string", "minLength": 1 },
-          "type": { "type": "string", "enum": ["module", "flow", "runbook"] },
+          "type": { "type": "string", "enum": ["module", "flow", "runbook", "accounts"] },
           "title": { "type": "string", "minLength": 1 },
           "priority": { "type": "integer" },
           "passes": { "type": "boolean" },

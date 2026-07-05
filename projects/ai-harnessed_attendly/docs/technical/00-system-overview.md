@@ -2,7 +2,7 @@
 
 **Product:** Attendly (*Smart Campus Attendance*)  
 **Domain:** Digital campus attendance and class-session check-in for universities and schools  
-**Related docs:** [../brds/00-project-overview.md](../brds/00-project-overview.md) · [../brds/02-business-workflow.md](../brds/02-business-workflow.md) · [../brds/03-functional-requirements.md](../brds/03-functional-requirements.md) · [../brds/04-business-rules.md](../brds/04-business-rules.md) · [01-roles-permissions.md](./01-roles-permissions.md) · [02-module-breakdown.md](./02-module-breakdown.md)
+**Related docs:** [../brds/00-project-overview.md](../brds/00-project-overview.md) · [../brds/02-business-workflow.md](../brds/02-business-workflow.md) · [../brds/03-functional-requirements.md](../brds/03-functional-requirements.md) · [../brds/04-business-rules.md](../brds/04-business-rules.md) · [01-roles-permissions.md](./01-roles-permissions.md) · [02-module-breakdown.md](./02-module-breakdown.md) · [14-integration-debt.md](./14-integration-debt.md)
 
 ## 1. Purpose and scope
 
@@ -232,6 +232,13 @@ Controls map to [../brds/07-non-functional-risk.md](../brds/07-non-functional-ri
 | GPS policy validation | FR-34, FR-35, BR-08 to BR-10 | [../brds/07-non-functional-risk.md](../brds/07-non-functional-risk.md) |
 | Manual correction and governance | FR-20, FR-21, BR-14 to BR-16 | [01-roles-permissions.md](./01-roles-permissions.md) |
 | Export and audit | FR-27, FR-29, FR-30, BR-18, BR-22 | [02-module-breakdown.md](./02-module-breakdown.md) |
+| MVP preview integration (phase 4) | FR-01, FR-07–FR-08, FR-16, FR-22, FR-27, FR-30 | [14-integration-debt.md](./14-integration-debt.md) |
+
+### 8.2 Implementation readiness
+
+Technical specs in `docs/technical/` describe the **target** system. Phase 0–3 harness slices may deliver isolated modules and UI while the preview runtime remains partially unwired (~75% MVP readiness as of 2026-07-05).
+
+Release sign-off requires closing **integration debt** (phase 4): wiring the production API module, migrate/seed scripts, fixture gating, and full preview compose. See [14-integration-debt.md](./14-integration-debt.md) and [../brds/08-acceptance-mvp-future.md](../brds/08-acceptance-mvp-future.md) §4.
 
 ## 9. Future consideration
 

@@ -17,7 +17,7 @@ When the latest failed `*-browser-test.txt` for the slice contains parseable `TC
 
 Set `browserTest.maxCasesPerBatch` to `0` to disable batching and run a single legacy **full** phase. Set `browserTest.retryFailedCasesFirst` to `false` to skip retry and always start at case batches (or full phase when batching disabled).
 
-Artifacts: `*-browser-test-retry*.txt`, `*-browser-test-batch-*.txt`, `*-browser-test-finalize.txt` (or `*-browser-test-full.txt` when batching disabled), combined `*-browser-test.txt`, and `*-browser-test.json` with a `phases` array (`batchIndex`, `batchTotal`, `caseIds`).
+Artifacts: `*-browser-test-retry*.txt`, `*-browser-test-batch-*.txt`, `*-browser-test-finalize.txt` (or `*-browser-test-full.txt` when batching disabled), combined `*-browser-test.txt`, and `*-browser-test.json` with a `phases` array (`batchIndex`, `batchTotal`, `caseIds`). Failed batch/retry phases are merged into combined `*-browser-test.txt` (same as finalize/full), so retry and implementer feedback see all collected `TC-*: FAIL` lines.
 
 ## Prerequisites
 

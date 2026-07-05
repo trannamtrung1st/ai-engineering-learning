@@ -2,7 +2,7 @@
 
 **Product:** Attendly (*Smart Campus Attendance*)  
 **Domain:** Digital campus attendance and class-session check-in for universities and schools  
-**Related docs:** [05-api-design.md](./05-api-design.md) · [06-main-workflows.md](./06-main-workflows.md) · [07-state-machines.md](./07-state-machines.md) · [08-validation-rules.md](./08-validation-rules.md) · [09-error-handling.md](./09-error-handling.md) · [../brds/08-acceptance-mvp-future.md](../brds/08-acceptance-mvp-future.md)
+**Related docs:** [05-api-design.md](./05-api-design.md) · [06-main-workflows.md](./06-main-workflows.md) · [07-state-machines.md](./07-state-machines.md) · [08-validation-rules.md](./08-validation-rules.md) · [09-error-handling.md](./09-error-handling.md) · [performance-smoke-runbook.md](./performance-smoke-runbook.md) · [14-integration-debt.md](./14-integration-debt.md) · [../brds/08-acceptance-mvp-future.md](../brds/08-acceptance-mvp-future.md)
 
 ## 1. Purpose
 
@@ -141,6 +141,16 @@ OS-native camera app scanning that opens `/check-in?token=...` is out of scope f
 - No continuous location tracking behavior.
 - Retention jobs or scripts enforce data minimization policy.
 
+### 7.5 Performance smoke execution
+
+Performance smoke tests guard AC-20, AC-21, AC-22 under representative load (2 open sessions × 20 students, concurrency 5). Execution and triage: [performance-smoke-runbook.md](./performance-smoke-runbook.md).
+
+| Command | Purpose |
+| --- | --- |
+| `npm run test:integration:performance-smoke` | Integration-level smoke with gate evaluators |
+| `PERF_SMOKE_PUBLISH_METRICS=true npm run test:integration:performance-smoke` | Write metric JSON under `ai-harness/generated/runs/performance-smoke/` |
+| `npm run aih:check -- test-nfr-performance-reliability-smoke` | Full harness gate with slice timeouts |
+
 ## 8. Test data management
 
 ### 8.1 Required fixture sets
@@ -206,6 +216,20 @@ To keep release confidence stable, CI and local pipelines must explicitly manage
 | environment reset | Harness resets the test stack once per check run; suites truncate mutable tables per test via the integration harness |
 | deterministic fixtures | Shared fixtures use deterministic IDs/timestamps where feasible to reduce flake from timing variance |
 | serial execution | Integration tests run with `--test-concurrency=1`; cross-file isolation relies on suite-level full reset in `runIntegrationBeforeSuite` |
+
+### 9.4 Integration flake triage protocol
+
+When a test fails intermittently in CI or locally:
+
+| Step | Action |
+| --- | --- |
+| 1 | Run isolated `node --test` on the single failing file — do not re-run the full suite as first response |
+| 2 | Emit `{run-id}-integration-triage.json` with failure signature, suite profile, and table reset scope |
+| 3 | Classify: infrastructure flake vs parallel isolation bug vs functional regression |
+| 4 | Fix in owning module slice — add `afterEach` restore, dedicated fixtures, or scoped truncate per harness profile |
+| 5 | Re-verify with `--test-concurrency=1` before promoting to full `aih:check` |
+
+Prohibited: declaring flake resolved by bare full-suite re-run without isolation fix.
 
 ## 10. Defect triage policy
 
@@ -273,3 +297,12 @@ Run this suite on every merge to protect the attendance critical path:
 | REG-03 | one-success-per-student duplicate prevention |
 | REG-04 | manual correction with edit-window and scope enforcement |
 | REG-05 | report/export scope filtering and audit completeness |
+
+## 16. Release integration gate
+
+Phase 0–3 feature slice passes do **not** alone satisfy MVP release readiness. Before release sign-off:
+
+1. Complete phase 4 integration slices per [14-integration-debt.md](./14-integration-debt.md).
+2. Run `npm run aih:verify:integration` — must exit 0.
+3. Run full `npm run aih:check` including `e2e-acceptance-suite` on live seeded preview (`VITE_PREVIEW_FIXTURE_MODE=false`).
+4. Confirm AC-01 through AC-26 on production-like data, not fixture-only paths.
