@@ -7,7 +7,8 @@ source "$(dirname "$0")/lib/common.sh"
 GENERATOR_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 fail=0
 
-pattern='\b(admin|instructor|student|participant|organizer|check-in|event-specific|hesd)\b|simulateQr|qrDecode|/events'
+# Product-domain terms from prior projects — not generic harness infra (bootstrap admin, admin:bootstrap, etc.).
+pattern='\b(instructor|student|participant|organizer|check-in|event-specific|hesd)\b|simulateQr|qrDecode|/events'
 
 for root in templates agents; do
   dir="${GENERATOR_ROOT}/${root}"

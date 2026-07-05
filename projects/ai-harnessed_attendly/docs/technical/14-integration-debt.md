@@ -10,8 +10,8 @@
 | Audience | Doc | Role |
 | --- | --- | --- |
 | Engineers, reviewers, BRD traceability | **This file** (`14-integration-debt.md`) | Canonical product technical reference — link here from other `docs/` |
-| Harness agents (Ralph loop) | `ai-harness/docs/integration-debt-register.md` | Operational gap register; created on harness scaffold |
-| Release sign-off | `ai-harness/docs/integration-checklist.md` | Mechanical checklist paired with `npm run aih:verify:integration` |
+| Harness agents (Ralph loop) | Harness **integration-debt-register** (scaffolded with Ralph loop) | Operational gap register; mirrors §4 gap table in this doc |
+| Release sign-off | Harness **integration-checklist** (scaffolded with Ralph loop) | Mechanical checklist paired with `npm run aih:verify:integration` |
 
 > **Naming:** Use `aih:verify:integration` (not legacy `aih:verify:mvp-integration`). A former stub `14-mvp-integration-debt.md` duplicated this content and has been removed.
 

@@ -118,9 +118,66 @@ This document defines RBAC for Attendly MVP, including role scopes, permission m
 | PRM-10 | Unauthorized report or export requests return denial without partial leakage | BR-19 |
 | PRM-11 | Every successful export produces immutable audit entry | FR-30, BR-22 |
 
-## 5. Role-specific technical behavior
+## 5. Default post-login routes (home hubs)
 
-### 5.1 Student
+After successful authentication, the client redirects each role to its **home hub** unless a safe `returnUrl` query parameter is present (check-in deep links, bookmarked staff pages). Home hubs are the navigation anchor for that role and are reachable from every authenticated page via the persistent nav surface. The **app logo in nav is a link to home** on every authenticated page.
+
+| Role | Default route | Page | Layout | Trace |
+| --- | --- | --- | --- | --- |
+| `Student` | `/check-in` | PG-02 | `StudentLayout` | FR-16, FR-37 |
+| `Lecturer` | `/lecturer/sessions` | PG-04 | `StaffLayout` | FR-10 |
+| `DepartmentAdmin` | `/lecturer/sessions` | PG-04 | `StaffLayout` | FR-31 |
+| `AcademicAdmin` | `/admin/terms` | PG-07 | `AdminLayout` | FR-01 |
+| `ITAdmin` | `/audit/logs` | PG-15 | `StaffLayout` | FR-33 |
+| `SystemAuditor` | `/audit/logs` | PG-15 | `StaffLayout` | FR-32 |
+
+UI route inventory, nav entry points, and flow cross-links: [../ui-ux/09-page-list.md](../ui-ux/09-page-list.md) §2 · [../ui-ux/10-user-flows.md](../ui-ux/10-user-flows.md) FLOW-14.
+
+**Implementation note:** Post-login redirect is resolved in M01 (Identity and Access) from JWT role claims. The frontend router enforces the same destinations as a defense-in-depth guard when an actor lands on a route outside their role scope.
+
+## 6. Account provisioning
+
+Attendly MVP does **not** offer public self-registration. All accounts are institution-provisioned. Provisioning paths differ by role class and environment.
+
+### 6.1 Provisioning matrix
+
+| Role | Production | Local / preview (`db:seed`) | Notes |
+| --- | --- | --- | --- |
+| `Student` | Created or imported by `AcademicAdmin` or `ITAdmin` when enrollment is loaded; credentials issued by institution (student ID + initial password or campus directory sync) | `student@attendly.local` after `db:seed` | Must have active `Enrollment` before check-in succeeds (`BR-06`) |
+| `Lecturer` | Created by `AcademicAdmin` or `ITAdmin`; linked to `ClassSection` assignments | `lecturer@attendly.local` after `db:seed` | Section scope derived from assignment, not from role alone |
+| `DepartmentAdmin` | Created by `AcademicAdmin` or `ITAdmin` with `facultyId` scope (Should) | `deptadmin@attendly.local` after `db:seed` | Faculty boundary enforced at authorization (`PRM-02`) |
+| `AcademicAdmin` | **Production bootstrap** (first admin) or created by existing `AcademicAdmin` / `ITAdmin` | `admin@attendly.local` after `db:seed` | Broadest academic authority (`PRM-04`) |
+| `ITAdmin` | **Production bootstrap** (optional second admin-class role) or created by existing `ITAdmin` | `itadmin@attendly.local` after `db:seed` | Technical operations; no academic edits by default |
+| `SystemAuditor` | Created by `ITAdmin` or `AcademicAdmin` with read-only grant (Should) | `auditor@attendly.local` after `db:seed` | No attendance mutations (`PRM-05`) |
+
+### 6.2 Production bootstrap
+
+Privileged admin-class roles cannot be created through a public signup flow.
+
+| Item | Value |
+| --- | --- |
+| Bootstrap target role | `AcademicAdmin` (primary); `ITAdmin` when `INITIAL_ADMIN_ROLE=ITAdmin` |
+| Environment variables | `INITIAL_ADMIN_EMAIL`, `INITIAL_ADMIN_PASSWORD`; optional `INITIAL_ADMIN_ROLE` when multiple admin-class roles exist |
+| CLI | `npm run admin:bootstrap` — idempotent; no-op when an admin-class user already exists |
+| Demo seed restriction | **`db:seed` demo accounts are dev/preview only** — never deploy seed scripts or demo credentials to production |
+
+Full demo account table and bootstrap procedure: [10-local-development-setup.md](./10-local-development-setup.md) §Demo accounts · §Production bootstrap.
+
+### 6.3 Account lifecycle rules
+
+| Rule ID | Rule | Trace |
+| --- | --- | --- |
+| ACC-01 | Deactivated users (`isActive = false`) fail authentication and cannot check in | FR-36 |
+| ACC-02 | A user may hold multiple roles only when institution policy explicitly allows; effective permissions are the union of role grants intersected with scope | RBAC-02 |
+| ACC-03 | Student accounts require linkage to a `Student` profile (or embedded student fields) before enrollment-backed check-in | FR-17, BR-06 |
+| ACC-04 | Lecturer accounts require at least one `ClassSection` assignment before session control actions succeed | FR-07, PRM-01 |
+| ACC-05 | Password reset in MVP is admin-assisted or IT-configured; self-service reset is future | FR-36 |
+
+Local development setup, seed status, and interim fixtures: [10-local-development-setup.md](./10-local-development-setup.md).
+
+## 7. Role-specific technical behavior
+
+### 7.1 Student
 
 - Allowed:
   - Authenticate and perform check-in for open sessions.
@@ -128,7 +185,7 @@ This document defines RBAC for Attendly MVP, including role scopes, permission m
 - Denied:
   - Manual corrections, report exports, policy views, audit log browsing.
 
-### 5.2 Lecturer
+### 7.2 Lecturer
 
 - Allowed:
   - Open/close session attendance.
@@ -138,7 +195,7 @@ This document defines RBAC for Attendly MVP, including role scopes, permission m
 - Denied:
   - Institution-wide policy management or cross-section edits.
 
-### 5.3 DepartmentAdmin (Should)
+### 7.3 DepartmentAdmin (Should)
 
 - Allowed:
   - Department-scoped reports and exception handling.
@@ -146,7 +203,7 @@ This document defines RBAC for Attendly MVP, including role scopes, permission m
 - Denied:
   - Institution-wide policy authority by default.
 
-### 5.4 AcademicAdmin
+### 7.4 AcademicAdmin
 
 - Allowed:
   - Manage academic master data and attendance policy.
@@ -155,7 +212,7 @@ This document defines RBAC for Attendly MVP, including role scopes, permission m
 - Guardrail:
   - Changes must be auditable and reasoned.
 
-### 5.5 ITAdmin
+### 7.5 ITAdmin
 
 - Allowed:
   - Technical operations, monitoring, service configuration.
@@ -164,16 +221,16 @@ This document defines RBAC for Attendly MVP, including role scopes, permission m
 - Exception:
   - Temporary emergency academic access requires explicit elevated grant and audit logging.
 
-### 5.6 SystemAuditor (Should)
+### 7.6 SystemAuditor (Should)
 
 - Allowed:
   - Read-only audit and attendance evidence collection.
 - Denied:
   - Any attendance or policy mutations.
 
-## 6. Authentication and authorization flow
+## 8. Authentication and authorization flow
 
-### 6.1 Request evaluation pipeline
+### 8.1 Request evaluation pipeline
 
 ```mermaid
 flowchart TD
@@ -189,7 +246,7 @@ flowchart TD
   G --> H[Write audit record if privileged]
 ```
 
-### 6.2 Policy decision inputs
+### 8.2 Policy decision inputs
 
 - Actor identity and active role assignments.
 - Resource type and intended action.
@@ -197,15 +254,15 @@ flowchart TD
 - Effective attendance policy (for time-window and override rules).
 - Session state for attendance control operations.
 
-### 6.3 Logout and session termination
+### 8.3 Logout and session termination
 
 - Voluntary logout (`FR-38`, `BR-24`) clears client-held credentials and redirects to login.
 - `POST /v1/auth/logout` acknowledges session end for authenticated actors; MVP does not revoke stateless JWTs server-side.
-- After logout, the request evaluation pipeline in §6.1 rejects protected requests at the authentication step (`401`).
+- After logout, the request evaluation pipeline in §8.1 rejects protected requests at the authentication step (`401`).
 
-## 7. Audit and compliance requirements
+## 9. Audit and compliance requirements
 
-### 7.1 Audit events by role action
+### 9.1 Audit events by role action
 
 | Event | Minimum audit fields |
 | --- | --- |
@@ -214,7 +271,7 @@ flowchart TD
 | Escalated admin override | actor, target, reason, approval context, timestamp |
 | Unauthorized privileged attempt (optional policy) | actor, attempted action, target scope, denial reason, timestamp |
 
-### 7.2 Compliance controls
+### 9.2 Compliance controls
 
 | Control ID | Control | Trace |
 | --- | --- | --- |
@@ -223,24 +280,25 @@ flowchart TD
 | CMP-03 | Structured reason codes for failed check-in attempts | FR-22, BR-23 |
 | CMP-04 | Role-scoped data access for reports and exports | BR-19 |
 
-## 8. Requirement traceability
+## 10. Requirement traceability
 
-### 8.1 FR and BR mapping
+### 10.1 FR and BR mapping
 
 | Permission area | FR IDs | BR IDs |
 | --- | --- | --- |
+| Account provisioning and bootstrap | FR-33, FR-36 | BR-05 |
 | Session control | FR-07, FR-08 | BR-01, BR-02 |
 | Student check-in access | FR-15, FR-16, FR-17, FR-18 | BR-05, BR-06, BR-07 |
 | Manual correction governance | FR-20, FR-21 | BR-14, BR-15, BR-16 |
 | Reporting and export scope | FR-27, FR-28 | BR-18, BR-19 |
 | Audit and compliance | FR-29, FR-30, FR-32 | BR-22, BR-23 |
 
-### 8.2 Technical cross-links
+### 10.2 Technical cross-links
 
 - System context and architecture: [00-system-overview.md](./00-system-overview.md)
 - Module ownership and APIs: [02-module-breakdown.md](./02-module-breakdown.md)
 
-## 9. Future consideration
+## 11. Future consideration
 
 Potential RBAC extensions after MVP:
 

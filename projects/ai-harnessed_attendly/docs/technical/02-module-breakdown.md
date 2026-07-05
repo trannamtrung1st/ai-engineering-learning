@@ -16,6 +16,26 @@ This document decomposes Attendly MVP into technical modules with clear ownershi
 | MOD-G02 | Separate policy and authorization concerns | Keep rule changes isolated from core workflow logic |
 | MOD-G03 | Preserve auditability by design | Ensure all sensitive writes and exports are traceable |
 | MOD-G04 | Support incremental delivery | Enable phased rollout without cross-module rewrites |
+| MOD-G05 | Map cleanly to API domains and deployable packages | Engineers can locate code without ambiguity |
+
+### 1.2 Implementation package map
+
+Logical modules map to deployable packages and NestJS feature modules. Package names use the `@attendly/*` workspace scope.
+
+| Module ID | Backend package / NestJS module | Primary API prefix | Frontend surfaces |
+| --- | --- | --- | --- |
+| M01 | `apps/api` → `IdentityModule` | `/v1/auth/*`, `/v1/me` | PG-01 login; role guards on all routes |
+| M02 | `AcademicStructureModule` | `/v1/terms`, `/v1/courses`, `/v1/class-sections`, `/v1/enrollments`, `/v1/rooms` | PG-07–PG-11 |
+| M03 | `SessionLifecycleModule` | `/v1/class-sessions`, `/open`, `/close` | PG-04, PG-05 |
+| M04 | `CheckInModule` | `/v1/class-sessions/{id}/qr/current`, `/v1/check-ins` | PG-02, PG-05 (QR display) |
+| M05 | `AttendanceLedgerModule` | `/v1/class-sessions/{id}/attendance` | PG-05, PG-06 roster |
+| M06 | `PolicyModule` | `/v1/policies` | PG-12 |
+| M07 | `ReportingModule` | `/v1/reports/*`, `/v1/exports` | PG-13, PG-14 |
+| M08 | `AuditModule` | `/v1/audit-logs` | PG-15 |
+| M09 | `RealtimeModule` | WebSocket/SSE channel per open session | PG-05, PG-06 live roster |
+| M10 | `NotificationModule` (Should) | internal job queue | alert banners / email future |
+
+API contract detail: [05-api-design.md](./05-api-design.md). Current wiring status (phase 4 integration debt): [14-integration-debt.md](./14-integration-debt.md) §3–§4.
 
 ## 2. Module map
 
@@ -68,24 +88,31 @@ flowchart LR
 - Resolve authenticated user identity.
 - Map actor roles and authorized scope.
 - Enforce permission checks at API boundaries.
+- Resolve post-login redirect targets per role (home hubs).
+- Support production admin bootstrap (`admin:bootstrap` CLI).
 
 **Owned concepts**
 
 - User session context.
 - Role assignments and scope claims.
+- Account provisioning metadata (`isActive`, role bindings).
 
 **Inbound interfaces**
 
-- Login and token/session middleware hooks.
+- Login, logout, and token/session middleware hooks.
+- Admin bootstrap command (production first `AcademicAdmin`).
 
 **Outbound interfaces**
 
 - `authorize(action, resource, scopeContext)` decision API for other modules.
+- JWT claims: `roles[]`, `scope` (section IDs, faculty ID, institution flag).
 
 **Requirement trace**
 
 - FR-15, FR-36, FR-38, FR-31, FR-32, FR-33.
 - BR-05, BR-24, BR-18, BR-19.
+
+Account provisioning rules: [01-roles-permissions.md](./01-roles-permissions.md) §6.
 
 ### 3.2 M02 — Academic Structure
 
@@ -387,7 +414,11 @@ flowchart LR
 
 ## 7. Delivery and implementation sequencing
 
-### 7.1 Recommended module rollout (MVP)
+### 7.1 Current integration status (2026-07-05)
+
+Phase 0–3 feature slices exist in isolation. As of this date, preview API imports only `HealthModule` and `IdentityModule`; remaining modules require phase 4 wiring before end-to-end preview validation. See [14-integration-debt.md](./14-integration-debt.md) GAP-01.
+
+### 7.2 Recommended module rollout (MVP)
 
 | Phase | Modules | Outcome |
 | --- | --- | --- |
@@ -397,7 +428,7 @@ flowchart LR
 | Phase D | M07 | Reports and CSV export with scope controls |
 | Phase E (Should) | M06 enhancements, M10 | Full policy hierarchy and alerts |
 
-### 7.2 MVP critical path
+### 7.3 MVP critical path
 
 `M01 -> M02 -> M03 -> M04 -> M05 -> M08 -> M07`
 

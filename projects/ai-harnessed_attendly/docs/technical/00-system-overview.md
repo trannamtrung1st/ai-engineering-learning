@@ -2,7 +2,9 @@
 
 **Product:** Attendly (*Smart Campus Attendance*)  
 **Domain:** Digital campus attendance and class-session check-in for universities and schools  
-**Related docs:** [../brds/00-project-overview.md](../brds/00-project-overview.md) · [../brds/02-business-workflow.md](../brds/02-business-workflow.md) · [../brds/03-functional-requirements.md](../brds/03-functional-requirements.md) · [../brds/04-business-rules.md](../brds/04-business-rules.md) · [01-roles-permissions.md](./01-roles-permissions.md) · [02-module-breakdown.md](./02-module-breakdown.md) · [14-integration-debt.md](./14-integration-debt.md)
+**Platform:** Responsive web and mobile-web; no native app in MVP  
+**Locale:** Vietnamese (`vi-VN`) UI copy; technical identifiers in English  
+**Related docs:** [../brds/00-project-overview.md](../brds/00-project-overview.md) · [../brds/02-business-workflow.md](../brds/02-business-workflow.md) · [../brds/03-functional-requirements.md](../brds/03-functional-requirements.md) · [../brds/04-business-rules.md](../brds/04-business-rules.md) · [01-roles-permissions.md](./01-roles-permissions.md) · [02-module-breakdown.md](./02-module-breakdown.md) · [12-backend-frontend-tech-stack.md](./12-backend-frontend-tech-stack.md) · [14-integration-debt.md](./14-integration-debt.md)
 
 ## 1. Purpose and scope
 
@@ -25,6 +27,21 @@ Attendly digitizes classroom attendance with short-lived rotating QR tokens, stu
 
 Out-of-scope MVP items are inherited from [../brds/01-stakeholders-scope.md](../brds/01-stakeholders-scope.md) and must not be implemented implicitly in technical decisions.
 
+### 1.3 MVP operational scale (design assumptions)
+
+Scale targets from [product-meta.json](../product-meta.json) inform capacity planning and test profiles:
+
+| Parameter | Assumed range |
+| --- | --- |
+| Class sections per term | Tens to hundreds |
+| Students per section (typical) | ~60 |
+| Sessions per section per term | 15–30 |
+| QR token rotation | 30 seconds |
+| Concurrent check-in window | ~5 minutes at session start |
+| Peak load pattern | Multiple sections × enrolled students checking in within the session-start window |
+
+Performance smoke and load validation: [performance-smoke-runbook.md](./performance-smoke-runbook.md).
+
 ## 2. System context
 
 ### 2.1 Primary actors
@@ -37,6 +54,19 @@ Out-of-scope MVP items are inherited from [../brds/01-stakeholders-scope.md](../
 - `SystemAuditor` (Should): read-only compliance and dispute review.
 
 Role details: [01-roles-permissions.md](./01-roles-permissions.md).
+
+### 2.3 Client surfaces by actor
+
+| Actor group | Primary client | Default post-login route | Module dependencies |
+| --- | --- | --- | --- |
+| Student | Mobile-first web (`StudentLayout`) | `/check-in` (PG-02) | M01, M04, M05 |
+| Lecturer | Staff web dashboard (`StaffLayout`) | `/lecturer/sessions` (PG-04) | M01, M03, M04, M05, M09 |
+| DepartmentAdmin | Staff web (department-scoped) | `/lecturer/sessions` (PG-04) | M01, M07 |
+| AcademicAdmin | Admin web (`AdminLayout`) | `/admin/terms` (PG-07) | M01, M02, M06, M07 |
+| ITAdmin | Staff web (operations) | `/audit/logs` (PG-15) | M01, M08 |
+| SystemAuditor | Staff web (read-only) | `/audit/logs` (PG-15) | M01, M07, M08 |
+
+Route inventory and navigation: [../ui-ux/09-page-list.md](../ui-ux/09-page-list.md) §2. Default routes are authoritative in [01-roles-permissions.md](./01-roles-permissions.md) §5.
 
 ### 2.2 External dependencies
 
@@ -57,6 +87,18 @@ Role details: [01-roles-permissions.md](./01-roles-permissions.md).
 | Token authority | Signing, TTL, rotation, and validation remain server-side in Check-in & QR Orchestrator (M04) |
 
 Library choices and implementation pipelines: [12-backend-frontend-tech-stack.md](./12-backend-frontend-tech-stack.md) §4.4.
+
+### 2.4 Technology stack summary
+
+| Layer | Choice | Rationale |
+| --- | --- | --- |
+| Backend | Node.js 20 + TypeScript + NestJS | Module boundaries align with [02-module-breakdown.md](./02-module-breakdown.md); structured validation and guards |
+| Frontend | React + TypeScript + Vite | Mobile-first student check-in; role-based route composition |
+| Database | PostgreSQL | Relational integrity for attendance invariants (`INV-03`) |
+| Cache / realtime (optional) | Redis | M09 roster pub/sub; export job queue |
+| Auth | JWT with role/scope claims | Stateless MVP tokens; logout clears client credentials (`BR-24`) |
+
+Full stack rationale, package layout, and QR library selection: [12-backend-frontend-tech-stack.md](./12-backend-frontend-tech-stack.md).
 
 ## 3. Architecture overview
 
@@ -234,7 +276,15 @@ Controls map to [../brds/07-non-functional-risk.md](../brds/07-non-functional-ri
 | Export and audit | FR-27, FR-29, FR-30, BR-18, BR-22 | [02-module-breakdown.md](./02-module-breakdown.md) |
 | MVP preview integration (phase 4) | FR-01, FR-07–FR-08, FR-16, FR-22, FR-27, FR-30 | [14-integration-debt.md](./14-integration-debt.md) |
 
-### 8.2 Implementation readiness
+### 8.3 Account and access provisioning
+
+| Concern | Approach | Doc |
+| --- | --- | --- |
+| No public signup | Institution-provisioned accounts for all roles | [01-roles-permissions.md](./01-roles-permissions.md) §6 |
+| First admin in production | `npm run admin:bootstrap` with `INITIAL_ADMIN_*` env vars | [01-roles-permissions.md](./01-roles-permissions.md) §6.2 |
+| Local demo personas | `db:seed` target accounts `*@attendly.local` (dev/preview only) | [10-local-development-setup.md](./10-local-development-setup.md) |
+
+### 8.4 Implementation readiness
 
 Technical specs in `docs/technical/` describe the **target** system. Phase 0–3 harness slices may deliver isolated modules and UI while the preview runtime remains partially unwired (~75% MVP readiness as of 2026-07-05).
 
