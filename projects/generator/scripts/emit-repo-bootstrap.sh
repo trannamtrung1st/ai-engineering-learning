@@ -74,7 +74,8 @@ cat > "${REPO_ROOT}/package.json" <<EOF
     "aih:manualsgen:once": "./ai-harness/scripts/manualsgen-once.sh",
     "aih:manualsgen:loop": "./ai-harness/scripts/manualsgen-loop.sh",
     "aih:manualsgen:drift": "./ai-harness/scripts/check-manuals-drift.sh",
-    "aih:manualsgen:validate": "./ai-harness/scripts/validate-user-manuals.sh"
+    "aih:manualsgen:validate": "./ai-harness/scripts/validate-user-manuals.sh",
+    "aih:verify:integration": "./ai-harness/scripts/verify-integration.sh"
   }
 }
 EOF
@@ -86,6 +87,8 @@ node_modules/
 .npm-cache/
 ai-harness/generated/runs/
 .playwright-mcp/
+tests/playwright-ui/test-results/
+tests/playwright-ui/playwright-report/
 *.log
 dist/
 .next/
@@ -102,6 +105,9 @@ WEB_PORT=3000
 # Ephemeral test stack (integration / API e2e) — separate from preview dev DB.
 TEST_POSTGRES_PORT=5433
 TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5433/app_test
+
+# Preview fixture mode — set true only when API is unwired (phase 3 fallback).
+VITE_PREVIEW_FIXTURE_MODE=false
 EOF
 fi
 

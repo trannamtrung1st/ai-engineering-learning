@@ -195,10 +195,10 @@ check_slice_test_requirements() {
     local found=false
     local match
     if command -v rg >/dev/null 2>&1; then
-      match="$(rg -l "$tag" apps/api tests/e2e apps/web \
+      match="$(rg -l "$tag" apps/api tests/e2e tests/playwright-ui apps/web packages/domain \
         -g '*.test.ts' -g '*.test.tsx' -g '*.integration.test.ts' 2>/dev/null | head -1 || true)"
     else
-      match="$(grep -Ril "$tag" apps/api tests/e2e apps/web --include='*.test.ts' --include='*.test.tsx' --include='*.integration.test.ts' 2>/dev/null | head -1 || true)"
+      match="$(grep -Ril "$tag" apps/api tests/e2e tests/playwright-ui apps/web packages/domain --include='*.test.ts' --include='*.test.tsx' --include='*.integration.test.ts' 2>/dev/null | head -1 || true)"
     fi
     [[ -n "$match" ]] && found=true
     if [[ "$found" != true ]]; then
@@ -241,10 +241,10 @@ check_generated_test_case_coverage() {
         [[ -z "$tag" ]] && continue
         found=false
         if command -v rg >/dev/null 2>&1; then
-          match="$(rg -l "$tag" apps/api tests/e2e apps/web packages/domain \
+          match="$(rg -l "$tag" apps/api tests/e2e tests/playwright-ui apps/web packages/domain \
             -g '*.test.ts' -g '*.test.tsx' -g '*.integration.test.ts' 2>/dev/null | head -1 || true)"
         else
-          match="$(grep -Ril "$tag" apps/api tests/e2e apps/web packages/domain \
+          match="$(grep -Ril "$tag" apps/api tests/e2e tests/playwright-ui apps/web packages/domain \
             --include='*.test.ts' --include='*.test.tsx' --include='*.integration.test.ts' 2>/dev/null | head -1 || true)"
         fi
         [[ -n "$match" ]] && found=true

@@ -260,6 +260,8 @@ Source alignment: [01-stakeholders-scope.md](./01-stakeholders-scope.md) §2.3 �
 
 ## 4. Release readiness checklist
 
+> **Harness note (2026-07-05):** Phase 0–3 feature slices may pass while preview still runs on harness fixtures (API feature routes unwired). Release sign-off requires phase 4 integration per [docs/technical/14-mvp-integration-debt.md](../technical/14-mvp-integration-debt.md) and `npm run aih:verify:mvp-integration`.
+
 ### 4.1 Functional readiness
 
 - `AC-01` through `AC-19` and `AC-26` pass in staging with production-like data.

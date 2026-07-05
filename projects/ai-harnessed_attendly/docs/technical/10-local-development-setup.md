@@ -67,6 +67,8 @@ No secrets should be committed; use `.env.example` templates.
 
 ## 5. Database setup
 
+> **Implementation status (2026-07-05):** Schema is created at API startup via repository `ensureSchema()`. **`db:migrate` and `db:seed` scripts are not yet implemented** — tracked in harness slice `db-migrate-seed-preview`. See [14-mvp-integration-debt.md](./14-mvp-integration-debt.md).
+
 ### 5.1 Local database tasks
 
 | Task | Requirement |
@@ -95,7 +97,7 @@ The local seed should include:
 | `API_PORT` | backend listen port |
 | `DATABASE_URL` | PostgreSQL connection string |
 | `REDIS_URL` | Redis connection string (if enabled) |
-| `JWT_SECRET` | local signing secret |
+| `JWT_SECRET` | local signing secret (also accepts `ATTENDLY_JWT_SECRET` — see slice `config-jwt-env-alignment`) |
 | `QR_TOKEN_TTL_SECONDS` | default `30` |
 | `DEFAULT_GPS_RADIUS_METERS` | default `100` |
 | `LOG_LEVEL` | `debug` for local |
@@ -107,6 +109,7 @@ The local seed should include:
 | `VITE_API_BASE_URL` (or equivalent) | backend base URL |
 | `VITE_APP_NAME` | `Attendly` |
 | `VITE_LOCALE_DEFAULT` | `vi-VN` |
+| `VITE_PREVIEW_FIXTURE_MODE` | `false` for live API demo; `true` only when API unwired (phase 3 fallback — see [14-mvp-integration-debt.md](./14-mvp-integration-debt.md)) |
 
 ## 7. Local workflow commands
 
@@ -117,8 +120,9 @@ The local seed should include:
 | install deps | `pnpm install` |
 | run backend dev server | `pnpm dev:api` |
 | run frontend dev server | `pnpm dev:web` |
-| run migrations | `pnpm db:migrate` |
-| run seeds | `pnpm db:seed` |
+| run migrations | `pnpm db:migrate` *(phase 4 — not yet wired)* |
+| run seeds | `pnpm db:seed` *(phase 4 — not yet wired)* |
+| verify MVP integration | `npm run aih:verify:mvp-integration` |
 | run lint | `pnpm lint` |
 | run tests | `pnpm test` |
 

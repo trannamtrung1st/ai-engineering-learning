@@ -22,6 +22,17 @@
           "completionArtifacts": { "type": "array", "items": { "type": "string" } },
           "testRequirements": { "type": "object" },
           "excludes": { "type": "array", "items": { "type": "string" } },
+          "scopeExtensions": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["path", "reason"],
+              "properties": {
+                "path": { "type": "string", "minLength": 1 },
+                "reason": { "type": "string", "minLength": 1 }
+              }
+            }
+          },
           "notes": { "type": "string" },
           "reverifyOnDrift": { "type": "boolean" },
           "history": {

@@ -108,6 +108,10 @@
     "requiredSubstrings": ["test stack", "flake"],
     "minLines": 20
   },
+  "docs/technical/14-integration-debt.md": {
+    "requiredHeadings": ["Integration", "Debt"],
+    "minLines": 20
+  },
   "docs/ui-ux/00-production-ui-quality-bar.md": {
     "requiredHeadings": ["Quality"],
     "requiredSubstrings": ["Acceptable", "Not acceptable", "contrast"],

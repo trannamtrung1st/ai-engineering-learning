@@ -37,6 +37,19 @@ Test failure in aih:check
 
 ---
 
+## Supportive scope vs cross-slice deferral
+
+| Situation | Action |
+| --- | --- |
+| Compile/wiring/unblock **this** slice (e.g. `app.module.ts` import, shared export) | **Supportive scope** — add path to slice `scopeExtensions` with reason; document in `progress.md` |
+| Failure in tests/code **owned by another slice** | **`SLICE_DEFER`** — revert in-scope changes; do not fix via supportive scope |
+| Edit under another slice listed in **Excludes** | **Forbidden** — never supportive; separate slice or defer |
+| Gate-owned Playwright index/specs | **Forbidden** — browser-test gate owns these |
+
+Supportive scope unblocks the current slice's acceptance. It does **not** replace `SLICE_DEFER` when integration/e2e failures belong to another slice's `testRequirements`.
+
+---
+
 ## Harness integration triage report
 
 When `computationalChecks.integrationFailurePolicy.investigateOnFailure` is enabled (default in `ralph-loop.json`), Ralph runs mechanical triage after `test:integration` fails:

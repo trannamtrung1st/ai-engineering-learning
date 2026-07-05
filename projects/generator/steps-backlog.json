@@ -249,7 +249,8 @@
         "docs/technical/10-local-development-setup.md",
         "docs/technical/11-testing-plan.md",
         "docs/technical/12-backend-frontend-tech-stack.md",
-        "docs/technical/13-docker-compose-local-runtime.md"
+        "docs/technical/13-docker-compose-local-runtime.md",
+        "docs/technical/14-integration-debt.md"
       ],
       "contextDocs": [
         "docs/technical/05-api-design.md",
@@ -498,20 +499,24 @@
       "phase": 4,
       "kind": "agent",
       "agent": "harness-planner",
-      "description": "Generate context-map, testgen-docs-map, test-case-index, manuals config",
+      "description": "Generate context-map, testgen-docs-map, integration-checks, test-case-index, manuals config",
       "outputs": [
         "ai-harness/config/context-map.json",
         "ai-harness/config/testgen-docs-map.json",
         "ai-harness/config/manualsgen-docs-map.json",
+        "ai-harness/config/integration-checks.json",
         "ai-harness/test-case-index.json",
         "ai-harness/manuals-backlog.json",
         "ai-harness/manuals-index.json"
       ],
       "contextDocs": [
         "ai-harness/whole-app-backlog.json",
+        "ai-harness/docs/integration-debt-register.md",
+        "ai-harness/docs/integration-checklist.md",
         "docs/brds/03-functional-requirements.md",
         "docs/brds/08-acceptance-mvp-future.md",
         "docs/technical/02-module-breakdown.md",
+        "docs/technical/13-docker-compose-local-runtime.md",
         "docs/ui-ux/09-page-list.md",
         "docs/ui-ux/10-user-flows.md"
       ],

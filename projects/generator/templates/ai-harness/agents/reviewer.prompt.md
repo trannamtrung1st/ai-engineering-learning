@@ -48,7 +48,7 @@ Also read when relevant to this slice:
 
 ## Checklist
 
-1. **Slice scope** — when `scope_gate: pass` in bundled evidence, trust the allowlisted files list; verify changes match slice intent only. Paths listed under **browser_test_owned** are written by the browser-test gate after implementer scope passed — never block review for those. When scope gate not bundled, check diff matches slice with no unrelated edits
+1. **Slice scope** — when `scope_gate: pass` in bundled evidence, trust the allowlisted files list (including declared `scopeExtensions`); verify changes match slice intent only. Paths listed under **browser_test_owned** are written by the browser-test gate after implementer scope passed — never block review for those. When scope gate not bundled, check diff matches slice with no unrelated edits; fail on undeclared edits, edits under **Excludes**, or supportive changes that implement another slice's `completionArtifacts`
 2. **Forbidden patterns** — no in-memory repos, SQLite, mock fixtures, lorem ipsum (trust bundled checks; spot-check diff only)
 3. **Acceptance tags** — addressed with evidence in code/docs and, for frontend/test slices, trust bundled browser test report (`pass: true`, not `skipped`) for runtime UI verification
 4. **Test coverage** — for each path in `testRequirements` (unit, integration, component) and each `acceptanceTags` entry, confirm a matching test file exists and references the tag (read files only; trust computational gates for pass/fail)

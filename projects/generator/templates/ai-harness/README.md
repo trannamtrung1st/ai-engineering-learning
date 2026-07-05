@@ -57,6 +57,7 @@ npm run aih:loop -- 50                     # max 50 iterations
 | `AIH_MODEL` | `auto` | Implementer model |
 | `AIH_REVIEWER_MODEL` | `auto` | Reviewer model |
 | `AIH_TESTER_MODEL` | `auto` | Browser test agent model |
+| `AIH_BROWSER_TEST_MAX_CASES_PER_BATCH` | `10` (`ralph-loop.json` → `browserTest.maxCasesPerBatch`) | Max browser-layer cases per tester agent invocation; `0` = legacy single full phase |
 | `AIH_TESTGEN_MODEL` | `auto` | Test case generator model |
 | `AIH_TESTGEN_WORKERS` | `5` (`testgen-loop.json` → `parallelism.workers`) | Parallel TestGen worker count; `1` = legacy sequential loop |
 | `AIH_MANUALSGEN_MODEL` | `auto` | User manual generator model |
@@ -124,6 +125,7 @@ Defaults live in `ai-harness/config/models.json`.
 | `npm run aih:manualsgen:loop` | Autonomous ManualsGen loop until all backlog items are current |
 | `npm run aih:manualsgen:drift` | Detect doc drift; mark manual items stale (`current: false`) |
 | `npm run aih:manualsgen:validate` | Validate generated user manual markdown for one item |
+| `npm run aih:verify:integration` | Mechanical phase-4 integration gate (AppModule, seed scripts, compose, fixture flag) |
 
 ### Preview (API + web)
 
@@ -175,6 +177,22 @@ Doc drift alone sets `test-case-index` `current: false` and appends guardrails �
 To re-run implementer and tester gates after TestGen catches up, set `passes: false` on that slice in `whole-app-backlog.json`, run `npm run aih:slice:reopen -- <slice-id> --reason "..."`, or let TestGen regeneration do it when `reverifyOnDrift` is true (appends `drift` history).
 
 When a slice is blocked by another slice's failing tests, the implementer should revert in-scope changes and signal `SLICE_DEFER <owner-slice-id> <reason>`. The harness reopens the owner, records history, and focuses the next loop iteration on it (`ai-harness/state/loop-state.json`). Use `npm run aih:slice:focus` to manually redirect one iteration.
+
+### Supportive out-of-scope changes
+
+Implementer agents default to slice `completionArtifacts` and `testRequirements`, but may make **minimal supportive edits** outside that allowlist when directly required to complete the current slice (e.g. register a module in `app.module.ts`, export a shared type).
+
+Before `SLICE_DONE`, each supportive path must be declared in the slice's `scopeExtensions` array in `whole-app-backlog.json`:
+
+```json
+"scopeExtensions": [
+  { "path": "apps/api/src/app.module.ts", "reason": "register FooModule for this slice" }
+]
+```
+
+The mechanical scope gate (`npm run aih:scope`) includes `scopeExtensions[].path` in the allowlist. Hard guardrails remain: edits under **Excludes** slice artifacts, gate-owned Playwright paths, and another slice's failing tests still require `SLICE_DEFER` — supportive scope is not a substitute for cross-slice deferral.
+
+See `agents/implementer.prompt.md` → **Supportive out-of-scope changes** for examples and limits.
 
 ### Autonomous loop (hands-off)
 
@@ -281,13 +299,13 @@ Canonical guide: [`docs/user-manuals-guide.md`](docs/user-manuals-guide.md).
 
 1. `pick-next-slice.sh` selects lowest-priority slice with `passes: false`
 2. Doc drift check — fails if any referenced tag has stale test-case state
-3. Test case gate — **optional by default** (`testCaseGate.mode` in `ralph-loop.json`); warns and continues when tags are missing; hard-fails only in `required` mode
+3. Test case gate — **`required` by default** (`testCaseGate.mode` in `ralph-loop.json`); hard-fails when tags are missing or stale; set `mode` to `optional` or `AIH_SKIP_TESTGEN_GATE=1` to warn and continue
 4. `build-prompt.sh` injects slice into `implementer.prompt.md` (plus prior scope / checks / browser-test / AI-review failures when the slice failed those gates last time)
 5. `agent -p --force` implements one slice
 6. `check-slice-scope.sh` — mechanical allowlist gate (before expensive checks)
 7. `run-checks.sh` — pre-browser computational gates (typecheck, lint, build, unit, integration, e2e — **no** `test:playwright-ui`)
-8. `run-browser-test.sh` — Playwright MCP gate: `TC-*` checklist, UX audit, test-case maintenance, Playwright regression codegen; must end with `BROWSER_TEST_PASS` (commit deferred)
-9. `run-checks.sh --playwright-only` — headless Playwright UI regression on freshly codegen'd spec (`playwrightRegressionGate` in `ralph-loop.json`)
+8. `run-browser-test.sh` — Playwright MCP gate: batched `TC-*` checklist (sub-loop), finalize phase (common UI/UX suite, UX audit, test-case maintenance, Playwright codegen); validates Playwright UI config before finalize close; must end with `BROWSER_TEST_PASS` (commit deferred)
+9. `run-checks.sh --playwright-only` — single headless Playwright UI regression run on freshly codegen'd spec (`playwrightRegressionGate` in `ralph-loop.json`)
 10. `finalize_browser_test_pass` — validate test-case JSON, sync backlog, commit browser-test-owned paths
 11. `run-ai-review.sh` — static code review; must end with `REVIEW_PASS`
 12. Backlog updated (`passes: true`), progress logged, optional git commit

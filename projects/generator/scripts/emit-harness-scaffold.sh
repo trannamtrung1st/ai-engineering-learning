@@ -77,11 +77,16 @@ Verification failures and remediation notes for harness agents.
 
 ## Doc requirements
 
-- **Listing pages:** Collection views must implement search, filter, sort, and pagination per [14-listing-pages-search-filter-sort.md](../docs/ui-ux/14-listing-pages-search-filter-sort.md) §0 (documented UX variants allowed). Apply `TableToolbar` and listing chrome per [design-system/tables.md](../../docs/ui-ux/design-system/tables.md).
+- **Listing pages:** Collection views must implement search, filter, sort, and pagination per [14-listing-pages-search-filter-sort.md](../../docs/ui-ux/14-listing-pages-search-filter-sort.md) §0 (documented UX variants allowed). Apply `TableToolbar` and listing chrome per [design-system/tables.md](../../docs/ui-ux/design-system/tables.md).
 - **Design craft:** Visual implementation via [`visual-design`](../skills/visual-design/SKILL.md) and [design-system/](../../docs/ui-ux/design-system/) modules. Authoritative index [DESIGN.md](../../docs/ui-ux/DESIGN.md); product tokens in [04-design-tokens.md](../../docs/ui-ux/04-design-tokens.md) always win for CSS values.
 - **Table toolbar:** Listing routes use `TableToolbar` per [05-common-ui-components.md](../../docs/ui-ux/05-common-ui-components.md).
 
 ## Signs
+
+- **Phase 4 integration debt:** Read [integration-debt-register.md](../docs/integration-debt-register.md) and [integration-checklist.md](../docs/integration-checklist.md) before closing acceptance or phase 4 slices. Run `npm run aih:verify:integration` — must pass before `e2e-acceptance-suite` can close on **live** preview data.
+- **No silent fixture fallback:** Do not add API-404→harness-fixture fallbacks without gating on `VITE_PREVIEW_FIXTURE_MODE` (see `web-harness-fixture-gating` slice).
+- **Root app wiring:** Every new backend module must be imported in the root application module in the same slice (or `api-app-module-wiring`) — test-only wiring in E2E harness alone is insufficient.
+- **Playwright artifact hygiene:** Implementer browser screenshots must not mutate `tests/playwright-ui/test-results/` or `playwright-report/` — MCP and `npx playwright` runs update `.last-run.json`; save captures only under `ai-harness/generated/runs/screenshots/<slice-id>/implementer/`.
 
 EOF
 

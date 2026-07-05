@@ -3,18 +3,21 @@
 Interactive UI verification for frontend and test slices. The harness uses Playwright MCP in two places:
 
 1. **Implementer smoke test** — `frontend`/`test` slices get `--approve-mcps` during implementation
-2. **Browser test agent gate** — `run-browser-test.sh` runs after pre-browser computational checks, before AI code review (hard gate for `frontend`/`test` slices). On the **full** phase, the harness validates `tests/playwright-ui` config (`validate-playwright-ui-config.sh`) and runs `npx playwright test` on the slice spec **before** accepting `BROWSER_TEST_PASS`. When a prior browser test failed for the slice and `browserTest.retryFailedCasesFirst` is true (default), the harness runs a **retry phase** (failed case IDs only) then a **full phase** (all `layer: browser` cases). Both phases use **collect-all failures** (`browserTest.collectAllFailures`, default true) — the tester reports every FAIL in one pass.
+2. **Browser test agent gate** — `run-browser-test.sh` runs after pre-browser computational checks, before AI code review (hard gate for `frontend`/`test` slices). By default (`browserTest.maxCasesPerBatch`, default `10`), the harness runs a **batch sub-loop**: case batches (focused `TC-*` checklist per agent) then a **finalize** phase (common UI/UX suite, UX audit, test-case maintenance, Playwright codegen). On the finalize phase, the harness validates `tests/playwright-ui` config (`validate-playwright-ui-config.sh`) **before** accepting `BROWSER_TEST_PASS`. When a prior browser test failed and `browserTest.retryFailedCasesFirst` is true (default), a **retry phase** (failed case IDs, batched when needed) runs first. All phases use **collect-all failures** (`browserTest.collectAllFailures`, default true). Set `maxCasesPerBatch` to `0` for legacy single **full** phase.
 
-3. **Playwright UI regression gate** — `run-checks.sh --playwright-only` runs headless Playwright again on the codegen'd spec **after** browser test pass (confirmation before commit). Commit of browser-test-owned paths is deferred until this gate passes.
+3. **Playwright UI regression gate** — `run-checks.sh --playwright-only` runs headless Playwright once on the codegen'd spec **after** browser test pass (before commit). Commit of browser-test-owned paths is deferred until this gate passes.
 
 ## Phased browser test gate
 
 When the latest failed `*-browser-test.txt` for the slice contains parseable `TC-*: FAIL` lines:
 
-1. **Retry phase** — tester agent runs only those case IDs; collects **all** failures before emitting `BROWSER_TEST_FAIL`
-2. **Full phase** — tester agent runs every mandatory browser case, maintains test-case JSON, and codegen Playwright specs
+1. **Retry phase** (optional) — tester agent runs only those case IDs (batched when count exceeds `maxCasesPerBatch`); emits `BROWSER_TEST_BATCH_PASS` per batch
+2. **Case batches** — tester agent runs `layer: browser` cases in batches of at most `maxCasesPerBatch` (default 10), sorted P0→P3; emits `BROWSER_TEST_BATCH_PASS` per batch
+3. **Finalize phase** — common UI/UX suite, UX audit, test-case JSON maintenance, Playwright codegen; emits `BROWSER_TEST_PASS`
 
-Artifacts: `*-browser-test-retry.txt`, `*-browser-test-full.txt`, combined `*-browser-test.txt`, and `*-browser-test.json` with a `phases` array. Set `browserTest.retryFailedCasesFirst` to `false` in `ralph-loop.json` to disable and always run full phase only.
+Set `browserTest.maxCasesPerBatch` to `0` to disable batching and run a single legacy **full** phase. Set `browserTest.retryFailedCasesFirst` to `false` to skip retry and always start at case batches (or full phase when batching disabled).
+
+Artifacts: `*-browser-test-retry*.txt`, `*-browser-test-batch-*.txt`, `*-browser-test-finalize.txt` (or `*-browser-test-full.txt` when batching disabled), combined `*-browser-test.txt`, and `*-browser-test.json` with a `phases` array (`batchIndex`, `batchTotal`, `caseIds`).
 
 ## Prerequisites
 
@@ -63,7 +66,8 @@ All agent UI screenshots go under `ai-harness/generated/runs/screenshots/` (giti
 - Create the directory with `mkdir -p` before the first capture (the harness pre-creates it when the agent starts)
 - **cursor-ide-browser:** `browser_take_screenshot` → set `filename` to an absolute path in that directory
 - **Playwright MCP:** use the same directory when supported; otherwise move/copy files here after capture
-- **Do not** save to repo root, `/tmp`, `.playwright-mcp/`, or other random paths
+- **Do not** save to repo root, `/tmp`, `.playwright-mcp/`, `tests/playwright-ui/test-results/`, `tests/playwright-ui/playwright-report/`, or other random paths
+- **Implementer must not** run `npx playwright test` or `npx playwright screenshot` during smoke verification — those commands mutate tracked Playwright artifacts (`.last-run.json`, HTML report) and fail the scope gate. Use MCP or cursor-ide-browser only; screenshots go under `ai-harness/generated/runs/screenshots/<slice-id>/implementer/`
 - Filename: `<UTC-timestamp>-<page-or-case-slug>.png` (e.g. `20250629T120000Z-login.png`)
 
 | Agent | When to screenshot |
@@ -120,12 +124,12 @@ Use dev auth tokens or the app's dev login flow as documented in `docs/technical
 | API scenario tests | `npm run test:e2e` — in-process Fastify flows |
 | HTTP stack probe | `verify-stack.sh` — health + web HTTP 200 |
 | **Browser UI (implementer)** | Playwright MCP smoke test during implementation |
-| **Browser UI (gate)** | `run-browser-test.sh` — dedicated test agent; `TC-*` checklist + UX audit + test-case maintenance + Playwright regression codegen |
+| **Browser UI (gate)** | `run-browser-test.sh` — dedicated test agent; batched `TC-*` checklist + finalize (UX audit + test-case maintenance + Playwright regression codegen) |
 | **Playwright UI regression** | `run-checks.sh --playwright-only` — headless gate after browser tester updates specs; also `npm run aih:playwright-check` |
 
-### Post-verification (full phase)
+### Post-verification (finalize phase)
 
-After the `TC-*` checklist, the browser test agent:
+After case batches complete, the finalize-phase browser test agent:
 
 1. **UX audit** — screenshot review per `skills/ui-ux-testing/SKILL.md`; logs `UX-<slice>-NNN` bugs (P0/P1 block pass)
 2. **UX bugs JSON** — `ai-harness/generated/runs/ux-bugs/<slice-id>/<run-id>.json`

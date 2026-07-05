@@ -60,9 +60,10 @@ State file (dev mode PIDs): `ai-harness/generated/runs/preview-stack.pids`
 
 1. Copy `.env.example` to `.env` (or export vars) — `DATABASE_URL` must target Compose Postgres (`localhost:5432`).
 2. `npm run aih:dev:db:up` — database healthy before API start.
-3. Run migrations against Postgres before API start.
-4. `npm run build --workspace {{WORKSPACE_NAME}}api` — API `dev` script runs `node --watch dist/index.js`.
-5. `preview-stack.sh` sets `PORT` per service via `aih_api_port()` / `aih_web_port()` when starting dev processes (defaults: API `3001`, preview web `3007`).
+3. Run migrations and seed against Postgres before API start (`npm run db:migrate && npm run db:seed` — **required for live demo**; see slice `db-migrate-seed-preview`).
+4. Confirm integration debt closed: `npm run aih:verify:integration` (optional advisory until phase 4 complete).
+5. `npm run build --workspace {{WORKSPACE_NAME}}api` — API `dev` script runs `node --watch dist/index.js`.
+6. `preview-stack.sh` sets `PORT` per service via `aih_api_port()` / `aih_web_port()` when starting dev processes (defaults: API `3001`, preview web `3007`).
 
 ### Full-mode prerequisites
 

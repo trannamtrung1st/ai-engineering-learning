@@ -21,7 +21,8 @@
     "reviewPass": "REVIEW_PASS",
     "reviewFail": "REVIEW_FAIL",
     "testPass": "BROWSER_TEST_PASS",
-    "testFail": "BROWSER_TEST_FAIL"
+    "testFail": "BROWSER_TEST_FAIL",
+    "testBatchPass": "BROWSER_TEST_BATCH_PASS"
   },
   "computationalChecks": {
     "playwrightScope": "slice",
@@ -131,7 +132,9 @@
   },
   "browserTest": {
     "required": true,
-    "playwrightMaxCasesPerSlice": 30,
+    "maxCasesPerBatch": 10,
+    "acceptanceSliceIds": ["e2e-acceptance-suite"],
+    "acceptanceSliceTimeoutMinutes": 25,
     "modelKey": "tester",
     "retryFailedCasesFirst": true,
     "collectAllFailures": true,
@@ -183,5 +186,11 @@
   },
   "testCaseGate": {
     "mode": "required"
+  },
+  "integrationGate": {
+    "enabled": true,
+    "blockBrowserTestForSlices": ["e2e-acceptance-suite"],
+    "requireVerifyIntegrationPass": true,
+    "autoFocusNextPhase4Slice": true
   }
 }

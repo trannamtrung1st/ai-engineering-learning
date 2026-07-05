@@ -1,6 +1,15 @@
 import type { Page } from "@playwright/test";
 import { API_BASE_URL, DEFAULT_PASSWORD, WEB_BASE_URL } from "./constants.js";
 
+/** Clear client auth session before each browser scenario. */
+export async function clearWebSession(page: Page): Promise<void> {
+  await page.goto(`${WEB_BASE_URL}/login`);
+  await page.evaluate(() => {
+    localStorage.removeItem("accessToken");
+    localStorage.removeItem("roles");
+  });
+}
+
 /**
  * Dev login via API — customize endpoint, cookies, and post-login route per product.
  * See docs/technical/10-local-development-setup.md

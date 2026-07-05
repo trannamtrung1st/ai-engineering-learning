@@ -118,6 +118,9 @@ if echo "$agent_text" | grep -q "SLICE_BLOCKED"; then
   exit 1
 fi
 
+# --- Restore accidental Playwright artifact mutations before scope gate ---
+restore_playwright_scope_artifacts
+
 # --- Mechanical scope gate (before expensive computational checks) ---
 aih_step "Running slice scope gate"
 set +e
@@ -200,8 +203,13 @@ if [[ "${AIH_SKIP_BROWSER_TEST:-}" != "1" ]]; then
     browser_test_status=$?
     set -e
     if [[ "$browser_test_status" -ne 0 ]]; then
-      record_iteration_failure "$SLICE_ID" "gate_failed" "browser_test_failed" \
-        "Browser test failed — see ${RID}-browser-test.json"
+      if jq -e '.integrationGateBlocked == true' "${RUNS_DIR}/${RID}-browser-test.json" >/dev/null 2>&1; then
+        gate_reason="$(jq -r '.reason // "integration debt pending"' "${RUNS_DIR}/${RID}-browser-test.json" 2>/dev/null || true)"
+        aih_err "Browser test blocked — ${gate_reason}"
+      else
+        record_iteration_failure "$SLICE_ID" "gate_failed" "browser_test_failed" \
+          "Browser test failed — see ${RID}-browser-test.json"
+      fi
       exit 1
     fi
   fi

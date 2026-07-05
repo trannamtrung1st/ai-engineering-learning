@@ -62,6 +62,14 @@ done < <(jq -r '
     | [$id, "suspicious key \"\(.key)\" — did you mean \"\(.key | gsub("^\\s+|\\s+$"; ""))\"?"]
   ),
   (
+    (.scopeExtensions // [])[]
+    | if (.path | type) != "string" or (.path | length) == 0 then
+        [$id, "scopeExtensions entry missing string path"]
+      elif (.reason | type) != "string" or (.reason | length) == 0 then
+        [$id, "scopeExtensions entry missing string reason"]
+      else empty end
+  ),
+  (
     (.history // [])[]
     | if (.at | type) != "string" or (.at | length) == 0 then
         [$id, "history entry missing string at"]

@@ -53,6 +53,33 @@ check_json "${TEMPLATES_DIR}/ai-harness/workflows/ralph-loop.json"
 check_file_exists "${TEMPLATES_DIR}/ai-harness/scripts/run-playwright-check.sh"
 check_file_exists "${TEMPLATES_DIR}/ai-harness/scripts/lib/integration-failure-triage.js"
 check_file_exists "${TEMPLATES_DIR}/ai-harness/scripts/lib/integration-failure-triage.test.js"
+check_file_exists "${TEMPLATES_DIR}/ai-harness/scripts/verify-integration.sh"
+check_file_exists "${TEMPLATES_DIR}/ai-harness/docs/integration-debt-register.md"
+check_file_exists "${TEMPLATES_DIR}/ai-harness/docs/integration-checklist.md"
+check_json "${TEMPLATES_DIR}/ai-harness/config/integration-checks.json"
+check_json "${TEMPLATES_DIR}/ai-harness/schemas/integration-checks.schema.json"
+
+gen_step "Self-check: integration verify script"
+if [[ ! -x "${TEMPLATES_DIR}/ai-harness/scripts/verify-integration.sh" ]]; then
+  gen_err "verify-integration.sh must be executable"
+  fail=1
+fi
+
+gen_step "Self-check: implementer prompt integration docs"
+if ! grep -q 'integration-debt-register.md' "${TEMPLATES_DIR}/ai-harness/agents/implementer.prompt.md" 2>/dev/null; then
+  gen_err "implementer.prompt.md must reference integration-debt-register.md"
+  fail=1
+fi
+if grep -q 'mvp-integration' "${TEMPLATES_DIR}/ai-harness/agents/implementer.prompt.md" 2>/dev/null; then
+  gen_err "implementer.prompt.md must not reference mvp-integration (use generic integration-debt docs)"
+  fail=1
+fi
+
+gen_step "Self-check: repo bootstrap integration script"
+if ! grep -q 'aih:verify:integration' "${GEN_SCRIPTS_DIR}/emit-repo-bootstrap.sh" 2>/dev/null; then
+  gen_err "emit-repo-bootstrap.sh missing aih:verify:integration"
+  fail=1
+fi
 
 gen_step "Self-check: harness integration triage policy"
 if [[ -f "${TEMPLATES_DIR}/ai-harness/workflows/ralph-loop.json" ]]; then
@@ -65,6 +92,38 @@ fi
 gen_step "Self-check: integration failure triage unit tests"
 if ! node --test "${TEMPLATES_DIR}/ai-harness/scripts/lib/integration-failure-triage.test.js" >/dev/null 2>&1; then
   gen_err "integration-failure-triage.test.js failed"
+  fail=1
+fi
+
+gen_step "Self-check: integration gate and browser hardening"
+if [[ -f "${TEMPLATES_DIR}/ai-harness/workflows/ralph-loop.json" ]]; then
+  if [[ "$(jq -r '.integrationGate.enabled // false' "${TEMPLATES_DIR}/ai-harness/workflows/ralph-loop.json")" != "true" ]]; then
+    gen_err "ralph-loop.json missing integrationGate.enabled"
+    fail=1
+  fi
+  if [[ "$(jq -r '.browserTest.acceptanceSliceTimeoutMinutes // empty' "${TEMPLATES_DIR}/ai-harness/workflows/ralph-loop.json")" == "" ]]; then
+    gen_err "ralph-loop.json missing browserTest.acceptanceSliceTimeoutMinutes"
+    fail=1
+  fi
+fi
+if ! grep -q 'test-results/.last-run.json' "${TEMPLATES_DIR}/ai-harness/docs/integration-checklist.md" 2>/dev/null; then
+  gen_err "integration-checklist.md must document test-results/.last-run.json hygiene"
+  fail=1
+fi
+if ! jq -e '.properties.jwtEnvVars' "${TEMPLATES_DIR}/ai-harness/schemas/integration-checks.schema.json" >/dev/null 2>&1; then
+  gen_err "integration-checks.schema.json missing jwtEnvVars"
+  fail=1
+fi
+if ! grep -q 'jwt-env' "${TEMPLATES_DIR}/ai-harness/scripts/verify-integration.sh" 2>/dev/null; then
+  gen_err "verify-integration.sh missing jwt-env check"
+  fail=1
+fi
+if [[ ! -f "${TEMPLATES_DIR}/tests/playwright-ui/.gitignore" ]]; then
+  gen_err "missing templates/tests/playwright-ui/.gitignore"
+  fail=1
+fi
+if ! grep -q 'playwright-ui/test-results' "${GEN_SCRIPTS_DIR}/emit-repo-bootstrap.sh" 2>/dev/null; then
+  gen_err "emit-repo-bootstrap.sh must gitignore playwright-ui test-results"
   fail=1
 fi
 

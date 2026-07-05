@@ -23,7 +23,8 @@
     },
     "infra": {
       "alwaysRead": [
-        "docs/technical/10-local-development-setup.md"
+        "docs/technical/10-local-development-setup.md",
+        "ai-harness/docs/integration-debt-register.md"
       ]
     },
     "test": {

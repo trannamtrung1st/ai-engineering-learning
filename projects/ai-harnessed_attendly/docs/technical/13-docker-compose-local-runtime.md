@@ -8,6 +8,8 @@
 
 This document specifies the local Docker Compose runtime topology for Attendly MVP development and testing.
 
+> **Implementation status (2026-07-05):** Repository `docker-compose.yml` currently provides **`db` (Postgres) only**. Target topology below (Redis, api, web containers, `full-preview` profile) is tracked in harness slice `compose-full-preview-redis`. Dev preview uses local API/web processes via `npm run aih:preview` — see [14-mvp-integration-debt.md](./14-mvp-integration-debt.md).
+
 ## 2. Local container runtime goals
 
 | ID | Goal |

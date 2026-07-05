@@ -42,8 +42,7 @@ fi
 
 expected_web_port="$(aih_web_port)"
 if [[ -f "${PW_DIR}/playwright.config.ts" ]]; then
-  if ! grep -qE 'testDir:[[:space:]]*["'\'']\\./scenarios' "${PW_DIR}/playwright.config.ts" \
-    && ! grep -qE 'testDir:[[:space:]]*["'\'']scenarios' "${PW_DIR}/playwright.config.ts"; then
+  if ! grep -qE 'testDir:[[:space:]]*["'\''][.]?/?scenarios["'\'']' "${PW_DIR}/playwright.config.ts"; then
     fail "playwright.config.ts testDir should point at ./scenarios"
   fi
   if ! grep -q 'PLAYWRIGHT_BASE_URL' "${PW_DIR}/playwright.config.ts" \
@@ -78,16 +77,19 @@ elif slice_requires_playwright_regression_gate "$SLICE_ID"; then
 fi
 
 if [[ "$PASS" == true ]]; then
-  set +e
-  list_out="$(cd "$PW_DIR" && npx playwright test --list 2>&1)"
-  list_status=$?
-  set -e
-  if [[ "$list_status" -ne 0 ]]; then
-    fail "npx playwright test --list failed (config or spec parse error)"
-    while IFS= read -r line; do
-      [[ -z "$line" ]] && continue
-      fail "  ${line}"
-    done <<< "$list_out"
+  spec_files="$(find "${PW_DIR}/scenarios" -maxdepth 1 -name '*.spec.ts' 2>/dev/null | wc -l | tr -d ' ')"
+  if [[ -n "$SPEC_REL" || "$spec_files" -gt 0 ]]; then
+    set +e
+    list_out="$(cd "$PW_DIR" && npx playwright test --list 2>&1)"
+    list_status=$?
+    set -e
+    if [[ "$list_status" -ne 0 ]]; then
+      fail "npx playwright test --list failed (config or spec parse error)"
+      while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        fail "  ${line}"
+      done <<< "$list_out"
+    fi
   fi
 fi
 

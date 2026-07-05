@@ -50,9 +50,9 @@ When bundled below, execute **every** `layer: browser` case from the generated t
 
 If no generated cases are bundled, derive scenarios from acceptance tags and slice docs.
 
-## Test case maintenance (full phase only)
+## Test case maintenance (finalize phase only)
 
-After exercising flows in the **full verification phase**, reconcile `docs/test-cases/items/<tag>.json` for each acceptance tag in this slice:
+After exercising flows in the **finalize phase**, reconcile `docs/test-cases/items/<tag>.json` for each acceptance tag in this slice:
 
 - **Add** `layer: browser` cases for newly discovered flows not covered by TestGen
 - **Update** steps, preconditions, or expected when requirements or UI changed
@@ -65,7 +65,7 @@ Keep valid JSON per `ai-harness/schemas/test-cases.schema.json`. The harness val
 
 ## Common UI/UX suite (always executed)
 
-The harness appends a `## Common UI/UX suite (always executed)` block (from `ai-harness/test-cases/common/ui-ux-suite.json`) to the **full** verification phase. These are generic, product-wide UI/UX checks (`TC-UX-COMMON-NNN`) that apply to **every** distinct screen/state — not tied to a requirement tag.
+The harness appends a `## Common UI/UX suite (always executed)` block (from `ai-harness/test-cases/common/ui-ux-suite.json`) to the **finalize** phase. These are generic, product-wide UI/UX checks (`TC-UX-COMMON-NNN`) that apply to **every** distinct screen/state — not tied to a requirement tag.
 
 - Run each common case against every screen you exercise, alongside the slice's own browser cases.
 - Report each as `TC-UX-COMMON-NNN: PASS|FAIL|SKIP` with evidence and a screenshot path.
@@ -87,19 +87,50 @@ When a case in the checklist shows **Harness scope: SKIP …**, follow that tag 
 
 ## Phased verification (when harness injects a phase block)
 
-The harness may run browser verification in one or two phases. Follow the **phase instruction block** appended by the harness (retry or full). When no phase block is present, run all mandatory cases in a single pass.
+The harness may run browser verification in multiple phases. Follow the **phase instruction block** appended by the harness (retry, batch, finalize, or legacy full). When no phase block is present, run all mandatory cases in a single pass.
 
-### Retry phase (`## Retry phase — failed cases from prior run`)
+### Retry phase (`## Retry phase — failed cases from prior run` or `## Retry batch N of M`)
 
 - Execute **only** the case IDs listed in that phase's mandatory checklist — ignore all other cases in the artifact
-- **Do not** run UX audit, test-case maintenance, or Playwright codegen in retry phase
-- Run **every** listed case — collect **all** FAIL results and P0/P1 UX bugs before emitting the final signal
-- When **all** listed runnable cases PASS (or SKIP): emit `BROWSER_TEST_PASS` (the harness runs a separate full verification phase next)
-- When **any** runnable case FAILs or P0/P1 UX bugs remain: emit `BROWSER_TEST_FAIL` with the **complete** blocker list at the end
+- **Do not** run common UI/UX suite, UX audit, test-case maintenance, or Playwright codegen
+- Run **every** listed case — collect **all** FAIL results before emitting the final signal
+- When **all** listed runnable cases PASS (or SKIP): emit `BROWSER_TEST_BATCH_PASS`
+- When **any** runnable case FAILs: emit `BROWSER_TEST_FAIL` with the **complete** blocker list at the end
 
-### Full phase (`## Full verification phase`)
+### Case batch phase (`## Case batch N of M — execute ONLY these case IDs`)
 
-1. Execute **every** `layer: browser` case — run the **full checklist** even when earlier cases fail; collect **all** FAIL results before the final signal. When the checklist exceeds `playwrightMaxCasesPerSlice` in `ralph-loop.json`, prioritize P0/P1 cases first but still complete the pass.
+- Execute **only** the case IDs listed in that batch — ignore all other cases in the artifact
+- **Do not** run common UI/UX suite, UX audit, test-case maintenance, or Playwright codegen
+- Run **every** listed case — collect **all** FAIL results before emitting the final signal
+- When **all** listed runnable cases PASS (or SKIP): emit `BROWSER_TEST_BATCH_PASS`
+- When **any** runnable case FAILs: emit `BROWSER_TEST_FAIL` with the **complete** blocker list at the end
+
+### Finalize phase (`## Finalize phase — UX audit, test-case maintenance, and Playwright codegen`)
+
+Functional `layer: browser` cases were already verified in prior batches — **do not re-run** them unless the harness lists cases in the checklist (rare: no prior batches).
+
+1. Run the **common UI/UX suite** against every distinct screen/state exercised in prior batches
+2. **App logo home shortcut** — on every authenticated screen, verify the app logo / product mark in the nav header or sidebar is a clickable link that navigates to the role's home route
+3. **UI/UX screen audit** (after functional cases, before final signal):
+   - Enumerate every **screen/state** exercised (from prior batch summary + slice `completionArtifacts`)
+   - For each, capture screenshot to `ai-harness/generated/runs/screenshots/<slice-id>/browser-test/`
+   - Run the 10-item checklist from `ai-harness/docs/ui-visual-verification.md` on each screenshot
+   - Log defects as `UX-<slice-id>-NNN` per `ai-harness/docs/ux-bug-logging.md` (P0/P1 = contrast, illegible disabled, missing forbidden chrome, broken touch targets; P2/P3 = spacing, breadcrumb, minor alignment)
+   - Minimum: **1 screenshot per distinct screen/state** verified in finalize phase
+   - Include in browser test summary: `uiScreensAudited: [{ "screen": "/route", "screenshot": "...", "checklistPass": true|false, "failedChecks": [1,4] }]`
+4. Write `{{UX_BUGS_PATH}}` per schema before final signal
+5. **Test case maintenance** — reconcile browser-layer cases in `docs/test-cases/items/<tag>.json` (add / update / remove obsolete)
+6. **Playwright regression codegen** — update `{{PLAYWRIGHT_OUTPUT_PATH}}` from exercised flows; remove obsolete `test()` blocks when flows were deleted (see `ai-harness/docs/playwright-regression.md`)
+7. **Playwright config sanity** — read `tests/playwright-ui/playwright.config.ts` and `src/support/constants.ts`; ensure `baseURL` / `WEB_BASE_URL` target preview web (`http://localhost:3007` or `PLAYWRIGHT_BASE_URL`). Fix owned spec/support imports only.
+8. Emit `playwright-regression: {{PLAYWRIGHT_OUTPUT_PATH}} (N tests)` where N = count of `test()` blocks written
+9. Emit `playwright-regression-run: PASS` when the spec should pass headless `npx playwright test` (harness validates config before accepting this phase; headless run follows in the regression gate)
+10. Emit `BROWSER_TEST_PASS` only when common suite passes, no P0/P1 UX bugs remain, **and** Playwright config/spec are ready for the harness regression check
+
+### Legacy full phase (`## Full verification phase`)
+
+When `browserTest.maxCasesPerBatch` is `0`, the harness runs a single full phase (no batching):
+
+1. Execute **every** `layer: browser` case — run the **full checklist** even when earlier cases fail; collect **all** FAIL results before the final signal
 2. **App logo home shortcut** — on every authenticated screen, verify the app logo / product mark in the nav header or sidebar is a clickable link that navigates to the role's home route
 3. **UI/UX screen audit** (after functional cases, before final signal):
    - Enumerate every **screen/state** exercised (from test cases + slice `completionArtifacts`)
@@ -113,12 +144,20 @@ The harness may run browser verification in one or two phases. Follow the **phas
 6. **Playwright regression codegen** — update `{{PLAYWRIGHT_OUTPUT_PATH}}` from exercised flows; remove obsolete `test()` blocks when flows were deleted (see `ai-harness/docs/playwright-regression.md`)
 7. **Playwright config sanity** — read `tests/playwright-ui/playwright.config.ts` and `src/support/constants.ts`; ensure `baseURL` / `WEB_BASE_URL` target preview web (`http://localhost:3007` or `PLAYWRIGHT_BASE_URL`). Fix owned spec/support imports only.
 8. Emit `playwright-regression: {{PLAYWRIGHT_OUTPUT_PATH}} (N tests)` where N = count of `test()` blocks written
-9. Emit `playwright-regression-run: PASS` when the spec should pass headless `npx playwright test` (harness validates config and runs the spec before accepting this phase)
+9. Emit `playwright-regression-run: PASS` when the spec should pass headless `npx playwright test` (harness validates config before accepting this phase; headless run follows in the regression gate)
 10. Emit `BROWSER_TEST_PASS` only when all runnable cases pass, no P0/P1 UX bugs remain, **and** Playwright config/spec are ready for the harness regression check
 
-Retry phase: skip UX audit, test-case maintenance, and codegen.
+Retry and batch phases: skip UX audit, test-case maintenance, and codegen.
 
 **Collect-all failures:** run the complete case list in each phase. Per-action 30s timeouts still apply (do not abandon a stuck step before its timeout). Report every blocker in one pass — do not stop after the first FAIL.
+
+### Acceptance slice (`e2e-acceptance-suite`) rules
+
+When slice id is `e2e-acceptance-suite` (or harness injects acceptance-slice phase block):
+
+- **Codegen is mandatory** even when many cases are `SKIP` — emit `playwright-regression: {{PLAYWRIGHT_OUTPUT_PATH}} (N tests)` before the signal line
+- If the **15 min** whole-pass budget is exceeded, FAIL remaining cases as `timeout — pass incomplete` but **still complete Playwright codegen** for every flow you exercised
+- Do not emit `BROWSER_TEST_PASS` without the `playwright-regression:` line — the harness rejects pass without it
 
 ## Execution
 
@@ -163,15 +202,16 @@ Brief markdown findings (bullets).
 **Playwright regression:**
 
 - `playwright-regression: {{PLAYWRIGHT_OUTPUT_PATH}} (N tests)`
-- `playwright-regression-run: PASS` — emit only when config + spec are ready for headless `npx playwright test` (harness re-runs before phase close)
+- `playwright-regression-run: PASS` — emit only when config + spec are ready for headless `npx playwright test` (harness validates config before phase close; headless run follows in the regression gate)
 
 **Per acceptance tag (when no case id):** `AC-XX: PASS`, `AC-XX: FAIL — reason`, or `AC-XX: SKIP — <tag> — reason`
 
 Summary line: `cases: N/M passed (K skipped)` — count only PASS toward M; skipped cases listed separately
 
-End with **exactly one** signal line:
+End with **exactly one** signal line per phase:
 
-- `BROWSER_TEST_PASS` — all runnable browser test cases verified, no P0/P1 UX bugs (skipped out-of-scope cases excluded)
+- `BROWSER_TEST_BATCH_PASS` — all assigned cases in this retry/batch phase PASS or SKIP (intermediate phases only)
+- `BROWSER_TEST_PASS` — finalize phase (or legacy full phase) complete; all runnable cases verified, no P0/P1 UX bugs (skipped out-of-scope cases excluded)
 - `BROWSER_TEST_FAIL` — list **all** blockers above in one pass; harness will retry
 
 Finish in **one pass**. Test only — no product fixes.

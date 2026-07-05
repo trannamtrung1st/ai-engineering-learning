@@ -17,8 +17,8 @@ TestGen emits `layer: browser` **JSON specs** only (`docs/test-cases/items/`). T
 ```
 pre-browser run-checks (no Playwright UI)
   → browser test agent (MCP verification + codegen + test-case sync)
-  → harness: validate-playwright-ui-config + npx playwright test (slice spec) — before browser test phase closes
-  → run-checks --playwright-only (headless regression confirmation when not deferred)
+  → harness: validate-playwright-ui-config (slice spec) — before browser test phase closes
+  → run-checks --playwright-only (single headless regression run; when not deferred)
   → finalize_browser_test_pass (validate JSON, commit owned paths)
   → AI review
 ```
@@ -49,7 +49,7 @@ The browser test agent:
 1. Finishes `TC-*` checklist + UX audit
 2. Writes/updates `tests/playwright-ui/scenarios/<slice-id>.spec.ts`
 3. Emits `playwright-regression: tests/playwright-ui/scenarios/<slice-id>.spec.ts (N tests)` in output
-4. Before the full phase closes, the harness runs `validate-playwright-ui-config.sh` and `npx playwright test` on that spec — fix owned spec/support files until both pass
+4. Before the finalize phase closes, the harness runs `validate-playwright-ui-config.sh` on that spec — fix owned spec/support files until config validation passes; headless `npx playwright test` runs once in the next regression gate
 
 ## Spec template
 
@@ -109,9 +109,9 @@ After browser test pass, Ralph runs `run-checks.sh --playwright-only` (or `npm r
 
 `npm run aih:check` (pre-browser gate) does **not** include Playwright UI — use `aih:playwright-check` after browser test codegen.
 
-### Case budget
+### Case batching
 
-`browserTest.playwrightMaxCasesPerSlice` in `ralph-loop.json` caps how many browser cases the tester prioritizes per slice (P0/P1 first when the checklist exceeds the budget). Committed Playwright specs may still cover more flows over time.
+`browserTest.maxCasesPerBatch` in `ralph-loop.json` (default `10`) mechanically splits browser-layer cases into focused tester agent invocations per Ralph iteration — P0/P1 cases run first within the sort order. Override with `AIH_BROWSER_TEST_MAX_CASES_PER_BATCH`. Set to `0` to disable batching (legacy single full phase). Committed Playwright specs may still cover more flows over time.
 
 Optional gate in `ralph-loop.json` — `playwrightRegressionGate.enabled` (default true for `frontend`/`test` slices).
 

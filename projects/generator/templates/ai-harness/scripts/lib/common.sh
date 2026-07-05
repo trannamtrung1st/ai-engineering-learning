@@ -589,11 +589,34 @@ run_check_with_timeout_ms() {
 
 get_agent_timeout_ms() {
   local config="${1:-$LOOP_CONFIG}"
+  local slice_id="${2:-}"
   if [[ -n "${AIH_AGENT_TIMEOUT_MS:-}" ]]; then
     echo "$AIH_AGENT_TIMEOUT_MS"
     return
   fi
+  if [[ -n "$slice_id" ]]; then
+    local override_ms
+    override_ms="$(get_browser_test_timeout_ms "$slice_id" "$config" 2>/dev/null || true)"
+    if [[ -n "$override_ms" ]]; then
+      echo "$override_ms"
+      return
+    fi
+  fi
   jq -r ".agent.timeoutMs // ${AGENT_TIMEOUT_DEFAULT_MS}" "$config"
+}
+
+get_browser_test_timeout_ms() {
+  local slice_id="$1"
+  local config="${2:-$LOOP_CONFIG}"
+  [[ -n "$slice_id" ]] || return 1
+  local ids_json minutes
+  ids_json="$(jq -c '.browserTest.acceptanceSliceIds // []' "$config" 2>/dev/null || echo '[]')"
+  if ! jq -e --arg id "$slice_id" '.[] | select(. == $id)' <<<"$ids_json" >/dev/null 2>&1; then
+    return 1
+  fi
+  minutes="$(jq -r '.browserTest.acceptanceSliceTimeoutMinutes // empty' "$config" 2>/dev/null || true)"
+  [[ -n "$minutes" && "$minutes" != "null" ]] || return 1
+  echo $((minutes * 60000))
 }
 
 get_agent_idle_timeout_ms() {
@@ -833,9 +856,9 @@ After all \`TC-*\` cases complete:
 2. **Write UX bugs JSON:** \`${ux_path}\` (schema: \`ai-harness/schemas/ux-bugs.schema.json\`)
 3. **Playwright codegen** — create or update \`${spec_path}\` per \`ai-harness/docs/playwright-regression.md\`
 4. **Playwright config sanity** — read \`tests/playwright-ui/playwright.config.ts\` and \`src/support/constants.ts\`; \`baseURL\` / \`WEB_BASE_URL\` must target preview web (\`http://localhost:${web_port}\` or \`PLAYWRIGHT_BASE_URL\`). Fix imports/paths in owned spec/support files only.
-5. **Harness regression gate** — before this phase closes, the harness runs \`validate-playwright-ui-config.sh\` and \`npx playwright test\` on your spec. Ensure the spec compiles, imports resolve, and selectors match MCP-verified UI.
+5. **Harness config gate** — before this phase closes, the harness runs \`validate-playwright-ui-config.sh\` on your spec path. Ensure the spec compiles, imports resolve, and selectors match MCP-verified UI. Headless \`npx playwright test\` runs once in the next gate (\`run-checks --playwright-only\`).
 6. Emit a plain line (no markdown/backticks): \`playwright-regression: ${spec_path} (N tests)\` before the signal line
-7. Emit \`playwright-regression-run: PASS\` only after you believe the headless spec will pass (harness re-runs it before accepting \`BROWSER_TEST_PASS\`)
+7. Emit \`playwright-regression-run: PASS\` only after you believe the headless spec will pass (harness validates config before accepting \`BROWSER_TEST_PASS\`; headless run follows in the regression gate)
 8. P0/P1 UX bugs block \`BROWSER_TEST_PASS\` even when all \`TC-*\` cases pass
 EOF
 }
@@ -910,7 +933,8 @@ run_playwright_ui_spec_rel() {
   return 0
 }
 
-# Config validate + headless slice regression before browser-test phase closes (full phase).
+# Playwright UI config validation before browser-test phase closes (full phase).
+# Headless regression runs once in run-checks.sh --playwright-only (ralph-once or standalone browser test).
 verify_playwright_ui_for_browser_test_close() {
   local slice_id="$1"
   local text_file="$2"
@@ -930,7 +954,7 @@ verify_playwright_ui_for_browser_test_close() {
   test_count="$(echo "$resolved" | cut -f2)"
 
   if [[ "$test_count" -eq 0 ]]; then
-    aih_warn "Playwright spec reports 0 tests — skipping headless regression run"
+    aih_warn "Playwright spec reports 0 tests — skipping Playwright UI config validation"
     return 0
   fi
 
@@ -938,18 +962,11 @@ verify_playwright_ui_for_browser_test_close() {
   {
     echo "==> Validating Playwright UI workspace config"
     "${HARNESS_ROOT}/scripts/validate-playwright-ui-config.sh" "$slice_id" "$spec_path"
-    echo ""
-    echo "==> Running headless Playwright regression on ${spec_path}"
   } >>"$log_file" 2>&1 || {
     cat "$log_file" >&2
     return 1
   }
-
-  set +e
-  run_playwright_ui_spec_rel "$spec_path" "$log_file"
-  local status=$?
-  set -e
-  return "$status"
+  return 0
 }
 
 browser_output_has_ux_blockers() {
@@ -1004,6 +1021,46 @@ parse_playwright_regression_from_output() {
   [[ -z "$count" ]] && count="0"
   [[ -z "$spec" || "$spec" == "$line" ]] && return 1
   printf '%s\t%s\n' "$spec" "$count"
+}
+
+count_playwright_tests_in_spec() {
+  local spec_rel="$1"
+  local spec_path
+  spec_rel="$(normalize_repo_rel_path "$spec_rel")"
+  [[ -n "$spec_rel" ]] || { echo 0; return; }
+  spec_path="${REPO_ROOT}/${spec_rel}"
+  [[ -f "$spec_path" ]] || { echo 0; return; }
+  grep -cE '^\s*test\(' "$spec_path" 2>/dev/null || echo 0
+}
+
+# Resolve playwright spec path + test count from agent output, with on-disk fallback.
+resolve_playwright_regression_for_pass() {
+  local slice_id="$1"
+  local text_file="$2"
+  local parse_line spec_path test_count synthesized_line
+
+  if parse_line="$(parse_playwright_regression_from_output "$text_file" 2>/dev/null)"; then
+    spec_path="$(echo "$parse_line" | cut -f1)"
+    test_count="$(jq_number_or_default "$(echo "$parse_line" | cut -f2)")"
+    spec_path="$(normalize_repo_rel_path "$spec_path")"
+    printf '%s\t%s\n' "$spec_path" "$test_count"
+    return 0
+  fi
+
+  spec_path="$(resolve_playwright_spec_for_slice "$slice_id" 2>/dev/null || true)"
+  spec_path="$(normalize_repo_rel_path "$spec_path")"
+  [[ -n "$spec_path" && -f "${REPO_ROOT}/${spec_path}" ]] || return 1
+  test_count="$(count_playwright_tests_in_spec "$spec_path")"
+  [[ "$test_count" -gt 0 ]] || return 1
+  synthesized_line="playwright-regression: ${spec_path} (${test_count} tests)"
+  aih_warn "Browser test output missing playwright-regression line — using on-disk spec ${spec_path} (${test_count} tests)"
+  {
+    echo ""
+    echo "## Harness fallback — synthesized playwright-regression line"
+    echo "$synthesized_line"
+  } >>"$text_file"
+  printf '%s\t%s\n' "$spec_path" "$test_count"
+  return 0
 }
 
 extract_source_tc_ids_from_output() {
@@ -2143,6 +2200,11 @@ build_slice_scope_allowlist() {
     done < <(echo "$slice_json" | jq -r --arg layer "$layer" '.testRequirements[$layer][]?')
   done
 
+  while IFS= read -r path; do
+    [[ -z "$path" ]] && continue
+    allowlist+=("$path")
+  done < <(echo "$slice_json" | jq -r '.scopeExtensions[]?.path // empty')
+
   allowlist+=("ai-harness/generated/runs/screenshots/${slice_id}")
   allowlist+=("ai-harness/state/progress.md")
   allowlist+=("ai-harness/state/guardrails.md")
@@ -2656,6 +2718,72 @@ slice_requires_playwright_regression_gate() {
   slice_requires_browser_test "$slice_id"
 }
 
+integration_gate_enabled() {
+  jq -r '.integrationGate.enabled // false' "$LOOP_CONFIG" 2>/dev/null
+}
+
+slice_in_integration_gate_block_list() {
+  local slice_id="$1"
+  jq -e --arg id "$slice_id" '.integrationGate.blockBrowserTestForSlices[]? | select(. == $id)' "$LOOP_CONFIG" >/dev/null 2>&1
+}
+
+integration_gate_requires_verify() {
+  jq -r '.integrationGate.requireVerifyIntegrationPass // false' "$LOOP_CONFIG" 2>/dev/null
+}
+
+next_pending_phase4_slice_id() {
+  jq -r '
+    [.slices[]?
+      | select(.passes == false)
+      | select((.phase // 0) >= 4)
+    ]
+    | sort_by(.priority // 999)
+    | .[0].id // empty
+  ' "$BACKLOG" 2>/dev/null
+}
+
+handle_integration_gate_browser_block() {
+  local slice_id="$1"
+  local run_id="$2"
+  local next_slice reason report
+  next_slice="$(next_pending_phase4_slice_id)"
+  reason="integration_debt_pending — complete phase 4 slices before browser test on ${slice_id}"
+  report="$(jq -n \
+    --arg slice "$slice_id" \
+    --arg ts "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+    --arg reason "$reason" \
+    --arg nextSlice "${next_slice:-}" \
+    '{
+      slice: $slice,
+      timestamp: $ts,
+      pass: false,
+      skipped: false,
+      reason: $reason,
+      integrationGateBlocked: true,
+      focusNextSlice: (if $nextSlice == "" then null else $nextSlice end)
+    }')"
+  write_run_report "${run_id}-browser-test.json" "$report"
+  if [[ -n "$next_slice" ]]; then
+    if [[ "$(jq -r '.integrationGate.autoFocusNextPhase4Slice // true' "$LOOP_CONFIG")" == "true" ]]; then
+      set_loop_slice_override "$next_slice" "$reason" "integration-gate"
+      aih_warn "Integration gate blocked browser test — next iteration focused on ${next_slice}"
+    fi
+  fi
+  record_iteration_failure "$slice_id" "blocked" "integration_debt_pending" "$reason"
+}
+
+integration_gate_blocks_browser_test() {
+  local slice_id="$1"
+  [[ "$(integration_gate_enabled)" == "true" ]] || return 1
+  slice_in_integration_gate_block_list "$slice_id" || return 1
+  [[ "$(integration_gate_requires_verify)" == "true" ]] || return 1
+  set +e
+  ./ai-harness/scripts/verify-integration.sh --check all >/dev/null 2>&1
+  local status=$?
+  set -e
+  [[ "$status" -ne 0 ]]
+}
+
 browser_test_collect_all_failures() {
   jq -r '.browserTest.collectAllFailures // true' "$LOOP_CONFIG"
 }
@@ -2868,6 +2996,30 @@ git_path_is_ignored() {
   local rel="$1"
   [[ -n "$rel" ]] || return 1
   git check-ignore -q -- "$rel" 2>/dev/null
+}
+
+# Tracked Playwright run artifacts that MCP/CLI mutate and break the scope gate.
+playwright_scope_artifact_paths() {
+  printf '%s\n' \
+    "tests/playwright-ui/test-results/.last-run.json" \
+    "tests/playwright-ui/playwright-report/index.html"
+}
+
+restore_playwright_scope_artifacts() {
+  if ! git rev-parse --git-dir >/dev/null 2>&1; then
+    return 0
+  fi
+  local rel restored=0
+  while IFS= read -r rel; do
+    [[ -z "$rel" ]] || continue
+    if git_path_has_changes "$rel"; then
+      git restore -- "$rel" 2>/dev/null || true
+      restored=$((restored + 1))
+    fi
+  done < <(playwright_scope_artifact_paths)
+  if [[ "$restored" -gt 0 ]]; then
+    aih_warn "Restored ${restored} tracked Playwright artifact(s) before scope gate"
+  fi
 }
 
 git_commit_allowlisted_paths() {
@@ -3160,6 +3312,131 @@ browser_test_retry_failed_cases_first() {
   jq -r '.browserTest.retryFailedCasesFirst // true' "$LOOP_CONFIG"
 }
 
+browser_test_max_cases_per_batch() {
+  if [[ -n "${AIH_BROWSER_TEST_MAX_CASES_PER_BATCH:-}" ]]; then
+    echo "${AIH_BROWSER_TEST_MAX_CASES_PER_BATCH}"
+    return 0
+  fi
+  jq -r '.browserTest.maxCasesPerBatch // 10' "$LOOP_CONFIG"
+}
+
+browser_test_batching_enabled() {
+  local max
+  max="$(browser_test_max_cases_per_batch)"
+  [[ "$max" =~ ^[0-9]+$ ]] && [[ "$max" -gt 0 ]]
+}
+
+# Runnable browser case IDs for a slice, sorted P0→P3 (stable within priority).
+list_runnable_browser_case_ids_for_slice() {
+  local slice_id="$1"
+  load_test_cases_json_for_slice "$slice_id" | jq -r '
+    def prio_rank($p):
+      if $p == "P0" then 0
+      elif $p == "P1" then 1
+      elif $p == "P2" then 2
+      elif $p == "P3" then 3
+      else 4
+      end;
+    [.cases[]? | select(.layer == "browser") | select((.harnessSkip // "") == "")]
+    | sort_by(prio_rank(.priority), .id)
+    | .[].id
+  ' 2>/dev/null
+}
+
+# Split newline-separated case IDs into batches of at most max_per_batch.
+# Prints one JSON array per batch line.
+split_case_ids_into_batches() {
+  local max_per_batch="$1"
+  shift
+  local ids_json
+  ids_json="$(printf '%s\n' "$@" | jq -R . | jq -s 'map(select(. != ""))')"
+  jq -c --argjson max "$max_per_batch" '
+    def chunk($n):
+      if length == 0 then []
+      elif length <= $n then [.]
+      else [.[0:$n]] + (.[$n:] | chunk($n))
+      end;
+    chunk($max) | .[]
+  ' <<< "$ids_json"
+}
+
+# Ensure every expected case ID has PASS or SKIP (not FAIL or missing) in output.
+validate_batch_case_results() {
+  local text_file="$1"
+  shift
+  local case_id
+  [[ -f "$text_file" ]] || return 1
+  [[ $# -gt 0 ]] || return 0
+  if ! browser_case_ids_still_failing_in_output "$text_file" "$@"; then
+    return 1
+  fi
+  for case_id in "$@"; do
+    if ! grep -qE "${case_id}:[[:space:]]*(PASS|SKIP)" "$text_file" 2>/dev/null; then
+      return 1
+    fi
+  done
+  return 0
+}
+
+browser_output_has_batch_pass_signal() {
+  local text_file="$1"
+  [[ -f "$text_file" ]] || return 1
+  grep -q 'BROWSER_TEST_BATCH_PASS' "$text_file" 2>/dev/null
+}
+
+extract_passed_browser_case_ids_from_output() {
+  local text_file="$1"
+  [[ -f "$text_file" ]] || return 1
+  grep -oE 'TC-[A-Z0-9][A-Z0-9-]*:[[:space:]]*PASS' "$text_file" 2>/dev/null \
+    | sed -E 's/:[[:space:]]*PASS$//' \
+    | sort -u
+}
+
+format_prior_batch_summary_block() {
+  local -a outfile_paths=("$@")
+  local path cid block=""
+  for path in "${outfile_paths[@]}"; do
+    [[ -f "$path" ]] || continue
+    while IFS= read -r cid; do
+      [[ -z "$cid" ]] && continue
+      block+="- ${cid}: PASS"$'\n'
+    done < <(extract_passed_browser_case_ids_from_output "$path" 2>/dev/null || true)
+  done
+  if [[ -n "$block" ]]; then
+    printf '%s\n' "## Prior batch results (functional cases already verified — do not re-run)
+
+The harness executed these browser cases in earlier batches. Use this list to know which screens/states were exercised.
+
+${block}"
+  fi
+}
+
+append_batch_phase_result() {
+  local phases_json="$1"
+  local phase="$2"
+  local pass="$3"
+  local batch_index="$4"
+  local batch_total="$5"
+  local prior_run_id="${6:-}"
+  local case_ids_json="${7:-[]}"
+  jq -n \
+    --argjson phases "$phases_json" \
+    --arg name "$phase" \
+    --argjson pass "$pass" \
+    --argjson batchIndex "$batch_index" \
+    --argjson batchTotal "$batch_total" \
+    --arg prior "$prior_run_id" \
+    --argjson caseIds "$case_ids_json" \
+    '$phases + [{
+      name: $name,
+      pass: $pass,
+      batchIndex: $batchIndex,
+      batchTotal: $batchTotal,
+      priorRunId: (if $prior == "" then null else $prior end),
+      caseIds: (if ($caseIds | length) == 0 then null else $caseIds end)
+    }]'
+}
+
 common_ui_ux_suite_enabled() {
   jq -r '.browserTest.commonUiUxSuite.enabled // true' "$LOOP_CONFIG"
 }
@@ -3269,7 +3546,7 @@ summarize_scope_failures() {
   local json_file="${RUNS_DIR}/${run_id}-scope.json"
   [[ -f "$json_file" ]] || return 1
   jq -e '.pass == false and ((.violations // []) | length) > 0' "$json_file" >/dev/null 2>&1 || return 1
-  jq '{slice, violations, hint: "Revert out-of-scope edits or add paths to completionArtifacts / testRequirements in whole-app-backlog.json (see guardrails.md)."}' \
+  jq '{slice, violations, hint: "Revert unrelated edits, or add justified paths to scopeExtensions (with reason), completionArtifacts, or testRequirements in whole-app-backlog.json — see implementer prompt Supportive out-of-scope changes and guardrails.md."}' \
     "$json_file" 2>/dev/null | head -c "$max_chars"
 }
 
@@ -3468,7 +3745,7 @@ build_implementer_prior_gate_feedback() {
     if [[ -n "$block" ]]; then
       sections="${sections}### Scope gate failures (\`${scope_run}\`)
 
-Fix every out-of-scope path below before signaling \`SLICE_DONE\`. Run \`npm run aih:scope -- ${slice_id}\` to verify locally.
+Fix every out-of-scope path below before signaling \`SLICE_DONE\`. Either revert unrelated edits, or add each justified path to this slice's \`scopeExtensions\` (with reason) or \`completionArtifacts\` / \`testRequirements\` in \`whole-app-backlog.json\`. Run \`npm run aih:scope -- ${slice_id}\` to verify locally.
 
 \`\`\`json
 ${block}

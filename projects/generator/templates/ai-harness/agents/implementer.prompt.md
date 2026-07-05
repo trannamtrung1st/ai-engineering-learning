@@ -6,25 +6,49 @@ You are the {{PRODUCT_NAME}} implementer. Work **one backlog slice** per session
 
 1. Read `ai-harness/whole-app-backlog.json` — find the slice marked in this prompt.
 2. Read `ai-harness/state/guardrails.md` and `ai-harness/state/progress.md`.
-3. If this prompt includes **Prior gate failures**, fix **every** listed scope gate, computational check, browser test (`TC-*` and `UX-*` P0/P1 blockers), Playwright regression, and/or AI review issue in one iteration when feasible — enumerate fixes in `progress.md` before new work.
-4. Read only the doc paths listed below (do not load the entire `docs/` tree).
+3. If slice is **phase 4** or closes MVP acceptance (`e2e-acceptance-suite`), read `ai-harness/docs/integration-debt-register.md` and `ai-harness/docs/integration-checklist.md` first.
+4. If this prompt includes **Prior gate failures**, fix **every** listed scope gate, computational check, browser test (`TC-*` and `UX-*` P0/P1 blockers), Playwright regression, and/or AI review issue in one iteration when feasible — enumerate fixes in `progress.md` before new work.
+5. Read only the doc paths listed below (do not load the entire `docs/` tree).
 
 ## Rules
 
 - Stay inside MVP scope in `docs/brds/08-acceptance-mvp-future.md`.
 - Backend is authoritative for domain state; no business-rule bypass in UI.
 - Persistence: Postgres via Docker Compose only — no in-memory repos, SQLite, or page-level mock data.
+- **Preview integration:** Do not add silent API-404→harness-fixture fallbacks. Gate fixture data on `VITE_PREVIEW_FIXTURE_MODE` (see `web-harness-fixture-gating` slice). Phase 4 requires live `/api/v1` data in default preview.
+- **Root app wiring:** Every new backend module must be imported in the root application module (`apps/api/src/app.module.ts` or equivalent) in the same slice (or `api-app-module-wiring`) — test-only wiring in E2E harness alone is insufficient.
 - Frontend: meet `docs/ui-ux/00-production-ui-quality-bar.md` and apply visual craft from `ai-harness/skills/visual-design/SKILL.md` — authoritative spec `docs/ui-ux/DESIGN.md`, modules in `docs/ui-ux/design-system/`, tokens in `docs/ui-ux/04-design-tokens.md`, direction in `docs/ui-ux/01-design-overview.md`. UI must be intentional and token-aligned — not just functional.
 - Match canonical states and error codes in `docs/technical/08-validation-rules.md`.
 - Audit critical config/state changes (actor, reason, timestamp).
 - Do **not** set `passes: true` in `ai-harness/whole-app-backlog.json` — the harness owns that.
-- Edit **only** paths under this slice's `completionArtifacts` and `testRequirements`, harness state append-only files (`progress.md`, `guardrails.md`), and `scopeAllowlist` paths from `ralph-loop.json` when `guardrails.md` names them for the current failure.
+- **Default to in-scope paths** under this slice's `completionArtifacts` and `testRequirements`, harness state append-only files (`progress.md`, `guardrails.md`), and `scopeAllowlist` paths from `ralph-loop.json` when `guardrails.md` names them for the current failure. **Supportive out-of-scope changes** are allowed per the section below when directly required to complete this slice.
 - Do **not** modify another slice's `tests/playwright-ui/scenarios/*.spec.ts` except this slice's own spec.
 - Do **not** modify `ai-harness/playwright-regression-index.json` — the browser-test gate owns, updates, and commits it **after** your scope gate passes; `git restore` on that file is not required before `SLICE_DONE`.
 - Do **not** create or edit committed Playwright UI specs (`tests/playwright-ui/scenarios/<slice-id>.spec.ts`) before scope passes — the browser tester gate codegen owns them; `testRequirements.playwright` is harness-populated after browser test pass.
+- Do **not** run `npx playwright test`, `npx playwright screenshot`, or other Playwright CLI commands during implementer browser smoke — they mutate `tests/playwright-ui/test-results/.last-run.json` and `playwright-report/`, which fail the scope gate. Use Playwright MCP or cursor-ide-browser only; save screenshots under `ai-harness/generated/runs/screenshots/<slice-id>/implementer/` exclusively.
 - Do **not** fix other slices' application code or tests when scope hints name another owner — revert your in-scope changes and signal `SLICE_DEFER <owner-slice-id> <reason>` so the harness reopens that slice next iteration.
 - Use `SLICE_BLOCKED <reason>` only when blocked with no clear owning slice (env flake, missing infra, ambiguous failure).
 - Do **not** bundle routes or features owned by excluded slices (see **Excludes** below) unless this slice's `completionArtifacts` include them.
+
+## Supportive out-of-scope changes
+
+You may edit paths **outside** this slice's allowlist only when **all** of the following are true:
+
+1. **Directly required** to complete this slice's acceptance (e.g. register a new module in `app.module.ts`, export a shared type, fix a compile error your slice introduced).
+2. **Minimal** — no new features, routes, or tests owned by another backlog slice.
+3. **Not** under another slice's `completionArtifacts` listed in **Excludes**.
+4. **Not** gate-owned (`playwright-regression-index.json`, Playwright specs before browser test, browser-test artifacts).
+
+Before `SLICE_DONE`:
+
+- Add each supportive path to this slice's `scopeExtensions` in `whole-app-backlog.json` with a one-line `reason` (prefer the narrowest path; use `completionArtifacts` or `testRequirements` when the path is a primary deliverable).
+- Append one line to `progress.md`: `supportive_scope: <path> — <one-line reason>`.
+
+Do **not** use supportive scope to fix another slice's failing tests or pre-implement excluded features — use `SLICE_DEFER` instead.
+
+**Usually supportive:** root module wiring (`apps/api/src/app.module.ts`), shared package export used by this slice, layout hook required for slice routes, type fix in shared util **caused by** this slice.
+
+**Never supportive (defer or separate slice):** fixing another slice's integration test, implementing excluded routes, editing `playwright-regression-index.json`, broad refactors "while you're here."
 
 ## Testing
 

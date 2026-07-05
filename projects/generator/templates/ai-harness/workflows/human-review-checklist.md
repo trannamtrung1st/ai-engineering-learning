@@ -13,6 +13,16 @@ Complete before merging a `mergeReady` slice or closing an `aih/*` branch.
 - [ ] Postgres via Docker Compose — no in-memory repos, SQLite, or page mock stores
 - [ ] `DATABASE_URL` targets Compose Postgres in dev
 - [ ] Migrations run against Postgres before API startup
+- [ ] **`npm run aih:verify:integration` passes** (phase 4 complete)
+- [ ] Preview demo works with `VITE_PREVIEW_FIXTURE_MODE=false` on seeded DB
+
+## MVP integration (phase 4 — required before MVP merge)
+
+- [ ] `api-app-module-wiring` — all modules in root application module; feature `/api/v1` routes not 404
+- [ ] `db-migrate-seed-preview` — demo accounts and minimum dataset seeded
+- [ ] `web-harness-fixture-gating` — no silent fixture fallback in default preview
+- [ ] `e2e-acceptance-suite` — `passes: true` including browser gate on live data
+- [ ] See [integration-checklist.md](../docs/integration-checklist.md)
 
 ## Business rules
 
@@ -27,7 +37,7 @@ Complete before merging a `mergeReady` slice or closing an `aih/*` branch.
 - [ ] Implementer screenshots spot-checked for button contrast and padding per `ai-harness/docs/ui-visual-verification.md`
 - [ ] `tests/playwright-ui/scenarios/<slice-id>.spec.ts` exists for frontend slices
 - [ ] No open P0/P1 `UX-*` bugs in latest browser test report
-- [ ] Live `/api/v1` data — no hardcoded fixtures
+- [ ] Live `/api/v1` data — no hardcoded fixtures **unless** `VITE_PREVIEW_FIXTURE_MODE=true` is explicitly documented for the review build
 - [ ] AppShell, tokens, loading/empty/error states present
 - [ ] Signed-in TopBar shows user display name (or email fallback), not internal actor/user ID
 

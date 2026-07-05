@@ -11,6 +11,7 @@ testgen_map="${REPO_ROOT}/ai-harness/config/testgen-docs-map.json"
 manualsgen_map="${REPO_ROOT}/ai-harness/config/manualsgen-docs-map.json"
 manuals_backlog="${REPO_ROOT}/ai-harness/manuals-backlog.json"
 manuals_index="${REPO_ROOT}/ai-harness/manuals-index.json"
+integration_checks="${REPO_ROOT}/ai-harness/config/integration-checks.json"
 
 validate_json_shape() {
   local file="$1"
@@ -38,6 +39,10 @@ validate_json_shape() {
 
 validate_json_shape "$backlog" "${GEN_ROOT}/schemas/whole-app-backlog.schema.json"
 validate_json_shape "$context_map" "${GEN_ROOT}/schemas/context-map.schema.json"
+
+if [[ -f "$integration_checks" ]]; then
+  validate_json_shape "$integration_checks" "${TEMPLATES_DIR}/ai-harness/schemas/integration-checks.schema.json"
+fi
 
 if [[ -f "$manuals_backlog" ]]; then
   validate_json_shape "$manuals_backlog" "${GEN_ROOT}/schemas/manuals-backlog.schema.json"

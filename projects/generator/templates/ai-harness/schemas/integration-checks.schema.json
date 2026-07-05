@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://{{PRODUCT_SLUG}}.local/ai-harness/schemas/integration-checks.schema.json",
+  "type": "object",
+  "required": [
+    "appModulePath",
+    "requiredModules",
+    "requiredNpmScripts",
+    "fixtureEnvVar",
+    "e2eHarnessPath",
+    "composeProfiles"
+  ],
+  "properties": {
+    "appModulePath": {
+      "type": "string",
+      "minLength": 1
+    },
+    "requiredModules": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "requiredNpmScripts": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "fixtureEnvVar": {
+      "type": "string",
+      "minLength": 1
+    },
+    "fixtureHelperPath": {
+      "type": "string"
+    },
+    "e2eHarnessPath": {
+      "type": "string",
+      "minLength": 1
+    },
+    "e2eRequiredModules": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "composeProfiles": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "composeServices": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "jwtEnvVars": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "description": "JWT secret env var names the service must accept (e.g. JWT_SECRET, PRODUCT_JWT_SECRET)"
+    },
+    "jwtServicePath": {
+      "type": "string",
+      "description": "Path to JWT service implementation for env-var alignment checks"
+    }
+  },
+  "additionalProperties": false
+}

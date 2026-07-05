@@ -43,6 +43,14 @@ TestGen resolves doc lists per tag via [`config/testgen-docs-map.json`](../confi
 | [08-validation-rules.md](../../docs/technical/08-validation-rules.md) | Error codes, validation |
 | [11-testing-plan.md](../../docs/technical/11-testing-plan.md) | Test pyramid, TestGen, flake triage |
 | [13-docker-compose-local-runtime.md](../../docs/technical/13-docker-compose-local-runtime.md) | Persistence policy, test stack |
+| [14-integration-debt.md](../../docs/technical/14-integration-debt.md) | Phase 4 integration debt status (product doc) |
+
+## Harness integration docs
+
+| Doc | Role |
+| --- | --- |
+| [integration-debt-register.md](./integration-debt-register.md) | Known phase-3→4 integration debt (GAP-*) |
+| [integration-checklist.md](./integration-checklist.md) | Phase 4 slice closure gates + release readiness |
 
 ## Harness skills
 
