@@ -29,7 +29,7 @@ DRIFT_COUNT=0
 check_item_drift() {
   local item_id="$1"
   local stored_fp live_fp artifact
-  stored_fp="$(jq -r --arg id "$item_id" '.tags[$id].docFingerprint // ""' "$MANUALS_INDEX")"
+  stored_fp="$(jq_generation_index_read "$MANUALS_INDEX" --arg id "$item_id" '.[0] | .tags[$id].docFingerprint // ""')"
   live_fp="$(compute_manual_item_doc_fingerprint "$item_id")"
 
   if [[ -z "$stored_fp" || "$stored_fp" == "null" ]]; then

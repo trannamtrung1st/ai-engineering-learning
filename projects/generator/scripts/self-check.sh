@@ -147,6 +147,12 @@ if ! bash "${TEMPLATES_DIR}/ai-harness/scripts/lib/plan-gate-fixtures.test.sh" >
   fail=1
 fi
 
+gen_step "Self-check: generation index jq helpers"
+if ! bash "${TEMPLATES_DIR}/ai-harness/scripts/lib/generation-index.test.sh" >/dev/null 2>&1; then
+  gen_err "generation-index.test.sh failed — run: bash templates/ai-harness/scripts/lib/generation-index.test.sh"
+  fail=1
+fi
+
 gen_step "Self-check: harness backlog plan step"
 check_file_exists "${GEN_ROOT}/agents/harness-backlog-planner.prompt.md"
 check_file_exists "${GEN_SCRIPTS_DIR}/validate-harness-backlog-plan.sh"

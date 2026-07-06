@@ -1493,7 +1493,7 @@ EOF
 
   case_count="$(jq '.cases | length' "$artifact_abs")"
   id_list="$(jq -r '.cases[].id' "$artifact_abs" | paste -sd ', ' -)"
-  stored_fp="$(jq -r --arg id "$requirement_tag" '.tags[$id].docFingerprint // ""' "$TEST_CASE_INDEX")"
+  stored_fp="$(jq_generation_index_read "$TEST_CASE_INDEX" --arg id "$requirement_tag" '.[0] | .tags[$id].docFingerprint // ""')"
   feedback_path="$(testgen_validation_feedback_path "$requirement_tag")"
   if [[ -f "$feedback_path" ]]; then
     status_line="**failed harness validation** — fix errors listed under **Previous validation failure** below"
@@ -1687,10 +1687,34 @@ all_requirement_tags_sorted() {
   done < <(all_requirement_tag_ids) | sort -n | cut -f2-
 }
 
+# test-case-index.json and manuals-index.json must be exactly one JSON object.
+# Planner agents sometimes append a second copy; plain jq reads/writes every value
+# and preserves duplication. Always use -s '.[0] | …'; writers collapse on save.
+jq_generation_index_read() {
+  local file="$1"
+  shift
+  jq -r -s "$@" "$file"
+}
+
+jq_generation_index_update() {
+  local file="$1"
+  local filter="$2"
+  shift 2
+  local tmp
+  tmp="$(mktemp)"
+  jq -s "$@" "$filter" "$file" > "$tmp" && mv "$tmp" "$file"
+}
+
+list_stale_requirement_tags() {
+  jq_generation_index_read "$TEST_CASE_INDEX" '
+    .[0] | .tags | to_entries[] | select(.value.current == false) | .key
+  ' 2>/dev/null || true
+}
+
 requirement_tag_test_cases_current() {
   local requirement_tag="$1"
   local current
-  current="$(jq -r --arg id "$requirement_tag" '.tags[$id].current // false' "$TEST_CASE_INDEX")"
+  current="$(jq_generation_index_read "$TEST_CASE_INDEX" --arg id "$requirement_tag" '.[0] | .tags[$id].current // false')"
   [[ "$current" == "true" ]]
 }
 
@@ -1933,7 +1957,7 @@ manual_item_type() {
 manual_item_current() {
   local item_id="$1"
   local current
-  current="$(jq -r --arg id "$item_id" '.tags[$id].current // false' "$MANUALS_INDEX")"
+  current="$(jq_generation_index_read "$MANUALS_INDEX" --arg id "$item_id" '.[0] | .tags[$id].current // false')"
   [[ "$current" == "true" ]]
 }
 
@@ -1994,29 +2018,25 @@ mark_manual_current() {
   local item_id="$1"
   local fingerprint="$2"
   local generated_at="${3:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}"
-  local tmp
-  tmp="$(mktemp)"
-  jq --arg id "$item_id" --arg fp "$fingerprint" --arg ts "$generated_at" '
-    .tags[$id] = {
+  jq_generation_index_update "$MANUALS_INDEX" '
+    .[0] | .tags[$id] = {
       current: true,
       docFingerprint: $fp,
       generatedAt: $ts
     }
-  ' "$MANUALS_INDEX" > "$tmp" && mv "$tmp" "$MANUALS_INDEX"
+  ' --arg id "$item_id" --arg fp "$fingerprint" --arg ts "$generated_at"
 }
 
 reset_manual_item_on_doc_drift() {
   local item_id="$1"
   local live_fp="$2"
-  local tmp
-  tmp="$(mktemp)"
-  jq --arg id "$item_id" --arg fp "$live_fp" '
-    .tags[$id] = {
+  jq_generation_index_update "$MANUALS_INDEX" '
+    .[0] | .tags[$id] = {
       current: false,
       docFingerprint: $fp,
       generatedAt: null
     }
-  ' "$MANUALS_INDEX" > "$tmp" && mv "$tmp" "$MANUALS_INDEX"
+  ' --arg id "$item_id" --arg fp "$live_fp"
   append_guardrail "$item_id" "Manual source docs changed — run ManualsGen (index current=false; fingerprint=${live_fp})"
 }
 
@@ -2046,7 +2066,7 @@ EOF
   fi
 
   line_count="$(wc -l < "$artifact_abs" | tr -d ' ')"
-  stored_fp="$(jq -r --arg id "$item_id" '.tags[$id].docFingerprint // ""' "$MANUALS_INDEX")"
+  stored_fp="$(jq_generation_index_read "$MANUALS_INDEX" --arg id "$item_id" '.[0] | .tags[$id].docFingerprint // ""')"
 
   cat <<EOF
 ## Review and update existing manual
@@ -2066,15 +2086,13 @@ mark_test_cases_current() {
   local requirement_tag="$1"
   local fingerprint="$2"
   local generated_at="${3:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}"
-  local tmp
-  tmp="$(mktemp)"
-  jq --arg id "$requirement_tag" --arg fp "$fingerprint" --arg ts "$generated_at" '
-    .tags[$id] = {
+  jq_generation_index_update "$TEST_CASE_INDEX" '
+    .[0] | .tags[$id] = {
       current: true,
       docFingerprint: $fp,
       generatedAt: $ts
     }
-  ' "$TEST_CASE_INDEX" > "$tmp" && mv "$tmp" "$TEST_CASE_INDEX"
+  ' --arg id "$requirement_tag" --arg fp "$fingerprint" --arg ts "$generated_at"
   mark_slices_stale_for_tag "$requirement_tag"
 }
 
@@ -2082,15 +2100,13 @@ _reset_requirement_tag_on_doc_drift_body() {
   local requirement_tag="$1"
   local live_fp="$2"
   ensure_test_case_artifact_restored "$requirement_tag"
-  local tmp
-  tmp="$(mktemp)"
-  jq --arg id "$requirement_tag" --arg fp "$live_fp" '
-    .tags[$id] = {
+  jq_generation_index_update "$TEST_CASE_INDEX" '
+    .[0] | .tags[$id] = {
       current: false,
       docFingerprint: $fp,
       generatedAt: null
     }
-  ' "$TEST_CASE_INDEX" > "$tmp" && mv "$tmp" "$TEST_CASE_INDEX"
+  ' --arg id "$requirement_tag" --arg fp "$live_fp"
   mark_slices_stale_for_tag "$requirement_tag"
   append_guardrail "$requirement_tag" "Docs changed — run TestGen before Ralph (index current=false; fingerprint=${live_fp})"
 }

@@ -41,7 +41,7 @@ done < <(jq -r '.slices[] | select(.passes == false) | .id' "$BACKLOG")
 
 echo ""
 echo "Stale test case tags (current: false):"
-stale="$(jq -r '.tags | to_entries[] | select(.value.current == false) | .key' "$TEST_CASE_INDEX" 2>/dev/null || true)"
+stale="$(list_stale_requirement_tags)"
 if [[ -z "$stale" ]]; then
   echo "  (none)"
 else

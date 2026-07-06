@@ -11,7 +11,41 @@ testgen_map="${REPO_ROOT}/ai-harness/config/testgen-docs-map.json"
 manualsgen_map="${REPO_ROOT}/ai-harness/config/manualsgen-docs-map.json"
 manuals_backlog="${REPO_ROOT}/ai-harness/manuals-backlog.json"
 manuals_index="${REPO_ROOT}/ai-harness/manuals-index.json"
+test_case_index="${REPO_ROOT}/ai-harness/test-case-index.json"
 integration_checks="${REPO_ROOT}/ai-harness/config/integration-checks.json"
+
+validate_single_json_document() {
+  local file="$1"
+  [[ -f "$file" ]] || return 0
+  local count
+  count="$(jq -s 'length' "$file" 2>/dev/null || echo 0)"
+  if [[ "$count" -eq 0 ]]; then
+    gen_err "invalid JSON: $file"
+    fail=1
+    return
+  fi
+  if [[ "$count" -gt 1 ]]; then
+    gen_err "$file: expected one JSON object, found $count (overwrite the file — do not append a second object)"
+    fail=1
+    return
+  fi
+  if ! jq empty "$file" 2>/dev/null; then
+    gen_err "invalid JSON: $file"
+    fail=1
+  fi
+}
+
+validate_generation_index_shape() {
+  local file="$1"
+  [[ -f "$file" ]] || return 0
+  local field
+  for field in current docFingerprint tags; do
+    if [[ "$(jq -r --arg f "$field" 'has($f)' "$file")" != "true" ]]; then
+      gen_err "$file: missing required field $field"
+      fail=1
+    fi
+  done
+}
 
 validate_json_shape() {
   local file="$1"
@@ -173,10 +207,13 @@ if [[ -f "$manuals_backlog" ]]; then
 fi
 
 if [[ -f "$manuals_index" ]]; then
-  if ! jq empty "$manuals_index" 2>/dev/null; then
-    gen_err "invalid JSON: $manuals_index"
-    fail=1
-  fi
+  validate_single_json_document "$manuals_index"
+  validate_generation_index_shape "$manuals_index"
+fi
+
+if [[ -f "$test_case_index" ]]; then
+  validate_single_json_document "$test_case_index"
+  validate_generation_index_shape "$test_case_index"
 fi
 
 if [[ "$fail" -eq 0 ]]; then
