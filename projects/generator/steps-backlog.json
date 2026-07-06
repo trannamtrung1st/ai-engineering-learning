@@ -564,7 +564,7 @@
       "description": "Substitute product placeholders in harness agent prompts and README",
       "outputs": [
         "ai-harness/agents/implementer.prompt.md",
-        "ai-harness/agents/slice-planner.prompt.md",
+        "ai-harness/agents/work-planner.prompt.md",
         "ai-harness/agents/reviewer.prompt.md",
         "ai-harness/agents/tester.prompt.md",
         "ai-harness/agents/testgen.prompt.md",

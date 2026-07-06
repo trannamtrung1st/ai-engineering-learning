@@ -15,7 +15,7 @@ workspace="$(workspace_name)"
 
 for f in \
   "${REPO_ROOT}/ai-harness/agents/implementer.prompt.md" \
-  "${REPO_ROOT}/ai-harness/agents/slice-planner.prompt.md" \
+  "${REPO_ROOT}/ai-harness/agents/work-planner.prompt.md" \
   "${REPO_ROOT}/ai-harness/agents/reviewer.prompt.md" \
   "${REPO_ROOT}/ai-harness/agents/tester.prompt.md" \
   "${REPO_ROOT}/ai-harness/agents/testgen.prompt.md" \

@@ -161,30 +161,47 @@ if [[ "$plan_prio" -ge "$backlog_prio" ]]; then
   fail=1
 fi
 
-gen_step "Self-check: slice plan gate templates"
-check_file_exists "${TEMPLATES_DIR}/ai-harness/agents/slice-planner.prompt.md"
-check_file_exists "${TEMPLATES_DIR}/ai-harness/scripts/validate-slice-plan.sh"
+gen_step "Self-check: work plan gate templates"
+check_file_exists "${TEMPLATES_DIR}/ai-harness/agents/work-planner.prompt.md"
+check_file_exists "${TEMPLATES_DIR}/ai-harness/scripts/validate-work-plan.sh"
 check_file_exists "${TEMPLATES_DIR}/ai-harness/scripts/check-plan-drift.sh"
 check_file_exists "${TEMPLATES_DIR}/ai-harness/config/plan-index.json"
-check_json "${TEMPLATES_DIR}/ai-harness/schemas/slice-plan.schema.json"
-if [[ "$(jq -r '.slicePlanGate.mode // empty' "${TEMPLATES_DIR}/ai-harness/workflows/ralph-loop.json")" != "required" ]]; then
-  gen_err "ralph-loop.json missing slicePlanGate.mode required"
+check_json "${TEMPLATES_DIR}/ai-harness/schemas/work-plan.schema.json"
+if [[ "$(jq -r '.workPlanGate.mode // empty' "${TEMPLATES_DIR}/ai-harness/workflows/ralph-loop.json")" != "required" ]]; then
+  gen_err "ralph-loop.json missing workPlanGate.mode required"
   fail=1
 fi
-if [[ "$(jq -r '.slicePlanGate.requireExplicitRequiresPlan // false' "${TEMPLATES_DIR}/ai-harness/workflows/ralph-loop.json")" != "true" ]]; then
-  gen_err "ralph-loop.json missing slicePlanGate.requireExplicitRequiresPlan"
+if [[ "$(jq -r '.workPlanGate.requireExplicitRequiresPlan // false' "${TEMPLATES_DIR}/ai-harness/workflows/ralph-loop.json")" != "true" ]]; then
+  gen_err "ralph-loop.json missing workPlanGate.requireExplicitRequiresPlan"
   fail=1
 fi
-if ! grep -q 'Approved implementation plan' "${TEMPLATES_DIR}/ai-harness/agents/implementer.prompt.md" 2>/dev/null; then
-  gen_err "implementer.prompt.md must reference approved implementation plan"
+if ! grep -q 'WORK_PLAN_BLOCK' "${TEMPLATES_DIR}/ai-harness/agents/implementer.prompt.md" 2>/dev/null; then
+  gen_err "implementer.prompt.md must include WORK_PLAN_BLOCK placeholder"
+  fail=1
+fi
+if ! grep -q 'Plan progress tracking' "${TEMPLATES_DIR}/ai-harness/agents/implementer.prompt.md" 2>/dev/null; then
+  gen_err "implementer.prompt.md must include plan progress tracking section"
   fail=1
 fi
 if ! grep -q 'PRIOR_GATE_FAILURES_BLOCK' "${TEMPLATES_DIR}/ai-harness/agents/implementer.prompt.md" 2>/dev/null; then
   gen_err "implementer.prompt.md must include PRIOR_GATE_FAILURES_BLOCK placeholder"
   fail=1
 fi
-if ! grep -q 'PLAN_VALIDATION_FEEDBACK_BLOCK' "${TEMPLATES_DIR}/ai-harness/agents/slice-planner.prompt.md" 2>/dev/null; then
-  gen_err "slice-planner.prompt.md must include PLAN_VALIDATION_FEEDBACK_BLOCK placeholder"
+if ! grep -q 'BACKLOG_PLAN_VALIDATION_FEEDBACK_BLOCK' "${GEN_ROOT}/agents/harness-backlog-planner.prompt.md" 2>/dev/null; then
+  gen_err "harness-backlog-planner.prompt.md must include BACKLOG_PLAN_VALIDATION_FEEDBACK_BLOCK placeholder"
+  fail=1
+fi
+check_file_exists "${GEN_SCRIPTS_DIR}/lib/gen-step.sh"
+if [[ "$(jq -r '.harnessBacklogPlanGate.maxRetries // empty' "$LOOP_CONFIG")" == "" ]]; then
+  gen_err "gen-loop.json missing harnessBacklogPlanGate.maxRetries"
+  fail=1
+fi
+if ! grep -q 'PLAN_VALIDATION_FEEDBACK_BLOCK' "${TEMPLATES_DIR}/ai-harness/agents/work-planner.prompt.md" 2>/dev/null; then
+  gen_err "work-planner.prompt.md must include PLAN_VALIDATION_FEEDBACK_BLOCK placeholder"
+  fail=1
+fi
+if ! grep -q 'PRIOR_GATE_FAILURES_BLOCK' "${TEMPLATES_DIR}/ai-harness/agents/work-planner.prompt.md" 2>/dev/null; then
+  gen_err "work-planner.prompt.md must include PRIOR_GATE_FAILURES_BLOCK placeholder"
   fail=1
 fi
 

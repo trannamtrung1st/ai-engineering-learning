@@ -439,3 +439,34 @@ reset_gate_repair_count() {
   jq --arg id "$step_id" 'del(.[$id])' "$GATE_REPAIR_STATE" > "$tmp"
   mv "$tmp" "$GATE_REPAIR_STATE"
 }
+
+BACKLOG_PLAN_VALIDATION_FEEDBACK_DIR="${GEN_STATE_DIR}/harness-backlog-plan-validation-feedback"
+
+write_harness_backlog_plan_validation_feedback() {
+  local feedback="$1"
+  mkdir -p "$BACKLOG_PLAN_VALIDATION_FEEDBACK_DIR"
+  printf '%s\n' "$feedback" > "${BACKLOG_PLAN_VALIDATION_FEEDBACK_DIR}/whole-app-backlog.txt"
+}
+
+clear_harness_backlog_plan_validation_feedback() {
+  local path="${BACKLOG_PLAN_VALIDATION_FEEDBACK_DIR}/whole-app-backlog.txt"
+  [[ -f "$path" ]] && rm -f "$path"
+}
+
+format_harness_backlog_plan_validation_feedback_block() {
+  local path="${BACKLOG_PLAN_VALIDATION_FEEDBACK_DIR}/whole-app-backlog.txt"
+  [[ -f "$path" ]] || return 0
+
+  cat <<'EOF'
+## Previous backlog plan validation failure (fix before STEP_DONE)
+
+The last harness run for this step **failed plan validation**. Update `ai-harness/plans/whole-app-backlog.md` so `validate-harness-backlog-plan.sh` passes — address **every** item below:
+
+EOF
+  local line
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" ]] && continue
+    echo "- ${line}"
+  done < "$path"
+  echo ""
+}

@@ -27,7 +27,7 @@ pick step → [scaffold|agent|gate]
   → mark passes → commit → repeat
 ```
 
-**Harness backlog (plan-first):** `harness-backlog-plan` writes `ai-harness/plans/whole-app-backlog.md` (slice inventory, acceptance mapping, `testingPlanRefs`). `harness-backlog` runs harness-planner against that plan to emit `whole-app-backlog.json`. Validators block JSON generation when the plan is missing or incomplete.
+**Harness backlog (plan-first, one iteration):** `harness-backlog-plan` and `harness-backlog` run in the **same** `gen-once` / `gen-loop` iteration when either step is pending — separate agent sessions (`harness-backlog-planner` then `harness-planner`). The planner inner loop retries plan validation up to `harnessBacklogPlanGate.maxRetries` (default 5) before the JSON step runs. Validators block JSON generation when the plan is missing or incomplete.
 
 Scripts: `generate.sh` (entry), `gen-loop.sh` (autonomous), `gen-once.sh` (single step), `discover-docs.sh`, `auto-skip-complete-steps.sh`.
 

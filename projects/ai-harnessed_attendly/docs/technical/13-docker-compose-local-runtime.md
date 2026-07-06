@@ -8,14 +8,14 @@
 
 This document specifies the local Docker Compose runtime topology for Attendly MVP development and testing.
 
-> **Implementation status (2026-07-05):** Repository `docker-compose.yml` currently provides **`db` (Postgres) only**. Target topology below (Redis, api, web containers, `full-preview` profile) is tracked in harness slice `compose-full-preview-redis`. Dev preview uses local API/web processes via `npm run aih:preview` — see [14-integration-debt.md](./14-integration-debt.md).
+> **Implementation status (2026-07-06):** Repository `docker-compose.yml` provides **`db` (Postgres) only** on port 5432 with `pg_isready` health checks and `attendly-local-net`. `docker-compose.test.yml` provides an isolated ephemeral Postgres on port 5433 for integration/e2e. Target topology below (Redis, api, web containers, `full-preview` profile) is tracked in harness slice `compose-full-preview-redis`. Dev preview uses local API/web processes via `npm run aih:preview` — see [14-integration-debt.md](./14-integration-debt.md).
 
 ### 1.1 Current vs target snapshot
 
-| Component | Current (2026-07-05) | Target |
+| Component | Current (2026-07-06) | Target |
 | --- | --- | --- |
-| `docker-compose.yml` | `db` (Postgres) service only | `db`, `redis`, `api`, `web` with profiles |
-| `docker-compose.test.yml` | Isolated Postgres on port 5433 | Same — used by integration harness |
+| `docker-compose.yml` | `db` (Postgres) on 5432, health check, named volume | `db`, `redis`, `api`, `web` with profiles |
+| `docker-compose.test.yml` | Isolated Postgres on port 5433 (tmpfs, health check) | Same — used by integration harness |
 | API/web runtime | Host processes via `aih:preview` | Optional containerized `full-preview` profile |
 | Migrate/seed | `ensureSchema()` at API boot | One-off `migrate` and `seed` compose services |
 | Redis | Not in dev compose | Recommended for realtime pubsub (M09) |

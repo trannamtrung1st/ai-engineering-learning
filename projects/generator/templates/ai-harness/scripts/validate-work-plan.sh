@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Validate slice implementation plan markdown before implementer runs
-# Usage: validate-slice-plan.sh <sliceId> [--quiet]
+# Validate work plan markdown
+# Usage: validate-work-plan.sh <sliceId> [--quiet] [--plan-file <path>]
+# Without --plan-file, reads legacy path ai-harness/plans/<slice-id>.md (manual use only).
 set -euo pipefail
 source "$(dirname "$0")/lib/common.sh"
 
@@ -8,10 +9,9 @@ require_harness_deps
 cd "$REPO_ROOT"
 
 SLICE_ID="${1:?slice id required}"
+shift
 QUIET=false
-if [[ "${2:-}" == "--quiet" ]]; then
-  QUIET=true
-fi
+PLAN_FILE_OVERRIDE=""
 
 log_err() {
   if [[ "$QUIET" == true ]]; then
@@ -27,14 +27,43 @@ log_ok() {
   fi
 }
 
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --quiet)
+      QUIET=true
+      shift
+      ;;
+    --plan-file)
+      PLAN_FILE_OVERRIDE="${2:?--plan-file requires a path}"
+      shift 2
+      ;;
+    *)
+      log_err "unknown argument: $1"
+      exit 1
+      ;;
+  esac
+done
+
 if ! slice_requires_plan "$SLICE_ID"; then
-  log_ok "slice plan validation skipped (requiresPlan=false): ${SLICE_ID}"
+  log_ok "work plan validation skipped (requiresPlan=false): ${SLICE_ID}"
   exit 0
 fi
 
-plan_path="$(slice_plan_artifact_abs "$SLICE_ID")"
+if [[ -n "$PLAN_FILE_OVERRIDE" ]]; then
+  if [[ "$PLAN_FILE_OVERRIDE" = /* ]]; then
+    plan_path="$PLAN_FILE_OVERRIDE"
+  else
+    plan_path="${REPO_ROOT}/${PLAN_FILE_OVERRIDE}"
+  fi
+else
+  plan_path="$(work_plan_artifact_abs "$SLICE_ID")"
+fi
 if [[ ! -f "$plan_path" ]]; then
-  log_err "plan artifact missing: $(slice_plan_artifact_path "$SLICE_ID")"
+  if [[ -n "$PLAN_FILE_OVERRIDE" ]]; then
+    log_err "plan file missing: ${PLAN_FILE_OVERRIDE}"
+  else
+    log_err "plan artifact missing: $(work_plan_artifact_path "$SLICE_ID") (use --plan-file for ephemeral plans)"
+  fi
   exit 1
 fi
 
@@ -49,6 +78,13 @@ required_headings=(
   "Implementation sequence"
   "Risks and deferrals"
 )
+
+if slice_has_prior_gate_failures "$SLICE_ID"; then
+  required_headings=(
+    "Prior gate failure remediation"
+    "${required_headings[@]}"
+  )
+fi
 
 for heading in "${required_headings[@]}"; do
   if ! grep -qiE "^##[[:space:]]+${heading}[[:space:]]*$" "$plan_path"; then
@@ -72,6 +108,20 @@ acceptance_section="$(extract_section "Acceptance coverage")"
 testing_section="$(extract_section "Testing plan alignment")"
 files_section="$(extract_section "Files to create or modify")"
 test_strategy_section="$(extract_section "Test strategy")"
+deferrals_section="$(extract_section "Risks and deferrals")"
+remediation_section=""
+if slice_has_prior_gate_failures "$SLICE_ID"; then
+  remediation_section="$(extract_section "Prior gate failure remediation")"
+  if [[ -z "${remediation_section//[[:space:]]/}" ]]; then
+    FAILURES+=("Prior gate failure remediation section must list concrete fix steps for each prior gate failure")
+  elif ! grep -qE '^[[:space:]]*([-*]|[0-9]+[.)])' <<< "$remediation_section"; then
+    FAILURES+=("Prior gate failure remediation section must use bullets or numbered fix steps")
+  fi
+  impl_section="$(extract_section "Implementation sequence")"
+  if [[ -z "${impl_section//[[:space:]]/}" ]] || ! grep -qE '^[[:space:]]*1[.)]' <<< "$impl_section"; then
+    FAILURES+=("Implementation sequence must start with step 1 listing remediation fixes when prior gate failures exist")
+  fi
+fi
 
 while IFS= read -r tag; do
   [[ -z "$tag" ]] && continue
@@ -141,17 +191,26 @@ while IFS= read -r tag; do
   fi
   while IFS= read -r case_id; do
     [[ -z "$case_id" ]] && continue
-    if ! grep -qF "$case_id" <<< "$test_strategy_section" && ! grep -qF "$case_id" "$plan_path"; then
-      FAILURES+=("TestGen case ${case_id} (${tag}) not referenced in Test strategy")
+    # A case is "accounted for" if it is either implemented (referenced in the
+    # Test strategy section) or explicitly deferred (listed under Risks and
+    # deferrals). Cross-cutting acceptance tags (e.g. NFR-05/NFR-08) legitimately
+    # spread their cases across multiple slices, so a single slice plan may cover
+    # only a subset and defer the rest to downstream slices.
+    if grep -qF "$case_id" <<< "$test_strategy_section"; then
+      continue
     fi
+    if grep -qF "$case_id" <<< "$deferrals_section"; then
+      continue
+    fi
+    FAILURES+=("TestGen case ${case_id} (${tag}) not referenced in Test strategy or deferred in Risks and deferrals")
   done < <(jq -r '.cases[]? | select((.layer // "") | test("^(integration|e2e|browser)$")) | .id // empty' "$artifact_abs" 2>/dev/null)
 done < <(echo "$slice_json" | jq -r '.acceptance[]? // empty')
 
 if [[ ${#FAILURES[@]} -gt 0 ]]; then
-  log_err "slice plan validation failed for ${SLICE_ID}:"
+  log_err "work plan validation failed for ${SLICE_ID}:"
   printf '%s\n' "${FAILURES[@]}" >&2
   exit 1
 fi
 
-log_ok "slice plan validation passed: ${SLICE_ID}"
+log_ok "work plan validation passed: ${SLICE_ID}"
 exit 0

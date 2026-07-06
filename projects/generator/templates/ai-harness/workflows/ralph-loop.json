@@ -189,10 +189,13 @@
   "testCaseGate": {
     "mode": "required"
   },
-  "slicePlanGate": {
+  "workPlanGate": {
     "mode": "required",
     "skipWhenRequiresPlanFalse": true,
-    "requireExplicitRequiresPlan": true
+    "requireExplicitRequiresPlan": true,
+    "maxRetries": 5,
+    "artifactWaitMs": 30000,
+    "artifactPollMs": 500
   },
   "integrationGate": {
     "enabled": true,

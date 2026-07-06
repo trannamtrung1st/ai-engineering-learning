@@ -52,6 +52,13 @@ prompt="${prompt//\{\{SEED_DOCS\}\}/$seed_list}"
 prompt="${prompt//\{\{EXISTING_OUTPUTS\}\}/$existing_list}"
 prompt="${prompt//\{\{INPUT_MODE\}\}/$(gen_input_mode)}"
 
+if [[ "$MODE" == "harness-backlog-planner" ]]; then
+  backlog_plan_feedback="$(format_harness_backlog_plan_validation_feedback_block 2>/dev/null || true)"
+  prompt="${prompt//\{\{BACKLOG_PLAN_VALIDATION_FEEDBACK_BLOCK\}\}/$backlog_plan_feedback}"
+else
+  prompt="${prompt//\{\{BACKLOG_PLAN_VALIDATION_FEEDBACK_BLOCK\}\}/}"
+fi
+
 if [[ "$STEP_ID" == "harness-backlog" && "$MODE" == "harness-planner" ]]; then
   plan_path="$(resolve_repo_path ai-harness/plans/whole-app-backlog.md)"
   plan_block=""

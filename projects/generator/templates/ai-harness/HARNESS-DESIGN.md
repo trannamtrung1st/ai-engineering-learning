@@ -7,7 +7,7 @@ Concise index for the 12 harness components. Referenced by `docs/technical/13-do
 | Component | Location |
 |---|---|
 | Model | `config/models.json`, env `AIH_MODEL` |
-| Prompt | `agents/implementer.prompt.md`, `agents/slice-planner.prompt.md`, `agents/tester.prompt.md`, `agents/reviewer.prompt.md`, `agents/testgen.prompt.md`, `agents/manualsgen.prompt.md` |
+| Prompt | `agents/implementer.prompt.md`, `agents/work-planner.prompt.md`, `agents/tester.prompt.md`, `agents/reviewer.prompt.md`, `agents/testgen.prompt.md`, `agents/manualsgen.prompt.md` |
 | Context | `config/context-map.json` — doc pointers per slice/agent |
 | Skills | `skills/*/SKILL.md` — agent craft guidance (`visual-design`, `ui-ux-testing`); wired via `context-map.json` `alwaysRead`, injected into prompts by `build-prompt.sh` |
 | Tools | Cursor CLI (`agent -p --force`) + Playwright MCP on frontend/test slices |
@@ -24,7 +24,7 @@ Concise index for the 12 harness components. Referenced by `docs/technical/13-do
 | ManualsGen | `scripts/manualsgen-loop.sh`, `scripts/check-manuals-drift.sh` — end-user manuals and demo scripts per backlog item |
 | Guardrails | `state/guardrails.md` + forbidden patterns in `ralph-loop.json` |
 | Observability | `generated/runs/<timestamp>-*.json` — TTL-pruned each Ralph iteration (`loop.generatedRetentionMinutes`, default 60m; preview/loop runtime files excluded) |
-| Feedback loops | Failed scope/check/browser-test/playwright-regression/review → guardrails append → retry; prior failures injected at **top** of implementer prompt (`{{PRIOR_GATE_FAILURES_BLOCK}}`) with gate-order fix list and targeted verify hints — implementer **retry-first** workflow: fix listed blockers before full doc read or `aih:check`, then full verify; plan validation errors persisted to `generated/runs/plan-validation-feedback/<slice-id>.txt` and injected at top of slice-planner prompt; **integration failure triage** (`integrationFailurePolicy`) runs isolated `node --test` on gate fail, writes `{run-id}-integration-triage.json`, reopens/focuses owner slice on `crossSuiteFlake` — bare full-suite re-run is not an acceptable fix; browser tester retries failed cases first (`browserTest.retryFailedCasesFirst`), then runs case batches + finalize sub-loop (`browserTest.maxCasesPerBatch`, default 10); **collect-all failures** (`browserTest.collectAllFailures`, default true) — report every FAIL in one pass; on pass syncs `testRequirements.playwright`, validates browser test-case JSON, and commits owned paths **after** headless Playwright regression; on browser/playwright fail reverts uncommitted owned changes |
+| Feedback loops | Failed scope/check/browser-test/playwright-regression/review → guardrails append → retry; **work planner runs every Ralph iteration** from backlog + guardrails + progress + prior gate failures; plan is ephemeral (`generated/runs/<run-id>-work-plan.md`) and read by implementer before coding; implementer marks checkbox progress in the plan file (no re-validation); prior failures in `{{PRIOR_GATE_FAILURES_BLOCK}}` with remediation section when needed; plan validation errors in `state/plan-validation-feedback/<slice-id>.txt` (inner retry before implementer); **integration failure triage** (`integrationFailurePolicy`) runs isolated `node --test` on gate fail, writes `{run-id}-integration-triage.json`, reopens/focuses owner slice on `crossSuiteFlake` — bare full-suite re-run is not an acceptable fix; browser tester retries failed cases first (`browserTest.retryFailedCasesFirst`), then runs case batches + finalize sub-loop (`browserTest.maxCasesPerBatch`, default 10); **collect-all failures** (`browserTest.collectAllFailures`, default true) — report every FAIL in one pass; on pass syncs `testRequirements.playwright`, validates browser test-case JSON, and commits owned paths **after** headless Playwright regression; on browser/playwright fail reverts uncommitted owned changes |
 | Human review | `workflows/human-review-checklist.md` |
 | Integration debt | `docs/integration-debt-register.md`, `docs/integration-checklist.md`, `scripts/verify-integration.sh`, `config/integration-checks.json` |
 | Preview runtime | `scripts/preview-stack.sh`, `docs/preview-runtime.md` |
@@ -41,7 +41,7 @@ Concise index for the 12 harness components. Referenced by `docs/technical/13-do
 Each iteration spawns a **fresh** agent context (no `--resume`). State lives on disk and in git.
 
 ```
-pick slice (priority, or one-shot override from loop-state.json) → drift check → test-case gate → plan drift check → slice-planner (when plan not current) → validate plan → implementer → slice scope gate → run-checks (no Playwright UI) → run-browser-test (MCP + codegen + validate PW config) → run-checks --playwright-only → run-ai-review → mark pass → commit
+pick slice (priority, or one-shot override from loop-state.json) → drift check → test-case gate → work-planner inner retry loop (ephemeral plan in `generated/runs/`; validation feedback in `state/plan-validation-feedback/`) → implementer reads plan → slice scope gate → run-checks (no Playwright UI) → run-browser-test (MCP + codegen + validate PW config) → run-checks --playwright-only → run-ai-review → mark pass → commit
 ```
 
 **Slice selection:** pending slices (`passes: false`) sorted by `priority`. Optional one-shot override in `state/loop-state.json` (`nextSliceId`) — consumed on pick so the next iteration focuses a specific slice, then normal priority resumes.
@@ -61,14 +61,16 @@ Test case gate policy (`ralph-loop.json` → `testCaseGate.mode`):
 
 To re-run a slice after TestGen catches up, set `passes: false` manually in `whole-app-backlog.json`.
 
-**Slice plan gate** (`ralph-loop.json` → `slicePlanGate.mode`):
+**Work planner** (`ralph-loop.json` → `workPlanGate.mode`):
 
 | Value | Behavior |
 |---|---|
-| `required` (default) | Slices with explicit `requiresPlan: true` must have a current plan before implementer runs; Ralph spawns slice-planner agent first. Legacy slices without `requiresPlan` skip until harness-planner regen (`requireExplicitRequiresPlan: true`). |
-| `optional` | Warn and continue when plan is not current |
+| `required` (default) | Slices with explicit `requiresPlan: true` run work-planner **every Ralph iteration** before implementer. Plan is ephemeral (`generated/runs/<run-id>-work-plan.md`), validated once, then read and checkbox-updated by implementer with the Read/Write tools — not committed. Legacy slices without `requiresPlan` skip until harness-planner regen (`requireExplicitRequiresPlan: true`). |
+| `optional` | Skip work-planner; implementer runs without a plan file |
 
-Infra slices (`requiresPlan: false` or `agent: infra`) skip the plan gate. With `requireExplicitRequiresPlan: true` (default), legacy slices **without** `requiresPlan` in the backlog also skip the plan gate until harness-planner regen adds explicit metadata. Plan drift (`check-plan-drift.sh`) invalidates `plan-index.json` when slice docs, acceptance tags, or `testingPlanRefs` change. Reopened slices invalidate their plan automatically. Skip gate: `AIH_SKIP_PLAN_GATE=1`. Validate manually: `npm run aih:validate:plan -- <slice-id>`.
+Infra slices (`requiresPlan: false` or `agent: infra`) skip the planner. Skip planner: `AIH_SKIP_WORK_PLAN_GATE=1`. Validate plan markdown manually: `npm run aih:validate:work-plan -- <slice-id> --plan-file <path>`.
+
+`ralph-once.sh` runs an **inner retry loop** (`workPlanGate.maxRetries`, default `5`) in the **same** iteration: work planner → stable ephemeral file wait → validate → on failure inject feedback from `state/plan-validation-feedback/<slice-id>.txt` and retry planner. Prior gate failures and slice `history` (reopen, drift, etc.) are injected into the work planner prompt so each plan reflects current state. The work-planner does **not** early-terminate on `PLAN_DONE` assistant text; it exits on the stream `result` event. Implementer runs in the same `ralph-once` after a validated plan — never on the next outer loop iteration. Implementer checkbox edits (`- [ ]` → `- [x]`) in the ephemeral plan do **not** re-trigger validation.
 
 Scripts: `ralph-loop.sh` (autonomous), `ralph-once.sh` (single step).
 
@@ -124,7 +126,7 @@ See [`docs/user-manuals-guide.md`](docs/user-manuals-guide.md).
 
 ## Backlog
 
-`ai-harness/whole-app-backlog.json` — phased slices with `passes`, `priority`, `acceptance`, `completionArtifacts`, optional `requiresPlan` / `planArtifact` / `testingPlanRefs` (plan gate inputs), optional `scopeExtensions` (supportive out-of-scope paths with reasons), optional `mergeReady` (set on `mvp-completion-ready` finale only). Set `passes: false` to re-queue a slice, or use `npm run aih:slice:reopen`. Optional per-slice `history` records why a slice was reopened or failed (injected into implementer prompts).
+`ai-harness/whole-app-backlog.json` — phased slices with `passes`, `priority`, `acceptance`, `completionArtifacts`, optional `requiresPlan` / `testingPlanRefs` (planner inputs), optional `scopeExtensions` (supportive out-of-scope paths with reasons), optional `mergeReady` (set on `mvp-completion-ready` finale only). Set `passes: false` to re-queue a slice, or use `npm run aih:slice:reopen`. Optional per-slice `history` records why a slice was reopened or failed (injected into planner and implementer prompts).
 
 **Phase model:** phase 0 infra → phase 1 backend (`module-<slug>`) → phase 2 frontend (`web-module-<slug>` + shell slices) → phase 4 finale (`mvp-completion-ready`, `mergeReady: true`). No separate phase 3 acceptance slice. Feature backend slices wire their module in root `AppModule` in the same slice; the finale verifies integration, runs HTTP E2E + browser acceptance on live preview, and triggers human merge review.
 

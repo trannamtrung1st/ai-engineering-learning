@@ -653,6 +653,13 @@ agent_completion_signals_csv() {
   jq -r '[.signals[]? // empty] | unique | join(",")' "$config"
 }
 
+# Work-planner must not early-terminate on PLAN_DONE in assistant text — that signal
+# fires before tool writes always flush to the host repo. Planner exits on result event only.
+agent_work_planner_completion_signals_csv() {
+  local config="${1:-${AIH_HARNESS_CONFIG:-$LOOP_CONFIG}}"
+  jq -r '[.signals[]? // empty | select(. != "PLAN_DONE")] | unique | join(",")' "$config"
+}
+
 agent_timeout_message() {
   local timeout_ms="$1"
   local timeout_min=$(( timeout_ms / 60000 ))
@@ -717,7 +724,11 @@ run_agent_with_timeout_ms() {
     idle_ms="$(get_agent_idle_timeout_ms "$harness_config")"
     signal_grace_ms="$(get_agent_signal_grace_ms "$harness_config")"
     result_grace_ms="$(get_agent_result_grace_ms "$harness_config")"
-    signals_csv="$(agent_completion_signals_csv "$harness_config")"
+    if [[ -n "${AIH_AGENT_COMPLETION_SIGNALS:-}" ]]; then
+      signals_csv="$AIH_AGENT_COMPLETION_SIGNALS"
+    else
+      signals_csv="$(agent_completion_signals_csv "$harness_config")"
+    fi
     stream_cmd=(node "${HARNESS_ROOT}/scripts/lib/stream-agent-output.js" \
       --outfile "$outfile" \
       --idle-timeout-ms "$idle_ms" \
@@ -1252,7 +1263,6 @@ mark_slice_reopened() {
   else
     append_slice_history "$slice_id" "$kind" "$reason" "$source"
   fi
-  invalidate_slice_plan "$slice_id" "reopened: ${reason}"
 }
 
 format_slice_history_block() {
@@ -1422,7 +1432,7 @@ EOF
   echo ""
 }
 
-PLAN_VALIDATION_FEEDBACK_DIR="${RUNS_DIR}/plan-validation-feedback"
+PLAN_VALIDATION_FEEDBACK_DIR="${STATE_DIR}/plan-validation-feedback"
 
 plan_validation_feedback_path() {
   local slice_id="$1"
@@ -1451,7 +1461,7 @@ format_plan_validation_feedback_block() {
   cat <<EOF
 ## Previous plan validation failure (fix before PLAN_DONE)
 
-The last harness run for this slice **failed plan validation**. Update the plan at \`$(slice_plan_artifact_path "$slice_id")\` so \`validate-slice-plan.sh\` passes — address **every** item below. Do not replan unrelated sections or re-read the full doc tree first.
+The last harness run for this slice **failed plan validation**. Fix **every** item below in your next plan output. Do not replan unrelated sections or re-read the full doc tree first.
 
 EOF
   while IFS= read -r line || [[ -n "$line" ]]; do
@@ -2110,7 +2120,6 @@ mark_slices_stale_for_tag() {
   ' "$BACKLOG" > "$pi_tmp" && mv "$pi_tmp" "$BACKLOG"
   for slice_id in "${stale_ids[@]}"; do
     append_slice_history "$slice_id" "drift" "Doc drift for ${requirement_tag} — reverify after TestGen" "harness"
-    invalidate_slice_plan "$slice_id" "doc drift for ${requirement_tag}"
   done
 }
 
@@ -2252,10 +2261,6 @@ build_slice_scope_allowlist() {
   allowlist+=("ai-harness/state/progress.md")
   allowlist+=("ai-harness/state/guardrails.md")
   allowlist+=("ai-harness/whole-app-backlog.json")
-  if slice_requires_plan "$slice_id"; then
-    allowlist+=("$(slice_plan_artifact_path "$slice_id")")
-    allowlist+=("ai-harness/config/plan-index.json")
-  fi
 
   if [[ "$agent_type" == "frontend" ]]; then
     while IFS= read -r path; do
@@ -2702,8 +2707,8 @@ agent_invoke_manualsgen() {
   AIH_HARNESS_CONFIG="$idle_config" run_agent_with_timeout_ms "$timeout_ms" "$outfile" "$AGENT_BIN" "${args[@]}" "$prompt"
 }
 
-# Slice planner: writes plan markdown only (no product code).
-agent_invoke_planner() {
+# Work planner: writes plan markdown only (no product code).
+agent_invoke_work_planner() {
   local model="$1"
   local prompt="$2"
   local outfile="${3:-}"
@@ -2712,20 +2717,44 @@ agent_invoke_planner() {
   args=(-p --force --trust --model "$model")
   read -ra fmt <<< "$(agent_output_format_args)"
   args+=("${fmt[@]}")
-  local timeout_ms idle_config
+  local timeout_ms idle_config planner_signals
   idle_config="$LOOP_CONFIG"
   timeout_ms="$(get_agent_timeout_ms "$idle_config")"
-  AIH_HARNESS_CONFIG="$idle_config" run_agent_with_timeout_ms "$timeout_ms" "$outfile" "$AGENT_BIN" "${args[@]}" "$prompt"
+  planner_signals="$(agent_work_planner_completion_signals_csv "$idle_config")"
+  AIH_AGENT_COMPLETION_SIGNALS="$planner_signals" \
+    AIH_HARNESS_CONFIG="$idle_config" \
+    run_agent_with_timeout_ms "$timeout_ms" "$outfile" "$AGENT_BIN" "${args[@]}" "$prompt"
 }
 
-ensure_plan_index() {
-  if [[ ! -f "$PLAN_INDEX" ]]; then
-    mkdir -p "$(dirname "$PLAN_INDEX")"
-    echo '{"current":[],"docFingerprint":null,"tags":{}}' > "$PLAN_INDEX"
+# Ephemeral per-iteration plan (generated/runs, not committed). Injected into implementer prompt.
+work_plan_run_path() {
+  local run_id="$1"
+  echo "ai-harness/generated/runs/${run_id}-work-plan.md"
+}
+
+work_plan_run_abs() {
+  local run_id="$1"
+  echo "${REPO_ROOT}/$(work_plan_run_path "$run_id")"
+}
+
+resolve_work_plan_file_for_prompt() {
+  if [[ -n "${AIH_WORK_PLAN_FILE:-}" && -f "${AIH_WORK_PLAN_FILE}" ]]; then
+    printf '%s' "${AIH_WORK_PLAN_FILE}"
+    return 0
   fi
+  if [[ -n "${AIH_RUN_ID:-}" ]]; then
+    local run_plan
+    run_plan="$(work_plan_run_abs "$AIH_RUN_ID")"
+    if [[ -f "$run_plan" ]]; then
+      printf '%s' "$run_plan"
+      return 0
+    fi
+  fi
+  return 1
 }
 
-slice_plan_artifact_path() {
+# Legacy path under ai-harness/plans/ — manual validate only; Ralph does not write here.
+work_plan_artifact_path() {
   local slice_id="$1"
   local custom
   custom="$(get_slice_field "$slice_id" planArtifact 2>/dev/null || echo "")"
@@ -2736,9 +2765,9 @@ slice_plan_artifact_path() {
   echo "ai-harness/plans/${slice_id}.md"
 }
 
-slice_plan_artifact_abs() {
+work_plan_artifact_abs() {
   local slice_id="$1"
-  echo "${REPO_ROOT}/$(slice_plan_artifact_path "$slice_id")"
+  echo "${REPO_ROOT}/$(work_plan_artifact_path "$slice_id")"
 }
 
 slice_requires_plan() {
@@ -2751,7 +2780,7 @@ slice_requires_plan() {
   if [[ "$explicit" == "true" ]]; then
     return 0
   fi
-  require_explicit="$(jq -r '.slicePlanGate.requireExplicitRequiresPlan // false' "$LOOP_CONFIG" 2>/dev/null || echo false)"
+  require_explicit="$(jq -r '.workPlanGate.requireExplicitRequiresPlan // false' "$LOOP_CONFIG" 2>/dev/null || echo false)"
   if [[ "$require_explicit" == "true" ]]; then
     return 1
   fi
@@ -2759,99 +2788,278 @@ slice_requires_plan() {
   [[ "$agent_type" != "infra" ]]
 }
 
-slice_plan_gate_mode() {
+work_plan_gate_mode() {
   local mode
-  mode="$(jq -r '.slicePlanGate.mode // "required"' "$LOOP_CONFIG" 2>/dev/null || echo required)"
+  mode="$(jq -r '.workPlanGate.mode // "required"' "$LOOP_CONFIG" 2>/dev/null || echo required)"
   echo "$mode"
 }
 
-slice_plan_current() {
-  local slice_id="$1"
-  local current stored_fp live_fp artifact
-  ensure_plan_index
-  if ! slice_requires_plan "$slice_id"; then
-    return 0
+work_plan_gate_max_retries() {
+  if [[ -n "${AIH_WORK_PLAN_MAX_RETRIES:-}" ]]; then
+    echo "$AIH_WORK_PLAN_MAX_RETRIES"
+    return
   fi
-  artifact="$(slice_plan_artifact_abs "$slice_id")"
-  [[ -f "$artifact" ]] || return 1
-  current="$(jq -r --arg id "$slice_id" '.tags[$id].current // false' "$PLAN_INDEX")"
-  [[ "$current" == "true" ]] || return 1
-  stored_fp="$(jq -r --arg id "$slice_id" '.tags[$id].docFingerprint // ""' "$PLAN_INDEX")"
-  # shellcheck source=doc-fingerprint.sh
-  source "$(dirname "${BASH_SOURCE[0]}")/doc-fingerprint.sh"
-  live_fp="$(compute_slice_plan_fingerprint "$slice_id")"
-  [[ -n "$stored_fp" && "$stored_fp" == "$live_fp" ]]
+  jq -r '.workPlanGate.maxRetries // 5' "$LOOP_CONFIG" 2>/dev/null || echo 5
 }
 
-mark_slice_plan_current() {
-  local slice_id="$1"
-  local fingerprint="$2"
-  local generated_at="${3:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}"
-  local tmp
-  ensure_plan_index
-  tmp="$(mktemp)"
-  jq --arg id "$slice_id" --arg fp "$fingerprint" --arg ts "$generated_at" '
-    .tags[$id] = {
-      current: true,
-      docFingerprint: $fp,
-      generatedAt: $ts
-    }
-  ' "$PLAN_INDEX" > "$tmp" && mv "$tmp" "$PLAN_INDEX"
+work_plan_gate_artifact_wait_ms() {
+  if [[ -n "${AIH_WORK_PLAN_ARTIFACT_WAIT_MS:-}" ]]; then
+    echo "$AIH_WORK_PLAN_ARTIFACT_WAIT_MS"
+    return
+  fi
+  jq -r '.workPlanGate.artifactWaitMs // 30000' "$LOOP_CONFIG" 2>/dev/null || echo 30000
 }
 
-invalidate_slice_plan() {
-  local slice_id="$1"
-  local reason="${2:-stale}"
-  local tmp live_fp=""
-  ensure_plan_index
-  if slice_requires_plan "$slice_id"; then
-    # shellcheck source=doc-fingerprint.sh
-    source "$(dirname "${BASH_SOURCE[0]}")/doc-fingerprint.sh"
-    live_fp="$(compute_slice_plan_fingerprint "$slice_id" 2>/dev/null || echo "")"
+work_plan_gate_artifact_poll_ms() {
+  if [[ -n "${AIH_WORK_PLAN_ARTIFACT_POLL_MS:-}" ]]; then
+    echo "$AIH_WORK_PLAN_ARTIFACT_POLL_MS"
+    return
   fi
-  tmp="$(mktemp)"
-  jq --arg id "$slice_id" --arg fp "$live_fp" --arg reason "$reason" '
-    .tags[$id] = {
-      current: false,
-      docFingerprint: $fp,
-      generatedAt: null,
-      staleReason: $reason
-    }
-  ' "$PLAN_INDEX" > "$tmp" && mv "$tmp" "$PLAN_INDEX"
+  jq -r '.workPlanGate.artifactPollMs // 500' "$LOOP_CONFIG" 2>/dev/null || echo 500
+}
+
+# Poll until ephemeral plan markdown exists and is non-empty (post-agent fs flush).
+wait_for_plan_file() {
+  local plan_file="$1"
+  local wait_ms poll_ms elapsed=0
+  wait_ms="$(work_plan_gate_artifact_wait_ms)"
+  poll_ms="$(work_plan_gate_artifact_poll_ms)"
+  while [[ "$elapsed" -lt "$wait_ms" ]]; do
+    if [[ -f "$plan_file" && -s "$plan_file" ]]; then
+      return 0
+    fi
+    sleep "$(awk "BEGIN { printf \"%.3f\", ${poll_ms} / 1000 }")"
+    elapsed=$((elapsed + poll_ms))
+  done
+  [[ -f "$plan_file" && -s "$plan_file" ]]
+}
+
+# Wait until plan file size is stable (agent may still be flushing a follow-up edit).
+wait_for_plan_file_stable() {
+  local plan_file="$1"
+  local wait_ms poll_ms elapsed=0 prev_size=-1 stable_polls=0 size
+  wait_ms="$(work_plan_gate_artifact_wait_ms)"
+  poll_ms="$(work_plan_gate_artifact_poll_ms)"
+  while [[ "$elapsed" -lt "$wait_ms" ]]; do
+    if [[ -f "$plan_file" && -s "$plan_file" ]]; then
+      size="$(wc -c < "$plan_file" | tr -d ' ')"
+      if [[ "$prev_size" -ge 0 && "$size" == "$prev_size" ]]; then
+        stable_polls=$((stable_polls + 1))
+        if [[ "$stable_polls" -ge 2 ]]; then
+          return 0
+        fi
+      else
+        stable_polls=0
+        prev_size="$size"
+      fi
+    else
+      stable_polls=0
+      prev_size=-1
+    fi
+    sleep "$(awk "BEGIN { printf \"%.3f\", ${poll_ms} / 1000 }")"
+    elapsed=$((elapsed + poll_ms))
+  done
+  [[ -f "$plan_file" && -s "$plan_file" ]]
+}
+
+validate_work_plan_artifact_quiet() {
+  local slice_id="$1"
+  local plan_file="$2"
+  local out rc
+  set +e
+  out="$(./ai-harness/scripts/validate-work-plan.sh "$slice_id" --quiet --plan-file "$plan_file" 2>&1)"
+  rc=$?
+  if [[ "$rc" -ne 0 ]]; then
+    write_plan_validation_feedback "$slice_id" "$out"
+    return 1
+  fi
+  clear_plan_validation_feedback "$slice_id"
+  return 0
+}
+
+finalize_ephemeral_work_plan() {
+  local slice_id="$1"
+  local plan_file="$2"
+  local artifact_wait_ms rel_path validate_rc=0
+  set +e
+  artifact_wait_ms="$(work_plan_gate_artifact_wait_ms)"
+  rel_path="${plan_file#${REPO_ROOT}/}"
+
+  if ! wait_for_plan_file_stable "$plan_file"; then
+    write_plan_validation_feedback "$slice_id" "$(plan_artifact_missing_feedback "$slice_id" "$rel_path" "$artifact_wait_ms")"
+    aih_err "Work plan missing at ${rel_path} after ${artifact_wait_ms}ms wait"
+    return 1
+  fi
+
+  validate_work_plan_artifact_quiet "$slice_id" "$plan_file"
+  validate_rc=$?
+  if [[ "$validate_rc" -ne 0 ]]; then
+    sleep "$(awk "BEGIN { printf \"%.3f\", $(work_plan_gate_artifact_poll_ms) / 1000 }")"
+    wait_for_plan_file_stable "$plan_file"
+    validate_work_plan_artifact_quiet "$slice_id" "$plan_file"
+    validate_rc=$?
+  fi
+  if [[ "$validate_rc" -ne 0 ]]; then
+    aih_err "Work plan validation failed for ${slice_id} — see state/plan-validation-feedback/${slice_id}.txt"
+    return 1
+  fi
+  aih_ok "Work plan validated: ${rel_path}"
+  return 0
+}
+
+plan_artifact_missing_feedback() {
+  local slice_id="$1"
+  local rel_path="$2"
+  local wait_ms="$3"
+  cat <<EOF
+Plan markdown not found at ${rel_path} after agent exit (waited ${wait_ms}ms).
+Write the implementation plan with the editor Write tool to exactly: ${rel_path}
+Do not only print the plan in chat. Read the file back to confirm it is non-empty before emitting PLAN_DONE ${slice_id}.
+Do not run validate-work-plan.sh — the harness validates after you exit.
+EOF
+}
+
+# Run work-planner every iteration; plan is ephemeral — implementer reads generated/runs/<run-id>-work-plan.md (same ralph-once).
+# Returns 0 when a validated plan exists at generated/runs/<run-id>-work-plan.md.
+run_work_plan_gate() {
+  local slice_id="$1"
+  local run_id="$2"
+  local max_retries attempt plan_file plan_agent_out plan_agent_status=0
+  local plan_agent_text plan_model plan_prompt plan_full_prompt
+  local timeout_ms reason finalize_status=0
+  local prior_errexit=0
+
+  if [[ $- == *e* ]]; then prior_errexit=1; fi
+  set +e
+
+  plan_file="$(work_plan_run_abs "$run_id")"
+  mkdir -p "$(dirname "$plan_file")"
+  max_retries="$(work_plan_gate_max_retries)"
+  attempt=0
+
+  while true; do
+    attempt=$((attempt + 1))
+    if [[ "$attempt" -gt "$max_retries" ]]; then
+      record_iteration_failure "$slice_id" "gate_failed" "plan_validation_failed" \
+        "Work planner failed after ${max_retries} attempt(s) — see state/plan-validation-feedback/${slice_id}.txt"
+      aih_err "Work planner exhausted ${max_retries} retries for ${slice_id}"
+      [[ "$prior_errexit" -eq 1 ]] && set -e
+      return 1
+    fi
+
+    if [[ "$attempt" -gt 1 ]]; then
+      aih_warn "Work planner retry ${attempt}/${max_retries} for ${slice_id} (same Ralph iteration)"
+    fi
+
+    if [[ "$attempt" -eq 1 ]]; then
+      plan_agent_out="${RUNS_DIR}/${run_id}-plan-agent.txt"
+    else
+      plan_agent_out="${RUNS_DIR}/${run_id}-plan-agent-r${attempt}.txt"
+    fi
+
+    if [[ "${AIH_SKIP_AGENT:-}" == "1" ]]; then
+      aih_warn "AIH_SKIP_AGENT=1 — skipping work-planner agent"
+      if [[ ! -f "$plan_file" ]]; then
+        record_iteration_failure "$slice_id" "gate_failed" "plan_artifact_missing" \
+          "Ephemeral plan missing at $(work_plan_run_path "$run_id") — place plan before AIH_SKIP_AGENT=1"
+        aih_err "Work plan missing (AIH_SKIP_AGENT=1 does not skip validation)"
+        [[ "$prior_errexit" -eq 1 ]] && set -e
+        return 1
+      fi
+      echo "PLAN_DONE ${slice_id}" > "$plan_agent_out"
+    else
+      require_agent
+      plan_prompt="$(AIH_RUN_ID="$run_id" ./ai-harness/scripts/build-prompt.sh "$slice_id" work-planner)"
+      plan_model="$(get_model default)"
+      plan_full_prompt="${plan_prompt}
+
+## Harness reminder
+
+Write the implementation plan markdown to exactly: \`${plan_file}\`
+This file is ephemeral (generated/runs) — the implementer reads it with the Read tool; it is not committed.
+Do not edit any other files.
+Read that path back and confirm the file is non-empty before your final message.
+Do not run validate-work-plan.sh — the harness runs it after you exit.
+After the plan file is saved on disk, end with exactly one line: PLAN_DONE ${slice_id}
+"
+      aih_step "Running work-planner (${AGENT_BIN}, model=${plan_model}, attempt=${attempt}/${max_retries})"
+      aih_agent_begin "work-planner (${plan_model})"
+      set +e
+      agent_invoke_work_planner "$plan_model" "$plan_full_prompt" "$plan_agent_out"
+      plan_agent_status=$?
+      aih_agent_end "${plan_agent_status}"
+    fi
+
+    if [[ "${plan_agent_status:-0}" -eq "$AGENT_TIMEOUT_EXIT" ]]; then
+      timeout_ms="$(get_agent_timeout_ms "$LOOP_CONFIG")"
+      record_iteration_failure "$slice_id" "gate_failed" "plan_agent_timeout" \
+        "Work-planner agent timed out after ${timeout_ms}ms — see $(basename "$plan_agent_out")"
+      aih_err "Work-planner agent timed out. See guardrails.md"
+      [[ "$prior_errexit" -eq 1 ]] && set -e
+      return 1
+    fi
+
+    plan_agent_text="$(cat "$plan_agent_out" 2>/dev/null || true)"
+    if echo "$plan_agent_text" | grep -q "PLAN_BLOCKED"; then
+      reason="$(echo "$plan_agent_text" | grep "PLAN_BLOCKED" | tail -1)"
+      record_iteration_failure "$slice_id" "blocked" "plan_blocked" "$reason"
+      aih_err "Work plan blocked. See guardrails.md"
+      [[ "$prior_errexit" -eq 1 ]] && set -e
+      return 1
+    fi
+
+    finalize_ephemeral_work_plan "$slice_id" "$plan_file"
+    finalize_status=$?
+    if [[ "$finalize_status" -ne 0 ]]; then
+      aih_warn "Work plan validation failed (attempt ${attempt}/${max_retries})"
+      continue
+    fi
+
+    if ! parse_plan_done_from_agent "$plan_agent_text" "$slice_id"; then
+      aih_warn "Work-planner did not emit PLAN_DONE ${slice_id} in agent output (plan validated — continuing)"
+    fi
+    break
+  done
+
+  export AIH_WORK_PLAN_FILE="$plan_file"
+  append_progress "$slice_id" "planner_ok" || true
+  aih_ok "Work plan ready for ${slice_id} — proceeding to implementer in this iteration"
+  [[ "$prior_errexit" -eq 1 ]] && set -e
+  return 0
 }
 
 parse_plan_done_from_agent() {
   local agent_text="$1"
   local slice_id="$2"
-  echo "$agent_text" | grep -qF "PLAN_DONE ${slice_id}"
+  if echo "$agent_text" | grep -qF "PLAN_DONE ${slice_id}"; then
+    return 0
+  fi
+  # Agent stream may split the signal across formatting; accept same-line variants.
+  echo "$agent_text" | grep -qE "PLAN_DONE[[:space:]]+${slice_id}([[:space:]]|$)"
 }
 
-format_slice_plan_block() {
+# Deprecated: plans are ephemeral per iteration; no plan-index fast path.
+try_approve_work_plan_from_disk() {
+  return 1
+}
+
+format_work_plan_block() {
   local slice_id="$1"
-  local plan_path artifact_abs excerpt max_lines=120 line_count
-  plan_path="$(slice_plan_artifact_path "$slice_id")"
-  artifact_abs="$(slice_plan_artifact_abs "$slice_id")"
-  [[ -f "$artifact_abs" ]] || return 0
-
-  line_count="$(wc -l < "$artifact_abs" | tr -d ' ')"
-  excerpt=""
-  if [[ "$line_count" -le "$max_lines" ]]; then
-    excerpt="$(cat "$artifact_abs")"
-  else
-    excerpt="$(head -n "$max_lines" "$artifact_abs")"
-    excerpt="${excerpt}
-
-... (plan truncated — read full file at ${plan_path})"
-  fi
+  local artifact_abs rel_path
+  artifact_abs="$(resolve_work_plan_file_for_prompt 2>/dev/null || true)"
+  [[ -n "$artifact_abs" && -f "$artifact_abs" ]] || return 0
+  rel_path="${artifact_abs#${REPO_ROOT}/}"
 
   cat <<EOF
-## Approved implementation plan
+## Work plan (this iteration)
 
-Read and follow the plan at \`${plan_path}\` before writing code. Do not deviate without updating the plan and re-running the planner gate.
+**Mandatory:** Read the full work plan with the editor **Read** tool before backlog, other docs, or code:
 
-\`\`\`markdown
-${excerpt}
-\`\`\`
+\`${rel_path}\`
+
+Follow **Implementation sequence** in order. Mark each step \`- [x]\` in the plan file after its **Verify:** passes.
+When **Prior gate failures** appear above, read **Prior gate failure remediation** in the plan first (if present).
+Deviate only per out-of-plan protocol in the implementer prompt.
 EOF
 }
 
@@ -3376,6 +3584,18 @@ find_latest_failed_run_id_for_slice() {
         jq -e --arg s "$slice_id" '.slice == $s and .pass == false and (.skipped // false) == false' "$f" >/dev/null 2>&1 || continue
       fi
       basename "$f" "-${artifact_kind}.json"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# True when a prior iteration left scope/checks/browser/review gate artifacts for this slice.
+slice_has_prior_gate_failures() {
+  local slice_id="$1"
+  local kind
+  for kind in scope checks browser-test review; do
+    if find_latest_failed_run_id_for_slice "$slice_id" "$kind" >/dev/null 2>&1; then
       return 0
     fi
   done
@@ -3935,8 +4155,9 @@ Do **not** resolve this by re-running \`npm run aih:check\` until you apply a co
 EOF
 }
 
-build_implementer_prior_gate_feedback() {
+build_slice_prior_gate_failures_block() {
   local slice_id="$1"
+  local audience="${2:-implementer}"
   local block sections="" excerpt_block="" fix_order="" fix_order_num=0
   local scope_run="" checks_run="" browser_run="" review_run=""
 
@@ -4040,17 +4261,48 @@ ${block}
 
   [[ -n "$sections" ]] || return 0
 
-  cat <<EOF
+  case "$audience" in
+    planner)
+      cat <<EOF
+## Prior gate failures — replan context
+
+This slice failed an implementation gate on a previous iteration. **Regenerate** the plan for this iteration from current state — preserve acceptance/testing/files sections where still accurate when failures are narrow; when **Prior gate failures** are listed below, remediation comes first.
+
+**Required plan changes when failures are listed below:**
+
+1. Add **## Prior gate failure remediation** immediately after the \`# Plan:\` title (before **Acceptance coverage**).
+2. Map **every** failure category below to concrete fix steps: files to touch, root cause, and targeted verify command.
+3. Rewrite **Implementation sequence** so numbered steps **start** with those remediation fixes (gate order below) before any remaining build work.
+
+**Gate fix order:**
+
+${fix_order}
+${sections}
+EOF
+      ;;
+    *)
+      cat <<EOF
 ## Prior gate failures — fix these before anything else
 
 This slice failed on a previous iteration. **Do not** run full checks or re-read all docs first.
 Fix every item below in gate order, using targeted verification after each category.
+When the approved plan includes **## Prior gate failure remediation**, follow that section first — it should mirror the failures below.
 
 **Fix order:**
 
 ${fix_order}
 ${sections}
 EOF
+      ;;
+  esac
+}
+
+build_implementer_prior_gate_feedback() {
+  build_slice_prior_gate_failures_block "$1" implementer
+}
+
+build_planner_prior_gate_feedback() {
+  build_slice_prior_gate_failures_block "$1" planner
 }
 
 # Backend/infra slices only require API runtime probes; frontend/test need web too.

@@ -34,6 +34,7 @@ fi
 
 RID="$(run_id)"
 ensure_runs_dir
+export AIH_RUN_ID="$RID"
 
 # --- Test case drift ---
 drift_failed=false
@@ -72,129 +73,66 @@ if ! slice_test_cases_current "$SLICE_ID"; then
   aih_warn "set passes: false in whole-app-backlog.json to re-run after TestGen completes"
 fi
 
-# --- Plan drift ---
+# --- Work planner (always when requiresPlan; ephemeral plan → implementer in same iteration) ---
 if slice_requires_plan "$SLICE_ID"; then
-  set +e
-  ./ai-harness/scripts/check-plan-drift.sh --quiet "$SLICE_ID" 2>&1
-  plan_drift_status=$?
-  set -e
-  if [[ "$plan_drift_status" -ne 0 ]]; then
-    aih_info "Plan drift reset applied for ${SLICE_ID}"
-  fi
-fi
-
-# --- Slice plan gate ---
-if slice_requires_plan "$SLICE_ID" && ! slice_plan_current "$SLICE_ID"; then
-  if [[ "${AIH_SKIP_PLAN_GATE:-}" == "1" ]]; then
-    aih_warn "AIH_SKIP_PLAN_GATE=1 — skipping slice plan gate"
+  if [[ "${AIH_SKIP_WORK_PLAN_GATE:-}" == "1" ]]; then
+    aih_warn "AIH_SKIP_WORK_PLAN_GATE=1 — skipping work planner"
   else
-    gate_mode="$(slice_plan_gate_mode)"
+    gate_mode="$(work_plan_gate_mode)"
     if [[ "$gate_mode" == "optional" ]]; then
-      aih_warn "slice plan not current for ${SLICE_ID} — continuing (mode=${gate_mode})"
+      aih_warn "work planner optional — continuing without plan for ${SLICE_ID}"
     else
-      # shellcheck source=lib/doc-fingerprint.sh
-      source "$(dirname "$0")/lib/doc-fingerprint.sh"
-      PLAN_FP="$(compute_slice_plan_fingerprint "$SLICE_ID")"
-      PLAN_ARTIFACT="$(slice_plan_artifact_abs "$SLICE_ID")"
-      mkdir -p "$(dirname "$PLAN_ARTIFACT")"
-
-      if [[ "${AIH_SKIP_AGENT:-}" == "1" ]]; then
-        aih_warn "AIH_SKIP_AGENT=1 — skipping slice-planner agent"
-        plan_agent_out="${RUNS_DIR}/${RID}-plan-agent.txt"
-        if [[ ! -f "$PLAN_ARTIFACT" ]]; then
-          record_iteration_failure "$SLICE_ID" "gate_failed" "plan_artifact_missing" \
-            "Plan file missing at $(slice_plan_artifact_path "$SLICE_ID") — run slice-planner or place plan before AIH_SKIP_AGENT=1"
-          aih_err "Slice plan artifact missing (AIH_SKIP_AGENT=1 does not skip plan validation)"
-          exit 1
-        fi
-        echo "PLAN_DONE ${SLICE_ID}" > "$plan_agent_out"
-      else
-        require_agent
-        plan_prompt="$(./ai-harness/scripts/build-prompt.sh "$SLICE_ID" planner)"
-        plan_model="$(get_model default)"
-        plan_agent_out="${RUNS_DIR}/${RID}-plan-agent.txt"
-        plan_full_prompt="${plan_prompt}
-
-## Harness reminder
-
-Write the implementation plan markdown to exactly: \`${PLAN_ARTIFACT}\`
-Do not edit any other files.
-
-After writing the plan, end with: PLAN_DONE ${SLICE_ID}
-"
-        aih_step "Running slice-planner (${AGENT_BIN}, model=${plan_model})"
-        aih_agent_begin "slice-planner (${plan_model})"
-        set +e
-        agent_invoke_planner "$plan_model" "$plan_full_prompt" "$plan_agent_out"
-        plan_agent_status=$?
-        set -e
-        aih_agent_end "${plan_agent_status}"
-      fi
-
-      if [[ "${plan_agent_status:-0}" -eq "$AGENT_TIMEOUT_EXIT" ]]; then
-        timeout_ms="$(get_agent_timeout_ms "$LOOP_CONFIG")"
-        record_iteration_failure "$SLICE_ID" "gate_failed" "plan_agent_timeout" \
-          "Slice-planner agent timed out after ${timeout_ms}ms — see ${RID}-plan-agent.txt"
-        aih_err "Slice-planner agent timed out. See guardrails.md"
-        exit 1
-      fi
-
-      plan_agent_text="$(cat "$plan_agent_out")"
-      if echo "$plan_agent_text" | grep -q "PLAN_BLOCKED"; then
-        reason="$(echo "$plan_agent_text" | grep "PLAN_BLOCKED" | tail -1)"
-        record_iteration_failure "$SLICE_ID" "blocked" "plan_blocked" "$reason"
-        aih_err "Slice plan blocked. See guardrails.md"
-        exit 1
-      fi
-
-      if ! parse_plan_done_from_agent "$plan_agent_text" "$SLICE_ID"; then
-        record_iteration_failure "$SLICE_ID" "gate_failed" "plan_signal_missing" \
-          "Slice-planner did not emit PLAN_DONE ${SLICE_ID} — see ${RID}-plan-agent.txt"
-        aih_err "Slice-planner did not signal PLAN_DONE"
-        exit 1
-      fi
-
       set +e
-      plan_validate_output="$(./ai-harness/scripts/validate-slice-plan.sh "$SLICE_ID" --quiet 2>&1)"
-      plan_validate_status=$?
+      run_work_plan_gate "$SLICE_ID" "$RID"
+      plan_gate_status=$?
       set -e
-      if [[ "$plan_validate_status" -ne 0 ]]; then
-        write_plan_validation_feedback "$SLICE_ID" "$plan_validate_output"
-        record_iteration_failure "$SLICE_ID" "gate_failed" "plan_validation_failed" \
-          "Slice plan validation failed — run: npm run aih:validate:plan -- ${SLICE_ID}"
-        aih_err "Slice plan validation failed"
+      if [[ "$plan_gate_status" -ne 0 ]]; then
         exit 1
       fi
-
-      clear_plan_validation_feedback "$SLICE_ID"
-
-      mark_slice_plan_current "$SLICE_ID" "$PLAN_FP"
-      append_progress "$SLICE_ID" "plan_current"
-      aih_ok "Slice plan approved for ${SLICE_ID}"
     fi
   fi
-elif slice_requires_plan "$SLICE_ID"; then
-  aih_ok "Slice plan current for ${SLICE_ID}"
 fi
 
-# --- Implement ---
+# --- Implement (same ralph-once iteration after planner) ---
+aih_step "Running implementer for ${SLICE_ID}"
+if slice_requires_plan "$SLICE_ID" && [[ -f "$(work_plan_run_abs "$RID")" ]]; then
+  export AIH_WORK_PLAN_FILE="$(work_plan_run_abs "$RID")"
+elif slice_requires_plan "$SLICE_ID"; then
+  aih_warn "Ephemeral plan file missing for ${SLICE_ID} — implementer prompt may omit plan block"
+fi
 if [[ "${AIH_SKIP_AGENT:-}" == "1" ]]; then
   aih_warn "AIH_SKIP_AGENT=1 — skipping implementer agent"
   agent_out="${RUNS_DIR}/${RID}-agent.txt"
   echo "SLICE_DONE ${SLICE_ID}" > "$agent_out"
 else
   require_agent
-  prompt="$(./ai-harness/scripts/build-prompt.sh "$SLICE_ID" implementer)"
+  set +e
+  prompt="$(AIH_RUN_ID="$RID" AIH_WORK_PLAN_FILE="${AIH_WORK_PLAN_FILE:-}" ./ai-harness/scripts/build-prompt.sh "$SLICE_ID" implementer)"
+  prompt_status=$?
+  set -e
+  if [[ "$prompt_status" -ne 0 ]]; then
+    aih_err "build-prompt.sh failed for implementer (${SLICE_ID})"
+    exit 1
+  fi
+  if slice_requires_plan "$SLICE_ID" && ! grep -q "Work plan (this iteration)" <<< "$prompt"; then
+    aih_warn "Implementer prompt missing plan read instruction — check ${AIH_WORK_PLAN_FILE:-$(work_plan_run_path "$RID")}"
+  fi
   model="$(get_model default)"
   agent_out="${RUNS_DIR}/${RID}-agent.txt"
   if slice_uses_browser_mcp "$SLICE_ID"; then
     cleanup_playwright_mcp_artifacts
     ensure_screenshot_dir "$(screenshot_dir_for_slice "$SLICE_ID" implementer)"
   fi
+  plan_read_path="$(work_plan_run_path "$RID")"
+  full_prompt="${prompt}
+
+## Harness reminder
+
+Read the work plan at \`${plan_read_path}\` with the editor **Read** tool **before** backlog, docs, or code. Follow **Implementation sequence** in that file; mark steps \`- [x]\` after each **Verify:** passes."
   aih_step "Running implementer (${AGENT_BIN}, model=${model})"
   aih_agent_begin "implementer (${model})"
   set +e
-  agent_invoke "$model" "$prompt" "$agent_out" "$SLICE_ID"
+  agent_invoke "$model" "$full_prompt" "$agent_out" "$SLICE_ID"
   agent_status=$?
   set -e
   aih_agent_end "${agent_status}"

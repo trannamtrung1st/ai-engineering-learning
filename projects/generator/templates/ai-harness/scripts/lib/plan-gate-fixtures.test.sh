@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Fixture tests for slice plan gate validators (macOS bash + BSD awk compatible)
+# Fixture tests for work plan gate validators (macOS bash + BSD awk compatible)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -50,7 +50,7 @@ assert_fail() {
 
 setup_fixture_repo
 
-# --- validate-slice-plan: good plan ---
+# --- validate-work-plan: good plan ---
 cat > "$FIXTURE/ai-harness/whole-app-backlog.json" <<'EOF'
 {"branchName":"aih/test-mvp","slices":[{"id":"module-foo","passes":false,"priority":20,"phase":1,"agent":"backend","acceptance":["AC-01"],"docs":["docs/technical/11-testing-plan.md"],"description":"test","completionArtifacts":["apps/api/foo.ts"],"testingPlanRefs":["§3.2"],"requiresPlan":true}]}
 EOF
@@ -71,10 +71,127 @@ cat > "$FIXTURE/ai-harness/plans/module-foo.md" <<'EOF'
 EOF
 (
   cd "$FIXTURE"
-  assert_ok "validate-slice-plan passes good plan" ./ai-harness/scripts/validate-slice-plan.sh module-foo
+  assert_ok "validate-work-plan passes good plan" ./ai-harness/scripts/validate-work-plan.sh module-foo
 )
 
-# --- validate-slice-plan: empty test strategy fails ---
+# --- validate-work-plan: prior gate failures require remediation section ---
+cat > "$FIXTURE/ai-harness/whole-app-backlog.json" <<'EOF'
+{"branchName":"aih/test-mvp","slices":[{"id":"module-retry","passes":false,"priority":20,"phase":1,"agent":"backend","acceptance":["AC-01"],"docs":["docs/technical/11-testing-plan.md"],"description":"retry slice","completionArtifacts":["apps/api/foo.ts"],"testingPlanRefs":["§3.2"],"requiresPlan":true}]}
+EOF
+cat > "$FIXTURE/ai-harness/generated/runs/run-fail-checks-checks.json" <<'EOF'
+{"slice":"module-retry","pass":false,"failures":[{"script":"test:unit","logFile":"ai-harness/generated/runs/run-fail-checks-check-unit.log"}]}
+EOF
+cat > "$FIXTURE/ai-harness/plans/module-retry.md" <<'EOF'
+# Plan: module-retry
+## Acceptance coverage
+- AC-01: foo
+## Testing plan alignment
+- §3.2
+## Files to create or modify
+- apps/api/foo.ts
+## Test strategy
+- integration: apps/api/foo.integration.test.ts
+## Implementation sequence
+1. step
+## Risks and deferrals
+- none
+EOF
+(
+  cd "$FIXTURE"
+  assert_fail "validate-work-plan fails without remediation when prior checks failed" \
+    ./ai-harness/scripts/validate-work-plan.sh module-retry
+)
+cat > "$FIXTURE/ai-harness/plans/module-retry.md" <<'EOF'
+# Plan: module-retry
+## Prior gate failure remediation
+- Computational checks (`run-fail-checks`): fix `test:unit` failure in `apps/api/foo.ts`; verify with `npm run aih:run-check -- test:unit`
+## Acceptance coverage
+- AC-01: foo
+## Testing plan alignment
+- §3.2
+## Files to create or modify
+- apps/api/foo.ts
+## Test strategy
+- integration: apps/api/foo.integration.test.ts
+## Implementation sequence
+1. Fix `test:unit` per remediation above
+2. Continue remaining build steps
+## Risks and deferrals
+- none
+EOF
+(
+  cd "$FIXTURE"
+  assert_ok "validate-work-plan passes with remediation when prior checks failed" \
+    ./ai-harness/scripts/validate-work-plan.sh module-retry
+)
+
+# Restore module-foo backlog for subsequent fixtures (retry block overwrote it).
+cat > "$FIXTURE/ai-harness/whole-app-backlog.json" <<'EOF'
+{"branchName":"aih/test-mvp","slices":[{"id":"module-foo","passes":false,"priority":20,"phase":1,"agent":"backend","acceptance":["AC-01"],"docs":["docs/technical/11-testing-plan.md"],"description":"test","completionArtifacts":["apps/api/foo.ts"],"testingPlanRefs":["§3.2"],"requiresPlan":true}]}
+EOF
+
+# --- validate-work-plan: TestGen case coverage (implemented + deferred) ---
+mkdir -p "$FIXTURE/docs/test-cases/items"
+# The coverage loop only runs when the tag's test cases are marked current.
+cat > "$FIXTURE/ai-harness/test-case-index.json" <<'EOF'
+{"tags":{"AC-01":{"current":true}}}
+EOF
+cat > "$FIXTURE/docs/test-cases/items/AC-01.json" <<'EOF'
+{"requirementTag":"AC-01","cases":[
+  {"id":"TC-AC-01-001","layer":"integration"},
+  {"id":"TC-AC-01-002","layer":"e2e"},
+  {"id":"TC-AC-01-003","layer":"browser"},
+  {"id":"TC-AC-01-004","layer":"unit"}
+]}
+EOF
+# Plan implements the integration case and defers the e2e/browser cases.
+cat > "$FIXTURE/ai-harness/plans/module-foo.md" <<'EOF'
+# Plan: module-foo
+## Acceptance coverage
+- AC-01: foo
+## Testing plan alignment
+- §3.2
+## Files to create or modify
+- apps/api/foo.ts
+## Test strategy
+- integration: apps/api/foo.integration.test.ts covers TC-AC-01-001
+## Implementation sequence
+1. step
+## Risks and deferrals
+- TC-AC-01-002 deferred to module-bar (e2e login flow)
+- TC-AC-01-003 deferred to web-shell (browser)
+EOF
+(
+  cd "$FIXTURE"
+  assert_ok "validate-work-plan accepts implemented + deferred TestGen cases" ./ai-harness/scripts/validate-work-plan.sh module-foo
+)
+
+# --- validate-work-plan: unaccounted TestGen case fails ---
+cat > "$FIXTURE/ai-harness/plans/module-foo.md" <<'EOF'
+# Plan: module-foo
+## Acceptance coverage
+- AC-01: foo
+## Testing plan alignment
+- §3.2
+## Files to create or modify
+- apps/api/foo.ts
+## Test strategy
+- integration: apps/api/foo.integration.test.ts covers TC-AC-01-001
+## Implementation sequence
+1. step
+## Risks and deferrals
+- TC-AC-01-002 deferred to module-bar (e2e login flow)
+EOF
+(
+  cd "$FIXTURE"
+  # TC-AC-01-003 (browser) is neither implemented nor deferred -> must fail.
+  assert_fail "validate-work-plan rejects unaccounted TestGen case" ./ai-harness/scripts/validate-work-plan.sh module-foo
+)
+
+# Remove the artifact + index so later fixtures keep their original (artifact-free) behavior.
+rm -f "$FIXTURE/docs/test-cases/items/AC-01.json" "$FIXTURE/ai-harness/test-case-index.json"
+
+# --- validate-work-plan: empty test strategy fails ---
 cat > "$FIXTURE/ai-harness/plans/module-foo.md" <<'EOF'
 # Plan: module-foo
 ## Acceptance coverage
@@ -92,7 +209,7 @@ cat > "$FIXTURE/ai-harness/plans/module-foo.md" <<'EOF'
 EOF
 (
   cd "$FIXTURE"
-  assert_fail "validate-slice-plan rejects empty test strategy" ./ai-harness/scripts/validate-slice-plan.sh module-foo
+  assert_fail "validate-work-plan rejects empty test strategy" ./ai-harness/scripts/validate-work-plan.sh module-foo
 )
 
 # --- validate-backlog: legacy without requiresPlan passes ---
@@ -126,6 +243,141 @@ if slice_requires_plan module-foo; then
 else
   echo "ok: slice_requires_plan skips legacy backlog"
 fi
+cd - >/dev/null
+
+# --- planner completion signals exclude PLAN_DONE ---
+cd "$FIXTURE"
+# shellcheck source=/dev/null
+source ./ai-harness/scripts/lib/common.sh
+planner_signals="$(agent_work_planner_completion_signals_csv)"
+if echo "$planner_signals" | grep -q 'PLAN_DONE'; then
+  echo "FAIL: planner signals must not include PLAN_DONE (was: $planner_signals)" >&2
+  fail=1
+else
+  echo "ok: agent_work_planner_completion_signals_csv excludes PLAN_DONE"
+fi
+if ! echo "$planner_signals" | grep -q 'PLAN_BLOCKED'; then
+  echo "FAIL: planner signals should still include PLAN_BLOCKED" >&2
+  fail=1
+else
+  echo "ok: agent_work_planner_completion_signals_csv keeps PLAN_BLOCKED"
+fi
+
+# --- wait_for_plan_file polls until file appears ---
+AIH_WORK_PLAN_ARTIFACT_WAIT_MS=2000 AIH_WORK_PLAN_ARTIFACT_POLL_MS=100 \
+  bash -c '
+    cd "'"$FIXTURE"'"
+    source ./ai-harness/scripts/lib/common.sh
+    plan_path="'"$FIXTURE"'/ai-harness/generated/runs/test-wait-work-plan.md"
+    rm -f "$plan_path"
+    ( sleep 0.4; echo "# plan" > "$plan_path" ) &
+    wait_for_plan_file "$plan_path"
+  ' && echo "ok: wait_for_plan_file detects delayed write" || {
+  echo "FAIL: wait_for_plan_file should detect delayed write" >&2
+  fail=1
+}
+AIH_WORK_PLAN_ARTIFACT_WAIT_MS=200 AIH_WORK_PLAN_ARTIFACT_POLL_MS=100 \
+  bash -c '
+    cd "'"$FIXTURE"'"
+    source ./ai-harness/scripts/lib/common.sh
+    plan_path="'"$FIXTURE"'/ai-harness/generated/runs/test-missing-work-plan.md"
+    rm -f "$plan_path"
+    ! wait_for_plan_file "$plan_path"
+  ' && echo "ok: wait_for_plan_file times out when missing" || {
+  echo "FAIL: wait_for_plan_file should time out when file missing" >&2
+  fail=1
+}
+
+# --- finalize_ephemeral_work_plan validates ephemeral plan ---
+cat > "$FIXTURE/ai-harness/whole-app-backlog.json" <<'EOF'
+{"branchName":"aih/test","slices":[{"id":"module-fast","passes":false,"priority":20,"phase":1,"agent":"backend","acceptance":["AC-01"],"docs":["docs/technical/11-testing-plan.md"],"description":"test","completionArtifacts":["apps/api/foo.ts"],"testingPlanRefs":["§3.2"],"requiresPlan":true}]}
+EOF
+cat > "$FIXTURE/docs/test-cases/items/AC-01.json" <<'EOF'
+{"requirementTag":"AC-01","cases":[]}
+EOF
+cat > "$FIXTURE/ai-harness/test-case-index.json" <<'EOF'
+{"tags":{"AC-01":{"current":true}}}
+EOF
+PLAN_EPHEMERAL="$FIXTURE/ai-harness/generated/runs/test-fast-work-plan.md"
+cat > "$PLAN_EPHEMERAL" <<'EOF'
+# Plan: module-fast
+## Acceptance coverage
+- AC-01: foo
+## Testing plan alignment
+- §3.2
+## Files to create or modify
+- apps/api/foo.ts
+## Test strategy
+- integration: apps/api/foo.integration.test.ts
+## Implementation sequence
+1. step
+## Risks and deferrals
+- none
+EOF
+(
+  cd "$FIXTURE"
+  bash -c '
+    source ./ai-harness/scripts/lib/common.sh
+    require_harness_deps
+    if finalize_ephemeral_work_plan module-fast "'"$PLAN_EPHEMERAL"'"; then
+      echo "ok: finalize_ephemeral_work_plan validates ephemeral plan"
+    else
+      echo "FAIL: finalize_ephemeral_work_plan should validate ephemeral plan" >&2
+      exit 1
+    fi
+  '
+) || fail=1
+
+# --- wait_for_plan_file_stable detects delayed growth ---
+(
+  cd "$FIXTURE"
+  AIH_WORK_PLAN_ARTIFACT_WAIT_MS=5000 AIH_WORK_PLAN_ARTIFACT_POLL_MS=200 bash -c '
+    source ./ai-harness/scripts/lib/common.sh
+    require_harness_deps
+    artifact="'"$FIXTURE"'/ai-harness/generated/runs/test-stable-work-plan.md"
+    printf "# partial\n" > "$artifact"
+    (sleep 0.5; cat > "$artifact" <<PLAN
+# Plan: module-fast
+## Acceptance coverage
+- AC-01: foo
+## Testing plan alignment
+- §3.2
+## Files to create or modify
+- apps/api/foo.ts
+## Test strategy
+- integration: apps/api/foo.integration.test.ts
+## Implementation sequence
+1. step
+## Risks and deferrals
+- none
+PLAN
+    ) &
+    if wait_for_plan_file_stable "$artifact"; then
+      echo "ok: wait_for_plan_file_stable waits for stable file"
+    else
+      echo "FAIL: wait_for_plan_file_stable should accept growing then stable file" >&2
+      exit 1
+    fi
+  '
+) || fail=1
+
+# --- run_work_plan_gate skip-agent path ---
+(
+  cd "$FIXTURE"
+  AIH_SKIP_AGENT=1 RUN_ID=test-gate bash -c '
+    source ./ai-harness/scripts/lib/common.sh
+    require_harness_deps
+    ensure_runs_dir
+    cp "'"$PLAN_EPHEMERAL"'" "$(work_plan_run_abs test-gate)"
+    if run_work_plan_gate module-fast test-gate; then
+      [[ -n "${AIH_WORK_PLAN_FILE:-}" ]] && echo "ok: run_work_plan_gate sets AIH_WORK_PLAN_FILE"
+    else
+      echo "FAIL: run_work_plan_gate should succeed with valid ephemeral plan" >&2
+      exit 1
+    fi
+  '
+) || fail=1
+
 cd - >/dev/null
 
 # --- generator harness-backlog-plan validator ---

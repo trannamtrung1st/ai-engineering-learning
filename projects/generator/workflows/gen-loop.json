@@ -26,6 +26,9 @@
     "enabled": true,
     "maxRepairAttemptsPerStep": 3
   },
+  "harnessBacklogPlanGate": {
+    "maxRetries": 5
+  },
   "placeholderPatterns": [
     "TODO",
     "TBD",

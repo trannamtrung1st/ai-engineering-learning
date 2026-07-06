@@ -71,7 +71,7 @@ compute_slice_doc_fingerprint() {
   _fingerprint_from_paths "$doc_lines"
 }
 
-compute_slice_plan_fingerprint() {
+compute_work_plan_fingerprint() {
   local slice_id="$1"
   local doc_fp acceptance_fp refs_fp hash_input
   doc_fp="$(compute_slice_doc_fingerprint "$slice_id")"

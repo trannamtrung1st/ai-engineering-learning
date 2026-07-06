@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Build implementer/reviewer/tester prompt for a slice, or testgen prompt for a requirement tag,
 # or manualsgen prompt for a manual backlog item
-# Usage: build-prompt.sh <sliceId> [implementer|reviewer|tester|planner]
+# Usage: build-prompt.sh <sliceId> [implementer|reviewer|tester|work-planner]
 #        build-prompt.sh testgen <requirementTag>
 #        build-prompt.sh manualsgen <manualItemId>
 set -euo pipefail
@@ -22,8 +22,13 @@ if [[ "$SUBJECT_ID" == "manualsgen" ]]; then
   SUBJECT_ID="${2:?manual item id required for manualsgen}"
 fi
 
-if [[ "$MODE" != "implementer" && "$MODE" != "reviewer" && "$MODE" != "tester" && "$MODE" != "planner" && "$MODE" != "testgen" && "$MODE" != "manualsgen" ]]; then
-  echo "ERROR: mode must be implementer, reviewer, tester, planner, testgen, or manualsgen" >&2
+# Legacy alias
+if [[ "$MODE" == "planner" ]]; then
+  MODE="work-planner"
+fi
+
+if [[ "$MODE" != "implementer" && "$MODE" != "reviewer" && "$MODE" != "tester" && "$MODE" != "work-planner" && "$MODE" != "testgen" && "$MODE" != "manualsgen" ]]; then
+  echo "ERROR: mode must be implementer, reviewer, tester, work-planner, testgen, or manualsgen" >&2
   exit 1
 fi
 
@@ -121,10 +126,10 @@ agent_type="$(echo "$slice_json" | jq -r '.agent // "backend"')"
 slice_excludes="$(echo "$slice_json" | jq -r '(.excludes // []) | join(", ")')"
 slice_notes="$(echo "$slice_json" | jq -r '.notes // ""')"
 testing_plan_refs="$(echo "$slice_json" | jq -r '(.testingPlanRefs // []) | join(", ")')"
-plan_artifact_path="$(slice_plan_artifact_path "$SLICE_ID")"
+plan_artifact_path="$(work_plan_run_path "${AIH_RUN_ID:-$(run_id)}")"
 prompt_agent="$agent_type"
 [[ "$MODE" == "tester" ]] && prompt_agent="tester"
-[[ "$MODE" == "planner" ]] && prompt_agent="planner"
+[[ "$MODE" == "work-planner" ]] && prompt_agent="work-planner"
 
 docs_list="$(jq -r --arg id "$SLICE_ID" --arg agent "$prompt_agent" '
   (.slices[$id].docs // []) as $sliceDocs |
@@ -137,9 +142,6 @@ if [[ -z "$docs_list" ]]; then
 fi
 
 template_file="${HARNESS_ROOT}/agents/${MODE}.prompt.md"
-if [[ "$MODE" == "planner" ]]; then
-  template_file="${HARNESS_ROOT}/agents/slice-planner.prompt.md"
-fi
 if [[ ! -f "$template_file" ]]; then
   echo "ERROR: template not found: $template_file" >&2
   exit 1
@@ -155,7 +157,7 @@ prompt="${prompt//\{\{SLICE_DOCS\}\}/$docs_list}"
 prompt="${prompt//\{\{SLICE_EXCLUDES\}\}/$slice_excludes}"
 prompt="${prompt//\{\{SLICE_NOTES\}\}/$slice_notes}"
 prompt="${prompt//\{\{SLICE_TESTING_PLAN_REFS\}\}/$testing_plan_refs}"
-prompt="${prompt//\{\{SLICE_PLAN_PATH\}\}/$plan_artifact_path}"
+prompt="${prompt//\{\{WORK_PLAN_PATH\}\}/$plan_artifact_path}"
 
 ui_screens_block="$(format_ui_screens_to_verify_block "$SLICE_ID" 2>/dev/null || true)"
 prompt="${prompt//\{\{UI_SCREENS_TO_VERIFY\}\}/$ui_screens_block}"
@@ -184,24 +186,22 @@ if [[ "$MODE" == "implementer" ]]; then
   prior_gate_feedback="$(build_implementer_prior_gate_feedback "$SLICE_ID" 2>/dev/null || true)"
   prompt="${prompt//\{\{PRIOR_GATE_FAILURES_BLOCK\}\}/$prior_gate_feedback}"
 
+  plan_block="$(format_work_plan_block "$SLICE_ID" 2>/dev/null || true)"
+  prompt="${prompt//\{\{WORK_PLAN_BLOCK\}\}/$plan_block}"
+
   slice_history_block="$(format_slice_history_block "$SLICE_ID" 2>/dev/null || true)"
   if [[ -n "$slice_history_block" ]]; then
     prompt="${prompt}
 
 ${slice_history_block}"
   fi
-
-  plan_block="$(format_slice_plan_block "$SLICE_ID" 2>/dev/null || true)"
-  if [[ -n "$plan_block" ]]; then
-    prompt="${prompt}
-
-${plan_block}"
-  fi
 fi
 
-if [[ "$MODE" == "planner" ]]; then
+if [[ "$MODE" == "work-planner" ]]; then
   plan_validation_feedback="$(format_plan_validation_feedback_block "$SLICE_ID" 2>/dev/null || true)"
   prompt="${prompt//\{\{PLAN_VALIDATION_FEEDBACK_BLOCK\}\}/$plan_validation_feedback}"
+  prior_gate_feedback="$(build_planner_prior_gate_feedback "$SLICE_ID" 2>/dev/null || true)"
+  prompt="${prompt//\{\{PRIOR_GATE_FAILURES_BLOCK\}\}/$prior_gate_feedback}"
 fi
 
 if [[ "$MODE" == "tester" ]]; then

@@ -80,7 +80,7 @@ npm run aih:loop -- 50                     # max 50 iterations
 | `AIH_SKIP_REVIEW` | — | Skip AI review (`1`) |
 | `AIH_SKIP_BROWSER_TEST` | — | Skip browser test gate (`1`) |
 | `AIH_SKIP_TESTGEN_GATE` | — | Force optional test-case gate (`1`; redundant when `testCaseGate.mode` is `optional`) |
-| `AIH_SKIP_PLAN_GATE` | — | Skip slice plan gate (`1`; redundant when `slicePlanGate.mode` is `optional`) |
+| `AIH_SKIP_WORK_PLAN_GATE` | — | Skip work plan gate (`1`; redundant when `workPlanGate.mode` is `optional`) |
 | `AIH_SKIP_TESTGEN_AGENT` | — | Skip testgen agent (`1`) |
 | `AIH_SKIP_MANUALSGEN_AGENT` | — | Skip manualsgen agent (`1`) |
 | `AIH_BROWSER_MCP` | — | Enable Playwright MCP on any slice (`1`) |
@@ -104,8 +104,8 @@ Defaults live in `ai-harness/config/models.json`.
 | `npm run aih:slice:reopen -- <id> --reason "..."` | Reopen slice (`passes: false`) and append `history` |
 | `npm run aih:slice:focus -- <id> --reason "..."` | One-shot next-iteration slice override (`--reopen` also sets `passes: false`) |
 | `npm run aih:validate:backlog` | Validate `whole-app-backlog.json` structure (including `testingPlanRefs` on non-infra slices) |
-| `npm run aih:validate:plan -- <slice-id>` | Validate slice implementation plan markdown |
-| `npm run aih:plan:drift` | Detect plan drift; mark slice plans stale in `plan-index.json` |
+| `npm run aih:validate:work-plan -- <slice-id> [--plan-file <path>]` | Validate work plan markdown (ephemeral run file or legacy `plans/` path) |
+| `npm run aih:plan:drift` | Deprecated no-op — Ralph replans from state every iteration |
 | `npm run aih:scope` | Mechanical slice scope gate only (changed files vs allowlist) |
 | `npm run aih:check` | Pre-browser computational gates (no Playwright UI); add `--profile fast` for slice self-check |
 | `npm run aih:playwright-check` | Headless Playwright UI regression for a slice — runs after browser tester codegen in Ralph |
@@ -176,9 +176,11 @@ npm run aih:playwright-check -- <sliceId>
 npm run aih:status
 ```
 
-Doc drift alone sets `test-case-index` `current: false` and appends guardrails — it does **not** reset slice `passes` until TestGen successfully regenerates the artifact (`mark_slices_stale_for_tag`). Plan drift (`check-plan-drift.sh`) invalidates `config/plan-index.json` for affected slices; Ralph replans before implementer on the next iteration.
+Doc drift alone sets `test-case-index` `current: false` and appends guardrails — it does **not** reset slice `passes` until TestGen successfully regenerates the artifact (`mark_slices_stale_for_tag`).
 
-Each non-infra slice carries `testingPlanRefs[]` in the backlog (cross-walked from `docs/technical/11-testing-plan.md` at harness-planner time). The slice-planner agent must cover every ref in **Testing plan alignment**; `validate-slice-plan.sh` enforces this mechanically.
+Each non-infra slice carries `testingPlanRefs[]` in the backlog (cross-walked from `docs/technical/11-testing-plan.md` at harness-planner time). The **work planner** runs **every Ralph iteration** before the implementer when `requiresPlan: true`. It owns doc synthesis and writes a full execution spec (checkbox **Implementation sequence** with **Verify:** commands) to `generated/runs/<run-id>-work-plan.md`, validated with `validate-work-plan.sh`. The **implementer** executes that plan step-by-step, marks `- [x]` on completed steps, and deviates only via the out-of-plan protocol. Prior gate failures, guardrails, progress, and slice `history` are injected into the work planner so reopened or failing slices get remediation-first plans.
+
+**Upgrading from generator:** rename `slicePlanGate` → `workPlanGate` in `ralph-loop.json`, `agents/slice-planner.prompt.md` → `agents/work-planner.prompt.md`, `validate-slice-plan.sh` → `validate-work-plan.sh`, env `AIH_SKIP_PLAN_GATE` → `AIH_SKIP_WORK_PLAN_GATE`, npm `aih:validate:plan` → `aih:validate:work-plan`, and ephemeral artifact `*-slice-plan.md` → `*-work-plan.md`.
 
 To re-run implementer and tester gates after TestGen catches up, set `passes: false` on that slice in `whole-app-backlog.json`, run `npm run aih:slice:reopen -- <slice-id> --reason "..."`, or let TestGen regeneration do it when `reverifyOnDrift` is true (appends `drift` history).
 

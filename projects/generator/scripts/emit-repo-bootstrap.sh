@@ -45,7 +45,7 @@ cat > "${REPO_ROOT}/package.json" <<EOF
     "aih:slice:reopen": "./ai-harness/scripts/slice-reopen.sh",
     "aih:slice:focus": "./ai-harness/scripts/slice-focus.sh",
     "aih:validate:backlog": "./ai-harness/scripts/validate-backlog.sh",
-    "aih:validate:plan": "./ai-harness/scripts/validate-slice-plan.sh",
+    "aih:validate:work-plan": "./ai-harness/scripts/validate-work-plan.sh",
     "aih:plan:drift": "./ai-harness/scripts/check-plan-drift.sh",
     "aih:scope": "./ai-harness/scripts/check-slice-scope.sh",
     "aih:check": "./ai-harness/scripts/run-checks.sh",

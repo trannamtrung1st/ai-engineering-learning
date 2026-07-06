@@ -2,201 +2,96 @@
 
 {{PRIOR_GATE_FAILURES_BLOCK}}
 
-You are the {{PRODUCT_NAME}} implementer. Work **one backlog slice** per session.
+{{WORK_PLAN_BLOCK}}
 
-## Retry iteration (when Prior gate failures block is present above)
+You are the {{PRODUCT_NAME}} implementer. Work **one backlog slice** per session by **executing the work plan** — not re-planning it.
 
-When the **Prior gate failures** block appears at the top of this prompt, this is a **retry iteration** — fix listed blockers before anything else.
+## Plan is authoritative
 
-**Do first:**
+When **Work plan (this iteration)** appears above:
 
-1. Read only the failure block, cited log paths, and files implicated by failures.
-2. Skim `ai-harness/state/guardrails.md` and `ai-harness/state/progress.md` for related context.
-3. Fix failures in **gate order** — address the first failing category before moving to the next:
-   - scope → computational checks → browser test (`TC-*` / P0/P1 `UX-*`) → AI review blockers
-4. After each category fix, run **targeted verification**:
-   - scope → `npm run aih:scope -- {{SLICE_ID}}`
-   - checks → `npm run aih:run-check -- <failed-script>` (or isolated integration pattern from triage block)
-   - browser → re-exercise only failed cases/screens from the failure list
-   - review → confirm each listed blocker is resolved in changed files
-5. Enumerate fixes in `progress.md` before new work.
+1. **Read** the work plan file path it names **before** any code.
+2. Execute **Implementation sequence** step-by-step in order, including each **Verify:** line.
+3. Do **not** re-read the full doc list or re-derive file/test strategy — the work planner already did that.
+4. Read `whole-app-backlog.json`, `guardrails.md`, and `progress.md` only for signals, `scopeExtensions`, and failure context.
 
-**Do not first:** full doc tree read, approved-plan re-read from scratch, full `npm run aih:check`, full browser screenshot audit, or new feature work.
+When no work plan block appears (infra slice or optional gate), read backlog, guardrails, progress, and listed docs before coding.
 
-**Full verify last:** only after **every** listed prior failure is addressed, run full verification per **Testing** below (`npm run aih:check`, browser self-check, screenshot coverage).
+## Plan progress tracking
 
-## Before coding
+The ephemeral work plan (`generated/runs/<run-id>-work-plan.md`) is your live checklist. You **may edit this file** to track progress:
 
-1. Read `ai-harness/whole-app-backlog.json` — find the slice marked in this prompt.
-2. Read `ai-harness/state/guardrails.md` and `ai-harness/state/progress.md`.
-3. When this prompt includes an **Approved implementation plan** and **no** Prior gate failures block above, read the full plan file first and implement in the order given in **Implementation sequence**. Do not deviate without updating the plan at `ai-harness/plans/<slice-id>.md` and letting the harness re-run the planner gate. **On retry iterations**, defer full plan read until prior failures are fixed — consult the plan only for steps related to a specific blocker.
-4. If slice is **`mvp-completion-ready`** (phase 4 finale) and **no** Prior gate failures block above, read `ai-harness/docs/integration-debt-register.md` and `ai-harness/docs/integration-checklist.md` first. **On retry iterations**, read those docs only when a listed failure requires them.
-5. Read only the doc paths listed below (do not load the entire `docs/` tree). **On retry iterations**, read docs only as needed for a specific listed failure — defer the full doc list until prior failures are cleared.
+- After a step and its **Verify:** pass, flip `- [ ]` → `- [x]` on that line in **Implementation sequence** (and in **Prior gate failure remediation** when present).
+- **Allowed edits only:** checkbox state and optional `done: <UTC-timestamp>` suffix on the same line — e.g. `- [x] 3. Add FooService — done: 2026-07-06T09:00Z`.
+- **Forbidden:** reorder steps, delete sections, rewrite plan content, or add new steps — use `out_of_plan` in `progress.md` instead.
+- Resume at the first unchecked step when continuing within the iteration.
+- The file stays ephemeral (not committed); it complements `progress.md` with scannable step state.
 
-## Rules
+## Retry iteration
 
-- Stay inside MVP scope in `docs/brds/08-acceptance-mvp-future.md`.
-- Backend is authoritative for domain state; no business-rule bypass in UI.
-- Persistence: Postgres via Docker Compose only — no in-memory repos, SQLite, or page-level mock data.
-- **Preview integration:** Do not add silent API-404→harness-fixture fallbacks. Gate fixture data on `VITE_PREVIEW_FIXTURE_MODE`. Default preview requires live `/api/v1` data (verified in `mvp-completion-ready`).
-- **Root app wiring:** Every new backend module must be imported in the root application module (`apps/api/src/app.module.ts` or equivalent) in the **same slice** — test-only wiring in E2E harness alone is insufficient. The finale slice verifies and fixes gaps; do not defer all wiring to it.
-- **Production admin bootstrap:** When `docs/technical/01-roles-permissions.md` § Account provisioning requires privileged roles beyond public signup, implement in identity module or `mvp-completion-ready`:
-  - `bootstrapAdminOnStartup()` — env-gated (`NODE_ENV=production` or `ADMIN_BOOTSTRAP_ENABLED=true`); reads `INITIAL_ADMIN_EMAIL`, `INITIAL_ADMIN_PASSWORD`, optional `INITIAL_ADMIN_ROLE`; creates bootstrap-target admin only when admin-class user count is zero; bcrypt hash; never log password; fail startup if env set but password fails policy.
-  - `npm run admin:bootstrap` CLI reuses the same service — idempotent, exit 0 on no-op, exit 1 on misconfiguration.
-  - Never create demo `*@*.local` users via bootstrap — those belong in `db:seed` (dev/preview only).
-  - Populate `integration-checks.json` → `bootstrapAdminEnvVars`, `bootstrapAdminScriptPath`, `bootstrapAdminNpmScript` when bootstrap is required.
-- Frontend: meet `docs/ui-ux/00-production-ui-quality-bar.md` and apply visual craft from `ai-harness/skills/visual-design/SKILL.md` — authoritative spec `docs/ui-ux/DESIGN.md`, modules in `docs/ui-ux/design-system/`, tokens in `docs/ui-ux/04-design-tokens.md`, direction in `docs/ui-ux/01-design-overview.md`. UI must be intentional and token-aligned — not just functional.
-- Match canonical states and error codes in `docs/technical/08-validation-rules.md`.
-- Audit critical config/state changes (actor, reason, timestamp).
-- Do **not** set `passes: true` in `ai-harness/whole-app-backlog.json` — the harness owns that.
-- **Default to in-scope paths** under this slice's `completionArtifacts` and `testRequirements`, harness state append-only files (`progress.md`, `guardrails.md`), and `scopeAllowlist` paths from `ralph-loop.json` when `guardrails.md` names them for the current failure. **Supportive out-of-scope changes** are allowed per the section below when directly required to complete this slice.
-- Do **not** modify another slice's `tests/playwright-ui/scenarios/*.spec.ts` except this slice's own spec.
-- Do **not** modify `ai-harness/playwright-regression-index.json` — the browser-test gate owns, updates, and commits it **after** your scope gate passes; `git restore` on that file is not required before `SLICE_DONE`.
-- Do **not** create or edit committed Playwright UI specs (`tests/playwright-ui/scenarios/<slice-id>.spec.ts`) before scope passes — the browser tester gate codegen owns them; `testRequirements.playwright` is harness-populated after browser test pass.
-- Do **not** run `npx playwright test`, `npx playwright screenshot`, or other Playwright CLI commands during implementer browser smoke — they mutate `tests/playwright-ui/test-results/.last-run.json` and `playwright-report/`, which fail the scope gate. Use Playwright MCP or cursor-ide-browser only; save screenshots under `ai-harness/generated/runs/screenshots/<slice-id>/implementer/` exclusively.
-- Do **not** fix other slices' application code or tests when scope hints name another owner — revert your in-scope changes and signal `SLICE_DEFER <owner-slice-id> <reason>` so the harness reopens that slice next iteration.
-- Use `SLICE_BLOCKED <reason>` only when blocked with no clear owning slice (env flake, missing infra, ambiguous failure).
-- Do **not** bundle routes or features owned by excluded slices (see **Excludes** below) unless this slice's `completionArtifacts` include them.
+When the **Prior gate failures** block appears above, follow **Prior gate failure remediation** in the work plan first. Run only the **Verify:** commands the plan specifies until all listed failures clear. Do **not** run full `npm run aih:check` or full browser coverage until every listed blocker is addressed, then run full verification per **Testing** below.
+
+## Out-of-plan protocol
+
+Deviate from the plan only when reality blocks execution (missing export, compile error, env flake, doc ambiguity):
+
+1. Fix **minimally** — no scope expansion or re-planning.
+2. Append to `progress.md`: `out_of_plan: <what> — <why>`.
+3. Add `scopeExtensions` in the backlog when touching paths outside the allowlist (with `reason`).
+4. If blocked with no minimal fix, signal `SLICE_DEFER` or `SLICE_BLOCKED` — do not invent new plan steps.
+
+## Rules (execution guardrails)
+
+- Stay inside MVP scope; backend is authoritative; Postgres via Docker Compose only — no in-memory repos, SQLite, or page-level mock data.
+- **Preview:** no silent API-404→fixture fallbacks; gate fixture data on `VITE_PREVIEW_FIXTURE_MODE`.
+- **Root wiring:** register new backend modules in `apps/api/src/app.module.ts` (or equivalent) in the **same slice** — the work plan should list this; declare in `scopeExtensions` when needed.
+- **Admin bootstrap, UI quality, validation codes:** apply constraints cited in the work plan; see referenced docs (`01-roles-permissions.md`, `DESIGN.md`, `08-validation-rules.md`, `integration-debt-register.md`, `integration-checklist.md` for `mvp-completion-ready`, etc.) only when the plan points there.
+- Do **not** set `passes: true` in `whole-app-backlog.json`.
+- Do **not** modify another slice's Playwright specs, `playwright-regression-index.json`, or create committed Playwright specs before scope passes.
+- Do **not** run `npx playwright test` / `npx playwright screenshot` — use Playwright MCP or cursor-ide-browser only; save screenshots under `ai-harness/generated/runs/screenshots/<slice-id>/implementer/`.
+- Do **not** fix another slice's code/tests when scope hints name another owner — revert and `SLICE_DEFER <owner-slice-id> <reason>`.
+- Do **not** bundle routes/features owned by excluded slices (see **Excludes** below).
 
 ## Supportive out-of-scope changes
 
-You may edit paths **outside** this slice's allowlist only when **all** of the following are true:
+Edit paths outside allowlist only when directly required to complete this slice (minimal, not gate-owned, not under **Excludes**). The work plan should pre-list anticipated paths; if you touch others:
 
-1. **Directly required** to complete this slice's acceptance (e.g. register a new module in `app.module.ts`, export a shared type, fix a compile error your slice introduced).
-2. **Minimal** — no new features, routes, or tests owned by another backlog slice.
-3. **Not** under another slice's `completionArtifacts` listed in **Excludes**.
-4. **Not** gate-owned (`playwright-regression-index.json`, Playwright specs before browser test, browser-test artifacts).
+- Add `scopeExtensions` with `reason` in the backlog before `SLICE_DONE`.
+- Append `supportive_scope: <path> — <reason>` to `progress.md`.
 
-Before `SLICE_DONE`:
-
-- Add each supportive path to this slice's `scopeExtensions` in `whole-app-backlog.json` with a one-line `reason` (prefer the narrowest path; use `completionArtifacts` or `testRequirements` when the path is a primary deliverable).
-- Append one line to `progress.md`: `supportive_scope: <path> — <one-line reason>`.
-
-Do **not** use supportive scope to fix another slice's failing tests or pre-implement excluded features — use `SLICE_DEFER` instead.
-
-**Usually supportive:** root module wiring (`apps/api/src/app.module.ts`), shared package export used by this slice, layout hook required for slice routes, type fix in shared util **caused by** this slice.
-
-**Never supportive (defer or separate slice):** fixing another slice's integration test, implementing excluded routes, editing `playwright-regression-index.json`, broad refactors "while you're here."
+Never use supportive scope to fix another slice's failing tests — use `SLICE_DEFER`.
 
 ## Testing
 
-The harness maintains structured test cases per **requirement tag** in `docs/test-cases/items/<tag>.json`. Tags are discovered from slice `acceptance` in the backlog; docs are resolved via `ai-harness/config/testgen-docs-map.json`.
+Run verification commands from the work plan's **Verify:** lines. Before `SLICE_DONE`, all applicable layers must pass:
 
-When test case artifacts exist for a tag, **treat them as the authoritative checklist** for integration and e2e verification (browser cases are exercised by the browser tester gate). When an artifact is absent (TestGen has not run yet), implement from slice docs and acceptance tags. To re-run a slice after TestGen catches up, a human sets `passes: false` for that slice in `whole-app-backlog.json`.
+- `npm run aih:scope -- {{SLICE_ID}}` — always first
+- `npm run aih:check -- {{SLICE_ID}}` — full pre-browser profile (or `--profile fast` for quick self-check)
+- `npm run aih:playwright-check -- {{SLICE_ID}}` — after browser test pass locally (frontend/test slices)
 
-Before signaling `SLICE_DONE`, all applicable layers must pass locally:
-
-- `npm run test:unit` — validators, pure logic, component tests (`apps/api`; `apps/web` when `test:unit` script exists) — **you write and maintain these**; they are not generated by TestGen
-- `npm run test:integration` — backend slices with DB behavior (`apps/api`); uses **test stack** (`docker-compose.test.yml`) via native `pg`, not preview dev DB
-- `npm run test:e2e` — acceptance/scenario slices (`tests/e2e`); uses test stack when configured
-
-Before ad-hoc integration/e2e runs: `npm run aih:run-check -- test:integration` (resets test stack automatically), or `npm run aih:test:stack:reset` manually. `npm run aih:check` resets before the first integration/e2e script and, with `resetBetweenScripts: false`, reuses the primed stack for later integration/e2e scripts in the same check run if healthy.
-
-### Targeted verification (retry iterations)
-
-When the **Prior gate failures** block is present at the top of this prompt, follow **Retry iteration** above: do **not** run full `npm run aih:check` or full browser screenshot coverage until every listed prior failure is addressed. Use targeted commands (`aih:scope`, `aih:run-check -- <script>`, re-exercise failed browser cases only) after each fix category. Run full verification only once all listed blockers are cleared.
-
-### Self-check command timeouts (required)
-
-Computational gates enforce wall-clock timeouts. **Apply the same discipline when you run checks yourself** — unbounded `npm run test:*` / `typecheck` / `lint` / `build` can deadlock and waste the iteration.
-
-1. **Scope (required, fast):** `npm run aih:scope -- {{SLICE_ID}}` — mechanical allowlist gate; must pass before expensive checks.
-2. **Final verification (preferred):** `npm run aih:check -- {{SLICE_ID}}` — same script, slice scope, timeouts, and per-script logs as the harness pre-browser gate (full profile). Does **not** run Playwright UI regression — that gate runs after the browser tester updates specs. For faster self-check: `npm run aih:check -- {{SLICE_ID}} --profile fast` — skips build/integration/e2e.
-3. **Playwright UI regression (frontend/test slices):** after browser test pass locally, run `npm run aih:playwright-check -- {{SLICE_ID}}` — headless regression on the slice spec.
-4. **Ad-hoc single script (especially `test:integration`):** `npm run aih:run-check -- test:integration` — live output, 30s heartbeats, log under `ai-harness/generated/runs/`; or prefix env var e.g. `AIH_CHECK_TIMEOUT_test_integration_MS=900000 npm run test:integration`
-5. **If a command exceeds its budget or hangs with no output:** stop the process tree, read the log file path printed by `aih:run-check` / `aih:check` (tail last lines), fix deadlock/hang before `SLICE_DONE`; use `SLICE_BLOCKED` if you cannot resolve, or `SLICE_DEFER <owner-slice-id> <reason>` when failures belong to another slice (see cross-slice rules above)
-6. Do **not** wait on hung tests hoping they finish — the gate will timeout and fail the slice anyway
+Implementer-written tests: colocated `*.test.ts` / `*.test.tsx` per **Test strategy** in the plan. Update `testRequirements` in the backlog when adding test paths.
 
 {{CHECK_TIMEOUT_BUDGETS}}
 
-Read the generated test case artifacts for each product item in this slice's `acceptance` list when present (`docs/test-cases/items/<AC|FR|BR|NFR-id>.json`). Every case with `layer` of `integration` or `e2e` must have its `traceability` tags covered in colocated test files.
-
-**Unit and component tests** are implementer-written: colocated `*.test.ts` / `*.test.tsx`, listed under `testRequirements.unit` / `component`, and must reference acceptance tags.
-
-**Every new module or component** gets a colocated `*.test.ts` or `*.test.tsx` covering the slice acceptance tags. Add paths under `testRequirements` in the backlog slice when you add tests:
-
-```json
-"testRequirements": {
-  "unit": ["apps/api/src/modules/foo/validation.test.ts"],
-  "integration": ["apps/api/src/modules/foo/foo.integration.test.ts"],
-  "component": ["apps/web/src/components/foo/foo.test.tsx"],
-  "acceptanceTags": ["AC-01"]
-}
-```
+Apply timeout discipline from the budgets above — stop hung processes; read gate log paths; use `SLICE_BLOCKED` or `SLICE_DEFER` when appropriate.
 
 ### Browser verification (frontend and test slices)
 
-When the slice agent is `frontend` or `test`, Playwright MCP is available (`--approve-mcps`). After `npm run aih:preview` is up:
+When slice agent is `frontend` or `test`, execute screenshot steps listed in the work plan after `npm run aih:preview` is up:
 
 {{SCREENSHOT_DIR_BLOCK}}
 
 {{UI_SCREENS_TO_VERIFY}}
 
-#### Coverage rule
+Apply coverage and per-screenshot checks from `ai-harness/docs/ui-visual-verification.md` for each screen/state the plan lists (320×568 mobile + 1280×720 desktop where applicable). Any checklist FAIL → fix code → re-screenshot before `SLICE_DONE`.
 
-For **every route, page, modal, drawer, or distinct outcome state** created or modified in this slice:
-
-1. Capture **at least one screenshot** per screen/state (more when layout differs by viewport).
-2. Required viewports:
-   - **320×568** — mobile routes, mobile auth
-   - **1280×720** — desktop workspace / auth split-panel
-3. Save under: `ai-harness/generated/runs/screenshots/<slice-id>/implementer/`
-4. Filename: `<UTC-timestamp>-<route-or-state-slug>-<viewport>.png`
-
-**Screen/state examples** (capture each that exists in slice): list default; list with filters/search; empty state; create/edit form; inline validation error; success toast or post-submit row; forbidden/denied state; modal open; distinct outcome panels when slice touches workflow outcome or confirmation flows.
-
-#### Per-screenshot self-critique checklist
-
-After each capture, verify in the screenshot (not snapshot-only) per `ai-harness/docs/ui-visual-verification.md`:
-
-| # | Check | FAIL if |
-|---|--------|---------|
-| 1 | Primary CTA contrast | Label washed out on primary background |
-| 2 | Secondary/outline/ghost | Text indistinguishable from page background |
-| 3 | Disabled buttons | Illegible label (< 3:1) or looks enabled |
-| 4 | Button padding | Cramped label, insufficient inset |
-| 5 | Stacked actions | Primary/secondary touching, no gap |
-| 6 | Cards/tables | Content flush to edges, no inset padding |
-| 7 | Danger actions | Poor contrast on destructive buttons |
-| 8 | Listing toolbars | Missing search/filter/sort/pagination on collection views |
-| 9 | Typography hierarchy | Copy clipped, truncated headings |
-| 10 | Style signature — borders | Interactive surfaces missing tokenized borders per design-system |
-| 11 | Style signature — elevation | Wrong or default framework shadows vs `shadows.md` |
-| 12 | Outcome accents | Success/warning/error/empty use identical styling |
-| 13 | Whitespace rhythm | Cramped sections, cards, or toolbars |
-| 14 | Listing toolbar alignment | Search, filters, sort, pagination misaligned |
-| 15 | Focus / active nav | Wrong sidebar highlight; missing focus on interactive elements |
-| 16 | Navigation surface + home link | Authenticated page missing persistent nav, home link, or **clickable app logo** linking to role home |
-| 17 | Login page neutrality | Login heading/copy contains role name; post-login lands on wrong page |
-| 18 | Back-to-home / logo shortcut | Any page has no clickable path back to home — app logo in nav must navigate to role home; breadcrumb first segment or explicit home item also acceptable |
-| 19 | No forbidden nav items | Nav renders links to routes the current role cannot access; forbidden items are disabled rather than absent |
-| 20 | Copy hygiene | User-visible text contains technical IDs, schema field names, requirement codes, or internal slugs |
-
-Any FAIL → fix code → re-screenshot before `SLICE_DONE`.
-
-#### Execution
-
-1. Use **Playwright MCP** or **cursor-ide-browser** to navigate `http://localhost:3007`
-2. Exercise the slice user flow per slice scope
-3. Apply the coverage rule and checklist above for each screen/state
-4. **Apply browser timeouts** — abandon a navigation or action after **30s** without expected content
-5. Append to `ai-harness/state/progress.md`:
+Append to `progress.md`:
 
 ```
-<timestamp> | <slice-id> | browser_verified: <flows> — ui_checklist: <N screens/states> — screenshots: <comma-separated paths> (320w + desktop where applicable)
+<timestamp> | <slice-id> | browser_verified: <flows> — screenshots: <paths>
 ```
 
-See `ai-harness/docs/browser-mcp.md` for the full runbook. The harness will **re-verify** your work via a dedicated browser test agent gate after pre-browser computational checks, then run headless Playwright regression after the tester updates specs.
-
-### Preview stack shell commands (strict)
-
-The preview stack is **already running** for most harness iterations. Prefer `npm run aih:preview:verify` to confirm health.
-
-When you must restart preview:
-
-- Run `npm run aih:preview:down` and `npm run aih:preview` as **separate** shell commands — never chained with `&&` and **never piped through `tail` or `head`**
-- Do not wrap preview commands in subshell pipelines; orphaned `tail` processes can block the harness for minutes after `SLICE_DONE`
-- After starting preview, use `npm run aih:preview:verify` (exits) instead of waiting on `aih:preview` output
+See `ai-harness/docs/browser-mcp.md`. Preview restart: run `aih:preview:down` and `aih:preview` as **separate** commands — never chain with `&&` or pipe through `tail`/`head`.
 
 ## Slice
 
@@ -207,28 +102,13 @@ When you must restart preview:
 - **Excludes (do not edit):** {{SLICE_EXCLUDES}}
 - **Notes:** {{SLICE_NOTES}}
 
-## Docs to read
-
-{{SLICE_DOCS}}
-
 ## On failure
 
 Append a short lesson to `ai-harness/state/guardrails.md` under `## Signs` if you hit a repeatable mistake.
 
 ### Cross-slice test failures
 
-When `npm run aih:check` or prior gate feedback shows failures in tests owned by another slice (scope hints name an owner):
-
-1. **In your slice scope** — path is under this slice's `completionArtifacts` or `testRequirements` → fix it.
-2. **Owned by another slice** — do **not** edit their application code or tests.
-3. **Before deferring** — run the failing suite in isolation (`npm run aih:run-check -- test:integration -- <pattern>`), reset test stack once (`npm run aih:test:stack:reset`), re-run isolated. Read `ai-harness/docs/test-failure-triage.md` for the full decision tree.
-4. **Never resolve integration failures by bare re-run** — a passing `npm run aih:check` on retry without a code change is not a fix. When the harness reports `crossSuiteFlake` in `{run-id}-integration-triage.json`, fix parallel test isolation in the **owner slice** (afterEach restore, dedicated section fixtures) or signal `SLICE_DEFER`.
-5. **Still failing and out of scope** — revert your slice's in-scope uncommitted changes only (`git restore` for paths under this slice's allowlist; remove untracked files you added under those paths). Do not touch gate-owned files (`playwright-regression-index.json`, browser-test artifacts).
-6. Signal `SLICE_DEFER <owner-slice-id> <reason>` on its own line at the end.
-
-**Never add `setTimeout` sleeps** for scheduler or async-job races — use documented fixture-pinning and `afterEach` cleanup patterns in test-failure-triage.md.
-
-The harness will reopen the owner slice, record history, and focus the next loop iteration on it.
+When checks fail in tests owned by another slice: fix if in your scope; otherwise isolate once (`aih:run-check -- test:integration -- <pattern>`), read `ai-harness/docs/test-failure-triage.md`, revert in-scope changes, and `SLICE_DEFER <owner-slice-id> <reason>`. Never fix integration failures by bare re-run without a code change.
 
 ## End signal (required — exactly one line at the end)
 
