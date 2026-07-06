@@ -12,7 +12,7 @@ Concise index for the 12 harness components. Referenced by `docs/technical/13-do
 | Skills | `skills/*/SKILL.md` — agent craft guidance (`visual-design`, `ui-ux-testing`); wired via `context-map.json` `alwaysRead`, injected into prompts by `build-prompt.sh` |
 | Tools | Cursor CLI (`agent -p --force`) + Playwright MCP on frontend/test slices |
 | Workflow | `workflows/ralph-loop.json`, `workflows/testgen-loop.json`, `workflows/manualsgen-loop.json` |
-| Memory/State | `state/progress.md`, `state/guardrails.md`, `state/loop-state.json` (one-shot next slice override), `whole-app-backlog.json` (slice `history` for reopen/failure context), `config/plan-index.json`, `plans/<slice-id>.md` (implementation plans) |
+| Memory/State | `state/progress.md`, `state/guardrails.md`, `state/loop-state.json` (one-shot next slice override), `whole-app-backlog.json` (slice `history` for reopen/failure context), `plans/<slice-id>.md` (legacy manual plan paths) |
 | Test cases | `config/testgen-docs-map.json`, `test-case-index.json`, `docs/test-cases/items/<tag>.json` — TestGen seeds; browser tester maintains `layer: browser` cases post-implementation |
 | User manuals | `config/manualsgen-docs-map.json`, `manuals-backlog.json`, `manuals-index.json`, `docs/user-manuals/` (demo-accounts, modules, flows, demo-runbook) |
 | Common UI/UX suite | `test-cases/common/ui-ux-suite.json` (generic `TC-UX-COMMON-*`, `schemas/ui-ux-suite.schema.json`) — always appended to the browser test finalize phase; config in `ralph-loop.json` → `browserTest.commonUiUxSuite` |

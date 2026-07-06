@@ -105,7 +105,6 @@ Defaults live in `ai-harness/config/models.json`.
 | `npm run aih:slice:focus -- <id> --reason "..."` | One-shot next-iteration slice override (`--reopen` also sets `passes: false`) |
 | `npm run aih:validate:backlog` | Validate `whole-app-backlog.json` structure (including `testingPlanRefs` on non-infra slices) |
 | `npm run aih:validate:work-plan -- <slice-id> [--plan-file <path>]` | Validate work plan markdown (ephemeral run file or legacy `plans/` path) |
-| `npm run aih:plan:drift` | Deprecated no-op — Ralph replans from state every iteration |
 | `npm run aih:scope` | Mechanical slice scope gate only (changed files vs allowlist) |
 | `npm run aih:check` | Pre-browser computational gates (no Playwright UI); add `--profile fast` for slice self-check |
 | `npm run aih:playwright-check` | Headless Playwright UI regression for a slice — runs after browser tester codegen in Ralph |

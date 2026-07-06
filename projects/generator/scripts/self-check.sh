@@ -164,8 +164,6 @@ fi
 gen_step "Self-check: work plan gate templates"
 check_file_exists "${TEMPLATES_DIR}/ai-harness/agents/work-planner.prompt.md"
 check_file_exists "${TEMPLATES_DIR}/ai-harness/scripts/validate-work-plan.sh"
-check_file_exists "${TEMPLATES_DIR}/ai-harness/scripts/check-plan-drift.sh"
-check_file_exists "${TEMPLATES_DIR}/ai-harness/config/plan-index.json"
 check_json "${TEMPLATES_DIR}/ai-harness/schemas/work-plan.schema.json"
 if [[ "$(jq -r '.workPlanGate.mode // empty' "${TEMPLATES_DIR}/ai-harness/workflows/ralph-loop.json")" != "required" ]]; then
   gen_err "ralph-loop.json missing workPlanGate.mode required"

@@ -18,8 +18,6 @@ setup_fixture_repo() {
   cp -R "$HARNESS_TPL/scripts/"* "$FIXTURE/ai-harness/scripts/"
   cp "$HARNESS_TPL/workflows/ralph-loop.json" "$FIXTURE/ai-harness/workflows/"
   cp "$HARNESS_TPL/config/context-map.json" "$FIXTURE/ai-harness/config/"
-  cp "$HARNESS_TPL/config/plan-index.json" "$FIXTURE/ai-harness/config/" 2>/dev/null || \
-    echo '{"current":[],"docFingerprint":null,"tags":{}}' > "$FIXTURE/ai-harness/config/plan-index.json"
   chmod +x "$FIXTURE/ai-harness/scripts/"*.sh
   for f in 11-testing-plan 00-system-overview 08-validation-rules 12-backend-frontend-tech-stack; do
     echo "# stub" > "$FIXTURE/docs/technical/${f}.md"

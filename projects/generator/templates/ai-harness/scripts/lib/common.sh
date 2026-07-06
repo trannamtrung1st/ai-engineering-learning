@@ -27,7 +27,6 @@ aih_api_port() {
 
 BACKLOG="${HARNESS_ROOT}/whole-app-backlog.json"
 TEST_CASE_INDEX="${HARNESS_ROOT}/test-case-index.json"
-PLAN_INDEX="${HARNESS_ROOT}/config/plan-index.json"
 PLAN_DIR="${HARNESS_ROOT}/plans"
 TESTGEN_DOCS_MAP="${HARNESS_ROOT}/config/testgen-docs-map.json"
 LOOP_CONFIG="${HARNESS_ROOT}/workflows/ralph-loop.json"
@@ -60,7 +59,7 @@ PLAYWRIGHT_REGRESSION_INDEX="${HARNESS_ROOT}/playwright-regression-index.json"
 UX_BUGS_ROOT="${RUNS_DIR}/ux-bugs"
 PLAYWRIGHT_UI_SCENARIOS_DIR="${REPO_ROOT}/tests/playwright-ui/scenarios"
 
-export HARNESS_ROOT REPO_ROOT BACKLOG TEST_CASE_INDEX PLAN_INDEX PLAN_DIR TESTGEN_DOCS_MAP LOOP_CONFIG TESTGEN_CONFIG MODELS_CONFIG CONTEXT_MAP STATE_DIR RUNS_DIR SCREENSHOTS_ROOT TEST_CASES_DIR
+export HARNESS_ROOT REPO_ROOT BACKLOG TEST_CASE_INDEX PLAN_DIR TESTGEN_DOCS_MAP LOOP_CONFIG TESTGEN_CONFIG MODELS_CONFIG CONTEXT_MAP STATE_DIR RUNS_DIR SCREENSHOTS_ROOT TEST_CASES_DIR
 export PREVIEW_PID_FILE PREVIEW_AUX_PID_FILE
 export PREVIEW_WEB_LOG PREVIEW_API_LOG PREVIEW_DB_LOG PREVIEW_STACK_LOG PREVIEW_COMBINED_LOG
 export PREVIEW_SUPERVISOR_STOP_FILE PREVIEW_WEB_REFRESH_FILE
@@ -3036,11 +3035,6 @@ parse_plan_done_from_agent() {
   fi
   # Agent stream may split the signal across formatting; accept same-line variants.
   echo "$agent_text" | grep -qE "PLAN_DONE[[:space:]]+${slice_id}([[:space:]]|$)"
-}
-
-# Deprecated: plans are ephemeral per iteration; no plan-index fast path.
-try_approve_work_plan_from_disk() {
-  return 1
 }
 
 format_work_plan_block() {
