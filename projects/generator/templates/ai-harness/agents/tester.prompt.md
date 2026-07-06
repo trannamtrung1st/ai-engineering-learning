@@ -91,6 +91,7 @@ The harness may run browser verification in multiple phases. Follow the **phase 
 
 ### Retry phase (`## Retry phase — failed cases from prior run` or `## Retry batch N of M`)
 
+- When the harness injects a retry phase, **do not** start with the common UI/UX suite or full checklist — execute **only** the case IDs listed in that phase
 - Execute **only** the case IDs listed in that phase's mandatory checklist — ignore all other cases in the artifact
 - **Do not** run common UI/UX suite, UX audit, test-case maintenance, or Playwright codegen
 - Run **every** listed case — collect **all** FAIL results before emitting the final signal

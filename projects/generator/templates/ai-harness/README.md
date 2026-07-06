@@ -80,6 +80,7 @@ npm run aih:loop -- 50                     # max 50 iterations
 | `AIH_SKIP_REVIEW` | — | Skip AI review (`1`) |
 | `AIH_SKIP_BROWSER_TEST` | — | Skip browser test gate (`1`) |
 | `AIH_SKIP_TESTGEN_GATE` | — | Force optional test-case gate (`1`; redundant when `testCaseGate.mode` is `optional`) |
+| `AIH_SKIP_PLAN_GATE` | — | Skip slice plan gate (`1`; redundant when `slicePlanGate.mode` is `optional`) |
 | `AIH_SKIP_TESTGEN_AGENT` | — | Skip testgen agent (`1`) |
 | `AIH_SKIP_MANUALSGEN_AGENT` | — | Skip manualsgen agent (`1`) |
 | `AIH_BROWSER_MCP` | — | Enable Playwright MCP on any slice (`1`) |
@@ -94,7 +95,7 @@ Defaults live in `ai-harness/config/models.json`.
 
 | Command | What it does |
 |---|---|
-| `npm run aih:once` | **One** iteration (implement → scope gate → check → browser test → review) |
+| `npm run aih:once` | **One** iteration (plan → implement → scope gate → check → browser test → review) |
 | `npm run aih:loop` | **Autonomous loop** — repeats until all slices pass or max iterations (30) |
 | `npm run aih:loop:bg` | Same as loop, but **background/unattended** (nohup + log file) |
 | `npm run aih:loop:stop` | Stop background loop |
@@ -102,6 +103,9 @@ Defaults live in `ai-harness/config/models.json`.
 | `npm run aih:status` | Loop health dashboard (pending slices, stale tags, recent failures, loop override) |
 | `npm run aih:slice:reopen -- <id> --reason "..."` | Reopen slice (`passes: false`) and append `history` |
 | `npm run aih:slice:focus -- <id> --reason "..."` | One-shot next-iteration slice override (`--reopen` also sets `passes: false`) |
+| `npm run aih:validate:backlog` | Validate `whole-app-backlog.json` structure (including `testingPlanRefs` on non-infra slices) |
+| `npm run aih:validate:plan -- <slice-id>` | Validate slice implementation plan markdown |
+| `npm run aih:plan:drift` | Detect plan drift; mark slice plans stale in `plan-index.json` |
 | `npm run aih:scope` | Mechanical slice scope gate only (changed files vs allowlist) |
 | `npm run aih:check` | Pre-browser computational gates (no Playwright UI); add `--profile fast` for slice self-check |
 | `npm run aih:playwright-check` | Headless Playwright UI regression for a slice — runs after browser tester codegen in Ralph |
@@ -172,7 +176,9 @@ npm run aih:playwright-check -- <sliceId>
 npm run aih:status
 ```
 
-Doc drift alone sets `test-case-index` `current: false` and appends guardrails — it does **not** reset slice `passes` until TestGen successfully regenerates the artifact (`mark_slices_stale_for_tag`).
+Doc drift alone sets `test-case-index` `current: false` and appends guardrails — it does **not** reset slice `passes` until TestGen successfully regenerates the artifact (`mark_slices_stale_for_tag`). Plan drift (`check-plan-drift.sh`) invalidates `config/plan-index.json` for affected slices; Ralph replans before implementer on the next iteration.
+
+Each non-infra slice carries `testingPlanRefs[]` in the backlog (cross-walked from `docs/technical/11-testing-plan.md` at harness-planner time). The slice-planner agent must cover every ref in **Testing plan alignment**; `validate-slice-plan.sh` enforces this mechanically.
 
 To re-run implementer and tester gates after TestGen catches up, set `passes: false` on that slice in `whole-app-backlog.json`, run `npm run aih:slice:reopen -- <slice-id> --reason "..."`, or let TestGen regeneration do it when `reverifyOnDrift` is true (appends `drift` history).
 

@@ -71,6 +71,20 @@ compute_slice_doc_fingerprint() {
   _fingerprint_from_paths "$doc_lines"
 }
 
+compute_slice_plan_fingerprint() {
+  local slice_id="$1"
+  local doc_fp acceptance_fp refs_fp hash_input
+  doc_fp="$(compute_slice_doc_fingerprint "$slice_id")"
+  acceptance_fp="$(get_slice_json "$slice_id" | jq -r '(.acceptance // []) | sort | join(",")')"
+  refs_fp="$(get_slice_json "$slice_id" | jq -r '(.testingPlanRefs // []) | sort | join(",")')"
+  hash_input="docs:${doc_fp}"$'\n'"acceptance:${acceptance_fp}"$'\n'"testingPlanRefs:${refs_fp}"$'\n'
+  if command -v shasum >/dev/null 2>&1; then
+    printf '%s' "$hash_input" | shasum -a 256 | awk '{print "sha256:" $1}'
+  else
+    printf '%s' "$hash_input" | sha256sum | awk '{print "sha256:" $1}'
+  fi
+}
+
 compute_manual_item_doc_fingerprint() {
   local item_id="$1"
   # shellcheck source=resolve-manualsgen-docs.sh

@@ -27,6 +27,8 @@ aih_api_port() {
 
 BACKLOG="${HARNESS_ROOT}/whole-app-backlog.json"
 TEST_CASE_INDEX="${HARNESS_ROOT}/test-case-index.json"
+PLAN_INDEX="${HARNESS_ROOT}/config/plan-index.json"
+PLAN_DIR="${HARNESS_ROOT}/plans"
 TESTGEN_DOCS_MAP="${HARNESS_ROOT}/config/testgen-docs-map.json"
 LOOP_CONFIG="${HARNESS_ROOT}/workflows/ralph-loop.json"
 TESTGEN_CONFIG="${HARNESS_ROOT}/workflows/testgen-loop.json"
@@ -58,7 +60,7 @@ PLAYWRIGHT_REGRESSION_INDEX="${HARNESS_ROOT}/playwright-regression-index.json"
 UX_BUGS_ROOT="${RUNS_DIR}/ux-bugs"
 PLAYWRIGHT_UI_SCENARIOS_DIR="${REPO_ROOT}/tests/playwright-ui/scenarios"
 
-export HARNESS_ROOT REPO_ROOT BACKLOG TEST_CASE_INDEX TESTGEN_DOCS_MAP LOOP_CONFIG TESTGEN_CONFIG MODELS_CONFIG CONTEXT_MAP STATE_DIR RUNS_DIR SCREENSHOTS_ROOT TEST_CASES_DIR
+export HARNESS_ROOT REPO_ROOT BACKLOG TEST_CASE_INDEX PLAN_INDEX PLAN_DIR TESTGEN_DOCS_MAP LOOP_CONFIG TESTGEN_CONFIG MODELS_CONFIG CONTEXT_MAP STATE_DIR RUNS_DIR SCREENSHOTS_ROOT TEST_CASES_DIR
 export PREVIEW_PID_FILE PREVIEW_AUX_PID_FILE
 export PREVIEW_WEB_LOG PREVIEW_API_LOG PREVIEW_DB_LOG PREVIEW_STACK_LOG PREVIEW_COMBINED_LOG
 export PREVIEW_SUPERVISOR_STOP_FILE PREVIEW_WEB_REFRESH_FILE
@@ -1250,6 +1252,7 @@ mark_slice_reopened() {
   else
     append_slice_history "$slice_id" "$kind" "$reason" "$source"
   fi
+  invalidate_slice_plan "$slice_id" "reopened: ${reason}"
 }
 
 format_slice_history_block() {
@@ -1410,6 +1413,45 @@ format_testgen_validation_feedback_block() {
 ## Previous validation failure (fix before TESTGEN_DONE)
 
 The last harness run for this tag **failed validation**. Update the artifact at \`$(test_case_artifact_path "$requirement_tag")\` so \`validate-test-cases.sh\` passes — address **every** item below:
+
+EOF
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" ]] && continue
+    echo "- ${line}"
+  done < "$path"
+  echo ""
+}
+
+PLAN_VALIDATION_FEEDBACK_DIR="${RUNS_DIR}/plan-validation-feedback"
+
+plan_validation_feedback_path() {
+  local slice_id="$1"
+  echo "${PLAN_VALIDATION_FEEDBACK_DIR}/${slice_id}.txt"
+}
+
+write_plan_validation_feedback() {
+  local slice_id="$1"
+  local feedback="$2"
+  mkdir -p "$PLAN_VALIDATION_FEEDBACK_DIR"
+  printf '%s\n' "$feedback" > "$(plan_validation_feedback_path "$slice_id")"
+}
+
+clear_plan_validation_feedback() {
+  local path
+  path="$(plan_validation_feedback_path "$1")"
+  [[ -f "$path" ]] && rm -f "$path"
+}
+
+format_plan_validation_feedback_block() {
+  local slice_id="$1"
+  local path line
+  path="$(plan_validation_feedback_path "$slice_id")"
+  [[ -f "$path" ]] || return 0
+
+  cat <<EOF
+## Previous plan validation failure (fix before PLAN_DONE)
+
+The last harness run for this slice **failed plan validation**. Update the plan at \`$(slice_plan_artifact_path "$slice_id")\` so \`validate-slice-plan.sh\` passes — address **every** item below. Do not replan unrelated sections or re-read the full doc tree first.
 
 EOF
   while IFS= read -r line || [[ -n "$line" ]]; do
@@ -2068,6 +2110,7 @@ mark_slices_stale_for_tag() {
   ' "$BACKLOG" > "$pi_tmp" && mv "$pi_tmp" "$BACKLOG"
   for slice_id in "${stale_ids[@]}"; do
     append_slice_history "$slice_id" "drift" "Doc drift for ${requirement_tag} — reverify after TestGen" "harness"
+    invalidate_slice_plan "$slice_id" "doc drift for ${requirement_tag}"
   done
 }
 
@@ -2209,6 +2252,10 @@ build_slice_scope_allowlist() {
   allowlist+=("ai-harness/state/progress.md")
   allowlist+=("ai-harness/state/guardrails.md")
   allowlist+=("ai-harness/whole-app-backlog.json")
+  if slice_requires_plan "$slice_id"; then
+    allowlist+=("$(slice_plan_artifact_path "$slice_id")")
+    allowlist+=("ai-harness/config/plan-index.json")
+  fi
 
   if [[ "$agent_type" == "frontend" ]]; then
     while IFS= read -r path; do
@@ -2653,6 +2700,159 @@ agent_invoke_manualsgen() {
   idle_config="$MANUALSGEN_CONFIG"
   timeout_ms="$(get_agent_timeout_ms "$idle_config")"
   AIH_HARNESS_CONFIG="$idle_config" run_agent_with_timeout_ms "$timeout_ms" "$outfile" "$AGENT_BIN" "${args[@]}" "$prompt"
+}
+
+# Slice planner: writes plan markdown only (no product code).
+agent_invoke_planner() {
+  local model="$1"
+  local prompt="$2"
+  local outfile="${3:-}"
+  require_agent
+  local -a args fmt
+  args=(-p --force --trust --model "$model")
+  read -ra fmt <<< "$(agent_output_format_args)"
+  args+=("${fmt[@]}")
+  local timeout_ms idle_config
+  idle_config="$LOOP_CONFIG"
+  timeout_ms="$(get_agent_timeout_ms "$idle_config")"
+  AIH_HARNESS_CONFIG="$idle_config" run_agent_with_timeout_ms "$timeout_ms" "$outfile" "$AGENT_BIN" "${args[@]}" "$prompt"
+}
+
+ensure_plan_index() {
+  if [[ ! -f "$PLAN_INDEX" ]]; then
+    mkdir -p "$(dirname "$PLAN_INDEX")"
+    echo '{"current":[],"docFingerprint":null,"tags":{}}' > "$PLAN_INDEX"
+  fi
+}
+
+slice_plan_artifact_path() {
+  local slice_id="$1"
+  local custom
+  custom="$(get_slice_field "$slice_id" planArtifact 2>/dev/null || echo "")"
+  if [[ -n "$custom" && "$custom" != "null" ]]; then
+    echo "$custom"
+    return 0
+  fi
+  echo "ai-harness/plans/${slice_id}.md"
+}
+
+slice_plan_artifact_abs() {
+  local slice_id="$1"
+  echo "${REPO_ROOT}/$(slice_plan_artifact_path "$slice_id")"
+}
+
+slice_requires_plan() {
+  local slice_id="$1"
+  local explicit agent_type require_explicit
+  explicit="$(get_slice_field "$slice_id" requiresPlan 2>/dev/null || echo "")"
+  if [[ "$explicit" == "false" ]]; then
+    return 1
+  fi
+  if [[ "$explicit" == "true" ]]; then
+    return 0
+  fi
+  require_explicit="$(jq -r '.slicePlanGate.requireExplicitRequiresPlan // false' "$LOOP_CONFIG" 2>/dev/null || echo false)"
+  if [[ "$require_explicit" == "true" ]]; then
+    return 1
+  fi
+  agent_type="$(get_slice_field "$slice_id" agent 2>/dev/null || echo "backend")"
+  [[ "$agent_type" != "infra" ]]
+}
+
+slice_plan_gate_mode() {
+  local mode
+  mode="$(jq -r '.slicePlanGate.mode // "required"' "$LOOP_CONFIG" 2>/dev/null || echo required)"
+  echo "$mode"
+}
+
+slice_plan_current() {
+  local slice_id="$1"
+  local current stored_fp live_fp artifact
+  ensure_plan_index
+  if ! slice_requires_plan "$slice_id"; then
+    return 0
+  fi
+  artifact="$(slice_plan_artifact_abs "$slice_id")"
+  [[ -f "$artifact" ]] || return 1
+  current="$(jq -r --arg id "$slice_id" '.tags[$id].current // false' "$PLAN_INDEX")"
+  [[ "$current" == "true" ]] || return 1
+  stored_fp="$(jq -r --arg id "$slice_id" '.tags[$id].docFingerprint // ""' "$PLAN_INDEX")"
+  # shellcheck source=doc-fingerprint.sh
+  source "$(dirname "${BASH_SOURCE[0]}")/doc-fingerprint.sh"
+  live_fp="$(compute_slice_plan_fingerprint "$slice_id")"
+  [[ -n "$stored_fp" && "$stored_fp" == "$live_fp" ]]
+}
+
+mark_slice_plan_current() {
+  local slice_id="$1"
+  local fingerprint="$2"
+  local generated_at="${3:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}"
+  local tmp
+  ensure_plan_index
+  tmp="$(mktemp)"
+  jq --arg id "$slice_id" --arg fp "$fingerprint" --arg ts "$generated_at" '
+    .tags[$id] = {
+      current: true,
+      docFingerprint: $fp,
+      generatedAt: $ts
+    }
+  ' "$PLAN_INDEX" > "$tmp" && mv "$tmp" "$PLAN_INDEX"
+}
+
+invalidate_slice_plan() {
+  local slice_id="$1"
+  local reason="${2:-stale}"
+  local tmp live_fp=""
+  ensure_plan_index
+  if slice_requires_plan "$slice_id"; then
+    # shellcheck source=doc-fingerprint.sh
+    source "$(dirname "${BASH_SOURCE[0]}")/doc-fingerprint.sh"
+    live_fp="$(compute_slice_plan_fingerprint "$slice_id" 2>/dev/null || echo "")"
+  fi
+  tmp="$(mktemp)"
+  jq --arg id "$slice_id" --arg fp "$live_fp" --arg reason "$reason" '
+    .tags[$id] = {
+      current: false,
+      docFingerprint: $fp,
+      generatedAt: null,
+      staleReason: $reason
+    }
+  ' "$PLAN_INDEX" > "$tmp" && mv "$tmp" "$PLAN_INDEX"
+}
+
+parse_plan_done_from_agent() {
+  local agent_text="$1"
+  local slice_id="$2"
+  echo "$agent_text" | grep -qF "PLAN_DONE ${slice_id}"
+}
+
+format_slice_plan_block() {
+  local slice_id="$1"
+  local plan_path artifact_abs excerpt max_lines=120 line_count
+  plan_path="$(slice_plan_artifact_path "$slice_id")"
+  artifact_abs="$(slice_plan_artifact_abs "$slice_id")"
+  [[ -f "$artifact_abs" ]] || return 0
+
+  line_count="$(wc -l < "$artifact_abs" | tr -d ' ')"
+  excerpt=""
+  if [[ "$line_count" -le "$max_lines" ]]; then
+    excerpt="$(cat "$artifact_abs")"
+  else
+    excerpt="$(head -n "$max_lines" "$artifact_abs")"
+    excerpt="${excerpt}
+
+... (plan truncated — read full file at ${plan_path})"
+  fi
+
+  cat <<EOF
+## Approved implementation plan
+
+Read and follow the plan at \`${plan_path}\` before writing code. Do not deviate without updating the plan and re-running the planner gate.
+
+\`\`\`markdown
+${excerpt}
+\`\`\`
+EOF
 }
 
 append_guardrail() {
@@ -3737,15 +3937,20 @@ EOF
 
 build_implementer_prior_gate_feedback() {
   local slice_id="$1"
-  local block sections="" excerpt_block=""
+  local block sections="" excerpt_block="" fix_order="" fix_order_num=0
   local scope_run="" checks_run="" browser_run="" review_run=""
 
   if scope_run="$(find_latest_failed_run_id_for_slice "$slice_id" scope)"; then
     block="$(summarize_scope_failures "$scope_run" 2>/dev/null || true)"
     if [[ -n "$block" ]]; then
+      fix_order_num=$((fix_order_num + 1))
+      fix_order="${fix_order}${fix_order_num}. Scope gate — revert or declare out-of-scope paths; verify with \`npm run aih:scope -- ${slice_id}\`
+"
       sections="${sections}### Scope gate failures (\`${scope_run}\`)
 
-Fix every out-of-scope path below before signaling \`SLICE_DONE\`. Either revert unrelated edits, or add each justified path to this slice's \`scopeExtensions\` (with reason) or \`completionArtifacts\` / \`testRequirements\` in \`whole-app-backlog.json\`. Run \`npm run aih:scope -- ${slice_id}\` to verify locally.
+Fix every out-of-scope path below before signaling \`SLICE_DONE\`. Either revert unrelated edits, or add each justified path to this slice's \`scopeExtensions\` (with reason) or \`completionArtifacts\` / \`testRequirements\` in \`whole-app-backlog.json\`.
+
+**Targeted verify:** \`npm run aih:scope -- ${slice_id}\`
 
 \`\`\`json
 ${block}
@@ -3759,9 +3964,14 @@ ${block}
     block="$(summarize_checks_failures "$checks_run" 2>/dev/null || true)"
     excerpt_block="$(summarize_checks_failure_excerpts "$checks_run" 2>/dev/null || true)"
     if [[ -n "$block" ]]; then
+      fix_order_num=$((fix_order_num + 1))
+      fix_order="${fix_order}${fix_order_num}. Computational checks — fix each failed script; verify with \`npm run aih:run-check -- <failed-script>\`
+"
       sections="${sections}### Computational checks failures (\`${checks_run}\`)
 
 Fix every item below before signaling \`SLICE_DONE\`. **Read the log excerpts** — they contain assertion errors and test case ids the JSON summary omits.
+
+**Targeted verify:** \`npm run aih:run-check -- <failed-script>\` (or isolated integration pattern from triage block)
 
 \`\`\`json
 ${block}
@@ -3791,9 +4001,14 @@ Do **not** resolve integration gate failures by bare re-run of \`npm run aih:che
   if browser_run="$(find_latest_failed_run_id_for_slice "$slice_id" browser-test)"; then
     block="$(summarize_browser_test_failures "$browser_run" 2>/dev/null || true)"
     if [[ -n "$block" ]]; then
+      fix_order_num=$((fix_order_num + 1))
+      fix_order="${fix_order}${fix_order_num}. Browser test — fix failed \`TC-*\` / P0/P1 \`UX-*\` cases; re-exercise only listed failures
+"
       sections="${sections}### Browser test failures (\`${browser_run}\`)
 
 Fix only the failed cases below before signaling \`SLICE_DONE\`.
+
+**Targeted verify:** re-exercise only the failed cases/screens listed below (Playwright MCP or cursor-ide-browser)
 
 \`\`\`
 ${block}
@@ -3806,9 +4021,14 @@ ${block}
   if review_run="$(find_latest_failed_run_id_for_slice "$slice_id" review)"; then
     block="$(summarize_review_failures "$review_run" 2>/dev/null || true)"
     if [[ -n "$block" ]]; then
+      fix_order_num=$((fix_order_num + 1))
+      fix_order="${fix_order}${fix_order_num}. AI code review — resolve each listed blocker in changed files
+"
       sections="${sections}### AI code review blockers (\`${review_run}\`)
 
 Resolve the blockers below before signaling \`SLICE_DONE\`.
+
+**Targeted verify:** confirm each listed blocker is resolved in the changed files (no full re-review needed)
 
 \`\`\`
 ${block}
@@ -3821,10 +4041,14 @@ ${block}
   [[ -n "$sections" ]] || return 0
 
   cat <<EOF
-## Prior gate failures — address these first
+## Prior gate failures — fix these before anything else
 
-This slice failed harness gates on a previous iteration. Only failure summaries are included below — fix them before signaling \`SLICE_DONE\`.
+This slice failed on a previous iteration. **Do not** run full checks or re-read all docs first.
+Fix every item below in gate order, using targeted verification after each category.
 
+**Fix order:**
+
+${fix_order}
 ${sections}
 EOF
 }

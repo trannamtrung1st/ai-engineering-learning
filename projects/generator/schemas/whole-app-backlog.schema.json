@@ -34,6 +34,9 @@
             }
           },
           "notes": { "type": "string" },
+          "requiresPlan": { "type": "boolean" },
+          "planArtifact": { "type": "string" },
+          "testingPlanRefs": { "type": "array", "items": { "type": "string" } },
           "mergeReady": { "type": "boolean" },
           "reverifyOnDrift": { "type": "boolean" },
           "history": {

@@ -22,7 +22,9 @@
     "reviewFail": "REVIEW_FAIL",
     "testPass": "BROWSER_TEST_PASS",
     "testFail": "BROWSER_TEST_FAIL",
-    "testBatchPass": "BROWSER_TEST_BATCH_PASS"
+    "testBatchPass": "BROWSER_TEST_BATCH_PASS",
+    "planDone": "PLAN_DONE",
+    "planBlocked": "PLAN_BLOCKED"
   },
   "computationalChecks": {
     "playwrightScope": "slice",
@@ -186,6 +188,11 @@
   },
   "testCaseGate": {
     "mode": "required"
+  },
+  "slicePlanGate": {
+    "mode": "required",
+    "skipWhenRequiresPlanFalse": true,
+    "requireExplicitRequiresPlan": true
   },
   "integrationGate": {
     "enabled": true,

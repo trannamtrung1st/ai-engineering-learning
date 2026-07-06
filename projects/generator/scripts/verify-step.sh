@@ -199,6 +199,18 @@ run_validator() {
       "$scripts_dir/emit-harness-scaffold.sh" --verify || fail=1
       "$scripts_dir/verify-no-domain-terms.sh" || fail=1
       ;;
+    harness-backlog-plan)
+      "$scripts_dir/validate-harness-backlog-plan.sh" || fail=1
+      ;;
+    harness-backlog-plan-current)
+      plan="$(resolve_repo_path ai-harness/plans/whole-app-backlog.md)"
+      if [[ ! -f "$plan" ]]; then
+        gen_err "missing approved backlog plan — run harness-backlog-plan step first"
+        fail=1
+      else
+        "$scripts_dir/validate-harness-backlog-plan.sh" || fail=1
+      fi
+      ;;
     harness-backlog-schema)
       bl="$(resolve_repo_path ai-harness/whole-app-backlog.json)"
       if [[ ! -f "$bl" ]]; then fail=1; else gen_ok "harness-backlog exists"; fi

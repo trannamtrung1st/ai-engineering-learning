@@ -15,7 +15,7 @@ Verification failures and remediation notes for generator agents.
 | --- | --- | --- |
 | **PORT** | `scripts/run-checks.sh`, `workflows/ralph-loop.json`, `schemas/*.schema.json`, generic agent prompt rules | Copy to `templates/ai-harness/`; run `npm run gen:self-check` |
 | **PLACEHOLDER** | Agent prompts with product name, `browser-mcp.md` actor sections, `preview-runtime.md` workspace refs | Generalize literals → `{{PRODUCT_NAME}}`, `{{WORKSPACE_NAME}}`, `{{PRIMARY_ACTOR}}` before porting |
-| **SKIP** | `whole-app-backlog.json`, `test-case-index.json`, `context-map.json` (generated), `playwright-regression-index.json` runtime entries, `state/progress.md` | Do not copy — harness-planner or Ralph loop owns these |
+| **SKIP** | `whole-app-backlog.json`, `test-case-index.json`, `config/plan-index.json`, `plans/<slice-id>.md` (Ralph runtime), `plans/whole-app-backlog.md` (generator step output — do not backport from live repos), `context-map.json` (generated), `playwright-regression-index.json` runtime entries, `state/progress.md` | Do not copy — harness-planner or Ralph loop owns these |
 | **GENERICIZE** | Live `mvp-integration-*` docs/scripts | Port as `integration-debt-register.md`, `integration-checklist.md`, `verify-integration.sh` + `config/integration-checks.json` |
 
 Run `./scripts/backport-harness-diff.sh` after live-project harness work to list remaining PORT deltas.

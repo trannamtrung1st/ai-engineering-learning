@@ -73,6 +73,21 @@ $(grep -oE '(FR|BR|NFR|AC)-[0-9]{2}' "$abs" 2>/dev/null || true)"
       fail=1
     fi
   done < <(jq -r '.slices[].docs[]?' "$backlog" 2>/dev/null | sort -u)
+
+  while IFS=$'\t' read -r slice_id issue; do
+    [[ -z "$slice_id" ]] && continue
+    gen_err "[$slice_id] $issue"
+    fail=1
+  done < <(jq -r '
+    .slices[]? |
+    .id as $id |
+    select(.requiresPlan == true) |
+    if ((.docs // []) | index("docs/technical/11-testing-plan.md")) == null then
+      [$id, "slice with requiresPlan:true missing docs/technical/11-testing-plan.md in docs[]"]
+    elif ((.testingPlanRefs // []) | length) == 0 then
+      [$id, "slice with requiresPlan:true missing testingPlanRefs[]"]
+    else empty end
+  ' "$backlog" 2>/dev/null)
 fi
 
 if [[ -f "$context_map" ]]; then

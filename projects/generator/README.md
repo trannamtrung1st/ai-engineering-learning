@@ -92,6 +92,7 @@ docs/brds/              # 10 BRD files
 docs/technical/         # 14 technical specs
 docs/ui-ux/             # 16 UI/UX specs (includes DESIGN.md)
 ai-harness/             # Full Ralph harness (scripts + generated backlog)
+ai-harness/plans/whole-app-backlog.md  # Backlog plan (harness-backlog-plan step)
 package.json            # Root workspace with aih:* scripts only
 ```
 

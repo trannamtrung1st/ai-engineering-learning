@@ -79,6 +79,23 @@ if [[ "$kind" == "agent" ]]; then
     prompt="$("${GEN_SCRIPTS_DIR}/build-prompt.sh" "$STEP_ID" "$agent_mode")"
     model="$(get_model default)"
     [[ "$agent_mode" == "harness-planner" ]] && model="$(get_model harnessPlanner 2>/dev/null || get_model default)"
+    [[ "$agent_mode" == "harness-backlog-planner" ]] && model="$(get_model harnessPlanner 2>/dev/null || get_model default)"
+
+    if [[ "$STEP_ID" == "harness-backlog" ]]; then
+      plan_abs="$(resolve_repo_path ai-harness/plans/whole-app-backlog.md)"
+      if [[ ! -f "$plan_abs" ]]; then
+        gen_err "harness-backlog requires approved plan at ai-harness/plans/whole-app-backlog.md — run harness-backlog-plan first"
+        exit 1
+      fi
+      set +e
+      "${GEN_SCRIPTS_DIR}/validate-harness-backlog-plan.sh" --quiet
+      plan_validate_status=$?
+      set -e
+      if [[ "$plan_validate_status" -ne 0 ]]; then
+        gen_err "harness-backlog plan validation failed — fix ai-harness/plans/whole-app-backlog.md or re-run harness-backlog-plan"
+        exit 1
+      fi
+    fi
 
     outputs_reminder=""
     while IFS= read -r out; do
@@ -161,6 +178,7 @@ Full log: ${verify_log}"
     fix_prompt="$("${GEN_SCRIPTS_DIR}/build-prompt.sh" "$STEP_ID" "$agent_mode")"
     fix_model="$(get_model default)"
     [[ "$agent_mode" == "harness-planner" ]] && fix_model="$(get_model harnessPlanner 2>/dev/null || get_model default)"
+    [[ "$agent_mode" == "harness-backlog-planner" ]] && fix_model="$(get_model harnessPlanner 2>/dev/null || get_model default)"
 
     fix_outputs_reminder=""
     while IFS= read -r out; do

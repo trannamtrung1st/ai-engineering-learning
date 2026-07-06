@@ -57,6 +57,7 @@ Early-phase slices build NestJS modules, React pages, and tests in isolation. Co
 | GAP-04 | **High** | Compose stack incomplete vs [13-docker-compose-local-runtime.md](./13-docker-compose-local-runtime.md) | `compose-full-preview-redis` | `aih:preview:full`, containerized demo |
 | GAP-05 | **High** | JWT env naming mismatch between code and docs | `config-jwt-env-alignment` | Preview auth configuration drift |
 | GAP-06 | **High** | Acceptance browser gate not fully wired | `e2e-acceptance-suite` | Final slice closure, browser AC sign-off |
+| GAP-07 | **Critical** | Integration harness diverges from [11-testing-plan.md](./11-testing-plan.md) §8.3; `audit_logs.occurred_at` missing blocks `createIntegrationTestApp()` | `integration-harness-testing-plan-compliance` | `test:integration` gate, all module slice checks, REG-01–REG-05 |
 
 ### 4.1 GAP-01 — Production API not wired
 
@@ -121,10 +122,25 @@ npm run aih:browser-test -- e2e-acceptance-suite
 npm run aih:playwright-check -- e2e-acceptance-suite
 ```
 
+### 4.7 GAP-07 — Integration harness testing-plan compliance
+
+**Expected:** [`apps/api/src/infra/integration-test-harness.ts`](../../apps/api/src/infra/integration-test-harness.ts) implements [11-testing-plan.md](./11-testing-plan.md) §8.3 — shared `base-academic` + `role-matrix` fixtures, JWT caching in `runIntegrationBeforeSuite`, suite-level seed once per `.integration.test.ts` file, and scoped per-test truncate via suite profiles only (no per-test bcrypt reseed). `ensureAuditSchema` in `audit.repository.ts` must define `audit_logs.occurred_at` before creating indexes on that column so `createIntegrationTestApp()` succeeds for all module suites.
+
+**Verification:**
+
+```bash
+npm run test:integration -w @attendly/api
+```
+
+All integration tests must execute (no `hookFailed` cancellations). Refactor module suites listed in backlog `integration-harness-testing-plan-compliance` `scopeExtensions` to consume the centralized harness.
+
+**Owner:** `integration-harness-testing-plan-compliance` (priority 0 — immediate; blocks all module integration gates).
+
 ## 5. Phase 4 backlog slices
 
 | Slice ID | Priority | Delivers | Closes |
 | --- | --- | --- | --- |
+| `integration-harness-testing-plan-compliance` | 0 | Centralized integration harness per testing plan §8.3; fix `occurred_at` schema blocker | GAP-07 |
 | `api-app-module-wiring` | 91 | Wire all modules into production + E2E app | GAP-01 |
 | `db-migrate-seed-preview` | 92 | Migrate/seed scripts + demo-runbook dataset | GAP-02 |
 | `config-jwt-env-alignment` | 93 | JWT env parity | GAP-05 |
@@ -184,7 +200,7 @@ Integration debt is **closed** when all items pass:
 
 ## 9. Parallel integration test flakes
 
-Integration test flakes caused by cross-suite pollution are **integration debt** when they block release gates. Resolution policy:
+Integration test flakes caused by cross-suite pollution are **integration debt** when they block release gates. Harness-wide lifecycle drift (stubbed seed, per-test full reseed, schema boot failures) is tracked as **GAP-07** and owned by `integration-harness-testing-plan-compliance` — fix there before re-opening individual module slices. Resolution policy:
 
 1. Reproduce with isolated `node --test` on the failing file.
 2. Classify via `{run-id}-integration-triage.json`.

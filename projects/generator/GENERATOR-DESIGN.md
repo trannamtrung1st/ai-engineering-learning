@@ -27,6 +27,8 @@ pick step → [scaffold|agent|gate]
   → mark passes → commit → repeat
 ```
 
+**Harness backlog (plan-first):** `harness-backlog-plan` writes `ai-harness/plans/whole-app-backlog.md` (slice inventory, acceptance mapping, `testingPlanRefs`). `harness-backlog` runs harness-planner against that plan to emit `whole-app-backlog.json`. Validators block JSON generation when the plan is missing or incomplete.
+
 Scripts: `generate.sh` (entry), `gen-loop.sh` (autonomous), `gen-once.sh` (single step), `discover-docs.sh`, `auto-skip-complete-steps.sh`.
 
 ## Docs intake (flexible input)
@@ -56,7 +58,7 @@ Env: `GEN_INPUT_MODE=flexible` (default), `GEN_FORCE_DESIGN=1` to overwrite desi
 | 1 | BRD (6 steps) | `docs/brds/*.md` |
 | 2 | Technical (5 steps) | `docs/technical/*.md` |
 | 3 | UI/UX (4 steps) | `docs/ui-ux/*.md` |
-| 4 | Harness (4 steps) | `ai-harness/` (incl. `integration-checks.json`, `manuals-backlog.json`, `manualsgen-docs-map.json` from harness-planner) |
+| 4 | Harness (5 steps) | `ai-harness/` — backlog **plan** then JSON, context maps, agent customization |
 | 5 | Bootstrap | `package.json`, `.gitignore` |
 
 ## Signals

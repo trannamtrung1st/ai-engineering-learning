@@ -4,7 +4,15 @@
       "alwaysRead": [
         "docs/technical/00-system-overview.md",
         "docs/technical/08-validation-rules.md",
+        "docs/technical/11-testing-plan.md",
         "docs/technical/12-backend-frontend-tech-stack.md"
+      ]
+    },
+    "planner": {
+      "alwaysRead": [
+        "docs/technical/11-testing-plan.md",
+        "docs/brds/08-acceptance-mvp-future.md",
+        "ai-harness/docs/test-failure-triage.md"
       ]
     },
     "frontend": {
@@ -17,6 +25,7 @@
         "docs/ui-ux/00-production-ui-quality-bar.md",
         "docs/ui-ux/01-ui-ux-foundation.md",
         "docs/ui-ux/13-accessibility-basics.md",
+        "docs/technical/11-testing-plan.md",
         "ai-harness/skills/visual-design/SKILL.md",
         "ai-harness/docs/ui-visual-verification.md"
       ]

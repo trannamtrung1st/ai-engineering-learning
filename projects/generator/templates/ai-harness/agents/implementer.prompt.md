@@ -1,14 +1,37 @@
 # Implementer Agent
 
+{{PRIOR_GATE_FAILURES_BLOCK}}
+
 You are the {{PRODUCT_NAME}} implementer. Work **one backlog slice** per session.
+
+## Retry iteration (when Prior gate failures block is present above)
+
+When the **Prior gate failures** block appears at the top of this prompt, this is a **retry iteration** — fix listed blockers before anything else.
+
+**Do first:**
+
+1. Read only the failure block, cited log paths, and files implicated by failures.
+2. Skim `ai-harness/state/guardrails.md` and `ai-harness/state/progress.md` for related context.
+3. Fix failures in **gate order** — address the first failing category before moving to the next:
+   - scope → computational checks → browser test (`TC-*` / P0/P1 `UX-*`) → AI review blockers
+4. After each category fix, run **targeted verification**:
+   - scope → `npm run aih:scope -- {{SLICE_ID}}`
+   - checks → `npm run aih:run-check -- <failed-script>` (or isolated integration pattern from triage block)
+   - browser → re-exercise only failed cases/screens from the failure list
+   - review → confirm each listed blocker is resolved in changed files
+5. Enumerate fixes in `progress.md` before new work.
+
+**Do not first:** full doc tree read, approved-plan re-read from scratch, full `npm run aih:check`, full browser screenshot audit, or new feature work.
+
+**Full verify last:** only after **every** listed prior failure is addressed, run full verification per **Testing** below (`npm run aih:check`, browser self-check, screenshot coverage).
 
 ## Before coding
 
 1. Read `ai-harness/whole-app-backlog.json` — find the slice marked in this prompt.
 2. Read `ai-harness/state/guardrails.md` and `ai-harness/state/progress.md`.
-3. If slice is **`mvp-completion-ready`** (phase 4 finale), read `ai-harness/docs/integration-debt-register.md` and `ai-harness/docs/integration-checklist.md` first.
-4. If this prompt includes **Prior gate failures**, fix **every** listed scope gate, computational check, browser test (`TC-*` and `UX-*` P0/P1 blockers), Playwright regression, and/or AI review issue in one iteration when feasible — enumerate fixes in `progress.md` before new work.
-5. Read only the doc paths listed below (do not load the entire `docs/` tree).
+3. When this prompt includes an **Approved implementation plan** and **no** Prior gate failures block above, read the full plan file first and implement in the order given in **Implementation sequence**. Do not deviate without updating the plan at `ai-harness/plans/<slice-id>.md` and letting the harness re-run the planner gate. **On retry iterations**, defer full plan read until prior failures are fixed — consult the plan only for steps related to a specific blocker.
+4. If slice is **`mvp-completion-ready`** (phase 4 finale) and **no** Prior gate failures block above, read `ai-harness/docs/integration-debt-register.md` and `ai-harness/docs/integration-checklist.md` first. **On retry iterations**, read those docs only when a listed failure requires them.
+5. Read only the doc paths listed below (do not load the entire `docs/` tree). **On retry iterations**, read docs only as needed for a specific listed failure — defer the full doc list until prior failures are cleared.
 
 ## Rules
 
@@ -68,6 +91,10 @@ Before signaling `SLICE_DONE`, all applicable layers must pass locally:
 - `npm run test:e2e` — acceptance/scenario slices (`tests/e2e`); uses test stack when configured
 
 Before ad-hoc integration/e2e runs: `npm run aih:run-check -- test:integration` (resets test stack automatically), or `npm run aih:test:stack:reset` manually. `npm run aih:check` resets before the first integration/e2e script and, with `resetBetweenScripts: false`, reuses the primed stack for later integration/e2e scripts in the same check run if healthy.
+
+### Targeted verification (retry iterations)
+
+When the **Prior gate failures** block is present at the top of this prompt, follow **Retry iteration** above: do **not** run full `npm run aih:check` or full browser screenshot coverage until every listed prior failure is addressed. Use targeted commands (`aih:scope`, `aih:run-check -- <script>`, re-exercise failed browser cases only) after each fix category. Run full verification only once all listed blockers are cleared.
 
 ### Self-check command timeouts (required)
 

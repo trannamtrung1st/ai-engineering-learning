@@ -9,6 +9,8 @@
     "test:playwright-ui": "npm run test:playwright-ui -w {{WORKSPACE_NAME}}playwright-ui --if-present",
     "aih:once": "./ai-harness/scripts/ralph-once.sh",
     "aih:loop": "./ai-harness/scripts/ralph-loop.sh",
-    "aih:scope": "./ai-harness/scripts/check-slice-scope.sh"
+    "aih:scope": "./ai-harness/scripts/check-slice-scope.sh",
+    "aih:validate:plan": "./ai-harness/scripts/validate-slice-plan.sh",
+    "aih:plan:drift": "./ai-harness/scripts/check-plan-drift.sh"
   }
 }

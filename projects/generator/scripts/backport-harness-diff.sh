@@ -31,6 +31,9 @@ fi
 SKIP_PATTERNS=(
   'whole-app-backlog.json'
   'test-case-index.json'
+  'config/plan-index.json'
+  'plans/whole-app-backlog.md'
+  'plans/'
   'manuals-backlog.json'
   'manuals-index.json'
   'playwright-regression-index.json'

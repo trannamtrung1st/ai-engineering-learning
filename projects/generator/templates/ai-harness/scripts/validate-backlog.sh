@@ -80,6 +80,14 @@ done < <(jq -r '
       elif (.source | type) != "string" or (.source | length) == 0 then
         [$id, "history entry missing string source"]
       else empty end
+  ),
+  (
+    select(.requiresPlan == true)
+    | if ((.docs // []) | index("docs/technical/11-testing-plan.md")) == null then
+        [$id, "non-infra slice missing docs/technical/11-testing-plan.md in docs[]"]
+      elif ((.testingPlanRefs // []) | length) == 0 then
+        [$id, "slice with requiresPlan:true missing testingPlanRefs[] — cross-walk acceptance tags against testing-plan scenario matrix"]
+      else empty end
   )
 ' "$BACKLOG" 2>/dev/null)
 

@@ -62,6 +62,7 @@ rsync -a \
   --exclude='generated/' \
   --exclude='whole-app-backlog.json' \
   --exclude='test-case-index.json' \
+  --exclude='config/plan-index.json' \
   --exclude='manuals-backlog.json' \
   --exclude='manuals-index.json' \
   --exclude='state/progress.md' \
@@ -93,7 +94,17 @@ EOF
 cat > "${dest}/test-case-index.json" <<EOF
 {
   "current": [],
-  "docFingerprint": null
+  "docFingerprint": null,
+  "tags": {}
+}
+EOF
+
+mkdir -p "${dest}/plans"
+cat > "${dest}/config/plan-index.json" <<EOF
+{
+  "current": [],
+  "docFingerprint": null,
+  "tags": {}
 }
 EOF
 

@@ -469,17 +469,44 @@
       ]
     },
     {
-      "id": "harness-backlog",
+      "id": "harness-backlog-plan",
       "passes": false,
       "priority": 41,
       "phase": 4,
       "kind": "agent",
+      "agent": "harness-backlog-planner",
+      "description": "Plan whole-app-backlog.json slice inventory, acceptance mapping, and testing-plan cross-walk before JSON generation",
+      "outputs": [
+        "ai-harness/plans/whole-app-backlog.md"
+      ],
+      "contextDocs": [
+        "docs/brds/03-functional-requirements.md",
+        "docs/brds/08-acceptance-mvp-future.md",
+        "docs/technical/01-roles-permissions.md",
+        "docs/technical/02-module-breakdown.md",
+        "docs/technical/11-testing-plan.md",
+        "docs/ui-ux/09-page-list.md",
+        "docs/product-meta.json"
+      ],
+      "validators": [
+        "outputs-exist",
+        "harness-backlog-plan",
+        "no-generator-refs"
+      ]
+    },
+    {
+      "id": "harness-backlog",
+      "passes": false,
+      "priority": 42,
+      "phase": 4,
+      "kind": "agent",
       "agent": "harness-planner",
-      "description": "Generate whole-app-backlog.json from specs",
+      "description": "Generate whole-app-backlog.json from approved plan and specs",
       "outputs": [
         "ai-harness/whole-app-backlog.json"
       ],
       "contextDocs": [
+        "ai-harness/plans/whole-app-backlog.md",
         "docs/brds/08-acceptance-mvp-future.md",
         "docs/technical/02-module-breakdown.md",
         "docs/technical/11-testing-plan.md",
@@ -487,6 +514,7 @@
       ],
       "validators": [
         "outputs-exist",
+        "harness-backlog-plan-current",
         "harness-backlog-schema",
         "harness-backlog-tags",
         "no-generator-refs"
@@ -495,7 +523,7 @@
     {
       "id": "harness-context-maps",
       "passes": false,
-      "priority": 42,
+      "priority": 43,
       "phase": 4,
       "kind": "agent",
       "agent": "harness-planner",
@@ -530,12 +558,13 @@
     {
       "id": "harness-customize-agents",
       "passes": false,
-      "priority": 43,
+      "priority": 44,
       "phase": 4,
       "kind": "scaffold",
       "description": "Substitute product placeholders in harness agent prompts and README",
       "outputs": [
         "ai-harness/agents/implementer.prompt.md",
+        "ai-harness/agents/slice-planner.prompt.md",
         "ai-harness/agents/reviewer.prompt.md",
         "ai-harness/agents/tester.prompt.md",
         "ai-harness/agents/testgen.prompt.md",
