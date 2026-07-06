@@ -72,6 +72,32 @@ EOF
   assert_ok "validate-work-plan passes good plan" ./ai-harness/scripts/validate-work-plan.sh module-foo
 )
 
+# --- validate-work-plan: glob completionArtifacts accept concrete filenames ---
+cat > "$FIXTURE/ai-harness/whole-app-backlog.json" <<'EOF'
+{"branchName":"aih/test-mvp","slices":[{"id":"module-glob","passes":false,"priority":20,"phase":1,"agent":"backend","acceptance":["AC-01"],"docs":["docs/technical/11-testing-plan.md"],"description":"glob artifact slice","completionArtifacts":["apps/api/src/modules/foo/","apps/api/src/modules/foo/*.integration.test.ts"],"testingPlanRefs":["§3.2"],"requiresPlan":true}]}
+EOF
+cat > "$FIXTURE/ai-harness/plans/module-glob.md" <<'EOF'
+# Plan: module-glob
+## Acceptance coverage
+- AC-01: foo
+## Testing plan alignment
+- §3.2
+## Files to create or modify
+- apps/api/src/modules/foo/foo.service.ts — create service
+- apps/api/src/modules/foo/foo.integration.test.ts — create integration suite
+## Test strategy
+- integration: apps/api/src/modules/foo/foo.integration.test.ts
+## Implementation sequence
+1. step
+## Risks and deferrals
+- none
+EOF
+(
+  cd "$FIXTURE"
+  assert_ok "validate-work-plan accepts concrete file for glob completionArtifact" \
+    ./ai-harness/scripts/validate-work-plan.sh module-glob
+)
+
 # --- validate-work-plan: prior gate failures require remediation section ---
 cat > "$FIXTURE/ai-harness/whole-app-backlog.json" <<'EOF'
 {"branchName":"aih/test-mvp","slices":[{"id":"module-retry","passes":false,"priority":20,"phase":1,"agent":"backend","acceptance":["AC-01"],"docs":["docs/technical/11-testing-plan.md"],"description":"retry slice","completionArtifacts":["apps/api/foo.ts"],"testingPlanRefs":["§3.2"],"requiresPlan":true}]}

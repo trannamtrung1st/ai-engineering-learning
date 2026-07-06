@@ -143,14 +143,48 @@ while IFS= read -r ref; do
   fi
 done < <(echo "$slice_json" | jq -r '.testingPlanRefs[]? // empty')
 
+# completionArtifacts may use globs (e.g. dir/*.integration.test.ts); accept concrete
+# filenames in the same directory that match the glob suffix.
+completion_artifact_in_section() {
+  local artifact="$1"
+  local section="$2"
+  local base="${artifact##*/}"
+
+  if grep -qF "$artifact" <<< "$section" || grep -qF "$base" <<< "$section"; then
+    return 0
+  fi
+
+  if [[ "$base" == *'*'* ]]; then
+    local dir_prefix="${artifact%/*}/"
+    local suffix="${base#\*}"
+    while IFS= read -r line; do
+      [[ -z "$line" ]] && continue
+      if [[ "$line" == *"${dir_prefix}"* && "$line" == *"${suffix}"* ]]; then
+        local after_dir="${line#*${dir_prefix}}"
+        if [[ -n "$after_dir" && "$after_dir" != "$suffix" && "$after_dir" == *"${suffix}"* ]]; then
+          return 0
+        fi
+      fi
+    done <<< "$section"
+  fi
+
+  if [[ "$artifact" == */ ]]; then
+    local dir_no_slash="${artifact%/}"
+    if grep -qF "$dir_no_slash" <<< "$section"; then
+      return 0
+    fi
+  fi
+
+  return 1
+}
+
 while IFS= read -r artifact; do
   [[ -z "$artifact" ]] && continue
-  base="${artifact##*/}"
   if [[ -n "$files_section" ]]; then
-    if ! grep -qF "$artifact" <<< "$files_section" && ! grep -qF "$base" <<< "$files_section"; then
+    if ! completion_artifact_in_section "$artifact" "$files_section"; then
       FAILURES+=("completionArtifacts path not mentioned in Files to create or modify: ${artifact}")
     fi
-  elif ! grep -qF "$artifact" "$plan_path" && ! grep -qF "$base" "$plan_path"; then
+  elif ! completion_artifact_in_section "$artifact" "$(cat "$plan_path")"; then
     FAILURES+=("completionArtifacts path not mentioned in plan: ${artifact}")
   fi
 done < <(echo "$slice_json" | jq -r '.completionArtifacts[]? // empty')

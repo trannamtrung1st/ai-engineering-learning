@@ -21,14 +21,14 @@ You own all synthesis for this iteration: read the full doc list, TestGen artifa
 
 - Write **only** the plan markdown to the ephemeral session path in this prompt (`{{WORK_PLAN_PATH}}`) using the editor Write tool. This file lives under `generated/runs/`, is **not committed**, and is read (and checkbox-updated) by the implementer for this iteration only.
 - **Read the plan file back** after writing — the harness polls for a stable non-empty file before validation.
-- **Do not** run `validate-work-plan.sh` or other shell validators — the harness runs validation after you exit.
+- **Self-validate before `PLAN_DONE`** — run the validator below, fix every reported error in the plan file, and re-run until it passes. The harness re-validates after you exit; do not emit `PLAN_DONE` while validation fails.
 - Cross-walk every `testingPlanRefs[]` entry against `docs/technical/11-testing-plan.md` (pyramid layer, scenario matrix row, isolation notes from §8–§9).
 - Map every `acceptance[]` tag to concrete implementation work in **Acceptance coverage**.
 - Align **Files to create or modify** with `completionArtifacts[]` and expected test paths from `testRequirements` when declared.
 - Do **not** edit product code, tests, Playwright specs, `ai-harness/plans/`, or `ai-harness/whole-app-backlog.json`.
 - Do **not** set `passes: true` in the backlog — the harness owns that.
 - Do **not** use Cursor plan mode or any `createPlan` tool — write the markdown file directly.
-- Do **not** run shell commands except when explicitly required to read docs (prefer reading files in the editor). Never run `validate-work-plan.sh`.
+- Do **not** run shell commands except `npm run aih:validate:work-plan -- …` (required before `PLAN_DONE`) or when explicitly required to read docs (prefer reading files in the editor).
 
 ## Required plan structure
 
@@ -79,7 +79,7 @@ Write markdown with **exactly these level-2 headings** (in order).
 | **Prior gate failure remediation** | **Gate-failure retry only.** Checkbox bullets (`- [ ]`) per failing gate category (scope → checks → browser → review): files, root cause, targeted **Verify:** command. Omit this heading on the first plan for a slice. |
 | **Acceptance coverage** | One bullet per `acceptance[]` tag — concrete deliverable + doc section(s) that justify it |
 | **Testing plan alignment** | One bullet per `testingPlanRefs[]` entry — pyramid layer, scenario row, isolation/fixture notes |
-| **Files to create or modify** | `path` — intent (create / modify / wire), not path-only listing; include anticipated test file paths |
+| **Files to create or modify** | `path` — intent (create / modify / wire), not path-only listing; include every `completionArtifacts[]` entry verbatim (including globs like `dir/*.integration.test.ts`) plus any concrete test filenames |
 | **Test strategy** | Per layer (`unit` / `integration` / `component` / `e2e` / `browser`): file path, case IDs (`TC-*`), acceptance tags covered; outline unit cases to write |
 | **Implementation sequence** | Checkbox steps (`- [ ] N. …`) in execution order; each step ends with **Verify:** (`npm run aih:scope -- {{SLICE_ID}}`, `npm run aih:run-check -- <script>`, targeted test pattern, or browser screen). List anticipated `scopeExtensions` paths with reasons inline. On gate-failure retry, **start** with remediation steps before build steps. |
 | **Risks and deferrals** | Blockers, cross-slice dependencies, candidate `SLICE_DEFER` targets, **and every TestGen case ID this slice does _not_ implement (deferred to a named downstream slice)** |
@@ -101,6 +101,20 @@ All **Implementation sequence** and remediation steps must use `- [ ]` (unchecke
 
 Cross-cutting acceptance tags (e.g. `NFR-05`, `NFR-08`) legitimately spread their cases across many slices. Do **not** try to implement cases that belong to later slices — list them explicitly as deferred instead. **Unaccounted-for case IDs fail the gate**, so enumerate each deferred case ID (a shared range like `TC-NFR-05-002..004` is not enough — list every ID) under Risks and deferrals.
 
+## Self-validation (required before PLAN_DONE)
+
+After the plan file is written and read back, run:
+
+```bash
+npm run aih:validate:work-plan -- {{SLICE_ID}} --plan-file {{WORK_PLAN_PATH}}
+```
+
+- Exit code **0** — proceed to `PLAN_DONE`.
+- Exit code **non-zero** — read stderr lines, fix **only** what the validator reports (missing headings, unlisted `completionArtifacts`, unaccounted TestGen case IDs, etc.), save the plan, and re-run until exit 0.
+- On **Previous plan validation failure** at the top of this prompt, treat validator output the same way — those bullets are the errors to fix first.
+
+Do **not** emit `PLAN_DONE` until this command passes. The harness runs the same validator again after you exit as a safety net.
+
 ## Slice
 
 - **ID:** {{SLICE_ID}}
@@ -118,7 +132,7 @@ Cross-cutting acceptance tags (e.g. `NFR-05`, `NFR-08`) legitimately spread thei
 
 ## End signal (required — exactly one line at the end)
 
-Emit **only after** the plan file exists and is non-empty at `{{WORK_PLAN_PATH}}`:
+Emit **only after** the plan file exists, is non-empty at `{{WORK_PLAN_PATH}}`, and `npm run aih:validate:work-plan -- {{SLICE_ID}} --plan-file {{WORK_PLAN_PATH}}` exits 0:
 
 - `PLAN_DONE {{SLICE_ID}}` — plan written to the ephemeral session path above
 - `PLAN_BLOCKED <reason>` — blocked with no path forward; explain briefly above the signal line

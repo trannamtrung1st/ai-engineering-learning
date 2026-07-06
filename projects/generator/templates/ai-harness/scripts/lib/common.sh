@@ -2914,7 +2914,8 @@ plan_artifact_missing_feedback() {
 Plan markdown not found at ${rel_path} after agent exit (waited ${wait_ms}ms).
 Write the implementation plan with the editor Write tool to exactly: ${rel_path}
 Do not only print the plan in chat. Read the file back to confirm it is non-empty before emitting PLAN_DONE ${slice_id}.
-Do not run validate-work-plan.sh — the harness validates after you exit.
+Run: npm run aih:validate:work-plan -- ${slice_id} --plan-file ${rel_path}
+Fix every reported error and re-run until exit 0 before PLAN_DONE ${slice_id}.
 EOF
 }
 
@@ -2970,6 +2971,7 @@ run_work_plan_gate() {
       require_agent
       plan_prompt="$(AIH_RUN_ID="$run_id" ./ai-harness/scripts/build-prompt.sh "$slice_id" work-planner)"
       plan_model="$(get_model default)"
+      plan_rel_path="$(work_plan_run_path "$run_id")"
       plan_full_prompt="${plan_prompt}
 
 ## Harness reminder
@@ -2978,8 +2980,8 @@ Write the implementation plan markdown to exactly: \`${plan_file}\`
 This file is ephemeral (generated/runs) — the implementer reads it with the Read tool; it is not committed.
 Do not edit any other files.
 Read that path back and confirm the file is non-empty before your final message.
-Do not run validate-work-plan.sh — the harness runs it after you exit.
-After the plan file is saved on disk, end with exactly one line: PLAN_DONE ${slice_id}
+Run \`npm run aih:validate:work-plan -- ${slice_id} --plan-file ${plan_rel_path}\` and fix every error until it exits 0 before PLAN_DONE.
+After validation passes, end with exactly one line: PLAN_DONE ${slice_id}
 "
       aih_step "Running work-planner (${AGENT_BIN}, model=${plan_model}, attempt=${attempt}/${max_retries})"
       aih_agent_begin "work-planner (${plan_model})"
