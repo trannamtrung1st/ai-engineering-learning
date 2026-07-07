@@ -33,6 +33,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/docs-intake.sh"
 AGENT_TIMEOUT_EXIT=124
 AGENT_TIMEOUT_DEFAULT_MS=3600000
 AGENT_IDLE_TIMEOUT_DEFAULT_MS=300000
+AGENT_SHELL_TIMEOUT_DEFAULT_MS=900000
 AGENT_SIGNAL_GRACE_DEFAULT_MS=15000
 AGENT_RESULT_GRACE_DEFAULT_MS=5000
 
@@ -97,6 +98,15 @@ get_agent_idle_timeout_ms() {
     return
   fi
   jq -r ".agent.idleTimeoutMs // ${AGENT_IDLE_TIMEOUT_DEFAULT_MS}" "$config"
+}
+
+get_agent_shell_timeout_ms() {
+  local config="${1:-$LOOP_CONFIG}"
+  if [[ -n "${GEN_AGENT_SHELL_TIMEOUT_MS:-}" ]]; then
+    echo "$GEN_AGENT_SHELL_TIMEOUT_MS"
+    return
+  fi
+  jq -r ".agent.shellTimeoutMs // ${AGENT_SHELL_TIMEOUT_DEFAULT_MS}" "$config"
 }
 
 get_agent_signal_grace_ms() {
@@ -184,16 +194,18 @@ run_agent_with_timeout_ms() {
 
   if [[ -n "$outfile" ]] && agent_stream_enabled && run_agent_uses_stream_json "$@"; then
     require_cmd node
-    local idle_ms signal_grace_ms result_grace_ms signals_csv
+    local idle_ms signal_grace_ms result_grace_ms shell_ms signals_csv
     local -a stream_cmd
     idle_ms="$(get_agent_idle_timeout_ms)"
     signal_grace_ms="$(get_agent_signal_grace_ms)"
     result_grace_ms="$(get_agent_result_grace_ms)"
+    shell_ms="$(get_agent_shell_timeout_ms)"
     signals_csv="$(agent_completion_signals_csv)"
     stream_cmd=(node "${TEMPLATES_DIR}/ai-harness/scripts/lib/stream-agent-output.js" \
       --outfile "$outfile" \
       --idle-timeout-ms "$idle_ms" \
       --max-timeout-ms "$timeout_ms" \
+      --shell-timeout-ms "$shell_ms" \
       --signal-grace-ms "$signal_grace_ms" \
       --result-grace-ms "$result_grace_ms")
     if [[ -n "$signals_csv" ]]; then

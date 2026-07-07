@@ -105,6 +105,24 @@ if [[ -f "${TEMPLATES_DIR}/ai-harness/workflows/ralph-loop.json" ]]; then
     gen_err "ralph-loop.json missing browserTest.acceptanceSliceTimeoutMinutes"
     fail=1
   fi
+  if [[ "$(jq -r '.browserTest.timeoutMinutes // empty' "${TEMPLATES_DIR}/ai-harness/workflows/ralph-loop.json")" == "" ]]; then
+    gen_err "ralph-loop.json missing browserTest.timeoutMinutes"
+    fail=1
+  fi
+  if [[ "$(jq -r '.agent.shellTimeoutMs // empty' "${TEMPLATES_DIR}/ai-harness/workflows/ralph-loop.json")" == "" ]]; then
+    gen_err "ralph-loop.json missing agent.shellTimeoutMs"
+    fail=1
+  fi
+fi
+if [[ -f "${TEMPLATES_DIR}/ai-harness/workflows/testgen-loop.json" ]]; then
+  if [[ "$(jq -r '.tagMaxRetries // empty' "${TEMPLATES_DIR}/ai-harness/workflows/testgen-loop.json")" == "" ]]; then
+    gen_err "testgen-loop.json missing tagMaxRetries"
+    fail=1
+  fi
+  if [[ "$(jq -r '.parallelism.workerTimeoutMs // empty' "${TEMPLATES_DIR}/ai-harness/workflows/testgen-loop.json")" == "" ]]; then
+    gen_err "testgen-loop.json missing parallelism.workerTimeoutMs"
+    fail=1
+  fi
 fi
 if ! grep -q 'test-results/.last-run.json' "${TEMPLATES_DIR}/ai-harness/docs/integration-checklist.md" 2>/dev/null; then
   gen_err "integration-checklist.md must document test-results/.last-run.json hygiene"

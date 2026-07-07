@@ -94,6 +94,7 @@ while [[ "$wave" -lt "$max" ]]; do
   assign_testgen_worker_tag_files "$RID" "$workers" "${pending_tags[@]}" >/dev/null
 
   worker_pids=()
+  worker_tag_counts=()
   w=0
   tags_file=""
   raw_log=""
@@ -131,18 +132,26 @@ while [[ "$wave" -lt "$max" ]]; do
         | tee -a "$combined_log"
     ) &
     worker_pids+=("$!")
+    worker_tag_counts+=("$tag_count")
   done
 
   wave_failed=0
   pid=""
+  worker_idx=0
+  worker_timeout_ms=0
   for pid in "${worker_pids[@]}"; do
+    worker_timeout_ms="$(get_testgen_worker_timeout_ms "${worker_tag_counts[$worker_idx]}")"
     set +e
-    wait "$pid"
+    wait_cmd_with_timeout_ms "$pid" "$worker_timeout_ms" "testgen-worker-$((worker_idx + 1))"
     worker_status=$?
     set -e
-    if [[ "$worker_status" -ne 0 ]]; then
+    if [[ "$worker_status" -eq "$AGENT_TIMEOUT_EXIT" ]]; then
+      aih_err "TestGen worker $((worker_idx + 1)) timed out after ${worker_timeout_ms}ms"
+      wave_failed=$((wave_failed + 1))
+    elif [[ "$worker_status" -ne 0 ]]; then
       wave_failed=$((wave_failed + 1))
     fi
+    worker_idx=$((worker_idx + 1))
   done
 
   if [[ "$wave_failed" -gt 0 ]]; then

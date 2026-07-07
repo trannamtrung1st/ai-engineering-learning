@@ -4,11 +4,14 @@
     "commitOnPass": true
   },
   "parallelism": {
-    "workers": 7
+    "workers": 7,
+    "workerTimeoutMs": 7200000
   },
+  "tagMaxRetries": 5,
   "agent": {
     "timeoutMs": 3600000,
     "idleTimeoutMs": 300000,
+    "shellTimeoutMs": 900000,
     "signalGraceMs": 15000,
     "resultGraceMs": 5000
   },

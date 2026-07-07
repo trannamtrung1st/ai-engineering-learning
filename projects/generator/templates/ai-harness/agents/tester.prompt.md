@@ -172,12 +172,13 @@ When slice id is `mvp-completion-ready` (or harness injects acceptance-slice pha
 
 ### Timeouts (required — do not hang)
 
-Browser verification must finish in **one bounded pass**:
+Browser verification must finish in **one bounded pass**. The harness **enforces** wall-clock limits (`browserTest.timeoutMinutes`, default 20m; acceptance slices 25m) and kills the agent on idle or shell-tool overrun — prompt budgets below must stay within those caps:
 
 1. **Per navigation/action:** abandon after **30s** without expected content — FAIL the case with URL and last visible state; do not retry the same stuck step indefinitely
 2. **Whole pass:** complete within **15 minutes**; if over budget, FAIL remaining cases as `timeout — pass incomplete` and emit `BROWSER_TEST_FAIL`
 3. Do **not** wait on infinite spinners, permission dialogs you cannot dismiss, or device prompts that never resolve
 4. Run `npm run aih:preview:verify` once at start — do not restart preview unless necessary
+5. Do **not** run long shell commands (e.g. `npx playwright test`) — the harness runs headless Playwright after your pass; shell tools are killed after **15 minutes**
 
 ### Minimum coverage by slice type
 

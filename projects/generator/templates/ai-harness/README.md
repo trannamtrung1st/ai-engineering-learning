@@ -63,6 +63,9 @@ npm run aih:loop -- 50                     # max 50 iterations
 | `AIH_MANUALSGEN_MODEL` | `auto` | User manual generator model |
 | `AIH_AGENT_TIMEOUT_MS` | `3600000` | Max wall time per agent invocation (1 hour); applies to streamed and buffered runs |
 | `AIH_AGENT_IDLE_TIMEOUT_MS` | `300000` | Stream idle timeout — no stream-json activity for this long ends the run (5 minutes) |
+| `AIH_AGENT_SHELL_TIMEOUT_MS` | `900000` | Max wall time per in-flight shell tool during streamed agent runs (15 minutes); emits `[liveness]` heartbeats every 60s |
+| `AIH_TESTGEN_TAG_MAX_RETRIES` | `5` | Max TestGen attempts per requirement tag before giving up (`testgen-loop.json` → `tagMaxRetries`) |
+| `AIH_TESTGEN_WORKER_TIMEOUT_MS` | `7200000` × assigned tags | Total max wall time per parallel TestGen worker per wave; default per-tag budget from `parallelism.workerTimeoutMs` (2h) × tag count |
 | `AIH_AGENT_SIGNAL_GRACE_MS` | `15000` | After a completion signal (`SLICE_DONE`, `REVIEW_PASS`, etc.) in agent output, wait this long then terminate the agent process tree |
 | `AIH_VERIFY_GATE_TIMEOUT_MS` | `10000` | Shared budget for `verify-stack.sh --gate` when preview supervisors are already running; also `browserTest.previewVerifyGateTimeoutMs` in `ralph-loop.json` |
 | `AIH_VERIFY_CURL_CONNECT_TIMEOUT_SEC` | `2` | Per-request curl connect timeout for stack probes |

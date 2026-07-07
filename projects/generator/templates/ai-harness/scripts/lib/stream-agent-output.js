@@ -9,7 +9,7 @@
  *
  * Usage:
  *   node stream-agent-output.js --outfile path [--verbose] \
- *     [--idle-timeout-ms N] [--max-timeout-ms N] \
+ *     [--idle-timeout-ms N] [--max-timeout-ms N] [--shell-timeout-ms N] \
  *     [--signal-grace-ms N] [--result-grace-ms N] \
  *     [--signals SLICE_DONE,REVIEW_PASS,...] \
  *     -- agent -p ... prompt
@@ -23,9 +23,11 @@ const path = require("node:path");
 const AGENT_TIMEOUT_EXIT = 124;
 const DEFAULT_IDLE_TIMEOUT_MS = 300_000;
 const DEFAULT_MAX_TIMEOUT_MS = 3_600_000;
+const DEFAULT_SHELL_TIMEOUT_MS = 900_000;
 const DEFAULT_SIGNAL_GRACE_MS = 15_000;
 const DEFAULT_RESULT_GRACE_MS = 5_000;
 const TIMEOUT_POLL_MS = 5_000;
+const SHELL_LIVENESS_MS = 60_000;
 const SIGNAL_SCAN_TAIL_CHARS = 4096;
 
 const DEFAULT_COMPLETION_SIGNALS = [
@@ -130,6 +132,10 @@ function parseArgs(argv) {
       process.env.AIH_AGENT_TIMEOUT_MS,
       DEFAULT_MAX_TIMEOUT_MS,
     ),
+    shellTimeoutMs: parsePositiveInt(
+      process.env.AIH_AGENT_SHELL_TIMEOUT_MS,
+      DEFAULT_SHELL_TIMEOUT_MS,
+    ),
     signalGraceMs: parsePositiveInt(
       process.env.AIH_AGENT_SIGNAL_GRACE_MS,
       DEFAULT_SIGNAL_GRACE_MS,
@@ -157,6 +163,11 @@ function parseArgs(argv) {
     }
     if (arg === "--max-timeout-ms") {
       options.maxTimeoutMs = parsePositiveInt(argv[++i], options.maxTimeoutMs);
+      i += 1;
+      continue;
+    }
+    if (arg === "--shell-timeout-ms") {
+      options.shellTimeoutMs = parsePositiveInt(argv[++i], options.shellTimeoutMs);
       i += 1;
       continue;
     }
@@ -192,6 +203,10 @@ function parseArgs(argv) {
   }
   if (options.agentArgs.length === 0) {
     throw new Error("agent command required after --");
+  }
+
+  if (options.shellTimeoutMs > options.maxTimeoutMs) {
+    options.shellTimeoutMs = options.maxTimeoutMs;
   }
 
   options.signalRe = buildCompletionSignalRe(options.signals);
@@ -317,12 +332,15 @@ function handleStreamEvent(event, state, options, outfileFd, hooks) {
   }
 }
 
-function timeoutMessage(idleMs, reason) {
-  const minutes = Math.round(idleMs / 60_000);
+function timeoutMessage(ms, reason) {
+  const minutes = Math.round(ms / 60_000);
   if (reason === "idle") {
-    return `ERROR: Agent timed out after ${idleMs}ms idle (no stream output for ${minutes}m)`;
+    return `ERROR: Agent timed out after ${ms}ms idle (no stream output for ${minutes}m)`;
   }
-  return `ERROR: Agent timed out after ${idleMs}ms (${minutes}m max wall time)`;
+  if (reason === "shell") {
+    return `ERROR: Agent timed out after ${ms}ms shell tool in-flight (${minutes}m max per shell command)`;
+  }
+  return `ERROR: Agent timed out after ${ms}ms (${minutes}m max wall time)`;
 }
 
 async function main() {
@@ -424,7 +442,11 @@ async function main() {
       state.timedOut = true;
       state.timeoutReason = reason;
       const ms =
-        reason === "idle" ? options.idleTimeoutMs : options.maxTimeoutMs;
+        reason === "idle"
+          ? options.idleTimeoutMs
+          : reason === "shell"
+            ? options.shellTimeoutMs
+            : options.maxTimeoutMs;
       const message = timeoutMessage(ms, reason);
       writeStderr(yellow(message));
       try {
@@ -446,18 +468,19 @@ async function main() {
       if (state.completionPending) return;
       if (state.shellToolInFlight) {
         const elapsed = Date.now() - state.shellToolStartedMs;
-        if (
-          options.verbose &&
-          elapsed - state.lastShellHeartbeatMs >= 60_000
-        ) {
+        if (elapsed - state.lastShellHeartbeatMs >= SHELL_LIVENESS_MS) {
           state.lastShellHeartbeatMs = elapsed;
+          const shellBudgetSec = Math.round(options.shellTimeoutMs / 1000);
           writeStderr(
             dim(
               yellow(
-                `[tool] shell still running (${Math.round(elapsed / 1000)}s)`,
+                `[liveness] shell tool running (${Math.round(elapsed / 1000)}s / ${shellBudgetSec}s)`,
               ),
             ),
           );
+        }
+        if (elapsed >= options.shellTimeoutMs) {
+          killForTimeout("shell");
         }
         return;
       }
@@ -532,11 +555,14 @@ async function main() {
 module.exports = {
   AGENT_TIMEOUT_EXIT,
   DEFAULT_COMPLETION_SIGNALS,
+  DEFAULT_SHELL_TIMEOUT_MS,
   buildCompletionSignalRe,
   detectCompletionSignal,
   killProcessTree,
   listChildPids,
+  parseArgs,
   parseSignalList,
+  timeoutMessage,
 };
 
 if (require.main === module) {

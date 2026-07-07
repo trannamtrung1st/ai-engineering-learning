@@ -279,6 +279,7 @@ print_harness_env() {
 AGENT_TIMEOUT_EXIT=124
 AGENT_TIMEOUT_DEFAULT_MS=3600000
 AGENT_IDLE_TIMEOUT_DEFAULT_MS=300000
+AGENT_SHELL_TIMEOUT_DEFAULT_MS=900000
 AGENT_SIGNAL_GRACE_DEFAULT_MS=15000
 AGENT_RESULT_GRACE_DEFAULT_MS=5000
 PREVIEW_VERIFY_GATE_DEFAULT_MS=10000
@@ -612,12 +613,22 @@ get_browser_test_timeout_ms() {
   [[ -n "$slice_id" ]] || return 1
   local ids_json minutes
   ids_json="$(jq -c '.browserTest.acceptanceSliceIds // []' "$config" 2>/dev/null || echo '[]')"
-  if ! jq -e --arg id "$slice_id" '.[] | select(. == $id)' <<<"$ids_json" >/dev/null 2>&1; then
-    return 1
+  if jq -e --arg id "$slice_id" '.[] | select(. == $id)' <<<"$ids_json" >/dev/null 2>&1; then
+    minutes="$(jq -r '.browserTest.acceptanceSliceTimeoutMinutes // empty' "$config" 2>/dev/null || true)"
+  else
+    minutes="$(jq -r '.browserTest.timeoutMinutes // empty' "$config" 2>/dev/null || true)"
   fi
-  minutes="$(jq -r '.browserTest.acceptanceSliceTimeoutMinutes // empty' "$config" 2>/dev/null || true)"
   [[ -n "$minutes" && "$minutes" != "null" ]] || return 1
   echo $((minutes * 60000))
+}
+
+get_agent_shell_timeout_ms() {
+  local config="${1:-${AIH_HARNESS_CONFIG:-$LOOP_CONFIG}}"
+  if [[ -n "${AIH_AGENT_SHELL_TIMEOUT_MS:-}" ]]; then
+    echo "$AIH_AGENT_SHELL_TIMEOUT_MS"
+    return
+  fi
+  jq -r ".agent.shellTimeoutMs // ${AGENT_SHELL_TIMEOUT_DEFAULT_MS}" "$config"
 }
 
 get_agent_idle_timeout_ms() {
@@ -718,11 +729,12 @@ run_agent_with_timeout_ms() {
   local -a stream_cmd
 
   if [[ -n "$outfile" ]] && agent_stream_enabled && run_agent_uses_stream_json "$@"; then
-    local idle_ms signal_grace_ms result_grace_ms signals_csv harness_config
+    local idle_ms signal_grace_ms result_grace_ms shell_ms signals_csv harness_config
     harness_config="${AIH_HARNESS_CONFIG:-$LOOP_CONFIG}"
     idle_ms="$(get_agent_idle_timeout_ms "$harness_config")"
     signal_grace_ms="$(get_agent_signal_grace_ms "$harness_config")"
     result_grace_ms="$(get_agent_result_grace_ms "$harness_config")"
+    shell_ms="$(get_agent_shell_timeout_ms "$harness_config")"
     if [[ -n "${AIH_AGENT_COMPLETION_SIGNALS:-}" ]]; then
       signals_csv="$AIH_AGENT_COMPLETION_SIGNALS"
     else
@@ -732,6 +744,7 @@ run_agent_with_timeout_ms() {
       --outfile "$outfile" \
       --idle-timeout-ms "$idle_ms" \
       --max-timeout-ms "$timeout_ms" \
+      --shell-timeout-ms "$shell_ms" \
       --signal-grace-ms "$signal_grace_ms" \
       --result-grace-ms "$result_grace_ms")
     if [[ -n "$signals_csv" ]]; then
@@ -1766,6 +1779,36 @@ get_testgen_workers() {
   echo "$workers"
 }
 
+get_testgen_tag_max_retries() {
+  if [[ -n "${AIH_TESTGEN_TAG_MAX_RETRIES:-}" ]]; then
+    echo "$AIH_TESTGEN_TAG_MAX_RETRIES"
+    return
+  fi
+  jq -r '.tagMaxRetries // 5' "$TESTGEN_CONFIG" 2>/dev/null || echo 5
+}
+
+get_testgen_worker_timeout_ms() {
+  local tag_count="${1:-1}"
+  if [[ ! "$tag_count" =~ ^[0-9]+$ ]] || [[ "$tag_count" -lt 1 ]]; then
+    tag_count=1
+  fi
+  if [[ -n "${AIH_TESTGEN_WORKER_TIMEOUT_MS:-}" ]]; then
+    echo "$AIH_TESTGEN_WORKER_TIMEOUT_MS"
+    return
+  fi
+  local per_tag_ms configured
+  configured="$(jq -r '.parallelism.workerTimeoutMs // empty' "$TESTGEN_CONFIG" 2>/dev/null || true)"
+  if [[ -n "$configured" && "$configured" != "null" ]]; then
+    per_tag_ms="$configured"
+  else
+    local agent_ms max_retries
+    agent_ms="$(get_agent_timeout_ms "$TESTGEN_CONFIG")"
+    max_retries="$(get_testgen_tag_max_retries)"
+    per_tag_ms=$(( max_retries * agent_ms + max_retries * 120000 + 120000 ))
+  fi
+  echo $(( per_tag_ms * tag_count ))
+}
+
 list_pending_requirement_tags() {
   local tag
   while IFS= read -r tag; do
@@ -1781,13 +1824,19 @@ run_testgen_tag_until_current() {
   local tag="$1"
   local worker_id="${2:-${AIH_TESTGEN_WORKER_ID:-0}}"
   local attempt=0
-  local status=0
+  local max_retries status=0
   local tag_safe agent_out
+
+  max_retries="$(get_testgen_tag_max_retries)"
 
   while ! requirement_tag_test_cases_current "$tag"; do
     attempt=$((attempt + 1))
+    if [[ "$attempt" -gt "$max_retries" ]]; then
+      aih_err "TestGen exhausted ${max_retries} retries for ${tag}"
+      return 1
+    fi
     if [[ "$attempt" -gt 1 ]]; then
-      aih_warn "TestGen retry attempt ${attempt} for ${tag}"
+      aih_warn "TestGen retry attempt ${attempt}/${max_retries} for ${tag}"
     fi
 
     set +e

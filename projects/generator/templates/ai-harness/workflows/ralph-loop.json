@@ -10,6 +10,7 @@
   "agent": {
     "timeoutMs": 3600000,
     "idleTimeoutMs": 300000,
+    "shellTimeoutMs": 900000,
     "signalGraceMs": 15000,
     "resultGraceMs": 5000
   },
@@ -136,6 +137,7 @@
     "required": true,
     "maxCasesPerBatch": 10,
     "acceptanceSliceIds": ["mvp-completion-ready"],
+    "timeoutMinutes": 20,
     "acceptanceSliceTimeoutMinutes": 25,
     "modelKey": "tester",
     "retryFailedCasesFirst": true,
