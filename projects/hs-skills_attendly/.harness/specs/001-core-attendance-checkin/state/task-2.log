@@ -1,0 +1,10 @@
+Seeded Attendly demo data.
+
+ RUN  v4.1.10 /Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/hs-skills_attendly
+
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+   Start at  18:03:21
+   Duration  401ms (transform 31ms, setup 0ms, import 253ms, tests 71ms, environment 0ms)
+

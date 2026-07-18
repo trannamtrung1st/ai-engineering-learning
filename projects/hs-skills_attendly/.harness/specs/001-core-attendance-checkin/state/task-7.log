@@ -1,0 +1,52 @@
+
+> attendly@0.1.0 test
+> vitest run --passWithNoTests
+
+
+ RUN  v4.1.10 /Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/hs-skills_attendly
+
+
+ Test Files  5 passed (5)
+      Tests  18 passed (18)
+   Start at  18:16:02
+   Duration  711ms (transform 160ms, setup 0ms, import 1.55s, tests 991ms, environment 0ms)
+
+
+> attendly@0.1.0 lint
+> eslint src
+
+
+> attendly@0.1.0 build
+> next build
+
+▲ Next.js 16.2.10 (Turbopack)
+
+  Creating an optimized production build ...
+✓ Compiled successfully in 1172ms
+  Running TypeScript ...
+  Finished TypeScript in 1698ms ...
+  Collecting page data using 7 workers ...
+  Generating static pages using 7 workers (0/8) ...
+  Generating static pages using 7 workers (2/8) 
+  Generating static pages using 7 workers (4/8) 
+  Generating static pages using 7 workers (6/8) 
+✓ Generating static pages using 7 workers (8/8) in 90ms
+  Finalizing page optimization ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ƒ /api/auth/login
+├ ƒ /api/auth/logout
+├ ƒ /api/check-in
+├ ƒ /api/sessions/[id]/manual
+├ ƒ /api/sessions/[id]/open
+├ ƒ /api/sessions/[id]/qr
+├ ƒ /check-in
+├ ƒ /lecturer/sessions/[id]
+└ ƒ /login
+
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+

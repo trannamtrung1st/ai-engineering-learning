@@ -1,0 +1,9 @@
+
+ RUN  v4.1.10 /Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/hs-skills_attendly
+
+
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+   Start at  18:05:53
+   Duration  550ms (transform 32ms, setup 0ms, import 260ms, tests 224ms, environment 0ms)
+
