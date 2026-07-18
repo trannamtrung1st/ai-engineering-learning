@@ -29,6 +29,10 @@ describe("demo seed", () => {
       expect.arrayContaining([...DEMO.enrolledStudentIds]),
     );
     expect(section?.lecturerId).toBe(DEMO.lecturerId);
+    expect(section?.presentWindowMinutes).toBe(DEMO.presentWindowMinutes);
+    expect(section?.lateWindowMinutes).toBe(DEMO.lateWindowMinutes);
+    expect(section?.presentWindowMinutes).toBeGreaterThan(0);
+    expect(section?.lateWindowMinutes).toBeGreaterThan(0);
     expect(session?.classSectionId).toBe(DEMO.classSectionId);
   });
 

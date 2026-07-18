@@ -9,6 +9,8 @@ const rejectionMessages: Record<string, string> = {
   expired_token: "This QR code expired. Please scan the refreshed code.",
   wrong_session: "This QR code belongs to a different class session.",
   not_enrolled: "You are not enrolled in this class section.",
+  outside_attendance_windows:
+    "The check-in window has closed. Ask your lecturer to mark you manually.",
   already_checked_in: "You have already checked in for this session.",
   forbidden: "Only student accounts can use self check-in.",
 };
@@ -45,7 +47,10 @@ export function CheckInForm({
         );
         return;
       }
-      const body = (await response.json()) as { error?: string };
+      const body = (await response.json()) as {
+        error?: string;
+        status?: "present" | "late";
+      };
       if (!response.ok) {
         setSuccess(false);
         setMessage(
@@ -56,7 +61,11 @@ export function CheckInForm({
       }
 
       setSuccess(true);
-      setMessage("Check-in successful. You are marked Present.");
+      setMessage(
+        `Check-in successful. You are marked ${
+          body.status === "late" ? "Late" : "Present"
+        }.`,
+      );
     } catch {
       setSuccess(false);
       setMessage("Network error. Please try again or ask your lecturer for help.");

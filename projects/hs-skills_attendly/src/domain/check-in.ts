@@ -4,6 +4,7 @@ import type { AttendlyDatabase } from "../db/client";
 import {
   attendanceRecords,
   checkInAttempts,
+  classSections,
   classSessions,
   enrollments,
   qrSessionTokens,
@@ -16,10 +17,15 @@ export type CheckInRejection =
   | "expired_token"
   | "wrong_session"
   | "not_enrolled"
+  | "outside_attendance_windows"
   | "already_checked_in";
 
 export type CheckInResult =
-  | { ok: true; attendanceRecordId: string }
+  | {
+      ok: true;
+      attendanceRecordId: string;
+      status: "present" | "late";
+    }
   | { ok: false; reason: CheckInRejection };
 
 function recordAttempt(
@@ -99,6 +105,29 @@ export function checkIn(
     return reject("expired_token");
   }
 
+  const section = db
+    .select({
+      presentWindowMinutes: classSections.presentWindowMinutes,
+      lateWindowMinutes: classSections.lateWindowMinutes,
+    })
+    .from(classSections)
+    .where(eq(classSections.id, session.classSectionId))
+    .get();
+  if (!section) return reject("attendance_not_open");
+
+  const presentWindowEndsAt =
+    session.attendanceOpenedAt.getTime() +
+    section.presentWindowMinutes * 60_000;
+  const lateWindowEndsAt =
+    presentWindowEndsAt + section.lateWindowMinutes * 60_000;
+  const status =
+    now.getTime() <= presentWindowEndsAt
+      ? "present"
+      : now.getTime() <= lateWindowEndsAt
+        ? "late"
+        : null;
+  if (!status) return reject("outside_attendance_windows");
+
   const enrollment = db
     .select({ id: enrollments.id })
     .from(enrollments)
@@ -131,7 +160,7 @@ export function checkIn(
           id: attendanceRecordId,
           studentId: input.studentId,
           classSessionId: input.classSessionId,
-          status: "present",
+          status,
           method: "qr",
           checkedInAt: now,
           createdAt: now,
@@ -156,7 +185,7 @@ export function checkIn(
     throw error;
   }
 
-  return { ok: true, attendanceRecordId };
+  return { ok: true, attendanceRecordId, status };
 }
 
 function isUniqueViolation(error: unknown) {

@@ -16,6 +16,22 @@ export type RosterEntry = {
   status: string | null;
 };
 
+export const MANUAL_ATTENDANCE_STATUSES = [
+  "manual_present",
+  "late",
+  "absent",
+  "excused",
+] as const;
+
+export type ManualAttendanceStatus =
+  (typeof MANUAL_ATTENDANCE_STATUSES)[number];
+
+export function isManualAttendanceStatus(
+  value: unknown,
+): value is ManualAttendanceStatus {
+  return MANUAL_ATTENDANCE_STATUSES.some((status) => status === value);
+}
+
 export function getSessionRoster(
   db: AttendlyDatabase,
   classSessionId: string,
@@ -58,12 +74,13 @@ export class ManualAttendanceError extends Error {
   }
 }
 
-export function markManualPresent(
+export function setManualAttendance(
   db: AttendlyDatabase,
   input: {
     lecturerId: string;
     classSessionId: string;
     studentId: string;
+    status: ManualAttendanceStatus;
     reason: string;
     now?: Date;
   },
@@ -123,7 +140,7 @@ export function markManualPresent(
         })
       : null;
     const newValue = JSON.stringify({
-      status: "manual_present",
+      status: input.status,
       method: "manual",
       checkedInAt: now.toISOString(),
     });
@@ -131,7 +148,7 @@ export function markManualPresent(
     if (existing) {
       tx.update(attendanceRecords)
         .set({
-          status: "manual_present",
+          status: input.status,
           method: "manual",
           checkedInAt: now,
         })
@@ -143,7 +160,7 @@ export function markManualPresent(
           id: attendanceRecordId,
           studentId: input.studentId,
           classSessionId: input.classSessionId,
-          status: "manual_present",
+          status: input.status,
           method: "manual",
           checkedInAt: now,
           createdAt: now,
@@ -157,7 +174,7 @@ export function markManualPresent(
         id: auditLogId,
         actorId: input.lecturerId,
         attendanceRecordId,
-        action: "attendance.manual_present",
+        action: "attendance.manual_set",
         oldValue,
         newValue,
         reason,
@@ -165,6 +182,6 @@ export function markManualPresent(
       })
       .run();
 
-    return { attendanceRecordId, auditLogId };
+    return { attendanceRecordId, auditLogId, status: input.status };
   });
 }

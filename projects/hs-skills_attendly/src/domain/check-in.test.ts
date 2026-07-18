@@ -6,6 +6,7 @@ import {
   attendanceRecords,
   checkInAttempts,
   classSessions,
+  qrSessionTokens,
 } from "../db/schema";
 import { checkIn } from "./check-in";
 import { clearActiveQrCache, openAttendance } from "./qr-session";
@@ -31,6 +32,10 @@ describe("student check-in", () => {
     );
   }
 
+  function keepQrValidUntil(expiresAt: Date) {
+    database.db.update(qrSessionTokens).set({ expiresAt }).run();
+  }
+
   it("allows two enrolled students to use the same valid token", () => {
     const qr = open();
     const results = DEMO.enrolledStudentIds.map((studentId) =>
@@ -43,6 +48,9 @@ describe("student check-in", () => {
     );
 
     expect(results.every((result) => result.ok)).toBe(true);
+    expect(
+      results.every((result) => result.ok && result.status === "present"),
+    ).toBe(true);
     expect(database.db.select().from(attendanceRecords).all()).toHaveLength(2);
     expect(
       database.db
@@ -51,6 +59,87 @@ describe("student check-in", () => {
         .where(eq(checkInAttempts.outcome, "success"))
         .all(),
     ).toHaveLength(2);
+  });
+
+  it("records Late after the present window but inside the late window", () => {
+    const qr = open();
+    const checkInAt = new Date(
+      now.getTime() + (DEMO.presentWindowMinutes + 1) * 60_000,
+    );
+    keepQrValidUntil(new Date(checkInAt.getTime() + 60_000));
+
+    const result = checkIn(database.db, {
+      studentId: DEMO.enrolledStudentIds[0],
+      classSessionId: DEMO.classSessionId,
+      token: qr.token,
+      now: checkInAt,
+    });
+
+    expect(result).toMatchObject({ ok: true, status: "late" });
+    expect(database.db.select().from(attendanceRecords).get()?.status).toBe(
+      "late",
+    );
+  });
+
+  it("treats the exact present-window endpoint as Present", () => {
+    const qr = open();
+    const checkInAt = new Date(
+      now.getTime() + DEMO.presentWindowMinutes * 60_000,
+    );
+    keepQrValidUntil(new Date(checkInAt.getTime() + 60_000));
+
+    const result = checkIn(database.db, {
+      studentId: DEMO.enrolledStudentIds[0],
+      classSessionId: DEMO.classSessionId,
+      token: qr.token,
+      now: checkInAt,
+    });
+
+    expect(result).toMatchObject({ ok: true, status: "present" });
+  });
+
+  it("treats the exact late-window endpoint as Late", () => {
+    const qr = open();
+    const checkInAt = new Date(
+      now.getTime() +
+        (DEMO.presentWindowMinutes + DEMO.lateWindowMinutes) * 60_000,
+    );
+    keepQrValidUntil(new Date(checkInAt.getTime() + 60_000));
+
+    const result = checkIn(database.db, {
+      studentId: DEMO.enrolledStudentIds[0],
+      classSessionId: DEMO.classSessionId,
+      token: qr.token,
+      now: checkInAt,
+    });
+
+    expect(result).toMatchObject({ ok: true, status: "late" });
+  });
+
+  it("rejects and logs check-in after both attendance windows", () => {
+    const qr = open();
+    const checkInAt = new Date(
+      now.getTime() +
+        (DEMO.presentWindowMinutes + DEMO.lateWindowMinutes) * 60_000 +
+        1,
+    );
+    keepQrValidUntil(new Date(checkInAt.getTime() + 60_000));
+
+    const result = checkIn(database.db, {
+      studentId: DEMO.enrolledStudentIds[0],
+      classSessionId: DEMO.classSessionId,
+      token: qr.token,
+      now: checkInAt,
+    });
+
+    expect(result).toEqual({
+      ok: false,
+      reason: "outside_attendance_windows",
+    });
+    expect(database.db.select().from(attendanceRecords).get()).toBeUndefined();
+    expect(database.db.select().from(checkInAttempts).get()?.reason).toBe(
+      "outside_attendance_windows",
+    );
   });
 
   it("rejects and logs a non-enrolled student", () => {

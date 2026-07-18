@@ -1,0 +1,1 @@
+{"version":1,"spec":"002-attendance-status-policy","createdAt":"2026-07-18T12:43:49.427Z","fingerprint":"27ce8829e7bb11b53478602429befa4ec0371d274184d3f59672f62ef6059dd3","checks":["verify-tests","verify-lint","verify-build"]}

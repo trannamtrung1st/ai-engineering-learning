@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import { scryptSync } from "node:crypto";
 import { createDatabase, type AttendlyDatabase } from "./client";
+import { createSchema } from "./migrate";
 import {
   classSections,
   classSessions,
@@ -15,6 +16,8 @@ export const DEMO = {
   nonEnrolledStudentId: "student-an",
   classSectionId: "section-ai-101",
   classSessionId: "session-ai-101-01",
+  presentWindowMinutes: 10,
+  lateWindowMinutes: 20,
 } as const;
 
 function demoPasswordHash(password: string) {
@@ -22,93 +25,22 @@ function demoPasswordHash(password: string) {
   return `scrypt:${salt}:${scryptSync(password, salt, 64).toString("hex")}`;
 }
 
-export function createSchema(sqlite: Database.Database) {
-  sqlite.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      email TEXT NOT NULL UNIQUE,
-      name TEXT NOT NULL,
-      role TEXT NOT NULL CHECK (role IN ('student', 'lecturer')),
-      password_hash TEXT NOT NULL,
-      created_at INTEGER NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS class_sections (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      lecturer_id TEXT NOT NULL REFERENCES users(id),
-      created_at INTEGER NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS enrollments (
-      id TEXT PRIMARY KEY,
-      class_section_id TEXT NOT NULL REFERENCES class_sections(id),
-      student_id TEXT NOT NULL REFERENCES users(id),
-      created_at INTEGER NOT NULL,
-      UNIQUE(class_section_id, student_id)
-    );
-    CREATE TABLE IF NOT EXISTS class_sessions (
-      id TEXT PRIMARY KEY,
-      class_section_id TEXT NOT NULL REFERENCES class_sections(id),
-      starts_at INTEGER NOT NULL,
-      attendance_opened_at INTEGER,
-      attendance_closed_at INTEGER,
-      created_at INTEGER NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS qr_session_tokens (
-      id TEXT PRIMARY KEY,
-      class_session_id TEXT NOT NULL REFERENCES class_sessions(id),
-      token_hash TEXT NOT NULL,
-      expires_at INTEGER NOT NULL,
-      created_at INTEGER NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS check_in_attempts (
-      id TEXT PRIMARY KEY,
-      student_id TEXT NOT NULL REFERENCES users(id),
-      class_session_id TEXT REFERENCES class_sessions(id),
-      token_hash TEXT,
-      outcome TEXT NOT NULL CHECK (outcome IN ('success', 'rejected')),
-      reason TEXT,
-      created_at INTEGER NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS attendance_records (
-      id TEXT PRIMARY KEY,
-      student_id TEXT NOT NULL REFERENCES users(id),
-      class_session_id TEXT NOT NULL REFERENCES class_sessions(id),
-      status TEXT NOT NULL CHECK (status IN ('present', 'manual_present')),
-      method TEXT NOT NULL CHECK (method IN ('qr', 'manual')),
-      checked_in_at INTEGER NOT NULL,
-      created_at INTEGER NOT NULL,
-      UNIQUE(class_session_id, student_id)
-    );
-    CREATE TABLE IF NOT EXISTS audit_logs (
-      id TEXT PRIMARY KEY,
-      actor_id TEXT NOT NULL REFERENCES users(id),
-      attendance_record_id TEXT NOT NULL REFERENCES attendance_records(id),
-      action TEXT NOT NULL,
-      old_value TEXT,
-      new_value TEXT NOT NULL,
-      reason TEXT NOT NULL,
-      created_at INTEGER NOT NULL
-    );
-  `);
-}
-
 export function seedDatabase(db: AttendlyDatabase, sqlite: Database.Database) {
+  sqlite.exec(`
+    DROP TABLE IF EXISTS audit_logs;
+    DROP TABLE IF EXISTS attendance_records;
+    DROP TABLE IF EXISTS check_in_attempts;
+    DROP TABLE IF EXISTS qr_session_tokens;
+    DROP TABLE IF EXISTS class_sessions;
+    DROP TABLE IF EXISTS enrollments;
+    DROP TABLE IF EXISTS class_sections;
+    DROP TABLE IF EXISTS users;
+  `);
   createSchema(sqlite);
   const now = new Date();
   const passwordHash = demoPasswordHash(DEMO.password);
 
   sqlite.transaction(() => {
-    sqlite.exec(`
-      DELETE FROM audit_logs;
-      DELETE FROM attendance_records;
-      DELETE FROM check_in_attempts;
-      DELETE FROM qr_session_tokens;
-      DELETE FROM class_sessions;
-      DELETE FROM enrollments;
-      DELETE FROM class_sections;
-      DELETE FROM users;
-    `);
-
     db.insert(users)
       .values([
         {
@@ -151,6 +83,8 @@ export function seedDatabase(db: AttendlyDatabase, sqlite: Database.Database) {
         id: DEMO.classSectionId,
         name: "AI Engineering 101",
         lecturerId: DEMO.lecturerId,
+        presentWindowMinutes: DEMO.presentWindowMinutes,
+        lateWindowMinutes: DEMO.lateWindowMinutes,
         createdAt: now,
       })
       .run();

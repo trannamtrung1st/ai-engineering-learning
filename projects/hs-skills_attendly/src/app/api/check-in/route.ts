@@ -37,6 +37,6 @@ export async function POST(request: Request) {
   }
   return NextResponse.json({
     attendanceRecordId: result.attendanceRecordId,
-    status: "present",
+    status: result.status,
   });
 }

@@ -25,6 +25,8 @@ export const classSections = sqliteTable("class_sections", {
   lecturerId: text("lecturer_id")
     .notNull()
     .references(() => users.id),
+  presentWindowMinutes: integer("present_window_minutes").notNull(),
+  lateWindowMinutes: integer("late_window_minutes").notNull(),
   ...timestamps,
 });
 
@@ -91,8 +93,10 @@ export const attendanceRecords = sqliteTable(
     classSessionId: text("class_session_id")
       .notNull()
       .references(() => classSessions.id),
-    status: text("status", { enum: ["present", "manual_present"] }).notNull(),
-    method: text("method", { enum: ["qr", "manual"] }).notNull(),
+    status: text("status", {
+      enum: ["present", "late", "absent", "excused", "manual_present"],
+    }).notNull(),
+    method: text("method", { enum: ["qr", "manual", "system"] }).notNull(),
     checkedInAt: integer("checked_in_at", { mode: "timestamp_ms" }).notNull(),
     ...timestamps,
   },

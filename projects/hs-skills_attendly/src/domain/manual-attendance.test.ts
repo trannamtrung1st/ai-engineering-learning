@@ -6,8 +6,9 @@ import { attendanceRecords, auditLogs } from "../db/schema";
 import { checkIn } from "./check-in";
 import {
   getSessionRoster,
+  MANUAL_ATTENDANCE_STATUSES,
   ManualAttendanceError,
-  markManualPresent,
+  setManualAttendance,
 } from "./manual-attendance";
 import { clearActiveQrCache, openAttendance } from "./qr-session";
 
@@ -23,40 +24,43 @@ describe("manual attendance", () => {
 
   afterEach(() => database.sqlite.close());
 
-  it("creates Manual Present and a complete audit entry", () => {
-    const result = markManualPresent(database.db, {
-      lecturerId: DEMO.lecturerId,
-      classSessionId: DEMO.classSessionId,
-      studentId: DEMO.enrolledStudentIds[0],
-      reason: "Student phone battery was empty",
-      now,
-    });
-    const attendance = database.db
-      .select()
-      .from(attendanceRecords)
-      .where(eq(attendanceRecords.id, result.attendanceRecordId))
-      .get();
-    const audit = database.db
-      .select()
-      .from(auditLogs)
-      .where(eq(auditLogs.id, result.auditLogId))
-      .get();
+  it.each(MANUAL_ATTENDANCE_STATUSES)(
+    "creates %s and a complete audit entry",
+    (status) => {
+      const result = setManualAttendance(database.db, {
+        lecturerId: DEMO.lecturerId,
+        classSessionId: DEMO.classSessionId,
+        studentId: DEMO.enrolledStudentIds[0],
+        status,
+        reason: "Lecturer verified attendance",
+        now,
+      });
+      const attendance = database.db
+        .select()
+        .from(attendanceRecords)
+        .where(eq(attendanceRecords.id, result.attendanceRecordId))
+        .get();
+      const audit = database.db
+        .select()
+        .from(auditLogs)
+        .where(eq(auditLogs.id, result.auditLogId))
+        .get();
 
-    expect(attendance).toMatchObject({
-      status: "manual_present",
-      method: "manual",
-    });
-    expect(audit).toMatchObject({
-      actorId: DEMO.lecturerId,
-      oldValue: null,
-      reason: "Student phone battery was empty",
-      createdAt: now,
-    });
-    expect(JSON.parse(audit!.newValue)).toMatchObject({
-      status: "manual_present",
-      method: "manual",
-    });
-  });
+      expect(result.status).toBe(status);
+      expect(attendance).toMatchObject({ status, method: "manual" });
+      expect(audit).toMatchObject({
+        actorId: DEMO.lecturerId,
+        action: "attendance.manual_set",
+        oldValue: null,
+        reason: "Lecturer verified attendance",
+        createdAt: now,
+      });
+      expect(JSON.parse(audit!.newValue)).toMatchObject({
+        status,
+        method: "manual",
+      });
+    },
+  );
 
   it("updates an existing QR record and audits before and after", () => {
     const openedAt = new Date(now.getTime() - 5_000);
@@ -73,10 +77,11 @@ describe("manual attendance", () => {
       now: openedAt,
     });
 
-    markManualPresent(database.db, {
+    setManualAttendance(database.db, {
       lecturerId: DEMO.lecturerId,
       classSessionId: DEMO.classSessionId,
       studentId: DEMO.enrolledStudentIds[0],
+      status: "excused",
       reason: "Lecturer verified attendance",
       now,
     });
@@ -87,7 +92,7 @@ describe("manual attendance", () => {
       method: "qr",
     });
     expect(JSON.parse(audit!.newValue)).toMatchObject({
-      status: "manual_present",
+      status: "excused",
       method: "manual",
     });
     expect(database.db.select().from(attendanceRecords).all()).toHaveLength(1);
@@ -95,28 +100,31 @@ describe("manual attendance", () => {
 
   it("requires a reason and the owning lecturer", () => {
     expect(() =>
-      markManualPresent(database.db, {
+      setManualAttendance(database.db, {
         lecturerId: DEMO.lecturerId,
         classSessionId: DEMO.classSessionId,
         studentId: DEMO.enrolledStudentIds[0],
+        status: "manual_present",
         reason: " ",
       }),
     ).toThrowError(new ManualAttendanceError("invalid_reason"));
     expect(() =>
-      markManualPresent(database.db, {
+      setManualAttendance(database.db, {
         lecturerId: DEMO.enrolledStudentIds[0],
         classSessionId: DEMO.classSessionId,
         studentId: DEMO.enrolledStudentIds[1],
+        status: "manual_present",
         reason: "Not allowed",
       }),
     ).toThrowError(new ManualAttendanceError("not_owner"));
   });
 
   it("returns the enrolled roster with current status", () => {
-    markManualPresent(database.db, {
+    setManualAttendance(database.db, {
       lecturerId: DEMO.lecturerId,
       classSessionId: DEMO.classSessionId,
       studentId: DEMO.enrolledStudentIds[0],
+      status: "manual_present",
       reason: "Verified in person",
       now,
     });
