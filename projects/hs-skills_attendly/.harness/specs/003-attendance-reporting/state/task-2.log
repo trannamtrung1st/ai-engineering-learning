@@ -1,0 +1,13 @@
+
+> attendly@0.1.0 test
+> vitest run --passWithNoTests
+
+
+ RUN  v4.1.10 /Users/trungtran/MyPlace/Personal/Learning/ai-engineering-learning/projects/hs-skills_attendly
+
+
+ Test Files  7 passed (7)
+      Tests  36 passed (36)
+   Start at  20:17:47
+   Duration  950ms (transform 298ms, setup 0ms, import 2.47s, tests 1.92s, environment 0ms)
+

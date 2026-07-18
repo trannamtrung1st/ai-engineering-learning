@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { getCurrentSession } from "@/auth/session";
 import { CheckInForm } from "@/components/CheckInForm";
@@ -26,6 +27,9 @@ export default async function CheckInPage({ searchParams }: CheckInPageProps) {
         initialSessionId={query.session ?? ""}
         initialToken={query.token ?? ""}
       />
+      <p>
+        <Link href="/student/history">View my attendance history</Link>
+      </p>
       <form action="/api/auth/logout" method="post">
         <button type="submit">Sign out</button>
       </form>

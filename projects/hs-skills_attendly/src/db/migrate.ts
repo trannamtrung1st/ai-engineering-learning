@@ -62,7 +62,7 @@ export function createSchema(sqlite: Database.Database) {
     CREATE TABLE IF NOT EXISTS audit_logs (
       id TEXT PRIMARY KEY,
       actor_id TEXT NOT NULL REFERENCES users(id),
-      attendance_record_id TEXT NOT NULL REFERENCES attendance_records(id),
+      attendance_record_id TEXT REFERENCES attendance_records(id),
       action TEXT NOT NULL,
       old_value TEXT,
       new_value TEXT NOT NULL,
@@ -131,6 +131,35 @@ export function migrateSchema(sqlite: Database.Database) {
       `);
     });
     rebuild();
+    sqlite.exec("PRAGMA foreign_keys = ON");
+  }
+
+  // Older databases created audit_logs with attendance_record_id NOT NULL,
+  // but section-level events (e.g. report exports) have no single attendance
+  // record. SQLite cannot drop NOT NULL in place, so rebuild when stale.
+  const auditSql = tableSql(sqlite, "audit_logs");
+  if (auditSql && auditSql.includes("attendance_record_id TEXT NOT NULL")) {
+    sqlite.exec("PRAGMA foreign_keys = OFF");
+    const rebuildAudit = sqlite.transaction(() => {
+      sqlite.exec(`
+        ALTER TABLE audit_logs RENAME TO audit_logs_legacy;
+        CREATE TABLE audit_logs (
+          id TEXT PRIMARY KEY,
+          actor_id TEXT NOT NULL REFERENCES users(id),
+          attendance_record_id TEXT REFERENCES attendance_records(id),
+          action TEXT NOT NULL,
+          old_value TEXT,
+          new_value TEXT NOT NULL,
+          reason TEXT NOT NULL,
+          created_at INTEGER NOT NULL
+        );
+        INSERT INTO audit_logs
+          SELECT id, actor_id, attendance_record_id, action, old_value, new_value, reason, created_at
+          FROM audit_logs_legacy;
+        DROP TABLE audit_logs_legacy;
+      `);
+    });
+    rebuildAudit();
     sqlite.exec("PRAGMA foreign_keys = ON");
   }
 }

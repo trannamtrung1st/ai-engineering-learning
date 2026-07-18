@@ -113,9 +113,9 @@ export const auditLogs = sqliteTable("audit_logs", {
   actorId: text("actor_id")
     .notNull()
     .references(() => users.id),
-  attendanceRecordId: text("attendance_record_id")
-    .notNull()
-    .references(() => attendanceRecords.id),
+  attendanceRecordId: text("attendance_record_id").references(
+    () => attendanceRecords.id,
+  ),
   action: text("action").notNull(),
   oldValue: text("old_value"),
   newValue: text("new_value").notNull(),
