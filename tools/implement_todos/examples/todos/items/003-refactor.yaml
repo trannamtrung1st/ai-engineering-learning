@@ -1,0 +1,31 @@
+version: 1
+
+id: TASK-003
+title: Extract greeting defaults
+type: refactor
+status: pending
+priority: 80
+
+depends_on:
+  - TASK-002
+
+description: |
+  Refactor greeting defaults into a named constant or small config helper so
+  the default name is not a magic string scattered through the code.
+
+acceptance_criteria:
+  - Default name is defined in one place.
+  - Behavior is unchanged.
+  - Tests still pass.
+
+validation:
+  commands:
+    - pytest
+
+context:
+  files: []
+
+result:
+  completed_at: null
+  commit_sha: null
+  summary: null

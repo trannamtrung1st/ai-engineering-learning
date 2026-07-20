@@ -1,0 +1,31 @@
+version: 1
+
+id: TASK-002
+title: Handle empty greeting names
+type: fix
+status: pending
+priority: 90
+
+depends_on:
+  - TASK-001
+
+description: |
+  Fix the greeting helper so empty or whitespace-only names fall back to a
+  default such as "world" instead of producing awkward output.
+
+acceptance_criteria:
+  - Empty or whitespace names use a safe default.
+  - Existing happy-path behavior remains unchanged.
+  - Tests cover the empty-name case.
+
+validation:
+  commands:
+    - pytest
+
+context:
+  files: []
+
+result:
+  completed_at: null
+  commit_sha: null
+  summary: null

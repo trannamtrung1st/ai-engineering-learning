@@ -1,0 +1,19 @@
+version: 1
+
+settings:
+  max_attempts: 5
+  max_session_restarts_per_phase: 2
+  work_timeout_seconds: 1800
+  review_timeout_seconds: 900
+  auto_commit: true
+  stop_on_failure: true
+
+items:
+  - id: TASK-001
+    file: items/001-feature.yaml
+
+  - id: TASK-002
+    file: items/002-fix.yaml
+
+  - id: TASK-003
+    file: items/003-refactor.yaml

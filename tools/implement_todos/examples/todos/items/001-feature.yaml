@@ -1,0 +1,29 @@
+version: 1
+
+id: TASK-001
+title: Add greeting helper
+type: feature
+status: pending
+priority: 100
+
+depends_on: []
+
+description: |
+  Add a small greeting helper module that returns a personalized greeting string.
+  Follow the current repository layout and conventions.
+
+acceptance_criteria:
+  - A greeting helper function exists and returns a non-empty string.
+  - Basic unit tests cover the happy path.
+
+validation:
+  commands:
+    - pytest
+
+context:
+  files: []
+
+result:
+  completed_at: null
+  commit_sha: null
+  summary: null

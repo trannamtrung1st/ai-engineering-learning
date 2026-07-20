@@ -1,0 +1,74 @@
+"""Review decision validation tests."""
+
+from __future__ import annotations
+
+import pytest
+
+from todos_tool.errors import ReviewError
+from todos_tool.models import ItemType, ItemStatus, TodoItem
+from todos_tool.reviewer import accept_decision, parse_review_decision
+
+
+def _item() -> TodoItem:
+    return TodoItem(
+        id="TASK-001",
+        title="Add greeting helper",
+        type=ItemType.FEATURE,
+        status=ItemStatus.IN_PROGRESS,
+        description="desc",
+        acceptance_criteria=["Crit A", "Crit B"],
+        validation={"commands": ["pytest"]},
+    )
+
+
+VALID_PASS = """
+Here is my decision:
+```json
+{
+  "schema_version": 1,
+  "item_id": "TASK-001",
+  "logical_attempt": 1,
+  "decision": "pass",
+  "summary": "Looks good",
+  "acceptance_criteria": [
+    {"criterion": "Crit A", "passed": true, "evidence": "ok"},
+    {"criterion": "Crit B", "passed": true, "evidence": "ok"}
+  ],
+  "validation": [
+    {"command": "pytest", "passed": true, "exit_code": 0, "summary": "ok"}
+  ],
+  "instruction_compliance": {"passed": true, "violations": []},
+  "issues": [],
+  "recommended_next_action": "mark_done"
+}
+```
+"""
+
+
+def test_parse_and_accept_pass() -> None:
+    decision = parse_review_decision(VALID_PASS)
+    accept_decision(decision, _item(), 1)
+
+
+def test_reject_stale_attempt() -> None:
+    decision = parse_review_decision(VALID_PASS)
+    with pytest.raises(ReviewError):
+        accept_decision(decision, _item(), 2)
+
+
+def test_reject_failed_criterion_as_pass() -> None:
+    text = VALID_PASS.replace('"passed": true, "evidence": "ok"\n    },\n    {"criterion": "Crit B"',
+                              '"passed": false, "evidence": "no"\n    },\n    {"criterion": "Crit B"')
+    # Simpler: craft fail on Crit A
+    bad = VALID_PASS.replace(
+        '{"criterion": "Crit A", "passed": true, "evidence": "ok"}',
+        '{"criterion": "Crit A", "passed": false, "evidence": "no"}',
+    )
+    decision = parse_review_decision(bad)
+    with pytest.raises(ReviewError):
+        accept_decision(decision, _item(), 1)
+
+
+def test_missing_json_raises() -> None:
+    with pytest.raises(ReviewError):
+        parse_review_decision("all done and passed, ship it")
