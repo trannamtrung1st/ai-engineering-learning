@@ -104,9 +104,12 @@ def validate_pass(
     if not decision.instruction_compliance.passed:
         raise ReviewError("Pass requires instruction_compliance.passed=true")
 
-    blocking = [i for i in decision.issues if i.strip()]
+    blocking = [issue.display() for issue in decision.issues if issue.is_blocking]
     if blocking:
-        raise ReviewError("Pass cannot have unresolved issues")
+        raise ReviewError(
+            "Pass cannot have unresolved blocking issues: "
+            + "; ".join(blocking)
+        )
 
     if decision.recommended_next_action != "mark_done":
         raise ReviewError("Pass requires recommended_next_action=mark_done")

@@ -503,7 +503,7 @@ class Orchestrator:
             )
             state.review.decision = decision.decision
             state.review.summary = decision.summary
-            state.review.issues = list(decision.issues)
+            state.review.issues = decision.issue_strings()
 
             if decision.decision == "pass":
                 record_transition(runs_dir, state, Transition.REVIEW_PASSED)

@@ -152,7 +152,7 @@ Success is determined only by a validated JSON decision (`schema_version: 1`) wi
 - `recommended_next_action`: `mark_done` | `retry` | `block`
 - Per-criterion results, validation results, and instruction compliance
 
-A `pass` is accepted only when every acceptance criterion passes, mandatory validation passes, instruction compliance passes, issues are empty, and `item_id` / `logical_attempt` match the active run.
+A `pass` is accepted only when every acceptance criterion passes, mandatory validation passes, instruction compliance passes, no unresolved **blocking** issue exists (info/low notes are allowed), and `item_id` / `logical_attempt` match the active run.
 
 ## Streaming
 

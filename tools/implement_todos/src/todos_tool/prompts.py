@@ -125,7 +125,9 @@ def build_review_prompt(
     {"command": "string", "passed": true, "exit_code": 0, "summary": "string"}
   ],
   "instruction_compliance": {"passed": true, "violations": []},
-  "issues": [],
+  "issues": [
+    {"severity": "info", "title": "optional note", "detail": "non-blocking on pass"}
+  ],
   "recommended_next_action": "mark_done" | "retry" | "block"
 }
 """.strip() % (item.id, logical_attempt)
@@ -175,6 +177,8 @@ def build_review_prompt(
             "",
             "A pass is valid only when every acceptance criterion passes, mandatory validation passes,",
             "instruction compliance passes, and no unresolved blocking issue exists.",
+            "Use `issues` for notes. Structured issues may use severity info/low (non-blocking on pass)",
+            "or medium/high/critical (blocking). Plain-string issues are treated as blocking.",
             "Map decisions: pass→mark_done, fail→retry, blocked→block.",
         ]
     )

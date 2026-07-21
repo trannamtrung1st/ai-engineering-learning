@@ -41,6 +41,10 @@ def test_review_prompt_requires_instruction_discovery() -> None:
     assert prompt_requires_instruction_discovery(prompt)
     assert "schema_version" in prompt
     assert "TASK-001" in prompt
+    assert "no unresolved blocking issue exists" in prompt
+    assert '"severity": "info"' in prompt
+    assert "info/low (non-blocking on pass)" in prompt
+    assert "Plain-string issues are treated as blocking" in prompt
 
 
 def test_continuation_is_bounded(git_project: Path) -> None:

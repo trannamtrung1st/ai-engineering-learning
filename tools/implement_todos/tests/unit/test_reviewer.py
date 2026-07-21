@@ -72,3 +72,67 @@ def test_reject_failed_criterion_as_pass() -> None:
 def test_missing_json_raises() -> None:
     with pytest.raises(ReviewError):
         parse_review_decision("all done and passed, ship it")
+
+
+def test_accept_pass_with_structured_info_issues() -> None:
+    text = """
+```json
+{
+  "schema_version": 1,
+  "item_id": "TASK-001",
+  "logical_attempt": 1,
+  "decision": "pass",
+  "summary": "Looks good",
+  "acceptance_criteria": [
+    {"criterion": "Crit A", "passed": true, "evidence": "ok"},
+    {"criterion": "Crit B", "passed": true, "evidence": "ok"}
+  ],
+  "validation": [
+    {"command": "pytest", "passed": true, "exit_code": 0, "summary": "ok"}
+  ],
+  "instruction_compliance": {"passed": true, "violations": []},
+  "issues": [
+    {
+      "severity": "info",
+      "title": "npm run test exits 1 until UT-002",
+      "detail": "Expected interim behavior."
+    }
+  ],
+  "recommended_next_action": "mark_done"
+}
+```
+"""
+    decision = parse_review_decision(text)
+    accept_decision(decision, _item(), 1)
+    assert decision.issue_strings() == [
+        "[info] npm run test exits 1 until UT-002: Expected interim behavior."
+    ]
+
+
+def test_accept_pass_with_structured_low_issues() -> None:
+    text = VALID_PASS.replace(
+        '"issues": []',
+        '"issues": [{"severity": "low", "title": "Consider renaming helper", "detail": "Optional cleanup."}]',
+    )
+    decision = parse_review_decision(text)
+    accept_decision(decision, _item(), 1)
+    assert decision.issue_strings() == [
+        "[low] Consider renaming helper: Optional cleanup."
+    ]
+
+
+def test_reject_pass_with_structured_blocking_issue() -> None:
+    text = VALID_PASS.replace(
+        '"issues": []',
+        '"issues": [{"severity": "high", "title": "Missing tests", "detail": "blocker"}]',
+    )
+    decision = parse_review_decision(text)
+    with pytest.raises(ReviewError, match="blocking issues"):
+        accept_decision(decision, _item(), 1)
+
+
+def test_reject_pass_with_legacy_string_issue() -> None:
+    text = VALID_PASS.replace('"issues": []', '"issues": ["needs follow-up"]')
+    decision = parse_review_decision(text)
+    with pytest.raises(ReviewError, match="blocking issues"):
+        accept_decision(decision, _item(), 1)

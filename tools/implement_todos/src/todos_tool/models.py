@@ -159,6 +159,47 @@ class InstructionCompliance(BaseModel):
     violations: list[str] = Field(default_factory=list)
 
 
+class ReviewIssue(BaseModel):
+    """Structured or legacy review note."""
+
+    severity: Literal["info", "low", "medium", "high", "critical"] = "medium"
+    title: str = ""
+    detail: str = ""
+
+    @property
+    def is_blocking(self) -> bool:
+        return self.severity in ("medium", "high", "critical")
+
+    def display(self) -> str:
+        body = self.title.strip()
+        if self.detail.strip():
+            body = f"{body}: {self.detail.strip()}" if body else self.detail.strip()
+        if not body:
+            return ""
+        return f"[{self.severity}] {body}"
+
+    @classmethod
+    def coerce(cls, value: Any) -> ReviewIssue:
+        if isinstance(value, cls):
+            return value
+        if isinstance(value, str):
+            text = value.strip()
+            if not text:
+                return cls(severity="info", title="", detail="")
+            # Legacy plain-string issues remain blocking.
+            return cls(severity="medium", title=text, detail="")
+        if isinstance(value, dict):
+            severity = value.get("severity", "medium")
+            if severity not in ("info", "low", "medium", "high", "critical"):
+                severity = "medium"
+            return cls(
+                severity=severity,
+                title=str(value.get("title", "") or ""),
+                detail=str(value.get("detail", "") or ""),
+            )
+        raise ValueError(f"Unsupported review issue: {value!r}")
+
+
 class ReviewDecision(BaseModel):
     schema_version: Literal[1] = 1
     item_id: str
@@ -168,8 +209,20 @@ class ReviewDecision(BaseModel):
     acceptance_criteria: list[AcceptanceCriterionResult]
     validation: list[ValidationCommandResult] = Field(default_factory=list)
     instruction_compliance: InstructionCompliance
-    issues: list[str] = Field(default_factory=list)
+    issues: list[ReviewIssue] = Field(default_factory=list)
     recommended_next_action: Literal["mark_done", "retry", "block"]
+
+    @field_validator("issues", mode="before")
+    @classmethod
+    def normalize_issues(cls, value: Any) -> list[ReviewIssue]:
+        if value is None:
+            return []
+        if not isinstance(value, list):
+            raise ValueError("issues must be a list")
+        return [ReviewIssue.coerce(item) for item in value]
+
+    def issue_strings(self) -> list[str]:
+        return [text for issue in self.issues if (text := issue.display())]
 
     @model_validator(mode="after")
     def consistent_decision(self) -> ReviewDecision:
