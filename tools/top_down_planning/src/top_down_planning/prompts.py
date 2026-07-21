@@ -257,20 +257,13 @@ def build_final_render_prompt(
     *,
     loaded_input: LoadedInput,
     plan_file: Path,
+    output_dir: Path,
     workspace: Path,
     output_goal: LoadedOutputGoal,
     plan: PlanState,
     embed_threshold: int,
 ) -> str:
     """Build the prompt for the post-decomposition render phase."""
-    artifact_schema = {
-        "artifacts": [
-            {
-                "relative_path": "filename relative to --output, e.g. implementation-plan.md",
-                "content": "full file contents as a string",
-            }
-        ]
-    }
     input_section = format_input_document_section(
         loaded_input=loaded_input,
         workspace=workspace,
@@ -281,19 +274,26 @@ def build_final_render_prompt(
 Decomposition is complete. Produce the **final user-facing deliverable file(s)**.
 
 You are a planning renderer, not an executor. Read the canonical planning state and
-render deliverables according to the output goal. Do not invent new planning items,
+write deliverables according to the output goal. Do not invent new planning items,
 change statuses, or execute work.
 
 ## Output goal
 {format_output_goal_section(output_goal=output_goal, workspace=workspace, embed_threshold=embed_threshold)}
 
-Follow that specification for:
+Use that specification to decide:
 - deliverable format(s) and filename(s);
 - structure, terminology, and required sections;
-- actionability presentation.
+- how to present actionability, hierarchy, dependencies, blocked items, and open questions.
 
 If the output goal defines an **Output artifacts** section, follow it exactly for
 paths and formats. Otherwise choose sensible filenames and formats that match the goal.
+
+## Output directory
+Write all deliverables directly into this directory:
+
+{format_input_file_reference(output_dir, workspace)}
+
+Do not write into `.planning-output/` or modify files there.
 
 ## Source documents
 
@@ -312,18 +312,10 @@ status, expected output, acceptance criterion, blocked reason, and open question
 - Status: {plan.result.status.value}
 - Summary: {plan.result.summary or "No summary provided."}
 
-## Required response format
-Return one JSON object describing every generated deliverable:
-
-```json
-{json.dumps(artifact_schema, indent=2)}
-```
-
-Rules:
-- Return the JSON inside a ```json fenced block or as raw JSON.
-- Write one or more artifacts depending on the output goal.
-- Use only relative paths under the output directory.
-- Do not write into `.planning-output/`.
+## Instructions
+- Write one or more deliverable files under the output directory.
+- Let the output goal and breakdown items guide format and presentation freely.
+- Do not return structured JSON or a chat-only summary instead of writing files.
 - Do not include orchestration internals such as item IDs unless the output goal
   calls for them.
 - Preserve hierarchy, ordering, expected outputs, dependencies, acceptance criteria,

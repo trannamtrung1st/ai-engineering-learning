@@ -46,10 +46,14 @@ from top_down_planning.persistence import (
     update_final_status,
     write_json,
 )
-from top_down_planning.artifact_writer import write_render_artifacts
+from top_down_planning.artifact_writer import (
+    discover_written_artifacts,
+    snapshot_deliverable_files,
+    write_render_artifacts,
+)
 from top_down_planning.fallback_artifact import write_fallback_artifact
 from top_down_planning.prompts import build_final_render_prompt, build_planning_prompt
-from top_down_planning.response_parser import parse_agent_response, parse_render_response
+from top_down_planning.response_parser import parse_agent_response
 from top_down_planning.scheduler import initialize_root_plan, select_batch
 from top_down_planning.state_updates import apply_response
 from top_down_planning.stream_events import StreamEmitter
@@ -451,9 +455,11 @@ class Orchestrator:
         self.renderer.rule("RENDER deliverables according to output goal")
 
         for attempt in range(1, limits.max_retries + 1):
+            before_snapshot = snapshot_deliverable_files(output_dir)
             prompt = build_final_render_prompt(
                 loaded_input=loaded,
                 plan_file=canonical_plan_file,
+                output_dir=output_dir,
                 workspace=self.config.workspace_root,
                 output_goal=self.config.output_goal,
                 plan=plan,
@@ -463,7 +469,7 @@ class Orchestrator:
                 prompt += (
                     "\n\n## Validation feedback from previous attempt\n"
                     + "\n".join(f"- {error}" for error in validation_feedback)
-                    + "\n\nFix every issue and return valid JSON with artifacts.\n"
+                    + "\n\nFix every issue and write deliverable files under the output directory.\n"
                 )
 
             prompt_path = audit_dir / "render-request-prompt.md"
@@ -490,6 +496,7 @@ class Orchestrator:
                     on_agent_started=lambda pid: _persist_agent_pid(
                         output_dir, run_state, pid
                     ),
+                    session_mode="agent",
                 )
             except UserInterrupted:
                 run_state.agent_pid = None
@@ -518,11 +525,11 @@ class Orchestrator:
 
             run_state.agent_pid = None
 
-            try:
-                render_response = parse_render_response(result.assistant_text)
-                written = write_render_artifacts(output_dir, render_response)
-            except (ResponseParseError, ValueError) as exc:
-                validation_feedback = [str(exc)]
+            written = discover_written_artifacts(output_dir, before_snapshot)
+            if not written:
+                validation_feedback = [
+                    "No deliverable files were written under the output directory."
+                ]
                 if self.config.audit_iterations:
                     write_json(
                         response_path,
@@ -530,25 +537,32 @@ class Orchestrator:
                     )
                 if attempt >= limits.max_retries:
                     self.renderer.warning(
-                        "Final render response was invalid; "
+                        "Final render produced no deliverables; "
                         "writing deterministic fallback artifact."
                     )
                     fallback = write_fallback_artifact(output_dir, plan)
                     paths = _persist_render_result(output_dir, run_state, [fallback])
                     save_run_state(output_dir, run_state)
-                    self.stream.emit("render.fallback", reason=str(exc))
+                    self.stream.emit(
+                        "render.fallback",
+                        reason="no deliverables written",
+                    )
                     return paths
                 self.stream.emit(
                     "render.retrying",
                     attempt=attempt + 1,
-                    reason=str(exc),
+                    reason=validation_feedback[0],
                 )
                 continue
 
             if self.config.audit_iterations:
                 write_json(
                     response_path,
-                    render_response.model_dump(mode="json"),
+                    {
+                        "artifacts": [
+                            path.relative_to(output_dir).as_posix() for path in written
+                        ],
+                    },
                 )
 
             artifact_paths = _persist_render_result(output_dir, run_state, written)

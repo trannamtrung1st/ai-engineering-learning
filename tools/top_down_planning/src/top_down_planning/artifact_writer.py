@@ -1,4 +1,4 @@
-"""Write user-facing output artifacts and validate relative paths."""
+"""Write and discover user-facing output artifacts."""
 
 from __future__ import annotations
 
@@ -7,6 +7,42 @@ from pathlib import Path
 
 from top_down_planning.models import RenderResponse
 from top_down_planning.persistence import STATE_DIRNAME
+
+
+def snapshot_deliverable_files(output_dir: Path) -> dict[str, float]:
+    """Return relative paths to mtimes for deliverable files under output_dir."""
+    snapshot: dict[str, float] = {}
+    if not output_dir.is_dir():
+        return snapshot
+    for path in output_dir.rglob("*"):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(output_dir)
+        if rel.parts and rel.parts[0] == STATE_DIRNAME:
+            continue
+        snapshot[rel.as_posix()] = path.stat().st_mtime
+    return snapshot
+
+
+def discover_written_artifacts(
+    output_dir: Path,
+    before: dict[str, float],
+) -> list[Path]:
+    """Return newly created or updated deliverable files under output_dir."""
+    written: list[Path] = []
+    if not output_dir.is_dir():
+        return written
+    for path in output_dir.rglob("*"):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(output_dir)
+        if rel.parts and rel.parts[0] == STATE_DIRNAME:
+            continue
+        key = rel.as_posix()
+        mtime = path.stat().st_mtime
+        if key not in before or before[key] < mtime:
+            written.append(path)
+    return sorted(written, key=lambda item: item.relative_to(output_dir).as_posix())
 
 
 def normalize_artifact_path(relative_path: str) -> str:

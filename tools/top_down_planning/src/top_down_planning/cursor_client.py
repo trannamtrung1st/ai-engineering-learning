@@ -1,7 +1,8 @@
 """Cursor Agent CLI process adapter with streaming and recovery.
 
 Adapted from tools/implement_todos/src/todos_tool/cursor_client.py.
-Planning sessions always use ask/read-only mode.
+Planning decomposition sessions use read-only ``ask`` mode; the final render
+session uses agent mode so deliverables can be written directly to disk.
 """
 
 from __future__ import annotations
@@ -16,7 +17,9 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, TextIO
+from typing import Any, Literal, TextIO
+
+SessionMode = Literal["ask", "agent"]
 
 from top_down_planning.console_renderer import ConsoleRenderer
 from top_down_planning.errors import CursorEnvironmentError, CursorSessionError, UserInterrupted
@@ -102,6 +105,7 @@ def build_agent_args(
     prompt: str,
     model: str | None,
     stream_flags: list[str],
+    session_mode: SessionMode = "ask",
 ) -> list[str]:
     args = [
         "-p",
@@ -109,9 +113,11 @@ def build_agent_args(
         "--workspace",
         str(workspace),
         *stream_flags,
-        "--mode",
-        "ask",
     ]
+    if session_mode == "ask":
+        args.extend(["--mode", "ask"])
+    else:
+        args.append("--force")
     if model:
         args.extend(["--model", model])
     args.append(prompt)
@@ -167,6 +173,7 @@ class CursorClient:
         prompt_path: Path | None = None,
         renderer: ConsoleRenderer | None = None,
         on_agent_started: AgentStartedCallback | None = None,
+        session_mode: SessionMode = "ask",
     ) -> SessionResult:
         await self.ensure_ready()
         assert self._stream_flags is not None
@@ -181,6 +188,7 @@ class CursorClient:
             prompt=prompt_arg,
             model=self.model,
             stream_flags=self._stream_flags,
+            session_mode=session_mode,
         )
         renderer = renderer or ConsoleRenderer(no_color=self.no_color, log_path=log_path)
         parser = NdjsonStreamParser(parse_error_threshold=self.parse_error_threshold)

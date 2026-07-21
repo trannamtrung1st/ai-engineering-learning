@@ -96,12 +96,15 @@ def _default_planning_response(selected: list[str]) -> dict:
     }
 
 
-def _default_render_response() -> str:
-    payload = {
-        "artifacts": [
-            {
-                "relative_path": "implementation-plan.md",
-                "content": """# Actionable Implementation Plan
+def _output_dir_from_prompt(prompt: str) -> Path | None:
+    match = re.search(r"## Output directory[\s\S]*?Absolute: `([^`]+)`", prompt)
+    if not match:
+        return None
+    return Path(match.group(1))
+
+
+def _default_render_content() -> str:
+    return """# Actionable Implementation Plan
 
 Rendered according to the output goal after decomposition completed.
 
@@ -130,11 +133,16 @@ Rendered according to the output goal after decomposition completed.
    - Dependencies: Define CLI interface
    - Expected outputs: Parser module
    - Acceptance criteria: Malformed rows handled
-""",
-            }
-        ]
-    }
-    return "```json\n" + json.dumps(payload, indent=2) + "\n```\n"
+"""
+
+
+def _write_default_render_artifact(prompt: str) -> None:
+    output_dir = _output_dir_from_prompt(prompt)
+    if output_dir is None:
+        return
+    output_dir.mkdir(parents=True, exist_ok=True)
+    target = output_dir / "implementation-plan.md"
+    target.write_text(_default_render_content(), encoding="utf-8")
 
 
 def main() -> int:
@@ -155,7 +163,8 @@ def main() -> int:
                 "model": "fake-model",
             }
         )
-        assistant(_default_render_response())
+        _write_default_render_artifact(prompt)
+        assistant("Wrote deliverables to the output directory.")
         emit({"type": "result", "subtype": "success", "duration_ms": 5, "is_error": False})
         return 0
 

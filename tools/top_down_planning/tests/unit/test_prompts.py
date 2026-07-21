@@ -275,6 +275,7 @@ def test_final_render_prompt_references_plan_and_output_goal(
     prompt = build_final_render_prompt(
         loaded_input=loaded_input,
         plan_file=plan_file,
+        output_dir=tmp_path / "planning-output",
         workspace=tmp_path,
         output_goal=output_goal,
         plan=plan,
@@ -284,4 +285,6 @@ def test_final_render_prompt_references_plan_and_output_goal(
     assert "Final planning render" in prompt
     assert str(plan_file.resolve()) in prompt
     assert "Produce an actionable implementation plan" in prompt
-    assert "artifacts" in prompt
+    assert "Output directory" in prompt
+    assert '"artifacts"' not in prompt
+    assert "Required response format" not in prompt
