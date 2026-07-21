@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, field_validator
 
 SCHEMA_VERSION = 1
 DEFAULT_CURSOR_MODEL = "gpt-5.6-sol-high"
+DEFAULT_INLINE_EMBED_THRESHOLD = 4000
 
 
 class DecompositionStatus(str, Enum):
@@ -59,6 +60,9 @@ class SourceMetadata(BaseModel):
     output_goal_file: str | None = None
     input_digest: str
     output_goal_digest: str
+    stop_hint: str | None = None
+    stop_hint_file: str | None = None
+    stop_hint_digest: str | None = None
 
 
 class PlanItem(BaseModel):
@@ -214,6 +218,7 @@ class RunState(BaseModel):
     limits: PlanningLimits = Field(default_factory=PlanningLimits)
     input_digest: str = ""
     output_goal_digest: str = ""
+    stop_hint_digest: str | None = None
     input_file: str = ""
     output_goal: str = ""
     last_successful_update: datetime | None = None

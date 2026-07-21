@@ -21,5 +21,5 @@ def test_write_render_artifacts(tmp_path: Path) -> None:
 
 
 def test_reject_state_dir_artifact_path() -> None:
-    with pytest.raises(ValueError, match="top-down-planning"):
-        normalize_artifact_path(".top-down-planning/plan.yaml")
+    with pytest.raises(ValueError, match="planning-output"):
+        normalize_artifact_path(".planning-output/plan.yaml")

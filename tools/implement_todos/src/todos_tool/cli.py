@@ -55,9 +55,7 @@ def _exit_interrupted(exc: BaseException, *, no_color: bool) -> NoReturn:
     if isinstance(exc, UserInterrupted):
         console.print(f"[yellow]{exc}[/]")
     else:
-        console.print(
-            "[yellow]Interrupted — Cursor agent session left running if still active.[/]"
-        )
+        console.print("[yellow]Interrupted — Cursor agent session terminated.[/]")
     raise typer.Exit(130) from exc
 
 

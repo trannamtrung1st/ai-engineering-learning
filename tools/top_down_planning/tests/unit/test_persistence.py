@@ -66,6 +66,27 @@ def test_legacy_root_state_migrates_on_save(tmp_path: Path) -> None:
     assert loaded.plan[0].id == "item-001"
 
 
+def test_legacy_state_dir_is_readable(tmp_path: Path) -> None:
+    from top_down_planning.persistence import LEGACY_STATE_DIRNAME
+    import shutil
+
+    plan = initialize_root_plan(
+        input_file="./idea.md",
+        output_goal="goal",
+        input_digest="input",
+        output_goal_digest="goal-d",
+    )
+    save_plan(tmp_path, plan)
+    shutil.move(tmp_path / STATE_DIRNAME, tmp_path / LEGACY_STATE_DIRNAME)
+
+    loaded = load_plan(tmp_path)
+    assert loaded is not None
+    assert loaded.plan[0].id == "item-001"
+
+    save_plan(tmp_path, plan)
+    assert (tmp_path / STATE_DIRNAME / "plan.yaml").is_file()
+
+
 def test_resume_rejects_changed_input(tmp_path: Path) -> None:
     plan = initialize_root_plan(
         input_file="./idea.md",
@@ -88,6 +109,36 @@ def test_resume_rejects_changed_input(tmp_path: Path) -> None:
             tmp_path,
             input_digest="new",
             output_goal_digest="goal-d",
+            limits=PlanningLimits(),
+            resume=True,
+        )
+
+
+def test_resume_rejects_changed_stop_hint(tmp_path: Path) -> None:
+    plan = initialize_root_plan(
+        input_file="./idea.md",
+        output_goal="goal",
+        input_digest="a",
+        output_goal_digest="b",
+        stop_hint_digest="old-hint",
+    )
+    run = new_run_state(
+        input_file="./idea.md",
+        output_goal="goal",
+        input_digest="a",
+        output_goal_digest="b",
+        stop_hint_digest="old-hint",
+        limits=PlanningLimits(),
+    )
+    save_plan(tmp_path, plan)
+    save_run_state(tmp_path, run)
+
+    with pytest.raises(ResumeError, match="Stop hint digest mismatch"):
+        ensure_resume_compatible(
+            tmp_path,
+            input_digest="a",
+            output_goal_digest="b",
+            stop_hint_digest="new-hint",
             limits=PlanningLimits(),
             resume=True,
         )

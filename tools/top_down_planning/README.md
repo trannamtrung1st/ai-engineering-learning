@@ -14,6 +14,17 @@ pip install -e ".[dev]"
 
 ## Usage
 
+Using a YAML config file (recommended for repeatable runs):
+
+```bash
+top-down-planning --config ./examples/planning.config.yaml
+```
+
+CLI flags override values from the config file. Paths in the config file are resolved
+relative to the config file's directory.
+
+Or pass options directly:
+
 ```bash
 top-down-planning \
   --input ./examples/idea.md \
@@ -76,12 +87,12 @@ Each run writes user-facing deliverables directly under `--output`. The delivera
 filename(s) and format(s) come from the output goal's **Output artifacts** section
 when present, or are chosen by the final render phase to match the goal.
 
-Internal resumable state is stored separately under `.top-down-planning/`:
+Internal resumable state is stored separately under `.planning-output/`:
 
 ```text
 planning-output/
 ├── implementation-plan.md          # example goal-driven deliverable
-└── .top-down-planning/
+└── .planning-output/
     ├── plan.yaml
     ├── run-state.json
     └── iterations/
@@ -94,7 +105,7 @@ The `--output` directory should contain only generated deliverables at its top l
 Do not place input files or output goal files there.
 
 Goal-driven deliverables are written only when planning finishes with status `complete`.
-Incomplete or failed runs keep internal state under `.top-down-planning/` but do not
+Incomplete or failed runs keep internal state under `.planning-output/` but do not
 write new deliverables.
 
 ## v1 contracts
@@ -125,11 +136,22 @@ The agent returns structured operations only:
 
 The tool validates the full batch atomically, assigns IDs/depth/order, and persists the updated state.
 
+Optional guidance for when to stop expanding versus marking items actionable:
+
+- CLI: `--stop-hint` or `--stop-hint-file`
+- Config: `stop_hint` or `stop_hint_file`
+
+The stop hint is included in planning prompts to help the agent decide between
+`expand`, `mark_actionable`, and `assessment.plan_complete`. Resume rejects
+runs when the stop hint changes after a prior run stored a digest.
+
 ### Agent context
 
-Each iteration prompt references the primary input Markdown file by path (workspace-relative when possible, plus absolute). The agent is instructed to open and read that file; the prompt does not embed the full document inline.
-
-The output goal may be supplied inline with `--output-goal` or as a Markdown/text file via `--output-goal-file`. When a file is used, the prompt references that file by path instead of embedding its contents. Resume compatibility uses SHA-256 digests of the resolved goal content.
+Prompts use hybrid embedding for the primary input and output goal: when content is at
+or below `--embed-threshold` characters (default 4000, env `PLANNING_TOOL_EMBED_THRESHOLD`),
+it is inlined in the prompt; otherwise the agent is told to open the file by path
+(workspace-relative when possible, plus absolute). Resume compatibility uses SHA-256
+digests of the resolved goal content.
 
 ### Actionability and stopping
 

@@ -226,7 +226,7 @@ Flags are probed from `agent --help` at runtime. Events are normalized to catego
 ## Run vs resume
 
 - `run` refuses to start when any item is already `in_progress` or has non-idle persisted run state. Use `resume` instead.
-- `resume` refuses while a previously detached Cursor agent PID from `state.json` is still alive; stop that process first.
+- `resume` refuses while a Cursor agent PID from `state.json` is still alive (for example if termination failed); stop that process first.
 - Outcomes are recorded explicitly in `RunReport`: `failed` for terminal failures, `retryable` for errors that leave the item `in_progress`, and `blocked` for policy/review exhaustion. The CLI exits `1` when any of these lists is non-empty.
 - `stop_on_failure: true` stops batch runs after the first failed, retryable, or blocked item. A retryable item always stops the batch regardless of this setting to preserve the single-active-item invariant.
 
@@ -267,7 +267,7 @@ TODOS_TOOL_RUN_LIVE_SMOKE=1 pytest tests/live/test_cursor_prompt_bootstrap.py
 
 ## Interrupting a run
 
-`Ctrl+C` cancels the **todos-tool process only**. The Cursor agent is started in its own session with file-backed stdio, so interrupt detaches without sending SIGTERM/SIGINT to the agent. The tool exits with code `130`, persists `agent_pid` in `todos/runs/<id>/state.json` when the session starts, and leaves the agent running.
+`Ctrl+C` cancels the tool and **terminates the Cursor agent** (SIGTERM, then SIGKILL if needed). The tool exits with code `130`, clears `agent_pid` in persisted state, and saves partial progress where applicable. While a session is active, `agent_pid` is recorded in `todos/runs/<id>/state.json` for resume safety checks.
 
 `status` shows a live `pid=` when recorded. Resume **refuses** while that pid is still alive; stop the process manually, then resume. Dead pids are cleared automatically. Timeouts and stream parse failures still terminate the agent process group.
 

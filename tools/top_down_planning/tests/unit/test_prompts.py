@@ -1,18 +1,28 @@
 from pathlib import Path
 
-from top_down_planning.input_loader import load_output_goal
+from top_down_planning.input_loader import load_markdown_input, load_output_goal, load_stop_hint
+from top_down_planning.models import DEFAULT_INLINE_EMBED_THRESHOLD
 from top_down_planning.prompts import (
     build_final_render_prompt,
     build_planning_prompt,
+    format_input_document_section,
     format_input_file_reference,
+    format_output_goal_section,
+    should_embed_content,
 )
 from top_down_planning.scheduler import initialize_root_plan
 
 
-def test_prompt_references_input_file_instead_of_embedding_content(
+def test_should_embed_content_respects_threshold() -> None:
+    assert should_embed_content("short", embed_threshold=10)
+    assert not should_embed_content("too long", embed_threshold=3)
+
+
+def test_prompt_embeds_small_input_document(
     example_input: Path,
     tmp_path: Path,
 ) -> None:
+    loaded_input = load_markdown_input(example_input)
     output_goal = load_output_goal(inline="Produce an actionable implementation plan")
     plan = initialize_root_plan(
         input_file=str(example_input),
@@ -24,27 +34,56 @@ def test_prompt_references_input_file_instead_of_embedding_content(
     assert root is not None
 
     prompt = build_planning_prompt(
-        input_file=example_input,
+        loaded_input=loaded_input,
         workspace=tmp_path,
         output_goal=output_goal,
         plan=plan,
         selected_items=[root],
+        embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
     )
 
-    assert "Read the complete primary input Markdown file" in prompt
-    assert str(example_input.resolve()) in prompt
-    assert "```markdown" not in prompt
-    assert "Build a small CLI that converts CSV" not in prompt
+    assert "The complete primary input Markdown document" in prompt
+    assert "```markdown" in prompt
+    assert "Build a small CLI that converts CSV" in prompt
     assert "Produce an actionable implementation plan" in prompt
 
 
-def test_prompt_references_output_goal_file(tmp_path: Path, example_input: Path) -> None:
+def test_prompt_references_large_input_file_by_path(tmp_path: Path) -> None:
+    input_file = tmp_path / "large-input.md"
+    input_file.write_text("# Large\n\n" + ("x" * 5000), encoding="utf-8")
+    loaded_input = load_markdown_input(input_file)
+    output_goal = load_output_goal(inline="Produce an actionable implementation plan")
+    plan = initialize_root_plan(
+        input_file=str(input_file),
+        output_goal=output_goal.text,
+        input_digest="a",
+        output_goal_digest="b",
+    )
+    root = plan.item_by_id("item-001")
+    assert root is not None
+
+    prompt = build_planning_prompt(
+        loaded_input=loaded_input,
+        workspace=tmp_path,
+        output_goal=output_goal,
+        plan=plan,
+        selected_items=[root],
+        embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
+    )
+
+    assert "Read the complete primary input Markdown file" in prompt
+    assert str(input_file.resolve()) in prompt
+    assert "xxxxx" not in prompt
+
+
+def test_prompt_embeds_short_output_goal_file(tmp_path: Path, example_input: Path) -> None:
     goal_file = tmp_path / "goals" / "plan.md"
     goal_file.parent.mkdir()
     goal_file.write_text(
         "# Goal\n\nProduce an actionable implementation plan with phases.\n",
         encoding="utf-8",
     )
+    loaded_input = load_markdown_input(example_input)
     output_goal = load_output_goal(goal_file=goal_file)
     plan = initialize_root_plan(
         input_file=str(example_input),
@@ -57,16 +96,93 @@ def test_prompt_references_output_goal_file(tmp_path: Path, example_input: Path)
     assert root is not None
 
     prompt = build_planning_prompt(
-        input_file=example_input,
+        loaded_input=loaded_input,
         workspace=tmp_path,
         output_goal=output_goal,
         plan=plan,
         selected_items=[root],
+        embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
+    )
+
+    assert "with phases" in prompt
+    assert "Read the output goal specification" not in prompt
+
+
+def test_prompt_references_large_output_goal_file(tmp_path: Path, example_input: Path) -> None:
+    goal_file = tmp_path / "goals" / "plan.md"
+    goal_file.parent.mkdir()
+    goal_file.write_text("# Goal\n\n" + ("y" * 5000), encoding="utf-8")
+    loaded_input = load_markdown_input(example_input)
+    output_goal = load_output_goal(goal_file=goal_file)
+    plan = initialize_root_plan(
+        input_file=str(example_input),
+        output_goal=output_goal.text,
+        output_goal_file=str(goal_file),
+        input_digest="a",
+        output_goal_digest="b",
+    )
+    root = plan.item_by_id("item-001")
+    assert root is not None
+
+    prompt = build_planning_prompt(
+        loaded_input=loaded_input,
+        workspace=tmp_path,
+        output_goal=output_goal,
+        plan=plan,
+        selected_items=[root],
+        embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
     )
 
     assert "Read the output goal specification" in prompt
     assert str(goal_file.resolve()) in prompt
-    assert "with phases" not in prompt
+    assert "yyyyy" not in prompt
+
+
+def test_embed_threshold_zero_prefers_path_refs_for_file_backed_content(
+    tmp_path: Path,
+    example_input: Path,
+) -> None:
+    goal_file = tmp_path / "goal.md"
+    goal_file.write_text("# Goal\n\nShort goal from file.\n", encoding="utf-8")
+    loaded_input = load_markdown_input(example_input)
+    output_goal = load_output_goal(goal_file=goal_file)
+
+    input_section = format_input_document_section(
+        loaded_input=loaded_input,
+        workspace=tmp_path,
+        embed_threshold=0,
+    )
+    goal_section = format_output_goal_section(
+        output_goal=output_goal,
+        workspace=tmp_path,
+        embed_threshold=0,
+    )
+
+    assert "Read the complete primary input Markdown file" in input_section
+    assert "Build a small CLI" not in input_section
+    assert "Read the output goal specification" in goal_section
+    assert "Short goal from file" not in goal_section
+
+
+def test_long_inline_output_goal_embeds_when_no_path_exists() -> None:
+    output_goal = load_output_goal(inline="g" * 5000)
+    section = format_output_goal_section(
+        output_goal=output_goal,
+        workspace=Path("."),
+        embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
+    )
+
+    assert "g" * 100 in section
+    assert "Read the output goal specification" not in section
+
+
+def test_should_embed_content_uses_inclusive_boundary() -> None:
+    exact = "x" * DEFAULT_INLINE_EMBED_THRESHOLD
+    assert should_embed_content(exact, embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD)
+    assert not should_embed_content(
+        exact + "y",
+        embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
+    )
 
 
 def test_input_file_reference_prefers_workspace_relative_path(tmp_path: Path) -> None:
@@ -81,10 +197,44 @@ def test_input_file_reference_prefers_workspace_relative_path(tmp_path: Path) ->
     assert str(input_file.resolve()) in reference
 
 
-def test_final_render_prompt_references_plan_and_output_goal(
-    tmp_path: Path,
+def test_prompt_includes_stop_hint_when_provided(
     example_input: Path,
+    tmp_path: Path,
 ) -> None:
+    loaded_input = load_markdown_input(example_input)
+    output_goal = load_output_goal(inline="Produce an actionable implementation plan")
+    stop_hint = load_stop_hint(
+        inline="Stop expanding once each major area has actionable leaf tasks."
+    )
+    plan = initialize_root_plan(
+        input_file=str(example_input),
+        output_goal=output_goal.text,
+        input_digest="a",
+        output_goal_digest="b",
+    )
+    root = plan.item_by_id("item-001")
+    assert root is not None
+
+    prompt = build_planning_prompt(
+        loaded_input=loaded_input,
+        workspace=tmp_path,
+        output_goal=output_goal,
+        plan=plan,
+        selected_items=[root],
+        embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
+        stop_hint=stop_hint,
+    )
+
+    assert "Expansion stop guidance" in prompt
+    assert "actionable leaf tasks" in prompt
+    assert "assessment.plan_complete" in prompt
+
+
+def test_prompt_omits_stop_hint_section_when_not_provided(
+    example_input: Path,
+    tmp_path: Path,
+) -> None:
+    loaded_input = load_markdown_input(example_input)
     output_goal = load_output_goal(inline="Produce an actionable implementation plan")
     plan = initialize_root_plan(
         input_file=str(example_input),
@@ -92,15 +242,43 @@ def test_final_render_prompt_references_plan_and_output_goal(
         input_digest="a",
         output_goal_digest="b",
     )
-    plan_file = tmp_path / ".top-down-planning" / "plan.yaml"
+    root = plan.item_by_id("item-001")
+    assert root is not None
+
+    prompt = build_planning_prompt(
+        loaded_input=loaded_input,
+        workspace=tmp_path,
+        output_goal=output_goal,
+        plan=plan,
+        selected_items=[root],
+        embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
+    )
+
+    assert "Expansion stop guidance" not in prompt
+
+
+def test_final_render_prompt_references_plan_and_output_goal(
+    tmp_path: Path,
+    example_input: Path,
+) -> None:
+    loaded_input = load_markdown_input(example_input)
+    output_goal = load_output_goal(inline="Produce an actionable implementation plan")
+    plan = initialize_root_plan(
+        input_file=str(example_input),
+        output_goal=output_goal.text,
+        input_digest="a",
+        output_goal_digest="b",
+    )
+    plan_file = tmp_path / ".planning-output" / "plan.yaml"
     plan_file.parent.mkdir(parents=True)
 
     prompt = build_final_render_prompt(
-        input_file=example_input,
+        loaded_input=loaded_input,
         plan_file=plan_file,
         workspace=tmp_path,
         output_goal=output_goal,
         plan=plan,
+        embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
     )
 
     assert "Final planning render" in prompt

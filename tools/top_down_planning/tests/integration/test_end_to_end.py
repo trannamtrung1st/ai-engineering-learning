@@ -39,8 +39,8 @@ async def test_end_to_end_with_fake_agent(
     assert report.status == FinalStatus.COMPLETE
     assert report.actionable_items >= 2
     assert len(report.artifacts) == 1
-    assert (output_dir / ".top-down-planning" / "plan.yaml").is_file()
-    assert (output_dir / ".top-down-planning" / "run-state.json").is_file()
+    assert (output_dir / ".planning-output" / "plan.yaml").is_file()
+    assert (output_dir / ".planning-output" / "run-state.json").is_file()
     assert not (output_dir / "plan.md").exists()
     artifact_path = output_dir / "implementation-plan.md"
     assert artifact_path.is_file()

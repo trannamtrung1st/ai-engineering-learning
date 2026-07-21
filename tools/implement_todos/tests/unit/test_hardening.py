@@ -331,9 +331,6 @@ async def test_resume_refuses_live_agent_pid(
     assert started
     state.agent_pid = started[0]
     save_state(runs_dir, state)
-    task.cancel()
-    with pytest.raises(TodosToolError, match="Interrupted"):
-        await task
 
     dry_orch = Orchestrator(
         RunConfig(
@@ -352,14 +349,9 @@ async def test_resume_refuses_live_agent_pid(
     with pytest.raises(TodosToolError, match="still running"):
         await orch.resume()
 
-    _stop_pid(started[0])
-    deadline = time.time() + 2
-    while time.time() < deadline:
-        try:
-            os.kill(started[0], 0)
-        except ProcessLookupError:
-            break
-        await __import__("asyncio").sleep(0.05)
+    task.cancel()
+    with pytest.raises(TodosToolError, match="Interrupted"):
+        await task
 
 
 @pytest.mark.asyncio

@@ -31,6 +31,19 @@ class LoadedOutputGoal:
         return self.text
 
 
+@dataclass(frozen=True)
+class LoadedStopHint:
+    text: str
+    digest: str
+    path: Path | None = None
+
+    @property
+    def source_label(self) -> str:
+        if self.path is not None:
+            return str(self.path)
+        return self.text
+
+
 def load_markdown_input(path: Path) -> LoadedInput:
     resolved = path.resolve()
     if not resolved.is_file():
@@ -71,6 +84,34 @@ def load_output_goal(
             raise PlanningToolError("--output-goal must not be empty")
         return LoadedOutputGoal(text=text, digest=digest_text(text))
     raise PlanningToolError("Provide --output-goal or --output-goal-file")
+
+
+def load_stop_hint(
+    *,
+    inline: str | None = None,
+    hint_file: Path | None = None,
+) -> LoadedStopHint | None:
+    if inline is not None and hint_file is not None:
+        raise PlanningToolError("Use either --stop-hint or --stop-hint-file, not both")
+    if hint_file is not None:
+        resolved = hint_file.resolve()
+        if not resolved.is_file():
+            raise PlanningToolError(f"Stop hint file not found: {hint_file}")
+        if resolved.suffix.lower() not in _GOAL_SUFFIXES:
+            raise PlanningToolError(
+                "Stop hint file must be .md, .markdown, or .txt: "
+                f"{hint_file}"
+            )
+        text = resolved.read_text(encoding="utf-8")
+        if not text.strip():
+            raise PlanningToolError(f"Stop hint file is empty: {hint_file}")
+        return LoadedStopHint(text=text, digest=digest_file(resolved), path=resolved)
+    if inline is not None:
+        text = inline.strip()
+        if not text:
+            raise PlanningToolError("--stop-hint must not be empty")
+        return LoadedStopHint(text=text, digest=digest_text(text))
+    return None
 
 
 def digest_output_goal(output_goal: str) -> str:

@@ -254,8 +254,9 @@ class CursorClient:
             raise
         except (asyncio.CancelledError, KeyboardInterrupt):
             renderer.flush()
+            await _terminate_process_tree(proc)
             raise UserInterrupted(
-                f"Interrupted; Cursor agent left running (pid={proc.pid})",
+                f"Interrupted; Cursor agent terminated (pid={proc.pid})",
                 agent_pid=proc.pid,
             ) from None
 

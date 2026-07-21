@@ -23,8 +23,8 @@ from top_down_planning.errors import (
     UserInterrupted,
     ValidationError,
 )
-from top_down_planning.input_loader import LoadedInput, LoadedOutputGoal, load_markdown_input
-from top_down_planning.model_config import resolve_model
+from top_down_planning.input_loader import LoadedInput, LoadedOutputGoal, LoadedStopHint, load_markdown_input
+from top_down_planning.model_config import resolve_embed_threshold, resolve_model
 from top_down_planning.models import (
     FinalStatus,
     PlanningLimits,
@@ -70,6 +70,8 @@ class RunConfig:
     agent_bin: str | None = None
     skip_probe: bool = False
     audit_iterations: bool = True
+    embed_threshold: int | None = None
+    stop_hint: LoadedStopHint | None = None
 
 
 class Orchestrator:
@@ -79,6 +81,7 @@ class Orchestrator:
         self.stream = StreamEmitter(enabled=config.stream_json)
         self._client: CursorClient | None = None
         self._artifacts: list[str] = []
+        self._embed_threshold = resolve_embed_threshold(config.embed_threshold)
 
     @property
     def client(self) -> CursorClient:
@@ -95,7 +98,9 @@ class Orchestrator:
     async def run(self) -> PlanningReport:
         loaded = load_markdown_input(self.config.input_path)
         loaded_goal = self.config.output_goal
+        loaded_stop_hint = self.config.stop_hint
         goal_digest = loaded_goal.digest
+        stop_hint_digest = loaded_stop_hint.digest if loaded_stop_hint else None
         output_dir = self.config.output_dir.resolve()
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -103,6 +108,7 @@ class Orchestrator:
             output_dir,
             input_digest=loaded.digest,
             output_goal_digest=goal_digest,
+            stop_hint_digest=stop_hint_digest,
             limits=self.config.limits,
             resume=self.config.resume,
         )
@@ -128,12 +134,20 @@ class Orchestrator:
                 ),
                 input_digest=loaded.digest,
                 output_goal_digest=goal_digest,
+                stop_hint=loaded_stop_hint.text if loaded_stop_hint is not None else None,
+                stop_hint_file=(
+                    str(loaded_stop_hint.path)
+                    if loaded_stop_hint is not None and loaded_stop_hint.path is not None
+                    else None
+                ),
+                stop_hint_digest=stop_hint_digest,
             )
             run_state = new_run_state(
                 input_file=str(loaded.path),
                 output_goal=loaded_goal.source_label,
                 input_digest=loaded.digest,
                 output_goal_digest=goal_digest,
+                stop_hint_digest=stop_hint_digest,
                 limits=self.config.limits,
             )
             save_plan(output_dir, plan)
@@ -150,6 +164,7 @@ class Orchestrator:
             )
         except (CursorEnvironmentError, UserInterrupted):
             run_state.active_status = RunActiveStatus.PAUSED
+            run_state.agent_pid = None
             save_run_state(output_dir, run_state)
             save_plan(output_dir, plan)
             raise
@@ -228,11 +243,13 @@ class Orchestrator:
             for attempt in range(1, limits.max_retries + 1):
                 run_state.retry_count = attempt - 1
                 prompt = build_planning_prompt(
-                    input_file=loaded.path,
+                    loaded_input=loaded,
                     workspace=self.config.workspace_root,
                     output_goal=self.config.output_goal,
                     plan=plan,
                     selected_items=batch,
+                    embed_threshold=self._embed_threshold,
+                    stop_hint=self.config.stop_hint,
                     validation_feedback=validation_feedback,
                 )
                 prefix = Path(iteration_prefix(output_dir, iteration))
@@ -273,6 +290,8 @@ class Orchestrator:
                         ),
                     )
                 except UserInterrupted:
+                    run_state.agent_pid = None
+                    save_run_state(output_dir, run_state)
                     raise
                 except CursorEnvironmentError:
                     raise
@@ -433,11 +452,12 @@ class Orchestrator:
 
         for attempt in range(1, limits.max_retries + 1):
             prompt = build_final_render_prompt(
-                input_file=loaded.path,
+                loaded_input=loaded,
                 plan_file=canonical_plan_file,
                 workspace=self.config.workspace_root,
                 output_goal=self.config.output_goal,
                 plan=plan,
+                embed_threshold=self._embed_threshold,
             )
             if validation_feedback:
                 prompt += (
@@ -472,6 +492,8 @@ class Orchestrator:
                     ),
                 )
             except UserInterrupted:
+                run_state.agent_pid = None
+                save_run_state(output_dir, run_state)
                 raise
             except CursorEnvironmentError:
                 raise

@@ -904,7 +904,7 @@ class Orchestrator:
                     ),
                 )
             except UserInterrupted as exc:
-                state.agent_pid = exc.agent_pid or state.agent_pid
+                state.agent_pid = None
                 state.last_error = str(exc)
                 save_state(runs_dir, state)
                 raise
@@ -1023,7 +1023,7 @@ class Orchestrator:
                     ),
                 )
             except UserInterrupted as exc:
-                state.agent_pid = exc.agent_pid or state.agent_pid
+                state.agent_pid = None
                 state.last_error = str(exc)
                 save_state(runs_dir, state)
                 raise

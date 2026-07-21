@@ -29,35 +29,52 @@ from top_down_planning.models import (
 PLAN_FILENAME = "plan.yaml"
 RUN_STATE_FILENAME = "run-state.json"
 ITERATIONS_DIR = "iterations"
-STATE_DIRNAME = ".top-down-planning"
+STATE_DIRNAME = ".planning-output"
+LEGACY_STATE_DIRNAME = ".top-down-planning"
 
 
 def state_dir(output_dir: Path) -> Path:
     return output_dir / STATE_DIRNAME
 
 
+def _read_state_dir(output_dir: Path) -> Path:
+    current = output_dir / STATE_DIRNAME
+    legacy = output_dir / LEGACY_STATE_DIRNAME
+    if current.is_dir() or not legacy.is_dir():
+        return current
+    return legacy
+
+
 def plan_path(output_dir: Path) -> Path:
-    state_path = state_dir(output_dir) / PLAN_FILENAME
-    if state_path.is_file():
-        return state_path
+    for dirname in (STATE_DIRNAME, LEGACY_STATE_DIRNAME):
+        state_path = output_dir / dirname / PLAN_FILENAME
+        if state_path.is_file():
+            return state_path
     legacy = output_dir / PLAN_FILENAME
     if legacy.is_file():
         return legacy
-    return state_path
+    return state_dir(output_dir) / PLAN_FILENAME
 
 
 def run_state_path(output_dir: Path) -> Path:
-    state_path = state_dir(output_dir) / RUN_STATE_FILENAME
-    if state_path.is_file():
-        return state_path
+    for dirname in (STATE_DIRNAME, LEGACY_STATE_DIRNAME):
+        state_path = output_dir / dirname / RUN_STATE_FILENAME
+        if state_path.is_file():
+            return state_path
     legacy = output_dir / RUN_STATE_FILENAME
     if legacy.is_file():
         return legacy
-    return state_path
+    return state_dir(output_dir) / RUN_STATE_FILENAME
 
 
 def iterations_dir(output_dir: Path) -> Path:
-    return state_dir(output_dir) / ITERATIONS_DIR
+    current = state_dir(output_dir) / ITERATIONS_DIR
+    if current.is_dir():
+        return current
+    legacy = _read_state_dir(output_dir) / ITERATIONS_DIR
+    if legacy.is_dir():
+        return legacy
+    return current
 
 
 def iteration_prefix(output_dir: Path, iteration: int) -> str:
@@ -127,12 +144,14 @@ def new_run_state(
     input_digest: str,
     output_goal_digest: str,
     limits: PlanningLimits,
+    stop_hint_digest: str | None = None,
 ) -> RunState:
     return RunState(
         input_file=input_file,
         output_goal=output_goal,
         input_digest=input_digest,
         output_goal_digest=output_goal_digest,
+        stop_hint_digest=stop_hint_digest,
         limits=limits,
         active_status=RunActiveStatus.RUNNING,
     )
@@ -143,6 +162,7 @@ def ensure_resume_compatible(
     *,
     input_digest: str,
     output_goal_digest: str,
+    stop_hint_digest: str | None = None,
     limits: PlanningLimits,
     resume: bool,
 ) -> tuple[PlanState | None, RunState | None]:
@@ -173,6 +193,10 @@ def ensure_resume_compatible(
         if existing_run.output_goal_digest != output_goal_digest:
             raise ResumeError(
                 "Output goal digest mismatch: the output goal changed since the last run"
+            )
+        if existing_run.stop_hint_digest != stop_hint_digest:
+            raise ResumeError(
+                "Stop hint digest mismatch: the stop hint changed since the last run"
             )
         if existing_run.schema_version != SCHEMA_VERSION:
             raise ResumeError(

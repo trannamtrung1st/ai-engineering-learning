@@ -31,7 +31,7 @@ class CursorSessionError(TodosToolError):
 
 
 class UserInterrupted(TodosToolError):
-    """Operator cancelled the tool; the Cursor agent was left running."""
+    """Operator cancelled the tool; the Cursor agent was terminated."""
 
     def __init__(self, message: str, *, agent_pid: int | None = None) -> None:
         self.agent_pid = agent_pid

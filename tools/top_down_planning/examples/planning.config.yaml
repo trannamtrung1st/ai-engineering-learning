@@ -1,0 +1,53 @@
+# Example planning run config.
+#
+# Run:
+#   top-down-planning --config ./examples/planning.config.yaml
+#
+# CLI flags override values from this file. Paths are resolved relative to this
+# file's directory unless absolute.
+#
+# Required for a new run: input, output, and one of output_goal / output_goal_file.
+
+# --- Primary inputs (required) ------------------------------------------------
+
+input: ./idea.md
+output: ./planning-output
+workspace: .
+
+# Use either output_goal (inline) or output_goal_file (not both).
+# output_goal: Produce an actionable implementation plan.
+output_goal_file: ./output-goal.md
+
+# Optional guidance for when to stop expanding vs mark items actionable.
+# Use either stop_hint (inline) or stop_hint_file (not both).
+stop_hint: |
+  Stop expanding once each major workstream has actionable leaf tasks.
+  Prefer marking items actionable over further expansion when details are
+  sufficient for the output goal.
+# stop_hint_file: ./stop-hint.md
+
+# --- Planning limits ----------------------------------------------------------
+# Set here or under `limits:` (top-level keys win when both are set).
+
+limits:
+  max_iterations: 50
+  max_depth: 6
+  max_items: 200
+  batch_size: 3
+  max_retries: 3
+  # max_children_per_expansion: 12 # default: 12 — max child items per expand
+  # session_timeout_seconds: 600 # default: 600 — Cursor agent session timeout
+  # parse_error_threshold: 20 # default: 20 — stream parse errors before abort
+
+# --- Agent / Cursor (optional) ------------------------------------------------
+
+# model: gpt-5.6-sol-high # default: gpt-5.6-sol-high; env: PLANNING_TOOL_MODEL
+# agent_bin: /usr/local/bin/agent
+# skip_probe: false
+# embed_threshold: 4000 # env: PLANNING_TOOL_EMBED_THRESHOLD
+
+# --- Run behavior (optional) --------------------------------------------------
+
+# resume: false
+# stream_json: false
+# no_color: false

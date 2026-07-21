@@ -378,7 +378,7 @@ Suggested layout:
 ```text
 planning-output/
 ├── implementation-plan.md          # example goal-driven deliverable
-└── .top-down-planning/
+└── .planning-output/
     ├── plan.yaml
     ├── run-state.json
     └── iterations/
@@ -389,7 +389,7 @@ planning-output/
 ```
 
 The top level of `--output` should contain only generated deliverables. Internal state
-and audit artifacts live under `.top-down-planning/`.
+and audit artifacts live under `.planning-output/`.
 
 Deliverables are produced by a final render phase after decomposition completes. The
 agent returns JSON describing one or more artifacts:

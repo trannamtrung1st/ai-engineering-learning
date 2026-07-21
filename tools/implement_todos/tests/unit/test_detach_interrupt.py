@@ -1,4 +1,4 @@
-"""Ctrl+C / cancel must detach from the agent without killing it."""
+"""Ctrl+C / cancel must terminate the Cursor agent process."""
 
 from __future__ import annotations
 
@@ -25,8 +25,19 @@ def _stop_pid(pid: int) -> None:
             pass
 
 
+async def _wait_for_process_exit(pid: int, *, timeout: float = 2.0) -> None:
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return
+        await asyncio.sleep(0.05)
+    pytest.fail(f"process {pid} did not exit after cancel")
+
+
 @pytest.mark.asyncio
-async def test_cancel_detaches_without_killing_agent(
+async def test_cancel_terminates_agent(
     fake_agent: Path, git_project: Path, tmp_path: Path
 ) -> None:
     wrapper = tmp_path / "agent-timeout"
@@ -56,7 +67,6 @@ async def test_cancel_detaches_without_killing_agent(
         )
     )
 
-    # Let the agent start
     for _ in range(40):
         if started:
             break
@@ -70,18 +80,7 @@ async def test_cancel_detaches_without_killing_agent(
     pid = exc_info.value.agent_pid
     assert pid is not None
     assert pid == started[0]
-    # Agent must still be alive after detach
-    os.kill(pid, 0)
-
-    _stop_pid(pid)
-    # Brief wait so we don't leave zombies around in CI
-    deadline = time.time() + 2
-    while time.time() < deadline:
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            break
-        await asyncio.sleep(0.05)
+    await _wait_for_process_exit(pid)
 
 
 @pytest.mark.asyncio
@@ -114,7 +113,6 @@ async def test_timeout_still_terminates_agent(
         )
     assert started
     pid = started[0]
-    # Terminator should reap the process group; tolerate brief zombie windows.
     dead = False
     for _ in range(40):
         try:
@@ -122,7 +120,6 @@ async def test_timeout_still_terminates_agent(
         except ProcessLookupError:
             dead = True
             break
-        # If still listed, try waiting — parent Popen may need to be collected.
         await asyncio.sleep(0.05)
     if not dead:
         _stop_pid(pid)

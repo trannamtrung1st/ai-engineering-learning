@@ -11,10 +11,11 @@ import typer
 from rich.console import Console
 
 from top_down_planning import __version__
+from top_down_planning.config_loader import merge_run_options, options_to_planning_limits
 from top_down_planning.errors import PlanningToolError, ResumeError, UserInterrupted, ValidationError
-from top_down_planning.input_loader import load_output_goal
+from top_down_planning.input_loader import load_output_goal, load_stop_hint
 from top_down_planning.model_config import resolve_model
-from top_down_planning.models import DEFAULT_CURSOR_MODEL, PlanningLimits
+from top_down_planning.models import DEFAULT_CURSOR_MODEL, DEFAULT_INLINE_EMBED_THRESHOLD
 from top_down_planning.orchestrator import Orchestrator, RunConfig
 
 app = typer.Typer(
@@ -37,9 +38,7 @@ def _exit_interrupted(exc: BaseException, *, no_color: bool) -> NoReturn:
     if isinstance(exc, UserInterrupted):
         console.print(f"[yellow]{exc}[/]")
     else:
-        console.print(
-            "[yellow]Interrupted — Cursor agent session left running if still active.[/]"
-        )
+        console.print("[yellow]Interrupted — Cursor agent session terminated.[/]")
     raise typer.Exit(130) from exc
 
 
@@ -54,69 +53,104 @@ def _resolve_run_goal(
         raise typer.BadParameter(str(exc)) from exc
 
 
+def _resolve_stop_hint(
+    *,
+    stop_hint: str | None,
+    stop_hint_file: Path | None,
+):
+    try:
+        return load_stop_hint(inline=stop_hint, hint_file=stop_hint_file)
+    except PlanningToolError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+
 def _execute_run(
     *,
-    input_path: Path,
+    config_path: Path | None,
+    input_path: Path | None,
     output_goal: str | None,
     output_goal_file: Path | None,
-    output_dir: Path,
-    max_iterations: int,
-    max_depth: int,
-    max_items: int,
-    batch_size: int,
-    max_retries: int,
+    stop_hint: str | None,
+    stop_hint_file: Path | None,
+    output_dir: Path | None,
+    max_iterations: int | None,
+    max_depth: int | None,
+    max_items: int | None,
+    batch_size: int | None,
+    max_retries: int | None,
     resume: bool,
     stream_json: bool,
-    workspace: Path,
+    workspace: Path | None,
     no_color: bool,
     model: Optional[str],
     agent_bin: Optional[str],
     skip_probe: bool,
+    embed_threshold: Optional[int],
 ) -> None:
-    if output_goal is None and output_goal_file is None:
-        raise typer.BadParameter("Provide --output-goal or --output-goal-file")
-    if output_goal is not None and output_goal_file is not None:
-        raise typer.BadParameter("Use either --output-goal or --output-goal-file, not both")
+    try:
+        options = merge_run_options(
+            config_path=config_path,
+            input_path=input_path,
+            output_dir=output_dir,
+            output_goal=output_goal,
+            output_goal_file=output_goal_file,
+            stop_hint=stop_hint,
+            stop_hint_file=stop_hint_file,
+            workspace=workspace,
+            max_iterations=max_iterations,
+            max_depth=max_depth,
+            max_items=max_items,
+            batch_size=batch_size,
+            max_retries=max_retries,
+            resume=resume,
+            stream_json=stream_json,
+            no_color=no_color,
+            model=model,
+            agent_bin=agent_bin,
+            skip_probe=skip_probe,
+            embed_threshold=embed_threshold,
+        )
+    except PlanningToolError as exc:
+        raise typer.BadParameter(str(exc)) from exc
 
     env_skip = os.environ.get("PLANNING_TOOL_SKIP_PROBE", "").lower() in {
         "1",
         "true",
         "yes",
     }
-    limits = PlanningLimits(
-        max_iterations=max_iterations,
-        max_depth=max_depth,
-        max_items=max_items,
-        batch_size=batch_size,
-        max_retries=max_retries,
-    )
+    limits = options_to_planning_limits(options)
     config = RunConfig(
-        input_path=input_path,
+        input_path=options.input_path,
         output_goal=_resolve_run_goal(
-            output_goal=output_goal,
-            output_goal_file=output_goal_file,
+            output_goal=options.output_goal,
+            output_goal_file=options.output_goal_file,
         ),
-        output_dir=output_dir,
-        workspace_root=workspace.resolve(),
+        output_dir=options.output_dir,
+        workspace_root=options.workspace.resolve(),
         limits=limits,
-        resume=resume,
-        stream_json=stream_json,
-        no_color=no_color,
-        model=resolve_model(model),
-        agent_bin=agent_bin,
-        skip_probe=skip_probe or env_skip,
+        resume=options.resume,
+        stream_json=options.stream_json,
+        no_color=options.no_color,
+        model=resolve_model(options.model),
+        agent_bin=options.agent_bin,
+        skip_probe=options.skip_probe or env_skip,
+        embed_threshold=options.embed_threshold,
+        stop_hint=_resolve_stop_hint(
+            stop_hint=options.stop_hint,
+            stop_hint_file=options.stop_hint_file,
+        ),
     )
     orch = Orchestrator(config)
     try:
         report = asyncio.run(orch.run())
     except (UserInterrupted, KeyboardInterrupt) as exc:
-        _exit_interrupted(exc, no_color=no_color)
+        _exit_interrupted(exc, no_color=options.no_color)
     except (PlanningToolError, ResumeError, ValidationError) as exc:
-        if not stream_json:
-            Console(no_color=no_color, stderr=True).print(f"[red]{exc}[/]")
+        if not options.stream_json:
+            Console(no_color=options.no_color, stderr=True).print(f"[red]{exc}[/]")
         raise typer.Exit(1) from exc
 
-    if not stream_json:
+    if not options.stream_json:
         console = Console(stderr=True)
         console.print(
             f"status={report.status.value} items={report.items} "
@@ -141,6 +175,15 @@ def main_callback(
         callback=_version_callback,
         is_eager=True,
     ),
+    config_path: Optional[Path] = typer.Option(
+        None,
+        "--config",
+        "-c",
+        help="YAML config file with optional run settings (CLI flags override)",
+        exists=True,
+        dir_okay=False,
+        readable=True,
+    ),
     input_path: Optional[Path] = typer.Option(None, "--input", help="Primary Markdown input file"),
     output_goal: Optional[str] = typer.Option(
         None,
@@ -152,24 +195,34 @@ def main_callback(
         "--output-goal-file",
         help="Markdown or text file describing the desired final plan",
     ),
+    stop_hint: Optional[str] = typer.Option(
+        None,
+        "--stop-hint",
+        help="Guidance for when to stop expanding vs mark items actionable",
+    ),
+    stop_hint_file: Optional[Path] = typer.Option(
+        None,
+        "--stop-hint-file",
+        help="Markdown or text file with expansion stop guidance",
+    ),
     output_dir: Optional[Path] = typer.Option(
         None,
         "--output",
         help="Output directory for generated deliverables",
     ),
-    max_iterations: int = typer.Option(50, "--max-iterations"),
-    max_depth: int = typer.Option(6, "--max-depth"),
-    max_items: int = typer.Option(200, "--max-items"),
-    batch_size: int = typer.Option(3, "--batch-size"),
-    max_retries: int = typer.Option(3, "--max-retries"),
+    max_iterations: Optional[int] = typer.Option(None, "--max-iterations"),
+    max_depth: Optional[int] = typer.Option(None, "--max-depth"),
+    max_items: Optional[int] = typer.Option(None, "--max-items"),
+    batch_size: Optional[int] = typer.Option(None, "--batch-size"),
+    max_retries: Optional[int] = typer.Option(None, "--max-retries"),
     resume: bool = typer.Option(False, "--resume", help="Resume an existing planning run"),
     stream_json: bool = typer.Option(
         False,
         "--stream-json",
         help="Emit planning events as JSONL on stdout (logs go to stderr)",
     ),
-    workspace: Path = typer.Option(
-        Path("."),
+    workspace: Optional[Path] = typer.Option(
+        None,
         "--workspace",
         help="Workspace passed to Cursor Agent CLI",
     ),
@@ -190,19 +243,33 @@ def main_callback(
         "--skip-probe",
         envvar="PLANNING_TOOL_SKIP_PROBE",
     ),
+    embed_threshold: Optional[int] = typer.Option(
+        None,
+        "--embed-threshold",
+        min=0,
+        help=(
+            "Inline input and output-goal content in prompts when at or below this "
+            f"character count; otherwise reference by path (default: "
+            f"{DEFAULT_INLINE_EMBED_THRESHOLD}; env: PLANNING_TOOL_EMBED_THRESHOLD)"
+        ),
+        envvar="PLANNING_TOOL_EMBED_THRESHOLD",
+    ),
 ) -> None:
     """Top-down planning via Cursor Agent CLI."""
     if ctx.invoked_subcommand is not None:
         return
-    if input_path is None or output_dir is None:
+    if config_path is None and (input_path is None or output_dir is None):
         raise typer.BadParameter(
-            "Planning requires --input and --output "
-            "(plus --output-goal or --output-goal-file)."
+            "Planning requires --input and --output, or --config with those fields "
+            "(plus an output goal)."
         )
     _execute_run(
+        config_path=config_path,
         input_path=input_path,
         output_goal=output_goal,
         output_goal_file=output_goal_file,
+        stop_hint=stop_hint,
+        stop_hint_file=stop_hint_file,
         output_dir=output_dir,
         max_iterations=max_iterations,
         max_depth=max_depth,
@@ -216,12 +283,22 @@ def main_callback(
         model=model,
         agent_bin=agent_bin,
         skip_probe=skip_probe,
+        embed_threshold=embed_threshold,
     )
 
 
 @app.command("run")
 def run_cmd(
-    input_path: Path = typer.Option(..., "--input", help="Primary Markdown input file"),
+    config_path: Optional[Path] = typer.Option(
+        None,
+        "--config",
+        "-c",
+        help="YAML config file with optional run settings (CLI flags override)",
+        exists=True,
+        dir_okay=False,
+        readable=True,
+    ),
+    input_path: Optional[Path] = typer.Option(None, "--input", help="Primary Markdown input file"),
     output_goal: Optional[str] = typer.Option(
         None,
         "--output-goal",
@@ -232,20 +309,34 @@ def run_cmd(
         "--output-goal-file",
         help="Markdown or text file describing the desired final plan",
     ),
-    output_dir: Path = typer.Option(..., "--output", help="Output directory for generated deliverables"),
-    max_iterations: int = typer.Option(50, "--max-iterations"),
-    max_depth: int = typer.Option(6, "--max-depth"),
-    max_items: int = typer.Option(200, "--max-items"),
-    batch_size: int = typer.Option(3, "--batch-size"),
-    max_retries: int = typer.Option(3, "--max-retries"),
+    stop_hint: Optional[str] = typer.Option(
+        None,
+        "--stop-hint",
+        help="Guidance for when to stop expanding vs mark items actionable",
+    ),
+    stop_hint_file: Optional[Path] = typer.Option(
+        None,
+        "--stop-hint-file",
+        help="Markdown or text file with expansion stop guidance",
+    ),
+    output_dir: Optional[Path] = typer.Option(
+        None,
+        "--output",
+        help="Output directory for generated deliverables",
+    ),
+    max_iterations: Optional[int] = typer.Option(None, "--max-iterations"),
+    max_depth: Optional[int] = typer.Option(None, "--max-depth"),
+    max_items: Optional[int] = typer.Option(None, "--max-items"),
+    batch_size: Optional[int] = typer.Option(None, "--batch-size"),
+    max_retries: Optional[int] = typer.Option(None, "--max-retries"),
     resume: bool = typer.Option(False, "--resume", help="Resume an existing planning run"),
     stream_json: bool = typer.Option(
         False,
         "--stream-json",
         help="Emit planning events as JSONL on stdout (logs go to stderr)",
     ),
-    workspace: Path = typer.Option(
-        Path("."),
+    workspace: Optional[Path] = typer.Option(
+        None,
         "--workspace",
         help="Workspace passed to Cursor Agent CLI",
     ),
@@ -266,12 +357,26 @@ def run_cmd(
         "--skip-probe",
         envvar="PLANNING_TOOL_SKIP_PROBE",
     ),
+    embed_threshold: Optional[int] = typer.Option(
+        None,
+        "--embed-threshold",
+        min=0,
+        help=(
+            "Inline input and output-goal content in prompts when at or below this "
+            f"character count; otherwise reference by path (default: "
+            f"{DEFAULT_INLINE_EMBED_THRESHOLD}; env: PLANNING_TOOL_EMBED_THRESHOLD)"
+        ),
+        envvar="PLANNING_TOOL_EMBED_THRESHOLD",
+    ),
 ) -> None:
     """Run or resume top-down planning."""
     _execute_run(
+        config_path=config_path,
         input_path=input_path,
         output_goal=output_goal,
         output_goal_file=output_goal_file,
+        stop_hint=stop_hint,
+        stop_hint_file=stop_hint_file,
         output_dir=output_dir,
         max_iterations=max_iterations,
         max_depth=max_depth,
@@ -285,6 +390,7 @@ def run_cmd(
         model=model,
         agent_bin=agent_bin,
         skip_probe=skip_probe,
+        embed_threshold=embed_threshold,
     )
 
 

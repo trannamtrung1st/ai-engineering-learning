@@ -259,11 +259,10 @@ class CursorClient:
             await _terminate_process_tree(proc)
             raise
         except (asyncio.CancelledError, KeyboardInterrupt):
-            # Detach: stop watching, leave the agent process group alive.
-            # Do not terminate/kill — file-backed stdio + new session keep it alive.
             renderer.flush()
+            await _terminate_process_tree(proc)
             raise UserInterrupted(
-                f"Interrupted; Cursor agent left running (pid={proc.pid})",
+                f"Interrupted; Cursor agent terminated (pid={proc.pid})",
                 agent_pid=proc.pid,
             ) from None
 
@@ -347,8 +346,8 @@ def _spawn_agent(
 ) -> subprocess.Popen[bytes]:
     """Start agent in its own session with file-backed stdio.
 
-    File-backed streams are required so Ctrl+C can detach the tool without
-    closing pipes (which would SIGPIPE / kill the agent).
+    File-backed streams let the tool stop watching agent output without closing
+    pipes while it terminates the agent process group on cancel or timeout.
     """
     stdout_f: TextIO[bytes] = stdout_path.open("wb")
     stderr_f: TextIO[bytes] = stderr_path.open("wb")

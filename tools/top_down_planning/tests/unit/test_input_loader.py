@@ -10,6 +10,7 @@ from top_down_planning.input_loader import (
     digest_output_goal,
     load_markdown_input,
     load_output_goal,
+    load_stop_hint,
 )
 
 
@@ -60,3 +61,27 @@ def test_load_output_goal_rejects_both_sources() -> None:
 def test_load_output_goal_requires_one_source() -> None:
     with pytest.raises(PlanningToolError):
         load_output_goal()
+
+
+def test_load_stop_hint_inline() -> None:
+    loaded = load_stop_hint(inline="Stop when each area has actionable leaves.")
+    assert loaded is not None
+    assert loaded.path is None
+    assert "actionable leaves" in loaded.text
+
+
+def test_load_stop_hint_from_file(tmp_path: Path) -> None:
+    hint_file = tmp_path / "stop.md"
+    hint_file.write_text("Stop after major workstreams are covered.\n", encoding="utf-8")
+    loaded = load_stop_hint(hint_file=hint_file)
+    assert loaded is not None
+    assert loaded.path == hint_file.resolve()
+
+
+def test_load_stop_hint_absent_by_default() -> None:
+    assert load_stop_hint() is None
+
+
+def test_load_stop_hint_rejects_both_sources() -> None:
+    with pytest.raises(PlanningToolError):
+        load_stop_hint(inline="x", hint_file=Path("stop.md"))
