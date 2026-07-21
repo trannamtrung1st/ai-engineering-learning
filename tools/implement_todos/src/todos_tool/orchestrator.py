@@ -29,6 +29,7 @@ from todos_tool.errors import (
 from todos_tool.git_service import (
     commit,
     ensure_git_repo,
+    filter_stageable_paths,
     has_staged_changes,
     head_sha,
     paths_changed_since,
@@ -68,6 +69,7 @@ class RunConfig:
     no_color: bool = False
     model: str | None = None
     stop_on_failure: bool | None = None
+    auto_commit: bool | None = None
     agent_bin: str | None = None
     skip_probe: bool = False
     dry_run_prompts: bool = False
@@ -97,6 +99,12 @@ class Orchestrator:
             parse_error_threshold=self.workspace.manifest.settings.parse_error_threshold,
         )
         self._pre_existing_dirty: set[str] = set()
+
+    def _resolve_auto_commit(self) -> bool:
+        return _resolve_auto_commit(
+            cli_auto_commit=self.config.auto_commit,
+            manifest_auto_commit=self.workspace.manifest.settings.auto_commit,
+        )
 
     async def run(self, todo_id: str | None = None) -> RunReport:
         ensure_git_repo(self.config.workspace_root)
@@ -150,6 +158,44 @@ class Orchestrator:
                 break
 
         return report
+
+    async def commit_item(self, item_id: str) -> str:
+        """Commit trackable changes for a done item that has no commit SHA yet."""
+        ensure_git_repo(self.config.workspace_root)
+        # Backfill intentionally commits the current working tree; do not refuse dirty.
+        self._pre_existing_dirty = set()
+
+        if not self._resolve_auto_commit():
+            raise TodosToolError(
+                "auto_commit is disabled; enable it in manifest or pass --auto-commit true"
+            )
+
+        item = self.workspace.get(item_id)
+        if item is None:
+            raise SchedulingError(f"Unknown item id: {item_id}")
+        if item.status != ItemStatus.DONE:
+            raise TodosToolError(
+                f"{item_id} must be done before commit (status={item.status.value})"
+            )
+        if item.result.commit_sha:
+            raise TodosToolError(
+                f"{item_id} already committed as {item.result.commit_sha[:8]}"
+            )
+
+        runs_dir = self.workspace.runs_dir(item.id)
+        state = load_state(runs_dir)
+        if state is None:
+            state = new_run_state(item.id, head_sha(self.config.workspace_root))
+            state.work_summary = item.result.summary
+        elif state.commit_state == CommitState.COMPLETED and state.commit_sha:
+            self._finalize_item_done(item, state.commit_sha, item.result.summary or "")
+            return state.commit_sha
+
+        await self._commit_item(item, state, runs_dir)
+        sha = state.commit_sha or item.result.commit_sha
+        if not sha:
+            raise GitError(f"{item_id}: commit finished without a SHA")
+        return sha
 
     async def resume(self) -> RunReport:
         """Resume any in_progress item from persisted state + git reality."""
@@ -522,8 +568,10 @@ class Orchestrator:
         state: RunState,
         runs_dir: Path,
     ) -> None:
-        settings = self.workspace.manifest.settings
-        if not settings.auto_commit:
+        if not self._resolve_auto_commit():
+            self.renderer.info(
+                f"{item.id}: auto_commit disabled; marked done without git commit"
+            )
             self._finalize_item_done(item, None, state.work_summary or "")
             state.phase = Phase.IDLE
             record_transition(runs_dir, state, Transition.ITEM_DONE)
@@ -563,22 +611,29 @@ class Orchestrator:
             if item_rel not in paths:
                 paths.append(item_rel)
 
+        paths = filter_stageable_paths(self.config.workspace_root, paths)
         if not paths:
             state.commit_state = CommitState.FAILED
             record_transition(runs_dir, state, Transition.COMMIT_FAILED)
-            raise GitError("Review passed but no stageable paths found for commit")
+            raise GitError(
+                "Review passed but no stageable paths found for commit "
+                "(changes may be gitignored or already committed)"
+            )
 
         message = ""
         try:
             stage_paths(self.config.workspace_root, paths)
             if not has_staged_changes(self.config.workspace_root):
-                raise GitError("Staging produced no staged changes")
+                raise GitError(
+                    "Staging produced no staged changes "
+                    "(paths may be gitignored or already committed)"
+                )
             message = generate_commit_message(
                 item, staged_diff_stat(self.config.workspace_root)
             )
             sha = commit(self.config.workspace_root, message)
         except GitError:
-            # Roll status back so resume can retry commit
+            # Roll status back so resume/commit can retry
             item.status = ItemStatus.IN_PROGRESS
             item.result.completed_at = None
             item.result.summary = None
@@ -637,6 +692,17 @@ def _resolve_model(*, cli_model: str | None, manifest_model: str | None) -> str 
     if cli_model is not None and cli_model.strip():
         return cli_model.strip()
     return manifest_model
+
+
+def _resolve_auto_commit(
+    *,
+    cli_auto_commit: bool | None,
+    manifest_auto_commit: bool | None,
+) -> bool:
+    """CLI ``--auto-commit true|false`` overrides manifest when set."""
+    if cli_auto_commit is not None:
+        return cli_auto_commit
+    return manifest_auto_commit if manifest_auto_commit is not None else True
 
 
 def _persist_agent_pid(runs_dir: Path, state: RunState, pid: int) -> None:

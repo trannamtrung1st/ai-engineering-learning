@@ -142,6 +142,62 @@ async def test_full_run_pass_and_commit(
 
 
 @pytest.mark.asyncio
+async def test_commit_backfill_done_item_without_sha(
+    git_project: Path,
+    sample_item: dict,
+) -> None:
+    from datetime import datetime, timezone
+
+    from todos_tool.manifest import load_workspace, save_item
+    from todos_tool.models import ItemStatus
+
+    write_todos(
+        git_project,
+        [sample_item],
+        settings={
+            "max_attempts": 1,
+            "max_session_restarts_per_phase": 1,
+            "work_timeout_seconds": 30,
+            "review_timeout_seconds": 30,
+            "auto_commit": False,
+            "stop_on_failure": True,
+            "parse_error_threshold": 20,
+        },
+    )
+    (git_project / "src").mkdir(exist_ok=True)
+    (git_project / "src/greeting.py").write_text(
+        "def greet(name): return f'hi {name}'\n",
+        encoding="utf-8",
+    )
+
+    ws = load_workspace(git_project)
+    item = ws.get("TASK-001")
+    assert item is not None
+    item.status = ItemStatus.DONE
+    item.result.completed_at = datetime.now(timezone.utc)
+    item.result.summary = "Implemented greeting helper"
+    save_item(ws, item)
+
+    orch = Orchestrator(
+        RunConfig(
+            workspace_root=git_project,
+            skip_probe=True,
+            no_color=True,
+            allow_dirty=False,
+            auto_commit=True,
+        )
+    )
+    sha = await orch.commit_item("TASK-001")
+    assert sha
+
+    ws = load_workspace(git_project)
+    item = ws.get("TASK-001")
+    assert item is not None
+    assert item.result.commit_sha == sha
+    assert (git_project / "src/greeting.py").is_file()
+
+
+@pytest.mark.asyncio
 async def test_review_fail_consumes_attempt(
     fake_agent: Path,
     git_project: Path,

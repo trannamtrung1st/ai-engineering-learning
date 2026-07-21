@@ -32,6 +32,24 @@ def _version_callback(value: bool) -> None:
         raise typer.Exit(0)
 
 
+_TRUTHY = frozenset({"true", "1", "yes", "on", "t", "y"})
+_FALSY = frozenset({"false", "0", "no", "off", "f", "n"})
+
+
+def _parse_optional_bool(value: str | None, *, name: str) -> bool | None:
+    """Parse ``--name true|false``; ``None`` means use manifest default."""
+    if value is None:
+        return None
+    normalized = value.strip().lower()
+    if normalized in _TRUTHY:
+        return True
+    if normalized in _FALSY:
+        return False
+    raise typer.BadParameter(
+        f"Invalid value for --{name}: {value!r} (expected true or false)"
+    )
+
+
 def _exit_interrupted(exc: BaseException, *, no_color: bool) -> NoReturn:
     console = Console(no_color=no_color)
     if isinstance(exc, UserInterrupted):
@@ -49,7 +67,8 @@ def _workspace_options(
     allow_dirty: bool,
     no_color: bool,
     model: Optional[str],
-    stop_on_failure: Optional[bool],
+    stop_on_failure: Optional[str],
+    auto_commit: Optional[str],
     agent_bin: Optional[str],
     skip_probe: bool,
 ) -> RunConfig:
@@ -64,7 +83,10 @@ def _workspace_options(
         allow_dirty=allow_dirty,
         no_color=no_color,
         model=model,
-        stop_on_failure=stop_on_failure,
+        stop_on_failure=_parse_optional_bool(
+            stop_on_failure, name="stop-on-failure"
+        ),
+        auto_commit=_parse_optional_bool(auto_commit, name="auto-commit"),
         agent_bin=agent_bin,
         skip_probe=skip_probe or env_skip,
     )
@@ -120,7 +142,11 @@ def status_cmd(
     table.add_column("Status")
     table.add_column("Priority")
     table.add_column("Ready")
+    table.add_column("Commit")
     table.add_column("Run phase")
+
+    auto_commit = ws.manifest.settings.auto_commit
+    console.print(f"auto_commit={auto_commit}")
 
     for row in readiness_rows(ws):
         state = load_state(ws.runs_dir(row["id"]))
@@ -135,6 +161,7 @@ def status_cmd(
             row["status"],
             row["priority"],
             row["ready"],
+            row["commit"],
             phase,
         )
     console.print(table)
@@ -152,10 +179,17 @@ def run_cmd(
         "--model",
         help="Cursor model override (overrides manifest settings.model)",
     ),
-    stop_on_failure: Optional[bool] = typer.Option(
+    stop_on_failure: Optional[str] = typer.Option(
         None,
-        "--stop-on-failure/--no-stop-on-failure",
-        help="Override manifest stop_on_failure",
+        "--stop-on-failure",
+        metavar="BOOL",
+        help="Override manifest stop_on_failure (true/false)",
+    ),
+    auto_commit: Optional[str] = typer.Option(
+        None,
+        "--auto-commit",
+        metavar="BOOL",
+        help="Override manifest auto_commit (true/false; manifest default: true)",
     ),
     agent_bin: Optional[str] = typer.Option(
         None,
@@ -178,6 +212,7 @@ def run_cmd(
         no_color,
         model,
         stop_on_failure,
+        auto_commit,
         agent_bin,
         skip_probe,
     )
@@ -209,9 +244,17 @@ def resume_cmd(
         "--model",
         help="Cursor model override (overrides manifest settings.model)",
     ),
-    stop_on_failure: Optional[bool] = typer.Option(
+    stop_on_failure: Optional[str] = typer.Option(
         None,
-        "--stop-on-failure/--no-stop-on-failure",
+        "--stop-on-failure",
+        metavar="BOOL",
+        help="Override manifest stop_on_failure (true/false)",
+    ),
+    auto_commit: Optional[str] = typer.Option(
+        None,
+        "--auto-commit",
+        metavar="BOOL",
+        help="Override manifest auto_commit (true/false; manifest default: true)",
     ),
     agent_bin: Optional[str] = typer.Option(
         None,
@@ -232,6 +275,7 @@ def resume_cmd(
         no_color,
         model,
         stop_on_failure,
+        auto_commit,
         agent_bin,
         skip_probe,
     )
@@ -250,6 +294,41 @@ def resume_cmd(
     )
     if report.failed or report.blocked:
         raise typer.Exit(1)
+
+
+@app.command("commit")
+def commit_cmd(
+    todo: str = typer.Option(..., "--todo", help="Done item id to commit"),
+    workspace: Path = typer.Option(Path("."), "--workspace"),
+    todos_dir: str = typer.Option("todos", "--todos-dir"),
+    no_color: bool = typer.Option(False, "--no-color"),
+    auto_commit: Optional[str] = typer.Option(
+        None,
+        "--auto-commit",
+        metavar="BOOL",
+        help="Override manifest auto_commit (true/false; manifest default: true)",
+    ),
+) -> None:
+    """Commit trackable changes for a done item with no commit SHA."""
+    config = _workspace_options(
+        workspace,
+        todos_dir,
+        allow_dirty=False,
+        no_color=no_color,
+        model=None,
+        stop_on_failure=None,
+        auto_commit=auto_commit,
+        agent_bin=None,
+        skip_probe=False,
+    )
+    orch = Orchestrator(config)
+    console = Console(no_color=no_color)
+    try:
+        sha = asyncio.run(orch.commit_item(todo))
+    except TodosToolError as exc:
+        console.print(f"[red]{exc}[/]")
+        raise typer.Exit(1) from exc
+    console.print(f"[green]Committed[/] {todo} as {sha[:8]}")
 
 
 def run() -> None:

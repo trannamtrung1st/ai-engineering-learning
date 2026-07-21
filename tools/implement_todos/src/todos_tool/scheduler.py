@@ -51,9 +51,18 @@ def readiness_rows(workspace: Workspace) -> list[dict[str, str]]:
                 "status": item.status.value,
                 "priority": str(item.priority),
                 "ready": ready,
+                "commit": _format_commit(item),
             }
         )
     return rows
+
+
+def _format_commit(item: TodoItem) -> str:
+    if item.result.commit_sha:
+        return item.result.commit_sha[:8]
+    if item.status == ItemStatus.DONE:
+        return "uncommitted"
+    return "-"
 
 
 def list_ready(workspace: Workspace) -> list[TodoItem]:

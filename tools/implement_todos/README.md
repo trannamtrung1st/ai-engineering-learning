@@ -36,7 +36,10 @@ python -m todos_tool status --workspace /path/to/project
 python -m todos_tool run --workspace /path/to/project
 python -m todos_tool run --workspace /path/to/project --todo TASK-001
 python -m todos_tool resume --workspace /path/to/project
+python -m todos_tool commit --workspace /path/to/project --todo TASK-001
 ```
+
+`status` prints `auto_commit` from the manifest and a **Commit** column (`sha` prefix, `uncommitted`, or `-`).
 
 Useful flags:
 
@@ -49,7 +52,14 @@ Useful flags:
 | `--model` | Cursor model override (overrides `manifest.settings.model`) |
 | `--agent-bin` | Path to agent binary (`TODOS_TOOL_AGENT_BIN`) |
 | `--skip-probe` | Skip `agent --help` probe; use documented stream flags (`TODOS_TOOL_SKIP_PROBE`) |
-| `--stop-on-failure / --no-stop-on-failure` | Override manifest setting |
+| `--stop-on-failure BOOL` | Override manifest `stop_on_failure` (`true` / `false`) |
+| `--auto-commit BOOL` | Override manifest `auto_commit` (`true` / `false`; default: `true`) |
+
+Commit a done item that was finished without a SHA:
+
+```bash
+python -m todos_tool commit --workspace /path/to/project --todo TASK-001
+```
 
 ## Todos workspace schema
 

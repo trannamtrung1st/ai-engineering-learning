@@ -10,7 +10,8 @@ import yaml
 from tests.helpers import write_todos
 from todos_tool.errors import SchedulingError, ValidationError
 from todos_tool.manifest import load_workspace
-from todos_tool.scheduler import list_ready, next_ready, readiness_rows
+from todos_tool.models import ItemStatus
+from todos_tool.scheduler import _format_commit, list_ready, next_ready, readiness_rows
 
 
 def test_load_valid_workspace(git_project: Path, sample_item: dict) -> None:
@@ -27,6 +28,16 @@ def test_manifest_model_default_when_omitted(git_project: Path, sample_item: dic
     assert "model" not in manifest["settings"]
     ws = load_workspace(git_project)
     assert ws.manifest.settings.model == "composer-2.5"
+
+
+def test_manifest_auto_commit_default_when_omitted(
+    git_project: Path, sample_item: dict
+) -> None:
+    write_todos(git_project, [sample_item], settings={"max_attempts": 5})
+    manifest = yaml.safe_load((git_project / "todos/manifest.yaml").read_text())
+    assert "auto_commit" not in manifest["settings"]
+    ws = load_workspace(git_project)
+    assert ws.manifest.settings.auto_commit is True
 
 
 def test_manifest_model_setting(git_project: Path, sample_item: dict) -> None:
@@ -46,6 +57,16 @@ def test_resolve_model_cli_overrides_manifest() -> None:
     assert _resolve_model(cli_model=None, manifest_model="manifest-model") == "manifest-model"
     assert _resolve_model(cli_model="", manifest_model="manifest-model") == "manifest-model"
     assert _resolve_model(cli_model=None, manifest_model=None) is None
+
+
+def test_resolve_auto_commit_cli_overrides_manifest() -> None:
+    from todos_tool.orchestrator import _resolve_auto_commit
+
+    assert _resolve_auto_commit(cli_auto_commit=True, manifest_auto_commit=False) is True
+    assert _resolve_auto_commit(cli_auto_commit=False, manifest_auto_commit=True) is False
+    assert _resolve_auto_commit(cli_auto_commit=None, manifest_auto_commit=True) is True
+    assert _resolve_auto_commit(cli_auto_commit=None, manifest_auto_commit=False) is False
+    assert _resolve_auto_commit(cli_auto_commit=None, manifest_auto_commit=None) is True
 
 
 def test_duplicate_ids(git_project: Path, sample_item: dict) -> None:
@@ -106,6 +127,20 @@ def test_dependency_order(git_project: Path, sample_item: dict) -> None:
     assert [i.id for i in ready] == ["TASK-001"]
     rows = readiness_rows(ws)
     assert rows[1]["ready"].startswith("waiting:")
+
+
+def test_format_commit(git_project: Path, sample_item: dict) -> None:
+    write_todos(git_project, [sample_item])
+    ws = load_workspace(git_project)
+    item = ws.get("TASK-001")
+    assert item is not None
+    assert _format_commit(item) == "-"
+
+    item.status = ItemStatus.DONE
+    assert _format_commit(item) == "uncommitted"
+
+    item.result.commit_sha = "abcdef1234567890"
+    assert _format_commit(item) == "abcdef12"
 
 
 def test_next_ready_specific(git_project: Path, sample_item: dict) -> None:

@@ -8,7 +8,13 @@ import pytest
 
 from todos_tool.commit_message import generate_commit_message, validate_commit_message
 from todos_tool.errors import GitError
-from todos_tool.git_service import refuse_if_dirty, stage_paths, status
+from todos_tool.git_service import (
+    filter_stageable_paths,
+    is_ignored_path,
+    refuse_if_dirty,
+    stage_paths,
+    status,
+)
 from todos_tool.models import ItemType, TodoItem
 
 
@@ -57,3 +63,20 @@ def test_explicit_staging_only(git_project: Path) -> None:
     assert "a.txt" in st.porcelain
     assert "b.txt" in st.porcelain
     assert "A  a.txt" in st.porcelain or "A  a.txt" in st.porcelain.replace("\n", " ")
+
+
+def test_filter_stageable_paths_skips_gitignored(git_project: Path) -> None:
+    (git_project / ".gitignore").write_text("ignored/\n", encoding="utf-8")
+    (git_project / "tracked.txt").write_text("ok", encoding="utf-8")
+    ignored_dir = git_project / "ignored"
+    ignored_dir.mkdir()
+    (ignored_dir / "secret.txt").write_text("nope", encoding="utf-8")
+
+    assert is_ignored_path(git_project, "ignored/secret.txt")
+    assert not is_ignored_path(git_project, "tracked.txt")
+
+    stageable = filter_stageable_paths(
+        git_project,
+        ["tracked.txt", "ignored/secret.txt"],
+    )
+    assert stageable == ["tracked.txt"]

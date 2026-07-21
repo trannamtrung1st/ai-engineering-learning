@@ -152,6 +152,17 @@ def stage_paths(root: Path, paths: list[str]) -> None:
     _run(root, ["add", "--", *paths])
 
 
+def is_ignored_path(root: Path, path: str) -> bool:
+    """Return True when git would ignore ``path`` (not stageable)."""
+    result = _run(root, ["check-ignore", "-q", "--", path], check=False)
+    return result.returncode == 0
+
+
+def filter_stageable_paths(root: Path, paths: list[str]) -> list[str]:
+    """Drop gitignored paths that ``git add`` would silently skip."""
+    return [path for path in paths if not is_ignored_path(root, path)]
+
+
 def commit(root: Path, message: str) -> str:
     _run(root, ["commit", "-m", message])
     return head_sha(root)
