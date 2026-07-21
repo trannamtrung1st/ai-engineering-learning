@@ -12,6 +12,7 @@ from rich.console import Console
 
 from top_down_planning import __version__
 from top_down_planning.errors import PlanningToolError, ResumeError, UserInterrupted, ValidationError
+from top_down_planning.input_loader import load_output_goal
 from top_down_planning.model_config import resolve_model
 from top_down_planning.models import DEFAULT_CURSOR_MODEL, PlanningLimits
 from top_down_planning.orchestrator import Orchestrator, RunConfig
@@ -42,10 +43,22 @@ def _exit_interrupted(exc: BaseException, *, no_color: bool) -> NoReturn:
     raise typer.Exit(130) from exc
 
 
+def _resolve_run_goal(
+    *,
+    output_goal: str | None,
+    output_goal_file: Path | None,
+):
+    try:
+        return load_output_goal(inline=output_goal, goal_file=output_goal_file)
+    except PlanningToolError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+
 def _execute_run(
     *,
     input_path: Path,
-    output_goal: str,
+    output_goal: str | None,
+    output_goal_file: Path | None,
     output_dir: Path,
     max_iterations: int,
     max_depth: int,
@@ -60,6 +73,11 @@ def _execute_run(
     agent_bin: Optional[str],
     skip_probe: bool,
 ) -> None:
+    if output_goal is None and output_goal_file is None:
+        raise typer.BadParameter("Provide --output-goal or --output-goal-file")
+    if output_goal is not None and output_goal_file is not None:
+        raise typer.BadParameter("Use either --output-goal or --output-goal-file, not both")
+
     env_skip = os.environ.get("PLANNING_TOOL_SKIP_PROBE", "").lower() in {
         "1",
         "true",
@@ -74,7 +92,10 @@ def _execute_run(
     )
     config = RunConfig(
         input_path=input_path,
-        output_goal=output_goal,
+        output_goal=_resolve_run_goal(
+            output_goal=output_goal,
+            output_goal_file=output_goal_file,
+        ),
         output_dir=output_dir,
         workspace_root=workspace.resolve(),
         limits=limits,
@@ -102,6 +123,10 @@ def _execute_run(
             f"actionable={report.actionable_items} blocked={report.blocked_items} "
             f"iterations={report.iterations} output={report.output_dir}"
         )
+        if report.artifacts:
+            console.print("artifacts:")
+            for artifact in report.artifacts:
+                console.print(f"  - {artifact}")
     if report.status.value not in {"complete"}:
         raise typer.Exit(1)
 
@@ -120,12 +145,17 @@ def main_callback(
     output_goal: Optional[str] = typer.Option(
         None,
         "--output-goal",
-        help="Short prompt describing the desired final plan",
+        help="Short inline prompt describing the desired final plan",
+    ),
+    output_goal_file: Optional[Path] = typer.Option(
+        None,
+        "--output-goal-file",
+        help="Markdown or text file describing the desired final plan",
     ),
     output_dir: Optional[Path] = typer.Option(
         None,
         "--output",
-        help="Output directory for plan artifacts",
+        help="Output directory for generated deliverables",
     ),
     max_iterations: int = typer.Option(50, "--max-iterations"),
     max_depth: int = typer.Option(6, "--max-depth"),
@@ -164,14 +194,15 @@ def main_callback(
     """Top-down planning via Cursor Agent CLI."""
     if ctx.invoked_subcommand is not None:
         return
-    if input_path is None or output_goal is None or output_dir is None:
+    if input_path is None or output_dir is None:
         raise typer.BadParameter(
-            "Planning requires --input, --output-goal, and --output "
-            "(or use the explicit `run` subcommand)."
+            "Planning requires --input and --output "
+            "(plus --output-goal or --output-goal-file)."
         )
     _execute_run(
         input_path=input_path,
         output_goal=output_goal,
+        output_goal_file=output_goal_file,
         output_dir=output_dir,
         max_iterations=max_iterations,
         max_depth=max_depth,
@@ -182,7 +213,7 @@ def main_callback(
         stream_json=stream_json,
         workspace=workspace,
         no_color=no_color,
-        model=resolve_model(model),
+        model=model,
         agent_bin=agent_bin,
         skip_probe=skip_probe,
     )
@@ -191,12 +222,17 @@ def main_callback(
 @app.command("run")
 def run_cmd(
     input_path: Path = typer.Option(..., "--input", help="Primary Markdown input file"),
-    output_goal: str = typer.Option(
-        ...,
+    output_goal: Optional[str] = typer.Option(
+        None,
         "--output-goal",
-        help="Short prompt describing the desired final plan",
+        help="Short inline prompt describing the desired final plan",
     ),
-    output_dir: Path = typer.Option(..., "--output", help="Output directory for plan artifacts"),
+    output_goal_file: Optional[Path] = typer.Option(
+        None,
+        "--output-goal-file",
+        help="Markdown or text file describing the desired final plan",
+    ),
+    output_dir: Path = typer.Option(..., "--output", help="Output directory for generated deliverables"),
     max_iterations: int = typer.Option(50, "--max-iterations"),
     max_depth: int = typer.Option(6, "--max-depth"),
     max_items: int = typer.Option(200, "--max-items"),
@@ -235,6 +271,7 @@ def run_cmd(
     _execute_run(
         input_path=input_path,
         output_goal=output_goal,
+        output_goal_file=output_goal_file,
         output_dir=output_dir,
         max_iterations=max_iterations,
         max_depth=max_depth,
@@ -245,7 +282,7 @@ def run_cmd(
         stream_json=stream_json,
         workspace=workspace,
         no_color=no_color,
-        model=resolve_model(model),
+        model=model,
         agent_bin=agent_bin,
         skip_probe=skip_probe,
     )

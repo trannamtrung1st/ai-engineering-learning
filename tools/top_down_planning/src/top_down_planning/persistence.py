@@ -29,18 +29,35 @@ from top_down_planning.models import (
 PLAN_FILENAME = "plan.yaml"
 RUN_STATE_FILENAME = "run-state.json"
 ITERATIONS_DIR = "iterations"
+STATE_DIRNAME = ".top-down-planning"
+
+
+def state_dir(output_dir: Path) -> Path:
+    return output_dir / STATE_DIRNAME
 
 
 def plan_path(output_dir: Path) -> Path:
-    return output_dir / PLAN_FILENAME
+    state_path = state_dir(output_dir) / PLAN_FILENAME
+    if state_path.is_file():
+        return state_path
+    legacy = output_dir / PLAN_FILENAME
+    if legacy.is_file():
+        return legacy
+    return state_path
 
 
 def run_state_path(output_dir: Path) -> Path:
-    return output_dir / RUN_STATE_FILENAME
+    state_path = state_dir(output_dir) / RUN_STATE_FILENAME
+    if state_path.is_file():
+        return state_path
+    legacy = output_dir / RUN_STATE_FILENAME
+    if legacy.is_file():
+        return legacy
+    return state_path
 
 
 def iterations_dir(output_dir: Path) -> Path:
-    return output_dir / ITERATIONS_DIR
+    return state_dir(output_dir) / ITERATIONS_DIR
 
 
 def iteration_prefix(output_dir: Path, iteration: int) -> str:
@@ -59,9 +76,12 @@ def load_plan(output_dir: Path) -> PlanState | None:
 
 
 def save_plan(output_dir: Path, plan: PlanState) -> None:
-    output_dir.mkdir(parents=True, exist_ok=True)
+    directory = state_dir(output_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+    target = directory / PLAN_FILENAME
     payload = plan.model_dump(mode="json")
-    _atomic_write_yaml(plan_path(output_dir), payload)
+    _atomic_write_yaml(target, payload)
+    _remove_legacy_file(output_dir / PLAN_FILENAME, target)
 
 
 def load_run_state(output_dir: Path) -> RunState | None:
@@ -76,10 +96,13 @@ def load_run_state(output_dir: Path) -> RunState | None:
 
 
 def save_run_state(output_dir: Path, state: RunState) -> None:
-    output_dir.mkdir(parents=True, exist_ok=True)
+    directory = state_dir(output_dir)
+    directory.mkdir(parents=True, exist_ok=True)
+    target = directory / RUN_STATE_FILENAME
     state.updated_at = datetime.now(timezone.utc)
     payload = state.model_dump(mode="json")
-    _atomic_write_json(run_state_path(output_dir), payload)
+    _atomic_write_json(target, payload)
+    _remove_legacy_file(output_dir / RUN_STATE_FILENAME, target)
 
 
 def write_json(path: Path, payload: Any) -> None:
@@ -129,16 +152,19 @@ def ensure_resume_compatible(
     if existing_plan or existing_run:
         if not resume:
             raise ResumeError(
-                f"Output directory already contains planning state: {output_dir}. "
+                f"Output directory already contains planning state under "
+                f"{STATE_DIRNAME}/ (or legacy root files). "
                 "Pass --resume to continue or choose a different --output path."
             )
         if existing_run is None:
             raise ResumeError(
-                f"Cannot resume: {RUN_STATE_FILENAME} missing in {output_dir}"
+                f"Cannot resume: {RUN_STATE_FILENAME} missing under "
+                f"{output_dir}/{STATE_DIRNAME}/ (or legacy root)"
             )
         if existing_plan is None:
             raise ResumeError(
-                f"Cannot resume: {PLAN_FILENAME} missing in {output_dir}"
+                f"Cannot resume: {PLAN_FILENAME} missing under "
+                f"{output_dir}/{STATE_DIRNAME}/ (or legacy root)"
             )
         if existing_run.input_digest != input_digest:
             raise ResumeError(
@@ -146,7 +172,7 @@ def ensure_resume_compatible(
             )
         if existing_run.output_goal_digest != output_goal_digest:
             raise ResumeError(
-                "Output goal digest mismatch: --output-goal changed since the last run"
+                "Output goal digest mismatch: the output goal changed since the last run"
             )
         if existing_run.schema_version != SCHEMA_VERSION:
             raise ResumeError(
@@ -252,3 +278,8 @@ def _atomic_write_yaml(path: Path, payload: dict[str, Any]) -> None:
 def update_final_status(plan: PlanState, status: FinalStatus, summary: str | None) -> None:
     plan.result.status = status
     plan.result.summary = summary
+
+
+def _remove_legacy_file(legacy: Path, canonical: Path) -> None:
+    if legacy.is_file() and legacy.resolve() != canonical.resolve():
+        legacy.unlink()

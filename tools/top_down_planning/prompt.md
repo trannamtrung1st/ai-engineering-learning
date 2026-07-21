@@ -371,32 +371,46 @@ Final statuses:
 
 ## Outputs
 
-The tool should produce a small set of run-level files.
+The tool separates **user-facing deliverables** from **internal resumable state**.
 
-Suggested output:
-
-```text
-planning-output/
-├── plan.yaml
-├── plan.md
-└── run-state.json
-```
-
-Optional debug or audit artifacts may be enabled:
+Suggested layout:
 
 ```text
 planning-output/
-└── iterations/
-    ├── 001-request.json
-    ├── 001-response.json
-    └── 001-validation.json
+├── implementation-plan.md          # example goal-driven deliverable
+└── .top-down-planning/
+    ├── plan.yaml
+    ├── run-state.json
+    └── iterations/
+        ├── 001-request.json
+        ├── 001-response.json
+        ├── render-response.json
+        └── render-request-prompt.md
 ```
 
+The top level of `--output` should contain only generated deliverables. Internal state
+and audit artifacts live under `.top-down-planning/`.
+
+Deliverables are produced by a final render phase after decomposition completes. The
+agent returns JSON describing one or more artifacts:
+
+```json
+{
+  "artifacts": [
+    {
+      "relative_path": "implementation-plan.md",
+      "content": "..."
+    }
+  ]
+}
+```
+
+The output goal may define an **Output artifacts** section with filenames and formats.
 Do not create one file per planning item.
 
 ### `plan.yaml`
 
-The canonical structured planning state.
+The canonical structured planning state (internal).
 
 It should contain:
 
@@ -408,11 +422,9 @@ It should contain:
 * dependencies;
 * final result metadata.
 
-### `plan.md`
+### Goal-driven deliverables
 
-A readable rendering of the final plan.
-
-Render it according to the output goal while preserving:
+Readable final output files rendered according to the output goal while preserving:
 
 * hierarchy;
 * item ordering;
@@ -422,7 +434,7 @@ Render it according to the output goal while preserving:
 * blocked items;
 * open questions.
 
-Avoid exposing unnecessary internal orchestration fields.
+Avoid exposing unnecessary internal orchestration fields unless the output goal requires them.
 
 ### `run-state.json`
 
@@ -434,6 +446,7 @@ Contains resumable runtime information such as:
 * retry counts;
 * input digest;
 * output-goal digest;
+* generated artifact paths;
 * last successful update.
 
 The input digest should prevent accidentally resuming a state against a different input document.
@@ -476,6 +489,7 @@ Suggested options:
 ```text
 --input
 --output-goal
+--output-goal-file
 --output
 --max-iterations
 --max-depth
@@ -486,7 +500,8 @@ Suggested options:
 --stream-json
 ```
 
-`--output-goal` should remain a short prompt, not another configuration file.
+`--output-goal` may be a short inline prompt. `--output-goal-file` may supply a longer
+Markdown or text specification, including an **Output artifacts** section.
 
 ## Streaming
 
@@ -501,7 +516,9 @@ Suggested events:
 {"type":"item.actionable","item_id":"item-003"}
 {"type":"validation.failed","iteration":2,"errors":["Duplicate child title"]}
 {"type":"iteration.retrying","iteration":2,"attempt":2}
-{"type":"planning.completed","status":"complete","items":18,"actionable_items":11}
+{"type":"planning.completed","status":"complete","items":18,"actionable_items":11,"artifacts":["./planning-output/implementation-plan.md"]}
+{"type":"render.started"}
+{"type":"render.completed","artifacts":["./planning-output/implementation-plan.md"]}
 ```
 
 Requirements:

@@ -46,6 +46,7 @@ def initialize_root_plan(
     output_goal: str,
     input_digest: str,
     output_goal_digest: str,
+    output_goal_file: str | None = None,
 ) -> PlanState:
     from top_down_planning.models import ReadinessStatus, ResultMetadata, SourceMetadata
 
@@ -63,6 +64,7 @@ def initialize_root_plan(
         source=SourceMetadata(
             input_file=input_file,
             output_goal=output_goal,
+            output_goal_file=output_goal_file,
             input_digest=input_digest,
             output_goal_digest=output_goal_digest,
         ),

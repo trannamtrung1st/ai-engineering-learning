@@ -5,6 +5,7 @@ import yaml
 
 from top_down_planning.models import PlanningLimits, RunActiveStatus
 from top_down_planning.persistence import (
+    STATE_DIRNAME,
     ensure_resume_compatible,
     load_plan,
     load_run_state,
@@ -40,8 +41,29 @@ def test_atomic_persistence_roundtrip(tmp_path: Path) -> None:
     assert loaded_plan.plan[0].id == "item-001"
     assert loaded_run.active_status == RunActiveStatus.RUNNING
 
-    raw = yaml.safe_load((tmp_path / "plan.yaml").read_text(encoding="utf-8"))
+    raw = yaml.safe_load(
+        (tmp_path / STATE_DIRNAME / "plan.yaml").read_text(encoding="utf-8")
+    )
     assert raw["schema_version"] == 1
+
+
+def test_legacy_root_state_migrates_on_save(tmp_path: Path) -> None:
+    plan = initialize_root_plan(
+        input_file="./idea.md",
+        output_goal="goal",
+        input_digest="input",
+        output_goal_digest="goal-d",
+    )
+    legacy_plan = tmp_path / "plan.yaml"
+    legacy_plan.write_text("schema_version: 1\n", encoding="utf-8")
+
+    save_plan(tmp_path, plan)
+
+    assert (tmp_path / STATE_DIRNAME / "plan.yaml").is_file()
+    assert not legacy_plan.exists()
+    loaded = load_plan(tmp_path)
+    assert loaded is not None
+    assert loaded.plan[0].id == "item-001"
 
 
 def test_resume_rejects_changed_input(tmp_path: Path) -> None:

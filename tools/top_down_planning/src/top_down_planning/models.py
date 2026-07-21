@@ -56,6 +56,7 @@ class PlanningLimits(BaseModel):
 class SourceMetadata(BaseModel):
     input_file: str
     output_goal: str
+    output_goal_file: str | None = None
     input_digest: str
     output_goal_digest: str
 
@@ -174,6 +175,37 @@ class AgentResponse(BaseModel):
     operations: list[PlanningOperation] = Field(default_factory=list)
 
 
+class RenderArtifact(BaseModel):
+    relative_path: str
+    content: str
+
+    @field_validator("relative_path")
+    @classmethod
+    def _non_empty_path(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("relative_path must not be empty")
+        return stripped
+
+    @field_validator("content")
+    @classmethod
+    def _non_empty_content(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("content must not be empty")
+        return value
+
+
+class RenderResponse(BaseModel):
+    artifacts: list[RenderArtifact]
+
+    @field_validator("artifacts")
+    @classmethod
+    def _non_empty_artifacts(cls, value: list[RenderArtifact]) -> list[RenderArtifact]:
+        if not value:
+            raise ValueError("artifacts must contain at least one item")
+        return value
+
+
 class RunState(BaseModel):
     schema_version: int = SCHEMA_VERSION
     active_status: RunActiveStatus = RunActiveStatus.IDLE
@@ -188,6 +220,7 @@ class RunState(BaseModel):
     agent_pid: int | None = None
     last_error: str | None = None
     history: list[dict[str, Any]] = Field(default_factory=list)
+    generated_artifacts: list[str] = Field(default_factory=list)
     updated_at: datetime | None = None
 
 
@@ -199,4 +232,5 @@ class PlanningReport(BaseModel):
     out_of_scope_items: int = 0
     iterations: int = 0
     output_dir: str = ""
+    artifacts: list[str] = Field(default_factory=list)
     summary: str | None = None

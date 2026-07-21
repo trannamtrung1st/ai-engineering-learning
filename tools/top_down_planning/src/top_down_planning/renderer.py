@@ -1,17 +1,22 @@
-"""Render plan.md from canonical planning state."""
+"""Deterministic fallback rendering from canonical planning state."""
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from top_down_planning.models import DecompositionStatus, PlanItem, PlanState
+
+
+def _format_output_goal_label(plan: PlanState) -> str:
+    if plan.source.output_goal_file:
+        return plan.source.output_goal_file
+    first_line = plan.source.output_goal.strip().splitlines()[0]
+    return first_line[:200]
 
 
 def render_plan_markdown(plan: PlanState) -> str:
     lines: list[str] = [
         "# Planning result",
         "",
-        f"**Output goal:** {plan.source.output_goal}",
+        f"**Output goal:** {_format_output_goal_label(plan)}",
         "",
         f"**Status:** {plan.result.status.value}",
     ]
@@ -35,12 +40,6 @@ def render_plan_markdown(plan: PlanState) -> str:
             for question in item.open_questions:
                 lines.append(f"  - Open question: {question}")
     return "\n".join(lines).rstrip() + "\n"
-
-
-def write_plan_markdown(output_dir: Path, plan: PlanState) -> Path:
-    path = output_dir / "plan.md"
-    path.write_text(render_plan_markdown(plan), encoding="utf-8")
-    return path
 
 
 def _render_hierarchy(

@@ -96,6 +96,47 @@ def _default_planning_response(selected: list[str]) -> dict:
     }
 
 
+def _default_render_response() -> str:
+    payload = {
+        "artifacts": [
+            {
+                "relative_path": "implementation-plan.md",
+                "content": """# Actionable Implementation Plan
+
+Rendered according to the output goal after decomposition completed.
+
+## Hierarchical view
+
+1. **Define CLI interface**
+   - Objective: Specify the command-line interface
+   - Expected outputs: CLI spec
+   - Acceptance criteria: All flags documented
+
+2. **Implement CSV parser**
+   - Objective: Parse CSV rows safely
+   - Expected outputs: Parser module
+   - Acceptance criteria: Malformed rows handled
+   - Dependencies: Define CLI interface
+
+## Actionable items
+
+1. **Define CLI interface**
+   - Objective: Specify the command-line interface
+   - Expected outputs: CLI spec
+   - Acceptance criteria: All flags documented
+
+2. **Implement CSV parser**
+   - Objective: Parse CSV rows safely
+   - Dependencies: Define CLI interface
+   - Expected outputs: Parser module
+   - Acceptance criteria: Malformed rows handled
+""",
+            }
+        ]
+    }
+    return "```json\n" + json.dumps(payload, indent=2) + "\n```\n"
+
+
 def main() -> int:
     argv = sys.argv[1:]
     if "--help" in argv or "-h" in argv:
@@ -104,6 +145,20 @@ def main() -> int:
 
     mode = os.environ.get("FAKE_AGENT_MODE", "planning")
     prompt = _prompt_text()
+
+    if "Final planning render" in prompt:
+        emit(
+            {
+                "type": "system",
+                "subtype": "init",
+                "session_id": "fake-planning-session",
+                "model": "fake-model",
+            }
+        )
+        assistant(_default_render_response())
+        emit({"type": "result", "subtype": "success", "duration_ms": 5, "is_error": False})
+        return 0
+
     selected = _selected_ids(prompt)
 
     emit(

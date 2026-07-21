@@ -17,6 +17,15 @@ pip install -e ".[dev]"
 ```bash
 top-down-planning \
   --input ./examples/idea.md \
+  --output-goal-file ./examples/output-goal.md \
+  --output ./planning-output
+```
+
+Or pass a short inline goal:
+
+```bash
+top-down-planning \
+  --input ./examples/idea.md \
   --output-goal "Produce an actionable implementation plan" \
   --output ./planning-output
 ```
@@ -63,19 +72,30 @@ top-down-planning \
 
 ## Outputs
 
-Each run writes:
+Each run writes user-facing deliverables directly under `--output`. The deliverable
+filename(s) and format(s) come from the output goal's **Output artifacts** section
+when present, or are chosen by the final render phase to match the goal.
+
+Internal resumable state is stored separately under `.top-down-planning/`:
 
 ```text
 planning-output/
-├── plan.yaml
-├── plan.md
-├── run-state.json
-└── iterations/
-    ├── 001-request.json
-    ├── 001-request-prompt.md
-    ├── 001-response.json
-    └── 001-validation.json
+├── implementation-plan.md          # example goal-driven deliverable
+└── .top-down-planning/
+    ├── plan.yaml
+    ├── run-state.json
+    └── iterations/
+        ├── 001-request-prompt.md
+        ├── 001-response.json
+        └── render-response.json
 ```
+
+The `--output` directory should contain only generated deliverables at its top level.
+Do not place input files or output goal files there.
+
+Goal-driven deliverables are written only when planning finishes with status `complete`.
+Incomplete or failed runs keep internal state under `.top-down-planning/` but do not
+write new deliverables.
 
 ## v1 contracts
 
@@ -105,6 +125,12 @@ The agent returns structured operations only:
 
 The tool validates the full batch atomically, assigns IDs/depth/order, and persists the updated state.
 
+### Agent context
+
+Each iteration prompt references the primary input Markdown file by path (workspace-relative when possible, plus absolute). The agent is instructed to open and read that file; the prompt does not embed the full document inline.
+
+The output goal may be supplied inline with `--output-goal` or as a Markdown/text file via `--output-goal-file`. When a file is used, the prompt references that file by path instead of embedding its contents. Resume compatibility uses SHA-256 digests of the resolved goal content.
+
 ### Actionability and stopping
 
 Actionability criteria are inferred from `--output-goal`. Implementation-oriented goals require expected outputs and acceptance criteria on actionable leaves.
@@ -113,7 +139,18 @@ Planning completes when no expandable items remain and the graph is structurally
 
 ### Persistence and resume
 
-`run-state.json` stores iteration counters, limits, and SHA-256 digests of the input file and output goal. Resume rejects changed input, changed output goal, or mismatched limits.
+`run-state.json` stores iteration counters, limits, and SHA-256 digests of the input file and output goal. Resume rejects changed input, changed output goal, or mismatched limits. Resuming an
+already-complete run skips the render phase when prior deliverables still exist on disk.
+
+### Stream events
+
+When `--stream-json` is enabled, render-phase events include:
+
+- `render.started`
+- `render.completed` (with `artifacts`)
+- `render.skipped` (when resuming with existing deliverables)
+- `render.fallback` (deterministic fallback artifact)
+- `render.retrying`
 
 ## Testing
 
@@ -126,4 +163,4 @@ Integration tests use a deterministic fake agent fixture; live Cursor tests are 
 
 ## Design note: expanded internal nodes
 
-When an item is expanded, it becomes a non-leaf container marked `actionable` so it is no longer selected for expansion. Only **leaf** actionable items appear in the actionable list inside `plan.md`.
+When an item is expanded, it becomes a non-leaf container marked `actionable` so it is no longer selected for expansion. Only **leaf** actionable items should appear in the final actionable list inside the rendered deliverable.

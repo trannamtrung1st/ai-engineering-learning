@@ -3,8 +3,38 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
+from top_down_planning.input_loader import LoadedOutputGoal
 from top_down_planning.models import PlanItem, PlanState
+
+
+def format_input_file_reference(input_file: Path, workspace: Path) -> str:
+    """Return workspace-relative and absolute paths for a file reference."""
+    resolved = input_file.resolve()
+    try:
+        display_path = str(resolved.relative_to(workspace.resolve())).replace("\\", "/")
+    except ValueError:
+        display_path = str(resolved)
+    return (
+        f"- Path: `{display_path}`\n"
+        f"- Absolute: `{resolved}`"
+    )
+
+
+def format_output_goal_section(
+    *,
+    output_goal: LoadedOutputGoal,
+    workspace: Path,
+) -> str:
+    if output_goal.path is not None:
+        return (
+            "Read the output goal specification before planning:\n\n"
+            f"{format_input_file_reference(output_goal.path, workspace)}\n\n"
+            "Open and read that file in full. It defines the desired final plan "
+            "shape, actionability criteria, and rendering expectations."
+        )
+    return output_goal.text.strip()
 
 
 def _ancestors(plan: PlanState, item: PlanItem) -> list[PlanItem]:
@@ -82,8 +112,9 @@ def _format_item_context(plan: PlanState, item: PlanItem) -> str:
 
 def build_planning_prompt(
     *,
-    input_text: str,
-    output_goal: str,
+    input_file: Path,
+    workspace: Path,
+    output_goal: LoadedOutputGoal,
     plan: PlanState,
     selected_items: list[PlanItem],
     validation_feedback: list[str] | None = None,
@@ -128,7 +159,7 @@ You are a planning agent. Analyze the selected planning items and return **only*
 structured JSON operations. Do not rewrite the full plan state. Do not execute work.
 
 ## Output goal
-{output_goal.strip()}
+{format_output_goal_section(output_goal=output_goal, workspace=workspace)}
 
 ## Rules
 - Choose exactly one operation per selected item.
@@ -141,9 +172,12 @@ structured JSON operations. Do not rewrite the full plan state. Do not execute w
 - Prefer breadth-first planning: keep major areas coherent before over-detailing one branch.
 
 {feedback_block}## Input document
-```markdown
-{input_text.strip()}
-```
+
+Read the complete primary input Markdown file before planning:
+
+{format_input_file_reference(input_file, workspace)}
+
+Open and read that file in full. Treat its entire contents as the source planning context.
 
 ## Other established branches
 {_branch_summary(plan, selected_ids)}
@@ -159,4 +193,76 @@ Return one JSON object matching this schema:
 ```
 
 Return the JSON inside a ```json fenced block or as raw JSON. No prose outside the JSON.
+"""
+
+
+def build_final_render_prompt(
+    *,
+    input_file: Path,
+    plan_file: Path,
+    workspace: Path,
+    output_goal: LoadedOutputGoal,
+    plan: PlanState,
+) -> str:
+    """Build the prompt for the post-decomposition render phase."""
+    artifact_schema = {
+        "artifacts": [
+            {
+                "relative_path": "filename relative to --output, e.g. implementation-plan.md",
+                "content": "full file contents as a string",
+            }
+        ]
+    }
+    return f"""# Final planning render
+
+Decomposition is complete. Produce the **final user-facing deliverable file(s)**.
+
+You are a planning renderer, not an executor. Read the canonical planning state and
+render deliverables according to the output goal. Do not invent new planning items,
+change statuses, or execute work.
+
+## Output goal
+{format_output_goal_section(output_goal=output_goal, workspace=workspace)}
+
+Follow that specification for:
+- deliverable format(s) and filename(s);
+- structure, terminology, and required sections;
+- actionability presentation.
+
+If the output goal defines an **Output artifacts** section, follow it exactly for
+paths and formats. Otherwise choose sensible filenames and formats that match the goal.
+
+## Source documents
+
+Primary input (for context only):
+
+{format_input_file_reference(input_file, workspace)}
+
+Canonical planning state (authoritative):
+
+{format_input_file_reference(plan_file, workspace)}
+
+Open and read `plan.yaml` in full. It contains every planning item, dependency,
+status, expected output, acceptance criterion, blocked reason, and open question.
+
+## Planning result metadata
+- Status: {plan.result.status.value}
+- Summary: {plan.result.summary or "No summary provided."}
+
+## Required response format
+Return one JSON object describing every generated deliverable:
+
+```json
+{json.dumps(artifact_schema, indent=2)}
+```
+
+Rules:
+- Return the JSON inside a ```json fenced block or as raw JSON.
+- Write one or more artifacts depending on the output goal.
+- Use only relative paths under the output directory.
+- Do not write into `.top-down-planning/`.
+- Do not include orchestration internals such as item IDs unless the output goal
+  calls for them.
+- Preserve hierarchy, ordering, expected outputs, dependencies, acceptance criteria,
+  blocked items, and open questions from the canonical state.
 """

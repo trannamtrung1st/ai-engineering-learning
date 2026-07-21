@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 
 from top_down_planning.completeness import (
@@ -24,7 +23,7 @@ from top_down_planning.errors import (
     UserInterrupted,
     ValidationError,
 )
-from top_down_planning.input_loader import LoadedInput, digest_output_goal, load_markdown_input
+from top_down_planning.input_loader import LoadedInput, LoadedOutputGoal, load_markdown_input
 from top_down_planning.model_config import resolve_model
 from top_down_planning.models import (
     FinalStatus,
@@ -36,19 +35,21 @@ from top_down_planning.models import (
 from top_down_planning.persistence import (
     ensure_resume_compatible,
     iteration_prefix,
-    load_plan,
+    iterations_dir,
     load_run_state,
     mark_last_success,
     new_run_state,
+    plan_path,
     record_history,
     save_plan,
     save_run_state,
     update_final_status,
     write_json,
 )
-from top_down_planning.prompts import build_planning_prompt
-from top_down_planning.renderer import write_plan_markdown
-from top_down_planning.response_parser import parse_agent_response
+from top_down_planning.artifact_writer import write_render_artifacts
+from top_down_planning.fallback_artifact import write_fallback_artifact
+from top_down_planning.prompts import build_final_render_prompt, build_planning_prompt
+from top_down_planning.response_parser import parse_agent_response, parse_render_response
 from top_down_planning.scheduler import initialize_root_plan, select_batch
 from top_down_planning.state_updates import apply_response
 from top_down_planning.stream_events import StreamEmitter
@@ -58,7 +59,7 @@ from top_down_planning.validator import validate_response
 @dataclass
 class RunConfig:
     input_path: Path
-    output_goal: str
+    output_goal: LoadedOutputGoal
     output_dir: Path
     workspace_root: Path
     limits: PlanningLimits
@@ -77,6 +78,7 @@ class Orchestrator:
         self.renderer = ConsoleRenderer(no_color=config.no_color)
         self.stream = StreamEmitter(enabled=config.stream_json)
         self._client: CursorClient | None = None
+        self._artifacts: list[str] = []
 
     @property
     def client(self) -> CursorClient:
@@ -92,7 +94,8 @@ class Orchestrator:
 
     async def run(self) -> PlanningReport:
         loaded = load_markdown_input(self.config.input_path)
-        goal_digest = digest_output_goal(self.config.output_goal)
+        loaded_goal = self.config.output_goal
+        goal_digest = loaded_goal.digest
         output_dir = self.config.output_dir.resolve()
         output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -119,13 +122,16 @@ class Orchestrator:
         else:
             plan = initialize_root_plan(
                 input_file=str(loaded.path),
-                output_goal=self.config.output_goal,
+                output_goal=loaded_goal.text,
+                output_goal_file=(
+                    str(loaded_goal.path) if loaded_goal.path is not None else None
+                ),
                 input_digest=loaded.digest,
                 output_goal_digest=goal_digest,
             )
             run_state = new_run_state(
                 input_file=str(loaded.path),
-                output_goal=self.config.output_goal,
+                output_goal=loaded_goal.source_label,
                 input_digest=loaded.digest,
                 output_goal_digest=goal_digest,
                 limits=self.config.limits,
@@ -146,7 +152,6 @@ class Orchestrator:
             run_state.active_status = RunActiveStatus.PAUSED
             save_run_state(output_dir, run_state)
             save_plan(output_dir, plan)
-            write_plan_markdown(output_dir, plan)
             raise
         except PlanningToolError as exc:
             run_state.active_status = RunActiveStatus.FAILED
@@ -154,7 +159,6 @@ class Orchestrator:
             update_final_status(plan, FinalStatus.FAILED, str(exc))
             save_run_state(output_dir, run_state)
             save_plan(output_dir, plan)
-            write_plan_markdown(output_dir, plan)
             raise
 
         counts = count_by_status(plan)
@@ -166,6 +170,7 @@ class Orchestrator:
             out_of_scope_items=counts["out_of_scope"],
             iterations=run_state.iteration,
             output_dir=str(output_dir),
+            artifacts=self._artifacts,
             summary=plan.result.summary,
         )
         self.stream.emit(
@@ -173,6 +178,7 @@ class Orchestrator:
             status=plan.result.status.value,
             items=report.items,
             actionable_items=report.actionable_items,
+            artifacts=report.artifacts,
         )
         return report
 
@@ -199,7 +205,6 @@ class Orchestrator:
                 run_state.active_status = RunActiveStatus.COMPLETED
                 save_plan(output_dir, plan)
                 save_run_state(output_dir, run_state)
-                write_plan_markdown(output_dir, plan)
                 return plan, run_state
 
             batch = select_batch(plan, limits)
@@ -223,7 +228,8 @@ class Orchestrator:
             for attempt in range(1, limits.max_retries + 1):
                 run_state.retry_count = attempt - 1
                 prompt = build_planning_prompt(
-                    input_text=loaded.text,
+                    input_file=loaded.path,
+                    workspace=self.config.workspace_root,
                     output_goal=self.config.output_goal,
                     plan=plan,
                     selected_items=batch,
@@ -236,9 +242,9 @@ class Orchestrator:
                 events_path = prefix.with_name(prefix.name + "-agent.ndjson")
                 log_path = prefix.with_name(prefix.name + "-agent.log")
 
+                prompt_path.parent.mkdir(parents=True, exist_ok=True)
+                prompt_path.write_text(prompt, encoding="utf-8")
                 if self.config.audit_iterations:
-                    prompt_path.parent.mkdir(parents=True, exist_ok=True)
-                    prompt_path.write_text(prompt, encoding="utf-8")
                     write_json(
                         prefix.with_name(prefix.name + "-request.json"),
                         {
@@ -384,7 +390,6 @@ class Orchestrator:
                 )
 
             save_plan(output_dir, plan)
-            write_plan_markdown(output_dir, plan)
 
         status = compute_final_status(plan)
         summary = (
@@ -396,8 +401,176 @@ class Orchestrator:
         run_state.active_status = RunActiveStatus.COMPLETED
         save_plan(output_dir, plan)
         save_run_state(output_dir, run_state)
-        write_plan_markdown(output_dir, plan)
+        if status == FinalStatus.COMPLETE:
+            existing = _existing_generated_artifacts(output_dir, run_state)
+            if existing:
+                self._artifacts = existing
+                self.stream.emit("render.skipped", artifacts=existing)
+            else:
+                self._artifacts = await self._run_final_render(
+                    loaded=loaded,
+                    plan=plan,
+                    output_dir=output_dir,
+                    run_state=run_state,
+                )
         return plan, run_state
+
+    async def _run_final_render(
+        self,
+        *,
+        loaded: LoadedInput,
+        plan,
+        output_dir: Path,
+        run_state: RunState,
+    ) -> list[str]:
+        canonical_plan_file = plan_path(output_dir)
+        limits = self.config.limits
+        validation_feedback: list[str] | None = None
+        audit_dir = iterations_dir(output_dir)
+
+        self.stream.emit("render.started")
+        self.renderer.rule("RENDER deliverables according to output goal")
+
+        for attempt in range(1, limits.max_retries + 1):
+            prompt = build_final_render_prompt(
+                input_file=loaded.path,
+                plan_file=canonical_plan_file,
+                workspace=self.config.workspace_root,
+                output_goal=self.config.output_goal,
+                plan=plan,
+            )
+            if validation_feedback:
+                prompt += (
+                    "\n\n## Validation feedback from previous attempt\n"
+                    + "\n".join(f"- {error}" for error in validation_feedback)
+                    + "\n\nFix every issue and return valid JSON with artifacts.\n"
+                )
+
+            prompt_path = audit_dir / "render-request-prompt.md"
+            response_path = audit_dir / "render-response.json"
+            events_path = audit_dir / "render-agent.ndjson"
+            log_path = audit_dir / "render-agent.log"
+            prompt_path.parent.mkdir(parents=True, exist_ok=True)
+            prompt_path.write_text(prompt, encoding="utf-8")
+
+            try:
+                result = await self.client.run_session(
+                    workspace=self.config.workspace_root,
+                    prompt=prompt,
+                    prompt_path=prompt_path,
+                    timeout_seconds=limits.session_timeout_seconds,
+                    events_path=events_path if self.config.audit_iterations else None,
+                    log_path=log_path if self.config.audit_iterations else None,
+                    renderer=ConsoleRenderer.with_file_logging(
+                        self.renderer,
+                        log_path,
+                    )
+                    if self.config.audit_iterations
+                    else self.renderer,
+                    on_agent_started=lambda pid: _persist_agent_pid(
+                        output_dir, run_state, pid
+                    ),
+                )
+            except UserInterrupted:
+                raise
+            except CursorEnvironmentError:
+                raise
+            except CursorSessionError as exc:
+                run_state.last_error = str(exc)
+                save_run_state(output_dir, run_state)
+                if attempt >= limits.max_retries:
+                    self.renderer.warning(
+                        "Final render failed; writing deterministic fallback artifact."
+                    )
+                    fallback = write_fallback_artifact(output_dir, plan)
+                    paths = _persist_render_result(output_dir, run_state, [fallback])
+                    save_run_state(output_dir, run_state)
+                    self.stream.emit("render.fallback", reason=str(exc))
+                    return paths
+                self.stream.emit(
+                    "render.retrying",
+                    attempt=attempt + 1,
+                    reason=str(exc),
+                )
+                continue
+
+            run_state.agent_pid = None
+
+            try:
+                render_response = parse_render_response(result.assistant_text)
+                written = write_render_artifacts(output_dir, render_response)
+            except (ResponseParseError, ValueError) as exc:
+                validation_feedback = [str(exc)]
+                if self.config.audit_iterations:
+                    write_json(
+                        response_path,
+                        {"raw": result.assistant_text[-8000:]},
+                    )
+                if attempt >= limits.max_retries:
+                    self.renderer.warning(
+                        "Final render response was invalid; "
+                        "writing deterministic fallback artifact."
+                    )
+                    fallback = write_fallback_artifact(output_dir, plan)
+                    paths = _persist_render_result(output_dir, run_state, [fallback])
+                    save_run_state(output_dir, run_state)
+                    self.stream.emit("render.fallback", reason=str(exc))
+                    return paths
+                self.stream.emit(
+                    "render.retrying",
+                    attempt=attempt + 1,
+                    reason=str(exc),
+                )
+                continue
+
+            if self.config.audit_iterations:
+                write_json(
+                    response_path,
+                    render_response.model_dump(mode="json"),
+                )
+
+            artifact_paths = _persist_render_result(output_dir, run_state, written)
+            record_history(
+                output_dir,
+                run_state,
+                event="render_applied",
+                attempt=attempt,
+                artifacts=artifact_paths,
+            )
+            save_run_state(output_dir, run_state)
+            self.stream.emit("render.completed", artifacts=artifact_paths)
+            return artifact_paths
+
+        fallback = write_fallback_artifact(output_dir, plan)
+        paths = _persist_render_result(output_dir, run_state, [fallback])
+        save_run_state(output_dir, run_state)
+        self.stream.emit("render.fallback", reason="exhausted retries")
+        return paths
+
+
+def _persist_render_result(
+    output_dir: Path,
+    run_state: RunState,
+    written: list[Path],
+) -> list[str]:
+    relative = [path.relative_to(output_dir).as_posix() for path in written]
+    run_state.generated_artifacts = relative
+    return [str(output_dir / name) for name in relative]
+
+
+def _existing_generated_artifacts(
+    output_dir: Path,
+    run_state: RunState,
+) -> list[str] | None:
+    if not run_state.generated_artifacts:
+        return None
+    absolute: list[str] = []
+    for relative in run_state.generated_artifacts:
+        path = output_dir / relative
+        if not path.is_file():
+            return None
+        absolute.append(str(path))
+    return absolute
 
 
 def _persist_agent_pid(output_dir: Path, run_state: RunState, pid: int) -> None:
