@@ -117,7 +117,8 @@ class CursorClient:
         skip_probe: bool = False,
         stream_flags: list[str] | None = None,
     ) -> None:
-        self.agent_bin = resolve_agent_bin(agent_bin)
+        self._agent_bin_explicit = agent_bin
+        self._agent_bin: str | None = None
         self.model = model
         self.no_color = no_color
         self.parse_error_threshold = parse_error_threshold
@@ -125,7 +126,14 @@ class CursorClient:
         self._stream_flags = stream_flags
         self._probed = False
 
+    @property
+    def agent_bin(self) -> str:
+        if self._agent_bin is None:
+            self._agent_bin = resolve_agent_bin(self._agent_bin_explicit)
+        return self._agent_bin
+
     async def ensure_ready(self) -> None:
+        _ = self.agent_bin
         if self._stream_flags is not None:
             self._probed = True
             return

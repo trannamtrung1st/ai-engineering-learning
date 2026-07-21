@@ -12,7 +12,7 @@ from rich.console import Console
 from rich.table import Table
 
 from todos_tool import __version__
-from todos_tool.errors import TodosToolError, UserInterrupted, ValidationError
+from todos_tool.errors import TodosToolError, UserInterrupted, ValidationError, SchedulingError
 from todos_tool.manifest import load_workspace
 from todos_tool.orchestrator import Orchestrator, RunConfig
 from todos_tool.persistence import load_state
@@ -227,7 +227,8 @@ def run_cmd(
 
     console = Console(no_color=no_color)
     console.print(
-        f"completed={report.completed} failed={report.failed} blocked={report.blocked}"
+        f"completed={report.completed} failed={report.failed} "
+        f"blocked={report.blocked} skipped={report.skipped}"
     )
     if report.failed or report.blocked:
         raise typer.Exit(1)
@@ -290,7 +291,8 @@ def resume_cmd(
 
     console = Console(no_color=no_color)
     console.print(
-        f"completed={report.completed} failed={report.failed} blocked={report.blocked}"
+        f"completed={report.completed} failed={report.failed} "
+        f"blocked={report.blocked} skipped={report.skipped}"
     )
     if report.failed or report.blocked:
         raise typer.Exit(1)
@@ -325,6 +327,9 @@ def commit_cmd(
     console = Console(no_color=no_color)
     try:
         sha = asyncio.run(orch.commit_item(todo))
+    except SchedulingError as exc:
+        console.print(f"[red]{exc}[/]")
+        raise typer.Exit(1) from exc
     except TodosToolError as exc:
         console.print(f"[red]{exc}[/]")
         raise typer.Exit(1) from exc

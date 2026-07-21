@@ -33,6 +33,7 @@ def build_work_prompt(
     item: TodoItem,
     *,
     logical_attempt: int,
+    todos_dir: str = "todos",
     previous_feedback: str | None = None,
     continuation: str | None = None,
 ) -> str:
@@ -74,7 +75,8 @@ def build_work_prompt(
         "- Do NOT mark the item complete or edit todos item status to done.",
         "- Do NOT use `git add .` or `git add -A`.",
         "- If the item should be split/deferred/replaced, write a proposal JSON file to "
-        f"`todos/runs/{item.id}/restructure-proposal.json` instead of silently weakening criteria.",
+        f"`{todos_dir}/runs/{item.id}/restructure-proposal.json` instead of silently "
+        "weakening criteria.",
     ]
 
     if previous_feedback:
@@ -107,6 +109,7 @@ def build_review_prompt(
     work_summary: str | None,
     git_diff: str,
     git_status: str,
+    continuation: str | None = None,
 ) -> str:
     criteria = "\n".join(f"- {c}" for c in item.acceptance_criteria)
     commands = "\n".join(f"- `{c}`" for c in item.validation.commands) or "- (none specified)"
@@ -132,40 +135,57 @@ def build_review_prompt(
 }
 """.strip() % (item.id, logical_attempt)
 
-    return "\n".join(
+    parts = [
+        "# Independent review session (read-only)",
+        "",
+        INSTRUCTION_DISCOVERY,
+        "",
+        "You are an independent reviewer. Remain read-only. Do not edit files or commit.",
+        "",
+        f"## Item `{item.id}`",
+        f"**Title:** {item.title}",
+        f"**Type:** {item.type.value}",
+        f"**Logical attempt:** {logical_attempt}",
+        "",
+        "## Description",
+        item.description.strip(),
+        "",
+        "## Acceptance criteria",
+        criteria,
+        "",
+        "## Required validation commands",
+        commands,
+        "",
+        "## Work summary from implementer",
+        (work_summary or "(none provided)").strip(),
+    ]
+
+    if continuation:
+        parts.extend(
+            [
+                "",
+                "## Continuation context (session restart)",
+                continuation.strip(),
+            ]
+        )
+    else:
+        parts.extend(
+            [
+                "",
+                "## Current git status",
+                "```",
+                git_status.strip() or "(clean)",
+                "```",
+                "",
+                "## Current git diff",
+                "```",
+                git_diff.strip() or "(no diff)",
+                "```",
+            ]
+        )
+
+    parts.extend(
         [
-            "# Independent review session (read-only)",
-            "",
-            INSTRUCTION_DISCOVERY,
-            "",
-            "You are an independent reviewer. Remain read-only. Do not edit files or commit.",
-            "",
-            f"## Item `{item.id}`",
-            f"**Title:** {item.title}",
-            f"**Type:** {item.type.value}",
-            f"**Logical attempt:** {logical_attempt}",
-            "",
-            "## Description",
-            item.description.strip(),
-            "",
-            "## Acceptance criteria",
-            criteria,
-            "",
-            "## Required validation commands",
-            commands,
-            "",
-            "## Work summary from implementer",
-            (work_summary or "(none provided)").strip(),
-            "",
-            "## Current git status",
-            "```",
-            git_status.strip() or "(clean)",
-            "```",
-            "",
-            "## Current git diff",
-            "```",
-            git_diff.strip() or "(no diff)",
-            "```",
             "",
             "## Your task",
             "Independently inspect the repository, instructions, rules/skills, diff, and validation.",
@@ -182,6 +202,7 @@ def build_review_prompt(
             "Map decisions: pass→mark_done, fail→retry, blocked→block.",
         ]
     )
+    return "\n".join(parts)
 
 
 def prompt_requires_instruction_discovery(prompt: str) -> bool:

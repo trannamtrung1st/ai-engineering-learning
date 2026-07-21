@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +17,7 @@ from todos_tool.models import (
     RestructuringProposal,
     TodoItem,
 )
+from todos_tool.paths import resolve_within, validate_relative_path
 
 MAX_DIFF_CHARS = 8_000
 MAX_SUMMARY_CHARS = 2_000
@@ -85,90 +88,34 @@ def _truncate(text: str, limit: int) -> str:
     text = text.strip()
     if len(text) <= limit:
         return text
-    return text[:limit] + f"\n... truncated ({len(text)} chars total)"
+    head = max(1, limit // 3)
+    tail = max(1, limit - head - 40)
+    return (
+        text[:head]
+        + f"\n... truncated ({len(text)} chars total) ...\n"
+        + text[-tail:]
+    )
 
 
 def load_restructure_proposal(path: Path) -> RestructuringProposal | None:
     if not path.is_file():
         return None
     try:
-        import json
-
         data = json.loads(path.read_text(encoding="utf-8"))
         return RestructuringProposal.model_validate(data)
     except (OSError, ValueError, PydanticValidationError) as exc:
         raise RestructuringError(f"Invalid restructure proposal at {path}: {exc}") from exc
 
 
-def apply_restructure_proposal(
-    workspace: Workspace,
-    item: TodoItem,
-    proposal: RestructuringProposal,
-) -> Workspace:
-    """Validate and apply a restructuring proposal; returns reloaded workspace."""
-    if proposal.item_id != item.id:
-        raise RestructuringError(
-            f"Proposal item_id {proposal.item_id} does not match active item {item.id}"
-        )
-
-    original_criteria = list(item.acceptance_criteria)
-    created_files: list[Path] = []
-
-    try:
-        for raw in proposal.new_items:
-            new_item = _validate_new_item(raw, workspace)
-            # Prevent weakening: new items must not empty-out original AC without supersede
-            rel = raw.get("file") or f"items/{new_item.id.lower()}.yaml"
-            if not isinstance(rel, str):
-                raise RestructuringError("new item file must be a string")
-            dest = workspace.todos_dir / rel
-            if dest.exists():
-                raise RestructuringError(f"Refusing to overwrite existing item file: {rel}")
-            new_item.source_file = rel
-            save_item(workspace, new_item)
-            created_files.append(dest)
-            append_manifest_item(workspace, new_item.id, rel)
-
-        if proposal.dependency_updates:
-            for target_id, deps in proposal.dependency_updates.items():
-                target = workspace.get(target_id)
-                if target is None and target_id != item.id:
-                    # May be a newly added item — reload later
-                    continue
-                if target_id == item.id:
-                    item.depends_on = list(deps)
-                elif target is not None:
-                    target.depends_on = list(deps)
-                    save_item(workspace, target)
-
-        if proposal.supersede:
-            item.status = ItemStatus.SUPERSEDED
-            save_item(workspace, item)
-        else:
-            # Reject silent AC weakening on the active item via proposal side-effects
-            if item.acceptance_criteria != original_criteria:
-                # Only allow AC changes if explicitly present and not a strict subset shrink
-                if _is_weakening(original_criteria, item.acceptance_criteria):
-                    raise RestructuringError(
-                        "Refusing silent weakening of acceptance criteria"
-                    )
-            save_item(workspace, item)
-
-        # Reload and validate full graph
-        reloaded = load_workspace(workspace.root, workspace.todos_dir.name)
-        return reloaded
-    except Exception:
-        for path in created_files:
-            try:
-                path.unlink(missing_ok=True)
-            except OSError:
-                pass
-        raise
-
-
-def _validate_new_item(raw: dict[str, Any], workspace: Workspace) -> TodoItem:
+def _validate_new_item(raw: dict[str, Any], workspace: Workspace) -> tuple[TodoItem, str]:
     data = dict(raw)
-    data.pop("file", None)
+    rel = data.pop("file", None) or f"items/{str(data.get('id', '')).lower()}.yaml"
+    if not isinstance(rel, str):
+        raise RestructuringError("new item file must be a string")
+    rel_file = validate_relative_path(rel, label="new item file")
+    dest = resolve_within(workspace.todos_dir, rel_file)
+    if dest.exists():
+        raise RestructuringError(f"Refusing to overwrite existing item file: {rel_file}")
     try:
         item = TodoItem.model_validate(data)
     except PydanticValidationError as exc:
@@ -177,7 +124,138 @@ def _validate_new_item(raw: dict[str, Any], workspace: Workspace) -> TodoItem:
         raise RestructuringError(f"New item id already exists: {item.id}")
     if not item.acceptance_criteria:
         raise RestructuringError(f"New item {item.id} missing acceptance criteria")
-    return item
+    item.source_file = rel_file
+    return item, rel_file
+
+
+def _validate_proposal(
+    workspace: Workspace,
+    item: TodoItem,
+    proposal: RestructuringProposal,
+) -> tuple[list[tuple[TodoItem, str]], dict[str, list[str]]]:
+    if proposal.item_id != item.id:
+        raise RestructuringError(
+            f"Proposal item_id {proposal.item_id} does not match active item {item.id}"
+        )
+
+    original_criteria = list(item.acceptance_criteria)
+    new_entries: list[tuple[TodoItem, str]] = []
+    new_ids: set[str] = set()
+    for raw in proposal.new_items:
+        new_item, rel_file = _validate_new_item(raw, workspace)
+        if new_item.id in new_ids:
+            raise RestructuringError(f"Duplicate new item id in proposal: {new_item.id}")
+        new_ids.add(new_item.id)
+        new_entries.append((new_item, rel_file))
+
+    known_ids = {entry.id for entry in workspace.items} | new_ids
+    pending_updates: dict[str, list[str]] = {}
+    for target_id, deps in proposal.dependency_updates.items():
+        if target_id != item.id and target_id not in known_ids:
+            raise RestructuringError(
+                f"dependency_updates target unknown item: {target_id}"
+            )
+        for dep in deps:
+            if dep not in known_ids:
+                raise RestructuringError(
+                    f"dependency_updates references unknown dependency: {dep}"
+                )
+        pending_updates[target_id] = list(deps)
+
+    updated_item = item.model_copy(deep=True)
+    if item.id in pending_updates:
+        updated_item.depends_on = list(pending_updates[item.id])
+
+    if not proposal.supersede and updated_item.acceptance_criteria != original_criteria:
+        if _is_weakening(original_criteria, updated_item.acceptance_criteria):
+            raise RestructuringError("Refusing silent weakening of acceptance criteria")
+
+    return new_entries, pending_updates
+
+
+def apply_restructure_proposal(
+    workspace: Workspace,
+    item: TodoItem,
+    proposal: RestructuringProposal,
+    *,
+    proposal_path: Path | None = None,
+) -> Workspace:
+    """Validate and apply a restructuring proposal; returns reloaded workspace."""
+    new_entries, pending_updates = _validate_proposal(workspace, item, proposal)
+
+    snapshots: dict[Path, str | None] = {}
+    manifest_path = workspace.todos_dir / "manifest.yaml"
+    snapshots[manifest_path] = (
+        manifest_path.read_text(encoding="utf-8") if manifest_path.is_file() else None
+    )
+    snapshots[workspace.item_path(item)] = workspace.item_path(item).read_text(
+        encoding="utf-8"
+    )
+
+    for target_id in pending_updates:
+        if target_id == item.id:
+            continue
+        target = workspace.get(target_id)
+        if target is not None:
+            target_path = workspace.item_path(target)
+            snapshots[target_path] = target_path.read_text(encoding="utf-8")
+
+    created_files: list[Path] = []
+
+    def _restore() -> None:
+        for path in created_files:
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                pass
+        for path, content in snapshots.items():
+            if content is None:
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError:
+                    pass
+            else:
+                path.write_text(content, encoding="utf-8")
+
+    try:
+        for new_item, rel_file in new_entries:
+            save_item(workspace, new_item)
+            created_files.append(workspace.todos_dir / rel_file)
+            append_manifest_item(workspace, new_item.id, rel_file)
+
+        for target_id, deps in pending_updates.items():
+            if target_id == item.id:
+                item.depends_on = list(deps)
+            else:
+                target = workspace.get(target_id)
+                if target is not None:
+                    target.depends_on = list(deps)
+                    save_item(workspace, target)
+
+        if proposal.supersede:
+            item.status = ItemStatus.SUPERSEDED
+        save_item(workspace, item)
+
+        reloaded = load_workspace(workspace.root, workspace.todos_dir.name)
+
+        for target_id, deps in pending_updates.items():
+            target = reloaded.get(target_id)
+            if target is None:
+                raise RestructuringError(
+                    f"dependency_updates target missing after apply: {target_id}"
+                )
+            if list(target.depends_on) != list(deps):
+                target.depends_on = list(deps)
+                save_item(reloaded, target)
+
+        if proposal_path is not None and proposal_path.is_file():
+            archive_path = proposal_path.with_suffix(".applied.json")
+            shutil.move(str(proposal_path), str(archive_path))
+
+        return load_workspace(workspace.root, workspace.todos_dir.name)
+    except Exception:
+        _restore()
+        raise
 
 
 def _is_weakening(original: list[str], updated: list[str]) -> bool:

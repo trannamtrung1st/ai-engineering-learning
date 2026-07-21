@@ -136,3 +136,51 @@ def test_reject_pass_with_legacy_string_issue() -> None:
     decision = parse_review_decision(text)
     with pytest.raises(ReviewError, match="blocking issues"):
         accept_decision(decision, _item(), 1)
+
+
+def test_reject_substituted_acceptance_criterion() -> None:
+    text = VALID_PASS.replace('"Crit A"', '"Crit A renamed"')
+    decision = parse_review_decision(text)
+    with pytest.raises(ReviewError, match="exact acceptance criteria"):
+        accept_decision(decision, _item(), 1)
+
+
+def test_reject_duplicate_acceptance_criterion() -> None:
+    text = VALID_PASS.replace(
+        '"acceptance_criteria": [',
+        '"acceptance_criteria": [\n'
+        '    {"criterion": "Crit A", "passed": true, "evidence": "dup"},',
+    )
+    decision = parse_review_decision(text)
+    with pytest.raises(ReviewError, match="Duplicate acceptance criterion"):
+        accept_decision(decision, _item(), 1)
+
+
+def test_reject_omitted_validation_command() -> None:
+    text = VALID_PASS.replace(
+        '"validation": [\n    {"command": "pytest", "passed": true, "exit_code": 0, "summary": "ok"}\n  ],',
+        '"validation": [],',
+    )
+    decision = parse_review_decision(text)
+    with pytest.raises(ReviewError, match="validation results"):
+        accept_decision(decision, _item(), 1)
+
+
+def test_reject_failed_validation_command() -> None:
+    text = VALID_PASS.replace(
+        '"passed": true, "exit_code": 0, "summary": "ok"',
+        '"passed": false, "exit_code": 1, "summary": "failed"',
+    )
+    decision = parse_review_decision(text)
+    with pytest.raises(ReviewError, match="mandatory validation"):
+        accept_decision(decision, _item(), 1)
+
+
+def test_reject_unexpected_validation_command() -> None:
+    text = VALID_PASS.replace(
+        '"command": "pytest"',
+        '"command": "npm test"',
+    )
+    decision = parse_review_decision(text)
+    with pytest.raises(ReviewError, match="validation command"):
+        accept_decision(decision, _item(), 1)

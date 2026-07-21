@@ -73,12 +73,161 @@ def is_todos_metadata_path(path: str, todos_dir: str = "todos") -> bool:
     return normalized == todos_dir or normalized.startswith(f"{todos_dir}/")
 
 
+def staged_paths(root: Path) -> list[str]:
+    result = _run(root, ["diff", "--cached", "--name-only"], check=False)
+    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+
+
+def unrelated_staged_paths(
+    root: Path,
+    *,
+    todos_dir: str = "todos",
+    approved_paths: set[str] | None = None,
+) -> list[str]:
+    """Return staged paths outside approved/todos metadata."""
+    unrelated: list[str] = []
+    for path in staged_paths(root):
+        if is_todos_metadata_path(path, todos_dir):
+            continue
+        if approved_paths is not None and path in approved_paths:
+            continue
+        unrelated.append(path)
+    return unrelated
+
+
+def refuse_unrelated_staged(
+    root: Path,
+    *,
+    todos_dir: str = "todos",
+    approved_paths: set[str] | None = None,
+) -> None:
+    """Refuse when unrelated content is already staged.
+
+    ``--allow-dirty`` permits unrelated working-tree changes but never unrelated
+    staged content that could leak into generated commits.
+    """
+    unrelated = unrelated_staged_paths(
+        root,
+        todos_dir=todos_dir,
+        approved_paths=approved_paths,
+    )
+    if unrelated:
+        raise GitError(
+            "Working tree has unrelated staged changes. Unstage them before running.\n"
+            + "\n".join(unrelated)
+        )
+
+
+def verify_staged_paths(
+    root: Path,
+    expected_paths: list[str],
+    *,
+    todos_dir: str = "todos",
+) -> None:
+    """Ensure approved paths are staged and no unrelated non-metadata paths are staged."""
+    expected = set(expected_paths)
+    actual = set(staged_paths(root))
+    missing = sorted(expected - actual)
+    extra = sorted(
+        path
+        for path in actual - expected
+        if not is_todos_metadata_path(path, todos_dir)
+    )
+    if missing or extra:
+        raise GitError(
+            "Staged paths do not match approved commit set "
+            f"(missing={missing}, unexpected={extra})"
+        )
+
+
+def _expand_path_prefixes(paths: set[str]) -> set[str]:
+    expanded = set(paths)
+    for path in paths:
+        parts = Path(path.replace("\\", "/")).parts
+        for idx in range(1, len(parts)):
+            expanded.add(str(Path(*parts[:idx])))
+    return expanded
+
+
+def refuse_if_dirty_only_permitted(
+    root: Path,
+    *,
+    allow_dirty: bool,
+    todos_dir: str = "todos",
+    permitted_paths: set[str],
+) -> GitStatus:
+    """Refuse when the working tree has non-metadata changes outside ``permitted_paths``."""
+    refuse_unrelated_staged(
+        root,
+        todos_dir=todos_dir,
+        approved_paths=permitted_paths,
+    )
+    st = status(root)
+    if not st.is_dirty or allow_dirty:
+        return st
+    permitted = _expand_path_prefixes(permitted_paths)
+    unrelated = [
+        path
+        for path in st.changed_paths
+        if not is_todos_metadata_path(path, todos_dir)
+        and path not in permitted
+        and not any(
+            path.startswith(f"{allowed}/") or allowed.startswith(f"{path}/")
+            for allowed in permitted
+        )
+    ]
+    if unrelated:
+        raise GitError(
+            "Working tree has uncommitted changes unrelated to todos metadata. "
+            "Commit/stash them or pass --allow-dirty.\n"
+            + "\n".join(unrelated)
+        )
+    return st
+
+
+def refuse_if_dirty_except(
+    root: Path,
+    *,
+    allow_dirty: bool,
+    todos_dir: str = "todos",
+    permitted_paths: set[str] | None = None,
+) -> GitStatus:
+    """Like ``refuse_if_dirty`` but allow specific working-tree paths."""
+    permitted = _expand_path_prefixes(permitted_paths or set())
+    refuse_unrelated_staged(
+        root,
+        todos_dir=todos_dir,
+        approved_paths=permitted,
+    )
+    st = status(root)
+    if not st.is_dirty or allow_dirty:
+        return st
+    unrelated = [
+        path
+        for path in st.changed_paths
+        if not is_todos_metadata_path(path, todos_dir)
+        and path not in permitted
+        and not any(
+            path.startswith(f"{allowed}/") or allowed.startswith(f"{path}/")
+            for allowed in permitted
+        )
+    ]
+    if unrelated:
+        raise GitError(
+            "Working tree has uncommitted changes unrelated to todos metadata. "
+            "Commit/stash them or pass --allow-dirty.\n"
+            + "\n".join(unrelated)
+        )
+    return st
+
+
 def refuse_if_dirty(
     root: Path,
     *,
     allow_dirty: bool,
     todos_dir: str = "todos",
 ) -> GitStatus:
+    refuse_unrelated_staged(root, todos_dir=todos_dir)
     st = status(root)
     if not st.is_dirty or allow_dirty:
         return st
@@ -124,7 +273,25 @@ def diff_names(root: Path, baseline: str | None = None) -> list[str]:
     return st.changed_paths
 
 
-def diff_text(root: Path, *, max_chars: int = 12_000) -> str:
+def diff_text(root: Path, *, max_chars: int = 12_000, paths: list[str] | None = None) -> str:
+    if paths is not None:
+        if not paths:
+            return "(no diff)"
+        result = _run(root, ["diff", "HEAD", "--", *paths], check=False)
+        text = result.stdout
+        untracked = [
+            path
+            for path in paths
+            if _run(root, ["ls-files", "--error-unmatch", path], check=False).returncode
+            != 0
+            and Path(root / path).is_file()
+        ]
+        if untracked:
+            text += "\n# Untracked files:\n" + "\n".join(untracked)
+        if len(text) > max_chars:
+            return text[:max_chars] + f"\n... truncated ({len(text)} chars total)"
+        return text or "(no diff)"
+
     result = _run(root, ["diff", "HEAD"], check=False)
     untracked_list = _run(
         root,
@@ -145,11 +312,12 @@ def paths_changed_since(root: Path, baseline: str, pre_existing: set[str]) -> li
     return [p for p in names if p not in pre_existing]
 
 
-def stage_paths(root: Path, paths: list[str]) -> None:
+def stage_paths(root: Path, paths: list[str], *, todos_dir: str = "todos") -> None:
     if not paths:
         raise GitError("No paths to stage")
     # Explicit paths only — never git add -A / .
     _run(root, ["add", "--", *paths])
+    verify_staged_paths(root, paths, todos_dir=todos_dir)
 
 
 def is_ignored_path(root: Path, path: str) -> bool:

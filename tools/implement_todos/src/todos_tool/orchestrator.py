@@ -34,6 +34,8 @@ from todos_tool.git_service import (
     head_sha,
     paths_changed_since,
     refuse_if_dirty,
+    refuse_if_dirty_only_permitted,
+    refuse_unrelated_staged,
     stage_paths,
     staged_diff_stat,
     status,
@@ -88,17 +90,23 @@ class Orchestrator:
         self.config = config
         self.renderer = ConsoleRenderer(no_color=config.no_color)
         self.workspace = load_workspace(config.workspace_root, config.todos_dir)
-        self.client = CursorClient(
-            agent_bin=config.agent_bin,
-            model=_resolve_model(
-                cli_model=config.model,
-                manifest_model=self.workspace.manifest.settings.model,
-            ),
-            no_color=config.no_color,
-            skip_probe=config.skip_probe,
-            parse_error_threshold=self.workspace.manifest.settings.parse_error_threshold,
-        )
+        self._client: CursorClient | None = None
         self._pre_existing_dirty: set[str] = set()
+
+    @property
+    def client(self) -> CursorClient:
+        if self._client is None:
+            self._client = CursorClient(
+                agent_bin=self.config.agent_bin,
+                model=_resolve_model(
+                    cli_model=self.config.model,
+                    manifest_model=self.workspace.manifest.settings.model,
+                ),
+                no_color=self.config.no_color,
+                skip_probe=self.config.skip_probe,
+                parse_error_threshold=self.workspace.manifest.settings.parse_error_threshold,
+            )
+        return self._client
 
     def _resolve_auto_commit(self) -> bool:
         return _resolve_auto_commit(
@@ -130,29 +138,37 @@ class Orchestrator:
         while True:
             try:
                 item = next_ready(self.workspace, todo_id)
-            except SchedulingError:
+            except SchedulingError as exc:
+                if todo_id is not None:
+                    raise
                 break
 
+            outcome = "completed"
             try:
                 await self._execute_item(item)
-                report.completed.append(item.id)
             except (CursorEnvironmentError, UserInterrupted):
                 raise
             except TodosToolError as exc:
                 self.renderer.error(f"{item.id}: {exc}")
+                outcome = _classify_item_outcome(self.workspace.get(item.id))
+            else:
                 refreshed = self.workspace.get(item.id)
-                if refreshed and refreshed.status == ItemStatus.BLOCKED:
-                    report.blocked.append(item.id)
-                else:
-                    report.failed.append(item.id)
-                if stop_on_failure or todo_id is not None:
-                    break
-            finally:
-                # Reload workspace after each item
-                self.workspace = load_workspace(
-                    self.config.workspace_root,
-                    self.config.todos_dir,
-                )
+                if refreshed and refreshed.status == ItemStatus.SUPERSEDED:
+                    outcome = "skipped"
+
+            _apply_outcome(report, item.id, outcome)
+
+            if outcome == "failed" and (stop_on_failure or todo_id is not None):
+                raise TodosToolError(f"{item.id}: execution failed")
+            if todo_id is not None and outcome in {"blocked", "skipped"}:
+                break
+            if outcome == "failed" and stop_on_failure:
+                break
+
+            self.workspace = load_workspace(
+                self.config.workspace_root,
+                self.config.todos_dir,
+            )
 
             if todo_id is not None:
                 break
@@ -162,7 +178,6 @@ class Orchestrator:
     async def commit_item(self, item_id: str) -> str:
         """Commit trackable changes for a done item that has no commit SHA yet."""
         ensure_git_repo(self.config.workspace_root)
-        # Backfill intentionally commits the current working tree; do not refuse dirty.
         self._pre_existing_dirty = set()
 
         if not self._resolve_auto_commit():
@@ -191,6 +206,14 @@ class Orchestrator:
             self._finalize_item_done(item, state.commit_sha, item.result.summary or "")
             return state.commit_sha
 
+        commit_paths = self._collect_commit_paths(item, state)
+        refuse_if_dirty_only_permitted(
+            self.config.workspace_root,
+            allow_dirty=self.config.allow_dirty,
+            todos_dir=self.config.todos_dir,
+            permitted_paths=set(commit_paths),
+        )
+
         await self._commit_item(item, state, runs_dir)
         sha = state.commit_sha or item.result.commit_sha
         if not sha:
@@ -200,27 +223,58 @@ class Orchestrator:
     async def resume(self) -> RunReport:
         """Resume any in_progress item from persisted state + git reality."""
         ensure_git_repo(self.config.workspace_root)
-        st = refuse_if_dirty(
-            self.config.workspace_root,
-            allow_dirty=self.config.allow_dirty,
-            todos_dir=self.config.todos_dir,
-        )
-        self._pre_existing_dirty = {
-            p
-            for p in snapshot_pre_existing_dirty(st)
-            if not p.startswith(f"{self.config.todos_dir}/")
-        }
 
         in_progress = [
             i for i in self.workspace.items if i.status == ItemStatus.IN_PROGRESS
         ]
         if not in_progress:
-            # Also look for run state without status update
             for item in self.workspace.items:
                 state = load_state(self.workspace.runs_dir(item.id))
                 if state and state.phase != Phase.IDLE and item.status == ItemStatus.PENDING:
                     in_progress.append(item)
                     break
+
+        if in_progress:
+            item = in_progress[0]
+            runs_dir = self.workspace.runs_dir(item.id)
+            state = load_state(runs_dir)
+            permitted: set[str] = set()
+            if state and state.baseline_head:
+                permitted = {
+                    path
+                    for path in paths_changed_since(
+                        self.config.workspace_root,
+                        state.baseline_head,
+                        set(),
+                    )
+                    if not path.startswith(f"{self.config.todos_dir}/runs/")
+                }
+                if item.source_file:
+                    permitted.add(f"{self.config.todos_dir}/{item.source_file}")
+            refuse_if_dirty_only_permitted(
+                self.config.workspace_root,
+                allow_dirty=self.config.allow_dirty,
+                todos_dir=self.config.todos_dir,
+                permitted_paths=permitted,
+            )
+            st = status(self.config.workspace_root)
+            self._pre_existing_dirty = {
+                path
+                for path in snapshot_pre_existing_dirty(st)
+                if not path.startswith(f"{self.config.todos_dir}/")
+                and path not in permitted
+            }
+        else:
+            st = refuse_if_dirty(
+                self.config.workspace_root,
+                allow_dirty=self.config.allow_dirty,
+                todos_dir=self.config.todos_dir,
+            )
+            self._pre_existing_dirty = {
+                path
+                for path in snapshot_pre_existing_dirty(st)
+                if not path.startswith(f"{self.config.todos_dir}/")
+            }
 
         if not in_progress:
             self.renderer.info("Nothing to resume; starting normal run")
@@ -240,14 +294,19 @@ class Orchestrator:
                 prior.agent_pid = None
                 save_state(runs_dir, prior)
         report = RunReport()
+        outcome = "completed"
         try:
             await self._execute_item(item, resuming=True)
-            report.completed.append(item.id)
         except (CursorEnvironmentError, UserInterrupted):
             raise
         except TodosToolError as exc:
             self.renderer.error(f"{item.id}: {exc}")
-            report.failed.append(item.id)
+            outcome = _classify_item_outcome(self.workspace.get(item.id))
+        else:
+            refreshed = self.workspace.get(item.id)
+            if refreshed and refreshed.status == ItemStatus.SUPERSEDED:
+                outcome = "skipped"
+        _apply_outcome(report, item.id, outcome)
         return report
 
     async def _execute_item(self, item: TodoItem, *, resuming: bool = False) -> None:
@@ -275,8 +334,11 @@ class Orchestrator:
                 f"- {i}" for i in state.review.issues
             )
 
-        # Resume mid-commit
-        if state.phase == Phase.COMMIT and state.commit_state == CommitState.STARTED:
+        # Resume mid-commit (including failed attempts)
+        if state.phase == Phase.COMMIT and state.commit_state in (
+            CommitState.STARTED,
+            CommitState.FAILED,
+        ):
             await self._commit_item(item, state, runs_dir)
             return
 
@@ -313,6 +375,7 @@ class Orchestrator:
             if not work_ok:
                 continue
 
+            # Optional restructuring after work
             # Optional restructuring after work
             self._maybe_apply_restructure(item, runs_dir)
             item = self.workspace.get(item.id) or item
@@ -376,6 +439,7 @@ class Orchestrator:
             prompt = build_work_prompt(
                 item,
                 logical_attempt=state.logical_attempt,
+                todos_dir=self.config.todos_dir,
                 previous_feedback=feedback,
                 continuation=continuation,
             )
@@ -388,6 +452,19 @@ class Orchestrator:
                 f"session={state.session_number}"
             )
 
+            if self.config.dry_run_prompts:
+                (attempt_dir / f"work-prompt-{state.session_number}.md").write_text(
+                    prompt, encoding="utf-8"
+                )
+                state.work_summary = "dry-run: work prompt written"
+                record_transition(runs_dir, state, Transition.WORK_PHASE_READY)
+                return True
+
+            session_renderer = ConsoleRenderer.with_file_logging(
+                self.renderer,
+                log_path,
+            )
+
             try:
                 result = await self.client.run_session(
                     workspace=self.config.workspace_root,
@@ -396,7 +473,7 @@ class Orchestrator:
                     timeout_seconds=settings.work_timeout_seconds,
                     events_path=events_path,
                     log_path=log_path,
-                    renderer=self.renderer,
+                    renderer=session_renderer,
                     on_agent_started=lambda pid: _persist_agent_pid(
                         runs_dir, state, pid
                     ),
@@ -416,7 +493,7 @@ class Orchestrator:
                     raise
                 if state.session_restart_count >= settings.max_session_restarts_per_phase:
                     state.review.summary = f"Work phase failed: {exc}"
-                    record_transition(runs_dir, state, Transition.REVIEW_FAILED)
+                    record_transition(runs_dir, state, Transition.WORK_PHASE_FAILED)
                     return False
                 state.session_restart_count += 1
                 continuation = build_continuation_context(
@@ -467,17 +544,29 @@ class Orchestrator:
             events_path = attempt_dir / f"review-session-{state.session_number}.ndjson"
             log_path = attempt_dir / f"review-session-{state.session_number}.log"
 
+            item_paths = paths_changed_since(
+                self.config.workspace_root,
+                state.baseline_head or "HEAD",
+                self._pre_existing_dirty,
+            )
+            item_paths = [
+                path
+                for path in item_paths
+                if not path.startswith(f"{self.config.todos_dir}/runs/")
+            ]
             st = status(self.config.workspace_root)
-            git_diff = diff_text(self.config.workspace_root)
+            git_diff = diff_text(
+                self.config.workspace_root,
+                paths=item_paths,
+            )
             prompt = build_review_prompt(
                 item,
                 logical_attempt=state.logical_attempt,
                 work_summary=state.work_summary,
-                git_diff=git_diff if not continuation else (continuation + "\n\n" + git_diff),
+                git_diff=git_diff,
                 git_status=st.porcelain,
+                continuation=continuation,
             )
-            if continuation:
-                prompt += "\n\n## Continuation\n" + continuation
 
             (attempt_dir / f"review-prompt-{state.session_number}.md").write_text(
                 prompt, encoding="utf-8"
@@ -485,6 +574,11 @@ class Orchestrator:
             self.renderer.rule(
                 f"REVIEW {item.id} attempt={state.logical_attempt} "
                 f"session={state.session_number}"
+            )
+
+            session_renderer = ConsoleRenderer.with_file_logging(
+                self.renderer,
+                log_path,
             )
 
             try:
@@ -495,7 +589,7 @@ class Orchestrator:
                     timeout_seconds=settings.review_timeout_seconds,
                     events_path=events_path,
                     log_path=log_path,
-                    renderer=self.renderer,
+                    renderer=session_renderer,
                     on_agent_started=lambda pid: _persist_agent_pid(
                         runs_dir, state, pid
                     ),
@@ -586,19 +680,7 @@ class Orchestrator:
         state.commit_state = CommitState.STARTED
         record_transition(runs_dir, state, Transition.COMMIT_STARTED)
 
-        paths = paths_changed_since(
-            self.config.workspace_root,
-            state.baseline_head or "HEAD",
-            self._pre_existing_dirty,
-        )
-        # Never stage todos run artifacts or pre-existing dirty paths
-        paths = [
-            p
-            for p in paths
-            if not p.startswith(f"{self.config.todos_dir}/runs/")
-            and p not in self._pre_existing_dirty
-        ]
-
+        paths = self._collect_commit_paths(item, state)
         summary = state.work_summary or state.review.summary or ""
         # Prepare item metadata for inclusion in the same commit (sha filled after).
         item.status = ItemStatus.DONE
@@ -606,13 +688,12 @@ class Orchestrator:
         item.result.summary = summary
         item.result.commit_sha = None
         save_item(self.workspace, item)
-        if item.source_file:
-            item_rel = f"{self.config.todos_dir}/{item.source_file}"
-            if item_rel not in paths:
-                paths.append(item_rel)
 
-        paths = filter_stageable_paths(self.config.workspace_root, paths)
         if not paths:
+            item.status = ItemStatus.IN_PROGRESS
+            item.result.completed_at = None
+            item.result.summary = None
+            save_item(self.workspace, item)
             state.commit_state = CommitState.FAILED
             record_transition(runs_dir, state, Transition.COMMIT_FAILED)
             raise GitError(
@@ -622,7 +703,16 @@ class Orchestrator:
 
         message = ""
         try:
-            stage_paths(self.config.workspace_root, paths)
+            refuse_unrelated_staged(
+                self.config.workspace_root,
+                todos_dir=self.config.todos_dir,
+                approved_paths=set(paths),
+            )
+            stage_paths(
+                self.config.workspace_root,
+                paths,
+                todos_dir=self.config.todos_dir,
+            )
             if not has_staged_changes(self.config.workspace_root):
                 raise GitError(
                     "Staging produced no staged changes "
@@ -664,6 +754,33 @@ class Orchestrator:
         item.result.summary = summary
         save_item(self.workspace, item)
 
+    def _collect_commit_paths(self, item: TodoItem, state: RunState) -> list[str]:
+        if state.changed_paths:
+            paths = [
+                path
+                for path in state.changed_paths
+                if not path.startswith(f"{self.config.todos_dir}/runs/")
+                and path not in self._pre_existing_dirty
+            ]
+        else:
+            paths = paths_changed_since(
+                self.config.workspace_root,
+                state.baseline_head or "HEAD",
+                self._pre_existing_dirty,
+            )
+            paths = [
+                path
+                for path in paths
+                if not path.startswith(f"{self.config.todos_dir}/runs/")
+                and path not in self._pre_existing_dirty
+            ]
+        if item.source_file:
+            item_rel = f"{self.config.todos_dir}/{item.source_file}"
+            dirty_paths = set(status(self.config.workspace_root).changed_paths)
+            if item_rel not in paths and item_rel in dirty_paths:
+                paths.append(item_rel)
+        return filter_stageable_paths(self.config.workspace_root, paths)
+
     def _maybe_apply_restructure(self, item: TodoItem, runs_dir: Path) -> None:
         proposal_path = runs_dir / "restructure-proposal.json"
         try:
@@ -674,17 +791,49 @@ class Orchestrator:
         if proposal is None:
             return
         try:
-            self.workspace = apply_restructure_proposal(self.workspace, item, proposal)
+            self.workspace = apply_restructure_proposal(
+                self.workspace,
+                item,
+                proposal,
+                proposal_path=proposal_path,
+            )
             self.renderer.info(f"Applied restructuring proposal for {item.id}")
         except RestructuringError as exc:
             self.renderer.warn(f"Restructuring rejected: {exc}")
 
 
+def _classify_item_outcome(item: TodoItem | None) -> str:
+    if item is None:
+        return "failed"
+    if item.status == ItemStatus.SUPERSEDED:
+        return "skipped"
+    if item.status == ItemStatus.BLOCKED:
+        return "blocked"
+    return "failed"
+
+
+def _apply_outcome(report: RunReport, item_id: str, outcome: str) -> None:
+    if outcome == "completed":
+        report.completed.append(item_id)
+    elif outcome == "skipped":
+        report.skipped.append(item_id)
+    elif outcome == "blocked":
+        report.blocked.append(item_id)
+    else:
+        report.failed.append(item_id)
+
+
 def _extract_summary(result: SessionResult) -> str:
     text = result.assistant_text.strip()
-    if len(text) > 4000:
-        return text[-4000:]
-    return text
+    if len(text) <= 4000:
+        return text
+    head = 1500
+    tail = 2400
+    return (
+        text[:head]
+        + f"\n... truncated ({len(text)} chars total) ...\n"
+        + text[-tail:]
+    )
 
 
 def _resolve_model(*, cli_model: str | None, manifest_model: str | None) -> str | None:

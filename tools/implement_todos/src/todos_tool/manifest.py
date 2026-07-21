@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import tempfile
 from pathlib import Path
 
 import yaml
@@ -9,6 +11,7 @@ from pydantic import ValidationError as PydanticValidationError
 
 from todos_tool.errors import ValidationError
 from todos_tool.models import ItemStatus, Manifest, TodoItem
+from todos_tool.paths import resolve_within, validate_item_id, validate_relative_path
 
 
 class Workspace:
@@ -33,13 +36,35 @@ class Workspace:
     def item_path(self, item: TodoItem) -> Path:
         if not item.source_file:
             raise ValidationError([f"Item {item.id} has no source_file"])
-        return self.todos_dir / item.source_file
+        return resolve_within(self.todos_dir, item.source_file)
 
     def runs_dir(self, item_id: str) -> Path:
-        return self.todos_dir / "runs" / item_id
+        validate_item_id(item_id)
+        return resolve_within(self.todos_dir, f"runs/{item_id}")
 
     def status_map(self) -> dict[str, ItemStatus]:
         return {item.id: item.status for item in self.items}
+
+
+def _atomic_write_text(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        dir=str(path.parent),
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(tmp_name, path)
+    except Exception:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
 
 
 def _load_yaml(path: Path) -> dict:
@@ -89,7 +114,10 @@ def load_workspace(
 ) -> Workspace:
     """Load and validate manifest + items under workspace_root/todos_dir_name."""
     root = workspace_root.resolve()
-    todos_dir = (root / todos_dir_name).resolve()
+    try:
+        todos_dir = resolve_within(root, todos_dir_name)
+    except ValueError as exc:
+        raise ValidationError([str(exc)]) from exc
     errors: list[str] = []
 
     if not todos_dir.is_dir():
@@ -110,6 +138,7 @@ def load_workspace(
         errors.append("manifest.yaml has no items")
 
     seen_ids: set[str] = set()
+    manifest_ids = {ref.id for ref in manifest.items}
     items: list[TodoItem] = []
 
     for ref in manifest.items:
@@ -118,7 +147,14 @@ def load_workspace(
             continue
         seen_ids.add(ref.id)
 
-        item_path = todos_dir / ref.file
+        try:
+            validate_item_id(ref.id)
+            rel_file = validate_relative_path(ref.file, label="manifest item file")
+            item_path = resolve_within(todos_dir, rel_file)
+        except ValueError as exc:
+            errors.append(f"{ref.id}: {exc}")
+            continue
+
         if not item_path.is_file():
             errors.append(f"Missing item file for {ref.id}: {ref.file}")
             continue
@@ -138,21 +174,18 @@ def load_workspace(
             errors.append(
                 f"Item id mismatch: manifest has {ref.id}, file has {item.id}"
             )
-        item.source_file = ref.file
+        item.source_file = rel_file
         items.append(item)
 
-    known_ids = {item.id for item in items}
     for item in items:
         for dep in item.depends_on:
-            if dep not in known_ids and dep not in seen_ids:
+            if dep not in manifest_ids:
                 errors.append(f"{item.id} depends on unknown item: {dep}")
             elif dep == item.id:
                 errors.append(f"{item.id} depends on itself")
 
     errors.extend(_detect_cycles(items))
 
-    # Active state sanity: at most one in_progress with run state is OK;
-    # invalid combos are checked at schedule time. Here ensure statuses are valid.
     in_progress = [i.id for i in items if i.status == ItemStatus.IN_PROGRESS]
     if len(in_progress) > 1:
         errors.append(
@@ -170,15 +203,13 @@ def save_item(workspace: Workspace, item: TodoItem) -> None:
     """Write an item YAML back to disk (without source_file)."""
     path = workspace.item_path(item)
     data = item.model_dump(mode="json", exclude_none=False)
-    # Keep enums as values
     data["type"] = item.type.value
     data["status"] = item.status.value
     if item.result.completed_at is not None:
         data["result"]["completed_at"] = item.result.completed_at.isoformat()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
+    _atomic_write_text(
+        path,
         yaml.safe_dump(data, sort_keys=False, allow_unicode=True),
-        encoding="utf-8",
     )
 
 
@@ -188,12 +219,15 @@ def append_manifest_item(
     relative_file: str,
 ) -> None:
     """Append a new item reference to manifest.yaml."""
+    validate_item_id(item_id)
+    rel_file = validate_relative_path(relative_file, label="manifest item file")
+    resolve_within(workspace.todos_dir, rel_file)
     manifest_path = workspace.todos_dir / "manifest.yaml"
     raw = _load_yaml(manifest_path)
     items = list(raw.get("items") or [])
-    items.append({"id": item_id, "file": relative_file})
+    items.append({"id": item_id, "file": rel_file})
     raw["items"] = items
-    manifest_path.write_text(
+    _atomic_write_text(
+        manifest_path,
         yaml.safe_dump(raw, sort_keys=False, allow_unicode=True),
-        encoding="utf-8",
     )

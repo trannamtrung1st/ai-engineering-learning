@@ -66,13 +66,14 @@ def _format_commit(item: TodoItem) -> str:
 
 
 def list_ready(workspace: Workspace) -> list[TodoItem]:
-    """Ready items in manifest order, then by priority (lower first)."""
+    """Ready items sorted by priority (lower first), then manifest order."""
     status_map = workspace.status_map()
-    ready = [item for item in workspace.items if is_executable(item, status_map)]
-    # Manifest order is primary; among same position priority is already
-    # secondary via stable sort on priority.
-    indexed = list(enumerate(ready))
-    indexed.sort(key=lambda pair: (pair[0], pair[1].priority))
+    indexed = [
+        (idx, item)
+        for idx, item in enumerate(workspace.items)
+        if is_executable(item, status_map)
+    ]
+    indexed.sort(key=lambda pair: (pair[1].priority, pair[0]))
     return [item for _, item in indexed]
 
 

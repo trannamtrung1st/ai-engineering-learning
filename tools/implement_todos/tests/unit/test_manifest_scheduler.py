@@ -121,12 +121,30 @@ def test_dependency_order(git_project: Path, sample_item: dict) -> None:
     b["title"] = "Second"
     b["depends_on"] = ["TASK-001"]
     b["priority"] = 1
+    a["priority"] = 50
     write_todos(git_project, [a, {**b, "_file": "items/002.yaml"}])
     ws = load_workspace(git_project)
     ready = list_ready(ws)
     assert [i.id for i in ready] == ["TASK-001"]
     rows = readiness_rows(ws)
     assert rows[1]["ready"].startswith("waiting:")
+
+
+def test_priority_breaks_ties_after_dependencies(git_project: Path, sample_item: dict) -> None:
+    a = dict(sample_item)
+    b = dict(sample_item)
+    c = dict(sample_item)
+    b["id"] = "TASK-002"
+    b["priority"] = 50
+    c["id"] = "TASK-003"
+    c["priority"] = 10
+    write_todos(
+        git_project,
+        [a, {**b, "_file": "items/002.yaml"}, {**c, "_file": "items/003.yaml"}],
+    )
+    ws = load_workspace(git_project)
+    ready = list_ready(ws)
+    assert [item.id for item in ready] == ["TASK-003", "TASK-002", "TASK-001"]
 
 
 def test_format_commit(git_project: Path, sample_item: dict) -> None:

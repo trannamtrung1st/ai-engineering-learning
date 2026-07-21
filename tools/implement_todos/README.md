@@ -26,18 +26,32 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
+After installation, the `todos-tool` console script is available alongside `python -m todos_tool`.
+
 ## Quick start
 
 From a Git project that contains a `todos/` workspace:
 
 ```bash
-python -m todos_tool validate --workspace /path/to/project
-python -m todos_tool status --workspace /path/to/project
-python -m todos_tool run --workspace /path/to/project
-python -m todos_tool run --workspace /path/to/project --todo TASK-001
-python -m todos_tool resume --workspace /path/to/project
-python -m todos_tool commit --workspace /path/to/project --todo TASK-001
+todos-tool validate --workspace /path/to/project
+todos-tool status --workspace /path/to/project
+todos-tool run --workspace /path/to/project
+todos-tool run --workspace /path/to/project --todo TASK-001
+todos-tool resume --workspace /path/to/project
+todos-tool commit --workspace /path/to/project --todo TASK-001
 ```
+
+Equivalent module invocations also work: `python -m todos_tool validate --workspace /path/to/project`.
+
+To try the bundled example workspace from this repository:
+
+```bash
+cd tools/implement_todos
+todos-tool validate --workspace examples
+todos-tool status --workspace examples
+```
+
+Point `--workspace` at any Git checkout that contains a prepared todos directory (default name `todos`, override with `--todos-dir`).
 
 `status` prints `auto_commit` from the manifest and a **Commit** column (`sha` prefix, `uncommitted`, or `-`).
 
@@ -86,6 +100,7 @@ settings:
   review_timeout_seconds: 900
   auto_commit: true
   stop_on_failure: true
+  parse_error_threshold: 20   # max malformed NDJSON lines before a recoverable restart
   model: composer-2.5   # default; set null to use Cursor default instead
 items:
   - id: TASK-001
@@ -93,6 +108,10 @@ items:
 ```
 
 `settings.model` defaults to `composer-2.5`. Work and review sessions pass `--model` to the Cursor agent. Omit the field to keep the default, set another slug to change it, or set `null` to defer to Cursor's account default. The CLI flag `--model` overrides this value for a single run.
+
+`settings.parse_error_threshold` defaults to `20`. During streaming, malformed NDJSON lines increment a counter; when the threshold is reached the session fails recoverably and may restart within the same phase without consuming a logical attempt.
+
+Scheduling uses `(priority, manifest order)` with **lower priority numbers first**. Dependencies still gate readiness: an item is not executable until every `depends_on` entry is `done`.
 
 ### Item file
 
@@ -162,7 +181,7 @@ Success is determined only by a validated JSON decision (`schema_version: 1`) wi
 - `recommended_next_action`: `mark_done` | `retry` | `block`
 - Per-criterion results, validation results, and instruction compliance
 
-A `pass` is accepted only when every acceptance criterion passes, mandatory validation passes, instruction compliance passes, no unresolved **blocking** issue exists (info/low notes are allowed), and `item_id` / `logical_attempt` match the active run.
+A `pass` is accepted only when every acceptance criterion is reported **exactly** (normalized match, no substitutions or duplicates), every configured validation command is reported and passing, instruction compliance passes, no unresolved **blocking** issue exists (info/low notes are allowed), and `item_id` / `logical_attempt` match the active run.
 
 ## Streaming
 
@@ -177,8 +196,11 @@ Flags are probed from `agent --help` at runtime. Events are normalized to catego
 ## Git safety
 
 - Refuses unrelated dirty trees unless `--allow-dirty` (todos item/run metadata is ignored).
+- **Never** allows unrelated **staged** content, even with `--allow-dirty`; unstage foreign index entries before running.
 - Stages **explicit paths** only — never `git add .` / `git add -A`.
+- Verifies the staged set exactly matches approved paths for each commit.
 - One commit per successful item after review pass.
+- Backfill `commit --todo` applies the same staged-content policy; only paths attributable to the done item (plus its item YAML) may be dirty.
 - Commit prefixes: `feat` / `fix` / `refactor`.
 - Subjects are short, imperative, ≤72 chars, and must not mention AI/agent/Cursor/TODO/item IDs.
 
@@ -195,9 +217,13 @@ A work session may write `todos/runs/<item-id>/restructure-proposal.json` to pro
 ```bash
 pip install -e ".[dev]"
 pytest
+python -m todos_tool validate --workspace examples
+python -m build
+pip install dist/todos_tool-*.whl
+todos-tool --version
 ```
 
-Tests use a fake Cursor executable under `tests/fixtures/fake_agent.py`. Live Cursor access is not required.
+Tests use a fake Cursor executable under `tests/fixtures/fake_agent.py`. Live Cursor access is not required for `validate`, `status`, or Git-only `commit` paths — the Cursor CLI is resolved lazily when a work/review session starts.
 
 ## Interrupting a run
 

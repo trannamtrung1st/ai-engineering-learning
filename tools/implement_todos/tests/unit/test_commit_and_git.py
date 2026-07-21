@@ -12,7 +12,9 @@ from todos_tool.git_service import (
     filter_stageable_paths,
     is_ignored_path,
     refuse_if_dirty,
+    refuse_unrelated_staged,
     stage_paths,
+    staged_paths,
     status,
 )
 from todos_tool.models import ItemType, TodoItem
@@ -80,3 +82,26 @@ def test_filter_stageable_paths_skips_gitignored(git_project: Path) -> None:
         ["tracked.txt", "ignored/secret.txt"],
     )
     assert stageable == ["tracked.txt"]
+
+
+def test_unrelated_staged_refused_even_with_allow_dirty(git_project: Path) -> None:
+    (git_project / "a.txt").write_text("a", encoding="utf-8")
+    stage_paths(git_project, ["a.txt"])
+    assert staged_paths(git_project) == ["a.txt"]
+    with pytest.raises(GitError):
+        refuse_if_dirty(git_project, allow_dirty=True)
+    with pytest.raises(GitError):
+        refuse_unrelated_staged(git_project)
+
+
+def test_unrelated_unstaged_allowed_with_allow_dirty(git_project: Path) -> None:
+    (git_project / "dirty.txt").write_text("x", encoding="utf-8")
+    st = refuse_if_dirty(git_project, allow_dirty=True)
+    assert st.is_dirty
+
+
+def test_stage_paths_verifies_exact_set(git_project: Path) -> None:
+    (git_project / "a.txt").write_text("a", encoding="utf-8")
+    (git_project / "b.txt").write_text("b", encoding="utf-8")
+    stage_paths(git_project, ["a.txt"])
+    assert staged_paths(git_project) == ["a.txt"]

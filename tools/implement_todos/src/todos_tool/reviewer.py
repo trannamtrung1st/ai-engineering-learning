@@ -12,7 +12,10 @@ from todos_tool.errors import ReviewError
 from todos_tool.models import ReviewDecision, TodoItem
 
 FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
-JSON_OBJECT_RE = re.compile(r"\{(?:[^{}]|(?:\{[^{}]*\}))*\}", re.DOTALL)
+
+
+def _normalize_text(text: str) -> str:
+    return " ".join(text.strip().split()).lower()
 
 
 def extract_json_objects(text: str) -> list[dict[str, Any]]:
@@ -63,6 +66,72 @@ def parse_review_decision(text: str) -> ReviewDecision:
     raise ReviewError("No valid review decision JSON found")
 
 
+def _validate_acceptance_coverage(
+    decision: ReviewDecision,
+    item: TodoItem,
+) -> None:
+    expected = {_normalize_text(criterion) for criterion in item.acceptance_criteria}
+    reported: dict[str, str] = {}
+    for entry in decision.acceptance_criteria:
+        key = _normalize_text(entry.criterion)
+        if key in reported:
+            raise ReviewError(
+                f"Duplicate acceptance criterion reported: {entry.criterion}"
+            )
+        reported[key] = entry.criterion
+
+    missing = expected - set(reported)
+    unexpected = set(reported) - expected
+    if missing or unexpected:
+        parts: list[str] = []
+        if missing:
+            parts.append(f"missing: {', '.join(sorted(missing))}")
+        if unexpected:
+            parts.append(f"unexpected: {', '.join(sorted(unexpected))}")
+        raise ReviewError(
+            "Pass requires exact acceptance criteria coverage "
+            f"({'; '.join(parts)})"
+        )
+
+    if not all(entry.passed for entry in decision.acceptance_criteria):
+        raise ReviewError("Pass requires every acceptance criterion to pass")
+
+
+def _validate_command_coverage(
+    decision: ReviewDecision,
+    item: TodoItem,
+) -> None:
+    expected = {_normalize_text(command) for command in item.validation.commands}
+    if not expected:
+        return
+
+    if not decision.validation:
+        raise ReviewError("Pass requires validation results for mandatory commands")
+
+    reported: dict[str, str] = {}
+    for entry in decision.validation:
+        key = _normalize_text(entry.command)
+        if key in reported:
+            raise ReviewError(f"Duplicate validation command reported: {entry.command}")
+        reported[key] = entry.command
+
+    missing = expected - set(reported)
+    unexpected = set(reported) - expected
+    if missing or unexpected:
+        parts: list[str] = []
+        if missing:
+            parts.append(f"missing: {', '.join(sorted(missing))}")
+        if unexpected:
+            parts.append(f"unexpected: {', '.join(sorted(unexpected))}")
+        raise ReviewError(
+            "Pass requires every configured validation command to be reported "
+            f"({'; '.join(parts)})"
+        )
+
+    if not all(entry.passed for entry in decision.validation):
+        raise ReviewError("Pass requires all mandatory validation to pass")
+
+
 def validate_pass(
     decision: ReviewDecision,
     item: TodoItem,
@@ -85,21 +154,8 @@ def validate_pass(
     if not decision.acceptance_criteria:
         raise ReviewError("Pass requires acceptance_criteria results")
 
-    expected = {c.strip() for c in item.acceptance_criteria}
-    reported = {c.criterion.strip() for c in decision.acceptance_criteria}
-    if not expected.issubset(reported) and len(decision.acceptance_criteria) < len(
-        item.acceptance_criteria
-    ):
-        raise ReviewError("Pass missing acceptance criteria coverage")
-
-    if not all(c.passed for c in decision.acceptance_criteria):
-        raise ReviewError("Pass requires every acceptance criterion to pass")
-
-    if item.validation.commands:
-        if not decision.validation:
-            raise ReviewError("Pass requires validation results for mandatory commands")
-        if not all(v.passed for v in decision.validation):
-            raise ReviewError("Pass requires all mandatory validation to pass")
+    _validate_acceptance_coverage(decision, item)
+    _validate_command_coverage(decision, item)
 
     if not decision.instruction_compliance.passed:
         raise ReviewError("Pass requires instruction_compliance.passed=true")

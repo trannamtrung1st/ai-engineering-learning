@@ -6,7 +6,9 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from todos_tool.paths import validate_item_id as _validate_item_id
 
 
 class ItemType(str, Enum):
@@ -42,6 +44,7 @@ class Transition(str, Enum):
     WORK_SESSION_STARTED = "work_session_started"
     WORK_SESSION_RESTARTED = "work_session_restarted"
     WORK_PHASE_READY = "work_phase_ready"
+    WORK_PHASE_FAILED = "work_phase_failed"
     REVIEW_SESSION_STARTED = "review_session_started"
     REVIEW_SESSION_RESTARTED = "review_session_restarted"
     REVIEW_PASSED = "review_passed"
@@ -54,6 +57,8 @@ class Transition(str, Enum):
 
 
 class ManifestSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     max_attempts: int = 5
     max_session_restarts_per_phase: int = 2
     work_timeout_seconds: int = 1800
@@ -86,31 +91,43 @@ class ManifestSettings(BaseModel):
 
 
 class ManifestItemRef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     id: str
     file: str
 
 
 class Manifest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     version: Literal[1] = 1
     settings: ManifestSettings = Field(default_factory=ManifestSettings)
     items: list[ManifestItemRef] = Field(default_factory=list)
 
 
 class ItemResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     completed_at: datetime | None = None
     commit_sha: str | None = None
     summary: str | None = None
 
 
 class ItemValidation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     commands: list[str] = Field(default_factory=list)
 
 
 class ItemContext(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     files: list[str] = Field(default_factory=list)
 
 
 class TodoItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     version: Literal[1] = 1
     id: str
     title: str
@@ -129,9 +146,7 @@ class TodoItem(BaseModel):
     @field_validator("id")
     @classmethod
     def non_empty_id(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("id must not be empty")
-        return value.strip()
+        return _validate_item_id(value)
 
     @field_validator("title", "description")
     @classmethod
@@ -142,12 +157,16 @@ class TodoItem(BaseModel):
 
 
 class AcceptanceCriterionResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     criterion: str
     passed: bool
     evidence: str = ""
 
 
 class ValidationCommandResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     command: str
     passed: bool
     exit_code: int | None = None
@@ -155,12 +174,16 @@ class ValidationCommandResult(BaseModel):
 
 
 class InstructionCompliance(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     passed: bool
     violations: list[str] = Field(default_factory=list)
 
 
 class ReviewIssue(BaseModel):
     """Structured or legacy review note."""
+
+    model_config = ConfigDict(extra="forbid")
 
     severity: Literal["info", "low", "medium", "high", "critical"] = "medium"
     title: str = ""
@@ -201,6 +224,8 @@ class ReviewIssue(BaseModel):
 
 
 class ReviewDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     schema_version: Literal[1] = 1
     item_id: str
     logical_attempt: int
@@ -236,6 +261,8 @@ class ReviewDecision(BaseModel):
 
 
 class ReviewResultRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     decision: str | None = None
     summary: str | None = None
     issues: list[str] = Field(default_factory=list)
@@ -243,6 +270,8 @@ class ReviewResultRecord(BaseModel):
 
 
 class RunState(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     schema_version: Literal[1] = 1
     item_id: str
     logical_attempt: int = 0
@@ -266,6 +295,8 @@ class RunState(BaseModel):
 
 class RestructuringProposal(BaseModel):
     """Structured proposal from a Cursor session for backlog changes."""
+
+    model_config = ConfigDict(extra="forbid")
 
     schema_version: Literal[1] = 1
     item_id: str
