@@ -3,33 +3,52 @@
 from __future__ import annotations
 
 import json
-import re
 from typing import Any
 
 from pydantic import ValidationError as PydanticValidationError
 
 from todos_tool.errors import ReviewError
-from todos_tool.models import ReviewDecision, TodoItem
-
-FENCE_RE = re.compile(r"```(?:json)?\s*(\{.*?\})\s*```", re.DOTALL)
+from todos_tool.models import ReviewDecision, TodoItem, ValidationCommandResult
 
 
 def _normalize_text(text: str) -> str:
     return " ".join(text.strip().split()).lower()
 
 
-def extract_json_objects(text: str) -> list[dict[str, Any]]:
-    """Extract candidate JSON objects from assistant text."""
+def _extract_fenced_json_objects(text: str) -> list[dict[str, Any]]:
+    """Extract JSON objects from ```json ... ``` or ``` ... ``` fences."""
     candidates: list[dict[str, Any]] = []
-    for match in FENCE_RE.finditer(text):
+    marker = "```"
+    idx = 0
+    while True:
+        start = text.find(marker, idx)
+        if start < 0:
+            break
+        content_start = start + len(marker)
+        if text[content_start : content_start + 4].lower() == "json":
+            content_start += 4
+        newline = text.find("\n", content_start)
+        if newline < 0:
+            break
+        end = text.find(marker, newline + 1)
+        if end < 0:
+            break
+        block = text[newline + 1 : end].strip()
         try:
-            obj = json.loads(match.group(1))
+            obj = json.loads(block)
             if isinstance(obj, dict):
                 candidates.append(obj)
         except json.JSONDecodeError:
-            continue
+            pass
+        idx = end + len(marker)
+    return candidates
 
-    # Also try last brace-balanced object
+
+def extract_json_objects(text: str) -> list[dict[str, Any]]:
+    """Extract candidate JSON objects from assistant text."""
+    candidates: list[dict[str, Any]] = []
+    candidates.extend(_extract_fenced_json_objects(text))
+
     decoder = json.JSONDecoder()
     idx = 0
     while idx < len(text):
@@ -132,10 +151,45 @@ def _validate_command_coverage(
         raise ReviewError("Pass requires all mandatory validation to pass")
 
 
+def _validate_authoritative_validation(
+    decision: ReviewDecision,
+    authoritative: list[ValidationCommandResult],
+) -> None:
+    expected = {
+        _normalize_text(result.command): result
+        for result in authoritative
+    }
+    reported = {
+        _normalize_text(result.command): result
+        for result in decision.validation
+    }
+    if set(reported) != set(expected):
+        raise ReviewError(
+            "Review validation commands do not match authoritative results"
+        )
+
+    disagreements: list[str] = []
+    for key, actual in expected.items():
+        claimed = reported[key]
+        if (
+            claimed.passed != actual.passed
+            or claimed.exit_code != actual.exit_code
+        ):
+            disagreements.append(actual.command)
+    if disagreements:
+        raise ReviewError(
+            "Review validation results contradict authoritative execution: "
+            + ", ".join(disagreements)
+        )
+    if not all(result.passed for result in authoritative):
+        raise ReviewError("Pass rejected because authoritative validation failed")
+
+
 def validate_pass(
     decision: ReviewDecision,
     item: TodoItem,
     logical_attempt: int,
+    authoritative_validation: list[ValidationCommandResult] | None = None,
 ) -> None:
     """Raise ReviewError if a claimed pass is not actually valid."""
     if decision.item_id != item.id:
@@ -156,6 +210,8 @@ def validate_pass(
 
     _validate_acceptance_coverage(decision, item)
     _validate_command_coverage(decision, item)
+    if authoritative_validation is not None:
+        _validate_authoritative_validation(decision, authoritative_validation)
 
     if not decision.instruction_compliance.passed:
         raise ReviewError("Pass requires instruction_compliance.passed=true")
@@ -175,6 +231,12 @@ def accept_decision(
     decision: ReviewDecision,
     item: TodoItem,
     logical_attempt: int,
+    authoritative_validation: list[ValidationCommandResult] | None = None,
 ) -> ReviewDecision:
-    validate_pass(decision, item, logical_attempt)
+    validate_pass(
+        decision,
+        item,
+        logical_attempt,
+        authoritative_validation,
+    )
     return decision

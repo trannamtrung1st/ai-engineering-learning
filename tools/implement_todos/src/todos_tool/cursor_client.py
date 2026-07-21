@@ -22,6 +22,8 @@ from todos_tool.stream_parser import NdjsonStreamParser
 PhaseName = Literal["work", "review"]
 AgentStartedCallback = Callable[[int], None]
 
+PROMPT_FILE_ENV = "TODOS_TOOL_PROMPT_FILE"
+
 
 @dataclass
 class SessionResult:
@@ -78,6 +80,20 @@ async def probe_stream_flags(agent_bin: str) -> list[str]:
     if "--stream-partial-output" in help_text:
         flags.append("--stream-partial-output")
     return flags or default_stream_flags()
+
+
+def build_bootstrap_prompt(prompt_path: Path, workspace: Path) -> str:
+    """Return a short argv-safe prompt that directs the agent to the full prompt file."""
+    try:
+        rel = prompt_path.relative_to(workspace)
+        display_path = str(rel).replace("\\", "/")
+    except ValueError:
+        display_path = str(prompt_path)
+    return (
+        "Read and follow the complete instructions in the prompt file at "
+        f"`{display_path}` (absolute: {prompt_path}). "
+        "Open that file first and execute it exactly."
+    )
 
 
 def build_agent_args(
@@ -153,15 +169,21 @@ class CursorClient:
         timeout_seconds: int,
         events_path: Path | None = None,
         log_path: Path | None = None,
+        prompt_path: Path | None = None,
         renderer: ConsoleRenderer | None = None,
         on_agent_started: AgentStartedCallback | None = None,
     ) -> SessionResult:
         await self.ensure_ready()
         assert self._stream_flags is not None
 
+        if prompt_path is not None:
+            prompt_arg = build_bootstrap_prompt(prompt_path, workspace)
+        else:
+            prompt_arg = prompt
+
         args = build_agent_args(
             workspace=workspace,
-            prompt=prompt,
+            prompt=prompt_arg,
             phase=phase,
             model=self.model,
             stream_flags=self._stream_flags,
@@ -175,6 +197,9 @@ class CursorClient:
 
         stdout_path, stderr_path, tmp_paths = _resolve_capture_paths(events_path, log_path)
         proc: subprocess.Popen[bytes] | None = None
+        extra_env: dict[str, str] = {}
+        if prompt_path is not None:
+            extra_env[PROMPT_FILE_ENV] = str(prompt_path.resolve())
 
         try:
             proc = _spawn_agent(
@@ -183,6 +208,7 @@ class CursorClient:
                 workspace=workspace,
                 stdout_path=stdout_path,
                 stderr_path=stderr_path,
+                extra_env=extra_env,
             )
         except OSError as exc:
             _cleanup_tmp_paths(tmp_paths)
@@ -317,6 +343,7 @@ def _spawn_agent(
     workspace: Path,
     stdout_path: Path,
     stderr_path: Path,
+    extra_env: dict[str, str] | None = None,
 ) -> subprocess.Popen[bytes]:
     """Start agent in its own session with file-backed stdio.
 
@@ -325,6 +352,9 @@ def _spawn_agent(
     """
     stdout_f: TextIO[bytes] = stdout_path.open("wb")
     stderr_f: TextIO[bytes] = stderr_path.open("wb")
+    env = os.environ.copy()
+    if extra_env:
+        env.update(extra_env)
     try:
         return subprocess.Popen(
             [agent_bin, *args],
@@ -332,6 +362,7 @@ def _spawn_agent(
             stderr=stderr_f,
             cwd=str(workspace),
             start_new_session=True,
+            env=env,
         )
     finally:
         # Child keeps its own duplicated fds; parent write handles can close.

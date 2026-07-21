@@ -33,13 +33,19 @@ def build_continuation_context(
     previous_summary: str | None,
     failure_reason: str,
     validation_notes: str | None = None,
+    item_paths: list[str] | None = None,
+    todos_dir: str = "todos",
 ) -> str:
     """Build bounded continuation context for a session restart."""
     st = status(workspace_root)
-    diff = diff_text(workspace_root, max_chars=MAX_DIFF_CHARS)
+    runs_prefix = f"{todos_dir}/runs/"
+    scoped_paths = item_paths or [
+        path for path in st.changed_paths if not path.startswith(runs_prefix)
+    ]
+    diff = diff_text(workspace_root, max_chars=MAX_DIFF_CHARS, paths=scoped_paths)
     stat = diff_summary(workspace_root)
 
-    changed_lines = [f"- {p}" for p in st.changed_paths[:50]] or ["- (none)"]
+    changed_lines = [f"- {p}" for p in scoped_paths[:50]] or ["- (none)"]
     parts = [
         f"Item: {item.id} ({item.title})",
         f"Logical attempt: {logical_attempt}",

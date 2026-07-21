@@ -99,7 +99,7 @@ async def test_no_stageable_paths_rolls_back_to_in_progress(
         )
     )
     report = await orch.resume()
-    assert report.failed == ["TASK-001"]
+    assert report.retryable == ["TASK-001"]
 
     ws = load_workspace(git_project)
     item = ws.get("TASK-001")
@@ -177,6 +177,9 @@ async def test_stop_on_failure_false_continues(
         f"workspace = {str(git_project)!r}\n"
         "args = sys.argv[1:]\n"
         "prompt = args[-1] if args else ''\n"
+        "prompt_file = os.environ.get('TODOS_TOOL_PROMPT_FILE')\n"
+        "if prompt_file and os.path.isfile(prompt_file):\n"
+        "    prompt = open(prompt_file).read()\n"
         "env = os.environ.copy()\n"
         "env['FAKE_AGENT_WORKSPACE'] = workspace\n"
         "if 'TASK-002' in prompt:\n"
@@ -203,7 +206,7 @@ async def test_stop_on_failure_false_continues(
         )
     )
     report = await orch.run()
-    assert "TASK-001" in report.failed or "TASK-001" in report.blocked
+    assert report.blocked == ["TASK-001"]
     assert report.completed == ["TASK-002"]
 
 

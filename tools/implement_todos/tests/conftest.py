@@ -43,7 +43,16 @@ def git_project(tmp_path: Path) -> Path:
         capture_output=True,
     )
     (root / "README.md").write_text("# demo\n", encoding="utf-8")
-    subprocess.run(["git", "add", "README.md"], cwd=root, check=True, capture_output=True)
+    (root / "test_workspace_smoke.py").write_text(
+        "def test_workspace_smoke():\n    assert True\n",
+        encoding="utf-8",
+    )
+    subprocess.run(
+        ["git", "add", "README.md", "test_workspace_smoke.py"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+    )
     subprocess.run(
         ["git", "commit", "-m", "chore: initial"],
         cwd=root,

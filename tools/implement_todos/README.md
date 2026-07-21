@@ -68,6 +68,7 @@ Useful flags:
 | `--skip-probe` | Skip `agent --help` probe; use documented stream flags (`TODOS_TOOL_SKIP_PROBE`) |
 | `--stop-on-failure BOOL` | Override manifest `stop_on_failure` (`true` / `false`) |
 | `--auto-commit BOOL` | Override manifest `auto_commit` (`true` / `false`; default: `true`) |
+| `--dry-run-prompts` | Write prompt previews without agents, validation, commits, or item/state changes |
 
 Commit a done item that was finished without a SHA:
 
@@ -98,6 +99,7 @@ settings:
   max_session_restarts_per_phase: 2
   work_timeout_seconds: 1800
   review_timeout_seconds: 900
+  validation_timeout_seconds: 900  # timeout for each orchestrator-run command
   auto_commit: true
   stop_on_failure: true
   parse_error_threshold: 20   # max malformed NDJSON lines before a recoverable restart
@@ -155,11 +157,13 @@ See [`examples/todos/`](examples/todos/) for a minimal valid workspace.
 ```text
 Logical attempt
 ├── Work phase  (one or more Cursor sessions)
+├── Validation  (commands run directly by the orchestrator)
 └── Review phase (fresh Cursor session, --mode ask)
 ```
 
 - Default: **5** logical attempts, **2** session restarts per phase.
 - Timeouts / recoverable stream failures restart the **same** phase without consuming a logical attempt.
+- Configured validation commands run sequentially outside Cursor. Their exit codes and bounded output are persisted and supplied to review as authoritative evidence.
 - A failed or invalid independent review consumes one logical attempt.
 - Missing Cursor CLI or auth failures block immediately.
 
@@ -181,7 +185,9 @@ Success is determined only by a validated JSON decision (`schema_version: 1`) wi
 - `recommended_next_action`: `mark_done` | `retry` | `block`
 - Per-criterion results, validation results, and instruction compliance
 
-A `pass` is accepted only when every acceptance criterion is reported **exactly** (normalized match, no substitutions or duplicates), every configured validation command is reported and passing, instruction compliance passes, no unresolved **blocking** issue exists (info/low notes are allowed), and `item_id` / `logical_attempt` match the active run.
+A `pass` is accepted only when every acceptance criterion is reported **exactly** (normalized match, no substitutions or duplicates), every configured validation command matches the orchestrator's authoritative command/exit-code result and passes, instruction compliance passes, no unresolved **blocking** issue exists (info/low notes are allowed), and `item_id` / `logical_attempt` match the active run.
+
+Validation commands are trusted workspace input and execute through the system shell from the project root. Each command has its own `validation_timeout_seconds` limit. Output is bounded in run artifacts and review prompts.
 
 ## Streaming
 
@@ -196,6 +202,7 @@ Flags are probed from `agent --help` at runtime. Events are normalized to catego
 ## Git safety
 
 - Refuses unrelated dirty trees unless `--allow-dirty` (todos item/run metadata is ignored).
+- With `--allow-dirty`, files that were already dirty before the run are **immutable**: if the agent modifies them, the run fails instead of silently omitting them from the commit.
 - **Never** allows unrelated **staged** content, even with `--allow-dirty`; unstage foreign index entries before running.
 - Stages **explicit paths** only — never `git add .` / `git add -A`.
 - Verifies the staged set exactly matches approved paths for each commit.
@@ -203,10 +210,26 @@ Flags are probed from `agent --help` at runtime. Events are normalized to catego
 - Backfill `commit --todo` applies the same staged-content policy; only paths attributable to the done item (plus its item YAML) may be dirty.
 - Commit prefixes: `feat` / `fix` / `refactor`.
 - Subjects are short, imperative, ≤72 chars, and must not mention AI/agent/Cursor/TODO/item IDs.
+- Git path parsing uses NUL-delimited porcelain/name-only output so paths with spaces or unusual characters are handled safely.
+
+## Run vs resume
+
+- `run` refuses to start when any item is already `in_progress` or has non-idle persisted run state. Use `resume` instead.
+- `resume` refuses while a previously detached Cursor agent PID from `state.json` is still alive; stop that process first.
+- Outcomes are recorded explicitly in `RunReport`: `failed` for terminal failures, `retryable` for errors that leave the item `in_progress`, and `blocked` for policy/review exhaustion. The CLI exits `1` when any of these lists is non-empty.
+- `stop_on_failure: true` stops batch runs after the first failed, retryable, or blocked item. A retryable item always stops the batch regardless of this setting to preserve the single-active-item invariant.
+
+## Prompt-only dry run
+
+`run --dry-run-prompts` and `resume --dry-run-prompts` write work/review previews under `todos/runs/<id>/dry-run/`. They do not resolve or start Cursor, run validation, commit, or modify item YAML/state. Resume previews use the persisted logical attempt, summary, diff, and cached authoritative validation when available, and enforce the same dirty-tree and live-agent preflight as a real resume. In an unconstrained batch, previews cover only items that are ready in the current dependency state.
+
+## Prompt delivery
+
+Work and review sessions write the full prompt to `todos/runs/<id>/attempts/<NN>/…-prompt-<session>.md`. The Cursor agent receives a short bootstrap prompt pointing at that file, avoiding OS argument-size limits on large diffs.
 
 ## Resume
 
-`python -m todos_tool resume` reconciles `todos/runs/<id>/state.json` with Git status. It recovers from crashes during work, review, staging, commit, or final status update, and prevents duplicate commits when commit already completed.
+`python -m todos_tool resume` reconciles `todos/runs/<id>/state.json` with Git status. It recovers from crashes during work, review, staging, commit, or final status update, prevents duplicate commits when commit already completed (persisted SHAs are verified in Git), and preserves monotonic session numbers so artifacts are not overwritten.
 
 ## Controlled restructuring
 
@@ -225,11 +248,17 @@ todos-tool --version
 
 Tests use a fake Cursor executable under `tests/fixtures/fake_agent.py`. Live Cursor access is not required for `validate`, `status`, or Git-only `commit` paths — the Cursor CLI is resolved lazily when a work/review session starts.
 
+An opt-in smoke test verifies that a live authenticated Cursor agent follows the persisted prompt bootstrap:
+
+```bash
+TODOS_TOOL_RUN_LIVE_SMOKE=1 pytest tests/live/test_cursor_prompt_bootstrap.py
+```
+
 ## Interrupting a run
 
 `Ctrl+C` cancels the **todos-tool process only**. The Cursor agent is started in its own session with file-backed stdio, so interrupt detaches without sending SIGTERM/SIGINT to the agent. The tool exits with code `130`, persists `agent_pid` in `todos/runs/<id>/state.json` when the session starts, and leaves the agent running.
 
-`status` shows a live `pid=` when recorded. Resume starts a **new** session; if a previous agent pid is still alive it warns so you can stop it manually. Dead pids are cleared. Timeouts and stream parse failures still terminate the agent process group.
+`status` shows a live `pid=` when recorded. Resume **refuses** while that pid is still alive; stop the process manually, then resume. Dead pids are cleared automatically. Timeouts and stream parse failures still terminate the agent process group.
 
 ## Known limitations
 

@@ -5,7 +5,12 @@ from __future__ import annotations
 import pytest
 
 from todos_tool.errors import ReviewError
-from todos_tool.models import ItemType, ItemStatus, TodoItem
+from todos_tool.models import (
+    ItemStatus,
+    ItemType,
+    TodoItem,
+    ValidationCommandResult,
+)
 from todos_tool.reviewer import accept_decision, parse_review_decision
 
 
@@ -48,6 +53,33 @@ Here is my decision:
 def test_parse_and_accept_pass() -> None:
     decision = parse_review_decision(VALID_PASS)
     accept_decision(decision, _item(), 1)
+
+
+def test_accepts_matching_authoritative_validation() -> None:
+    decision = parse_review_decision(VALID_PASS)
+    authoritative = [
+        ValidationCommandResult(
+            command="pytest",
+            passed=True,
+            exit_code=0,
+            summary="runner output",
+        )
+    ]
+    accept_decision(decision, _item(), 1, authoritative)
+
+
+def test_rejects_claim_that_contradicts_authoritative_validation() -> None:
+    decision = parse_review_decision(VALID_PASS)
+    authoritative = [
+        ValidationCommandResult(
+            command="pytest",
+            passed=False,
+            exit_code=1,
+            summary="failed",
+        )
+    ]
+    with pytest.raises(ReviewError, match="contradict"):
+        accept_decision(decision, _item(), 1, authoritative)
 
 
 def test_reject_stale_attempt() -> None:

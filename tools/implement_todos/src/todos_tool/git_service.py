@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
-from todos_tool.errors import GitError
+from todos_tool.errors import GitError, PersistenceError
 
 
 @dataclass
@@ -21,20 +22,75 @@ def _run(
     args: list[str],
     *,
     check: bool = True,
-) -> subprocess.CompletedProcess[str]:
+    input_data: bytes | None = None,
+) -> subprocess.CompletedProcess[str | bytes]:
     result = subprocess.run(
         ["git", *args],
         cwd=str(root),
         capture_output=True,
-        text=True,
+        text=input_data is None,
+        input=input_data,
         check=False,
     )
     if check and result.returncode != 0:
+        stderr = (
+            result.stderr.strip()
+            if isinstance(result.stderr, str)
+            else result.stderr.decode("utf-8", errors="replace").strip()
+        )
+        stdout = (
+            result.stdout.strip()
+            if isinstance(result.stdout, str)
+            else result.stdout.decode("utf-8", errors="replace").strip()
+        )
         raise GitError(
             f"git {' '.join(args)} failed ({result.returncode}): "
-            f"{result.stderr.strip() or result.stdout.strip()}"
+            f"{stderr or stdout}"
         )
     return result
+
+
+def _split_nul_paths(raw: str | bytes) -> list[str]:
+    if isinstance(raw, bytes):
+        text = raw.decode("utf-8", errors="replace")
+    else:
+        text = raw
+    if not text:
+        return []
+    return [part for part in text.split("\0") if part]
+
+
+def _parse_porcelain_z(raw: str | bytes) -> list[str]:
+    """Parse ``git status --porcelain -z`` into changed paths."""
+    if isinstance(raw, str):
+        data = raw.encode("utf-8")
+    else:
+        data = raw
+    if not data:
+        return []
+    parts = data.split(b"\0")
+    paths: list[str] = []
+    idx = 0
+    while idx < len(parts):
+        part = parts[idx]
+        if not part:
+            idx += 1
+            continue
+        line = part.decode("utf-8", errors="replace")
+        if len(line) < 3:
+            idx += 1
+            continue
+        xy = line[:2]
+        path = line[3:]
+        if xy[0] in "RC" and len(xy) == 2 and xy[1] in " MADRCU":
+            if idx + 1 < len(parts) and parts[idx + 1]:
+                paths.append(parts[idx + 1].decode("utf-8", errors="replace"))
+                idx += 2
+                continue
+        if path:
+            paths.append(path)
+        idx += 1
+    return paths
 
 
 def ensure_git_repo(root: Path) -> None:
@@ -48,18 +104,41 @@ def head_sha(root: Path) -> str:
     return result.stdout.strip()
 
 
+def verify_git_object(root: Path, ref: str, *, expected_type: str) -> None:
+    """Raise ``PersistenceError`` when ``ref`` is missing or not ``expected_type``."""
+    result = _run(root, ["cat-file", "-t", ref], check=False)
+    if result.returncode != 0:
+        raise PersistenceError(f"Git object not found: {ref}")
+    actual = result.stdout.strip()
+    if actual != expected_type:
+        raise PersistenceError(
+            f"Expected git object type {expected_type!r} for {ref}, got {actual!r}"
+        )
+
+
+def verify_commit_sha(root: Path, sha: str) -> None:
+    verify_git_object(root, sha, expected_type="commit")
+
+
+def require_usable_baseline(root: Path, baseline: str | None, *, item_id: str) -> str:
+    """Return a verified baseline ref or raise ``PersistenceError``."""
+    if not baseline or not baseline.strip():
+        raise PersistenceError(
+            f"Run state for {item_id} is missing baseline_head; "
+            "cannot resume or commit safely. Fix or remove todos/runs state."
+        )
+    verify_git_object(root, baseline.strip(), expected_type="commit")
+    return baseline.strip()
+
+
 def status(root: Path) -> GitStatus:
-    result = _run(root, ["status", "--porcelain"])
-    porcelain = result.stdout
-    paths: list[str] = []
-    for line in porcelain.splitlines():
-        if not line.strip():
-            continue
-        # Format: XY PATH or XY ORIG -> PATH
-        entry = line[3:]
-        if " -> " in entry:
-            entry = entry.split(" -> ", 1)[1]
-        paths.append(entry.strip())
+    porcelain_result = _run(root, ["status", "--porcelain"])
+    porcelain = porcelain_result.stdout
+    z_result = _run(root, ["status", "--porcelain", "-z"], check=False)
+    raw = z_result.stdout
+    if isinstance(raw, str):
+        raw = raw.encode("utf-8")
+    paths = _parse_porcelain_z(raw)
     return GitStatus(
         porcelain=porcelain,
         changed_paths=paths,
@@ -74,8 +153,8 @@ def is_todos_metadata_path(path: str, todos_dir: str = "todos") -> bool:
 
 
 def staged_paths(root: Path) -> list[str]:
-    result = _run(root, ["diff", "--cached", "--name-only"], check=False)
-    return [line.strip() for line in result.stdout.splitlines() if line.strip()]
+    result = _run(root, ["diff", "--cached", "--name-only", "-z"], check=False)
+    return _split_nul_paths(result.stdout)
 
 
 def unrelated_staged_paths(
@@ -140,13 +219,22 @@ def verify_staged_paths(
         )
 
 
-def _expand_path_prefixes(paths: set[str]) -> set[str]:
+def expand_path_prefixes(paths: set[str]) -> set[str]:
     expanded = set(paths)
     for path in paths:
         parts = Path(path.replace("\\", "/")).parts
         for idx in range(1, len(parts)):
             expanded.add(str(Path(*parts[:idx])))
     return expanded
+
+
+def paths_overlap(path: str, allowed: str) -> bool:
+    """Return True when two repo paths refer to the same file or directory tree."""
+    left = path.replace("\\", "/").rstrip("/")
+    right = allowed.replace("\\", "/").rstrip("/")
+    if not left or not right:
+        return False
+    return left == right or left.startswith(f"{right}/") or right.startswith(f"{left}/")
 
 
 def refuse_if_dirty_only_permitted(
@@ -165,16 +253,13 @@ def refuse_if_dirty_only_permitted(
     st = status(root)
     if not st.is_dirty or allow_dirty:
         return st
-    permitted = _expand_path_prefixes(permitted_paths)
+    permitted = expand_path_prefixes(permitted_paths)
     unrelated = [
         path
         for path in st.changed_paths
         if not is_todos_metadata_path(path, todos_dir)
         and path not in permitted
-        and not any(
-            path.startswith(f"{allowed}/") or allowed.startswith(f"{path}/")
-            for allowed in permitted
-        )
+        and not any(paths_overlap(path, allowed) for allowed in permitted_paths)
     ]
     if unrelated:
         raise GitError(
@@ -193,7 +278,7 @@ def refuse_if_dirty_except(
     permitted_paths: set[str] | None = None,
 ) -> GitStatus:
     """Like ``refuse_if_dirty`` but allow specific working-tree paths."""
-    permitted = _expand_path_prefixes(permitted_paths or set())
+    permitted = expand_path_prefixes(permitted_paths or set())
     refuse_unrelated_staged(
         root,
         todos_dir=todos_dir,
@@ -207,10 +292,7 @@ def refuse_if_dirty_except(
         for path in st.changed_paths
         if not is_todos_metadata_path(path, todos_dir)
         and path not in permitted
-        and not any(
-            path.startswith(f"{allowed}/") or allowed.startswith(f"{path}/")
-            for allowed in permitted
-        )
+        and not any(paths_overlap(path, allowed) for allowed in permitted)
     ]
     if unrelated:
         raise GitError(
@@ -254,26 +336,29 @@ def diff_names(root: Path, baseline: str | None = None) -> list[str]:
     if baseline:
         result = _run(
             root,
-            ["diff", "--name-only", baseline],
+            ["diff", "--name-only", "-z", baseline],
             check=False,
         )
-        names = [line.strip() for line in result.stdout.splitlines() if line.strip()]
-        # Also include untracked
+        names = _split_nul_paths(result.stdout)
         untracked = _run(
             root,
-            ["ls-files", "--others", "--exclude-standard"],
+            ["ls-files", "--others", "--exclude-standard", "-z"],
             check=False,
         )
-        for line in untracked.stdout.splitlines():
-            path = line.strip()
-            if path and path not in names:
+        for path in _split_nul_paths(untracked.stdout):
+            if path not in names:
                 names.append(path)
         return names
     st = status(root)
     return st.changed_paths
 
 
-def diff_text(root: Path, *, max_chars: int = 12_000, paths: list[str] | None = None) -> str:
+def diff_text(
+    root: Path,
+    *,
+    max_chars: int = 12_000,
+    paths: list[str] | None = None,
+) -> str:
     if paths is not None:
         if not paths:
             return "(no diff)"
@@ -295,12 +380,13 @@ def diff_text(root: Path, *, max_chars: int = 12_000, paths: list[str] | None = 
     result = _run(root, ["diff", "HEAD"], check=False)
     untracked_list = _run(
         root,
-        ["ls-files", "--others", "--exclude-standard"],
+        ["ls-files", "--others", "--exclude-standard", "-z"],
         check=False,
     )
     text = result.stdout
-    if untracked_list.stdout.strip():
-        text += "\n# Untracked files:\n" + untracked_list.stdout
+    untracked_paths = _split_nul_paths(untracked_list.stdout)
+    if untracked_paths:
+        text += "\n# Untracked files:\n" + "\n".join(untracked_paths)
     if len(text) > max_chars:
         return text[:max_chars] + f"\n... truncated ({len(text)} chars total)"
     return text
@@ -310,6 +396,73 @@ def paths_changed_since(root: Path, baseline: str, pre_existing: set[str]) -> li
     """Return paths changed since baseline excluding pre-existing dirty paths."""
     names = diff_names(root, baseline=baseline)
     return [p for p in names if p not in pre_existing]
+
+
+def fingerprint_path(root: Path, path: str) -> str:
+    """Return a stable content fingerprint for a working-tree path."""
+    full = root / path
+    if full.is_file():
+        digest = hashlib.sha256()
+        with full.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(65536), b""):
+                digest.update(chunk)
+        return f"file:{digest.hexdigest()}"
+    if full.is_dir():
+        return "dir"
+    if full.exists():
+        return "other"
+    tracked = _run(root, ["ls-files", "--error-unmatch", path], check=False).returncode == 0
+    if tracked:
+        blob = _run(root, ["rev-parse", f":{path}"], check=False)
+        if blob.returncode == 0:
+            return f"index:{blob.stdout.strip()}"
+    return "missing"
+
+
+def capture_pre_dirty_fingerprints(root: Path, paths: set[str]) -> dict[str, str]:
+    return {path: fingerprint_path(root, path) for path in sorted(paths)}
+
+
+def verify_pre_dirty_unchanged(
+    root: Path,
+    fingerprints: dict[str, str],
+    *,
+    item_id: str,
+) -> None:
+    """Fail when any pre-existing dirty path changed during execution."""
+    if not fingerprints:
+        return
+    changed: list[str] = []
+    for path, expected in fingerprints.items():
+        current = fingerprint_path(root, path)
+        if current != expected:
+            changed.append(path)
+    if changed:
+        raise GitError(
+            f"{item_id}: agent modified file(s) that were already dirty before this run. "
+            "Commit or stash those changes before running with --allow-dirty.\n"
+            + "\n".join(changed)
+        )
+
+
+def require_pre_dirty_fingerprints(
+    state_fingerprints: dict[str, str],
+    pre_existing_dirty: set[str],
+    *,
+    item_id: str,
+    resuming: bool,
+) -> dict[str, str]:
+    """Ensure persisted fingerprints exist for active runs with pre-dirty paths."""
+    if not pre_existing_dirty:
+        return state_fingerprints
+    if state_fingerprints:
+        return state_fingerprints
+    if resuming:
+        raise PersistenceError(
+            f"Run state for {item_id} has no pre_dirty_fingerprints but the tree "
+            "had unrelated dirty files. Cannot resume safely; fix or reset run state."
+        )
+    return {}
 
 
 def stage_paths(root: Path, paths: list[str], *, todos_dir: str = "todos") -> None:
@@ -341,5 +494,4 @@ def staged_diff_stat(root: Path) -> str:
 
 
 def has_staged_changes(root: Path) -> bool:
-    result = _run(root, ["diff", "--cached", "--name-only"], check=False)
-    return bool(result.stdout.strip())
+    return bool(staged_paths(root))

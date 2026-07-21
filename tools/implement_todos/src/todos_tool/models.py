@@ -63,6 +63,7 @@ class ManifestSettings(BaseModel):
     max_session_restarts_per_phase: int = 2
     work_timeout_seconds: int = 1800
     review_timeout_seconds: int = 900
+    validation_timeout_seconds: int = 900
     auto_commit: bool = True
     stop_on_failure: bool = True
     parse_error_threshold: int = 20
@@ -81,6 +82,7 @@ class ManifestSettings(BaseModel):
         "max_session_restarts_per_phase",
         "work_timeout_seconds",
         "review_timeout_seconds",
+        "validation_timeout_seconds",
         "parse_error_threshold",
     )
     @classmethod
@@ -287,6 +289,9 @@ class RunState(BaseModel):
     last_error: str | None = None
     blocked_reason: str | None = None
     changed_paths: list[str] = Field(default_factory=list)
+    validation_attempt: int = 0
+    validation_results: list[ValidationCommandResult] = Field(default_factory=list)
+    pre_dirty_fingerprints: dict[str, str] = Field(default_factory=dict)
     history: list[dict[str, Any]] = Field(default_factory=list)
     updated_at: datetime | None = None
     # Set while a detached/active Cursor agent process may still be running.

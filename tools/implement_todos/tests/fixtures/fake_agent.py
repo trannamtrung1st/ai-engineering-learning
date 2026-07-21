@@ -44,7 +44,30 @@ def detect_mode(argv: list[str]) -> str:
         idx = argv.index("--mode")
         if idx + 1 < len(argv) and argv[idx + 1] == "ask":
             return "review"
+    prompt_file = os.environ.get("TODOS_TOOL_PROMPT_FILE")
+    if prompt_file and Path(prompt_file).is_file():
+        text = Path(prompt_file).read_text(encoding="utf-8")
+        if "Independent review session" in text:
+            return "review"
     return "work"
+
+
+def _resolve_prompt_text(argv: list[str]) -> str:
+    prompt_file = os.environ.get("TODOS_TOOL_PROMPT_FILE")
+    if prompt_file and Path(prompt_file).is_file():
+        return Path(prompt_file).read_text(encoding="utf-8")
+    return argv[-1] if argv else ""
+
+
+def _extract_item_id(prompt_text: str) -> str | None:
+    marker = "## Item `"
+    if marker not in prompt_text:
+        return None
+    start = prompt_text.index(marker) + len(marker)
+    end = prompt_text.find("`", start)
+    if end < 0:
+        return None
+    return prompt_text[start:end]
 
 
 def main() -> int:
@@ -62,7 +85,8 @@ def main() -> int:
         return 0
     mode = detect_mode(argv)
     decision = os.environ.get("FAKE_AGENT_DECISION", "pass")
-    item_id = os.environ.get("FAKE_AGENT_ITEM_ID", "TASK-001")
+    prompt_text = _resolve_prompt_text(argv)
+    item_id = os.environ.get("FAKE_AGENT_ITEM_ID") or _extract_item_id(prompt_text) or "TASK-001"
     attempt = int(os.environ.get("FAKE_AGENT_ATTEMPT", "1"))
     workspace = Path(os.environ.get("FAKE_AGENT_WORKSPACE", os.getcwd()))
 
@@ -158,6 +182,19 @@ def main() -> int:
                 "A greeting helper function exists and returns a non-empty string.",
                 "Basic unit tests cover the happy path.",
             ]
+        validation_override = os.environ.get("FAKE_AGENT_VALIDATION_JSON")
+        validation = (
+            json.loads(validation_override)
+            if validation_override
+            else [
+                {
+                    "command": "pytest",
+                    "passed": decision == "pass",
+                    "exit_code": 0 if decision == "pass" else 1,
+                    "summary": "fake",
+                }
+            ]
+        )
         review = {
             "schema_version": 1,
             "item_id": item_id,
@@ -172,14 +209,7 @@ def main() -> int:
                 }
                 for c in criteria
             ],
-            "validation": [
-                {
-                    "command": "pytest",
-                    "passed": decision == "pass",
-                    "exit_code": 0 if decision == "pass" else 1,
-                    "summary": "fake",
-                }
-            ],
+            "validation": validation,
             "instruction_compliance": {
                 "passed": decision == "pass",
                 "violations": [],

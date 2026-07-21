@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from todos_tool.models import TodoItem
+from todos_tool.models import TodoItem, ValidationCommandResult
+from todos_tool.validation_runner import format_validation_results
 
 INSTRUCTION_DISCOVERY = """
 ## Mandatory instruction discovery
@@ -66,7 +67,7 @@ def build_work_prompt(
         "## Requirements",
         "1. Inspect the current repository and applicable instructions/skills.",
         "2. Implement the requested change.",
-        "3. Run targeted validation commands listed above.",
+        "3. Run the validation commands for fast feedback; the orchestrator will rerun them authoritatively.",
         "4. Leave the working tree ready for independent review.",
         "5. Return a concise summary of what changed and validation results.",
         "",
@@ -109,10 +110,21 @@ def build_review_prompt(
     work_summary: str | None,
     git_diff: str,
     git_status: str,
+    authoritative_validation: list[ValidationCommandResult] | None = None,
+    prompt_only: bool = False,
     continuation: str | None = None,
 ) -> str:
     criteria = "\n".join(f"- {c}" for c in item.acceptance_criteria)
     commands = "\n".join(f"- `{c}`" for c in item.validation.commands) or "- (none specified)"
+    validation_text = (
+        "(not executed in prompt-only dry run)"
+        if prompt_only
+        else (
+            "(authoritative validation results unavailable)"
+            if authoritative_validation is None
+            else format_validation_results(authoritative_validation)
+        )
+    )
 
     decision_schema = """
 {
@@ -156,9 +168,31 @@ def build_review_prompt(
         "## Required validation commands",
         commands,
         "",
+        "## Authoritative orchestrator validation",
+        validation_text,
+        "",
+        "These results were produced outside the Cursor sessions. Treat them as authoritative.",
+        "Copy each command, passed value, and exit_code exactly into your JSON decision.",
+        "You may inspect or rerun commands for diagnosis, but must not contradict these results.",
+        "",
         "## Work summary from implementer",
         (work_summary or "(none provided)").strip(),
     ]
+
+    parts.extend(
+        [
+            "",
+            "## Current git status",
+            "```",
+            git_status.strip() or "(clean)",
+            "```",
+            "",
+            "## Current git diff",
+            "```",
+            git_diff.strip() or "(no diff)",
+            "```",
+        ]
+    )
 
     if continuation:
         parts.extend(
@@ -166,21 +200,6 @@ def build_review_prompt(
                 "",
                 "## Continuation context (session restart)",
                 continuation.strip(),
-            ]
-        )
-    else:
-        parts.extend(
-            [
-                "",
-                "## Current git status",
-                "```",
-                git_status.strip() or "(clean)",
-                "```",
-                "",
-                "## Current git diff",
-                "```",
-                git_diff.strip() or "(no diff)",
-                "```",
             ]
         )
 

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
+import sys
 from pathlib import Path
 
 import pytest
@@ -126,6 +128,23 @@ async def test_full_run_pass_and_commit(
     assert item is not None
     assert item.status == ItemStatus.DONE
     assert item.result.commit_sha
+    validation_path = (
+        git_project
+        / "todos"
+        / "runs"
+        / "TASK-001"
+        / "attempts"
+        / "01"
+        / "validation-results.json"
+    )
+    validation = json.loads(validation_path.read_text(encoding="utf-8"))
+    assert validation["results"][0]["command"] == "pytest"
+    assert validation["results"][0]["passed"] is True
+    review_prompt = (
+        validation_path.parent / "review-prompt-1.md"
+    ).read_text(encoding="utf-8")
+    assert "Authoritative orchestrator validation" in review_prompt
+    assert "passed=true exit_code=0" in review_prompt
 
     # Exactly one new commit beyond initial
     import subprocess
@@ -269,11 +288,163 @@ async def test_review_fail_consumes_attempt(
         )
     )
     report = await orch.run(todo_id="TASK-001")
-    assert "TASK-001" in report.failed or "TASK-001" in report.blocked
+    assert report.blocked == ["TASK-001"]
     ws = load_workspace(git_project)
     item = ws.get("TASK-001")
     assert item is not None
     assert item.status == ItemStatus.BLOCKED
+
+
+@pytest.mark.asyncio
+async def test_authoritative_validation_failure_rejects_review_pass(
+    fake_agent: Path,
+    git_project: Path,
+    sample_item: dict,
+) -> None:
+    command = (
+        f"{shlex.quote(sys.executable)} "
+        "-c 'import sys; sys.exit(3)'"
+    )
+    item = dict(sample_item)
+    item["validation"] = {"commands": [command]}
+    write_todos(
+        git_project,
+        [item],
+        settings={
+            "max_attempts": 1,
+            "auto_commit": False,
+            "validation_timeout_seconds": 30,
+        },
+    )
+
+    claimed_validation = json.dumps(
+        [
+            {
+                "command": command,
+                "passed": True,
+                "exit_code": 0,
+                "summary": "claimed pass",
+            }
+        ]
+    )
+    wrapper = fake_agent.parent / "agent-validation-disagreement"
+    wrapper.write_text(
+        "#!/usr/bin/env python3\n"
+        "import os, subprocess, sys\n"
+        f"agent = {str(fake_agent)!r}\n"
+        f"workspace = {str(git_project)!r}\n"
+        "env = os.environ.copy()\n"
+        "env['FAKE_AGENT_WORKSPACE'] = workspace\n"
+        "env['FAKE_AGENT_ITEM_ID'] = 'TASK-001'\n"
+        "env['FAKE_AGENT_ATTEMPT'] = '1'\n"
+        "env['FAKE_AGENT_DECISION'] = 'pass'\n"
+        "env['FAKE_AGENT_WRITE_FILE'] = 'src/result.py'\n"
+        f"env['FAKE_AGENT_VALIDATION_JSON'] = {claimed_validation!r}\n"
+        "raise SystemExit(subprocess.call([sys.executable, agent, *sys.argv[1:]], env=env))\n",
+        encoding="utf-8",
+    )
+    wrapper.chmod(0o755)
+
+    orch = Orchestrator(
+        RunConfig(
+            workspace_root=git_project,
+            agent_bin=str(wrapper),
+            skip_probe=True,
+            no_color=True,
+        )
+    )
+    report = await orch.run(todo_id="TASK-001")
+
+    assert report.blocked == ["TASK-001"]
+    validation_path = (
+        git_project
+        / "todos"
+        / "runs"
+        / "TASK-001"
+        / "attempts"
+        / "01"
+        / "validation-results.json"
+    )
+    validation = json.loads(validation_path.read_text(encoding="utf-8"))
+    assert validation["results"][0]["passed"] is False
+    assert validation["results"][0]["exit_code"] == 3
+
+
+@pytest.mark.asyncio
+async def test_retryable_resume_failure_can_succeed_on_next_resume(
+    fake_agent: Path,
+    git_project: Path,
+    sample_item: dict,
+) -> None:
+    write_todos(
+        git_project,
+        [sample_item],
+        settings={"max_attempts": 2, "auto_commit": False},
+    )
+    ws = load_workspace(git_project)
+    item = ws.items[0]
+    item.status = ItemStatus.IN_PROGRESS
+    from todos_tool.manifest import save_item
+    from todos_tool.models import Phase, Transition
+    from todos_tool.persistence import new_run_state, record_transition
+    from todos_tool.git_service import head_sha
+
+    save_item(ws, item)
+    runs_dir = ws.runs_dir(item.id)
+    state = new_run_state(item.id, head_sha(git_project))
+    state.logical_attempt = 1
+    state.phase = Phase.REVIEW
+    state.work_summary = "attempt one work"
+    record_transition(runs_dir, state, Transition.REVIEW_SESSION_STARTED)
+
+    fail_wrapper = fake_agent.parent / "agent-resume-fail"
+    fail_wrapper.write_text(
+        "#!/bin/sh\n"
+        f"export FAKE_AGENT_WORKSPACE='{git_project}'\n"
+        "export FAKE_AGENT_ITEM_ID=TASK-001\n"
+        "export FAKE_AGENT_ATTEMPT=1\n"
+        "export FAKE_AGENT_DECISION=fail\n"
+        f"exec python3 '{fake_agent}' \"$@\"\n",
+        encoding="utf-8",
+    )
+    fail_wrapper.chmod(0o755)
+
+    first = Orchestrator(
+        RunConfig(
+            workspace_root=git_project,
+            agent_bin=str(fail_wrapper),
+            skip_probe=True,
+            no_color=True,
+        )
+    )
+    first_report = await first.resume()
+    assert first_report.retryable == ["TASK-001"]
+    assert load_workspace(git_project).get("TASK-001").status == ItemStatus.IN_PROGRESS
+
+    pass_wrapper = fake_agent.parent / "agent-resume-pass"
+    pass_wrapper.write_text(
+        "#!/bin/sh\n"
+        f"export FAKE_AGENT_WORKSPACE='{git_project}'\n"
+        "export FAKE_AGENT_ITEM_ID=TASK-001\n"
+        "export FAKE_AGENT_ATTEMPT=2\n"
+        "export FAKE_AGENT_DECISION=pass\n"
+        "export FAKE_AGENT_WRITE_FILE=src/recovered.py\n"
+        f"exec python3 '{fake_agent}' \"$@\"\n",
+        encoding="utf-8",
+    )
+    pass_wrapper.chmod(0o755)
+
+    second = Orchestrator(
+        RunConfig(
+            workspace_root=git_project,
+            agent_bin=str(pass_wrapper),
+            skip_probe=True,
+            no_color=True,
+        )
+    )
+    second_report = await second.resume()
+    assert second_report.completed == ["TASK-001"]
+    assert load_workspace(git_project).get("TASK-001").status == ItemStatus.DONE
 
 
 @pytest.mark.asyncio
@@ -284,6 +455,15 @@ async def test_duplicate_commit_prevention_on_resume(
 ) -> None:
     write_todos(git_project, [sample_item])
     # Simulate completed commit state without item marked done
+    import subprocess
+
+    real_sha = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=git_project,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
     runs = git_project / "todos" / "runs" / "TASK-001"
     runs.mkdir(parents=True)
     state = {
@@ -296,8 +476,8 @@ async def test_duplicate_commit_prevention_on_resume(
         "last_transition": "commit_completed",
         "review": {"decision": "pass", "summary": "ok", "issues": []},
         "commit_state": "completed",
-        "commit_sha": "deadbeef",
-        "baseline_head": "HEAD",
+        "commit_sha": real_sha,
+        "baseline_head": real_sha,
         "work_summary": "done",
         "changed_paths": [],
         "history": [],
@@ -314,8 +494,6 @@ async def test_duplicate_commit_prevention_on_resume(
         encoding="utf-8",
     )
     wrapper.chmod(0o755)
-
-    import subprocess
 
     before = subprocess.run(
         ["git", "rev-list", "--count", "HEAD"],

@@ -20,6 +20,7 @@ from todos_tool.errors import (
     CursorEnvironmentError,
     CursorSessionError,
     GitError,
+    PersistenceError,
     ReviewError,
     RestructuringError,
     SchedulingError,
@@ -27,19 +28,26 @@ from todos_tool.errors import (
     UserInterrupted,
 )
 from todos_tool.git_service import (
+    capture_pre_dirty_fingerprints,
     commit,
     ensure_git_repo,
+    expand_path_prefixes,
     filter_stageable_paths,
     has_staged_changes,
     head_sha,
     paths_changed_since,
+    paths_overlap,
     refuse_if_dirty,
     refuse_if_dirty_only_permitted,
     refuse_unrelated_staged,
+    require_pre_dirty_fingerprints,
+    require_usable_baseline,
     stage_paths,
     staged_diff_stat,
     status,
     diff_text,
+    verify_commit_sha,
+    verify_pre_dirty_unchanged,
 )
 from todos_tool.manifest import Workspace, load_workspace, save_item
 from todos_tool.models import (
@@ -60,7 +68,11 @@ from todos_tool.persistence import (
 )
 from todos_tool.prompts import build_review_prompt, build_work_prompt
 from todos_tool.reviewer import accept_decision, parse_review_decision
-from todos_tool.scheduler import next_ready
+from todos_tool.scheduler import list_ready, next_ready
+from todos_tool.validation_runner import (
+    format_validation_results,
+    run_validation_commands,
+)
 
 
 @dataclass
@@ -81,8 +93,11 @@ class RunConfig:
 class RunReport:
     completed: list[str] = field(default_factory=list)
     failed: list[str] = field(default_factory=list)
+    retryable: list[str] = field(default_factory=list)
     blocked: list[str] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
+    planned: list[str] = field(default_factory=list)
+    errors: dict[str, str] = field(default_factory=dict)
 
 
 class Orchestrator:
@@ -116,6 +131,7 @@ class Orchestrator:
 
     async def run(self, todo_id: str | None = None) -> RunReport:
         ensure_git_repo(self.config.workspace_root)
+        self._ensure_no_active_execution_for_run(todo_id)
         st = refuse_if_dirty(
             self.config.workspace_root,
             allow_dirty=self.config.allow_dirty,
@@ -126,6 +142,8 @@ class Orchestrator:
             for p in snapshot_pre_existing_dirty(st)
             if not p.startswith(f"{self.config.todos_dir}/")
         }
+        if self.config.dry_run_prompts:
+            return self._write_dry_run_prompts(todo_id)
 
         settings = self.workspace.manifest.settings
         stop_on_failure = (
@@ -150,6 +168,7 @@ class Orchestrator:
                 raise
             except TodosToolError as exc:
                 self.renderer.error(f"{item.id}: {exc}")
+                report.errors[item.id] = str(exc)
                 outcome = _classify_item_outcome(self.workspace.get(item.id))
             else:
                 refreshed = self.workspace.get(item.id)
@@ -158,11 +177,13 @@ class Orchestrator:
 
             _apply_outcome(report, item.id, outcome)
 
-            if outcome == "failed" and (stop_on_failure or todo_id is not None):
-                raise TodosToolError(f"{item.id}: execution failed")
-            if todo_id is not None and outcome in {"blocked", "skipped"}:
+            if todo_id is not None:
                 break
-            if outcome == "failed" and stop_on_failure:
+            if outcome in {"failed", "retryable", "blocked"} and stop_on_failure:
+                break
+            if outcome in {"failed", "retryable"}:
+                # A retryable item remains in_progress, so continuing would
+                # violate the single-active-item invariant.
                 break
 
             self.workspace = load_workspace(
@@ -203,6 +224,7 @@ class Orchestrator:
             state = new_run_state(item.id, head_sha(self.config.workspace_root))
             state.work_summary = item.result.summary
         elif state.commit_state == CommitState.COMPLETED and state.commit_sha:
+            verify_commit_sha(self.config.workspace_root, state.commit_sha)
             self._finalize_item_done(item, state.commit_sha, item.result.summary or "")
             return state.commit_sha
 
@@ -234,10 +256,18 @@ class Orchestrator:
                     in_progress.append(item)
                     break
 
+        resume_state: RunState | None = None
         if in_progress:
             item = in_progress[0]
             runs_dir = self.workspace.runs_dir(item.id)
             state = load_state(runs_dir)
+            resume_state = state
+            if state is not None:
+                require_usable_baseline(
+                    self.config.workspace_root,
+                    state.baseline_head,
+                    item_id=item.id,
+                )
             permitted: set[str] = set()
             if state and state.baseline_head:
                 permitted = {
@@ -258,12 +288,24 @@ class Orchestrator:
                 permitted_paths=permitted,
             )
             st = status(self.config.workspace_root)
+            permitted_expanded = expand_path_prefixes(permitted)
             self._pre_existing_dirty = {
                 path
                 for path in snapshot_pre_existing_dirty(st)
                 if not path.startswith(f"{self.config.todos_dir}/")
-                and path not in permitted
+                and path not in permitted_expanded
+                and not any(paths_overlap(path, allowed) for allowed in permitted)
             }
+            if state is not None:
+                fingerprints = require_pre_dirty_fingerprints(
+                    state.pre_dirty_fingerprints,
+                    self._pre_existing_dirty,
+                    item_id=item.id,
+                    resuming=True,
+                )
+                if not self.config.dry_run_prompts:
+                    state.pre_dirty_fingerprints = fingerprints
+                    save_state(runs_dir, state)
         else:
             st = refuse_if_dirty(
                 self.config.workspace_root,
@@ -276,6 +318,26 @@ class Orchestrator:
                 if not path.startswith(f"{self.config.todos_dir}/")
             }
 
+        if in_progress:
+            item = in_progress[0]
+            runs_dir = self.workspace.runs_dir(item.id)
+            prior = resume_state
+            if prior and prior.agent_pid:
+                if _pid_alive(prior.agent_pid):
+                    raise TodosToolError(
+                        f"Cannot resume {item.id}: Cursor agent still running "
+                        f"(pid={prior.agent_pid}). Stop it manually, then resume."
+                    )
+                if not self.config.dry_run_prompts:
+                    prior.agent_pid = None
+                    save_state(runs_dir, prior)
+
+        if self.config.dry_run_prompts:
+            target = in_progress[0].id if in_progress else None
+            if in_progress and resume_state is not None:
+                self._verify_pre_dirty_paths(in_progress[0], resume_state)
+            return self._write_dry_run_prompts(target, resume_state)
+
         if not in_progress:
             self.renderer.info("Nothing to resume; starting normal run")
             return await self.run()
@@ -283,16 +345,6 @@ class Orchestrator:
         item = in_progress[0]
         self.renderer.info(f"Resuming {item.id}")
         runs_dir = self.workspace.runs_dir(item.id)
-        prior = load_state(runs_dir)
-        if prior and prior.agent_pid:
-            if _pid_alive(prior.agent_pid):
-                self.renderer.warn(
-                    f"Previous Cursor agent may still be running (pid={prior.agent_pid}). "
-                    "Resume starts a new session; stop that pid manually if it conflicts."
-                )
-            else:
-                prior.agent_pid = None
-                save_state(runs_dir, prior)
         report = RunReport()
         outcome = "completed"
         try:
@@ -301,6 +353,7 @@ class Orchestrator:
             raise
         except TodosToolError as exc:
             self.renderer.error(f"{item.id}: {exc}")
+            report.errors[item.id] = str(exc)
             outcome = _classify_item_outcome(self.workspace.get(item.id))
         else:
             refreshed = self.workspace.get(item.id)
@@ -315,6 +368,7 @@ class Orchestrator:
         state = load_state(runs_dir)
 
         if state and state.commit_state == CommitState.COMPLETED and state.commit_sha:
+            verify_commit_sha(self.config.workspace_root, state.commit_sha)
             # Prevent duplicate commits after crash during status update
             self._finalize_item_done(item, state.commit_sha, state.work_summary or "")
             return
@@ -322,6 +376,24 @@ class Orchestrator:
         if state is None:
             baseline = head_sha(self.config.workspace_root)
             state = new_run_state(item.id, baseline)
+            if self._pre_existing_dirty:
+                state.pre_dirty_fingerprints = capture_pre_dirty_fingerprints(
+                    self.config.workspace_root,
+                    self._pre_existing_dirty,
+                )
+            save_state(runs_dir, state)
+        elif resuming:
+            require_usable_baseline(
+                self.config.workspace_root,
+                state.baseline_head,
+                item_id=item.id,
+            )
+            state.pre_dirty_fingerprints = require_pre_dirty_fingerprints(
+                state.pre_dirty_fingerprints,
+                self._pre_existing_dirty,
+                item_id=item.id,
+                resuming=True,
+            )
             save_state(runs_dir, state)
 
         if item.status == ItemStatus.PENDING:
@@ -339,7 +411,56 @@ class Orchestrator:
             CommitState.STARTED,
             CommitState.FAILED,
         ):
+            self._verify_pre_dirty_paths(item, state)
             await self._commit_item(item, state, runs_dir)
+            return
+
+        # Resume after work completed but before review started
+        if (
+            resuming
+            and state.phase == Phase.WORK
+            and state.last_transition == Transition.WORK_PHASE_READY
+        ):
+            self._maybe_apply_restructure(item, runs_dir)
+            item = self.workspace.get(item.id) or item
+            if item.status == ItemStatus.SUPERSEDED:
+                self.renderer.info(f"{item.id} superseded; stopping item")
+                return
+            review_outcome = await self._run_review_phase(
+                item, state, runs_dir, feedback, preserve_session=True
+            )
+            await self._handle_review_outcome(
+                item, state, runs_dir, review_outcome, feedback
+            )
+            return
+
+        # Resume mid-work: continue the same phase without resetting session numbers
+        if (
+            resuming
+            and state.phase == Phase.WORK
+            and state.last_transition
+            in (
+                Transition.WORK_SESSION_STARTED,
+                Transition.WORK_SESSION_RESTARTED,
+                Transition.WORK_PHASE_FAILED,
+            )
+        ):
+            work_ok = await self._run_work_phase(
+                item, state, runs_dir, feedback, preserve_session=True
+            )
+            if not work_ok:
+                raise TodosToolError(state.review.summary or "Work phase failed")
+            self._maybe_apply_restructure(item, runs_dir)
+            item = self.workspace.get(item.id) or item
+            if item.status == ItemStatus.SUPERSEDED:
+                self.renderer.info(f"{item.id} superseded; stopping item")
+                return
+            review_outcome = await self._run_review_phase(
+                item, state, runs_dir, feedback, preserve_session=True
+            )
+            await self._handle_review_outcome(
+                item, state, runs_dir, review_outcome, feedback
+            )
             return
 
         # Resume mid-review: re-run review for current attempt
@@ -349,7 +470,12 @@ class Orchestrator:
             and state.last_transition
             in (Transition.REVIEW_SESSION_STARTED, Transition.REVIEW_SESSION_RESTARTED)
         ):
-            await self._run_review_phase(item, state, runs_dir, feedback)
+            review_outcome = await self._run_review_phase(
+                item, state, runs_dir, feedback, preserve_session=True
+            )
+            await self._handle_review_outcome(
+                item, state, runs_dir, review_outcome, feedback
+            )
             return
 
         start_attempt = state.logical_attempt or 1
@@ -367,6 +493,8 @@ class Orchestrator:
             state.logical_attempt = attempt
             state.session_number = 0
             state.session_restart_count = 0
+            state.validation_attempt = 0
+            state.validation_results = []
             state.phase = Phase.WORK
             state.commit_state = CommitState.NONE
             record_transition(runs_dir, state, Transition.ATTEMPT_STARTED)
@@ -375,8 +503,6 @@ class Orchestrator:
             if not work_ok:
                 continue
 
-            # Optional restructuring after work
-            # Optional restructuring after work
             self._maybe_apply_restructure(item, runs_dir)
             item = self.workspace.get(item.id) or item
             if item.status == ItemStatus.SUPERSEDED:
@@ -412,15 +538,195 @@ class Orchestrator:
         record_transition(runs_dir, state, Transition.ITEM_BLOCKED)
         raise TodosToolError(state.blocked_reason)
 
+    async def _handle_review_outcome(
+        self,
+        item: TodoItem,
+        state: RunState,
+        runs_dir: Path,
+        review_outcome: str,
+        feedback: str | None,
+    ) -> None:
+        if review_outcome == "pass":
+            await self._commit_item(item, state, runs_dir)
+            return
+        if review_outcome == "blocked":
+            item.status = ItemStatus.BLOCKED
+            save_item(self.workspace, item)
+            state.phase = Phase.IDLE
+            record_transition(
+                runs_dir,
+                state,
+                Transition.ITEM_BLOCKED,
+                reason=state.blocked_reason,
+            )
+            raise TodosToolError(state.blocked_reason or "Item blocked by review")
+        raise TodosToolError(state.review.summary or "Review failed during resume")
+
+    def _verify_pre_dirty_paths(self, item: TodoItem, state: RunState) -> None:
+        verify_pre_dirty_unchanged(
+            self.config.workspace_root,
+            state.pre_dirty_fingerprints,
+            item_id=item.id,
+        )
+
+    def _item_paths(self, state: RunState) -> list[str]:
+        paths = paths_changed_since(
+            self.config.workspace_root,
+            state.baseline_head or "HEAD",
+            self._pre_existing_dirty,
+        )
+        return [
+            path
+            for path in paths
+            if not path.startswith(f"{self.config.todos_dir}/runs/")
+        ]
+
+    def _write_dry_run_prompts(
+        self,
+        todo_id: str | None,
+        state: RunState | None = None,
+    ) -> RunReport:
+        """Write prompt previews without agents, validation, state, or item changes."""
+        items = (
+            [next_ready(self.workspace, todo_id)]
+            if todo_id is not None
+            else list_ready(self.workspace)
+        )
+        report = RunReport()
+        st = status(self.config.workspace_root)
+        for item in items:
+            item_state = state if state and state.item_id == item.id else None
+            logical_attempt = (
+                item_state.logical_attempt
+                if item_state and item_state.logical_attempt
+                else 1
+            )
+            feedback = item_state.review.summary if item_state else None
+            if item_state and item_state.review.issues:
+                feedback = (feedback or "") + "\n" + "\n".join(
+                    item_state.review.issues
+                )
+            item_paths = self._item_paths(item_state) if item_state else []
+            validation = (
+                item_state.validation_results
+                if item_state
+                and item_state.validation_attempt == logical_attempt
+                else None
+            )
+            preview_dir = self.workspace.runs_dir(item.id) / "dry-run"
+            preview_dir.mkdir(parents=True, exist_ok=True)
+            work_prompt = build_work_prompt(
+                item,
+                logical_attempt=logical_attempt,
+                todos_dir=self.config.todos_dir,
+                previous_feedback=feedback,
+            )
+            review_prompt = build_review_prompt(
+                item,
+                logical_attempt=logical_attempt,
+                work_summary=(
+                    item_state.work_summary
+                    if item_state and item_state.work_summary
+                    else "(not executed in prompt-only dry run)"
+                ),
+                git_diff=(
+                    diff_text(self.config.workspace_root, paths=item_paths)
+                    if item_state
+                    else "(not available before work executes)"
+                ),
+                git_status=st.porcelain,
+                authoritative_validation=validation,
+                prompt_only=validation is None,
+            )
+            (preview_dir / "work-prompt.md").write_text(
+                work_prompt,
+                encoding="utf-8",
+            )
+            (preview_dir / "review-prompt.md").write_text(
+                review_prompt,
+                encoding="utf-8",
+            )
+            report.planned.append(item.id)
+        return report
+
+    async def _ensure_validation_results(
+        self,
+        item: TodoItem,
+        state: RunState,
+        runs_dir: Path,
+    ) -> None:
+        if state.validation_attempt == state.logical_attempt:
+            return
+
+        self.renderer.rule(
+            f"VALIDATE {item.id} attempt={state.logical_attempt}"
+        )
+        self._verify_pre_dirty_paths(item, state)
+        results = await run_validation_commands(
+            self.config.workspace_root,
+            item.validation.commands,
+            timeout_seconds=(
+                self.workspace.manifest.settings.validation_timeout_seconds
+            ),
+        )
+        self._verify_pre_dirty_paths(item, state)
+        state.validation_attempt = state.logical_attempt
+        state.validation_results = results
+        state.changed_paths = self._item_paths(state)
+        save_state(runs_dir, state)
+
+        attempt_dir = attempts_dir(runs_dir, state.logical_attempt)
+        write_json(
+            attempt_dir / "validation-results.json",
+            {
+                "logical_attempt": state.logical_attempt,
+                "results": [
+                    result.model_dump(mode="json")
+                    for result in results
+                ],
+            },
+        )
+
+    def _ensure_no_active_execution_for_run(self, todo_id: str | None) -> None:
+        active = self._find_active_execution()
+        if active is None:
+            return
+        item, state = active
+        if todo_id is not None and item.id != todo_id:
+            raise TodosToolError(
+                f"Item {item.id} is already in progress "
+                f"(phase={state.phase.value}). Use `todos-tool resume` instead."
+            )
+        raise TodosToolError(
+            f"Item {item.id} is already in progress "
+            f"(phase={state.phase.value}). Use `todos-tool resume` instead."
+        )
+
+    def _find_active_execution(self) -> tuple[TodoItem, RunState] | None:
+        for item in self.workspace.items:
+            if item.status == ItemStatus.IN_PROGRESS:
+                state = load_state(self.workspace.runs_dir(item.id))
+                if state is not None:
+                    return item, state
+                return item, new_run_state(item.id, None)
+            state = load_state(self.workspace.runs_dir(item.id))
+            if state and state.phase != Phase.IDLE:
+                return item, state
+        return None
+
     async def _run_work_phase(
         self,
         item: TodoItem,
         state: RunState,
         runs_dir: Path,
         feedback: str | None,
+        *,
+        preserve_session: bool = False,
     ) -> bool:
         settings = self.workspace.manifest.settings
         continuation: str | None = None
+        if not preserve_session:
+            state.session_restart_count = 0
 
         while True:
             state.phase = Phase.WORK
@@ -436,6 +742,7 @@ class Orchestrator:
             attempt_dir.mkdir(parents=True, exist_ok=True)
             events_path = attempt_dir / f"work-session-{state.session_number}.ndjson"
             log_path = attempt_dir / f"work-session-{state.session_number}.log"
+            prompt_path = attempt_dir / f"work-prompt-{state.session_number}.md"
             prompt = build_work_prompt(
                 item,
                 logical_attempt=state.logical_attempt,
@@ -443,22 +750,12 @@ class Orchestrator:
                 previous_feedback=feedback,
                 continuation=continuation,
             )
-            (attempt_dir / f"work-prompt-{state.session_number}.md").write_text(
-                prompt, encoding="utf-8"
-            )
+            prompt_path.write_text(prompt, encoding="utf-8")
 
             self.renderer.rule(
                 f"WORK {item.id} attempt={state.logical_attempt} "
                 f"session={state.session_number}"
             )
-
-            if self.config.dry_run_prompts:
-                (attempt_dir / f"work-prompt-{state.session_number}.md").write_text(
-                    prompt, encoding="utf-8"
-                )
-                state.work_summary = "dry-run: work prompt written"
-                record_transition(runs_dir, state, Transition.WORK_PHASE_READY)
-                return True
 
             session_renderer = ConsoleRenderer.with_file_logging(
                 self.renderer,
@@ -469,6 +766,7 @@ class Orchestrator:
                 result = await self.client.run_session(
                     workspace=self.config.workspace_root,
                     prompt=prompt,
+                    prompt_path=prompt_path,
                     phase="work",
                     timeout_seconds=settings.work_timeout_seconds,
                     events_path=events_path,
@@ -503,15 +801,14 @@ class Orchestrator:
                     workspace_root=self.config.workspace_root,
                     previous_summary=state.work_summary,
                     failure_reason=str(exc),
+                    item_paths=self._item_paths(state),
+                    todos_dir=self.config.todos_dir,
                 )
                 continue
 
             state.work_summary = _extract_summary(result)
-            state.changed_paths = paths_changed_since(
-                self.config.workspace_root,
-                state.baseline_head or "HEAD",
-                self._pre_existing_dirty,
-            )
+            self._verify_pre_dirty_paths(item, state)
+            state.changed_paths = self._item_paths(state)
             state.session_restart_count = 0
             state.agent_pid = None
             record_transition(runs_dir, state, Transition.WORK_PHASE_READY)
@@ -523,18 +820,22 @@ class Orchestrator:
         state: RunState,
         runs_dir: Path,
         feedback: str | None,
+        *,
+        preserve_session: bool = False,
     ) -> str:
         settings = self.workspace.manifest.settings
         continuation: str | None = None
-        state.session_restart_count = 0
-        state.session_number = 0
+        await self._ensure_validation_results(item, state, runs_dir)
+        if not preserve_session:
+            state.session_restart_count = 0
+            state.session_number = 0
 
         while True:
             state.phase = Phase.REVIEW
             state.session_number += 1
             transition = (
                 Transition.REVIEW_SESSION_RESTARTED
-                if continuation
+                if state.session_restart_count > 0
                 else Transition.REVIEW_SESSION_STARTED
             )
             record_transition(runs_dir, state, transition)
@@ -544,33 +845,25 @@ class Orchestrator:
             events_path = attempt_dir / f"review-session-{state.session_number}.ndjson"
             log_path = attempt_dir / f"review-session-{state.session_number}.log"
 
-            item_paths = paths_changed_since(
-                self.config.workspace_root,
-                state.baseline_head or "HEAD",
-                self._pre_existing_dirty,
-            )
-            item_paths = [
-                path
-                for path in item_paths
-                if not path.startswith(f"{self.config.todos_dir}/runs/")
-            ]
+            item_paths = self._item_paths(state)
+            self._verify_pre_dirty_paths(item, state)
             st = status(self.config.workspace_root)
             git_diff = diff_text(
                 self.config.workspace_root,
                 paths=item_paths,
             )
+            prompt_path = attempt_dir / f"review-prompt-{state.session_number}.md"
             prompt = build_review_prompt(
                 item,
                 logical_attempt=state.logical_attempt,
                 work_summary=state.work_summary,
                 git_diff=git_diff,
                 git_status=st.porcelain,
+                authoritative_validation=state.validation_results,
                 continuation=continuation,
             )
 
-            (attempt_dir / f"review-prompt-{state.session_number}.md").write_text(
-                prompt, encoding="utf-8"
-            )
+            prompt_path.write_text(prompt, encoding="utf-8")
             self.renderer.rule(
                 f"REVIEW {item.id} attempt={state.logical_attempt} "
                 f"session={state.session_number}"
@@ -585,6 +878,7 @@ class Orchestrator:
                 result = await self.client.run_session(
                     workspace=self.config.workspace_root,
                     prompt=prompt,
+                    prompt_path=prompt_path,
                     phase="review",
                     timeout_seconds=settings.review_timeout_seconds,
                     events_path=events_path,
@@ -618,6 +912,11 @@ class Orchestrator:
                     workspace_root=self.config.workspace_root,
                     previous_summary=state.work_summary,
                     failure_reason=str(exc),
+                    item_paths=item_paths,
+                    todos_dir=self.config.todos_dir,
+                    validation_notes=format_validation_results(
+                        state.validation_results
+                    ),
                 )
                 continue
 
@@ -625,7 +924,12 @@ class Orchestrator:
 
             try:
                 decision = parse_review_decision(result.assistant_text)
-                accept_decision(decision, item, state.logical_attempt)
+                accept_decision(
+                    decision,
+                    item,
+                    state.logical_attempt,
+                    state.validation_results,
+                )
             except ReviewError as exc:
                 # Malformed/contradictory review consumes a logical attempt
                 state.review.summary = str(exc)
@@ -673,8 +977,11 @@ class Orchestrator:
 
         # Duplicate-commit prevention
         if state.commit_state == CommitState.COMPLETED and state.commit_sha:
+            verify_commit_sha(self.config.workspace_root, state.commit_sha)
             self._finalize_item_done(item, state.commit_sha, state.work_summary or "")
             return
+
+        self._verify_pre_dirty_paths(item, state)
 
         state.phase = Phase.COMMIT
         state.commit_state = CommitState.STARTED
@@ -809,6 +1116,8 @@ def _classify_item_outcome(item: TodoItem | None) -> str:
         return "skipped"
     if item.status == ItemStatus.BLOCKED:
         return "blocked"
+    if item.status == ItemStatus.IN_PROGRESS:
+        return "retryable"
     return "failed"
 
 
@@ -819,6 +1128,8 @@ def _apply_outcome(report: RunReport, item_id: str, outcome: str) -> None:
         report.skipped.append(item_id)
     elif outcome == "blocked":
         report.blocked.append(item_id)
+    elif outcome == "retryable":
+        report.retryable.append(item_id)
     else:
         report.failed.append(item_id)
 

@@ -5,6 +5,7 @@ settings:
   max_session_restarts_per_phase: 2
   work_timeout_seconds: 1800
   review_timeout_seconds: 900
+  validation_timeout_seconds: 900
   auto_commit: true
   stop_on_failure: true
   model: composer-2.5

@@ -71,6 +71,7 @@ def _workspace_options(
     auto_commit: Optional[str],
     agent_bin: Optional[str],
     skip_probe: bool,
+    dry_run_prompts: bool = False,
 ) -> RunConfig:
     env_skip = os.environ.get("TODOS_TOOL_SKIP_PROBE", "").lower() in {
         "1",
@@ -89,6 +90,7 @@ def _workspace_options(
         auto_commit=_parse_optional_bool(auto_commit, name="auto-commit"),
         agent_bin=agent_bin,
         skip_probe=skip_probe or env_skip,
+        dry_run_prompts=dry_run_prompts,
     )
 
 
@@ -203,6 +205,11 @@ def run_cmd(
         help="Skip probing agent --help for stream flags (use documented defaults)",
         envvar="TODOS_TOOL_SKIP_PROBE",
     ),
+    dry_run_prompts: bool = typer.Option(
+        False,
+        "--dry-run-prompts",
+        help="Write work/review prompt previews without agents or state changes",
+    ),
 ) -> None:
     """Execute ready items in dependency-safe order."""
     config = _workspace_options(
@@ -215,6 +222,7 @@ def run_cmd(
         auto_commit,
         agent_bin,
         skip_probe,
+        dry_run_prompts,
     )
     orch = Orchestrator(config)
     try:
@@ -228,9 +236,11 @@ def run_cmd(
     console = Console(no_color=no_color)
     console.print(
         f"completed={report.completed} failed={report.failed} "
-        f"blocked={report.blocked} skipped={report.skipped}"
+        f"retryable={report.retryable} "
+        f"blocked={report.blocked} skipped={report.skipped} "
+        f"planned={report.planned}"
     )
-    if report.failed or report.blocked:
+    if report.failed or report.retryable or report.blocked:
         raise typer.Exit(1)
 
 
@@ -267,6 +277,11 @@ def resume_cmd(
         "--skip-probe",
         envvar="TODOS_TOOL_SKIP_PROBE",
     ),
+    dry_run_prompts: bool = typer.Option(
+        False,
+        "--dry-run-prompts",
+        help="Write resumed prompt previews without agents or state changes",
+    ),
 ) -> None:
     """Recover from persisted state and actual Git state."""
     config = _workspace_options(
@@ -279,6 +294,7 @@ def resume_cmd(
         auto_commit,
         agent_bin,
         skip_probe,
+        dry_run_prompts,
     )
     orch = Orchestrator(config)
     try:
@@ -292,9 +308,11 @@ def resume_cmd(
     console = Console(no_color=no_color)
     console.print(
         f"completed={report.completed} failed={report.failed} "
-        f"blocked={report.blocked} skipped={report.skipped}"
+        f"retryable={report.retryable} "
+        f"blocked={report.blocked} skipped={report.skipped} "
+        f"planned={report.planned}"
     )
-    if report.failed or report.blocked:
+    if report.failed or report.retryable or report.blocked:
         raise typer.Exit(1)
 
 
