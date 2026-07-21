@@ -21,7 +21,8 @@ top-down-planning --config ./examples/planning.config.yaml
 ```
 
 CLI flags override values from the config file. Paths in the config file are resolved
-relative to the config file's directory.
+relative to `workspace` (or the config file's directory when `workspace` is `.` or omitted),
+unless absolute.
 
 Or pass options directly:
 

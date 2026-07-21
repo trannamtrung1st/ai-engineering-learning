@@ -3,8 +3,9 @@
 # Run:
 #   top-down-planning --config ./examples/planning.config.yaml
 #
-# CLI flags override values from this file. Paths are resolved relative to this
-# file's directory unless absolute.
+# CLI flags override values from this file. Paths are resolved relative to
+# `workspace` (or this file's directory when `workspace` is `.` or omitted),
+# unless absolute.
 #
 # Required for a new run: input, output, and one of output_goal / output_goal_file.
 

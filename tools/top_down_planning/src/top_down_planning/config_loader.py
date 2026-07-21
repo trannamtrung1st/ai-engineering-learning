@@ -122,36 +122,38 @@ def merge_run_options(
     embed_threshold: int | None = None,
 ) -> ResolvedRunOptions:
     file_cfg = load_run_config_file(config_path) if config_path is not None else None
-    base_dir = config_path.resolve().parent if config_path is not None else Path.cwd()
+    config_dir = config_path.resolve().parent if config_path is not None else Path.cwd()
     defaults = PlanningLimits()
+
+    resolved_workspace = _pick_path(
+        cli_value=workspace,
+        file_value=file_cfg.workspace if file_cfg else None,
+        base_dir=config_dir,
+        default=Path("."),
+    )
+    path_base = resolved_workspace or config_dir
 
     resolved_input = _pick_path(
         cli_value=input_path,
         file_value=file_cfg.input if file_cfg else None,
-        base_dir=base_dir,
+        base_dir=path_base,
     )
     resolved_output = _pick_path(
         cli_value=output_dir,
         file_value=file_cfg.output if file_cfg else None,
-        base_dir=base_dir,
-    )
-    resolved_workspace = _pick_path(
-        cli_value=workspace,
-        file_value=file_cfg.workspace if file_cfg else None,
-        base_dir=base_dir,
-        default=Path("."),
+        base_dir=path_base,
     )
     resolved_goal_file = _pick_path(
         cli_value=output_goal_file,
         file_value=file_cfg.output_goal_file if file_cfg else None,
-        base_dir=base_dir,
+        base_dir=path_base,
     )
     resolved_goal = _pick_optional_str(output_goal, file_cfg.output_goal if file_cfg else None)
     resolved_stop_hint = _pick_optional_str(stop_hint, file_cfg.stop_hint if file_cfg else None)
     resolved_stop_hint_file = _pick_path(
         cli_value=stop_hint_file,
         file_value=file_cfg.stop_hint_file if file_cfg else None,
-        base_dir=base_dir,
+        base_dir=path_base,
     )
 
     if resolved_input is None:
@@ -270,13 +272,21 @@ def _pick_path(
     default: Path | None = None,
 ) -> Path | None:
     if cli_value is not None:
-        return cli_value.expanduser().resolve()
+        path = Path(cli_value).expanduser()
+        if not path.is_absolute():
+            path = base_dir / path
+        return path.resolve()
     if file_value is not None:
         path = Path(file_value).expanduser()
         if not path.is_absolute():
             path = base_dir / path
         return path.resolve()
-    return default.resolve() if default is not None else None
+    if default is not None:
+        path = Path(default).expanduser()
+        if not path.is_absolute():
+            path = base_dir / path
+        return path.resolve()
+    return None
 
 
 def _pick_optional_str(cli_value: str | None, file_value: str | None) -> str | None:

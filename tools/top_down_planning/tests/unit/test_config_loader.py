@@ -132,6 +132,39 @@ def test_merge_run_options_rejects_both_goal_sources_in_config(tmp_path: Path) -
         merge_run_options(config_path=config_path)
 
 
+def test_merge_run_options_resolves_content_paths_relative_to_workspace(
+    tmp_path: Path,
+) -> None:
+    """Paths like input/output/goal file are workspace-relative, not config-dir-relative."""
+    project_root = tmp_path / "project"
+    config_dir = project_root / "temp"
+    config_dir.mkdir(parents=True)
+    input_file = project_root / "plans" / "feature" / "proposal.md"
+    input_file.parent.mkdir(parents=True)
+    input_file.write_text("# Proposal\n", encoding="utf-8")
+    goal_file = config_dir / "planning-goal.md"
+    goal_file.write_text("# Goal\n", encoding="utf-8")
+    config_path = config_dir / "planning.config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                f"input: plans/feature/proposal.md",
+                "output: temp",
+                f"workspace: {project_root}",
+                "output_goal_file: temp/planning-goal.md",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    options = merge_run_options(config_path=config_path)
+
+    assert options.workspace == project_root.resolve()
+    assert options.input_path == input_file.resolve()
+    assert options.output_dir == config_dir.resolve()
+    assert options.output_goal_file == goal_file.resolve()
+
+
 def test_merge_run_options_requires_input_and_output(tmp_path: Path) -> None:
     config_path = tmp_path / "planning.yaml"
     config_path.write_text("output_goal: Produce a plan\n", encoding="utf-8")
