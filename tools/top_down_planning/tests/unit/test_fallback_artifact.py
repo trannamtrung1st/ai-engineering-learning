@@ -3,6 +3,7 @@ from top_down_planning.fallback_artifact import (
     default_artifact_filename,
 )
 from top_down_planning.scheduler import initialize_root_plan
+from tests.plan_factory import make_root_plan
 
 
 def test_artifact_paths_from_output_goal_section() -> None:
@@ -26,7 +27,7 @@ def test_default_artifact_filename_prefers_output_artifacts_section() -> None:
 
 - `implementation-plan.md`
 """
-    plan = initialize_root_plan(
+    plan = make_root_plan(
         input_file="./idea.md",
         output_goal=goal,
         input_digest="a",

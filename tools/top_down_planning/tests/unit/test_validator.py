@@ -9,11 +9,12 @@ from top_down_planning.models import (
     PlanningLimits,
 )
 from top_down_planning.scheduler import initialize_root_plan
+from tests.plan_factory import make_root_plan
 from top_down_planning.validator import validate_response
 
 
 def _plan():
-    return initialize_root_plan(
+    return make_root_plan(
         input_file="./idea.md",
         output_goal="Produce an actionable implementation plan",
         input_digest="a",

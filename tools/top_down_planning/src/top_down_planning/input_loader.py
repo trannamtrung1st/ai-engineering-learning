@@ -120,3 +120,62 @@ def digest_output_goal(output_goal: str) -> str:
     if not text:
         raise PlanningToolError("--output-goal must not be empty")
     return digest_text(text)
+
+
+def normalize_persisted_text(text: str) -> str:
+    """Collapse whitespace so plan.yaml source fields stay readable."""
+    return " ".join(text.strip().split())
+
+
+def persisted_goal_label(loaded: LoadedOutputGoal) -> str:
+    """Return a compact label for plan.yaml when the goal may live in a file."""
+    if loaded.path is not None:
+        for line in loaded.text.splitlines():
+            stripped = line.strip()
+            if stripped:
+                return stripped[:200]
+        return loaded.path.name
+    return normalize_persisted_text(loaded.text)
+
+
+def persisted_stop_hint_label(loaded: LoadedStopHint) -> str:
+    if loaded.path is not None:
+        for line in loaded.text.splitlines():
+            stripped = line.strip()
+            if stripped:
+                return stripped[:200]
+        return loaded.path.name
+    return normalize_persisted_text(loaded.text)
+
+
+def build_source_metadata(
+    *,
+    input_file: str,
+    input_digest: str,
+    loaded_goal: LoadedOutputGoal,
+    loaded_stop_hint: LoadedStopHint | None = None,
+) -> "SourceMetadata":
+    from top_down_planning.models import SourceMetadata
+
+    stop_hint: str | None = None
+    stop_hint_file: str | None = None
+    stop_hint_digest: str | None = None
+    if loaded_stop_hint is not None:
+        stop_hint = persisted_stop_hint_label(loaded_stop_hint)
+        stop_hint_file = (
+            str(loaded_stop_hint.path) if loaded_stop_hint.path is not None else None
+        )
+        stop_hint_digest = loaded_stop_hint.digest
+
+    return SourceMetadata(
+        input_file=input_file,
+        output_goal=persisted_goal_label(loaded_goal),
+        output_goal_file=(
+            str(loaded_goal.path) if loaded_goal.path is not None else None
+        ),
+        input_digest=input_digest,
+        output_goal_digest=loaded_goal.digest,
+        stop_hint=stop_hint,
+        stop_hint_file=stop_hint_file,
+        stop_hint_digest=stop_hint_digest,
+    )

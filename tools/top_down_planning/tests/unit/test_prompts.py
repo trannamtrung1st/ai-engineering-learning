@@ -11,6 +11,7 @@ from top_down_planning.prompts import (
     should_embed_content,
 )
 from top_down_planning.scheduler import initialize_root_plan
+from tests.plan_factory import make_root_plan
 
 
 def test_should_embed_content_respects_threshold() -> None:
@@ -24,7 +25,7 @@ def test_prompt_embeds_small_input_document(
 ) -> None:
     loaded_input = load_markdown_input(example_input)
     output_goal = load_output_goal(inline="Produce an actionable implementation plan")
-    plan = initialize_root_plan(
+    plan = make_root_plan(
         input_file=str(example_input),
         output_goal=output_goal.text,
         input_digest="a",
@@ -53,7 +54,7 @@ def test_prompt_references_large_input_file_by_path(tmp_path: Path) -> None:
     input_file.write_text("# Large\n\n" + ("x" * 5000), encoding="utf-8")
     loaded_input = load_markdown_input(input_file)
     output_goal = load_output_goal(inline="Produce an actionable implementation plan")
-    plan = initialize_root_plan(
+    plan = make_root_plan(
         input_file=str(input_file),
         output_goal=output_goal.text,
         input_digest="a",
@@ -85,7 +86,7 @@ def test_prompt_embeds_short_output_goal_file(tmp_path: Path, example_input: Pat
     )
     loaded_input = load_markdown_input(example_input)
     output_goal = load_output_goal(goal_file=goal_file)
-    plan = initialize_root_plan(
+    plan = make_root_plan(
         input_file=str(example_input),
         output_goal=output_goal.text,
         output_goal_file=str(goal_file),
@@ -114,7 +115,7 @@ def test_prompt_references_large_output_goal_file(tmp_path: Path, example_input:
     goal_file.write_text("# Goal\n\n" + ("y" * 5000), encoding="utf-8")
     loaded_input = load_markdown_input(example_input)
     output_goal = load_output_goal(goal_file=goal_file)
-    plan = initialize_root_plan(
+    plan = make_root_plan(
         input_file=str(example_input),
         output_goal=output_goal.text,
         output_goal_file=str(goal_file),
@@ -206,7 +207,7 @@ def test_prompt_includes_stop_hint_when_provided(
     stop_hint = load_stop_hint(
         inline="Stop expanding once each major area has actionable leaf tasks."
     )
-    plan = initialize_root_plan(
+    plan = make_root_plan(
         input_file=str(example_input),
         output_goal=output_goal.text,
         input_digest="a",
@@ -236,7 +237,7 @@ def test_prompt_omits_stop_hint_section_when_not_provided(
 ) -> None:
     loaded_input = load_markdown_input(example_input)
     output_goal = load_output_goal(inline="Produce an actionable implementation plan")
-    plan = initialize_root_plan(
+    plan = make_root_plan(
         input_file=str(example_input),
         output_goal=output_goal.text,
         input_digest="a",
@@ -263,7 +264,7 @@ def test_final_render_prompt_references_plan_and_output_goal(
 ) -> None:
     loaded_input = load_markdown_input(example_input)
     output_goal = load_output_goal(inline="Produce an actionable implementation plan")
-    plan = initialize_root_plan(
+    plan = make_root_plan(
         input_file=str(example_input),
         output_goal=output_goal.text,
         input_digest="a",

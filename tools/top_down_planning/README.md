@@ -106,14 +106,22 @@ The `--output` directory should contain only generated deliverables at its top l
 Do not place input files or output goal files there.
 
 Goal-driven deliverables are written only when planning finishes with status `complete`.
-Incomplete or failed runs keep internal state under `.planning-output/` but do not
-write new deliverables.
+The render agent writes files directly under `--output`. Incomplete or failed runs keep
+internal state under `.planning-output/` but do not write new deliverables.
+
+Render audit artifacts under `.planning-output/iterations/` include
+`render-request-prompt.md`, `render-response.json` (discovered artifact paths), and
+agent logs when audit is enabled.
 
 ## v1 contracts
 
 ### Planning state (`plan.yaml`)
 
 Flat list of items with stable tool-owned IDs (`item-001`, `item-002`, ...), parent references, deterministic ordering, and separate decomposition/readiness statuses.
+
+The `source` block stores compact labels for the output goal and stop hint. When a goal
+or hint comes from a file, `plan.yaml` also records `output_goal_file` or
+`stop_hint_file`. Full text is loaded from those files at runtime.
 
 Supported decomposition statuses:
 
@@ -162,8 +170,11 @@ Planning completes when no expandable items remain and the graph is structurally
 
 ### Persistence and resume
 
-`run-state.json` stores iteration counters, limits, and SHA-256 digests of the input file and output goal. Resume rejects changed input, changed output goal, or mismatched limits. Resuming an
-already-complete run skips the render phase when prior deliverables still exist on disk.
+`run-state.json` stores iteration counters, limits, and SHA-256 digests of the input file and output goal. Resume rejects changed input, changed output goal, or mismatched limits. Resuming an already-complete run skips the render phase when prior deliverables still exist on disk.
+
+On resume, the tool detects when `plan.yaml` was reset but `run-state.json` still shows prior progress. It attempts to rebuild the plan by replaying stored `iterations/*-response.json` audit files before continuing.
+
+During render, `plan.yaml` is backed up and restored automatically if the render agent modifies canonical state.
 
 ### Stream events
 

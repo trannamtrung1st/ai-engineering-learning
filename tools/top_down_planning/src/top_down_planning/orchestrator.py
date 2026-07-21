@@ -20,10 +20,11 @@ from top_down_planning.errors import (
     CursorSessionError,
     PlanningToolError,
     ResponseParseError,
+    ResumeError,
     UserInterrupted,
     ValidationError,
 )
-from top_down_planning.input_loader import LoadedInput, LoadedOutputGoal, LoadedStopHint, load_markdown_input
+from top_down_planning.input_loader import LoadedInput, LoadedOutputGoal, LoadedStopHint, load_markdown_input, build_source_metadata
 from top_down_planning.model_config import resolve_embed_threshold, resolve_model
 from top_down_planning.models import (
     FinalStatus,
@@ -45,6 +46,12 @@ from top_down_planning.persistence import (
     save_run_state,
     update_final_status,
     write_json,
+)
+from top_down_planning.recovery import (
+    backup_canonical_plan,
+    is_plan_run_state_desynced,
+    recover_plan_from_iterations,
+    restore_canonical_plan,
 )
 from top_down_planning.artifact_writer import (
     discover_written_artifacts,
@@ -125,27 +132,32 @@ class Orchestrator:
                     "Cannot resume while Cursor agent is still running "
                     f"(pid={run_state.agent_pid}). Stop it manually, then retry."
                 )
+            if is_plan_run_state_desynced(plan, run_state):
+                recovered = recover_plan_from_iterations(output_dir, plan)
+                if recovered is None or is_plan_run_state_desynced(recovered, run_state):
+                    raise ResumeError(
+                        "plan.yaml appears reset but run-state shows prior progress "
+                        f"(iteration={run_state.iteration}). "
+                        "Automatic recovery from iteration audit files failed."
+                    )
+                plan = recovered
+                save_plan(output_dir, plan)
+                self.renderer.info(
+                    f"Recovered plan state from iteration audit files "
+                    f"({len(plan.plan)} items)"
+                )
             run_state.agent_pid = None
             run_state.active_status = RunActiveStatus.RUNNING
             save_run_state(output_dir, run_state)
             self.renderer.info(f"Resuming planning in {output_dir}")
         else:
-            plan = initialize_root_plan(
+            source = build_source_metadata(
                 input_file=str(loaded.path),
-                output_goal=loaded_goal.text,
-                output_goal_file=(
-                    str(loaded_goal.path) if loaded_goal.path is not None else None
-                ),
                 input_digest=loaded.digest,
-                output_goal_digest=goal_digest,
-                stop_hint=loaded_stop_hint.text if loaded_stop_hint is not None else None,
-                stop_hint_file=(
-                    str(loaded_stop_hint.path)
-                    if loaded_stop_hint is not None and loaded_stop_hint.path is not None
-                    else None
-                ),
-                stop_hint_digest=stop_hint_digest,
+                loaded_goal=loaded_goal,
+                loaded_stop_hint=loaded_stop_hint,
             )
+            plan = initialize_root_plan(source=source)
             run_state = new_run_state(
                 input_file=str(loaded.path),
                 output_goal=loaded_goal.source_label,
@@ -478,6 +490,8 @@ class Orchestrator:
             log_path = audit_dir / "render-agent.log"
             prompt_path.parent.mkdir(parents=True, exist_ok=True)
             prompt_path.write_text(prompt, encoding="utf-8")
+            plan_backup = backup_canonical_plan(output_dir)
+            min_plan_items = len(plan.plan)
 
             try:
                 result = await self.client.run_session(
@@ -522,6 +536,13 @@ class Orchestrator:
                     reason=str(exc),
                 )
                 continue
+            finally:
+                if restore_canonical_plan(
+                    output_dir, plan_backup, min_items=min_plan_items
+                ):
+                    self.renderer.warning(
+                        "Restored plan.yaml after render modified canonical state"
+                    )
 
             run_state.agent_pid = None
 

@@ -1,10 +1,10 @@
-from top_down_planning.models import DecompositionStatus, ReadinessStatus
-from top_down_planning.scheduler import initialize_root_plan, select_batch
-from top_down_planning.models import PlanningLimits
+from top_down_planning.models import DecompositionStatus, PlanningLimits, ReadinessStatus
+from top_down_planning.scheduler import select_batch
+from tests.plan_factory import make_root_plan
 
 
 def test_initialize_root_plan() -> None:
-    plan = initialize_root_plan(
+    plan = make_root_plan(
         input_file="./idea.md",
         output_goal="Produce an actionable implementation plan",
         input_digest="abc",
@@ -20,7 +20,7 @@ def test_initialize_root_plan() -> None:
 
 
 def test_bfs_selects_shallowest_first() -> None:
-    plan = initialize_root_plan(
+    plan = make_root_plan(
         input_file="./idea.md",
         output_goal="goal",
         input_digest="a",
@@ -53,7 +53,7 @@ def test_bfs_selects_shallowest_first() -> None:
 
 
 def test_batch_size_respected() -> None:
-    plan = initialize_root_plan(
+    plan = make_root_plan(
         input_file="./idea.md",
         output_goal="goal",
         input_digest="a",

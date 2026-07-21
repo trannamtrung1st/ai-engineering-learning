@@ -14,11 +14,12 @@ from top_down_planning.persistence import (
     save_run_state,
 )
 from top_down_planning.scheduler import initialize_root_plan
+from tests.plan_factory import make_root_plan
 from top_down_planning.errors import ResumeError
 
 
 def test_atomic_persistence_roundtrip(tmp_path: Path) -> None:
-    plan = initialize_root_plan(
+    plan = make_root_plan(
         input_file="./idea.md",
         output_goal="goal",
         input_digest="input",
@@ -48,7 +49,7 @@ def test_atomic_persistence_roundtrip(tmp_path: Path) -> None:
 
 
 def test_legacy_root_state_migrates_on_save(tmp_path: Path) -> None:
-    plan = initialize_root_plan(
+    plan = make_root_plan(
         input_file="./idea.md",
         output_goal="goal",
         input_digest="input",
@@ -70,7 +71,7 @@ def test_legacy_state_dir_is_readable(tmp_path: Path) -> None:
     from top_down_planning.persistence import LEGACY_STATE_DIRNAME
     import shutil
 
-    plan = initialize_root_plan(
+    plan = make_root_plan(
         input_file="./idea.md",
         output_goal="goal",
         input_digest="input",
@@ -88,7 +89,7 @@ def test_legacy_state_dir_is_readable(tmp_path: Path) -> None:
 
 
 def test_resume_rejects_changed_input(tmp_path: Path) -> None:
-    plan = initialize_root_plan(
+    plan = make_root_plan(
         input_file="./idea.md",
         output_goal="goal",
         input_digest="old",
@@ -115,7 +116,7 @@ def test_resume_rejects_changed_input(tmp_path: Path) -> None:
 
 
 def test_resume_rejects_changed_stop_hint(tmp_path: Path) -> None:
-    plan = initialize_root_plan(
+    plan = make_root_plan(
         input_file="./idea.md",
         output_goal="goal",
         input_digest="a",
@@ -145,7 +146,7 @@ def test_resume_rejects_changed_stop_hint(tmp_path: Path) -> None:
 
 
 def test_new_output_requires_resume_flag(tmp_path: Path) -> None:
-    plan = initialize_root_plan(
+    plan = make_root_plan(
         input_file="./idea.md",
         output_goal="goal",
         input_digest="a",

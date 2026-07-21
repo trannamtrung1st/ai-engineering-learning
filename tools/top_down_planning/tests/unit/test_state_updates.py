@@ -7,11 +7,12 @@ from top_down_planning.models import (
     PlanItem,
 )
 from top_down_planning.scheduler import initialize_root_plan
+from tests.plan_factory import make_root_plan
 from top_down_planning.state_updates import apply_response, detect_dependency_cycles
 
 
 def _plan():
-    return initialize_root_plan(
+    return make_root_plan(
         input_file="./idea.md",
         output_goal="Produce an actionable implementation plan",
         input_digest="a",
@@ -66,7 +67,7 @@ def test_apply_actionable() -> None:
 
 
 def test_cycle_detection() -> None:
-    plan = initialize_root_plan(
+    plan = make_root_plan(
         input_file="./idea.md",
         output_goal="goal",
         input_digest="a",

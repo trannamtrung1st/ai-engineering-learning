@@ -7,10 +7,12 @@ import pytest
 from top_down_planning.digest import digest_text
 from top_down_planning.errors import PlanningToolError
 from top_down_planning.input_loader import (
+    build_source_metadata,
     digest_output_goal,
     load_markdown_input,
     load_output_goal,
     load_stop_hint,
+    normalize_persisted_text,
 )
 
 
@@ -85,3 +87,35 @@ def test_load_stop_hint_absent_by_default() -> None:
 def test_load_stop_hint_rejects_both_sources() -> None:
     with pytest.raises(PlanningToolError):
         load_stop_hint(inline="x", hint_file=Path("stop.md"))
+
+
+def test_normalize_persisted_text_collapses_whitespace() -> None:
+    text = "Stop expanding once.\n\nPrefer marking items actionable\nwhen sufficient."
+    assert normalize_persisted_text(text) == (
+        "Stop expanding once. Prefer marking items actionable when sufficient."
+    )
+
+
+def test_build_source_metadata_stores_file_reference(tmp_path: Path) -> None:
+    goal_file = tmp_path / "planning-goal.md"
+    goal_file.write_text(
+        "Please use the ia-conventions skill.\n"
+        "Based on the proposal, produce the todos list.\n",
+        encoding="utf-8",
+    )
+    loaded_goal = load_output_goal(goal_file=goal_file)
+    loaded_stop = load_stop_hint(
+        inline="Stop expanding once each major workstream has actionable leaf tasks.\n"
+        "Prefer marking items actionable over further expansion."
+    )
+    source = build_source_metadata(
+        input_file=str(tmp_path / "proposal.md"),
+        input_digest="input",
+        loaded_goal=loaded_goal,
+        loaded_stop_hint=loaded_stop,
+    )
+    assert source.output_goal == "Please use the ia-conventions skill."
+    assert source.output_goal_file == str(goal_file.resolve())
+    assert "\n" not in (source.stop_hint or "")
+    assert source.stop_hint_file is None
+

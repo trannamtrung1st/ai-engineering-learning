@@ -15,6 +15,7 @@ from top_down_planning.models import (
 from top_down_planning.orchestrator import Orchestrator, RunConfig
 from top_down_planning.persistence import load_plan, load_run_state, new_run_state, save_plan, save_run_state
 from top_down_planning.scheduler import initialize_root_plan
+from tests.plan_factory import make_root_plan
 from top_down_planning.state_updates import apply_response
 
 
@@ -63,7 +64,7 @@ async def test_resume_after_partial_run(
     loaded_goal = load_output_goal(inline="Produce an actionable implementation plan")
     limits = PlanningLimits(max_iterations=5, batch_size=2)
 
-    plan = initialize_root_plan(
+    plan = make_root_plan(
         input_file=str(loaded.path),
         output_goal=loaded_goal.text,
         input_digest=loaded.digest,

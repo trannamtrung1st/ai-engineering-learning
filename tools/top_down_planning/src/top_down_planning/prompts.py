@@ -316,6 +316,7 @@ status, expected output, acceptance criterion, blocked reason, and open question
 - Write one or more deliverable files under the output directory.
 - Let the output goal and breakdown items guide format and presentation freely.
 - Do not return structured JSON or a chat-only summary instead of writing files.
+- Do not modify, delete, or recreate any file under `.planning-output/`, especially `plan.yaml`.
 - Do not include orchestration internals such as item IDs unless the output goal
   calls for them.
 - Preserve hierarchy, ordering, expected outputs, dependencies, acceptance criteria,

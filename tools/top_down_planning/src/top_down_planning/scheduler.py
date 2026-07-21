@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from top_down_planning.models import DecompositionStatus, PlanItem, PlanState, PlanningLimits
+from top_down_planning.models import DecompositionStatus, PlanItem, PlanState, PlanningLimits, SourceMetadata
 
 
 def expandable_items(plan: PlanState) -> list[PlanItem]:
@@ -40,18 +40,8 @@ def next_order(plan: PlanState) -> int:
     return max(item.order for item in plan.plan) + 1
 
 
-def initialize_root_plan(
-    *,
-    input_file: str,
-    output_goal: str,
-    input_digest: str,
-    output_goal_digest: str,
-    output_goal_file: str | None = None,
-    stop_hint: str | None = None,
-    stop_hint_file: str | None = None,
-    stop_hint_digest: str | None = None,
-) -> PlanState:
-    from top_down_planning.models import ReadinessStatus, ResultMetadata, SourceMetadata
+def initialize_root_plan(*, source: SourceMetadata) -> PlanState:
+    from top_down_planning.models import ReadinessStatus, ResultMetadata
 
     root = PlanItem(
         id="item-001",
@@ -64,16 +54,7 @@ def initialize_root_plan(
         readiness_status=ReadinessStatus.PENDING,
     )
     return PlanState(
-        source=SourceMetadata(
-            input_file=input_file,
-            output_goal=output_goal,
-            output_goal_file=output_goal_file,
-            input_digest=input_digest,
-            output_goal_digest=output_goal_digest,
-            stop_hint=stop_hint,
-            stop_hint_file=stop_hint_file,
-            stop_hint_digest=stop_hint_digest,
-        ),
+        source=source,
         plan=[root],
         result=ResultMetadata(),
     )

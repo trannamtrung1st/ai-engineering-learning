@@ -1,14 +1,9 @@
 from top_down_planning.models import (
     AgentResponse,
     MarkActionableOperation,
-    RenderArtifact,
-    RenderResponse,
 )
-from top_down_planning.response_parser import (
-    parse_agent_response,
-    parse_render_response,
-)
-from top_down_planning.scheduler import initialize_root_plan
+from top_down_planning.response_parser import parse_agent_response
+from tests.plan_factory import make_root_plan
 from top_down_planning.renderer import render_plan_markdown
 
 
@@ -28,7 +23,7 @@ def test_parse_fenced_json() -> None:
 
 
 def test_render_markdown_contains_views() -> None:
-    plan = initialize_root_plan(
+    plan = make_root_plan(
         input_file="./idea.md",
         output_goal="Produce an actionable implementation plan",
         input_digest="a",
@@ -38,18 +33,3 @@ def test_render_markdown_contains_views() -> None:
     assert "## Hierarchical view" in md
     assert "## Actionable items" in md
     assert "item-001" in md
-
-
-def test_parse_render_response_reads_artifacts_json() -> None:
-    payload = RenderResponse(
-        artifacts=[
-            RenderArtifact(
-                relative_path="implementation-plan.md",
-                content="# Plan\n\nDone.",
-            )
-        ]
-    )
-    text = "```json\n" + payload.model_dump_json(indent=2) + "\n```"
-    parsed = parse_render_response(text)
-    assert parsed.artifacts[0].relative_path == "implementation-plan.md"
-    assert parsed.artifacts[0].content.startswith("# Plan")

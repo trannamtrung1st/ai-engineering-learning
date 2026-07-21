@@ -10,6 +10,15 @@ from top_down_planning.models import PlanState, RenderArtifact, RenderResponse
 from top_down_planning.renderer import render_plan_markdown
 
 
+def resolve_output_goal_text(plan: PlanState) -> str:
+    """Load the full output goal text from file when plan.yaml stores a reference."""
+    if plan.source.output_goal_file:
+        path = Path(plan.source.output_goal_file)
+        if path.is_file():
+            return path.read_text(encoding="utf-8")
+    return plan.source.output_goal
+
+
 def artifact_paths_from_output_goal(output_goal: str) -> list[str]:
     lines = output_goal.splitlines()
     in_section = False
@@ -28,7 +37,7 @@ def artifact_paths_from_output_goal(output_goal: str) -> list[str]:
 
 
 def default_artifact_filename(plan: PlanState) -> str:
-    declared = artifact_paths_from_output_goal(plan.source.output_goal)
+    declared = artifact_paths_from_output_goal(resolve_output_goal_text(plan))
     if declared:
         return declared[0]
     first_line = plan.source.output_goal.strip().splitlines()[0]

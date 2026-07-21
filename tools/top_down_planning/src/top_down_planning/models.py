@@ -180,6 +180,8 @@ class AgentResponse(BaseModel):
 
 
 class RenderArtifact(BaseModel):
+    """Internal fallback artifact payload written by the deterministic renderer."""
+
     relative_path: str
     content: str
 
@@ -200,6 +202,8 @@ class RenderArtifact(BaseModel):
 
 
 class RenderResponse(BaseModel):
+    """Internal fallback artifact batch used by the deterministic renderer."""
+
     artifacts: list[RenderArtifact]
 
     @field_validator("artifacts")

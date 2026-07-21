@@ -391,22 +391,20 @@ planning-output/
 The top level of `--output` should contain only generated deliverables. Internal state
 and audit artifacts live under `.planning-output/`.
 
-Deliverables are produced by a final render phase after decomposition completes. The
-agent returns JSON describing one or more artifacts:
+Deliverables are produced by a final render phase after decomposition completes.
+The render agent runs in write mode, reads `plan.yaml`, and writes one or more
+deliverable files directly under `--output`. Format, structure, and filenames are
+guided by the output goal rather than a fixed JSON response schema.
 
-```json
-{
-  "artifacts": [
-    {
-      "relative_path": "implementation-plan.md",
-      "content": "..."
-    }
-  ]
-}
-```
+The tool discovers newly written files under `--output` (excluding
+`.planning-output/`). If render fails or writes nothing, a deterministic fallback
+artifact is generated internally.
 
 The output goal may define an **Output artifacts** section with filenames and formats.
 Do not create one file per planning item.
+
+The render agent must not modify canonical state under `.planning-output/`. The tool
+backs up and restores `plan.yaml` if render corrupts it.
 
 ### `plan.yaml`
 
@@ -415,12 +413,17 @@ The canonical structured planning state (internal).
 It should contain:
 
 * source input metadata;
-* output goal;
+* a compact output-goal label and optional `output_goal_file` path;
+* optional stop-hint label and optional `stop_hint_file` path;
 * all planning items;
 * relationships;
 * statuses;
 * dependencies;
 * final result metadata.
+
+When the output goal or stop hint comes from a file, `plan.yaml` stores a short
+label plus the source file path. Full goal/hint text is loaded at runtime from that
+file. Resume compatibility still uses SHA-256 digests of the resolved file contents.
 
 ### Goal-driven deliverables
 
@@ -450,6 +453,11 @@ Contains resumable runtime information such as:
 * last successful update.
 
 The input digest should prevent accidentally resuming a state against a different input document.
+
+Resume should detect when `plan.yaml` was reset but `run-state.json` still shows prior
+progress. In that case, rebuild the plan by replaying stored
+`iterations/*-response.json` audit files before continuing. During render, back up and
+restore `plan.yaml` if the render agent modifies canonical state.
 
 ## Final plan views
 
@@ -553,12 +561,11 @@ Use a replaceable agent adapter so the planning engine is not tightly coupled to
 ## Important constraints
 
 * Accept one primary Markdown input file.
-* Accept one short output-goal prompt.
+* Accept one output goal via inline prompt or goal file.
 * Maintain one structured plan state.
 * Do not create a Markdown file for every item.
-* Do not let the agent directly edit the canonical state.
-* The agent only proposes structured operations.
-* The tool validates and applies operations.
+* During planning, the agent only proposes structured operations; the tool validates and applies them.
+* During render, the agent writes deliverables directly under `--output` and must not modify `.planning-output/`.
 * Prefer breadth-first top-down decomposition.
 * Do not execute the generated plan.
 * Keep the tool generic across domains.
