@@ -147,7 +147,11 @@ def run_cmd(
     todo: Optional[str] = typer.Option(None, "--todo", help="Execute one item id"),
     allow_dirty: bool = typer.Option(False, "--allow-dirty"),
     no_color: bool = typer.Option(False, "--no-color"),
-    model: Optional[str] = typer.Option(None, "--model"),
+    model: Optional[str] = typer.Option(
+        None,
+        "--model",
+        help="Cursor model override (overrides manifest settings.model)",
+    ),
     stop_on_failure: Optional[bool] = typer.Option(
         None,
         "--stop-on-failure/--no-stop-on-failure",
@@ -200,7 +204,11 @@ def resume_cmd(
     todos_dir: str = typer.Option("todos", "--todos-dir"),
     allow_dirty: bool = typer.Option(False, "--allow-dirty"),
     no_color: bool = typer.Option(False, "--no-color"),
-    model: Optional[str] = typer.Option(None, "--model"),
+    model: Optional[str] = typer.Option(
+        None,
+        "--model",
+        help="Cursor model override (overrides manifest settings.model)",
+    ),
     stop_on_failure: Optional[bool] = typer.Option(
         None,
         "--stop-on-failure/--no-stop-on-failure",

@@ -46,7 +46,7 @@ Useful flags:
 | `--todos-dir` | Todos directory name (default: `todos`) |
 | `--allow-dirty` | Allow unrelated uncommitted changes |
 | `--no-color` | Disable colorized streaming |
-| `--model` | Cursor model override |
+| `--model` | Cursor model override (overrides `manifest.settings.model`) |
 | `--agent-bin` | Path to agent binary (`TODOS_TOOL_AGENT_BIN`) |
 | `--skip-probe` | Skip `agent --help` probe; use documented stream flags (`TODOS_TOOL_SKIP_PROBE`) |
 | `--stop-on-failure / --no-stop-on-failure` | Override manifest setting |
@@ -76,10 +76,13 @@ settings:
   review_timeout_seconds: 900
   auto_commit: true
   stop_on_failure: true
+  model: gpt-5.2   # optional; omit to use Cursor default
 items:
   - id: TASK-001
     file: items/001-feature.yaml
 ```
+
+`settings.model` is optional. When set, work and review sessions pass `--model` to the Cursor agent. The CLI flag `--model` overrides this value for a single run.
 
 ### Item file
 

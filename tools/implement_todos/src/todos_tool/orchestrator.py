@@ -88,7 +88,10 @@ class Orchestrator:
         self.workspace = load_workspace(config.workspace_root, config.todos_dir)
         self.client = CursorClient(
             agent_bin=config.agent_bin,
-            model=config.model,
+            model=_resolve_model(
+                cli_model=config.model,
+                manifest_model=self.workspace.manifest.settings.model,
+            ),
             no_color=config.no_color,
             skip_probe=config.skip_probe,
             parse_error_threshold=self.workspace.manifest.settings.parse_error_threshold,
@@ -627,6 +630,13 @@ def _extract_summary(result: SessionResult) -> str:
     if len(text) > 4000:
         return text[-4000:]
     return text
+
+
+def _resolve_model(*, cli_model: str | None, manifest_model: str | None) -> str | None:
+    """CLI ``--model`` overrides ``manifest.settings.model`` when set."""
+    if cli_model is not None and cli_model.strip():
+        return cli_model.strip()
+    return manifest_model
 
 
 def _persist_agent_pid(runs_dir: Path, state: RunState, pid: int) -> None:

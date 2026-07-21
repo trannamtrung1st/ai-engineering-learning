@@ -61,6 +61,15 @@ class ManifestSettings(BaseModel):
     auto_commit: bool = True
     stop_on_failure: bool = True
     parse_error_threshold: int = 20
+    model: str | None = None
+
+    @field_validator("model")
+    @classmethod
+    def normalize_model(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
 
     @field_validator(
         "max_attempts",

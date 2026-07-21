@@ -20,6 +20,25 @@ def test_load_valid_workspace(git_project: Path, sample_item: dict) -> None:
     assert ws.items[0].id == "TASK-001"
 
 
+def test_manifest_model_setting(git_project: Path, sample_item: dict) -> None:
+    write_todos(
+        git_project,
+        [sample_item],
+        settings={"model": "gpt-5.2", "max_attempts": 5},
+    )
+    ws = load_workspace(git_project)
+    assert ws.manifest.settings.model == "gpt-5.2"
+
+
+def test_resolve_model_cli_overrides_manifest() -> None:
+    from todos_tool.orchestrator import _resolve_model
+
+    assert _resolve_model(cli_model="cli-model", manifest_model="manifest-model") == "cli-model"
+    assert _resolve_model(cli_model=None, manifest_model="manifest-model") == "manifest-model"
+    assert _resolve_model(cli_model="", manifest_model="manifest-model") == "manifest-model"
+    assert _resolve_model(cli_model=None, manifest_model=None) is None
+
+
 def test_duplicate_ids(git_project: Path, sample_item: dict) -> None:
     other = dict(sample_item)
     other["id"] = "TASK-001"
