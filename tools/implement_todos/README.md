@@ -159,7 +159,7 @@ Uses Cursor non-interactive streaming:
 agent -p --force --trust --output-format stream-json --stream-partial-output ...
 ```
 
-Flags are probed from `agent --help` at runtime. Events are normalized to categories such as `[assistant]`, `[tool:start]`, `[status]`, `[error]`, `[unknown]`. Thinking is rendered only when the stream provides it. Persisted logs contain no ANSI color codes.
+Flags are probed from `agent --help` at runtime. Events are normalized to categories such as `[assistant]`, `[thinking]`, `[tool:start]`, `[status]`, `[error]`. Assistant and thinking text stream as continuous blocks (thinking gets a single `[thinking]` prefix; tool lines include paths/commands). Prompt echoes (`user`) and headless approval chatter (`interaction_query`) are suppressed. Thinking is rendered only when the stream provides it. Persisted logs contain no ANSI color codes.
 
 ## Git safety
 
@@ -186,9 +186,16 @@ pytest
 
 Tests use a fake Cursor executable under `tests/fixtures/fake_agent.py`. Live Cursor access is not required.
 
+## Interrupting a run
+
+`Ctrl+C` cancels the **todos-tool process only**. The Cursor agent is started in its own session with file-backed stdio, so interrupt detaches without sending SIGTERM/SIGINT to the agent. The tool exits with code `130`, persists `agent_pid` in `todos/runs/<id>/state.json` when the session starts, and leaves the agent running.
+
+`status` shows a live `pid=` when recorded. Resume starts a **new** session; if a previous agent pid is still alive it warns so you can stop it manually. Dead pids are cleared. Timeouts and stream parse failures still terminate the agent process group.
+
 ## Known limitations
 
 - Review JSON must appear in assistant text (fenced or raw object); there is no secondary success heuristic.
 - Item `result.commit_sha` may be written to the item YAML after the implementation commit; that metadata-only dirty state is allowed for subsequent runs.
 - Process-tree termination best-effort depends on POSIX process groups.
 - Live MCP / interactive approvals are not used; runs expect `--force` / `--trust` headless operation.
+- Detach-on-interrupt relies on POSIX process sessions and unreaped `Popen` children; Windows behavior may differ.

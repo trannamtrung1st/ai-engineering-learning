@@ -8,7 +8,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.text import Text
 
-from todos_tool.event_normalizer import NormalizedEvent
+from todos_tool.event_normalizer import EventCategory, NormalizedEvent
 
 CATEGORY_STYLES = {
     "assistant": "white",
@@ -22,6 +22,9 @@ CATEGORY_STYLES = {
     "unknown": "magenta",
 }
 
+# Stream these categories as continuous blocks (prefix once, then deltas).
+_STREAM_CATEGORIES = frozenset({"assistant", "thinking"})
+
 
 class ConsoleRenderer:
     def __init__(self, *, no_color: bool = False, log_path: Path | None = None) -> None:
@@ -32,46 +35,70 @@ class ConsoleRenderer:
             highlight=False,
         )
         self.log_path = log_path
-        self._assistant_open = False
+        self._stream_category: EventCategory | None = None
         if log_path is not None:
             log_path.parent.mkdir(parents=True, exist_ok=True)
 
     def render(self, event: NormalizedEvent) -> None:
-        label = f"[{event.category}]"
-        style = CATEGORY_STYLES.get(event.category, "white")
-        if event.category == "assistant":
-            # Stream assistant text without a prefix on every delta chunk
-            self.console.print(event.text, end="", soft_wrap=True)
-            self._log(event.text)
-            self._assistant_open = True
+        if event.category in _STREAM_CATEGORIES:
+            self._render_stream(event)
             return
 
-        if self._assistant_open:
-            self.console.print()
-            self._log("\n")
-            self._assistant_open = False
-
+        self._close_stream()
+        label = f"[{event.category}]"
+        style = CATEGORY_STYLES.get(event.category, "white")
         text = Text()
         text.append(label + " ", style=style)
         text.append(event.text)
         self.console.print(text)
         self._log(f"{label} {event.text}\n")
 
+    def flush(self) -> None:
+        """Ensure any open streamed block ends with a newline."""
+        self._close_stream()
+
     def info(self, message: str) -> None:
+        self._close_stream()
         self.console.print(f"[bold blue][info][/] {message}")
         self._log(f"[info] {message}\n")
 
     def warn(self, message: str) -> None:
+        self._close_stream()
         self.console.print(f"[bold yellow][warning][/] {message}")
         self._log(f"[warning] {message}\n")
 
     def error(self, message: str) -> None:
+        self._close_stream()
         self.console.print(f"[bold red][error][/] {message}")
         self._log(f"[error] {message}\n")
 
     def rule(self, title: str) -> None:
+        self._close_stream()
         self.console.rule(title)
         self._log(f"--- {title} ---\n")
+
+    def _render_stream(self, event: NormalizedEvent) -> None:
+        style = CATEGORY_STYLES.get(event.category, "white")
+        if self._stream_category != event.category:
+            self._close_stream()
+            self._stream_category = event.category
+            if event.category == "thinking":
+                prefix = Text()
+                prefix.append("[thinking] ", style=style)
+                self.console.print(prefix, end="")
+                self._log("[thinking] ")
+            # Assistant text streams without a per-chunk / block prefix.
+
+        styled = Text(event.text, style=style) if event.category == "thinking" else event.text
+        self.console.print(styled, end="", soft_wrap=True)
+        self._log(event.text)
+
+    def _close_stream(self) -> None:
+        if self._stream_category is None:
+            return
+        self.console.print()
+        self._log("\n")
+        self._stream_category = None
 
     def _log(self, text: str) -> None:
         if self.log_path is None:

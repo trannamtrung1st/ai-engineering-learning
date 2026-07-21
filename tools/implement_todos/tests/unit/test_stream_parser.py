@@ -3,8 +3,16 @@
 from __future__ import annotations
 
 import json
+from io import StringIO
+from pathlib import Path
 
-from todos_tool.event_normalizer import EventNormalizer, normalize_assistant_delta
+from todos_tool.console_renderer import ConsoleRenderer
+from todos_tool.event_normalizer import (
+    EventNormalizer,
+    NormalizedEvent,
+    normalize_assistant_delta,
+    normalize_text_delta,
+)
 from todos_tool.stream_parser import NdjsonStreamParser
 
 
@@ -53,3 +61,192 @@ def test_assistant_delta_helper() -> None:
     assert turn == "abc" and delta == "abc"
     turn, delta = normalize_assistant_delta("abc", "abcdef")
     assert turn == "abcdef" and delta == "def"
+    turn, delta = normalize_text_delta("abc", "def")
+    assert turn == "abcdef" and delta == "def"
+
+
+def test_thinking_chunks_coalesced() -> None:
+    normalizer = EventNormalizer()
+    chunks = ["Beginning work on UT-001:", " installing", " Vitest"]
+    deltas = []
+    for chunk in chunks:
+        events = normalizer.normalize({"type": "thinking", "subtype": "extended", "text": chunk})
+        assert len(events) == 1
+        assert events[0].category == "thinking"
+        deltas.append(events[0].text)
+    assert "".join(deltas) == "Beginning work on UT-001: installing Vitest"
+
+
+def test_thinking_cumulative_deduped() -> None:
+    normalizer = EventNormalizer()
+    first = normalizer.normalize({"type": "thinking", "text": "Hello"})
+    second = normalizer.normalize({"type": "thinking", "text": "Hello world"})
+    assert first[0].text == "Hello"
+    assert second[0].text == " world"
+
+
+def test_user_and_interaction_query_suppressed() -> None:
+    normalizer = EventNormalizer()
+    assert (
+        normalizer.normalize(
+            {
+                "type": "user",
+                "message": {"role": "user", "content": [{"type": "text", "text": "prompt"}]},
+            }
+        )
+        == []
+    )
+    assert (
+        normalizer.normalize(
+            {
+                "type": "interaction_query",
+                "subtype": "request",
+                "query_type": "webSearchRequestQuery",
+            }
+        )
+        == []
+    )
+
+
+def test_assistant_skips_model_call_id_flush() -> None:
+    normalizer = EventNormalizer()
+    streamed = normalizer.normalize(
+        {
+            "type": "assistant",
+            "timestamp_ms": 1,
+            "message": {"content": [{"type": "text", "text": "Hi"}]},
+        }
+    )
+    assert streamed[0].text == "Hi"
+    duplicate = normalizer.normalize(
+        {
+            "type": "assistant",
+            "timestamp_ms": 2,
+            "model_call_id": "call-1",
+            "message": {"content": [{"type": "text", "text": "Hi there"}]},
+        }
+    )
+    assert duplicate == []
+
+
+def test_non_partial_assistant_messages_still_emit() -> None:
+    """Complete stream-json messages (no timestamp_ms) must still render."""
+    normalizer = EventNormalizer()
+    first = normalizer.normalize(
+        {
+            "type": "assistant",
+            "message": {"content": [{"type": "text", "text": "I'll read the file"}]},
+        }
+    )
+    assert first[0].text == "I'll read the file"
+    normalizer.normalize(
+        {
+            "type": "tool_call",
+            "subtype": "started",
+            "tool_call": {"readToolCall": {"args": {"path": "a.ts"}}},
+        }
+    )
+    second = normalizer.normalize(
+        {
+            "type": "assistant",
+            "message": {"content": [{"type": "text", "text": "Done."}]},
+        }
+    )
+    assert second[0].text == "Done."
+
+
+def test_end_of_turn_flush_deduped_after_partials() -> None:
+    normalizer = EventNormalizer()
+    normalizer.normalize(
+        {
+            "type": "assistant",
+            "timestamp_ms": 1,
+            "message": {"content": [{"type": "text", "text": "Hello"}]},
+        }
+    )
+    normalizer.normalize(
+        {
+            "type": "assistant",
+            "timestamp_ms": 2,
+            "message": {"content": [{"type": "text", "text": " world"}]},
+        }
+    )
+    # Final flush without timestamp_ms duplicates the streamed turn.
+    assert (
+        normalizer.normalize(
+            {
+                "type": "assistant",
+                "message": {"content": [{"type": "text", "text": "Hello world"}]},
+            }
+        )
+        == []
+    )
+
+
+def test_tool_labels_include_paths() -> None:
+    normalizer = EventNormalizer()
+    started = normalizer.normalize(
+        {
+            "type": "tool_call",
+            "subtype": "started",
+            "tool_call": {"readToolCall": {"args": {"path": "src/app.ts"}}},
+        }
+    )
+    assert started[0].category == "tool:start"
+    assert started[0].text == "read src/app.ts"
+
+    globbed = normalizer.normalize(
+        {
+            "type": "tool_call",
+            "subtype": "started",
+            "tool_call": {"globToolCall": {"args": {"globPattern": "**/*.tsx"}}},
+        }
+    )
+    assert globbed[0].text == "glob **/*.tsx"
+
+    shelled = normalizer.normalize(
+        {
+            "type": "tool_call",
+            "subtype": "started",
+            "tool_call": {"shellToolCall": {"args": {"command": "npm test"}}},
+        }
+    )
+    assert shelled[0].text == "shell: npm test"
+
+
+def test_console_renderer_streams_thinking_as_one_block(tmp_path: Path) -> None:
+    log_path = tmp_path / "out.log"
+    renderer = ConsoleRenderer(no_color=True, log_path=log_path)
+    # Capture console via private buffer replacement
+    buffer = StringIO()
+    renderer.console.file = buffer
+
+    for text in ("Hello ", "world"):
+        renderer.render(NormalizedEvent("thinking", text, {}))
+    renderer.render(NormalizedEvent("tool:start", "read a.ts", {}))
+    renderer.flush()
+
+    output = buffer.getvalue()
+    assert output.count("[thinking]") == 1
+    assert "Hello world" in output
+    assert "[tool:start] read a.ts" in output
+
+    logged = log_path.read_text(encoding="utf-8")
+    assert logged.startswith("[thinking] Hello world\n")
+    assert "[tool:start] read a.ts\n" in logged
+
+
+def test_console_renderer_streams_assistant_without_prefix(tmp_path: Path) -> None:
+    log_path = tmp_path / "assistant.log"
+    renderer = ConsoleRenderer(no_color=True, log_path=log_path)
+    buffer = StringIO()
+    renderer.console.file = buffer
+
+    renderer.render(NormalizedEvent("assistant", "I'll ", {}))
+    renderer.render(NormalizedEvent("assistant", "start.", {}))
+    renderer.flush()
+
+    output = buffer.getvalue()
+    assert "[assistant]" not in output
+    assert "I'll start." in output
+    assert log_path.read_text(encoding="utf-8") == "I'll start.\n"

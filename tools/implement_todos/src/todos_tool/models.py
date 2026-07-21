@@ -198,6 +198,8 @@ class RunState(BaseModel):
     changed_paths: list[str] = Field(default_factory=list)
     history: list[dict[str, Any]] = Field(default_factory=list)
     updated_at: datetime | None = None
+    # Set while a detached/active Cursor agent process may still be running.
+    agent_pid: int | None = None
 
 
 class RestructuringProposal(BaseModel):

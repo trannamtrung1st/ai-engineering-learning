@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -23,6 +24,7 @@ from todos_tool.errors import (
     RestructuringError,
     SchedulingError,
     TodosToolError,
+    UserInterrupted,
 )
 from todos_tool.git_service import (
     commit,
@@ -83,13 +85,14 @@ class Orchestrator:
     def __init__(self, config: RunConfig) -> None:
         self.config = config
         self.renderer = ConsoleRenderer(no_color=config.no_color)
+        self.workspace = load_workspace(config.workspace_root, config.todos_dir)
         self.client = CursorClient(
             agent_bin=config.agent_bin,
             model=config.model,
             no_color=config.no_color,
             skip_probe=config.skip_probe,
+            parse_error_threshold=self.workspace.manifest.settings.parse_error_threshold,
         )
-        self.workspace = load_workspace(config.workspace_root, config.todos_dir)
         self._pre_existing_dirty: set[str] = set()
 
     async def run(self, todo_id: str | None = None) -> RunReport:
@@ -122,7 +125,7 @@ class Orchestrator:
             try:
                 await self._execute_item(item)
                 report.completed.append(item.id)
-            except CursorEnvironmentError:
+            except (CursorEnvironmentError, UserInterrupted):
                 raise
             except TodosToolError as exc:
                 self.renderer.error(f"{item.id}: {exc}")
@@ -176,11 +179,22 @@ class Orchestrator:
 
         item = in_progress[0]
         self.renderer.info(f"Resuming {item.id}")
+        runs_dir = self.workspace.runs_dir(item.id)
+        prior = load_state(runs_dir)
+        if prior and prior.agent_pid:
+            if _pid_alive(prior.agent_pid):
+                self.renderer.warn(
+                    f"Previous Cursor agent may still be running (pid={prior.agent_pid}). "
+                    "Resume starts a new session; stop that pid manually if it conflicts."
+                )
+            else:
+                prior.agent_pid = None
+                save_state(runs_dir, prior)
         report = RunReport()
         try:
             await self._execute_item(item, resuming=True)
             report.completed.append(item.id)
-        except CursorEnvironmentError:
+        except (CursorEnvironmentError, UserInterrupted):
             raise
         except TodosToolError as exc:
             self.renderer.error(f"{item.id}: {exc}")
@@ -334,11 +348,21 @@ class Orchestrator:
                     events_path=events_path,
                     log_path=log_path,
                     renderer=self.renderer,
+                    on_agent_started=lambda pid: _persist_agent_pid(
+                        runs_dir, state, pid
+                    ),
                 )
+            except UserInterrupted as exc:
+                state.agent_pid = exc.agent_pid or state.agent_pid
+                state.last_error = str(exc)
+                save_state(runs_dir, state)
+                raise
             except CursorEnvironmentError:
                 raise
             except CursorSessionError as exc:
                 state.last_error = str(exc)
+                state.agent_pid = None
+                save_state(runs_dir, state)
                 if not exc.recoverable:
                     raise
                 if state.session_restart_count >= settings.max_session_restarts_per_phase:
@@ -363,6 +387,7 @@ class Orchestrator:
                 self._pre_existing_dirty,
             )
             state.session_restart_count = 0
+            state.agent_pid = None
             record_transition(runs_dir, state, Transition.WORK_PHASE_READY)
             return True
 
@@ -422,11 +447,21 @@ class Orchestrator:
                     events_path=events_path,
                     log_path=log_path,
                     renderer=self.renderer,
+                    on_agent_started=lambda pid: _persist_agent_pid(
+                        runs_dir, state, pid
+                    ),
                 )
+            except UserInterrupted as exc:
+                state.agent_pid = exc.agent_pid or state.agent_pid
+                state.last_error = str(exc)
+                save_state(runs_dir, state)
+                raise
             except CursorEnvironmentError:
                 raise
             except CursorSessionError as exc:
                 state.last_error = str(exc)
+                state.agent_pid = None
+                save_state(runs_dir, state)
                 if state.session_restart_count >= settings.max_session_restarts_per_phase:
                     state.review.summary = f"Review session failed: {exc}"
                     state.review.issues = [str(exc)]
@@ -442,6 +477,8 @@ class Orchestrator:
                     failure_reason=str(exc),
                 )
                 continue
+
+            state.agent_pid = None
 
             try:
                 decision = parse_review_decision(result.assistant_text)
@@ -590,3 +627,20 @@ def _extract_summary(result: SessionResult) -> str:
     if len(text) > 4000:
         return text[-4000:]
     return text
+
+
+def _persist_agent_pid(runs_dir: Path, state: RunState, pid: int) -> None:
+    state.agent_pid = pid
+    save_state(runs_dir, state)
+
+
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True

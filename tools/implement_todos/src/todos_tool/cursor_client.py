@@ -6,17 +6,21 @@ import asyncio
 import os
 import shutil
 import signal
+import subprocess
+import tempfile
+import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, TextIO
 
 from todos_tool.console_renderer import ConsoleRenderer
-from todos_tool.errors import CursorEnvironmentError, CursorSessionError
+from todos_tool.errors import CursorEnvironmentError, CursorSessionError, UserInterrupted
 from todos_tool.event_normalizer import EventNormalizer
-from todos_tool.persistence import append_ndjson
 from todos_tool.stream_parser import NdjsonStreamParser
 
 PhaseName = Literal["work", "review"]
+AgentStartedCallback = Callable[[int], None]
 
 
 @dataclass
@@ -28,6 +32,7 @@ class SessionResult:
     parse_errors: int = 0
     malformed: list[str] = field(default_factory=list)
     stderr_text: str = ""
+    agent_pid: int | None = None
 
 
 def resolve_agent_bin(explicit: str | None = None) -> str:
@@ -141,6 +146,7 @@ class CursorClient:
         events_path: Path | None = None,
         log_path: Path | None = None,
         renderer: ConsoleRenderer | None = None,
+        on_agent_started: AgentStartedCallback | None = None,
     ) -> SessionResult:
         await self.ensure_ready()
         assert self._stream_flags is not None
@@ -159,53 +165,57 @@ class CursorClient:
         all_events: list[dict[str, Any]] = []
         stderr_chunks: list[str] = []
 
+        stdout_path, stderr_path, tmp_paths = _resolve_capture_paths(events_path, log_path)
+        proc: subprocess.Popen[bytes] | None = None
+
         try:
-            proc = await asyncio.create_subprocess_exec(
+            proc = _spawn_agent(
                 self.agent_bin,
-                *args,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=str(workspace),
-                start_new_session=True,
+                args,
+                workspace=workspace,
+                stdout_path=stdout_path,
+                stderr_path=stderr_path,
             )
         except OSError as exc:
+            _cleanup_tmp_paths(tmp_paths)
             raise CursorEnvironmentError(f"Failed to start Cursor agent: {exc}") from exc
+
+        if on_agent_started is not None:
+            on_agent_started(proc.pid)
 
         timed_out = False
 
-        async def read_stdout() -> None:
-            assert proc.stdout is not None
-            while True:
-                chunk = await proc.stdout.read(4096)
-                if not chunk:
-                    break
-                for event in parser.feed(chunk):
-                    all_events.append(event)
-                    if events_path is not None:
-                        append_ndjson(events_path, event)
-                    for normalized in normalizer.normalize(event):
-                        renderer.render(normalized)
-                        if normalized.category == "assistant":
-                            assistant_parts.append(normalized.text)
-                if parser.threshold_exceeded():
-                    raise CursorSessionError(
-                        f"Parse error threshold exceeded ({parser.parse_errors})",
-                        recoverable=True,
-                    )
+        def handle_stdout_events(events: list[dict[str, Any]]) -> None:
+            for event in events:
+                all_events.append(event)
+                for normalized in normalizer.normalize(event):
+                    renderer.render(normalized)
+                    if normalized.category == "assistant":
+                        assistant_parts.append(normalized.text)
+            if parser.threshold_exceeded():
+                raise CursorSessionError(
+                    f"Parse error threshold exceeded ({parser.parse_errors})",
+                    recoverable=True,
+                )
 
-        async def read_stderr() -> None:
-            assert proc.stderr is not None
-            while True:
-                chunk = await proc.stderr.read(4096)
-                if not chunk:
-                    break
-                text = chunk.decode("utf-8", errors="replace")
-                stderr_chunks.append(text)
-                renderer.warn(text.rstrip())
+        def handle_stderr_text(text: str) -> None:
+            if not text:
+                return
+            stderr_chunks.append(text)
+            for line in text.splitlines():
+                if line.strip():
+                    renderer.warn(line.rstrip())
 
         try:
             await asyncio.wait_for(
-                asyncio.gather(read_stdout(), read_stderr()),
+                _watch_agent_output(
+                    proc,
+                    stdout_path=stdout_path,
+                    stderr_path=stderr_path,
+                    parser=parser,
+                    on_events=handle_stdout_events,
+                    on_stderr=handle_stderr_text,
+                ),
                 timeout=timeout_seconds,
             )
         except TimeoutError:
@@ -214,19 +224,31 @@ class CursorClient:
         except CursorSessionError:
             await _terminate_process_tree(proc)
             raise
+        except (asyncio.CancelledError, KeyboardInterrupt):
+            # Detach: stop watching, leave the agent process group alive.
+            # Do not terminate/kill — file-backed stdio + new session keep it alive.
+            renderer.flush()
+            raise UserInterrupted(
+                f"Interrupted; Cursor agent left running (pid={proc.pid})",
+                agent_pid=proc.pid,
+            ) from None
 
         for event in parser.finish():
             all_events.append(event)
-            if events_path is not None:
-                append_ndjson(events_path, event)
             for normalized in normalizer.normalize(event):
                 renderer.render(normalized)
                 if normalized.category == "assistant":
                     assistant_parts.append(normalized.text)
+        renderer.flush()
 
-        exit_code = await proc.wait()
+        exit_code = proc.poll()
+        if exit_code is None:
+            exit_code = await asyncio.to_thread(proc.wait)
         stderr_text = "".join(stderr_chunks)
+        if not stderr_text and stderr_path.is_file():
+            stderr_text = stderr_path.read_text(encoding="utf-8", errors="replace")
         _raise_if_environment_failure(exit_code, stderr_text, timed_out)
+        _cleanup_tmp_paths(tmp_paths)
 
         result = SessionResult(
             exit_code=exit_code if not timed_out else 124,
@@ -236,6 +258,7 @@ class CursorClient:
             parse_errors=parser.parse_errors,
             malformed=list(parser.malformed),
             stderr_text=stderr_text,
+            agent_pid=proc.pid,
         )
         if timed_out:
             raise CursorSessionError(
@@ -248,6 +271,122 @@ class CursorClient:
                 recoverable=True,
             )
         return result
+
+
+def _resolve_capture_paths(
+    events_path: Path | None,
+    log_path: Path | None,
+) -> tuple[Path, Path, list[Path]]:
+    """Return (stdout_path, stderr_path, temp_paths_to_cleanup)."""
+    tmp_paths: list[Path] = []
+    if events_path is not None:
+        stdout_path = events_path
+        stdout_path.parent.mkdir(parents=True, exist_ok=True)
+        # Truncate so this session owns the file from offset 0.
+        stdout_path.write_bytes(b"")
+    else:
+        fd, name = tempfile.mkstemp(prefix="todos-agent-", suffix=".ndjson")
+        os.close(fd)
+        stdout_path = Path(name)
+        tmp_paths.append(stdout_path)
+
+    if log_path is not None:
+        stderr_path = log_path.with_suffix(".stderr")
+        stderr_path.parent.mkdir(parents=True, exist_ok=True)
+        stderr_path.write_bytes(b"")
+    else:
+        fd, name = tempfile.mkstemp(prefix="todos-agent-", suffix=".stderr")
+        os.close(fd)
+        stderr_path = Path(name)
+        tmp_paths.append(stderr_path)
+    return stdout_path, stderr_path, tmp_paths
+
+
+def _spawn_agent(
+    agent_bin: str,
+    args: list[str],
+    *,
+    workspace: Path,
+    stdout_path: Path,
+    stderr_path: Path,
+) -> subprocess.Popen[bytes]:
+    """Start agent in its own session with file-backed stdio.
+
+    File-backed streams are required so Ctrl+C can detach the tool without
+    closing pipes (which would SIGPIPE / kill the agent).
+    """
+    stdout_f: TextIO[bytes] = stdout_path.open("wb")
+    stderr_f: TextIO[bytes] = stderr_path.open("wb")
+    try:
+        return subprocess.Popen(
+            [agent_bin, *args],
+            stdout=stdout_f,
+            stderr=stderr_f,
+            cwd=str(workspace),
+            start_new_session=True,
+        )
+    finally:
+        # Child keeps its own duplicated fds; parent write handles can close.
+        stdout_f.close()
+        stderr_f.close()
+
+
+async def _watch_agent_output(
+    proc: subprocess.Popen[bytes],
+    *,
+    stdout_path: Path,
+    stderr_path: Path,
+    parser: NdjsonStreamParser,
+    on_events: Any,
+    on_stderr: Any,
+) -> None:
+    stdout_offset = 0
+    stderr_offset = 0
+    while True:
+        stdout_offset = _consume_file_bytes(
+            stdout_path,
+            stdout_offset,
+            lambda data: on_events(parser.feed(data)),
+        )
+        stderr_offset = _consume_file_bytes(
+            stderr_path,
+            stderr_offset,
+            lambda data: on_stderr(data.decode("utf-8", errors="replace")),
+        )
+        if proc.poll() is not None:
+            # Final drain after exit.
+            stdout_offset = _consume_file_bytes(
+                stdout_path,
+                stdout_offset,
+                lambda data: on_events(parser.feed(data)),
+            )
+            stderr_offset = _consume_file_bytes(
+                stderr_path,
+                stderr_offset,
+                lambda data: on_stderr(data.decode("utf-8", errors="replace")),
+            )
+            return
+        await asyncio.sleep(0.05)
+
+
+def _consume_file_bytes(path: Path, offset: int, consumer: Any) -> int:
+    if not path.is_file():
+        return offset
+    with path.open("rb") as handle:
+        handle.seek(offset)
+        data = handle.read()
+    if data:
+        consumer(data)
+        return offset + len(data)
+    return offset
+
+
+def _cleanup_tmp_paths(paths: list[Path]) -> None:
+    for path in paths:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
 
 
 def _raise_if_environment_failure(
@@ -272,8 +411,8 @@ def _raise_if_environment_failure(
         )
 
 
-async def _terminate_process_tree(proc: asyncio.subprocess.Process) -> None:
-    if proc.returncode is not None:
+async def _terminate_process_tree(proc: subprocess.Popen[bytes]) -> None:
+    if proc.poll() is not None:
         return
     pid = proc.pid
     try:
@@ -283,11 +422,8 @@ async def _terminate_process_tree(proc: asyncio.subprocess.Process) -> None:
             proc.terminate()
         except ProcessLookupError:
             return
-    try:
-        await asyncio.wait_for(proc.wait(), timeout=5)
+    if await _wait_proc(proc, timeout=5):
         return
-    except TimeoutError:
-        pass
     try:
         os.killpg(os.getpgid(pid), signal.SIGKILL)
     except (ProcessLookupError, PermissionError, OSError):
@@ -295,7 +431,13 @@ async def _terminate_process_tree(proc: asyncio.subprocess.Process) -> None:
             proc.kill()
         except ProcessLookupError:
             pass
-    try:
-        await asyncio.wait_for(proc.wait(), timeout=5)
-    except TimeoutError:
-        pass
+    await _wait_proc(proc, timeout=5)
+
+
+async def _wait_proc(proc: subprocess.Popen[bytes], *, timeout: float) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if proc.poll() is not None:
+            return True
+        await asyncio.sleep(0.05)
+    return proc.poll() is not None

@@ -5,14 +5,14 @@ from __future__ import annotations
 import asyncio
 import os
 from pathlib import Path
-from typing import Optional
+from typing import NoReturn, Optional
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
 from todos_tool import __version__
-from todos_tool.errors import TodosToolError, ValidationError
+from todos_tool.errors import TodosToolError, UserInterrupted, ValidationError
 from todos_tool.manifest import load_workspace
 from todos_tool.orchestrator import Orchestrator, RunConfig
 from todos_tool.persistence import load_state
@@ -30,6 +30,17 @@ def _version_callback(value: bool) -> None:
     if value:
         typer.echo(__version__)
         raise typer.Exit(0)
+
+
+def _exit_interrupted(exc: BaseException, *, no_color: bool) -> NoReturn:
+    console = Console(no_color=no_color)
+    if isinstance(exc, UserInterrupted):
+        console.print(f"[yellow]{exc}[/]")
+    else:
+        console.print(
+            "[yellow]Interrupted — Cursor agent session left running if still active.[/]"
+        )
+    raise typer.Exit(130) from exc
 
 
 def _workspace_options(
@@ -116,6 +127,8 @@ def status_cmd(
         phase = state.phase.value if state else "-"
         if state and state.logical_attempt:
             phase = f"{phase} a{state.logical_attempt}"
+        if state and state.agent_pid:
+            phase = f"{phase} pid={state.agent_pid}"
         table.add_row(
             row["id"],
             row["title"],
@@ -167,6 +180,8 @@ def run_cmd(
     orch = Orchestrator(config)
     try:
         report = asyncio.run(orch.run(todo_id=todo))
+    except (UserInterrupted, KeyboardInterrupt) as exc:
+        _exit_interrupted(exc, no_color=no_color)
     except TodosToolError as exc:
         Console(no_color=no_color).print(f"[red]{exc}[/]")
         raise typer.Exit(1) from exc
@@ -215,6 +230,8 @@ def resume_cmd(
     orch = Orchestrator(config)
     try:
         report = asyncio.run(orch.resume())
+    except (UserInterrupted, KeyboardInterrupt) as exc:
+        _exit_interrupted(exc, no_color=no_color)
     except TodosToolError as exc:
         Console(no_color=no_color).print(f"[red]{exc}[/]")
         raise typer.Exit(1) from exc
