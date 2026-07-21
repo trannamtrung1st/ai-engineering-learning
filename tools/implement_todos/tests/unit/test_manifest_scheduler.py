@@ -18,6 +18,15 @@ def test_load_valid_workspace(git_project: Path, sample_item: dict) -> None:
     ws = load_workspace(git_project)
     assert len(ws.items) == 1
     assert ws.items[0].id == "TASK-001"
+    assert ws.manifest.settings.model == "composer-2.5"
+
+
+def test_manifest_model_default_when_omitted(git_project: Path, sample_item: dict) -> None:
+    write_todos(git_project, [sample_item], settings={"max_attempts": 5})
+    manifest = yaml.safe_load((git_project / "todos/manifest.yaml").read_text())
+    assert "model" not in manifest["settings"]
+    ws = load_workspace(git_project)
+    assert ws.manifest.settings.model == "composer-2.5"
 
 
 def test_manifest_model_setting(git_project: Path, sample_item: dict) -> None:

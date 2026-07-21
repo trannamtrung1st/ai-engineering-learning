@@ -61,7 +61,7 @@ class ManifestSettings(BaseModel):
     auto_commit: bool = True
     stop_on_failure: bool = True
     parse_error_threshold: int = 20
-    model: str | None = None
+    model: str | None = "composer-2.5"
 
     @field_validator("model")
     @classmethod

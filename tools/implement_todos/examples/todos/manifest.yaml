@@ -7,6 +7,7 @@ settings:
   review_timeout_seconds: 900
   auto_commit: true
   stop_on_failure: true
+  model: composer-2.5
 
 items:
   - id: TASK-001

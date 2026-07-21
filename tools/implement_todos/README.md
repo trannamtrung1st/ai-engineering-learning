@@ -76,13 +76,13 @@ settings:
   review_timeout_seconds: 900
   auto_commit: true
   stop_on_failure: true
-  model: gpt-5.2   # optional; omit to use Cursor default
+  model: composer-2.5   # default; set null to use Cursor default instead
 items:
   - id: TASK-001
     file: items/001-feature.yaml
 ```
 
-`settings.model` is optional. When set, work and review sessions pass `--model` to the Cursor agent. The CLI flag `--model` overrides this value for a single run.
+`settings.model` defaults to `composer-2.5`. Work and review sessions pass `--model` to the Cursor agent. Omit the field to keep the default, set another slug to change it, or set `null` to defer to Cursor's account default. The CLI flag `--model` overrides this value for a single run.
 
 ### Item file
 

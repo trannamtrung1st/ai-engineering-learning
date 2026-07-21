@@ -35,6 +35,7 @@ def write_todos(
             "auto_commit": True,
             "stop_on_failure": True,
             "parse_error_threshold": 20,
+            "model": "composer-2.5",
         },
         "items": refs,
     }
