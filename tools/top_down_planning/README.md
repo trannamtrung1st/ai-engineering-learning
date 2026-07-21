@@ -84,11 +84,13 @@ top-down-planning \
 
 ## Outputs
 
-Each run writes user-facing deliverables directly under `--output`. The deliverable
-filename(s) and format(s) come from the output goal's **Output artifacts** section
-when present, or are chosen by the final render phase to match the goal.
+The tool separates **user-facing deliverables** from **internal resumable state**.
 
-Internal resumable state is stored separately under `.planning-output/`:
+`--output` stores resumable planning state under `.planning-output/`. Deliverables may
+be written anywhere in the workspace according to the output goal — they are not
+required to live under `--output`.
+
+Example layout when deliverables stay under `--output`:
 
 ```text
 planning-output/
@@ -102,16 +104,20 @@ planning-output/
         └── render-response.json
 ```
 
-The `--output` directory should contain only generated deliverables at its top level.
-Do not place input files or output goal files there.
-
 Goal-driven deliverables are written only when planning finishes with status `complete`.
-The render agent writes files directly under `--output`. Incomplete or failed runs keep
-internal state under `.planning-output/` but do not write new deliverables.
+The render phase transforms the completed breakdown into deliverables that satisfy the
+output goal. Incomplete or failed runs keep internal state under `.planning-output/`
+but do not write new deliverables.
+
+Before render, the tool writes `render-brief.md` from `plan.yaml`. That brief lists
+every actionable leaf unit and is the authoritative scope contract for deliverables.
+The output goal defines format and schema; the breakdown defines which items must
+appear. After render, the tool validates that every breakdown title appears in the
+written deliverables and retries with feedback when coverage is incomplete.
 
 Render audit artifacts under `.planning-output/iterations/` include
-`render-request-prompt.md`, `render-response.json` (discovered artifact paths), and
-agent logs when audit is enabled.
+`render-brief.md`, `render-request-prompt.md`, `render-response.json` (discovered
+artifact paths and any coverage errors), and agent logs when audit is enabled.
 
 ## v1 contracts
 
@@ -183,6 +189,7 @@ When `--stream-json` is enabled, render-phase events include:
 - `render.started`
 - `render.completed` (with `artifacts`)
 - `render.skipped` (when resuming with existing deliverables)
+- `render.validation_failed` (when deliverables omit breakdown items)
 - `render.fallback` (deterministic fallback artifact)
 - `render.retrying`
 

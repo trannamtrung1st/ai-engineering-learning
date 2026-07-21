@@ -8,6 +8,7 @@ from top_down_planning.models import (
     PlanState,
     PlanningLimits,
 )
+from top_down_planning.render_brief import actionable_leaf_items
 from top_down_planning.scheduler import expandable_items
 from top_down_planning.state_updates import detect_dependency_cycles
 
@@ -44,12 +45,7 @@ def has_blocked_leaves(plan: PlanState) -> bool:
 
 
 def leaf_actionable_count(plan: PlanState) -> int:
-    return sum(
-        1
-        for item in plan.plan
-        if item.decomposition_status == DecompositionStatus.ACTIONABLE
-        and _is_leaf(plan, item.id)
-    )
+    return len(actionable_leaf_items(plan))
 
 
 def structural_errors(plan: PlanState) -> list[str]:

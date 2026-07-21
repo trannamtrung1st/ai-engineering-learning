@@ -8,41 +8,67 @@ from pathlib import Path
 from top_down_planning.models import RenderResponse
 from top_down_planning.persistence import STATE_DIRNAME
 
+_SKIP_DIR_NAMES = frozenset(
+    {
+        ".git",
+        ".venv",
+        "node_modules",
+        "__pycache__",
+        ".pytest_cache",
+        STATE_DIRNAME,
+    }
+)
 
-def snapshot_deliverable_files(output_dir: Path) -> dict[str, float]:
-    """Return relative paths to mtimes for deliverable files under output_dir."""
-    snapshot: dict[str, float] = {}
-    if not output_dir.is_dir():
-        return snapshot
-    for path in output_dir.rglob("*"):
+
+def _workspace_key(path: Path, workspace: Path) -> str:
+    return path.resolve().relative_to(workspace.resolve()).as_posix()
+
+
+def _iter_candidate_files(workspace: Path, *, output_dir: Path) -> list[Path]:
+    workspace = workspace.resolve()
+    output_dir = output_dir.resolve()
+    candidates: list[Path] = []
+    for path in workspace.rglob("*"):
         if not path.is_file():
             continue
-        rel = path.relative_to(output_dir)
-        if rel.parts and rel.parts[0] == STATE_DIRNAME:
+        try:
+            rel = path.relative_to(workspace)
+        except ValueError:
             continue
-        snapshot[rel.as_posix()] = path.stat().st_mtime
+        if any(part in _SKIP_DIR_NAMES for part in rel.parts):
+            continue
+        try:
+            rel_to_output = path.relative_to(output_dir)
+            if rel_to_output.parts and rel_to_output.parts[0] == STATE_DIRNAME:
+                continue
+        except ValueError:
+            pass
+        candidates.append(path)
+    return candidates
+
+
+def snapshot_deliverable_files(workspace: Path, *, output_dir: Path) -> dict[str, float]:
+    """Return workspace-relative paths to mtimes for discoverable deliverable files."""
+    snapshot: dict[str, float] = {}
+    for path in _iter_candidate_files(workspace, output_dir=output_dir):
+        snapshot[_workspace_key(path, workspace)] = path.stat().st_mtime
     return snapshot
 
 
 def discover_written_artifacts(
+    workspace: Path,
+    *,
     output_dir: Path,
     before: dict[str, float],
 ) -> list[Path]:
-    """Return newly created or updated deliverable files under output_dir."""
+    """Return newly created or updated deliverable files anywhere in the workspace."""
     written: list[Path] = []
-    if not output_dir.is_dir():
-        return written
-    for path in output_dir.rglob("*"):
-        if not path.is_file():
-            continue
-        rel = path.relative_to(output_dir)
-        if rel.parts and rel.parts[0] == STATE_DIRNAME:
-            continue
-        key = rel.as_posix()
+    for path in _iter_candidate_files(workspace, output_dir=output_dir):
+        key = _workspace_key(path, workspace)
         mtime = path.stat().st_mtime
         if key not in before or before[key] < mtime:
             written.append(path)
-    return sorted(written, key=lambda item: item.relative_to(output_dir).as_posix())
+    return sorted(written, key=lambda item: _workspace_key(item, workspace))
 
 
 def normalize_artifact_path(relative_path: str) -> str:
@@ -60,7 +86,7 @@ def normalize_artifact_path(relative_path: str) -> str:
     return path.as_posix()
 
 
-def write_render_artifacts(output_dir: Path, response: RenderResponse) -> list[Path]:
+def write_render_artifacts(base_dir: Path, response: RenderResponse) -> list[Path]:
     written: list[Path] = []
     seen: set[str] = set()
     for artifact in response.artifacts:
@@ -68,7 +94,7 @@ def write_render_artifacts(output_dir: Path, response: RenderResponse) -> list[P
         if relative in seen:
             raise ValueError(f"Duplicate artifact path: {relative}")
         seen.add(relative)
-        target = output_dir / relative
+        target = base_dir / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         if target.suffix.lower() == ".json":
             parsed = json.loads(artifact.content)

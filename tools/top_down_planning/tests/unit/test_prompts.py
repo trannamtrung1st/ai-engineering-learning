@@ -286,6 +286,40 @@ def test_final_render_prompt_references_plan_and_output_goal(
     assert "Final planning render" in prompt
     assert str(plan_file.resolve()) in prompt
     assert "Produce an actionable implementation plan" in prompt
-    assert "Output directory" in prompt
+    assert "Deliverable directory" in prompt
+    assert "Breakdown to render" in prompt
+    assert "authoritative scope" in prompt
+    assert "Do **not** copy, restore, or reuse pre-existing files" in prompt
+    assert ".planning-output" in prompt
     assert '"artifacts"' not in prompt
     assert "Required response format" not in prompt
+
+
+def test_final_render_prompt_includes_validation_feedback(
+    tmp_path: Path,
+    example_input: Path,
+) -> None:
+    loaded_input = load_markdown_input(example_input)
+    output_goal = load_output_goal(inline="Produce an actionable implementation plan")
+    plan = make_root_plan(
+        input_file=str(example_input),
+        output_goal=output_goal.text,
+        input_digest="a",
+        output_goal_digest="b",
+    )
+    plan_file = tmp_path / ".planning-output" / "plan.yaml"
+    plan_file.parent.mkdir(parents=True)
+
+    prompt = build_final_render_prompt(
+        loaded_input=loaded_input,
+        plan_file=plan_file,
+        output_dir=tmp_path / "planning-output",
+        workspace=tmp_path,
+        output_goal=output_goal,
+        plan=plan,
+        embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
+        validation_feedback=["Deliverables do not cover breakdown item item-002"],
+    )
+
+    assert "Render validation feedback from previous attempt" in prompt
+    assert "item-002" in prompt

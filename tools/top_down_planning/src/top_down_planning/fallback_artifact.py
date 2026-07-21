@@ -47,7 +47,7 @@ def default_artifact_filename(plan: PlanState) -> str:
     return f"{slug or 'deliverable'}.md"
 
 
-def write_fallback_artifact(output_dir: Path, plan: PlanState) -> Path:
+def write_fallback_artifact(deliverable_dir: Path, plan: PlanState) -> Path:
     filename = default_artifact_filename(plan)
     response = RenderResponse(
         artifacts=[
@@ -57,5 +57,5 @@ def write_fallback_artifact(output_dir: Path, plan: PlanState) -> Path:
             )
         ]
     )
-    written = write_render_artifacts(output_dir, response)
+    written = write_render_artifacts(deliverable_dir, response)
     return written[0]

@@ -208,7 +208,7 @@ def main_callback(
     output_dir: Optional[Path] = typer.Option(
         None,
         "--output",
-        help="Output directory for generated deliverables",
+        help="Output directory for resumable planning state (.planning-output/)",
     ),
     max_iterations: Optional[int] = typer.Option(None, "--max-iterations"),
     max_depth: Optional[int] = typer.Option(None, "--max-depth"),
@@ -322,7 +322,7 @@ def run_cmd(
     output_dir: Optional[Path] = typer.Option(
         None,
         "--output",
-        help="Output directory for generated deliverables",
+        help="Output directory for resumable planning state (.planning-output/)",
     ),
     max_iterations: Optional[int] = typer.Option(None, "--max-iterations"),
     max_depth: Optional[int] = typer.Option(None, "--max-depth"),

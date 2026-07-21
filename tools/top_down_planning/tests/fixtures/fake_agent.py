@@ -96,53 +96,63 @@ def _default_planning_response(selected: list[str]) -> dict:
     }
 
 
-def _output_dir_from_prompt(prompt: str) -> Path | None:
-    match = re.search(r"## Output directory[\s\S]*?Absolute: `([^`]+)`", prompt)
+def _deliverable_dir_from_prompt(prompt: str) -> Path | None:
+    match = re.search(
+        r"## Deliverable directory[\s\S]*?Absolute: `([^`]+)`",
+        prompt,
+    )
+    if match:
+        return Path(match.group(1))
+    return _workspace_from_prompt(prompt)
+
+
+def _workspace_from_prompt(prompt: str) -> Path | None:
+    match = re.search(r"## Workspace[\s\S]*?Absolute: `([^`]+)`", prompt)
     if not match:
         return None
     return Path(match.group(1))
 
 
-def _default_render_content() -> str:
-    return """# Actionable Implementation Plan
+def _breakdown_titles(prompt: str) -> list[str]:
+    titles = re.findall(r"^### \d+\. (.+)$", prompt, re.MULTILINE)
+    if titles:
+        return titles
+    return [
+        "Define CLI interface",
+        "Implement CSV parser",
+    ]
 
-Rendered according to the output goal after decomposition completed.
 
-## Hierarchical view
-
-1. **Define CLI interface**
-   - Objective: Specify the command-line interface
-   - Expected outputs: CLI spec
-   - Acceptance criteria: All flags documented
-
-2. **Implement CSV parser**
-   - Objective: Parse CSV rows safely
-   - Expected outputs: Parser module
-   - Acceptance criteria: Malformed rows handled
-   - Dependencies: Define CLI interface
-
-## Actionable items
-
-1. **Define CLI interface**
-   - Objective: Specify the command-line interface
-   - Expected outputs: CLI spec
-   - Acceptance criteria: All flags documented
-
-2. **Implement CSV parser**
-   - Objective: Parse CSV rows safely
-   - Dependencies: Define CLI interface
-   - Expected outputs: Parser module
-   - Acceptance criteria: Malformed rows handled
-"""
+def _default_render_content(titles: list[str]) -> str:
+    lines = [
+        "# Actionable Implementation Plan",
+        "",
+        "Rendered according to the output goal after decomposition completed.",
+        "",
+        "## Actionable items",
+        "",
+    ]
+    for index, title in enumerate(titles, start=1):
+        lines.extend(
+            [
+                f"{index}. **{title}**",
+                f"   - Objective: Deliverable for {title}",
+                f"   - Expected outputs: Output for {title}",
+                f"   - Acceptance criteria: Done when {title} is complete",
+                "",
+            ]
+        )
+    return "\n".join(lines).rstrip() + "\n"
 
 
 def _write_default_render_artifact(prompt: str) -> None:
-    output_dir = _output_dir_from_prompt(prompt)
-    if output_dir is None:
+    target_dir = _deliverable_dir_from_prompt(prompt)
+    if target_dir is None:
         return
-    output_dir.mkdir(parents=True, exist_ok=True)
-    target = output_dir / "implementation-plan.md"
-    target.write_text(_default_render_content(), encoding="utf-8")
+    target_dir.mkdir(parents=True, exist_ok=True)
+    titles = _breakdown_titles(prompt)
+    target = target_dir / "implementation-plan.md"
+    target.write_text(_default_render_content(titles), encoding="utf-8")
 
 
 def main() -> int:
@@ -164,7 +174,7 @@ def main() -> int:
             }
         )
         _write_default_render_artifact(prompt)
-        assistant("Wrote deliverables to the output directory.")
+        assistant("Wrote deliverables to the workspace.")
         emit({"type": "result", "subtype": "success", "duration_ms": 5, "is_error": False})
         return 0
 

@@ -7,6 +7,7 @@ from pathlib import Path
 
 from top_down_planning.input_loader import LoadedInput, LoadedOutputGoal, LoadedStopHint
 from top_down_planning.models import PlanItem, PlanState
+from top_down_planning.render_brief import actionable_leaf_items, build_render_brief
 
 
 def should_embed_content(text: str, *, embed_threshold: int) -> bool:
@@ -253,6 +254,34 @@ Return the JSON inside a ```json fenced block or as raw JSON. No prose outside t
 """
 
 
+def _format_render_brief_section(
+    *,
+    plan: PlanState,
+    render_brief_file: Path | None,
+    workspace: Path,
+    embed_threshold: int,
+) -> str:
+    brief = build_render_brief(plan)
+    leaf_count = len(actionable_leaf_items(plan))
+    header = (
+        f"The decomposition produced **{leaf_count} actionable deliverable unit(s)**. "
+        "Every unit below must appear in the final output. Use the output goal only "
+        "to decide file format, schema, and naming — not to add, remove, merge, or "
+        "re-scope items."
+    )
+    if render_brief_file is not None and not should_embed_content(
+        brief, embed_threshold=embed_threshold
+    ):
+        return (
+            f"{header}\n\n"
+            "Read the full render brief before writing deliverables:\n\n"
+            f"{format_input_file_reference(render_brief_file, workspace)}\n\n"
+            "Open and read that file in full. It is derived from the canonical "
+            "planning breakdown and defines the required scope."
+        )
+    return f"{header}\n\n{brief}"
+
+
 def build_final_render_prompt(
     *,
     loaded_input: LoadedInput,
@@ -262,6 +291,8 @@ def build_final_render_prompt(
     output_goal: LoadedOutputGoal,
     plan: PlanState,
     embed_threshold: int,
+    render_brief_file: Path | None = None,
+    validation_feedback: list[str] | None = None,
 ) -> str:
     """Build the prompt for the post-decomposition render phase."""
     input_section = format_input_document_section(
@@ -269,56 +300,99 @@ def build_final_render_prompt(
         workspace=workspace,
         embed_threshold=embed_threshold,
     )
+    brief_section = _format_render_brief_section(
+        plan=plan,
+        render_brief_file=render_brief_file,
+        workspace=workspace,
+        embed_threshold=embed_threshold,
+    )
+    feedback_block = ""
+    if validation_feedback:
+        feedback_block = (
+            "## Render validation feedback from previous attempt\n"
+            + "\n".join(f"- {error}" for error in validation_feedback)
+            + "\n\nFix every issue. Regenerate deliverables from the breakdown; "
+            "do not copy prior files.\n\n"
+        )
+    deliverable_dir = output_dir.resolve()
+    try:
+        deliverable_display = str(
+            deliverable_dir.relative_to(workspace.resolve())
+        ).replace("\\", "/")
+    except ValueError:
+        deliverable_display = str(deliverable_dir)
     return f"""# Final planning render
 
 Decomposition is complete. Produce the **final user-facing deliverable file(s)**.
 
-You are a planning renderer, not an executor. Read the canonical planning state and
-write deliverables according to the output goal. Do not invent new planning items,
-change statuses, or execute work.
+You are a planning renderer, not an executor. Transform the completed breakdown into
+deliverables that satisfy the output goal. Do not execute implementation work.
 
-## Output goal
+## Roles of each input
+
+1. **Breakdown (authoritative scope)** — which items exist, their order, dependencies,
+   expected outputs, acceptance criteria, blocked items, and open questions.
+2. **Output goal (authoritative format)** — deliverable schema, filenames, terminology,
+   validation rules, and presentation requirements.
+3. **Primary input (background context only)** — source intent and domain detail for
+   filling in format-specific fields. It must not override or replace breakdown items.
+
+{feedback_block}## Output goal
 {format_output_goal_section(output_goal=output_goal, workspace=workspace, embed_threshold=embed_threshold)}
 
-Use that specification to decide:
+Use the output goal to decide:
 - deliverable format(s) and filename(s);
 - structure, terminology, and required sections;
-- how to present actionability, hierarchy, dependencies, blocked items, and open questions.
+- how to map each breakdown unit into the requested schema.
 
-If the output goal defines an **Output artifacts** section, follow it exactly for
-paths and formats. Otherwise choose sensible filenames and formats that match the goal.
+If the output goal mentions an example path (for example `plans/.../todos/`), treat
+that as a format reference only. Write new deliverables under the deliverable
+directory below unless the output goal defines an **Output artifacts** section with
+exact paths.
 
-## Output directory
-Write all deliverables directly into this directory:
+## Deliverable directory
+Write all deliverables here:
 
-{format_input_file_reference(output_dir, workspace)}
+{format_input_file_reference(deliverable_dir, workspace)}
 
-Do not write into `.planning-output/` or modify files there.
+Prefer `{deliverable_display}/` over paths cited only as examples inside the output goal.
+
+Internal planning state lives under `{output_dir / ".planning-output"}`. Do not write
+deliverables there or modify files under `.planning-output/`.
+
+## Breakdown to render
+{brief_section}
 
 ## Source documents
 
-Primary input (for context only):
+Primary input (background context only):
 
 {input_section}
 
-Canonical planning state (authoritative):
+Canonical planning state (full breakdown source):
 
 {format_input_file_reference(plan_file, workspace)}
 
-Open and read `plan.yaml` in full. It contains every planning item, dependency,
-status, expected output, acceptance criterion, blocked reason, and open question.
+Open and read `plan.yaml` when you need fields not shown in the render brief.
 
 ## Planning result metadata
 - Status: {plan.result.status.value}
 - Summary: {plan.result.summary or "No summary provided."}
+- Actionable deliverable units: {len(actionable_leaf_items(plan))}
 
 ## Instructions
-- Write one or more deliverable files under the output directory.
-- Let the output goal and breakdown items guide format and presentation freely.
+- Treat the breakdown as the scope contract: cover **every actionable deliverable unit**
+  exactly once in the final output.
+- Do **not** copy, restore, or reuse pre-existing files from git history or from paths
+  mentioned in the output goal. Generate fresh deliverables from the breakdown.
+- Do **not** add, remove, merge, or re-scope items beyond what the breakdown defines.
+- When the output goal implies one file per checkpoint/item, create one deliverable per
+  actionable leaf unit in breakdown order.
+- Preserve each unit's objective, dependencies, expected outputs, acceptance criteria,
+  blocked reasons, and open questions.
 - Do not return structured JSON or a chat-only summary instead of writing files.
-- Do not modify, delete, or recreate any file under `.planning-output/`, especially `plan.yaml`.
+- Do not modify, delete, or recreate any file under `.planning-output/`, especially
+  `plan.yaml`.
 - Do not include orchestration internals such as item IDs unless the output goal
-  calls for them.
-- Preserve hierarchy, ordering, expected outputs, dependencies, acceptance criteria,
-  blocked items, and open questions from the canonical state.
+  requires them.
 """

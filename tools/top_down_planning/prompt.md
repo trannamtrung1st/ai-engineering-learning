@@ -377,7 +377,7 @@ Suggested layout:
 
 ```text
 planning-output/
-├── implementation-plan.md          # example goal-driven deliverable
+├── implementation-plan.md          # example deliverable (path chosen by output goal)
 └── .planning-output/
     ├── plan.yaml
     ├── run-state.json
@@ -388,23 +388,34 @@ planning-output/
         └── render-request-prompt.md
 ```
 
-The top level of `--output` should contain only generated deliverables. Internal state
-and audit artifacts live under `.planning-output/`.
+`--output` holds internal resumable state under `.planning-output/`. Deliverables may
+be written anywhere in the workspace according to the output goal.
 
 Deliverables are produced by a final render phase after decomposition completes.
-The render agent runs in write mode, reads `plan.yaml`, and writes one or more
-deliverable files directly under `--output`. Format, structure, and filenames are
-guided by the output goal rather than a fixed JSON response schema.
+The render agent runs in write mode, transforms the completed breakdown into
+deliverables, and writes one or more files under the deliverable directory (typically
+`--output`, excluding `.planning-output/`). Format and schema come from the output
+goal; scope and item coverage come from the breakdown.
 
-The tool discovers newly written files under `--output` (excluding
-`.planning-output/`). If render fails or writes nothing, a deterministic fallback
-artifact is generated internally.
+Before render, the tool writes `render-brief.md` from `plan.yaml`. That brief lists
+every actionable leaf unit with objectives, dependencies, expected outputs, and
+acceptance criteria. The render prompt treats the breakdown as the authoritative
+scope contract and the output goal as the authoritative format contract.
 
-The output goal may define an **Output artifacts** section with filenames and formats.
-Do not create one file per planning item.
+The tool discovers newly written or updated files anywhere in the workspace (excluding
+`.planning-output/` and common VCS/dependency directories). After discovery, it
+validates that every breakdown title appears in the deliverables. Missing coverage
+triggers a render retry with validation feedback. If the render session fails or
+coverage remains incomplete after retries, a deterministic fallback artifact is
+generated internally.
 
-The render agent must not modify canonical state under `.planning-output/`. The tool
-backs up and restores `plan.yaml` if render corrupts it.
+The output goal may define an **Output artifacts** section with suggested filenames
+and formats. Paths mentioned only as examples inside the output goal must not be
+treated as copy sources; deliverables must be generated fresh from the breakdown.
+
+The render agent must not copy or restore pre-existing files from git history or
+from paths cited in the output goal. It must not modify canonical state under
+`.planning-output/`. The tool backs up and restores `plan.yaml` if render corrupts it.
 
 ### `plan.yaml`
 
@@ -565,7 +576,7 @@ Use a replaceable agent adapter so the planning engine is not tightly coupled to
 * Maintain one structured plan state.
 * Do not create a Markdown file for every item.
 * During planning, the agent only proposes structured operations; the tool validates and applies them.
-* During render, the agent writes deliverables directly under `--output` and must not modify `.planning-output/`.
+* During render, the agent writes deliverables wherever the output goal calls for them and must not modify `.planning-output/`.
 * Prefer breadth-first top-down decomposition.
 * Do not execute the generated plan.
 * Keep the tool generic across domains.

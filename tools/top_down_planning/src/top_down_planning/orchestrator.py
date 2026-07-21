@@ -60,6 +60,7 @@ from top_down_planning.artifact_writer import (
 )
 from top_down_planning.fallback_artifact import write_fallback_artifact
 from top_down_planning.prompts import build_final_render_prompt, build_planning_prompt
+from top_down_planning.render_brief import build_render_brief, validate_render_coverage
 from top_down_planning.response_parser import parse_agent_response
 from top_down_planning.scheduler import initialize_root_plan, select_batch
 from top_down_planning.state_updates import apply_response
@@ -437,7 +438,9 @@ class Orchestrator:
         save_plan(output_dir, plan)
         save_run_state(output_dir, run_state)
         if status == FinalStatus.COMPLETE:
-            existing = _existing_generated_artifacts(output_dir, run_state)
+            existing = _existing_generated_artifacts(
+                self.config.workspace_root, run_state
+            )
             if existing:
                 self._artifacts = existing
                 self.stream.emit("render.skipped", artifacts=existing)
@@ -458,31 +461,34 @@ class Orchestrator:
         output_dir: Path,
         run_state: RunState,
     ) -> list[str]:
+        workspace = self.config.workspace_root.resolve()
         canonical_plan_file = plan_path(output_dir)
         limits = self.config.limits
-        validation_feedback: list[str] | None = None
         audit_dir = iterations_dir(output_dir)
 
         self.stream.emit("render.started")
         self.renderer.rule("RENDER deliverables according to output goal")
 
+        render_brief_path = audit_dir / "render-brief.md"
+        render_brief_path.parent.mkdir(parents=True, exist_ok=True)
+        render_brief_path.write_text(build_render_brief(plan), encoding="utf-8")
+
+        validation_feedback: list[str] | None = None
         for attempt in range(1, limits.max_retries + 1):
-            before_snapshot = snapshot_deliverable_files(output_dir)
+            before_snapshot = snapshot_deliverable_files(
+                workspace, output_dir=output_dir
+            )
             prompt = build_final_render_prompt(
                 loaded_input=loaded,
                 plan_file=canonical_plan_file,
                 output_dir=output_dir,
-                workspace=self.config.workspace_root,
+                workspace=workspace,
                 output_goal=self.config.output_goal,
                 plan=plan,
                 embed_threshold=self._embed_threshold,
+                render_brief_file=render_brief_path,
+                validation_feedback=validation_feedback,
             )
-            if validation_feedback:
-                prompt += (
-                    "\n\n## Validation feedback from previous attempt\n"
-                    + "\n".join(f"- {error}" for error in validation_feedback)
-                    + "\n\nFix every issue and write deliverable files under the output directory.\n"
-                )
 
             prompt_path = audit_dir / "render-request-prompt.md"
             response_path = audit_dir / "render-response.json"
@@ -494,8 +500,8 @@ class Orchestrator:
             min_plan_items = len(plan.plan)
 
             try:
-                result = await self.client.run_session(
-                    workspace=self.config.workspace_root,
+                await self.client.run_session(
+                    workspace=workspace,
                     prompt=prompt,
                     prompt_path=prompt_path,
                     timeout_seconds=limits.session_timeout_seconds,
@@ -526,7 +532,7 @@ class Orchestrator:
                         "Final render failed; writing deterministic fallback artifact."
                     )
                     fallback = write_fallback_artifact(output_dir, plan)
-                    paths = _persist_render_result(output_dir, run_state, [fallback])
+                    paths = _persist_render_result(workspace, run_state, [fallback])
                     save_run_state(output_dir, run_state)
                     self.stream.emit("render.fallback", reason=str(exc))
                     return paths
@@ -546,33 +552,45 @@ class Orchestrator:
 
             run_state.agent_pid = None
 
-            written = discover_written_artifacts(output_dir, before_snapshot)
-            if not written:
-                validation_feedback = [
-                    "No deliverable files were written under the output directory."
-                ]
+            written = discover_written_artifacts(
+                workspace, output_dir=output_dir, before=before_snapshot
+            )
+            coverage_errors = validate_render_coverage(plan, written)
+            if coverage_errors:
+                validation_feedback = coverage_errors
+                self.stream.emit(
+                    "render.validation_failed",
+                    attempt=attempt,
+                    errors=coverage_errors,
+                )
                 if self.config.audit_iterations:
                     write_json(
                         response_path,
-                        {"raw": result.assistant_text[-8000:]},
+                        {
+                            "artifacts": [
+                                _workspace_relative(path, workspace)
+                                for path in written
+                            ],
+                            "coverage_errors": coverage_errors,
+                        },
                     )
                 if attempt >= limits.max_retries:
                     self.renderer.warning(
-                        "Final render produced no deliverables; "
+                        "Render deliverables did not cover the breakdown; "
                         "writing deterministic fallback artifact."
                     )
                     fallback = write_fallback_artifact(output_dir, plan)
-                    paths = _persist_render_result(output_dir, run_state, [fallback])
+                    paths = _persist_render_result(workspace, run_state, [fallback])
                     save_run_state(output_dir, run_state)
                     self.stream.emit(
                         "render.fallback",
-                        reason="no deliverables written",
+                        reason="; ".join(coverage_errors),
                     )
                     return paths
                 self.stream.emit(
                     "render.retrying",
                     attempt=attempt + 1,
-                    reason=validation_feedback[0],
+                    reason="; ".join(coverage_errors),
                 )
                 continue
 
@@ -581,12 +599,12 @@ class Orchestrator:
                     response_path,
                     {
                         "artifacts": [
-                            path.relative_to(output_dir).as_posix() for path in written
+                            _workspace_relative(path, workspace) for path in written
                         ],
                     },
                 )
 
-            artifact_paths = _persist_render_result(output_dir, run_state, written)
+            artifact_paths = _persist_render_result(workspace, run_state, written)
             record_history(
                 output_dir,
                 run_state,
@@ -599,31 +617,35 @@ class Orchestrator:
             return artifact_paths
 
         fallback = write_fallback_artifact(output_dir, plan)
-        paths = _persist_render_result(output_dir, run_state, [fallback])
+        paths = _persist_render_result(workspace, run_state, [fallback])
         save_run_state(output_dir, run_state)
         self.stream.emit("render.fallback", reason="exhausted retries")
         return paths
 
 
+def _workspace_relative(path: Path, workspace: Path) -> str:
+    return path.resolve().relative_to(workspace.resolve()).as_posix()
+
+
 def _persist_render_result(
-    output_dir: Path,
+    workspace: Path,
     run_state: RunState,
     written: list[Path],
 ) -> list[str]:
-    relative = [path.relative_to(output_dir).as_posix() for path in written]
+    relative = [_workspace_relative(path, workspace) for path in written]
     run_state.generated_artifacts = relative
-    return [str(output_dir / name) for name in relative]
+    return [str(workspace / name) for name in relative]
 
 
 def _existing_generated_artifacts(
-    output_dir: Path,
+    workspace: Path,
     run_state: RunState,
 ) -> list[str] | None:
     if not run_state.generated_artifacts:
         return None
     absolute: list[str] = []
     for relative in run_state.generated_artifacts:
-        path = output_dir / relative
+        path = workspace / relative
         if not path.is_file():
             return None
         absolute.append(str(path))

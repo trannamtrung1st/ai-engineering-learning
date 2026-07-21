@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from top_down_planning.models import DecompositionStatus, PlanItem, PlanState
+from top_down_planning.models import DecompositionStatus, PlanState
+from top_down_planning.render_brief import actionable_leaf_items, blocked_leaf_items
 
 
 def _format_output_goal_label(plan: PlanState) -> str:
@@ -26,11 +27,7 @@ def render_plan_markdown(plan: PlanState) -> str:
     lines.extend(_render_hierarchy(plan, parent_id=None, prefix=""))
     lines.extend(["", "## Actionable items", ""])
     lines.extend(_render_actionable_list(plan))
-    blocked = [
-        item
-        for item in plan.plan
-        if item.decomposition_status == DecompositionStatus.BLOCKED
-    ]
+    blocked = blocked_leaf_items(plan)
     if blocked:
         lines.extend(["", "## Blocked items", ""])
         for item in blocked:
@@ -70,18 +67,8 @@ def _render_hierarchy(
     return lines
 
 
-def _is_leaf(plan: PlanState, item: PlanItem) -> bool:
-    return not any(child.parent_id == item.id for child in plan.plan)
-
-
 def _render_actionable_list(plan: PlanState) -> list[str]:
-    actionable = [
-        item
-        for item in plan.plan
-        if item.decomposition_status == DecompositionStatus.ACTIONABLE
-        and _is_leaf(plan, item)
-    ]
-    actionable.sort(key=lambda item: item.order)
+    actionable = actionable_leaf_items(plan)
     if not actionable:
         return ["- No actionable leaf items."]
     lines: list[str] = []
