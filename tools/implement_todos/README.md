@@ -97,6 +97,7 @@ version: 1
 settings:
   max_attempts: 5
   max_session_restarts_per_phase: 2
+  max_validation_repairs_per_attempt: 2
   work_timeout_seconds: 1800
   review_timeout_seconds: 900
   validation_timeout_seconds: 900  # timeout for each orchestrator-run command
@@ -104,7 +105,10 @@ settings:
   stop_on_failure: true
   parse_error_threshold: 20   # max malformed NDJSON lines before a recoverable restart
   model: composer-2.5   # default; set null to use Cursor default instead
+  project_check: bash scripts/check   # required shared canonical gate for every item
 items:
+  - id: SETUP-001
+    file: items/000-setup.yaml
   - id: TASK-001
     file: items/001-feature.yaml
 ```
@@ -112,6 +116,10 @@ items:
 `settings.model` defaults to `composer-2.5`. Work and review sessions pass `--model` to the Cursor agent. Omit the field to keep the default, set another slug to change it, or set `null` to defer to Cursor's account default. The CLI flag `--model` overrides this value for a single run.
 
 `settings.parse_error_threshold` defaults to `20`. During streaming, malformed NDJSON lines increment a counter; when the threshold is reached the session fails recoverably and may restart within the same phase without consuming a logical attempt.
+
+`settings.project_check` is **required**. The orchestrator always runs this shared command before any item-specific `validation.commands` entries (deduplicated). Use a committed, non-interactive script such as `bash scripts/check`.
+
+`settings.max_validation_repairs_per_attempt` defaults to `2`. When authoritative validation fails, the orchestrator skips review and sends the bounded failure output back to a repair work session within the same logical attempt. After the repair budget is exhausted, the attempt is consumed.
 
 Scheduling uses `(priority, manifest order)` with **lower priority numbers first**. Dependencies still gate readiness: an item is not executable until every `depends_on` entry is `done`.
 
@@ -130,8 +138,7 @@ description: |
 acceptance_criteria:
   - Registration endpoint is implemented.
 validation:
-  commands:
-    - pytest
+  commands: []   # optional item-specific gates beyond manifest.settings.project_check
 context:
   files:
     - docs/requirements.md
@@ -147,23 +154,27 @@ See [`examples/todos/`](examples/todos/) for a minimal valid workspace.
 
 1. Create `todos/manifest.yaml` and `todos/items/*.yaml`.
 2. Use unique `id` values; list every item in the manifest.
-3. Encode dependencies with `depends_on`.
-4. Write concrete acceptance criteria and validation commands.
-5. Leave `status: pending` and empty `result` fields.
-6. Do not hand-edit `todos/runs/` — the tool owns that.
+3. Add a first setup item (convention: id prefix `SETUP-`) that creates or reuses a canonical project check and sets `manifest.settings.project_check`.
+4. Make implementation items depend on the setup item when the shared check is required.
+5. Encode dependencies with `depends_on`.
+6. Write concrete acceptance criteria. Use item `validation.commands` only for extra gates beyond `project_check`.
+7. Leave `status: pending` and empty `result` fields.
+8. Do not hand-edit `todos/runs/` — the tool owns that.
 
 ## Execution model
 
 ```text
 Logical attempt
-├── Work phase  (one or more Cursor sessions)
-├── Validation  (commands run directly by the orchestrator)
-└── Review phase (fresh Cursor session, --mode ask)
+├── Work phase  (one or more Cursor sessions; targeted local checks only)
+├── Validation gate  (orchestrator runs project_check + item commands once)
+│   └── on failure: repair work loop (bounded, same attempt)
+└── Review phase (fresh Cursor session, --mode ask; read-only, no reruns)
 ```
 
-- Default: **5** logical attempts, **2** session restarts per phase.
+- Default: **5** logical attempts, **2** session restarts per phase, **2** validation repairs per attempt.
 - Timeouts / recoverable stream failures restart the **same** phase without consuming a logical attempt.
-- Configured validation commands run sequentially outside Cursor. Their exit codes and bounded output are persisted and supplied to review as authoritative evidence.
+- The orchestrator runs `project_check` plus any item-specific validation commands sequentially outside Cursor. Work agents must not run the full authoritative suite; reviewers must not rerun it.
+- Failed authoritative validation skips review and returns repair feedback to the implementer within the same logical attempt.
 - A failed or invalid independent review consumes one logical attempt.
 - Missing Cursor CLI or auth failures block immediately.
 
@@ -185,9 +196,9 @@ Success is determined only by a validated JSON decision (`schema_version: 1`) wi
 - `recommended_next_action`: `mark_done` | `retry` | `block`
 - Per-criterion results, validation results, and instruction compliance
 
-A `pass` is accepted only when every acceptance criterion is reported **exactly** (normalized match, no substitutions or duplicates), every configured validation command matches the orchestrator's authoritative command/exit-code result and passes, instruction compliance passes, no unresolved **blocking** issue exists (info/low notes are allowed), and `item_id` / `logical_attempt` match the active run.
+A `pass` is accepted only when every acceptance criterion is reported **exactly** (normalized match, no substitutions or duplicates), every resolved validation command matches the orchestrator's authoritative command/exit-code result and passes, instruction compliance passes, no unresolved **blocking** issue exists (info/low notes are allowed), and `item_id` / `logical_attempt` match the active run.
 
-Validation commands are trusted workspace input and execute through the system shell from the project root. Each command has its own `validation_timeout_seconds` limit. Output is bounded in run artifacts and review prompts.
+Resolved validation commands are always `settings.project_check` followed by item-specific commands, deduplicated. Review passes must copy the orchestrator's authoritative command results exactly; item YAML alone is never sufficient.
 
 ## Streaming
 

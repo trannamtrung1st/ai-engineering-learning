@@ -19,8 +19,7 @@ acceptance_criteria:
   - Tests still pass.
 
 validation:
-  commands:
-    - pytest
+  commands: []
 
 context:
   files: []

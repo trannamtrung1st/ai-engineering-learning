@@ -45,6 +45,9 @@ class Transition(str, Enum):
     WORK_SESSION_RESTARTED = "work_session_restarted"
     WORK_PHASE_READY = "work_phase_ready"
     WORK_PHASE_FAILED = "work_phase_failed"
+    VALIDATION_STARTED = "validation_started"
+    VALIDATION_PASSED = "validation_passed"
+    VALIDATION_FAILED = "validation_failed"
     REVIEW_SESSION_STARTED = "review_session_started"
     REVIEW_SESSION_RESTARTED = "review_session_restarted"
     REVIEW_PASSED = "review_passed"
@@ -61,6 +64,7 @@ class ManifestSettings(BaseModel):
 
     max_attempts: int = 5
     max_session_restarts_per_phase: int = 2
+    max_validation_repairs_per_attempt: int = 2
     work_timeout_seconds: int = 1800
     review_timeout_seconds: int = 900
     validation_timeout_seconds: int = 900
@@ -68,6 +72,7 @@ class ManifestSettings(BaseModel):
     stop_on_failure: bool = True
     parse_error_threshold: int = 20
     model: str | None = "composer-2.5"
+    project_check: str
 
     @field_validator("model")
     @classmethod
@@ -76,6 +81,14 @@ class ManifestSettings(BaseModel):
             return None
         stripped = value.strip()
         return stripped or None
+
+    @field_validator("project_check")
+    @classmethod
+    def normalize_project_check(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("must not be empty")
+        return stripped
 
     @field_validator(
         "max_attempts",
@@ -91,6 +104,13 @@ class ManifestSettings(BaseModel):
             raise ValueError("must be >= 1")
         return value
 
+    @field_validator("max_validation_repairs_per_attempt")
+    @classmethod
+    def non_negative(cls, value: int) -> int:
+        if value < 0:
+            raise ValueError("must be >= 0")
+        return value
+
 
 class ManifestItemRef(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -103,7 +123,7 @@ class Manifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     version: Literal[1] = 1
-    settings: ManifestSettings = Field(default_factory=ManifestSettings)
+    settings: ManifestSettings
     items: list[ManifestItemRef] = Field(default_factory=list)
 
 
@@ -290,6 +310,7 @@ class RunState(BaseModel):
     blocked_reason: str | None = None
     changed_paths: list[str] = Field(default_factory=list)
     validation_attempt: int = 0
+    validation_repair_count: int = 0
     validation_results: list[ValidationCommandResult] = Field(default_factory=list)
     pre_dirty_fingerprints: dict[str, str] = Field(default_factory=dict)
     history: list[dict[str, Any]] = Field(default_factory=list)

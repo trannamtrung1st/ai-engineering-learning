@@ -71,6 +71,7 @@ from todos_tool.reviewer import accept_decision, parse_review_decision
 from todos_tool.scheduler import list_ready, next_ready
 from todos_tool.validation_runner import (
     format_validation_results,
+    resolve_validation_commands,
     run_validation_commands,
 )
 
@@ -415,20 +416,32 @@ class Orchestrator:
             await self._commit_item(item, state, runs_dir)
             return
 
-        # Resume after work completed but before review started
+        # Resume after work completed or validation completed, before review
         if (
             resuming
             and state.phase == Phase.WORK
-            and state.last_transition == Transition.WORK_PHASE_READY
+            and state.last_transition
+            in (
+                Transition.WORK_PHASE_READY,
+                Transition.VALIDATION_STARTED,
+                Transition.VALIDATION_FAILED,
+                Transition.VALIDATION_PASSED,
+            )
         ):
             self._maybe_apply_restructure(item, runs_dir)
             item = self.workspace.get(item.id) or item
             if item.status == ItemStatus.SUPERSEDED:
                 self.renderer.info(f"{item.id} superseded; stopping item")
                 return
-            review_outcome = await self._run_review_phase(
-                item, state, runs_dir, feedback, preserve_session=True
+            review_outcome = await self._work_validate_review_attempt(
+                item,
+                state,
+                runs_dir,
+                feedback,
+                preserve_session=True,
             )
+            if review_outcome == "superseded":
+                return
             await self._handle_review_outcome(
                 item, state, runs_dir, review_outcome, feedback
             )
@@ -455,15 +468,19 @@ class Orchestrator:
             if item.status == ItemStatus.SUPERSEDED:
                 self.renderer.info(f"{item.id} superseded; stopping item")
                 return
-            review_outcome = await self._run_review_phase(
-                item, state, runs_dir, feedback, preserve_session=True
+            review_outcome = await self._work_validate_review_attempt(
+                item,
+                state,
+                runs_dir,
+                feedback,
+                preserve_session=True,
             )
+            if review_outcome == "superseded":
+                return
             await self._handle_review_outcome(
                 item, state, runs_dir, review_outcome, feedback
             )
             return
-
-        # Resume mid-review: re-run review for current attempt
         if (
             resuming
             and state.phase == Phase.REVIEW
@@ -482,12 +499,13 @@ class Orchestrator:
         if state.logical_attempt == 0:
             start_attempt = 1
 
-        # If previous attempt failed review, continue from next attempt
-        if state.last_transition == Transition.REVIEW_FAILED:
+        # If previous attempt failed review or validation, continue from next attempt
+        if state.last_transition in (
+            Transition.REVIEW_FAILED,
+            Transition.VALIDATION_FAILED,
+        ):
             start_attempt = state.logical_attempt + 1
-            feedback = state.review.summary
-            if state.review.issues:
-                feedback = (feedback or "") + "\n" + "\n".join(state.review.issues)
+            feedback = self._attempt_failure_feedback(state)
 
         for attempt in range(start_attempt, settings.max_attempts + 1):
             state.logical_attempt = attempt
@@ -495,6 +513,7 @@ class Orchestrator:
             state.session_restart_count = 0
             state.validation_attempt = 0
             state.validation_results = []
+            state.validation_repair_count = 0
             state.phase = Phase.WORK
             state.commit_state = CommitState.NONE
             record_transition(runs_dir, state, Transition.ATTEMPT_STARTED)
@@ -509,9 +528,12 @@ class Orchestrator:
                 self.renderer.info(f"{item.id} superseded; stopping item")
                 return
 
-            review_outcome = await self._run_review_phase(
+            review_outcome = await self._work_validate_review_attempt(
                 item, state, runs_dir, feedback
             )
+            if review_outcome == "superseded":
+                self.renderer.info(f"{item.id} superseded; stopping item")
+                return
             if review_outcome == "pass":
                 await self._commit_item(item, state, runs_dir)
                 return
@@ -528,9 +550,7 @@ class Orchestrator:
                 raise TodosToolError(state.blocked_reason or "Item blocked by review")
 
             # fail → next logical attempt
-            feedback = state.review.summary
-            if state.review.issues:
-                feedback = (feedback or "") + "\n" + "\n".join(state.review.issues)
+            feedback = self._attempt_failure_feedback(state)
 
         item.status = ItemStatus.BLOCKED
         save_item(self.workspace, item)
@@ -618,12 +638,15 @@ class Orchestrator:
             work_prompt = build_work_prompt(
                 item,
                 logical_attempt=logical_attempt,
+                resolved_commands=self._resolved_validation_commands(item),
                 todos_dir=self.config.todos_dir,
                 previous_feedback=feedback,
+                allow_full_check=self._allow_full_check(item),
             )
             review_prompt = build_review_prompt(
                 item,
                 logical_attempt=logical_attempt,
+                resolved_commands=self._resolved_validation_commands(item),
                 work_summary=(
                     item_state.work_summary
                     if item_state and item_state.work_summary
@@ -649,6 +672,98 @@ class Orchestrator:
             report.planned.append(item.id)
         return report
 
+    def _resolved_validation_commands(self, item: TodoItem) -> list[str]:
+        return resolve_validation_commands(self.workspace.manifest, item)
+
+    def _allow_full_check(self, item: TodoItem) -> bool:
+        return item.id.upper().startswith("SETUP-")
+
+    def _invalidate_validation_cache(self, state: RunState) -> None:
+        state.validation_attempt = 0
+        state.validation_results = []
+
+    def _validation_failure_feedback(self, state: RunState) -> str:
+        return format_validation_results(state.validation_results)
+
+    def _attempt_failure_feedback(self, state: RunState) -> str | None:
+        if (
+            state.last_transition == Transition.VALIDATION_FAILED
+            and state.validation_results
+        ):
+            return self._validation_failure_feedback(state)
+        feedback = state.review.summary
+        if state.review.issues:
+            feedback = (feedback or "") + "\n" + "\n".join(state.review.issues)
+        return feedback
+
+    async def _run_validation_gate(
+        self,
+        item: TodoItem,
+        state: RunState,
+        runs_dir: Path,
+    ) -> str:
+        if state.last_transition == Transition.VALIDATION_STARTED:
+            self._invalidate_validation_cache(state)
+
+        await self._ensure_validation_results(item, state, runs_dir)
+
+        if all(result.passed for result in state.validation_results):
+            record_transition(runs_dir, state, Transition.VALIDATION_PASSED)
+            return "pass"
+
+        record_transition(runs_dir, state, Transition.VALIDATION_FAILED)
+        save_state(runs_dir, state)
+        return "fail"
+
+    async def _work_validate_review_attempt(
+        self,
+        item: TodoItem,
+        state: RunState,
+        runs_dir: Path,
+        feedback: str | None,
+        *,
+        preserve_session: bool = False,
+    ) -> str:
+        settings = self.workspace.manifest.settings
+        current_feedback = feedback
+
+        while True:
+            gate = await self._run_validation_gate(item, state, runs_dir)
+            if gate == "pass":
+                break
+
+            if state.validation_repair_count >= settings.max_validation_repairs_per_attempt:
+                record_transition(runs_dir, state, Transition.VALIDATION_FAILED)
+                return "fail"
+
+            state.validation_repair_count += 1
+            self._invalidate_validation_cache(state)
+            repair_feedback = self._validation_failure_feedback(state)
+            work_ok = await self._run_work_phase(
+                item,
+                state,
+                runs_dir,
+                current_feedback,
+                preserve_session=False,
+                validation_failure_feedback=repair_feedback,
+            )
+            if not work_ok:
+                return "fail"
+
+            self._maybe_apply_restructure(item, runs_dir)
+            item = self.workspace.get(item.id) or item
+            if item.status == ItemStatus.SUPERSEDED:
+                return "superseded"
+            current_feedback = feedback
+
+        return await self._run_review_phase(
+            item,
+            state,
+            runs_dir,
+            current_feedback,
+            preserve_session=preserve_session,
+        )
+
     async def _ensure_validation_results(
         self,
         item: TodoItem,
@@ -659,12 +774,15 @@ class Orchestrator:
             return
 
         self.renderer.rule(
-            f"VALIDATE {item.id} attempt={state.logical_attempt}"
+            f"VALIDATE {item.id} attempt={state.logical_attempt} "
+            f"repair={state.validation_repair_count}"
         )
+        record_transition(runs_dir, state, Transition.VALIDATION_STARTED)
         self._verify_pre_dirty_paths(item, state)
+        commands = self._resolved_validation_commands(item)
         results = await run_validation_commands(
             self.config.workspace_root,
-            item.validation.commands,
+            commands,
             timeout_seconds=(
                 self.workspace.manifest.settings.validation_timeout_seconds
             ),
@@ -676,16 +794,21 @@ class Orchestrator:
         save_state(runs_dir, state)
 
         attempt_dir = attempts_dir(runs_dir, state.logical_attempt)
-        write_json(
-            attempt_dir / "validation-results.json",
-            {
-                "logical_attempt": state.logical_attempt,
-                "results": [
-                    result.model_dump(mode="json")
-                    for result in results
-                ],
-            },
-        )
+        payload = {
+            "logical_attempt": state.logical_attempt,
+            "validation_repair_count": state.validation_repair_count,
+            "results": [
+                result.model_dump(mode="json")
+                for result in results
+            ],
+        }
+        write_json(attempt_dir / "validation-results.json", payload)
+        if state.validation_repair_count:
+            write_json(
+                attempt_dir
+                / f"validation-results-repair-{state.validation_repair_count}.json",
+                payload,
+            )
 
     def _ensure_no_active_execution_for_run(self, todo_id: str | None) -> None:
         active = self._find_active_execution()
@@ -722,6 +845,7 @@ class Orchestrator:
         feedback: str | None,
         *,
         preserve_session: bool = False,
+        validation_failure_feedback: str | None = None,
     ) -> bool:
         settings = self.workspace.manifest.settings
         continuation: str | None = None
@@ -746,8 +870,11 @@ class Orchestrator:
             prompt = build_work_prompt(
                 item,
                 logical_attempt=state.logical_attempt,
+                resolved_commands=self._resolved_validation_commands(item),
                 todos_dir=self.config.todos_dir,
                 previous_feedback=feedback,
+                validation_failure_feedback=validation_failure_feedback,
+                allow_full_check=self._allow_full_check(item),
                 continuation=continuation,
             )
             prompt_path.write_text(prompt, encoding="utf-8")
@@ -825,7 +952,13 @@ class Orchestrator:
     ) -> str:
         settings = self.workspace.manifest.settings
         continuation: str | None = None
-        await self._ensure_validation_results(item, state, runs_dir)
+        if (
+            not state.validation_results
+            or state.validation_attempt != state.logical_attempt
+        ):
+            gate = await self._run_validation_gate(item, state, runs_dir)
+            if gate != "pass":
+                return "fail"
         if not preserve_session:
             state.session_restart_count = 0
             state.session_number = 0
@@ -856,6 +989,7 @@ class Orchestrator:
             prompt = build_review_prompt(
                 item,
                 logical_attempt=state.logical_attempt,
+                resolved_commands=self._resolved_validation_commands(item),
                 work_summary=state.work_summary,
                 git_diff=git_diff,
                 git_status=st.porcelain,

@@ -7,9 +7,29 @@ import os
 import signal
 from pathlib import Path
 
-from todos_tool.models import ValidationCommandResult
+from todos_tool.models import Manifest, TodoItem, ValidationCommandResult
 
 MAX_VALIDATION_OUTPUT_CHARS = 12_000
+
+
+def _normalize_command(command: str) -> str:
+    return " ".join(command.strip().split()).lower()
+
+
+def resolve_validation_commands(manifest: Manifest, item: TodoItem) -> list[str]:
+    """Resolve manifest project check plus item-specific commands, deduplicated."""
+    commands: list[str] = []
+    seen: set[str] = set()
+    project_check = manifest.settings.project_check
+    key = _normalize_command(project_check)
+    seen.add(key)
+    commands.append(project_check)
+    for command in item.validation.commands:
+        key = _normalize_command(command)
+        if key not in seen:
+            seen.add(key)
+            commands.append(command)
+    return commands
 
 
 async def run_validation_commands(

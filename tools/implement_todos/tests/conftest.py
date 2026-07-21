@@ -77,7 +77,7 @@ def sample_item() -> dict:
             "A greeting helper function exists and returns a non-empty string.",
             "Basic unit tests cover the happy path.",
         ],
-        "validation": {"commands": ["pytest"]},
+        "validation": {"commands": []},
         "context": {"files": []},
         "result": {
             "completed_at": None,

@@ -3,14 +3,19 @@ version: 1
 settings:
   max_attempts: 5
   max_session_restarts_per_phase: 2
+  max_validation_repairs_per_attempt: 2
   work_timeout_seconds: 1800
   review_timeout_seconds: 900
   validation_timeout_seconds: 900
   auto_commit: true
   stop_on_failure: true
   model: composer-2.5
+  project_check: bash scripts/check
 
 items:
+  - id: SETUP-001
+    file: items/000-setup.yaml
+
   - id: TASK-001
     file: items/001-feature.yaml
 

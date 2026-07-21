@@ -82,6 +82,7 @@ def test_review_prompt_includes_diff_with_continuation() -> None:
     prompt = build_review_prompt(
         item,
         logical_attempt=1,
+        resolved_commands=["pytest"],
         work_summary="summary",
         git_diff="diff --git a/x b/x",
         git_status=" M x",
@@ -155,7 +156,7 @@ async def test_run_rejects_other_in_progress_when_targeting_todo(
 
 
 @pytest.mark.asyncio
-async def test_resume_after_work_phase_ready_skips_to_review(
+async def test_resume_after_work_phase_ready_runs_validation_then_review(
     fake_agent: Path,
     git_project: Path,
     sample_item: dict,

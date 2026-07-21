@@ -1,0 +1,31 @@
+version: 1
+
+id: SETUP-001
+title: Establish canonical project check
+type: feature
+status: pending
+priority: 10
+
+depends_on: []
+
+description: |
+  Reuse an existing project check command when one already exists.
+  Otherwise add a committed, non-interactive script such as `scripts/check`
+  that runs the project's deterministic validation gate from the repo root.
+  Wire the chosen command into `manifest.settings.project_check`.
+
+acceptance_criteria:
+  - A canonical project check command or script exists in the repository.
+  - The manifest references that command via `settings.project_check`.
+
+validation:
+  commands:
+    - bash scripts/check
+
+context:
+  files: []
+
+result:
+  completed_at: null
+  commit_sha: null
+  summary: null

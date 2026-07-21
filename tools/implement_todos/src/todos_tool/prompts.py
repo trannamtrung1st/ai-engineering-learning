@@ -34,12 +34,15 @@ def build_work_prompt(
     item: TodoItem,
     *,
     logical_attempt: int,
+    resolved_commands: list[str],
     todos_dir: str = "todos",
     previous_feedback: str | None = None,
+    validation_failure_feedback: str | None = None,
     continuation: str | None = None,
+    allow_full_check: bool = False,
 ) -> str:
     criteria = "\n".join(f"- {c}" for c in item.acceptance_criteria)
-    commands = "\n".join(f"- `{c}`" for c in item.validation.commands) or "- (none specified)"
+    command_lines = "\n".join(f"- `{c}`" for c in resolved_commands) or "- (none configured)"
     context_files = "\n".join(f"- {f}" for f in item.context.files) or "- (none specified)"
 
     parts = [
@@ -58,8 +61,12 @@ def build_work_prompt(
         "## Acceptance criteria",
         criteria,
         "",
-        "## Validation commands to run",
-        commands,
+        "## Authoritative validation commands (orchestrator-owned)",
+        command_lines,
+        "",
+        "The orchestrator runs these commands once as the authoritative gate before review.",
+        "Do NOT run the full authoritative check suite yourself unless this item is "
+        "explicitly creating or bootstrapping that check.",
         "",
         "## Context files",
         context_files,
@@ -67,9 +74,9 @@ def build_work_prompt(
         "## Requirements",
         "1. Inspect the current repository and applicable instructions/skills.",
         "2. Implement the requested change.",
-        "3. Run the validation commands for fast feedback; the orchestrator will rerun them authoritatively.",
+        "3. Use targeted local checks while editing (single tests, lint on touched files).",
         "4. Leave the working tree ready for independent review.",
-        "5. Return a concise summary of what changed and validation results.",
+        "5. Return a concise summary of what changed and any targeted checks you ran.",
         "",
         "## Hard constraints",
         "- Do NOT commit.",
@@ -79,6 +86,28 @@ def build_work_prompt(
         f"`{todos_dir}/runs/{item.id}/restructure-proposal.json` instead of silently "
         "weakening criteria.",
     ]
+
+    if allow_full_check:
+        parts.extend(
+            [
+                "",
+                "## Setup exception",
+                "This item may create or bootstrap the canonical project check. You may run "
+                "the authoritative validation commands while establishing the check script.",
+            ]
+        )
+
+    if validation_failure_feedback:
+        parts.extend(
+            [
+                "",
+                "## Authoritative validation failure (repair required)",
+                validation_failure_feedback.strip(),
+                "",
+                "Fix the failures above. The orchestrator will rerun the authoritative gate "
+                "after your repair work.",
+            ]
+        )
 
     if previous_feedback:
         parts.extend(
@@ -110,12 +139,13 @@ def build_review_prompt(
     work_summary: str | None,
     git_diff: str,
     git_status: str,
+    resolved_commands: list[str],
     authoritative_validation: list[ValidationCommandResult] | None = None,
     prompt_only: bool = False,
     continuation: str | None = None,
 ) -> str:
     criteria = "\n".join(f"- {c}" for c in item.acceptance_criteria)
-    commands = "\n".join(f"- `{c}`" for c in item.validation.commands) or "- (none specified)"
+    command_lines = "\n".join(f"- `{c}`" for c in resolved_commands) or "- (none configured)"
     validation_text = (
         "(not executed in prompt-only dry run)"
         if prompt_only
@@ -166,14 +196,14 @@ def build_review_prompt(
         criteria,
         "",
         "## Required validation commands",
-        commands,
+        command_lines,
         "",
         "## Authoritative orchestrator validation",
         validation_text,
         "",
         "These results were produced outside the Cursor sessions. Treat them as authoritative.",
         "Copy each command, passed value, and exit_code exactly into your JSON decision.",
-        "You may inspect or rerun commands for diagnosis, but must not contradict these results.",
+        "Do NOT rerun validation commands. Inspect code, diffs, and the supplied output only.",
         "",
         "## Work summary from implementer",
         (work_summary or "(none provided)").strip(),

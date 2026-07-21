@@ -24,19 +24,20 @@ def write_todos(
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
         refs.append({"id": data["id"], "file": rel})
+    default_settings = {
+        "max_attempts": 5,
+        "max_session_restarts_per_phase": 2,
+        "work_timeout_seconds": 30,
+        "review_timeout_seconds": 30,
+        "auto_commit": True,
+        "stop_on_failure": True,
+        "parse_error_threshold": 20,
+        "model": "composer-2.5",
+        "project_check": "pytest",
+    }
     manifest = {
         "version": 1,
-        "settings": settings
-        or {
-            "max_attempts": 5,
-            "max_session_restarts_per_phase": 2,
-            "work_timeout_seconds": 30,
-            "review_timeout_seconds": 30,
-            "auto_commit": True,
-            "stop_on_failure": True,
-            "parse_error_threshold": 20,
-            "model": "composer-2.5",
-        },
+        "settings": {**default_settings, **(settings or {})},
         "items": refs,
     }
     (todos / "manifest.yaml").write_text(

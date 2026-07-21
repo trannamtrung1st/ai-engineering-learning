@@ -22,8 +22,19 @@ def _item() -> TodoItem:
         status=ItemStatus.IN_PROGRESS,
         description="desc",
         acceptance_criteria=["Crit A", "Crit B"],
-        validation={"commands": ["pytest"]},
+        validation={"commands": []},
     )
+
+
+def _authoritative() -> list[ValidationCommandResult]:
+    return [
+        ValidationCommandResult(
+            command="pytest",
+            passed=True,
+            exit_code=0,
+            summary="runner output",
+        )
+    ]
 
 
 VALID_PASS = """
@@ -52,20 +63,12 @@ Here is my decision:
 
 def test_parse_and_accept_pass() -> None:
     decision = parse_review_decision(VALID_PASS)
-    accept_decision(decision, _item(), 1)
+    accept_decision(decision, _item(), 1, _authoritative())
 
 
 def test_accepts_matching_authoritative_validation() -> None:
     decision = parse_review_decision(VALID_PASS)
-    authoritative = [
-        ValidationCommandResult(
-            command="pytest",
-            passed=True,
-            exit_code=0,
-            summary="runner output",
-        )
-    ]
-    accept_decision(decision, _item(), 1, authoritative)
+    accept_decision(decision, _item(), 1, _authoritative())
 
 
 def test_rejects_claim_that_contradicts_authoritative_validation() -> None:
@@ -85,20 +88,17 @@ def test_rejects_claim_that_contradicts_authoritative_validation() -> None:
 def test_reject_stale_attempt() -> None:
     decision = parse_review_decision(VALID_PASS)
     with pytest.raises(ReviewError):
-        accept_decision(decision, _item(), 2)
+        accept_decision(decision, _item(), 2, _authoritative())
 
 
 def test_reject_failed_criterion_as_pass() -> None:
-    text = VALID_PASS.replace('"passed": true, "evidence": "ok"\n    },\n    {"criterion": "Crit B"',
-                              '"passed": false, "evidence": "no"\n    },\n    {"criterion": "Crit B"')
-    # Simpler: craft fail on Crit A
     bad = VALID_PASS.replace(
         '{"criterion": "Crit A", "passed": true, "evidence": "ok"}',
         '{"criterion": "Crit A", "passed": false, "evidence": "no"}',
     )
     decision = parse_review_decision(bad)
     with pytest.raises(ReviewError):
-        accept_decision(decision, _item(), 1)
+        accept_decision(decision, _item(), 1, _authoritative())
 
 
 def test_missing_json_raises() -> None:
@@ -135,7 +135,7 @@ def test_accept_pass_with_structured_info_issues() -> None:
 ```
 """
     decision = parse_review_decision(text)
-    accept_decision(decision, _item(), 1)
+    accept_decision(decision, _item(), 1, _authoritative())
     assert decision.issue_strings() == [
         "[info] npm run test exits 1 until UT-002: Expected interim behavior."
     ]
@@ -147,7 +147,7 @@ def test_accept_pass_with_structured_low_issues() -> None:
         '"issues": [{"severity": "low", "title": "Consider renaming helper", "detail": "Optional cleanup."}]',
     )
     decision = parse_review_decision(text)
-    accept_decision(decision, _item(), 1)
+    accept_decision(decision, _item(), 1, _authoritative())
     assert decision.issue_strings() == [
         "[low] Consider renaming helper: Optional cleanup."
     ]
@@ -160,21 +160,21 @@ def test_reject_pass_with_structured_blocking_issue() -> None:
     )
     decision = parse_review_decision(text)
     with pytest.raises(ReviewError, match="blocking issues"):
-        accept_decision(decision, _item(), 1)
+        accept_decision(decision, _item(), 1, _authoritative())
 
 
 def test_reject_pass_with_legacy_string_issue() -> None:
     text = VALID_PASS.replace('"issues": []', '"issues": ["needs follow-up"]')
     decision = parse_review_decision(text)
     with pytest.raises(ReviewError, match="blocking issues"):
-        accept_decision(decision, _item(), 1)
+        accept_decision(decision, _item(), 1, _authoritative())
 
 
 def test_reject_substituted_acceptance_criterion() -> None:
     text = VALID_PASS.replace('"Crit A"', '"Crit A renamed"')
     decision = parse_review_decision(text)
     with pytest.raises(ReviewError, match="exact acceptance criteria"):
-        accept_decision(decision, _item(), 1)
+        accept_decision(decision, _item(), 1, _authoritative())
 
 
 def test_reject_duplicate_acceptance_criterion() -> None:
@@ -185,7 +185,7 @@ def test_reject_duplicate_acceptance_criterion() -> None:
     )
     decision = parse_review_decision(text)
     with pytest.raises(ReviewError, match="Duplicate acceptance criterion"):
-        accept_decision(decision, _item(), 1)
+        accept_decision(decision, _item(), 1, _authoritative())
 
 
 def test_reject_omitted_validation_command() -> None:
@@ -195,7 +195,7 @@ def test_reject_omitted_validation_command() -> None:
     )
     decision = parse_review_decision(text)
     with pytest.raises(ReviewError, match="validation results"):
-        accept_decision(decision, _item(), 1)
+        accept_decision(decision, _item(), 1, _authoritative())
 
 
 def test_reject_failed_validation_command() -> None:
@@ -205,7 +205,7 @@ def test_reject_failed_validation_command() -> None:
     )
     decision = parse_review_decision(text)
     with pytest.raises(ReviewError, match="mandatory validation"):
-        accept_decision(decision, _item(), 1)
+        accept_decision(decision, _item(), 1, _authoritative())
 
 
 def test_reject_unexpected_validation_command() -> None:
@@ -215,4 +215,4 @@ def test_reject_unexpected_validation_command() -> None:
     )
     decision = parse_review_decision(text)
     with pytest.raises(ReviewError, match="validation command"):
-        accept_decision(decision, _item(), 1)
+        accept_decision(decision, _item(), 1, _authoritative())

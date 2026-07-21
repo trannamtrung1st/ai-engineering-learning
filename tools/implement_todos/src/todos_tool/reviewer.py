@@ -70,7 +70,6 @@ def parse_review_decision(text: str) -> ReviewDecision:
     if not candidates:
         raise ReviewError("No JSON review decision found in session output")
 
-    # Prefer the last candidate that looks like a review decision
     last_error: Exception | None = None
     for obj in reversed(candidates):
         if "decision" not in obj and "schema_version" not in obj:
@@ -118,9 +117,11 @@ def _validate_acceptance_coverage(
 
 def _validate_command_coverage(
     decision: ReviewDecision,
-    item: TodoItem,
+    authoritative_validation: list[ValidationCommandResult],
 ) -> None:
-    expected = {_normalize_text(command) for command in item.validation.commands}
+    expected = {
+        _normalize_text(result.command) for result in authoritative_validation
+    }
     if not expected:
         return
 
@@ -189,7 +190,7 @@ def validate_pass(
     decision: ReviewDecision,
     item: TodoItem,
     logical_attempt: int,
-    authoritative_validation: list[ValidationCommandResult] | None = None,
+    authoritative_validation: list[ValidationCommandResult],
 ) -> None:
     """Raise ReviewError if a claimed pass is not actually valid."""
     if decision.item_id != item.id:
@@ -209,9 +210,8 @@ def validate_pass(
         raise ReviewError("Pass requires acceptance_criteria results")
 
     _validate_acceptance_coverage(decision, item)
-    _validate_command_coverage(decision, item)
-    if authoritative_validation is not None:
-        _validate_authoritative_validation(decision, authoritative_validation)
+    _validate_command_coverage(decision, authoritative_validation)
+    _validate_authoritative_validation(decision, authoritative_validation)
 
     if not decision.instruction_compliance.passed:
         raise ReviewError("Pass requires instruction_compliance.passed=true")
@@ -231,7 +231,7 @@ def accept_decision(
     decision: ReviewDecision,
     item: TodoItem,
     logical_attempt: int,
-    authoritative_validation: list[ValidationCommandResult] | None = None,
+    authoritative_validation: list[ValidationCommandResult],
 ) -> ReviewDecision:
     validate_pass(
         decision,

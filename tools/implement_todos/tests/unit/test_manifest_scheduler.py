@@ -24,8 +24,10 @@ def test_load_valid_workspace(git_project: Path, sample_item: dict) -> None:
 
 def test_manifest_model_default_when_omitted(git_project: Path, sample_item: dict) -> None:
     write_todos(git_project, [sample_item], settings={"max_attempts": 5})
-    manifest = yaml.safe_load((git_project / "todos/manifest.yaml").read_text())
-    assert "model" not in manifest["settings"]
+    manifest_path = git_project / "todos/manifest.yaml"
+    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    manifest["settings"].pop("model", None)
+    manifest_path.write_text(yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8")
     ws = load_workspace(git_project)
     assert ws.manifest.settings.model == "composer-2.5"
 
@@ -34,8 +36,10 @@ def test_manifest_auto_commit_default_when_omitted(
     git_project: Path, sample_item: dict
 ) -> None:
     write_todos(git_project, [sample_item], settings={"max_attempts": 5})
-    manifest = yaml.safe_load((git_project / "todos/manifest.yaml").read_text())
-    assert "auto_commit" not in manifest["settings"]
+    manifest_path = git_project / "todos/manifest.yaml"
+    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    manifest["settings"].pop("auto_commit", None)
+    manifest_path.write_text(yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8")
     ws = load_workspace(git_project)
     assert ws.manifest.settings.auto_commit is True
 
@@ -48,6 +52,38 @@ def test_manifest_model_setting(git_project: Path, sample_item: dict) -> None:
     )
     ws = load_workspace(git_project)
     assert ws.manifest.settings.model == "gpt-5.2"
+
+
+def test_manifest_project_check_setting(git_project: Path, sample_item: dict) -> None:
+    write_todos(
+        git_project,
+        [sample_item],
+        settings={"project_check": "bash scripts/check", "max_attempts": 5},
+    )
+    ws = load_workspace(git_project)
+    assert ws.manifest.settings.project_check == "bash scripts/check"
+
+
+def test_manifest_allows_zero_validation_repairs(
+    git_project: Path,
+    sample_item: dict,
+) -> None:
+    write_todos(
+        git_project,
+        [sample_item],
+        settings={"max_validation_repairs_per_attempt": 0, "max_attempts": 5},
+    )
+    ws = load_workspace(git_project)
+    assert ws.manifest.settings.max_validation_repairs_per_attempt == 0
+
+
+def test_manifest_missing_project_check_rejected(
+    git_project: Path,
+    sample_item: dict,
+) -> None:
+    write_todos(git_project, [sample_item], settings={"project_check": ""})
+    with pytest.raises(ValidationError):
+        load_workspace(git_project)
 
 
 def test_resolve_model_cli_overrides_manifest() -> None:

@@ -19,8 +19,7 @@ acceptance_criteria:
   - Tests cover the empty-name case.
 
 validation:
-  commands:
-    - pytest
+  commands: []
 
 context:
   files: []

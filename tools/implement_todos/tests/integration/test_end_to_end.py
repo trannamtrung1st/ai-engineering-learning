@@ -296,7 +296,7 @@ async def test_review_fail_consumes_attempt(
 
 
 @pytest.mark.asyncio
-async def test_authoritative_validation_failure_rejects_review_pass(
+async def test_validation_failure_skips_review(
     fake_agent: Path,
     git_project: Path,
     sample_item: dict,
@@ -306,7 +306,7 @@ async def test_authoritative_validation_failure_rejects_review_pass(
         "-c 'import sys; sys.exit(3)'"
     )
     item = dict(sample_item)
-    item["validation"] = {"commands": [command]}
+    item["validation"] = {"commands": []}
     write_todos(
         git_project,
         [item],
@@ -314,6 +314,7 @@ async def test_authoritative_validation_failure_rejects_review_pass(
             "max_attempts": 1,
             "auto_commit": False,
             "validation_timeout_seconds": 30,
+            "project_check": command,
         },
     )
 
@@ -368,6 +369,7 @@ async def test_authoritative_validation_failure_rejects_review_pass(
     validation = json.loads(validation_path.read_text(encoding="utf-8"))
     assert validation["results"][0]["passed"] is False
     assert validation["results"][0]["exit_code"] == 3
+    assert not list(validation_path.parent.glob("review-session-*.ndjson"))
 
 
 @pytest.mark.asyncio
