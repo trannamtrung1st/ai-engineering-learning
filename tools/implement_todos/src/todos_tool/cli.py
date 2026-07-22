@@ -346,5 +346,9 @@ def run() -> None:
     raise SystemExit(main())
 
 
+# Stale console scripts may still import `app` from an older Typer entry point.
+app = run
+
+
 if __name__ == "__main__":
     run()
