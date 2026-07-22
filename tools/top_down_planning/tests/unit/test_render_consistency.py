@@ -92,4 +92,5 @@ def test_render_prompt_inlines_breakdown_from_plan(
     assert "Complete the checkpoint" in prompt
     assert "Deliverable artifact" in prompt
     assert "Actionable deliverable units: 1" in prompt
+    assert "```markdown" in prompt
     assert render_brief_path.read_text(encoding="utf-8") == build_render_brief(plan)

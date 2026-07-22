@@ -15,6 +15,11 @@ def should_embed_content(text: str, *, embed_threshold: int) -> bool:
     return len(text.strip()) <= embed_threshold
 
 
+def format_embedded_markdown(text: str) -> str:
+    """Wrap Markdown or text content in a fenced block for prompt embedding."""
+    return f"```markdown\n{text.strip()}\n```"
+
+
 def format_input_file_reference(input_file: Path, workspace: Path) -> str:
     """Return workspace-relative and absolute paths for a file reference."""
     resolved = input_file.resolve()
@@ -36,7 +41,7 @@ def format_output_goal_section(
 ) -> str:
     text = output_goal.text.strip()
     if should_embed_content(text, embed_threshold=embed_threshold):
-        return text
+        return format_embedded_markdown(text)
     if output_goal.path is not None:
         return (
             "Read the output goal specification before planning:\n\n"
@@ -44,7 +49,7 @@ def format_output_goal_section(
             "Open and read that file in full. It defines the desired final plan "
             "shape, actionability criteria, and rendering expectations."
         )
-    return text
+    return format_embedded_markdown(text)
 
 
 def format_stop_hint_section(
@@ -55,7 +60,7 @@ def format_stop_hint_section(
 ) -> str:
     text = stop_hint.text.strip()
     if should_embed_content(text, embed_threshold=embed_threshold):
-        return text
+        return format_embedded_markdown(text)
     if stop_hint.path is not None:
         return (
             "Read the expansion stop guidance before deciding whether to expand or stop:\n\n"
@@ -63,7 +68,7 @@ def format_stop_hint_section(
             "Open and read that file in full. Use it when choosing `expand`, "
             "`mark_actionable`, and `assessment.plan_complete`."
         )
-    return text
+    return format_embedded_markdown(text)
 
 
 def format_input_document_section(
@@ -76,7 +81,7 @@ def format_input_document_section(
     if should_embed_content(text, embed_threshold=embed_threshold):
         return (
             "The complete primary input Markdown document:\n\n"
-            f"```markdown\n{text}\n```"
+            f"{format_embedded_markdown(text)}"
         )
     return (
         "Read the complete primary input Markdown file before planning:\n\n"
@@ -279,7 +284,7 @@ def _format_render_brief_section(
             "Open and read that file in full. It is derived from the canonical "
             "planning breakdown and defines the required scope."
         )
-    return f"{header}\n\n{brief}"
+    return f"{header}\n\n{format_embedded_markdown(brief)}"
 
 
 def build_final_render_prompt(

@@ -5,9 +5,11 @@ from top_down_planning.models import DEFAULT_INLINE_EMBED_THRESHOLD
 from top_down_planning.prompts import (
     build_final_render_prompt,
     build_planning_prompt,
+    format_embedded_markdown,
     format_input_document_section,
     format_input_file_reference,
     format_output_goal_section,
+    format_stop_hint_section,
     should_embed_content,
 )
 from top_down_planning.scheduler import initialize_root_plan
@@ -17,6 +19,78 @@ from tests.plan_factory import make_root_plan
 def test_should_embed_content_respects_threshold() -> None:
     assert should_embed_content("short", embed_threshold=10)
     assert not should_embed_content("too long", embed_threshold=3)
+
+
+def test_format_embedded_markdown_wraps_content() -> None:
+    assert format_embedded_markdown("  # Goal\n\nDo the thing.\n  ") == (
+        "```markdown\n# Goal\n\nDo the thing.\n```"
+    )
+
+
+def test_embedded_sections_use_markdown_fences_consistently(
+    tmp_path: Path,
+    example_input: Path,
+) -> None:
+    loaded_input = load_markdown_input(example_input)
+    output_goal = load_output_goal(inline="# Goal\n\nShip the feature.")
+    stop_hint = load_stop_hint(inline="# Stop\n\nStop at actionable leaves.")
+
+    input_section = format_input_document_section(
+        loaded_input=loaded_input,
+        workspace=tmp_path,
+        embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
+    )
+    goal_section = format_output_goal_section(
+        output_goal=output_goal,
+        workspace=tmp_path,
+        embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
+    )
+    stop_section = format_stop_hint_section(
+        stop_hint=stop_hint,
+        workspace=tmp_path,
+        embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
+    )
+
+    for section in (input_section, goal_section, stop_section):
+        assert "```markdown\n" in section
+        assert section.endswith("```")
+
+    assert "The complete primary input Markdown document:" in input_section
+    assert "Ship the feature." in goal_section
+    assert "Stop at actionable leaves." in stop_section
+
+
+def test_large_file_backed_sections_reference_paths_not_fences(
+    tmp_path: Path,
+    example_input: Path,
+) -> None:
+    goal_file = tmp_path / "goal.md"
+    goal_file.write_text("# Goal\n\n" + ("y" * 5000), encoding="utf-8")
+    hint_file = tmp_path / "stop.md"
+    hint_file.write_text("# Stop\n\n" + ("z" * 5000), encoding="utf-8")
+    input_file = tmp_path / "large-input.md"
+    input_file.write_text("# Large\n\n" + ("x" * 5000), encoding="utf-8")
+
+    goal_section = format_output_goal_section(
+        output_goal=load_output_goal(goal_file=goal_file),
+        workspace=tmp_path,
+        embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
+    )
+    stop_section = format_stop_hint_section(
+        stop_hint=load_stop_hint(hint_file=hint_file),
+        workspace=tmp_path,
+        embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
+    )
+    input_section = format_input_document_section(
+        loaded_input=load_markdown_input(input_file),
+        workspace=tmp_path,
+        embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
+    )
+
+    for section in (input_section, goal_section, stop_section):
+        assert "```markdown" not in section
+        assert "- Path:" in section
+        assert "- Absolute:" in section
 
 
 def test_prompt_embeds_small_input_document(
@@ -47,6 +121,12 @@ def test_prompt_embeds_small_input_document(
     assert "```markdown" in prompt
     assert "Build a small CLI that converts CSV" in prompt
     assert "Produce an actionable implementation plan" in prompt
+    goal_section = format_output_goal_section(
+        output_goal=output_goal,
+        workspace=tmp_path,
+        embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
+    )
+    assert goal_section.startswith("```markdown\n")
 
 
 def test_prompt_references_large_input_file_by_path(tmp_path: Path) -> None:
@@ -107,6 +187,7 @@ def test_prompt_embeds_short_output_goal_file(tmp_path: Path, example_input: Pat
 
     assert "with phases" in prompt
     assert "Read the output goal specification" not in prompt
+    assert "```markdown" in prompt
 
 
 def test_prompt_references_large_output_goal_file(tmp_path: Path, example_input: Path) -> None:
@@ -175,6 +256,7 @@ def test_long_inline_output_goal_embeds_when_no_path_exists() -> None:
 
     assert "g" * 100 in section
     assert "Read the output goal specification" not in section
+    assert section.startswith("```markdown\n")
 
 
 def test_should_embed_content_uses_inclusive_boundary() -> None:
@@ -229,6 +311,7 @@ def test_prompt_includes_stop_hint_when_provided(
     assert "Expansion stop guidance" in prompt
     assert "actionable leaf tasks" in prompt
     assert "assessment.plan_complete" in prompt
+    assert prompt.count("```markdown") >= 2
 
 
 def test_prompt_omits_stop_hint_section_when_not_provided(
@@ -286,6 +369,7 @@ def test_final_render_prompt_references_plan_and_output_goal(
     assert "Final planning render" in prompt
     assert str(plan_file.resolve()) in prompt
     assert "Produce an actionable implementation plan" in prompt
+    assert prompt.count("```markdown") >= 3
     assert "Deliverable directory" in prompt
     assert "Breakdown to render" in prompt
     assert "authoritative scope" in prompt
