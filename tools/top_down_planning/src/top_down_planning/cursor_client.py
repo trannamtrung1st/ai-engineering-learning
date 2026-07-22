@@ -1,8 +1,9 @@
 """Cursor Agent CLI process adapter with streaming and recovery.
 
 Adapted from tools/implement_todos/src/todos_tool/cursor_client.py.
-Planning decomposition sessions use read-only ``ask`` mode; the final render
-session uses agent mode so deliverables can be written directly to disk.
+Planning decomposition sessions use agent mode so agents can invoke the bundled
+planning transaction CLI; the final render session also uses agent mode so
+deliverables can be written directly to disk.
 """
 
 from __future__ import annotations
@@ -174,6 +175,7 @@ class CursorClient:
         renderer: ConsoleRenderer | None = None,
         on_agent_started: AgentStartedCallback | None = None,
         session_mode: SessionMode = "ask",
+        extra_env: dict[str, str] | None = None,
     ) -> SessionResult:
         await self.ensure_ready()
         assert self._stream_flags is not None
@@ -199,9 +201,9 @@ class CursorClient:
 
         stdout_path, stderr_path, tmp_paths = _resolve_capture_paths(events_path, log_path)
         proc: subprocess.Popen[bytes] | None = None
-        extra_env: dict[str, str] = {}
+        session_env: dict[str, str] = dict(extra_env or {})
         if prompt_path is not None:
-            extra_env[PROMPT_FILE_ENV] = str(prompt_path.resolve())
+            session_env[PROMPT_FILE_ENV] = str(prompt_path.resolve())
 
         try:
             proc = _spawn_agent(
@@ -210,7 +212,7 @@ class CursorClient:
                 workspace=workspace,
                 stdout_path=stdout_path,
                 stderr_path=stderr_path,
-                extra_env=extra_env,
+                extra_env=session_env,
             )
         except OSError as exc:
             _cleanup_tmp_paths(tmp_paths)

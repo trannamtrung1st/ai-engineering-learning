@@ -6,6 +6,8 @@ Controlled by environment:
 - FAKE_AGENT_MODE: planning|timeout|malformed|crash|split
 - FAKE_AGENT_PLANNING_JSON: full planning response override
 - FAKE_AGENT_EXPAND_ROOT=true expands item-001 once, then marks leaves actionable
+- PLANNING_TOOL_TXN_FILE / PLANNING_TOOL_SELECTED_IDS / PLANNING_TOOL_PLAN_FILE:
+  session scope for the planning transaction CLI
 """
 
 from __future__ import annotations
@@ -13,9 +15,16 @@ from __future__ import annotations
 import json
 import os
 import re
+import subprocess
 import sys
 import time
 from pathlib import Path
+
+_SRC_ROOT = Path(__file__).resolve().parents[2] / "src"
+if str(_SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SRC_ROOT))
+
+from top_down_planning.plan_tool import plan_tool_argv, resolve_plan_tool_command
 
 
 def emit(event: dict) -> None:
@@ -41,7 +50,28 @@ def _prompt_text() -> str:
 
 
 def _selected_ids(prompt: str) -> list[str]:
+    env_ids = os.environ.get("PLANNING_TOOL_SELECTED_IDS", "")
+    if env_ids.strip():
+        return [part.strip() for part in env_ids.split(",") if part.strip()]
     return re.findall(r"Selected item `([^`]+)`", prompt)
+
+
+def _plan_tool_env() -> dict[str, str]:
+    env = os.environ.copy()
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = (
+        f"{_SRC_ROOT}{os.pathsep}{existing}" if existing else str(_SRC_ROOT)
+    )
+    return env
+
+
+def _run_plan_tool(*args: str) -> None:
+    command = resolve_plan_tool_command()
+    subprocess.run(
+        plan_tool_argv(command, *args),
+        env=_plan_tool_env(),
+        check=True,
+    )
 
 
 def _default_planning_response(selected: list[str]) -> dict:
@@ -94,6 +124,28 @@ def _default_planning_response(selected: list[str]) -> dict:
         },
         "operations": operations,
     }
+
+
+def _write_planning_transaction(response: dict) -> None:
+    if not os.environ.get("PLANNING_TOOL_TXN_FILE"):
+        raise RuntimeError("PLANNING_TOOL_TXN_FILE is required for planning sessions")
+
+    for operation in response.get("operations") or []:
+        _run_plan_tool(
+            "record-operation",
+            "--json",
+            json.dumps(operation, separators=(",", ":")),
+        )
+    assessment = response.get("assessment") or {}
+    plan_complete = bool(assessment.get("plan_complete", False))
+    summary = str(assessment.get("summary") or "")
+    assessment_args = ["set-assessment", "--summary", summary]
+    if plan_complete:
+        assessment_args.append("--plan-complete")
+    else:
+        assessment_args.append("--no-plan-complete")
+    _run_plan_tool(*assessment_args)
+    _run_plan_tool("finalize")
 
 
 def _deliverable_dir_from_prompt(prompt: str) -> Path | None:
@@ -222,7 +274,8 @@ def main() -> int:
     else:
         response = _default_planning_response(selected)
 
-    assistant("```json\n" + json.dumps(response, indent=2) + "\n```\n")
+    _write_planning_transaction(response)
+    assistant("Finalized planning transaction.")
     emit({"type": "result", "subtype": "success", "duration_ms": 5, "is_error": False})
     return 0
 

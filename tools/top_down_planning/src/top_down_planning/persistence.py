@@ -81,6 +81,11 @@ def iteration_prefix(output_dir: Path, iteration: int) -> str:
     return str(iterations_dir(output_dir) / f"{iteration:03d}")
 
 
+def iteration_transaction_path(output_dir: Path, iteration: int) -> Path:
+    prefix = Path(iteration_prefix(output_dir, iteration))
+    return prefix.with_name(prefix.name + "-transaction.json")
+
+
 def load_plan(output_dir: Path) -> PlanState | None:
     path = plan_path(output_dir)
     if not path.is_file():

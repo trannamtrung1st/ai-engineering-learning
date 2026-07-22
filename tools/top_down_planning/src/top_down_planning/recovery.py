@@ -52,15 +52,22 @@ def _root_plan_from_source(plan: PlanState) -> PlanState:
 
 
 def list_iteration_response_paths(output_dir: Path) -> list[Path]:
+    """Return iteration audit files, preferring response JSON with transaction fallback."""
     it_dir = state_dir(output_dir) / "iterations"
     if not it_dir.is_dir():
         return []
-    paths: list[tuple[int, Path]] = []
+
+    chosen: dict[int, Path] = {}
     for path in it_dir.glob("*-response.json"):
         prefix = path.name.split("-", 1)[0]
         if prefix.isdigit():
-            paths.append((int(prefix), path))
-    return [path for _, path in sorted(paths, key=lambda item: item[0])]
+            chosen[int(prefix)] = path
+    for path in it_dir.glob("*-transaction.json"):
+        prefix = path.name.split("-", 1)[0]
+        if prefix.isdigit():
+            iteration = int(prefix)
+            chosen.setdefault(iteration, path)
+    return [chosen[key] for key in sorted(chosen)]
 
 
 def recover_plan_from_iterations(output_dir: Path, plan: PlanState) -> PlanState | None:

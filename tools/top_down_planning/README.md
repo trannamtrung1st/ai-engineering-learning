@@ -1,6 +1,6 @@
 # Top-Down Planning Tool
 
-Generic CLI that progressively decomposes one Markdown input into a structured plan using Cursor Agent CLI in read-only (`ask`) mode.
+Generic CLI that progressively decomposes one Markdown input into a structured plan using Cursor Agent CLI in agent mode for decomposition (and agent mode for final render).
 
 This package mirrors the reusable infrastructure patterns from [`../implement_todos/`](../implement_todos/) while keeping planning-specific state and operations separate.
 
@@ -100,6 +100,7 @@ planning-output/
     ├── run-state.json
     └── iterations/
         ├── 001-request-prompt.md
+        ├── 001-transaction.json
         ├── 001-response.json
         └── render-response.json
 ```
@@ -149,14 +150,29 @@ entire wave is discarded and nothing from that wave is applied.
 
 ### Agent operation schema
 
-The agent returns structured operations only:
+During decomposition, the agent records structured operations through the bundled
+`planning-plan-tool` CLI (one transaction file per iteration batch). It must not edit
+`plan.yaml` directly. Supported operation types:
 
 - `expand`
 - `mark_actionable`
 - `mark_blocked`
 - `mark_out_of_scope`
 
-The tool validates the full batch atomically, assigns IDs/depth/order, and persists the updated state.
+Each batch session writes `.planning-output/iterations/{NNN}-transaction.json`. The
+orchestrator validates the full wave atomically, assigns IDs/depth/order, and persists
+the updated state to `plan.yaml`. On success it also writes matching
+`{NNN}-response.json` audit files used by resume recovery.
+
+Set `PLANNING_TOOL_COMMAND` when the CLI is not on `PATH` (for example during local
+development):
+
+```bash
+export PLANNING_TOOL_COMMAND="$PWD/.venv/bin/python -m top_down_planning.plan_tool"
+```
+
+If unset, the orchestrator uses `planning-plan-tool` when installed, otherwise falls
+back to `python -m top_down_planning.plan_tool`.
 
 Optional guidance for when to stop expanding versus marking items actionable:
 
@@ -164,7 +180,7 @@ Optional guidance for when to stop expanding versus marking items actionable:
 - Config: `stop_hint` or `stop_hint_file`
 
 The stop hint is included in planning prompts to help the agent decide between
-`expand`, `mark_actionable`, and `assessment.plan_complete`. Resume rejects
+`expand`, `mark_actionable`, and `plan_complete` (via `set-assessment`). Resume rejects
 runs when the stop hint changes after a prior run stored a digest.
 
 ### Agent context
@@ -185,9 +201,9 @@ Planning completes when no expandable items remain and the graph is structurally
 
 `run-state.json` stores iteration counters, limits, and SHA-256 digests of the input file and output goal. Resume rejects changed input, changed output goal, or mismatched limits. Resuming an already-complete run skips the render phase when prior deliverables still exist on disk.
 
-On resume, the tool detects when `plan.yaml` was reset but `run-state.json` still shows prior progress. It attempts to rebuild the plan by replaying stored `iterations/*-response.json` audit files before continuing.
+On resume, the tool detects when `plan.yaml` was reset but `run-state.json` still shows prior progress. It attempts to rebuild the plan by replaying stored `iterations/*-response.json` audit files (falling back to `*-transaction.json` when needed) before continuing.
 
-During render, `plan.yaml` is backed up and restored automatically if the render agent modifies canonical state.
+During render, `plan.yaml` is backed up and restored automatically if the render agent modifies canonical state. The same protection applies if a decomposition session mutates canonical state unexpectedly.
 
 ### Stream events
 

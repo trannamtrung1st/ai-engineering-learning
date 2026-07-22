@@ -1,17 +1,30 @@
-"""Extract structured planning operations from agent text.
+"""Load structured planning operations from agent artifacts.
 
-Adapted from tools/implement_todos/src/todos_tool/reviewer.py.
+Decomposition sessions record operations through ``planning-plan-tool`` into
+``*-transaction.json`` files. The legacy ``parse_agent_response`` helper remains
+for fenced/raw JSON extraction in tests and migration tooling only.
 """
 
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from pydantic import ValidationError as PydanticValidationError
 
 from top_down_planning.errors import ResponseParseError
 from top_down_planning.models import AgentResponse
+from top_down_planning.plan_tool import PlanToolError, load_transaction
+
+__all__ = [
+    "AgentResponse",
+    "PlanToolError",
+    "extract_json_objects",
+    "load_planning_response",
+    "load_transaction",
+    "parse_agent_response",
+]
 
 
 def _extract_fenced_json_objects(text: str) -> list[dict[str, Any]]:
@@ -63,6 +76,7 @@ def extract_json_objects(text: str) -> list[dict[str, Any]]:
 
 
 def parse_agent_response(text: str) -> AgentResponse:
+    """Legacy helper: extract planning JSON embedded in assistant text."""
     candidates = extract_json_objects(text)
     if not candidates:
         raise ResponseParseError("No JSON planning response found in session output")
@@ -81,3 +95,8 @@ def parse_agent_response(text: str) -> AgentResponse:
             f"Malformed planning response: {last_error}"
         ) from last_error
     raise ResponseParseError("No valid planning response JSON found")
+
+
+def load_planning_response(path: Path) -> AgentResponse:
+    """Load a planning response from a transaction or legacy response audit file."""
+    return load_transaction(path)

@@ -237,68 +237,65 @@ It must include a reason.
 
 ## Agent response contract
 
-The agent must return structured operations.
+During decomposition, the agent records structured operations through the bundled
+`planning-plan-tool` CLI. It must **not** return planning JSON in chat and must **not**
+edit `.planning-output/plan.yaml` directly.
 
-It must not rewrite the complete planning state.
+Each batch session receives scoped environment variables:
 
-Example:
+* `PLANNING_TOOL_TXN_FILE` — path to `{NNN}-transaction.json`
+* `PLANNING_TOOL_SELECTED_IDS` — comma-separated selected node ids
+* `PLANNING_TOOL_PLAN_FILE` — read-only path to canonical `plan.yaml`
+* `PLANNING_TOOL_COMMAND` — resolved shell command for the CLI
+
+Workflow per batch:
+
+1. `planning-plan-tool show-context` (optional)
+2. `planning-plan-tool status` (optional)
+3. `planning-plan-tool record-operation --json '<operation>'` once per selected item
+4. `planning-plan-tool set-assessment [--plan-complete|--no-plan-complete] --summary "..."`
+5. `planning-plan-tool finalize`
+
+The orchestrator loads the finalized transaction, validates the wave atomically, assigns
+IDs/depth/order, and persists the updated state to `plan.yaml`. Successful batches also
+write matching `{NNN}-response.json` audit files for resume recovery.
+
+Example operation payload for `record-operation`:
 
 ```json
 {
-  "assessment": {
-    "plan_complete": false,
-    "summary": "The major implementation areas are identified but still need decomposition."
-  },
-  "operations": [
+  "type": "expand",
+  "node_id": "item-001",
+  "reason": "The root contains multiple independent planning areas.",
+  "children": [
     {
-      "type": "expand",
-      "node_id": "item-001",
-      "reason": "The root contains multiple independent planning areas.",
-      "children": [
-        {
-          "title": "Define the planning state model",
-          "objective": "Define the canonical structure used by the planning loop.",
-          "dependencies": [],
-          "expected_outputs": [
-            "Typed planning-state schema"
-          ],
-          "acceptance_criteria": [
-            "The schema supports stable parent-child relationships.",
-            "The schema can be validated deterministically."
-          ]
-        },
-        {
-          "title": "Implement breadth-first expansion",
-          "objective": "Select and expand the shallowest incomplete planning items.",
-          "dependencies": [
-            "Define the planning state model"
-          ],
-          "expected_outputs": [
-            "Deterministic expansion scheduler"
-          ],
-          "acceptance_criteria": [
-            "All incomplete items at a shallower depth are handled before deeper items."
-          ]
-        }
+      "title": "Define the planning state model",
+      "objective": "Define the canonical structure used by the planning loop.",
+      "dependencies": [],
+      "expected_outputs": [
+        "Typed planning-state schema"
+      ],
+      "acceptance_criteria": [
+        "The schema supports stable parent-child relationships.",
+        "The schema can be validated deterministically."
       ]
     }
   ]
 }
 ```
 
-Supported operation types should include:
+Supported operation types:
 
 * `expand`
 * `mark_actionable`
 * `mark_blocked`
 * `mark_out_of_scope`
-* `update_item`
 
 Keep the initial version small. Only include `update_item` if it is necessary for correcting or enriching existing items.
 
 ## Validation
 
-Validate every agent response before modifying the planning state.
+Validate every finalized transaction before modifying the planning state.
 
 Validation must ensure:
 
@@ -386,6 +383,7 @@ planning-output/
     ├── run-state.json
     └── iterations/
         ├── 001-request.json
+        ├── 001-transaction.json
         ├── 001-response.json
         ├── render-response.json
         └── render-request-prompt.md

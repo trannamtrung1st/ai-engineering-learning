@@ -310,8 +310,37 @@ def test_prompt_includes_stop_hint_when_provided(
 
     assert "Expansion stop guidance" in prompt
     assert "actionable leaf tasks" in prompt
-    assert "assessment.plan_complete" in prompt
+    assert "plan_complete" in prompt
     assert prompt.count("```markdown") >= 2
+
+
+def test_planning_prompt_uses_transaction_cli(
+    example_input: Path,
+    tmp_path: Path,
+) -> None:
+    loaded_input = load_markdown_input(example_input)
+    output_goal = load_output_goal(inline="Produce an actionable implementation plan")
+    plan = make_root_plan(
+        input_file=str(example_input),
+        output_goal=output_goal.text,
+        input_digest="a",
+        output_goal_digest="b",
+    )
+    root = plan.item_by_id("item-001")
+    assert root is not None
+
+    prompt = build_planning_prompt(
+        loaded_input=loaded_input,
+        workspace=tmp_path,
+        output_goal=output_goal,
+        plan=plan,
+        selected_items=[root],
+        embed_threshold=DEFAULT_INLINE_EMBED_THRESHOLD,
+    )
+
+    assert "Planning transaction CLI" in prompt
+    assert "record-operation" in prompt
+    assert "Required response format" not in prompt
 
 
 def test_prompt_omits_stop_hint_section_when_not_provided(

@@ -22,7 +22,6 @@ from top_down_planning.errors import (
     CursorEnvironmentError,
     CursorSessionError,
     PlanningToolError,
-    ResponseParseError,
     ResumeError,
     UserInterrupted,
     ValidationError,
@@ -41,6 +40,7 @@ from top_down_planning.models import (
 from top_down_planning.persistence import (
     ensure_resume_compatible,
     iteration_prefix,
+    iteration_transaction_path,
     iterations_dir,
     load_run_state,
     mark_last_success,
@@ -51,6 +51,13 @@ from top_down_planning.persistence import (
     save_run_state,
     update_final_status,
     write_json,
+)
+from top_down_planning.plan_tool import (
+    PlanToolError,
+    build_session_env,
+    load_transaction,
+    reset_transaction,
+    resolve_plan_tool_command,
 )
 from top_down_planning.recovery import (
     backup_canonical_plan,
@@ -66,7 +73,6 @@ from top_down_planning.artifact_writer import (
 from top_down_planning.fallback_artifact import write_fallback_artifact
 from top_down_planning.prompts import build_final_render_prompt, build_planning_prompt
 from top_down_planning.render_brief import build_render_brief, validate_render_coverage
-from top_down_planning.response_parser import parse_agent_response
 from top_down_planning.scheduler import (
     initialize_root_plan,
     select_concurrent_batches,
@@ -405,11 +411,12 @@ class Orchestrator:
             for session_result in session_results:
                 spec = session_result.spec
                 prefix = Path(iteration_prefix(output_dir, spec.iteration))
+                transaction_path = iteration_transaction_path(output_dir, spec.iteration)
                 response_path = prefix.with_name(prefix.name + "-response.json")
                 validation_path = prefix.with_name(prefix.name + "-validation.json")
                 try:
-                    response = parse_agent_response(session_result.result.assistant_text)
-                except ResponseParseError as exc:
+                    response = load_transaction(transaction_path)
+                except PlanToolError as exc:
                     parse_failed = True
                     validation_feedback = [str(exc)]
                     self.stream.emit(
@@ -422,12 +429,15 @@ class Orchestrator:
                     if self.config.audit_iterations:
                         write_json(
                             response_path,
-                            {"raw": session_result.result.assistant_text[-8000:]},
+                            {
+                                "error": str(exc),
+                                "assistant_tail": session_result.result.assistant_text[-8000:],
+                            },
                         )
                         write_json(validation_path, {"errors": validation_feedback})
                     if attempt >= limits.max_retries:
                         raise PlanningToolError(
-                            f"Failed to parse agent response after {limits.max_retries} attempts"
+                            f"Failed to load planning transaction after {limits.max_retries} attempts"
                         ) from exc
                     self.stream.emit(
                         "wave.retrying",
@@ -582,6 +592,7 @@ class Orchestrator:
         validation_feedback: list[str] | None,
     ) -> _BatchSessionResult:
         limits = self.config.limits
+        plan_tool_command = resolve_plan_tool_command()
         prompt = build_planning_prompt(
             loaded_input=loaded,
             workspace=self.config.workspace_root,
@@ -591,14 +602,18 @@ class Orchestrator:
             embed_threshold=self._embed_threshold,
             stop_hint=self.config.stop_hint,
             validation_feedback=validation_feedback,
+            plan_tool_command=plan_tool_command,
         )
         prefix = Path(iteration_prefix(output_dir, spec.iteration))
         prompt_path = prefix.with_name(prefix.name + "-request-prompt.md")
         events_path = prefix.with_name(prefix.name + "-agent.ndjson")
         log_path = prefix.with_name(prefix.name + "-agent.log")
+        transaction_path = iteration_transaction_path(output_dir, spec.iteration)
+        canonical_plan_file = plan_path(output_dir)
 
         prompt_path.parent.mkdir(parents=True, exist_ok=True)
         prompt_path.write_text(prompt, encoding="utf-8")
+        reset_transaction(transaction_path)
         if self.config.audit_iterations:
             write_json(
                 prefix.with_name(prefix.name + "-request.json"),
@@ -608,27 +623,47 @@ class Orchestrator:
                     "batch_count": batch_count,
                     "attempt": attempt,
                     "selected_items": spec.selected_ids,
+                    "transaction_path": str(transaction_path),
                 },
             )
+
+        session_env = build_session_env(
+            transaction_path=transaction_path,
+            selected_ids=spec.selected_ids,
+            plan_file=canonical_plan_file,
+            plan_tool_command=plan_tool_command,
+        )
+        min_plan_items = len(plan.plan)
+        plan_backup = backup_canonical_plan(output_dir)
 
         def on_started(pid: int) -> None:
             self._add_agent_pid(output_dir, run_state, pid)
 
-        result = await self.client.run_session(
-            workspace=self.config.workspace_root,
-            prompt=prompt,
-            prompt_path=prompt_path,
-            timeout_seconds=limits.session_timeout_seconds,
-            events_path=events_path if self.config.audit_iterations else None,
-            log_path=log_path if self.config.audit_iterations else None,
-            renderer=ConsoleRenderer.with_file_logging(
-                self.renderer,
-                log_path,
+        try:
+            result = await self.client.run_session(
+                workspace=self.config.workspace_root,
+                prompt=prompt,
+                prompt_path=prompt_path,
+                timeout_seconds=limits.session_timeout_seconds,
+                events_path=events_path if self.config.audit_iterations else None,
+                log_path=log_path if self.config.audit_iterations else None,
+                renderer=ConsoleRenderer.with_file_logging(
+                    self.renderer,
+                    log_path,
+                )
+                if self.config.audit_iterations
+                else self.renderer,
+                on_agent_started=on_started,
+                session_mode="agent",
+                extra_env=session_env,
             )
-            if self.config.audit_iterations
-            else self.renderer,
-            on_agent_started=on_started,
-        )
+        finally:
+            if restore_canonical_plan(
+                output_dir, plan_backup, min_items=min_plan_items
+            ):
+                self.renderer.warning(
+                    "Restored plan.yaml after planning session modified canonical state"
+                )
         return _BatchSessionResult(spec=spec, result=result)
 
     def _emit_operation_events(self, response: AgentResponse) -> None:

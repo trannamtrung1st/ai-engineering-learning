@@ -78,6 +78,38 @@ def test_recover_plan_from_iteration_audit(tmp_path: Path) -> None:
     assert len(recovered.plan) == 3
 
 
+def test_recover_plan_from_transaction_audit(tmp_path: Path) -> None:
+    plan = make_root_plan(
+        input_file="./idea.md",
+        output_goal="goal",
+        input_digest="a",
+        output_goal_digest="b",
+    )
+    save_plan(tmp_path, plan)
+
+    response = AgentResponse(
+        operations=[
+            ExpandOperation(
+                node_id="item-001",
+                children=[
+                    ChildDraft(title="Area A", objective="Do A"),
+                    ChildDraft(title="Area B", objective="Do B"),
+                ],
+            )
+        ]
+    )
+    audit_dir = tmp_path / ".planning-output" / "iterations"
+    audit_dir.mkdir(parents=True)
+    (audit_dir / "001-transaction.json").write_text(
+        json.dumps(response.model_dump(mode="json")),
+        encoding="utf-8",
+    )
+
+    recovered = recover_plan_from_iterations(tmp_path, plan)
+    assert recovered is not None
+    assert len(recovered.plan) == 3
+
+
 def test_restore_canonical_plan_after_agent_reset(tmp_path: Path) -> None:
     plan = make_root_plan(
         input_file="./idea.md",

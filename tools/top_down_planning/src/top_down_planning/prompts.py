@@ -66,7 +66,7 @@ def format_stop_hint_section(
             "Read the expansion stop guidance before deciding whether to expand or stop:\n\n"
             f"{format_input_file_reference(stop_hint.path, workspace)}\n\n"
             "Open and read that file in full. Use it when choosing `expand`, "
-            "`mark_actionable`, and `assessment.plan_complete`."
+            "`mark_actionable`, and `plan_complete` via `set-assessment`."
         )
     return format_embedded_markdown(text)
 
@@ -164,6 +164,43 @@ def _format_item_context(plan: PlanState, item: PlanItem) -> str:
     return "\n".join(parts)
 
 
+def format_plan_tool_section(*, plan_tool_command: str = "planning-plan-tool") -> str:
+    """Describe the session transaction CLI the agent must invoke."""
+    return f"""Use the planning transaction CLI — do **not** return JSON in chat and do **not**
+edit `.planning-output/plan.yaml` directly. Session scope is already configured in the
+environment (`PLANNING_TOOL_TXN_FILE`, `PLANNING_TOOL_SELECTED_IDS`, `PLANNING_TOOL_PLAN_FILE`).
+
+Workflow:
+1. Optionally run `{plan_tool_command} show-context` for selected-node details.
+2. Optionally run `{plan_tool_command} status` to inspect the current draft.
+3. For **each** selected item, run `{plan_tool_command} record-operation --json '<operation>'`.
+4. Run `{plan_tool_command} set-assessment [--plan-complete|--no-plan-complete] --summary "..."`.
+5. Run `{plan_tool_command} finalize` to commit the session transaction.
+
+Operation JSON schema (one object per `record-operation` call):
+
+```json
+{{
+  "type": "expand | mark_actionable | mark_blocked | mark_out_of_scope",
+  "node_id": "one of the selected item ids",
+  "reason": "string",
+  "children": [
+    {{
+      "ref": "optional local reference like child-1",
+      "title": "string",
+      "objective": "string",
+      "dependencies": ["child refs or existing item ids"],
+      "expected_outputs": ["string"],
+      "acceptance_criteria": ["string"]
+    }}
+  ]
+}}
+```
+
+For `mark_actionable`, include `expected_outputs` and `acceptance_criteria` when required by
+the output goal. For `mark_blocked`, include `missing_information` and `open_question`."""
+
+
 def build_planning_prompt(
     *,
     loaded_input: LoadedInput,
@@ -174,39 +211,17 @@ def build_planning_prompt(
     embed_threshold: int,
     stop_hint: LoadedStopHint | None = None,
     validation_feedback: list[str] | None = None,
+    plan_tool_command: str = "planning-plan-tool",
 ) -> str:
     selected_ids = {item.id for item in selected_items}
     contexts = [_format_item_context(plan, item) for item in selected_items]
-    operation_schema = {
-        "assessment": {
-            "plan_complete": "boolean",
-            "summary": "string",
-        },
-        "operations": [
-            {
-                "type": "expand | mark_actionable | mark_blocked | mark_out_of_scope",
-                "node_id": "one of the selected item ids",
-                "reason": "string",
-                "children": [
-                    {
-                        "ref": "optional local reference like child-1",
-                        "title": "string",
-                        "objective": "string",
-                        "dependencies": ["child refs or existing item ids"],
-                        "expected_outputs": ["string"],
-                        "acceptance_criteria": ["string"],
-                    }
-                ],
-            }
-        ],
-    }
 
     feedback_block = ""
     if validation_feedback:
         feedback_block = (
             "## Validation feedback from previous attempt\n"
             + "\n".join(f"- {error}" for error in validation_feedback)
-            + "\n\nFix every issue and return a valid response.\n\n"
+            + "\n\nFix every issue and finalize a valid transaction.\n\n"
         )
 
     stop_hint_block = ""
@@ -214,14 +229,15 @@ def build_planning_prompt(
         stop_hint_block = (
             "## Expansion stop guidance\n"
             "Use this when deciding whether to `expand`, `mark_actionable`, or set "
-            "`assessment.plan_complete` to true:\n\n"
+            "`plan_complete` with `set-assessment`:\n\n"
             f"{format_stop_hint_section(stop_hint=stop_hint, workspace=workspace, embed_threshold=embed_threshold)}\n\n"
         )
 
     return f"""# Top-down planning session
 
-You are a planning agent. Analyze the selected planning items and return **only**
-structured JSON operations. Do not rewrite the full plan state. Do not execute work.
+You are a planning agent. Analyze the selected planning items and record structured
+operations through the planning transaction CLI. Do not rewrite the full plan state.
+Do not execute implementation work.
 
 ## Output goal
 {format_output_goal_section(output_goal=output_goal, workspace=workspace, embed_threshold=embed_threshold)}
@@ -232,11 +248,12 @@ structured JSON operations. Do not rewrite the full plan state. Do not execute w
 - Use `mark_actionable` when the item is detailed enough for the output goal.
 - Use `mark_blocked` only when required information is missing and cannot be inferred safely.
 - Use `mark_out_of_scope` when the item does not contribute to the output goal.
-- Set `assessment.plan_complete` to true only when every relevant item is sufficiently
-  detailed for the output goal and no further expansion is warranted.
-- Do not invent canonical item IDs. The tool assigns IDs.
+- Set `plan_complete` to true only when every relevant item is sufficiently detailed for the
+  output goal and no further expansion is warranted.
+- Do not invent canonical item IDs. The orchestrator assigns IDs on apply.
 - For sibling dependencies in an `expand`, use child `ref` values or existing item ids.
 - Prefer breadth-first planning: keep major areas coherent before over-detailing one branch.
+- Do not modify files under `.planning-output/` except through `{plan_tool_command}`.
 
 {feedback_block}## Input document
 
@@ -248,14 +265,8 @@ structured JSON operations. Do not rewrite the full plan state. Do not execute w
 ## Selected items
 {chr(10).join(contexts)}
 
-## Required response format
-Return one JSON object matching this schema:
-
-```json
-{json.dumps(operation_schema, indent=2)}
-```
-
-Return the JSON inside a ```json fenced block or as raw JSON. No prose outside the JSON.
+## Planning transaction CLI
+{format_plan_tool_section(plan_tool_command=plan_tool_command)}
 """
 
 
