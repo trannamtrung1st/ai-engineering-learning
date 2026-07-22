@@ -5,8 +5,6 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from pydantic import ValidationError as PydanticValidationError
-
 from todos_tool.errors import ReviewError
 from todos_tool.models import ReviewDecision, TodoItem, ValidationCommandResult
 
@@ -76,7 +74,7 @@ def parse_review_decision(text: str) -> ReviewDecision:
             continue
         try:
             return ReviewDecision.model_validate(obj)
-        except PydanticValidationError as exc:
+        except ValueError as exc:
             last_error = exc
             continue
     if last_error:

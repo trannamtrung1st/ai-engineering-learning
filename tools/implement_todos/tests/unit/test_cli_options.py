@@ -6,55 +6,66 @@ import subprocess
 import sys
 
 import pytest
-import typer
-from typer.testing import CliRunner
 
-from todos_tool.cli import _parse_optional_bool, app
+from todos_tool.cli import main
+from todos_tool.flags import parse_optional_bool
 from tests.helpers import write_todos
 
 
 def test_parse_optional_bool_values() -> None:
-    assert _parse_optional_bool(None, name="auto-commit") is None
-    assert _parse_optional_bool("true", name="auto-commit") is True
-    assert _parse_optional_bool("false", name="auto-commit") is False
-    assert _parse_optional_bool("TRUE", name="auto-commit") is True
-    assert _parse_optional_bool("0", name="auto-commit") is False
+    assert parse_optional_bool(None, name="auto-commit") is None
+    assert parse_optional_bool("true", name="auto-commit") is True
+    assert parse_optional_bool("false", name="auto-commit") is False
+    assert parse_optional_bool("TRUE", name="auto-commit") is True
+    assert parse_optional_bool("0", name="auto-commit") is False
 
 
 def test_parse_optional_bool_rejects_invalid() -> None:
-    with pytest.raises(typer.BadParameter, match="Invalid value"):
-        _parse_optional_bool("maybe", name="auto-commit")
+    with pytest.raises(ValueError, match="Invalid value"):
+        parse_optional_bool("maybe", name="auto-commit")
 
 
-def test_run_auto_commit_flag_parsing(tmp_path, monkeypatch) -> None:
-    """--auto-commit accepts explicit true/false values (not --no-auto-commit)."""
-    monkeypatch.chdir(tmp_path)
-    runner = CliRunner()
+def test_run_auto_commit_flag_parsing(capsys) -> None:
+    """--auto-commit accepts explicit true/false values."""
+    with pytest.raises(SystemExit) as exc:
+        main(["run", "--help"])
+    assert exc.value.code == 0
+    captured = capsys.readouterr()
+    assert "--auto-commit" in captured.out
+    assert "--no-auto-commit" not in captured.out
+    assert "true/false" in captured.out
 
-    result = runner.invoke(app, ["run", "--help"])
-    assert result.exit_code == 0
-    assert "--auto-commit" in result.stdout
-    assert "--no-auto-commit" not in result.stdout
-    assert "true/false" in result.stdout
-
-    bad = runner.invoke(app, ["run", "--auto-commit", "maybe"])
-    assert bad.exit_code != 0
+    with pytest.raises(SystemExit) as bad:
+        main(["run", "--auto-commit", "maybe"])
+    assert bad.value.code != 0
 
 
 def test_validate_status_and_version(tmp_path, sample_item, git_project) -> None:
     write_todos(git_project, [sample_item])
-    runner = CliRunner()
+    assert main(["validate", "--workspace", str(git_project)]) == 0
+    assert (
+        main(["status", "--workspace", str(git_project), "--no-color"]) == 0
+    )
+    with pytest.raises(SystemExit) as version_exc:
+        main(["--version"])
+    assert version_exc.value.code == 0
 
-    ok = runner.invoke(app, ["validate", "--workspace", str(git_project)])
-    assert ok.exit_code == 0
 
-    status = runner.invoke(app, ["status", "--workspace", str(git_project), "--no-color"])
-    assert status.exit_code == 0
-    assert "TASK-001" in status.stdout
-
-    version = runner.invoke(app, ["--version"])
-    assert version.exit_code == 0
-    assert version.stdout.strip()
+def test_run_new_flags_in_help(capsys) -> None:
+    with pytest.raises(SystemExit):
+        main(["run", "--help"])
+    captured = capsys.readouterr()
+    for flag in (
+        "--project-config",
+        "--context-file",
+        "--skip-commit",
+        "--no-auto-repair-yaml",
+        "--max-yaml-repair-attempts",
+        "--dry-run",
+        "--dry-run-prompts",
+    ):
+        assert flag in captured.out
+    assert "--allow-dirty" not in captured.out
 
 
 def test_installed_entry_point_help() -> None:

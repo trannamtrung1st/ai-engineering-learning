@@ -7,10 +7,9 @@ import tempfile
 from pathlib import Path
 
 import yaml
-from pydantic import ValidationError as PydanticValidationError
 
 from todos_tool.errors import ValidationError
-from todos_tool.models import ItemStatus, Manifest, TodoItem
+from todos_tool.models import ItemStatus, Manifest, TodoItem, validate_manifest, validate_todo_item
 from todos_tool.paths import resolve_within, validate_item_id, validate_relative_path
 
 
@@ -128,11 +127,11 @@ def load_workspace(
         raise ValidationError([f"Missing manifest: {manifest_path}"])
 
     try:
-        manifest = Manifest.model_validate(_load_yaml(manifest_path))
-    except PydanticValidationError as exc:
-        raise ValidationError(
-            [f"manifest.yaml: {err['loc']}: {err['msg']}" for err in exc.errors()]
-        ) from exc
+        raw_manifest = _load_yaml(manifest_path)
+        validate_manifest(raw_manifest)
+        manifest = Manifest.from_dict(raw_manifest)
+    except ValueError as exc:
+        raise ValidationError([f"manifest.yaml: {exc}"]) from exc
 
     if not manifest.items:
         errors.append("manifest.yaml has no items")
@@ -161,10 +160,10 @@ def load_workspace(
 
         try:
             raw = _load_yaml(item_path)
-            item = TodoItem.model_validate(raw)
-        except PydanticValidationError as exc:
-            for err in exc.errors():
-                errors.append(f"{ref.file}: {err['loc']}: {err['msg']}")
+            validate_todo_item(raw)
+            item = TodoItem.from_dict(raw)
+        except ValueError as exc:
+            errors.append(f"{ref.file}: {exc}")
             continue
         except ValidationError as exc:
             errors.extend(exc.errors)
@@ -202,9 +201,7 @@ def load_workspace(
 def save_item(workspace: Workspace, item: TodoItem) -> None:
     """Write an item YAML back to disk (without source_file)."""
     path = workspace.item_path(item)
-    data = item.model_dump(mode="json", exclude_none=False)
-    data["type"] = item.type.value
-    data["status"] = item.status.value
+    data = item.to_dict()
     if item.result.completed_at is not None:
         data["result"]["completed_at"] = item.result.completed_at.isoformat()
     _atomic_write_text(

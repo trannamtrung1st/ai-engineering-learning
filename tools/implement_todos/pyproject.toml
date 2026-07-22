@@ -9,21 +9,19 @@ description = "Generic TODO execution tool using Cursor Agent CLI"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "pydantic>=2.0",
   "pyyaml>=6.0",
-  "rich>=13.0",
-  "typer>=0.12",
 ]
 
 [project.optional-dependencies]
 dev = [
   "build",
+  "pydantic>=2.0",
   "pytest>=8.0",
   "pytest-asyncio>=0.23",
 ]
 
 [project.scripts]
-todos-tool = "todos_tool.cli:app"
+todos-tool = "todos_tool.cli:run"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

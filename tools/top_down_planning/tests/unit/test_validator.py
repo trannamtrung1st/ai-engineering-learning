@@ -10,7 +10,7 @@ from top_down_planning.models import (
 )
 from top_down_planning.scheduler import initialize_root_plan
 from tests.plan_factory import make_root_plan
-from top_down_planning.validator import validate_response
+from top_down_planning.validator import validate_response, validate_wave_responses
 
 
 def _plan():
@@ -93,3 +93,63 @@ def test_validate_max_children_limit() -> None:
         limits=PlanningLimits(max_children_per_expansion=2),
     )
     assert any("max children" in error for error in errors)
+
+
+def test_validate_cumulative_max_items_within_single_response() -> None:
+    plan = _plan()
+    response = AgentResponse(
+        operations=[
+            ExpandOperation(
+                node_id="item-001",
+                children=[ChildDraft(title="A", objective="a")],
+            )
+        ]
+    )
+    errors = validate_response(
+        plan,
+        response,
+        selected_ids=["item-001"],
+        limits=PlanningLimits(max_items=1),
+    )
+    assert any("max items" in error for error in errors)
+
+
+def test_validate_wave_responses_checks_combined_item_limit() -> None:
+    plan = _plan()
+    from top_down_planning.models import PlanItem
+
+    plan.plan.append(
+        PlanItem(
+            id="item-002",
+            parent_id=None,
+            title="Sibling",
+            objective="sibling",
+            depth=0,
+            order=2,
+        )
+    )
+    first = AgentResponse(
+        operations=[
+            ExpandOperation(
+                node_id="item-001",
+                children=[ChildDraft(title="A", objective="a")],
+            )
+        ]
+    )
+    second = AgentResponse(
+        operations=[
+            ExpandOperation(
+                node_id="item-002",
+                children=[ChildDraft(title="B", objective="b")],
+            )
+        ]
+    )
+    errors = validate_wave_responses(
+        plan,
+        [
+            (["item-001"], first),
+            (["item-002"], second),
+        ],
+        limits=PlanningLimits(max_items=2),
+    )
+    assert any("max items" in error for error in errors)

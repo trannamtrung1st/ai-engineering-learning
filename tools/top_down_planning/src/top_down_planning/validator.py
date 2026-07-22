@@ -82,9 +82,64 @@ def validate_response(
         errors.extend(_validate_operation(plan, item, operation, limits=limits))
 
     if not errors:
+        errors.extend(
+            _validate_cumulative_item_limit(plan, list(op_by_node.values()), limits=limits)
+        )
+
+    if not errors:
         errors.extend(_validate_applied_state(plan, response))
 
     return errors
+
+
+def validate_wave_responses(
+    plan: PlanState,
+    batches: list[tuple[list[str], AgentResponse]],
+    *,
+    limits: PlanningLimits,
+) -> list[str]:
+    """Validate independent concurrent batch responses against one plan snapshot."""
+    all_operations: list[PlanningOperation] = []
+    for selected_ids, response in batches:
+        errors = validate_response(
+            plan,
+            response,
+            selected_ids=selected_ids,
+            limits=limits,
+        )
+        if errors:
+            return errors
+        all_operations.extend(response.operations)
+
+    errors = _validate_cumulative_item_limit(plan, all_operations, limits=limits)
+    if errors:
+        return errors
+
+    updated = plan
+    try:
+        for _, response in batches:
+            updated = apply_response(updated, response)
+    except ValueError as exc:
+        return [str(exc)]
+    return structural_errors(updated)
+
+
+def _validate_cumulative_item_limit(
+    plan: PlanState,
+    operations: list[PlanningOperation],
+    *,
+    limits: PlanningLimits,
+) -> list[str]:
+    projected_total = len(plan.plan)
+    for operation in operations:
+        if isinstance(operation, ExpandOperation):
+            projected_total += len(operation.children)
+            if projected_total > limits.max_items:
+                return [
+                    "Operations would exceed max items "
+                    f"({projected_total} > {limits.max_items})"
+                ]
+    return []
 
 
 def _validate_applied_state(plan: PlanState, response: AgentResponse) -> list[str]:
@@ -214,3 +269,4 @@ def _validate_out_of_scope(
     if not operation.reason.strip():
         return [f"Out-of-scope item {item.id} requires a reason"]
     return []
+

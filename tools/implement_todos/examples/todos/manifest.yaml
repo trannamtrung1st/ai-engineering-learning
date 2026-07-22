@@ -10,7 +10,8 @@ settings:
   auto_commit: true
   stop_on_failure: true
   model: composer-2.5
-  project_check: bash scripts/check
+  # Optional legacy shared gate; profile evidence.required_commands are preferred
+  project_check: pytest
 
 items:
   - id: SETUP-001

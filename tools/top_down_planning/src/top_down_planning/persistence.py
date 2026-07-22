@@ -107,9 +107,20 @@ def load_run_state(output_dir: Path) -> RunState | None:
         return None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
+        data = _normalize_legacy_run_state(data)
         return RunState.model_validate(data)
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         raise PersistenceError(f"Failed to load run state from {path}: {exc}") from exc
+
+
+def _normalize_legacy_run_state(data: dict[str, Any]) -> dict[str, Any]:
+    limits = data.get("limits")
+    if isinstance(limits, dict) and "concurrent_batches" not in limits:
+        limits = dict(limits)
+        limits["concurrent_batches"] = 1
+        data = dict(data)
+        data["limits"] = limits
+    return data
 
 
 def save_run_state(output_dir: Path, state: RunState) -> None:

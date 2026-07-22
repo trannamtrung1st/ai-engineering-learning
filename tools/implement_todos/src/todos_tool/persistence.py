@@ -27,8 +27,8 @@ def load_state(runs_dir: Path) -> RunState | None:
         return None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        return RunState.model_validate(data)
-    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        return RunState.from_dict(data)
+    except (OSError, json.JSONDecodeError, ValueError, TypeError) as exc:
         raise PersistenceError(f"Failed to load state from {path}: {exc}") from exc
 
 
@@ -36,7 +36,7 @@ def save_state(runs_dir: Path, state: RunState) -> None:
     runs_dir.mkdir(parents=True, exist_ok=True)
     state.updated_at = datetime.now(timezone.utc)
     path = state_path(runs_dir)
-    payload = state.model_dump(mode="json")
+    payload = state.to_dict()
     _atomic_write_json(path, payload)
 
 

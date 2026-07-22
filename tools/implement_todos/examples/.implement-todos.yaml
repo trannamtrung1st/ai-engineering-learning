@@ -1,0 +1,19 @@
+schema_version: 1
+
+context:
+  files:
+    - path: README.md
+      required: false
+  instructions:
+    - Follow the repository's existing architecture and naming conventions.
+
+authority:
+  forbidden_path_globs: []
+
+evidence:
+  required_commands:
+    - pytest
+  forbidden_command_patterns: []
+
+git:
+  commit_prefix: "agent:"

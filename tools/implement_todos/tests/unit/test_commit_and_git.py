@@ -8,16 +8,17 @@ import pytest
 
 from todos_tool.commit_message import generate_commit_message, validate_commit_message
 from todos_tool.errors import GitError
+from todos_tool.git_finalize import finalize_worktree
 from todos_tool.git_service import (
     filter_stageable_paths,
+    head_sha,
     is_ignored_path,
     refuse_if_dirty,
-    refuse_unrelated_staged,
     stage_paths,
     staged_paths,
     status,
 )
-from todos_tool.models import ItemType, TodoItem
+from todos_tool.models import ItemType, ProvenanceKind, TodoItem
 
 
 def _item(item_type: ItemType = ItemType.FEATURE) -> TodoItem:
@@ -32,7 +33,7 @@ def _item(item_type: ItemType = ItemType.FEATURE) -> TodoItem:
 
 def test_commit_message_prefix_and_length() -> None:
     msg = generate_commit_message(_item(), "src/auth.py | 10 +++++")
-    assert msg.startswith("feat:")
+    assert msg.startswith("agent: feat:")
     assert len(msg) <= 72
     validate_commit_message(msg, _item())
 
@@ -42,18 +43,26 @@ def test_commit_message_bans_agent_words() -> None:
         validate_commit_message("feat: cursor agent todo attempt")
 
 
-def test_dirty_tree_refused(git_project: Path) -> None:
+def test_dirty_tree_allowed_by_default(git_project: Path) -> None:
     (git_project / "dirty.txt").write_text("x", encoding="utf-8")
-    with pytest.raises(GitError):
-        refuse_if_dirty(git_project, allow_dirty=False)
-
-
-def test_todos_metadata_dirty_allowed(git_project: Path) -> None:
-    todos_item = git_project / "todos" / "items" / "001.yaml"
-    todos_item.parent.mkdir(parents=True)
-    todos_item.write_text("id: x\n", encoding="utf-8")
-    st = refuse_if_dirty(git_project, allow_dirty=False)
+    st = refuse_if_dirty(git_project, allow_dirty=True)
     assert st.is_dirty
+
+
+def test_finalize_includes_preexisting_dirty_changes(git_project: Path) -> None:
+    baseline = head_sha(git_project)
+    (git_project / "dirty.txt").write_text("preexisting\n", encoding="utf-8")
+    (git_project / "tracked.txt").write_text("new\n", encoding="utf-8")
+
+    result = finalize_worktree(
+        git_project,
+        commit_prefix="agent:",
+        skip_commit=False,
+        baseline_head=baseline,
+    )
+
+    assert result.provenance_kind == ProvenanceKind.DRIVER
+    assert result.commit_sha != baseline
 
 
 def test_explicit_staging_only(git_project: Path) -> None:
@@ -83,15 +92,6 @@ def test_filter_stageable_paths_skips_gitignored(git_project: Path) -> None:
     )
     assert stageable == ["tracked.txt"]
 
-
-def test_unrelated_staged_refused_even_with_allow_dirty(git_project: Path) -> None:
-    (git_project / "a.txt").write_text("a", encoding="utf-8")
-    stage_paths(git_project, ["a.txt"])
-    assert staged_paths(git_project) == ["a.txt"]
-    with pytest.raises(GitError):
-        refuse_if_dirty(git_project, allow_dirty=True)
-    with pytest.raises(GitError):
-        refuse_unrelated_staged(git_project)
 
 
 def test_unrelated_unstaged_allowed_with_allow_dirty(git_project: Path) -> None:

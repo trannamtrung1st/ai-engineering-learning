@@ -35,12 +35,32 @@ def test_project_check_precedes_item_commands() -> None:
     ]
 
 
+def test_profile_required_commands_precede_manifest_and_item() -> None:
+    from todos_tool.project_context import EvidencePolicy, GitPolicy, ProjectContext
+
+    manifest = Manifest(settings=ManifestSettings(project_check="make lint"))
+    ctx = ProjectContext(
+        schema_version=1,
+        context_files=(),
+        instructions=(),
+        authority=ProjectContext.neutral().authority,
+        evidence=EvidencePolicy(required_commands=("pytest",)),
+        git=GitPolicy(),
+    )
+    item = _item(commands=["make test"])
+    assert resolve_validation_commands(manifest, item, project_context=ctx) == [
+        "pytest",
+        "make lint",
+        "make test",
+    ]
+
+
 def test_deduplicates_normalized_commands() -> None:
     manifest = Manifest(settings=ManifestSettings(project_check="pytest"))
     item = _item(commands=["  pytest  "])
     assert resolve_validation_commands(manifest, item) == ["pytest"]
 
 
-def test_manifest_requires_project_check() -> None:
-    with pytest.raises(Exception):
-        ManifestSettings()
+def test_project_check_optional_when_absent() -> None:
+    manifest = Manifest(settings=ManifestSettings())
+    assert resolve_validation_commands(manifest, _item()) == []

@@ -355,7 +355,7 @@ async def test_resume_refuses_live_agent_pid(
 
 
 @pytest.mark.asyncio
-async def test_allow_dirty_agent_touching_pre_dirty_fails(
+async def test_allow_dirty_whole_worktree_commits_preexisting_changes(
     fake_agent: Path,
     git_project: Path,
     sample_item: dict,
@@ -392,10 +392,12 @@ async def test_allow_dirty_agent_touching_pre_dirty_fails(
         )
     )
     report = await orch.run(todo_id="TASK-001")
-    assert report.retryable == ["TASK-001"]
-    assert "already dirty" in report.errors["TASK-001"]
+    assert report.completed == ["TASK-001"]
     ws = load_workspace(git_project)
-    assert ws.get("TASK-001").status == ItemStatus.IN_PROGRESS
+    item = ws.get("TASK-001")
+    assert item is not None
+    assert item.status == ItemStatus.DONE
+    assert "agent changed this" in pre.read_text(encoding="utf-8")
 
 
 def test_staged_paths_nul_safe(git_project: Path) -> None:
@@ -556,11 +558,14 @@ async def test_resume_dry_run_enforces_dirty_tree_preflight(
     state = new_run_state(item.id, head_sha(git_project))
     state.logical_attempt = 1
     state.phase = Phase.WORK
-    state.pre_dirty_fingerprints = capture_pre_dirty_fingerprints(
+    save_state(ws.runs_dir(item.id), state)
+    state_path = ws.runs_dir(item.id) / "state.json"
+    raw = json.loads(state_path.read_text(encoding="utf-8"))
+    raw["pre_dirty_fingerprints"] = capture_pre_dirty_fingerprints(
         git_project,
         {"unrelated.txt"},
     )
-    save_state(ws.runs_dir(item.id), state)
+    state_path.write_text(json.dumps(raw), encoding="utf-8")
     unrelated.write_text("after\n", encoding="utf-8")
 
     orch = Orchestrator(

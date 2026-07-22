@@ -136,9 +136,16 @@ Supported decomposition statuses:
 - `blocked`
 - `out_of_scope`
 
-### Breadth-first selection
+### Concurrent batch selection
 
-Each iteration selects items with `decomposition_status = needs_expansion` at the **minimum current depth**, ordered by insertion order, capped by `--batch-size`.
+Each planning wave selects expandable items across independent branches, preferring
+shallower items first (tie-broken by insertion order). Up to `--concurrent-batches`
+agent sessions run in parallel per wave (default `3`), and each batch is capped by
+`--batch-size`. Each launched batch counts as one iteration toward `--max-iterations`.
+
+When a wave completes, all batch responses are validated against the same plan
+snapshot and merged atomically. If any batch in a wave fails after retries, the
+entire wave is discarded and nothing from that wave is applied.
 
 ### Agent operation schema
 
@@ -172,7 +179,7 @@ digests of the resolved goal content.
 
 Actionability criteria are inferred from `--output-goal`. Implementation-oriented goals require expected outputs and acceptance criteria on actionable leaves.
 
-Planning completes when no expandable items remain and the graph is structurally valid. Safety limits (`--max-iterations`, `--max-depth`, `--max-items`, `--batch-size`, `--max-retries`) preserve partial output with explicit final statuses.
+Planning completes when no expandable items remain and the graph is structurally valid. Safety limits (`--max-iterations`, `--max-depth`, `--max-items`, `--batch-size`, `--concurrent-batches`, `--max-retries`) preserve partial output with explicit final statuses.
 
 ### Persistence and resume
 
@@ -184,7 +191,14 @@ During render, `plan.yaml` is backed up and restored automatically if the render
 
 ### Stream events
 
-When `--stream-json` is enabled, render-phase events include:
+When `--stream-json` is enabled, planning-phase events include:
+
+- `planning.started` (with `concurrent_batches`)
+- `wave.started` / `wave.completed` / `wave.retrying`
+- `iteration.started` / `iteration.completed` (with `batch_index`, `batch_count`)
+- `validation.failed`, `item.expanded`, `item.actionable`, etc.
+
+Render-phase events include:
 
 - `render.started`
 - `render.completed` (with `artifacts`)

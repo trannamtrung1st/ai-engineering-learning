@@ -10,9 +10,9 @@ import pytest
 
 from tests.helpers import write_todos
 from todos_tool.errors import GitError
-from todos_tool.git_service import head_sha, stage_paths, staged_paths
+from todos_tool.git_service import head_sha
 from todos_tool.manifest import load_workspace, save_item
-from todos_tool.models import CommitState, ItemStatus, Phase, Transition
+from todos_tool.models import CommitState, ItemStatus, Phase, ProvenanceKind, Transition
 from todos_tool.orchestrator import Orchestrator, RunConfig
 from todos_tool.persistence import (
     append_ndjson,
@@ -31,24 +31,8 @@ def test_append_ndjson_roundtrip(tmp_path: Path) -> None:
     assert json.loads(lines[0])["type"] == "assistant"
 
 
-def test_stage_paths_allows_extra_todos_metadata(git_project: Path) -> None:
-    todos_item = git_project / "todos" / "items" / "001.yaml"
-    todos_item.parent.mkdir(parents=True, exist_ok=True)
-    todos_item.write_text("id: x\n", encoding="utf-8")
-    (git_project / "src").mkdir(exist_ok=True)
-    tracked = git_project / "src/change.py"
-    tracked.write_text("x = 1\n", encoding="utf-8")
-
-    stage_paths(git_project, ["todos/items/001.yaml"], todos_dir="todos")
-    stage_paths(git_project, ["src/change.py"], todos_dir="todos")
-    assert set(staged_paths(git_project)) == {
-        "todos/items/001.yaml",
-        "src/change.py",
-    }
-
-
 @pytest.mark.asyncio
-async def test_no_stageable_paths_rolls_back_to_in_progress(
+async def test_resume_commit_includes_todos_metadata(
     git_project: Path,
     sample_item: dict,
 ) -> None:
@@ -57,18 +41,10 @@ async def test_no_stageable_paths_rolls_back_to_in_progress(
     item = ws.items[0]
     item.status = ItemStatus.IN_PROGRESS
     save_item(ws, item)
-    subprocess.run(["git", "add", "todos"], cwd=git_project, check=True)
-    subprocess.run(["git", "commit", "-m", "sync todos metadata"], cwd=git_project, check=True)
 
     runs_dir = ws.runs_dir(item.id)
     runs_dir.mkdir(parents=True, exist_ok=True)
-    baseline = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=git_project,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
+    baseline = head_sha(git_project)
     state = {
         "schema_version": 1,
         "item_id": item.id,
@@ -80,14 +56,10 @@ async def test_no_stageable_paths_rolls_back_to_in_progress(
         "review": {"decision": "pass", "summary": "ok", "issues": []},
         "commit_state": "failed",
         "baseline_head": baseline,
-        "work_summary": "only ignored changes",
-        "changed_paths": ["ignored/secret.txt"],
+        "work_summary": "metadata only",
+        "changed_paths": [],
         "history": [],
     }
-    (git_project / ".gitignore").write_text("ignored/\n", encoding="utf-8")
-    ignored = git_project / "ignored"
-    ignored.mkdir()
-    (ignored / "secret.txt").write_text("nope\n", encoding="utf-8")
     (runs_dir / "state.json").write_text(json.dumps(state), encoding="utf-8")
 
     orch = Orchestrator(
@@ -95,19 +67,10 @@ async def test_no_stageable_paths_rolls_back_to_in_progress(
             workspace_root=git_project,
             skip_probe=True,
             no_color=True,
-            allow_dirty=True,
         )
     )
     report = await orch.resume()
-    assert report.retryable == ["TASK-001"]
-
-    ws = load_workspace(git_project)
-    item = ws.get("TASK-001")
-    assert item is not None
-    assert item.status == ItemStatus.IN_PROGRESS
-    saved_state = load_state(runs_dir)
-    assert saved_state is not None
-    assert saved_state.commit_state == CommitState.FAILED
+    assert report.completed == ["TASK-001"]
 
 
 @pytest.mark.asyncio
@@ -151,6 +114,9 @@ async def test_resume_after_failed_commit(
     assert item is not None
     assert item.status == ItemStatus.DONE
     assert item.result.commit_sha
+    saved = load_state(runs_dir)
+    assert saved is not None
+    assert saved.provenance_kind == ProvenanceKind.DRIVER
 
 
 @pytest.mark.asyncio
@@ -211,7 +177,7 @@ async def test_stop_on_failure_false_continues(
 
 
 @pytest.mark.asyncio
-async def test_backfill_rejects_unrelated_dirty_file(
+async def test_backfill_commits_with_unrelated_dirty_file(
     git_project: Path,
     sample_item: dict,
 ) -> None:
@@ -235,17 +201,24 @@ async def test_backfill_rejects_unrelated_dirty_file(
             workspace_root=git_project,
             skip_probe=True,
             no_color=True,
-            allow_dirty=False,
             auto_commit=True,
         )
     )
     runs_dir = git_project / "todos" / "runs" / "TASK-001"
     runs_dir.mkdir(parents=True, exist_ok=True)
-    from todos_tool.persistence import new_run_state, save_state
-
     state = new_run_state("TASK-001", head_sha(git_project))
     state.changed_paths = ["src/greeting.py"]
+    from todos_tool.persistence import save_state
+
     save_state(runs_dir, state)
 
-    with pytest.raises(GitError, match="unrelated"):
-        await orch.commit_item("TASK-001")
+    sha = await orch.commit_item("TASK-001")
+    assert sha
+    log = subprocess.run(
+        ["git", "log", "--oneline", "-n", "1"],
+        cwd=git_project,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert "finalize worktree" in log.stdout

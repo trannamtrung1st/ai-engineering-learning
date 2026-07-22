@@ -1,33 +1,135 @@
-"""Prompt builders for work and review Cursor sessions."""
+"""Prompt builders for work, review, and YAML repair Cursor sessions."""
 
 from __future__ import annotations
 
+from typing import Any
+
 from todos_tool.models import TodoItem, ValidationCommandResult
+from todos_tool.project_context import ProjectContext, ResolvedContextFile
 from todos_tool.validation_runner import format_validation_results
 
-INSTRUCTION_DISCOVERY = """
-## Mandatory instruction discovery
+LONG_RUNNING_COMMANDS = """
+# Long-running commands
 
-Before making changes or decisions, inspect applicable project instructions where present:
-
-- AGENTS.md
-- CLAUDE.md
-- CONTRIBUTING.md
-- README.md
-- .cursor/rules/
-- .cursor/skills/**/SKILL.md
-
-Rules are mandatory when applicable. Skills are selected task-specific workflows.
-
-You must:
-1. Identify applicable global and scoped rules.
-2. Select relevant skills only.
-3. Follow required workflows and validation.
-4. Re-check scoped rules when modifying new directories or file types.
-5. Report instruction conflicts in your summary.
-
-Do not skip this discovery process.
+- Run potentially long commands in the tool-managed background; never use
+  shell `&`, `nohup`, or another detached process.
+- Continue independent work while a background command runs.
+- Check every background command before ending the session.
+- If a command exceeds its expected runtime, inspect its latest output and
+  process activity before deciding it is hung.
+- If it is hung, terminate its complete process tree and record the command as
+  failed or inconclusive. A killed command is not passing evidence.
+- Never emit the final driver signal while a shell command is still running.
 """.strip()
+
+
+def _join_parts(parts: list[str]) -> str:
+    return "\n".join(part for part in parts if part is not None and part != "")
+
+
+def _bullet_lines(items: list[str]) -> str:
+    lines = [f"- {item.strip()}" for item in items if item and str(item).strip()]
+    return "\n".join(lines)
+
+
+def _optional_section(title: str, body: str | None) -> list[str]:
+    if body is None or not body.strip():
+        return []
+    return ["", f"## {title}", body.strip()]
+
+
+def _render_project_context(
+    project_context: ProjectContext | None,
+    resolved_context_files: list[ResolvedContextFile] | None,
+) -> list[str]:
+    ctx = project_context or ProjectContext.neutral()
+    resolved = resolved_context_files or []
+    if not ctx.context_files and not ctx.instructions and not resolved:
+        return []
+
+    parts: list[str] = ["", "## Repository context"]
+    if resolved:
+        file_lines = []
+        for entry in resolved:
+            suffix = ""
+            if not entry.exists:
+                suffix = " (missing)"
+            req = " required" if entry.required else ""
+            file_lines.append(f"- `{entry.path}`{req}{suffix}")
+        parts.extend(["", "### Context files", "\n".join(file_lines)])
+    elif ctx.context_files:
+        parts.extend(
+            [
+                "",
+                "### Context files",
+                _bullet_lines([ref.path for ref in ctx.context_files]),
+            ]
+        )
+
+    if ctx.instructions:
+        parts.extend(["", "### Instructions", _bullet_lines(list(ctx.instructions))])
+
+    parts.extend(
+        [
+            "",
+            "Read applicable context files before making edits or decisions.",
+        ]
+    )
+    return parts
+
+
+def _render_manifest_policy(
+    *,
+    authority: list[str] | None,
+    hard_rules: list[str] | None,
+    stop_conditions: list[str] | None,
+    out_of_scope: str | None,
+) -> list[str]:
+    parts: list[str] = []
+    if authority:
+        parts.extend(_optional_section("Authority", _bullet_lines(authority)))
+    if hard_rules:
+        parts.extend(_optional_section("Hard rules", _bullet_lines(hard_rules)))
+    if stop_conditions:
+        parts.extend(_optional_section("Stop conditions", _bullet_lines(stop_conditions)))
+    if out_of_scope and out_of_scope.strip():
+        parts.extend(_optional_section("Out of scope", out_of_scope.strip()))
+    return parts
+
+
+def _render_item_contract(
+    *,
+    contract_refs: list[str] | None,
+    checklist: list[dict[str, Any]] | None,
+    item_context_files: list[str],
+) -> list[str]:
+    parts: list[str] = []
+    if contract_refs:
+        parts.extend(_optional_section("Contract references", _bullet_lines(contract_refs)))
+    if checklist:
+        lines = []
+        for entry in checklist:
+            if not isinstance(entry, dict):
+                continue
+            label = str(entry.get("item") or entry.get("text") or entry.get("id") or "").strip()
+            if not label:
+                continue
+            done = entry.get("done")
+            status = entry.get("status")
+            if done is True or status == "done":
+                state = "done"
+            elif done is False or status in {"pending", "open"}:
+                state = "open"
+            else:
+                state = str(status or "unknown")
+            lines.append(f"- [{state}] {label}")
+        if lines:
+            parts.extend(["", "## Checklist", "\n".join(lines)])
+    if item_context_files:
+        parts.extend(
+            _optional_section("Item context files", _bullet_lines(item_context_files))
+        )
+    return parts
 
 
 def build_work_prompt(
@@ -36,19 +138,24 @@ def build_work_prompt(
     logical_attempt: int,
     resolved_commands: list[str],
     todos_dir: str = "todos",
+    project_context: ProjectContext | None = None,
+    resolved_context_files: list[ResolvedContextFile] | None = None,
+    authority: list[str] | None = None,
+    hard_rules: list[str] | None = None,
+    stop_conditions: list[str] | None = None,
+    out_of_scope: str | None = None,
+    contract_refs: list[str] | None = None,
+    checklist: list[dict[str, Any]] | None = None,
     previous_feedback: str | None = None,
     validation_failure_feedback: str | None = None,
     continuation: str | None = None,
     allow_full_check: bool = False,
 ) -> str:
-    criteria = "\n".join(f"- {c}" for c in item.acceptance_criteria)
-    command_lines = "\n".join(f"- `{c}`" for c in resolved_commands) or "- (none configured)"
-    context_files = "\n".join(f"- {f}" for f in item.context.files) or "- (none specified)"
+    criteria = _bullet_lines(item.acceptance_criteria)
+    command_lines = _bullet_lines([f"`{c}`" for c in resolved_commands])
 
     parts = [
         "# Work session: implement one TODO item",
-        "",
-        INSTRUCTION_DISCOVERY,
         "",
         f"## Item `{item.id}`",
         f"**Title:** {item.title}",
@@ -60,32 +167,54 @@ def build_work_prompt(
         "",
         "## Acceptance criteria",
         criteria,
-        "",
-        "## Authoritative validation commands (orchestrator-owned)",
-        command_lines,
-        "",
-        "The orchestrator runs these commands once as the authoritative gate before review.",
-        "Do NOT run the full authoritative check suite yourself unless this item is "
-        "explicitly creating or bootstrapping that check.",
-        "",
-        "## Context files",
-        context_files,
-        "",
-        "## Requirements",
-        "1. Inspect the current repository and applicable instructions/skills.",
-        "2. Implement the requested change.",
-        "3. Use targeted local checks while editing (single tests, lint on touched files).",
-        "4. Leave the working tree ready for independent review.",
-        "5. Return a concise summary of what changed and any targeted checks you ran.",
-        "",
-        "## Hard constraints",
-        "- Do NOT commit.",
-        "- Do NOT mark the item complete or edit todos item status to done.",
-        "- Do NOT use `git add .` or `git add -A`.",
-        "- If the item should be split/deferred/replaced, write a proposal JSON file to "
-        f"`{todos_dir}/runs/{item.id}/restructure-proposal.json` instead of silently "
-        "weakening criteria.",
     ]
+    parts.extend(_render_item_contract(
+        contract_refs=contract_refs,
+        checklist=checklist,
+        item_context_files=item.context.files,
+    ))
+    parts.extend(_render_manifest_policy(
+        authority=authority,
+        hard_rules=hard_rules,
+        stop_conditions=stop_conditions,
+        out_of_scope=out_of_scope,
+    ))
+    parts.extend(_render_project_context(project_context, resolved_context_files))
+
+    if command_lines:
+        parts.extend(
+            [
+                "",
+                "## Authoritative validation commands (orchestrator-owned)",
+                command_lines,
+                "",
+                "The orchestrator runs these commands once as the authoritative gate before review.",
+                "Do NOT run the full authoritative check suite yourself unless this item is "
+                "explicitly creating or bootstrapping that check.",
+            ]
+        )
+
+    parts.extend(
+        [
+            "",
+            LONG_RUNNING_COMMANDS,
+            "",
+            "## Requirements",
+            "1. Inspect the current repository and applicable context/instructions.",
+            "2. Implement the requested change.",
+            "3. Use targeted local checks while editing (single tests, lint on touched files).",
+            "4. Leave the working tree ready for independent review.",
+            "5. Return a concise summary of what changed and any targeted checks you ran.",
+            "",
+            "## Hard constraints",
+            "- Do NOT commit.",
+            "- Do NOT mark the item complete or edit todos item status to done.",
+            "- Do NOT use `git add .` or `git add -A`.",
+            "- If the item should be split/deferred/replaced, write a proposal JSON file to "
+            f"`{todos_dir}/runs/{item.id}/restructure-proposal.json` instead of silently "
+            "weakening criteria.",
+        ]
+    )
 
     if allow_full_check:
         parts.extend(
@@ -129,7 +258,7 @@ def build_work_prompt(
             ]
         )
 
-    return "\n".join(parts)
+    return _join_parts(parts)
 
 
 def build_review_prompt(
@@ -140,12 +269,20 @@ def build_review_prompt(
     git_diff: str,
     git_status: str,
     resolved_commands: list[str],
+    project_context: ProjectContext | None = None,
+    resolved_context_files: list[ResolvedContextFile] | None = None,
+    authority: list[str] | None = None,
+    hard_rules: list[str] | None = None,
+    stop_conditions: list[str] | None = None,
+    out_of_scope: str | None = None,
+    contract_refs: list[str] | None = None,
+    checklist: list[dict[str, Any]] | None = None,
     authoritative_validation: list[ValidationCommandResult] | None = None,
     prompt_only: bool = False,
     continuation: str | None = None,
 ) -> str:
-    criteria = "\n".join(f"- {c}" for c in item.acceptance_criteria)
-    command_lines = "\n".join(f"- `{c}`" for c in resolved_commands) or "- (none configured)"
+    criteria = _bullet_lines(item.acceptance_criteria)
+    command_lines = _bullet_lines([f"`{c}`" for c in resolved_commands])
     validation_text = (
         "(not executed in prompt-only dry run)"
         if prompt_only
@@ -180,9 +317,8 @@ def build_review_prompt(
     parts = [
         "# Independent review session (read-only)",
         "",
-        INSTRUCTION_DISCOVERY,
-        "",
-        "You are an independent reviewer. Remain read-only. Do not edit files or commit.",
+        "You are an independent reviewer. Remain read-only. Do not edit files, run shell "
+        "commands, or commit.",
         "",
         f"## Item `{item.id}`",
         f"**Title:** {item.title}",
@@ -194,23 +330,41 @@ def build_review_prompt(
         "",
         "## Acceptance criteria",
         criteria,
-        "",
-        "## Required validation commands",
-        command_lines,
-        "",
-        "## Authoritative orchestrator validation",
-        validation_text,
-        "",
-        "These results were produced outside the Cursor sessions. Treat them as authoritative.",
-        "Copy each command, passed value, and exit_code exactly into your JSON decision.",
-        "Do NOT rerun validation commands. Inspect code, diffs, and the supplied output only.",
-        "",
-        "## Work summary from implementer",
-        (work_summary or "(none provided)").strip(),
     ]
+    parts.extend(_render_item_contract(
+        contract_refs=contract_refs,
+        checklist=checklist,
+        item_context_files=item.context.files,
+    ))
+    parts.extend(_render_manifest_policy(
+        authority=authority,
+        hard_rules=hard_rules,
+        stop_conditions=stop_conditions,
+        out_of_scope=out_of_scope,
+    ))
+    parts.extend(_render_project_context(project_context, resolved_context_files))
+
+    if command_lines:
+        parts.extend(
+            [
+                "",
+                "## Required validation commands",
+                command_lines,
+            ]
+        )
 
     parts.extend(
         [
+            "",
+            "## Authoritative orchestrator validation",
+            validation_text,
+            "",
+            "These results were produced outside the Cursor sessions. Treat them as authoritative.",
+            "Copy each command, passed value, and exit_code exactly into your JSON decision.",
+            "Do NOT rerun validation commands. Inspect code, diffs, and the supplied output only.",
+            "",
+            "## Work summary from implementer",
+            (work_summary or "(none provided)").strip(),
             "",
             "## Current git status",
             "```",
@@ -237,7 +391,7 @@ def build_review_prompt(
         [
             "",
             "## Your task",
-            "Independently inspect the repository, instructions, rules/skills, diff, and validation.",
+            "Independently inspect the repository, context files, diff, and validation output.",
             "Return EXACTLY one JSON object matching this schema (no prose outside a JSON code fence):",
             "",
             "```json",
@@ -251,14 +405,69 @@ def build_review_prompt(
             "Map decisions: pass→mark_done, fail→retry, blocked→block.",
         ]
     )
-    return "\n".join(parts)
+    return _join_parts(parts)
+
+
+def build_repair_prompt(
+    *,
+    diagnostic: str,
+    todos_dir: str,
+    yaml_files: list[str],
+    project_context: ProjectContext | None = None,
+    resolved_context_files: list[ResolvedContextFile] | None = None,
+    authoring_guide_path: str | None = None,
+    schema_module: str = "todos_tool.manifest",
+) -> str:
+    file_lines = _bullet_lines(yaml_files) or "- (none discovered)"
+    parts = [
+        "# YAML repair session (TODO set only)",
+        "",
+        "Repair malformed TODO-set YAML so the driver can reload and validate the work package.",
+        "",
+        "## Loader diagnostic",
+        diagnostic.strip(),
+        "",
+        "## TODO set location",
+        f"Directory: `{todos_dir}`",
+        "",
+        "## Candidate YAML files",
+        file_lines,
+    ]
+    parts.extend(_render_project_context(project_context, resolved_context_files))
+
+    if authoring_guide_path:
+        parts.extend(
+            [
+                "",
+                "## Authoring guide",
+                f"Read `{authoring_guide_path}` for schema semantics and completion behavior.",
+            ]
+        )
+
+    parts.extend(
+        [
+            "",
+            "## Machine authority",
+            f"Use `{schema_module}` as the authoritative loader/schema reference.",
+            "",
+            "## Repair contract",
+            "- Edit only existing TODO YAML required to fix the diagnostic.",
+            "- Preserve intent, ids, ordering, dependencies, checklist state, done values, "
+            "and evidence unless the diagnostic requires a contract correction.",
+            "- Never mark additional work complete.",
+            "- Do not change files outside the TODO YAML set.",
+            "- Do not stage, commit, reset, stash, or rewrite history.",
+            "- Leave acceptance to driver reload and validation.",
+        ]
+    )
+    return _join_parts(parts)
 
 
 def prompt_requires_instruction_discovery(prompt: str) -> bool:
+    """Return True when the work prompt includes generic lifecycle guidance."""
     markers = (
-        "AGENTS.md",
-        ".cursor/rules/",
-        ".cursor/skills",
-        "Mandatory instruction discovery",
+        "Long-running commands",
+        "tool-managed background",
+        "Never emit the final driver signal while a shell command is still running",
     )
     return all(marker in prompt for marker in markers)

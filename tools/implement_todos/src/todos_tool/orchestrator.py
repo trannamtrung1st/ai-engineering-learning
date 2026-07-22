@@ -2,54 +2,40 @@
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
-from todos_tool.commit_message import generate_commit_message
 from todos_tool.console_renderer import ConsoleRenderer
 from todos_tool.continuation import (
     apply_restructure_proposal,
     build_continuation_context,
     load_restructure_proposal,
-    snapshot_pre_existing_dirty,
 )
 from todos_tool.cursor_client import CursorClient, SessionResult
 from todos_tool.errors import (
     CursorEnvironmentError,
     CursorSessionError,
     GitError,
-    PersistenceError,
     ReviewError,
     RestructuringError,
     SchedulingError,
     TodosToolError,
     UserInterrupted,
 )
+from todos_tool.git_finalize import finalize_worktree
 from todos_tool.git_service import (
-    capture_pre_dirty_fingerprints,
-    commit,
     ensure_git_repo,
-    expand_path_prefixes,
-    filter_stageable_paths,
-    has_staged_changes,
     head_sha,
     paths_changed_since,
-    paths_overlap,
-    refuse_if_dirty,
-    refuse_if_dirty_only_permitted,
-    refuse_unrelated_staged,
-    require_pre_dirty_fingerprints,
-    require_usable_baseline,
-    stage_paths,
-    staged_diff_stat,
     status,
-    diff_text,
     verify_commit_sha,
     verify_pre_dirty_unchanged,
 )
-from todos_tool.manifest import Workspace, load_workspace, save_item
+from todos_tool.manifest import Workspace, save_item
 from todos_tool.models import (
     CommitState,
     ItemStatus,
@@ -64,30 +50,29 @@ from todos_tool.persistence import (
     new_run_state,
     record_transition,
     save_state,
+    state_path,
     write_json,
 )
+from todos_tool.profile_loader import (
+    load_project_context,
+    resolve_context_files,
+    validate_required_context,
+)
+from todos_tool.project_context import ProjectContext
 from todos_tool.prompts import build_review_prompt, build_work_prompt
 from todos_tool.reviewer import accept_decision, parse_review_decision
+from todos_tool.review_context import build_review_context
+from todos_tool.run_config import RunConfig
 from todos_tool.scheduler import list_ready, next_ready
 from todos_tool.validation_runner import (
     format_validation_results,
     resolve_validation_commands,
     run_validation_commands,
 )
+from todos_tool.workspace_loader import load_workspace_repairable
 
 
-@dataclass
-class RunConfig:
-    workspace_root: Path
-    todos_dir: str = "todos"
-    allow_dirty: bool = False
-    no_color: bool = False
-    model: str | None = None
-    stop_on_failure: bool | None = None
-    auto_commit: bool | None = None
-    agent_bin: str | None = None
-    skip_probe: bool = False
-    dry_run_prompts: bool = False
+__all__ = ["Orchestrator", "RunConfig", "RunReport"]
 
 
 @dataclass
@@ -105,46 +90,110 @@ class Orchestrator:
     def __init__(self, config: RunConfig) -> None:
         self.config = config
         self.renderer = ConsoleRenderer(no_color=config.no_color)
-        self.workspace = load_workspace(config.workspace_root, config.todos_dir)
+        self.project_context = load_project_context(
+            config.workspace_root,
+            profile_path=config.project_config,
+            extra_context_files=config.context_files,
+        )
+        self.resolved_context_files = resolve_context_files(
+            config.workspace_root,
+            self.project_context.context_files,
+        )
+        self.workspace: Workspace | None = None
         self._client: CursorClient | None = None
-        self._pre_existing_dirty: set[str] = set()
+        self._pre_dirty_fingerprints: dict[str, str] = {}
 
     @property
     def client(self) -> CursorClient:
         if self._client is None:
+            manifest_model = None
+            if self.workspace is not None:
+                manifest_model = self.workspace.manifest.settings.model
             self._client = CursorClient(
                 agent_bin=self.config.agent_bin,
                 model=_resolve_model(
                     cli_model=self.config.model,
-                    manifest_model=self.workspace.manifest.settings.model,
+                    manifest_model=manifest_model,
                 ),
                 no_color=self.config.no_color,
                 skip_probe=self.config.skip_probe,
-                parse_error_threshold=self.workspace.manifest.settings.parse_error_threshold,
+                parse_error_threshold=(
+                    self.workspace.manifest.settings.parse_error_threshold
+                    if self.workspace is not None
+                    else 20
+                ),
             )
         return self._client
 
     def _resolve_auto_commit(self) -> bool:
+        if self.workspace is None:
+            return _resolve_auto_commit(
+                cli_auto_commit=self.config.auto_commit,
+                manifest_auto_commit=None,
+            )
         return _resolve_auto_commit(
             cli_auto_commit=self.config.auto_commit,
             manifest_auto_commit=self.workspace.manifest.settings.auto_commit,
         )
 
+    async def _ensure_workspace(self, *, allow_repair: bool | None = None) -> Workspace:
+        if self.workspace is not None and allow_repair is False:
+            return self.workspace
+        repair = (
+            not self.config.no_auto_repair_yaml
+            if allow_repair is None
+            else allow_repair
+        )
+        self.workspace = await load_workspace_repairable(
+            self.config,
+            allow_repair=repair,
+            client=self.client if repair else None,
+            project_context=self.project_context,
+            resolved_context_files=self.resolved_context_files,
+            renderer=self.renderer,
+        )
+        return self.workspace
+
+    async def _reload_workspace(self) -> None:
+        self.workspace = await load_workspace_repairable(
+            self.config,
+            allow_repair=not self.config.no_auto_repair_yaml,
+            client=self.client,
+            project_context=self.project_context,
+            resolved_context_files=self.resolved_context_files,
+            renderer=self.renderer,
+        )
+
+    def _manifest_out_of_scope(self) -> str | None:
+        if self.workspace is None or not self.workspace.manifest.out_of_scope:
+            return None
+        return "\n".join(self.workspace.manifest.out_of_scope)
+
+    def _checklist_payload(self, item: TodoItem) -> list[dict[str, Any]]:
+        return [entry.to_dict() for entry in item.checklist]
+
+    def _prompt_kwargs(self, item: TodoItem) -> dict[str, Any]:
+        manifest = self.workspace.manifest if self.workspace else None
+        return {
+            "project_context": self.project_context,
+            "resolved_context_files": self.resolved_context_files,
+            "authority": manifest.authority if manifest else None,
+            "hard_rules": manifest.hard_rules if manifest else None,
+            "stop_conditions": manifest.stop_conditions if manifest else None,
+            "out_of_scope": self._manifest_out_of_scope(),
+            "contract_refs": item.contract_refs,
+            "checklist": self._checklist_payload(item),
+        }
+
     async def run(self, todo_id: str | None = None) -> RunReport:
         ensure_git_repo(self.config.workspace_root)
+        await self._ensure_workspace()
         self._ensure_no_active_execution_for_run(todo_id)
-        st = refuse_if_dirty(
-            self.config.workspace_root,
-            allow_dirty=self.config.allow_dirty,
-            todos_dir=self.config.todos_dir,
-        )
-        self._pre_existing_dirty = {
-            p
-            for p in snapshot_pre_existing_dirty(st)
-            if not p.startswith(f"{self.config.todos_dir}/")
-        }
+
         if self.config.dry_run_prompts:
-            return self._write_dry_run_prompts(todo_id)
+            return await self._write_dry_run_prompts(todo_id)
+
+        validate_required_context(self.resolved_context_files)
 
         settings = self.workspace.manifest.settings
         stop_on_failure = (
@@ -183,14 +232,9 @@ class Orchestrator:
             if outcome in {"failed", "retryable", "blocked"} and stop_on_failure:
                 break
             if outcome in {"failed", "retryable"}:
-                # A retryable item remains in_progress, so continuing would
-                # violate the single-active-item invariant.
                 break
 
-            self.workspace = load_workspace(
-                self.config.workspace_root,
-                self.config.todos_dir,
-            )
+            await self._reload_workspace()
 
             if todo_id is not None:
                 break
@@ -200,7 +244,7 @@ class Orchestrator:
     async def commit_item(self, item_id: str) -> str:
         """Commit trackable changes for a done item that has no commit SHA yet."""
         ensure_git_repo(self.config.workspace_root)
-        self._pre_existing_dirty = set()
+        await self._ensure_workspace(allow_repair=False)
 
         if not self._resolve_auto_commit():
             raise TodosToolError(
@@ -229,14 +273,6 @@ class Orchestrator:
             self._finalize_item_done(item, state.commit_sha, item.result.summary or "")
             return state.commit_sha
 
-        commit_paths = self._collect_commit_paths(item, state)
-        refuse_if_dirty_only_permitted(
-            self.config.workspace_root,
-            allow_dirty=self.config.allow_dirty,
-            todos_dir=self.config.todos_dir,
-            permitted_paths=set(commit_paths),
-        )
-
         await self._commit_item(item, state, runs_dir)
         sha = state.commit_sha or item.result.commit_sha
         if not sha:
@@ -246,6 +282,7 @@ class Orchestrator:
     async def resume(self) -> RunReport:
         """Resume any in_progress item from persisted state + git reality."""
         ensure_git_repo(self.config.workspace_root)
+        await self._ensure_workspace()
 
         in_progress = [
             i for i in self.workspace.items if i.status == ItemStatus.IN_PROGRESS
@@ -264,60 +301,15 @@ class Orchestrator:
             state = load_state(runs_dir)
             resume_state = state
             if state is not None:
-                require_usable_baseline(
-                    self.config.workspace_root,
-                    state.baseline_head,
-                    item_id=item.id,
+                self._pre_dirty_fingerprints = _load_legacy_pre_dirty_fingerprints(
+                    runs_dir
                 )
-            permitted: set[str] = set()
-            if state and state.baseline_head:
-                permitted = {
-                    path
-                    for path in paths_changed_since(
+                if self._pre_dirty_fingerprints:
+                    verify_pre_dirty_unchanged(
                         self.config.workspace_root,
-                        state.baseline_head,
-                        set(),
+                        self._pre_dirty_fingerprints,
+                        item_id=item.id,
                     )
-                    if not path.startswith(f"{self.config.todos_dir}/runs/")
-                }
-                if item.source_file:
-                    permitted.add(f"{self.config.todos_dir}/{item.source_file}")
-            refuse_if_dirty_only_permitted(
-                self.config.workspace_root,
-                allow_dirty=self.config.allow_dirty,
-                todos_dir=self.config.todos_dir,
-                permitted_paths=permitted,
-            )
-            st = status(self.config.workspace_root)
-            permitted_expanded = expand_path_prefixes(permitted)
-            self._pre_existing_dirty = {
-                path
-                for path in snapshot_pre_existing_dirty(st)
-                if not path.startswith(f"{self.config.todos_dir}/")
-                and path not in permitted_expanded
-                and not any(paths_overlap(path, allowed) for allowed in permitted)
-            }
-            if state is not None:
-                fingerprints = require_pre_dirty_fingerprints(
-                    state.pre_dirty_fingerprints,
-                    self._pre_existing_dirty,
-                    item_id=item.id,
-                    resuming=True,
-                )
-                if not self.config.dry_run_prompts:
-                    state.pre_dirty_fingerprints = fingerprints
-                    save_state(runs_dir, state)
-        else:
-            st = refuse_if_dirty(
-                self.config.workspace_root,
-                allow_dirty=self.config.allow_dirty,
-                todos_dir=self.config.todos_dir,
-            )
-            self._pre_existing_dirty = {
-                path
-                for path in snapshot_pre_existing_dirty(st)
-                if not path.startswith(f"{self.config.todos_dir}/")
-            }
 
         if in_progress:
             item = in_progress[0]
@@ -335,13 +327,13 @@ class Orchestrator:
 
         if self.config.dry_run_prompts:
             target = in_progress[0].id if in_progress else None
-            if in_progress and resume_state is not None:
-                self._verify_pre_dirty_paths(in_progress[0], resume_state)
-            return self._write_dry_run_prompts(target, resume_state)
+            return await self._write_dry_run_prompts(target, resume_state)
 
         if not in_progress:
             self.renderer.info("Nothing to resume; starting normal run")
             return await self.run()
+
+        validate_required_context(self.resolved_context_files)
 
         item = in_progress[0]
         self.renderer.info(f"Resuming {item.id}")
@@ -370,36 +362,23 @@ class Orchestrator:
 
         if state and state.commit_state == CommitState.COMPLETED and state.commit_sha:
             verify_commit_sha(self.config.workspace_root, state.commit_sha)
-            # Prevent duplicate commits after crash during status update
             self._finalize_item_done(item, state.commit_sha, state.work_summary or "")
             return
 
         if state is None:
             baseline = head_sha(self.config.workspace_root)
             state = new_run_state(item.id, baseline)
-            if self._pre_existing_dirty:
-                state.pre_dirty_fingerprints = capture_pre_dirty_fingerprints(
-                    self.config.workspace_root,
-                    self._pre_existing_dirty,
-                )
             save_state(runs_dir, state)
-        elif resuming:
-            require_usable_baseline(
+        elif resuming and self._pre_dirty_fingerprints:
+            verify_pre_dirty_unchanged(
                 self.config.workspace_root,
-                state.baseline_head,
+                self._pre_dirty_fingerprints,
                 item_id=item.id,
             )
-            state.pre_dirty_fingerprints = require_pre_dirty_fingerprints(
-                state.pre_dirty_fingerprints,
-                self._pre_existing_dirty,
-                item_id=item.id,
-                resuming=True,
-            )
-            save_state(runs_dir, state)
 
         if item.status == ItemStatus.PENDING:
             item.status = ItemStatus.IN_PROGRESS
-            save_item(self.workspace, item)
+            self._persist_item(item)
 
         feedback: str | None = state.review.summary
         if state.review.issues:
@@ -407,16 +386,13 @@ class Orchestrator:
                 f"- {i}" for i in state.review.issues
             )
 
-        # Resume mid-commit (including failed attempts)
         if state.phase == Phase.COMMIT and state.commit_state in (
             CommitState.STARTED,
             CommitState.FAILED,
         ):
-            self._verify_pre_dirty_paths(item, state)
             await self._commit_item(item, state, runs_dir)
             return
 
-        # Resume after work completed or validation completed, before review
         if (
             resuming
             and state.phase == Phase.WORK
@@ -428,6 +404,7 @@ class Orchestrator:
                 Transition.VALIDATION_PASSED,
             )
         ):
+            await self._reload_workspace()
             self._maybe_apply_restructure(item, runs_dir)
             item = self.workspace.get(item.id) or item
             if item.status == ItemStatus.SUPERSEDED:
@@ -447,7 +424,6 @@ class Orchestrator:
             )
             return
 
-        # Resume mid-work: continue the same phase without resetting session numbers
         if (
             resuming
             and state.phase == Phase.WORK
@@ -463,6 +439,7 @@ class Orchestrator:
             )
             if not work_ok:
                 raise TodosToolError(state.review.summary or "Work phase failed")
+            await self._reload_workspace()
             self._maybe_apply_restructure(item, runs_dir)
             item = self.workspace.get(item.id) or item
             if item.status == ItemStatus.SUPERSEDED:
@@ -499,7 +476,6 @@ class Orchestrator:
         if state.logical_attempt == 0:
             start_attempt = 1
 
-        # If previous attempt failed review or validation, continue from next attempt
         if state.last_transition in (
             Transition.REVIEW_FAILED,
             Transition.VALIDATION_FAILED,
@@ -522,6 +498,7 @@ class Orchestrator:
             if not work_ok:
                 continue
 
+            await self._reload_workspace()
             self._maybe_apply_restructure(item, runs_dir)
             item = self.workspace.get(item.id) or item
             if item.status == ItemStatus.SUPERSEDED:
@@ -538,8 +515,9 @@ class Orchestrator:
                 await self._commit_item(item, state, runs_dir)
                 return
             if review_outcome == "blocked":
+                item = self.workspace.get(item.id) or item
                 item.status = ItemStatus.BLOCKED
-                save_item(self.workspace, item)
+                self._persist_item(item)
                 state.phase = Phase.IDLE
                 record_transition(
                     runs_dir,
@@ -549,11 +527,11 @@ class Orchestrator:
                 )
                 raise TodosToolError(state.blocked_reason or "Item blocked by review")
 
-            # fail → next logical attempt
             feedback = self._attempt_failure_feedback(state)
 
+        item = self.workspace.get(item.id) or item
         item.status = ItemStatus.BLOCKED
-        save_item(self.workspace, item)
+        self._persist_item(item)
         state.blocked_reason = f"Exceeded {settings.max_attempts} logical attempts"
         record_transition(runs_dir, state, Transition.ITEM_BLOCKED)
         raise TodosToolError(state.blocked_reason)
@@ -570,8 +548,9 @@ class Orchestrator:
             await self._commit_item(item, state, runs_dir)
             return
         if review_outcome == "blocked":
+            item = self.workspace.get(item.id) or item
             item.status = ItemStatus.BLOCKED
-            save_item(self.workspace, item)
+            self._persist_item(item)
             state.phase = Phase.IDLE
             record_transition(
                 runs_dir,
@@ -582,18 +561,11 @@ class Orchestrator:
             raise TodosToolError(state.blocked_reason or "Item blocked by review")
         raise TodosToolError(state.review.summary or "Review failed during resume")
 
-    def _verify_pre_dirty_paths(self, item: TodoItem, state: RunState) -> None:
-        verify_pre_dirty_unchanged(
-            self.config.workspace_root,
-            state.pre_dirty_fingerprints,
-            item_id=item.id,
-        )
-
     def _item_paths(self, state: RunState) -> list[str]:
         paths = paths_changed_since(
             self.config.workspace_root,
             state.baseline_head or "HEAD",
-            self._pre_existing_dirty,
+            set(),
         )
         return [
             path
@@ -601,19 +573,18 @@ class Orchestrator:
             if not path.startswith(f"{self.config.todos_dir}/runs/")
         ]
 
-    def _write_dry_run_prompts(
+    async def _write_dry_run_prompts(
         self,
         todo_id: str | None,
         state: RunState | None = None,
     ) -> RunReport:
-        """Write prompt previews without agents, validation, state, or item changes."""
+        await self._ensure_workspace(allow_repair=False)
         items = (
             [next_ready(self.workspace, todo_id)]
             if todo_id is not None
             else list_ready(self.workspace)
         )
         report = RunReport()
-        st = status(self.config.workspace_root)
         for item in items:
             item_state = state if state and state.item_id == item.id else None
             logical_attempt = (
@@ -635,13 +606,23 @@ class Orchestrator:
             )
             preview_dir = self.workspace.runs_dir(item.id) / "dry-run"
             preview_dir.mkdir(parents=True, exist_ok=True)
+            prompt_kwargs = self._prompt_kwargs(item)
             work_prompt = build_work_prompt(
                 item,
                 logical_attempt=logical_attempt,
                 resolved_commands=self._resolved_validation_commands(item),
                 todos_dir=self.config.todos_dir,
                 previous_feedback=feedback,
-                allow_full_check=self._allow_full_check(item),
+                **prompt_kwargs,
+            )
+            review_ctx = (
+                build_review_context(
+                    self.config.workspace_root,
+                    baseline_head=item_state.baseline_head if item_state else None,
+                    paths=item_paths or None,
+                )
+                if item_state
+                else None
             )
             review_prompt = build_review_prompt(
                 item,
@@ -653,13 +634,18 @@ class Orchestrator:
                     else "(not executed in prompt-only dry run)"
                 ),
                 git_diff=(
-                    diff_text(self.config.workspace_root, paths=item_paths)
-                    if item_state
+                    review_ctx.format_summary()
+                    if review_ctx
                     else "(not available before work executes)"
                 ),
-                git_status=st.porcelain,
+                git_status=(
+                    review_ctx.status_porcelain
+                    if review_ctx
+                    else status(self.config.workspace_root).porcelain
+                ),
                 authoritative_validation=validation,
                 prompt_only=validation is None,
+                **prompt_kwargs,
             )
             (preview_dir / "work-prompt.md").write_text(
                 work_prompt,
@@ -673,10 +659,11 @@ class Orchestrator:
         return report
 
     def _resolved_validation_commands(self, item: TodoItem) -> list[str]:
-        return resolve_validation_commands(self.workspace.manifest, item)
-
-    def _allow_full_check(self, item: TodoItem) -> bool:
-        return item.id.upper().startswith("SETUP-")
+        return resolve_validation_commands(
+            self.workspace.manifest,
+            item,
+            project_context=self.project_context,
+        )
 
     def _invalidate_validation_cache(self, state: RunState) -> None:
         state.validation_attempt = 0
@@ -750,6 +737,7 @@ class Orchestrator:
             if not work_ok:
                 return "fail"
 
+            await self._reload_workspace()
             self._maybe_apply_restructure(item, runs_dir)
             item = self.workspace.get(item.id) or item
             if item.status == ItemStatus.SUPERSEDED:
@@ -778,7 +766,6 @@ class Orchestrator:
             f"repair={state.validation_repair_count}"
         )
         record_transition(runs_dir, state, Transition.VALIDATION_STARTED)
-        self._verify_pre_dirty_paths(item, state)
         commands = self._resolved_validation_commands(item)
         results = await run_validation_commands(
             self.config.workspace_root,
@@ -787,7 +774,6 @@ class Orchestrator:
                 self.workspace.manifest.settings.validation_timeout_seconds
             ),
         )
-        self._verify_pre_dirty_paths(item, state)
         state.validation_attempt = state.logical_attempt
         state.validation_results = results
         state.changed_paths = self._item_paths(state)
@@ -826,6 +812,8 @@ class Orchestrator:
         )
 
     def _find_active_execution(self) -> tuple[TodoItem, RunState] | None:
+        if self.workspace is None:
+            return None
         for item in self.workspace.items:
             if item.status == ItemStatus.IN_PROGRESS:
                 state = load_state(self.workspace.runs_dir(item.id))
@@ -867,6 +855,7 @@ class Orchestrator:
             events_path = attempt_dir / f"work-session-{state.session_number}.ndjson"
             log_path = attempt_dir / f"work-session-{state.session_number}.log"
             prompt_path = attempt_dir / f"work-prompt-{state.session_number}.md"
+            prompt_kwargs = self._prompt_kwargs(item)
             prompt = build_work_prompt(
                 item,
                 logical_attempt=state.logical_attempt,
@@ -874,8 +863,8 @@ class Orchestrator:
                 todos_dir=self.config.todos_dir,
                 previous_feedback=feedback,
                 validation_failure_feedback=validation_failure_feedback,
-                allow_full_check=self._allow_full_check(item),
                 continuation=continuation,
+                **prompt_kwargs,
             )
             prompt_path.write_text(prompt, encoding="utf-8")
 
@@ -934,7 +923,6 @@ class Orchestrator:
                 continue
 
             state.work_summary = _extract_summary(result)
-            self._verify_pre_dirty_paths(item, state)
             state.changed_paths = self._item_paths(state)
             state.session_restart_count = 0
             state.agent_pid = None
@@ -979,22 +967,23 @@ class Orchestrator:
             log_path = attempt_dir / f"review-session-{state.session_number}.log"
 
             item_paths = self._item_paths(state)
-            self._verify_pre_dirty_paths(item, state)
-            st = status(self.config.workspace_root)
-            git_diff = diff_text(
+            review_ctx = build_review_context(
                 self.config.workspace_root,
-                paths=item_paths,
+                baseline_head=state.baseline_head,
+                paths=item_paths or None,
             )
             prompt_path = attempt_dir / f"review-prompt-{state.session_number}.md"
+            prompt_kwargs = self._prompt_kwargs(item)
             prompt = build_review_prompt(
                 item,
                 logical_attempt=state.logical_attempt,
                 resolved_commands=self._resolved_validation_commands(item),
                 work_summary=state.work_summary,
-                git_diff=git_diff,
-                git_status=st.porcelain,
+                git_diff=review_ctx.format_summary(),
+                git_status=review_ctx.status_porcelain,
                 authoritative_validation=state.validation_results,
                 continuation=continuation,
+                **prompt_kwargs,
             )
 
             prompt_path.write_text(prompt, encoding="utf-8")
@@ -1065,7 +1054,6 @@ class Orchestrator:
                     state.validation_results,
                 )
             except ReviewError as exc:
-                # Malformed/contradictory review consumes a logical attempt
                 state.review.summary = str(exc)
                 state.review.issues = [str(exc)]
                 write_json(
@@ -1109,79 +1097,58 @@ class Orchestrator:
             record_transition(runs_dir, state, Transition.ITEM_DONE)
             return
 
-        # Duplicate-commit prevention
         if state.commit_state == CommitState.COMPLETED and state.commit_sha:
             verify_commit_sha(self.config.workspace_root, state.commit_sha)
             self._finalize_item_done(item, state.commit_sha, state.work_summary or "")
             return
 
-        self._verify_pre_dirty_paths(item, state)
-
         state.phase = Phase.COMMIT
         state.commit_state = CommitState.STARTED
         record_transition(runs_dir, state, Transition.COMMIT_STARTED)
 
-        paths = self._collect_commit_paths(item, state)
         summary = state.work_summary or state.review.summary or ""
-        # Prepare item metadata for inclusion in the same commit (sha filled after).
+        item = self.workspace.get(item.id) or item
         item.status = ItemStatus.DONE
         item.result.completed_at = datetime.now(timezone.utc)
         item.result.summary = summary
         item.result.commit_sha = None
-        save_item(self.workspace, item)
+        self._persist_item(item)
 
-        if not paths:
-            item.status = ItemStatus.IN_PROGRESS
-            item.result.completed_at = None
-            item.result.summary = None
-            save_item(self.workspace, item)
-            state.commit_state = CommitState.FAILED
-            record_transition(runs_dir, state, Transition.COMMIT_FAILED)
-            raise GitError(
-                "Review passed but no stageable paths found for commit "
-                "(changes may be gitignored or already committed)"
-            )
-
-        message = ""
+        skip_commit = self.config.skip_commit or not self._resolve_auto_commit()
         try:
-            refuse_unrelated_staged(
+            result = finalize_worktree(
                 self.config.workspace_root,
-                todos_dir=self.config.todos_dir,
-                approved_paths=set(paths),
+                commit_prefix=self.project_context.git.commit_prefix,
+                skip_commit=skip_commit,
+                baseline_head=state.baseline_head,
             )
-            stage_paths(
-                self.config.workspace_root,
-                paths,
-                todos_dir=self.config.todos_dir,
-            )
-            if not has_staged_changes(self.config.workspace_root):
-                raise GitError(
-                    "Staging produced no staged changes "
-                    "(paths may be gitignored or already committed)"
-                )
-            message = generate_commit_message(
-                item, staged_diff_stat(self.config.workspace_root)
-            )
-            sha = commit(self.config.workspace_root, message)
         except GitError:
-            # Roll status back so resume/commit can retry
+            item = self.workspace.get(item.id) or item
             item.status = ItemStatus.IN_PROGRESS
             item.result.completed_at = None
             item.result.summary = None
-            save_item(self.workspace, item)
+            self._persist_item(item)
             state.commit_state = CommitState.FAILED
             record_transition(runs_dir, state, Transition.COMMIT_FAILED)
             raise
 
+        sha = result.commit_sha
+        item = self.workspace.get(item.id) or item
         item.result.commit_sha = sha
-        save_item(self.workspace, item)
+        self._persist_item(item)
 
         state.commit_state = CommitState.COMPLETED
         state.commit_sha = sha
-        record_transition(runs_dir, state, Transition.COMMIT_COMPLETED, sha=sha)
+        state.provenance_kind = result.provenance_kind
+        record_transition(
+            runs_dir,
+            state,
+            Transition.COMMIT_COMPLETED,
+            sha=sha,
+        )
         state.phase = Phase.IDLE
         record_transition(runs_dir, state, Transition.ITEM_DONE, sha=sha)
-        self.renderer.info(f"Committed {item.id} as {sha[:8]} — {message}")
+        self.renderer.info(result.message)
 
     def _finalize_item_done(
         self,
@@ -1189,38 +1156,16 @@ class Orchestrator:
         commit_sha: str | None,
         summary: str,
     ) -> None:
+        item = self.workspace.get(item.id) or item
         item.status = ItemStatus.DONE
         item.result.completed_at = datetime.now(timezone.utc)
         item.result.commit_sha = commit_sha
         item.result.summary = summary
-        save_item(self.workspace, item)
+        self._persist_item(item)
 
-    def _collect_commit_paths(self, item: TodoItem, state: RunState) -> list[str]:
-        if state.changed_paths:
-            paths = [
-                path
-                for path in state.changed_paths
-                if not path.startswith(f"{self.config.todos_dir}/runs/")
-                and path not in self._pre_existing_dirty
-            ]
-        else:
-            paths = paths_changed_since(
-                self.config.workspace_root,
-                state.baseline_head or "HEAD",
-                self._pre_existing_dirty,
-            )
-            paths = [
-                path
-                for path in paths
-                if not path.startswith(f"{self.config.todos_dir}/runs/")
-                and path not in self._pre_existing_dirty
-            ]
-        if item.source_file:
-            item_rel = f"{self.config.todos_dir}/{item.source_file}"
-            dirty_paths = set(status(self.config.workspace_root).changed_paths)
-            if item_rel not in paths and item_rel in dirty_paths:
-                paths.append(item_rel)
-        return filter_stageable_paths(self.config.workspace_root, paths)
+    def _persist_item(self, item: TodoItem) -> None:
+        save_item(self.workspace, item)
+        self.workspace._by_id[item.id] = item
 
     def _maybe_apply_restructure(self, item: TodoItem, runs_dir: Path) -> None:
         proposal_path = runs_dir / "restructure-proposal.json"
@@ -1241,6 +1186,21 @@ class Orchestrator:
             self.renderer.info(f"Applied restructuring proposal for {item.id}")
         except RestructuringError as exc:
             self.renderer.warn(f"Restructuring rejected: {exc}")
+
+
+def _load_legacy_pre_dirty_fingerprints(runs_dir: Path) -> dict[str, str]:
+    """Read pre_dirty_fingerprints from legacy state.json for resume safety."""
+    path = state_path(runs_dir)
+    if not path.is_file():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    raw = data.get("pre_dirty_fingerprints")
+    if not isinstance(raw, dict):
+        return {}
+    return {str(key): str(value) for key, value in raw.items()}
 
 
 def _classify_item_outcome(item: TodoItem | None) -> str:
@@ -1282,7 +1242,6 @@ def _extract_summary(result: SessionResult) -> str:
 
 
 def _resolve_model(*, cli_model: str | None, manifest_model: str | None) -> str | None:
-    """CLI ``--model`` overrides ``manifest.settings.model`` when set."""
     if cli_model is not None and cli_model.strip():
         return cli_model.strip()
     return manifest_model
@@ -1293,7 +1252,6 @@ def _resolve_auto_commit(
     cli_auto_commit: bool | None,
     manifest_auto_commit: bool | None,
 ) -> bool:
-    """CLI ``--auto-commit true|false`` overrides manifest when set."""
     if cli_auto_commit is not None:
         return cli_auto_commit
     return manifest_auto_commit if manifest_auto_commit is not None else True

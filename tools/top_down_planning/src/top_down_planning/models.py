@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 SCHEMA_VERSION = 1
@@ -49,6 +49,7 @@ class PlanningLimits(BaseModel):
     max_items: int = 200
     max_children_per_expansion: int = 12
     batch_size: int = 3
+    concurrent_batches: int = 3
     max_retries: int = 3
     session_timeout_seconds: int = 600
     parse_error_threshold: int = 20
@@ -226,11 +227,22 @@ class RunState(BaseModel):
     input_file: str = ""
     output_goal: str = ""
     last_successful_update: datetime | None = None
+    agent_pids: list[int] = Field(default_factory=list)
     agent_pid: int | None = None
     last_error: str | None = None
     history: list[dict[str, Any]] = Field(default_factory=list)
     generated_artifacts: list[str] = Field(default_factory=list)
     updated_at: datetime | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_legacy_agent_pid(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        if "agent_pids" not in data:
+            legacy_pid = data.get("agent_pid")
+            data["agent_pids"] = [legacy_pid] if legacy_pid is not None else []
+        return data
 
 
 class PlanningReport(BaseModel):

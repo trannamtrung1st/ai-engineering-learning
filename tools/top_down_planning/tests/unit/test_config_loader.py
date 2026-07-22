@@ -48,6 +48,7 @@ def test_merge_run_options_uses_nested_limits(tmp_path: Path) -> None:
                 "limits:",
                 "  max_iterations: 12",
                 "  batch_size: 5",
+                "  concurrent_batches: 2",
                 "  session_timeout_seconds: 900",
             ]
         ),
@@ -58,6 +59,7 @@ def test_merge_run_options_uses_nested_limits(tmp_path: Path) -> None:
 
     assert options.max_iterations == 12
     assert options.batch_size == 5
+    assert options.concurrent_batches == 2
     assert options.max_depth == 6
     assert options.session_timeout_seconds == 900
 
@@ -84,6 +86,7 @@ def test_options_to_planning_limits_includes_advanced_fields(tmp_path: Path) -> 
     assert limits.max_children_per_expansion == 8
     assert limits.parse_error_threshold == 10
     assert limits.session_timeout_seconds == 600
+    assert limits.concurrent_batches == 3
 
 
 def test_merge_run_options_cli_overrides_config(tmp_path: Path) -> None:

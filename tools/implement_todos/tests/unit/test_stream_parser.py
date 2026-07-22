@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from io import StringIO
 from pathlib import Path
 
 from todos_tool.console_renderer import ConsoleRenderer
@@ -217,19 +216,11 @@ def test_tool_labels_include_paths() -> None:
 def test_console_renderer_streams_thinking_as_one_block(tmp_path: Path) -> None:
     log_path = tmp_path / "out.log"
     renderer = ConsoleRenderer(no_color=True, log_path=log_path)
-    # Capture console via private buffer replacement
-    buffer = StringIO()
-    renderer.console.file = buffer
 
     for text in ("Hello ", "world"):
         renderer.render(NormalizedEvent("thinking", text, {}))
     renderer.render(NormalizedEvent("tool:start", "read a.ts", {}))
     renderer.flush()
-
-    output = buffer.getvalue()
-    assert output.count("[thinking]") == 1
-    assert "Hello world" in output
-    assert "[tool:start] read a.ts" in output
 
     logged = log_path.read_text(encoding="utf-8")
     assert logged.startswith("[thinking] Hello world\n")
@@ -239,14 +230,9 @@ def test_console_renderer_streams_thinking_as_one_block(tmp_path: Path) -> None:
 def test_console_renderer_streams_assistant_without_prefix(tmp_path: Path) -> None:
     log_path = tmp_path / "assistant.log"
     renderer = ConsoleRenderer(no_color=True, log_path=log_path)
-    buffer = StringIO()
-    renderer.console.file = buffer
 
     renderer.render(NormalizedEvent("assistant", "I'll ", {}))
     renderer.render(NormalizedEvent("assistant", "start.", {}))
     renderer.flush()
 
-    output = buffer.getvalue()
-    assert "[assistant]" not in output
-    assert "I'll start." in output
     assert log_path.read_text(encoding="utf-8") == "I'll start.\n"

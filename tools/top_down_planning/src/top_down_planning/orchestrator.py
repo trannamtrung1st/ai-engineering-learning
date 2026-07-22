@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+import copy
 import os
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -14,7 +17,7 @@ from top_down_planning.completeness import (
     limit_reached,
 )
 from top_down_planning.console_renderer import ConsoleRenderer
-from top_down_planning.cursor_client import CursorClient
+from top_down_planning.cursor_client import CursorClient, SessionResult
 from top_down_planning.errors import (
     CursorEnvironmentError,
     CursorSessionError,
@@ -27,7 +30,9 @@ from top_down_planning.errors import (
 from top_down_planning.input_loader import LoadedInput, LoadedOutputGoal, LoadedStopHint, load_markdown_input, build_source_metadata
 from top_down_planning.model_config import resolve_embed_threshold, resolve_model
 from top_down_planning.models import (
+    AgentResponse,
     FinalStatus,
+    PlanItem,
     PlanningLimits,
     PlanningReport,
     RunActiveStatus,
@@ -62,10 +67,14 @@ from top_down_planning.fallback_artifact import write_fallback_artifact
 from top_down_planning.prompts import build_final_render_prompt, build_planning_prompt
 from top_down_planning.render_brief import build_render_brief, validate_render_coverage
 from top_down_planning.response_parser import parse_agent_response
-from top_down_planning.scheduler import initialize_root_plan, select_batch
+from top_down_planning.scheduler import (
+    initialize_root_plan,
+    select_concurrent_batches,
+    wave_batch_budget,
+)
 from top_down_planning.state_updates import apply_response
 from top_down_planning.stream_events import StreamEmitter
-from top_down_planning.validator import validate_response
+from top_down_planning.validator import validate_wave_responses
 
 
 @dataclass
@@ -86,6 +95,20 @@ class RunConfig:
     stop_hint: LoadedStopHint | None = None
 
 
+@dataclass(frozen=True)
+class _BatchSpec:
+    iteration: int
+    batch_index: int
+    items: list[PlanItem]
+    selected_ids: list[str]
+
+
+@dataclass
+class _BatchSessionResult:
+    spec: _BatchSpec
+    result: SessionResult
+
+
 class Orchestrator:
     def __init__(self, config: RunConfig) -> None:
         self.config = config
@@ -94,6 +117,7 @@ class Orchestrator:
         self._client: CursorClient | None = None
         self._artifacts: list[str] = []
         self._embed_threshold = resolve_embed_threshold(config.embed_threshold)
+        self._agent_pid_lock = threading.Lock()
 
     @property
     def client(self) -> CursorClient:
@@ -128,10 +152,11 @@ class Orchestrator:
         if existing_plan is not None and existing_run is not None:
             plan = existing_plan
             run_state = existing_run
-            if run_state.agent_pid and _pid_alive(run_state.agent_pid):
+            if _any_agent_alive(run_state.agent_pids):
+                alive = [pid for pid in run_state.agent_pids if _pid_alive(pid)]
                 raise PlanningToolError(
                     "Cannot resume while Cursor agent is still running "
-                    f"(pid={run_state.agent_pid}). Stop it manually, then retry."
+                    f"(pids={alive}). Stop them manually, then retry."
                 )
             if is_plan_run_state_desynced(plan, run_state):
                 recovered = recover_plan_from_iterations(output_dir, plan)
@@ -147,7 +172,7 @@ class Orchestrator:
                     f"Recovered plan state from iteration audit files "
                     f"({len(plan.plan)} items)"
                 )
-            run_state.agent_pid = None
+            run_state.agent_pids = []
             run_state.active_status = RunActiveStatus.RUNNING
             save_run_state(output_dir, run_state)
             self.renderer.info(f"Resuming planning in {output_dir}")
@@ -170,7 +195,11 @@ class Orchestrator:
             save_plan(output_dir, plan)
             save_run_state(output_dir, run_state)
 
-        self.stream.emit("planning.started", input=str(loaded.path))
+        self.stream.emit(
+            "planning.started",
+            input=str(loaded.path),
+            concurrent_batches=self.config.limits.concurrent_batches,
+        )
 
         try:
             plan, run_state = await self._planning_loop(
@@ -181,7 +210,7 @@ class Orchestrator:
             )
         except (CursorEnvironmentError, UserInterrupted):
             run_state.active_status = RunActiveStatus.PAUSED
-            run_state.agent_pid = None
+            run_state.agent_pids = []
             save_run_state(output_dir, run_state)
             save_plan(output_dir, plan)
             raise
@@ -239,193 +268,36 @@ class Orchestrator:
                 save_run_state(output_dir, run_state)
                 return plan, run_state
 
-            batch = select_batch(plan, limits)
-            if not batch:
+            remaining_iterations = limits.max_iterations - run_state.iteration
+            wave_size = wave_batch_budget(
+                limits,
+                remaining_iterations=remaining_iterations,
+            )
+            batch_groups = select_concurrent_batches(
+                plan,
+                limits,
+                max_batches=wave_size,
+            )
+            if not batch_groups:
                 break
 
-            run_state.iteration += 1
-            iteration = run_state.iteration
-            selected_ids = [item.id for item in batch]
-            self.stream.emit(
-                "iteration.started",
-                iteration=iteration,
-                selected_items=selected_ids,
+            base_iteration = run_state.iteration
+            specs = [
+                _BatchSpec(
+                    iteration=base_iteration + batch_index + 1,
+                    batch_index=batch_index,
+                    items=batch_items,
+                    selected_ids=[item.id for item in batch_items],
+                )
+                for batch_index, batch_items in enumerate(batch_groups)
+            ]
+            plan = await self._run_planning_wave(
+                loaded=loaded,
+                plan=plan,
+                run_state=run_state,
+                output_dir=output_dir,
+                specs=specs,
             )
-            self.renderer.rule(
-                f"PLAN iteration={iteration} items={','.join(selected_ids)}"
-            )
-
-            validation_feedback: list[str] | None = None
-            applied = False
-            for attempt in range(1, limits.max_retries + 1):
-                run_state.retry_count = attempt - 1
-                prompt = build_planning_prompt(
-                    loaded_input=loaded,
-                    workspace=self.config.workspace_root,
-                    output_goal=self.config.output_goal,
-                    plan=plan,
-                    selected_items=batch,
-                    embed_threshold=self._embed_threshold,
-                    stop_hint=self.config.stop_hint,
-                    validation_feedback=validation_feedback,
-                )
-                prefix = Path(iteration_prefix(output_dir, iteration))
-                prompt_path = prefix.with_name(prefix.name + "-request-prompt.md")
-                response_path = prefix.with_name(prefix.name + "-response.json")
-                validation_path = prefix.with_name(prefix.name + "-validation.json")
-                events_path = prefix.with_name(prefix.name + "-agent.ndjson")
-                log_path = prefix.with_name(prefix.name + "-agent.log")
-
-                prompt_path.parent.mkdir(parents=True, exist_ok=True)
-                prompt_path.write_text(prompt, encoding="utf-8")
-                if self.config.audit_iterations:
-                    write_json(
-                        prefix.with_name(prefix.name + "-request.json"),
-                        {
-                            "iteration": iteration,
-                            "attempt": attempt,
-                            "selected_items": selected_ids,
-                        },
-                    )
-
-                try:
-                    result = await self.client.run_session(
-                        workspace=self.config.workspace_root,
-                        prompt=prompt,
-                        prompt_path=prompt_path,
-                        timeout_seconds=limits.session_timeout_seconds,
-                        events_path=events_path if self.config.audit_iterations else None,
-                        log_path=log_path if self.config.audit_iterations else None,
-                        renderer=ConsoleRenderer.with_file_logging(
-                            self.renderer,
-                            log_path,
-                        )
-                        if self.config.audit_iterations
-                        else self.renderer,
-                        on_agent_started=lambda pid: _persist_agent_pid(
-                            output_dir, run_state, pid
-                        ),
-                    )
-                except UserInterrupted:
-                    run_state.agent_pid = None
-                    save_run_state(output_dir, run_state)
-                    raise
-                except CursorEnvironmentError:
-                    raise
-                except CursorSessionError as exc:
-                    run_state.last_error = str(exc)
-                    save_run_state(output_dir, run_state)
-                    if attempt >= limits.max_retries:
-                        raise PlanningToolError(
-                            f"Agent session failed after {limits.max_retries} attempts: {exc}"
-                        ) from exc
-                    self.stream.emit(
-                        "iteration.retrying",
-                        iteration=iteration,
-                        attempt=attempt + 1,
-                        reason=str(exc),
-                    )
-                    continue
-
-                run_state.agent_pid = None
-
-                try:
-                    response = parse_agent_response(result.assistant_text)
-                except ResponseParseError as exc:
-                    validation_feedback = [str(exc)]
-                    self.stream.emit(
-                        "validation.failed",
-                        iteration=iteration,
-                        errors=validation_feedback,
-                    )
-                    if self.config.audit_iterations:
-                        write_json(response_path, {"raw": result.assistant_text[-8000:]})
-                        write_json(validation_path, {"errors": validation_feedback})
-                    if attempt >= limits.max_retries:
-                        raise PlanningToolError(
-                            f"Failed to parse agent response after {limits.max_retries} attempts"
-                        ) from exc
-                    self.stream.emit(
-                        "iteration.retrying",
-                        iteration=iteration,
-                        attempt=attempt + 1,
-                    )
-                    continue
-
-                errors = validate_response(
-                    plan,
-                    response,
-                    selected_ids=selected_ids,
-                    limits=limits,
-                )
-                if errors:
-                    validation_feedback = errors
-                    self.stream.emit(
-                        "validation.failed",
-                        iteration=iteration,
-                        errors=errors,
-                    )
-                    if self.config.audit_iterations:
-                        write_json(
-                            response_path,
-                            response.model_dump(mode="json"),
-                        )
-                        write_json(validation_path, {"errors": errors})
-                    if attempt >= limits.max_retries:
-                        raise ValidationError(errors)
-                    self.stream.emit(
-                        "iteration.retrying",
-                        iteration=iteration,
-                        attempt=attempt + 1,
-                    )
-                    continue
-
-                plan = apply_response(plan, response)
-                for operation in response.operations:
-                    if operation.type == "expand":
-                        self.stream.emit(
-                            "item.expanded",
-                            item_id=operation.node_id,
-                            children_count=len(operation.children),
-                        )
-                    elif operation.type == "mark_actionable":
-                        self.stream.emit(
-                            "item.actionable",
-                            item_id=operation.node_id,
-                        )
-                    elif operation.type == "mark_blocked":
-                        self.stream.emit(
-                            "item.blocked",
-                            item_id=operation.node_id,
-                        )
-                    elif operation.type == "mark_out_of_scope":
-                        self.stream.emit(
-                            "item.out_of_scope",
-                            item_id=operation.node_id,
-                        )
-
-                if self.config.audit_iterations:
-                    write_json(response_path, response.model_dump(mode="json"))
-                    write_json(validation_path, {"errors": []})
-
-                save_plan(output_dir, plan)
-                mark_last_success(output_dir, run_state)
-                record_history(
-                    output_dir,
-                    run_state,
-                    event="iteration_applied",
-                    selected_items=selected_ids,
-                    attempt=attempt,
-                )
-                applied = True
-                break
-
-            if not applied:
-                raise PlanningToolError(
-                    f"Iteration {iteration} failed after {limits.max_retries} attempts"
-                )
-
-            save_plan(output_dir, plan)
 
         status = compute_final_status(plan)
         summary = (
@@ -452,6 +324,336 @@ class Orchestrator:
                     run_state=run_state,
                 )
         return plan, run_state
+
+    async def _run_planning_wave(
+        self,
+        *,
+        loaded: LoadedInput,
+        plan,
+        run_state: RunState,
+        output_dir: Path,
+        specs: list[_BatchSpec],
+    ):
+        limits = self.config.limits
+        plan_snapshot = copy.deepcopy(plan)
+        wave_size = len(specs)
+        iteration_numbers = [spec.iteration for spec in specs]
+
+        self.stream.emit(
+            "wave.started",
+            wave_size=wave_size,
+            iterations=iteration_numbers,
+        )
+        for spec in specs:
+            self.stream.emit(
+                "iteration.started",
+                iteration=spec.iteration,
+                batch_index=spec.batch_index,
+                batch_count=wave_size,
+                selected_items=spec.selected_ids,
+            )
+            self.renderer.rule(
+                "PLAN "
+                f"iteration={spec.iteration} "
+                f"batch={spec.batch_index + 1}/{wave_size} "
+                f"items={','.join(spec.selected_ids)}"
+            )
+
+        validation_feedback: list[str] | None = None
+        applied = False
+        for attempt in range(1, limits.max_retries + 1):
+            run_state.retry_count = attempt - 1
+            run_state.agent_pids = []
+            save_run_state(output_dir, run_state)
+
+            try:
+                session_results = await self._run_batch_sessions(
+                    loaded=loaded,
+                    plan=plan_snapshot,
+                    run_state=run_state,
+                    output_dir=output_dir,
+                    specs=specs,
+                    attempt=attempt,
+                    validation_feedback=validation_feedback,
+                )
+            except UserInterrupted:
+                run_state.agent_pids = []
+                save_run_state(output_dir, run_state)
+                raise
+            except CursorEnvironmentError:
+                raise
+            except CursorSessionError as exc:
+                run_state.agent_pids = []
+                run_state.last_error = str(exc)
+                save_run_state(output_dir, run_state)
+                if attempt >= limits.max_retries:
+                    raise PlanningToolError(
+                        f"Planning wave failed after {limits.max_retries} attempts: {exc}"
+                    ) from exc
+                self.stream.emit(
+                    "wave.retrying",
+                    wave_size=wave_size,
+                    iterations=iteration_numbers,
+                    attempt=attempt + 1,
+                    reason=str(exc),
+                )
+                continue
+
+            run_state.agent_pids = []
+            parsed_batches: list[tuple[_BatchSpec, AgentResponse]] = []
+            parse_failed = False
+            for session_result in session_results:
+                spec = session_result.spec
+                prefix = Path(iteration_prefix(output_dir, spec.iteration))
+                response_path = prefix.with_name(prefix.name + "-response.json")
+                validation_path = prefix.with_name(prefix.name + "-validation.json")
+                try:
+                    response = parse_agent_response(session_result.result.assistant_text)
+                except ResponseParseError as exc:
+                    parse_failed = True
+                    validation_feedback = [str(exc)]
+                    self.stream.emit(
+                        "validation.failed",
+                        iteration=spec.iteration,
+                        batch_index=spec.batch_index,
+                        batch_count=wave_size,
+                        errors=validation_feedback,
+                    )
+                    if self.config.audit_iterations:
+                        write_json(
+                            response_path,
+                            {"raw": session_result.result.assistant_text[-8000:]},
+                        )
+                        write_json(validation_path, {"errors": validation_feedback})
+                    if attempt >= limits.max_retries:
+                        raise PlanningToolError(
+                            f"Failed to parse agent response after {limits.max_retries} attempts"
+                        ) from exc
+                    self.stream.emit(
+                        "wave.retrying",
+                        wave_size=wave_size,
+                        iterations=iteration_numbers,
+                        attempt=attempt + 1,
+                        reason=str(exc),
+                    )
+                    break
+                parsed_batches.append((spec, response))
+
+            if parse_failed:
+                continue
+
+            wave_pairs = [
+                (spec.selected_ids, response)
+                for spec, response in parsed_batches
+            ]
+            errors = validate_wave_responses(
+                plan_snapshot,
+                wave_pairs,
+                limits=limits,
+            )
+            if errors:
+                validation_feedback = errors
+                for spec, response in parsed_batches:
+                    self.stream.emit(
+                        "validation.failed",
+                        iteration=spec.iteration,
+                        batch_index=spec.batch_index,
+                        batch_count=wave_size,
+                        errors=errors,
+                    )
+                    if self.config.audit_iterations:
+                        prefix = Path(iteration_prefix(output_dir, spec.iteration))
+                        response_path = prefix.with_name(prefix.name + "-response.json")
+                        validation_path = prefix.with_name(prefix.name + "-validation.json")
+                        write_json(response_path, response.model_dump(mode="json"))
+                        write_json(validation_path, {"errors": errors})
+                if attempt >= limits.max_retries:
+                    raise ValidationError(errors)
+                self.stream.emit(
+                    "wave.retrying",
+                    wave_size=wave_size,
+                    iterations=iteration_numbers,
+                    attempt=attempt + 1,
+                )
+                continue
+
+            for spec, response in parsed_batches:
+                plan = apply_response(plan, response)
+                self._emit_operation_events(response)
+
+            if self.config.audit_iterations:
+                for spec, response in parsed_batches:
+                    prefix = Path(iteration_prefix(output_dir, spec.iteration))
+                    response_path = prefix.with_name(prefix.name + "-response.json")
+                    validation_path = prefix.with_name(prefix.name + "-validation.json")
+                    write_json(response_path, response.model_dump(mode="json"))
+                    write_json(validation_path, {"errors": []})
+
+            run_state.iteration = specs[-1].iteration
+            save_plan(output_dir, plan)
+            mark_last_success(output_dir, run_state)
+            record_history(
+                output_dir,
+                run_state,
+                event="wave_applied",
+                wave_size=wave_size,
+                iterations=iteration_numbers,
+                attempt=attempt,
+            )
+            for spec in specs:
+                record_history(
+                    output_dir,
+                    run_state,
+                    event="iteration_applied",
+                    iteration=spec.iteration,
+                    batch_index=spec.batch_index,
+                    batch_count=wave_size,
+                    selected_items=spec.selected_ids,
+                    attempt=attempt,
+                )
+                self.stream.emit(
+                    "iteration.completed",
+                    iteration=spec.iteration,
+                    batch_index=spec.batch_index,
+                    batch_count=wave_size,
+                    selected_items=spec.selected_ids,
+                )
+
+            self.stream.emit(
+                "wave.completed",
+                wave_size=wave_size,
+                iterations=iteration_numbers,
+            )
+            applied = True
+            break
+
+        if not applied:
+            raise PlanningToolError(
+                f"Planning wave {iteration_numbers} failed after {limits.max_retries} attempts"
+            )
+
+        return plan
+
+    async def _run_batch_sessions(
+        self,
+        *,
+        loaded: LoadedInput,
+        plan,
+        run_state: RunState,
+        output_dir: Path,
+        specs: list[_BatchSpec],
+        attempt: int,
+        validation_feedback: list[str] | None,
+    ) -> list[_BatchSessionResult]:
+        await self.client.ensure_ready()
+        batch_count = len(specs)
+        tasks = [
+            asyncio.create_task(
+                self._execute_batch_session(
+                    loaded=loaded,
+                    plan=plan,
+                    run_state=run_state,
+                    output_dir=output_dir,
+                    spec=spec,
+                    batch_count=batch_count,
+                    attempt=attempt,
+                    validation_feedback=validation_feedback,
+                )
+            )
+            for spec in specs
+        ]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        for result in results:
+            if isinstance(result, BaseException):
+                await _cancel_tasks(tasks)
+                raise result
+        return results  # type: ignore[return-value]
+
+    async def _execute_batch_session(
+        self,
+        *,
+        loaded: LoadedInput,
+        plan,
+        run_state: RunState,
+        output_dir: Path,
+        spec: _BatchSpec,
+        batch_count: int,
+        attempt: int,
+        validation_feedback: list[str] | None,
+    ) -> _BatchSessionResult:
+        limits = self.config.limits
+        prompt = build_planning_prompt(
+            loaded_input=loaded,
+            workspace=self.config.workspace_root,
+            output_goal=self.config.output_goal,
+            plan=plan,
+            selected_items=spec.items,
+            embed_threshold=self._embed_threshold,
+            stop_hint=self.config.stop_hint,
+            validation_feedback=validation_feedback,
+        )
+        prefix = Path(iteration_prefix(output_dir, spec.iteration))
+        prompt_path = prefix.with_name(prefix.name + "-request-prompt.md")
+        events_path = prefix.with_name(prefix.name + "-agent.ndjson")
+        log_path = prefix.with_name(prefix.name + "-agent.log")
+
+        prompt_path.parent.mkdir(parents=True, exist_ok=True)
+        prompt_path.write_text(prompt, encoding="utf-8")
+        if self.config.audit_iterations:
+            write_json(
+                prefix.with_name(prefix.name + "-request.json"),
+                {
+                    "iteration": spec.iteration,
+                    "batch_index": spec.batch_index,
+                    "batch_count": batch_count,
+                    "attempt": attempt,
+                    "selected_items": spec.selected_ids,
+                },
+            )
+
+        def on_started(pid: int) -> None:
+            self._add_agent_pid(output_dir, run_state, pid)
+
+        result = await self.client.run_session(
+            workspace=self.config.workspace_root,
+            prompt=prompt,
+            prompt_path=prompt_path,
+            timeout_seconds=limits.session_timeout_seconds,
+            events_path=events_path if self.config.audit_iterations else None,
+            log_path=log_path if self.config.audit_iterations else None,
+            renderer=ConsoleRenderer.with_file_logging(
+                self.renderer,
+                log_path,
+            )
+            if self.config.audit_iterations
+            else self.renderer,
+            on_agent_started=on_started,
+        )
+        return _BatchSessionResult(spec=spec, result=result)
+
+    def _emit_operation_events(self, response: AgentResponse) -> None:
+        for operation in response.operations:
+            if operation.type == "expand":
+                self.stream.emit(
+                    "item.expanded",
+                    item_id=operation.node_id,
+                    children_count=len(operation.children),
+                )
+            elif operation.type == "mark_actionable":
+                self.stream.emit(
+                    "item.actionable",
+                    item_id=operation.node_id,
+                )
+            elif operation.type == "mark_blocked":
+                self.stream.emit(
+                    "item.blocked",
+                    item_id=operation.node_id,
+                )
+            elif operation.type == "mark_out_of_scope":
+                self.stream.emit(
+                    "item.out_of_scope",
+                    item_id=operation.node_id,
+                )
 
     async def _run_final_render(
         self,
@@ -513,13 +715,13 @@ class Orchestrator:
                     )
                     if self.config.audit_iterations
                     else self.renderer,
-                    on_agent_started=lambda pid: _persist_agent_pid(
+                    on_agent_started=lambda pid: self._add_agent_pid(
                         output_dir, run_state, pid
                     ),
                     session_mode="agent",
                 )
             except UserInterrupted:
-                run_state.agent_pid = None
+                run_state.agent_pids = []
                 save_run_state(output_dir, run_state)
                 raise
             except CursorEnvironmentError:
@@ -550,7 +752,7 @@ class Orchestrator:
                         "Restored plan.yaml after render modified canonical state"
                     )
 
-            run_state.agent_pid = None
+            run_state.agent_pids = []
 
             written = discover_written_artifacts(
                 workspace, output_dir=output_dir, before=before_snapshot
@@ -622,6 +824,13 @@ class Orchestrator:
         self.stream.emit("render.fallback", reason="exhausted retries")
         return paths
 
+    def _add_agent_pid(self, output_dir: Path, run_state: RunState, pid: int) -> None:
+        with self._agent_pid_lock:
+            if pid not in run_state.agent_pids:
+                run_state.agent_pids.append(pid)
+            run_state.agent_pid = None
+            save_run_state(output_dir, run_state)
+
 
 def _workspace_relative(path: Path, workspace: Path) -> str:
     return path.resolve().relative_to(workspace.resolve()).as_posix()
@@ -652,9 +861,16 @@ def _existing_generated_artifacts(
     return absolute
 
 
-def _persist_agent_pid(output_dir: Path, run_state: RunState, pid: int) -> None:
-    run_state.agent_pid = pid
-    save_run_state(output_dir, run_state)
+def _any_agent_alive(pids: list[int]) -> bool:
+    return any(_pid_alive(pid) for pid in pids)
+
+
+async def _cancel_tasks(tasks: list[asyncio.Task]) -> None:
+    for task in tasks:
+        if not task.done():
+            task.cancel()
+    if tasks:
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 def _pid_alive(pid: int) -> bool:

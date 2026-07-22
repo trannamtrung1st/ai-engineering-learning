@@ -35,7 +35,7 @@ def test_work_prompt_requires_instruction_discovery() -> None:
     assert "Do NOT run the full authoritative check suite" in prompt
 
 
-def test_review_prompt_requires_instruction_discovery() -> None:
+def test_review_prompt_is_commandless() -> None:
     prompt = build_review_prompt(
         _item(),
         logical_attempt=2,
@@ -52,7 +52,7 @@ def test_review_prompt_requires_instruction_discovery() -> None:
             )
         ],
     )
-    assert prompt_requires_instruction_discovery(prompt)
+    assert "Do not edit files, run shell commands, or commit." in prompt
     assert "schema_version" in prompt
     assert "TASK-001" in prompt
     assert "no unresolved blocking issue exists" in prompt

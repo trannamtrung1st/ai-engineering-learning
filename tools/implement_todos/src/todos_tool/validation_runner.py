@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import fnmatch
 import os
+import re
 import signal
 from pathlib import Path
 
+from todos_tool.errors import ValidationError
 from todos_tool.models import Manifest, TodoItem, ValidationCommandResult
+from todos_tool.project_context import ProjectContext
 
 MAX_VALIDATION_OUTPUT_CHARS = 12_000
 
@@ -16,19 +20,63 @@ def _normalize_command(command: str) -> str:
     return " ".join(command.strip().split()).lower()
 
 
-def resolve_validation_commands(manifest: Manifest, item: TodoItem) -> list[str]:
-    """Resolve manifest project check plus item-specific commands, deduplicated."""
+def _command_matches_pattern(command: str, pattern: str) -> bool:
+    normalized = command.strip()
+    if any(ch in pattern for ch in "*?[]"):
+        return fnmatch.fnmatch(normalized, pattern)
+    try:
+        return re.search(pattern, normalized) is not None
+    except re.error:
+        return pattern in normalized
+
+
+def _assert_commands_allowed(
+    commands: list[str],
+    project_context: ProjectContext | None,
+) -> None:
+    if project_context is None:
+        return
+    forbidden = project_context.evidence.forbidden_command_patterns
+    if not forbidden:
+        return
+    blocked: list[str] = []
+    for command in commands:
+        for pattern in forbidden:
+            if _command_matches_pattern(command, pattern):
+                blocked.append(f"{command!r} matches forbidden pattern {pattern!r}")
+                break
+    if blocked:
+        raise ValidationError(blocked)
+
+
+def resolve_validation_commands(
+    manifest: Manifest,
+    item: TodoItem,
+    *,
+    project_context: ProjectContext | None = None,
+) -> list[str]:
+    """Resolve profile, manifest, and item validation commands, deduplicated."""
     commands: list[str] = []
     seen: set[str] = set()
-    project_check = manifest.settings.project_check
-    key = _normalize_command(project_check)
-    seen.add(key)
-    commands.append(project_check)
-    for command in item.validation.commands:
+
+    def add(command: str) -> None:
         key = _normalize_command(command)
         if key not in seen:
             seen.add(key)
             commands.append(command)
+
+    if project_context is not None:
+        for command in project_context.evidence.required_commands:
+            add(command)
+
+    project_check = manifest.settings.project_check
+    if project_check:
+        add(project_check)
+
+    for command in item.validation.commands:
+        add(command)
+
+    _assert_commands_allowed(commands, project_context)
     return commands
 
 

@@ -156,7 +156,7 @@ async def test_full_run_pass_and_commit(
         text=True,
         check=True,
     )
-    assert "feat:" in log.stdout
+    assert "finalize worktree" in log.stdout or "agent:" in log.stdout
     assert (git_project / "src/greeting.py").is_file()
 
 

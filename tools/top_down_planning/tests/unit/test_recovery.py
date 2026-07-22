@@ -127,7 +127,7 @@ async def test_resume_recovers_reset_plan_from_audit(
     output_dir = tmp_path / "planning-output"
     loaded = load_markdown_input(example_input)
     loaded_goal = load_output_goal(inline="Produce an actionable implementation plan")
-    limits = PlanningLimits(max_iterations=5, batch_size=2)
+    limits = PlanningLimits(max_iterations=5, batch_size=2, concurrent_batches=1)
 
     plan = make_root_plan(
         input_file=str(loaded.path),

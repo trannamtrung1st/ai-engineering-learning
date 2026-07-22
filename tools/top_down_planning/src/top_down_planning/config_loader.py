@@ -29,6 +29,7 @@ class RunConfigFile(BaseModel):
     max_depth: int | None = Field(default=None, ge=1)
     max_items: int | None = Field(default=None, ge=1)
     batch_size: int | None = Field(default=None, ge=1)
+    concurrent_batches: int | None = Field(default=None, ge=1)
     max_retries: int | None = Field(default=None, ge=1)
     max_children_per_expansion: int | None = Field(default=None, ge=1)
     session_timeout_seconds: int | None = Field(default=None, ge=1)
@@ -64,6 +65,7 @@ class ResolvedRunOptions:
     max_depth: int
     max_items: int
     batch_size: int
+    concurrent_batches: int
     max_retries: int
     max_children_per_expansion: int
     session_timeout_seconds: int
@@ -109,6 +111,7 @@ def merge_run_options(
     max_depth: int | None = None,
     max_items: int | None = None,
     batch_size: int | None = None,
+    concurrent_batches: int | None = None,
     max_retries: int | None = None,
     max_children_per_expansion: int | None = None,
     session_timeout_seconds: int | None = None,
@@ -204,6 +207,12 @@ def merge_run_options(
             file_limits.batch_size if file_limits else None,
             defaults.batch_size,
         ),
+        concurrent_batches=_pick_int(
+            concurrent_batches,
+            file_cfg.concurrent_batches if file_cfg else None,
+            file_limits.concurrent_batches if file_limits else None,
+            defaults.concurrent_batches,
+        ),
         max_retries=_pick_int(
             max_retries,
             file_cfg.max_retries if file_cfg else None,
@@ -247,6 +256,7 @@ def options_to_planning_limits(options: ResolvedRunOptions) -> PlanningLimits:
         max_depth=options.max_depth,
         max_items=options.max_items,
         batch_size=options.batch_size,
+        concurrent_batches=options.concurrent_batches,
         max_retries=options.max_retries,
         max_children_per_expansion=options.max_children_per_expansion,
         session_timeout_seconds=options.session_timeout_seconds,

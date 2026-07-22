@@ -184,9 +184,11 @@ The selected batch should normally contain items with:
 decomposition_status = needs_expansion
 ```
 
-at the smallest current depth.
+across independent branches, preferring shallower items first.
 
-Batch size should be configurable.
+Batch size and concurrent batch count should be configurable. Each launched batch
+counts as one iteration. Up to the configured concurrency limit, independent batches
+may run in parallel per wave and are merged atomically after validation.
 
 ## Agent responsibilities
 
@@ -358,6 +360,7 @@ Use configurable safety limits:
 * maximum total items;
 * maximum children per expansion;
 * maximum batch size;
+* maximum concurrent batches;
 * maximum validation retries.
 
 When a limit is reached, preserve the partial plan and return an explicit incomplete result.
@@ -514,6 +517,7 @@ Suggested options:
 --max-depth
 --max-items
 --batch-size
+--concurrent-batches
 --max-retries
 --resume
 --stream-json
@@ -529,8 +533,9 @@ When `--stream-json` is enabled, emit one valid JSON object per line.
 Suggested events:
 
 ```json
-{"type":"planning.started","input":"./idea.md"}
-{"type":"iteration.started","iteration":1,"selected_items":["item-001"]}
+{"type":"planning.started","input":"./idea.md","concurrent_batches":3}
+{"type":"wave.started","wave_size":2,"iterations":[1,2]}
+{"type":"iteration.started","iteration":1,"batch_index":0,"batch_count":2,"selected_items":["item-001"]}
 {"type":"item.expanded","item_id":"item-001","children_count":4}
 {"type":"item.actionable","item_id":"item-003"}
 {"type":"validation.failed","iteration":2,"errors":["Duplicate child title"]}

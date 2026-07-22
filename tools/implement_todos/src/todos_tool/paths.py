@@ -40,3 +40,13 @@ def resolve_within(base: Path, relative: str) -> Path:
     if resolved != base_resolved and base_resolved not in resolved.parents:
         raise ValueError(f"path escapes configured todos directory: {relative}")
     return resolved
+
+
+def resolve_within_repo(repo_root: Path, relative: str) -> Path:
+    """Resolve ``relative`` under repository root or raise ValueError."""
+    rel = validate_relative_path(relative, label="path")
+    base_resolved = repo_root.resolve()
+    resolved = (base_resolved / rel).resolve()
+    if resolved != base_resolved and base_resolved not in resolved.parents:
+        raise ValueError(f"path escapes repository root: {relative}")
+    return resolved

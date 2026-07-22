@@ -32,7 +32,7 @@ async def test_end_to_end_with_fake_agent(
         output_goal=loaded_goal,
         output_dir=output_dir,
         workspace_root=tmp_path,
-        limits=PlanningLimits(max_iterations=5, batch_size=2),
+        limits=PlanningLimits(max_iterations=5, batch_size=2, concurrent_batches=1),
         agent_bin=fake_agent_bin,
         skip_probe=True,
     )
@@ -65,7 +65,7 @@ async def test_resume_after_partial_run(
     output_dir = tmp_path / "planning-output"
     loaded = load_markdown_input(example_input)
     loaded_goal = load_output_goal(inline="Produce an actionable implementation plan")
-    limits = PlanningLimits(max_iterations=5, batch_size=2)
+    limits = PlanningLimits(max_iterations=5, batch_size=2, concurrent_batches=1)
 
     plan = make_root_plan(
         input_file=str(loaded.path),
@@ -115,3 +115,32 @@ async def test_resume_after_partial_run(
     run_state = load_run_state(output_dir)
     assert run_state is not None
     assert run_state.iteration >= 2
+
+
+@pytest.mark.asyncio
+async def test_end_to_end_with_concurrent_batches(
+    tmp_path: Path,
+    example_input: Path,
+    fake_agent_bin: str,
+) -> None:
+    output_dir = tmp_path / "planning-output-concurrent"
+    loaded_goal = load_output_goal(inline="Produce an actionable implementation plan")
+    config = RunConfig(
+        input_path=example_input,
+        output_goal=loaded_goal,
+        output_dir=output_dir,
+        workspace_root=tmp_path,
+        limits=PlanningLimits(
+            max_iterations=5,
+            batch_size=1,
+            concurrent_batches=2,
+        ),
+        agent_bin=fake_agent_bin,
+        skip_probe=True,
+    )
+    report = await Orchestrator(config).run()
+    assert report.status == FinalStatus.COMPLETE
+    assert report.iterations >= 2
+    iteration_dir = output_dir / ".planning-output" / "iterations"
+    assert (iteration_dir / "001-response.json").is_file()
+    assert (iteration_dir / "002-response.json").is_file()

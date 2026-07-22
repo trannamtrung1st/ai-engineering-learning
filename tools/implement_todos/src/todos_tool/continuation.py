@@ -7,8 +7,6 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from pydantic import ValidationError as PydanticValidationError
-
 from todos_tool.errors import RestructuringError
 from todos_tool.git_service import GitStatus, diff_summary, diff_text, status
 from todos_tool.manifest import Workspace, append_manifest_item, load_workspace, save_item
@@ -109,7 +107,7 @@ def load_restructure_proposal(path: Path) -> RestructuringProposal | None:
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
         return RestructuringProposal.model_validate(data)
-    except (OSError, ValueError, PydanticValidationError) as exc:
+    except (OSError, ValueError) as exc:
         raise RestructuringError(f"Invalid restructure proposal at {path}: {exc}") from exc
 
 
@@ -124,7 +122,7 @@ def _validate_new_item(raw: dict[str, Any], workspace: Workspace) -> tuple[TodoI
         raise RestructuringError(f"Refusing to overwrite existing item file: {rel_file}")
     try:
         item = TodoItem.model_validate(data)
-    except PydanticValidationError as exc:
+    except ValueError as exc:
         raise RestructuringError(f"Invalid new item: {exc}") from exc
     if workspace.get(item.id) is not None:
         raise RestructuringError(f"New item id already exists: {item.id}")

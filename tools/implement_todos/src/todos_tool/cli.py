@@ -1,153 +1,258 @@
-"""Typer CLI for the todos tool."""
+"""Argparse CLI for the todos tool."""
 
 from __future__ import annotations
 
+import argparse
 import asyncio
-import os
+import sys
 from pathlib import Path
-from typing import NoReturn, Optional
-
-import typer
-from rich.console import Console
-from rich.table import Table
+from typing import NoReturn
 
 from todos_tool import __version__
-from todos_tool.errors import TodosToolError, UserInterrupted, ValidationError, SchedulingError
+from todos_tool.errors import SchedulingError, TodosToolError, UserInterrupted, ValidationError
+from todos_tool.flags import env_truthy, parse_optional_bool
 from todos_tool.manifest import load_workspace
-from todos_tool.orchestrator import Orchestrator, RunConfig
+from todos_tool.orchestrator import Orchestrator, RunConfig, RunReport
 from todos_tool.persistence import load_state
+from todos_tool.workspace_loader import DryRunReport, load_workspace_repairable
 from todos_tool.scheduler import readiness_rows
 
-app = typer.Typer(
-    name="todos-tool",
-    help="Execute a structured todos/ workspace with Cursor Agent CLI.",
-    add_completion=False,
-    no_args_is_help=True,
-)
+
+def _optional_bool_arg(value: str) -> bool:
+    try:
+        parsed = parse_optional_bool(value, name="flag")
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
+    if parsed is None:
+        raise argparse.ArgumentTypeError("expected true or false")
+    return parsed
 
 
-def _version_callback(value: bool) -> None:
-    if value:
-        typer.echo(__version__)
-        raise typer.Exit(0)
-
-
-_TRUTHY = frozenset({"true", "1", "yes", "on", "t", "y"})
-_FALSY = frozenset({"false", "0", "no", "off", "f", "n"})
-
-
-def _parse_optional_bool(value: str | None, *, name: str) -> bool | None:
-    """Parse ``--name true|false``; ``None`` means use manifest default."""
-    if value is None:
-        return None
-    normalized = value.strip().lower()
-    if normalized in _TRUTHY:
-        return True
-    if normalized in _FALSY:
-        return False
-    raise typer.BadParameter(
-        f"Invalid value for --{name}: {value!r} (expected true or false)"
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        prog="todos-tool",
+        description="Execute a structured todos/ workspace with Cursor Agent CLI.",
     )
+    parser.add_argument(
+        "--version",
+        action="version",
+        version=__version__,
+    )
+
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    validate = subparsers.add_parser("validate", help="Validate schemas and dependencies")
+    _add_workspace_args(validate)
+
+    status = subparsers.add_parser("status", help="Show item readiness and execution state")
+    _add_workspace_args(status)
+    status.add_argument("--no-color", action="store_true", help="Disable color output")
+
+    for name, help_text in (
+        ("run", "Execute ready items in dependency-safe order"),
+        ("resume", "Recover from persisted state and actual Git state"),
+    ):
+        cmd = subparsers.add_parser(name, help=help_text)
+        _add_run_args(cmd)
+
+    commit = subparsers.add_parser(
+        "commit",
+        help="Commit trackable changes for a done item with no commit SHA",
+    )
+    _add_workspace_args(commit)
+    commit.add_argument("--todo", required=True, help="Done item id to commit")
+    commit.add_argument("--no-color", action="store_true")
+    commit.add_argument(
+        "--auto-commit",
+        type=_optional_bool_arg,
+        metavar="BOOL",
+        help="Override manifest auto_commit (true/false)",
+    )
+
+    return parser
+
+
+def _add_workspace_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--workspace",
+        type=Path,
+        default=Path("."),
+        help="Repository workspace root (default: .)",
+    )
+    parser.add_argument(
+        "--todos-dir",
+        default="todos",
+        help="Relative path to the todos workspace (default: todos)",
+    )
+
+
+def _add_run_args(parser: argparse.ArgumentParser) -> None:
+    _add_workspace_args(parser)
+    parser.add_argument("--todo", help="Execute one item id")
+    parser.add_argument("--no-color", action="store_true", help="Disable color output")
+    parser.add_argument(
+        "--model",
+        help="Cursor model override (overrides manifest settings.model)",
+    )
+    parser.add_argument(
+        "--stop-on-failure",
+        type=_optional_bool_arg,
+        metavar="BOOL",
+        help="Override manifest stop_on_failure (true/false)",
+    )
+    parser.add_argument(
+        "--auto-commit",
+        type=_optional_bool_arg,
+        metavar="BOOL",
+        help="Override manifest auto_commit (true/false; manifest default: true)",
+    )
+    parser.add_argument(
+        "--agent-bin",
+        default=None,
+        help="Path to Cursor agent binary (default: agent/cursor-agent on PATH)",
+    )
+    parser.add_argument(
+        "--skip-probe",
+        action="store_true",
+        help="Skip probing agent --help for stream flags (use documented defaults)",
+    )
+    parser.add_argument(
+        "--project-config",
+        type=Path,
+        default=None,
+        help="Path to repository profile YAML (default: .implement-todos.yaml when present)",
+    )
+    parser.add_argument(
+        "--context-file",
+        action="append",
+        default=[],
+        metavar="PATH",
+        help="Additional repository context file (repeatable)",
+    )
+    parser.add_argument(
+        "--skip-commit",
+        action="store_true",
+        help="Do not stage or commit worktree changes during finalization",
+    )
+    parser.add_argument(
+        "--no-auto-repair-yaml",
+        action="store_true",
+        help="Disable bounded YAML auto-repair for malformed TODO documents",
+    )
+    parser.add_argument(
+        "--max-yaml-repair-attempts",
+        type=int,
+        default=2,
+        metavar="N",
+        help="Maximum YAML repair attempts before failing (default: 2; 0 is fail-fast)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Report whether YAML repair would be required without invoking Cursor",
+    )
+    parser.add_argument(
+        "--dry-run-prompts",
+        action="store_true",
+        help="Write work/review prompt previews without agents or state changes",
+    )
+
+
+def _run_config_from_args(args: argparse.Namespace) -> RunConfig:
+    env_skip = env_truthy("TODOS_TOOL_SKIP_PROBE")
+    agent_bin = args.agent_bin
+    if agent_bin is None:
+        import os
+
+        agent_bin = os.environ.get("TODOS_TOOL_AGENT_BIN")
+
+    dry_run_prompts = bool(getattr(args, "dry_run_prompts", False))
+    dry_run = bool(getattr(args, "dry_run", False))
+    if dry_run and not dry_run_prompts:
+        dry_run_prompts = False
+
+    return RunConfig(
+        workspace_root=args.workspace.resolve(),
+        todos_dir=args.todos_dir,
+        no_color=bool(getattr(args, "no_color", False)),
+        model=getattr(args, "model", None),
+        stop_on_failure=getattr(args, "stop_on_failure", None),
+        auto_commit=getattr(args, "auto_commit", None),
+        agent_bin=agent_bin,
+        skip_probe=bool(getattr(args, "skip_probe", False)) or env_skip,
+        dry_run_prompts=dry_run_prompts,
+        dry_run=dry_run,
+        project_config=getattr(args, "project_config", None),
+        context_files=tuple(getattr(args, "context_file", []) or ()),
+        skip_commit=bool(getattr(args, "skip_commit", False)),
+        no_auto_repair_yaml=bool(getattr(args, "no_auto_repair_yaml", False)),
+        max_yaml_repair_attempts=int(getattr(args, "max_yaml_repair_attempts", 2)),
+    )
+
+
+def _print_error(message: str, *, no_color: bool = False) -> None:
+    prefix = "" if no_color else "\033[1;31m"
+    suffix = "" if no_color else "\033[0m"
+    print(f"{prefix}{message}{suffix}", file=sys.stderr)
+
+
+def _print_info(message: str, *, no_color: bool = False) -> None:
+    prefix = "" if no_color else "\033[1;34m"
+    suffix = "" if no_color else "\033[0m"
+    print(f"{prefix}{message}{suffix}")
 
 
 def _exit_interrupted(exc: BaseException, *, no_color: bool) -> NoReturn:
-    console = Console(no_color=no_color)
     if isinstance(exc, UserInterrupted):
-        console.print(f"[yellow]{exc}[/]")
+        _print_error(str(exc), no_color=no_color)
     else:
-        console.print("[yellow]Interrupted — Cursor agent session terminated.[/]")
-    raise typer.Exit(130) from exc
+        _print_error("Interrupted — Cursor agent session terminated.", no_color=no_color)
+    raise SystemExit(130) from exc
 
 
-def _workspace_options(
-    workspace: Path,
-    todos_dir: str,
-    allow_dirty: bool,
-    no_color: bool,
-    model: Optional[str],
-    stop_on_failure: Optional[str],
-    auto_commit: Optional[str],
-    agent_bin: Optional[str],
-    skip_probe: bool,
-    dry_run_prompts: bool = False,
-) -> RunConfig:
-    env_skip = os.environ.get("TODOS_TOOL_SKIP_PROBE", "").lower() in {
-        "1",
-        "true",
-        "yes",
-    }
-    return RunConfig(
-        workspace_root=workspace.resolve(),
-        todos_dir=todos_dir,
-        allow_dirty=allow_dirty,
-        no_color=no_color,
-        model=model,
-        stop_on_failure=_parse_optional_bool(
-            stop_on_failure, name="stop-on-failure"
-        ),
-        auto_commit=_parse_optional_bool(auto_commit, name="auto-commit"),
-        agent_bin=agent_bin,
-        skip_probe=skip_probe or env_skip,
-        dry_run_prompts=dry_run_prompts,
-    )
-
-
-@app.callback()
-def main_callback(
-    version: bool = typer.Option(
-        False,
-        "--version",
-        help="Show version and exit",
-        callback=_version_callback,
-        is_eager=True,
-    ),
-) -> None:
-    """Execute a structured todos/ workspace with Cursor Agent CLI."""
-
-
-@app.command("validate")
-def validate_cmd(
-    workspace: Path = typer.Option(Path("."), "--workspace"),
-    todos_dir: str = typer.Option("todos", "--todos-dir"),
-) -> None:
-    """Validate schemas, files, dependencies, cycles, and duplicate IDs."""
-    console = Console()
+def _cmd_validate(args: argparse.Namespace) -> int:
     try:
-        ws = load_workspace(workspace.resolve(), todos_dir)
+        ws = load_workspace(args.workspace.resolve(), args.todos_dir)
     except ValidationError as exc:
-        console.print(f"[red]{exc}[/]")
-        raise typer.Exit(1) from exc
-    console.print(
-        f"[green]OK[/] {len(ws.items)} item(s) in {ws.todos_dir}"
-    )
+        _print_error(str(exc))
+        return 1
+    print(f"OK {len(ws.items)} item(s) in {ws.todos_dir}")
+    return 0
 
 
-@app.command("status")
-def status_cmd(
-    workspace: Path = typer.Option(Path("."), "--workspace"),
-    todos_dir: str = typer.Option("todos", "--todos-dir"),
-    no_color: bool = typer.Option(False, "--no-color"),
-) -> None:
-    """Show item readiness and active execution state."""
-    console = Console(no_color=no_color or False)
+async def _cmd_dry_run(args: argparse.Namespace) -> int:
+    config = _run_config_from_args(args)
+    report = DryRunReport()
     try:
-        ws = load_workspace(workspace.resolve(), todos_dir)
-    except ValidationError as exc:
-        console.print(f"[red]{exc}[/]")
-        raise typer.Exit(1) from exc
+        await load_workspace_repairable(
+            config,
+            allow_repair=False,
+            dry_run_report=report,
+        )
+    except ValidationError:
+        if report.repair_required:
+            _print_info(
+                "YAML repair would be required:\n"
+                f"{report.diagnostic}",
+                no_color=config.no_color,
+            )
+            return 1
+        _print_error(report.diagnostic or "Validation failed", no_color=config.no_color)
+        return 1
+    _print_info("Workspace valid; YAML repair not required.", no_color=config.no_color)
+    return 0
 
-    table = Table(title="Todos status")
-    table.add_column("ID")
-    table.add_column("Title")
-    table.add_column("Status")
-    table.add_column("Priority")
-    table.add_column("Ready")
-    table.add_column("Commit")
-    table.add_column("Run phase")
+
+def _cmd_status(args: argparse.Namespace) -> int:
+    try:
+        ws = load_workspace(args.workspace.resolve(), args.todos_dir)
+    except ValidationError as exc:
+        _print_error(str(exc), no_color=args.no_color)
+        return 1
 
     auto_commit = ws.manifest.settings.auto_commit
-    console.print(f"auto_commit={auto_commit}")
-
+    print(f"auto_commit={auto_commit}")
+    print(f"{'ID':<12} {'Title':<24} {'Status':<12} {'Priority':<8} {'Ready':<6} {'Commit':<8} Run phase")
     for row in readiness_rows(ws):
         state = load_state(ws.runs_dir(row["id"]))
         phase = state.phase.value if state else "-"
@@ -155,206 +260,91 @@ def status_cmd(
             phase = f"{phase} a{state.logical_attempt}"
         if state and state.agent_pid:
             phase = f"{phase} pid={state.agent_pid}"
-        table.add_row(
-            row["id"],
-            row["title"],
-            row["status"],
-            row["priority"],
-            row["ready"],
-            row["commit"],
-            phase,
+        print(
+            f"{row['id']:<12} {row['title'][:24]:<24} {row['status']:<12} "
+            f"{row['priority']:<8} {row['ready']:<6} {row['commit']:<8} {phase}"
         )
-    console.print(table)
+    return 0
 
 
-@app.command("run")
-def run_cmd(
-    workspace: Path = typer.Option(Path("."), "--workspace"),
-    todos_dir: str = typer.Option("todos", "--todos-dir"),
-    todo: Optional[str] = typer.Option(None, "--todo", help="Execute one item id"),
-    allow_dirty: bool = typer.Option(False, "--allow-dirty"),
-    no_color: bool = typer.Option(False, "--no-color"),
-    model: Optional[str] = typer.Option(
-        None,
-        "--model",
-        help="Cursor model override (overrides manifest settings.model)",
-    ),
-    stop_on_failure: Optional[str] = typer.Option(
-        None,
-        "--stop-on-failure",
-        metavar="BOOL",
-        help="Override manifest stop_on_failure (true/false)",
-    ),
-    auto_commit: Optional[str] = typer.Option(
-        None,
-        "--auto-commit",
-        metavar="BOOL",
-        help="Override manifest auto_commit (true/false; manifest default: true)",
-    ),
-    agent_bin: Optional[str] = typer.Option(
-        None,
-        "--agent-bin",
-        help="Path to Cursor agent binary (default: agent/cursor-agent on PATH)",
-        envvar="TODOS_TOOL_AGENT_BIN",
-    ),
-    skip_probe: bool = typer.Option(
-        False,
-        "--skip-probe",
-        help="Skip probing agent --help for stream flags (use documented defaults)",
-        envvar="TODOS_TOOL_SKIP_PROBE",
-    ),
-    dry_run_prompts: bool = typer.Option(
-        False,
-        "--dry-run-prompts",
-        help="Write work/review prompt previews without agents or state changes",
-    ),
-) -> None:
-    """Execute ready items in dependency-safe order."""
-    config = _workspace_options(
-        workspace,
-        todos_dir,
-        allow_dirty,
-        no_color,
-        model,
-        stop_on_failure,
-        auto_commit,
-        agent_bin,
-        skip_probe,
-        dry_run_prompts,
-    )
-    orch = Orchestrator(config)
-    try:
-        report = asyncio.run(orch.run(todo_id=todo))
-    except (UserInterrupted, KeyboardInterrupt) as exc:
-        _exit_interrupted(exc, no_color=no_color)
-    except TodosToolError as exc:
-        Console(no_color=no_color).print(f"[red]{exc}[/]")
-        raise typer.Exit(1) from exc
-
-    console = Console(no_color=no_color)
-    console.print(
+def _print_report(report, *, no_color: bool) -> int:
+    _print_info(
         f"completed={report.completed} failed={report.failed} "
-        f"retryable={report.retryable} "
-        f"blocked={report.blocked} skipped={report.skipped} "
-        f"planned={report.planned}"
-    )
-    if report.failed or report.retryable or report.blocked:
-        raise typer.Exit(1)
-
-
-@app.command("resume")
-def resume_cmd(
-    workspace: Path = typer.Option(Path("."), "--workspace"),
-    todos_dir: str = typer.Option("todos", "--todos-dir"),
-    allow_dirty: bool = typer.Option(False, "--allow-dirty"),
-    no_color: bool = typer.Option(False, "--no-color"),
-    model: Optional[str] = typer.Option(
-        None,
-        "--model",
-        help="Cursor model override (overrides manifest settings.model)",
-    ),
-    stop_on_failure: Optional[str] = typer.Option(
-        None,
-        "--stop-on-failure",
-        metavar="BOOL",
-        help="Override manifest stop_on_failure (true/false)",
-    ),
-    auto_commit: Optional[str] = typer.Option(
-        None,
-        "--auto-commit",
-        metavar="BOOL",
-        help="Override manifest auto_commit (true/false; manifest default: true)",
-    ),
-    agent_bin: Optional[str] = typer.Option(
-        None,
-        "--agent-bin",
-        envvar="TODOS_TOOL_AGENT_BIN",
-    ),
-    skip_probe: bool = typer.Option(
-        False,
-        "--skip-probe",
-        envvar="TODOS_TOOL_SKIP_PROBE",
-    ),
-    dry_run_prompts: bool = typer.Option(
-        False,
-        "--dry-run-prompts",
-        help="Write resumed prompt previews without agents or state changes",
-    ),
-) -> None:
-    """Recover from persisted state and actual Git state."""
-    config = _workspace_options(
-        workspace,
-        todos_dir,
-        allow_dirty,
-        no_color,
-        model,
-        stop_on_failure,
-        auto_commit,
-        agent_bin,
-        skip_probe,
-        dry_run_prompts,
-    )
-    orch = Orchestrator(config)
-    try:
-        report = asyncio.run(orch.resume())
-    except (UserInterrupted, KeyboardInterrupt) as exc:
-        _exit_interrupted(exc, no_color=no_color)
-    except TodosToolError as exc:
-        Console(no_color=no_color).print(f"[red]{exc}[/]")
-        raise typer.Exit(1) from exc
-
-    console = Console(no_color=no_color)
-    console.print(
-        f"completed={report.completed} failed={report.failed} "
-        f"retryable={report.retryable} "
-        f"blocked={report.blocked} skipped={report.skipped} "
-        f"planned={report.planned}"
-    )
-    if report.failed or report.retryable or report.blocked:
-        raise typer.Exit(1)
-
-
-@app.command("commit")
-def commit_cmd(
-    todo: str = typer.Option(..., "--todo", help="Done item id to commit"),
-    workspace: Path = typer.Option(Path("."), "--workspace"),
-    todos_dir: str = typer.Option("todos", "--todos-dir"),
-    no_color: bool = typer.Option(False, "--no-color"),
-    auto_commit: Optional[str] = typer.Option(
-        None,
-        "--auto-commit",
-        metavar="BOOL",
-        help="Override manifest auto_commit (true/false; manifest default: true)",
-    ),
-) -> None:
-    """Commit trackable changes for a done item with no commit SHA."""
-    config = _workspace_options(
-        workspace,
-        todos_dir,
-        allow_dirty=False,
+        f"retryable={report.retryable} blocked={report.blocked} "
+        f"skipped={report.skipped} planned={report.planned}",
         no_color=no_color,
-        model=None,
-        stop_on_failure=None,
-        auto_commit=auto_commit,
-        agent_bin=None,
-        skip_probe=False,
     )
+    if report.failed or report.retryable or report.blocked:
+        return 1
+    return 0
+
+
+async def _cmd_run(args: argparse.Namespace) -> int:
+    config = _run_config_from_args(args)
+    if config.dry_run:
+        return await _cmd_dry_run(args)
     orch = Orchestrator(config)
-    console = Console(no_color=no_color)
     try:
-        sha = asyncio.run(orch.commit_item(todo))
-    except SchedulingError as exc:
-        console.print(f"[red]{exc}[/]")
-        raise typer.Exit(1) from exc
+        report = await orch.run(todo_id=args.todo)
+    except (UserInterrupted, KeyboardInterrupt) as exc:
+        _exit_interrupted(exc, no_color=config.no_color)
     except TodosToolError as exc:
-        console.print(f"[red]{exc}[/]")
-        raise typer.Exit(1) from exc
-    console.print(f"[green]Committed[/] {todo} as {sha[:8]}")
+        _print_error(str(exc), no_color=config.no_color)
+        return 1
+    return _print_report(report, no_color=config.no_color)
+
+
+async def _cmd_resume(args: argparse.Namespace) -> int:
+    config = _run_config_from_args(args)
+    orch = Orchestrator(config)
+    try:
+        report = await orch.resume()
+    except (UserInterrupted, KeyboardInterrupt) as exc:
+        _exit_interrupted(exc, no_color=config.no_color)
+    except TodosToolError as exc:
+        _print_error(str(exc), no_color=config.no_color)
+        return 1
+    return _print_report(report, no_color=config.no_color)
+
+
+async def _cmd_commit(args: argparse.Namespace) -> int:
+    config = _run_config_from_args(args)
+    orch = Orchestrator(config)
+    try:
+        sha = await orch.commit_item(args.todo)
+    except SchedulingError as exc:
+        _print_error(str(exc), no_color=config.no_color)
+        return 1
+    except TodosToolError as exc:
+        _print_error(str(exc), no_color=config.no_color)
+        return 1
+    prefix = "" if config.no_color else "\033[32m"
+    suffix = "" if config.no_color else "\033[0m"
+    print(f"{prefix}Committed{suffix} {args.todo} as {sha[:8]}")
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = _build_parser()
+    args = parser.parse_args(argv)
+
+    if args.command == "validate":
+        return _cmd_validate(args)
+    if args.command == "status":
+        return _cmd_status(args)
+    if args.command == "run":
+        return asyncio.run(_cmd_run(args))
+    if args.command == "resume":
+        return asyncio.run(_cmd_resume(args))
+    if args.command == "commit":
+        return asyncio.run(_cmd_commit(args))
+    parser.error(f"Unknown command: {args.command}")
+    return 2
 
 
 def run() -> None:
-    app()
+    raise SystemExit(main())
 
 
 if __name__ == "__main__":
-    app()
+    run()
