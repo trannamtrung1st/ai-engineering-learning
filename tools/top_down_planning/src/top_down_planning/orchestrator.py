@@ -99,6 +99,7 @@ class RunConfig:
     audit_iterations: bool = True
     embed_threshold: int | None = None
     stop_hint: LoadedStopHint | None = None
+    notify: bool = True
 
 
 @dataclass(frozen=True)
@@ -122,6 +123,7 @@ class Orchestrator:
         self.stream = StreamEmitter(enabled=config.stream_json)
         self._client: CursorClient | None = None
         self._artifacts: list[str] = []
+        self._render_fallback = False
         self._embed_threshold = resolve_embed_threshold(config.embed_threshold)
         self._agent_pid_lock = threading.Lock()
 
@@ -239,6 +241,7 @@ class Orchestrator:
             output_dir=str(output_dir),
             artifacts=self._artifacts,
             summary=plan.result.summary,
+            render_fallback=self._render_fallback,
         )
         self.stream.emit(
             "planning.completed",
@@ -771,6 +774,7 @@ class Orchestrator:
                     fallback = write_fallback_artifact(output_dir, plan)
                     paths = _persist_render_result(workspace, run_state, [fallback])
                     save_run_state(output_dir, run_state)
+                    self._render_fallback = True
                     self.stream.emit("render.fallback", reason=str(exc))
                     return paths
                 self.stream.emit(
@@ -819,6 +823,7 @@ class Orchestrator:
                     fallback = write_fallback_artifact(output_dir, plan)
                     paths = _persist_render_result(workspace, run_state, [fallback])
                     save_run_state(output_dir, run_state)
+                    self._render_fallback = True
                     self.stream.emit(
                         "render.fallback",
                         reason="; ".join(coverage_errors),
@@ -856,6 +861,7 @@ class Orchestrator:
         fallback = write_fallback_artifact(output_dir, plan)
         paths = _persist_render_result(workspace, run_state, [fallback])
         save_run_state(output_dir, run_state)
+        self._render_fallback = True
         self.stream.emit("render.fallback", reason="exhausted retries")
         return paths
 

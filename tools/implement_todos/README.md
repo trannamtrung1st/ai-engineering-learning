@@ -2,7 +2,7 @@
 
 Standalone Python CLI that executes a structured TODO workspace in **any Git repository** using the Cursor Agent CLI.
 
-The tool is self-contained (stdlib + PyYAML only at runtime). It does not import project-specific runtimes or assume one repository's docs, test commands, or directory layout. Repository context comes from the TODO manifest, an optional repository profile (`.implement-todos.yaml`), and explicit `--context-file` additions.
+The tool is self-contained at runtime (`PyYAML` + `notify-py`). It does not import project-specific runtimes or assume one repository's docs, test commands, or directory layout. Repository context comes from the TODO manifest, an optional repository profile (`.implement-todos.yaml`), and explicit `--context-file` additions.
 
 This tool does **not** generate the initial backlog. Another agent or user prepares the TODO set according to the schema below. The orchestrator validates, schedules, executes, reviews, finalizes Git state, and resumes work.
 
@@ -74,7 +74,21 @@ todos-tool status --workspace examples
 | `--stop-on-failure BOOL` | Override manifest `stop_on_failure` |
 | `--auto-commit BOOL` | Override manifest `auto_commit` |
 
+| `--force-reset` | Clear run state and reset items to pending before running |
+| `--notify` / `--no-notify` | Enable or disable desktop notifications (default: on for desktop sessions) |
+
 Inspection commands (`validate`, `status`) never repair or modify TODO YAML.
+
+## Desktop notifications
+
+Long-running `run`, `resume`, and `commit` commands can emit native desktop notifications when a terminal outcome is reached (run finished, interrupted, failed, or commit succeeded/failed).
+
+- **Default:** enabled on desktop sessions; disabled when `CI=true` or on headless Linux (no display/D-Bus session)
+- **CLI:** `--notify` / `--no-notify`
+- **Env:** `TODOS_TOOL_NOTIFY=true|false`
+- **Config:** `notify: true|false` in run YAML
+
+Notifications are fail-soft: backend errors never change exit codes. Phase-level progress (work, review, evidence, validation) is not notified to avoid alert fatigue.
 
 ## Run config
 
@@ -87,7 +101,7 @@ todos-tool run --config ./run.config.yaml --todo TASK-001
 
 CLI flags override config values. Paths resolve relative to `workspace` (or the config file directory when `workspace` is `.`).
 
-Supported keys include `workspace`, `todos_dir`, `model`, `auto_commit`, `stop_on_failure`, `skip_commit`, `project_config`, `context_files`, `commit_hint`, `commit_hint_file`, `evidence_mode`, `max_identical_evidence_failures`, and `evidence_batch_timeout_seconds`. Use either `commit_hint` or `commit_hint_file`, not both.
+Supported keys include `workspace`, `todos_dir`, `model`, `auto_commit`, `stop_on_failure`, `skip_commit`, `project_config`, `context_files`, `commit_hint`, `commit_hint_file`, `evidence_mode`, `max_identical_evidence_failures`, `evidence_batch_timeout_seconds`, and `notify`. Use either `commit_hint` or `commit_hint_file`, not both.
 
 When no commit hint is supplied, the tool uses a built-in default requiring `agent:` plus a conventional type (`feat:`, `fix:`, or `refactor:`) and a concise subject.
 

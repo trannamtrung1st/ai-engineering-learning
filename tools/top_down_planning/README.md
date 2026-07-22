@@ -70,6 +70,17 @@ top-down-planning run \
 
 Human-readable logs and agent progress go to stderr when `--stream-json` is enabled.
 
+### Desktop notifications
+
+Terminal outcomes (`complete`, incomplete, paused, failed) can emit native desktop notifications.
+
+- **Default:** enabled on desktop sessions; disabled when `CI=true` or on headless Linux
+- **CLI:** `--notify` / `--no-notify`
+- **Env:** `PLANNING_TOOL_NOTIFY=true|false`
+- **Config:** `notify: true|false`
+
+When render falls back to a deterministic artifact, the final notification indicates fallback mode. Wave/iteration progress is not notified. `--stream-json` stdout remains machine-readable only.
+
 ### Model selection
 
 By default the tool uses Cursor model `gpt-5.6-sol-high`. Override with `--model` or `PLANNING_TOOL_MODEL`:

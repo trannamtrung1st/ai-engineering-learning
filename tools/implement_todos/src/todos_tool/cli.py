@@ -14,6 +14,14 @@ from todos_tool.errors import SchedulingError, TodosToolError, UserInterrupted, 
 from todos_tool.flags import env_truthy, parse_optional_bool
 from todos_tool.config_loader import build_run_config
 from todos_tool.manifest import load_workspace
+from todos_tool.notifications import (
+    notify_commit_failure,
+    notify_commit_success,
+    notify_error,
+    notify_interrupted,
+    notify_run_report,
+    resolve_notify_enabled,
+)
 from todos_tool.orchestrator import Orchestrator, RunConfig, RunReport
 from todos_tool.persistence import load_state
 from todos_tool.workspace_loader import DryRunReport, load_workspace_repairable
@@ -69,6 +77,17 @@ def _build_parser() -> argparse.ArgumentParser:
         type=_optional_bool_arg,
         metavar="BOOL",
         help="Override manifest auto_commit (true/false)",
+    )
+    commit_notify = commit.add_mutually_exclusive_group()
+    commit_notify.add_argument(
+        "--notify",
+        action="store_true",
+        help="Enable desktop notifications",
+    )
+    commit_notify.add_argument(
+        "--no-notify",
+        action="store_true",
+        help="Disable desktop notifications",
     )
 
     return parser
@@ -219,6 +238,25 @@ def _add_run_args(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Clear run state and reset items to pending before running",
     )
+    notify_group = parser.add_mutually_exclusive_group()
+    notify_group.add_argument(
+        "--notify",
+        action="store_true",
+        help="Enable desktop notifications when the run finishes",
+    )
+    notify_group.add_argument(
+        "--no-notify",
+        action="store_true",
+        help="Disable desktop notifications",
+    )
+
+
+def _cli_notify_override(args: argparse.Namespace) -> bool | None:
+    if getattr(args, "no_notify", False):
+        return False
+    if getattr(args, "notify", False):
+        return True
+    return None
 
 
 def _run_config_from_args(args: argparse.Namespace) -> RunConfig:
@@ -261,7 +299,16 @@ def _run_config_from_args(args: argparse.Namespace) -> RunConfig:
             args, "evidence_batch_timeout_seconds", None
         ),
         force_reset=bool(getattr(args, "force_reset", False)),
+        notify=_cli_notify_override(args),
     )
+
+
+def _finalize_run_config(config: RunConfig, args: argparse.Namespace) -> RunConfig:
+    config.notify = resolve_notify_enabled(
+        cli_value=_cli_notify_override(args),
+        config_value=config.notify,
+    )
+    return config
 
 
 def _print_error(message: str, *, no_color: bool = False) -> None:
@@ -276,11 +323,18 @@ def _print_info(message: str, *, no_color: bool = False) -> None:
     print(f"{prefix}{message}{suffix}")
 
 
-def _exit_interrupted(exc: BaseException, *, no_color: bool) -> NoReturn:
+def _exit_interrupted(
+    exc: BaseException,
+    *,
+    no_color: bool,
+    notify_enabled: bool = False,
+) -> NoReturn:
     if isinstance(exc, UserInterrupted):
         _print_error(str(exc), no_color=no_color)
+        notify_interrupted(enabled=notify_enabled, message=str(exc))
     else:
         _print_error("Interrupted — Cursor agent session terminated.", no_color=no_color)
+        notify_interrupted(enabled=notify_enabled)
     raise SystemExit(130) from exc
 
 
@@ -352,60 +406,78 @@ def _cmd_status(args: argparse.Namespace) -> int:
     return 0
 
 
-def _print_report(report, *, no_color: bool) -> int:
+def _print_report(report: RunReport, *, no_color: bool, notify_enabled: bool) -> int:
     _print_info(
-        f"completed={report.completed} failed={report.failed} "
-        f"retryable={report.retryable} blocked={report.blocked} "
-        f"skipped={report.skipped} planned={report.planned}",
+        f"completed={len(report.completed)} failed={len(report.failed)} "
+        f"retryable={len(report.retryable)} blocked={len(report.blocked)} "
+        f"skipped={len(report.skipped)} planned={len(report.planned)}",
         no_color=no_color,
     )
+    notify_run_report(report, enabled=notify_enabled)
     if report.failed or report.retryable or report.blocked:
         return 1
     return 0
 
 
 async def _cmd_run(args: argparse.Namespace) -> int:
-    config = _run_config_from_args(args)
+    config = _finalize_run_config(_run_config_from_args(args), args)
     if config.dry_run:
         return await _cmd_dry_run(args)
     orch = Orchestrator(config)
     try:
         report = await orch.run(todo_id=args.todo)
     except (UserInterrupted, KeyboardInterrupt) as exc:
-        _exit_interrupted(exc, no_color=config.no_color)
+        _exit_interrupted(exc, no_color=config.no_color, notify_enabled=config.notify)
     except TodosToolError as exc:
         _print_error(str(exc), no_color=config.no_color)
+        notify_error(enabled=config.notify, message=str(exc))
         return 1
-    return _print_report(report, no_color=config.no_color)
+    return _print_report(report, no_color=config.no_color, notify_enabled=config.notify)
 
 
 async def _cmd_resume(args: argparse.Namespace) -> int:
-    config = _run_config_from_args(args)
+    config = _finalize_run_config(_run_config_from_args(args), args)
     orch = Orchestrator(config)
     try:
         report = await orch.resume()
     except (UserInterrupted, KeyboardInterrupt) as exc:
-        _exit_interrupted(exc, no_color=config.no_color)
+        _exit_interrupted(exc, no_color=config.no_color, notify_enabled=config.notify)
     except TodosToolError as exc:
         _print_error(str(exc), no_color=config.no_color)
+        notify_error(enabled=config.notify, message=str(exc))
         return 1
-    return _print_report(report, no_color=config.no_color)
+    return _print_report(report, no_color=config.no_color, notify_enabled=config.notify)
 
 
 async def _cmd_commit(args: argparse.Namespace) -> int:
-    config = _run_config_from_args(args)
+    config = _finalize_run_config(_run_config_from_args(args), args)
     orch = Orchestrator(config)
     try:
         sha = await orch.commit_item(args.todo)
     except SchedulingError as exc:
         _print_error(str(exc), no_color=config.no_color)
+        notify_commit_failure(
+            enabled=config.notify,
+            item_id=args.todo,
+            message=str(exc),
+        )
         return 1
     except TodosToolError as exc:
         _print_error(str(exc), no_color=config.no_color)
+        notify_commit_failure(
+            enabled=config.notify,
+            item_id=args.todo,
+            message=str(exc),
+        )
         return 1
     prefix = "" if config.no_color else "\033[32m"
     suffix = "" if config.no_color else "\033[0m"
     print(f"{prefix}Committed{suffix} {args.todo} as {sha[:8]}")
+    notify_commit_success(
+        enabled=config.notify,
+        item_id=args.todo,
+        sha=sha,
+    )
     return 0
 
 

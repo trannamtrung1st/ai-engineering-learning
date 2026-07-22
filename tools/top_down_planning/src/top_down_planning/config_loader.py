@@ -37,6 +37,7 @@ class RunConfigFile(BaseModel):
     resume: bool | None = None
     stream_json: bool | None = None
     no_color: bool | None = None
+    notify: bool | None = None
     model: str | None = None
     agent_bin: str | None = None
     skip_probe: bool | None = None
@@ -73,6 +74,7 @@ class ResolvedRunOptions:
     resume: bool
     stream_json: bool
     no_color: bool
+    notify: bool
     model: str | None
     agent_bin: str | None
     skip_probe: bool
@@ -119,6 +121,7 @@ def merge_run_options(
     resume: bool = False,
     stream_json: bool = False,
     no_color: bool = False,
+    notify: bool | None = None,
     model: str | None = None,
     agent_bin: str | None = None,
     skip_probe: bool = False,
@@ -240,6 +243,7 @@ def merge_run_options(
         resume=_pick_bool(resume, file_cfg.resume if file_cfg else None, default=False),
         stream_json=_pick_bool(stream_json, file_cfg.stream_json if file_cfg else None, default=False),
         no_color=_pick_bool(no_color, file_cfg.no_color if file_cfg else None, default=False),
+        notify=_pick_notify(notify, file_cfg.notify if file_cfg else None),
         model=_pick_optional_str(model, file_cfg.model if file_cfg else None),
         agent_bin=_pick_optional_str(agent_bin, file_cfg.agent_bin if file_cfg else None),
         skip_probe=_pick_bool(skip_probe, file_cfg.skip_probe if file_cfg else None, default=False),
@@ -333,6 +337,19 @@ def _pick_int(
 def _pick_bool(cli_flag: bool, file_value: bool | None, *, default: bool) -> bool:
     if cli_flag:
         return True
+    if file_value is not None:
+        return file_value
+    return default
+
+
+def _pick_notify(
+    cli_value: bool | None,
+    file_value: bool | None,
+    *,
+    default: bool = True,
+) -> bool:
+    if cli_value is not None:
+        return cli_value
     if file_value is not None:
         return file_value
     return default

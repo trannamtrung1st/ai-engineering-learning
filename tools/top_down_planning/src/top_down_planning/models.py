@@ -255,3 +255,4 @@ class PlanningReport(BaseModel):
     output_dir: str = ""
     artifacts: list[str] = Field(default_factory=list)
     summary: str | None = None
+    render_fallback: bool = False

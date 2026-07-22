@@ -53,3 +53,4 @@ limits:
 # resume: false
 # stream_json: false
 # no_color: false
+# notify: true

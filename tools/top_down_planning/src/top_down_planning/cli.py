@@ -16,6 +16,12 @@ from top_down_planning.errors import PlanningToolError, ResumeError, UserInterru
 from top_down_planning.input_loader import load_output_goal, load_stop_hint
 from top_down_planning.model_config import resolve_model
 from top_down_planning.models import DEFAULT_CURSOR_MODEL, DEFAULT_INLINE_EMBED_THRESHOLD
+from top_down_planning.notifications import (
+    notify_error,
+    notify_interrupted,
+    notify_planning_report,
+    resolve_notify_enabled,
+)
 from top_down_planning.orchestrator import Orchestrator, RunConfig
 
 app = typer.Typer(
@@ -33,12 +39,27 @@ def _version_callback(value: bool) -> None:
         raise typer.Exit(0)
 
 
-def _exit_interrupted(exc: BaseException, *, no_color: bool) -> NoReturn:
+def _cli_notify_override(*, notify: bool, no_notify: bool) -> bool | None:
+    if no_notify:
+        return False
+    if notify:
+        return True
+    return None
+
+
+def _exit_interrupted(
+    exc: BaseException,
+    *,
+    no_color: bool,
+    notify_enabled: bool = False,
+) -> NoReturn:
     console = Console(no_color=no_color, stderr=True)
     if isinstance(exc, UserInterrupted):
         console.print(f"[yellow]{exc}[/]")
+        notify_interrupted(enabled=notify_enabled, message=str(exc))
     else:
         console.print("[yellow]Interrupted — Cursor agent session terminated.[/]")
+        notify_interrupted(enabled=notify_enabled)
     raise typer.Exit(130) from exc
 
 
@@ -87,7 +108,10 @@ def _execute_run(
     agent_bin: Optional[str],
     skip_probe: bool,
     embed_threshold: Optional[int],
+    notify: bool = False,
+    no_notify: bool = False,
 ) -> None:
+    cli_notify = _cli_notify_override(notify=notify, no_notify=no_notify)
     try:
         options = merge_run_options(
             config_path=config_path,
@@ -107,6 +131,7 @@ def _execute_run(
             resume=resume,
             stream_json=stream_json,
             no_color=no_color,
+            notify=cli_notify,
             model=model,
             agent_bin=agent_bin,
             skip_probe=skip_probe,
@@ -114,6 +139,11 @@ def _execute_run(
         )
     except PlanningToolError as exc:
         raise typer.BadParameter(str(exc)) from exc
+
+    notify_enabled = resolve_notify_enabled(
+        cli_value=cli_notify,
+        config_value=options.notify,
+    )
 
     env_skip = os.environ.get("PLANNING_TOOL_SKIP_PROBE", "").lower() in {
         "1",
@@ -141,16 +171,24 @@ def _execute_run(
             stop_hint=options.stop_hint,
             stop_hint_file=options.stop_hint_file,
         ),
+        notify=notify_enabled,
     )
     orch = Orchestrator(config)
     try:
         report = asyncio.run(orch.run())
     except (UserInterrupted, KeyboardInterrupt) as exc:
-        _exit_interrupted(exc, no_color=options.no_color)
+        _exit_interrupted(exc, no_color=options.no_color, notify_enabled=notify_enabled)
     except (PlanningToolError, ResumeError, ValidationError) as exc:
         if not options.stream_json:
             Console(no_color=options.no_color, stderr=True).print(f"[red]{exc}[/]")
+        notify_error(enabled=notify_enabled, message=str(exc))
         raise typer.Exit(1) from exc
+
+    notify_planning_report(
+        report,
+        enabled=notify_enabled,
+        render_fallback=report.render_fallback,
+    )
 
     if not options.stream_json:
         console = Console(stderr=True)
@@ -257,6 +295,16 @@ def main_callback(
         ),
         envvar="PLANNING_TOOL_EMBED_THRESHOLD",
     ),
+    notify: bool = typer.Option(
+        False,
+        "--notify",
+        help="Enable desktop notifications when the run finishes",
+    ),
+    no_notify: bool = typer.Option(
+        False,
+        "--no-notify",
+        help="Disable desktop notifications",
+    ),
 ) -> None:
     """Top-down planning via Cursor Agent CLI."""
     if ctx.invoked_subcommand is not None:
@@ -288,6 +336,8 @@ def main_callback(
         agent_bin=agent_bin,
         skip_probe=skip_probe,
         embed_threshold=embed_threshold,
+        notify=notify,
+        no_notify=no_notify,
     )
 
 
@@ -373,6 +423,16 @@ def run_cmd(
         ),
         envvar="PLANNING_TOOL_EMBED_THRESHOLD",
     ),
+    notify: bool = typer.Option(
+        False,
+        "--notify",
+        help="Enable desktop notifications when the run finishes",
+    ),
+    no_notify: bool = typer.Option(
+        False,
+        "--no-notify",
+        help="Disable desktop notifications",
+    ),
 ) -> None:
     """Run or resume top-down planning."""
     _execute_run(
@@ -397,6 +457,8 @@ def run_cmd(
         agent_bin=agent_bin,
         skip_probe=skip_probe,
         embed_threshold=embed_threshold,
+        notify=notify,
+        no_notify=no_notify,
     )
 
 

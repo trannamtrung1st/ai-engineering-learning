@@ -9,6 +9,7 @@ description = "Generic TODO execution tool using Cursor Agent CLI"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+  "notify-py>=0.3.43,<0.4",
   "pyyaml>=6.0",
 ]
 

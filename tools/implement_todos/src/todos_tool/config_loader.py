@@ -34,6 +34,7 @@ ALLOWED_CONFIG_KEYS = frozenset(
         "max_identical_evidence_failures",
         "evidence_batch_timeout_seconds",
         "force_reset",
+        "notify",
     }
 )
 
@@ -61,6 +62,7 @@ class LoadedRunConfigFile:
     max_identical_evidence_failures: int | None = None
     evidence_batch_timeout_seconds: int | None = None
     force_reset: bool | None = None
+    notify: bool | None = None
 
 
 def load_run_config_file(path: Path) -> LoadedRunConfigFile:
@@ -120,6 +122,7 @@ def load_run_config_file(path: Path) -> LoadedRunConfigFile:
             raw.get("evidence_batch_timeout_seconds")
         ),
         force_reset=_optional_bool(raw.get("force_reset")),
+        notify=_optional_bool(raw.get("notify")),
     )
 
 
@@ -147,6 +150,7 @@ def build_run_config(
     max_identical_evidence_failures: int | None = None,
     evidence_batch_timeout_seconds: int | None = None,
     force_reset: bool = False,
+    notify: bool | None = None,
 ) -> RunConfig:
     file_cfg = load_run_config_file(config_path) if config_path is not None else None
     config_dir = config_path.resolve().parent if config_path is not None else Path.cwd()
@@ -250,6 +254,10 @@ def build_run_config(
             force_reset,
             file_cfg.force_reset if file_cfg else None,
             default=False,
+        ),
+        notify=_pick_notify(
+            notify,
+            file_cfg.notify if file_cfg else None,
         ),
     )
 
@@ -382,3 +390,16 @@ def _pick_optional_int(
     if cli_value is not None:
         return cli_value
     return file_value
+
+
+def _pick_notify(
+    cli_value: bool | None,
+    file_value: bool | None,
+    *,
+    default: bool = True,
+) -> bool:
+    if cli_value is not None:
+        return cli_value
+    if file_value is not None:
+        return file_value
+    return default
