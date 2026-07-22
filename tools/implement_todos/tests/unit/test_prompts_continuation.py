@@ -35,7 +35,7 @@ def test_work_prompt_requires_instruction_discovery() -> None:
     assert "Do NOT run the full authoritative check suite" in prompt
 
 
-def test_review_prompt_is_commandless() -> None:
+def test_review_prompt_requires_submission_tool() -> None:
     prompt = build_review_prompt(
         _item(),
         logical_attempt=2,
@@ -52,7 +52,9 @@ def test_review_prompt_is_commandless() -> None:
             )
         ],
     )
-    assert "Do not edit files, run shell commands, or commit." in prompt
+    assert "Submit your decision only through the review submission CLI" in prompt
+    assert "todos-review-tool submit --json" in prompt
+    assert "Do not edit files or commit." in prompt
     assert "schema_version" in prompt
     assert "TASK-001" in prompt
     assert "no unresolved blocking issue exists" in prompt
@@ -60,6 +62,7 @@ def test_review_prompt_is_commandless() -> None:
     assert "info/low (non-blocking on pass)" in prompt
     assert "Plain-string issues are treated as blocking" in prompt
     assert "Do NOT rerun validation commands" in prompt
+    assert "except the review submission CLI" in prompt
 
 
 def test_continuation_is_bounded(git_project: Path) -> None:

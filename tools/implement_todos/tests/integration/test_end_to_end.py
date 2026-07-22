@@ -13,7 +13,7 @@ import yaml
 
 from tests.helpers import write_todos
 from todos_tool.cursor_client import CursorClient
-from todos_tool.errors import CursorSessionError
+from todos_tool.errors import CursorSessionError, TodosToolError
 from todos_tool.manifest import load_workspace
 from todos_tool.models import ItemStatus
 from todos_tool.orchestrator import Orchestrator, RunConfig
@@ -147,6 +147,10 @@ async def test_full_run_pass_and_commit(
     assert "passed=true exit_code=0" in review_prompt
     assert "Commit subject guidance" in review_prompt
     assert "proposed_commit_message" in review_prompt
+    submission_path = validation_path.parent / "review-submission-1.json"
+    assert submission_path.is_file()
+    submission = json.loads(submission_path.read_text(encoding="utf-8"))
+    assert submission["decision"] == "pass"
 
     # Exactly one new commit beyond initial
     import subprocess
@@ -528,3 +532,121 @@ async def test_duplicate_commit_prevention_on_resume(
     assert before == after  # no new commit
     ws = load_workspace(git_project)
     assert ws.get("TASK-001").status == ItemStatus.DONE
+
+
+@pytest.mark.asyncio
+async def test_review_chat_json_without_artifact_is_ignored(
+    fake_agent: Path,
+    git_project: Path,
+    sample_item: dict,
+) -> None:
+    write_todos(
+        git_project,
+        [sample_item],
+        settings={
+            "max_attempts": 1,
+            "max_session_restarts_per_phase": 1,
+            "work_timeout_seconds": 30,
+            "review_timeout_seconds": 30,
+            "auto_commit": True,
+            "stop_on_failure": True,
+            "parse_error_threshold": 20,
+        },
+    )
+    wrapper = fake_agent.parent / "agent-chat-only"
+    wrapper.write_text(
+        "#!/bin/sh\n"
+        f"export FAKE_AGENT_WORKSPACE='{git_project}'\n"
+        "export FAKE_AGENT_ITEM_ID=TASK-001\n"
+        "export FAKE_AGENT_WRITE_FILE=src/greeting.py\n"
+        "export FAKE_AGENT_DECISION=pass\n"
+        "export FAKE_AGENT_EMIT_CHAT_JSON=1\n"
+        "export FAKE_AGENT_SKIP_SUBMIT=1\n"
+        f"exec python3 '{fake_agent}' \"$@\"\n",
+        encoding="utf-8",
+    )
+    wrapper.chmod(0o755)
+
+    orch = Orchestrator(
+        RunConfig(
+            workspace_root=git_project,
+            agent_bin=str(wrapper),
+            skip_probe=True,
+            no_color=True,
+            no_auto_repair_yaml=True,
+        )
+    )
+    report = await orch.run(todo_id="TASK-001")
+    assert report.blocked == ["TASK-001"]
+    assert "artifact contract failed" in report.errors["TASK-001"]
+
+    ws = load_workspace(git_project)
+    item = ws.get("TASK-001")
+    assert item is not None
+    assert item.status == ItemStatus.BLOCKED
+
+
+@pytest.mark.asyncio
+async def test_missing_review_artifact_restarts_review_only(
+    fake_agent: Path,
+    git_project: Path,
+    sample_item: dict,
+) -> None:
+    write_todos(
+        git_project,
+        [sample_item],
+        settings={
+            "max_attempts": 3,
+            "max_session_restarts_per_phase": 1,
+            "work_timeout_seconds": 30,
+            "review_timeout_seconds": 30,
+            "auto_commit": True,
+            "stop_on_failure": True,
+            "parse_error_threshold": 20,
+        },
+    )
+    counter = fake_agent.parent / "review_submit_counter"
+    counter.write_text("0", encoding="utf-8")
+    wrapper = fake_agent.parent / "agent-missing-then-submit"
+    wrapper.write_text(
+        "#!/usr/bin/env python3\n"
+        "import os, sys, subprocess\n"
+        f"counter = {str(counter)!r}\n"
+        f"agent = {str(fake_agent)!r}\n"
+        f"workspace = {str(git_project)!r}\n"
+        "args = sys.argv[1:]\n"
+        "is_review = '--mode' in args and 'ask' in args\n"
+        "env = os.environ.copy()\n"
+        "env['FAKE_AGENT_WORKSPACE'] = workspace\n"
+        "env['FAKE_AGENT_ITEM_ID'] = 'TASK-001'\n"
+        "env['FAKE_AGENT_WRITE_FILE'] = 'src/greeting.py'\n"
+        "env['FAKE_AGENT_DECISION'] = 'pass'\n"
+        "if is_review:\n"
+        "    n = int(open(counter).read() or '0') + 1\n"
+        "    open(counter, 'w').write(str(n))\n"
+        "    if n == 1:\n"
+        "        env['FAKE_AGENT_SKIP_SUBMIT'] = '1'\n"
+        "else:\n"
+        "    env['FAKE_AGENT_ATTEMPT'] = '1'\n"
+        "raise SystemExit(subprocess.call([sys.executable, agent, *args], env=env))\n",
+        encoding="utf-8",
+    )
+    wrapper.chmod(0o755)
+
+    orch = Orchestrator(
+        RunConfig(
+            workspace_root=git_project,
+            agent_bin=str(wrapper),
+            skip_probe=True,
+            no_color=True,
+        )
+    )
+    report = await orch.run(todo_id="TASK-001")
+    assert report.completed == ["TASK-001"]
+    assert counter.read_text(encoding="utf-8").strip() == "2"
+    attempt_dir = (
+        git_project / "todos" / "runs" / "TASK-001" / "attempts" / "01"
+    )
+    assert (attempt_dir / "review-session-1.ndjson").is_file()
+    assert (attempt_dir / "review-session-2.ndjson").is_file()
+    assert not (attempt_dir / "work-session-2.ndjson").exists()

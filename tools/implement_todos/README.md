@@ -26,7 +26,7 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ```
 
-After installation: `todos-tool` or `python -m todos_tool`.
+After installation: `todos-tool`, `todos-review-tool`, or `python -m todos_tool`.
 
 ## Quick start
 
@@ -244,7 +244,9 @@ Implementation prompts require tool-managed background execution for long comman
 
 ## Review contract
 
-Success requires a validated JSON decision (`schema_version: 1`) with exact acceptance-criterion coverage, authoritative validation results copied from the orchestrator, authoritative completion-evidence results copied when `evidence.commands` is configured, instruction compliance, no unresolved blocking issues, and on pass a non-empty `proposed_commit_message` for the orchestrator commit step. Review sessions do not rerun validation or evidence commands.
+Success requires a validated review submission artifact (`schema_version: 1`) with exact acceptance-criterion coverage, authoritative validation results copied from the orchestrator, authoritative completion-evidence results copied when `evidence.commands` is configured, instruction compliance, no unresolved blocking issues, and on pass a non-empty `proposed_commit_message` for the orchestrator commit step. Review sessions submit decisions through `todos-review-tool`; assistant chat is not parsed. Review sessions do not rerun validation or evidence commands.
+
+Missing or invalid review artifacts restart only the review session. After `max_session_restarts_per_phase` is exhausted, the item is blocked with the artifact diagnostic instead of silently consuming another work attempt.
 
 ## Streaming and transport
 
@@ -281,6 +283,6 @@ TODOS_TOOL_RUN_LIVE_SMOKE=1 pytest tests/live/test_cursor_prompt_bootstrap.py
 
 ## Known limitations
 
-- Review JSON must appear in assistant text; there is no secondary success heuristic.
+- Review decisions must be submitted through `todos-review-tool`; assistant chat is not parsed.
 - Process-tree termination is best-effort and depends on POSIX process groups.
 - Live MCP / interactive approvals are not used; runs expect headless `--force` / `--trust` operation.

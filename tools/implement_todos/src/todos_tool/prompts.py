@@ -315,6 +315,21 @@ def build_work_prompt(
     return _join_parts(parts)
 
 
+def format_review_tool_section(*, review_tool_command: str = "todos-review-tool") -> str:
+    """Describe the session review CLI the agent must invoke."""
+    return f"""Use the review submission CLI — do **not** return JSON in chat and do **not**
+edit files. Session scope is already configured in the environment
+(`TODOS_TOOL_REVIEW_SUBMISSION_FILE`, `TODOS_TOOL_ITEM_ID`, `TODOS_TOOL_LOGICAL_ATTEMPT`).
+
+Workflow:
+1. Optionally run `{review_tool_command} status` to inspect the current submission state.
+2. Run `{review_tool_command} submit --json '<decision>'` with one review decision object.
+3. Confirm with `{review_tool_command} status` that the submission artifact exists.
+
+The only shell command you may run during review is `{review_tool_command}`.
+Do NOT rerun validation commands or other repository commands."""
+
+
 def build_review_prompt(
     item: TodoItem,
     *,
@@ -336,6 +351,7 @@ def build_review_prompt(
     prompt_only: bool = False,
     continuation: str | None = None,
     commit_hint: str | None = None,
+    review_tool_command: str = "todos-review-tool",
 ) -> str:
     criteria = _bullet_lines(item.acceptance_criteria)
     command_lines = _bullet_lines([f"`{c}`" for c in resolved_commands])
@@ -386,8 +402,8 @@ def build_review_prompt(
     parts = [
         "# Independent review session (read-only)",
         "",
-        "You are an independent reviewer. Remain read-only. Do not edit files, run shell "
-        "commands, or commit.",
+        "You are an independent reviewer. Remain read-only. Do not edit files or commit.",
+        "Submit your decision only through the review submission CLI described below.",
         "",
         f"## Item `{item.id}`",
         f"**Title:** {item.title}",
@@ -437,7 +453,8 @@ def build_review_prompt(
             "",
             "These results were produced outside the Cursor sessions for item "
             "evidence.commands. Copy each command, cwd, passed value, and exit_code "
-            "exactly into your JSON decision. Do not run shell commands during review.",
+            "exactly into your JSON decision. Do not run repository shell commands "
+            "during review except the review submission CLI.",
             "",
             "## Work summary from implementer",
             (work_summary or "(none provided)").strip(),
@@ -478,9 +495,10 @@ def build_review_prompt(
     parts.extend(
         [
             "",
-            "## Your task",
-            "Independently inspect the repository, context files, diff, and validation output.",
-            "Return EXACTLY one JSON object matching this schema (no prose outside a JSON code fence):",
+            "## Review submission tool",
+            format_review_tool_section(review_tool_command=review_tool_command),
+            "",
+            "Submit EXACTLY one JSON object matching this schema:",
             "",
             "```json",
             decision_schema,

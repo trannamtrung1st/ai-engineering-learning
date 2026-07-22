@@ -1,9 +1,6 @@
-"""Extract and validate structured review decisions."""
+"""Validate structured review decisions loaded from session artifacts."""
 
 from __future__ import annotations
-
-import json
-from typing import Any
 
 from todos_tool.errors import ReviewError
 from todos_tool.evidence_matcher import normalize_command, normalize_cwd
@@ -25,75 +22,6 @@ def _normalize_validation_command(command: str) -> str:
 
 def _normalize_evidence_key(command: str, cwd: str) -> str:
     return f"{normalize_command(command)}@{normalize_cwd(cwd)}"
-
-
-def _extract_fenced_json_objects(text: str) -> list[dict[str, Any]]:
-    """Extract JSON objects from ```json ... ``` or ``` ... ``` fences."""
-    candidates: list[dict[str, Any]] = []
-    marker = "```"
-    idx = 0
-    while True:
-        start = text.find(marker, idx)
-        if start < 0:
-            break
-        content_start = start + len(marker)
-        if text[content_start : content_start + 4].lower() == "json":
-            content_start += 4
-        newline = text.find("\n", content_start)
-        if newline < 0:
-            break
-        end = text.find(marker, newline + 1)
-        if end < 0:
-            break
-        block = text[newline + 1 : end].strip()
-        try:
-            obj = json.loads(block)
-            if isinstance(obj, dict):
-                candidates.append(obj)
-        except json.JSONDecodeError:
-            pass
-        idx = end + len(marker)
-    return candidates
-
-
-def extract_json_objects(text: str) -> list[dict[str, Any]]:
-    """Extract candidate JSON objects from assistant text."""
-    candidates: list[dict[str, Any]] = []
-    candidates.extend(_extract_fenced_json_objects(text))
-
-    decoder = json.JSONDecoder()
-    idx = 0
-    while idx < len(text):
-        start = text.find("{", idx)
-        if start < 0:
-            break
-        try:
-            obj, end = decoder.raw_decode(text[start:])
-            if isinstance(obj, dict) and "decision" in obj:
-                candidates.append(obj)
-            idx = start + end
-        except json.JSONDecodeError:
-            idx = start + 1
-    return candidates
-
-
-def parse_review_decision(text: str) -> ReviewDecision:
-    candidates = extract_json_objects(text)
-    if not candidates:
-        raise ReviewError("No JSON review decision found in session output")
-
-    last_error: Exception | None = None
-    for obj in reversed(candidates):
-        if "decision" not in obj and "schema_version" not in obj:
-            continue
-        try:
-            return ReviewDecision.model_validate(obj)
-        except ValueError as exc:
-            last_error = exc
-            continue
-    if last_error:
-        raise ReviewError(f"Malformed review decision: {last_error}") from last_error
-    raise ReviewError("No valid review decision JSON found")
 
 
 def _validate_acceptance_coverage(

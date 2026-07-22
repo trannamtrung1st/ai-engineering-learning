@@ -35,7 +35,7 @@ def test_work_prompt_has_no_project_specific_defaults() -> None:
     assert prompt_requires_instruction_discovery(prompt)
 
 
-def test_review_prompt_is_commandless() -> None:
+def test_review_prompt_uses_submission_tool() -> None:
     prompt = build_review_prompt(
         _item(),
         logical_attempt=1,
@@ -46,7 +46,9 @@ def test_review_prompt_is_commandless() -> None:
         commit_hint="Use `agent: feat:` for features.",
     )
     assert "Do NOT rerun validation commands" in prompt
-    assert "Long-running commands" not in prompt
+    assert "todos-review-tool submit --json" in prompt
+    assert "do **not** return JSON in chat" in prompt
+    assert "Submit your decision only through the review submission CLI" in prompt
     assert "Commit subject guidance" in prompt
     assert "proposed_commit_message" in prompt
 

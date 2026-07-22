@@ -35,7 +35,6 @@ from todos_tool.models import (
 from todos_tool.orchestrator import Orchestrator, RunConfig
 from todos_tool.persistence import load_state, new_run_state, record_transition, save_state
 from todos_tool.prompts import build_review_prompt
-from todos_tool.reviewer import extract_json_objects
 from todos_tool.validation_runner import run_validation_commands
 
 
@@ -91,24 +90,7 @@ def test_review_prompt_includes_diff_with_continuation() -> None:
     assert "## Current git status" in prompt
     assert "## Current git diff" in prompt
     assert "Session restart context" in prompt
-
-
-def test_nested_json_fence_extraction() -> None:
-    nested = {
-        "schema_version": 1,
-        "item_id": "TASK-001",
-        "logical_attempt": 1,
-        "decision": "pass",
-        "summary": "ok",
-        "acceptance_criteria": [],
-        "instruction_compliance": {"passed": True, "violations": []},
-        "issues": [{"severity": "info", "title": "note", "detail": "x"}],
-        "recommended_next_action": "mark_done",
-    }
-    text = "```json\n" + json.dumps(nested, indent=2) + "\n```"
-    objs = extract_json_objects(text)
-    assert objs
-    assert objs[-1]["decision"] == "pass"
+    assert "Review submission tool" in prompt
 
 
 @pytest.mark.asyncio

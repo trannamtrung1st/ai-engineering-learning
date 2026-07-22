@@ -68,8 +68,15 @@ from todos_tool.profile_loader import (
 )
 from todos_tool.project_context import ProjectContext
 from todos_tool.prompts import build_review_prompt, build_work_prompt
-from todos_tool.reviewer import accept_decision, parse_review_decision
+from todos_tool.reviewer import accept_decision
 from todos_tool.review_context import build_review_context
+from todos_tool.review_tool import (
+    build_session_env,
+    load_review_submission,
+    reset_review_submission,
+    resolve_review_tool_command,
+    review_submission_path,
+)
 from todos_tool.run_config import RunConfig
 from todos_tool.scheduler import list_ready, next_ready
 from todos_tool.validation_runner import (
@@ -1264,6 +1271,12 @@ class Orchestrator:
             attempt_dir.mkdir(parents=True, exist_ok=True)
             events_path = attempt_dir / f"review-session-{state.session_number}.ndjson"
             log_path = attempt_dir / f"review-session-{state.session_number}.log"
+            submission_path = review_submission_path(
+                attempt_dir,
+                state.session_number,
+            )
+            reset_review_submission(submission_path)
+            review_tool_command = resolve_review_tool_command()
 
             item_paths = self._item_paths(state)
             review_ctx = build_review_context(
@@ -1284,6 +1297,7 @@ class Orchestrator:
                 authoritative_evidence=state.evidence_results,
                 continuation=continuation,
                 commit_hint=self.config.commit_hint,
+                review_tool_command=review_tool_command,
                 **prompt_kwargs,
             )
 
@@ -1296,6 +1310,13 @@ class Orchestrator:
             session_renderer = ConsoleRenderer.with_file_logging(
                 self.renderer,
                 log_path,
+            )
+
+            session_env = build_session_env(
+                submission_path=submission_path,
+                item_id=item.id,
+                logical_attempt=state.logical_attempt,
+                review_tool_command=review_tool_command,
             )
 
             try:
@@ -1311,6 +1332,7 @@ class Orchestrator:
                     on_agent_started=lambda pid: _persist_agent_pid(
                         runs_dir, state, pid
                     ),
+                    extra_env=session_env,
                 )
             except UserInterrupted as exc:
                 state.agent_pid = None
@@ -1345,9 +1367,10 @@ class Orchestrator:
                 continue
 
             state.agent_pid = None
+            _ = result
 
             try:
-                decision = parse_review_decision(result.assistant_text)
+                decision = load_review_submission(submission_path)
                 accept_decision(
                     decision,
                     item,
@@ -1360,10 +1383,36 @@ class Orchestrator:
                 state.review.issues = [str(exc)]
                 write_json(
                     attempt_dir / f"review-decision-{state.session_number}.json",
-                    {"error": str(exc), "raw": result.assistant_text[-4000:]},
+                    {
+                        "error": str(exc),
+                        "submission_path": str(submission_path),
+                        "submitted": submission_path.is_file(),
+                    },
                 )
-                record_transition(runs_dir, state, Transition.REVIEW_FAILED)
-                return "fail"
+                if state.session_restart_count >= settings.max_session_restarts_per_phase:
+                    state.blocked_reason = (
+                        f"Review artifact contract failed after "
+                        f"{settings.max_session_restarts_per_phase} session restart(s): "
+                        f"{exc}"
+                    )
+                    state.review.summary = state.blocked_reason
+                    record_transition(runs_dir, state, Transition.ITEM_BLOCKED)
+                    return "blocked"
+                state.session_restart_count += 1
+                continuation = build_continuation_context(
+                    item=item,
+                    logical_attempt=state.logical_attempt,
+                    phase="review",
+                    workspace_root=self.config.workspace_root,
+                    previous_summary=state.work_summary,
+                    failure_reason=str(exc),
+                    item_paths=item_paths,
+                    todos_dir=self.config.todos_dir,
+                    validation_notes=format_validation_results(
+                        state.validation_results
+                    ),
+                )
+                continue
 
             write_json(
                 attempt_dir / f"review-decision-{state.session_number}.json",

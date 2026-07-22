@@ -10,12 +10,16 @@ Controlled by argv and environment:
 - FAKE_AGENT_WRITE_FILE / FAKE_AGENT_WRITE_CONTENT
 - FAKE_AGENT_REVIEW_JSON full decision override
 - FAKE_AGENT_CRITERIA JSON list of criterion strings
+- FAKE_AGENT_SKIP_SUBMIT=1 to finish review without writing an artifact
+- FAKE_AGENT_EMIT_CHAT_JSON=1 to emit fenced JSON in chat (ignored by orchestrator)
 """
 
 from __future__ import annotations
 
 import json
 import os
+import shlex
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -68,6 +72,22 @@ def _extract_item_id(prompt_text: str) -> str | None:
     if end < 0:
         return None
     return prompt_text[start:end]
+
+
+def _submit_review_decision(review: dict) -> None:
+    if os.environ.get("FAKE_AGENT_SKIP_SUBMIT"):
+        return
+    command = os.environ.get(
+        "TODOS_TOOL_REVIEW_TOOL_COMMAND",
+        f"{sys.executable} -m todos_tool.review_tool",
+    ).strip()
+    argv = shlex.split(command) if " " in command else [command]
+    payload = json.dumps(review)
+    subprocess.run(
+        [*argv, "submit", "--json", payload],
+        check=True,
+        env=os.environ,
+    )
 
 
 def main() -> int:
@@ -270,7 +290,18 @@ def main() -> int:
         override = os.environ.get("FAKE_AGENT_REVIEW_JSON")
         if override:
             review = json.loads(override)
-        assistant("```json\n" + json.dumps(review, indent=2) + "\n```\n")
+        if os.environ.get("FAKE_AGENT_EMIT_CHAT_JSON"):
+            assistant("```json\n" + json.dumps(review, indent=2) + "\n```\n")
+        if os.environ.get("FAKE_AGENT_SKIP_SUBMIT"):
+            assistant("Review finished without submitting an artifact.\n")
+        else:
+            try:
+                _submit_review_decision(review)
+                assistant("Review decision submitted via todos-review-tool.\n")
+            except subprocess.CalledProcessError:
+                assistant("Review submission failed.\n")
+                emit({"type": "result", "subtype": "success", "duration_ms": 5, "is_error": False})
+                return 0
         emit({"type": "result", "subtype": "success", "duration_ms": 5, "is_error": False})
         return 0
 

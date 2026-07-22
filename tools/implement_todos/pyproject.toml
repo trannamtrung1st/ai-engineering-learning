@@ -22,6 +22,7 @@ dev = [
 
 [project.scripts]
 todos-tool = "todos_tool.cli:run"
+todos-review-tool = "todos_tool.review_tool:main"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

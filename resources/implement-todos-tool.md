@@ -265,9 +265,30 @@ Every generated Cursor prompt must explicitly require this discovery process.
 
 ## 7. Review Decision
 
-Do not determine success by searching normal text for words such as `done` or `passed`.
+Do not determine success by searching normal text for words such as `done` or `passed`, and do not parse JSON embedded in assistant chat.
 
-Require a validated JSON decision:
+Reviewers submit one validated JSON decision through the session-scoped `todos-review-tool` CLI. The orchestrator loads the artifact at:
+
+```text
+{todos_dir}/runs/{item_id}/attempts/{logical_attempt:02d}/review-submission-{session}.json
+```
+
+Environment variables scoped to each review session:
+
+```text
+TODOS_TOOL_REVIEW_SUBMISSION_FILE
+TODOS_TOOL_ITEM_ID
+TODOS_TOOL_LOGICAL_ATTEMPT
+TODOS_TOOL_REVIEW_TOOL_COMMAND
+```
+
+Workflow:
+
+1. Optionally run `todos-review-tool status`.
+2. Run `todos-review-tool submit --json '<decision>'`.
+3. Confirm the submission artifact exists before ending the session.
+
+Decision schema:
 
 ```json
 {
@@ -324,7 +345,7 @@ A pass is valid only when:
 * No unresolved blocking issue exists.
 * The item ID and logical attempt match the active run.
 
-Malformed, contradictory, missing, or stale review output must not complete an item.
+Malformed, contradictory, missing, or stale review artifacts must not complete an item. Missing or invalid submissions restart only the review session within `max_session_restarts_per_phase`; they do not consume a new logical work attempt. After the restart budget is exhausted, the item is blocked with the artifact diagnostic. Only a valid `decision: "fail"` consumes the next logical attempt.
 
 ---
 

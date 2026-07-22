@@ -177,6 +177,7 @@ class CursorTransport:
         prompt_path: Path | None = None,
         renderer: ConsoleRenderer | None = None,
         on_agent_started: AgentStartedCallback | None = None,
+        extra_env: dict[str, str] | None = None,
     ) -> SessionResult:
         await self.ensure_ready()
         assert self._stream_flags is not None
@@ -202,9 +203,9 @@ class CursorTransport:
 
         stdout_path, stderr_path, tmp_paths = _resolve_capture_paths(events_path, log_path)
         proc: subprocess.Popen[bytes] | None = None
-        extra_env: dict[str, str] = {}
+        session_env: dict[str, str] = dict(extra_env or {})
         if prompt_path is not None:
-            extra_env[PROMPT_FILE_ENV] = str(prompt_path.resolve())
+            session_env[PROMPT_FILE_ENV] = str(prompt_path.resolve())
 
         try:
             proc = _spawn_agent(
@@ -213,7 +214,7 @@ class CursorTransport:
                 workspace=workspace,
                 stdout_path=stdout_path,
                 stderr_path=stderr_path,
-                extra_env=extra_env,
+                extra_env=session_env,
             )
             self._active_proc = proc
         except OSError as exc:
