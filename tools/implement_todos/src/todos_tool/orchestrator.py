@@ -61,11 +61,12 @@ from todos_tool.persistence import (
     state_path,
     write_json,
 )
-from todos_tool.profile_loader import (
-    load_project_context,
-    resolve_context_files,
-    validate_required_context,
+from todos_tool.agent_context import (
+    resolve_phase_agent_context,
+    resolve_phase_model,
+    validate_agent_context_paths,
 )
+from todos_tool.context_files import resolve_context_files, validate_required_context
 from todos_tool.project_context import ProjectContext
 from todos_tool.prompts import build_review_prompt, build_work_prompt
 from todos_tool.reviewer import accept_decision
@@ -106,13 +107,9 @@ class Orchestrator:
     def __init__(self, config: RunConfig) -> None:
         self.config = config
         self.renderer = ConsoleRenderer(no_color=config.no_color)
-        self.project_context = load_project_context(
-            config.workspace_root,
-            profile_path=config.project_config,
-            extra_context_files=config.context_files,
-        )
+        self.project_context = config.project_context
         self.resolved_context_files = resolve_context_files(
-            config.workspace_root,
+            config.workspace_root.resolve(),
             self.project_context.context_files,
         )
         self.workspace: Workspace | None = None
@@ -189,8 +186,9 @@ class Orchestrator:
     def _checklist_payload(self, item: TodoItem) -> list[dict[str, Any]]:
         return [entry.to_dict() for entry in item.checklist]
 
-    def _prompt_kwargs(self, item: TodoItem) -> dict[str, Any]:
+    def _prompt_kwargs(self, item: TodoItem, *, phase: str) -> dict[str, Any]:
         manifest = self.workspace.manifest if self.workspace else None
+        agent_context = self._resolve_agent_context(item, phase=phase)
         return {
             "project_context": self.project_context,
             "resolved_context_files": self.resolved_context_files,
@@ -200,7 +198,52 @@ class Orchestrator:
             "out_of_scope": self._manifest_out_of_scope(),
             "contract_refs": item.contract_refs,
             "checklist": self._checklist_payload(item),
+            "agent_context": agent_context,
         }
+
+    def _resolve_agent_context(self, item: TodoItem, *, phase: str):
+        manifest = self.workspace.manifest if self.workspace else None
+        resolved = resolve_phase_agent_context(
+            phase,  # type: ignore[arg-type]
+            self.config.agent_context,
+            manifest.agent_context if manifest else None,
+            item.agent_context,
+        )
+        if not resolved.skills and not resolved.rules:
+            return None
+        return resolved
+
+    def _validate_item_agent_context(self, item: TodoItem) -> None:
+        repo_root = self.config.workspace_root.resolve()
+        for phase in ("implement", "review"):
+            resolved = self._resolve_agent_context(item, phase=phase)
+            if resolved is None:
+                continue
+            validate_agent_context_paths(
+                repo_root,
+                resolved,
+                label=f"{item.id} {phase} agent_context",
+            )
+
+    def _base_session_model(self) -> str | None:
+        manifest_model = None
+        if self.workspace is not None:
+            manifest_model = self.workspace.manifest.settings.model
+        return resolve_model(
+            self.config.model,
+            manifest_model=manifest_model,
+            workspace_loaded=self.workspace is not None,
+        )
+
+    def _resolve_session_model(self, item: TodoItem, *, phase: str) -> str | None:
+        manifest = self.workspace.manifest if self.workspace else None
+        return resolve_phase_model(
+            phase,  # type: ignore[arg-type]
+            self._base_session_model(),
+            self.config.agent_context,
+            manifest.agent_context if manifest else None,
+            item.agent_context,
+        )
 
     async def run(self, todo_id: str | None = None) -> RunReport:
         ensure_git_repo(self.config.workspace_root)
@@ -408,6 +451,7 @@ class Orchestrator:
         return await self._run_loop(initial_item=item, initial_resuming=True)
 
     async def _execute_item(self, item: TodoItem, *, resuming: bool = False) -> None:
+        self._validate_item_agent_context(item)
         settings = self.workspace.manifest.settings
         runs_dir = self.workspace.runs_dir(item.id)
         state = load_state(runs_dir)
@@ -656,6 +700,7 @@ class Orchestrator:
         )
         report = RunReport()
         for item in items:
+            self._validate_item_agent_context(item)
             item_state = state if state and state.item_id == item.id else None
             logical_attempt = (
                 item_state.logical_attempt
@@ -687,7 +732,6 @@ class Orchestrator:
             )
             preview_dir = self.workspace.runs_dir(item.id) / "dry-run"
             preview_dir.mkdir(parents=True, exist_ok=True)
-            prompt_kwargs = self._prompt_kwargs(item)
             work_prompt = build_work_prompt(
                 item,
                 logical_attempt=logical_attempt,
@@ -695,7 +739,7 @@ class Orchestrator:
                 todos_dir=self.config.todos_dir,
                 previous_feedback=feedback,
                 evidence_mode=evidence_mode,
-                **prompt_kwargs,
+                **self._prompt_kwargs(item, phase="implement"),
             )
             review_ctx = (
                 build_review_context(
@@ -729,7 +773,7 @@ class Orchestrator:
                 authoritative_evidence=evidence,
                 prompt_only=validation is None,
                 commit_hint=self.config.commit_hint,
-                **prompt_kwargs,
+                **self._prompt_kwargs(item, phase="review"),
             )
             (preview_dir / "work-prompt.md").write_text(
                 work_prompt,
@@ -1147,7 +1191,6 @@ class Orchestrator:
             events_path = attempt_dir / f"work-session-{state.session_number}.ndjson"
             log_path = attempt_dir / f"work-session-{state.session_number}.log"
             prompt_path = attempt_dir / f"work-prompt-{state.session_number}.md"
-            prompt_kwargs = self._prompt_kwargs(item)
             prompt = build_work_prompt(
                 item,
                 logical_attempt=state.logical_attempt,
@@ -1158,7 +1201,7 @@ class Orchestrator:
                 evidence_failure_feedback=evidence_failure_feedback,
                 evidence_mode=evidence_mode.value,
                 continuation=continuation,
-                **prompt_kwargs,
+                **self._prompt_kwargs(item, phase="implement"),
             )
             prompt_path.write_text(prompt, encoding="utf-8")
 
@@ -1185,6 +1228,7 @@ class Orchestrator:
                     on_agent_started=lambda pid: _persist_agent_pid(
                         runs_dir, state, pid
                     ),
+                    model=self._resolve_session_model(item, phase="implement"),
                 )
             except UserInterrupted as exc:
                 state.agent_pid = None
@@ -1289,7 +1333,6 @@ class Orchestrator:
                 paths=item_paths or None,
             )
             prompt_path = attempt_dir / f"review-prompt-{state.session_number}.md"
-            prompt_kwargs = self._prompt_kwargs(item)
             prompt = build_review_prompt(
                 item,
                 logical_attempt=state.logical_attempt,
@@ -1302,7 +1345,7 @@ class Orchestrator:
                 continuation=continuation,
                 commit_hint=self.config.commit_hint,
                 review_tool_command=review_tool_command,
-                **prompt_kwargs,
+                **self._prompt_kwargs(item, phase="review"),
             )
 
             prompt_path.write_text(prompt, encoding="utf-8")
@@ -1337,6 +1380,7 @@ class Orchestrator:
                         runs_dir, state, pid
                     ),
                     extra_env=session_env,
+                    model=self._resolve_session_model(item, phase="review"),
                 )
             except UserInterrupted as exc:
                 state.agent_pid = None

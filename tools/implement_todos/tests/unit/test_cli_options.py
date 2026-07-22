@@ -59,7 +59,6 @@ def test_run_new_flags_in_help(capsys) -> None:
         "--config",
         "--commit-hint",
         "--commit-hint-file",
-        "--project-config",
         "--context-file",
         "--skip-commit",
         "--no-auto-repair-yaml",

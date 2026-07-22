@@ -172,6 +172,7 @@ def _execute_run(
             stop_hint_file=options.stop_hint_file,
         ),
         notify=notify_enabled,
+        agent_context=options.agent_context,
     )
     orch = Orchestrator(config)
     try:

@@ -196,8 +196,34 @@ runs when the stop hint changes after a prior run stored a digest.
 
 ### Agent context
 
-Prompts use hybrid embedding for the primary input and output goal: when content is at
-or below `--embed-threshold` characters (default 4000, env `PLANNING_TOOL_EMBED_THRESHOLD`),
+Configure workspace-relative skill and rule file paths under `agent_context` in the run config:
+
+```yaml
+agent_context:
+  default:
+    skills:
+      - ./.cursor/skills/shared/SKILL.md
+    rules:
+      - ./.cursor/rules/shared.mdc
+    model: gpt-5.6-sol-high
+  planning:
+    skills:
+      - ./.cursor/skills/planning/SKILL.md
+  rendering:
+    skills:
+      - ./.cursor/skills/rendering/SKILL.md
+    rules:
+      - ./.cursor/rules/rendering.mdc
+    model: composer-2.5
+```
+
+Planning sessions receive `default` + `planning` references. Render sessions receive `default` + `rendering` references. Optional `model` on each block overrides the global `--model` / env default for that phase only; omit it to inherit the normal default.
+
+See [`examples/planning.config.yaml`](examples/planning.config.yaml).
+
+### Prompt embedding
+
+Prompts use hybrid embedding for the primary input and output goal: when content is at or below `--embed-threshold` characters (default 4000, env `PLANNING_TOOL_EMBED_THRESHOLD`),
 it is inlined in the prompt; otherwise the agent is told to open the file by path
 (workspace-relative when possible, plus absolute). Resume compatibility uses SHA-256
 digests of the resolved goal content.

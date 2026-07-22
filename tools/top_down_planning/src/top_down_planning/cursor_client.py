@@ -176,6 +176,7 @@ class CursorClient:
         on_agent_started: AgentStartedCallback | None = None,
         session_mode: SessionMode = "ask",
         extra_env: dict[str, str] | None = None,
+        model: str | None = None,
     ) -> SessionResult:
         await self.ensure_ready()
         assert self._stream_flags is not None
@@ -185,10 +186,11 @@ class CursorClient:
         else:
             prompt_arg = prompt
 
+        session_model = self.model if model is None else model
         args = build_agent_args(
             workspace=workspace,
             prompt=prompt_arg,
-            model=self.model,
+            model=session_model,
             stream_flags=self._stream_flags,
             session_mode=session_mode,
         )

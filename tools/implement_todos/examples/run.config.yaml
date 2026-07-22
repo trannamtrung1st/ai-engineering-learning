@@ -1,7 +1,7 @@
 # Example todos-tool run config.
 #
 # Run:
-#   todos-tool run --config ./examples/run.config.yaml
+#   todos-tool run --config ./examples/run.config.yaml --workspace examples
 #
 # CLI flags override values from this file. Paths are resolved relative to
 # `workspace` (or this file's directory when `workspace` is `.` or omitted),
@@ -10,13 +10,44 @@
 workspace: .
 todos_dir: todos
 
-# Markdown guidance for the review session's proposed commit subject.
-# Use either commit_hint (inline) or commit_hint_file (not both).
 commit_hint: |
   When the review passes, propose a full commit subject like:
   - feature items: `agent: feat: <concise subject>`
   - fix items: `agent: fix: <concise subject>`
   - refactor items: `agent: refactor: <concise subject>`
+
+context:
+  files:
+    - path: README.md
+      required: false
+  instructions:
+    - Follow the repository's existing architecture and naming conventions.
+
+authority:
+  forbidden_path_globs: []
+
+evidence:
+  required_commands:
+    - pytest
+  forbidden_command_patterns: []
+
+git:
+  commit_prefix: "agent:"
+
+agent_context:
+  default:
+    skills:
+      - .cursor/skills/example-shared/SKILL.md
+    rules:
+      - .cursor/rules/example-shared.mdc
+  implement:
+    model: composer-2.5
+    skills:
+      - .cursor/skills/example-implement/SKILL.md
+  review:
+    model: gpt-5.6-sol-high
+    skills:
+      - .cursor/skills/example-review/SKILL.md
 
 # --- Optional run overrides ---------------------------------------------------
 
@@ -29,6 +60,5 @@ commit_hint: |
 # evidence_batch_timeout_seconds: 900
 # notify: true
 # notify_per_item: true
-# project_config: .implement-todos.yaml
 # context_files:
 #   - README.md

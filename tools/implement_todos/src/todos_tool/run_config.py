@@ -5,6 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from todos_tool.agent_context import AgentContextConfig
+from todos_tool.project_context import ProjectContext
+
 DEFAULT_COMMIT_HINT = """\
 When your decision is `pass`, include `proposed_commit_message` in the JSON with the
 exact full commit subject the orchestrator should use.
@@ -32,7 +35,8 @@ class RunConfig:
     skip_probe: bool = False
     dry_run_prompts: bool = False
     dry_run: bool = False
-    project_config: Path | None = None
+    project_context: ProjectContext = field(default_factory=ProjectContext.neutral)
+    agent_context: AgentContextConfig | None = None
     context_files: tuple[str, ...] = ()
     skip_commit: bool = False
     no_auto_repair_yaml: bool = False

@@ -10,8 +10,13 @@ settings:
   auto_commit: true
   stop_on_failure: true
   model: composer-2.5
-  # Optional legacy shared gate; profile evidence.required_commands are preferred
+  # Optional legacy shared gate; run-config evidence.required_commands are preferred
   project_check: pytest
+
+agent_context:
+  implement:
+    rules:
+      - .cursor/rules/example-manifest-implement.mdc
 
 items:
   - id: SETUP-001

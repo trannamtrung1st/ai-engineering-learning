@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from todos_tool.models import TodoItem, ValidationCommandResult, EvidenceCommandResult
+from todos_tool.agent_context import ResolvedAgentContext
 from todos_tool.project_context import ProjectContext, ResolvedContextFile
 from todos_tool.validation_runner import format_validation_results
 from todos_tool.evidence_runner import format_evidence_results
@@ -76,6 +77,35 @@ def _render_project_context(
             "Read applicable context files before making edits or decisions.",
         ]
     )
+    return parts
+
+
+def _render_agent_context(resolved: ResolvedAgentContext | None) -> list[str]:
+    if resolved is None or (not resolved.skills and not resolved.rules):
+        return []
+    parts: list[str] = ["", "## Agent context"]
+    if resolved.skills:
+        lines = [f"- `{path}`" for path in resolved.skills]
+        parts.extend(
+            [
+                "",
+                "### Applicable skills",
+                "\n".join(lines),
+                "",
+                "Read each listed skill file before acting and follow its guidance.",
+            ]
+        )
+    if resolved.rules:
+        lines = [f"- `{path}`" for path in resolved.rules]
+        parts.extend(
+            [
+                "",
+                "### Applicable rules",
+                "\n".join(lines),
+                "",
+                "Read each listed rule file before acting and apply its constraints.",
+            ]
+        )
     return parts
 
 
@@ -167,6 +197,7 @@ def build_work_prompt(
     evidence_mode: str = "captured",
     continuation: str | None = None,
     allow_full_check: bool = False,
+    agent_context: ResolvedAgentContext | None = None,
 ) -> str:
     criteria = _bullet_lines(item.acceptance_criteria)
     command_lines = _bullet_lines([f"`{c}`" for c in resolved_commands])
@@ -197,6 +228,7 @@ def build_work_prompt(
         out_of_scope=out_of_scope,
     ))
     parts.extend(_render_project_context(project_context, resolved_context_files))
+    parts.extend(_render_agent_context(agent_context))
     parts.extend(_render_evidence_commands(item))
 
     if item.evidence.commands:
@@ -352,6 +384,7 @@ def build_review_prompt(
     continuation: str | None = None,
     commit_hint: str | None = None,
     review_tool_command: str = "todos-review-tool",
+    agent_context: ResolvedAgentContext | None = None,
 ) -> str:
     criteria = _bullet_lines(item.acceptance_criteria)
     command_lines = _bullet_lines([f"`{c}`" for c in resolved_commands])
@@ -428,6 +461,7 @@ def build_review_prompt(
         out_of_scope=out_of_scope,
     ))
     parts.extend(_render_project_context(project_context, resolved_context_files))
+    parts.extend(_render_agent_context(agent_context))
 
     if command_lines:
         parts.extend(

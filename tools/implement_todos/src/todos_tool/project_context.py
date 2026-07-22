@@ -36,12 +36,12 @@ class GitPolicy:
 
 @dataclass(frozen=True)
 class ProjectContext:
-    schema_version: int
     context_files: tuple[ContextFileRef, ...]
     instructions: tuple[str, ...]
     authority: AuthorityPolicy
     evidence: EvidencePolicy
     git: GitPolicy
+    schema_version: int = 1
     source: str = "defaults"
 
     @classmethod

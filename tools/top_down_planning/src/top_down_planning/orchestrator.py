@@ -9,6 +9,12 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
+from top_down_planning.agent_context import (
+    AgentContextConfig,
+    resolve_phase_agent_context,
+    resolve_phase_model,
+    validate_agent_context_paths,
+)
 from top_down_planning.completeness import (
     compute_final_status,
     count_by_status,
@@ -100,6 +106,7 @@ class RunConfig:
     embed_threshold: int | None = None
     stop_hint: LoadedStopHint | None = None
     notify: bool = True
+    agent_context: AgentContextConfig | None = None
 
 
 @dataclass(frozen=True)
@@ -126,6 +133,39 @@ class Orchestrator:
         self._render_fallback = False
         self._embed_threshold = resolve_embed_threshold(config.embed_threshold)
         self._agent_pid_lock = threading.Lock()
+        self._validate_config_agent_context()
+
+    def _validate_config_agent_context(self) -> None:
+        if self.config.agent_context is None:
+            return
+        workspace = self.config.workspace_root.resolve()
+        for phase in ("planning", "rendering"):
+            resolved = resolve_phase_agent_context(
+                phase,  # type: ignore[arg-type]
+                self.config.agent_context,
+            )
+            if resolved.skills or resolved.rules:
+                validate_agent_context_paths(
+                    workspace,
+                    resolved,
+                    label=f"{phase} agent_context",
+                )
+
+    def _resolved_agent_context(self, *, phase: str):
+        resolved = resolve_phase_agent_context(
+            phase,  # type: ignore[arg-type]
+            self.config.agent_context,
+        )
+        if not resolved.skills and not resolved.rules:
+            return None
+        return resolved
+
+    def _resolve_session_model(self, *, phase: str) -> str | None:
+        return resolve_phase_model(
+            phase,  # type: ignore[arg-type]
+            resolve_model(self.config.model),
+            self.config.agent_context,
+        )
 
     @property
     def client(self) -> CursorClient:
@@ -606,6 +646,7 @@ class Orchestrator:
             stop_hint=self.config.stop_hint,
             validation_feedback=validation_feedback,
             plan_tool_command=plan_tool_command,
+            agent_context=self._resolved_agent_context(phase="planning"),
         )
         prefix = Path(iteration_prefix(output_dir, spec.iteration))
         prompt_path = prefix.with_name(prefix.name + "-request-prompt.md")
@@ -659,6 +700,7 @@ class Orchestrator:
                 on_agent_started=on_started,
                 session_mode="agent",
                 extra_env=session_env,
+                model=self._resolve_session_model(phase="planning"),
             )
         finally:
             if restore_canonical_plan(
@@ -728,6 +770,7 @@ class Orchestrator:
                 embed_threshold=self._embed_threshold,
                 render_brief_file=render_brief_path,
                 validation_feedback=validation_feedback,
+                agent_context=self._resolved_agent_context(phase="rendering"),
             )
 
             prompt_path = audit_dir / "render-request-prompt.md"
@@ -757,6 +800,7 @@ class Orchestrator:
                         output_dir, run_state, pid
                     ),
                     session_mode="agent",
+                    model=self._resolve_session_model(phase="rendering"),
                 )
             except UserInterrupted:
                 run_state.agent_pids = []

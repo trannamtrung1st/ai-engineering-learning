@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from todos_tool.models import ItemType, TodoItem
-from todos_tool.profile_loader import ResolvedContextFile
-from todos_tool.project_context import ContextFileRef, ProjectContext
+from todos_tool.project_context import ContextFileRef, ProjectContext, ResolvedContextFile
 from todos_tool.prompts import (
     build_repair_prompt,
     build_review_prompt,

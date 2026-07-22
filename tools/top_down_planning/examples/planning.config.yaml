@@ -54,3 +54,20 @@ limits:
 # stream_json: false
 # no_color: false
 # notify: true
+
+agent_context:
+  default:
+    skills:
+      - ./.cursor/skills/example-shared/SKILL.md
+    rules:
+      - ./.cursor/rules/example-shared.mdc
+  planning:
+    model: gpt-5.6-sol-high
+    skills:
+      - ./.cursor/skills/example-planning/SKILL.md
+  rendering:
+    model: composer-2.5
+    skills:
+      - ./.cursor/skills/example-rendering/SKILL.md
+    rules:
+      - ./.cursor/rules/example-rendering.mdc

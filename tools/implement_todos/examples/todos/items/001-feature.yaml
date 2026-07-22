@@ -23,6 +23,11 @@ validation:
 context:
   files: []
 
+agent_context:
+  review:
+    rules:
+      - .cursor/rules/example-item-review.mdc
+
 result:
   completed_at: null
   commit_sha: null

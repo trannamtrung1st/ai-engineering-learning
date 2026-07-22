@@ -9,6 +9,7 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
+from top_down_planning.agent_context import AgentContextConfig
 from top_down_planning.errors import PlanningToolError
 from top_down_planning.models import PlanningLimits
 
@@ -42,6 +43,7 @@ class RunConfigFile(BaseModel):
     agent_bin: str | None = None
     skip_probe: bool | None = None
     embed_threshold: int | None = Field(default=None, ge=0)
+    agent_context: dict[str, Any] | None = None
     limits: PlanningLimits | None = None
 
     @model_validator(mode="after")
@@ -79,6 +81,7 @@ class ResolvedRunOptions:
     agent_bin: str | None
     skip_probe: bool
     embed_threshold: int | None
+    agent_context: AgentContextConfig | None = None
 
 
 def load_run_config_file(path: Path) -> RunConfigFile:
@@ -177,6 +180,7 @@ def merge_run_options(
         raise PlanningToolError("Use either stop_hint or stop_hint_file, not both")
 
     file_limits = file_cfg.limits if file_cfg else None
+    agent_context = _parse_agent_context(file_cfg.agent_context if file_cfg else None)
 
     return ResolvedRunOptions(
         input_path=resolved_input,
@@ -251,6 +255,7 @@ def merge_run_options(
             embed_threshold,
             file_cfg.embed_threshold if file_cfg else None,
         ),
+        agent_context=agent_context,
     )
 
 
@@ -266,6 +271,16 @@ def options_to_planning_limits(options: ResolvedRunOptions) -> PlanningLimits:
         session_timeout_seconds=options.session_timeout_seconds,
         parse_error_threshold=options.parse_error_threshold,
     )
+
+
+def _parse_agent_context(raw: dict[str, Any] | None) -> AgentContextConfig | None:
+    if raw is None:
+        return None
+    try:
+        config = AgentContextConfig.from_dict(raw)
+    except ValueError as exc:
+        raise PlanningToolError(f"Invalid agent_context: {exc}") from exc
+    return None if config.is_empty() else config
 
 
 def _normalize_config_mapping(raw: dict[str, Any]) -> dict[str, Any]:

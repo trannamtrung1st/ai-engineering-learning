@@ -9,6 +9,8 @@ from typing import Any, Literal
 
 from todos_tool.paths import validate_item_id as _validate_item_id
 
+from todos_tool.agent_context import AgentContextConfig
+
 
 DEFAULT_CURSOR_MODEL = "composer-2.5"
 
@@ -289,6 +291,7 @@ class Manifest:
     hard_rules: list[str] = field(default_factory=list)
     stop_conditions: list[str] = field(default_factory=list)
     out_of_scope: list[str] = field(default_factory=list)
+    agent_context: AgentContextConfig | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Manifest:
@@ -301,6 +304,7 @@ class Manifest:
         authority: list[str] | None = None
         if authority_raw is not None:
             authority = _parse_str_list(authority_raw, label="authority")
+        agent_context = _parse_optional_agent_context(mapping.get("agent_context"))
         return cls(
             version=1,
             settings=ManifestSettings.from_dict(mapping["settings"]),
@@ -318,6 +322,7 @@ class Manifest:
             out_of_scope=_parse_str_list(
                 mapping.get("out_of_scope"), label="out_of_scope"
             ),
+            agent_context=agent_context,
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -334,6 +339,8 @@ class Manifest:
             payload["stop_conditions"] = list(self.stop_conditions)
         if self.out_of_scope:
             payload["out_of_scope"] = list(self.out_of_scope)
+        if self.agent_context is not None and not self.agent_context.is_empty():
+            payload["agent_context"] = self.agent_context.to_dict()
         return payload
 
     @classmethod
@@ -355,6 +362,7 @@ def validate_manifest(data: dict[str, Any]) -> None:
         "hard_rules",
         "stop_conditions",
         "out_of_scope",
+        "agent_context",
     }
     if unknown:
         raise ValueError(f"Unknown manifest fields: {sorted(unknown)}")
@@ -371,6 +379,15 @@ def validate_manifest(data: dict[str, Any]) -> None:
         raise ValueError("manifest.items must be a list")
     for idx, item in enumerate(items):
         ManifestItemRef.from_dict(_require_mapping(item, label=f"items[{idx}]"))
+    if "agent_context" in mapping and mapping["agent_context"] is not None:
+        AgentContextConfig.from_dict(mapping["agent_context"])
+
+
+def _parse_optional_agent_context(value: Any) -> AgentContextConfig | None:
+    if value is None:
+        return None
+    config = AgentContextConfig.from_dict(value)
+    return None if config.is_empty() else config
 
 
 @dataclass
@@ -588,6 +605,7 @@ class TodoItem:
     result: ItemResult = field(default_factory=ItemResult)
     contract_refs: list[str] = field(default_factory=list)
     checklist: list[ChecklistItem] = field(default_factory=list)
+    agent_context: AgentContextConfig | None = None
     source_file: str | None = None
 
     def __post_init__(self) -> None:
@@ -638,6 +656,7 @@ class TodoItem:
                 ChecklistItem.from_dict(entry)
                 for entry in mapping.get("checklist") or []
             ],
+            agent_context=_parse_optional_agent_context(mapping.get("agent_context")),
             source_file=_optional_str(mapping.get("source_file"), label="source_file"),
         )
 
@@ -662,6 +681,8 @@ class TodoItem:
             payload["contract_refs"] = list(self.contract_refs)
         if self.checklist:
             payload["checklist"] = [entry.to_dict() for entry in self.checklist]
+        if self.agent_context is not None and not self.agent_context.is_empty():
+            payload["agent_context"] = self.agent_context.to_dict()
         if include_source_file and self.source_file is not None:
             payload["source_file"] = self.source_file
         return payload
@@ -711,6 +732,7 @@ def validate_todo_item(data: dict[str, Any]) -> None:
         "result",
         "contract_refs",
         "checklist",
+        "agent_context",
         "source_file",
     }
     if unknown:
@@ -733,6 +755,8 @@ def validate_todo_item(data: dict[str, Any]) -> None:
     if not criteria:
         raise ValueError("item.acceptance_criteria must contain at least one entry")
     ItemValidation.from_dict(mapping.get("validation"))
+    if "agent_context" in mapping and mapping["agent_context"] is not None:
+        AgentContextConfig.from_dict(mapping["agent_context"])
     ItemEvidence.from_dict(mapping.get("evidence"))
     ItemContext.from_dict(mapping.get("context"))
     ItemResult.from_dict(mapping.get("result"))

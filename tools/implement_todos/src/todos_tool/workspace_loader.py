@@ -9,7 +9,7 @@ from todos_tool.cursor_client import CursorClient
 from todos_tool.errors import ValidationError
 from todos_tool.manifest import Workspace, load_workspace
 from todos_tool.run_config import RunConfig
-from todos_tool.profile_loader import ResolvedContextFile
+from todos_tool.project_context import ResolvedContextFile
 from todos_tool.project_context import ProjectContext
 from todos_tool.yaml_repair import (
     Recoverability,

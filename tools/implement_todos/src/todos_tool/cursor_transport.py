@@ -178,6 +178,7 @@ class CursorTransport:
         renderer: ConsoleRenderer | None = None,
         on_agent_started: AgentStartedCallback | None = None,
         extra_env: dict[str, str] | None = None,
+        model: str | None = None,
     ) -> SessionResult:
         await self.ensure_ready()
         assert self._stream_flags is not None
@@ -187,11 +188,12 @@ class CursorTransport:
             if prompt_path is not None
             else prompt
         )
+        session_model = self.model if model is None else model
         args = build_agent_args(
             workspace=workspace,
             prompt=prompt_arg,
             phase=phase,
-            model=self.model,
+            model=session_model,
             stream_flags=self._stream_flags,
         )
         renderer = renderer or ConsoleRenderer(no_color=self.no_color, log_path=log_path)

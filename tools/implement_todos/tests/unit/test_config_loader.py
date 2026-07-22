@@ -113,6 +113,35 @@ def test_build_run_config_applies_config_without_cli_overrides(tmp_path: Path) -
     assert config.commit_hint == "from config only"
 
 
+def test_build_run_config_rejects_legacy_project_config(tmp_path: Path) -> None:
+    config_path = tmp_path / "run.config.yaml"
+    config_path.write_text("project_config: .implement-todos.yaml\n", encoding="utf-8")
+
+    with pytest.raises(TodosToolError, match="Unsupported config keys"):
+        load_run_config_file(config_path)
+
+
+def test_build_run_config_loads_agent_context(tmp_path: Path) -> None:
+    skill = tmp_path / "skill.md"
+    skill.write_text("# skill\n", encoding="utf-8")
+    config_path = tmp_path / "run.config.yaml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "workspace: .",
+                "agent_context:",
+                "  implement:",
+                f"    skills: [{skill.name}]",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    config = build_run_config(config_path=config_path, workspace=tmp_path)
+    assert config.agent_context is not None
+    assert config.agent_context.implement.skills == (skill.name,)
+
+
 def test_build_run_config_rejects_unknown_keys(tmp_path: Path) -> None:
     config_path = tmp_path / "run.config.yaml"
     config_path.write_text("unknown: true\n", encoding="utf-8")

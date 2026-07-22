@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from top_down_planning.agent_context import ResolvedAgentContext
 from top_down_planning.input_loader import LoadedInput, LoadedOutputGoal, LoadedStopHint
 from top_down_planning.models import PlanItem, PlanState
 from top_down_planning.render_brief import actionable_leaf_items, build_render_brief
@@ -31,6 +32,35 @@ def format_input_file_reference(input_file: Path, workspace: Path) -> str:
         f"- Path: `{display_path}`\n"
         f"- Absolute: `{resolved}`"
     )
+
+
+def _format_agent_context_section(resolved: ResolvedAgentContext | None) -> str:
+    if resolved is None or (not resolved.skills and not resolved.rules):
+        return ""
+    parts: list[str] = ["## Agent context"]
+    if resolved.skills:
+        skill_lines = "\n".join(f"- `{path}`" for path in resolved.skills)
+        parts.extend(
+            [
+                "",
+                "### Applicable skills",
+                skill_lines,
+                "",
+                "Read each listed skill file before acting and follow its guidance.",
+            ]
+        )
+    if resolved.rules:
+        rule_lines = "\n".join(f"- `{path}`" for path in resolved.rules)
+        parts.extend(
+            [
+                "",
+                "### Applicable rules",
+                rule_lines,
+                "",
+                "Read each listed rule file before acting and apply its constraints.",
+            ]
+        )
+    return "\n".join(parts) + "\n\n"
 
 
 def format_output_goal_section(
@@ -212,6 +242,7 @@ def build_planning_prompt(
     stop_hint: LoadedStopHint | None = None,
     validation_feedback: list[str] | None = None,
     plan_tool_command: str = "planning-plan-tool",
+    agent_context: ResolvedAgentContext | None = None,
 ) -> str:
     selected_ids = {item.id for item in selected_items}
     contexts = [_format_item_context(plan, item) for item in selected_items]
@@ -242,7 +273,7 @@ Do not execute implementation work.
 ## Output goal
 {format_output_goal_section(output_goal=output_goal, workspace=workspace, embed_threshold=embed_threshold)}
 
-{stop_hint_block}## Rules
+{stop_hint_block}{_format_agent_context_section(agent_context)}## Rules
 - Choose exactly one operation per selected item.
 - Use `expand` when the item still contains multiple meaningful planning concerns.
 - Use `mark_actionable` when the item is detailed enough for the output goal.
@@ -309,6 +340,7 @@ def build_final_render_prompt(
     embed_threshold: int,
     render_brief_file: Path | None = None,
     validation_feedback: list[str] | None = None,
+    agent_context: ResolvedAgentContext | None = None,
 ) -> str:
     """Build the prompt for the post-decomposition render phase."""
     input_section = format_input_document_section(
@@ -353,7 +385,7 @@ deliverables that satisfy the output goal. Do not execute implementation work.
 3. **Primary input (background context only)** — source intent and domain detail for
    filling in format-specific fields. It must not override or replace breakdown items.
 
-{feedback_block}## Output goal
+{feedback_block}{_format_agent_context_section(agent_context)}## Output goal
 {format_output_goal_section(output_goal=output_goal, workspace=workspace, embed_threshold=embed_threshold)}
 
 Use the output goal to decide:

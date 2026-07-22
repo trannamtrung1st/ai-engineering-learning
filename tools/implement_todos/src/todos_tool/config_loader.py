@@ -8,7 +8,15 @@ from typing import Any
 
 import yaml
 
+from todos_tool.agent_context import AgentContextConfig
+from todos_tool.context_files import parse_context_file_entry
 from todos_tool.errors import TodosToolError
+from todos_tool.project_context import ContextFileRef, ProjectContext
+from todos_tool.repository_config import (
+    merge_project_context,
+    parse_agent_context_from_config,
+    parse_project_context_from_config,
+)
 from todos_tool.run_config import DEFAULT_COMMIT_HINT, RunConfig
 
 ALLOWED_CONFIG_KEYS = frozenset(
@@ -21,8 +29,12 @@ ALLOWED_CONFIG_KEYS = frozenset(
         "auto_commit",
         "agent_bin",
         "skip_probe",
-        "project_config",
+        "context",
         "context_files",
+        "authority",
+        "evidence",
+        "git",
+        "agent_context",
         "skip_commit",
         "no_auto_repair_yaml",
         "max_yaml_repair_attempts",
@@ -39,6 +51,8 @@ ALLOWED_CONFIG_KEYS = frozenset(
     }
 )
 
+REMOVED_CONFIG_KEYS = frozenset({"project_config", "schema_version"})
+
 
 @dataclass(frozen=True)
 class LoadedRunConfigFile:
@@ -50,7 +64,6 @@ class LoadedRunConfigFile:
     auto_commit: bool | None = None
     agent_bin: str | None = None
     skip_probe: bool | None = None
-    project_config: Path | None = None
     context_files: tuple[str, ...] | None = None
     skip_commit: bool | None = None
     no_auto_repair_yaml: bool | None = None
@@ -65,9 +78,10 @@ class LoadedRunConfigFile:
     force_reset: bool | None = None
     notify: bool | None = None
     notify_per_item: bool | None = None
+    raw: dict[str, Any] | None = None
 
 
-def load_run_config_file(path: Path) -> LoadedRunConfigFile:
+def _read_config_mapping(path: Path) -> dict[str, Any]:
     resolved = path.resolve()
     if not resolved.is_file():
         raise TodosToolError(f"Config file not found: {path}")
@@ -79,6 +93,19 @@ def load_run_config_file(path: Path) -> LoadedRunConfigFile:
         raw = {}
     if not isinstance(raw, dict):
         raise TodosToolError(f"Config file must contain a YAML mapping: {path}")
+    return raw
+
+
+def load_run_config_file(path: Path) -> LoadedRunConfigFile:
+    raw = _read_config_mapping(path)
+
+    removed = set(raw) & REMOVED_CONFIG_KEYS
+    if removed:
+        raise TodosToolError(
+            f"Unsupported config keys in {path}: {', '.join(sorted(removed))}. "
+            "Move repository policy into the run config (context, authority, evidence, "
+            "git, agent_context). `.implement-todos.yaml` is no longer supported."
+        )
 
     unknown = set(raw) - ALLOWED_CONFIG_KEYS
     if unknown:
@@ -96,7 +123,9 @@ def load_run_config_file(path: Path) -> LoadedRunConfigFile:
     if context_files_raw is not None:
         if not isinstance(context_files_raw, list):
             raise TodosToolError(f"context_files must be a list in {path}")
-        context_files = tuple(str(item).strip() for item in context_files_raw if str(item).strip())
+        context_files = tuple(
+            str(item).strip() for item in context_files_raw if str(item).strip()
+        )
 
     return LoadedRunConfigFile(
         workspace=_optional_path(raw.get("workspace")),
@@ -107,7 +136,6 @@ def load_run_config_file(path: Path) -> LoadedRunConfigFile:
         auto_commit=_optional_bool(raw.get("auto_commit")),
         agent_bin=_optional_str(raw.get("agent_bin")),
         skip_probe=_optional_bool(raw.get("skip_probe")),
-        project_config=_optional_path(raw.get("project_config")),
         context_files=context_files,
         skip_commit=_optional_bool(raw.get("skip_commit")),
         no_auto_repair_yaml=_optional_bool(raw.get("no_auto_repair_yaml")),
@@ -126,6 +154,7 @@ def load_run_config_file(path: Path) -> LoadedRunConfigFile:
         force_reset=_optional_bool(raw.get("force_reset")),
         notify=_optional_bool(raw.get("notify")),
         notify_per_item=_optional_bool(raw.get("notify_per_item")),
+        raw=raw,
     )
 
 
@@ -140,7 +169,6 @@ def build_run_config(
     auto_commit: bool | None = None,
     agent_bin: str | None = None,
     skip_probe: bool = False,
-    project_config: Path | None = None,
     context_files: tuple[str, ...] = (),
     skip_commit: bool = False,
     no_auto_repair_yaml: bool = False,
@@ -165,13 +193,8 @@ def build_run_config(
         base_dir=config_dir,
         default=Path("."),
     )
-    path_base = resolved_workspace or config_dir
+    path_base = (resolved_workspace or config_dir).resolve()
 
-    resolved_project_config = _pick_path(
-        cli_value=project_config,
-        file_value=file_cfg.project_config if file_cfg else None,
-        base_dir=path_base,
-    )
     resolved_commit_hint_file = _pick_path(
         cli_value=commit_hint_file,
         file_value=file_cfg.commit_hint_file if file_cfg else None,
@@ -192,6 +215,27 @@ def build_run_config(
     merged_context_files = _merge_context_files(
         context_files,
         file_cfg.context_files if file_cfg else None,
+    )
+
+    project_context = ProjectContext.neutral()
+    agent_context: AgentContextConfig | None = None
+    if file_cfg is not None and file_cfg.raw is not None:
+        raw = file_cfg.raw
+        if _has_repository_policy(raw):
+            project_context = parse_project_context_from_config(
+                raw,
+                repo_root=path_base,
+                source="config",
+            )
+        agent_context = parse_agent_context_from_config(raw)
+
+    extra_refs = tuple(
+        parse_context_file_entry(path_base, path)
+        for path in merged_context_files
+    )
+    project_context = merge_project_context(
+        project_context,
+        extra_context_files=extra_refs,
     )
 
     return RunConfig(
@@ -217,7 +261,8 @@ def build_run_config(
             file_cfg.skip_probe if file_cfg else None,
             default=False,
         ),
-        project_config=resolved_project_config,
+        project_context=project_context,
+        agent_context=agent_context,
         context_files=merged_context_files,
         skip_commit=_pick_bool(
             skip_commit,
@@ -269,6 +314,10 @@ def build_run_config(
             default=False,
         ),
     )
+
+
+def _has_repository_policy(raw: dict[str, Any]) -> bool:
+    return any(key in raw for key in ("context", "authority", "evidence", "git"))
 
 
 def _merge_context_files(

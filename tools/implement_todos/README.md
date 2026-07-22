@@ -2,7 +2,7 @@
 
 Standalone Python CLI that executes a structured TODO workspace in **any Git repository** using the Cursor Agent CLI.
 
-The tool is self-contained at runtime (`PyYAML` + `notify-py`). It does not import project-specific runtimes or assume one repository's docs, test commands, or directory layout. Repository context comes from the TODO manifest, an optional repository profile (`.implement-todos.yaml`), and explicit `--context-file` additions.
+The tool is self-contained at runtime (`PyYAML` + `notify-py`). It does not import project-specific runtimes or assume one repository's docs, test commands, or directory layout. Repository context comes from the TODO manifest, the optional run config (`--config`), and explicit `--context-file` additions.
 
 This tool does **not** generate the initial backlog. Another agent or user prepares the TODO set according to the schema below. The orchestrator validates, schedules, executes, reviews, finalizes Git state, and resumes work.
 
@@ -57,7 +57,6 @@ todos-tool status --workspace examples
 | `--config`, `-c` | Optional YAML run config (CLI flags override) |
 | `--commit-hint` | Markdown guidance for review commit subjects |
 | `--commit-hint-file` | Markdown file with commit-subject guidance |
-| `--project-config` | Repository profile YAML (default: `.implement-todos.yaml` when present) |
 | `--context-file` | Additional context file, repeatable |
 | `--skip-commit` | Finalize without `git add` / commit |
 | `--no-auto-repair-yaml` | Fail on malformed TODO YAML instead of bounded repair |
@@ -109,31 +108,20 @@ todos-tool run --config ./run.config.yaml --todo TASK-001
 
 CLI flags override config values. Paths resolve relative to `workspace` (or the config file directory when `workspace` is `.`).
 
-Supported keys include `workspace`, `todos_dir`, `model`, `auto_commit`, `stop_on_failure`, `skip_commit`, `project_config`, `context_files`, `commit_hint`, `commit_hint_file`, `evidence_mode`, `max_identical_evidence_failures`, `evidence_batch_timeout_seconds`, `notify`, and `notify_per_item`. Use either `commit_hint` or `commit_hint_file`, not both.
+Supported keys include `workspace`, `todos_dir`, `model`, `auto_commit`, `stop_on_failure`, `skip_commit`, `context`, `authority`, `evidence`, `git`, `agent_context`, `context_files`, `commit_hint`, `commit_hint_file`, `evidence_mode`, `max_identical_evidence_failures`, `evidence_batch_timeout_seconds`, `notify`, and `notify_per_item`. Use either `commit_hint` or `commit_hint_file`, not both.
+
+When no `--config` is supplied, repository policy defaults to neutral values. `.implement-todos.yaml` is no longer supported.
 
 When no commit hint is supplied, the tool uses a built-in default requiring `agent:` plus a conventional type (`feat:`, `fix:`, or `refactor:`) and a concise subject.
 
-## Model selection
+## Repository policy (run config)
 
-- **Default:** `composer-2.5` (`DEFAULT_CURSOR_MODEL` in `models.py`)
-- **Override:** `--model <slug>` or env var `TODOS_TOOL_MODEL`
-- **Manifest:** `settings.model` in `manifest.yaml` (omit for default; set `null` to use Cursor's default)
-- **Precedence:** CLI `--model` → `TODOS_TOOL_MODEL` → manifest `settings.model` → package default
-
-Resolution lives in [`model_config.py`](src/todos_tool/model_config.py) and is applied when building the Cursor client in the orchestrator.
-
-## Repository profile
-
-Optional `.implement-todos.yaml` at the repository root:
+Repository-level context, evidence gates, git prefix, and agent skills/rules live in the run config:
 
 ```yaml
-schema_version: 1
-
 context:
   files:
     - path: AGENTS.md
-      required: false
-    - path: CONTRIBUTING.md
       required: false
   instructions:
     - Follow the repository's existing architecture and naming.
@@ -148,11 +136,35 @@ evidence:
 
 git:
   commit_prefix: "agent:"
+
+agent_context:
+  default:
+    skills:
+      - .cursor/skills/shared/SKILL.md
+    rules:
+      - .cursor/rules/shared.mdc
+    model: composer-2.5
+  implement:
+    skills:
+      - .cursor/skills/implement/SKILL.md
+    model: gpt-5.6-sol-high
+  review:
+    skills:
+      - .cursor/skills/review/SKILL.md
 ```
 
-Precedence: CLI overrides → profile → neutral defaults. Required missing context files fail before Cursor sessions. Optional missing files are skipped.
+CLI `--context-file` entries merge additively with `context.files`. Required missing context files fail before Cursor sessions. Optional missing files are skipped.
 
-See [`examples/.implement-todos.yaml`](examples/.implement-todos.yaml) for a neutral example.
+See [`examples/run.config.yaml`](examples/run.config.yaml) for a working example.
+
+## Model selection
+
+- **Default:** `composer-2.5` (`DEFAULT_CURSOR_MODEL` in `models.py`)
+- **Override:** `--model <slug>` or env var `TODOS_TOOL_MODEL`
+- **Manifest:** `settings.model` in `manifest.yaml` (omit for default; set `null` to use Cursor's default)
+- **Precedence:** CLI `--model` → `TODOS_TOOL_MODEL` → manifest `settings.model` → package default
+
+Resolution lives in [`model_config.py`](src/todos_tool/model_config.py) and is applied when building the Cursor client in the orchestrator.
 
 ## TODO workspace schema
 
@@ -187,12 +199,28 @@ authority: []               # optional manifest authority references
 hard_rules: []              # optional free-form rules
 stop_conditions: []
 out_of_scope: []
+agent_context:          # optional manifest-level additions
+  implement:
+    rules:
+      - .cursor/rules/manifest-implement.mdc
 items:
   - id: TASK-001
     file: items/001-feature.yaml
 ```
 
-`settings.project_check` is optional. When present, the orchestrator runs it plus item-specific `validation.commands` (deduplicated). Profile `evidence.required_commands` add repository-level gates.
+`settings.project_check` is optional. When present, the orchestrator runs it plus item-specific `validation.commands` (deduplicated). Run-config `evidence.required_commands` add repository-level gates.
+
+### Agent context merge order
+
+Effective skills and rules for each phase merge additively (deduplicated by path) in this order:
+
+1. Run config `default`, then phase (`implement` or `review`)
+2. Manifest `default`, then phase
+3. Item `default`, then phase
+
+Optional `model` entries use the same layer order; the most specific configured model wins. When no phase model is configured, the run uses the normal model precedence: CLI `--model` → `TODOS_TOOL_MODEL` → manifest `settings.model` → package default.
+
+Configured paths must exist as files under the workspace. Work prompts receive the implement set; review prompts receive the review set. When `agent_context` is omitted everywhere, no agent-context section is added to prompts.
 
 ### Item file
 
@@ -216,6 +244,10 @@ evidence:
   commands: []         # optional mapping entries: {command, cwd?, timeout_seconds?}
 context:
   files: []
+agent_context:          # optional item-level additions
+  review:
+    rules:
+      - .cursor/rules/item-review.mdc
 result:
   completed_at: null
   commit_sha: null
@@ -246,7 +278,8 @@ Work, review, continuation, and repair prompts include only supplied context:
 
 - Manifest authority, hard rules, stop conditions, out-of-scope text
 - Item contract refs, checklist state, context files
-- Profile/CLI context files and instructions
+- Run-config context files and instructions
+- Phase-specific agent skills and rules (when configured)
 
 Empty sections are omitted. There are no built-in hard-coded instruction paths.
 

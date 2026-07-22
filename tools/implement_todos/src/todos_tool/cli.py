@@ -164,12 +164,6 @@ def _add_run_args(parser: argparse.ArgumentParser) -> None:
         help="Skip probing agent --help for stream flags (use documented defaults)",
     )
     parser.add_argument(
-        "--project-config",
-        type=Path,
-        default=None,
-        help="Path to repository profile YAML (default: .implement-todos.yaml when present)",
-    )
-    parser.add_argument(
         "--context-file",
         action="append",
         default=[],
@@ -304,7 +298,6 @@ def _run_config_from_args(args: argparse.Namespace) -> RunConfig:
         skip_probe=bool(getattr(args, "skip_probe", False)) or env_skip,
         dry_run_prompts=dry_run_prompts,
         dry_run=dry_run,
-        project_config=getattr(args, "project_config", None),
         context_files=tuple(getattr(args, "context_file", []) or ()),
         skip_commit=bool(getattr(args, "skip_commit", False)),
         no_auto_repair_yaml=bool(getattr(args, "no_auto_repair_yaml", False)),

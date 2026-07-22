@@ -14,7 +14,7 @@ from todos_tool.errors import TodosToolError, ValidationError
 from todos_tool.git_service import status
 from todos_tool.manifest import Workspace, load_workspace
 from todos_tool.persistence import write_json
-from todos_tool.profile_loader import ResolvedContextFile
+from todos_tool.project_context import ResolvedContextFile
 from todos_tool.project_context import ProjectContext
 from todos_tool.prompts import build_repair_prompt
 
