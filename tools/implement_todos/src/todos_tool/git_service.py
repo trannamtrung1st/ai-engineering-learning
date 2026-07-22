@@ -419,6 +419,30 @@ def fingerprint_path(root: Path, path: str) -> str:
     return "missing"
 
 
+def _exclude_runs_path(path: str, todos_dir: str) -> bool:
+    normalized = path.replace("\\", "/").rstrip("/")
+    runs_prefix = f"{todos_dir}/runs"
+    return normalized == runs_prefix or normalized.startswith(f"{runs_prefix}/")
+
+
+def worktree_fingerprint(root: Path, *, todos_dir: str = "todos") -> str:
+    """Deterministic fingerprint of repository worktree state for evidence freshness."""
+    head = head_sha(root)
+    st = status(root)
+    paths = sorted(
+        {
+            path
+            for path in st.changed_paths
+            if not _exclude_runs_path(path, todos_dir)
+        }
+    )
+    entries = [f"head:{head}"]
+    for path in paths:
+        entries.append(f"{path}:{fingerprint_path(root, path)}")
+    digest = hashlib.sha256("\n".join(entries).encode("utf-8"))
+    return digest.hexdigest()
+
+
 def capture_pre_dirty_fingerprints(root: Path, paths: set[str]) -> dict[str, str]:
     return {path: fingerprint_path(root, path) for path in sorted(paths)}
 

@@ -26,6 +26,9 @@ from todos_tool.errors import (
     TodosToolError,
     UserInterrupted,
 )
+from todos_tool.evidence_gate import assess_evidence_gate, command_spec_fingerprint
+from todos_tool.evidence_matcher import ObservedShellRun
+from todos_tool.evidence_runner import format_evidence_results, run_evidence_commands
 from todos_tool.git_finalize import finalize_worktree
 from todos_tool.git_service import (
     ensure_git_repo,
@@ -34,11 +37,13 @@ from todos_tool.git_service import (
     status,
     verify_commit_sha,
     verify_pre_dirty_unchanged,
+    worktree_fingerprint,
 )
 from todos_tool.manifest import Workspace, save_item
 from todos_tool.model_config import resolve_model
 from todos_tool.models import (
     CommitState,
+    EvidenceMode,
     ItemStatus,
     Phase,
     RunState,
@@ -370,6 +375,8 @@ class Orchestrator:
         if state is None:
             baseline = head_sha(self.config.workspace_root)
             state = new_run_state(item.id, baseline)
+            if self.config.evidence_mode:
+                state.evidence_mode = EvidenceMode(self.config.evidence_mode)
             save_state(runs_dir, state)
         elif resuming and self._pre_dirty_fingerprints:
             verify_pre_dirty_unchanged(
@@ -401,6 +408,9 @@ class Orchestrator:
             and state.last_transition
             in (
                 Transition.WORK_PHASE_READY,
+                Transition.EVIDENCE_STARTED,
+                Transition.EVIDENCE_FAILED,
+                Transition.EVIDENCE_PASSED,
                 Transition.VALIDATION_STARTED,
                 Transition.VALIDATION_FAILED,
                 Transition.VALIDATION_PASSED,
@@ -481,6 +491,8 @@ class Orchestrator:
         if state.last_transition in (
             Transition.REVIEW_FAILED,
             Transition.VALIDATION_FAILED,
+            Transition.EVIDENCE_FAILED,
+            Transition.EVIDENCE_STALL,
         ):
             start_attempt = state.logical_attempt + 1
             feedback = self._attempt_failure_feedback(state)
@@ -492,6 +504,15 @@ class Orchestrator:
             state.validation_attempt = 0
             state.validation_results = []
             state.validation_repair_count = 0
+            state.evidence_attempt = 0
+            state.evidence_results = []
+            state.evidence_repair_count = 0
+            state.evidence_failure_signature = None
+            state.evidence_identical_failure_count = 0
+            state.evidence_worktree_fingerprint = None
+            state.evidence_command_spec_fingerprint = None
+            if self.config.evidence_mode:
+                state.evidence_mode = EvidenceMode(self.config.evidence_mode)
             state.phase = Phase.WORK
             state.commit_state = CommitState.NONE
             record_transition(runs_dir, state, Transition.ATTEMPT_STARTED)
@@ -527,7 +548,9 @@ class Orchestrator:
                     Transition.ITEM_BLOCKED,
                     reason=state.blocked_reason,
                 )
-                raise TodosToolError(state.blocked_reason or "Item blocked by review")
+                raise TodosToolError(
+                    state.blocked_reason or "Item blocked by evidence or review"
+                )
 
             feedback = self._attempt_failure_feedback(state)
 
@@ -606,6 +629,17 @@ class Orchestrator:
                 and item_state.validation_attempt == logical_attempt
                 else None
             )
+            evidence = (
+                item_state.evidence_results
+                if item_state
+                and item_state.evidence_attempt == logical_attempt
+                else None
+            )
+            evidence_mode = (
+                item_state.evidence_mode.value
+                if item_state and item_state.evidence_mode is not None
+                else (self.config.evidence_mode or "captured")
+            )
             preview_dir = self.workspace.runs_dir(item.id) / "dry-run"
             preview_dir.mkdir(parents=True, exist_ok=True)
             prompt_kwargs = self._prompt_kwargs(item)
@@ -615,6 +649,7 @@ class Orchestrator:
                 resolved_commands=self._resolved_validation_commands(item),
                 todos_dir=self.config.todos_dir,
                 previous_feedback=feedback,
+                evidence_mode=evidence_mode,
                 **prompt_kwargs,
             )
             review_ctx = (
@@ -646,6 +681,7 @@ class Orchestrator:
                     else status(self.config.workspace_root).porcelain
                 ),
                 authoritative_validation=validation,
+                authoritative_evidence=evidence,
                 prompt_only=validation is None,
                 commit_hint=self.config.commit_hint,
                 **prompt_kwargs,
@@ -672,10 +708,186 @@ class Orchestrator:
         state.validation_attempt = 0
         state.validation_results = []
 
+    def _invalidate_evidence_cache(self, state: RunState) -> None:
+        state.evidence_attempt = 0
+        state.evidence_results = []
+
+    def _resolve_evidence_mode(
+        self,
+        state: RunState,
+        *,
+        resuming: bool,
+    ) -> EvidenceMode:
+        configured = self.config.evidence_mode
+        if state.evidence_mode is None:
+            mode = EvidenceMode(configured or EvidenceMode.CAPTURED.value)
+            state.evidence_mode = mode
+            return mode
+        if (
+            resuming
+            and configured
+            and EvidenceMode(configured) != state.evidence_mode
+        ):
+            raise TodosToolError(
+                f"Evidence mode mismatch: persisted {state.evidence_mode.value}, "
+                f"requested {configured}. Delete run state and restart from implement."
+            )
+        return state.evidence_mode
+
+    def _evidence_failure_feedback(self, state: RunState) -> str:
+        return format_evidence_results(state.evidence_results)
+
+    def _persist_work_shell_evidence(
+        self,
+        attempt_dir: Path,
+        session_number: int,
+        shell_evidence: list,
+    ) -> None:
+        payload = [
+            ObservedShellRun(
+                command=entry.command,
+                cwd=entry.cwd or ".",
+                completed=entry.completed,
+                exit_code=entry.exit_code,
+                source=getattr(entry, "source", "captured"),
+            ).to_dict()
+            for entry in shell_evidence
+        ]
+        write_json(
+            attempt_dir / f"evidence-captured-session-{session_number}.json",
+            payload,
+        )
+
+    def _load_captured_runs_for_attempt(self, attempt_dir: Path) -> list[ObservedShellRun]:
+        runs: list[ObservedShellRun] = []
+        for path in sorted(attempt_dir.glob("evidence-captured-session-*.json")):
+            try:
+                raw = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if isinstance(raw, dict) and isinstance(raw.get("value"), list):
+                raw = raw["value"]
+            if not isinstance(raw, list):
+                continue
+            for entry in raw:
+                if isinstance(entry, dict):
+                    runs.append(ObservedShellRun.from_dict(entry))
+        return runs
+
+    async def _run_evidence_gate(
+        self,
+        item: TodoItem,
+        state: RunState,
+        runs_dir: Path,
+    ) -> str:
+        if not item.evidence.commands:
+            return "pass"
+
+        mode = self._resolve_evidence_mode(state, resuming=False)
+        attempt_dir = attempts_dir(runs_dir, state.logical_attempt)
+        worktree_fp = worktree_fingerprint(
+            self.config.workspace_root,
+            todos_dir=self.config.todos_dir,
+        )
+        spec_fp = command_spec_fingerprint(item.evidence.commands)
+
+        if (
+            state.evidence_attempt == state.logical_attempt
+            and state.evidence_results
+            and all(result.passed for result in state.evidence_results)
+            and state.evidence_worktree_fingerprint == worktree_fp
+            and state.evidence_command_spec_fingerprint == spec_fp
+        ):
+            return "pass"
+
+        self.renderer.rule(
+            f"EVIDENCE {item.id} attempt={state.logical_attempt} mode={mode.value}"
+        )
+        record_transition(runs_dir, state, Transition.EVIDENCE_STARTED)
+
+        driver_results = None
+        if mode == EvidenceMode.DRIVER:
+            driver_results = await run_evidence_commands(
+                self.config.workspace_root,
+                item.evidence.commands,
+                timeout_seconds=self.workspace.manifest.settings.validation_timeout_seconds,
+                batch_timeout_seconds=self.config.evidence_batch_timeout_seconds,
+                project_context=self.project_context,
+            )
+
+        captured_runs = (
+            self._load_captured_runs_for_attempt(attempt_dir)
+            if mode == EvidenceMode.CAPTURED
+            else None
+        )
+
+        assessment = assess_evidence_gate(
+            specs=item.evidence.commands,
+            mode=mode,
+            worktree_fingerprint=worktree_fp,
+            stored_worktree_fingerprint=state.evidence_worktree_fingerprint,
+            stored_command_spec_fingerprint=state.evidence_command_spec_fingerprint,
+            captured_runs=captured_runs,
+            driver_results=driver_results,
+            prior_failure_signature=state.evidence_failure_signature,
+            identical_failure_count=state.evidence_identical_failure_count,
+            max_identical_failures=self.config.max_identical_evidence_failures,
+        )
+
+        state.evidence_worktree_fingerprint = assessment.worktree_fingerprint
+        state.evidence_command_spec_fingerprint = assessment.command_spec_fingerprint
+        state.evidence_failure_signature = assessment.failure_signature
+        state.evidence_identical_failure_count = assessment.identical_failure_count
+        state.evidence_results = assessment.results
+
+        payload = {
+            "logical_attempt": state.logical_attempt,
+            "mode": mode.value,
+            "passed": assessment.passed,
+            "stale": assessment.stale,
+            "stalled": assessment.stalled,
+            "worktree_fingerprint": assessment.worktree_fingerprint,
+            "command_spec_fingerprint": assessment.command_spec_fingerprint,
+            "results": [result.to_dict() for result in assessment.results],
+            "feedback": assessment.feedback,
+        }
+        write_json(attempt_dir / "evidence-results.json", payload)
+        if state.evidence_repair_count:
+            write_json(
+                attempt_dir / f"evidence-results-repair-{state.evidence_repair_count}.json",
+                payload,
+            )
+
+        if assessment.passed:
+            state.evidence_attempt = state.logical_attempt
+            record_transition(runs_dir, state, Transition.EVIDENCE_PASSED)
+            save_state(runs_dir, state)
+            return "pass"
+
+        record_transition(runs_dir, state, Transition.EVIDENCE_FAILED)
+        save_state(runs_dir, state)
+
+        if assessment.stalled:
+            state.blocked_reason = assessment.remediation or assessment.feedback
+            record_transition(runs_dir, state, Transition.EVIDENCE_STALL)
+            save_state(runs_dir, state)
+            return "stall"
+
+        return "fail"
+
     def _validation_failure_feedback(self, state: RunState) -> str:
         return format_validation_results(state.validation_results)
 
     def _attempt_failure_feedback(self, state: RunState) -> str | None:
+        if (
+            state.last_transition
+            in (
+                Transition.EVIDENCE_FAILED,
+                Transition.EVIDENCE_STALL,
+            )
+            and state.evidence_results
+        ):
+            return self._evidence_failure_feedback(state)
         if (
             state.last_transition == Transition.VALIDATION_FAILED
             and state.validation_results
@@ -716,8 +928,37 @@ class Orchestrator:
     ) -> str:
         settings = self.workspace.manifest.settings
         current_feedback = feedback
+        self._resolve_evidence_mode(state, resuming=preserve_session)
 
         while True:
+            while True:
+                evidence_gate = await self._run_evidence_gate(item, state, runs_dir)
+                if evidence_gate == "pass":
+                    break
+                if evidence_gate == "stall":
+                    return "blocked"
+
+                state.evidence_repair_count += 1
+                self._invalidate_evidence_cache(state)
+                repair_feedback = self._evidence_failure_feedback(state)
+                work_ok = await self._run_work_phase(
+                    item,
+                    state,
+                    runs_dir,
+                    current_feedback,
+                    preserve_session=False,
+                    evidence_failure_feedback=repair_feedback,
+                )
+                if not work_ok:
+                    return "fail"
+
+                await self._reload_workspace()
+                self._maybe_apply_restructure(item, runs_dir)
+                item = self.workspace.get(item.id) or item
+                if item.status == ItemStatus.SUPERSEDED:
+                    return "superseded"
+                current_feedback = feedback
+
             gate = await self._run_validation_gate(item, state, runs_dir)
             if gate == "pass":
                 break
@@ -728,6 +969,7 @@ class Orchestrator:
 
             state.validation_repair_count += 1
             self._invalidate_validation_cache(state)
+            self._invalidate_evidence_cache(state)
             repair_feedback = self._validation_failure_feedback(state)
             work_ok = await self._run_work_phase(
                 item,
@@ -837,9 +1079,11 @@ class Orchestrator:
         *,
         preserve_session: bool = False,
         validation_failure_feedback: str | None = None,
+        evidence_failure_feedback: str | None = None,
     ) -> bool:
         settings = self.workspace.manifest.settings
         continuation: str | None = None
+        evidence_mode = self._resolve_evidence_mode(state, resuming=preserve_session)
         if not preserve_session:
             state.session_restart_count = 0
 
@@ -866,6 +1110,8 @@ class Orchestrator:
                 todos_dir=self.config.todos_dir,
                 previous_feedback=feedback,
                 validation_failure_feedback=validation_failure_feedback,
+                evidence_failure_feedback=evidence_failure_feedback,
+                evidence_mode=evidence_mode.value,
                 continuation=continuation,
                 **prompt_kwargs,
             )
@@ -927,6 +1173,12 @@ class Orchestrator:
 
             state.work_summary = _extract_summary(result)
             state.changed_paths = self._item_paths(state)
+            self._persist_work_shell_evidence(
+                attempt_dir,
+                state.session_number,
+                result.shell_evidence,
+            )
+            self._invalidate_evidence_cache(state)
             state.session_restart_count = 0
             state.agent_pid = None
             record_transition(runs_dir, state, Transition.WORK_PHASE_READY)
@@ -943,6 +1195,16 @@ class Orchestrator:
     ) -> str:
         settings = self.workspace.manifest.settings
         continuation: str | None = None
+        if item.evidence.commands and (
+            state.evidence_attempt != state.logical_attempt
+            or not state.evidence_results
+            or not all(result.passed for result in state.evidence_results)
+        ):
+            evidence_gate = await self._run_evidence_gate(item, state, runs_dir)
+            if evidence_gate == "stall":
+                return "blocked"
+            if evidence_gate != "pass":
+                return "fail"
         if (
             not state.validation_results
             or state.validation_attempt != state.logical_attempt
@@ -985,6 +1247,7 @@ class Orchestrator:
                 git_diff=review_ctx.format_summary(),
                 git_status=review_ctx.status_porcelain,
                 authoritative_validation=state.validation_results,
+                authoritative_evidence=state.evidence_results,
                 continuation=continuation,
                 commit_hint=self.config.commit_hint,
                 **prompt_kwargs,
@@ -1056,6 +1319,7 @@ class Orchestrator:
                     item,
                     state.logical_attempt,
                     state.validation_results,
+                    state.evidence_results,
                 )
             except ReviewError as exc:
                 state.review.summary = str(exc)

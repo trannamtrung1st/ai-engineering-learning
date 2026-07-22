@@ -144,6 +144,44 @@ def main() -> int:
         return 0
 
     if mode == "work":
+        shell_evidence_raw = os.environ.get("FAKE_AGENT_SHELL_EVIDENCE")
+        if shell_evidence_raw:
+            for entry in json.loads(shell_evidence_raw):
+                command = entry["command"]
+                cwd = entry.get("cwd", ".")
+                emit(
+                    {
+                        "type": "tool_call",
+                        "subtype": "started",
+                        "tool_call": {
+                            "shellToolCall": {
+                                "args": {
+                                    "command": command,
+                                    "workingDirectory": cwd,
+                                }
+                            }
+                        },
+                    }
+                )
+                emit(
+                    {
+                        "type": "tool_call",
+                        "subtype": "completed",
+                        "tool_call": {
+                            "shellToolCall": {
+                                "args": {
+                                    "command": command,
+                                    "workingDirectory": cwd,
+                                },
+                                "result": {
+                                    "success": {
+                                        "exitCode": int(entry.get("exit_code", 0)),
+                                    }
+                                },
+                            }
+                        },
+                    }
+                )
         emit(
             {
                 "type": "tool_call",
@@ -195,6 +233,8 @@ def main() -> int:
                 }
             ]
         )
+        evidence_override = os.environ.get("FAKE_AGENT_EVIDENCE_JSON")
+        evidence = json.loads(evidence_override) if evidence_override else []
         review = {
             "schema_version": 1,
             "item_id": item_id,
@@ -210,6 +250,7 @@ def main() -> int:
                 for c in criteria
             ],
             "validation": validation,
+            "evidence": evidence,
             "instruction_compliance": {
                 "passed": decision == "pass",
                 "violations": [],

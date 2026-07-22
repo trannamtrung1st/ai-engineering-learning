@@ -46,7 +46,7 @@ async def test_resume_commit_includes_todos_metadata(
     runs_dir.mkdir(parents=True, exist_ok=True)
     baseline = head_sha(git_project)
     state = {
-        "schema_version": 1,
+        "schema_version": 2,
         "item_id": item.id,
         "logical_attempt": 1,
         "phase": "commit",

@@ -47,12 +47,24 @@ class ProvenanceKind(str, Enum):
     SKIPPED = "skipped"
 
 
+class EvidenceMode(str, Enum):
+    CAPTURED = "captured"
+    DRIVER = "driver"
+
+
+SUPPORTED_RUN_STATE_SCHEMA_VERSION = 2
+
+
 class Transition(str, Enum):
     ATTEMPT_STARTED = "attempt_started"
     WORK_SESSION_STARTED = "work_session_started"
     WORK_SESSION_RESTARTED = "work_session_restarted"
     WORK_PHASE_READY = "work_phase_ready"
     WORK_PHASE_FAILED = "work_phase_failed"
+    EVIDENCE_STARTED = "evidence_started"
+    EVIDENCE_PASSED = "evidence_passed"
+    EVIDENCE_FAILED = "evidence_failed"
+    EVIDENCE_STALL = "evidence_stall"
     VALIDATION_STARTED = "validation_started"
     VALIDATION_PASSED = "validation_passed"
     VALIDATION_FAILED = "validation_failed"
@@ -427,18 +439,74 @@ class ItemValidation:
 
 
 @dataclass
+class EvidenceCommandSpec:
+    command: str
+    cwd: str = "."
+    timeout_seconds: int | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> EvidenceCommandSpec:
+        mapping = _require_mapping(data, label="evidence command")
+        allowed = {"command", "cwd", "timeout_seconds"}
+        unknown = set(mapping) - allowed
+        if unknown:
+            raise ValueError(
+                f"Unknown evidence command fields: {sorted(unknown)}"
+            )
+        command = _require_str(mapping["command"], label="command").strip()
+        if not command:
+            raise ValueError("evidence command must not be empty")
+        cwd_raw = mapping.get("cwd", ".")
+        if cwd_raw is None:
+            cwd_raw = "."
+        from todos_tool.paths import validate_relative_path
+
+        cwd = validate_relative_path(str(cwd_raw), label="evidence.commands[].cwd")
+        timeout_seconds = mapping.get("timeout_seconds")
+        if timeout_seconds is not None:
+            if not isinstance(timeout_seconds, int) or timeout_seconds <= 0:
+                raise ValueError("timeout_seconds must be a positive integer")
+        return cls(command=command, cwd=cwd, timeout_seconds=timeout_seconds)
+
+    def to_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {"command": self.command}
+        if self.cwd and self.cwd != ".":
+            payload["cwd"] = self.cwd
+        if self.timeout_seconds is not None:
+            payload["timeout_seconds"] = self.timeout_seconds
+        return payload
+
+
+@dataclass
 class ItemEvidence:
-    commands: list[str] = field(default_factory=list)
+    commands: list[EvidenceCommandSpec] = field(default_factory=list)
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> ItemEvidence:
         if data is None:
             return cls()
         mapping = _require_mapping(data, label="evidence")
-        return cls(commands=_parse_str_list(mapping.get("commands"), label="commands"))
+        raw_commands = mapping.get("commands")
+        if raw_commands is None:
+            return cls()
+        if not isinstance(raw_commands, list):
+            raise ValueError("evidence.commands must be a list")
+        commands: list[EvidenceCommandSpec] = []
+        for idx, entry in enumerate(raw_commands):
+            if isinstance(entry, str):
+                raise ValueError(
+                    f"evidence.commands[{idx}] must be a mapping with command, "
+                    "not a plain string"
+                )
+            commands.append(
+                EvidenceCommandSpec.from_dict(
+                    _require_mapping(entry, label=f"evidence.commands[{idx}]")
+                )
+            )
+        return cls(commands=commands)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"commands": list(self.commands)}
+        return {"commands": [entry.to_dict() for entry in self.commands]}
 
     @classmethod
     def model_validate(cls, data: Any) -> ItemEvidence:
@@ -747,6 +815,53 @@ class ValidationCommandResult:
 
 
 @dataclass
+class EvidenceCommandResult:
+    command: str
+    cwd: str
+    passed: bool
+    source: str
+    exit_code: int | None = None
+    summary: str = ""
+    match_kind: str = "exact"
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> EvidenceCommandResult:
+        mapping = _require_mapping(data, label="evidence command result")
+        exit_code = mapping.get("exit_code")
+        if exit_code is not None and not isinstance(exit_code, int):
+            raise ValueError("exit_code must be an integer")
+        return cls(
+            command=_require_str(mapping["command"], label="command"),
+            cwd=_require_str(mapping.get("cwd", "."), label="cwd"),
+            passed=bool(mapping["passed"]),
+            source=_require_str(mapping.get("source", "captured"), label="source"),
+            exit_code=exit_code,
+            summary=_require_str(mapping.get("summary", ""), label="summary"),
+            match_kind=_require_str(
+                mapping.get("match_kind", "exact"), label="match_kind"
+            ),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "command": self.command,
+            "cwd": self.cwd,
+            "passed": self.passed,
+            "source": self.source,
+            "exit_code": self.exit_code,
+            "summary": self.summary,
+            "match_kind": self.match_kind,
+        }
+
+    @classmethod
+    def model_validate(cls, data: Any) -> EvidenceCommandResult:
+        return cls.from_dict(_require_mapping(data, label="evidence command result"))
+
+    def model_dump(self, mode: str = "json", **kwargs: Any) -> dict[str, Any]:
+        return self.to_dict()
+
+
+@dataclass
 class InstructionCompliance:
     passed: bool
     violations: list[str] = field(default_factory=list)
@@ -835,6 +950,7 @@ class ReviewDecision:
     instruction_compliance: InstructionCompliance
     schema_version: Literal[1] = 1
     validation: list[ValidationCommandResult] = field(default_factory=list)
+    evidence: list[EvidenceCommandResult] = field(default_factory=list)
     issues: list[ReviewIssue] = field(default_factory=list)
     recommended_next_action: Literal["mark_done", "retry", "block"] = "retry"
     proposed_commit_message: str | None = None
@@ -878,6 +994,10 @@ class ReviewDecision:
                 ValidationCommandResult.from_dict(entry)
                 for entry in mapping.get("validation") or []
             ],
+            evidence=[
+                EvidenceCommandResult.from_dict(entry)
+                for entry in mapping.get("evidence") or []
+            ],
             instruction_compliance=InstructionCompliance.from_dict(
                 mapping["instruction_compliance"]
             ),
@@ -900,6 +1020,7 @@ class ReviewDecision:
                 entry.to_dict() for entry in self.acceptance_criteria
             ],
             "validation": [entry.to_dict() for entry in self.validation],
+            "evidence": [entry.to_dict() for entry in self.evidence],
             "instruction_compliance": self.instruction_compliance.to_dict(),
             "issues": [issue.to_dict() for issue in self.issues],
             "recommended_next_action": self.recommended_next_action,
@@ -960,7 +1081,7 @@ class ReviewResultRecord:
 @dataclass
 class RunState:
     item_id: str
-    schema_version: Literal[1] = 1
+    schema_version: Literal[2] = SUPPORTED_RUN_STATE_SCHEMA_VERSION
     logical_attempt: int = 0
     phase: Phase = Phase.IDLE
     session_number: int = 0
@@ -974,6 +1095,14 @@ class RunState:
     last_error: str | None = None
     blocked_reason: str | None = None
     changed_paths: list[str] = field(default_factory=list)
+    evidence_mode: EvidenceMode | None = None
+    evidence_attempt: int = 0
+    evidence_repair_count: int = 0
+    evidence_results: list[EvidenceCommandResult] = field(default_factory=list)
+    evidence_worktree_fingerprint: str | None = None
+    evidence_command_spec_fingerprint: str | None = None
+    evidence_failure_signature: str | None = None
+    evidence_identical_failure_count: int = 0
     validation_attempt: int = 0
     validation_repair_count: int = 0
     validation_results: list[ValidationCommandResult] = field(default_factory=list)
@@ -986,6 +1115,13 @@ class RunState:
     def from_dict(cls, data: dict[str, Any]) -> RunState:
         mapping = dict(_require_mapping(data, label="run state"))
         mapping.pop("pre_dirty_fingerprints", None)
+        raw_version = mapping.get("schema_version")
+        if raw_version != SUPPORTED_RUN_STATE_SCHEMA_VERSION:
+            raise ValueError(
+                f"Unsupported run state schema version {raw_version!r}; "
+                f"expected {SUPPORTED_RUN_STATE_SCHEMA_VERSION}. "
+                "Delete state and restart from implement."
+            )
         last_transition = mapping.get("last_transition")
         provenance = mapping.get("provenance_kind")
         provenance_kind: ProvenanceKind | None
@@ -993,8 +1129,14 @@ class RunState:
             provenance_kind = None
         else:
             provenance_kind = ProvenanceKind(_require_str(provenance, label="provenance_kind"))
+        evidence_mode_raw = mapping.get("evidence_mode")
+        evidence_mode = (
+            EvidenceMode(_require_str(evidence_mode_raw, label="evidence_mode"))
+            if evidence_mode_raw is not None
+            else None
+        )
         return cls(
-            schema_version=1,
+            schema_version=SUPPORTED_RUN_STATE_SCHEMA_VERSION,
             item_id=_require_str(mapping["item_id"], label="item_id"),
             logical_attempt=int(mapping.get("logical_attempt", 0)),
             phase=Phase(_require_str(mapping.get("phase", Phase.IDLE.value), label="phase")),
@@ -1017,6 +1159,28 @@ class RunState:
                 mapping.get("blocked_reason"), label="blocked_reason"
             ),
             changed_paths=_parse_str_list(mapping.get("changed_paths"), label="changed_paths"),
+            evidence_mode=evidence_mode,
+            evidence_attempt=int(mapping.get("evidence_attempt", 0)),
+            evidence_repair_count=int(mapping.get("evidence_repair_count", 0)),
+            evidence_results=[
+                EvidenceCommandResult.from_dict(entry)
+                for entry in mapping.get("evidence_results") or []
+            ],
+            evidence_worktree_fingerprint=_optional_str(
+                mapping.get("evidence_worktree_fingerprint"),
+                label="evidence_worktree_fingerprint",
+            ),
+            evidence_command_spec_fingerprint=_optional_str(
+                mapping.get("evidence_command_spec_fingerprint"),
+                label="evidence_command_spec_fingerprint",
+            ),
+            evidence_failure_signature=_optional_str(
+                mapping.get("evidence_failure_signature"),
+                label="evidence_failure_signature",
+            ),
+            evidence_identical_failure_count=int(
+                mapping.get("evidence_identical_failure_count", 0)
+            ),
             validation_attempt=int(mapping.get("validation_attempt", 0)),
             validation_repair_count=int(mapping.get("validation_repair_count", 0)),
             validation_results=[
@@ -1052,6 +1216,18 @@ class RunState:
             "last_error": self.last_error,
             "blocked_reason": self.blocked_reason,
             "changed_paths": list(self.changed_paths),
+            "evidence_mode": (
+                self.evidence_mode.value if self.evidence_mode is not None else None
+            ),
+            "evidence_attempt": self.evidence_attempt,
+            "evidence_repair_count": self.evidence_repair_count,
+            "evidence_results": [
+                entry.to_dict() for entry in self.evidence_results
+            ],
+            "evidence_worktree_fingerprint": self.evidence_worktree_fingerprint,
+            "evidence_command_spec_fingerprint": self.evidence_command_spec_fingerprint,
+            "evidence_failure_signature": self.evidence_failure_signature,
+            "evidence_identical_failure_count": self.evidence_identical_failure_count,
             "validation_attempt": self.validation_attempt,
             "validation_repair_count": self.validation_repair_count,
             "validation_results": [

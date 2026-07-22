@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from todos_tool.models import TodoItem, ValidationCommandResult
+from todos_tool.models import TodoItem, ValidationCommandResult, EvidenceCommandResult
 from todos_tool.project_context import ProjectContext, ResolvedContextFile
 from todos_tool.validation_runner import format_validation_results
+from todos_tool.evidence_runner import format_evidence_results
 
 LONG_RUNNING_COMMANDS = """
 # Long-running commands
@@ -132,6 +133,20 @@ def _render_item_contract(
     return parts
 
 
+def _render_evidence_commands(item: TodoItem) -> list[str]:
+    if not item.evidence.commands:
+        return []
+    lines: list[str] = []
+    for spec in item.evidence.commands:
+        line = f"- command: `{spec.command}`"
+        if spec.cwd and spec.cwd != ".":
+            line += f"  cwd: `{spec.cwd}`"
+        if spec.timeout_seconds is not None:
+            line += f"  timeout_seconds: {spec.timeout_seconds}"
+        lines.append(line)
+    return ["", "## Completion evidence commands", "\n".join(lines)]
+
+
 def build_work_prompt(
     item: TodoItem,
     *,
@@ -148,6 +163,8 @@ def build_work_prompt(
     checklist: list[dict[str, Any]] | None = None,
     previous_feedback: str | None = None,
     validation_failure_feedback: str | None = None,
+    evidence_failure_feedback: str | None = None,
+    evidence_mode: str = "captured",
     continuation: str | None = None,
     allow_full_check: bool = False,
 ) -> str:
@@ -180,6 +197,31 @@ def build_work_prompt(
         out_of_scope=out_of_scope,
     ))
     parts.extend(_render_project_context(project_context, resolved_context_files))
+    parts.extend(_render_evidence_commands(item))
+
+    if item.evidence.commands:
+        if evidence_mode == "driver":
+            parts.extend(
+                [
+                    "",
+                    "## Completion evidence mode: driver",
+                    "The orchestrator executes the completion evidence commands after this "
+                    "session. Do NOT duplicate those commands yourself.",
+                ]
+            )
+        else:
+            parts.extend(
+                [
+                    "",
+                    "## Completion evidence mode: captured",
+                    "Run each completion evidence command exactly as declared:",
+                    "- Pass the literal YAML `command` string to the shell tool.",
+                    "- Set the shell tool working-directory field to the declared `cwd` "
+                    "(omit or use repository root when cwd is `.`).",
+                    "- Do not prefix commands with `cd … &&`, pipelines, shell wrappers, "
+                    "or extra chained commands.",
+                ]
+            )
 
     if command_lines:
         parts.extend(
@@ -238,6 +280,18 @@ def build_work_prompt(
             ]
         )
 
+    if evidence_failure_feedback:
+        parts.extend(
+            [
+                "",
+                "## Completion evidence failure (repair required)",
+                evidence_failure_feedback.strip(),
+                "",
+                "Fix the issues above and rerun the declared completion evidence commands "
+                "exactly before ending the session.",
+            ]
+        )
+
     if previous_feedback:
         parts.extend(
             [
@@ -278,6 +332,7 @@ def build_review_prompt(
     contract_refs: list[str] | None = None,
     checklist: list[dict[str, Any]] | None = None,
     authoritative_validation: list[ValidationCommandResult] | None = None,
+    authoritative_evidence: list[EvidenceCommandResult] | None = None,
     prompt_only: bool = False,
     continuation: str | None = None,
     commit_hint: str | None = None,
@@ -293,6 +348,15 @@ def build_review_prompt(
             else format_validation_results(authoritative_validation)
         )
     )
+    evidence_text = (
+        "(not executed in prompt-only dry run)"
+        if prompt_only
+        else (
+            "(authoritative completion evidence unavailable)"
+            if authoritative_evidence is None
+            else format_evidence_results(authoritative_evidence)
+        )
+    )
 
     decision_schema = """
 {
@@ -306,6 +370,9 @@ def build_review_prompt(
   ],
   "validation": [
     {"command": "string", "passed": true, "exit_code": 0, "summary": "string"}
+  ],
+  "evidence": [
+    {"command": "string", "cwd": ".", "passed": true, "exit_code": 0, "summary": "string"}
   ],
   "instruction_compliance": {"passed": true, "violations": []},
   "issues": [
@@ -364,6 +431,13 @@ def build_review_prompt(
             "These results were produced outside the Cursor sessions. Treat them as authoritative.",
             "Copy each command, passed value, and exit_code exactly into your JSON decision.",
             "Do NOT rerun validation commands. Inspect code, diffs, and the supplied output only.",
+            "",
+            "## Authoritative completion evidence",
+            evidence_text,
+            "",
+            "These results were produced outside the Cursor sessions for item "
+            "evidence.commands. Copy each command, cwd, passed value, and exit_code "
+            "exactly into your JSON decision. Do not run shell commands during review.",
             "",
             "## Work summary from implementer",
             (work_summary or "(none provided)").strip(),

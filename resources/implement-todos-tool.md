@@ -90,6 +90,11 @@ validation:
   commands:
     - pytest
 
+evidence:
+  commands:
+    - command: pytest tests/unit/test_registration.py
+      cwd: .
+
 context:
   files:
     - docs/requirements.md
@@ -168,9 +173,13 @@ Keep these concepts separate:
 Logical attempt
 ├── Work phase
 │   └── One or more Cursor sessions
+├── Completion-evidence gate (captured shell logs or driver execution)
+├── Validation gate (orchestrator-owned commands)
 └── Review phase
-    └── One or more Cursor sessions
+    └── One or more Cursor sessions (read-only; no shell)
 ```
+
+Item `evidence.commands` entries are mappings with required `command` and optional repo-relative `cwd` / `timeout_seconds`. Only observed shell execution counts; YAML `result` never proves execution. Use `--evidence-mode captured` (default) or `--evidence-mode driver`.
 
 A logical attempt represents one substantive implementation and review cycle.
 

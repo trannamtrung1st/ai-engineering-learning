@@ -38,3 +38,6 @@ class RunConfig:
     no_auto_repair_yaml: bool = False
     max_yaml_repair_attempts: int = 2
     commit_hint: str = field(default_factory=lambda: DEFAULT_COMMIT_HINT)
+    evidence_mode: str | None = None
+    max_identical_evidence_failures: int = 3
+    evidence_batch_timeout_seconds: int | None = None

@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Literal, TextIO
 
 from todos_tool.console import ConsoleRenderer
-from todos_tool.cursor_stream import EventNormalizer, NdjsonStreamParser
+from todos_tool.cursor_stream import EventNormalizer, NdjsonStreamParser, ShellCommandEvidence
 from todos_tool.errors import CursorEnvironmentError, CursorSessionError, UserInterrupted
 
 PhaseName = Literal["work", "review", "repair"]
@@ -38,6 +38,7 @@ class SessionResult:
     stderr_text: str = ""
     agent_pid: int | None = None
     shell_commands: list[str] = field(default_factory=list)
+    shell_evidence: list[ShellCommandEvidence] = field(default_factory=list)
 
 
 def resolve_agent_bin(explicit: str | None = None) -> str:
@@ -301,6 +302,7 @@ class CursorTransport:
             stderr_text=stderr_text,
             agent_pid=proc.pid,
             shell_commands=[entry.command for entry in shell_evidence],
+            shell_evidence=list(shell_evidence),
         )
         if timed_out:
             raise CursorSessionError(

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from todos_tool.errors import PersistenceError
-from todos_tool.models import RunState, Transition
+from todos_tool.models import RunState, SUPPORTED_RUN_STATE_SCHEMA_VERSION, Transition
 
 
 def state_path(runs_dir: Path) -> Path:
@@ -27,6 +27,13 @@ def load_state(runs_dir: Path) -> RunState | None:
         return None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
+        raw_version = data.get("schema_version")
+        if raw_version != SUPPORTED_RUN_STATE_SCHEMA_VERSION:
+            raise PersistenceError(
+                f"Unsupported run state schema version {raw_version!r} in {path}. "
+                f"Expected {SUPPORTED_RUN_STATE_SCHEMA_VERSION}. "
+                "Delete state and restart from implement."
+            )
         return RunState.from_dict(data)
     except (OSError, json.JSONDecodeError, ValueError, TypeError) as exc:
         raise PersistenceError(f"Failed to load state from {path}: {exc}") from exc
@@ -61,7 +68,7 @@ def record_transition(
     return state
 
 
-def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
+def _atomic_write_json(path: Path, payload: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp_name = tempfile.mkstemp(
         prefix=f".{path.name}.",
@@ -84,9 +91,10 @@ def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
 
 
 def write_json(path: Path, payload: Any) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    data = payload if isinstance(payload, (dict, list)) else payload
-    _atomic_write_json(path, data if isinstance(data, dict) else {"value": data})
+    if isinstance(payload, (dict, list)):
+        _atomic_write_json(path, payload)
+    else:
+        _atomic_write_json(path, {"value": payload})
 
 
 def append_ndjson(path: Path, event: dict[str, Any]) -> None:

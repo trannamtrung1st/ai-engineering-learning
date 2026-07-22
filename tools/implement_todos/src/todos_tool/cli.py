@@ -194,6 +194,26 @@ def _add_run_args(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Write work/review prompt previews without agents or state changes",
     )
+    parser.add_argument(
+        "--evidence-mode",
+        choices=("captured", "driver"),
+        default=None,
+        help="Completion-evidence mode for item evidence.commands (default: captured)",
+    )
+    parser.add_argument(
+        "--max-identical-evidence-failures",
+        type=int,
+        default=None,
+        metavar="N",
+        help="Stop after N identical completion-evidence failures (default: 3)",
+    )
+    parser.add_argument(
+        "--evidence-batch-timeout-seconds",
+        type=int,
+        default=None,
+        metavar="SECONDS",
+        help="Optional global timeout for driver-mode evidence command batches",
+    )
 
 
 def _run_config_from_args(args: argparse.Namespace) -> RunConfig:
@@ -228,6 +248,13 @@ def _run_config_from_args(args: argparse.Namespace) -> RunConfig:
         max_yaml_repair_attempts=getattr(args, "max_yaml_repair_attempts", None),
         commit_hint=getattr(args, "commit_hint", None),
         commit_hint_file=getattr(args, "commit_hint_file", None),
+        evidence_mode=getattr(args, "evidence_mode", None),
+        max_identical_evidence_failures=getattr(
+            args, "max_identical_evidence_failures", None
+        ),
+        evidence_batch_timeout_seconds=getattr(
+            args, "evidence_batch_timeout_seconds", None
+        ),
     )
 
 
@@ -293,17 +320,28 @@ def _cmd_status(args: argparse.Namespace) -> int:
 
     auto_commit = ws.manifest.settings.auto_commit
     print(f"auto_commit={auto_commit}")
-    print(f"{'ID':<12} {'Title':<24} {'Status':<12} {'Priority':<8} {'Ready':<6} {'Commit':<8} Run phase")
+    print(
+        f"{'ID':<12} {'Title':<24} {'Status':<12} {'Priority':<8} "
+        f"{'Ready':<6} {'Commit':<8} Evidence Run phase"
+    )
     for row in readiness_rows(ws):
         state = load_state(ws.runs_dir(row["id"]))
         phase = state.phase.value if state else "-"
+        evidence = "-"
+        if state and state.evidence_mode is not None:
+            evidence = state.evidence_mode.value
+            if state.evidence_identical_failure_count:
+                evidence = f"{evidence} stall={state.evidence_identical_failure_count}"
+            if state.last_transition and state.last_transition.value.startswith("evidence_"):
+                evidence = f"{evidence} {state.last_transition.value.replace('evidence_', '')}"
         if state and state.logical_attempt:
             phase = f"{phase} a{state.logical_attempt}"
         if state and state.agent_pid:
             phase = f"{phase} pid={state.agent_pid}"
         print(
             f"{row['id']:<12} {row['title'][:24]:<24} {row['status']:<12} "
-            f"{row['priority']:<8} {row['ready']:<6} {row['commit']:<8} {phase}"
+            f"{row['priority']:<8} {row['ready']:<6} {row['commit']:<8} "
+            f"{evidence:<18} {phase}"
         )
     return 0
 

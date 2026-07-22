@@ -6,11 +6,25 @@ import json
 from typing import Any
 
 from todos_tool.errors import ReviewError
-from todos_tool.models import ReviewDecision, TodoItem, ValidationCommandResult
+from todos_tool.evidence_matcher import normalize_command, normalize_cwd
+from todos_tool.models import (
+    EvidenceCommandResult,
+    ReviewDecision,
+    TodoItem,
+    ValidationCommandResult,
+)
 
 
 def _normalize_text(text: str) -> str:
     return " ".join(text.strip().split()).lower()
+
+
+def _normalize_validation_command(command: str) -> str:
+    return normalize_command(command)
+
+
+def _normalize_evidence_key(command: str, cwd: str) -> str:
+    return f"{normalize_command(command)}@{normalize_cwd(cwd)}"
 
 
 def _extract_fenced_json_objects(text: str) -> list[dict[str, Any]]:
@@ -118,7 +132,8 @@ def _validate_command_coverage(
     authoritative_validation: list[ValidationCommandResult],
 ) -> None:
     expected = {
-        _normalize_text(result.command) for result in authoritative_validation
+        _normalize_validation_command(result.command)
+        for result in authoritative_validation
     }
     if not expected:
         return
@@ -128,7 +143,7 @@ def _validate_command_coverage(
 
     reported: dict[str, str] = {}
     for entry in decision.validation:
-        key = _normalize_text(entry.command)
+        key = _normalize_validation_command(entry.command)
         if key in reported:
             raise ReviewError(f"Duplicate validation command reported: {entry.command}")
         reported[key] = entry.command
@@ -155,11 +170,11 @@ def _validate_authoritative_validation(
     authoritative: list[ValidationCommandResult],
 ) -> None:
     expected = {
-        _normalize_text(result.command): result
+        _normalize_validation_command(result.command): result
         for result in authoritative
     }
     reported = {
-        _normalize_text(result.command): result
+        _normalize_validation_command(result.command): result
         for result in decision.validation
     }
     if set(reported) != set(expected):
@@ -184,11 +199,86 @@ def _validate_authoritative_validation(
         raise ReviewError("Pass rejected because authoritative validation failed")
 
 
+def _validate_evidence_coverage(
+    decision: ReviewDecision,
+    authoritative_evidence: list[EvidenceCommandResult],
+) -> None:
+    expected = {
+        _normalize_evidence_key(result.command, result.cwd)
+        for result in authoritative_evidence
+    }
+    if not expected:
+        return
+
+    if not decision.evidence:
+        raise ReviewError("Pass requires completion evidence results for mandatory commands")
+
+    reported: dict[str, str] = {}
+    for entry in decision.evidence:
+        key = _normalize_evidence_key(entry.command, entry.cwd)
+        if key in reported:
+            raise ReviewError(
+                f"Duplicate completion evidence command reported: {entry.command}"
+            )
+        reported[key] = entry.command
+
+    missing = expected - set(reported)
+    unexpected = set(reported) - expected
+    if missing or unexpected:
+        parts: list[str] = []
+        if missing:
+            parts.append(f"missing: {', '.join(sorted(missing))}")
+        if unexpected:
+            parts.append(f"unexpected: {', '.join(sorted(unexpected))}")
+        raise ReviewError(
+            "Pass requires every configured completion evidence command to be reported "
+            f"({'; '.join(parts)})"
+        )
+
+    if not all(entry.passed for entry in decision.evidence):
+        raise ReviewError("Pass requires all mandatory completion evidence to pass")
+
+
+def _validate_authoritative_evidence(
+    decision: ReviewDecision,
+    authoritative: list[EvidenceCommandResult],
+) -> None:
+    expected = {
+        _normalize_evidence_key(result.command, result.cwd): result
+        for result in authoritative
+    }
+    reported = {
+        _normalize_evidence_key(result.command, result.cwd): result
+        for result in decision.evidence
+    }
+    if set(reported) != set(expected):
+        raise ReviewError(
+            "Review completion evidence commands do not match authoritative results"
+        )
+
+    disagreements: list[str] = []
+    for key, actual in expected.items():
+        claimed = reported[key]
+        if (
+            claimed.passed != actual.passed
+            or claimed.exit_code != actual.exit_code
+        ):
+            disagreements.append(f"{actual.command}@{actual.cwd}")
+    if disagreements:
+        raise ReviewError(
+            "Review completion evidence contradict authoritative execution: "
+            + ", ".join(disagreements)
+        )
+    if not all(result.passed for result in authoritative):
+        raise ReviewError("Pass rejected because authoritative completion evidence failed")
+
+
 def validate_pass(
     decision: ReviewDecision,
     item: TodoItem,
     logical_attempt: int,
     authoritative_validation: list[ValidationCommandResult],
+    authoritative_evidence: list[EvidenceCommandResult] | None = None,
 ) -> None:
     """Raise ReviewError if a claimed pass is not actually valid."""
     if decision.item_id != item.id:
@@ -210,6 +300,9 @@ def validate_pass(
     _validate_acceptance_coverage(decision, item)
     _validate_command_coverage(decision, authoritative_validation)
     _validate_authoritative_validation(decision, authoritative_validation)
+    evidence = authoritative_evidence or []
+    _validate_evidence_coverage(decision, evidence)
+    _validate_authoritative_evidence(decision, evidence)
 
     if not decision.instruction_compliance.passed:
         raise ReviewError("Pass requires instruction_compliance.passed=true")
@@ -234,11 +327,13 @@ def accept_decision(
     item: TodoItem,
     logical_attempt: int,
     authoritative_validation: list[ValidationCommandResult],
+    authoritative_evidence: list[EvidenceCommandResult] | None = None,
 ) -> ReviewDecision:
     validate_pass(
         decision,
         item,
         logical_attempt,
         authoritative_validation,
+        authoritative_evidence,
     )
     return decision

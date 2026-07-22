@@ -43,8 +43,10 @@ class NormalizedEvent:
 @dataclass
 class ShellCommandEvidence:
     command: str
-    completed: bool
+    cwd: str = "."
+    completed: bool = False
     exit_code: int | None = None
+    source: str = "captured"
 
 
 class NdjsonStreamParser:
@@ -175,6 +177,25 @@ def extract_shell_command(event: dict[str, Any]) -> str | None:
     return None
 
 
+def extract_shell_cwd(event: dict[str, Any]) -> str | None:
+    """Return repo-relative shell working directory when present."""
+    if event.get("type") != "tool_call":
+        return None
+    tool_call = event.get("tool_call") or {}
+    if not isinstance(tool_call, dict) or "shellToolCall" not in tool_call:
+        return None
+    shell = tool_call["shellToolCall"] or {}
+    args = shell.get("args") or {}
+    result = shell.get("result") or {}
+    success = result.get("success") or {}
+    for key in ("workingDirectory", "working_directory", "cwd"):
+        for container in (args, success):
+            value = container.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip().replace("\\", "/")
+    return None
+
+
 def _tool_label(event: dict[str, Any]) -> str:
     tool_call = event.get("tool_call") or {}
     if not isinstance(tool_call, dict):
@@ -299,7 +320,13 @@ class EventNormalizer:
             return
         subtype = event.get("subtype")
         if subtype == "started":
-            self._shell_commands.append(ShellCommandEvidence(command=cmd, completed=False))
+            self._shell_commands.append(
+                ShellCommandEvidence(
+                    command=cmd,
+                    cwd=extract_shell_cwd(event) or ".",
+                    completed=False,
+                )
+            )
             return
         if subtype == "completed":
             tool_call = event.get("tool_call") or {}
@@ -309,14 +336,18 @@ class EventNormalizer:
             exit_code = success.get("exitCode")
             if exit_code is None:
                 exit_code = success.get("exit_code")
+            cwd = extract_shell_cwd(event) or "."
             for entry in reversed(self._shell_commands):
                 if entry.command == cmd and not entry.completed:
                     entry.completed = True
                     entry.exit_code = exit_code if isinstance(exit_code, int) else None
+                    if entry.cwd == "." and cwd != ".":
+                        entry.cwd = cwd
                     return
             self._shell_commands.append(
                 ShellCommandEvidence(
                     command=cmd,
+                    cwd=cwd,
                     completed=True,
                     exit_code=exit_code if isinstance(exit_code, int) else None,
                 )

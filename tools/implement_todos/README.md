@@ -64,6 +64,9 @@ todos-tool status --workspace examples
 | `--max-yaml-repair-attempts N` | Repair budget (default: `2`; `0` = fail-fast) |
 | `--dry-run` | Report that YAML repair would be required (no Cursor) |
 | `--dry-run-prompts` | Write prompt previews only |
+| `--evidence-mode` | Completion-evidence mode: `captured` (default) or `driver` |
+| `--max-identical-evidence-failures N` | Stop after N identical evidence failures (default: `3`) |
+| `--evidence-batch-timeout-seconds N` | Optional global timeout for driver-mode evidence batches |
 | `--no-color` | Plain-text console output |
 | `--model` | Cursor model override (default: `composer-2.5`; env: `TODOS_TOOL_MODEL`) |
 | `--agent-bin` | Agent binary path (`TODOS_TOOL_AGENT_BIN`) |
@@ -84,7 +87,7 @@ todos-tool run --config ./run.config.yaml --todo TASK-001
 
 CLI flags override config values. Paths resolve relative to `workspace` (or the config file directory when `workspace` is `.`).
 
-Supported keys include `workspace`, `todos_dir`, `model`, `auto_commit`, `stop_on_failure`, `skip_commit`, `project_config`, `context_files`, `commit_hint`, and `commit_hint_file`. Use either `commit_hint` or `commit_hint_file`, not both.
+Supported keys include `workspace`, `todos_dir`, `model`, `auto_commit`, `stop_on_failure`, `skip_commit`, `project_config`, `context_files`, `commit_hint`, `commit_hint_file`, `evidence_mode`, `max_identical_evidence_failures`, and `evidence_batch_timeout_seconds`. Use either `commit_hint` or `commit_hint_file`, not both.
 
 When no commit hint is supplied, the tool uses a built-in default requiring `agent:` plus a conventional type (`feat:`, `fix:`, or `refactor:`) and a concise subject.
 
@@ -188,7 +191,7 @@ checklist: []          # optional {id, text, done} entries
 validation:
   commands: []
 evidence:
-  commands: []         # optional exact commands for agent evidence gates
+  commands: []         # optional mapping entries: {command, cwd?, timeout_seconds?}
 context:
   files: []
 result:
@@ -204,10 +207,14 @@ See [`examples/todos/`](examples/todos/) for sample items.
 ```text
 Logical attempt
 ├── Work phase (Cursor; targeted local checks; tool-managed background commands)
+├── Completion-evidence gate (captured shell logs or driver execution)
+│   └── on failure: bounded repair work loop (same attempt)
 ├── Validation gate (orchestrator runs configured commands)
 │   └── on failure: bounded repair work loop (same attempt)
 └── Review phase (Cursor ask mode; read-only; no shell commands)
 ```
+
+Only observed shell execution counts for item `evidence.commands`. YAML `result` text never proves execution. In **captured** mode (default), implement sessions must run each declared command literally and set the shell tool working-directory field for `cwd`. In **driver** mode, the orchestrator executes evidence commands once and implementers must not duplicate them.
 
 Malformed TODO YAML may be repaired automatically during `run` / `resume` (bounded attempts). Repair succeeds only when the driver reloads and validates the set; agent claims are never acceptance.
 
@@ -237,7 +244,7 @@ Implementation prompts require tool-managed background execution for long comman
 
 ## Review contract
 
-Success requires a validated JSON decision (`schema_version: 1`) with exact acceptance-criterion coverage, authoritative validation results copied from the orchestrator, instruction compliance, no unresolved blocking issues, and on pass a non-empty `proposed_commit_message` for the orchestrator commit step. Review sessions do not rerun validation commands.
+Success requires a validated JSON decision (`schema_version: 1`) with exact acceptance-criterion coverage, authoritative validation results copied from the orchestrator, authoritative completion-evidence results copied when `evidence.commands` is configured, instruction compliance, no unresolved blocking issues, and on pass a non-empty `proposed_commit_message` for the orchestrator commit step. Review sessions do not rerun validation or evidence commands.
 
 ## Streaming and transport
 

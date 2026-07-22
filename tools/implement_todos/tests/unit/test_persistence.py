@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from todos_tool.models import Phase, Transition
 from todos_tool.persistence import (
     load_state,
@@ -51,3 +53,18 @@ def test_session_restart_does_not_bump_attempt(tmp_path: Path) -> None:
     assert loaded is not None
     assert loaded.logical_attempt == 2
     assert loaded.session_restart_count == 1
+
+
+def test_load_state_rejects_unsupported_schema_version(tmp_path: Path) -> None:
+    import json
+
+    from todos_tool.errors import PersistenceError
+
+    runs = tmp_path / "runs" / "TASK-001"
+    runs.mkdir(parents=True)
+    (runs / "state.json").write_text(
+        json.dumps({"schema_version": 1, "item_id": "TASK-001"}),
+        encoding="utf-8",
+    )
+    with pytest.raises(PersistenceError, match="Unsupported run state schema version"):
+        load_state(runs)

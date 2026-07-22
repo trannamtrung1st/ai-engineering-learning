@@ -6,6 +6,7 @@ import pytest
 
 from todos_tool.errors import ReviewError
 from todos_tool.models import (
+    EvidenceCommandResult,
     ItemStatus,
     ItemType,
     TodoItem,
@@ -228,3 +229,43 @@ def test_reject_unexpected_validation_command() -> None:
     decision = parse_review_decision(text)
     with pytest.raises(ReviewError, match="validation command"):
         accept_decision(decision, _item(), 1, _authoritative())
+
+
+def test_rejects_case_only_validation_command_drift() -> None:
+    text = VALID_PASS.replace(
+        '"command": "pytest"',
+        '"command": "PyTest"',
+    )
+    decision = parse_review_decision(text)
+    with pytest.raises(ReviewError, match="validation command"):
+        accept_decision(decision, _item(), 1, _authoritative())
+
+
+def test_rejects_missing_completion_evidence() -> None:
+    item = TodoItem(
+        id="TASK-001",
+        title="Add greeting helper",
+        type=ItemType.FEATURE,
+        status=ItemStatus.IN_PROGRESS,
+        description="desc",
+        acceptance_criteria=["Crit A", "Crit B"],
+        evidence={"commands": [{"command": "pytest"}]},
+    )
+    authoritative_evidence = [
+        EvidenceCommandResult(
+            command="pytest",
+            cwd=".",
+            passed=True,
+            source="driver",
+            exit_code=0,
+        )
+    ]
+    decision = parse_review_decision(VALID_PASS)
+    with pytest.raises(ReviewError, match="completion evidence"):
+        accept_decision(
+            decision,
+            item,
+            1,
+            _authoritative(),
+            authoritative_evidence,
+        )

@@ -471,7 +471,7 @@ async def test_duplicate_commit_prevention_on_resume(
     runs = git_project / "todos" / "runs" / "TASK-001"
     runs.mkdir(parents=True)
     state = {
-        "schema_version": 1,
+        "schema_version": 2,
         "item_id": "TASK-001",
         "logical_attempt": 1,
         "phase": "commit",

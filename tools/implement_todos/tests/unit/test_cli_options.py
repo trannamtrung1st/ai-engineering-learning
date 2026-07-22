@@ -66,6 +66,9 @@ def test_run_new_flags_in_help(capsys) -> None:
         "--max-yaml-repair-attempts",
         "--dry-run",
         "--dry-run-prompts",
+        "--evidence-mode",
+        "--max-identical-evidence-failures",
+        "--evidence-batch-timeout-seconds",
     ):
         assert flag in captured.out
     assert "--allow-dirty" not in captured.out

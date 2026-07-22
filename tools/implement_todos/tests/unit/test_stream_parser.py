@@ -213,6 +213,43 @@ def test_tool_labels_include_paths() -> None:
     assert shelled[0].text == "shell: npm test"
 
 
+def test_shell_evidence_captures_working_directory() -> None:
+    from todos_tool.cursor_stream import EventNormalizer
+
+    normalizer = EventNormalizer()
+    normalizer.normalize(
+        {
+            "type": "tool_call",
+            "subtype": "started",
+            "tool_call": {
+                "shellToolCall": {
+                    "args": {
+                        "command": "pytest",
+                        "workingDirectory": "src",
+                    }
+                }
+            },
+        }
+    )
+    normalizer.normalize(
+        {
+            "type": "tool_call",
+            "subtype": "completed",
+            "tool_call": {
+                "shellToolCall": {
+                    "args": {"command": "pytest", "workingDirectory": "src"},
+                    "result": {"success": {"exitCode": 0}},
+                }
+            },
+        }
+    )
+    evidence = normalizer.get_shell_commands()
+    assert len(evidence) == 1
+    assert evidence[0].command == "pytest"
+    assert evidence[0].cwd == "src"
+    assert evidence[0].completed is True
+
+
 def test_console_renderer_streams_thinking_as_one_block(tmp_path: Path) -> None:
     log_path = tmp_path / "out.log"
     renderer = ConsoleRenderer(no_color=True, log_path=log_path)

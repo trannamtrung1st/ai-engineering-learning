@@ -24,6 +24,9 @@ commit_hint: |
 # auto_commit: true
 # stop_on_failure: true
 # skip_commit: false
+# evidence_mode: captured
+# max_identical_evidence_failures: 3
+# evidence_batch_timeout_seconds: 900
 # project_config: .implement-todos.yaml
 # context_files:
 #   - README.md

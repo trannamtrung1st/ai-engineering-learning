@@ -30,6 +30,9 @@ ALLOWED_CONFIG_KEYS = frozenset(
         "dry_run_prompts",
         "commit_hint",
         "commit_hint_file",
+        "evidence_mode",
+        "max_identical_evidence_failures",
+        "evidence_batch_timeout_seconds",
     }
 )
 
@@ -53,6 +56,9 @@ class LoadedRunConfigFile:
     dry_run_prompts: bool | None = None
     commit_hint: str | None = None
     commit_hint_file: Path | None = None
+    evidence_mode: str | None = None
+    max_identical_evidence_failures: int | None = None
+    evidence_batch_timeout_seconds: int | None = None
 
 
 def load_run_config_file(path: Path) -> LoadedRunConfigFile:
@@ -104,6 +110,13 @@ def load_run_config_file(path: Path) -> LoadedRunConfigFile:
         dry_run_prompts=_optional_bool(raw.get("dry_run_prompts")),
         commit_hint=_optional_str(raw.get("commit_hint")),
         commit_hint_file=_optional_path(raw.get("commit_hint_file")),
+        evidence_mode=_optional_str(raw.get("evidence_mode")),
+        max_identical_evidence_failures=_optional_int(
+            raw.get("max_identical_evidence_failures")
+        ),
+        evidence_batch_timeout_seconds=_optional_int(
+            raw.get("evidence_batch_timeout_seconds")
+        ),
     )
 
 
@@ -127,6 +140,9 @@ def build_run_config(
     dry_run_prompts: bool = False,
     commit_hint: str | None = None,
     commit_hint_file: Path | None = None,
+    evidence_mode: str | None = None,
+    max_identical_evidence_failures: int | None = None,
+    evidence_batch_timeout_seconds: int | None = None,
 ) -> RunConfig:
     file_cfg = load_run_config_file(config_path) if config_path is not None else None
     config_dir = config_path.resolve().parent if config_path is not None else Path.cwd()
@@ -213,6 +229,19 @@ def build_run_config(
             default=False,
         ),
         commit_hint=resolved_commit_hint,
+        evidence_mode=_pick_optional_str(
+            evidence_mode,
+            file_cfg.evidence_mode if file_cfg else None,
+        ),
+        max_identical_evidence_failures=_pick_int(
+            max_identical_evidence_failures,
+            file_cfg.max_identical_evidence_failures if file_cfg else None,
+            default=3,
+        ),
+        evidence_batch_timeout_seconds=_pick_optional_int(
+            evidence_batch_timeout_seconds,
+            file_cfg.evidence_batch_timeout_seconds if file_cfg else None,
+        ),
     )
 
 
@@ -332,6 +361,15 @@ def _pick_optional_bool(
     cli_value: bool | None,
     file_value: bool | None,
 ) -> bool | None:
+    if cli_value is not None:
+        return cli_value
+    return file_value
+
+
+def _pick_optional_int(
+    cli_value: int | None,
+    file_value: int | None,
+) -> int | None:
     if cli_value is not None:
         return cli_value
     return file_value
