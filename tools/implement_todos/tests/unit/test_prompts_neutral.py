@@ -43,9 +43,12 @@ def test_review_prompt_is_commandless() -> None:
         work_summary="done",
         git_diff="(none)",
         git_status="(clean)",
+        commit_hint="Use `agent: feat:` for features.",
     )
     assert "Do NOT rerun validation commands" in prompt
     assert "Long-running commands" not in prompt
+    assert "Commit subject guidance" in prompt
+    assert "proposed_commit_message" in prompt
 
 
 def test_prompts_include_supplied_context_only() -> None:

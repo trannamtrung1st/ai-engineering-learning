@@ -280,6 +280,7 @@ def build_review_prompt(
     authoritative_validation: list[ValidationCommandResult] | None = None,
     prompt_only: bool = False,
     continuation: str | None = None,
+    commit_hint: str | None = None,
 ) -> str:
     criteria = _bullet_lines(item.acceptance_criteria)
     command_lines = _bullet_lines([f"`{c}`" for c in resolved_commands])
@@ -310,6 +311,7 @@ def build_review_prompt(
   "issues": [
     {"severity": "info", "title": "optional note", "detail": "non-blocking on pass"}
   ],
+  "proposed_commit_message": "agent: feat: concise subject",
   "recommended_next_action": "mark_done" | "retry" | "block"
 }
 """.strip() % (item.id, logical_attempt)
@@ -387,6 +389,18 @@ def build_review_prompt(
             ]
         )
 
+    if commit_hint and commit_hint.strip():
+        parts.extend(
+            [
+                "",
+                "## Commit subject guidance",
+                commit_hint.strip(),
+                "",
+                "When decision is pass, set `proposed_commit_message` to the exact full "
+                "commit subject the orchestrator should use.",
+            ]
+        )
+
     parts.extend(
         [
             "",
@@ -400,6 +414,7 @@ def build_review_prompt(
             "",
             "A pass is valid only when every acceptance criterion passes, mandatory validation passes,",
             "instruction compliance passes, and no unresolved blocking issue exists.",
+            "On pass, `proposed_commit_message` must be a non-empty full commit subject.",
             "Use `issues` for notes. Structured issues may use severity info/low (non-blocking on pass)",
             "or medium/high/critical (blocking). Plain-string issues are treated as blocking.",
             "Map decisions: pass→mark_done, fail→retry, blocked→block.",

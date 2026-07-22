@@ -55,6 +55,7 @@ Here is my decision:
   ],
   "instruction_compliance": {"passed": true, "violations": []},
   "issues": [],
+  "proposed_commit_message": "agent: feat: add greeting helper",
   "recommended_next_action": "mark_done"
 }
 ```
@@ -123,14 +124,15 @@ def test_accept_pass_with_structured_info_issues() -> None:
     {"command": "pytest", "passed": true, "exit_code": 0, "summary": "ok"}
   ],
   "instruction_compliance": {"passed": true, "violations": []},
-  "issues": [
-    {
-      "severity": "info",
-      "title": "npm run test exits 1 until UT-002",
-      "detail": "Expected interim behavior."
-    }
-  ],
-  "recommended_next_action": "mark_done"
+      "issues": [
+        {
+          "severity": "info",
+          "title": "npm run test exits 1 until UT-002",
+          "detail": "Expected interim behavior."
+        }
+      ],
+      "proposed_commit_message": "agent: feat: add greeting helper",
+      "recommended_next_action": "mark_done"
 }
 ```
 """
@@ -167,6 +169,16 @@ def test_reject_pass_with_legacy_string_issue() -> None:
     text = VALID_PASS.replace('"issues": []', '"issues": ["needs follow-up"]')
     decision = parse_review_decision(text)
     with pytest.raises(ReviewError, match="blocking issues"):
+        accept_decision(decision, _item(), 1, _authoritative())
+
+
+def test_reject_pass_without_proposed_commit_message() -> None:
+    text = VALID_PASS.replace(
+        '"proposed_commit_message": "agent: feat: add greeting helper",\n  ',
+        "",
+    )
+    decision = parse_review_decision(text)
+    with pytest.raises(ReviewError, match="proposed_commit_message"):
         accept_decision(decision, _item(), 1, _authoritative())
 
 

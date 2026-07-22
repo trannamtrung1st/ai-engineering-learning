@@ -12,6 +12,7 @@ from todos_tool import __version__
 from todos_tool.models import DEFAULT_CURSOR_MODEL
 from todos_tool.errors import SchedulingError, TodosToolError, UserInterrupted, ValidationError
 from todos_tool.flags import env_truthy, parse_optional_bool
+from todos_tool.config_loader import build_run_config
 from todos_tool.manifest import load_workspace
 from todos_tool.orchestrator import Orchestrator, RunConfig, RunReport
 from todos_tool.persistence import load_state
@@ -87,8 +88,29 @@ def _add_workspace_args(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_optional_workspace_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--workspace",
+        type=Path,
+        default=None,
+        help="Repository workspace root (default: . or config workspace)",
+    )
+    parser.add_argument(
+        "--todos-dir",
+        default=None,
+        help="Relative path to the todos workspace (default: todos or config todos_dir)",
+    )
+
+
 def _add_run_args(parser: argparse.ArgumentParser) -> None:
-    _add_workspace_args(parser)
+    _add_optional_workspace_args(parser)
+    parser.add_argument(
+        "--config",
+        "-c",
+        type=Path,
+        default=None,
+        help="Optional YAML run config (CLI flags override config values)",
+    )
     parser.add_argument("--todo", help="Execute one item id")
     parser.add_argument("--no-color", action="store_true", help="Disable color output")
     parser.add_argument(
@@ -147,9 +169,20 @@ def _add_run_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--max-yaml-repair-attempts",
         type=int,
-        default=2,
+        default=None,
         metavar="N",
         help="Maximum YAML repair attempts before failing (default: 2; 0 is fail-fast)",
+    )
+    parser.add_argument(
+        "--commit-hint",
+        default=None,
+        help="Markdown guidance for proposed commit subjects in review",
+    )
+    parser.add_argument(
+        "--commit-hint-file",
+        type=Path,
+        default=None,
+        help="Markdown file with commit-subject guidance for review",
     )
     parser.add_argument(
         "--dry-run",
@@ -176,9 +209,10 @@ def _run_config_from_args(args: argparse.Namespace) -> RunConfig:
     if dry_run and not dry_run_prompts:
         dry_run_prompts = False
 
-    return RunConfig(
-        workspace_root=args.workspace.resolve(),
-        todos_dir=args.todos_dir,
+    return build_run_config(
+        config_path=getattr(args, "config", None),
+        workspace=getattr(args, "workspace", None),
+        todos_dir=getattr(args, "todos_dir", None),
         no_color=bool(getattr(args, "no_color", False)),
         model=getattr(args, "model", None),
         stop_on_failure=getattr(args, "stop_on_failure", None),
@@ -191,7 +225,9 @@ def _run_config_from_args(args: argparse.Namespace) -> RunConfig:
         context_files=tuple(getattr(args, "context_file", []) or ()),
         skip_commit=bool(getattr(args, "skip_commit", False)),
         no_auto_repair_yaml=bool(getattr(args, "no_auto_repair_yaml", False)),
-        max_yaml_repair_attempts=int(getattr(args, "max_yaml_repair_attempts", 2)),
+        max_yaml_repair_attempts=getattr(args, "max_yaml_repair_attempts", None),
+        commit_hint=getattr(args, "commit_hint", None),
+        commit_hint_file=getattr(args, "commit_hint_file", None),
     )
 
 

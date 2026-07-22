@@ -36,6 +36,7 @@ def finalize_worktree(
     commit_prefix: str,
     skip_commit: bool,
     baseline_head: str | None,
+    commit_message: str | None = None,
 ) -> FinalizeResult:
     """Stage the full worktree and commit, or record external/skipped provenance."""
     if skip_commit:
@@ -50,10 +51,13 @@ def finalize_worktree(
     _run(repo, ["add", "-A"])
 
     if has_staged_changes(repo):
-        prefix = commit_prefix.strip()
-        if prefix and not prefix.endswith(":"):
-            prefix = f"{prefix}:"
-        message = f"{prefix} finalize worktree"
+        if commit_message and commit_message.strip():
+            message = commit_message.strip()
+        else:
+            prefix = commit_prefix.strip()
+            if prefix and not prefix.endswith(":"):
+                prefix = f"{prefix}:"
+            message = f"{prefix} finalize worktree"
         sha = commit(repo, message)
         return FinalizeResult(
             commit_sha=sha,

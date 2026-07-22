@@ -837,6 +837,7 @@ class ReviewDecision:
     validation: list[ValidationCommandResult] = field(default_factory=list)
     issues: list[ReviewIssue] = field(default_factory=list)
     recommended_next_action: Literal["mark_done", "retry", "block"] = "retry"
+    proposed_commit_message: str | None = None
 
     def __post_init__(self) -> None:
         if self.issues and not isinstance(self.issues[0], ReviewIssue):
@@ -882,6 +883,10 @@ class ReviewDecision:
             ),
             issues=issues,
             recommended_next_action=mapping["recommended_next_action"],  # type: ignore[arg-type]
+            proposed_commit_message=_optional_str(
+                mapping.get("proposed_commit_message"),
+                label="proposed_commit_message",
+            ),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -898,6 +903,7 @@ class ReviewDecision:
             "instruction_compliance": self.instruction_compliance.to_dict(),
             "issues": [issue.to_dict() for issue in self.issues],
             "recommended_next_action": self.recommended_next_action,
+            "proposed_commit_message": self.proposed_commit_message,
         }
 
     @classmethod
@@ -914,6 +920,7 @@ class ReviewResultRecord:
     summary: str | None = None
     issues: list[str] = field(default_factory=list)
     raw_path: str | None = None
+    proposed_commit_message: str | None = None
 
     @classmethod
     def from_dict(cls, data: dict[str, Any] | None) -> ReviewResultRecord:
@@ -925,6 +932,10 @@ class ReviewResultRecord:
             summary=_optional_str(mapping.get("summary"), label="summary"),
             issues=_parse_str_list(mapping.get("issues"), label="issues"),
             raw_path=_optional_str(mapping.get("raw_path"), label="raw_path"),
+            proposed_commit_message=_optional_str(
+                mapping.get("proposed_commit_message"),
+                label="proposed_commit_message",
+            ),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -933,6 +944,7 @@ class ReviewResultRecord:
             "summary": self.summary,
             "issues": list(self.issues),
             "raw_path": self.raw_path,
+            "proposed_commit_message": self.proposed_commit_message,
         }
 
     @classmethod

@@ -120,6 +120,54 @@ async def test_resume_after_failed_commit(
 
 
 @pytest.mark.asyncio
+async def test_resume_after_failed_commit_uses_stored_proposed_message(
+    git_project: Path,
+    sample_item: dict,
+) -> None:
+    write_todos(git_project, [sample_item], settings={"auto_commit": True})
+    (git_project / "src").mkdir(exist_ok=True)
+    (git_project / "src/greeting.py").write_text("x = 1\n", encoding="utf-8")
+
+    ws = load_workspace(git_project)
+    item = ws.items[0]
+    item.status = ItemStatus.IN_PROGRESS
+    save_item(ws, item)
+
+    runs_dir = ws.runs_dir(item.id)
+    runs_dir.mkdir(parents=True, exist_ok=True)
+    state = new_run_state(item.id, head_sha(git_project))
+    state.logical_attempt = 1
+    state.phase = Phase.COMMIT
+    state.commit_state = CommitState.FAILED
+    state.work_summary = "ready to commit"
+    state.review.decision = "pass"
+    state.review.proposed_commit_message = "agent: feat: add greeting helper"
+    state.changed_paths = ["src/greeting.py"]
+    record_transition(runs_dir, state, Transition.REVIEW_PASSED)
+    record_transition(runs_dir, state, Transition.COMMIT_FAILED)
+
+    orch = Orchestrator(
+        RunConfig(
+            workspace_root=git_project,
+            skip_probe=True,
+            no_color=True,
+            auto_commit=True,
+        )
+    )
+    report = await orch.resume()
+    assert report.completed == ["TASK-001"]
+
+    log = subprocess.run(
+        ["git", "log", "--oneline", "-n", "1"],
+        cwd=git_project,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert "agent: feat: add greeting helper" in log.stdout
+
+
+@pytest.mark.asyncio
 async def test_stop_on_failure_false_continues(
     fake_agent: Path,
     git_project: Path,

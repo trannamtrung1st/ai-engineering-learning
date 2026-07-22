@@ -224,6 +224,10 @@ def validate_pass(
     if decision.recommended_next_action != "mark_done":
         raise ReviewError("Pass requires recommended_next_action=mark_done")
 
+    proposed = (decision.proposed_commit_message or "").strip()
+    if not proposed:
+        raise ReviewError("Pass requires proposed_commit_message")
+
 
 def accept_decision(
     decision: ReviewDecision,

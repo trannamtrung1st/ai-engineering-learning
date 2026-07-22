@@ -2,8 +2,21 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+
+DEFAULT_COMMIT_HINT = """\
+When your decision is `pass`, include `proposed_commit_message` in the JSON with the
+exact full commit subject the orchestrator should use.
+
+Format:
+- Start with `agent:` as the provenance prefix
+- Follow with the conventional type for the item (`feat:` for feature, `fix:` for fix,
+  `refactor:` for refactor)
+- End with a concise imperative subject describing the actual repository change
+
+Example: `agent: feat: add account registration`
+""".strip()
 
 
 @dataclass
@@ -24,3 +37,4 @@ class RunConfig:
     skip_commit: bool = False
     no_auto_repair_yaml: bool = False
     max_yaml_repair_attempts: int = 2
+    commit_hint: str = field(default_factory=lambda: DEFAULT_COMMIT_HINT)

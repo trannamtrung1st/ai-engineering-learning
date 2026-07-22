@@ -27,6 +27,18 @@ def test_atomic_state_roundtrip(tmp_path: Path) -> None:
     assert loaded.history
 
 
+def test_review_proposed_commit_message_roundtrip(tmp_path: Path) -> None:
+    runs = tmp_path / "runs" / "TASK-001"
+    state = new_run_state("TASK-001", "abc123")
+    state.review.decision = "pass"
+    state.review.summary = "ok"
+    state.review.proposed_commit_message = "agent: feat: add greeting helper"
+    record_transition(runs, state, Transition.REVIEW_PASSED)
+    loaded = load_state(runs)
+    assert loaded is not None
+    assert loaded.review.proposed_commit_message == "agent: feat: add greeting helper"
+
+
 def test_session_restart_does_not_bump_attempt(tmp_path: Path) -> None:
     runs = tmp_path / "runs" / "TASK-001"
     state = new_run_state("TASK-001", "abc")

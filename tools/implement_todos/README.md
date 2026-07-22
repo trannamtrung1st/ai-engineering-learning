@@ -54,6 +54,9 @@ todos-tool status --workspace examples
 |------|---------|
 | `--workspace` | Git project root (default: `.`) |
 | `--todos-dir` | TODO workspace directory (default: `todos`) |
+| `--config`, `-c` | Optional YAML run config (CLI flags override) |
+| `--commit-hint` | Markdown guidance for review commit subjects |
+| `--commit-hint-file` | Markdown file with commit-subject guidance |
 | `--project-config` | Repository profile YAML (default: `.implement-todos.yaml` when present) |
 | `--context-file` | Additional context file, repeatable |
 | `--skip-commit` | Finalize without `git add` / commit |
@@ -69,6 +72,21 @@ todos-tool status --workspace examples
 | `--auto-commit BOOL` | Override manifest `auto_commit` |
 
 Inspection commands (`validate`, `status`) never repair or modify TODO YAML.
+
+## Run config
+
+Optional YAML run config for `run` and `resume` (see [`examples/run.config.yaml`](examples/run.config.yaml)):
+
+```bash
+todos-tool run --config ./run.config.yaml
+todos-tool run --config ./run.config.yaml --todo TASK-001
+```
+
+CLI flags override config values. Paths resolve relative to `workspace` (or the config file directory when `workspace` is `.`).
+
+Supported keys include `workspace`, `todos_dir`, `model`, `auto_commit`, `stop_on_failure`, `skip_commit`, `project_config`, `context_files`, `commit_hint`, and `commit_hint_file`. Use either `commit_hint` or `commit_hint_file`, not both.
+
+When no commit hint is supplied, the tool uses a built-in default requiring `agent:` plus a conventional type (`feat:`, `fix:`, or `refactor:`) and a concise subject.
 
 ## Model selection
 
@@ -210,7 +228,8 @@ Implementation prompts require tool-managed background execution for long comman
 **Whole-worktree ownership:** by starting the driver, you authorize normal finalization to commit the complete current worktree state.
 
 - Dirty, pre-staged, and manually committed work are accepted by default.
-- After review pass, finalization runs `git add -A` and commits with the profile prefix (default `agent:`).
+- After review pass, the review session proposes `proposed_commit_message` using the configured commit hint (or the built-in default). Python then runs `git add -A` and commits with that exact subject.
+- Legacy resume/manual commit paths without a stored proposal still use `agent: finalize worktree`.
 - `--skip-commit` performs no staging or commit.
 - `baseline_head` is review/evidence context, not a file-ownership boundary.
 - Provenance is recorded as `driver`, `external` (clean tree with advanced HEAD), or `skipped`.
@@ -218,7 +237,7 @@ Implementation prompts require tool-managed background execution for long comman
 
 ## Review contract
 
-Success requires a validated JSON decision (`schema_version: 1`) with exact acceptance-criterion coverage, authoritative validation results copied from the orchestrator, instruction compliance, and no unresolved blocking issues. Review sessions do not rerun validation commands.
+Success requires a validated JSON decision (`schema_version: 1`) with exact acceptance-criterion coverage, authoritative validation results copied from the orchestrator, instruction compliance, no unresolved blocking issues, and on pass a non-empty `proposed_commit_message` for the orchestrator commit step. Review sessions do not rerun validation commands.
 
 ## Streaming and transport
 

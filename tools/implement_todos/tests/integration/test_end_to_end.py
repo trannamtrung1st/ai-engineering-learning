@@ -145,6 +145,8 @@ async def test_full_run_pass_and_commit(
     ).read_text(encoding="utf-8")
     assert "Authoritative orchestrator validation" in review_prompt
     assert "passed=true exit_code=0" in review_prompt
+    assert "Commit subject guidance" in review_prompt
+    assert "proposed_commit_message" in review_prompt
 
     # Exactly one new commit beyond initial
     import subprocess
@@ -156,7 +158,7 @@ async def test_full_run_pass_and_commit(
         text=True,
         check=True,
     )
-    assert "finalize worktree" in log.stdout or "agent:" in log.stdout
+    assert "finalize worktree" in log.stdout or "implement reviewed change" in log.stdout
     assert (git_project / "src/greeting.py").is_file()
 
 

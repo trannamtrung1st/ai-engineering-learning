@@ -74,3 +74,19 @@ def test_skip_commit_records_skipped_provenance(git_project: Path) -> None:
 
     assert result.provenance_kind == ProvenanceKind.SKIPPED
     assert result.commit_sha == baseline
+
+
+def test_finalize_uses_proposed_commit_message(git_project: Path) -> None:
+    baseline = head_sha(git_project)
+    (git_project / "feature.txt").write_text("new\n", encoding="utf-8")
+
+    result = finalize_worktree(
+        git_project,
+        commit_prefix="agent:",
+        skip_commit=False,
+        baseline_head=baseline,
+        commit_message="agent: feat: add feature",
+    )
+
+    assert result.provenance_kind == ProvenanceKind.DRIVER
+    assert "agent: feat: add feature" in result.message

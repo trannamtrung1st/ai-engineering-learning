@@ -647,6 +647,7 @@ class Orchestrator:
                 ),
                 authoritative_validation=validation,
                 prompt_only=validation is None,
+                commit_hint=self.config.commit_hint,
                 **prompt_kwargs,
             )
             (preview_dir / "work-prompt.md").write_text(
@@ -985,6 +986,7 @@ class Orchestrator:
                 git_status=review_ctx.status_porcelain,
                 authoritative_validation=state.validation_results,
                 continuation=continuation,
+                commit_hint=self.config.commit_hint,
                 **prompt_kwargs,
             )
 
@@ -1072,6 +1074,7 @@ class Orchestrator:
             state.review.decision = decision.decision
             state.review.summary = decision.summary
             state.review.issues = decision.issue_strings()
+            state.review.proposed_commit_message = decision.proposed_commit_message
 
             if decision.decision == "pass":
                 record_transition(runs_dir, state, Transition.REVIEW_PASSED)
@@ -1123,6 +1126,7 @@ class Orchestrator:
                 commit_prefix=self.project_context.git.commit_prefix,
                 skip_commit=skip_commit,
                 baseline_head=state.baseline_head,
+                commit_message=state.review.proposed_commit_message,
             )
         except GitError:
             item = self.workspace.get(item.id) or item

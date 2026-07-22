@@ -1,0 +1,29 @@
+# Example todos-tool run config.
+#
+# Run:
+#   todos-tool run --config ./examples/run.config.yaml
+#
+# CLI flags override values from this file. Paths are resolved relative to
+# `workspace` (or this file's directory when `workspace` is `.` or omitted),
+# unless absolute.
+
+workspace: .
+todos_dir: todos
+
+# Markdown guidance for the review session's proposed commit subject.
+# Use either commit_hint (inline) or commit_hint_file (not both).
+commit_hint: |
+  When the review passes, propose a full commit subject like:
+  - feature items: `agent: feat: <concise subject>`
+  - fix items: `agent: fix: <concise subject>`
+  - refactor items: `agent: refactor: <concise subject>`
+
+# --- Optional run overrides ---------------------------------------------------
+
+# model: composer-2.5
+# auto_commit: true
+# stop_on_failure: true
+# skip_commit: false
+# project_config: .implement-todos.yaml
+# context_files:
+#   - README.md

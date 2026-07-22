@@ -56,6 +56,9 @@ def test_run_new_flags_in_help(capsys) -> None:
         main(["run", "--help"])
     captured = capsys.readouterr()
     for flag in (
+        "--config",
+        "--commit-hint",
+        "--commit-hint-file",
         "--project-config",
         "--context-file",
         "--skip-commit",

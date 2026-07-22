@@ -221,6 +221,11 @@ def main() -> int:
                 "blocked": "block",
             }[decision],
         }
+        if decision == "pass":
+            review["proposed_commit_message"] = os.environ.get(
+                "FAKE_AGENT_COMMIT_MESSAGE",
+                "agent: feat: implement reviewed change",
+            )
         override = os.environ.get("FAKE_AGENT_REVIEW_JSON")
         if override:
             review = json.loads(override)
