@@ -35,6 +35,7 @@ ALLOWED_CONFIG_KEYS = frozenset(
         "evidence_batch_timeout_seconds",
         "force_reset",
         "notify",
+        "notify_per_item",
     }
 )
 
@@ -63,6 +64,7 @@ class LoadedRunConfigFile:
     evidence_batch_timeout_seconds: int | None = None
     force_reset: bool | None = None
     notify: bool | None = None
+    notify_per_item: bool | None = None
 
 
 def load_run_config_file(path: Path) -> LoadedRunConfigFile:
@@ -123,6 +125,7 @@ def load_run_config_file(path: Path) -> LoadedRunConfigFile:
         ),
         force_reset=_optional_bool(raw.get("force_reset")),
         notify=_optional_bool(raw.get("notify")),
+        notify_per_item=_optional_bool(raw.get("notify_per_item")),
     )
 
 
@@ -151,6 +154,7 @@ def build_run_config(
     evidence_batch_timeout_seconds: int | None = None,
     force_reset: bool = False,
     notify: bool | None = None,
+    notify_per_item: bool | None = None,
 ) -> RunConfig:
     file_cfg = load_run_config_file(config_path) if config_path is not None else None
     config_dir = config_path.resolve().parent if config_path is not None else Path.cwd()
@@ -258,6 +262,11 @@ def build_run_config(
         notify=_pick_notify(
             notify,
             file_cfg.notify if file_cfg else None,
+        ),
+        notify_per_item=_pick_notify(
+            notify_per_item,
+            file_cfg.notify_per_item if file_cfg else None,
+            default=False,
         ),
     )
 

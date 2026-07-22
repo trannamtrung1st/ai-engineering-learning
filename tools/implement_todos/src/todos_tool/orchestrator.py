@@ -77,6 +77,7 @@ from todos_tool.review_tool import (
     resolve_review_tool_command,
     review_submission_path,
 )
+from todos_tool.notifications import notify_item_done
 from todos_tool.run_config import RunConfig
 from todos_tool.scheduler import list_ready, next_ready
 from todos_tool.validation_runner import (
@@ -262,6 +263,9 @@ class Orchestrator:
                     outcome = "skipped"
 
             _apply_outcome(report, item.id, outcome)
+
+            if outcome == "completed":
+                self._maybe_notify_item_done(item.id)
 
             if initial_resuming:
                 self._pre_dirty_fingerprints = {}
@@ -1515,6 +1519,17 @@ class Orchestrator:
         item.result.commit_sha = commit_sha
         item.result.summary = summary
         self._persist_item(item)
+
+    def _maybe_notify_item_done(self, item_id: str) -> None:
+        if not self.config.notify_per_item:
+            return
+        item = self.workspace.get(item_id) if self.workspace is not None else None
+        notify_item_done(
+            enabled=True,
+            item_id=item_id,
+            title=item.title if item is not None else "",
+            commit_sha=item.result.commit_sha if item is not None else None,
+        )
 
     def _persist_item(self, item: TodoItem) -> None:
         save_item(self.workspace, item)

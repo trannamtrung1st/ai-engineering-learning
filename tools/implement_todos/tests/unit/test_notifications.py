@@ -9,11 +9,14 @@ import pytest
 from todos_tool.notifications import (
     APP_NAME,
     ENV_NOTIFY,
+    ENV_NOTIFY_PER_ITEM,
     notify_commit_success,
     notify_error,
     notify_interrupted,
+    notify_item_done,
     notify_run_report,
     resolve_notify_enabled,
+    resolve_notify_per_item_enabled,
     send_notification,
     should_notify,
 )
@@ -47,6 +50,39 @@ def test_resolve_notify_enabled_precedence(
         monkeypatch.setenv(ENV_NOTIFY, env_value)
     assert (
         resolve_notify_enabled(cli_value=cli_value, config_value=config_value)
+        == expected
+    )
+
+
+@pytest.mark.parametrize(
+    ("cli_value", "config_value", "env_value", "master_notify", "expected"),
+    [
+        (True, False, "false", True, True),
+        (False, True, "true", True, False),
+        (None, True, None, True, True),
+        (None, True, None, False, False),
+        (None, False, "true", True, True),
+        (None, None, None, True, False),
+    ],
+)
+def test_resolve_notify_per_item_enabled_precedence(
+    monkeypatch: pytest.MonkeyPatch,
+    cli_value: bool | None,
+    config_value: bool | None,
+    env_value: str | None,
+    master_notify: bool,
+    expected: bool,
+) -> None:
+    if env_value is None:
+        monkeypatch.delenv(ENV_NOTIFY_PER_ITEM, raising=False)
+    else:
+        monkeypatch.setenv(ENV_NOTIFY_PER_ITEM, env_value)
+    assert (
+        resolve_notify_per_item_enabled(
+            cli_value=cli_value,
+            config_value=config_value,
+            master_notify=master_notify,
+        )
         == expected
     )
 
@@ -114,3 +150,33 @@ def test_notify_interrupted_and_error(mock_send: MagicMock) -> None:
     notify_error(enabled=True, message="Bad state")
     notify_commit_success(enabled=True, item_id="TASK-001", sha="abc12345")
     assert mock_send.call_count == 3
+
+
+@patch("todos_tool.notifications.send_notification")
+def test_notify_item_done(mock_send: MagicMock) -> None:
+    notify_item_done(
+        enabled=True,
+        item_id="TASK-001",
+        title="Add auth",
+        commit_sha="abc123456789",
+    )
+    mock_send.assert_called_once_with(
+        "Todo item done",
+        "TASK-001: Add auth committed as abc12345",
+        enabled=True,
+    )
+
+
+@patch("todos_tool.notifications.send_notification")
+def test_notify_item_done_without_commit(mock_send: MagicMock) -> None:
+    notify_item_done(
+        enabled=True,
+        item_id="TASK-002",
+        title="Refactor toolbar",
+        commit_sha=None,
+    )
+    mock_send.assert_called_once_with(
+        "Todo item done",
+        "TASK-002: Refactor toolbar done",
+        enabled=True,
+    )

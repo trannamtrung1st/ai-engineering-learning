@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -525,3 +526,47 @@ async def test_force_reset_clears_run_state_then_executes(
     assert saved is not None
     assert saved.phase == Phase.IDLE
     assert saved.last_transition != Transition.ITEM_BLOCKED
+
+
+@patch("todos_tool.orchestrator.notify_item_done")
+def test_maybe_notify_item_done_respects_config(
+    mock_notify_item_done,
+    git_project: Path,
+    sample_item: dict,
+) -> None:
+    write_todos(git_project, [sample_item])
+    ws = load_workspace(git_project)
+    item = ws.items[0]
+    item.status = ItemStatus.DONE
+    item.result.commit_sha = "abc123456789"
+    save_item(ws, item)
+
+    enabled = Orchestrator(
+        RunConfig(
+            workspace_root=git_project,
+            skip_probe=True,
+            no_color=True,
+            notify_per_item=True,
+        )
+    )
+    enabled.workspace = ws
+    enabled._maybe_notify_item_done(item.id)
+    mock_notify_item_done.assert_called_once_with(
+        enabled=True,
+        item_id=item.id,
+        title=item.title,
+        commit_sha="abc123456789",
+    )
+
+    mock_notify_item_done.reset_mock()
+    disabled = Orchestrator(
+        RunConfig(
+            workspace_root=git_project,
+            skip_probe=True,
+            no_color=True,
+            notify_per_item=False,
+        )
+    )
+    disabled.workspace = ws
+    disabled._maybe_notify_item_done(item.id)
+    mock_notify_item_done.assert_not_called()

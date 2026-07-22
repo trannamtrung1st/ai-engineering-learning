@@ -6,7 +6,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from todos_tool.cli import _cli_notify_override, _finalize_run_config, _print_report, main
+from todos_tool.cli import (
+    _cli_notify_override,
+    _cli_notify_per_item_override,
+    _finalize_run_config,
+    _print_report,
+    main,
+)
 from todos_tool.orchestrator import RunReport
 from todos_tool.run_config import RunConfig
 from pathlib import Path
@@ -18,8 +24,37 @@ def test_cli_notify_override() -> None:
     assert _cli_notify_override(argparse_like(notify=False, no_notify=False)) is None
 
 
+def test_cli_notify_per_item_override() -> None:
+    assert (
+        _cli_notify_per_item_override(
+            argparse_like_per_item(notify_per_item=True, no_notify_per_item=False)
+        )
+        is True
+    )
+    assert (
+        _cli_notify_per_item_override(
+            argparse_like_per_item(notify_per_item=False, no_notify_per_item=True)
+        )
+        is False
+    )
+    assert (
+        _cli_notify_per_item_override(
+            argparse_like_per_item(notify_per_item=False, no_notify_per_item=False)
+        )
+        is None
+    )
+
+
 def argparse_like(*, notify: bool, no_notify: bool):
     return type("Args", (), {"notify": notify, "no_notify": no_notify})()
+
+
+def argparse_like_per_item(*, notify_per_item: bool, no_notify_per_item: bool):
+    return type(
+        "Args",
+        (),
+        {"notify_per_item": notify_per_item, "no_notify_per_item": no_notify_per_item},
+    )()
 
 
 def test_finalize_run_config_applies_env(
@@ -30,6 +65,16 @@ def test_finalize_run_config_applies_env(
     args = argparse_like(notify=False, no_notify=False)
     finalized = _finalize_run_config(config, args)
     assert finalized.notify is False
+
+
+def test_finalize_run_config_applies_notify_per_item(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("TODOS_TOOL_NOTIFY_PER_ITEM", raising=False)
+    config = RunConfig(workspace_root=Path("."), notify=True, notify_per_item=True)
+    args = argparse_like_per_item(notify_per_item=False, no_notify_per_item=True)
+    finalized = _finalize_run_config(config, args)
+    assert finalized.notify_per_item is False
 
 
 @patch("todos_tool.cli.notify_run_report")

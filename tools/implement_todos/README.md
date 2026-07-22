@@ -88,6 +88,14 @@ Long-running `run`, `resume`, and `commit` commands can emit native desktop noti
 - **Env:** `TODOS_TOOL_NOTIFY=true|false`
 - **Config:** `notify: true|false` in run YAML
 
+Per-item notifications during multi-item `run` / `resume` are opt-in:
+
+- **Config:** `notify_per_item: true|false` in run YAML (default: `false`)
+- **CLI:** `--notify-per-item` / `--no-notify-per-item`
+- **Env:** `TODOS_TOOL_NOTIFY_PER_ITEM=true|false`
+
+When `notify_per_item` is enabled, each successfully completed item emits a desktop notification with the item id, title, and commit SHA when available. The run-level summary notification still fires when the command exits. Per-item notifications require the master `notify` switch to be on.
+
 Notifications are fail-soft: backend errors never change exit codes. Phase-level progress (work, review, evidence, validation) is not notified to avoid alert fatigue.
 
 ## Run config
@@ -101,7 +109,7 @@ todos-tool run --config ./run.config.yaml --todo TASK-001
 
 CLI flags override config values. Paths resolve relative to `workspace` (or the config file directory when `workspace` is `.`).
 
-Supported keys include `workspace`, `todos_dir`, `model`, `auto_commit`, `stop_on_failure`, `skip_commit`, `project_config`, `context_files`, `commit_hint`, `commit_hint_file`, `evidence_mode`, `max_identical_evidence_failures`, `evidence_batch_timeout_seconds`, and `notify`. Use either `commit_hint` or `commit_hint_file`, not both.
+Supported keys include `workspace`, `todos_dir`, `model`, `auto_commit`, `stop_on_failure`, `skip_commit`, `project_config`, `context_files`, `commit_hint`, `commit_hint_file`, `evidence_mode`, `max_identical_evidence_failures`, `evidence_batch_timeout_seconds`, `notify`, and `notify_per_item`. Use either `commit_hint` or `commit_hint_file`, not both.
 
 When no commit hint is supplied, the tool uses a built-in default requiring `agent:` plus a conventional type (`feat:`, `fix:`, or `refactor:`) and a concise subject.
 

@@ -13,7 +13,9 @@ if TYPE_CHECKING:
 
 APP_NAME = "todos-tool"
 ENV_NOTIFY = "TODOS_TOOL_NOTIFY"
+ENV_NOTIFY_PER_ITEM = "TODOS_TOOL_NOTIFY_PER_ITEM"
 DEFAULT_NOTIFY = True
+DEFAULT_NOTIFY_PER_ITEM = False
 MAX_MESSAGE_LENGTH = 240
 
 
@@ -40,6 +42,25 @@ def resolve_notify_enabled(
     env_raw = os.environ.get(ENV_NOTIFY)
     if env_raw is not None and env_raw.strip():
         return parse_optional_bool(env_raw, name=ENV_NOTIFY)
+    if config_value is not None:
+        return config_value
+    return default
+
+
+def resolve_notify_per_item_enabled(
+    *,
+    cli_value: bool | None,
+    config_value: bool | None,
+    master_notify: bool,
+    default: bool = DEFAULT_NOTIFY_PER_ITEM,
+) -> bool:
+    if not master_notify:
+        return False
+    if cli_value is not None:
+        return cli_value
+    env_raw = os.environ.get(ENV_NOTIFY_PER_ITEM)
+    if env_raw is not None and env_raw.strip():
+        return parse_optional_bool(env_raw, name=ENV_NOTIFY_PER_ITEM)
     if config_value is not None:
         return config_value
     return default
@@ -133,3 +154,21 @@ def notify_commit_failure(*, enabled: bool, item_id: str, message: str) -> None:
         f"{item_id}: {message}",
         enabled=enabled,
     )
+
+
+def notify_item_done(
+    *,
+    enabled: bool,
+    item_id: str,
+    title: str,
+    commit_sha: str | None = None,
+) -> None:
+    if title.strip():
+        summary = f"{item_id}: {title.strip()}"
+    else:
+        summary = item_id
+    if commit_sha:
+        summary = f"{summary} committed as {commit_sha[:8]}"
+    else:
+        summary = f"{summary} done"
+    send_notification("Todo item done", summary, enabled=enabled)

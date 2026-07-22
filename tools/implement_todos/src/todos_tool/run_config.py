@@ -43,3 +43,4 @@ class RunConfig:
     evidence_batch_timeout_seconds: int | None = None
     force_reset: bool = False
     notify: bool = True
+    notify_per_item: bool = False

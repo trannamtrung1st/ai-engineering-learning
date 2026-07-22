@@ -132,6 +132,17 @@ def test_build_run_config_loads_force_reset_from_config(tmp_path: Path) -> None:
     assert config.force_reset is True
 
 
+def test_build_run_config_loads_notify_per_item_from_config(tmp_path: Path) -> None:
+    config_path = tmp_path / "run.config.yaml"
+    config_path.write_text("notify_per_item: true\n", encoding="utf-8")
+
+    loaded = load_run_config_file(config_path)
+    config = build_run_config(config_path=config_path)
+
+    assert loaded.notify_per_item is True
+    assert config.notify_per_item is True
+
+
 def test_build_run_config_cli_overrides_force_reset(tmp_path: Path) -> None:
     config_path = tmp_path / "run.config.yaml"
     config_path.write_text("force_reset: false\n", encoding="utf-8")

@@ -72,6 +72,8 @@ def test_run_new_flags_in_help(capsys) -> None:
         "--force-reset",
         "--notify",
         "--no-notify",
+        "--notify-per-item",
+        "--no-notify-per-item",
     ):
         assert flag in captured.out
     assert "--allow-dirty" not in captured.out

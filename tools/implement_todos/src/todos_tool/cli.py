@@ -21,6 +21,7 @@ from todos_tool.notifications import (
     notify_interrupted,
     notify_run_report,
     resolve_notify_enabled,
+    resolve_notify_per_item_enabled,
 )
 from todos_tool.orchestrator import Orchestrator, RunConfig, RunReport
 from todos_tool.persistence import load_state
@@ -249,12 +250,31 @@ def _add_run_args(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Disable desktop notifications",
     )
+    notify_per_item_group = parser.add_mutually_exclusive_group()
+    notify_per_item_group.add_argument(
+        "--notify-per-item",
+        action="store_true",
+        help="Enable desktop notifications when each item finishes during run/resume",
+    )
+    notify_per_item_group.add_argument(
+        "--no-notify-per-item",
+        action="store_true",
+        help="Disable per-item desktop notifications during run/resume",
+    )
 
 
 def _cli_notify_override(args: argparse.Namespace) -> bool | None:
     if getattr(args, "no_notify", False):
         return False
     if getattr(args, "notify", False):
+        return True
+    return None
+
+
+def _cli_notify_per_item_override(args: argparse.Namespace) -> bool | None:
+    if getattr(args, "no_notify_per_item", False):
+        return False
+    if getattr(args, "notify_per_item", False):
         return True
     return None
 
@@ -300,6 +320,7 @@ def _run_config_from_args(args: argparse.Namespace) -> RunConfig:
         ),
         force_reset=bool(getattr(args, "force_reset", False)),
         notify=_cli_notify_override(args),
+        notify_per_item=_cli_notify_per_item_override(args),
     )
 
 
@@ -307,6 +328,11 @@ def _finalize_run_config(config: RunConfig, args: argparse.Namespace) -> RunConf
     config.notify = resolve_notify_enabled(
         cli_value=_cli_notify_override(args),
         config_value=config.notify,
+    )
+    config.notify_per_item = resolve_notify_per_item_enabled(
+        cli_value=_cli_notify_per_item_override(args),
+        config_value=config.notify_per_item,
+        master_notify=config.notify,
     )
     return config
 
