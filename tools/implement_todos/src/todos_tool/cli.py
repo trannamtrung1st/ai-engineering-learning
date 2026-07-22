@@ -217,7 +217,7 @@ def _add_run_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--force-reset",
         action="store_true",
-        help="Clear run state and reset incomplete items to pending before running",
+        help="Clear run state and reset items to pending before running",
     )
 
 

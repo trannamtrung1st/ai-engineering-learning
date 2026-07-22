@@ -197,8 +197,11 @@ class Orchestrator:
     async def run(self, todo_id: str | None = None) -> RunReport:
         ensure_git_repo(self.config.workspace_root)
         await self._ensure_workspace()
+        return await self._start_run(todo_id=todo_id)
+
+    async def _start_run(self, *, todo_id: str | None = None) -> RunReport:
         if self.config.force_reset:
-            await self._force_reset_incomplete_items(todo_id=todo_id)
+            await self._force_reset_items(todo_id=todo_id)
         self._ensure_no_active_execution_for_run(todo_id)
 
         if self.config.dry_run_prompts:
@@ -270,15 +273,13 @@ class Orchestrator:
 
         return report
 
-    async def _force_reset_incomplete_items(self, *, todo_id: str | None = None) -> None:
+    async def _force_reset_items(self, *, todo_id: str | None = None) -> None:
         ws = self.workspace
         if ws is None:
             return
         reset_ids: list[str] = []
         for item in ws.items:
             if todo_id is not None and item.id != todo_id:
-                continue
-            if item.status in (ItemStatus.DONE, ItemStatus.SUPERSEDED):
                 continue
             runs_dir = ws.runs_dir(item.id)
             if runs_dir.exists():
@@ -336,6 +337,10 @@ class Orchestrator:
         ensure_git_repo(self.config.workspace_root)
         await self._ensure_workspace()
 
+        if self.config.force_reset:
+            self.renderer.info("Force reset requested; starting fresh run")
+            return await self._start_run()
+
         in_progress = [
             i for i in self.workspace.items if i.status == ItemStatus.IN_PROGRESS
         ]
@@ -383,7 +388,7 @@ class Orchestrator:
 
         if not in_progress:
             self.renderer.info("Nothing to resume; starting normal run")
-            return await self.run()
+            return await self._start_run()
 
         validate_required_context(self.resolved_context_files)
 

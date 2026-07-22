@@ -256,7 +256,7 @@ Full prompts are written to `todos/runs/<id>/attempts/<NN>/…-prompt-<session>.
 
 `resume` reconciles persisted `state.json` with on-disk Git and TODO YAML, then continues the same scheduling loop as `run` (ready items in priority order). It prevents duplicate driver commits, accepts manual commits between baseline and HEAD, retries persisted commit failures, and refuses while a live `agent_pid` is recorded.
 
-Use `run --force-reset` to clear persisted run state and reset incomplete items to `pending` before starting (scoped to `--todo` when set).
+Use `run --force-reset` or `resume --force-reset` to clear persisted run state and reset all items to `pending` before starting (scoped to `--todo` on `run` when set). Checklist `done` flags in item YAML are preserved.
 
 ## Tests
 

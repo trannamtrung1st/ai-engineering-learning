@@ -205,6 +205,238 @@ async def test_resume_honors_stop_on_failure_for_later_items(
 
 
 @pytest.mark.asyncio
+async def test_force_reset_resets_all_items(
+    git_project: Path,
+    sample_item: dict,
+) -> None:
+    second = dict(sample_item)
+    second["id"] = "TASK-002"
+    second["title"] = "Second task"
+    second["priority"] = 200
+    third = dict(sample_item)
+    third["id"] = "TASK-003"
+    third["title"] = "Third task"
+    third["priority"] = 300
+    write_todos(
+        git_project,
+        [
+            sample_item,
+            {**second, "_file": "items/002.yaml"},
+            {**third, "_file": "items/003.yaml"},
+        ],
+        settings={"max_attempts": 1, "auto_commit": False},
+    )
+    ws = load_workspace(git_project)
+    for item in ws.items:
+        item.status = ItemStatus.BLOCKED
+        save_item(ws, item)
+        runs_dir = ws.runs_dir(item.id)
+        runs_dir.mkdir(parents=True, exist_ok=True)
+        state = new_run_state(item.id, "abc123")
+        record_transition(runs_dir, state, Transition.ITEM_BLOCKED)
+
+    orch = Orchestrator(
+        RunConfig(
+            workspace_root=git_project,
+            skip_probe=True,
+            no_color=True,
+            force_reset=True,
+            dry_run_prompts=True,
+        )
+    )
+    await orch.run()
+
+    ws = load_workspace(git_project)
+    for item_id in ("TASK-001", "TASK-002", "TASK-003"):
+        assert ws.get(item_id).status == ItemStatus.PENDING
+        assert load_state(ws.runs_dir(item_id)) is None
+
+
+@pytest.mark.asyncio
+async def test_force_reset_includes_done_items(
+    git_project: Path,
+    sample_item: dict,
+) -> None:
+    second = dict(sample_item)
+    second["id"] = "TASK-002"
+    second["title"] = "Second task"
+    second["priority"] = 200
+    write_todos(
+        git_project,
+        [sample_item, {**second, "_file": "items/002.yaml"}],
+        settings={"max_attempts": 1, "auto_commit": False},
+    )
+    ws = load_workspace(git_project)
+    done_item = ws.items[0]
+    done_item.status = ItemStatus.DONE
+    done_item.result.summary = "finished earlier"
+    done_item.result.commit_sha = "abc123"
+    save_item(ws, done_item)
+
+    blocked_item = ws.items[1]
+    blocked_item.status = ItemStatus.BLOCKED
+    save_item(ws, blocked_item)
+
+    for item in ws.items:
+        runs_dir = ws.runs_dir(item.id)
+        runs_dir.mkdir(parents=True, exist_ok=True)
+        state = new_run_state(item.id, "abc123")
+        record_transition(runs_dir, state, Transition.ITEM_BLOCKED)
+
+    orch = Orchestrator(
+        RunConfig(
+            workspace_root=git_project,
+            skip_probe=True,
+            no_color=True,
+            force_reset=True,
+            dry_run_prompts=True,
+        )
+    )
+    await orch.run()
+
+    ws = load_workspace(git_project)
+    for item_id in ("TASK-001", "TASK-002"):
+        item = ws.get(item_id)
+        assert item.status == ItemStatus.PENDING
+        assert item.result.summary is None
+        assert item.result.commit_sha is None
+        assert load_state(ws.runs_dir(item_id)) is None
+
+
+@pytest.mark.asyncio
+async def test_resume_force_reset_resets_all_items(
+    git_project: Path,
+    sample_item: dict,
+) -> None:
+    second = dict(sample_item)
+    second["id"] = "TASK-002"
+    second["title"] = "Second task"
+    second["priority"] = 200
+    write_todos(
+        git_project,
+        [sample_item, {**second, "_file": "items/002.yaml"}],
+        settings={"max_attempts": 1, "auto_commit": False},
+    )
+    ws = load_workspace(git_project)
+    ws.items[0].status = ItemStatus.IN_PROGRESS
+    save_item(ws, ws.items[0])
+    ws.items[1].status = ItemStatus.BLOCKED
+    save_item(ws, ws.items[1])
+
+    for item in ws.items:
+        runs_dir = ws.runs_dir(item.id)
+        runs_dir.mkdir(parents=True, exist_ok=True)
+        state = new_run_state(item.id, "abc123")
+        record_transition(runs_dir, state, Transition.ITEM_BLOCKED)
+
+    orch = Orchestrator(
+        RunConfig(
+            workspace_root=git_project,
+            skip_probe=True,
+            no_color=True,
+            force_reset=True,
+            dry_run_prompts=True,
+        )
+    )
+    await orch.resume()
+
+    ws = load_workspace(git_project)
+    assert ws.get("TASK-001").status == ItemStatus.PENDING
+    assert ws.get("TASK-002").status == ItemStatus.PENDING
+    assert load_state(ws.runs_dir("TASK-001")) is None
+    assert load_state(ws.runs_dir("TASK-002")) is None
+
+
+@pytest.mark.asyncio
+async def test_force_reset_includes_superseded_items(
+    git_project: Path,
+    sample_item: dict,
+) -> None:
+    write_todos(
+        git_project,
+        [sample_item],
+        settings={"max_attempts": 1, "auto_commit": False},
+    )
+    ws = load_workspace(git_project)
+    item = ws.items[0]
+    item.status = ItemStatus.SUPERSEDED
+    item.result.summary = "replaced by restructure"
+    save_item(ws, item)
+
+    runs_dir = ws.runs_dir(item.id)
+    runs_dir.mkdir(parents=True, exist_ok=True)
+    state = new_run_state(item.id, "abc123")
+    record_transition(runs_dir, state, Transition.ITEM_BLOCKED)
+
+    orch = Orchestrator(
+        RunConfig(
+            workspace_root=git_project,
+            skip_probe=True,
+            no_color=True,
+            force_reset=True,
+            dry_run_prompts=True,
+        )
+    )
+    await orch.run()
+
+    ws = load_workspace(git_project)
+    refreshed = ws.get("TASK-001")
+    assert refreshed.status == ItemStatus.PENDING
+    assert refreshed.result.summary is None
+    assert load_state(ws.runs_dir("TASK-001")) is None
+
+
+@pytest.mark.asyncio
+async def test_force_reset_scoped_leaves_other_done_items(
+    git_project: Path,
+    sample_item: dict,
+) -> None:
+    second = dict(sample_item)
+    second["id"] = "TASK-002"
+    second["title"] = "Second task"
+    second["priority"] = 200
+    write_todos(
+        git_project,
+        [sample_item, {**second, "_file": "items/002.yaml"}],
+        settings={"max_attempts": 1, "auto_commit": False},
+    )
+    ws = load_workspace(git_project)
+    done_item = ws.items[0]
+    done_item.status = ItemStatus.DONE
+    done_item.result.summary = "finished"
+    done_item.result.commit_sha = "abc123"
+    save_item(ws, done_item)
+
+    blocked_item = ws.items[1]
+    blocked_item.status = ItemStatus.BLOCKED
+    save_item(ws, blocked_item)
+
+    for item in ws.items:
+        runs_dir = ws.runs_dir(item.id)
+        runs_dir.mkdir(parents=True, exist_ok=True)
+        state = new_run_state(item.id, "abc123")
+        record_transition(runs_dir, state, Transition.ITEM_BLOCKED)
+
+    orch = Orchestrator(
+        RunConfig(
+            workspace_root=git_project,
+            skip_probe=True,
+            no_color=True,
+            force_reset=True,
+            dry_run_prompts=True,
+        )
+    )
+    await orch.run(todo_id="TASK-002")
+
+    ws = load_workspace(git_project)
+    assert ws.get("TASK-001").status == ItemStatus.DONE
+    assert ws.get("TASK-001").result.commit_sha == "abc123"
+    assert load_state(ws.runs_dir("TASK-001")) is not None
+    assert ws.get("TASK-002").status == ItemStatus.PENDING
+    assert load_state(ws.runs_dir("TASK-002")) is None
+
+
+@pytest.mark.asyncio
 async def test_force_reset_scoped_to_todo_flag(
     git_project: Path,
     sample_item: dict,
@@ -246,7 +478,7 @@ async def test_force_reset_scoped_to_todo_flag(
 
 
 @pytest.mark.asyncio
-async def test_force_reset_clears_incomplete_run_state(
+async def test_force_reset_clears_run_state_then_executes(
     fake_agent: Path,
     git_project: Path,
     sample_item: dict,

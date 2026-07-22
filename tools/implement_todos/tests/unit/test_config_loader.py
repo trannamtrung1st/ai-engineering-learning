@@ -119,3 +119,23 @@ def test_build_run_config_rejects_unknown_keys(tmp_path: Path) -> None:
 
     with pytest.raises(TodosToolError, match="Unknown config keys"):
         load_run_config_file(config_path)
+
+
+def test_build_run_config_loads_force_reset_from_config(tmp_path: Path) -> None:
+    config_path = tmp_path / "run.config.yaml"
+    config_path.write_text("force_reset: true\n", encoding="utf-8")
+
+    loaded = load_run_config_file(config_path)
+    config = build_run_config(config_path=config_path)
+
+    assert loaded.force_reset is True
+    assert config.force_reset is True
+
+
+def test_build_run_config_cli_overrides_force_reset(tmp_path: Path) -> None:
+    config_path = tmp_path / "run.config.yaml"
+    config_path.write_text("force_reset: false\n", encoding="utf-8")
+
+    config = build_run_config(config_path=config_path, force_reset=True)
+
+    assert config.force_reset is True

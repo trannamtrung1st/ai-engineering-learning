@@ -33,6 +33,7 @@ ALLOWED_CONFIG_KEYS = frozenset(
         "evidence_mode",
         "max_identical_evidence_failures",
         "evidence_batch_timeout_seconds",
+        "force_reset",
     }
 )
 
@@ -59,6 +60,7 @@ class LoadedRunConfigFile:
     evidence_mode: str | None = None
     max_identical_evidence_failures: int | None = None
     evidence_batch_timeout_seconds: int | None = None
+    force_reset: bool | None = None
 
 
 def load_run_config_file(path: Path) -> LoadedRunConfigFile:
@@ -117,6 +119,7 @@ def load_run_config_file(path: Path) -> LoadedRunConfigFile:
         evidence_batch_timeout_seconds=_optional_int(
             raw.get("evidence_batch_timeout_seconds")
         ),
+        force_reset=_optional_bool(raw.get("force_reset")),
     )
 
 
@@ -243,7 +246,11 @@ def build_run_config(
             evidence_batch_timeout_seconds,
             file_cfg.evidence_batch_timeout_seconds if file_cfg else None,
         ),
-        force_reset=force_reset,
+        force_reset=_pick_bool(
+            force_reset,
+            file_cfg.force_reset if file_cfg else None,
+            default=False,
+        ),
     )
 
 
