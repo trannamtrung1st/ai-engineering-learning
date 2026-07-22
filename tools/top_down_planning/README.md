@@ -83,14 +83,14 @@ When render falls back to a deterministic artifact, the final notification indic
 
 ### Model selection
 
-By default the tool uses Cursor model `gpt-5.6-sol-high`. Override with `--model` or `PLANNING_TOOL_MODEL`:
+By default the tool uses Cursor model `composer-2.5`. Override with `--model` or `PLANNING_TOOL_MODEL`:
 
 ```bash
 top-down-planning \
   --input ./examples/idea.md \
   --output-goal "Produce an actionable implementation plan" \
   --output ./planning-output \
-  --model gpt-5.6-sol-high
+  --model composer-2.5
 ```
 
 ## Outputs
@@ -205,8 +205,8 @@ agent_context:
       - ./.cursor/skills/shared/SKILL.md
     rules:
       - ./.cursor/rules/shared.mdc
-    model: gpt-5.6-sol-high
   planning:
+    model: gpt-5.6-sol-high
     skills:
       - ./.cursor/skills/planning/SKILL.md
   rendering:
@@ -214,7 +214,6 @@ agent_context:
       - ./.cursor/skills/rendering/SKILL.md
     rules:
       - ./.cursor/rules/rendering.mdc
-    model: composer-2.5
 ```
 
 Planning sessions receive `default` + `planning` references. Render sessions receive `default` + `rendering` references. Optional `model` on each block overrides the global `--model` / env default for that phase only; omit it to inherit the normal default.
