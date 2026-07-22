@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -44,6 +45,7 @@ from todos_tool.model_config import resolve_model
 from todos_tool.models import (
     CommitState,
     EvidenceMode,
+    ItemResult,
     ItemStatus,
     Phase,
     RunState,
@@ -195,13 +197,23 @@ class Orchestrator:
     async def run(self, todo_id: str | None = None) -> RunReport:
         ensure_git_repo(self.config.workspace_root)
         await self._ensure_workspace()
+        if self.config.force_reset:
+            await self._force_reset_incomplete_items(todo_id=todo_id)
         self._ensure_no_active_execution_for_run(todo_id)
 
         if self.config.dry_run_prompts:
             return await self._write_dry_run_prompts(todo_id)
 
         validate_required_context(self.resolved_context_files)
+        return await self._run_loop(todo_id=todo_id)
 
+    async def _run_loop(
+        self,
+        *,
+        todo_id: str | None = None,
+        initial_item: TodoItem | None = None,
+        initial_resuming: bool = False,
+    ) -> RunReport:
         settings = self.workspace.manifest.settings
         stop_on_failure = (
             self.config.stop_on_failure
@@ -209,18 +221,25 @@ class Orchestrator:
             else settings.stop_on_failure
         )
         report = RunReport()
+        first = True
 
         while True:
-            try:
-                item = next_ready(self.workspace, todo_id)
-            except SchedulingError as exc:
-                if todo_id is not None:
-                    raise
-                break
+            if first and initial_item is not None:
+                item = initial_item
+                resuming = initial_resuming
+                first = False
+            else:
+                try:
+                    item = next_ready(self.workspace, todo_id)
+                except SchedulingError as exc:
+                    if todo_id is not None:
+                        raise
+                    break
+                resuming = False
 
             outcome = "completed"
             try:
-                await self._execute_item(item)
+                await self._execute_item(item, resuming=resuming)
             except (CursorEnvironmentError, UserInterrupted):
                 raise
             except TodosToolError as exc:
@@ -233,6 +252,9 @@ class Orchestrator:
                     outcome = "skipped"
 
             _apply_outcome(report, item.id, outcome)
+
+            if initial_resuming:
+                self._pre_dirty_fingerprints = {}
 
             if todo_id is not None:
                 break
@@ -247,6 +269,29 @@ class Orchestrator:
                 break
 
         return report
+
+    async def _force_reset_incomplete_items(self, *, todo_id: str | None = None) -> None:
+        ws = self.workspace
+        if ws is None:
+            return
+        reset_ids: list[str] = []
+        for item in ws.items:
+            if todo_id is not None and item.id != todo_id:
+                continue
+            if item.status in (ItemStatus.DONE, ItemStatus.SUPERSEDED):
+                continue
+            runs_dir = ws.runs_dir(item.id)
+            if runs_dir.exists():
+                shutil.rmtree(runs_dir)
+            item.status = ItemStatus.PENDING
+            item.result = ItemResult()
+            self._persist_item(item)
+            reset_ids.append(item.id)
+        if reset_ids:
+            self.renderer.info(
+                f"Force reset {len(reset_ids)} item(s): {', '.join(reset_ids)}"
+            )
+        await self._reload_workspace()
 
     async def commit_item(self, item_id: str) -> str:
         """Commit trackable changes for a done item that has no commit SHA yet."""
@@ -344,23 +389,7 @@ class Orchestrator:
 
         item = in_progress[0]
         self.renderer.info(f"Resuming {item.id}")
-        runs_dir = self.workspace.runs_dir(item.id)
-        report = RunReport()
-        outcome = "completed"
-        try:
-            await self._execute_item(item, resuming=True)
-        except (CursorEnvironmentError, UserInterrupted):
-            raise
-        except TodosToolError as exc:
-            self.renderer.error(f"{item.id}: {exc}")
-            report.errors[item.id] = str(exc)
-            outcome = _classify_item_outcome(self.workspace.get(item.id))
-        else:
-            refreshed = self.workspace.get(item.id)
-            if refreshed and refreshed.status == ItemStatus.SUPERSEDED:
-                outcome = "skipped"
-        _apply_outcome(report, item.id, outcome)
-        return report
+        return await self._run_loop(initial_item=item, initial_resuming=True)
 
     async def _execute_item(self, item: TodoItem, *, resuming: bool = False) -> None:
         settings = self.workspace.manifest.settings

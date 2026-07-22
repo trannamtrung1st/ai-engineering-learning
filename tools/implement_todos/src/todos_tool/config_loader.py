@@ -143,6 +143,7 @@ def build_run_config(
     evidence_mode: str | None = None,
     max_identical_evidence_failures: int | None = None,
     evidence_batch_timeout_seconds: int | None = None,
+    force_reset: bool = False,
 ) -> RunConfig:
     file_cfg = load_run_config_file(config_path) if config_path is not None else None
     config_dir = config_path.resolve().parent if config_path is not None else Path.cwd()
@@ -242,6 +243,7 @@ def build_run_config(
             evidence_batch_timeout_seconds,
             file_cfg.evidence_batch_timeout_seconds if file_cfg else None,
         ),
+        force_reset=force_reset,
     )
 
 

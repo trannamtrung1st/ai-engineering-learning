@@ -41,3 +41,4 @@ class RunConfig:
     evidence_mode: str | None = None
     max_identical_evidence_failures: int = 3
     evidence_batch_timeout_seconds: int | None = None
+    force_reset: bool = False

@@ -69,6 +69,7 @@ def test_run_new_flags_in_help(capsys) -> None:
         "--evidence-mode",
         "--max-identical-evidence-failures",
         "--evidence-batch-timeout-seconds",
+        "--force-reset",
     ):
         assert flag in captured.out
     assert "--allow-dirty" not in captured.out

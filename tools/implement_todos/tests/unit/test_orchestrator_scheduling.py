@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
 
 from tests.helpers import write_todos
 from todos_tool.errors import SchedulingError
-from todos_tool.manifest import load_workspace
-from todos_tool.models import ItemStatus
+from todos_tool.manifest import load_workspace, save_item
+from todos_tool.models import ItemStatus, Phase, Transition
 from todos_tool.orchestrator import Orchestrator, RunConfig
+from todos_tool.persistence import load_state, new_run_state, record_transition
 from todos_tool.scheduler import list_ready
 
 
@@ -81,3 +83,213 @@ async def test_superseded_reported_as_skipped(
     report = await orch.run()
     assert report.skipped == []
     assert report.completed == []
+
+
+@pytest.mark.asyncio
+async def test_resume_continues_with_next_ready_item(
+    fake_agent: Path,
+    git_project: Path,
+    sample_item: dict,
+) -> None:
+    second = dict(sample_item)
+    second["id"] = "TASK-002"
+    second["title"] = "Second task"
+    second["priority"] = 200
+    write_todos(
+        git_project,
+        [sample_item, {**second, "_file": "items/002.yaml"}],
+        settings={"max_attempts": 1, "auto_commit": False},
+    )
+    ws = load_workspace(git_project)
+    item = ws.items[0]
+    item.status = ItemStatus.IN_PROGRESS
+    save_item(ws, item)
+
+    runs_dir = ws.runs_dir(item.id)
+    state = new_run_state(
+        item.id,
+        subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=git_project, text=True
+        ).strip(),
+    )
+    state.logical_attempt = 1
+    state.phase = Phase.WORK
+    state.work_summary = "work complete"
+    record_transition(runs_dir, state, Transition.WORK_PHASE_READY)
+
+    wrapper = fake_agent.parent / "agent-resume-continue"
+    wrapper.write_text(
+        "#!/bin/sh\n"
+        f"export FAKE_AGENT_WORKSPACE='{git_project}'\n"
+        "export FAKE_AGENT_DECISION=pass\n"
+        f"exec python3 '{fake_agent}' \"$@\"\n",
+        encoding="utf-8",
+    )
+    wrapper.chmod(0o755)
+
+    orch = Orchestrator(
+        RunConfig(
+            workspace_root=git_project,
+            agent_bin=str(wrapper),
+            skip_probe=True,
+            no_color=True,
+        )
+    )
+    report = await orch.resume()
+    assert report.completed == ["TASK-001", "TASK-002"]
+
+
+@pytest.mark.asyncio
+async def test_resume_honors_stop_on_failure_for_later_items(
+    fake_agent: Path,
+    git_project: Path,
+    sample_item: dict,
+) -> None:
+    second = dict(sample_item)
+    second["id"] = "TASK-002"
+    second["title"] = "Second task"
+    second["priority"] = 200
+    write_todos(
+        git_project,
+        [sample_item, {**second, "_file": "items/002.yaml"}],
+        settings={"max_attempts": 1, "stop_on_failure": True, "auto_commit": False},
+    )
+    ws = load_workspace(git_project)
+    item = ws.items[0]
+    item.status = ItemStatus.IN_PROGRESS
+    save_item(ws, item)
+
+    runs_dir = ws.runs_dir(item.id)
+    state = new_run_state(
+        item.id,
+        subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], cwd=git_project, text=True
+        ).strip(),
+    )
+    state.logical_attempt = 1
+    state.phase = Phase.WORK
+    state.work_summary = "work complete"
+    record_transition(runs_dir, state, Transition.WORK_PHASE_READY)
+
+    wrapper = fake_agent.parent / "agent-resume-stop"
+    wrapper.write_text(
+        "#!/usr/bin/env python3\n"
+        "import os, sys, subprocess\n"
+        f"agent = {str(fake_agent)!r}\n"
+        f"workspace = {str(git_project)!r}\n"
+        "args = sys.argv[1:]\n"
+        "env = os.environ.copy()\n"
+        "env['FAKE_AGENT_WORKSPACE'] = workspace\n"
+        "prompt_file = os.environ.get('TODOS_TOOL_PROMPT_FILE', '')\n"
+        "prompt = open(prompt_file, encoding='utf-8').read() if prompt_file else ''\n"
+        "if 'TASK-002' in prompt:\n"
+        "    env['FAKE_AGENT_DECISION'] = 'blocked'\n"
+        "else:\n"
+        "    env['FAKE_AGENT_DECISION'] = 'pass'\n"
+        "raise SystemExit(subprocess.call([sys.executable, agent, *args], env=env))\n",
+        encoding="utf-8",
+    )
+    wrapper.chmod(0o755)
+
+    orch = Orchestrator(
+        RunConfig(
+            workspace_root=git_project,
+            agent_bin=str(wrapper),
+            skip_probe=True,
+            no_color=True,
+        )
+    )
+    report = await orch.resume()
+    assert report.completed == ["TASK-001"]
+    assert report.blocked == ["TASK-002"]
+
+
+@pytest.mark.asyncio
+async def test_force_reset_scoped_to_todo_flag(
+    git_project: Path,
+    sample_item: dict,
+) -> None:
+    second = dict(sample_item)
+    second["id"] = "TASK-002"
+    second["title"] = "Second task"
+    second["priority"] = 200
+    write_todos(
+        git_project,
+        [sample_item, {**second, "_file": "items/002.yaml"}],
+        settings={"max_attempts": 1, "auto_commit": False},
+    )
+    ws = load_workspace(git_project)
+    for item in ws.items:
+        item.status = ItemStatus.BLOCKED
+        save_item(ws, item)
+        runs_dir = ws.runs_dir(item.id)
+        runs_dir.mkdir(parents=True, exist_ok=True)
+        state = new_run_state(item.id, "abc123")
+        record_transition(runs_dir, state, Transition.ITEM_BLOCKED)
+
+    orch = Orchestrator(
+        RunConfig(
+            workspace_root=git_project,
+            skip_probe=True,
+            no_color=True,
+            force_reset=True,
+            dry_run_prompts=True,
+        )
+    )
+    await orch.run(todo_id="TASK-002")
+
+    ws = load_workspace(git_project)
+    assert ws.get("TASK-001").status == ItemStatus.BLOCKED
+    assert ws.get("TASK-002").status == ItemStatus.PENDING
+    assert load_state(ws.runs_dir("TASK-001")) is not None
+    assert load_state(ws.runs_dir("TASK-002")) is None
+
+
+@pytest.mark.asyncio
+async def test_force_reset_clears_incomplete_run_state(
+    fake_agent: Path,
+    git_project: Path,
+    sample_item: dict,
+) -> None:
+    write_todos(
+        git_project,
+        [sample_item],
+        settings={"max_attempts": 1, "auto_commit": False},
+    )
+    ws = load_workspace(git_project)
+    item = ws.items[0]
+    item.status = ItemStatus.BLOCKED
+    save_item(ws, item)
+
+    runs_dir = ws.runs_dir(item.id)
+    runs_dir.mkdir(parents=True, exist_ok=True)
+    state = new_run_state(item.id, "abc123")
+    record_transition(runs_dir, state, Transition.ITEM_BLOCKED)
+
+    wrapper = fake_agent.parent / "agent-force-reset"
+    wrapper.write_text(
+        "#!/bin/sh\n"
+        f"export FAKE_AGENT_WORKSPACE='{git_project}'\n"
+        "export FAKE_AGENT_DECISION=pass\n"
+        f"exec python3 '{fake_agent}' \"$@\"\n",
+        encoding="utf-8",
+    )
+    wrapper.chmod(0o755)
+
+    orch = Orchestrator(
+        RunConfig(
+            workspace_root=git_project,
+            agent_bin=str(wrapper),
+            skip_probe=True,
+            no_color=True,
+            force_reset=True,
+        )
+    )
+    report = await orch.run()
+    assert report.completed == ["TASK-001"]
+    ws = load_workspace(git_project)
+    assert ws.get("TASK-001").status == ItemStatus.DONE
+    saved = load_state(runs_dir)
+    assert saved is not None
+    assert saved.phase == Phase.IDLE
+    assert saved.last_transition != Transition.ITEM_BLOCKED

@@ -214,6 +214,11 @@ def _add_run_args(parser: argparse.ArgumentParser) -> None:
         metavar="SECONDS",
         help="Optional global timeout for driver-mode evidence command batches",
     )
+    parser.add_argument(
+        "--force-reset",
+        action="store_true",
+        help="Clear run state and reset incomplete items to pending before running",
+    )
 
 
 def _run_config_from_args(args: argparse.Namespace) -> RunConfig:
@@ -255,6 +260,7 @@ def _run_config_from_args(args: argparse.Namespace) -> RunConfig:
         evidence_batch_timeout_seconds=getattr(
             args, "evidence_batch_timeout_seconds", None
         ),
+        force_reset=bool(getattr(args, "force_reset", False)),
     )
 
 
