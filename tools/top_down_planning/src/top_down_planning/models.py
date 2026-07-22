@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 SCHEMA_VERSION = 1
-DEFAULT_CURSOR_MODEL = "composer-2.5"
+DEFAULT_CURSOR_MODEL = "auto"
 DEFAULT_INLINE_EMBED_THRESHOLD = 4000
 
 

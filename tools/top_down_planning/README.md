@@ -83,14 +83,14 @@ When render falls back to a deterministic artifact, the final notification indic
 
 ### Model selection
 
-By default the tool uses Cursor model `composer-2.5`. Override with `--model` or `PLANNING_TOOL_MODEL`:
+By default the tool uses Cursor model `auto`. Override with `--model` or `PLANNING_TOOL_MODEL`:
 
 ```bash
 top-down-planning \
   --input ./examples/idea.md \
   --output-goal "Produce an actionable implementation plan" \
   --output ./planning-output \
-  --model composer-2.5
+  --model auto
 ```
 
 ## Outputs
