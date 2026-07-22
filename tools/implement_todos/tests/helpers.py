@@ -6,6 +6,8 @@ from pathlib import Path
 
 import yaml
 
+from todos_tool.models import DEFAULT_CURSOR_MODEL
+
 
 def write_todos(
     root: Path,
@@ -32,7 +34,7 @@ def write_todos(
         "auto_commit": True,
         "stop_on_failure": True,
         "parse_error_threshold": 20,
-        "model": "composer-2.5",
+        "model": DEFAULT_CURSOR_MODEL,
         "project_check": "pytest",
     }
     manifest = {

@@ -62,13 +62,22 @@ todos-tool status --workspace examples
 | `--dry-run` | Report that YAML repair would be required (no Cursor) |
 | `--dry-run-prompts` | Write prompt previews only |
 | `--no-color` | Plain-text console output |
-| `--model` | Cursor model override |
+| `--model` | Cursor model override (default: `composer-2.5`; env: `TODOS_TOOL_MODEL`) |
 | `--agent-bin` | Agent binary path (`TODOS_TOOL_AGENT_BIN`) |
 | `--skip-probe` | Skip `agent --help` stream-flag probe |
 | `--stop-on-failure BOOL` | Override manifest `stop_on_failure` |
 | `--auto-commit BOOL` | Override manifest `auto_commit` |
 
 Inspection commands (`validate`, `status`) never repair or modify TODO YAML.
+
+## Model selection
+
+- **Default:** `composer-2.5` (`DEFAULT_CURSOR_MODEL` in `models.py`)
+- **Override:** `--model <slug>` or env var `TODOS_TOOL_MODEL`
+- **Manifest:** `settings.model` in `manifest.yaml` (omit for default; set `null` to use Cursor's default)
+- **Precedence:** CLI `--model` → `TODOS_TOOL_MODEL` → manifest `settings.model` → package default
+
+Resolution lives in [`model_config.py`](src/todos_tool/model_config.py) and is applied when building the Cursor client in the orchestrator.
 
 ## Repository profile
 

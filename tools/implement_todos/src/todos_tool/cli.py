@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import NoReturn
 
 from todos_tool import __version__
+from todos_tool.models import DEFAULT_CURSOR_MODEL
 from todos_tool.errors import SchedulingError, TodosToolError, UserInterrupted, ValidationError
 from todos_tool.flags import env_truthy, parse_optional_bool
 from todos_tool.manifest import load_workspace
@@ -92,7 +93,11 @@ def _add_run_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--no-color", action="store_true", help="Disable color output")
     parser.add_argument(
         "--model",
-        help="Cursor model override (overrides manifest settings.model)",
+        help=(
+            "Cursor model override "
+            f"(default: {DEFAULT_CURSOR_MODEL}; env: TODOS_TOOL_MODEL; "
+            "manifest: settings.model)"
+        ),
     )
     parser.add_argument(
         "--stop-on-failure",

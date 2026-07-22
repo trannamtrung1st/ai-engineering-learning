@@ -36,6 +36,7 @@ from todos_tool.git_service import (
     verify_pre_dirty_unchanged,
 )
 from todos_tool.manifest import Workspace, save_item
+from todos_tool.model_config import resolve_model
 from todos_tool.models import (
     CommitState,
     ItemStatus,
@@ -111,9 +112,10 @@ class Orchestrator:
                 manifest_model = self.workspace.manifest.settings.model
             self._client = CursorClient(
                 agent_bin=self.config.agent_bin,
-                model=_resolve_model(
-                    cli_model=self.config.model,
+                model=resolve_model(
+                    self.config.model,
                     manifest_model=manifest_model,
+                    workspace_loaded=self.workspace is not None,
                 ),
                 no_color=self.config.no_color,
                 skip_probe=self.config.skip_probe,
@@ -1239,12 +1241,6 @@ def _extract_summary(result: SessionResult) -> str:
         + f"\n... truncated ({len(text)} chars total) ...\n"
         + text[-tail:]
     )
-
-
-def _resolve_model(*, cli_model: str | None, manifest_model: str | None) -> str | None:
-    if cli_model is not None and cli_model.strip():
-        return cli_model.strip()
-    return manifest_model
 
 
 def _resolve_auto_commit(

@@ -10,7 +10,8 @@ import yaml
 from tests.helpers import write_todos
 from todos_tool.errors import SchedulingError, ValidationError
 from todos_tool.manifest import load_workspace
-from todos_tool.models import ItemStatus
+from todos_tool.model_config import resolve_model
+from todos_tool.models import DEFAULT_CURSOR_MODEL, ItemStatus
 from todos_tool.scheduler import _format_commit, list_ready, next_ready, readiness_rows
 
 
@@ -19,7 +20,7 @@ def test_load_valid_workspace(git_project: Path, sample_item: dict) -> None:
     ws = load_workspace(git_project)
     assert len(ws.items) == 1
     assert ws.items[0].id == "TASK-001"
-    assert ws.manifest.settings.model == "composer-2.5"
+    assert ws.manifest.settings.model == DEFAULT_CURSOR_MODEL
 
 
 def test_manifest_model_default_when_omitted(git_project: Path, sample_item: dict) -> None:
@@ -29,7 +30,7 @@ def test_manifest_model_default_when_omitted(git_project: Path, sample_item: dic
     manifest["settings"].pop("model", None)
     manifest_path.write_text(yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8")
     ws = load_workspace(git_project)
-    assert ws.manifest.settings.model == "composer-2.5"
+    assert ws.manifest.settings.model == DEFAULT_CURSOR_MODEL
 
 
 def test_manifest_auto_commit_default_when_omitted(
@@ -87,12 +88,23 @@ def test_manifest_missing_project_check_rejected(
 
 
 def test_resolve_model_cli_overrides_manifest() -> None:
-    from todos_tool.orchestrator import _resolve_model
-
-    assert _resolve_model(cli_model="cli-model", manifest_model="manifest-model") == "cli-model"
-    assert _resolve_model(cli_model=None, manifest_model="manifest-model") == "manifest-model"
-    assert _resolve_model(cli_model="", manifest_model="manifest-model") == "manifest-model"
-    assert _resolve_model(cli_model=None, manifest_model=None) is None
+    assert (
+        resolve_model("cli-model", manifest_model="manifest-model", workspace_loaded=True)
+        == "cli-model"
+    )
+    assert (
+        resolve_model(None, manifest_model="manifest-model", workspace_loaded=True)
+        == "manifest-model"
+    )
+    assert (
+        resolve_model("", manifest_model="manifest-model", workspace_loaded=True)
+        == "manifest-model"
+    )
+    assert resolve_model(None, manifest_model=None, workspace_loaded=True) is None
+    assert (
+        resolve_model(None, manifest_model=None, workspace_loaded=False)
+        == DEFAULT_CURSOR_MODEL
+    )
 
 
 def test_resolve_auto_commit_cli_overrides_manifest() -> None:

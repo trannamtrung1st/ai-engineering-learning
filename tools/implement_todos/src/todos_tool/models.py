@@ -10,6 +10,9 @@ from typing import Any, Literal
 from todos_tool.paths import validate_item_id as _validate_item_id
 
 
+DEFAULT_CURSOR_MODEL = "composer-2.5"
+
+
 class ItemType(str, Enum):
     FEATURE = "feature"
     FIX = "fix"
@@ -152,7 +155,7 @@ class ManifestSettings:
     auto_commit: bool = True
     stop_on_failure: bool = True
     parse_error_threshold: int = 20
-    model: str | None = "composer-2.5"
+    model: str | None = DEFAULT_CURSOR_MODEL
     project_check: str | None = None
 
     def __post_init__(self) -> None:
@@ -208,7 +211,10 @@ class ManifestSettings:
                 mapping.get("parse_error_threshold", 20),
                 label="parse_error_threshold",
             ),
-            model=_optional_str(mapping.get("model", "composer-2.5"), label="model"),
+            model=_optional_str(
+                mapping.get("model", DEFAULT_CURSOR_MODEL),
+                label="model",
+            ),
             project_check=project_check,
         )
 
