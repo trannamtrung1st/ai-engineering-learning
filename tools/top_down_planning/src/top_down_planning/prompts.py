@@ -284,6 +284,8 @@ Do not execute implementation work.
 - Do not invent canonical item IDs. The orchestrator assigns IDs on apply.
 - For sibling dependencies in an `expand`, use child `ref` values or existing item ids.
 - Prefer breadth-first planning: keep major areas coherent before over-detailing one branch.
+- Do not write final deliverable files during this session. A dedicated render phase runs
+  after decomposition completes.
 - Do not modify files under `.planning-output/` except through `{plan_tool_command}`.
 
 {feedback_block}## Input document
@@ -438,6 +440,9 @@ Open and read `plan.yaml` when you need fields not shown in the render brief.
   actionable leaf unit in breakdown order.
 - Preserve each unit's objective, dependencies, expected outputs, acceptance criteria,
   blocked reasons, and open questions.
+- When the output goal uses per-item title fields (for example YAML `title:`), copy each
+  breakdown unit title **verbatim** from the render brief. Do not rephrase, add commas,
+  em-dashes, or other punctuation for readability.
 - Do not return structured JSON or a chat-only summary instead of writing files.
 - Do not modify, delete, or recreate any file under `.planning-output/`, especially
   `plan.yaml`.

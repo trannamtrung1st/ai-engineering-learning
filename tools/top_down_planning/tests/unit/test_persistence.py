@@ -9,6 +9,7 @@ from top_down_planning.persistence import (
     _normalize_legacy_run_state,
     ensure_resume_compatible,
     load_run_state,
+    render_attempt_prefix,
     save_run_state,
 )
 
@@ -94,3 +95,8 @@ def test_resume_rejects_concurrent_batches_mismatch(tmp_path: Path) -> None:
             limits=PlanningLimits(concurrent_batches=3),
             resume=True,
         )
+
+
+def test_render_attempt_prefix(tmp_path: Path) -> None:
+    prefix = render_attempt_prefix(tmp_path, 2)
+    assert prefix.endswith("/.planning-output/iterations/render-002")

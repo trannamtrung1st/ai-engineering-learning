@@ -101,3 +101,17 @@ def test_validate_render_coverage_requires_every_leaf_title(tmp_path: Path) -> N
 def test_validate_render_coverage_requires_at_least_one_file() -> None:
     plan = _plan_with_leaves()
     assert validate_render_coverage(plan, []) == ["No deliverable files were written."]
+
+
+def test_validate_render_coverage_ignores_punctuation_drift(tmp_path: Path) -> None:
+    plan = _plan_with_leaves()
+    plan.plan[1].title = "SR2-A baseline inventory and sequencing"
+    plan.plan[2].title = "SR2-B plan models manifest IO and lock helper"
+    punctuated = tmp_path / "todos.yaml"
+    punctuated.write_text(
+        "title: SR2-A baseline inventory and sequencing\n"
+        "title: SR2-B plan models, manifest IO, and lock helper\n",
+        encoding="utf-8",
+    )
+
+    assert validate_render_coverage(plan, [punctuated]) == []

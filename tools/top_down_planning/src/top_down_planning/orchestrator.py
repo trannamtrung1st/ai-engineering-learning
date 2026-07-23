@@ -48,6 +48,7 @@ from top_down_planning.persistence import (
     iteration_prefix,
     iteration_transaction_path,
     iterations_dir,
+    render_attempt_prefix,
     load_run_state,
     mark_last_success,
     new_run_state,
@@ -773,10 +774,17 @@ class Orchestrator:
                 agent_context=self._resolved_agent_context(phase="rendering"),
             )
 
-            prompt_path = audit_dir / "render-request-prompt.md"
-            response_path = audit_dir / "render-response.json"
-            events_path = audit_dir / "render-agent.ndjson"
-            log_path = audit_dir / "render-agent.log"
+            attempt_prefix = Path(render_attempt_prefix(output_dir, attempt))
+            prompt_path = attempt_prefix.with_name(
+                attempt_prefix.name + "-request-prompt.md"
+            )
+            response_path = attempt_prefix.with_name(
+                attempt_prefix.name + "-response.json"
+            )
+            events_path = attempt_prefix.with_name(
+                attempt_prefix.name + "-agent.ndjson"
+            )
+            log_path = attempt_prefix.with_name(attempt_prefix.name + "-agent.log")
             prompt_path.parent.mkdir(parents=True, exist_ok=True)
             prompt_path.write_text(prompt, encoding="utf-8")
             plan_backup = backup_canonical_plan(output_dir)

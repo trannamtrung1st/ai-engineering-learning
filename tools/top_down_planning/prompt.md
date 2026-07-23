@@ -385,9 +385,13 @@ planning-output/
         ├── 001-request.json
         ├── 001-transaction.json
         ├── 001-response.json
-        ├── render-response.json
-        └── render-request-prompt.md
+        ├── render-brief.md
+        └── render-001-response.json
 ```
+
+Each render attempt (including retries) also writes a numbered audit set under
+`iterations/`: `render-{NNN}-request-prompt.md`, `render-{NNN}-response.json`, and
+`render-{NNN}-agent.{ndjson,log}` when audit is enabled.
 
 `--output` holds internal resumable state under `.planning-output/`. Deliverables may
 be written anywhere in the workspace according to the output goal.

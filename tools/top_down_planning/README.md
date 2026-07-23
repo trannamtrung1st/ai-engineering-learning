@@ -113,7 +113,8 @@ planning-output/
         ├── 001-request-prompt.md
         ├── 001-transaction.json
         ├── 001-response.json
-        └── render-response.json
+        ├── render-brief.md
+        └── render-001-response.json
 ```
 
 Goal-driven deliverables are written only when planning finishes with status `complete`.
@@ -128,8 +129,9 @@ appear. After render, the tool validates that every breakdown title appears in t
 written deliverables and retries with feedback when coverage is incomplete.
 
 Render audit artifacts under `.planning-output/iterations/` include
-`render-brief.md`, `render-request-prompt.md`, `render-response.json` (discovered
-artifact paths and any coverage errors), and agent logs when audit is enabled.
+`render-brief.md`, per-attempt files such as `render-001-request-prompt.md`,
+`render-001-response.json`, and `render-001-agent.{ndjson,log}` (one numbered set
+per render attempt/ retry), plus agent logs when audit is enabled.
 
 ## v1 contracts
 

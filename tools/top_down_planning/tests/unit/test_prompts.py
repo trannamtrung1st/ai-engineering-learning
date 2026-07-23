@@ -340,6 +340,7 @@ def test_planning_prompt_uses_transaction_cli(
 
     assert "Planning transaction CLI" in prompt
     assert "record-operation" in prompt
+    assert "Do not write final deliverable files during this session" in prompt
     assert "Required response format" not in prompt
 
 
@@ -403,6 +404,7 @@ def test_final_render_prompt_references_plan_and_output_goal(
     assert "Breakdown to render" in prompt
     assert "authoritative scope" in prompt
     assert "Do **not** copy, restore, or reuse pre-existing files" in prompt
+    assert "copy each\n  breakdown unit title **verbatim**" in prompt
     assert ".planning-output" in prompt
     assert '"artifacts"' not in prompt
     assert "Required response format" not in prompt

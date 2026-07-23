@@ -86,6 +86,11 @@ def iteration_transaction_path(output_dir: Path, iteration: int) -> Path:
     return prefix.with_name(prefix.name + "-transaction.json")
 
 
+def render_attempt_prefix(output_dir: Path, attempt: int) -> str:
+    """Return the audit stem for one final-render attempt (``render-001``, etc.)."""
+    return str(iterations_dir(output_dir) / f"render-{attempt:03d}")
+
+
 def load_plan(output_dir: Path) -> PlanState | None:
     path = plan_path(output_dir)
     if not path.is_file():

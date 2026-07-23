@@ -41,9 +41,13 @@ def _dependency_labels(plan: PlanState, item: PlanItem) -> list[str]:
     return labels
 
 
+_PUNCTUATION_TO_SPACE = re.compile(r"[,;:.!?–—\-/\\()\"'`]+")
+
+
 def _normalize_for_match(text: str) -> str:
-    collapsed = re.sub(r"\s+", " ", text.strip().lower())
-    return collapsed
+    """Normalize titles for coverage checks; ignores case and punctuation drift."""
+    deduped = _PUNCTUATION_TO_SPACE.sub(" ", text.strip().lower())
+    return re.sub(r"\s+", " ", deduped).strip()
 
 
 def build_render_brief(plan: PlanState) -> str:
