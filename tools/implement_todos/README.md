@@ -244,6 +244,7 @@ evidence:
   commands: []         # optional mapping entries: {command, cwd?, timeout_seconds?}
 context:
   files: []
+# allow_empty_commit defaults to true; set false to require a tracked commit
 agent_context:          # optional item-level additions
   review:
     rules:
@@ -265,7 +266,7 @@ Logical attempt
 │   └── on failure: bounded repair work loop (same attempt)
 ├── Validation gate (orchestrator runs configured commands)
 │   └── on failure: bounded repair work loop (same attempt)
-└── Review phase (Cursor ask mode; read-only; no shell commands)
+└── Review phase (Cursor; read-only; submit via todos-review-tool only)
 ```
 
 Only observed shell execution counts for item `evidence.commands`. YAML `result` text never proves execution. In **captured** mode (default), implement sessions must run each declared command literally and set the shell tool working-directory field for `cwd`. In **driver** mode, the orchestrator executes evidence commands once and implementers must not duplicate them.
@@ -294,12 +295,12 @@ Implementation prompts require tool-managed background execution for long comman
 - Legacy resume/manual commit paths without a stored proposal still use `agent: finalize worktree`.
 - `--skip-commit` performs no staging or commit.
 - `baseline_head` is review/evidence context, not a file-ownership boundary.
-- Provenance is recorded as `driver`, `external` (clean tree with advanced HEAD), or `skipped`.
+- Provenance is recorded as `driver`, `external` (clean tree with advanced HEAD), `skipped`, or `unchanged` (no trackable source changes and unchanged HEAD; default item behavior). Gitignored deliverables and todos workspace metadata alone do not block `unchanged` finalize. Set `allow_empty_commit: false` on an item to require a tracked commit.
 - The tool never resets, stashes, amends, or rewrites user commits.
 
 ## Review contract
 
-Success requires a validated review submission artifact (`schema_version: 1`) with exact acceptance-criterion coverage, authoritative validation results copied from the orchestrator, authoritative completion-evidence results copied when `evidence.commands` is configured, instruction compliance, no unresolved blocking issues, and on pass a non-empty `proposed_commit_message` for the orchestrator commit step. Review sessions submit decisions through `todos-review-tool`; assistant chat is not parsed. Review sessions do not rerun validation or evidence commands.
+Success requires a validated review submission artifact (`schema_version: 1`) with exact acceptance-criterion coverage, authoritative validation results copied from the orchestrator, authoritative completion-evidence results copied when `evidence.commands` is configured, instruction compliance, no unresolved blocking issues, and on pass a non-empty `proposed_commit_message` when there are trackable changes to commit (or when the item sets `allow_empty_commit: false`). Review sessions submit decisions through `todos-review-tool`; assistant chat is not parsed. Review sessions do not rerun validation or evidence commands.
 
 Missing or invalid review artifacts restart only the review session. After `max_session_restarts_per_phase` is exhausted, the item is blocked with the artifact diagnostic instead of silently consuming another work attempt.
 

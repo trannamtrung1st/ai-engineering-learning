@@ -270,3 +270,53 @@ async def test_backfill_commits_with_unrelated_dirty_file(
         check=True,
     )
     assert "finalize worktree" in log.stdout
+
+
+@pytest.mark.asyncio
+async def test_allow_empty_commit_completes_with_unchanged_provenance(
+    git_project: Path,
+    sample_item: dict,
+) -> None:
+    from datetime import datetime, timezone
+
+    item_data = dict(sample_item)
+    write_todos(git_project, [item_data], settings={"auto_commit": True})
+
+    ws = load_workspace(git_project)
+    item = ws.get("TASK-001")
+    assert item is not None
+    item.status = ItemStatus.DONE
+    item.result.completed_at = datetime.now(timezone.utc)
+    item.result.summary = "decision artifact only"
+    save_item(ws, item)
+
+    baseline = head_sha(git_project)
+    runs_dir = ws.runs_dir("TASK-001")
+    runs_dir.mkdir(parents=True, exist_ok=True)
+    state = new_run_state("TASK-001", baseline)
+    state.review.decision = "pass"
+    state.review.summary = "ok"
+    from todos_tool.persistence import save_state
+
+    save_state(runs_dir, state)
+
+    orch = Orchestrator(
+        RunConfig(
+            workspace_root=git_project,
+            skip_probe=True,
+            no_color=True,
+            auto_commit=True,
+        )
+    )
+    sha = await orch.commit_item("TASK-001")
+    assert sha == baseline
+
+    ws = load_workspace(git_project)
+    item = ws.get("TASK-001")
+    assert item is not None
+    assert item.status == ItemStatus.DONE
+    assert item.result.commit_sha == baseline
+
+    saved = load_state(runs_dir)
+    assert saved is not None
+    assert saved.provenance_kind == ProvenanceKind.UNCHANGED

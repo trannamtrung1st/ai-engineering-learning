@@ -54,7 +54,7 @@ def test_review_prompt_requires_submission_tool() -> None:
     )
     assert "Submit your decision only through the review submission CLI" in prompt
     assert "todos-review-tool submit --json" in prompt
-    assert "Do not edit files or commit." in prompt
+    assert "Do not edit repository files or commit." in prompt
     assert "schema_version" in prompt
     assert "TASK-001" in prompt
     assert "no unresolved blocking issue exists" in prompt

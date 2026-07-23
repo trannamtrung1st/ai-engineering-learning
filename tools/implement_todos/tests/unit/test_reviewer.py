@@ -167,10 +167,25 @@ def test_reject_pass_with_legacy_string_issue() -> None:
         accept_decision(decision, _item(), 1, _authoritative())
 
 
-def test_reject_pass_without_proposed_commit_message() -> None:
+def test_reject_pass_without_proposed_commit_message_when_commit_required() -> None:
+    item = TodoItem(
+        id="TASK-001",
+        title="Add greeting helper",
+        type=ItemType.FEATURE,
+        status=ItemStatus.IN_PROGRESS,
+        description="desc",
+        acceptance_criteria=["Crit A", "Crit B"],
+        validation={"commands": []},
+        allow_empty_commit=False,
+    )
     decision = _decision({"proposed_commit_message": ""})
     with pytest.raises(ReviewError, match="proposed_commit_message"):
-        accept_decision(decision, _item(), 1, _authoritative())
+        accept_decision(decision, item, 1, _authoritative())
+
+
+def test_accept_pass_without_proposed_commit_message_by_default() -> None:
+    decision = _decision({"proposed_commit_message": ""})
+    accept_decision(decision, _item(), 1, _authoritative())
 
 
 def test_reject_substituted_acceptance_criterion() -> None:

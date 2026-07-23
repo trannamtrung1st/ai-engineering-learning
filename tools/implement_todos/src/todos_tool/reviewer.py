@@ -246,7 +246,7 @@ def validate_pass(
         raise ReviewError("Pass requires recommended_next_action=mark_done")
 
     proposed = (decision.proposed_commit_message or "").strip()
-    if not proposed:
+    if not proposed and not item.allow_empty_commit:
         raise ReviewError("Pass requires proposed_commit_message")
 
 

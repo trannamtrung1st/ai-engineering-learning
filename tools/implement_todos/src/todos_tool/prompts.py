@@ -300,6 +300,27 @@ def build_work_prompt(
             ]
         )
 
+    if item.allow_empty_commit:
+        parts.extend(
+            [
+                "",
+                "## Git finalize",
+                "This item may complete with **no tracked repository changes**. Deliverables "
+                "may live under gitignored paths (for example `temp/`). Do not force tracked "
+                "edits solely to produce a commit. When you do change tracked source files, "
+                "leave them ready for the orchestrator commit step.",
+            ]
+        )
+    else:
+        parts.extend(
+            [
+                "",
+                "## Git finalize requirement",
+                "This item **requires tracked repository changes**. Do not finish with only "
+                "gitignored or todos metadata updates.",
+            ]
+        )
+
     if validation_failure_feedback:
         parts.extend(
             [
@@ -350,7 +371,7 @@ def build_work_prompt(
 def format_review_tool_section(*, review_tool_command: str = "todos-review-tool") -> str:
     """Describe the session review CLI the agent must invoke."""
     return f"""Use the review submission CLI — do **not** return JSON in chat and do **not**
-edit files. Session scope is already configured in the environment
+edit repository files. Session scope is already configured in the environment
 (`TODOS_TOOL_REVIEW_SUBMISSION_FILE`, `TODOS_TOOL_ITEM_ID`, `TODOS_TOOL_LOGICAL_ATTEMPT`).
 
 Workflow:
@@ -358,8 +379,8 @@ Workflow:
 2. Run `{review_tool_command} submit --json '<decision>'` with one review decision object.
 3. Confirm with `{review_tool_command} status` that the submission artifact exists.
 
-The only shell command you may run during review is `{review_tool_command}`.
-Do NOT rerun validation commands or other repository commands."""
+You are read-only except for `{review_tool_command}`. Do NOT rerun validation commands
+or other repository shell commands. You MUST submit through `{review_tool_command}`."""
 
 
 def build_review_prompt(
@@ -435,20 +456,40 @@ def build_review_prompt(
     parts = [
         "# Independent review session (read-only)",
         "",
-        "You are an independent reviewer. Remain read-only. Do not edit files or commit.",
+        "You are an independent reviewer. Do not edit repository files or commit.",
         "Submit your decision only through the review submission CLI described below.",
         "",
         f"## Item `{item.id}`",
         f"**Title:** {item.title}",
         f"**Type:** {item.type.value}",
         f"**Logical attempt:** {logical_attempt}",
-        "",
-        "## Description",
-        item.description.strip(),
-        "",
-        "## Acceptance criteria",
-        criteria,
     ]
+    if item.allow_empty_commit:
+        parts.extend(
+            [
+                "",
+                "**Finalize mode:** allow empty (default) — deliverables may be gitignored-only; "
+                "pass is valid when there are no trackable source changes and HEAD is unchanged.",
+            ]
+        )
+    else:
+        parts.extend(
+            [
+                "",
+                "**Finalize mode:** commit required — pass expects trackable source changes and "
+                "a non-empty `proposed_commit_message`.",
+            ]
+        )
+    parts.extend(
+        [
+            "",
+            "## Description",
+            item.description.strip(),
+            "",
+            "## Acceptance criteria",
+            criteria,
+        ]
+    )
     parts.extend(_render_item_contract(
         contract_refs=contract_refs,
         checklist=checklist,
@@ -525,6 +566,23 @@ def build_review_prompt(
                 "commit subject the orchestrator should use.",
             ]
         )
+    elif item.allow_empty_commit:
+        parts.extend(
+            [
+                "",
+                "## Commit subject guidance",
+                "When there are trackable changes to commit, set `proposed_commit_message` to "
+                "the exact full commit subject the orchestrator should use. When there are no "
+                "trackable changes, omit `proposed_commit_message` or set it to null.",
+            ]
+        )
+
+    commit_message_rule = (
+        "On pass, `proposed_commit_message` may be omitted or null when there are no "
+        "trackable changes to commit; otherwise it must be a non-empty full commit subject."
+        if item.allow_empty_commit
+        else "On pass, `proposed_commit_message` must be a non-empty full commit subject."
+    )
 
     parts.extend(
         [
@@ -540,7 +598,7 @@ def build_review_prompt(
             "",
             "A pass is valid only when every acceptance criterion passes, mandatory validation passes,",
             "instruction compliance passes, and no unresolved blocking issue exists.",
-            "On pass, `proposed_commit_message` must be a non-empty full commit subject.",
+            commit_message_rule,
             "Use `issues` for notes. Structured issues may use severity info/low (non-blocking on pass)",
             "or medium/high/critical (blocking). Plain-string issues are treated as blocking.",
             "Map decisions: pass→mark_done, fail→retry, blocked→block.",

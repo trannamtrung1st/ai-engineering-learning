@@ -50,7 +50,7 @@ def test_finalize_external_provenance_when_head_advanced(git_project: Path) -> N
     assert result.commit_sha == head_sha(git_project)
 
 
-def test_finalize_clean_unchanged_head_fails(git_project: Path) -> None:
+def test_finalize_clean_unchanged_head_fails_when_commit_required(git_project: Path) -> None:
     baseline = head_sha(git_project)
     with pytest.raises(GitError, match="no commit provenance"):
         finalize_worktree(
@@ -58,7 +58,42 @@ def test_finalize_clean_unchanged_head_fails(git_project: Path) -> None:
             commit_prefix="agent:",
             skip_commit=False,
             baseline_head=baseline,
+            allow_empty_commit=False,
         )
+
+
+def test_finalize_clean_unchanged_head_allows_empty_by_default(
+    git_project: Path,
+) -> None:
+    baseline = head_sha(git_project)
+    result = finalize_worktree(
+        git_project,
+        commit_prefix="agent:",
+        skip_commit=False,
+        baseline_head=baseline,
+    )
+    assert result.provenance_kind == ProvenanceKind.UNCHANGED
+    assert result.commit_sha == baseline
+    assert "unchanged provenance" in result.message
+
+
+def test_finalize_allows_empty_when_only_todos_metadata_changed(
+    git_project: Path,
+) -> None:
+    baseline = head_sha(git_project)
+    todos = git_project / "todos"
+    todos.mkdir()
+    (todos / "runs").mkdir(parents=True)
+    (todos / "runs" / "state.json").write_text("{}\n", encoding="utf-8")
+
+    result = finalize_worktree(
+        git_project,
+        commit_prefix="agent:",
+        skip_commit=False,
+        baseline_head=baseline,
+    )
+    assert result.provenance_kind == ProvenanceKind.UNCHANGED
+    assert result.commit_sha == baseline
 
 
 def test_skip_commit_records_skipped_provenance(git_project: Path) -> None:

@@ -115,8 +115,6 @@ def build_agent_args(
     ]
     if force:
         args.append("--force")
-    if phase in ("review",):
-        args.extend(["--mode", "ask"])
     if model:
         args.extend(["--model", model])
     args.append(prompt)

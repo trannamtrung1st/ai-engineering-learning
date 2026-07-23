@@ -10,9 +10,10 @@ from todos_tool.git_service import (
     commit,
     has_staged_changes,
     head_sha,
+    is_todos_metadata_path,
     status,
 )
-from todos_tool.models import FinalizeResult, ProvenanceKind
+from todos_tool.models import FinalizeResult, ProvenanceKind, DEFAULT_ALLOW_EMPTY_COMMIT
 
 MAX_STATUS_PATHS = 50
 
@@ -30,6 +31,15 @@ def _format_pre_stage_summary(repo: Path) -> str:
     return count_line + "\n" + "\n".join(lines)
 
 
+def _trackable_changed_paths(repo: Path, *, todos_dir: str) -> list[str]:
+    st = status(repo)
+    return [
+        path
+        for path in st.changed_paths
+        if not is_todos_metadata_path(path, todos_dir)
+    ]
+
+
 def finalize_worktree(
     repo: Path,
     *,
@@ -37,6 +47,8 @@ def finalize_worktree(
     skip_commit: bool,
     baseline_head: str | None,
     commit_message: str | None = None,
+    allow_empty_commit: bool = DEFAULT_ALLOW_EMPTY_COMMIT,
+    todos_dir: str = "todos",
 ) -> FinalizeResult:
     """Stage the full worktree and commit, or record external/skipped provenance."""
     if skip_commit:
@@ -48,6 +60,23 @@ def finalize_worktree(
         )
 
     pre_summary = _format_pre_stage_summary(repo)
+    current = head_sha(repo)
+    if (
+        allow_empty_commit
+        and baseline_head
+        and current == baseline_head
+        and not _trackable_changed_paths(repo, todos_dir=todos_dir)
+    ):
+        return FinalizeResult(
+            commit_sha=current,
+            provenance_kind=ProvenanceKind.UNCHANGED,
+            message=(
+                f"{pre_summary}\n"
+                "No trackable source changes and HEAD unchanged since baseline "
+                "(unchanged provenance)."
+            ),
+        )
+
     _run(repo, ["add", "-A"])
 
     if has_staged_changes(repo):
@@ -73,6 +102,17 @@ def finalize_worktree(
             message=(
                 f"{pre_summary}\n"
                 "No staged changes; HEAD advanced since baseline (external provenance)."
+            ),
+        )
+
+    if allow_empty_commit:
+        return FinalizeResult(
+            commit_sha=current,
+            provenance_kind=ProvenanceKind.UNCHANGED,
+            message=(
+                f"{pre_summary}\n"
+                "No trackable source changes and HEAD unchanged since baseline "
+                "(unchanged provenance)."
             ),
         )
 

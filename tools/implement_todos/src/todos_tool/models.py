@@ -13,6 +13,7 @@ from todos_tool.agent_context import AgentContextConfig
 
 
 DEFAULT_CURSOR_MODEL = "composer-2.5"
+DEFAULT_ALLOW_EMPTY_COMMIT = True
 
 
 class ItemType(str, Enum):
@@ -47,6 +48,7 @@ class ProvenanceKind(str, Enum):
     DRIVER = "driver"
     EXTERNAL = "external"
     SKIPPED = "skipped"
+    UNCHANGED = "unchanged"
 
 
 class EvidenceMode(str, Enum):
@@ -607,6 +609,7 @@ class TodoItem:
     checklist: list[ChecklistItem] = field(default_factory=list)
     agent_context: AgentContextConfig | None = None
     source_file: str | None = None
+    allow_empty_commit: bool = DEFAULT_ALLOW_EMPTY_COMMIT
 
     def __post_init__(self) -> None:
         if isinstance(self.type, str):
@@ -658,6 +661,11 @@ class TodoItem:
             ],
             agent_context=_parse_optional_agent_context(mapping.get("agent_context")),
             source_file=_optional_str(mapping.get("source_file"), label="source_file"),
+            allow_empty_commit=(
+                bool(mapping["allow_empty_commit"])
+                if "allow_empty_commit" in mapping
+                else DEFAULT_ALLOW_EMPTY_COMMIT
+            ),
         )
 
     def to_dict(self, *, include_source_file: bool = False) -> dict[str, Any]:
@@ -683,6 +691,8 @@ class TodoItem:
             payload["checklist"] = [entry.to_dict() for entry in self.checklist]
         if self.agent_context is not None and not self.agent_context.is_empty():
             payload["agent_context"] = self.agent_context.to_dict()
+        if not self.allow_empty_commit:
+            payload["allow_empty_commit"] = False
         if include_source_file and self.source_file is not None:
             payload["source_file"] = self.source_file
         return payload
@@ -734,6 +744,7 @@ def validate_todo_item(data: dict[str, Any]) -> None:
         "checklist",
         "agent_context",
         "source_file",
+        "allow_empty_commit",
     }
     if unknown:
         raise ValueError(f"Unknown item fields: {sorted(unknown)}")
@@ -760,6 +771,10 @@ def validate_todo_item(data: dict[str, Any]) -> None:
     ItemEvidence.from_dict(mapping.get("evidence"))
     ItemContext.from_dict(mapping.get("context"))
     ItemResult.from_dict(mapping.get("result"))
+    if "allow_empty_commit" in mapping and not isinstance(
+        mapping["allow_empty_commit"], bool
+    ):
+        raise ValueError("item.allow_empty_commit must be a boolean")
     checklist = mapping.get("checklist")
     if checklist is not None:
         if not isinstance(checklist, list):

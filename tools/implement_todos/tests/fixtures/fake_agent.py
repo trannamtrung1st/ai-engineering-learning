@@ -3,7 +3,7 @@
 
 Controlled by argv and environment:
 
-- ``--mode ask`` selects review behavior (else work)
+- ``--mode ask`` still selects review behavior in the fake agent when present; otherwise review is detected from the prompt file title/content
 - FAKE_AGENT_MODE overrides: work|review|timeout|crash|malformed|split|unknown
 - FAKE_AGENT_DECISION=pass|fail|blocked
 - FAKE_AGENT_ITEM_ID / FAKE_AGENT_ATTEMPT

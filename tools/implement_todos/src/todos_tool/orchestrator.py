@@ -1522,6 +1522,8 @@ class Orchestrator:
                 skip_commit=skip_commit,
                 baseline_head=state.baseline_head,
                 commit_message=state.review.proposed_commit_message,
+                allow_empty_commit=item.allow_empty_commit,
+                todos_dir=self.config.todos_dir,
             )
         except GitError:
             item = self.workspace.get(item.id) or item
