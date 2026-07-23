@@ -1,0 +1,32 @@
+# Example config for distribute-commit-dates (dry-run by default).
+
+# Base branch for merge-base (omit to auto-detect main/master)
+# base: main
+
+# Commit range since merge-base
+scope: merge-base..HEAD
+
+# Include merge commits when rewriting
+include_merges: false
+
+# forward: anchor + random gaps; backward: anchor - random gaps
+direction: forward
+
+# Anchor datetime (omit for "now")
+# anchor: "2026-07-23 09:00:00 +0700"
+
+# Random gap between consecutive commits (minutes)
+min_gap: 30
+max_gap: 120
+
+# Optional seed for reproducible gaps
+# seed: 42
+
+# Restrict timestamps to office hours
+office_hours_enabled: false
+office_hours_start: "09:00"
+office_hours_end: "18:00"
+office_hours_weekdays: mon-fri
+
+# Set true (or pass --apply) to rewrite history
+apply: false

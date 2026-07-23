@@ -1,13 +1,4 @@
-#!/usr/bin/env python3
-"""
-Rewrite commit author/committer dates on the current branch since merge-base.
-
-Each gap between consecutive commits is a random duration between --min-gap and
---max-gap minutes (defaults: 30–120).
-
-Dry-run by default; pass --apply to rewrite history (creates a backup branch).
-Requires --config pointing to a YAML config file.
-"""
+"""Rewrite commit author/committer dates on the current branch since merge-base."""
 
 from __future__ import annotations
 
@@ -24,21 +15,17 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-MIN_GAP_MINUTES = 30
-MAX_GAP_MINUTES = 120
-
-if str(SCRIPT_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPT_DIR))
-
-from config import load_flat_yaml
-from office_hours import (
+from git_modifier.config import load_flat_yaml
+from git_modifier.office_hours import (
     OfficeHours,
     load_office_hours,
     next_office_time,
     prev_office_time,
     validate_office_times,
 )
+
+MIN_GAP_MINUTES = 30
+MAX_GAP_MINUTES = 120
 
 
 @dataclass(frozen=True)
@@ -537,7 +524,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--apply",
         action="store_true",
         default=None,
-        help="Rewrite history via interactive rebase (creates a backup branch).",
+        help="Rewrite history via filter-branch (creates a backup branch).",
     )
     parser.add_argument(
         "--dry-run",
@@ -662,7 +649,3 @@ def main() -> None:
 
     print()
     apply_plan(merge_base, planned)
-
-
-if __name__ == "__main__":
-    main()

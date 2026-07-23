@@ -1,7 +1,23 @@
 # git-modifier
 
-Local-only helpers under `temp/tools/` (gitignored). Run from anywhere inside
-the repo; scripts resolve the git root automatically.
+Local Git helpers for rewriting commit timestamps on the current branch.
+
+Run from anywhere inside a Git repository; the CLI resolves the repository root automatically.
+
+## Requirements
+
+- Python 3.11+
+- Git
+
+## Installation
+
+```bash
+cd tools/git-modifier
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+After installation: `git-modifier-distribute-dates`, or `python -m git_modifier`.
 
 ## distribute-commit-dates
 
@@ -14,36 +30,33 @@ config file you pass at runtime.
 
 ### Config
 
-Create or edit a YAML config (see `temp/tools/distribute-commit-dates.config.yaml`
-as an example). Pass it with `--config` (required). CLI flags override config
-values.
+Create or edit a YAML config (see `examples/distribute-commit-dates.config.yaml`).
+Pass it with `--config` (required). CLI flags override config values.
 
 ### Usage
 
 Preview:
 
 ```bash
-python3 temp/tools/git-modifier/distribute-commit-dates.py --config <config.yaml>
+git-modifier-distribute-dates --config ./examples/distribute-commit-dates.config.yaml
 ```
 
 Apply rewrite (creates `git-modifier-backup/<branch>-before-date-rewrite` first):
 
 ```bash
-python3 temp/tools/git-modifier/distribute-commit-dates.py --config <config.yaml> --apply
+git-modifier-distribute-dates --config ./examples/distribute-commit-dates.config.yaml --apply
 ```
 
 Uses `git filter-branch` so merge commits are supported when `include_merges: true`.
-Requires a clean index/worktree for **tracked** files (untracked `temp/` is OK).
+Requires a clean index/worktree for **tracked** files.
 
 Or set `apply: true` in the config file.
 
 Reproducible gaps:
 
 ```bash
-python3 temp/tools/git-modifier/distribute-commit-dates.py --config <config.yaml> --seed 42
+git-modifier-distribute-dates --config ./examples/distribute-commit-dates.config.yaml --seed 42
 ```
-
-Run from `apps/frontend` (paths above) or adjust paths relative to your cwd.
 
 ### Recovery
 
