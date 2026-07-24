@@ -188,6 +188,31 @@ def test_accept_pass_without_proposed_commit_message_by_default() -> None:
     accept_decision(decision, _item(), 1, _authoritative())
 
 
+def test_accept_multiplication_sign_variant_in_criterion() -> None:
+    item = TodoItem(
+        id="TASK-001",
+        title="Add greeting helper",
+        type=ItemType.FEATURE,
+        status=ItemStatus.IN_PROGRESS,
+        description="desc",
+        acceptance_criteria=["Overview renders at 1440×900."],
+        validation={"commands": []},
+    )
+    decision = _decision(
+        {
+            "acceptance_criteria": [
+                {
+                    "criterion": "Overview renders at 1440x900.",
+                    "passed": True,
+                    "evidence": "ok",
+                }
+            ],
+            "validation": [],
+        }
+    )
+    accept_decision(decision, item, 1, [])
+
+
 def test_reject_substituted_acceptance_criterion() -> None:
     decision = _decision(
         {

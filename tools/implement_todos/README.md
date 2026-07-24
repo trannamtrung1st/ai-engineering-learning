@@ -370,6 +370,6 @@ TODOS_TOOL_RUN_LIVE_SMOKE=1 pytest tests/live/test_cursor_prompt_bootstrap.py
 
 ## Known limitations
 
-- Review decisions must be submitted through `todos-review-tool`; assistant chat is not parsed.
+- Review decisions must be submitted through `todos-review-tool` (`scaffold` → `validate` → `submit`); assistant chat is not parsed.
 - Process-tree termination is best-effort and depends on POSIX process groups.
 - Live MCP / interactive approvals are not used; runs expect headless `--force` / `--trust` operation.

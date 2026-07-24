@@ -10,10 +10,11 @@ from todos_tool.models import (
     TodoItem,
     ValidationCommandResult,
 )
+from todos_tool.text_normalize import normalize_acceptance_criterion
 
 
 def _normalize_text(text: str) -> str:
-    return " ".join(text.strip().split()).lower()
+    return normalize_acceptance_criterion(text)
 
 
 def _normalize_validation_command(command: str) -> str:
@@ -46,9 +47,21 @@ def _validate_acceptance_coverage(
             parts.append(f"missing: {', '.join(sorted(missing))}")
         if unexpected:
             parts.append(f"unexpected: {', '.join(sorted(unexpected))}")
+        canonical = [
+            criterion
+            for criterion in item.acceptance_criteria
+            if _normalize_text(criterion) in missing
+        ]
+        hint = ""
+        if canonical:
+            hint = (
+                " Copy these criterion strings verbatim from the item YAML "
+                "(or run `todos-review-tool scaffold`): "
+                + "; ".join(repr(text) for text in canonical)
+            )
         raise ReviewError(
             "Pass requires exact acceptance criteria coverage "
-            f"({'; '.join(parts)})"
+            f"({'; '.join(parts)}).{hint}"
         )
 
     if not all(entry.passed for entry in decision.acceptance_criteria):

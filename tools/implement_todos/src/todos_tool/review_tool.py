@@ -14,6 +14,8 @@ from typing import Any
 from todos_tool.errors import ReviewError
 from todos_tool.models import ReviewDecision
 from todos_tool.persistence import write_json
+from todos_tool.review_scaffold import load_review_scaffold, validate_review_decision
+from todos_tool.review_scaffold import SCAFFOLD_FILENAME
 
 ENV_SUBMISSION_FILE = "TODOS_TOOL_REVIEW_SUBMISSION_FILE"
 ENV_ITEM_ID = "TODOS_TOOL_ITEM_ID"
@@ -74,6 +76,14 @@ def _require_env(name: str) -> str:
 
 def _submission_file() -> Path:
     return Path(_require_env(ENV_SUBMISSION_FILE)).resolve()
+
+
+def _session_scaffold_file() -> Path:
+    return _submission_file().parent / SCAFFOLD_FILENAME
+
+
+def _load_session_scaffold():
+    return load_review_scaffold(_session_scaffold_file())
 
 
 def _expected_item_id() -> str:
@@ -159,9 +169,34 @@ def submit_review_decision(json_payload: str) -> ReviewDecision:
     except ValueError as exc:
         raise ReviewToolError(f"Invalid review decision: {exc}") from exc
     _validate_identity(decision)
+    scaffold_file = _session_scaffold_file()
+    if scaffold_file.is_file():
+        validate_review_decision(load_review_scaffold(scaffold_file), decision)
     path.parent.mkdir(parents=True, exist_ok=True)
     write_json(path, decision.model_dump(mode="json"))
     return decision
+
+
+def cmd_scaffold() -> None:
+    scaffold = _load_session_scaffold()
+    print(json.dumps(scaffold.decision_template(), indent=2))
+
+
+def cmd_validate(json_payload: str) -> None:
+    scaffold = _load_session_scaffold()
+    try:
+        raw = json.loads(json_payload)
+    except json.JSONDecodeError as exc:
+        raise ReviewToolError(f"Invalid review decision JSON: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise ReviewToolError("Review decision JSON must be an object")
+    try:
+        decision = ReviewDecision.model_validate(raw)
+    except ValueError as exc:
+        raise ReviewToolError(f"Invalid review decision: {exc}") from exc
+    _validate_identity(decision)
+    validate_review_decision(scaffold, decision)
+    print("Review decision is valid for submission.")
 
 
 def cmd_submit(json_payload: str) -> None:
@@ -197,6 +232,21 @@ def _build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("status", help="Show current submission artifact state")
     subparsers.add_parser("reset", help="Remove the current submission artifact")
+
+    subparsers.add_parser(
+        "scaffold",
+        help="Print a fill-in review decision template with exact criterion strings",
+    )
+
+    validate = subparsers.add_parser(
+        "validate",
+        help="Validate review decision JSON without writing the submission artifact",
+    )
+    validate.add_argument(
+        "--json",
+        required=True,
+        help="Review decision JSON object",
+    )
     return parser
 
 
@@ -210,6 +260,10 @@ def main(argv: list[str] | None = None) -> int:
             cmd_status()
         elif args.command == "reset":
             cmd_reset()
+        elif args.command == "scaffold":
+            cmd_scaffold()
+        elif args.command == "validate":
+            cmd_validate(args.json)
         else:
             parser.error(f"Unknown command: {args.command}")
             return 2

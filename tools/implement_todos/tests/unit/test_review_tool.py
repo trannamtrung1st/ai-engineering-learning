@@ -11,6 +11,8 @@ from pathlib import Path
 import pytest
 
 from todos_tool.errors import ReviewError
+from todos_tool.models import ItemType, TodoItem, ValidationCommandResult
+from todos_tool.review_scaffold import build_review_scaffold, write_review_scaffold
 from todos_tool.review_tool import (
     ReviewToolError,
     build_session_env,
@@ -42,7 +44,24 @@ VALID_SUBMISSION = {
 
 @pytest.fixture
 def submission_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    submission = tmp_path / "review-submission-1.json"
+    attempt_dir = tmp_path / "attempt"
+    attempt_dir.mkdir()
+    submission = attempt_dir / "review-submission-1.json"
+    scaffold = attempt_dir / "review-scaffold.json"
+    write_review_scaffold(
+        scaffold,
+        build_review_scaffold(
+            TodoItem(
+                id="TASK-001",
+                title="Add helper",
+                type=ItemType.FEATURE,
+                description="desc",
+                acceptance_criteria=["Crit A"],
+            ),
+            logical_attempt=1,
+            authoritative_validation=[],
+        ),
+    )
     env = build_session_env(
         submission_path=submission,
         item_id="TASK-001",
@@ -156,3 +175,34 @@ def test_cli_submit_status_reset(submission_env: Path) -> None:
     )
     assert "reset" in reset.stdout.lower()
     assert not submission_env.is_file()
+
+
+def test_cli_scaffold_and_validate(submission_env: Path) -> None:
+    env = os.environ.copy()
+    scaffold = subprocess.run(
+        [sys.executable, "-m", "todos_tool.review_tool", "scaffold"],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    template = json.loads(scaffold.stdout)
+    template["summary"] = "Looks good"
+    template["acceptance_criteria"][0]["evidence"] = "ok"
+    template["proposed_commit_message"] = "agent: feat: ship it"
+
+    validate = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "todos_tool.review_tool",
+            "validate",
+            "--json",
+            json.dumps(template),
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert "valid for submission" in validate.stdout.lower()

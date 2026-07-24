@@ -71,6 +71,11 @@ from todos_tool.project_context import ProjectContext
 from todos_tool.prompts import build_review_prompt, build_work_prompt
 from todos_tool.reviewer import accept_decision
 from todos_tool.review_context import build_review_context
+from todos_tool.review_scaffold import (
+    build_review_scaffold,
+    review_scaffold_path,
+    write_review_scaffold,
+)
 from todos_tool.review_tool import (
     build_session_env,
     load_review_submission,
@@ -1408,6 +1413,16 @@ class Orchestrator:
             )
             reset_review_submission(submission_path)
             review_tool_command = resolve_review_tool_command()
+            scaffold_path = review_scaffold_path(attempt_dir)
+            write_review_scaffold(
+                scaffold_path,
+                build_review_scaffold(
+                    item,
+                    logical_attempt=state.logical_attempt,
+                    authoritative_validation=state.validation_results,
+                    authoritative_evidence=state.evidence_results,
+                ),
+            )
 
             item_paths = self._item_paths(state)
             review_ctx = build_review_context(

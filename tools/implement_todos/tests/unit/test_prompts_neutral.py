@@ -31,6 +31,7 @@ def test_work_prompt_has_no_project_specific_defaults() -> None:
     )
     assert "AGENTS.md" not in prompt
     assert "CONTRIBUTING.md" not in prompt
+    assert "## Artifact reporting" in prompt
     assert prompt_requires_instruction_discovery(prompt)
 
 
@@ -45,11 +46,14 @@ def test_review_prompt_uses_submission_tool() -> None:
         commit_hint="Use `agent: feat:` for features.",
     )
     assert "Do NOT rerun validation commands" in prompt
+    assert "todos-review-tool scaffold" in prompt
+    assert "todos-review-tool validate --json" in prompt
     assert "todos-review-tool submit --json" in prompt
     assert "do **not** return JSON in chat" in prompt
     assert "Submit your decision only through the review submission CLI" in prompt
     assert "Commit subject guidance" in prompt
     assert "proposed_commit_message" in prompt
+    assert "Glob/Grep skip gitignored paths" in prompt
 
 
 def test_prompts_include_supplied_context_only() -> None:
@@ -105,6 +109,23 @@ def test_work_prompt_includes_checklist_work_plan() -> None:
     assert "`ck-a`: Implement helper" in prompt
     assert "checklist_moves" in prompt
     assert "Do NOT mark the item complete" in prompt
+
+
+def test_review_prompt_includes_visual_rules_when_artifacts_listed() -> None:
+    summary = """
+## Artifacts
+- ai-harness/generated/runs/screenshots/slice/overview.png
+"""
+    prompt = build_review_prompt(
+        _item(),
+        logical_attempt=1,
+        resolved_commands=["pytest"],
+        work_summary=summary,
+        git_diff="(none)",
+        git_status="(clean)",
+    )
+    assert "## Visual evidence rules" in prompt
+    assert "overview.png" in prompt
 
 
 def test_review_prompt_includes_checklist_compliance_rules() -> None:

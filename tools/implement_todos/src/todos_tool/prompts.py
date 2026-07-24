@@ -11,6 +11,7 @@ from todos_tool.models import (
     EvidenceCommandResult,
 )
 from todos_tool.agent_context import ResolvedAgentContext
+from todos_tool.artifact_paths import extract_artifact_paths
 from todos_tool.project_context import ProjectContext, ResolvedContextFile
 from todos_tool.validation_runner import format_validation_results
 from todos_tool.evidence_runner import format_evidence_results
@@ -203,6 +204,85 @@ def _render_checklist_review_rules(item: TodoItem) -> list[str]:
     ]
 
 
+_VISUAL_KEYWORDS = (
+    "screenshot",
+    "browser",
+    "playwright",
+    "viewport",
+    "visual",
+    "responsive",
+    ".png",
+    ".webp",
+    ".jpeg",
+    ".jpg",
+)
+
+
+def _mentions_visual_verification(*texts: str | None) -> bool:
+    combined = " ".join(text for text in texts if text).lower()
+    if any(keyword in combined for keyword in _VISUAL_KEYWORDS):
+        return True
+    return " ui " in f" {combined} " or " ux " in f" {combined} "
+
+
+def _render_work_artifact_rules() -> list[str]:
+    return [
+        "",
+        "## Artifact reporting",
+        "When you capture UI screenshots, browser snapshots, or other gitignored artifacts, "
+        "list their **exact repository-relative paths** in your work summary under a "
+        "`## Artifacts` heading (one path per line). Review agents cannot discover "
+        "gitignored files through Glob/Grep.",
+    ]
+
+
+def _render_review_artifact_paths(work_summary: str | None) -> list[str]:
+    paths = extract_artifact_paths(work_summary)
+    if not paths:
+        return [
+            "",
+            "## Artifact paths",
+            "No artifact paths were extracted from the work summary.",
+            "Cursor Glob/Grep skip gitignored paths — use the Read tool or shell `ls` "
+            "with explicit paths when verifying screenshots or other generated artifacts.",
+        ]
+    lines = [
+        "",
+        "## Artifact paths (from work summary)",
+        "Verify these with the Read tool or shell `ls`. Do **not** rely on Glob/Grep — "
+        "gitignored artifact directories are invisible to search tools.",
+        "",
+        *[f"- `{path}`" for path in paths],
+    ]
+    return lines
+
+
+def _render_review_evidence_rules(
+    item: TodoItem,
+    work_summary: str | None,
+    artifact_paths: list[str],
+) -> list[str]:
+    if not (
+        artifact_paths
+        or _mentions_visual_verification(
+            work_summary,
+            item.description,
+            " ".join(item.acceptance_criteria),
+        )
+    ):
+        return []
+    return [
+        "",
+        "## Visual evidence rules",
+        "This item mentions UI/browser/visual verification.",
+        "- A work-summary claim alone is **not** sufficient evidence for visual criteria.",
+        "- For each visual acceptance criterion you mark `passed: true`, cite at least one "
+        "verified on-disk artifact path in that criterion's `evidence` field.",
+        "- Confirm artifacts exist via Read or shell — not Glob/Grep (gitignored paths are skipped).",
+        "- When artifact paths appear in the work summary, verify them before passing.",
+    ]
+
+
 def _render_evidence_commands(item: TodoItem) -> list[str]:
     if not item.evidence.commands:
         return []
@@ -332,6 +412,7 @@ def build_work_prompt(
             "weakening criteria.",
         ]
     )
+    parts.extend(_render_work_artifact_rules())
 
     if allow_full_check:
         parts.extend(
@@ -418,9 +499,13 @@ edit repository files. Session scope is already configured in the environment
 (`TODOS_TOOL_REVIEW_SUBMISSION_FILE`, `TODOS_TOOL_ITEM_ID`, `TODOS_TOOL_LOGICAL_ATTEMPT`).
 
 Workflow:
-1. Optionally run `{review_tool_command} status` to inspect the current submission state.
-2. Run `{review_tool_command} submit --json '<decision>'` with one review decision object.
+1. Run `{review_tool_command} scaffold` — start from the pre-filled template with exact
+   `acceptance_criteria[].criterion` strings and authoritative validation/evidence copied in.
+2. Fill in evidence, summary, and `proposed_commit_message`, then run
+   `{review_tool_command} submit --json '<decision>'` (submit validates against the scaffold).
 3. Confirm with `{review_tool_command} status` that the submission artifact exists.
+
+Optional: `{review_tool_command} validate --json '<decision>'` dry-runs validation before submit.
 
 You are read-only except for `{review_tool_command}`. Do NOT rerun validation commands
 or other repository shell commands. You MUST submit through `{review_tool_command}`."""
@@ -576,6 +661,13 @@ def build_review_prompt(
             "",
             "## Work summary from implementer",
             (work_summary or "(none provided)").strip(),
+        ]
+    )
+    parts.extend(_render_review_artifact_paths(work_summary))
+    artifact_paths = extract_artifact_paths(work_summary)
+    parts.extend(_render_review_evidence_rules(item, work_summary, artifact_paths))
+    parts.extend(
+        [
             "",
             "## Current git status",
             "```",
@@ -634,6 +726,10 @@ def build_review_prompt(
             format_review_tool_section(review_tool_command=review_tool_command),
             "",
             "Submit EXACTLY one JSON object matching this schema:",
+            "",
+            "Copy each `acceptance_criteria[].criterion` string from "
+            f"`{review_tool_command} scaffold` (preferred) or the Acceptance criteria section above. "
+            "Do not paraphrase criterion text.",
             "",
             "```json",
             decision_schema,

@@ -295,11 +295,17 @@ TODOS_TOOL_LOGICAL_ATTEMPT
 TODOS_TOOL_REVIEW_TOOL_COMMAND
 ```
 
+The orchestrator writes `{attempt_dir}/review-scaffold.json` beside each review submission file. The review CLI discovers it automatically — no extra session env vars.
+
 Workflow:
 
-1. Optionally run `todos-review-tool status`.
-2. Run `todos-review-tool submit --json '<decision>'`.
+1. Run `todos-review-tool scaffold` — pre-filled template with exact criterion strings and authoritative validation/evidence.
+2. Fill in evidence and summary, then run `todos-review-tool submit --json '<decision>'`.
 3. Confirm the submission artifact exists before ending the session.
+
+Acceptance-criterion matching normalizes whitespace, case, NFKC, and common multiplication-sign variants (`1440×900` ≡ `1440x900`). Criterion text must still match the item YAML semantically — paraphrased or shortened paths fail validation.
+
+For UI/browser criteria, reviewers verify gitignored artifact paths via Read or shell `ls` (Glob/Grep skip ignored paths). Implementers list artifact paths under `## Artifacts` in the work summary.
 
 Decision schema:
 
