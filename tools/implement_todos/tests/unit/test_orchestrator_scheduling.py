@@ -570,3 +570,61 @@ def test_maybe_notify_item_done_respects_config(
     disabled.workspace = ws
     disabled._maybe_notify_item_done(item.id)
     mock_notify_item_done.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_run_on_all_done_reports_idle(
+    git_project: Path,
+    sample_item: dict,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    write_todos(git_project, [sample_item])
+    ws = load_workspace(git_project)
+    item = ws.get("TASK-001")
+    assert item is not None
+    item.status = ItemStatus.DONE
+    save_item(ws, item)
+
+    orch = Orchestrator(
+        RunConfig(workspace_root=git_project, skip_probe=True, no_color=True)
+    )
+    report = await orch.run()
+
+    assert report.completed == []
+    assert report.idle_message is not None
+    assert "all 1 item(s) done" in report.idle_message
+    captured = capsys.readouterr().out
+    assert report.idle_message in captured
+
+
+@pytest.mark.asyncio
+async def test_run_after_completion_hints_next_item(
+    fake_agent: Path,
+    git_project: Path,
+    sample_item: dict,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    second = dict(sample_item)
+    second["id"] = "TASK-002"
+    second["title"] = "Second task"
+    second["priority"] = 200
+    write_todos(
+        git_project,
+        [sample_item, {**second, "_file": "items/002.yaml"}],
+        settings={"max_attempts": 1, "auto_commit": False},
+    )
+
+    orch = Orchestrator(
+        RunConfig(
+            workspace_root=git_project,
+            agent_bin=str(fake_agent),
+            skip_probe=True,
+            no_color=True,
+        )
+    )
+    report = await orch.run()
+
+    assert report.completed == ["TASK-001", "TASK-002"]
+    captured = capsys.readouterr().out
+    assert "Next item: TASK-002" in captured
+    assert "all 2 item(s) done" in report.idle_message or "all 2 item(s) done" in captured

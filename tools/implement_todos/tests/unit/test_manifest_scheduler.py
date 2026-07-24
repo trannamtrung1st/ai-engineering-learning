@@ -12,7 +12,13 @@ from todos_tool.errors import SchedulingError, ValidationError
 from todos_tool.manifest import load_workspace
 from todos_tool.model_config import resolve_model
 from todos_tool.models import DEFAULT_CURSOR_MODEL, ItemStatus
-from todos_tool.scheduler import _format_commit, list_ready, next_ready, readiness_rows
+from todos_tool.scheduler import (
+    _format_commit,
+    describe_idle,
+    list_ready,
+    next_ready,
+    readiness_rows,
+)
 
 
 def test_load_valid_workspace(git_project: Path, sample_item: dict) -> None:
@@ -228,3 +234,34 @@ def test_next_ready_specific(git_project: Path, sample_item: dict) -> None:
     assert item.id == "TASK-001"
     with pytest.raises(SchedulingError):
         next_ready(ws, "TASK-404")
+
+
+def test_describe_idle_all_done(git_project: Path, sample_item: dict) -> None:
+    write_todos(git_project, [sample_item])
+    ws = load_workspace(git_project)
+    item = ws.get("TASK-001")
+    assert item is not None
+    item.status = ItemStatus.DONE
+    message = describe_idle(ws)
+    assert "all 1 item(s) done" in message
+
+
+def test_describe_idle_waiting_on_dependency(
+    git_project: Path,
+    sample_item: dict,
+) -> None:
+    blocked = dict(sample_item)
+    blocked["id"] = "TASK-002"
+    blocked["depends_on"] = ["TASK-001"]
+    write_todos(
+        git_project,
+        [sample_item, {**blocked, "_file": "items/002.yaml"}],
+    )
+    ws = load_workspace(git_project)
+    first = ws.get("TASK-001")
+    assert first is not None
+    first.status = ItemStatus.BLOCKED
+    message = describe_idle(ws)
+    assert "waiting on dependencies" in message
+    assert "TASK-002" in message
+    assert "blocked: TASK-001" in message

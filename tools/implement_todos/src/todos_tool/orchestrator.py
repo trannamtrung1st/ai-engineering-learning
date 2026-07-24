@@ -106,6 +106,7 @@ class RunReport:
     skipped: list[str] = field(default_factory=list)
     planned: list[str] = field(default_factory=list)
     errors: dict[str, str] = field(default_factory=dict)
+    idle_message: str | None = None
 
 
 class Orchestrator:
@@ -289,6 +290,9 @@ class Orchestrator:
                 except SchedulingError as exc:
                     if todo_id is not None:
                         raise
+                    if report.idle_message is None:
+                        report.idle_message = str(exc)
+                        self.renderer.info(str(exc))
                     break
                 resuming = False
 
@@ -322,6 +326,9 @@ class Orchestrator:
                 break
 
             await self._reload_workspace()
+
+            if outcome == "completed" and todo_id is None:
+                self._log_next_item_hint(report)
 
             if todo_id is not None:
                 break
@@ -955,6 +962,17 @@ class Orchestrator:
             save_state(runs_dir, state)
             return "pass"
 
+        if assessment.feedback:
+            repair_num = state.evidence_repair_count + 1
+            self.renderer.warn(
+                f"Completion evidence failed for {item.id} "
+                f"(repair attempt {repair_num})"
+            )
+            for line in assessment.feedback.splitlines()[:6]:
+                self.renderer.info(line)
+            if assessment.stalled and assessment.remediation:
+                self.renderer.warn(assessment.remediation)
+
         record_transition(runs_dir, state, Transition.EVIDENCE_FAILED)
         save_state(runs_dir, state)
 
@@ -1058,6 +1076,10 @@ class Orchestrator:
                 state.evidence_repair_count += 1
                 self._invalidate_evidence_cache(state)
                 repair_feedback = self._evidence_failure_feedback(state)
+                self.renderer.info(
+                    f"Starting evidence repair work session for {item.id} "
+                    f"(repair={state.evidence_repair_count})"
+                )
                 work_ok = await self._run_work_phase(
                     item,
                     state,
@@ -1088,6 +1110,10 @@ class Orchestrator:
             repair_feedback = self._validation_failure_feedback(state, runs_dir)
             self._invalidate_validation_cache(state)
             self._invalidate_evidence_cache(state)
+            self.renderer.info(
+                f"Starting validation repair work session for {item.id} "
+                f"(repair={state.validation_repair_count})"
+            )
             work_ok = await self._run_work_phase(
                 item,
                 state,
@@ -1633,6 +1659,17 @@ class Orchestrator:
             title=item.title if item is not None else "",
             commit_sha=item.result.commit_sha if item is not None else None,
         )
+
+    def _log_next_item_hint(self, report: RunReport) -> None:
+        if self.workspace is None:
+            return
+        try:
+            nxt = next_ready(self.workspace, None)
+        except SchedulingError as exc:
+            report.idle_message = str(exc)
+            self.renderer.info(str(exc))
+        else:
+            self.renderer.info(f"Next item: {nxt.id} — {nxt.title}")
 
     def _persist_item(self, item: TodoItem) -> None:
         save_item(self.workspace, item)

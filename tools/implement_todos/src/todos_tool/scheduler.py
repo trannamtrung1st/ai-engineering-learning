@@ -92,5 +92,56 @@ def next_ready(workspace: Workspace, todo_id: str | None = None) -> TodoItem:
             )
         return item
     if not ready:
-        raise SchedulingError("No executable items")
+        raise SchedulingError(describe_idle(workspace))
     return ready[0]
+
+
+def describe_idle(workspace: Workspace) -> str:
+    """Explain why no item is executable (for console feedback)."""
+    if not workspace.items:
+        return "No executable items: manifest has no items."
+
+    status_map = workspace.status_map()
+    if list_ready(workspace):
+        raise RuntimeError("describe_idle called while executable items exist")
+
+    done_count = sum(1 for item in workspace.items if item.status == ItemStatus.DONE)
+    if done_count == len(workspace.items):
+        return f"No executable items: all {done_count} item(s) done."
+
+    parts: list[str] = ["No executable items"]
+    in_progress = [
+        item.id for item in workspace.items if item.status == ItemStatus.IN_PROGRESS
+    ]
+    if in_progress:
+        joined = ", ".join(in_progress)
+        parts.append(
+            f"{len(in_progress)} in progress ({joined}) — use `todos-tool resume`"
+        )
+
+    waiting: list[str] = []
+    for item in workspace.items:
+        if item.status != ItemStatus.PENDING:
+            continue
+        if _deps_satisfied(item, status_map):
+            continue
+        missing = [
+            dep
+            for dep in item.depends_on
+            if status_map.get(dep) != ItemStatus.DONE
+        ]
+        waiting.append(f"{item.id} (needs {', '.join(missing)})")
+    if waiting:
+        parts.append(f"waiting on dependencies: {'; '.join(waiting)}")
+
+    blocked = [item.id for item in workspace.items if item.status == ItemStatus.BLOCKED]
+    if blocked:
+        parts.append(f"blocked: {', '.join(blocked)}")
+
+    superseded = [
+        item.id for item in workspace.items if item.status == ItemStatus.SUPERSEDED
+    ]
+    if superseded and len(parts) == 1:
+        parts.append(f"{len(superseded)} superseded")
+
+    return ": ".join(parts) if len(parts) > 1 else parts[0]
