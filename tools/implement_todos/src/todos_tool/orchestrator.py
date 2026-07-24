@@ -83,8 +83,13 @@ from todos_tool.run_config import RunConfig
 from todos_tool.scheduler import list_ready, next_ready
 from todos_tool.validation_runner import (
     format_validation_results,
+    infer_format_fix_commands,
+    is_format_only_validation_failure,
+    load_persisted_validation_results,
     resolve_validation_commands,
+    run_mechanical_format_repair,
     run_validation_commands,
+    run_validation_preflight,
 )
 from todos_tool.workspace_loader import load_workspace_repairable
 
@@ -580,7 +585,7 @@ class Orchestrator:
             Transition.EVIDENCE_STALL,
         ):
             start_attempt = state.logical_attempt + 1
-            feedback = self._attempt_failure_feedback(state)
+            feedback = self._attempt_failure_feedback(state, runs_dir)
 
         for attempt in range(start_attempt, settings.max_attempts + 1):
             state.logical_attempt = attempt
@@ -637,7 +642,7 @@ class Orchestrator:
                     state.blocked_reason or "Item blocked by evidence or review"
                 )
 
-            feedback = self._attempt_failure_feedback(state)
+            feedback = self._attempt_failure_feedback(state, runs_dir)
 
         item = self.workspace.get(item.id) or item
         item.status = ItemStatus.BLOCKED
@@ -961,10 +966,31 @@ class Orchestrator:
 
         return "fail"
 
-    def _validation_failure_feedback(self, state: RunState) -> str:
-        return format_validation_results(state.validation_results)
+    def _validation_failure_feedback(
+        self,
+        state: RunState,
+        runs_dir: Path | None = None,
+    ) -> str:
+        if state.validation_results:
+            return format_validation_results(state.validation_results)
+        if runs_dir is not None:
+            attempt_dir = attempts_dir(runs_dir, state.logical_attempt)
+            persisted = load_persisted_validation_results(
+                attempt_dir,
+                validation_repair_count=max(state.validation_repair_count, 1),
+            )
+            if persisted:
+                return format_validation_results(persisted)
+        return (
+            "(validation failed but authoritative output was not loaded; "
+            "inspect validation-results.json under the item attempt directory)"
+        )
 
-    def _attempt_failure_feedback(self, state: RunState) -> str | None:
+    def _attempt_failure_feedback(
+        self,
+        state: RunState,
+        runs_dir: Path | None = None,
+    ) -> str | None:
         if (
             state.last_transition
             in (
@@ -974,11 +1000,8 @@ class Orchestrator:
             and state.evidence_results
         ):
             return self._evidence_failure_feedback(state)
-        if (
-            state.last_transition == Transition.VALIDATION_FAILED
-            and state.validation_results
-        ):
-            return self._validation_failure_feedback(state)
+        if state.last_transition == Transition.VALIDATION_FAILED:
+            return self._validation_failure_feedback(state, runs_dir)
         feedback = state.review.summary
         if state.review.issues:
             feedback = (feedback or "") + "\n" + "\n".join(state.review.issues)
@@ -990,10 +1013,18 @@ class Orchestrator:
         state: RunState,
         runs_dir: Path,
     ) -> str:
-        if state.last_transition == Transition.VALIDATION_STARTED:
+        if state.last_transition in (
+            Transition.VALIDATION_STARTED,
+            Transition.VALIDATION_FAILED,
+        ):
             self._invalidate_validation_cache(state)
 
         await self._ensure_validation_results(item, state, runs_dir)
+
+        commands = self._resolved_validation_commands(item)
+        if not commands:
+            record_transition(runs_dir, state, Transition.VALIDATION_PASSED)
+            return "pass"
 
         if all(result.passed for result in state.validation_results):
             record_transition(runs_dir, state, Transition.VALIDATION_PASSED)
@@ -1054,9 +1085,9 @@ class Orchestrator:
                 return "fail"
 
             state.validation_repair_count += 1
+            repair_feedback = self._validation_failure_feedback(state, runs_dir)
             self._invalidate_validation_cache(state)
             self._invalidate_evidence_cache(state)
-            repair_feedback = self._validation_failure_feedback(state)
             work_ok = await self._run_work_phase(
                 item,
                 state,
@@ -1097,14 +1128,43 @@ class Orchestrator:
             f"repair={state.validation_repair_count}"
         )
         record_transition(runs_dir, state, Transition.VALIDATION_STARTED)
+        settings = self.workspace.manifest.settings
         commands = self._resolved_validation_commands(item)
+        timeout_seconds = settings.validation_timeout_seconds
+
+        if settings.auto_format_before_validation and commands:
+            preflight_results = await run_validation_preflight(
+                self.config.workspace_root,
+                commands,
+                timeout_seconds=timeout_seconds,
+            )
+            if preflight_results:
+                passed = sum(1 for result in preflight_results if result.passed)
+                self.renderer.info(
+                    f"Auto-format preflight: {passed}/{len(preflight_results)} command(s) passed"
+                )
+
         results = await run_validation_commands(
             self.config.workspace_root,
             commands,
-            timeout_seconds=(
-                self.workspace.manifest.settings.validation_timeout_seconds
-            ),
+            timeout_seconds=timeout_seconds,
         )
+
+        if (
+            commands
+            and not all(result.passed for result in results)
+            and is_format_only_validation_failure(results)
+            and infer_format_fix_commands(self.config.workspace_root, commands)
+        ):
+            self.renderer.info(
+                "Mechanical auto-format: repairing format-check failure before agent repair"
+            )
+            results = await run_mechanical_format_repair(
+                self.config.workspace_root,
+                commands,
+                timeout_seconds=timeout_seconds,
+            )
+
         state.validation_attempt = state.logical_attempt
         state.validation_results = results
         state.changed_paths = self._item_paths(state)

@@ -318,8 +318,10 @@ def build_work_prompt(
             "1. Inspect the current repository and applicable context/instructions.",
             "2. Implement the requested change.",
             "3. Use targeted local checks while editing (single tests, lint on touched files).",
-            "4. Leave the working tree ready for independent review.",
-            "5. Return a concise summary of what changed and any targeted checks you ran.",
+            "4. When validation includes formatting checks, run the project formatter on touched "
+            "files before ending the session (the orchestrator also runs an auto-format preflight).",
+            "5. Leave the working tree ready for independent review.",
+            "6. Return a concise summary of what changed and any targeted checks you ran.",
             "",
             "## Hard constraints",
             "- Do NOT commit.",

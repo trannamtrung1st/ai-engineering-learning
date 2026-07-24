@@ -195,6 +195,7 @@ settings:
   parse_error_threshold: 20
   model: composer-2.5
   project_check: pytest   # optional legacy shared gate
+  auto_format_before_validation: true  # run formatter before pnpm/npm check gates
 authority: []               # optional manifest authority references
 hard_rules: []              # optional free-form rules
 stop_conditions: []
@@ -209,6 +210,8 @@ items:
 ```
 
 `settings.project_check` is optional. When present, the orchestrator runs it plus item-specific `validation.commands` (deduplicated). Run-config `evidence.required_commands` add repository-level gates.
+
+When `auto_format_before_validation` is true (default), the orchestrator runs inferred formatter commands (for example `pnpm run format`) before `pnpm run check` / `format:check` gates, and applies a mechanical format retry when a failure is format-only — without consuming an agent repair session.
 
 ### Agent context merge order
 

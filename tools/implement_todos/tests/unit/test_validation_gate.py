@@ -55,6 +55,8 @@ def test_work_prompt_includes_validation_failure_feedback() -> None:
         validation_failure_feedback="$ pytest\npassed=false exit_code=1\nfailed",
     )
     assert "Authoritative validation failure" in prompt
+    assert "passed=false exit_code=1" in prompt
+    assert "(no validation commands configured)" not in prompt
 
 
 def test_review_prompt_forbids_rerunning_validation() -> None:

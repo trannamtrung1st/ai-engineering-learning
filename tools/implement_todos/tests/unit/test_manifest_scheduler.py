@@ -45,6 +45,18 @@ def test_manifest_auto_commit_default_when_omitted(
     assert ws.manifest.settings.auto_commit is True
 
 
+def test_manifest_auto_format_default_when_omitted(
+    git_project: Path, sample_item: dict
+) -> None:
+    write_todos(git_project, [sample_item], settings={"max_attempts": 5})
+    manifest_path = git_project / "todos/manifest.yaml"
+    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    manifest["settings"].pop("auto_format_before_validation", None)
+    manifest_path.write_text(yaml.safe_dump(manifest, sort_keys=False), encoding="utf-8")
+    ws = load_workspace(git_project)
+    assert ws.manifest.settings.auto_format_before_validation is True
+
+
 def test_manifest_model_setting(git_project: Path, sample_item: dict) -> None:
     write_todos(
         git_project,

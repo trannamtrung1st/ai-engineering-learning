@@ -6,6 +6,16 @@ import json
 from dataclasses import dataclass
 from typing import Any, Literal
 
+def _coerce_exit_code(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value.strip())
+    return None
+
+
 EventCategory = Literal[
     "assistant",
     "thinking",
@@ -333,14 +343,16 @@ class EventNormalizer:
             shell = (tool_call.get("shellToolCall") or {}) if isinstance(tool_call, dict) else {}
             result = shell.get("result") or {}
             success = result.get("success") or {}
-            exit_code = success.get("exitCode")
+            exit_code = _coerce_exit_code(success.get("exitCode"))
             if exit_code is None:
-                exit_code = success.get("exit_code")
+                exit_code = _coerce_exit_code(success.get("exit_code"))
+            if exit_code is None and success:
+                exit_code = 0
             cwd = extract_shell_cwd(event) or "."
             for entry in reversed(self._shell_commands):
                 if entry.command == cmd and not entry.completed:
                     entry.completed = True
-                    entry.exit_code = exit_code if isinstance(exit_code, int) else None
+                    entry.exit_code = exit_code
                     if entry.cwd == "." and cwd != ".":
                         entry.cwd = cwd
                     return
@@ -349,7 +361,7 @@ class EventNormalizer:
                     command=cmd,
                     cwd=cwd,
                     completed=True,
-                    exit_code=exit_code if isinstance(exit_code, int) else None,
+                    exit_code=exit_code,
                 )
             )
 

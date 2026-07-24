@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import fnmatch
+import json
 import os
 import re
 import signal
@@ -14,6 +15,14 @@ from todos_tool.models import Manifest, TodoItem, ValidationCommandResult
 from todos_tool.project_context import ProjectContext
 
 MAX_VALIDATION_OUTPUT_CHARS = 12_000
+
+_FORMAT_CHECK_MARKERS = (
+    "format:check",
+    "oxfmt --check",
+    "format issues found",
+    "checking formatting",
+)
+_TYPECHECK_FAILURE_MARKERS = ("error ts",)
 
 
 def _normalize_command(command: str) -> str:
@@ -97,6 +106,151 @@ async def run_validation_commands(
             )
         )
     return results
+
+
+def validation_commands_imply_format_check(commands: list[str]) -> bool:
+    blob = " ".join(commands).lower()
+    if any(marker in blob for marker in _FORMAT_CHECK_MARKERS):
+        return True
+    normalized_commands = {_normalize_command(command) for command in commands}
+    return normalized_commands.intersection(
+        {
+            "pnpm run check",
+            "npm run check",
+            "yarn run check",
+            "yarn check",
+        }
+    ) != set()
+
+
+def infer_format_fix_commands(
+    workspace_root: Path,
+    validation_commands: list[str],
+) -> list[str]:
+    """Derive formatter fix commands from configured validation commands."""
+    if not validation_commands_imply_format_check(validation_commands):
+        return []
+
+    fixes: list[str] = []
+    seen: set[str] = set()
+
+    def add(command: str) -> None:
+        key = _normalize_command(command)
+        if key not in seen:
+            seen.add(key)
+            fixes.append(command)
+
+    package_json = workspace_root / "package.json"
+    if package_json.is_file():
+        if (workspace_root / "pnpm-lock.yaml").is_file():
+            add("pnpm run format")
+        elif (workspace_root / "package-lock.json").is_file():
+            add("npm run format")
+        elif (workspace_root / "yarn.lock").is_file():
+            add("yarn format")
+
+    for command in validation_commands:
+        if "oxfmt --check" in command:
+            add(re.sub(r"oxfmt\s+--check\b", "oxfmt", command))
+        if "format:check" in command and "pnpm run format:check" in command:
+            add(command.replace("format:check", "format"))
+        if "format:check" in command and "npm run format:check" in command:
+            add(command.replace("format:check", "format"))
+        if "pnpm exec oxfmt --check" in command:
+            add(command.replace("pnpm exec oxfmt --check", "pnpm exec oxfmt"))
+        if "npx oxfmt --check" in command:
+            add(command.replace("npx oxfmt --check", "npx oxfmt"))
+
+    return fixes
+
+
+def is_format_only_validation_failure(
+    results: list[ValidationCommandResult],
+) -> bool:
+    """Return True when failures look limited to formatting checks."""
+    failed = [result for result in results if not result.passed]
+    if not failed:
+        return False
+
+    for result in failed:
+        summary = (result.summary or "").lower()
+        if any(marker in summary for marker in _TYPECHECK_FAILURE_MARKERS):
+            return False
+        if re.search(r"found \d+ errors?\.", summary) and "format" not in summary:
+            return False
+        if not any(marker in summary for marker in _FORMAT_CHECK_MARKERS):
+            return False
+    return True
+
+
+async def run_validation_preflight(
+    workspace_root: Path,
+    validation_commands: list[str],
+    *,
+    timeout_seconds: int,
+) -> list[ValidationCommandResult]:
+    """Run formatter fix commands before the authoritative validation gate."""
+    fix_commands = infer_format_fix_commands(workspace_root, validation_commands)
+    if not fix_commands:
+        return []
+    return await run_validation_commands(
+        workspace_root,
+        fix_commands,
+        timeout_seconds=timeout_seconds,
+    )
+
+
+async def run_mechanical_format_repair(
+    workspace_root: Path,
+    validation_commands: list[str],
+    *,
+    timeout_seconds: int,
+) -> list[ValidationCommandResult]:
+    """Apply formatter fixes and rerun validation without an agent repair session."""
+    fix_commands = infer_format_fix_commands(workspace_root, validation_commands)
+    if not fix_commands:
+        return []
+    await run_validation_commands(
+        workspace_root,
+        fix_commands,
+        timeout_seconds=timeout_seconds,
+    )
+    return await run_validation_commands(
+        workspace_root,
+        validation_commands,
+        timeout_seconds=timeout_seconds,
+    )
+
+
+def load_persisted_validation_results(
+    attempt_dir: Path,
+    *,
+    validation_repair_count: int,
+) -> list[ValidationCommandResult]:
+    """Load the most recent validation artifact for repair prompts/resume."""
+    candidates: list[Path] = []
+    if validation_repair_count:
+        candidates.append(
+            attempt_dir / f"validation-results-repair-{validation_repair_count}.json"
+        )
+    candidates.append(attempt_dir / "validation-results.json")
+    for path in candidates:
+        if not path.is_file():
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        raw_results = payload.get("results")
+        if not isinstance(raw_results, list):
+            continue
+        parsed: list[ValidationCommandResult] = []
+        for entry in raw_results:
+            if isinstance(entry, dict):
+                parsed.append(ValidationCommandResult.from_dict(entry))
+        if parsed:
+            return parsed
+    return []
 
 
 async def _run_validation_command(

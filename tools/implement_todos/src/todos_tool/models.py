@@ -173,6 +173,7 @@ class ManifestSettings:
     parse_error_threshold: int = 20
     model: str | None = DEFAULT_CURSOR_MODEL
     project_check: str | None = None
+    auto_format_before_validation: bool = True
 
     def __post_init__(self) -> None:
         if self.model is not None:
@@ -232,6 +233,9 @@ class ManifestSettings:
                 label="model",
             ),
             project_check=project_check,
+            auto_format_before_validation=bool(
+                mapping.get("auto_format_before_validation", True)
+            ),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -247,6 +251,7 @@ class ManifestSettings:
             "parse_error_threshold": self.parse_error_threshold,
             "model": self.model,
             "project_check": self.project_check,
+            "auto_format_before_validation": self.auto_format_before_validation,
         }
 
     @classmethod

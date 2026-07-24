@@ -22,6 +22,83 @@ def normalize_cwd(cwd: str | None) -> str:
     return text or "."
 
 
+_CD_PREFIX_RE = re.compile(r"^cd\s+(\S+)\s*&&\s*(.+)$", re.IGNORECASE | re.DOTALL)
+
+
+def _resolve_cd_target(base_cwd: str, cd_target: str, workspace_root: Path | None) -> str:
+    target = cd_target.strip().replace("\\", "/")
+    if workspace_root is not None:
+        root = workspace_root.resolve()
+        if target.startswith("/"):
+            resolved = Path(target).resolve()
+        else:
+            base = normalize_cwd(base_cwd)
+            base_path = root if base == "." else (root / base).resolve()
+            resolved = (base_path / target).resolve()
+        try:
+            relative = resolved.relative_to(root)
+            if not relative.parts:
+                return "."
+            return relative.as_posix()
+        except ValueError:
+            pass
+
+    if target.startswith("/"):
+        return resolve_evidence_cwd(target, workspace_root)
+
+    base = normalize_cwd(base_cwd)
+    if base == ".":
+        return normalize_cwd(target)
+
+    if workspace_root is not None and not Path(base).is_absolute():
+        absolute_base = (workspace_root / base).resolve()
+        return (absolute_base / target).resolve().relative_to(
+            workspace_root.resolve()
+        ).as_posix()
+    return normalize_cwd(f"{base}/{target}")
+
+
+def expand_observed_shell_runs(
+    runs: list[ObservedShellRun],
+    *,
+    workspace_root: Path | None = None,
+) -> list[ObservedShellRun]:
+    """Add normalized variants for common `cd … && command` capture shapes."""
+    expanded: list[ObservedShellRun] = []
+    seen: set[tuple[str, str, bool, int | None]] = set()
+
+    def add(run: ObservedShellRun) -> None:
+        key = (
+            normalize_command(run.command),
+            normalize_cwd(run.cwd),
+            run.completed,
+            run.exit_code,
+        )
+        if key in seen:
+            return
+        seen.add(key)
+        expanded.append(run)
+
+    for run in runs:
+        add(run)
+        match = _CD_PREFIX_RE.match(run.command.strip())
+        if not match:
+            continue
+        inner_command = match.group(2).strip()
+        if not inner_command:
+            continue
+        add(
+            ObservedShellRun(
+                command=inner_command,
+                cwd=_resolve_cd_target(run.cwd, match.group(1), workspace_root),
+                completed=run.completed,
+                exit_code=run.exit_code,
+                source=run.source,
+            )
+        )
+    return expanded
+
+
 def resolve_evidence_cwd(cwd: str | None, workspace_root: Path | None = None) -> str:
     """Map an observed shell cwd to the same relative form used by evidence specs."""
     normalized = normalize_cwd(cwd)
@@ -211,6 +288,10 @@ def match_spec_to_observed(
     norm_spec = normalize_command(spec_command)
     norm_cwd = normalize_cwd(spec_cwd)
     near_misses: list[NearMiss] = []
+    observed_runs = expand_observed_shell_runs(
+        observed_runs,
+        workspace_root=workspace_root,
+    )
 
     for observed in observed_runs:
         if observed.source != "captured":
@@ -264,11 +345,15 @@ def match_all_specs(
     *,
     workspace_root: Path | None = None,
 ) -> list[EvidenceMatchResult]:
+    normalized_runs = expand_observed_shell_runs(
+        observed_runs,
+        workspace_root=workspace_root,
+    )
     return [
         match_spec_to_observed(
             command,
             cwd,
-            observed_runs,
+            normalized_runs,
             workspace_root=workspace_root,
         )
         for command, cwd in specs

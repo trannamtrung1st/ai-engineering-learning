@@ -28,7 +28,27 @@ def test_exact_normalized_command_match() -> None:
     assert result.match_kind == "exact"
 
 
-def test_cd_prefix_wrapper_near_miss() -> None:
+def test_cd_prefix_wrapper_is_normalized_with_workspace_root(tmp_path) -> None:
+    workspace = tmp_path / "apps" / "frontend"
+    workspace.mkdir(parents=True)
+    result = match_spec_to_observed(
+        "pnpm run test -- tests/",
+        ".",
+        [
+            ObservedShellRun(
+                command=f"cd {workspace} && pnpm run test -- tests/",
+                cwd=".",
+                completed=True,
+                exit_code=0,
+            )
+        ],
+        workspace_root=workspace,
+    )
+    assert result.passed is True
+    assert result.match_kind == "exact"
+
+
+def test_cd_prefix_wrapper_relative_dir_still_requires_matching_cwd() -> None:
     result = match_spec_to_observed(
         "pytest",
         ".",
@@ -43,7 +63,23 @@ def test_cd_prefix_wrapper_near_miss() -> None:
     )
     assert result.passed is False
     assert result.near_misses
-    assert result.near_misses[0].reason == "cd_prefix_wrapper"
+
+
+def test_cd_prefix_wrapper_still_near_miss_when_inner_command_differs() -> None:
+    result = match_spec_to_observed(
+        "pytest",
+        ".",
+        [
+            ObservedShellRun(
+                command="cd subdir && pytest -k smoke",
+                cwd=".",
+                completed=True,
+                exit_code=0,
+            )
+        ],
+    )
+    assert result.passed is False
+    assert result.near_misses
 
 
 def test_wrong_cwd_near_miss() -> None:
