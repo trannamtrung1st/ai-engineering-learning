@@ -125,14 +125,18 @@ def compute_forward_schedule(
     rng: random.Random,
     office: OfficeHours,
 ) -> list[PlannedCommit]:
-    current = next_office_time(start, office) if office.enabled else start
+    current = (
+        next_office_time(start, office, rng, min_gap, max_gap)
+        if office.enabled
+        else start
+    )
     planned: list[PlannedCommit] = []
 
     for commit in commits:
         gap = random_gap_minutes(min_gap, max_gap, rng)
         candidate = current + timedelta(minutes=gap)
         if office.enabled:
-            current = next_office_time(candidate, office)
+            current = next_office_time(candidate, office, rng, min_gap, max_gap)
         else:
             current = candidate
         planned.append(PlannedCommit(info=commit, new_date=current))
@@ -153,12 +157,16 @@ def compute_backward_schedule(
         return []
 
     dates: list[datetime] = []
-    current = prev_office_time(end, office) if office.enabled else end
+    current = (
+        prev_office_time(end, office, rng, min_gap, max_gap)
+        if office.enabled
+        else end
+    )
     for _ in reversed(commit_list):
         gap = random_gap_minutes(min_gap, max_gap, rng)
         candidate = current - timedelta(minutes=gap)
         if office.enabled:
-            current = prev_office_time(candidate, office)
+            current = prev_office_time(candidate, office, rng, min_gap, max_gap)
         else:
             current = candidate
         dates.append(current)

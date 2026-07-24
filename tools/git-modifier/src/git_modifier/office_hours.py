@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import random
 import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -174,6 +175,46 @@ def day_end(dt: datetime, office: OfficeHours) -> datetime:
     )
 
 
+def office_window_minutes(office: OfficeHours) -> int:
+    start_total = office.start_hour * 60 + office.start_minute
+    end_total = office.end_hour * 60 + office.end_minute
+    return end_total - start_total
+
+
+def gap_bounded_offset_minutes(
+    window: int,
+    min_gap: int,
+    max_gap: int,
+    rng: random.Random,
+) -> int:
+    if window <= 0:
+        return 0
+    if window <= min_gap:
+        return rng.randint(0, window)
+    low = min_gap
+    high = min(max_gap, window)
+    return rng.randint(low, high)
+
+
+def random_office_time_on_day(
+    day: datetime,
+    office: OfficeHours,
+    rng: random.Random,
+    min_gap: int,
+    max_gap: int,
+    *,
+    from_start: bool,
+) -> datetime:
+    """Pick a random in-hours time on ``day``'s calendar date."""
+    start = day_start(day, office)
+    end = day_end(day, office)
+    window = office_window_minutes(office)
+    offset = gap_bounded_offset_minutes(window, min_gap, max_gap, rng)
+    if from_start:
+        return start + timedelta(minutes=offset)
+    return end - timedelta(minutes=offset)
+
+
 def is_office_time(dt: datetime, office: OfficeHours) -> bool:
     if dt.weekday() not in office.weekdays:
         return False
@@ -182,35 +223,57 @@ def is_office_time(dt: datetime, office: OfficeHours) -> bool:
     return start <= dt <= end
 
 
-def next_office_time(dt: datetime, office: OfficeHours) -> datetime:
+def next_office_time(
+    dt: datetime,
+    office: OfficeHours,
+    rng: random.Random,
+    min_gap: int,
+    max_gap: int,
+) -> datetime:
     current = dt.replace(second=0, microsecond=0)
     for _ in range(366 * 2):
         if current.weekday() in office.weekdays:
             start = day_start(current, office)
             end = day_end(current, office)
             if current < start:
-                return start
-            if current <= end:
+                return random_office_time_on_day(
+                    current, office, rng, min_gap, max_gap, from_start=True
+                )
+            if current < end:
                 return current
-        current = day_start(current + timedelta(days=1), office)
-        while current.weekday() not in office.weekdays:
-            current = day_start(current + timedelta(days=1), office)
+        next_day = day_start(current + timedelta(days=1), office)
+        while next_day.weekday() not in office.weekdays:
+            next_day = day_start(next_day + timedelta(days=1), office)
+        return random_office_time_on_day(
+            next_day, office, rng, min_gap, max_gap, from_start=True
+        )
     raise ValueError("Could not find a valid office-hours timestamp going forward.")
 
 
-def prev_office_time(dt: datetime, office: OfficeHours) -> datetime:
+def prev_office_time(
+    dt: datetime,
+    office: OfficeHours,
+    rng: random.Random,
+    min_gap: int,
+    max_gap: int,
+) -> datetime:
     current = dt.replace(second=0, microsecond=0)
     for _ in range(366 * 2):
         if current.weekday() in office.weekdays:
             start = day_start(current, office)
             end = day_end(current, office)
             if current > end:
-                return end
-            if current >= start:
+                return random_office_time_on_day(
+                    current, office, rng, min_gap, max_gap, from_start=False
+                )
+            if current > start:
                 return current
-        current = day_end(current - timedelta(days=1), office)
-        while current.weekday() not in office.weekdays:
-            current = day_end(current - timedelta(days=1), office)
+        prev_day = day_end(current - timedelta(days=1), office)
+        while prev_day.weekday() not in office.weekdays:
+            prev_day = day_end(prev_day - timedelta(days=1), office)
+        return random_office_time_on_day(
+            prev_day, office, rng, min_gap, max_gap, from_start=False
+        )
     raise ValueError("Could not find a valid office-hours timestamp going backward.")
 
 
