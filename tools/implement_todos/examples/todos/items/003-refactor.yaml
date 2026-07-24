@@ -18,8 +18,24 @@ acceptance_criteria:
   - Behavior is unchanged.
   - Tests still pass.
 
+checklist:
+  - id: ck-locate
+    text: Find magic-string default usages in greeting code
+    done: false
+  - id: ck-extract
+    text: Introduce a single named default constant or helper
+    done: false
+  - id: ck-regression
+    text: Confirm behavior is unchanged and tests still pass
+    done: false
+
 validation:
   commands: []
+
+evidence:
+  commands:
+    - command: pytest
+      cwd: .
 
 context:
   files: []

@@ -1,1 +1,3 @@
-# Shared example rule for todos-tool demos.
+# Shared example rule
+
+Do not edit todos item status to done during work or review sessions.

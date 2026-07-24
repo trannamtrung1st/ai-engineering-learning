@@ -1,1 +1,3 @@
-# Item-level review rule for TASK-001 demos.
+# Item review rule for TASK-001
+
+When reviewing TASK-001, confirm checklist steps for module layout, implementation, and tests were covered or explicitly reshaped.

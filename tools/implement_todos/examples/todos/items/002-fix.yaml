@@ -19,6 +19,9 @@ acceptance_criteria:
   - Tests cover the empty-name case.
 
 checklist:
+  - id: ck-repro
+    text: Reproduce empty or whitespace-only name behavior
+    done: false
   - id: ck-fallback
     text: Implement safe default for empty or whitespace-only names
     done: false
@@ -31,6 +34,11 @@ checklist:
 
 validation:
   commands: []
+
+evidence:
+  commands:
+    - command: pytest
+      cwd: .
 
 context:
   files: []

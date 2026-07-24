@@ -18,8 +18,11 @@ acceptance_criteria:
   - Basic unit tests cover the happy path.
 
 checklist:
+  - id: ck-layout
+    text: Inspect repository layout and choose module location
+    done: false
   - id: ck-module
-    text: Add greeting helper module with personalized greeting function
+    text: Add greeting helper with personalized greeting function
     done: false
   - id: ck-tests
     text: Add unit tests for the happy path
@@ -27,6 +30,11 @@ checklist:
 
 validation:
   commands: []
+
+evidence:
+  commands:
+    - command: pytest
+      cwd: .
 
 context:
   files: []

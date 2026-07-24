@@ -56,9 +56,12 @@ def test_bundled_example_agent_context_merge_and_prompts() -> None:
     assert "example-manifest-implement" in work
     assert "example-review" not in work
     assert "example-item-review" not in work
+    assert "## Checklist work plan" in work
+    assert "`ck-module`" in work
 
     assert "example-shared" in review_prompt
     assert "example-review" in review_prompt
     assert "example-item-review" in review_prompt
     assert "example-implement" not in review_prompt
     assert "example-manifest-implement" not in review_prompt
+    assert "## Checklist review" in review_prompt

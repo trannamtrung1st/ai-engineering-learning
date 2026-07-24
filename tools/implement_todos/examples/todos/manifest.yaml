@@ -10,8 +10,11 @@ settings:
   auto_commit: true
   stop_on_failure: true
   model: composer-2.5
-  # Optional legacy shared gate; run-config evidence.required_commands are preferred
   project_check: pytest
+
+hard_rules:
+  - Maintain item checklists as the execution plan; set done on completed steps.
+  - Transfer checklist steps across items only via restructure-proposal checklist_moves.
 
 agent_context:
   implement:

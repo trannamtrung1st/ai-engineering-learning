@@ -1,7 +1,12 @@
 # Example todos-tool run config.
 #
 # Run:
+#   todos-tool validate --workspace examples
+#   todos-tool status --workspace examples
 #   todos-tool run --config ./examples/run.config.yaml --workspace examples
+#
+# Item YAML includes optional checklists ({id, text, done}) as agent-owned work plans.
+# Cross-item checklist transfers use checklist_moves in restructure-proposal.json.
 #
 # CLI flags override values from this file. Paths are resolved relative to
 # `workspace` (or this file's directory when `workspace` is `.` or omitted),
