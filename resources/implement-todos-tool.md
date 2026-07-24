@@ -86,6 +86,17 @@ acceptance_criteria:
   - Input validation is present.
   - Automated tests cover success and failure cases.
 
+checklist:
+  - id: ck-endpoint
+    text: Implement registration endpoint
+    done: false
+  - id: ck-validation
+    text: Add input validation
+    done: false
+  - id: ck-tests
+    text: Add automated tests for success and failure cases
+    done: false
+
 validation:
   commands:
     - pytest
@@ -124,6 +135,8 @@ superseded
 ```
 
 Use typed models and return actionable validation errors.
+
+Each checklist entry uses `{id, text, done}` where `id` is unique within the item. When present, the checklist is the agent-owned execution plan for that item. Work agents update `done` and may reshape the checklist in the current item YAML. Cross-item transfers use `checklist_moves` in a restructure proposal (see section 11).
 
 Document this schema clearly so another agent can generate a valid `todos/` workspace for any project.
 
@@ -471,6 +484,23 @@ Allow it to propose:
 * Follow-up work
 * Item splitting
 * `superseded` status
+* Checklist transfers via `checklist_moves` (move `{id, text, done}` entries to another item)
+
+Example restructure proposal fragment:
+
+```json
+{
+  "schema_version": 1,
+  "item_id": "TASK-001",
+  "supersede": false,
+  "new_items": [],
+  "dependency_updates": {},
+  "checklist_moves": [
+    {"id": "ck-tests", "to_item_id": "TASK-002"}
+  ],
+  "notes": "Tests belong with the fix item."
+}
+```
 
 The orchestrator must validate all changes.
 

@@ -237,7 +237,7 @@ description: |
 acceptance_criteria:
   - Registration endpoint is implemented.
 contract_refs: []      # optional authority references
-checklist: []          # optional {id, text, done} entries
+checklist: []          # optional {id, text, done} entries; agent-owned work plan
 validation:
   commands: []
 evidence:
@@ -256,6 +256,34 @@ result:
 ```
 
 See [`examples/todos/`](examples/todos/) for sample items.
+
+### Checklist work plan
+
+When present, `checklist` is the agent-owned execution plan for that item. Each entry uses `{id, text, done}` where `id` must be unique within the item.
+
+- Work agents cover open steps or reshape the checklist as reality changes.
+- In-item edits are allowed on the current item only: reorder, update `text`, add, remove obsolete steps, toggle `done`.
+- Removals should be justified in the work summary.
+- Cross-item transfers use `checklist_moves` in `todos/runs/<item-id>/restructure-proposal.json`; do not edit other item files directly.
+- Item `status` remains orchestrator-owned; checklist progress does not replace acceptance criteria.
+
+Example restructure proposal with checklist transfer:
+
+```json
+{
+  "schema_version": 1,
+  "item_id": "TASK-001",
+  "supersede": false,
+  "new_items": [],
+  "dependency_updates": {},
+  "checklist_moves": [
+    {"id": "ck-tests", "to_item_id": "TASK-002"}
+  ],
+  "notes": "Tests belong with the fix item."
+}
+```
+
+Review applies soft pressure: open checklist entries without justification should fail `instruction_compliance`. Acceptance criteria, evidence, and validation remain the hard gates.
 
 ## Execution model
 
@@ -278,7 +306,7 @@ Malformed TODO YAML may be repaired automatically during `run` / `resume` (bound
 Work, review, continuation, and repair prompts include only supplied context:
 
 - Manifest authority, hard rules, stop conditions, out-of-scope text
-- Item contract refs, checklist state, context files
+- Item contract refs, checklist state and work-plan rules, context files
 - Run-config context files and instructions
 - Phase-specific agent skills and rules (when configured)
 
@@ -300,7 +328,7 @@ Implementation prompts require tool-managed background execution for long comman
 
 ## Review contract
 
-Success requires a validated review submission artifact (`schema_version: 1`) with exact acceptance-criterion coverage, authoritative validation results copied from the orchestrator, authoritative completion-evidence results copied when `evidence.commands` is configured, instruction compliance, no unresolved blocking issues, and on pass a non-empty `proposed_commit_message` when there are trackable changes to commit (or when the item sets `allow_empty_commit: false`). Review sessions submit decisions through `todos-review-tool`; assistant chat is not parsed. Review sessions do not rerun validation or evidence commands.
+Success requires a validated review submission artifact (`schema_version: 1`) with exact acceptance-criterion coverage, authoritative validation results copied from the orchestrator, authoritative completion-evidence results copied when `evidence.commands` is configured, instruction compliance (including checklist coverage when the item has open steps without justification), no unresolved blocking issues, and on pass a non-empty `proposed_commit_message` when there are trackable changes to commit (or when the item sets `allow_empty_commit: false`). Review sessions submit decisions through `todos-review-tool`; assistant chat is not parsed. Review sessions do not rerun validation or evidence commands.
 
 Missing or invalid review artifacts restart only the review session. After `max_session_restarts_per_phase` is exhausted, the item is blocked with the artifact diagnostic instead of silently consuming another work attempt.
 

@@ -17,6 +17,14 @@ acceptance_criteria:
   - A greeting helper function exists and returns a non-empty string.
   - Basic unit tests cover the happy path.
 
+checklist:
+  - id: ck-module
+    text: Add greeting helper module with personalized greeting function
+    done: false
+  - id: ck-tests
+    text: Add unit tests for the happy path
+    done: false
+
 validation:
   commands: []
 

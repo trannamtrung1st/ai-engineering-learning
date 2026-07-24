@@ -11,6 +11,8 @@ from todos_tool.errors import RestructuringError
 from todos_tool.git_service import GitStatus, diff_summary, diff_text, status
 from todos_tool.manifest import Workspace, append_manifest_item, load_workspace, save_item
 from todos_tool.models import (
+    ChecklistItem,
+    ChecklistMove,
     ItemStatus,
     RestructuringProposal,
     TodoItem,
@@ -132,11 +134,81 @@ def _validate_new_item(raw: dict[str, Any], workspace: Workspace) -> tuple[TodoI
     return item, rel_file
 
 
+def _find_checklist_entry(item: TodoItem, entry_id: str) -> ChecklistItem | None:
+    for entry in item.checklist:
+        if entry.id == entry_id:
+            return entry
+    return None
+
+
+def _validate_checklist_moves(
+    workspace: Workspace,
+    item: TodoItem,
+    moves: list[ChecklistMove],
+) -> list[tuple[ChecklistMove, ChecklistItem]]:
+    if not moves:
+        return []
+    seen_move_ids: set[str] = set()
+    validated: list[tuple[ChecklistMove, ChecklistItem]] = []
+    for move in moves:
+        if move.id in seen_move_ids:
+            raise RestructuringError(
+                f"Duplicate checklist_moves id in proposal: {move.id}"
+            )
+        seen_move_ids.add(move.id)
+        if move.to_item_id == item.id:
+            raise RestructuringError(
+                f"checklist_moves target must differ from source item: {move.to_item_id}"
+            )
+        source_entry = _find_checklist_entry(item, move.id)
+        if source_entry is None:
+            raise RestructuringError(
+                f"checklist_moves references missing checklist entry: {move.id}"
+            )
+        target = workspace.get(move.to_item_id)
+        if target is None:
+            raise RestructuringError(
+                f"checklist_moves target item unknown: {move.to_item_id}"
+            )
+        if target.status in (ItemStatus.DONE, ItemStatus.SUPERSEDED):
+            raise RestructuringError(
+                f"checklist_moves target item not eligible: {move.to_item_id} "
+                f"(status={target.status.value})"
+            )
+        if _find_checklist_entry(target, move.id) is not None:
+            raise RestructuringError(
+                f"checklist_moves id already exists on target item {move.to_item_id}: "
+                f"{move.id}"
+            )
+        validated.append((move, source_entry))
+    return validated
+
+
+def _apply_checklist_move(
+    *,
+    source: TodoItem,
+    target: TodoItem,
+    move: ChecklistMove,
+    source_entry: ChecklistItem,
+) -> None:
+    source.checklist = [entry for entry in source.checklist if entry.id != move.id]
+    moved = ChecklistItem(
+        id=move.id,
+        text=move.text if move.text is not None else source_entry.text,
+        done=move.done if move.done is not None else source_entry.done,
+    )
+    target.checklist.append(moved)
+
+
 def _validate_proposal(
     workspace: Workspace,
     item: TodoItem,
     proposal: RestructuringProposal,
-) -> tuple[list[tuple[TodoItem, str]], dict[str, list[str]]]:
+) -> tuple[
+    list[tuple[TodoItem, str]],
+    dict[str, list[str]],
+    list[tuple[ChecklistMove, ChecklistItem]],
+]:
     if proposal.item_id != item.id:
         raise RestructuringError(
             f"Proposal item_id {proposal.item_id} does not match active item {item.id}"
@@ -166,6 +238,8 @@ def _validate_proposal(
                 )
         pending_updates[target_id] = list(deps)
 
+    checklist_moves = _validate_checklist_moves(workspace, item, proposal.checklist_moves)
+
     updated_item = item.model_copy(deep=True)
     if item.id in pending_updates:
         updated_item.depends_on = list(pending_updates[item.id])
@@ -174,7 +248,7 @@ def _validate_proposal(
         if _is_weakening(original_criteria, updated_item.acceptance_criteria):
             raise RestructuringError("Refusing silent weakening of acceptance criteria")
 
-    return new_entries, pending_updates
+    return new_entries, pending_updates, checklist_moves
 
 
 def apply_restructure_proposal(
@@ -185,7 +259,9 @@ def apply_restructure_proposal(
     proposal_path: Path | None = None,
 ) -> Workspace:
     """Validate and apply a restructuring proposal; returns reloaded workspace."""
-    new_entries, pending_updates = _validate_proposal(workspace, item, proposal)
+    new_entries, pending_updates, checklist_moves = _validate_proposal(
+        workspace, item, proposal
+    )
 
     snapshots: dict[Path, str | None] = {}
     manifest_path = workspace.todos_dir / "manifest.yaml"
@@ -196,7 +272,14 @@ def apply_restructure_proposal(
         encoding="utf-8"
     )
 
+    snapshot_item_ids: set[str] = {item.id}
     for target_id in pending_updates:
+        if target_id != item.id:
+            snapshot_item_ids.add(target_id)
+    for move, _ in checklist_moves:
+        snapshot_item_ids.add(move.to_item_id)
+
+    for target_id in snapshot_item_ids:
         if target_id == item.id:
             continue
         target = workspace.get(target_id)
@@ -236,9 +319,27 @@ def apply_restructure_proposal(
                     target.depends_on = list(deps)
                     save_item(workspace, target)
 
+        touched_targets: dict[str, TodoItem] = {}
+        for move, source_entry in checklist_moves:
+            target = workspace.get(move.to_item_id)
+            if target is None:
+                raise RestructuringError(
+                    f"checklist_moves target missing during apply: {move.to_item_id}"
+                )
+            _apply_checklist_move(
+                source=item,
+                target=target,
+                move=move,
+                source_entry=source_entry,
+            )
+            touched_targets[target.id] = target
+
         if proposal.supersede:
             item.status = ItemStatus.SUPERSEDED
         save_item(workspace, item)
+        for target in touched_targets.values():
+            if target.id != item.id:
+                save_item(workspace, target)
 
         reloaded = load_workspace(workspace.root, workspace.todos_dir.name)
 

@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from todos_tool.models import TodoItem, ValidationCommandResult, EvidenceCommandResult
+from todos_tool.models import (
+    ChecklistItem,
+    TodoItem,
+    ValidationCommandResult,
+    EvidenceCommandResult,
+)
 from todos_tool.agent_context import ResolvedAgentContext
 from todos_tool.project_context import ProjectContext, ResolvedContextFile
 from todos_tool.validation_runner import format_validation_results
@@ -131,7 +136,7 @@ def _render_manifest_policy(
 def _render_item_contract(
     *,
     contract_refs: list[str] | None,
-    checklist: list[dict[str, Any]] | None,
+    checklist: list[ChecklistItem],
     item_context_files: list[str],
 ) -> list[str]:
     parts: list[str] = []
@@ -140,27 +145,62 @@ def _render_item_contract(
     if checklist:
         lines = []
         for entry in checklist:
-            if not isinstance(entry, dict):
-                continue
-            label = str(entry.get("item") or entry.get("text") or entry.get("id") or "").strip()
-            if not label:
-                continue
-            done = entry.get("done")
-            status = entry.get("status")
-            if done is True or status == "done":
-                state = "done"
-            elif done is False or status in {"pending", "open"}:
-                state = "open"
-            else:
-                state = str(status or "unknown")
-            lines.append(f"- [{state}] {label}")
-        if lines:
-            parts.extend(["", "## Checklist", "\n".join(lines)])
+            state = "done" if entry.done else "open"
+            lines.append(f"- [{state}] `{entry.id}`: {entry.text}")
+        parts.extend(["", "## Checklist", "\n".join(lines)])
     if item_context_files:
         parts.extend(
             _optional_section("Item context files", _bullet_lines(item_context_files))
         )
     return parts
+
+
+def _render_checklist_work_rules(
+    *,
+    todos_dir: str,
+    item: TodoItem,
+) -> list[str]:
+    if not item.checklist:
+        return []
+    return [
+        "",
+        "## Checklist work plan",
+        "This item has a checklist. Treat it as the execution plan for this attempt.",
+        "",
+        "### While working",
+        "- Cover every open checklist step, or reshape the checklist when reality changes.",
+        "- After finishing a step, set `done: true` on that entry in this item YAML.",
+        "- You may reorder, update `text`, add, remove obsolete steps, or toggle `done` "
+        "directly in the current item file only.",
+        "- Justify removals in your work summary (obsolete, out of scope, or moved).",
+        "- To transfer a step to another item, write `checklist_moves` in "
+        f"`{todos_dir}/runs/{item.id}/restructure-proposal.json`; do not edit other item files.",
+        "- Do not weaken `acceptance_criteria` or set item `status` to done.",
+    ]
+
+
+def _render_checklist_review_rules(item: TodoItem) -> list[str]:
+    if not item.checklist:
+        return []
+    open_entries = [entry for entry in item.checklist if not entry.done]
+    if not open_entries:
+        return [
+            "",
+            "## Checklist review",
+            "All checklist entries are marked done. No checklist-related instruction "
+            "compliance issue is expected unless the work summary contradicts the checklist.",
+        ]
+    open_ids = ", ".join(f"`{entry.id}`" for entry in open_entries)
+    return [
+        "",
+        "## Checklist review",
+        f"Open checklist entries: {open_ids}.",
+        "If any open entry was not completed, removed, or moved with justification in the "
+        "work summary, set `instruction_compliance.passed=false` and note the open step ids "
+        "in `instruction_compliance.violations`.",
+        "Open checklist steps alone do not override acceptance-criteria, evidence, or "
+        "validation gates; they apply through instruction compliance.",
+    ]
 
 
 def _render_evidence_commands(item: TodoItem) -> list[str]:
@@ -190,7 +230,6 @@ def build_work_prompt(
     stop_conditions: list[str] | None = None,
     out_of_scope: str | None = None,
     contract_refs: list[str] | None = None,
-    checklist: list[dict[str, Any]] | None = None,
     previous_feedback: str | None = None,
     validation_failure_feedback: str | None = None,
     evidence_failure_feedback: str | None = None,
@@ -218,9 +257,10 @@ def build_work_prompt(
     ]
     parts.extend(_render_item_contract(
         contract_refs=contract_refs,
-        checklist=checklist,
+        checklist=item.checklist,
         item_context_files=item.context.files,
     ))
+    parts.extend(_render_checklist_work_rules(todos_dir=todos_dir, item=item))
     parts.extend(_render_manifest_policy(
         authority=authority,
         hard_rules=hard_rules,
@@ -398,7 +438,6 @@ def build_review_prompt(
     stop_conditions: list[str] | None = None,
     out_of_scope: str | None = None,
     contract_refs: list[str] | None = None,
-    checklist: list[dict[str, Any]] | None = None,
     authoritative_validation: list[ValidationCommandResult] | None = None,
     authoritative_evidence: list[EvidenceCommandResult] | None = None,
     prompt_only: bool = False,
@@ -492,9 +531,10 @@ def build_review_prompt(
     )
     parts.extend(_render_item_contract(
         contract_refs=contract_refs,
-        checklist=checklist,
+        checklist=item.checklist,
         item_context_files=item.context.files,
     ))
+    parts.extend(_render_checklist_review_rules(item))
     parts.extend(_render_manifest_policy(
         authority=authority,
         hard_rules=hard_rules,

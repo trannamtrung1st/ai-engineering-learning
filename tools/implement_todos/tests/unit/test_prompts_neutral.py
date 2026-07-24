@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from todos_tool.models import ItemType, TodoItem
+from todos_tool.models import ChecklistItem, ItemType, TodoItem
 from todos_tool.project_context import ContextFileRef, ProjectContext, ResolvedContextFile
 from todos_tool.prompts import (
     build_repair_prompt,
@@ -78,3 +78,46 @@ def test_repair_prompt_includes_diagnostic_and_contract() -> None:
     )
     assert "manifest.yaml: invalid field" in prompt
     assert "Do not change files outside the TODO YAML set" in prompt
+
+
+def _item_with_checklist() -> TodoItem:
+    return TodoItem(
+        id="TASK-001",
+        title="Add helper",
+        type=ItemType.FEATURE,
+        description="Implement helper.",
+        acceptance_criteria=["Helper exists."],
+        checklist=[
+            ChecklistItem(id="ck-a", text="Implement helper", done=False),
+            ChecklistItem(id="ck-b", text="Add tests", done=True),
+        ],
+    )
+
+
+def test_work_prompt_includes_checklist_work_plan() -> None:
+    item = _item_with_checklist()
+    prompt = build_work_prompt(
+        item,
+        logical_attempt=1,
+        resolved_commands=[],
+    )
+    assert "## Checklist work plan" in prompt
+    assert "`ck-a`: Implement helper" in prompt
+    assert "checklist_moves" in prompt
+    assert "Do NOT mark the item complete" in prompt
+
+
+def test_review_prompt_includes_checklist_compliance_rules() -> None:
+    item = _item_with_checklist()
+    prompt = build_review_prompt(
+        item,
+        logical_attempt=1,
+        resolved_commands=["pytest"],
+        work_summary="done",
+        git_diff="(none)",
+        git_status="(clean)",
+    )
+    assert "## Checklist review" in prompt
+    assert "instruction_compliance.passed=false" in prompt
+    assert "`ck-a`: Implement helper" in prompt
+    assert "Open checklist entries: `ck-a`" in prompt

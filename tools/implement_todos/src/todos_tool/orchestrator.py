@@ -183,9 +183,6 @@ class Orchestrator:
             return None
         return "\n".join(self.workspace.manifest.out_of_scope)
 
-    def _checklist_payload(self, item: TodoItem) -> list[dict[str, Any]]:
-        return [entry.to_dict() for entry in item.checklist]
-
     def _prompt_kwargs(self, item: TodoItem, *, phase: str) -> dict[str, Any]:
         manifest = self.workspace.manifest if self.workspace else None
         agent_context = self._resolve_agent_context(item, phase=phase)
@@ -197,7 +194,6 @@ class Orchestrator:
             "stop_conditions": manifest.stop_conditions if manifest else None,
             "out_of_scope": self._manifest_out_of_scope(),
             "contract_refs": item.contract_refs,
-            "checklist": self._checklist_payload(item),
             "agent_context": agent_context,
         }
 

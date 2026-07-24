@@ -11,7 +11,7 @@ from tests.helpers import write_todos
 from todos_tool.continuation import apply_restructure_proposal, load_restructure_proposal
 from todos_tool.errors import RestructuringError
 from todos_tool.manifest import load_workspace
-from todos_tool.models import ItemStatus, RestructuringProposal
+from todos_tool.models import ChecklistMove, ItemStatus, RestructuringProposal
 
 
 def test_reject_weakening_via_invalid_new_item(
@@ -165,3 +165,96 @@ def test_proposal_archived_after_apply(
     apply_restructure_proposal(ws, item, proposal, proposal_path=proposal_path)
     assert not proposal_path.exists()
     assert proposal_path.with_suffix(".applied.json").exists()
+
+
+def test_checklist_moves_transfer_entry(
+    git_project: Path,
+    sample_item: dict,
+) -> None:
+    second = dict(sample_item)
+    second["id"] = "TASK-002"
+    second["title"] = "Second task"
+    second["priority"] = 200
+    second["checklist"] = []
+    sample_item = {
+        **sample_item,
+        "checklist": [
+            {"id": "ck-tests", "text": "Add tests", "done": True},
+            {"id": "ck-docs", "text": "Update docs", "done": False},
+        ],
+    }
+    write_todos(
+        git_project,
+        [sample_item, {**second, "_file": "items/002.yaml"}],
+    )
+    ws = load_workspace(git_project)
+    item = ws.get("TASK-001")
+    assert item is not None
+    proposal = RestructuringProposal(
+        item_id=item.id,
+        checklist_moves=[
+            ChecklistMove(id="ck-tests", to_item_id="TASK-002"),
+        ],
+    )
+    reloaded = apply_restructure_proposal(ws, item, proposal)
+    source = reloaded.get("TASK-001")
+    target = reloaded.get("TASK-002")
+    assert source is not None
+    assert target is not None
+    assert [entry.id for entry in source.checklist] == ["ck-docs"]
+    assert len(target.checklist) == 1
+    assert target.checklist[0].id == "ck-tests"
+    assert target.checklist[0].text == "Add tests"
+    assert target.checklist[0].done is True
+
+
+def test_checklist_moves_reject_missing_source_entry(
+    git_project: Path,
+    sample_item: dict,
+) -> None:
+    second = dict(sample_item)
+    second["id"] = "TASK-002"
+    second["title"] = "Second task"
+    write_todos(
+        git_project,
+        [sample_item, {**second, "_file": "items/002.yaml"}],
+    )
+    ws = load_workspace(git_project)
+    item = ws.items[0]
+    proposal = RestructuringProposal(
+        item_id=item.id,
+        checklist_moves=[
+            ChecklistMove(id="ck-missing", to_item_id="TASK-002"),
+        ],
+    )
+    with pytest.raises(RestructuringError, match="missing checklist entry"):
+        apply_restructure_proposal(ws, item, proposal)
+
+
+def test_checklist_moves_reject_target_collision(
+    git_project: Path,
+    sample_item: dict,
+) -> None:
+    second = dict(sample_item)
+    second["id"] = "TASK-002"
+    second["title"] = "Second task"
+    second["checklist"] = [{"id": "ck-tests", "text": "Existing", "done": False}]
+    sample_item = {
+        **sample_item,
+        "checklist": [{"id": "ck-tests", "text": "Move me", "done": False}],
+    }
+    write_todos(
+        git_project,
+        [sample_item, {**second, "_file": "items/002.yaml"}],
+    )
+    ws = load_workspace(git_project)
+    item = ws.get("TASK-001")
+    assert item is not None
+    proposal = RestructuringProposal(
+        item_id=item.id,
+        checklist_moves=[
+            ChecklistMove(id="ck-tests", to_item_id="TASK-002"),
+        ],
+    )
+    with pytest.raises(RestructuringError, match="already exists on target"):
+        apply_restructure_proposal(ws, item, proposal)

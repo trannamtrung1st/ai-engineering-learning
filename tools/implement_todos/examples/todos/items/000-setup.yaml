@@ -18,6 +18,17 @@ acceptance_criteria:
   - A canonical project check command or script exists in the repository.
   - The manifest references that command via `settings.project_check`.
 
+checklist:
+  - id: ck-discover
+    text: Confirm whether a canonical project check already exists
+    done: false
+  - id: ck-script
+    text: Add or wire the project check script/command
+    done: false
+  - id: ck-manifest
+    text: Set manifest.settings.project_check to the chosen command
+    done: false
+
 validation:
   commands:
     - bash scripts/check

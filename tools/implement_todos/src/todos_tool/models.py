@@ -779,12 +779,16 @@ def validate_todo_item(data: dict[str, Any]) -> None:
     if checklist is not None:
         if not isinstance(checklist, list):
             raise ValueError("item.checklist must be a list")
+        seen_ids: set[str] = set()
         for idx, entry in enumerate(checklist):
             item = ChecklistItem.from_dict(_require_mapping(entry, label=f"checklist[{idx}]"))
             if not item.id:
                 raise ValueError(f"checklist[{idx}].id must not be empty")
             if not item.text:
                 raise ValueError(f"checklist[{idx}].text must not be empty")
+            if item.id in seen_ids:
+                raise ValueError(f"duplicate checklist id: {item.id}")
+            seen_ids.add(item.id)
 
 
 @dataclass
@@ -1291,6 +1295,56 @@ class RunState:
 
 
 @dataclass
+class ChecklistMove:
+    """Move a checklist entry from the proposal source item to another item."""
+
+    id: str
+    to_item_id: str
+    text: str | None = None
+    done: bool | None = None
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ChecklistMove:
+        mapping = _require_mapping(data, label="checklist move")
+        allowed = {"id", "to_item_id", "text", "done"}
+        unknown = set(mapping) - allowed
+        if unknown:
+            raise ValueError(f"Unknown checklist move fields: {sorted(unknown)}")
+        entry_id = _require_str(mapping["id"], label="checklist_moves[].id").strip()
+        if not entry_id:
+            raise ValueError("checklist_moves[].id must not be empty")
+        to_item_id = _validate_item_id(
+            _require_str(mapping["to_item_id"], label="checklist_moves[].to_item_id")
+        )
+        text: str | None = None
+        if "text" in mapping and mapping["text"] is not None:
+            text = _require_str(mapping["text"], label="checklist_moves[].text").strip()
+            if not text:
+                raise ValueError("checklist_moves[].text must not be empty when present")
+        done: bool | None = None
+        if "done" in mapping and mapping["done"] is not None:
+            if not isinstance(mapping["done"], bool):
+                raise ValueError("checklist_moves[].done must be a boolean when present")
+            done = bool(mapping["done"])
+        return cls(id=entry_id, to_item_id=to_item_id, text=text, done=done)
+
+    def to_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {"id": self.id, "to_item_id": self.to_item_id}
+        if self.text is not None:
+            payload["text"] = self.text
+        if self.done is not None:
+            payload["done"] = self.done
+        return payload
+
+    @classmethod
+    def model_validate(cls, data: Any) -> ChecklistMove:
+        return cls.from_dict(_require_mapping(data, label="checklist move"))
+
+    def model_dump(self, mode: str = "json", **kwargs: Any) -> dict[str, Any]:
+        return self.to_dict()
+
+
+@dataclass
 class RestructuringProposal:
     """Structured proposal from a Cursor session for backlog changes."""
 
@@ -1299,6 +1353,7 @@ class RestructuringProposal:
     supersede: bool = False
     new_items: list[dict[str, Any]] = field(default_factory=list)
     dependency_updates: dict[str, list[str]] = field(default_factory=dict)
+    checklist_moves: list[ChecklistMove] = field(default_factory=list)
     notes: str = ""
 
     @classmethod
@@ -1313,17 +1368,27 @@ class RestructuringProposal:
         new_items = mapping.get("new_items") or []
         if not isinstance(new_items, list):
             raise ValueError("new_items must be a list")
+        raw_moves = mapping.get("checklist_moves") or []
+        if not isinstance(raw_moves, list):
+            raise ValueError("checklist_moves must be a list")
+        checklist_moves = [
+            ChecklistMove.from_dict(
+                _require_mapping(entry, label=f"checklist_moves[{idx}]")
+            )
+            for idx, entry in enumerate(raw_moves)
+        ]
         return cls(
             schema_version=1,
             item_id=_require_str(mapping["item_id"], label="item_id"),
             supersede=bool(mapping.get("supersede", False)),
             new_items=[dict(item) for item in new_items if isinstance(item, dict)],
             dependency_updates=parsed_updates,
+            checklist_moves=checklist_moves,
             notes=_require_str(mapping.get("notes", ""), label="notes"),
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload: dict[str, Any] = {
             "schema_version": self.schema_version,
             "item_id": self.item_id,
             "supersede": self.supersede,
@@ -1333,6 +1398,9 @@ class RestructuringProposal:
             },
             "notes": self.notes,
         }
+        if self.checklist_moves:
+            payload["checklist_moves"] = [entry.to_dict() for entry in self.checklist_moves]
+        return payload
 
     @classmethod
     def model_validate(cls, data: Any) -> RestructuringProposal:

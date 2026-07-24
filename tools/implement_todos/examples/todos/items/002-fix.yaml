@@ -18,6 +18,17 @@ acceptance_criteria:
   - Existing happy-path behavior remains unchanged.
   - Tests cover the empty-name case.
 
+checklist:
+  - id: ck-fallback
+    text: Implement safe default for empty or whitespace-only names
+    done: false
+  - id: ck-regression
+    text: Verify happy-path behavior is unchanged
+    done: false
+  - id: ck-tests
+    text: Add tests for the empty-name case
+    done: false
+
 validation:
   commands: []
 
