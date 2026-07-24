@@ -154,7 +154,7 @@ class ObservedShellRun:
             command=str(data["command"]),
             cwd=normalize_cwd(data.get("cwd")),
             completed=bool(data.get("completed", False)),
-            exit_code=data.get("exit_code"),
+            exit_code=data.get("exit_code", data.get("exitCode")),
             source=str(data.get("source", "captured")),
         )
 
@@ -293,6 +293,9 @@ def match_spec_to_observed(
         workspace_root=workspace_root,
     )
 
+    last_exact_match: EvidenceMatchResult | None = None
+    last_successful_match: EvidenceMatchResult | None = None
+
     for observed in observed_runs:
         if observed.source != "captured":
             continue
@@ -307,7 +310,7 @@ def match_spec_to_observed(
         ):
             passed = observed.exit_code == 0
             kind: MatchKind = "exact" if passed else "failed_run"
-            return EvidenceMatchResult(
+            exact_match = EvidenceMatchResult(
                 spec_command=spec_command,
                 spec_cwd=norm_cwd,
                 match_kind=kind,
@@ -318,6 +321,10 @@ def match_spec_to_observed(
                 exit_code=observed.exit_code,
                 detail="" if passed else f"exit_code={observed.exit_code}",
             )
+            last_exact_match = exact_match
+            if passed:
+                last_successful_match = exact_match
+            continue
         miss = _classify_near_miss(
             spec_command,
             spec_cwd,
@@ -326,6 +333,11 @@ def match_spec_to_observed(
         )
         if miss is not None:
             near_misses.append(miss)
+
+    if last_successful_match is not None:
+        return last_successful_match
+    if last_exact_match is not None:
+        return last_exact_match
 
     bounded = near_misses[:5]
     detail = bounded[0].detail if bounded else "no matching shell execution observed"

@@ -250,6 +250,91 @@ def test_shell_evidence_captures_working_directory() -> None:
     assert evidence[0].completed is True
 
 
+def test_shell_evidence_reads_failure_exit_code() -> None:
+    from todos_tool.cursor_stream import EventNormalizer
+
+    normalizer = EventNormalizer()
+    normalizer.normalize(
+        {
+            "type": "tool_call",
+            "subtype": "started",
+            "tool_call": {
+                "shellToolCall": {
+                    "args": {"command": "pytest"},
+                }
+            },
+        }
+    )
+    normalizer.normalize(
+        {
+            "type": "tool_call",
+            "subtype": "completed",
+            "tool_call": {
+                "shellToolCall": {
+                    "args": {"command": "pytest"},
+                    "result": {"failure": {"exitCode": 2}},
+                }
+            },
+        }
+    )
+    evidence = normalizer.get_shell_commands()
+    assert len(evidence) == 1
+    assert evidence[0].exit_code == 2
+    assert evidence[0].completed is True
+
+
+def test_shell_evidence_retry_uses_last_successful_match() -> None:
+    from todos_tool.evidence_matcher import ObservedShellRun, match_spec_to_observed
+
+    result = match_spec_to_observed(
+        "pytest",
+        ".",
+        [
+            ObservedShellRun(
+                command="pytest",
+                cwd=".",
+                completed=True,
+                exit_code=1,
+            ),
+            ObservedShellRun(
+                command="pytest",
+                cwd=".",
+                completed=True,
+                exit_code=0,
+            ),
+        ],
+    )
+    assert result.passed is True
+    assert result.match_kind == "exact"
+    assert result.exit_code == 0
+
+
+def test_shell_evidence_all_failed_uses_last_match() -> None:
+    from todos_tool.evidence_matcher import ObservedShellRun, match_spec_to_observed
+
+    result = match_spec_to_observed(
+        "pytest",
+        ".",
+        [
+            ObservedShellRun(
+                command="pytest",
+                cwd=".",
+                completed=True,
+                exit_code=1,
+            ),
+            ObservedShellRun(
+                command="pytest",
+                cwd=".",
+                completed=True,
+                exit_code=2,
+            ),
+        ],
+    )
+    assert result.passed is False
+    assert result.match_kind == "failed_run"
+    assert result.exit_code == 2
+
+
 def test_console_renderer_streams_thinking_as_one_block(tmp_path: Path) -> None:
     log_path = tmp_path / "out.log"
     renderer = ConsoleRenderer(no_color=True, log_path=log_path)

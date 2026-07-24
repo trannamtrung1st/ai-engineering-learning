@@ -170,6 +170,28 @@ def _first_str(args: dict[str, Any], *keys: str) -> str:
     return ""
 
 
+def _shell_result_containers(result: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    success = result.get("success") if isinstance(result.get("success"), dict) else {}
+    failure = result.get("failure") if isinstance(result.get("failure"), dict) else {}
+    return success, failure
+
+
+def extract_shell_exit_code(result: dict[str, Any]) -> int | None:
+    """Read exit code from shellToolCall.result success or failure payloads."""
+    success, failure = _shell_result_containers(result)
+    for container in (success, failure):
+        exit_code = _coerce_exit_code(container.get("exitCode"))
+        if exit_code is None:
+            exit_code = _coerce_exit_code(container.get("exit_code"))
+        if exit_code is not None:
+            return exit_code
+    if success:
+        return 0
+    if failure:
+        return 1
+    return None
+
+
 def extract_shell_command(event: dict[str, Any]) -> str | None:
     """Return the shell command from a tool_call event, if present."""
     if event.get("type") != "tool_call":
@@ -180,8 +202,8 @@ def extract_shell_command(event: dict[str, Any]) -> str | None:
     shell = tool_call["shellToolCall"] or {}
     args = shell.get("args") or {}
     result = shell.get("result") or {}
-    success = result.get("success") or {}
-    cmd = args.get("command") or success.get("command")
+    success, failure = _shell_result_containers(result)
+    cmd = args.get("command") or success.get("command") or failure.get("command")
     if isinstance(cmd, str) and cmd.strip():
         return cmd.strip()
     return None
@@ -197,9 +219,9 @@ def extract_shell_cwd(event: dict[str, Any]) -> str | None:
     shell = tool_call["shellToolCall"] or {}
     args = shell.get("args") or {}
     result = shell.get("result") or {}
-    success = result.get("success") or {}
+    success, failure = _shell_result_containers(result)
     for key in ("workingDirectory", "working_directory", "cwd"):
-        for container in (args, success):
+        for container in (args, success, failure):
             value = container.get(key)
             if isinstance(value, str) and value.strip():
                 return value.strip().replace("\\", "/")
@@ -342,12 +364,7 @@ class EventNormalizer:
             tool_call = event.get("tool_call") or {}
             shell = (tool_call.get("shellToolCall") or {}) if isinstance(tool_call, dict) else {}
             result = shell.get("result") or {}
-            success = result.get("success") or {}
-            exit_code = _coerce_exit_code(success.get("exitCode"))
-            if exit_code is None:
-                exit_code = _coerce_exit_code(success.get("exit_code"))
-            if exit_code is None and success:
-                exit_code = 0
+            exit_code = extract_shell_exit_code(result)
             cwd = extract_shell_cwd(event) or "."
             for entry in reversed(self._shell_commands):
                 if entry.command == cmd and not entry.completed:
