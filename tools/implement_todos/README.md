@@ -297,7 +297,7 @@ Logical attempt
 └── Review phase (Cursor; read-only; submit via todos-review-tool only)
 ```
 
-Only observed shell execution counts for item `evidence.commands`. YAML `result` text never proves execution. In **captured** mode (default), implement sessions must run each declared command literally and set the shell tool working-directory field for `cwd`. In **driver** mode, the orchestrator executes evidence commands once and implementers must not duplicate them.
+Only observed shell execution counts for item `evidence.commands`. YAML `result` text never proves execution. In **captured** mode (default), implement sessions must run each declared command literally and set the shell tool working-directory field for `cwd`. Absolute shell working directories that resolve to the workspace root (or a declared relative subpath) are accepted as evidence for `.` and relative `cwd` values. In **driver** mode, the orchestrator executes evidence commands once and implementers must not duplicate them.
 
 Malformed TODO YAML may be repaired automatically during `run` / `resume` (bounded attempts). Repair succeeds only when the driver reloads and validates the set; agent claims are never acceptance.
 

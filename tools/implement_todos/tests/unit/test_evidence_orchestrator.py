@@ -222,6 +222,82 @@ async def test_captured_mode_accepts_declared_shell_evidence(
 
 
 @pytest.mark.asyncio
+async def test_captured_mode_accepts_absolute_workspace_cwd(
+    fake_agent: Path,
+    git_project: Path,
+    sample_item: dict,
+) -> None:
+    item = dict(sample_item)
+    item["validation"] = {"commands": []}
+    item["evidence"] = {"commands": [{"command": "echo captured-ok"}]}
+    project_check = f"{shlex.quote(sys.executable)} -c 'import sys; sys.exit(0)'"
+    write_todos(
+        git_project,
+        [item],
+        settings={
+            "max_attempts": 1,
+            "max_validation_repairs_per_attempt": 0,
+            "auto_commit": False,
+            "project_check": project_check,
+        },
+    )
+    shell_evidence = json.dumps(
+        [{"command": "echo captured-ok", "cwd": str(git_project), "exit_code": 0}]
+    )
+    evidence_json = json.dumps(
+        [
+            {
+                "command": "echo captured-ok",
+                "cwd": ".",
+                "passed": True,
+                "exit_code": 0,
+                "summary": "ok",
+            }
+        ]
+    )
+    validation_json = json.dumps(
+        [
+            {
+                "command": project_check,
+                "passed": True,
+                "exit_code": 0,
+                "summary": "ok",
+            }
+        ]
+    )
+    wrapper = fake_agent.parent / "agent-evidence-captured-absolute-cwd"
+    wrapper.write_text(
+        "#!/usr/bin/env python3\n"
+        "import os, subprocess, sys\n"
+        f"agent = {str(fake_agent)!r}\n"
+        f"workspace = {str(git_project)!r}\n"
+        "env = os.environ.copy()\n"
+        "env['FAKE_AGENT_WORKSPACE'] = workspace\n"
+        "env['FAKE_AGENT_ITEM_ID'] = 'TASK-001'\n"
+        "env['FAKE_AGENT_ATTEMPT'] = '1'\n"
+        "env['FAKE_AGENT_DECISION'] = 'pass'\n"
+        f"env['FAKE_AGENT_SHELL_EVIDENCE'] = {shell_evidence!r}\n"
+        f"env['FAKE_AGENT_EVIDENCE_JSON'] = {evidence_json!r}\n"
+        f"env['FAKE_AGENT_VALIDATION_JSON'] = {validation_json!r}\n"
+        "raise SystemExit(subprocess.call([sys.executable, agent, *sys.argv[1:]], env=env))\n",
+        encoding="utf-8",
+    )
+    wrapper.chmod(0o755)
+
+    orch = Orchestrator(
+        RunConfig(
+            workspace_root=git_project,
+            agent_bin=str(wrapper),
+            skip_probe=True,
+            no_color=True,
+            evidence_mode="captured",
+        )
+    )
+    report = await orch.run(todo_id="TASK-001")
+    assert report.completed == ["TASK-001"]
+
+
+@pytest.mark.asyncio
 async def test_resume_rejects_mismatched_evidence_mode(
     git_project: Path,
     sample_item: dict,

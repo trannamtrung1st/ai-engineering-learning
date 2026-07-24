@@ -917,6 +917,7 @@ class Orchestrator:
             prior_failure_signature=state.evidence_failure_signature,
             identical_failure_count=state.evidence_identical_failure_count,
             max_identical_failures=self.config.max_identical_evidence_failures,
+            workspace_root=self.config.workspace_root,
         )
 
         state.evidence_worktree_fingerprint = assessment.worktree_fingerprint

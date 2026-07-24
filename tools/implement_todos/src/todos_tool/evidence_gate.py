@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from todos_tool.evidence_matcher import (
     EvidenceMatchResult,
@@ -134,6 +135,7 @@ def assess_evidence_gate(
     prior_failure_signature: str | None = None,
     identical_failure_count: int = 0,
     max_identical_failures: int = 3,
+    workspace_root: Path | None = None,
 ) -> EvidenceGateAssessment:
     if not specs:
         return EvidenceGateAssessment(
@@ -153,7 +155,11 @@ def assess_evidence_gate(
 
     if mode == EvidenceMode.CAPTURED:
         observed = captured_runs or []
-        match_results = match_all_specs(spec_pairs, observed)
+        match_results = match_all_specs(
+            spec_pairs,
+            observed,
+            workspace_root=workspace_root,
+        )
         results = _match_results_to_evidence(match_results)
     else:
         results = list(driver_results or [])

@@ -178,7 +178,7 @@ def extract_shell_command(event: dict[str, Any]) -> str | None:
 
 
 def extract_shell_cwd(event: dict[str, Any]) -> str | None:
-    """Return repo-relative shell working directory when present."""
+    """Return shell working directory when present (often an absolute path)."""
     if event.get("type") != "tool_call":
         return None
     tool_call = event.get("tool_call") or {}

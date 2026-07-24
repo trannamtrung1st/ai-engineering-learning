@@ -289,7 +289,8 @@ def build_work_prompt(
                     "Run each completion evidence command exactly as declared:",
                     "- Pass the literal YAML `command` string to the shell tool.",
                     "- Set the shell tool working-directory field to the declared `cwd` "
-                    "(omit or use repository root when cwd is `.`).",
+                    "(omit or use the workspace root when cwd is `.`; absolute paths "
+                    "that resolve to the workspace root are accepted as evidence).",
                     "- Do not prefix commands with `cd … &&`, pipelines, shell wrappers, "
                     "or extra chained commands.",
                 ]

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Literal
 
 MatchKind = Literal["exact", "missing", "near_miss", "failed_run"]
@@ -19,6 +20,39 @@ def normalize_cwd(cwd: str | None) -> str:
         return "."
     text = str(cwd).replace("\\", "/").strip().rstrip("/")
     return text or "."
+
+
+def resolve_evidence_cwd(cwd: str | None, workspace_root: Path | None = None) -> str:
+    """Map an observed shell cwd to the same relative form used by evidence specs."""
+    normalized = normalize_cwd(cwd)
+    if workspace_root is None:
+        return normalized
+
+    root = workspace_root.resolve()
+    candidate = Path(normalized)
+    if not candidate.is_absolute():
+        return normalized
+
+    try:
+        relative = candidate.resolve().relative_to(root)
+    except ValueError:
+        return normalized
+
+    if not relative.parts:
+        return "."
+    return relative.as_posix()
+
+
+def cwd_matches_spec(
+    spec_cwd: str,
+    observed_cwd: str,
+    workspace_root: Path | None = None,
+) -> bool:
+    """Return True when observed cwd satisfies a declared relative evidence cwd."""
+    return resolve_evidence_cwd(spec_cwd, workspace_root=None) == resolve_evidence_cwd(
+        observed_cwd,
+        workspace_root=workspace_root,
+    )
 
 
 @dataclass
@@ -82,18 +116,29 @@ def _classify_near_miss(
     spec_command: str,
     spec_cwd: str,
     observed: ObservedShellRun,
+    *,
+    workspace_root: Path | None = None,
 ) -> NearMiss | None:
     obs_cmd = observed.command
     obs_cwd = normalize_cwd(observed.cwd)
     norm_spec = normalize_command(spec_command)
     norm_obs = normalize_command(obs_cmd)
 
-    if norm_spec == norm_obs and obs_cwd != normalize_cwd(spec_cwd):
+    if norm_spec == norm_obs and not cwd_matches_spec(
+        spec_cwd,
+        observed.cwd,
+        workspace_root=workspace_root,
+    ):
+        expected = resolve_evidence_cwd(spec_cwd, workspace_root=None)
+        observed_resolved = resolve_evidence_cwd(observed.cwd, workspace_root=workspace_root)
         return NearMiss(
             reason="wrong_cwd",
             observed_command=obs_cmd,
             observed_cwd=obs_cwd,
-            detail=f"expected cwd {normalize_cwd(spec_cwd)!r}, observed {obs_cwd!r}",
+            detail=(
+                f"expected cwd {expected!r}, observed {obs_cwd!r} "
+                f"(resolved {observed_resolved!r})"
+            ),
         )
 
     if norm_spec.lower() == norm_obs.lower() and norm_spec != norm_obs:
@@ -159,6 +204,8 @@ def match_spec_to_observed(
     spec_command: str,
     spec_cwd: str,
     observed_runs: list[ObservedShellRun],
+    *,
+    workspace_root: Path | None = None,
 ) -> EvidenceMatchResult:
     """Match one declared evidence command against captured shell runs."""
     norm_spec = normalize_command(spec_command)
@@ -172,7 +219,11 @@ def match_spec_to_observed(
             continue
         norm_obs = normalize_command(observed.command)
         obs_cwd = normalize_cwd(observed.cwd)
-        if norm_obs == norm_spec and obs_cwd == norm_cwd:
+        if norm_obs == norm_spec and cwd_matches_spec(
+            spec_cwd,
+            observed.cwd,
+            workspace_root=workspace_root,
+        ):
             passed = observed.exit_code == 0
             kind: MatchKind = "exact" if passed else "failed_run"
             return EvidenceMatchResult(
@@ -186,7 +237,12 @@ def match_spec_to_observed(
                 exit_code=observed.exit_code,
                 detail="" if passed else f"exit_code={observed.exit_code}",
             )
-        miss = _classify_near_miss(spec_command, spec_cwd, observed)
+        miss = _classify_near_miss(
+            spec_command,
+            spec_cwd,
+            observed,
+            workspace_root=workspace_root,
+        )
         if miss is not None:
             near_misses.append(miss)
 
@@ -205,8 +261,15 @@ def match_spec_to_observed(
 def match_all_specs(
     specs: list[tuple[str, str]],
     observed_runs: list[ObservedShellRun],
+    *,
+    workspace_root: Path | None = None,
 ) -> list[EvidenceMatchResult]:
     return [
-        match_spec_to_observed(command, cwd, observed_runs)
+        match_spec_to_observed(
+            command,
+            cwd,
+            observed_runs,
+            workspace_root=workspace_root,
+        )
         for command, cwd in specs
     ]

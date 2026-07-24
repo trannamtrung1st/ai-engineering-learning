@@ -151,3 +151,30 @@ def test_failure_signature_changes_with_worktree() -> None:
         results=results,
     )
     assert sig1 != sig2
+
+
+def test_gate_passes_absolute_workspace_cwd(tmp_path) -> None:
+    workspace = tmp_path / "apps" / "frontend"
+    workspace.mkdir(parents=True)
+    assessment = assess_evidence_gate(
+        specs=[_spec("pnpm run test -- tests/")],
+        mode=EvidenceMode.CAPTURED,
+        worktree_fingerprint="fp",
+        stored_worktree_fingerprint=None,
+        stored_command_spec_fingerprint=None,
+        captured_runs=[
+            ObservedShellRun(
+                command="pnpm run test -- tests/",
+                cwd=str(workspace),
+                completed=True,
+                exit_code=0,
+            )
+        ],
+        prior_failure_signature=None,
+        identical_failure_count=0,
+        max_identical_failures=3,
+        workspace_root=workspace,
+    )
+    assert assessment.passed is True
+    assert assessment.results[0].passed is True
+    assert assessment.results[0].match_kind == "exact"
