@@ -25,6 +25,7 @@ from todos_tool.notifications import (
 )
 from todos_tool.orchestrator import Orchestrator, RunConfig, RunReport
 from todos_tool.persistence import load_state
+from todos_tool.progress import format_status_summary, write_progress
 from todos_tool.workspace_loader import DryRunReport, load_workspace_repairable
 from todos_tool.scheduler import readiness_rows
 
@@ -397,15 +398,19 @@ def _cmd_status(args: argparse.Namespace) -> int:
         _print_error(str(exc), no_color=args.no_color)
         return 1
 
+    snapshot = write_progress(ws)
     auto_commit = ws.manifest.settings.auto_commit
+    print(format_status_summary(snapshot))
     print(f"auto_commit={auto_commit}")
     print(
         f"{'ID':<12} {'Title':<24} {'Status':<12} {'Priority':<8} "
-        f"{'Ready':<6} {'Commit':<8} Evidence Run phase"
+        f"{'Ready':<6} {'Commit':<8} {'Checklist':<11} Evidence Run phase"
     )
+    progress_by_id = {row.id: row for row in snapshot.items}
     for row in readiness_rows(ws):
+        progress_row = progress_by_id.get(row["id"])
+        phase = progress_row.phase if progress_row else "-"
         state = load_state(ws.runs_dir(row["id"]))
-        phase = state.phase.value if state else "-"
         evidence = "-"
         if state and state.evidence_mode is not None:
             evidence = state.evidence_mode.value
@@ -417,10 +422,15 @@ def _cmd_status(args: argparse.Namespace) -> int:
             phase = f"{phase} a{state.logical_attempt}"
         if state and state.agent_pid:
             phase = f"{phase} pid={state.agent_pid}"
+        checklist_text = "-"
+        if progress_row and progress_row.checklist.total:
+            checklist_text = (
+                f"{progress_row.checklist.done}/{progress_row.checklist.total}"
+            )
         print(
             f"{row['id']:<12} {row['title'][:24]:<24} {row['status']:<12} "
             f"{row['priority']:<8} {row['ready']:<6} {row['commit']:<8} "
-            f"{evidence:<18} {phase}"
+            f"{checklist_text:<11} {evidence:<18} {phase}"
         )
     return 0
 

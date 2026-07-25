@@ -317,6 +317,7 @@ def build_work_prompt(
     continuation: str | None = None,
     allow_full_check: bool = False,
     agent_context: ResolvedAgentContext | None = None,
+    progress_section: str | None = None,
 ) -> str:
     criteria = _bullet_lines(item.acceptance_criteria)
     command_lines = _bullet_lines([f"`{c}`" for c in resolved_commands])
@@ -335,6 +336,8 @@ def build_work_prompt(
         "## Acceptance criteria",
         criteria,
     ]
+    if progress_section:
+        parts.extend(["", progress_section])
     parts.extend(_render_item_contract(
         contract_refs=contract_refs,
         checklist=item.checklist,
@@ -533,6 +536,7 @@ def build_review_prompt(
     commit_hint: str | None = None,
     review_tool_command: str = "todos-review-tool",
     agent_context: ResolvedAgentContext | None = None,
+    progress_section: str | None = None,
 ) -> str:
     criteria = _bullet_lines(item.acceptance_criteria)
     command_lines = _bullet_lines([f"`{c}`" for c in resolved_commands])
@@ -617,6 +621,8 @@ def build_review_prompt(
             criteria,
         ]
     )
+    if progress_section:
+        parts.extend(["", progress_section])
     parts.extend(_render_item_contract(
         contract_refs=contract_refs,
         checklist=item.checklist,

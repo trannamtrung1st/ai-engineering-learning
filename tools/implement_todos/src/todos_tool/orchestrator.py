@@ -41,6 +41,7 @@ from todos_tool.git_service import (
     worktree_fingerprint,
 )
 from todos_tool.manifest import Workspace, save_item
+from todos_tool.progress import build_progress, format_prompt_progress, write_progress
 from todos_tool.model_config import resolve_model
 from todos_tool.models import (
     CommitState,
@@ -188,6 +189,7 @@ class Orchestrator:
             resolved_context_files=self.resolved_context_files,
             renderer=self.renderer,
         )
+        self._refresh_progress()
 
     def _manifest_out_of_scope(self) -> str | None:
         if self.workspace is None or not self.workspace.manifest.out_of_scope:
@@ -197,6 +199,16 @@ class Orchestrator:
     def _prompt_kwargs(self, item: TodoItem, *, phase: str) -> dict[str, Any]:
         manifest = self.workspace.manifest if self.workspace else None
         agent_context = self._resolve_agent_context(item, phase=phase)
+        progress_section: str | None = None
+        if self.workspace is not None:
+            progress_section = format_prompt_progress(
+                build_progress(
+                    self.workspace,
+                    project_context=self.project_context,
+                ),
+                item_id=item.id,
+                todos_dir=self.config.todos_dir,
+            )
         return {
             "project_context": self.project_context,
             "resolved_context_files": self.resolved_context_files,
@@ -206,6 +218,7 @@ class Orchestrator:
             "out_of_scope": self._manifest_out_of_scope(),
             "contract_refs": item.contract_refs,
             "agent_context": agent_context,
+            "progress_section": progress_section,
         }
 
     def _resolve_agent_context(self, item: TodoItem, *, phase: str):
@@ -642,7 +655,6 @@ class Orchestrator:
             if review_outcome == "blocked":
                 item = self.workspace.get(item.id) or item
                 item.status = ItemStatus.BLOCKED
-                self._persist_item(item)
                 state.phase = Phase.IDLE
                 record_transition(
                     runs_dir,
@@ -650,6 +662,7 @@ class Orchestrator:
                     Transition.ITEM_BLOCKED,
                     reason=state.blocked_reason,
                 )
+                self._persist_item(item)
                 raise TodosToolError(
                     state.blocked_reason or "Item blocked by evidence or review"
                 )
@@ -658,9 +671,10 @@ class Orchestrator:
 
         item = self.workspace.get(item.id) or item
         item.status = ItemStatus.BLOCKED
-        self._persist_item(item)
+        state.phase = Phase.IDLE
         state.blocked_reason = f"Exceeded {settings.max_attempts} logical attempts"
         record_transition(runs_dir, state, Transition.ITEM_BLOCKED)
+        self._persist_item(item)
         raise TodosToolError(state.blocked_reason)
 
     async def _handle_review_outcome(
@@ -677,7 +691,6 @@ class Orchestrator:
         if review_outcome == "blocked":
             item = self.workspace.get(item.id) or item
             item.status = ItemStatus.BLOCKED
-            self._persist_item(item)
             state.phase = Phase.IDLE
             record_transition(
                 runs_dir,
@@ -685,6 +698,7 @@ class Orchestrator:
                 Transition.ITEM_BLOCKED,
                 reason=state.blocked_reason,
             )
+            self._persist_item(item)
             raise TodosToolError(state.blocked_reason or "Item blocked by review")
         raise TodosToolError(state.review.summary or "Review failed during resume")
 
@@ -965,6 +979,7 @@ class Orchestrator:
             state.evidence_attempt = state.logical_attempt
             record_transition(runs_dir, state, Transition.EVIDENCE_PASSED)
             save_state(runs_dir, state)
+            self._refresh_progress()
             return "pass"
 
         if assessment.feedback:
@@ -985,8 +1000,10 @@ class Orchestrator:
             state.blocked_reason = assessment.remediation or assessment.feedback
             record_transition(runs_dir, state, Transition.EVIDENCE_STALL)
             save_state(runs_dir, state)
+            self._refresh_progress()
             return "stall"
 
+        self._refresh_progress()
         return "fail"
 
     def _validation_failure_feedback(
@@ -1047,14 +1064,17 @@ class Orchestrator:
         commands = self._resolved_validation_commands(item)
         if not commands:
             record_transition(runs_dir, state, Transition.VALIDATION_PASSED)
+            self._refresh_progress()
             return "pass"
 
         if all(result.passed for result in state.validation_results):
             record_transition(runs_dir, state, Transition.VALIDATION_PASSED)
+            self._refresh_progress()
             return "pass"
 
         record_transition(runs_dir, state, Transition.VALIDATION_FAILED)
         save_state(runs_dir, state)
+        self._refresh_progress()
         return "fail"
 
     async def _work_validate_review_attempt(
@@ -1109,6 +1129,7 @@ class Orchestrator:
 
             if state.validation_repair_count >= settings.max_validation_repairs_per_attempt:
                 record_transition(runs_dir, state, Transition.VALIDATION_FAILED)
+                self._refresh_progress()
                 return "fail"
 
             state.validation_repair_count += 1
@@ -1334,6 +1355,7 @@ class Orchestrator:
                 if state.session_restart_count >= settings.max_session_restarts_per_phase:
                     state.review.summary = f"Work phase failed: {exc}"
                     record_transition(runs_dir, state, Transition.WORK_PHASE_FAILED)
+                    self._refresh_progress()
                     return False
                 state.session_restart_count += 1
                 continuation = build_continuation_context(
@@ -1543,6 +1565,7 @@ class Orchestrator:
                     )
                     state.review.summary = state.blocked_reason
                     record_transition(runs_dir, state, Transition.ITEM_BLOCKED)
+                    self._refresh_progress()
                     return "blocked"
                 state.session_restart_count += 1
                 continuation = build_continuation_context(
@@ -1571,13 +1594,16 @@ class Orchestrator:
 
             if decision.decision == "pass":
                 record_transition(runs_dir, state, Transition.REVIEW_PASSED)
+                self._refresh_progress()
                 return "pass"
             if decision.decision == "blocked":
                 state.blocked_reason = decision.summary
                 record_transition(runs_dir, state, Transition.ITEM_BLOCKED)
+                self._refresh_progress()
                 return "blocked"
 
             record_transition(runs_dir, state, Transition.REVIEW_FAILED)
+            self._refresh_progress()
             return "fail"
 
     async def _commit_item(
@@ -1593,6 +1619,7 @@ class Orchestrator:
             self._finalize_item_done(item, None, state.work_summary or "")
             state.phase = Phase.IDLE
             record_transition(runs_dir, state, Transition.ITEM_DONE)
+            self._refresh_progress()
             return
 
         if state.commit_state == CommitState.COMPLETED and state.commit_sha:
@@ -1631,6 +1658,7 @@ class Orchestrator:
             self._persist_item(item)
             state.commit_state = CommitState.FAILED
             record_transition(runs_dir, state, Transition.COMMIT_FAILED)
+            self._refresh_progress()
             raise
 
         sha = result.commit_sha
@@ -1650,6 +1678,7 @@ class Orchestrator:
         state.phase = Phase.IDLE
         record_transition(runs_dir, state, Transition.ITEM_DONE, sha=sha)
         self.renderer.info(result.message)
+        self._refresh_progress()
 
     def _finalize_item_done(
         self,
@@ -1689,6 +1718,12 @@ class Orchestrator:
     def _persist_item(self, item: TodoItem) -> None:
         save_item(self.workspace, item)
         self.workspace._by_id[item.id] = item
+        self._refresh_progress()
+
+    def _refresh_progress(self) -> None:
+        if self.workspace is None:
+            return
+        write_progress(self.workspace, project_context=self.project_context)
 
     def _maybe_apply_restructure(self, item: TodoItem, runs_dir: Path) -> None:
         proposal_path = runs_dir / "restructure-proposal.json"
@@ -1707,6 +1742,7 @@ class Orchestrator:
                 proposal_path=proposal_path,
             )
             self.renderer.info(f"Applied restructuring proposal for {item.id}")
+            self._refresh_progress()
         except RestructuringError as exc:
             self.renderer.warn(f"Restructuring rejected: {exc}")
 

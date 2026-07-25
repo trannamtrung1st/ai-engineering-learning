@@ -37,12 +37,23 @@ todos/
 │   ├── 002-fix.yaml
 │   └── 003-refactor.yaml
 └── runs/
+    ├── progress.json
     └── <item-id>/
         ├── state.json
         └── attempts/
 ```
 
 `todos/runs/` contains local execution artifacts and should normally be ignored by Git.
+
+### Shared progress snapshot
+
+The orchestrator maintains `todos/runs/progress.json` as a driver-owned projection of workspace progress. It is rebuilt from item YAML (`status`, checklist `done`) and per-item `state.json` (phase, validation/evidence gates).
+
+- Only the orchestrator writes this file; agents must not edit it.
+- Checklist YAML remains authoritative for step completion.
+- Refreshed after item status changes, work/evidence/validation/review/commit transitions, workspace reloads, restructuring, and on every `todos-tool status` run.
+
+`todos-tool status` prints aggregate done/total counts, the current active item/step when applicable, and per-item checklist done/total columns. Work and review prompts include a short workspace progress block from the same snapshot.
 
 ### `manifest.yaml`
 

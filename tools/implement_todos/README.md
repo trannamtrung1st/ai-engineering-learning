@@ -174,10 +174,21 @@ todos/                       # location is configurable via --todos-dir
 ├── items/
 │   └── TASK-001.yaml
 └── runs/                    # local artifacts (typically gitignored)
+    ├── progress.json        # driver-owned workspace progress snapshot
     └── <item-id>/
         ├── state.json
         └── attempts/
 ```
+
+### Shared progress snapshot
+
+The orchestrator maintains `todos/runs/progress.json` as a **read-only projection** for humans and agents. It is rebuilt from item YAML (`status`, checklist `done`) and per-item `state.json` (phase, validation/evidence gates).
+
+- **Driver-owned:** only the orchestrator writes this file; agents must not edit it.
+- **Authoritative checklist state:** item YAML remains the source of truth for step completion.
+- **Refreshed:** after item status changes, work/evidence/validation/review/commit transitions, workspace reloads, restructuring, and on every `todos-tool status` run.
+
+`todos-tool status` prints a summary line such as `items 2/5 done | checklist 7/12 | current TASK-001 work a1 step setup-db (3/5)` plus per-item checklist done/total columns. Work and review prompts include a short workspace progress block derived from the same snapshot.
 
 ### manifest.yaml
 
@@ -269,6 +280,7 @@ When present, `checklist` is the agent-owned execution plan for that item. Each 
 - Removals should be justified in the work summary.
 - Cross-item transfers use `checklist_moves` in `todos/runs/<item-id>/restructure-proposal.json`; do not edit other item files directly.
 - Item `status` remains orchestrator-owned; checklist progress does not replace acceptance criteria.
+- The orchestrator projects checklist and gate state into `todos/runs/progress.json` (driver-owned, read-only for agents).
 
 Example restructure proposal with checklist transfer:
 
