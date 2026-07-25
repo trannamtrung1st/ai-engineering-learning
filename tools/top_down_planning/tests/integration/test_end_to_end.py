@@ -1,4 +1,5 @@
 import asyncio
+import json
 from pathlib import Path
 
 import pytest
@@ -7,9 +8,12 @@ from top_down_planning.input_loader import load_markdown_input, load_output_goal
 from top_down_planning.models import (
     AgentResponse,
     ChildDraft,
+    DecompositionStatus,
     ExpandOperation,
     FinalStatus,
     PlanningLimits,
+    ReviewConfig,
+    ReviewStatus,
     RunActiveStatus,
 )
 from top_down_planning.orchestrator import Orchestrator, RunConfig
@@ -191,6 +195,149 @@ async def test_resume_after_limit_reached_with_increased_max_iterations(
     plan = load_plan(output_dir)
     assert plan is not None
     assert plan.result.status == FinalStatus.COMPLETE
+
+
+@pytest.mark.asyncio
+async def test_resume_after_child_limit_blocked_with_increased_max_children(
+    tmp_path: Path,
+    example_input: Path,
+    fake_agent_bin: str,
+) -> None:
+    import os
+
+    output_dir = tmp_path / "planning-output-child-limit-resume"
+    loaded = load_markdown_input(example_input)
+    loaded_goal = load_output_goal(inline="Produce an actionable implementation plan")
+    blocked_response = json.dumps(
+        {
+            "assessment": {"plan_complete": False, "summary": "Blocked"},
+            "operations": [
+                {
+                    "type": "mark_blocked",
+                    "node_id": "item-001",
+                    "reason": "Source requires at least 9 direct children under item-001",
+                    "constraint_code": "max_children_exceeded",
+                    "required_min_children": 9,
+                }
+            ],
+        }
+    )
+    stored_limits = PlanningLimits(
+        max_iterations=5,
+        max_children_per_expansion=8,
+    )
+    first_config = RunConfig(
+        input_path=example_input,
+        output_goal=loaded_goal,
+        output_dir=output_dir,
+        workspace_root=tmp_path,
+        limits=stored_limits,
+        agent_bin=fake_agent_bin,
+        skip_probe=True,
+    )
+    os.environ["FAKE_AGENT_PLANNING_JSON"] = blocked_response
+    os.environ["FAKE_AGENT_EXPAND_ROOT"] = "false"
+    try:
+        first_report = await Orchestrator(first_config).run()
+    finally:
+        os.environ.pop("FAKE_AGENT_PLANNING_JSON", None)
+        os.environ.pop("FAKE_AGENT_EXPAND_ROOT", None)
+
+    assert first_report.status == FinalStatus.INCOMPLETE_BLOCKED
+
+    resume_report = await Orchestrator(
+        RunConfig(
+            input_path=example_input,
+            output_goal=loaded_goal,
+            output_dir=output_dir,
+            workspace_root=tmp_path,
+            limits=PlanningLimits(
+                max_iterations=5,
+                max_children_per_expansion=12,
+            ),
+            resume=True,
+            agent_bin=fake_agent_bin,
+            skip_probe=True,
+        )
+    ).run()
+
+    assert resume_report.status == FinalStatus.COMPLETE
+    run_state = load_run_state(output_dir)
+    assert run_state is not None
+    assert run_state.limits.max_children_per_expansion == 12
+    plan = load_plan(output_dir)
+    assert plan is not None
+    assert plan.result.status == FinalStatus.COMPLETE
+    root = plan.item_by_id("item-001")
+    assert root is not None
+    assert root.decomposition_status != DecompositionStatus.BLOCKED
+
+
+@pytest.mark.asyncio
+async def test_resume_does_not_reset_review_blocked_without_child_limit_change(
+    tmp_path: Path,
+    example_input: Path,
+    fake_agent_bin: str,
+) -> None:
+    import os
+
+    output_dir = tmp_path / "planning-output-review-blocked-resume"
+    loaded = load_markdown_input(example_input)
+    loaded_goal = load_output_goal(inline="Produce an actionable implementation plan")
+    needs_revision = json.dumps(
+        {
+            "stage": "whole_plan_review",
+            "plan_digest": "placeholder",
+            "decision": "needs_revision",
+            "summary": "Fix coverage",
+            "findings": [
+                {
+                    "severity": "major",
+                    "category": "coverage",
+                    "node_ids": ["item-001"],
+                    "description": "Reopen root",
+                    "recommended_change": "Replan branch",
+                }
+            ],
+        }
+    )
+    config = RunConfig(
+        input_path=example_input,
+        output_goal=loaded_goal,
+        output_dir=output_dir,
+        workspace_root=tmp_path,
+        limits=PlanningLimits(max_iterations=5),
+        agent_bin=fake_agent_bin,
+        skip_probe=True,
+        review=ReviewConfig(enabled=True, max_revision_cycles=0),
+    )
+    os.environ["FAKE_AGENT_REVIEW_JSON"] = needs_revision
+    try:
+        first_report = await Orchestrator(config).run()
+    finally:
+        os.environ.pop("FAKE_AGENT_REVIEW_JSON", None)
+
+    assert first_report.status == FinalStatus.INCOMPLETE_BLOCKED
+    plan = load_plan(output_dir)
+    assert plan is not None
+    assert plan.result.review_status == ReviewStatus.NEEDS_REVISION
+
+    resume_report = await Orchestrator(
+        RunConfig(
+            input_path=example_input,
+            output_goal=loaded_goal,
+            output_dir=output_dir,
+            workspace_root=tmp_path,
+            limits=PlanningLimits(max_iterations=5),
+            resume=True,
+            agent_bin=fake_agent_bin,
+            skip_probe=True,
+            review=ReviewConfig(enabled=True, max_revision_cycles=0),
+        )
+    ).run()
+
+    assert resume_report.status == FinalStatus.INCOMPLETE_BLOCKED
+    assert resume_report.review_status == ReviewStatus.NEEDS_REVISION
 
 
 @pytest.mark.asyncio

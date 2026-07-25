@@ -18,9 +18,11 @@ from top_down_planning.agent_context import (
 from top_down_planning.completeness import (
     compute_final_status,
     count_by_status,
+    has_child_limit_blocked_leaves,
     is_plan_complete,
     leaf_actionable_count,
     limit_reached,
+    reopen_eligible_child_limit_blocked,
 )
 from top_down_planning.console_renderer import ConsoleRenderer
 from top_down_planning.cursor_client import CursorClient, SessionResult
@@ -44,6 +46,7 @@ from top_down_planning.models import (
     RenderConfig,
     RenderStage,
     ReviewConfig,
+    ReviewStatus,
     RunActiveStatus,
     RunState,
     WholePlanContextMode,
@@ -66,6 +69,7 @@ from top_down_planning.persistence import (
     save_plan,
     save_run_state,
     update_final_status,
+    update_review_status,
     write_json,
 )
 from top_down_planning.plan_tool import (
@@ -256,13 +260,35 @@ class Orchestrator:
                 run_state.limits,
                 self.config.limits,
             )
-            if resolved_limits != run_state.limits:
+            stored_limits = run_state.limits
+            if resolved_limits != stored_limits:
                 changes = describe_resume_limit_changes(
-                    run_state.limits,
+                    stored_limits,
                     resolved_limits,
                 )
                 run_state.limits = resolved_limits
                 self.renderer.info(f"Updated resume limits ({changes})")
+            if (
+                resolved_limits.max_children_per_expansion
+                > stored_limits.max_children_per_expansion
+            ):
+                plan, reopened = reopen_eligible_child_limit_blocked(
+                    plan,
+                    max_children_per_expansion=resolved_limits.max_children_per_expansion,
+                )
+                if reopened:
+                    self.renderer.info(
+                        "Reopened child-limit blocked nodes "
+                        f"({', '.join(reopened)})"
+                    )
+                    if (
+                        plan.result.status == FinalStatus.INCOMPLETE_BLOCKED
+                        and not has_child_limit_blocked_leaves(plan)
+                    ):
+                        update_final_status(plan, FinalStatus.PLANNING, None)
+                        if plan.result.review_status == ReviewStatus.BLOCKED:
+                            update_review_status(plan, ReviewStatus.PENDING)
+                    save_plan(output_dir, plan)
             if (
                 plan.result.status == FinalStatus.INCOMPLETE_LIMIT_REACHED
                 and not limit_reached(

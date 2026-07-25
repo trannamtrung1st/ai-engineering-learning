@@ -402,11 +402,14 @@ _RELAXABLE_LIMIT_FIELDS = frozenset(
         "parse_error_threshold",
     }
 )
+# Per-expand safety limits that may increase on resume (e.g. after max_children_exceeded).
+_INCREASE_ONLY_LIMIT_FIELDS = frozenset({"max_children_per_expansion"})
 # Structural limits that must match the stored run for consistent decomposition.
-_STRICT_LIMIT_FIELDS = frozenset({"max_depth", "max_children_per_expansion"})
+_STRICT_LIMIT_FIELDS = frozenset({"max_depth"})
 
-assert _RELAXABLE_LIMIT_FIELDS | _STRICT_LIMIT_FIELDS == frozenset(
-    PlanningLimits.model_fields.keys()
+assert (
+    _RELAXABLE_LIMIT_FIELDS | _INCREASE_ONLY_LIMIT_FIELDS | _STRICT_LIMIT_FIELDS
+    == frozenset(PlanningLimits.model_fields.keys())
 ), "PlanningLimits fields must all be classified for resume compatibility"
 
 
@@ -423,6 +426,14 @@ def resolve_resume_limits(
             mismatches.append(
                 f"limits.{field}: stored={stored_value!r}, requested={requested_value!r}"
             )
+    for field in _INCREASE_ONLY_LIMIT_FIELDS:
+        stored_value = getattr(stored_limits, field)
+        requested_value = getattr(requested_limits, field)
+        if requested_value < stored_value:
+            mismatches.append(
+                f"limits.{field}: stored={stored_value!r}, requested={requested_value!r} "
+                f"(may only increase on resume)"
+            )
     if mismatches:
         raise ResumeError(
             "Resume config mismatch with stored run-state:\n"
@@ -430,7 +441,7 @@ def resolve_resume_limits(
         )
 
     merged = stored_limits.model_copy()
-    for field in _RELAXABLE_LIMIT_FIELDS:
+    for field in _RELAXABLE_LIMIT_FIELDS | _INCREASE_ONLY_LIMIT_FIELDS:
         setattr(merged, field, getattr(requested_limits, field))
     return merged
 
@@ -440,7 +451,7 @@ def describe_resume_limit_changes(
     after: PlanningLimits,
 ) -> str:
     parts: list[str] = []
-    for field in sorted(_RELAXABLE_LIMIT_FIELDS):
+    for field in sorted(_RELAXABLE_LIMIT_FIELDS | _INCREASE_ONLY_LIMIT_FIELDS):
         before_value = getattr(before, field)
         after_value = getattr(after, field)
         if before_value != after_value:

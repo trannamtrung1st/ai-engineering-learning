@@ -153,3 +153,100 @@ def test_resume_rejects_structural_limit_mismatch(tmp_path: Path) -> None:
             generation=default_generation(),
             resume=True,
         )
+
+
+def test_resume_allows_increased_max_children_per_expansion(tmp_path: Path) -> None:
+    output_dir = tmp_path / "planning-output"
+    output_dir.mkdir()
+    state_dir = output_dir / ".planning-output"
+    state_dir.mkdir()
+    (state_dir / "plan.yaml").write_text(
+        "\n".join(
+            [
+                "schema_version: 1",
+                "source:",
+                "  input_file: ./idea.md",
+                "  output_goal: goal",
+                "  input_digest: input-digest",
+                "  output_goal_digest: goal-digest",
+                "plan:",
+                "  - id: item-001",
+                "    title: Root",
+                "    objective: Root objective",
+                "    depth: 0",
+                "    order: 1",
+                "result:",
+                "  status: planning",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    run_state = RunState(
+        input_digest="input-digest",
+        output_goal_digest="goal-digest",
+        limits=PlanningLimits(max_children_per_expansion=10),
+        generation=default_generation(),
+    )
+    save_run_state(output_dir, run_state)
+
+    plan, loaded = ensure_resume_compatible(
+        output_dir,
+        input_digest="input-digest",
+        output_goal_digest="goal-digest",
+        limits=PlanningLimits(max_children_per_expansion=15),
+        generation=default_generation(),
+        resume=True,
+    )
+    assert plan is not None
+    assert loaded is not None
+
+    resolved = resolve_resume_limits(
+        loaded.limits,
+        PlanningLimits(max_children_per_expansion=15),
+    )
+    assert resolved.max_children_per_expansion == 15
+
+
+def test_resume_rejects_decreased_max_children_per_expansion(tmp_path: Path) -> None:
+    output_dir = tmp_path / "planning-output"
+    output_dir.mkdir()
+    state_dir = output_dir / ".planning-output"
+    state_dir.mkdir()
+    (state_dir / "plan.yaml").write_text(
+        "\n".join(
+            [
+                "schema_version: 1",
+                "source:",
+                "  input_file: ./idea.md",
+                "  output_goal: goal",
+                "  input_digest: input-digest",
+                "  output_goal_digest: goal-digest",
+                "plan:",
+                "  - id: item-001",
+                "    title: Root",
+                "    objective: Root objective",
+                "    depth: 0",
+                "    order: 1",
+                "result:",
+                "  status: planning",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    run_state = RunState(
+        input_digest="input-digest",
+        output_goal_digest="goal-digest",
+        limits=PlanningLimits(max_children_per_expansion=15),
+        generation=default_generation(),
+    )
+    save_run_state(output_dir, run_state)
+
+    with pytest.raises(ResumeError, match="limits.max_children_per_expansion"):
+        ensure_resume_compatible(
+            output_dir,
+            input_digest="input-digest",
+            output_goal_digest="goal-digest",
+            limits=PlanningLimits(max_children_per_expansion=10),
+            generation=default_generation(),
+            resume=True,
+        )

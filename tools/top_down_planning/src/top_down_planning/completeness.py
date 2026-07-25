@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import copy
+
 from top_down_planning.models import (
     BlockedConstraintCode,
     DecompositionStatus,
     FinalStatus,
     PlanState,
     PlanningLimits,
+    ReadinessStatus,
 )
 from top_down_planning.render_brief import actionable_leaf_items
 from top_down_planning.scheduler import expandable_items
@@ -44,6 +47,32 @@ def has_child_limit_blocked_leaves(plan: PlanState) -> bool:
         and item.blocked_constraint_code == BlockedConstraintCode.MAX_CHILDREN_EXCEEDED
         for item in plan.plan
     )
+
+
+def reopen_eligible_child_limit_blocked(
+    plan: PlanState,
+    *,
+    max_children_per_expansion: int,
+) -> tuple[PlanState, list[str]]:
+    """Reopen leaf nodes blocked by max_children_exceeded when the limit now allows it."""
+    updated = copy.deepcopy(plan)
+    reopened: list[str] = []
+    for item in updated.plan:
+        if (
+            item.decomposition_status != DecompositionStatus.BLOCKED
+            or item.blocked_constraint_code != BlockedConstraintCode.MAX_CHILDREN_EXCEEDED
+            or item.blocked_required_min_children is None
+            or item.blocked_required_min_children > max_children_per_expansion
+            or not _is_leaf(updated, item.id)
+        ):
+            continue
+        item.decomposition_status = DecompositionStatus.NEEDS_EXPANSION
+        item.readiness_status = ReadinessStatus.PENDING
+        item.blocked_reason = None
+        item.blocked_constraint_code = None
+        item.blocked_required_min_children = None
+        reopened.append(item.id)
+    return updated, reopened
 
 
 def child_limit_blocked_summary(

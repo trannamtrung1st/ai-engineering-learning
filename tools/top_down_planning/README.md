@@ -346,10 +346,11 @@ Example blocked summary:
 ```text
 Source requires at least 9 direct children under item-001, but
 max_children_per_expansion is 8. Increase the limit to at least 9
-or revise the source structure.
+or revise the source structure, then resume with `--resume`.
 ```
 
-These runs finish as `incomplete_blocked` and do not enter review or render.
+These runs finish as `incomplete_blocked` and do not enter review or render until
+the limit is raised and the run is resumed.
 
 ### Whole-plan review and final confirmation
 
@@ -398,8 +399,10 @@ Resume rejects changed input, changed output goal, or mismatched `generation`
 settings. Safety limits (`max_iterations`, `max_items`, `max_retries`,
 `session_timeout_seconds`, `parse_error_threshold`) may be updated on resume —
 for example, raise `max_iterations` after hitting
-`incomplete_limit_reached`. Structural limits (`max_depth`,
-`max_children_per_expansion`) must still match the stored run. Resuming an
+`incomplete_limit_reached`. `max_children_per_expansion` may only be
+**increased** on resume (for example after `max_children_exceeded` blocked a
+node); eligible blocked nodes are reopened automatically. `max_depth` must still
+match the stored run. Resuming an
 already-complete, confirmed run skips render when render state is `complete` and prior
 deliverables still exist on disk (use `--force-rerender` to regenerate).
 
