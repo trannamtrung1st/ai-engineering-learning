@@ -6,12 +6,18 @@ from top_down_planning.models import (
     ExpandOperation,
     MarkActionableOperation,
     MarkBlockedOperation,
+    PlanItem,
     PlanningLimits,
+    ReviseActionableOperation,
 )
 from top_down_planning.scheduler import initialize_root_plan
 from tests.helpers import default_generation, make_agent_response
 from tests.plan_factory import make_root_plan
-from top_down_planning.validator import validate_response, validate_wave_responses
+from top_down_planning.validator import (
+    validate_amend_response,
+    validate_response,
+    validate_wave_responses,
+)
 
 
 def _plan():
@@ -157,3 +163,44 @@ def test_validate_wave_responses_checks_combined_item_limit() -> None:
         plan_digest="wave-digest",
     )
     assert any("max items" in error for error in errors)
+
+
+def test_validate_response_rejects_revise_actionable() -> None:
+    plan = _plan()
+    response = make_agent_response(
+        operations=[
+            ReviseActionableOperation(
+                node_id="item-001",
+                reason="wrong session",
+                expected_outputs=["x"],
+                acceptance_criteria=["y"],
+            )
+        ]
+    )
+    errors = validate_response(plan, response, selected_ids=["item-001"], limits=PlanningLimits())
+    assert any("Unsupported operation type" in error for error in errors)
+
+
+def test_validate_amend_response_accepts_revise_actionable() -> None:
+    plan = _plan()
+    item = plan.item_by_id("item-001")
+    assert item is not None
+    item.decomposition_status = DecompositionStatus.ACTIONABLE
+    response = make_agent_response(
+        operations=[
+            ReviseActionableOperation(
+                node_id="item-001",
+                reason="Apply review fix",
+                expected_outputs=["Revised output"],
+                acceptance_criteria=["Revised criteria"],
+            )
+        ]
+    )
+    assert (
+        validate_amend_response(
+            plan,
+            response,
+            selected_ids=["item-001"],
+        )
+        == []
+    )

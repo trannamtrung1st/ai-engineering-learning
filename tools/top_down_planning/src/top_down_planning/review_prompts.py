@@ -123,6 +123,7 @@ Use `{review_tool_command} set-result --json '<json>'` then `{review_tool_comman
     {{
       "severity": "blocking | major | minor",
       "category": "coverage | overlap | consistency | dependency | granularity | acceptance | scope | other",
+      "revision_mode": "reopen | amend | annotate",
       "node_ids": ["item-..."],
       "description": "...",
       "recommended_change": "..."
@@ -131,9 +132,22 @@ Use `{review_tool_command} set-result --json '<json>'` then `{review_tool_comman
 }}
 ```
 
+Revision modes (required on every finding when decision is `needs_revision`):
+- `amend` — actionable item detail is wrong (acceptance criteria, sequencing, evidence,
+  wording). Cite only the actionable node ids to patch in place. Do not cite ancestors
+  together with descendants.
+- `reopen` — branch structure or decomposition is wrong. Cite only the minimal reopen
+  root id(s). Never cite both a parent and its descendant in the same finding.
+- `annotate` — minor note or reminder that should not trigger replanning. Optional
+  `node_ids`; the note is attached to cited items when present.
+
 Rules:
 - `approve` cannot include blocking or major findings.
-- `needs_revision` must include at least one finding with affected node ids.
+- `needs_revision` must include at least one finding with `revision_mode` and, for
+  `reopen`/`amend`, affected node ids.
+- Prefer `amend` over `reopen` when the decomposition tree is correct but detail on
+  actionable leaves needs correction.
+- Use `annotate` for minor nits that do not require agent replanning.
 - `blocked` must explain the unresolved condition in summary.
 - `plan_digest` must match exactly.
 - Do not modify files under `.planning-output/` except through `{review_tool_command}`.
@@ -208,7 +222,16 @@ Use `{review_tool_command} set-result --json '<json>'` then `{review_tool_comman
   "plan_digest": "{plan_digest}",
   "decision": "confirmed | needs_revision | blocked",
   "summary": "...",
-  "findings": []
+  "findings": [
+    {{
+      "severity": "blocking | major | minor",
+      "category": "coverage | overlap | consistency | dependency | granularity | acceptance | scope | other",
+      "revision_mode": "reopen | amend | annotate",
+      "node_ids": ["item-..."],
+      "description": "...",
+      "recommended_change": "..."
+    }}
+  ]
 }}
 ```
 
@@ -216,5 +239,6 @@ Rules:
 - `confirmed` requires matching digest and no blocking/major findings.
 - `confirmed` cannot override failed deterministic validation.
 - `needs_revision` or `blocked` must explain why rendering must not proceed.
+- When `findings` is non-empty, each entry requires `revision_mode`.
 - Do not modify files under `.planning-output/` except through `{review_tool_command}`.
 """

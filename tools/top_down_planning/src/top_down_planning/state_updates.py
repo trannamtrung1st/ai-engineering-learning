@@ -15,6 +15,7 @@ from top_down_planning.models import (
     PlanState,
     PlanningOperation,
     ReadinessStatus,
+    ReviseActionableOperation,
 )
 from top_down_planning.scheduler import next_item_id, next_order
 
@@ -33,6 +34,8 @@ def apply_response(plan: PlanState, response: AgentResponse) -> PlanState:
             _apply_blocked(item, operation)
         elif isinstance(operation, MarkOutOfScopeOperation):
             _apply_out_of_scope(item, operation)
+        elif isinstance(operation, ReviseActionableOperation):
+            _apply_revise_actionable(item, operation)
         else:
             raise ValueError(f"Unsupported operation: {operation}")
     _recompute_readiness(updated)
@@ -115,6 +118,25 @@ def _apply_out_of_scope(item: PlanItem, operation: MarkOutOfScopeOperation) -> N
     item.decomposition_status = DecompositionStatus.OUT_OF_SCOPE
     item.readiness_status = ReadinessStatus.READY
     item.out_of_scope_reason = operation.reason.strip()
+
+
+def _apply_revise_actionable(item: PlanItem, operation: ReviseActionableOperation) -> None:
+    item.decomposition_status = DecompositionStatus.ACTIONABLE
+    item.readiness_status = ReadinessStatus.READY
+    if operation.title and operation.title.strip():
+        item.title = operation.title.strip()
+    if operation.objective and operation.objective.strip():
+        item.objective = operation.objective.strip()
+    if operation.expected_outputs:
+        item.expected_outputs = list(operation.expected_outputs)
+    if operation.acceptance_criteria:
+        item.acceptance_criteria = list(operation.acceptance_criteria)
+    if operation.dependencies:
+        item.dependencies = list(operation.dependencies)
+    if operation.notes:
+        item.notes.extend(operation.notes)
+    if operation.risks:
+        item.risks.extend(operation.risks)
 
 
 def _recompute_readiness(plan: PlanState) -> None:

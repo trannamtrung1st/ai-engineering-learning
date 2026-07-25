@@ -23,6 +23,7 @@ from top_down_planning.persistence import write_json
 
 ENV_RESULT_FILE = "PLANNING_REVIEW_RESULT_FILE"
 ENV_STAGE = "PLANNING_REVIEW_STAGE"
+ENV_REVIEW_PASS = "PLANNING_REVIEW_PASS"
 REVIEW_TOOL_COMMAND_ENV = "PLANNING_REVIEW_TOOL_COMMAND"
 
 StageName = Literal["whole_plan_review", "final_confirmation", "rendered_output_review"]
@@ -66,13 +67,17 @@ def build_review_session_env(
     result_path: Path,
     stage: StageName,
     review_tool_command: str | None = None,
+    review_pass: int | None = None,
 ) -> dict[str, str]:
     command = resolve_review_tool_command(explicit=review_tool_command)
-    return {
+    env = {
         ENV_RESULT_FILE: str(result_path.resolve()),
         ENV_STAGE: stage,
         REVIEW_TOOL_COMMAND_ENV: command,
     }
+    if review_pass is not None:
+        env[ENV_REVIEW_PASS] = str(review_pass)
+    return env
 
 
 def _require_env(name: str) -> str:

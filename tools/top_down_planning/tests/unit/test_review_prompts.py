@@ -48,3 +48,4 @@ def test_whole_plan_review_prompt_includes_required_context() -> None:
     assert "# Idea" in prompt
     assert "Do not modify `plan.yaml`" in prompt
     assert "planning-review-tool" in prompt
+    assert "revision_mode" in prompt

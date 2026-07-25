@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -59,10 +58,10 @@ from top_down_planning.review_validator import (
     validate_final_confirmation,
     validate_whole_plan_review,
 )
+from top_down_planning.scheduler import expandable_items
 from top_down_planning.revision import (
-    reopen_branch,
-    revision_targets_from_findings,
-    validate_reopen_branch,
+    RevisionApplyResult,
+    apply_revision_from_findings,
 )
 from top_down_planning.stream_events import StreamEmitter
 
@@ -83,6 +82,7 @@ class ReviewFlowDeps:
     resolve_review_context: callable
     resolve_review_model: callable
     run_planning_loop: callable
+    run_amend_loop: callable
 
 
 async def run_post_decomposition_flow(
@@ -139,6 +139,7 @@ async def run_post_decomposition_flow(
         save_review_state(output_dir, review_state)
 
         whole_result = await _ensure_whole_plan_review(deps, plan, run_state, plan_digest)
+        review_state = load_review_state(output_dir) or review_state
         if whole_result is None:
             update_review_status(plan, ReviewStatus.BLOCKED)
             update_final_status(
@@ -186,19 +187,31 @@ async def run_post_decomposition_flow(
                 "revision.started",
                 revision_cycle=revision_cycles_used,
             )
-            plan = _apply_targeted_revision(
+            revision_result = _apply_targeted_revision(
                 deps,
                 plan=plan,
                 run_state=run_state,
                 findings=whole_result.findings,
                 revision_cycle=revision_cycles_used,
             )
+            plan = revision_result.plan
+            review_state.pending_amend_node_ids = list(revision_result.amend_node_ids)
             _invalidate_review_artifacts(output_dir)
             review_state.whole_plan_decision = None
             review_state.final_confirmation_decision = None
             save_review_state(output_dir, review_state)
 
-            plan, run_state = await deps.run_planning_loop(plan, run_state)
+            if expandable_items(plan):
+                plan, run_state = await deps.run_planning_loop(plan, run_state)
+            if review_state.pending_amend_node_ids:
+                plan, run_state = await deps.run_amend_loop(
+                    plan,
+                    run_state,
+                    amend_node_ids=review_state.pending_amend_node_ids,
+                    review_findings=whole_result.findings,
+                )
+                review_state.pending_amend_node_ids = []
+                save_review_state(output_dir, review_state)
             if not is_plan_complete(plan) or structural_errors(plan):
                 update_review_status(plan, ReviewStatus.NEEDS_REVISION)
                 update_final_status(
@@ -301,34 +314,72 @@ def _apply_targeted_revision(
     run_state: RunState,
     findings,
     revision_cycle: int,
-) -> PlanState:
-    targets = revision_targets_from_findings(plan, findings)
-    if not targets:
-        raise PlanningToolError("Revision requested but no affected node ids were provided")
+) -> RevisionApplyResult:
+    try:
+        result = apply_revision_from_findings(plan, findings)
+    except ValueError as exc:
+        raise PlanningToolError(str(exc)) from exc
 
-    updated = copy.deepcopy(plan)
-    for node_id in targets:
-        errors = validate_reopen_branch(updated, node_id)
-        if errors:
-            raise PlanningToolError("; ".join(errors))
-        updated = reopen_branch(updated, node_id)
+    if not (
+        result.reopened_nodes
+        or result.amend_node_ids
+        or result.annotated_node_ids
+    ):
+        raise PlanningToolError(
+            "Revision requested but no reopen, amend, or annotate actions were produced"
+        )
 
-    save_plan(deps.output_dir, updated)
+    save_plan(deps.output_dir, result.plan)
     record_history(
         deps.output_dir,
         run_state,
         event="revision_applied",
         revision_cycle=revision_cycle,
-        reopened_nodes=targets,
+        reopened_nodes=result.reopened_nodes,
+        amend_node_ids=result.amend_node_ids,
+        annotated_node_ids=result.annotated_node_ids,
     )
-    deps.stream.emit("revision.applied", reopened_nodes=targets, revision_cycle=revision_cycle)
+    deps.stream.emit(
+        "revision.applied",
+        reopened_nodes=result.reopened_nodes,
+        amend_node_ids=result.amend_node_ids,
+        annotated_node_ids=result.annotated_node_ids,
+        revision_cycle=revision_cycle,
+    )
     write_json(
-        Path(deps.output_dir / ".planning-output" / "reviews" / f"revision-{revision_cycle:03d}.json"),
-        {"reopened_nodes": targets},
+        Path(
+            deps.output_dir
+            / ".planning-output"
+            / "reviews"
+            / f"revision-{revision_cycle:03d}.json"
+        ),
+        {
+            "reopened_nodes": result.reopened_nodes,
+            "amend_node_ids": result.amend_node_ids,
+            "annotated_node_ids": result.annotated_node_ids,
+        },
     )
-    update_final_status(updated, FinalStatus.PLANNING, "Targeted revision reopened branches.")
-    update_review_status(updated, ReviewStatus.PENDING)
-    return updated
+
+    summary_bits: list[str] = []
+    if result.annotated_node_ids:
+        summary_bits.append(
+            f"annotated {len(result.annotated_node_ids)} item(s)"
+        )
+    if result.reopened_nodes:
+        summary_bits.append(
+            f"reopened {len(result.reopened_nodes)} branch(es)"
+        )
+    if result.amend_node_ids:
+        summary_bits.append(
+            f"queued amend for {len(result.amend_node_ids)} item(s)"
+        )
+    update_final_status(
+        result.plan,
+        FinalStatus.PLANNING,
+        "Targeted revision: " + "; ".join(summary_bits) + ".",
+    )
+    update_review_status(result.plan, ReviewStatus.PENDING)
+    return result
 
 
 async def _ensure_whole_plan_review(
@@ -341,6 +392,11 @@ async def _ensure_whole_plan_review(
     cached = _load_cached_whole_plan_review(result_path, plan_digest, plan=plan)
     if cached is not None:
         return cached
+
+    review_state = load_review_state(deps.output_dir) or ReviewState()
+    review_state.whole_plan_review_pass += 1
+    save_review_state(deps.output_dir, review_state)
+    review_pass_index = review_state.whole_plan_review_pass - 1
 
     deps.stream.emit("review.started", plan_digest=plan_digest)
     return await _run_review_session(
@@ -361,6 +417,7 @@ async def _ensure_whole_plan_review(
             agent_context=deps.resolve_review_context(),
         ),
         result_path=result_path,
+        review_pass_index=review_pass_index,
         validate=lambda result: validate_whole_plan_review(
             result,
             plan=plan,
@@ -478,6 +535,7 @@ async def _run_review_session(
     prompt: str,
     result_path: Path,
     validate,
+    review_pass_index: int | None = None,
 ):
     reviews_dir = result_path.parent
     reviews_dir.mkdir(parents=True, exist_ok=True)
@@ -497,6 +555,7 @@ async def _run_review_session(
         result_path=result_path,
         stage=stage,  # type: ignore[arg-type]
         review_tool_command=review_tool_command,
+        review_pass=review_pass_index,
     )
     limits = run_state.limits
     plan_backup = backup_canonical_plan(deps.output_dir)

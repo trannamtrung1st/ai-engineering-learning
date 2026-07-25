@@ -12,6 +12,7 @@ from top_down_planning.models import (
     ReviewFinding,
     ReviewFindingCategory,
     ReviewFindingSeverity,
+    RevisionMode,
     SourceMetadata,
     WholePlanReviewResult,
 )
@@ -44,6 +45,7 @@ def test_cached_approve_with_major_finding_is_rejected(tmp_path: Path) -> None:
             ReviewFinding(
                 severity=ReviewFindingSeverity.MAJOR,
                 category=ReviewFindingCategory.COVERAGE,
+                revision_mode=RevisionMode.REOPEN,
                 node_ids=["item-001"],
                 description="Missing branch",
             )

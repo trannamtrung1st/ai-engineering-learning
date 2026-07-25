@@ -294,6 +294,7 @@ async def test_resume_does_not_reset_review_blocked_without_child_limit_change(
                 {
                     "severity": "major",
                     "category": "coverage",
+                    "revision_mode": "reopen",
                     "node_ids": ["item-001"],
                     "description": "Reopen root",
                     "recommended_change": "Replan branch",

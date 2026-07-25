@@ -28,6 +28,20 @@ def expandable_items(plan: PlanState) -> list[PlanItem]:
     ]
 
 
+def amendable_items(plan: PlanState, node_ids: list[str]) -> list[PlanItem]:
+    """Return actionable items eligible for in-place revision."""
+    allowed = set(node_ids)
+    return sorted(
+        [
+            item
+            for item in plan.plan
+            if item.id in allowed
+            and item.decomposition_status == DecompositionStatus.ACTIONABLE
+        ],
+        key=lambda item: (item.depth, item.order),
+    )
+
+
 def is_ancestor(plan: PlanState, ancestor_id: str, item_id: str) -> bool:
     current = plan.item_by_id(item_id)
     while current is not None and current.parent_id is not None:
@@ -208,6 +222,34 @@ def select_batch(plan: PlanState, generation: GenerationConfig) -> list[PlanItem
     """Return the first concurrent batch for single-batch scheduling."""
     batches = select_concurrent_batches(plan, generation, max_batches=1)
     return batches[0] if batches else []
+
+
+def select_amend_batches(
+    plan: PlanState,
+    node_ids: list[str],
+    generation: GenerationConfig,
+    *,
+    max_batches: int,
+    output_dir: Path | None = None,
+) -> list[list[PlanItem]]:
+    """Return concurrent amend batches from pending actionable revision targets."""
+    if max_batches <= 0:
+        return []
+
+    candidates = amendable_items(plan, node_ids)
+    if not candidates:
+        return []
+
+    if generation.batch_strategy == BatchStrategy.COHERENT:
+        candidates = sorted(candidates, key=lambda item: _coherence_key(plan, item))
+
+    return _pack_into_batches(
+        plan,
+        candidates,
+        generation=generation,
+        max_batches=max_batches,
+        output_dir=output_dir,
+    )
 
 
 def wave_batch_budget(generation: GenerationConfig, *, remaining_iterations: int) -> int:

@@ -344,11 +344,25 @@ class MarkOutOfScopeOperation(BaseModel):
     reason: str = ""
 
 
+class ReviseActionableOperation(BaseModel):
+    type: Literal["revise_actionable"] = "revise_actionable"
+    node_id: str
+    reason: str = ""
+    title: str | None = None
+    objective: str | None = None
+    expected_outputs: list[str] = Field(default_factory=list)
+    acceptance_criteria: list[str] = Field(default_factory=list)
+    dependencies: list[str] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+    risks: list[str] = Field(default_factory=list)
+
+
 PlanningOperation = Annotated[
     ExpandOperation
     | MarkActionableOperation
     | MarkBlockedOperation
-    | MarkOutOfScopeOperation,
+    | MarkOutOfScopeOperation
+    | ReviseActionableOperation,
     Field(discriminator="type"),
 ]
 
@@ -447,9 +461,18 @@ class ReviewFindingCategory(str, Enum):
     OTHER = "other"
 
 
+class RevisionMode(str, Enum):
+    """How the orchestrator should apply a review finding."""
+
+    REOPEN = "reopen"
+    AMEND = "amend"
+    ANNOTATE = "annotate"
+
+
 class ReviewFinding(BaseModel):
     severity: ReviewFindingSeverity
     category: ReviewFindingCategory
+    revision_mode: RevisionMode
     node_ids: list[str] = Field(default_factory=list)
     description: str
     recommended_change: str = ""
@@ -498,8 +521,10 @@ class ReviewState(BaseModel):
     stage: ReviewStage = ReviewStage.DECOMPOSITION
     plan_digest: str | None = None
     revision_cycle: int = 0
+    whole_plan_review_pass: int = 0
     whole_plan_decision: ReviewDecision | None = None
     final_confirmation_decision: ConfirmationDecision | None = None
+    pending_amend_node_ids: list[str] = Field(default_factory=list)
     updated_at: datetime | None = None
 
 

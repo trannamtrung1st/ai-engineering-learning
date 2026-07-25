@@ -46,6 +46,7 @@ from top_down_planning.models import (
     RenderConfig,
     RenderStage,
     ReviewConfig,
+    ReviewFinding,
     ReviewStatus,
     RunActiveStatus,
     RunState,
@@ -90,15 +91,19 @@ from top_down_planning.render_flow import RenderFlowDeps, existing_published_art
 from top_down_planning.render_preconditions import validate_render_only_preconditions
 from top_down_planning.digest import compute_plan_digest
 from top_down_planning.generation_context import ensure_plan_overview_artifact, prepare_batch_context
-from top_down_planning.prompts import build_planning_prompt
+from top_down_planning.prompts import build_amend_prompt, build_planning_prompt
 from top_down_planning.scheduler import (
     initialize_root_plan,
+    select_amend_batches,
     select_concurrent_batches,
     wave_batch_budget,
 )
 from top_down_planning.state_updates import apply_response
 from top_down_planning.stream_events import StreamEmitter
-from top_down_planning.validator import validate_wave_responses
+from top_down_planning.validator import (
+    validate_amend_wave_responses,
+    validate_wave_responses,
+)
 
 
 @dataclass
@@ -482,6 +487,80 @@ class Orchestrator:
         save_run_state(output_dir, run_state)
         return plan, run_state
 
+    async def _amend_loop(
+        self,
+        *,
+        loaded: LoadedInput,
+        plan,
+        run_state: RunState,
+        output_dir: Path,
+        amend_node_ids: list[str],
+        review_findings: list[ReviewFinding],
+    ):
+        limits = run_state.limits
+        pending = list(dict.fromkeys(amend_node_ids))
+
+        while pending:
+            if limit_reached(iteration=run_state.iteration, plan=plan, limits=limits):
+                status = compute_final_status(plan, limit_reached=True)
+                update_final_status(
+                    plan,
+                    status,
+                    "Amendment stopped because a configured safety limit was reached.",
+                )
+                run_state.active_status = RunActiveStatus.COMPLETED
+                save_plan(output_dir, plan)
+                save_run_state(output_dir, run_state)
+                return plan, run_state
+
+            remaining_iterations = limits.max_iterations - run_state.iteration
+            wave_size = wave_batch_budget(
+                self.config.generation,
+                remaining_iterations=remaining_iterations,
+            )
+            batch_groups = select_amend_batches(
+                plan,
+                pending,
+                self.config.generation,
+                max_batches=wave_size,
+                output_dir=output_dir,
+            )
+            if not batch_groups:
+                break
+
+            base_iteration = run_state.iteration
+            specs = [
+                _BatchSpec(
+                    iteration=base_iteration + batch_index + 1,
+                    batch_index=batch_index,
+                    items=batch_items,
+                    selected_ids=[item.id for item in batch_items],
+                )
+                for batch_index, batch_items in enumerate(batch_groups)
+            ]
+            plan = await self._run_amend_wave(
+                loaded=loaded,
+                plan=plan,
+                run_state=run_state,
+                output_dir=output_dir,
+                specs=specs,
+                review_findings=review_findings,
+            )
+            amended_ids = {
+                item_id for spec in specs for item_id in spec.selected_ids
+            }
+            pending = [node_id for node_id in pending if node_id not in amended_ids]
+
+        if pending:
+            raise PlanningToolError(
+                "Amendment did not reach all queued items: "
+                + ", ".join(pending)
+            )
+
+        save_plan(output_dir, plan)
+        save_run_state(output_dir, run_state)
+        return plan, run_state
+
     def _review_flow_deps(
         self,
         *,
@@ -494,6 +573,22 @@ class Orchestrator:
                 plan=plan,
                 run_state=run_state,
                 output_dir=output_dir,
+            )
+
+        async def _resume_amend_only(
+            plan,
+            run_state,
+            *,
+            amend_node_ids: list[str],
+            review_findings: list[ReviewFinding],
+        ):
+            return await self._amend_loop(
+                loaded=loaded,
+                plan=plan,
+                run_state=run_state,
+                output_dir=output_dir,
+                amend_node_ids=amend_node_ids,
+                review_findings=review_findings,
             )
 
         return ReviewFlowDeps(
@@ -511,6 +606,7 @@ class Orchestrator:
             resolve_review_context=lambda: self._resolved_agent_context(phase="review"),
             resolve_review_model=lambda: self._resolve_session_model(phase="review"),
             run_planning_loop=_resume_decomposition_only,
+            run_amend_loop=_resume_amend_only,
         )
 
     def _render_flow_deps(
@@ -587,6 +683,8 @@ class Orchestrator:
         run_state: RunState,
         output_dir: Path,
         specs: list[_BatchSpec],
+        wave_kind: str = "planning",
+        review_findings: list[ReviewFinding] | None = None,
     ):
         limits = run_state.limits
         plan_snapshot = copy.deepcopy(plan)
@@ -629,7 +727,7 @@ class Orchestrator:
                 selected_items=spec.selected_ids,
             )
             self.renderer.rule(
-                "PLAN "
+                f"{'AMEND' if wave_kind == 'amend' else 'PLAN'} "
                 f"iteration={spec.iteration} "
                 f"batch={spec.batch_index + 1}/{wave_size} "
                 f"items={','.join(spec.selected_ids)}"
@@ -652,6 +750,8 @@ class Orchestrator:
                     attempt=attempt,
                     validation_feedback=validation_feedback,
                     plan_digest=plan_digest,
+                    session_kind=wave_kind,
+                    review_findings=review_findings,
                 )
             except UserInterrupted:
                 run_state.agent_pids = []
@@ -727,11 +827,19 @@ class Orchestrator:
                 (spec.selected_ids, response)
                 for spec, response in parsed_batches
             ]
-            errors = validate_wave_responses(
-                plan_snapshot,
-                wave_pairs,
-                limits=limits,
-                plan_digest=plan_digest,
+            errors = (
+                validate_amend_wave_responses(
+                    plan_snapshot,
+                    wave_pairs,
+                    plan_digest=plan_digest,
+                )
+                if wave_kind == "amend"
+                else validate_wave_responses(
+                    plan_snapshot,
+                    wave_pairs,
+                    limits=limits,
+                    plan_digest=plan_digest,
+                )
             )
             if errors:
                 validation_feedback = errors
@@ -851,6 +959,26 @@ class Orchestrator:
 
         return plan
 
+    async def _run_amend_wave(
+        self,
+        *,
+        loaded: LoadedInput,
+        plan,
+        run_state: RunState,
+        output_dir: Path,
+        specs: list[_BatchSpec],
+        review_findings: list[ReviewFinding],
+    ):
+        return await self._run_planning_wave(
+            loaded=loaded,
+            plan=plan,
+            run_state=run_state,
+            output_dir=output_dir,
+            specs=specs,
+            wave_kind="amend",
+            review_findings=review_findings,
+        )
+
     async def _run_batch_sessions(
         self,
         *,
@@ -862,6 +990,8 @@ class Orchestrator:
         attempt: int,
         validation_feedback: list[str] | None,
         plan_digest: str,
+        session_kind: str = "planning",
+        review_findings: list[ReviewFinding] | None = None,
     ) -> list[_BatchSessionResult]:
         await self.client.ensure_ready()
         batch_count = len(specs)
@@ -877,6 +1007,8 @@ class Orchestrator:
                     attempt=attempt,
                     validation_feedback=validation_feedback,
                     plan_digest=plan_digest,
+                    session_kind=session_kind,
+                    review_findings=review_findings,
                 )
             )
             for spec in specs
@@ -900,6 +1032,8 @@ class Orchestrator:
         attempt: int,
         validation_feedback: list[str] | None,
         plan_digest: str,
+        session_kind: str = "planning",
+        review_findings: list[ReviewFinding] | None = None,
     ) -> _BatchSessionResult:
         limits = run_state.limits
         generation = self.config.generation
@@ -918,24 +1052,43 @@ class Orchestrator:
         context_path.parent.mkdir(parents=True, exist_ok=True)
         context_path.write_text(prepared.batch_context_markdown, encoding="utf-8")
 
-        prompt = build_planning_prompt(
-            loaded_input=loaded,
-            workspace=self.config.workspace_root,
-            output_goal=self.config.output_goal,
-            plan=plan,
-            selected_items=spec.items,
-            embed_threshold=self._embed_threshold,
-            max_children_per_expansion=limits.max_children_per_expansion,
-            stop_hint=self.config.stop_hint,
-            validation_feedback=validation_feedback,
-            plan_tool_command=plan_tool_command,
-            agent_context=self._resolved_agent_context(phase="planning"),
-            plan_digest=plan_digest,
-            batch_context_markdown=prepared.batch_context_markdown,
-            context_mode=prepared.context_mode,
+        prompt = (
+            build_amend_prompt(
+                loaded_input=loaded,
+                workspace=self.config.workspace_root,
+                output_goal=self.config.output_goal,
+                plan=plan,
+                selected_items=spec.items,
+                review_findings=review_findings or [],
+                embed_threshold=self._embed_threshold,
+                validation_feedback=validation_feedback,
+                plan_tool_command=plan_tool_command,
+                agent_context=self._resolved_agent_context(phase="planning"),
+                plan_digest=plan_digest,
+                batch_context_markdown=prepared.batch_context_markdown,
+                context_mode=prepared.context_mode,
+            )
+            if session_kind == "amend"
+            else build_planning_prompt(
+                loaded_input=loaded,
+                workspace=self.config.workspace_root,
+                output_goal=self.config.output_goal,
+                plan=plan,
+                selected_items=spec.items,
+                embed_threshold=self._embed_threshold,
+                max_children_per_expansion=limits.max_children_per_expansion,
+                stop_hint=self.config.stop_hint,
+                validation_feedback=validation_feedback,
+                plan_tool_command=plan_tool_command,
+                agent_context=self._resolved_agent_context(phase="planning"),
+                plan_digest=plan_digest,
+                batch_context_markdown=prepared.batch_context_markdown,
+                context_mode=prepared.context_mode,
+            )
         )
         prefix = Path(iteration_prefix(output_dir, spec.iteration))
-        prompt_path = prefix.with_name(prefix.name + "-request-prompt.md")
+        prompt_suffix = "-request-prompt.md" if session_kind == "planning" else "-amend-request-prompt.md"
+        prompt_path = prefix.with_name(prefix.name + prompt_suffix)
         events_path = prefix.with_name(prefix.name + "-agent.ndjson")
         log_path = prefix.with_name(prefix.name + "-agent.log")
         transaction_path = iteration_transaction_path(output_dir, spec.iteration)
@@ -955,6 +1108,7 @@ class Orchestrator:
                 "plan_digest": plan_digest,
                 "batch_context_artifact": context_path.name,
                 "context_mode": prepared.context_mode.value,
+                "session_kind": session_kind,
             }
             if prepared.plan_overview_relative:
                 request_payload["plan_overview_artifact"] = (
@@ -1036,6 +1190,11 @@ class Orchestrator:
             elif operation.type == "mark_out_of_scope":
                 self.stream.emit(
                     "item.out_of_scope",
+                    item_id=operation.node_id,
+                )
+            elif operation.type == "revise_actionable":
+                self.stream.emit(
+                    "item.revised",
                     item_id=operation.node_id,
                 )
 

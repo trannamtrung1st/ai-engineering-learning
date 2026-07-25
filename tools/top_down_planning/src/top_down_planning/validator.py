@@ -14,6 +14,7 @@ from top_down_planning.models import (
     PlanState,
     PlanningLimits,
     PlanningOperation,
+    ReviseActionableOperation,
 )
 from top_down_planning.completeness import structural_errors
 from top_down_planning.state_updates import apply_response
@@ -91,6 +92,94 @@ def validate_response(
         errors.extend(_validate_applied_state(plan, response))
 
     return errors
+
+
+def validate_amend_response(
+    plan: PlanState,
+    response: AgentResponse,
+    *,
+    selected_ids: list[str],
+) -> list[str]:
+    """Validate in-place revision operations for actionable items."""
+    errors: list[str] = []
+    selected_set = set(selected_ids)
+    op_by_node: dict[str, PlanningOperation] = {}
+
+    if not response.operations:
+        errors.append("Response must include at least one operation")
+        return errors
+
+    for operation in response.operations:
+        node_id = operation.node_id
+        if node_id not in selected_set:
+            errors.append(f"Operation targets unselected node: {node_id}")
+            continue
+        if node_id in op_by_node:
+            errors.append(f"Duplicate operation for node: {node_id}")
+            continue
+        if not isinstance(operation, ReviseActionableOperation):
+            errors.append(
+                f"Amend session for {node_id} must use revise_actionable, "
+                f"got {operation.type}"
+            )
+            continue
+        op_by_node[node_id] = operation
+
+    missing = selected_set - set(op_by_node)
+    if missing:
+        errors.append(
+            "Missing revise_actionable operations for selected nodes: "
+            + ", ".join(sorted(missing))
+        )
+
+    for node_id, operation in op_by_node.items():
+        item = plan.item_by_id(node_id)
+        if item is None:
+            errors.append(f"Unknown node id: {node_id}")
+            continue
+        if item.decomposition_status != DecompositionStatus.ACTIONABLE:
+            errors.append(
+                f"Node {node_id} is not actionable "
+                f"(status={item.decomposition_status.value})"
+            )
+            continue
+        errors.extend(_validate_revise_actionable(plan, item, operation))
+
+    if not errors:
+        errors.extend(_validate_applied_state(plan, response))
+
+    return errors
+
+
+def validate_amend_wave_responses(
+    plan: PlanState,
+    batches: list[tuple[list[str], AgentResponse]],
+    *,
+    plan_digest: str,
+) -> list[str]:
+    """Validate concurrent amend batch responses against one plan snapshot."""
+    for selected_ids, response in batches:
+        if response.plan_digest != plan_digest:
+            return [
+                f"Transaction plan_digest mismatch: expected {plan_digest}, "
+                f"got {response.plan_digest}"
+            ]
+        errors = validate_amend_response(
+            plan,
+            response,
+            selected_ids=selected_ids,
+        )
+        if errors:
+            return errors
+
+    updated = plan
+    try:
+        for _, response in batches:
+            updated = apply_response(updated, response)
+    except ValueError as exc:
+        return [str(exc)]
+
+    return structural_errors(updated)
 
 
 def validate_wave_responses(
@@ -195,6 +284,36 @@ def _validate_operation(
     if isinstance(operation, MarkOutOfScopeOperation):
         return _validate_out_of_scope(item, operation)
     return [f"Unsupported operation type for node {item.id}"]
+
+
+def _validate_revise_actionable(
+    plan: PlanState,
+    item: PlanItem,
+    operation: ReviseActionableOperation,
+) -> list[str]:
+    errors: list[str] = []
+    if not operation.reason.strip():
+        errors.append(f"Revise on {item.id} requires a reason")
+    outputs = operation.expected_outputs or item.expected_outputs
+    criteria = operation.acceptance_criteria or item.acceptance_criteria
+    objective = operation.objective.strip() if operation.objective else item.objective
+    if not objective.strip():
+        errors.append(f"Revise on {item.id} requires a non-empty objective")
+    if _is_implementation_goal(plan.source.output_goal):
+        if not outputs:
+            errors.append(
+                f"Revise on {item.id} requires expected_outputs for this output goal"
+            )
+        if not criteria:
+            errors.append(
+                f"Revise on {item.id} requires acceptance_criteria "
+                "for this output goal"
+            )
+    deps = operation.dependencies if operation.dependencies else item.dependencies
+    for dep in deps:
+        if plan.item_by_id(dep) is None:
+            errors.append(f"Revise on {item.id} references unknown dependency: {dep}")
+    return errors
 
 
 def _validate_expand(

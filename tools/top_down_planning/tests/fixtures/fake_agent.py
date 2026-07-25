@@ -128,6 +128,28 @@ def _default_planning_response(selected: list[str]) -> dict:
     }
 
 
+def _default_amend_response(selected: list[str]) -> dict:
+    operations = []
+    for node_id in selected:
+        operations.append(
+            {
+                "type": "revise_actionable",
+                "node_id": node_id,
+                "reason": "Applied review finding",
+                "expected_outputs": [f"Revised output for {node_id}"],
+                "acceptance_criteria": [f"Revised done when {node_id} complete"],
+                "dependencies": [],
+            }
+        )
+    return {
+        "assessment": {
+            "plan_complete": True,
+            "summary": "Amendments applied",
+        },
+        "operations": operations,
+    }
+
+
 def _write_planning_transaction(response: dict) -> None:
     if not os.environ.get("PLANNING_TOOL_TXN_FILE"):
         raise RuntimeError("PLANNING_TOOL_TXN_FILE is required for planning sessions")
@@ -169,17 +191,25 @@ def _write_review_result(stage: str, prompt: str) -> None:
     plan_digest = digest_match.group(1) if digest_match else "0" * 64
 
     if stage == "whole_plan_review":
-        override = os.environ.get("FAKE_AGENT_REVIEW_JSON")
-        if override:
-            payload = json.loads(override)
+        sequence_raw = os.environ.get("FAKE_AGENT_REVIEW_SEQUENCE")
+        if sequence_raw:
+            sequence = json.loads(sequence_raw)
+            if not isinstance(sequence, list) or not sequence:
+                raise RuntimeError("FAKE_AGENT_REVIEW_SEQUENCE must be a non-empty JSON array")
+            index = int(os.environ.get("PLANNING_REVIEW_PASS", "0"))
+            payload = sequence[min(index, len(sequence) - 1)]
         else:
-            payload = {
-                "stage": "whole_plan_review",
-                "plan_digest": plan_digest,
-                "decision": "approve",
-                "summary": "Plan approved by fake reviewer.",
-                "findings": [],
-            }
+            override = os.environ.get("FAKE_AGENT_REVIEW_JSON")
+            if override:
+                payload = json.loads(override)
+            else:
+                payload = {
+                    "stage": "whole_plan_review",
+                    "plan_digest": plan_digest,
+                    "decision": "approve",
+                    "summary": "Plan approved by fake reviewer.",
+                    "findings": [],
+                }
     else:
         override = os.environ.get("FAKE_AGENT_CONFIRMATION_JSON")
         if override:
@@ -357,6 +387,21 @@ def main() -> int:
         )
         _write_review_result("final_confirmation", prompt)
         assistant("Finalized final confirmation result.")
+        emit({"type": "result", "subtype": "success", "duration_ms": 5, "is_error": False})
+        return 0
+
+    if "Plan amendment session" in prompt:
+        selected = _selected_ids(prompt)
+        emit(
+            {
+                "type": "system",
+                "subtype": "init",
+                "session_id": "fake-amend-session",
+                "model": "fake-model",
+            }
+        )
+        _write_planning_transaction(_default_amend_response(selected))
+        assistant("Finalized amendment transaction.")
         emit({"type": "result", "subtype": "success", "duration_ms": 5, "is_error": False})
         return 0
 

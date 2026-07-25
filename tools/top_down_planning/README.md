@@ -256,6 +256,7 @@ During decomposition, the agent records structured operations through the bundle
 - `mark_actionable`
 - `mark_blocked`
 - `mark_out_of_scope`
+- `revise_actionable` (amend sessions after review only)
 
 Each batch session writes `.planning-output/iterations/{NNN}-transaction.json`. The
 orchestrator validates the full wave atomically, assigns IDs/depth/order, and persists
@@ -368,21 +369,33 @@ Lifecycle:
 
 ```text
 Decomposition → deterministic validation → whole-plan review →
-(optional targeted revision + replan) → final confirmation → render
+(optional revision: annotate | amend | reopen+replan) → re-review →
+final confirmation → render
 ```
 
 Review sessions are read-only with respect to `plan.yaml`. Agents record structured
 results through `planning-review-tool` (not free-form chat approval). Each result is
 tied to a deterministic plan digest; stale approvals are rejected when the plan changes.
 
-When `review.enabled: false`, behavior matches the previous tool: structurally complete
-plans render immediately (`review_status: skipped`).
+When `review.enabled: false`, structurally complete plans render immediately
+(`review_status: skipped`).
 
 Configure review agent context under `agent_context.review` (model, skills, rules).
-Planning replan after targeted revision reuses the planning context.
+Amend and replan sessions reuse the planning agent context.
 
-Targeted revision reopens the smallest affected branch(es), removes descendant
-decomposition, and resumes normal top-down planning for at most `max_revision_cycles`.
+When review returns `needs_revision`, each finding must include `revision_mode`:
+
+| `revision_mode` | Effect |
+|---|---|
+| `annotate` | Append review note to cited items; no agent session |
+| `amend` | Run in-place `revise_actionable` sessions on cited actionable items |
+| `reopen` | Remove descendants and resume decomposition for cited branch roots |
+
+The review agent chooses the mode per finding. Prefer `amend` over `reopen` when the
+tree is correct but actionable detail needs correction. Cite only minimal reopen roots;
+never cite a parent and descendant together on a `reopen` finding.
+
+At most `max_revision_cycles` revision passes run before the run blocks.
 
 Render requires `review_status: confirmed` when review is enabled.
 
@@ -473,7 +486,7 @@ Render-phase events include:
 Review-phase events include:
 
 - `review.started` / `review.completed` / `review.needs_revision` / `review.blocked`
-- `revision.started` / `revision.applied`
+- `revision.started` / `revision.applied` (with `reopened_nodes`, `amend_node_ids`, `annotated_node_ids`)
 - `confirmation.started` / `confirmation.confirmed` / `confirmation.needs_revision` / `confirmation.blocked`
 
 ## Testing

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from top_down_planning.agent_context import ResolvedAgentContext
 from top_down_planning.input_loader import LoadedInput, LoadedOutputGoal, LoadedStopHint
-from top_down_planning.models import PlanItem, PlanState, WholePlanContextMode
+from top_down_planning.models import PlanItem, PlanState, ReviewFinding, WholePlanContextMode
 
 
 def should_embed_content(text: str, *, embed_threshold: int) -> bool:
@@ -200,7 +200,7 @@ Operation JSON schema (one object per `record-operation` call):
 
 ```json
 {{
-  "type": "expand | mark_actionable | mark_blocked | mark_out_of_scope",
+  "type": "expand | mark_actionable | mark_blocked | mark_out_of_scope | revise_actionable",
   "node_id": "one of the selected item ids",
   "reason": "string",
   "children": [
@@ -215,6 +215,10 @@ Operation JSON schema (one object per `record-operation` call):
   ]
 }}
 ```
+
+For `revise_actionable`, provide the full updated `expected_outputs` and
+`acceptance_criteria` lists (not partial deltas). Optional `title`, `objective`,
+and `dependencies` replace the existing values when provided.
 
 For `mark_actionable`, include `expected_outputs` and `acceptance_criteria` when required by
 the output goal. For `mark_blocked`, include `missing_information` and `open_question`.
@@ -299,6 +303,89 @@ Do not execute implementation work.
 - Do not modify files under `.planning-output/` except through `{plan_tool_command}`.
 
 {feedback_block}## Input document
+
+{format_input_document_section(loaded_input=loaded_input, workspace=workspace, embed_threshold=embed_threshold)}
+
+{generation_context_block}## Planning transaction CLI
+{format_plan_tool_section(plan_tool_command=plan_tool_command)}
+"""
+
+
+def _format_review_findings_for_items(
+    findings: list[ReviewFinding],
+    selected_ids: list[str],
+) -> str:
+    selected = set(selected_ids)
+    lines: list[str] = []
+    for index, finding in enumerate(findings, start=1):
+        relevant = [node_id for node_id in finding.node_ids if node_id in selected]
+        if finding.node_ids and not relevant:
+            continue
+        target = ", ".join(relevant) if relevant else "(informational)"
+        lines.append(f"### Finding {index} — {target}")
+        lines.append(f"- Severity: {finding.severity.value}")
+        lines.append(f"- Category: {finding.category.value}")
+        lines.append(f"- Revision mode: {finding.revision_mode.value}")
+        lines.append(f"- Issue: {finding.description}")
+        if finding.recommended_change.strip():
+            lines.append(f"- Recommended change: {finding.recommended_change}")
+    if not lines:
+        return "No item-specific review findings were supplied for this batch."
+    return "\n".join(lines)
+
+
+def build_amend_prompt(
+    *,
+    loaded_input: LoadedInput,
+    workspace: Path,
+    output_goal: LoadedOutputGoal,
+    plan: PlanState,
+    selected_items: list[PlanItem],
+    review_findings: list[ReviewFinding],
+    embed_threshold: int,
+    validation_feedback: list[str] | None = None,
+    plan_tool_command: str = "planning-plan-tool",
+    agent_context: ResolvedAgentContext | None = None,
+    plan_digest: str,
+    batch_context_markdown: str,
+    context_mode: WholePlanContextMode,
+) -> str:
+    selected_ids = [item.id for item in selected_items]
+    feedback_block = ""
+    if validation_feedback:
+        feedback_block = (
+            "## Validation feedback from previous attempt\n"
+            + "\n".join(f"- {error}" for error in validation_feedback)
+            + "\n\nFix every issue and finalize a valid transaction.\n\n"
+        )
+
+    generation_context_block = (
+        f"## Generation context ({context_mode.value})\n\n"
+        f"Wave plan digest: `{plan_digest}`\n\n"
+        f"{batch_context_markdown}\n\n"
+    )
+
+    return f"""# Plan amendment session
+
+You are revising actionable plan items in place after whole-plan review. Apply the
+review findings surgically. Do not re-expand branches, do not add or remove plan
+items, and do not execute implementation work.
+
+## Output goal
+{format_output_goal_section(output_goal=output_goal, workspace=workspace, embed_threshold=embed_threshold)}
+
+{_format_agent_context_section(agent_context)}## Rules
+- Record exactly one `revise_actionable` operation per assigned item.
+- Provide full replacement `expected_outputs` and `acceptance_criteria` lists.
+- Preserve unaffected detail unless the review finding requires a change.
+- Do not record `expand`, `mark_actionable`, `mark_blocked`, or `mark_out_of_scope`.
+- Set `plan_complete` to true with `set-assessment` once every assigned item is revised.
+- Do not modify files under `.planning-output/` except through `{plan_tool_command}`.
+
+{feedback_block}## Review findings for assigned items
+{_format_review_findings_for_items(review_findings, selected_ids)}
+
+## Input document
 
 {format_input_document_section(loaded_input=loaded_input, workspace=workspace, embed_threshold=embed_threshold)}
 
