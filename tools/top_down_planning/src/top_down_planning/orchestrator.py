@@ -48,6 +48,8 @@ from top_down_planning.models import (
 )
 from top_down_planning.persistence import (
     ensure_resume_compatible,
+    describe_resume_limit_changes,
+    resolve_resume_limits,
     iteration_context_path,
     iteration_prefix,
     iteration_transaction_path,
@@ -238,6 +240,27 @@ class Orchestrator:
                     f"Recovered plan state from iteration audit files "
                     f"({len(plan.plan)} items)"
                 )
+            resolved_limits = resolve_resume_limits(
+                run_state.limits,
+                self.config.limits,
+            )
+            if resolved_limits != run_state.limits:
+                changes = describe_resume_limit_changes(
+                    run_state.limits,
+                    resolved_limits,
+                )
+                run_state.limits = resolved_limits
+                self.renderer.info(f"Updated resume limits ({changes})")
+            if (
+                plan.result.status == FinalStatus.INCOMPLETE_LIMIT_REACHED
+                and not limit_reached(
+                    iteration=run_state.iteration,
+                    plan=plan,
+                    limits=run_state.limits,
+                )
+            ):
+                update_final_status(plan, FinalStatus.PLANNING, None)
+                save_plan(output_dir, plan)
             run_state.agent_pids = []
             run_state.active_status = RunActiveStatus.RUNNING
             save_run_state(output_dir, run_state)
@@ -358,7 +381,7 @@ class Orchestrator:
         run_state: RunState,
         output_dir: Path,
     ):
-        limits = self.config.limits
+        limits = run_state.limits
 
         while True:
             if is_plan_complete(plan):
@@ -459,7 +482,7 @@ class Orchestrator:
         output_dir: Path,
         specs: list[_BatchSpec],
     ):
-        limits = self.config.limits
+        limits = run_state.limits
         plan_snapshot = copy.deepcopy(plan)
         plan_digest = compute_plan_digest(plan_snapshot)
         wave_size = len(specs)
@@ -772,7 +795,7 @@ class Orchestrator:
         validation_feedback: list[str] | None,
         plan_digest: str,
     ) -> _BatchSessionResult:
-        limits = self.config.limits
+        limits = run_state.limits
         generation = self.config.generation
         plan_tool_command = resolve_plan_tool_command()
 
@@ -920,7 +943,7 @@ class Orchestrator:
     ) -> list[str]:
         workspace = self.config.workspace_root.resolve()
         canonical_plan_file = plan_path(output_dir)
-        limits = self.config.limits
+        limits = run_state.limits
         audit_dir = iterations_dir(output_dir)
 
         self.stream.emit("render.started")

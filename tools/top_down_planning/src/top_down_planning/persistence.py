@@ -300,20 +300,70 @@ def ensure_resume_compatible(
     return None, None
 
 
-def _assert_run_config_compatible(
+# Limits that may change on resume (e.g. after hitting max_iterations).
+_RELAXABLE_LIMIT_FIELDS = frozenset(
+    {
+        "max_iterations",
+        "max_items",
+        "max_retries",
+        "session_timeout_seconds",
+        "parse_error_threshold",
+    }
+)
+# Structural limits that must match the stored run for consistent decomposition.
+_STRICT_LIMIT_FIELDS = frozenset({"max_depth", "max_children_per_expansion"})
+
+assert _RELAXABLE_LIMIT_FIELDS | _STRICT_LIMIT_FIELDS == frozenset(
+    PlanningLimits.model_fields.keys()
+), "PlanningLimits fields must all be classified for resume compatibility"
+
+
+def resolve_resume_limits(
     stored_limits: PlanningLimits,
-    stored_generation: GenerationConfig,
     requested_limits: PlanningLimits,
-    requested_generation: GenerationConfig,
-) -> None:
+) -> PlanningLimits:
+    """Validate resume limits and return the effective limits to use."""
     mismatches: list[str] = []
-    for field in PlanningLimits.model_fields:
+    for field in _STRICT_LIMIT_FIELDS:
         stored_value = getattr(stored_limits, field)
         requested_value = getattr(requested_limits, field)
         if stored_value != requested_value:
             mismatches.append(
                 f"limits.{field}: stored={stored_value!r}, requested={requested_value!r}"
             )
+    if mismatches:
+        raise ResumeError(
+            "Resume config mismatch with stored run-state:\n"
+            + "\n".join(f"  - {line}" for line in mismatches)
+        )
+
+    merged = stored_limits.model_copy()
+    for field in _RELAXABLE_LIMIT_FIELDS:
+        setattr(merged, field, getattr(requested_limits, field))
+    return merged
+
+
+def describe_resume_limit_changes(
+    before: PlanningLimits,
+    after: PlanningLimits,
+) -> str:
+    parts: list[str] = []
+    for field in sorted(_RELAXABLE_LIMIT_FIELDS):
+        before_value = getattr(before, field)
+        after_value = getattr(after, field)
+        if before_value != after_value:
+            parts.append(f"{field} {before_value}->{after_value}")
+    return ", ".join(parts)
+
+
+def _assert_run_config_compatible(
+    stored_limits: PlanningLimits,
+    stored_generation: GenerationConfig,
+    requested_limits: PlanningLimits,
+    requested_generation: GenerationConfig,
+) -> None:
+    resolve_resume_limits(stored_limits, requested_limits)
+    mismatches: list[str] = []
     for field in GenerationConfig.model_fields:
         stored_value = getattr(stored_generation, field)
         requested_value = getattr(requested_generation, field)

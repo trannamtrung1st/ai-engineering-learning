@@ -120,6 +120,82 @@ async def test_resume_after_partial_run(
 
 
 @pytest.mark.asyncio
+async def test_resume_after_limit_reached_with_increased_max_iterations(
+    tmp_path: Path,
+    example_input: Path,
+    fake_agent_bin: str,
+) -> None:
+    output_dir = tmp_path / "planning-output-limit-resume"
+    loaded = load_markdown_input(example_input)
+    loaded_goal = load_output_goal(inline="Produce an actionable implementation plan")
+    stored_limits = PlanningLimits(max_iterations=2)
+
+    plan = make_root_plan(
+        input_file=str(loaded.path),
+        output_goal=loaded_goal.text,
+        input_digest=loaded.digest,
+        output_goal_digest=loaded_goal.digest,
+    )
+    plan = apply_response(
+        plan,
+        make_agent_response(
+            operations=[
+                ExpandOperation(
+                    node_id="item-001",
+                    children=[
+                        ChildDraft(title="Area A", objective="A"),
+                        ChildDraft(title="Area B", objective="B"),
+                    ],
+                )
+            ]
+        ),
+    )
+    from top_down_planning.persistence import update_final_status
+
+    update_final_status(
+        plan,
+        FinalStatus.INCOMPLETE_LIMIT_REACHED,
+        "Planning stopped because a configured safety limit was reached.",
+    )
+
+    run_state = new_run_state(
+        input_file=str(loaded.path),
+        output_goal=loaded_goal.source_label,
+        input_digest=loaded.digest,
+        output_goal_digest=loaded_goal.digest,
+        limits=stored_limits,
+        generation=default_generation(),
+    )
+    run_state.iteration = 2
+    run_state.active_status = RunActiveStatus.COMPLETED
+    output_dir.mkdir(parents=True, exist_ok=True)
+    save_plan(output_dir, plan)
+    save_run_state(output_dir, run_state)
+
+    report = await Orchestrator(
+        RunConfig(
+            input_path=example_input,
+            output_goal=loaded_goal,
+            output_dir=output_dir,
+            workspace_root=tmp_path,
+            limits=PlanningLimits(max_iterations=10),
+            resume=True,
+            agent_bin=fake_agent_bin,
+            skip_probe=True,
+        )
+    ).run()
+
+    assert report.status == FinalStatus.COMPLETE
+    run_state = load_run_state(output_dir)
+    assert run_state is not None
+    assert run_state.limits.max_iterations == 10
+    assert run_state.iteration > 2
+    plan = load_plan(output_dir)
+    assert plan is not None
+    assert plan.result.status == FinalStatus.COMPLETE
+
+
+@pytest.mark.asyncio
 async def test_end_to_end_with_concurrent_batches(
     tmp_path: Path,
     example_input: Path,

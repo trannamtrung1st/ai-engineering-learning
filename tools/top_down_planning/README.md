@@ -361,9 +361,14 @@ otherwise the tool reuses stored review/confirmation results only when their pla
 matches the current canonical plan, then proceeds to the next unfinished stage
 (review, confirmation, or render).
 
-Resume rejects changed input, changed output goal, or mismatched `limits` /
-`generation` settings. Resuming an already-complete, confirmed run skips render when
-prior deliverables still exist on disk.
+Resume rejects changed input, changed output goal, or mismatched `generation`
+settings. Safety limits (`max_iterations`, `max_items`, `max_retries`,
+`session_timeout_seconds`, `parse_error_threshold`) may be updated on resume —
+for example, raise `max_iterations` after hitting
+`incomplete_limit_reached`. Structural limits (`max_depth`,
+`max_children_per_expansion`) must still match the stored run. Resuming an
+already-complete, confirmed run skips render when prior deliverables still exist
+on disk.
 
 On resume, the tool detects when `plan.yaml` was reset but `run-state.json` still shows
 prior progress. It attempts to rebuild the plan by replaying stored
